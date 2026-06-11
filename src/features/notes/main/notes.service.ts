@@ -238,7 +238,7 @@ export class NotesService {
    */
   async listNotes(
     workspaceId: WorkspaceId,
-    options?: { offset?: number; limit?: number; skipSort?: boolean },
+    options?: { offset?: number; limit?: number; skipSort?: boolean; summariesOnly?: boolean },
   ): Promise<Result<{ notes: Note[]; total: number; hasMore: boolean }, string>> {
     try {
       // Validate workspaceId
@@ -253,32 +253,49 @@ export class NotesService {
       // Ensure workspace notes are migrated to new format
       await this.ensureWorkspaceMigrated(workspaceId);
 
-      // Ensure spec exists before listing
-      await this.ensureSpecExists(workspaceId);
+      const shouldLoadSummaries = options?.summariesOnly === true;
 
-      // Get all notes via repository
-      const allNotes = await this.notesRepository.findByWorkspace(workspaceId);
+      // Ensure spec exists before listing. Summary-only list calls avoid findById
+      // so inactive workspaces don't load/retain spec content just to render cards.
+      if (shouldLoadSummaries) {
+        const specId = 'spec' as NoteId;
+        if (!(await this.notesRepository.exists(workspaceId, specId))) {
+          await this.createDefaultSpec(workspaceId);
+        }
+      } else {
+        await this.ensureSpecExists(workspaceId);
+      }
+
+      const summaryLoader = this.notesRepository.findSummariesByWorkspace?.bind(this.notesRepository);
+
+      // Get notes via repository. Inactive/list-only surfaces can request summaries
+      // to avoid retaining markdown content and version payloads in memory.
+      const allNotes = shouldLoadSummaries && summaryLoader
+        ? await summaryLoader(workspaceId)
+        : await this.notesRepository.findByWorkspace(workspaceId);
 
       // PERF: Defer version pruning entirely off the critical path.
       // setTimeout ensures the synchronous prune loop doesn't run until after
       // the current microtask queue drains and the response is sent.
-      setTimeout(() => {
-        void (async () => {
-          try {
-            const notesToSave: Note[] = [];
-            for (const note of allNotes) {
-              if (this.pruneVersionsIfNeeded(note) > 0) {
-                notesToSave.push(note);
+      if (!shouldLoadSummaries) {
+        setTimeout(() => {
+          void (async () => {
+            try {
+              const notesToSave: Note[] = [];
+              for (const note of allNotes) {
+                if (this.pruneVersionsIfNeeded(note) > 0) {
+                  notesToSave.push(note);
+                }
               }
+              for (const note of notesToSave) {
+                await this.notesRepository.save(note);
+              }
+            } catch (err) {
+              logger.warn('Background version pruning failed', { error: err });
             }
-            for (const note of notesToSave) {
-              await this.notesRepository.save(note);
-            }
-          } catch (err) {
-            logger.warn('Background version pruning failed', { error: err });
-          }
-        })();
-      }, 0);
+          })();
+        }, 0);
+      }
 
       // Sort by updated date, newest first (unless skipped for performance)
       if (!options?.skipSort) {
@@ -343,7 +360,11 @@ export class NotesService {
   /**
    * Get a single note
    */
-  async getNote(workspaceId: WorkspaceId, noteId: NoteId): Promise<Result<Note, string>> {
+  async getNote(
+    workspaceId: WorkspaceId,
+    noteId: NoteId,
+    options?: { initializeCRDT?: boolean },
+  ): Promise<Result<Note, string>> {
     try {
       const note = await this.notesRepository.findById(workspaceId, noteId as NoteId);
 
@@ -355,7 +376,7 @@ export class NotesService {
       }
 
       // Initialize CRDT document for concurrent editing support
-      if (this.crdtEnabled) {
+      if (this.crdtEnabled && options?.initializeCRDT === true) {
         await crdtDocumentManager.initializeWithContent(workspaceId, noteId, note.content);
       }
 
@@ -599,7 +620,11 @@ export class NotesService {
       await this.notesRepository.save(note);
 
       // Update CRDT document to keep it in sync with file storage
-      if (this.crdtEnabled && request.content !== undefined) {
+      if (
+        this.crdtEnabled &&
+        request.content !== undefined &&
+        crdtDocumentManager.hasSession(note.workspaceId, note.id)
+      ) {
         await crdtDocumentManager.updateContent(note.workspaceId, note.id, note.content);
       }
 
@@ -786,7 +811,8 @@ export class NotesService {
       await this.createDefaultSpec(workspaceId);
     }
 
-    return this.getNote(workspaceId, specId);
+    const spec = await this.notesRepository.findById(workspaceId, specId);
+    return spec ? { ok: true, data: spec } : { ok: false, error: 'Failed to create spec' };
   }
 
   private async createDefaultSpec(workspaceId: WorkspaceId): Promise<void> {
@@ -2759,7 +2785,7 @@ export class NotesService {
       // Save the updated note
       await this.notesRepository.save(updatedNote);
 
-      if (this.crdtEnabled) {
+      if (this.crdtEnabled && crdtDocumentManager.hasSession(updatedNote.workspaceId, updatedNote.id)) {
         await crdtDocumentManager.updateContent(updatedNote.workspaceId, updatedNote.id, updatedNote.content);
       }
 

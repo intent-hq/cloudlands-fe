@@ -22,9 +22,7 @@
   import { createWorkspacePageState } from './composables/workspace-page-state.svelte';
   import {
   useCloseHandlers,
-  usePanelActions,
   usePanelShortcuts,
-  useSidebarState,
   useTabManagement,
   useWorkspaceLoader,
 } from './composables';
@@ -44,22 +42,12 @@
   // Performance optimization
   import { CleanupManager } from '$features/optimization/memory-manager';
 
-  import {
-  selectGitBranch,
-  selectGitAhead,
-} from '$store/renderer/slices/git/git-selectors';
-  import {
-  selectMainPanelView,
-  selectCurrentIsInitialized,
-  selectCurrentLoading,
-  selectSidebarCommits,
-} from '$store/renderer/slices/changes/changes-selectors';
+  import { selectMainPanelView } from '$store/renderer/slices/changes/changes-selectors';
   import { clearMainPanelView as ftClearMainPanelView } from '$store/renderer/slices/changes/changes-slice';
   import {
   selectActiveWorkspaceId,
   selectWorkspaceById,
   selectWorkspaceIsEmpty,
-  selectWorkspaceActivePullRequest,
   selectIsNewWorkspaceSession,
 } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
@@ -79,10 +67,7 @@
 
   import { workspaceStorageManager } from '$store/renderer/slices/workspace/utils/workspace-storage-manager';
 
-  import {
-  markNoteRead,
-  createNoteRequested,
-} from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
+  import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import { workspaceUnmounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
   import {
   track,
@@ -95,7 +80,6 @@
 
   // Components
   import WorkspaceLayout from '$lib/components/workspace/WorkspaceLayout.svelte';
-  import VSCodeResizablePanels from '$lib/components/workspace/VSCodeResizablePanels.svelte';
   import WorkspaceModals from '$lib/components/workspace/WorkspaceModals.svelte';
   import SidebarSkeleton from '$lib/components/workspace/SidebarSkeleton.svelte';
   import ContentSkeleton from '$lib/components/workspace/ContentSkeleton.svelte';
@@ -109,7 +93,6 @@
 
   // Utils
   import { createLogger } from '$lib/utils/client-logger';
-  import { SPEC_NOTE_ID } from '$shared/constants/notes';
 
   import { selectSidebarActiveTab } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { setSidebarActiveTab } from '$store/renderer/slices/transient-ui/transient-ui-slice';
@@ -129,7 +112,6 @@
   selectInitialAgentConfigProcessed,
   selectInitialAgentId,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-  import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
   import { store as appStore } from '$store/renderer/store';
 
@@ -148,11 +130,6 @@
   let stateDisposing = $state(false);
   // @ts-expect-error - Svelte 5 rune scoping issue
   let previousWorkspaceId = $state(null);
-  // Draft prompt to pre-fill in agent input without sending
-  // @ts-expect-error - Svelte 5 rune scoping issue
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  let draftPrompt = $state<string | null>(null);
-
   // Fade-in transition for fresh workspace creation (crossfade with onboarding page)
   // @ts-expect-error - Svelte 5 rune scoping issue
   let isFreshCreation = $state(false);
@@ -234,21 +211,11 @@
   // workspaceId changes AND Redux state updates.
   const workspace = selectWorkspaceById(workspaceIdStore);
 
-  // Git state from Redux (reactive via workspaceIdStore)
-  const gitBranch$ = selectGitBranch(workspaceIdStore);
-  const gitAhead$ = selectGitAhead(workspaceIdStore);
-
-  // Sidebar-specific selectors (stable references that avoid re-creating arrays/objects)
-  const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
-  const sidebarCommits$ = selectSidebarCommits(workspaceIdStore);
-
   // Transient signal: command palette → create-file dialog
   const pendingCommandPaletteAction$ = selectPendingCommandPaletteAction();
 
   // File tracking state from Redux
   const ftMainPanelView$ = selectMainPanelView();
-  const ftIsInitialized$ = selectCurrentIsInitialized();
-  const ftLoading$ = selectCurrentLoading();
 
   // Track if we're in the process of creating a workspace (including optimistic phase)
   let isCreatingWorkspace = $derived(
@@ -569,22 +536,6 @@
   });
 
   // ============================================================================
-  // Sidebar State (composable)
-  // ============================================================================
-
-  const sidebarState = useSidebarState({
-    get workspace() {
-      return $workspace ?? null;
-    },
-    get workspaceState() {
-      return workspaceState;
-    },
-    get state() {
-      return state;
-    },
-  });
-
-  // ============================================================================
   // Tab Management
   // ============================================================================
   const tabManagement = useTabManagement({
@@ -877,18 +828,6 @@
     }
   }
 
-  function handleFileSelect(filePath: string) {
-    if (workspaceState) {
-      logger.debug('[WorkspacePage] handleFileSelect called', { filePath });
-      workspaceState.openFile(filePath);
-
-      track('Opened File', {
-        workspace_id: $workspace?.id || workspaceId,
-        file_extension: getFileExtension(filePath),
-      });
-    }
-  }
-
   function handleCreateFile(folderPath: string, fileName?: string) {
     if (!$workspace?.id) return;
     createFileFolderPath = folderPath;
@@ -915,28 +854,9 @@
     appStore.dispatch(commandPaletteActionConsumed(workspaceId));
   });
 
-  async function handleOpenNote(noteId: string) {
-    if (workspaceState) {
-      logger.debug('[WorkspacePage] handleOpenNote called', { noteId });
-      await workspaceState.openNote(noteId);
-
-      // Mark note as read when opened (await to ensure persistence before refresh)
-      if ($workspace?.id) {
-        appStore.dispatch(markNoteRead($workspace.id, noteId));
-      }
-    }
-  }
-
   function handleCreateNote() {
     if (!$workspace?.id) return;
     appStore.dispatch(createNoteRequested($workspace.id));
-  }
-
-  function handleOpenUrl(url: string) {
-    if (workspaceState) {
-      logger.debug('[WorkspacePage] handleOpenUrl called', { url });
-      workspaceState.openBrowser(url);
-    }
   }
 
   // ============================================================================
@@ -951,41 +871,6 @@
       return workspaceState;
     },
   });
-
-  // ============================================================================
-  // Panel Actions with State Persistence
-  // ============================================================================
-
-  const panelActions = usePanelActions({
-    workspace: () => $workspace ?? null,
-    workspaceState: () => workspaceState,
-    state: () => state,
-    markAgentRecentlyCreated: (agentId: string) => {
-      const wsId = $workspace?.id || workspaceId;
-      if (wsId) {
-        appStore.dispatch(markAgentRecentlyCreatedAction(wsId, agentId));
-      }
-    },
-    onDraftPromptSet: (prompt) => {
-      draftPrompt = prompt;
-    },
-  });
-
-  function openAgent(agentId: string) {
-    panelActions.openAgent(agentId);
-  }
-
-  function openTerminal(terminalId: string) {
-    panelActions.openTerminal(terminalId);
-  }
-
-  /**
-   * Create an agent and pre-fill the input with a prompt (without sending)
-   * Used for contextual actions like "Generate tasks from spec" and "Delegate tasks"
-   */
-  async function handleCreateAgentWithPrompt(prompt: string, name: string) {
-    await panelActions.handleCreateAgentWithPrompt(prompt, name);
-  }
 
   /**
    * Create a new agent (used by keyboard shortcuts and UI buttons)
@@ -1002,14 +887,6 @@
   async function handleCreateAgentWithSpecialist(specialistId: string | null) {
     if (!$workspace) return;
     appStore.dispatch(createAgentWithSpecialistRequested($workspace.id, specialistId));
-  }
-
-  /**
-   * Create a new terminal (used by keyboard shortcuts and UI buttons)
-   */
-  async function handleCreateTerminal() {
-    if (!$workspace) return;
-    appStore.dispatch(createTerminalRequested($workspace.id));
   }
 
   // ============================================================================
@@ -1169,7 +1046,7 @@
       <!-- Show skeleton for normal loading -->
       <SidebarSkeleton />
     {/if}
-  {:else if sidebarState.useSleekSidebar}
+  {:else}
     <div
       class="h-full"
       style={isFreshCreation
@@ -1178,85 +1055,13 @@
     >
       <MultiSelectTabbedSidebar
         workspaceId={$workspace?.id || workspaceId}
-        notes={sidebarState.sidebarNotes}
-        notesLoading={sidebarState.sidebarNotesLoading}
-        selectedNoteId={state?.mainPanel?.type === 'notes'
-          ? state?.mainPanel?.selectedNoteId || SPEC_NOTE_ID
-          : null}
-        onOpenNote={handleOpenNote}
-        onOpenAgent={openAgent}
         onCreateNote={handleCreateNote}
-        selectedFile={state?.mainPanel?.type === 'file' ? state?.mainPanel?.selectedFile || '' : ''}
-        onOpenFile={handleFileSelect}
         onCreateFile={handleCreateFile}
         onFileRenamed={handleFileRenamed}
-        unstagedChanges={sidebarState.sidebarUnstagedChanges}
-        stagedChanges={sidebarState.sidebarStagedChanges}
-        selectedChangeId={state?.mainPanel?.selectedChangeId}
-        activeFilePath={state?.mainPanel?.type === 'file-tracking-diff'
-          ? state?.mainPanel?.selectedTrackedChange?.relativePath ||
-            state?.mainPanel?.selectedFile ||
-            null
-          : null}
-        activeFileStaged={state?.mainPanel?.type === 'file-tracking-diff'
-          ? state?.mainPanel?.selectedTrackedChange?.stage === 'committed'
-            ? null // Don't highlight any file in sidebar for committed changes
-            : state?.mainPanel?.selectedTrackedChange?.stage === 'staged'
-          : null}
-        isAllChangesViewActive={state?.mainPanel?.type === 'local-changes'}
-        onOpenChange={sidebarState.handleOpenChange}
-        onStageChange={sidebarState.handleStageChange}
-        onUnstageChange={sidebarState.handleUnstageChange}
-        onRevertChange={sidebarState.handleRevertChange}
-        onAcceptChanges={sidebarState.handleAcceptChanges}
-        isAcceptChangesOpen={state?.mainPanel?.type === 'accept-changes'}
-        onOpenPR={sidebarState.handleOpenPR}
-        currentBranch={$gitBranch$ || ''}
-        unpushedCount={$gitAhead$ ?? 0}
+        onAcceptChanges={() => workspaceState?.openAcceptChanges()}
         isNewWorkspaceSession={$isNewWorkspaceSession$}
-        activePullRequest={$activePullRequest$}
-        commits={$sidebarCommits$}
-        recentActivity={sidebarState.recentActivityEvents}
-        onViewAllActivity={sidebarState.handleViewAllActivity}
-        onOpenActivityEvent={sidebarState.handleOpenActivityEvent}
-        onOpenDashboard={() => {
-          workspaceState?.setMainPanel('dashboard');
-        }}
-        onCreateAgentWithPrompt={handleCreateAgentWithPrompt}
-        onOpenUrl={handleOpenUrl}
-        isChangesLoading={!$ftIsInitialized$ || $ftLoading$}
-        activeItemId={state?.drawer?.itemId}
-        showOverview={state?.drawer?.type === 'overview'}
-        drawerOpen={state?.drawer?.open}
-        drawerType={state?.drawer?.type}
-        onSelectAgent={openAgent}
-        onShowAgent={openAgent}
-        onOpenTerminal={openTerminal}
-        onCreateTerminal={handleCreateTerminal}
-        onToggleOverview={() => {
-          workspaceState?.openDrawer('overview', 'overview');
-        }}
         onCreateAgent={handleCreateAgent}
         onCreateAgentWithSpecialist={handleCreateAgentWithSpecialist}
-      />
-    </div>
-  {:else}
-    <div
-      class="h-full"
-      style={isFreshCreation
-        ? 'animation: slideInFromLeft 500ms cubic-bezier(0.16, 1, 0.3, 1) 200ms forwards; opacity: 0;'
-        : ''}
-    >
-      <VSCodeResizablePanels
-        workspaceId={$workspace?.id || workspaceId}
-        selectedNoteId={state?.mainPanel?.type === 'notes'
-          ? state?.mainPanel?.selectedNoteId || SPEC_NOTE_ID
-          : null}
-        selectedFile={state?.mainPanel?.type === 'file' ? state?.mainPanel?.selectedFile || '' : ''}
-        loading={false}
-        {handleFileSelect}
-        onOpenNote={handleOpenNote}
-        onSelectAgent={openAgent}
       />
     </div>
   {/if}

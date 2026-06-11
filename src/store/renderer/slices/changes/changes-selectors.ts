@@ -5,11 +5,12 @@
  */
 
 import { store } from "../../store";
-import { emptyWorkspaceState } from "./changes-slice";
+import { emptyAgentLineStatsRequestState, emptyWorkspaceState } from "./changes-slice";
 import { ChangeStage } from "$features/file-tracking/types";
 import type { StoreState } from "$store/renderer/types";
 import type {
   AcceptChangesState,
+  ChangesCoordinationState,
   FileTrackingWorkspaceState,
   TrackedChange,
   MainPanelViewState,
@@ -18,6 +19,7 @@ import type {
   StageTransition,
   FileLineChange,
   LineChangeStats,
+  AgentLineStatsRequestState,
 } from "./changes-types";
 
 
@@ -99,6 +101,50 @@ export const selectFileTrackingChangesTruncated = store.createSelector(
 
 export const selectFileTrackingTotalChangesCount = store.createSelector(
   (state, wsId: string): number => getWs(state, wsId).totalChangesCount
+);
+
+export const selectChangesCoordinationState = store.createSelector(
+  (state, wsId: string): ChangesCoordinationState => getWs(state, wsId).coordination
+);
+
+export const selectChangesLastSyncTime = store.createSelector(
+  (state, wsId: string): number => getWs(state, wsId).coordination.lastSyncTime
+);
+
+export const selectChangesLastUpdatedAt = store.createSelector(
+  (state, wsId: string): number => getWs(state, wsId).coordination.lastUpdatedAt
+);
+
+export const selectChangesSyncInProgress = store.createSelector(
+  (state, wsId: string): boolean => getWs(state, wsId).coordination.syncInProgress
+);
+
+export const selectChangesSyncDirty = store.createSelector(
+  (state, wsId: string): boolean => getWs(state, wsId).coordination.syncDirty
+);
+
+export const selectChangesSyncDirtyForce = store.createSelector(
+  (state, wsId: string): boolean => getWs(state, wsId).coordination.syncDirtyForce
+);
+
+export const selectChangesSyncThrottleMs = store.createSelector(
+  (state, wsId: string): number => getWs(state, wsId).coordination.syncThrottleMs
+);
+
+export const selectChangesLoadInProgress = store.createSelector(
+  (state, wsId: string): boolean => getWs(state, wsId).coordination.loadInProgress
+);
+
+export const selectChangesLoadDirty = store.createSelector(
+  (state, wsId: string): boolean => getWs(state, wsId).coordination.loadDirty
+);
+
+export const selectChangesRefreshInProgress = store.createSelector(
+  (state, wsId: string): boolean => getWs(state, wsId).coordination.refreshInProgress
+);
+
+export const selectChangesRefreshDirty = store.createSelector(
+  (state, wsId: string): boolean => getWs(state, wsId).coordination.refreshDirty
 );
 
 // ---------------------------------------------------------------------------
@@ -319,6 +365,28 @@ export const selectAgentLineStats = store.createSelector(
 /** Select the full agent stats record */
 export const selectAllAgentStats = store.createSelector(
   (state): Record<string, LineChangeStats> => state.changes.agentStats,
+);
+
+export const selectAgentLineStatsRequest = store.createSelector(
+  (state, agentId: string): AgentLineStatsRequestState =>
+    state.changes.agentLineStatsRequests[agentId] ?? emptyAgentLineStatsRequestState,
+);
+
+export const selectIsAgentLineStatsRequestInFlight = store.createSelector(
+  (state, agentId: string): boolean => selectAgentLineStatsRequest.select(state, agentId).isLoading,
+);
+
+export const selectAgentLineStatsRequestError = store.createSelector(
+  (state, agentId: string): string | null => selectAgentLineStatsRequest.select(state, agentId).error,
+);
+
+export const selectShouldRequestAgentLineStats = store.createSelector(
+  (state, agentId: string, forceRefresh = false): boolean => {
+    const requestState = selectAgentLineStatsRequest.select(state, agentId);
+    if (requestState.isLoading) return false;
+    if (!forceRefresh && selectAgentLineStats.select(state, agentId)) return false;
+    return true;
+  },
 );
 
 // ---------------------------------------------------------------------------

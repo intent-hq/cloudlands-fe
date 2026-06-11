@@ -16,6 +16,7 @@
   getPanelLayoutManager,
   type PanelTab,
 } from '$features/layout/panel-layout-adapter';
+  import { invoke as ipcInvoke } from '$shared/generated/ipc-client';
   import {
   createPanelKeyboardShortcuts,
   registerPanelKeyboardShortcuts,
@@ -220,7 +221,7 @@
   // Handler to create a new terminal
   async function handleCreateTerminal() {
     try {
-      const result = await window.electronAPI.invoke('terminal:professional:create', {
+      const result = await invoke<any>('terminal:professional:create', {
         workspaceId,
         cols: 80,
         rows: 24,
@@ -813,7 +814,9 @@
       logger.debug('Responding to browser:list-tabs-request', { count: browserTabs.length });
 
       // Send the list back to main process
-      window.electronAPI?.invoke('browser:list-tabs-response', { tabs: browserTabs });
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        void ipcInvoke('browser:list-tabs-response', { tabs: browserTabs });
+      }
     });
 
     return () => {

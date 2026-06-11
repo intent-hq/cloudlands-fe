@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 import type { WorkspaceEvent } from '$features/events/types';
 import {
+  bulkEventsReceived,
   eventReceived,
   eventsCleared,
   eventsLoaded,
@@ -31,16 +32,26 @@ describe('workspaceEventsReducer', () => {
     expect(workspaceEventsReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
 
-  it('appends a received event', () => {
-    const event = mockEvent('evt-1');
-    const state = workspaceEventsReducer(initialState, eventReceived(WS_1, event));
-    expect(state.byWorkspaceId[WS_1].events).toEqual([event]);
+  it('keeps eventReceived as an individual fan-out action without storing it', () => {
+    const state = workspaceEventsReducer(initialState, eventReceived(WS_1, mockEvent('evt-1')));
+    expect(state).toBe(initialState);
+  });
+
+  it('appends bulk received events in arrival order', () => {
+    const events = [mockEvent('evt-1'), mockEvent('evt-2')];
+    let state = workspaceEventsReducer(initialState, bulkEventsReceived(WS_1, events));
+    state = workspaceEventsReducer(state, bulkEventsReceived(WS_1, [mockEvent('evt-3')]));
+    expect(state.byWorkspaceId[WS_1].events.map((event) => event.id)).toEqual([
+      'evt-1',
+      'evt-2',
+      'evt-3',
+    ]);
   });
 
   it('caps events at 100', () => {
     let state = initialState;
     for (let i = 0; i < 110; i++) {
-      state = workspaceEventsReducer(state, eventReceived(WS_1, mockEvent(`evt-${i}`)));
+      state = workspaceEventsReducer(state, bulkEventsReceived(WS_1, [mockEvent(`evt-${i}`)]));
     }
     expect(state.byWorkspaceId[WS_1].events).toHaveLength(100);
     expect(state.byWorkspaceId[WS_1].events[0].id).toBe('evt-10');
@@ -67,14 +78,14 @@ describe('workspaceEventsReducer', () => {
     expect(state.byWorkspaceId[WS_1].loading).toBe(false);
   });
 
-  it('drops or normalizes malformed events before storing', () => {
+  it('drops or normalizes malformed events from bulk batches before storing', () => {
     const event = {
       ...mockEvent('evt-1'),
       actor: { type: 'agent', name: { bad: true }, id: 123 },
       description: false,
       data: { message: { bad: true }, command: 123 },
     };
-    const state = workspaceEventsReducer(initialState, eventReceived(WS_1, event as any));
+    const state = workspaceEventsReducer(initialState, bulkEventsReceived(WS_1, [event as any]));
     expect(state.byWorkspaceId[WS_1].events).toEqual([
       {
         ...mockEvent('evt-1'),
@@ -90,7 +101,7 @@ describe('workspaceEventsReducer', () => {
     data.self = data;
     const event = { ...mockEvent('evt-cycle'), data };
 
-    const state = workspaceEventsReducer(initialState, eventReceived(WS_1, event as any));
+    const state = workspaceEventsReducer(initialState, bulkEventsReceived(WS_1, [event as any]));
 
     expect(state.byWorkspaceId[WS_1].events[0]).toEqual({
       ...mockEvent('evt-cycle'),
@@ -114,14 +125,14 @@ describe('workspaceEventsReducer', () => {
   });
 
   it('clears workspace state on eventsCleared', () => {
-    const loaded = workspaceEventsReducer(initialState, eventReceived(WS_1, mockEvent('evt-1')));
+    const loaded = workspaceEventsReducer(initialState, bulkEventsReceived(WS_1, [mockEvent('evt-1')]));
     const cleared = workspaceEventsReducer(loaded, eventsCleared(WS_1));
     expect(cleared.byWorkspaceId[WS_1]).toBeUndefined();
   });
 
   it('does not affect other workspaces', () => {
-    let state = workspaceEventsReducer(initialState, eventReceived(WS_1, mockEvent('evt-1')));
-    state = workspaceEventsReducer(state, eventReceived(WS_2, mockEvent('evt-2', WS_2)));
+    let state = workspaceEventsReducer(initialState, bulkEventsReceived(WS_1, [mockEvent('evt-1')]));
+    state = workspaceEventsReducer(state, bulkEventsReceived(WS_2, [mockEvent('evt-2', WS_2)]));
     state = workspaceEventsReducer(state, eventsCleared(WS_1));
     expect(state.byWorkspaceId[WS_1]).toBeUndefined();
     expect(state.byWorkspaceId[WS_2].events).toHaveLength(1);

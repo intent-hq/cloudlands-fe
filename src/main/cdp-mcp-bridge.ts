@@ -22,6 +22,7 @@ export class CdpMcpBridge {
   private mcpServer: MCPServer | null = null;
   private logger: Logger;
   private port: number;
+  private cdpPort: number = 9223;
 
   constructor(port: number = 9223) {
     this.port = port;
@@ -40,7 +41,7 @@ export class CdpMcpBridge {
         status: 'ok',
         service: 'cdp-mcp-bridge',
         timestamp: new Date().toISOString(),
-        cdpPort: 9222,
+        cdpPort: this.cdpPort,
         port: this.port,
         tools,
       });
@@ -104,8 +105,8 @@ export class CdpMcpBridge {
     // Create and initialize CDP MCP server first
     try {
       // Get CDP port from environment or use default
-      const cdpPort = parseInt(process.env.CDP_PORT || '9223', 10);
-      this.mcpServer = await createCdpMCPServer(cdpPort);
+      this.cdpPort = parseInt(process.env.CDP_PORT || '9223', 10);
+      this.mcpServer = await createCdpMCPServer(this.cdpPort);
       const tools = this.mcpServer.getTools().map((t: any) => t.name);
       this.logger.debug(`CDP MCP Server initialized with tools: ${tools.join(', ')}`);
     } catch (error) {

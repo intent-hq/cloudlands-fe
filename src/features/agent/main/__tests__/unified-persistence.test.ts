@@ -2,14 +2,7 @@
  * Tests for Unified Persistence Service
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { UnifiedPersistence } from '../agent-persistence';
@@ -39,6 +32,7 @@ describe('UnifiedPersistence', () => {
   });
 
   afterEach(async () => {
+    persistence.invalidateAllLoadCaches();
     try {
       await fs.rm(testDir, { recursive: true, force: true });
     } catch {
@@ -98,7 +92,9 @@ describe('UnifiedPersistence', () => {
           errorSpy.mock.calls.flat().some((arg) => String(arg).includes('Invalid agent data')),
         ).toBe(false);
         expect(
-          warnSpy.mock.calls.flat().some((arg) => String(arg).includes('Agent data validation failed')),
+          warnSpy.mock.calls
+            .flat()
+            .some((arg) => String(arg).includes('Agent data validation failed')),
         ).toBe(false);
       } finally {
         errorSpy.mockRestore();
@@ -181,6 +177,243 @@ describe('UnifiedPersistence', () => {
         appMessageId: 'app-msg-save',
       });
       expect(saved.messages[0].timestamp).toBe('2026-05-04T10:00:01.000Z');
+    });
+
+    it('should load agent summaries without hydrating messages', async () => {
+      const agent: AgentSession = {
+        id: 'agent-summary' as any,
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        name: 'Summary Agent',
+        status: AgentStatus.Active,
+        messages: [
+          {
+            id: 'msg_summary_1',
+            role: 'user',
+            contentBlocks: [{ type: 'text', text: 'Heavy message' }],
+            timestamp: new Date('2026-05-04T10:00:00.000Z'),
+          },
+          {
+            id: 'msg_summary_2',
+            role: 'assistant',
+            contentBlocks: [{ type: 'text', text: 'Heavy response' }],
+            timestamp: new Date('2026-05-04T10:01:00.000Z'),
+          },
+        ] as any[],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      const saveResult = await persistence.saveAgent(agent, testDir);
+      expect(saveResult.success).toBe(true);
+
+      const parseSpy = vi.spyOn(JSON, 'parse');
+      let summaryResult: Awaited<ReturnType<typeof persistence.loadAgentSummary>>;
+      try {
+        summaryResult = await persistence.loadAgentSummary(
+          agent.id as any,
+          agent.workspaceId as any,
+          testDir,
+        );
+        expect(
+          parseSpy.mock.calls.some(
+            ([input]) => typeof input === 'string' && input.includes('Heavy message'),
+          ),
+        ).toBe(false);
+      } finally {
+        parseSpy.mockRestore();
+      }
+
+      expect(summaryResult.success).toBe(true);
+      expect(summaryResult.data?.messages).toEqual([]);
+      expect(summaryResult.data?.metadata?.messageCount).toBe(2);
+
+      const fullResult = await persistence.loadAgent(
+        agent.id as any,
+        agent.workspaceId as any,
+        testDir,
+      );
+      expect(fullResult.data?.messages).toHaveLength(2);
+    });
+  });
+
+  describe('load cache trimming', () => {
+    it('invalidates cached agent data after deleting an agent', async () => {
+      const agent: AgentSession = {
+        id: 'agent-cache-delete' as any,
+        workspaceId: 'amber-forest' as any,
+        name: 'Delete Cached Agent',
+        status: AgentStatus.Active,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      await persistence.saveAgent(agent, testDir);
+      expect(
+        await persistence.loadAgent(agent.id as any, agent.workspaceId as any, testDir),
+      ).toMatchObject({ success: true });
+
+      const deleteResult = await persistence.deleteAgent(agent.id, agent.workspaceId, testDir);
+      expect(deleteResult.success).toBe(true);
+      expect(
+        await persistence.loadAgent(agent.id as any, agent.workspaceId as any, testDir),
+      ).toMatchObject({ success: false });
+    });
+
+    it('evicts inactive completed load cache entries while retaining active entries', () => {
+      const activeAgent: AgentSession = {
+        id: 'agent-cache-active' as any,
+        workspaceId: 'workspace-cache-active' as any,
+        name: 'Active Cached Agent',
+        status: AgentStatus.Active,
+        messages: [
+          { id: 'msg-active', role: 'user', contentBlocks: [], timestamp: new Date() },
+        ] as any[],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+      const inactiveAgent: AgentSession = {
+        ...activeAgent,
+        id: 'agent-cache-inactive' as any,
+        workspaceId: 'workspace-cache-inactive' as any,
+        name: 'Inactive Cached Agent',
+        messages: [
+          { id: 'msg-inactive', role: 'user', contentBlocks: [], timestamp: new Date() },
+        ] as any[],
+      };
+
+      (persistence as any).loadCache.set('workspace-cache-active/agent-cache-active', {
+        data: { success: true, data: activeAgent },
+        timestamp: Date.now(),
+      });
+      (persistence as any).loadCache.set('workspace-cache-inactive/agent-cache-inactive', {
+        data: { success: true, data: inactiveAgent },
+        timestamp: Date.now(),
+      });
+
+      persistence.trimLoadCachesToOpenWorkspaces(['workspace-cache-active']);
+
+      expect((persistence as any).loadCache.has('workspace-cache-active/agent-cache-active')).toBe(
+        true,
+      );
+      expect(
+        (persistence as any).loadCache.has('workspace-cache-inactive/agent-cache-inactive'),
+      ).toBe(false);
+    });
+
+    it('retains inactive in-flight load promises so concurrent load de-duping still works', () => {
+      const loadPromise = Promise.resolve({ success: false, error: 'not loaded yet' });
+      (persistence as any).loadCache.set('workspace-cache-inactive/agent-cache-inflight', {
+        data: { success: false, error: 'Loading...' },
+        timestamp: Date.now(),
+        loadPromise,
+      });
+
+      persistence.trimLoadCachesToOpenWorkspaces([]);
+
+      expect(
+        (persistence as any).loadCache.get('workspace-cache-inactive/agent-cache-inflight')
+          ?.loadPromise,
+      ).toBe(loadPromise);
+    });
+
+    it('clears retained load and pending state for a cleared workspace only', async () => {
+      const targetAgent: AgentSession = {
+        id: 'agent-clear-workspace-target' as any,
+        workspaceId: 'amber-forest' as any,
+        name: 'Target Workspace Agent',
+        status: AgentStatus.Active,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+      const otherAgent: AgentSession = {
+        ...targetAgent,
+        id: 'agent-clear-workspace-other' as any,
+        workspaceId: 'green-hill' as any,
+      };
+
+      (persistence as any).loadCache.set('amber-forest/agent-clear-workspace-target', {
+        data: { success: true, data: targetAgent },
+        timestamp: Date.now(),
+      });
+      (persistence as any).loadCache.set('green-hill/agent-clear-workspace-other', {
+        data: { success: true, data: otherAgent },
+        timestamp: Date.now(),
+      });
+      (persistence as any).inactiveLoadCacheWorkspaces.add('amber-forest');
+      (persistence as any).inactiveLoadCacheWorkspaces.add('green-hill');
+      persistence.markAgentPending(targetAgent.id, targetAgent);
+      persistence.markAgentPending(otherAgent.id, otherAgent);
+
+      await persistence.clearWorkspace('amber-forest');
+
+      expect((persistence as any).loadCache.has('amber-forest/agent-clear-workspace-target')).toBe(
+        false,
+      );
+      expect((persistence as any).loadCache.has('green-hill/agent-clear-workspace-other')).toBe(
+        true,
+      );
+      expect((persistence as any).inactiveLoadCacheWorkspaces.has('amber-forest')).toBe(false);
+      expect((persistence as any).inactiveLoadCacheWorkspaces.has('green-hill')).toBe(true);
+      expect((persistence as any).pendingAgents.has(targetAgent.id)).toBe(false);
+      expect((persistence as any).pendingAgents.has(otherAgent.id)).toBe(true);
+    });
+
+    it('clears all retained load and pending state when clearing all persistence data', async () => {
+      const agent: AgentSession = {
+        id: 'agent-clear-all' as any,
+        workspaceId: 'amber-forest' as any,
+        name: 'Clear All Agent',
+        status: AgentStatus.Active,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      (persistence as any).loadCache.set('amber-forest/agent-clear-all', {
+        data: { success: true, data: agent },
+        timestamp: Date.now(),
+      });
+      (persistence as any).inactiveLoadCacheWorkspaces.add('amber-forest');
+      persistence.markAgentPending(agent.id, agent);
+
+      await persistence.clearAll();
+
+      expect((persistence as any).loadCache.size).toBe(0);
+      expect((persistence as any).inactiveLoadCacheWorkspaces.size).toBe(0);
+      expect((persistence as any).pendingAgents.size).toBe(0);
+    });
+
+    it('clears retained caches and pending agents on shutdown', async () => {
+      const agent: AgentSession = {
+        id: 'agent-cache-shutdown' as any,
+        workspaceId: 'workspace-cache-shutdown' as any,
+        name: 'Shutdown Cached Agent',
+        status: AgentStatus.Active,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        backendSessionId: null,
+      };
+
+      (persistence as any).loadCache.set('workspace-cache-shutdown/agent-cache-shutdown', {
+        data: { success: true, data: agent },
+        timestamp: Date.now(),
+      });
+      (persistence as any).inactiveLoadCacheWorkspaces.add('workspace-cache-shutdown');
+      persistence.markAgentPending(agent.id, agent);
+
+      await persistence.shutdown();
+
+      expect((persistence as any).loadCache.size).toBe(0);
+      expect((persistence as any).inactiveLoadCacheWorkspaces.size).toBe(0);
+      expect((persistence as any).pendingAgents.size).toBe(0);
     });
   });
 

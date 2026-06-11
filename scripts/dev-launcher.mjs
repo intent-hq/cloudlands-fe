@@ -195,6 +195,9 @@ function runDev(ports, cdpMode = false, devName = '') {
   if (cdpMode) {
     process.env.CDP_PORT = String(ports.cdpPort);
     process.env.ENABLE_CDP_DEBUG = 'true';
+    console.log(`  🔎 CDP targets: http://127.0.0.1:${ports.cdpPort}/json/list`);
+    console.log(`  🧠 Memory smoke: pnpm observe:memory -- --port ${ports.cdpPort} --count 1`);
+    console.log(`  🤖 agent-browser: agent-browser connect ${ports.cdpPort}`);
   }
 
   // Use cross-platform approach: set env vars on process.env and spawn pnpm directly

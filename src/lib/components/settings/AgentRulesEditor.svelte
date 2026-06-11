@@ -14,6 +14,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import { Logger } from '$lib/utils/logger';
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
+  import { invoke } from '$shared/generated/ipc-client';
 
 
   const logger = new Logger({ category: 'AgentRulesEditor' });
@@ -72,24 +73,24 @@
       errorMessage = null;
 
       // Check if legacy 'system' type exists and migrate
-      const legacyResult = await window.electronAPI.invoke('user-rules:get-by-type', {
+      const legacyResult = await invoke<any>('user-rules:get-by-type', {
         type: 'system',
       });
       if (legacyResult.success && legacyResult.data?.content) {
         logger.info('Migrating legacy system rules to base-system-prompt');
-        await window.electronAPI.invoke('user-rules:update-by-type', {
+        await invoke<any>('user-rules:update-by-type', {
           type: RULE_TYPE,
           content: legacyResult.data.content,
           enabled: legacyResult.data.enabled !== false,
         });
-        await window.electronAPI.invoke('user-rules:update-by-type', {
+        await invoke<any>('user-rules:update-by-type', {
           type: 'system',
           content: '',
           enabled: false,
         });
       }
 
-      const result = await window.electronAPI.invoke('user-rules:get-by-type', {
+      const result = await invoke<any>('user-rules:get-by-type', {
         type: RULE_TYPE,
       });
 
@@ -128,7 +129,7 @@
       errorMessage = null;
 
       const trimmedContent = rulesContent.trim();
-      const result = await window.electronAPI.invoke('user-rules:update-by-type', {
+      const result = await invoke<any>('user-rules:update-by-type', {
         type: RULE_TYPE,
         content: trimmedContent,
       });

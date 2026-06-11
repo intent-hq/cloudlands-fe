@@ -53,6 +53,8 @@
   let fitAddon: FitAddon | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let themeManager: TerminalThemeManager | null = null;
+  let initRafId: number | null = null;
+  let fitRafId: number | null = null;
 
 
 
@@ -136,7 +138,8 @@
     themeManager.applyTheme(xterm);
 
     // Fit after a tick to ensure container has dimensions
-    requestAnimationFrame(() => {
+    fitRafId = requestAnimationFrame(() => {
+      fitRafId = null;
       fitAddon?.fit();
     });
 
@@ -161,6 +164,14 @@
   }
 
   function disposeXterm(): void {
+    if (initRafId !== null) {
+      cancelAnimationFrame(initRafId);
+      initRafId = null;
+    }
+    if (fitRafId !== null) {
+      cancelAnimationFrame(fitRafId);
+      fitRafId = null;
+    }
     resizeObserver?.disconnect();
     resizeObserver = null;
     themeManager?.dispose();
@@ -250,7 +261,11 @@
     if (!isEmptyState && xtermContainer && !xterm) {
       // Container just became visible, initialize xterm
       // Use requestAnimationFrame to ensure DOM has updated
-      requestAnimationFrame(() => {
+      if (initRafId !== null) {
+        cancelAnimationFrame(initRafId);
+      }
+      initRafId = requestAnimationFrame(() => {
+        initRafId = null;
         initXterm();
       });
     }

@@ -1,4 +1,5 @@
 import { setLocalStorageItem } from "$store/renderer/utils/safe-local-storage-saga";
+import { invoke } from "$shared/generated/ipc-client";
 import {
   call,
   put,
@@ -21,7 +22,7 @@ const HIDDEN_OPEN_IN_EDITORS_KEY = "hiddenOpenInEditors";
 
 async function invokeSettings(channel: string, data?: any): Promise<any> {
   if (typeof window === "undefined" || !window.electronAPI) return undefined;
-  return await window.electronAPI.invoke(channel, data);
+  return await invoke(channel, data);
 }
 
 function* persistAction(action: string): SagaGenerator<void> {

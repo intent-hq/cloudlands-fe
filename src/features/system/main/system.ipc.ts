@@ -98,6 +98,63 @@ const require = createRequire(import.meta.url);
 
 const logger = new Logger('SystemIPC');
 
+// Discovery auto-timeout: automatically disable after 5 minutes.
+// Module scope lets the HTTP bridge clear this process-local timer when the
+// bridge is stopped, so the timeout callback cannot retain stale lifecycle work.
+const DISCOVERY_TIMEOUT_MS = 5 * 60 * 1000;
+let discoveryAutoOffTimer: ReturnType<typeof setTimeout> | null = null;
+let discoveryEnabledAt: number | null = null;
+
+type DiscoveryAutoOffCleanupGlobal = typeof globalThis & {
+  __clearWebSocketDiscoveryAutoOffTimer?: () => void;
+};
+
+export function clearWebSocketDiscoveryAutoOffTimer(): void {
+  if (discoveryAutoOffTimer) {
+    clearTimeout(discoveryAutoOffTimer);
+    discoveryAutoOffTimer = null;
+  }
+  discoveryEnabledAt = null;
+}
+
+function getWebSocketDiscoveryExpiresAt(): number | null {
+  return discoveryEnabledAt ? discoveryEnabledAt + DISCOVERY_TIMEOUT_MS : null;
+}
+
+async function autoDisableWebSocketDiscovery(logContext: string): Promise<void> {
+  try {
+    clearWebSocketDiscoveryAutoOffTimer();
+
+    const { setWebSocketApiDiscoveryEnabled } = await import(
+      '../../workspace/main/app-settings.service'
+    );
+    setWebSocketApiDiscoveryEnabled(false);
+
+    const bridge = (globalThis as any).__httpMcpBridgeInstance;
+    if (bridge?.updateWebSocketApiServer) {
+      await bridge.updateWebSocketApiServer();
+    }
+
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+        win.webContents.send('websocket-api:discovery-auto-disabled');
+      }
+    }
+  } catch (error) {
+    logger.warn(`Failed to auto-disable discovery in ${logContext}`, {
+      error: (error as Error).message,
+    });
+  }
+}
+
+function scheduleWebSocketDiscoveryAutoOffTimer(logContext: string): void {
+  clearWebSocketDiscoveryAutoOffTimer();
+  discoveryEnabledAt = Date.now();
+  discoveryAutoOffTimer = setTimeout(() => {
+    void autoDisableWebSocketDiscovery(logContext);
+  }, DISCOVERY_TIMEOUT_MS);
+}
+
 const CONTENT_BEARING_WORKSPACE_CHANNELS = new Set([
   'file:content-changed',
   'note:created',
@@ -274,10 +331,11 @@ export function getWindowIdsForWorkspace(workspaceId: string): number[] {
 
 /**
  * Send an IPC message to all windows viewing a specific workspace.
- * Falls back to broadcasting to ALL windows if no windows are found for the workspace,
- * or if workspaceId is not provided.
- * Content-bearing workspace events are an exception: they are dropped when no
- * matching workspace target exists so workspace content never reaches unrelated clients.
+ * Workspace-scoped messages are delivered only to windows that have that
+ * workspace active or open in a tab. If no matching windows exist, the Electron
+ * renderer delivery is dropped instead of falling back to unrelated windows.
+ * Messages without a workspace context remain global broadcasts unless they are
+ * content-bearing workspace messages with a recoverable workspaceId in the payload.
  *
  * This is the preferred way to send workspace-scoped IPC messages from the main process.
  * Use this instead of manually calling BrowserWindow.getAllWindows() + webContents.send().
@@ -298,12 +356,9 @@ export function sendToWorkspaceWindows(
       targetWindows = windowIds
         .map((id) => BrowserWindow.fromId(id))
         .filter((w): w is BrowserWindow => !!w && !w.isDestroyed());
-    } else if (isContentBearing) {
-      // Content-bearing workspace events must never fall back to unrelated windows.
-      targetWindows = [];
     } else {
-      // No windows found for workspace — fall back to all windows
-      targetWindows = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+      // Workspace-scoped events must never fall back to unrelated windows.
+      targetWindows = [];
     }
   } else if (isContentBearing) {
     // Without a workspace context there is no safe target for workspace content.
@@ -325,7 +380,7 @@ export function sendToWorkspaceWindows(
     broadcastToBrowserIpcClients(
       channel,
       data,
-      isContentBearing ? effectiveWorkspaceId : undefined,
+      effectiveWorkspaceId,
     );
   } catch {
     // Ignore — WebSocket bridge may not be initialized yet
@@ -555,6 +610,9 @@ export async function autoRepairCliSymlink(): Promise<void> {
 // ============================================================================
 
 export function setupSystemIPC() {
+  (globalThis as DiscoveryAutoOffCleanupGlobal).__clearWebSocketDiscoveryAutoOffTimer =
+    clearWebSocketDiscoveryAutoOffTimer;
+
   // App info
   ipcMain.handle(
     APP_CHANNELS.VERSION,
@@ -3091,37 +3149,12 @@ export function setupSystemIPC() {
           // If discovery is enabled (from persisted settings) but discoveryEnabledAt
           // was never initialized (e.g. after app restart), start the auto-disable timer
           // so discovery doesn't stay enabled indefinitely.
-          const discoveryCurrentlyEnabled = isWebSocketApiDiscoveryEnabled();
+          const persistedDiscoveryEnabled = isWebSocketApiDiscoveryEnabled();
+          const discoveryCurrentlyEnabled = enabled && persistedDiscoveryEnabled;
           if (discoveryCurrentlyEnabled && discoveryEnabledAt === null) {
-            discoveryEnabledAt = Date.now();
-            if (discoveryAutoOffTimer) {
-              clearTimeout(discoveryAutoOffTimer);
-            }
-            discoveryAutoOffTimer = setTimeout(async () => {
-              try {
-                discoveryAutoOffTimer = null;
-                discoveryEnabledAt = null;
-
-                const { setWebSocketApiDiscoveryEnabled } = await import(
-                  '../../workspace/main/app-settings.service'
-                );
-                setWebSocketApiDiscoveryEnabled(false);
-
-                const b = (globalThis as any).__httpMcpBridgeInstance;
-                if (b?.updateWebSocketApiServer) {
-                  await b.updateWebSocketApiServer();
-                }
-
-                const { BrowserWindow } = await import('electron');
-                for (const win of BrowserWindow.getAllWindows()) {
-                  if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
-                    win.webContents.send('websocket-api:discovery-auto-disabled');
-                  }
-                }
-              } catch (error) {
-                logger.warn('Failed to auto-disable discovery after restart recovery', { error: (error as Error).message });
-              }
-            }, DISCOVERY_TIMEOUT_MS);
+            scheduleWebSocketDiscoveryAutoOffTimer('restart recovery');
+          } else if (!discoveryCurrentlyEnabled && discoveryEnabledAt !== null) {
+            clearWebSocketDiscoveryAutoOffTimer();
           }
 
           return {
@@ -3134,7 +3167,9 @@ export function setupSystemIPC() {
               discoveryEnabled: discoveryCurrentlyEnabled,
               localIps: getAllLocalIps(),
               certFingerprint: getWssCertFingerprint() ?? null,
-              discoveryExpiresAt: discoveryEnabledAt ? discoveryEnabledAt + DISCOVERY_TIMEOUT_MS : null,
+              discoveryExpiresAt: discoveryCurrentlyEnabled
+                ? getWebSocketDiscoveryExpiresAt()
+                : null,
             },
           };
         } catch (error) {
@@ -3153,12 +3188,15 @@ export function setupSystemIPC() {
       async (_event, validated) => {
         try {
           const { getOrCreateToken } = await import('../../../main/websocket-auth');
-          const { setWebSocketApiEnabled } = await import(
+          const { setWebSocketApiDiscoveryEnabled, setWebSocketApiEnabled } = await import(
             '../../workspace/main/app-settings.service'
           );
           setWebSocketApiEnabled(validated.enabled);
           if (validated.enabled) {
             getOrCreateToken();
+          } else {
+            clearWebSocketDiscoveryAutoOffTimer();
+            setWebSocketApiDiscoveryEnabled(false);
           }
 
           // Start or stop the WebSocket server dynamically
@@ -3207,11 +3245,6 @@ export function setupSystemIPC() {
     ),
   );
 
-  // Discovery auto-timeout: automatically disable after 5 minutes
-  let discoveryAutoOffTimer: ReturnType<typeof setTimeout> | null = null;
-  const DISCOVERY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-  let discoveryEnabledAt: number | null = null;
-
   ipcMain.handle(
     WEBSOCKET_API_CHANNELS.SET_DISCOVERY,
     createSafeValidatedHandler(
@@ -3223,44 +3256,10 @@ export function setupSystemIPC() {
           );
           setWebSocketApiDiscoveryEnabled(validated.enabled);
 
-          // Clear any existing auto-off timer
-          if (discoveryAutoOffTimer) {
-            clearTimeout(discoveryAutoOffTimer);
-            discoveryAutoOffTimer = null;
-          }
+          clearWebSocketDiscoveryAutoOffTimer();
 
           if (validated.enabled) {
-            discoveryEnabledAt = Date.now();
-            // Auto-disable discovery after 5 minutes
-            discoveryAutoOffTimer = setTimeout(async () => {
-              try {
-                discoveryAutoOffTimer = null;
-                discoveryEnabledAt = null;
-
-                const { setWebSocketApiDiscoveryEnabled: setDisc } = await import(
-                  '../../workspace/main/app-settings.service'
-                );
-                setDisc(false);
-
-                // Stop the actual Bonjour service
-                const b = (globalThis as any).__httpMcpBridgeInstance;
-                if (b?.updateWebSocketApiServer) {
-                  await b.updateWebSocketApiServer();
-                }
-
-                // Notify all renderer windows that discovery was auto-disabled
-                const { BrowserWindow } = await import('electron');
-                for (const win of BrowserWindow.getAllWindows()) {
-                  if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
-                    win.webContents.send('websocket-api:discovery-auto-disabled');
-                  }
-                }
-              } catch (error) {
-                logger.warn('Failed to auto-disable discovery in setTimeout callback', { error: (error as Error).message });
-              }
-            }, DISCOVERY_TIMEOUT_MS);
-          } else {
-            discoveryEnabledAt = null;
+            scheduleWebSocketDiscoveryAutoOffTimer('setTimeout callback');
           }
 
           // Trigger discovery start/stop
@@ -3271,7 +3270,10 @@ export function setupSystemIPC() {
 
           return {
             success: true,
-            data: { discoveryEnabled: validated.enabled },
+            data: {
+              discoveryEnabled: validated.enabled,
+              discoveryExpiresAt: getWebSocketDiscoveryExpiresAt(),
+            },
           };
         } catch (error) {
           logger.error('Failed to set discovery enabled', error as Error);

@@ -15,6 +15,7 @@ import {
   type Analytics,
 } from '@segment/analytics-next';
 import { createLogger } from '$lib/utils/client-logger';
+import { invoke } from '$shared/generated/ipc-client';
 import type {
   AnalyticsConfig,
   AnalyticsEventName,
@@ -69,7 +70,10 @@ async function buildStaticCommonProperties(): Promise<
   // Get app version from main process
   let appVersion = 'unknown';
   try {
-    const version = await window.electronAPI?.invoke('app:get-version');
+    const version =
+      typeof window !== 'undefined' && window.electronAPI
+        ? await invoke<string>('app:get-version')
+        : undefined;
     if (version) appVersion = version;
   } catch {
     // Fallback to unknown
@@ -194,7 +198,10 @@ export async function initAnalytics(): Promise<boolean> {
  */
 async function fetchAnalyticsConfig(): Promise<AnalyticsConfig | null> {
   try {
-    const config = await window.electronAPI?.invoke('analytics:get-config');
+    const config =
+      typeof window !== 'undefined' && window.electronAPI
+        ? await invoke<AnalyticsConfig>('analytics:get-config')
+        : undefined;
     return config as AnalyticsConfig;
   } catch (error) {
     console.warn('[Analytics] Failed to fetch config:', error);
@@ -213,9 +220,12 @@ async function fetchAnalyticsConfig(): Promise<AnalyticsConfig | null> {
  */
 async function applyDownloadAttribution(analytics: Analytics): Promise<void> {
   try {
-    const result = await window.electronAPI?.invoke('settings:get', {
-      key: 'downloadAttribution',
-    });
+    const result =
+      typeof window !== 'undefined' && window.electronAPI
+        ? await invoke<any>('settings:get', {
+          key: 'downloadAttribution',
+        })
+        : undefined;
 
     const attribution = result?.data;
     if (!attribution) return;
@@ -224,10 +234,12 @@ async function applyDownloadAttribution(analytics: Analytics): Promise<void> {
     // avoid re-evaluating on every launch and skip further processing.
     if (!attribution.ajs_aid) {
       if (!attribution.eventTracked) {
-        await window.electronAPI?.invoke('settings:set', {
-          key: 'downloadAttribution',
-          value: { ...attribution, eventTracked: true },
-        });
+        if (typeof window !== 'undefined' && window.electronAPI) {
+          await invoke('settings:set', {
+            key: 'downloadAttribution',
+            value: { ...attribution, eventTracked: true },
+          });
+        }
       }
       return;
     }
@@ -252,10 +264,12 @@ async function applyDownloadAttribution(analytics: Analytics): Promise<void> {
       analytics.track('Claimed Download Attribution', enrichedProperties);
 
       // Mark event as tracked so it doesn't fire again
-      await window.electronAPI?.invoke('settings:set', {
-        key: 'downloadAttribution',
-        value: { ...attribution, eventTracked: true },
-      });
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        await invoke('settings:set', {
+          key: 'downloadAttribution',
+          value: { ...attribution, eventTracked: true },
+        });
+      }
       console.log('[Analytics] Tracked download attribution event');
     }
   } catch (error) {
@@ -354,7 +368,10 @@ export async function identifyUser(options?: { force?: boolean }): Promise<void>
   }
 
   try {
-    const result = await window.electronAPI?.invoke('auggie:get-user-info');
+    const result =
+      typeof window !== 'undefined' && window.electronAPI
+        ? await invoke<any>('auggie:get-user-info')
+        : undefined;
     if (result?.success && result.data?.id) {
       const traits: UserTraits = {};
       if (result.data.tenantId) traits.tenant_id = result.data.tenantId;

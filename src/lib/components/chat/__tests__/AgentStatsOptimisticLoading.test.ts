@@ -35,7 +35,18 @@ const mocks = vi.hoisted(() => {
     },
   });
 
-  return { dispatch, subscribeToAgent, statsState, agents, readable };
+  const readableForAgent = (agentId: string | { subscribe: (run: (value: string) => void) => () => void }) => ({
+    subscribe(run: (value: Record<string, unknown> | undefined) => void) {
+      if (typeof agentId === 'string') {
+        run(agents[agentId]);
+        return () => {};
+      }
+
+      return agentId.subscribe((id) => run(agents[id]));
+    },
+  });
+
+  return { dispatch, subscribeToAgent, statsState, agents, readable, readableForAgent };
 });
 
 vi.mock('$lib/components/ui/tooltip', async () => {
@@ -88,7 +99,7 @@ vi.mock('$store/renderer/slices/session-stats/session-stats-selectors', () => ({
   selectAgentStatsError: () => mocks.readable(() => mocks.statsState.error),
 }));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
-  selectAgentSession: Object.assign((agentId: string) => mocks.readable(() => mocks.agents[agentId]), {
+  selectAgentSession: Object.assign((agentId: Parameters<typeof mocks.readableForAgent>[0]) => mocks.readableForAgent(agentId), {
     select: (_state: unknown, agentId: string) => mocks.agents[agentId],
   }),
   selectAgentIsResponding: () => mocks.readable(() => false),
@@ -112,6 +123,12 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
 }));
 vi.mock('$store/renderer/slices/changes/changes-selectors', () => ({
   selectAgentLineStats: () => mocks.readable(() => null),
+}));
+vi.mock('$store/renderer/slices/changes/changes-slice', () => ({
+  requestAgentLineStats: vi.fn((agentId: string, forceRefresh = false) => ({
+    type: 'changes/requestAgentLineStats',
+    payload: { agentId, forceRefresh },
+  })),
 }));
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPendingCount: () => mocks.readable(() => 0),
@@ -182,6 +199,17 @@ describe('agent stats optimistic tooltip loading', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('AgentCard does not request line stats merely because it mounted', async () => {
+    const AgentCard = (await import('../AgentCard.svelte')).default;
+    render(AgentCard, { props: { agentId: 'agent-1' } });
+
+    await tick();
+
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'changes/requestAgentLineStats' }),
+    );
   });
 
   it('AgentCard shows the stats skeleton immediately after hover intent while Redux loading is still false', async () => {

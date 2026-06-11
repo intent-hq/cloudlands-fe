@@ -24,6 +24,9 @@ vi.mock("typed-redux-saga", () => ({
   put: function* (action: any) {
     return yield sagaEffects.put(action);
   },
+  takeEvery: function* (pattern: any, worker: any) {
+    return yield sagaEffects.takeEvery(pattern, worker);
+  },
   select: function* (selector: any, ...args: any[]) {
     return yield sagaEffects.select(selector, ...args);
   },
@@ -59,19 +62,24 @@ vi.mock("$store/renderer/slices/workspace/utils/workspace.client", () => ({
   workspaceClient: { delete: mockDelete },
 }));
 
-import {
-  applyOptimisticTaskStatusUpdate,
-  updateWorkspaceEntity,
-} from "../../workspace-slice";
+import { updateWorkspaceEntity } from "../../workspace-slice";
 import { WorkspaceId } from "$shared/types/branded-ids";
 import {
   watchWorkspaceUpdatedSaga,
   watchWorkspaceBackgroundEnrichmentSaga,
-  watchTaskStatusChangedSaga,
+  watchCoalescedWorkspaceUpdatesOnMountSaga,
+  watchMountedWorkspaceInterestCleanupSaga,
   watchWorkspaceBeforeUnloadSaga,
   workspaceIpcSaga,
   WORKSPACE_BEFORE_UNLOAD_POLL_MS,
+  flushCoalescedWorkspaceUpdateOnMountSaga,
+  clearMountedWorkspaceInterestOnUnmountSaga,
+  __resetWorkspaceIpcCoalescingForTesting,
 } from "../workspace-ipc-saga";
+import {
+  workspaceMounted,
+  workspaceUnmounted,
+} from "../../../workspace-lifecycle/workspace-lifecycle-slice";
 
 function getListenSyncHandler(eventName: string) {
   const call = takeEveryFromListenSyncMock.mock.calls.find(([name]: any) => name === eventName);
@@ -88,9 +96,10 @@ function getElectronHandler(eventName: string) {
 describe("workspace-ipc-saga", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetWorkspaceIpcCoalescingForTesting();
     mockAppStoreFactory.mockReturnValue({
       getState: () => ({
-        workspace: { pendingDeletions: { "ws-1": true } },
+        workspace: { activeWorkspaceId: "ws-1", pendingDeletions: { "ws-1": true } },
       }),
     });
   });
@@ -102,7 +111,9 @@ describe("workspace-ipc-saga", () => {
       .next()
       .fork(watchWorkspaceBackgroundEnrichmentSaga)
       .next()
-      .fork(watchTaskStatusChangedSaga)
+      .fork(watchCoalescedWorkspaceUpdatesOnMountSaga)
+      .next()
+      .fork(watchMountedWorkspaceInterestCleanupSaga)
       .next()
       .fork(watchWorkspaceBeforeUnloadSaga)
       .next()
@@ -114,14 +125,75 @@ describe("workspace-ipc-saga", () => {
       watchWorkspaceUpdatedSaga().next();
 
       const handler = getListenSyncHandler("workspace:updated");
-      const effect = handler({
+      const iterator = handler({
         workspaceId: "ws-1",
         changes: { title: "New Title" },
-      }).next().value as any;
+      });
+      expect((iterator.next().value as any).type).toBe("SELECT");
+      const effect = iterator.next("ws-1").value as any;
 
       expect(effect.type).toBe("PUT");
       expect(effect.payload.action).toEqual(
         updateWorkspaceEntity("ws-1", { title: "New Title" }),
+      );
+    });
+
+    it("coalesces inactive workspace updates until that workspace mounts", () => {
+      watchWorkspaceUpdatedSaga().next();
+
+      const handler = getListenSyncHandler("workspace:updated");
+      const first = handler({ workspaceId: "ws-2", changes: { title: "Old" } });
+      expect((first.next().value as any).type).toBe("SELECT");
+      expect((first.next("ws-1").value as any).type).toBe("SELECT");
+      expect((first.next(false).value as any).type).toBe("SELECT");
+      expect((first.next(false).value as any).type).toBe("SELECT");
+      expect(first.next([])).toEqual({ value: undefined, done: true });
+
+      const second = handler({ workspaceId: "ws-2", changes: { branch: "feature" } });
+      expect((second.next().value as any).type).toBe("SELECT");
+      expect((second.next("ws-1").value as any).type).toBe("SELECT");
+      expect((second.next(false).value as any).type).toBe("SELECT");
+      expect((second.next(false).value as any).type).toBe("SELECT");
+      expect(second.next([])).toEqual({ value: undefined, done: true });
+
+      const flush = flushCoalescedWorkspaceUpdateOnMountSaga(workspaceMounted("ws-2"));
+      const effect = flush.next().value as any;
+      expect(effect.type).toBe("PUT");
+      expect(effect.payload.action).toEqual(
+        updateWorkspaceEntity("ws-2", { title: "Old", branch: "feature" }),
+      );
+      expect(flush.next()).toEqual({ value: undefined, done: true });
+    });
+
+    it("preserves updates for a mounted non-active workspace", () => {
+      const mount = flushCoalescedWorkspaceUpdateOnMountSaga(workspaceMounted("ws-open"));
+      expect(mount.next()).toEqual({ value: undefined, done: true });
+
+      watchWorkspaceUpdatedSaga().next();
+
+      const handler = getListenSyncHandler("workspace:updated");
+      const iterator = handler({ workspaceId: "ws-open", changes: { title: "Open" } });
+      expect((iterator.next().value as any).type).toBe("SELECT");
+      const effect = iterator.next("ws-active").value as any;
+
+      expect(effect.type).toBe("PUT");
+      expect(effect.payload.action).toEqual(
+        updateWorkspaceEntity("ws-open", { title: "Open" }),
+      );
+    });
+
+    it("preserves updates for an open but unmounted non-active workspace tab", () => {
+      watchWorkspaceUpdatedSaga().next();
+
+      const handler = getListenSyncHandler("workspace:updated");
+      const iterator = handler({ workspaceId: "ws-tab", changes: { title: "Open Tab" } });
+      expect((iterator.next().value as any).type).toBe("SELECT");
+      expect((iterator.next("ws-active").value as any).type).toBe("SELECT");
+      const effect = iterator.next(true).value as any;
+
+      expect(effect.type).toBe("PUT");
+      expect(effect.payload.action).toEqual(
+        updateWorkspaceEntity("ws-tab", { title: "Open Tab" }),
       );
     });
   });
@@ -131,14 +203,53 @@ describe("workspace-ipc-saga", () => {
       watchWorkspaceBackgroundEnrichmentSaga().next();
 
       const handler = getElectronHandler("workspace:background-enrichment-complete");
-      const effect = handler({
+      const iterator = handler({
         workspaceId: "ws-1",
-        updates: { diffSummary: "Summary" },
-      }).next().value as any;
+        updates: { prUrl: "https://example.com/pr/1" },
+      });
+      expect((iterator.next().value as any).type).toBe("SELECT");
+      const effect = iterator.next("ws-1").value as any;
 
       expect(effect.type).toBe("PUT");
       expect(effect.payload.action).toEqual(
-        updateWorkspaceEntity("ws-1", { diffSummary: "Summary" }),
+        updateWorkspaceEntity("ws-1", { prUrl: "https://example.com/pr/1" }),
+      );
+    });
+
+    it("preserves enrichment updates for a subscribed non-active workspace", () => {
+      watchWorkspaceBackgroundEnrichmentSaga().next();
+
+      const handler = getElectronHandler("workspace:background-enrichment-complete");
+      const iterator = handler({
+        workspaceId: "ws-subscribed",
+        updates: { prUrl: "https://example.com/pr/2" },
+      });
+      expect((iterator.next().value as any).type).toBe("SELECT");
+      expect((iterator.next("ws-active").value as any).type).toBe("SELECT");
+      expect((iterator.next(false).value as any).type).toBe("SELECT");
+      const effect = iterator.next(true).value as any;
+
+      expect(effect.type).toBe("PUT");
+      expect(effect.payload.action).toEqual(
+        updateWorkspaceEntity("ws-subscribed", { prUrl: "https://example.com/pr/2" }),
+      );
+    });
+
+    it("preserves enrichment updates for open but unmounted workspace tabs", () => {
+      watchWorkspaceBackgroundEnrichmentSaga().next();
+
+      const handler = getElectronHandler("workspace:background-enrichment-complete");
+      const iterator = handler({
+        workspaceId: "ws-tab",
+        updates: { prUrl: "https://example.com/pr/3" },
+      });
+      expect((iterator.next().value as any).type).toBe("SELECT");
+      expect((iterator.next("ws-active").value as any).type).toBe("SELECT");
+      const effect = iterator.next(true).value as any;
+
+      expect(effect.type).toBe("PUT");
+      expect(effect.payload.action).toEqual(
+        updateWorkspaceEntity("ws-tab", { prUrl: "https://example.com/pr/3" }),
       );
     });
 
@@ -151,20 +262,19 @@ describe("workspace-ipc-saga", () => {
     });
   });
 
-  describe("watchTaskStatusChangedSaga", () => {
-    it("dispatches applyOptimisticTaskStatusUpdate on task:status-changed", () => {
-      watchTaskStatusChangedSaga().next();
+  describe("watchCoalescedWorkspaceUpdatesOnMountSaga", () => {
+    it("registers workspaceMounted watcher", () => {
+      expect(watchCoalescedWorkspaceUpdatesOnMountSaga().next().value).toEqual(
+        sagaEffects.takeEvery(workspaceMounted, flushCoalescedWorkspaceUpdateOnMountSaga),
+      );
+    });
+  });
 
-      const payload = {
-        workspaceId: "ws-1",
-        previousStatus: "in_progress",
-        newStatus: "complete",
-      };
-      const handler = getListenSyncHandler("task:status-changed");
-      const effect = handler(payload).next().value as any;
-
-      expect(effect.type).toBe("PUT");
-      expect(effect.payload.action).toEqual(applyOptimisticTaskStatusUpdate(payload));
+  describe("watchMountedWorkspaceInterestCleanupSaga", () => {
+    it("registers workspaceUnmounted watcher", () => {
+      expect(watchMountedWorkspaceInterestCleanupSaga().next().value).toEqual(
+        sagaEffects.takeEvery(workspaceUnmounted, clearMountedWorkspaceInterestOnUnmountSaga),
+      );
     });
   });
 

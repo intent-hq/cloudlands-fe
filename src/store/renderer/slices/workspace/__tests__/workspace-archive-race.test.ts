@@ -18,6 +18,7 @@ import {
 } from "vitest";
 import { getItem } from "ag-redux-toolkit/utils/collections/collection-utils";
 import {
+  bulkUpdateWorkspaceEntities,
   clearWorkspacePendingDeletion,
   initialState,
   markWorkspacePendingDeletion,
@@ -80,8 +81,11 @@ describe("workspace archive race conditions", () => {
     // Simulate pending archive
     state = { ...state, pendingArchives: { "ws-1": true } };
 
-    // An IPC update arrives with a title change but no status change
-    state = workspaceReducer(state, updateWorkspaceEntity("ws-1", { title: "Updated Title" }));
+    // A batched IPC update arrives with a title change but no status change
+    state = workspaceReducer(
+      state,
+      bulkUpdateWorkspaceEntities([updateWorkspaceEntity("ws-1", { title: "Updated Title" })])
+    );
 
     const updated = getItem(state.workspaces, "ws-1");
     expect(updated?.title).toBe("Updated Title");
@@ -141,7 +145,9 @@ describe("workspace archive race conditions", () => {
     // An update with an explicit status (e.g., backend confirms unarchive)
     state = workspaceReducer(
       state,
-      updateWorkspaceEntity("ws-1", { status: WorkspaceStatusEnum.Active })
+      bulkUpdateWorkspaceEntities([
+        updateWorkspaceEntity("ws-1", { status: WorkspaceStatusEnum.Active }),
+      ])
     );
 
     // The explicit status should take precedence (pendingArchive guard only applies

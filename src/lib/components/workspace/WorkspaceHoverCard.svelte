@@ -1,5 +1,12 @@
 <script lang="ts">
-  import type { AgentSession, PullRequestInfo, Workspace, WorkspaceAgentInfo } from '$shared/types';
+  import type {
+  AgentSession,
+  PullRequestInfo,
+  Workspace,
+  WorkspaceAgentInfo,
+  WorkspaceGitSummary,
+  WorkspaceTask,
+} from '$shared/types';
   import {
   PullRequestStatus,
   WorkspaceStatusEnum,
@@ -23,6 +30,17 @@
 } from '$store/renderer/slices/unread-tracking/unread-tracking-selectors';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { ensureAgentSessionLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+  selectWorkspaceTaskDisplayList,
+  selectWorkspaceTaskProgress,
+} from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
+  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+  import type { WorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-types';
+  import {
+  selectWorkspaceDiffSummary,
+  selectWorkspaceGitSummary,
+} from '$store/renderer/slices/workspace-summaries/workspace-summaries-selectors';
+  import { loadWorkspaceSummariesRequested } from '$store/renderer/slices/workspace-summaries/workspace-summaries-slice';
 
 
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
@@ -35,6 +53,8 @@
     activeAgentIds?: string[];
     /** Keep true in production; sandbox routes can disable session restoration/fetching. */
     loadAgentSessions?: boolean;
+    /** Keep true in production; sandbox routes can disable on-demand task/summary fetching. */
+    loadWorkspaceData?: boolean;
   }
 
   let {
@@ -43,6 +63,7 @@
     isLoading = false,
     activeAgentIds = [],
     loadAgentSessions = true,
+    loadWorkspaceData = true,
   }: Props = $props();
 
   const workspaceIdStore = writable('');
@@ -145,7 +166,7 @@
     return getPullRequestStatusColor(status);
   }
 
-  function formatGitSummary(summary: Workspace['gitSummary']) {
+  function formatGitSummary(summary: WorkspaceGitSummary | null) {
     if (!summary) return null;
 
     if (summary.ahead > 0 && summary.behind > 0) {
@@ -157,11 +178,11 @@
     return null;
   }
 
-  function formatTaskProgress(stats: Workspace['taskStats']) {
-    if (!stats || stats.total === 0) return null;
+  function formatTaskProgress(progress: WorkspaceTaskProgress) {
+    if (progress.total === 0) return null;
 
-    const parts = [`${stats.completed}/${stats.total} done`];
-    if (stats.inProgress > 0) parts.push(`${stats.inProgress} active`);
+    const parts = [`${progress.completed}/${progress.total} done`];
+    if (progress.inProgress > 0) parts.push(`${progress.inProgress} active`);
     return parts.join(' · ');
   }
 
@@ -180,21 +201,21 @@
     }
   }
 
-  function buildTaskProgressSegments(stats: Workspace['taskStats']) {
-    if (!stats || stats.total === 0) return [];
+  function buildTaskProgressSegments(progress: WorkspaceTaskProgress, tasks: WorkspaceTask[]) {
+    if (progress.total === 0) return [];
 
-    if (stats.tasks?.length) {
-      return stats.tasks.map((task) => ({
+    if (tasks.length) {
+      return tasks.map((task) => ({
         label: task.title,
         status: task.status,
         weight: 1,
       }));
     }
 
-    const waiting = Math.max(0, stats.total - stats.completed - stats.inProgress);
+    const waiting = Math.max(0, progress.total - progress.completed - progress.inProgress);
     return [
-      { label: 'Complete', status: 'complete', weight: stats.completed },
-      { label: 'In progress', status: 'in_progress', weight: stats.inProgress },
+      { label: 'Complete', status: 'complete', weight: progress.completed },
+      { label: 'In progress', status: 'in_progress', weight: progress.inProgress },
       { label: 'Not started', status: 'not_started', weight: waiting },
     ].filter((segment) => segment.weight > 0);
   }
@@ -275,6 +296,18 @@
   // Subscribe to unread state via Redux selector for reactivity
   const unreadAgentIds$ = selectUnreadAgentIds();
   const workspaceAgentSessions$ = selectAllWorkspaceAgents(workspaceIdStore);
+  const workspaceTaskProgress$ = selectWorkspaceTaskProgress(workspaceIdStore);
+  const workspaceTaskDisplayList$ = selectWorkspaceTaskDisplayList(workspaceIdStore);
+  const workspaceDiffSummary$ = selectWorkspaceDiffSummary(workspaceIdStore);
+  const workspaceGitSummary$ = selectWorkspaceGitSummary(workspaceIdStore);
+
+  // Fetch on-demand task/summary data when the hovered workspace changes.
+  $effect(() => {
+    const workspaceId = workspace?.id;
+    if (!loadWorkspaceData || !workspaceId) return;
+    appStore.dispatch(loadWorkspaceSummariesRequested(String(workspaceId)));
+    appStore.dispatch(ensureWorkspaceTasksLoaded(String(workspaceId)));
+  });
 
   // Reactive version counter for active streams (non-Redux service)
   let activeStreamsVersion = $state(0);
@@ -343,12 +376,18 @@
 
   let loadedAgentInfos = $derived($workspaceAgentSessions$.map(sessionToAgentInfo));
 
+  let memberAgentIds = $derived(workspace?.agentSummary?.agentIds ?? []);
+
   let hoverAgentInfos = $derived.by(() => {
-    const summaryAgents = workspace?.agentSummary?.agents ?? [];
-    // Live Redux session data takes precedence over the on-disk agentSummary
-    // snapshot, which is rebuilt asynchronously by the main process and can
-    // lag behind real-time agent status transitions.
-    const knownAgents = mergeAgentInfo(loadedAgentInfos, summaryAgents);
+    // The workspace payload carries member agent IDs only; live Redux session
+    // data provides names/statuses, with idle placeholders for sessions that
+    // have not loaded yet.
+    const memberPlaceholders = memberAgentIds.map((agentId) => ({
+      id: agentId,
+      name: 'Agent',
+      status: 'idle',
+    }));
+    const knownAgents = mergeAgentInfo(loadedAgentInfos, memberPlaceholders);
     const knownAgentIds = new Set(knownAgents.map((agent) => agent.id));
     const activePlaceholders = [...activeAgentIdSet]
       .filter((agentId) => !knownAgentIds.has(agentId))
@@ -366,8 +405,13 @@
   $effect(() => {
     const workspaceId = workspace?.id;
     if (!loadAgentSessions || !workspaceId) return;
-    for (const agent of runningAgents.slice(0, 3)) {
-      appStore.dispatch(ensureAgentSessionLoaded(String(workspaceId), agent.id));
+    // Member sessions provide real names/statuses for IDs-only summaries.
+    const agentIds = new Set([
+      ...memberAgentIds.slice(0, 6),
+      ...runningAgents.slice(0, 3).map((agent) => agent.id),
+    ]);
+    for (const agentId of agentIds) {
+      appStore.dispatch(ensureAgentSessionLoaded(String(workspaceId), agentId));
     }
   });
 
@@ -376,8 +420,10 @@
     return streamingAgentIds.filter((agentId) => !knownAgentIds.has(agentId));
   });
 
-  let taskSummaryText = $derived(workspace ? formatTaskProgress(workspace.taskStats) : null);
-  let taskProgressSegments = $derived(workspace ? buildTaskProgressSegments(workspace.taskStats) : []);
+  let taskSummaryText = $derived(workspace ? formatTaskProgress($workspaceTaskProgress$) : null);
+  let taskProgressSegments = $derived(
+    workspace ? buildTaskProgressSegments($workspaceTaskProgress$, $workspaceTaskDisplayList$) : [],
+  );
 
   let activePullRequest = $derived(getWorkspacePullRequest(workspace));
   let pullRequestDisplayStatus = $derived(
@@ -387,11 +433,11 @@
     formatPullRequestDetails(activePullRequest, workspace?.prStatus),
   );
 
-  let gitSummaryText = $derived(workspace ? formatGitSummary(workspace.gitSummary) : null);
+  let gitSummaryText = $derived(workspace ? formatGitSummary($workspaceGitSummary$) : null);
 
   let changeSummaryText = $derived.by(() => {
     if (!workspace) return hasChanges && lineStats ? 'Changes' : null;
-    const summary = workspace.diffSummary;
+    const summary = $workspaceDiffSummary$;
     if (summary && summary.totalFiles > 0) {
       return `${pluralize(summary.totalFiles, 'file')} +${summary.totalAdditions} -${summary.totalDeletions}`;
     }

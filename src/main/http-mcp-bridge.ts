@@ -66,6 +66,10 @@ import { getWebSocketClass, getWebSocketServerClass } from './utils/ws-runtime';
 const WebSocket = getWebSocketClass();
 const WebSocketServer = getWebSocketServerClass();
 
+type DiscoveryAutoOffCleanupGlobal = typeof globalThis & {
+  __clearWebSocketDiscoveryAutoOffTimer?: () => void;
+};
+
 // Cross-platform dummy workspace path (Windows doesn't have /tmp/)
 const DUMMY_WORKSPACE_PATH = process.platform === 'win32'
   ? path.join(os.tmpdir(), 'dummy-workspace')
@@ -1412,20 +1416,23 @@ export class HttpMcpBridge {
     // Start WebSocket API server if enabled (on its own port for LAN access)
     if (isWebSocketApiEnabled()) {
       const wsPort = this.port + 1;
-      this.wsApiServer = new WebSocketApiServer(wsPort);
+      const wsApiServer = new WebSocketApiServer(wsPort);
+      this.wsApiServer = wsApiServer;
       // Track the in-flight start promise so updateWebSocketApiServer() can
       // await it before checking isRunning() and avoid orphaning this
       // instance with a duplicate replacement.
-      this.wsApiServerStarting = this.wsApiServer.start()
+      const startPromise = wsApiServer.start()
         .then(() => {
-          this.logger.info('WebSocket API server started', { port: this.wsApiServer!.getPort() });
+          if (this.wsApiServer !== wsApiServer) return;
+
+          this.logger.info('WebSocket API server started', { port: wsApiServer.getPort() });
           this.logger.info('WebSocket API cert fingerprint', {
-            fingerprint: this.wsApiServer!.getCertFingerprint(),
-            port: this.wsApiServer!.getPort(),
+            fingerprint: wsApiServer.getCertFingerprint(),
+            port: wsApiServer.getPort(),
           });
 
           if (isDiscoveryEnabled()) {
-            startDiscovery(this.wsApiServer!.getPort(), this.wsApiServer!.getCertFingerprint() ?? undefined);
+            startDiscovery(wsApiServer.getPort(), wsApiServer.getCertFingerprint() ?? undefined);
           }
         })
         .catch((wsError) => {
@@ -1441,10 +1448,16 @@ export class HttpMcpBridge {
             },
             this.logger,
           );
+          if (this.wsApiServer === wsApiServer) {
+            this.wsApiServer = null;
+          }
         })
         .finally(() => {
-          this.wsApiServerStarting = null;
+          if (this.wsApiServerStarting === startPromise) {
+            this.wsApiServerStarting = null;
+          }
         });
+      this.wsApiServerStarting = startPromise;
     }
   }
 
@@ -1468,14 +1481,17 @@ export class HttpMcpBridge {
 
     if (enabled && !this.wsApiServer?.isRunning()) {
       const wsPort = this.port + 1;
-      this.wsApiServer = new WebSocketApiServer(wsPort);
+      const wsApiServer = new WebSocketApiServer(wsPort);
+      this.wsApiServer = wsApiServer;
       // Track the in-flight dynamic start promise so concurrent
       // updateWebSocketApiServer() calls await it at the top of the method
       // and skip constructing a duplicate WebSocketApiServer instance.
-      const startPromise = this.wsApiServer.start()
+      const startPromise = wsApiServer.start()
         .then(() => {
+          if (this.wsApiServer !== wsApiServer) return;
+
           this.logger.info('WebSocket API server started dynamically', {
-            port: this.wsApiServer!.getPort(),
+            port: wsApiServer.getPort(),
           });
         })
         .catch((wsError) => {
@@ -1490,15 +1506,24 @@ export class HttpMcpBridge {
             },
             this.logger,
           );
+          if (this.wsApiServer === wsApiServer) {
+            this.wsApiServer = null;
+          }
           throw wsError;
         })
         .finally(() => {
-          this.wsApiServerStarting = null;
+          if (this.wsApiServerStarting === startPromise) {
+            this.wsApiServerStarting = null;
+          }
         });
       this.wsApiServerStarting = startPromise;
       await startPromise;
     } else if (!enabled && this.wsApiServer?.isRunning()) {
-      await this.wsApiServer.stop();
+      const wsApiServer = this.wsApiServer;
+      await wsApiServer.stop();
+      if (this.wsApiServer === wsApiServer) {
+        this.wsApiServer = null;
+      }
       this.logger.info('WebSocket API server stopped dynamically');
     }
 
@@ -1556,6 +1581,10 @@ export class HttpMcpBridge {
       // Re-assert the shutdown flag: restart's internal start() reset it
       // when entering, and we need it set so any late retry aborts.
       this.shuttingDown = true;
+    }
+
+    if (!opts._fromRestart) {
+      (globalThis as DiscoveryAutoOffCleanupGlobal).__clearWebSocketDiscoveryAutoOffTimer?.();
     }
 
     // Stop Bonjour/mDNS discovery

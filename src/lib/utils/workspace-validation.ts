@@ -3,6 +3,7 @@
  */
 
 import { createLogger } from './client-logger';
+import { invoke } from '$shared/generated/ipc-client';
 
 const logger = createLogger('WorkspaceValidation');
 
@@ -155,7 +156,7 @@ async function validateLocalPath(
   // In Electron environment, check directory status
   if (typeof window !== 'undefined' && window.electronAPI) {
     try {
-      const statusResult = await window.electronAPI.invoke('file:getDirectoryStatus', { path });
+      const statusResult = await invoke<any>('file:getDirectoryStatus', { path });
 
       if (statusResult.success && statusResult.data) {
         const status: DirectoryStatus = statusResult.data;
@@ -231,7 +232,7 @@ async function validateLocalPath(
       }
 
       // Fall back to legacy check if new API fails
-      const result = await window.electronAPI.invoke('file:exists', { path });
+      const result = await invoke<any>('file:exists', { path });
       if (!result.exists) {
         if (allowNewRepo) {
           return {
@@ -248,7 +249,7 @@ async function validateLocalPath(
       }
 
       // Check if it's a git repository
-      const gitCheck = await window.electronAPI.invoke('git:isRepository', { path });
+      const gitCheck = await invoke<any>('git:isRepository', { path });
       if (!gitCheck.isRepository) {
         return {
           valid: true,

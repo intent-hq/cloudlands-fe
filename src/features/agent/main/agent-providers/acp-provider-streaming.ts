@@ -271,9 +271,6 @@ const pendingFileEdits = new Map<string, PendingFileEdit>();
 // TTL for pending tool state (5 minutes)
 const PENDING_TOOL_TTL_MS = 5 * 60 * 1000;
 
-// Cache for note titles to avoid repeated lookups during a session
-const noteTitleCache = new Map<string, string>();
-
 /**
  * Clean up pending tool state for a specific agent
  * Called when a stream completes or errors
@@ -327,6 +324,27 @@ let cleanupIntervalId: NodeJS.Timeout | null = null;
 function startCleanupInterval(): void {
   if (cleanupIntervalId === null) {
     cleanupIntervalId = setInterval(cleanupStalePendingToolState, 60 * 1000);
+  }
+}
+
+async function attachNoteTitle(
+  toolInput: Record<string, any>,
+  lookupNoteId: unknown,
+  workspaceId: unknown,
+): Promise<void> {
+  if (!lookupNoteId || !workspaceId) return;
+
+  try {
+    const { notesService } = await import('../../../notes/main/notes.service');
+    const noteResult = await notesService.getNote(
+      workspaceId as any,
+      String(lookupNoteId) as any,
+    );
+    if (noteResult.ok && noteResult.data?.title) {
+      toolInput._noteTitle = noteResult.data.title;
+    }
+  } catch {
+    // Silently skip — noteId will be used as fallback in classifier
   }
 }
 
@@ -904,25 +922,7 @@ export class ACPProviderStreaming {
     // human-readable names instead of raw UUIDs like "01c148a4-..."
     const lookupNoteId = enrichedInput.noteId || enrichedInput.taskNoteId;
     if (lookupNoteId && session?.workspaceId) {
-      const noteIdStr = String(lookupNoteId);
-      const cachedTitle = noteTitleCache.get(`${session.workspaceId}:${noteIdStr}`);
-      if (cachedTitle) {
-        enrichedInput._noteTitle = cachedTitle;
-      } else {
-        try {
-          const { notesService } = await import('../../../notes/main/notes.service');
-          const noteResult = await notesService.getNote(
-            session.workspaceId as any,
-            noteIdStr as any,
-          );
-          if (noteResult.ok && noteResult.data?.title) {
-            enrichedInput._noteTitle = noteResult.data.title;
-            noteTitleCache.set(`${session.workspaceId}:${noteIdStr}`, noteResult.data.title);
-          }
-        } catch {
-          // Silently skip — noteId will be used as fallback in classifier
-        }
-      }
+      await attachNoteTitle(enrichedInput, lookupNoteId, session.workspaceId);
     }
 
     // Emit "Calling tool" status for deferred skeleton
@@ -1822,29 +1822,11 @@ export class ACPProviderStreaming {
     }
 
     // Look up note title from notesService so the UI can show human-readable names
-    // instead of UUIDs like "#bef103b5". Cache results to avoid repeated lookups.
+    // instead of UUIDs like "#bef103b5".
     // Supports both noteId (most workspace tools) and taskNoteId (delegate_task, get_my_task).
     const lookupNoteId = input.noteId || input.taskNoteId;
     if (lookupNoteId && actualToolName.startsWith('workspace-mcp_') && session?.workspaceId) {
-      const noteIdStr = String(lookupNoteId);
-      const cachedTitle = noteTitleCache.get(`${session.workspaceId}:${noteIdStr}`);
-      if (cachedTitle) {
-        (toolInput as Record<string, any>)._noteTitle = cachedTitle;
-      } else {
-        try {
-          const { notesService } = await import('../../../notes/main/notes.service');
-          const noteResult = await notesService.getNote(
-            session.workspaceId as any,
-            noteIdStr as any,
-          );
-          if (noteResult.ok && noteResult.data?.title) {
-            (toolInput as Record<string, any>)._noteTitle = noteResult.data.title;
-            noteTitleCache.set(`${session.workspaceId}:${noteIdStr}`, noteResult.data.title);
-          }
-        } catch {
-          // Silently skip — noteId will be used as fallback in classifier
-        }
-      }
+      await attachNoteTitle(toolInput as Record<string, any>, lookupNoteId, session.workspaceId);
     }
 
     // Use string interpolation so actual values are visible in logs (object logging truncates)

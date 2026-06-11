@@ -4,6 +4,7 @@ import {
   put,
   takeEvery,
 } from "typed-redux-saga";
+import { invoke } from "$shared/generated/ipc-client";
 import {
   getLocalStorageJSON,
   getLocalStorageItem,
@@ -44,7 +45,7 @@ async function fetchAvailableProviderIds(): Promise<string[]> {
     if (typeof window === "undefined" || !window.electronAPI)
         return [];
     try {
-        const result = (await window.electronAPI.invoke(PROVIDERS_CHANNELS.GET_AVAILABILITY)) as ProviderAvailabilityIpcResult;
+        const result = await invoke<ProviderAvailabilityIpcResult>(PROVIDERS_CHANNELS.GET_AVAILABILITY);
         if (!result?.success || !result?.data)
             return [];
         return getAvailableIdsFromResult(result.data.providers, result.data.hiddenProviders ?? []);

@@ -2,10 +2,11 @@ import { githubAuthClient } from "$features/github-auth/renderer/github-auth.cli
 import {
   call,
   delay,
-  fork,
   put,
   race,
   take,
+  takeEvery,
+  takeLatest,
   type SagaGenerator,
 } from "typed-redux-saga";
 import {
@@ -142,27 +143,6 @@ function* handleLogout() {
   yield* put(logoutCompleted());
 }
 
-function* watchInitialize(): SagaGenerator<void> {
-  while (true) {
-    yield* take(initializeGitHubAuth);
-    yield* call(handleInitialize);
-  }
-}
-
-function* watchRefresh(): SagaGenerator<void> {
-  while (true) {
-    yield* take(refreshGitHubAuth);
-    yield* call(handleInitialize);
-  }
-}
-
-function* watchStartAuth(): SagaGenerator<void> {
-  while (true) {
-    yield* take(startGitHubAuth);
-    yield* call(handleStartAuth);
-  }
-}
-
 function* handleCheckAuthStatus() {
   try {
     const checkResult = yield* call([githubAuthClient, githubAuthClient.checkAuthComplete]);
@@ -174,33 +154,14 @@ function* handleCheckAuthStatus() {
   }
 }
 
-function* watchCheckAuthStatus(): SagaGenerator<void> {
-  while (true) {
-    yield* take(checkGitHubAuthStatus);
-    yield* call(handleCheckAuthStatus);
-  }
-}
-
-function* watchCancelAuth(): SagaGenerator<void> {
-  while (true) {
-    yield* take(cancelGitHubAuth);
-    yield* call(handleCancelAuth);
-  }
-}
-
-function* watchLogout(): SagaGenerator<void> {
-  while (true) {
-    yield* take(logoutGitHub);
-    yield* call(handleLogout);
-  }
-}
-
 export function* githubAuthSaga(): SagaGenerator<void> {
-  yield* fork(watchInitialize);
-  yield* fork(watchRefresh);
-  yield* fork(watchStartAuth);
-  yield* fork(watchCheckAuthStatus);
-  yield* fork(watchCancelAuth);
-  yield* fork(watchLogout);
-}
+  // Latest-only requests prevent stale hydration/status work and overlapping OAuth polling.
+  yield* takeLatest(initializeGitHubAuth, handleInitialize);
+  yield* takeLatest(refreshGitHubAuth, handleInitialize);
+  yield* takeLatest(startGitHubAuth, handleStartAuth);
+  yield* takeLatest(checkGitHubAuthStatus, handleCheckAuthStatus);
 
+  // Process every cleanup request so cancel/logout side effects are not dropped.
+  yield* takeEvery(cancelGitHubAuth, handleCancelAuth);
+  yield* takeEvery(logoutGitHub, handleLogout);
+}

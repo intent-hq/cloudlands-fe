@@ -32,6 +32,7 @@ const logger = new Logger('NotesRepository');
 export interface NotesRepository {
   findById(workspaceId: WorkspaceId, noteId: NoteId): Promise<Note | null>;
   findByWorkspace(workspaceId: WorkspaceId): Promise<Note[]>;
+  findSummariesByWorkspace?(workspaceId: WorkspaceId): Promise<Note[]>;
   save(note: Note): Promise<void>;
   delete(workspaceId: WorkspaceId, noteId: NoteId): Promise<void>;
   exists(workspaceId: WorkspaceId, noteId: NoteId): Promise<boolean>;
@@ -215,6 +216,11 @@ export class FileSystemNotesRepository implements NotesRepository {
     }
   }
 
+  async findSummariesByWorkspace(workspaceId: WorkspaceId): Promise<Note[]> {
+    const notes = await this.findByWorkspace(workspaceId);
+    return notes.map((note) => ({ ...note, content: '', versions: [] }));
+  }
+
   /**
    * Save note with locking and atomic writes to prevent corruption
    * from concurrent agent updates.
@@ -337,6 +343,11 @@ export class InMemoryNotesRepository implements NotesRepository {
 
   async findByWorkspace(workspaceId: WorkspaceId): Promise<Note[]> {
     return Array.from(this.notes.values()).filter((note) => note.workspaceId === workspaceId);
+  }
+
+  async findSummariesByWorkspace(workspaceId: WorkspaceId): Promise<Note[]> {
+    const notes = await this.findByWorkspace(workspaceId);
+    return notes.map((note) => ({ ...note, content: '', versions: [] }));
   }
 
   async save(note: Note): Promise<void> {

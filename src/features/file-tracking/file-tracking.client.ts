@@ -6,6 +6,7 @@
  */
 
 import { FILE_TRACKING_CHANNELS } from '../../shared/ipc/channels';
+import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 
 interface IPCResponse<T> {
   ok: boolean;
@@ -33,9 +34,9 @@ export async function getLineStats(workspaceId: string): Promise<LineStats> {
   }
 
   try {
-    const response = (await window.electronAPI.invoke(FILE_TRACKING_CHANNELS.GET_LINE_STATS, {
+    const response = await invokeIpc<IPCResponse<LineStats>>(FILE_TRACKING_CHANNELS.GET_LINE_STATS, {
       workspaceId,
-    })) as IPCResponse<LineStats>;
+    });
 
     if (!response.ok || !response.data) {
       return { additions: 0, deletions: 0 };

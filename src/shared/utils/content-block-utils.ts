@@ -6,6 +6,7 @@
  * into a flat ContentBlock array.
  */
 
+import flatstr from 'flatstr';
 import type { ContentBlock } from '../types/content-block';
 
 /**
@@ -39,7 +40,7 @@ export function buildOrderedContentBlocks(
       accumulatedText += item.content;
     } else if (item.type === 'block') {
       if (accumulatedText) {
-        blocks.push({ type: 'text' as const, text: accumulatedText });
+        blocks.push({ type: 'text' as const, text: flatstr(accumulatedText) });
         accumulatedText = '';
       }
       blocks.push(item.content as ContentBlock);
@@ -47,13 +48,13 @@ export function buildOrderedContentBlocks(
   }
 
   if (accumulatedText) {
-    blocks.push({ type: 'text' as const, text: accumulatedText });
+    blocks.push({ type: 'text' as const, text: flatstr(accumulatedText) });
   }
 
   if (buffer) {
     const lastBlock = blocks[blocks.length - 1];
     if (lastBlock && lastBlock.type === 'text') {
-      lastBlock.text += buffer;
+      lastBlock.text = flatstr(lastBlock.text + buffer);
     } else {
       blocks.push({ type: 'text' as const, text: buffer });
     }

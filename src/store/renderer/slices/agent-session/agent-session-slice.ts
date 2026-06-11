@@ -123,7 +123,7 @@ function repairNearSimultaneousOrphanAssistantOrdering(messages: AgentMessage[])
 }
 
 /**
- * Stable sort by timestamp ascending, then repair the close event-race case
+ * Stable sort by timestamp ascending, then repair the close event-ordering case
  * where a subsequent assistant reply sorts immediately above its user reply.
  */
 function orderMessagesForConversation(messages: AgentMessage[]): AgentMessage[] {
@@ -445,6 +445,59 @@ function isSessionEquivalent(a: StoredAgentSession, b: StoredAgentSession): bool
   return shallowEqual(toSessionComparisonSnapshot(a), toSessionComparisonSnapshot(b));
 }
 
+type SessionUpsertStorageOptions = {
+  preserveExplicitRuntimeFlags: boolean;
+};
+
+function applySessionUpsert(
+  state: AgentSessionState,
+  session: AgentSession,
+  options: SessionUpsertStorageOptions,
+): AgentSessionState {
+  const finalSession = toStoredSession(session);
+  const agentId = String(finalSession.id);
+  const wsId = String(session.workspaceId);
+  const existing = getSession(state, agentId);
+
+  if (existing) {
+    if (
+      existing.isStreaming &&
+      (options.preserveExplicitRuntimeFlags || finalSession.isStreaming === undefined)
+    ) {
+      finalSession.isStreaming = true;
+    }
+    if (
+      existing.isProcessing &&
+      (options.preserveExplicitRuntimeFlags || finalSession.isProcessing === undefined)
+    ) {
+      finalSession.isProcessing = true;
+    }
+
+    // Guard: if agent:idle/streamCompleted already cleared the streaming
+    // flags (existing is authoritatively idle), don't let stale incoming
+    // data from an async saga re-introduce isStreaming=true.
+    // Only chatSendStarted should transition idle→streaming.
+    const existingStatus = existing.status as string;
+    if (
+      (existingStatus === AgentStatus.Idle || existingStatus === 'idle') &&
+      existing.stopReason &&
+      !existing.isStreaming
+    ) {
+      finalSession.isStreaming = false;
+      finalSession.isProcessing = false;
+    }
+  }
+
+  const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);
+  if (existing && alreadyIndexed && isSessionEquivalent(existing, finalSession)) {
+    return state;
+  }
+
+  let next = setSession(state, agentId, finalSession);
+  next = registerInWorkspaceIndex(next, agentId, wsId);
+  return next;
+}
+
 function removeFromWorkspaceIndex(state: AgentSessionState, agentId: string): AgentSessionState {
   const agentIdsByWorkspace = { ...state.agentIdsByWorkspace };
   for (const wsId of Object.keys(agentIdsByWorkspace)) {
@@ -623,8 +676,20 @@ export const renameAgent = createAction<[wsId: string, agentId: string, name: st
   'workspaceAgents/renameAgent',
 );
 
-/** Bulk upsert sessions (initial load / snapshot reconciliation) */
-export const bulkUpsertSessions = createAction<[sessions: AgentSession[]]>(
+export type BulkUpsertSessionsOptions = {
+  /**
+   * Defaults to true for existing disk/snapshot load paths. The batching saga
+   * sets this false so queued upsertSession actions preserve prior single-upsert
+   * semantics where explicit false clears runtime flags.
+   */
+  preserveExplicitRuntimeFlags?: boolean;
+};
+
+/** Bulk upsert sessions (initial load / snapshot reconciliation / batched upsert storage) */
+export const bulkUpsertSessions = createAction<[
+  sessions: AgentSession[],
+  options?: BulkUpsertSessionsOptions,
+]>(
   'agentSessions/bulkUpsertSessions',
 );
 
@@ -641,50 +706,6 @@ export const clearAllSessions = createAction('agentSessions/clearAllSessions');
 // ============================================================================
 
 export const agentSessionReducer = createReducer<AgentSessionState>(initialState)
-  .with(upsertSession, (state, { payload: [session] }) => {
-    const finalSession = toStoredSession(session);
-    const agentId = String(finalSession.id);
-    const wsId = String(session.workspaceId);
-
-    // No-op guard: if the session already exists with equivalent data
-    // and is already registered in the workspace index, return state unchanged.
-    const existing = getSession(state, agentId);
-    const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);
-    if (existing && alreadyIndexed && isSessionEquivalent(existing, finalSession)) {
-      return state;
-    }
-
-    // Preserve in-flight isStreaming/isProcessing flags from a placeholder session
-    // created by chatSendStarted before the full session loaded from disk.
-    if (existing) {
-      if (existing.isStreaming && finalSession.isStreaming === undefined) {
-        finalSession.isStreaming = true;
-      }
-      if (existing.isProcessing && finalSession.isProcessing === undefined) {
-        finalSession.isProcessing = true;
-      }
-
-      // Guard: if agent:idle/streamCompleted already cleared the streaming
-      // flags (existing is authoritatively idle), don't let stale incoming
-      // data from an async saga re-introduce isStreaming=true.
-      // Only chatSendStarted should transition idle→streaming.
-      // Cast to string for comparison: the typed status is AgentStatus but
-      // IPC events may set it to lowercase 'idle' via type assertion.
-      const existingStatus = existing.status as string;
-      if (
-        (existingStatus === AgentStatus.Idle || existingStatus === 'idle') &&
-        existing.stopReason &&
-        !existing.isStreaming
-      ) {
-        finalSession.isStreaming = false;
-        finalSession.isProcessing = false;
-      }
-    }
-
-    let next = setSession(state, agentId, finalSession);
-    next = registerInWorkspaceIndex(next, agentId, wsId);
-    return next;
-  })
   .with(removeSession, (state, { payload: [agentId] }) => {
     if (!state.byAgentId[agentId]) return state;
 
@@ -769,30 +790,13 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     if (!session || session.name === name) return state;
     return setSession(state, agentId, { ...session, name });
   })
-  .with(bulkUpsertSessions, (state, { payload: [sessions] }) => {
+  .with(bulkUpsertSessions, (state, { payload: [sessions, options] }) => {
     let next = state;
+    const storageOptions: SessionUpsertStorageOptions = {
+      preserveExplicitRuntimeFlags: options?.preserveExplicitRuntimeFlags ?? true,
+    };
     for (const session of sessions) {
-      const finalSession = toStoredSession(session);
-      const agentId = String(finalSession.id);
-      const wsId = String(session.workspaceId);
-
-      // Preserve in-flight isStreaming/isProcessing flags unconditionally.
-      // bulkUpsertSessions is used for disk reconciliation; disk data is always
-      // stale for ephemeral in-memory flags like streaming/processing state.
-      // The factory or saga sets these flags before the bulk upsert runs, so
-      // an incoming false from disk must never overwrite an active true.
-      const existing = getSession(next, agentId);
-      if (existing) {
-        if (existing.isStreaming) {
-          finalSession.isStreaming = true;
-        }
-        if (existing.isProcessing) {
-          finalSession.isProcessing = true;
-        }
-      }
-
-      next = setSession(next, agentId, finalSession);
-      next = registerInWorkspaceIndex(next, agentId, wsId);
+      next = applySessionUpsert(next, session, storageOptions);
     }
     return next;
   })

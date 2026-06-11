@@ -45,6 +45,37 @@ describe('message-dedup utility', () => {
     ]);
   });
 
+  it('merges an optimistic user message into the canonical one without duplicating', () => {
+    const optimistic: AgentMessage = {
+      id: 'optimistic_abc',
+      role: 'user',
+      appMessageId: 'app_msg_user_1',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Hello there' }],
+    };
+    const canonical: AgentMessage = {
+      id: '550e8400-e29b-41d4-a716-446655440010',
+      role: 'user',
+      appMessageId: 'app_msg_user_1',
+      timestamp: '2024-01-01T00:00:01.000Z',
+      contentBlocks: [
+        { type: 'text', text: 'Hello there' },
+        { type: 'image', data: 'base64data', mimeType: 'image/png' },
+      ],
+      metadata: { contextReferences: [{ type: 'file', identifier: 'src/foo.ts' }] },
+    };
+
+    const merged = insertAgentMessageWithDedup([optimistic], canonical);
+    expect(merged).toHaveLength(1);
+    // Canonical contentBlocks (with attachments) and metadata win the merge
+    expect(merged[0]).toMatchObject({
+      role: 'user',
+      appMessageId: 'app_msg_user_1',
+      contentBlocks: canonical.contentBlocks,
+      metadata: canonical.metadata,
+    });
+  });
+
   it('collapses the observed same-appMessageId assistant duplicate shape', () => {
     const appMessageId = 'app_msg_observed';
     const streaming = makeAssistant(

@@ -308,6 +308,10 @@ export class AgentBackendHandler {
   private static readonly QUEUE_WATCHDOG_INTERVAL_MS = 30_000;
   /** Minimum age before a queued message is considered stuck (10 seconds) */
   private static readonly QUEUE_STUCK_THRESHOLD_MS = 10_000;
+  /** Maximum queued messages retained per agent. */
+  private static readonly MAX_QUEUED_MESSAGES_PER_AGENT = 100;
+  /** Maximum retained payload bytes for one queued message (content + context + images). */
+  private static readonly MAX_QUEUED_MESSAGE_BYTES = 20 * 1024 * 1024;
 
   /**
    * Tracks orphaned-streaming repairs applied in this process lifetime, keyed
@@ -4638,9 +4642,42 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
   // This cache persists across page refreshes since it's in the main process
   private persistenceListCache = new Map<
     string,
-    { agents: any[]; timestamp: number; loadPromise?: Promise<any[]> }
+    { agents: any[]; timestamp: number; loadPromise?: Promise<any[]>; hydratedMessages?: boolean }
   >();
+  private inactivePersistenceListCacheWorkspaces = new Set<string>();
+  private openWorkspaceIdsForAgentHydration: Set<string> | null = null;
   private static PERSISTENCE_LIST_CACHE_TTL_MS = 30000; // 30 second cache - 5s was too short for rapid workspace switching
+
+  private hasActiveAgentWorkInWorkspace(workspaceId: string): boolean {
+    if (!this.providers || !this.streamWorkspaceIds || !this.streamStartTimes) {
+      return false;
+    }
+    return this.hasActiveAgentsInWorkspace(workspaceId);
+  }
+
+  private hasAgentSubscriptionsInWorkspace(workspaceId: string, agentIds: string[]): boolean {
+    if (agentIds.length === 0) return false;
+
+    try {
+      const state = getMainState();
+      return agentIds.some(
+        (agentId) => selectAgentSubscriptions.select(state, workspaceId, agentId).length > 0,
+      );
+    } catch (err) {
+      logger.warn('Failed to check agent subscriptions during lazy list hydration', {
+        workspaceId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return true;
+    }
+  }
+
+  private shouldHydrateFullPersistenceList(workspaceId: string, agentIds: string[]): boolean {
+    if (!this.openWorkspaceIdsForAgentHydration) return true;
+    if (this.openWorkspaceIdsForAgentHydration.has(workspaceId)) return true;
+    if (this.hasActiveAgentWorkInWorkspace(workspaceId)) return true;
+    return this.hasAgentSubscriptionsInWorkspace(workspaceId, agentIds);
+  }
 
   /**
    * Invalidate the persistence list cache for a workspace
@@ -4648,7 +4685,40 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
    */
   public invalidatePersistenceListCache(workspaceId: string): void {
     this.persistenceListCache.delete(workspaceId);
+    this.inactivePersistenceListCacheWorkspaces.delete(workspaceId);
     logger.debug('Invalidated persistence list cache', { workspaceId });
+  }
+
+  /**
+   * Evict completed full-agent list cache entries for workspaces that are no longer open.
+   * In-flight list promises are retained for request de-duping, then dropped on resolution
+   * if the workspace remains inactive.
+   */
+  public trimPersistenceListCacheToOpenWorkspaces(openWorkspaceIds: Iterable<string>): void {
+    const openWorkspaceIdSet = new Set(openWorkspaceIds);
+    this.openWorkspaceIdsForAgentHydration = openWorkspaceIdSet;
+
+    for (const workspaceId of openWorkspaceIdSet) {
+      this.inactivePersistenceListCacheWorkspaces.delete(workspaceId);
+    }
+
+    for (const [workspaceId, cached] of this.persistenceListCache) {
+      if (openWorkspaceIdSet.has(workspaceId)) continue;
+
+      const cachedAgentIds = cached.agents.map((agent) => String(agent.id)).filter(Boolean);
+      if (this.shouldHydrateFullPersistenceList(workspaceId, cachedAgentIds)) continue;
+
+      if (cached.loadPromise) {
+        this.inactivePersistenceListCacheWorkspaces.add(workspaceId);
+        this.persistenceListCache.set(workspaceId, {
+          agents: [],
+          timestamp: Date.now(),
+          loadPromise: cached.loadPromise,
+        });
+      } else {
+        this.persistenceListCache.delete(workspaceId);
+      }
+    }
   }
 
   /**
@@ -4669,21 +4739,35 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
       if (cached) {
         const cacheAge = Date.now() - cached.timestamp;
         if (cacheAge < AgentBackendHandler.PERSISTENCE_LIST_CACHE_TTL_MS) {
-          // If there's an in-flight request, wait for it
-          if (cached.loadPromise) {
-            logger.debug('Waiting for in-flight persistence list', { workspaceId });
-            const agents = await cached.loadPromise;
-            return { success: true, data: agents };
-          }
-          // Return cached result
-          logger.debug('Returning cached persistence list', {
+          const cachedAgentIds = cached.agents.map((agent) => String(agent.id)).filter(Boolean);
+          const cachedNeedsFullHydration = this.shouldHydrateFullPersistenceList(
             workspaceId,
-            count: cached.agents.length,
-            cacheAge: `${cacheAge}ms`,
-          });
-          return { success: true, data: cached.agents };
+            cachedAgentIds,
+          );
+          if (cached.hydratedMessages === false && cachedNeedsFullHydration) {
+            logger.debug('Bypassing summary persistence-list cache for full hydration', {
+              workspaceId,
+              count: cached.agents.length,
+            });
+          } else {
+            // If there's an in-flight request, wait for it
+            if (cached.loadPromise) {
+              logger.debug('Waiting for in-flight persistence list', { workspaceId });
+              const agents = await cached.loadPromise;
+              return { success: true, data: agents };
+            }
+            // Return cached result
+            logger.debug('Returning cached persistence list', {
+              workspaceId,
+              count: cached.agents.length,
+              cacheAge: `${cacheAge}ms`,
+            });
+            return { success: true, data: cached.agents };
+          }
         }
       }
+
+      let hydratedMessagesForList = true;
 
       // Create a promise for this load operation to dedupe concurrent requests
       const loadPromise = (async (): Promise<any[]> => {
@@ -4691,11 +4775,19 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         // Do NOT pass workspacePath - let it use the correct metadata directory
         const agentIds = await agentPersistence.listAgents(workspaceId);
 
-        // Load full agent data for each ID in parallel for better performance
+        const hydrateFullAgents = this.shouldHydrateFullPersistenceList(workspaceId, agentIds);
+        hydratedMessagesForList = hydrateFullAgents;
+        const loadAgentSummary = agentPersistence.loadAgentSummary?.bind(agentPersistence);
+        const loadAgentForList = hydrateFullAgents
+          ? agentPersistence.loadAgent.bind(agentPersistence)
+          : loadAgentSummary ?? agentPersistence.loadAgent.bind(agentPersistence);
+
+        // Load agent data for each ID in parallel. Closed/inactive workspaces use
+        // summaries so list/status surfaces don't retain full message history.
         const loadResults = await Promise.all(
           agentIds.map(async (agentId) => {
             try {
-              const result = await agentPersistence.loadAgent(
+              const result = await loadAgentForList(
                 agentId as AgentId,
                 workspaceId as WorkspaceId,
               );
@@ -4716,20 +4808,28 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         agents: cached?.agents || [],
         timestamp: Date.now(),
         loadPromise,
+        hydratedMessages: cached?.hydratedMessages,
       });
 
       const agents = await loadPromise;
+
+      if (this.inactivePersistenceListCacheWorkspaces.has(workspaceId)) {
+        this.persistenceListCache.delete(workspaceId);
+        return { success: true, data: agents };
+      }
 
       // Update cache with loaded agents
       this.persistenceListCache.set(workspaceId, {
         agents,
         timestamp: Date.now(),
         loadPromise: undefined,
+        hydratedMessages: hydratedMessagesForList,
       });
 
       logger.info('Loaded persistence list', {
         workspaceId,
         count: agents.length,
+        hydratedMessages: hydratedMessagesForList,
         duration: `${(performance.now() - startTime).toFixed(1)}ms`,
       });
 
@@ -8470,6 +8570,37 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
     try {
       const queue = this.messageQueues.get(agentId) || [];
+      if (queue.length >= AgentBackendHandler.MAX_QUEUED_MESSAGES_PER_AGENT) {
+        logger.warn('Rejecting queued message because agent queue is full', {
+          agentId,
+          queueLength: queue.length,
+          maxQueueLength: AgentBackendHandler.MAX_QUEUED_MESSAGES_PER_AGENT,
+        });
+        return {
+          success: false,
+          error: `Agent queue is full (${AgentBackendHandler.MAX_QUEUED_MESSAGES_PER_AGENT} messages). Please wait for queued messages to process before adding more.`,
+        };
+      }
+
+      const queuedPayloadBytes = this.estimateQueuedMessageBytes({
+        content,
+        contextItems,
+        imageBlocks,
+      });
+      if (queuedPayloadBytes > AgentBackendHandler.MAX_QUEUED_MESSAGE_BYTES) {
+        logger.warn('Rejecting queued message because payload is too large', {
+          agentId,
+          queuedPayloadBytes,
+          maxQueuedPayloadBytes: AgentBackendHandler.MAX_QUEUED_MESSAGE_BYTES,
+          hasContextItems: !!contextItems?.length,
+          imageCount: imageBlocks?.length || 0,
+        });
+        return {
+          success: false,
+          error: `Queued message payload is too large (${queuedPayloadBytes} bytes; max ${AgentBackendHandler.MAX_QUEUED_MESSAGE_BYTES} bytes).`,
+        };
+      }
+
       // Validate messageId format: must be a UUID, msg_ prefix, or user-msg- prefix.
       // If a non-conforming ID is passed, generate a new one to avoid downstream
       // MessageIdSchema validation failures.
@@ -8661,8 +8792,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         this.emitQueueWorkspaceEvent('agent:queue:updated', agentId, wsId, { queue });
       }
 
-      // Stop the watchdog if all queues are now empty
-      this.stopQueueWatchdogIfEmpty();
+      // Drop empty per-agent queue state so queues/workspace IDs do not linger after drain.
+      this.cleanupEmptyQueue(agentId);
 
       return { success: true };
     } catch (error) {
@@ -8804,6 +8935,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     const queue = this.messageQueues.get(agentId);
     if (!queue || queue.length === 0) {
       logger.debug('No queued messages to process', { agentId });
+      this.cleanupEmptyQueue(agentId);
       return;
     }
 
@@ -9022,8 +9154,8 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
         remainingInQueue: queue.length,
       });
 
-      // Stop the watchdog if all queues are now empty
-      this.stopQueueWatchdogIfEmpty();
+      // Drop empty per-agent queue state so queues/workspace IDs do not linger after drain.
+      this.cleanupEmptyQueue(agentId);
     } catch (error) {
       // FIX: Re-add the message to the front of the queue so it can be retried.
       // The message was removed above before attempting to send, so we must restore it.
@@ -9095,6 +9227,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     this.queueWatchdogInterval = setInterval(() => {
       for (const [agentId, queue] of this.messageQueues) {
         if (!queue || queue.length === 0) {
+          this.cleanupEmptyQueue(agentId);
           continue;
         }
 
@@ -9141,6 +9274,46 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
     }, AgentBackendHandler.QUEUE_WATCHDOG_INTERVAL_MS);
 
     logger.info('Queue watchdog started');
+  }
+
+  private cleanupEmptyQueue(agentId: string): void {
+    const queue = this.messageQueues.get(agentId);
+    if (queue && queue.length === 0) {
+      this.messageQueues.delete(agentId);
+      this.queueAgentWorkspaceIds.delete(agentId);
+    }
+
+    this.stopQueueWatchdogIfEmpty();
+  }
+
+  private estimateQueuedMessageBytes(params: {
+    content: string;
+    contextItems?: any[];
+    imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  }): number {
+    let totalBytes = Buffer.byteLength(params.content || '', 'utf8');
+
+    if (params.contextItems?.length) {
+      totalBytes += this.estimateJsonBytes(params.contextItems);
+    }
+
+    if (params.imageBlocks?.length) {
+      for (const imageBlock of params.imageBlocks) {
+        totalBytes += Buffer.byteLength(imageBlock.type || '', 'utf8');
+        totalBytes += Buffer.byteLength(imageBlock.mimeType || '', 'utf8');
+        totalBytes += Buffer.byteLength(imageBlock.data || '', 'utf8');
+      }
+    }
+
+    return totalBytes;
+  }
+
+  private estimateJsonBytes(value: unknown): number {
+    try {
+      return Buffer.byteLength(JSON.stringify(value) || '', 'utf8');
+    } catch {
+      return Number.POSITIVE_INFINITY;
+    }
   }
 
   /**
@@ -9880,6 +10053,10 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
 
     // Clear session tracking
     this.activeSessions.clear();
+
+    // Clear persistence-list cache retention markers
+    this.inactivePersistenceListCacheWorkspaces.clear();
+    this.openWorkspaceIdsForAgentHydration = null;
 
     // Clean up providers
     for (const [agentId, provider] of this.providers) {

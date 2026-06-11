@@ -43,6 +43,7 @@ import {
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import {
   addAgent,
+  removeWorkspaceAgentState,
   removeAgent,
   setAgentsLoaded,
   setInitialAgentConfig,
@@ -68,7 +69,12 @@ import {
 import { loadAgentsFromDiskSaga } from "./agent-loading-saga";
 import { watchAgentCreationSaga } from "./agent-creation-saga";
 import { watchEnsureAgentSessionLoadedSaga } from "./ensure-agent-session-saga";
-import { selectAgentSession } from '../../agent-session/agent-session-selectors';
+import { selectWorkspaceHasActiveSubscriptions } from "../../agent-subscription-ui/agent-subscription-ui-selectors";
+import { selectIsWorkspaceTabOpen } from "../../tab-state/tab-state-selectors";
+import {
+  selectAllRetainedAgentSessions,
+  selectAgentSession,
+} from "../../agent-session/agent-session-selectors";
 
 
 type MaybeWrappedPayload<T> = T | { payload: T };
@@ -131,6 +137,28 @@ function isValidFileTrackingWorkspaceId(wsId: string): boolean {
   return !!wsId && wsId !== "new" && !isOptimisticWorkspaceId(wsId) && wsId !== "undefined";
 }
 
+function isRetainedAgentSession(session: AgentSession | undefined): boolean {
+  return session?.isStreaming === true || session?.isProcessing === true || session?.isResponding === true;
+}
+
+function* isWorkspaceActiveOrMounted(wsId: string) {
+  const activeWorkspaceId = yield* selectActiveWorkspaceId.effect();
+  if (activeWorkspaceId === wsId || workspaceAgentTasks.has(wsId)) {
+    return true;
+  }
+
+  if (yield* selectIsWorkspaceTabOpen.effect(wsId)) {
+    return true;
+  }
+
+  if (yield* selectWorkspaceHasActiveSubscriptions.effect(wsId)) {
+    return true;
+  }
+
+  const retainedAgents = yield* selectAllRetainedAgentSessions.effect();
+  return retainedAgents.some((agent) => String(agent.workspaceId) === wsId);
+}
+
 function* clearUnreadForMountedWorkspace(wsId: string) {
   if (!wsId || wsId === "new" || isOptimisticWorkspaceId(wsId)) {
     return;
@@ -161,8 +189,11 @@ export function* watchAgentDeletedSaga() {
         return;
       }
 
+      const shouldUpdateWorkspaceState = yield* isWorkspaceActiveOrMounted(data.workspaceId);
       yield* put(removeAgentSession(data.agentId));
-      yield* put(removeAgent(data.workspaceId, data.agentId));
+      if (shouldUpdateWorkspaceState) {
+        yield* put(removeAgent(data.workspaceId, data.agentId));
+      }
     },
   );
 }
@@ -182,13 +213,23 @@ export function* watchAgentRestoredSaga() {
         return;
       }
 
+      const shouldUpdateWorkspaceState = yield* isWorkspaceActiveOrMounted(data.workspaceId);
+      if (!shouldUpdateWorkspaceState) {
+        const existingSession = yield* selectAgentSession.effect(data.agentId);
+        if (!isRetainedAgentSession(existingSession)) {
+          return;
+        }
+      }
+
       // Dual-dispatch mirrors watchAgentDeletedSaga: re-populate the full
       // session first, then re-index it in the workspace agent list.
       yield* put(upsertSession({
         ...session,
         workspaceId: data.workspaceId as AgentSession['workspaceId'],
       }));
-      yield* put(addAgent(data.workspaceId, session));
+      if (shouldUpdateWorkspaceState) {
+        yield* put(addAgent(data.workspaceId, session));
+      }
     },
   );
 }
@@ -207,8 +248,11 @@ export function* watchAgentRenamedSaga() {
         return;
       }
 
+      const shouldUpdateWorkspaceState = yield* isWorkspaceActiveOrMounted(data.workspaceId);
       yield* put(renameAgentSession(data.agentId, data.name));
-      yield* put(renameAgent(data.workspaceId, data.agentId, data.name));
+      if (shouldUpdateWorkspaceState) {
+        yield* put(renameAgent(data.workspaceId, data.agentId, data.name));
+      }
     },
   );
 }
@@ -217,6 +261,10 @@ export function* watchWaitingForFirstMessageSaga() {
   yield* takeEveryFromWindowEvent<{ agentId: string; workspaceId: string }>(
     "workspace:waiting-for-first-message",
     function* (data) {
+      if (!(yield* isWorkspaceActiveOrMounted(data.workspaceId))) {
+        return;
+      }
+
       yield* put(setWaitingForFirstMessage(data.workspaceId, data.agentId, true));
     },
   );
@@ -431,10 +479,22 @@ export function* cancelWorkspaceAgentEventsForWorkspaceSaga(
 ) {
   const [wsId] = action.payload;
   const tasks = workspaceAgentTasks.get(wsId);
+  const mountedAgents = yield* selectAllWorkspaceAgents.effect(wsId);
+  const retainedAgents = yield* selectAllRetainedAgentSessions.effect();
+  const isWorkspaceTabOpen = yield* selectIsWorkspaceTabOpen.effect(wsId);
+  const hasActiveSubscriptions = yield* selectWorkspaceHasActiveSubscriptions.effect(wsId);
+  const shouldCompactWorkspaceState =
+    !mountedAgents.some(isRetainedAgentSession) &&
+    !retainedAgents.some((agent) => String(agent.workspaceId) === wsId) &&
+    !isWorkspaceTabOpen &&
+    !hasActiveSubscriptions;
 
   yield* put(clearCurrentlyViewed());
 
   if (!tasks) {
+    if (shouldCompactWorkspaceState) {
+      yield* put(removeWorkspaceAgentState(wsId));
+    }
     return;
   }
 
@@ -443,6 +503,9 @@ export function* cancelWorkspaceAgentEventsForWorkspaceSaga(
   }
 
   workspaceAgentTasks.delete(wsId);
+  if (shouldCompactWorkspaceState) {
+    yield* put(removeWorkspaceAgentState(wsId));
+  }
 }
 
 /**

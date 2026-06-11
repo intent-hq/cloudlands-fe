@@ -28,6 +28,27 @@ interface AgentCacheEntry {
 }
 const agentCache = new Map<string, AgentCacheEntry>();
 const CACHE_TTL_MS = 10000; // 10 second frontend cache - backend has 30 second cache
+const MAX_AGENT_CACHE_ENTRIES = 50;
+
+function pruneAgentCache(now = Date.now()): void {
+  for (const [workspaceId, entry] of agentCache) {
+    if (!entry.loadPromise && now - entry.timestamp >= CACHE_TTL_MS) {
+      agentCache.delete(workspaceId);
+    }
+  }
+
+  while (agentCache.size > MAX_AGENT_CACHE_ENTRIES) {
+    const oldestCompletedKey = [...agentCache.entries()].find(([, entry]) => !entry.loadPromise)?.[0];
+    if (!oldestCompletedKey) break;
+    agentCache.delete(oldestCompletedKey);
+  }
+}
+
+function setAgentCacheEntry(workspaceId: string, entry: AgentCacheEntry): void {
+  agentCache.delete(workspaceId);
+  agentCache.set(workspaceId, entry);
+  pruneAgentCache(entry.timestamp);
+}
 
 /**
  * Invalidate the agent cache for a workspace
@@ -74,6 +95,7 @@ export interface StoredAgent {
  */
 export async function getStoredAgentsFromDisk(workspaceId: string): Promise<StoredAgent[]> {
   const startTime = performance.now();
+  pruneAgentCache();
 
   // OPTIMIZATION: Check frontend cache first to dedupe rapid calls within same page session
   const cached = agentCache.get(workspaceId);
@@ -155,7 +177,7 @@ export async function getStoredAgentsFromDisk(workspaceId: string): Promise<Stor
       );
 
       // Update frontend cache
-      agentCache.set(workspaceId, {
+      setAgentCacheEntry(workspaceId, {
         agents,
         timestamp: Date.now(),
         loadPromise: undefined,
@@ -171,7 +193,7 @@ export async function getStoredAgentsFromDisk(workspaceId: string): Promise<Stor
   })();
 
   // Store the promise in cache so concurrent calls can wait for it
-  agentCache.set(workspaceId, {
+  setAgentCacheEntry(workspaceId, {
     agents: cached?.agents || [],
     timestamp: Date.now(),
     loadPromise,

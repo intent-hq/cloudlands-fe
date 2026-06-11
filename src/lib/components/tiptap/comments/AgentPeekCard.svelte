@@ -7,6 +7,7 @@
    */
 
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
+  import { requestAgentLineStats } from '$store/renderer/slices/changes/changes-slice';
   import {
   getAgentPeekData,
   truncateToLines,
@@ -31,6 +32,7 @@
   import { cn } from '$lib/utils';
 import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { writable } from 'svelte/store';
 
   type DisplayMode = 'full' | 'compact' | 'icon';
 
@@ -51,13 +53,18 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   }: Props = $props();
 
   const activeWorkspace = selectActiveWorkspace();
+  // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
+  const agentIdStore = writable(agentId);
+  $effect(() => {
+    agentIdStore.set(agentId);
+  });
 
   // Reactive agent session from Redux. The ensure saga dispatch below
   // triggers the disk restore; running it in an effect ensures we
   // re-dispatch when the active workspace or agentId changes while the
   // component stays mounted.
-  const agent$ = selectAgentSession(agentId);
-  const agentIsResponding$ = selectAgentIsResponding(agentId);
+  const agent$ = selectAgentSession(agentIdStore);
+  const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
   const agentData = $derived(getAgentPeekData($agent$));
 
   $effect(() => {
@@ -67,7 +74,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   });
 
   // Get line change stats
-  const lineStats$ = selectAgentLineStats(agentId);
+  const lineStats$ = selectAgentLineStats(agentIdStore);
+
+  $effect(() => {
+    if (displayMode === 'icon' || isCollapsed) return;
+    appStore.dispatch(requestAgentLineStats(agentId));
+  });
 
   const truncatedOneLine = $derived(
     agentData?.lastResponse ? truncateToLines(agentData.lastResponse, 1) : '',

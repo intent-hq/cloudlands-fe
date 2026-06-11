@@ -443,7 +443,7 @@
     try {
       const remoteBranch = $workspace?.branch || 'HEAD';
       const pullCommand = `git pull --rebase origin ${remoteBranch}`;
-      const result = await window.electronAPI.invoke('terminal:createWithCommand', {
+      const result = await invoke<any>('terminal:createWithCommand', {
         workspaceId, command: pullCommand, cwd: worktreePath,
         title: `Pull from origin/${remoteBranch}`,
       });

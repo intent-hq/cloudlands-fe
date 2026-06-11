@@ -14,10 +14,6 @@ import type { Saga } from "redux-saga";
 
 import type { MainStore } from "./types";
 import {
-  supervisedDelegationGroupSaga,
-  supervisedMatchingSaga,
-} from "./slices/agent-subscriptions/sagas/agent-subscriptions-saga";
-import {
   deliverySaga,
   periodicQueueSweep,
   watchAgentIdleForDelivery,
@@ -27,14 +23,17 @@ import {
   watchAgentDeletion,
 } from "./slices/agent-subscriptions/sagas/cleanup-saga";
 import {
+  delegationGroupSaga,
   watchDelegationAgentCompleted,
   watchDelegationAgentDeleted,
 } from "./slices/agent-subscriptions/sagas/delegation-group-saga";
 import { ipcBridgeSaga } from "./slices/agent-subscriptions/sagas/ipc-bridge-saga";
+import { matchingSaga } from "./slices/agent-subscriptions/sagas/matching-saga";
 import { subscriptionsChangedEmitterSaga } from "./slices/agent-subscriptions/sagas/subscriptions-changed-emitter-saga";
 import { workspaceEventsSaga } from "./slices/workspace-events/sagas/workspace-events-saga";
 import { workspaceEventsPersistenceSaga } from "./slices/workspace-events/sagas/persistence-saga";
 import { workspaceEventsBroadcastSaga } from "./slices/workspace-events/sagas/broadcast-saga";
+import { workspaceTasksChangedSaga } from "./slices/workspace-events/sagas/tasks-changed-saga";
 import { rendererSubscriptionSaga } from "./slices/workspace-events/sagas/renderer-subscription-saga";
 import { eventTriggeredSagas } from "./slices/workspace-events/sagas/event-triggered-sagas";
 import { workspaceLifecycleEventsSaga } from "./slices/workspace-lifecycle-events/sagas/workspace-lifecycle-events-saga";
@@ -53,18 +52,19 @@ export const mainSagas = {
   deliverySaga,
   watchAgentIdleForDelivery,
   periodicQueueSweep,
-  supervisedDelegationGroupSaga,
+  delegationGroupSaga,
   watchDelegationAgentCompleted,
   watchDelegationAgentDeleted,
   cleanupSaga,
   watchAgentDeletion,
   ipcBridgeSaga,
   subscriptionsChangedEmitterSaga,
-  supervisedMatchingSaga,
+  matchingSaga,
 
   workspaceEventsSaga,
   workspaceEventsPersistenceSaga,
   workspaceEventsBroadcastSaga,
+  workspaceTasksChangedSaga,
   rendererSubscriptionSaga,
   eventTriggeredSagas,
 

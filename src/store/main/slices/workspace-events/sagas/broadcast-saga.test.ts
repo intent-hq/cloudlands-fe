@@ -47,26 +47,38 @@ describe("broadcastEvent global routing", () => {
     sendToWorkspaceWindowsMock.mockClear();
   });
 
-  const GLOBAL_EVENT_TYPES = [
+  const PAYLOAD_LIGHT_FALLBACK_EVENT_TYPES = [
     "agent:subscribed",
     "agent:unsubscribed",
     "agent:subscriptions-changed",
     "agent:status-changed",
   ];
 
-  for (const eventType of GLOBAL_EVENT_TYPES) {
-    it(`broadcasts ${eventType} globally (workspaceId=undefined)`, async () => {
+  for (const eventType of PAYLOAD_LIGHT_FALLBACK_EVENT_TYPES) {
+    it(`broadcasts ${eventType} to its workspace when workspaceId is present`, async () => {
       const { broadcastEvent } = await import("./broadcast-saga");
-      const event = makeEvent("e1", eventType);
+      const event = makeEvent("e1", eventType, "ws-1");
       await broadcastEvent(event);
 
-      // Both calls (events:new + specific channel) should use undefined workspaceId
       expect(sendToWorkspaceWindowsMock).toHaveBeenCalledTimes(2);
 
       const [firstCallWsId] = sendToWorkspaceWindowsMock.mock.calls[0];
       const [secondCallWsId] = sendToWorkspaceWindowsMock.mock.calls[1];
-      expect(firstCallWsId).toBeUndefined();
-      expect(secondCallWsId).toBeUndefined();
+      expect(firstCallWsId).toBe("ws-1");
+      expect(secondCallWsId).toBe("ws-1");
+    });
+
+    it(`keeps ${eventType} global when workspaceId is missing`, async () => {
+      const { broadcastEvent } = await import("./broadcast-saga");
+      const event = {
+        ...makeEvent("e1", eventType),
+        workspaceId: undefined,
+      } as unknown as WorkspaceEvent;
+      await broadcastEvent(event);
+
+      expect(sendToWorkspaceWindowsMock).toHaveBeenCalledTimes(2);
+      expect(sendToWorkspaceWindowsMock.mock.calls[0][0]).toBeUndefined();
+      expect(sendToWorkspaceWindowsMock.mock.calls[1][0]).toBeUndefined();
     });
   }
 
@@ -143,14 +155,13 @@ describe("broadcastEvent global routing", () => {
     expect(firstCallWsId).toBeUndefined();
   });
 
-  it("global events preserve workspaceId in the payload even though routing is global", async () => {
+  it("workspace-targeted payload-light events preserve workspaceId in the payload", async () => {
     const { broadcastEvent } = await import("./broadcast-saga");
     const event = makeEvent("e1", "agent:subscribed", "ws-42");
     await broadcastEvent(event);
 
-    // Routing is global (undefined), but payload still has workspaceId
     const [routeWsId, , payload] = sendToWorkspaceWindowsMock.mock.calls[0];
-    expect(routeWsId).toBeUndefined();
+    expect(routeWsId).toBe("ws-42");
     expect(payload.workspaceId).toBe("ws-42");
     expect(payload.event.workspaceId).toBe("ws-42");
   });

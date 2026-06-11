@@ -459,13 +459,18 @@ class ErrorHandler {
   private async recoverFromNetworkError(): Promise<boolean> {
     if (!navigator.onLine) {
       return new Promise((resolve) => {
+        let timeout: ReturnType<typeof setTimeout> | null = null;
         const handler = () => {
+          if (timeout) {
+            clearTimeout(timeout);
+            timeout = null;
+          }
           window.removeEventListener('online', handler);
           resolve(true);
         };
         window.addEventListener('online', handler);
 
-        setTimeout(() => {
+        timeout = setTimeout(() => {
           window.removeEventListener('online', handler);
           resolve(false);
         }, 30000);

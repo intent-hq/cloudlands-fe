@@ -12,7 +12,7 @@
   SYSTEM_CHANNELS,
 } from '$shared/ipc/channels';
   import { onMount } from 'svelte';
-  import { invoke } from '$lib/electron-bridge';
+  import { invoke } from '$shared/generated/ipc-client';
 
   import {
   addTerminal,
@@ -33,11 +33,11 @@
 
     try {
       // Check if rtk is installed
-      const availResult = await window.electronAPI.invoke(SYSTEM_CHANNELS.CHECK_RTK, undefined);
+      const availResult = await invoke<any>(SYSTEM_CHANNELS.CHECK_RTK, undefined);
       rtkAvailable = availResult?.data?.available ?? false;
 
       // Load the current setting
-      const settingResult = await window.electronAPI.invoke(SETTINGS_CHANNELS.GET, {
+      const settingResult = await invoke<any>(SETTINGS_CHANNELS.GET, {
         key: 'rtkEnabled',
       });
       rtkEnabled = settingResult?.data ?? false;
@@ -52,7 +52,10 @@
     if (checking) return;
     checking = true;
     try {
-      const availResult = await window.electronAPI?.invoke(SYSTEM_CHANNELS.CHECK_RTK, undefined);
+      const availResult =
+        typeof window !== 'undefined' && window.electronAPI
+          ? await invoke<any>(SYSTEM_CHANNELS.CHECK_RTK, undefined)
+          : undefined;
       rtkAvailable = availResult?.data?.available ?? false;
     } catch {
       // Silently fail
@@ -95,10 +98,12 @@
     const newValue = !rtkEnabled;
     rtkEnabled = newValue;
     try {
-      await window.electronAPI?.invoke(SETTINGS_CHANNELS.SET, {
-        key: 'rtkEnabled',
-        value: newValue,
-      });
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        await invoke(SETTINGS_CHANNELS.SET, {
+          key: 'rtkEnabled',
+          value: newValue,
+        });
+      }
     } catch {
       // Revert on failure
       rtkEnabled = !newValue;

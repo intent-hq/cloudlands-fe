@@ -6,6 +6,7 @@ import {
 import type { StoreState } from "../../types";
 import { initialState } from "./websocket-api-slice";
 import {
+  selectWebSocketApiActiveDiscoveryExpiresAt,
   selectWebSocketApiDiscoveryCountdown,
   selectWebSocketApiEnabled,
   selectWebSocketApiToken,
@@ -36,5 +37,40 @@ describe("websocket-api selectors", () => {
     });
 
     expect(selectWebSocketApiDiscoveryCountdown.select(state)).toBe("1:00");
+  });
+
+  it("returns active discovery expiry as a scalar only while discovery is enabled", () => {
+    expect(
+      selectWebSocketApiActiveDiscoveryExpiresAt.select(
+        mockState({ discoveryEnabled: true, discoveryExpiresAt: 125000 }),
+      ),
+    ).toBe(125000);
+    expect(
+      selectWebSocketApiActiveDiscoveryExpiresAt.select(
+        mockState({ discoveryEnabled: false, discoveryExpiresAt: 125000 }),
+      ),
+    ).toBeNull();
+    expect(
+      selectWebSocketApiActiveDiscoveryExpiresAt.select(
+        mockState({ discoveryEnabled: true, discoveryExpiresAt: null }),
+      ),
+    ).toBeNull();
+  });
+
+  it("does not include countdownNow in the active discovery expiry selector", () => {
+    const base = {
+      discoveryEnabled: true,
+      discoveryExpiresAt: 125000,
+    };
+
+    expect(
+      selectWebSocketApiActiveDiscoveryExpiresAt.select(
+        mockState({ ...base, discoveryCountdownNow: 65000 }),
+      ),
+    ).toBe(
+      selectWebSocketApiActiveDiscoveryExpiresAt.select(
+        mockState({ ...base, discoveryCountdownNow: 66000 }),
+      ),
+    );
   });
 });

@@ -7,6 +7,7 @@
 
 import type { FirstVisitState, WorkspaceId } from '$shared/types';
 import { createLogger } from '$lib/utils/client-logger';
+import { invoke } from '$shared/generated/ipc-client';
 
 const logger = createLogger('FirstVisitStateClient');
 
@@ -17,7 +18,7 @@ class FirstVisitStateClient {
   async load(workspaceId: WorkspaceId): Promise<FirstVisitState | null> {
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        return await window.electronAPI.invoke('first-visit-state:load', { workspaceId });
+        return await invoke('first-visit-state:load', { workspaceId });
       }
       logger.warn('[FirstVisitStateClient] IPC not available');
       return null;
@@ -36,7 +37,7 @@ class FirstVisitStateClient {
   async save(workspaceId: WorkspaceId, state: FirstVisitState): Promise<boolean> {
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        return await window.electronAPI.invoke('first-visit-state:save', { workspaceId, state });
+        return await invoke('first-visit-state:save', { workspaceId, state });
       }
       logger.warn('[FirstVisitStateClient] IPC not available');
       return false;
@@ -55,7 +56,7 @@ class FirstVisitStateClient {
   async delete(workspaceId: WorkspaceId): Promise<boolean> {
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        return await window.electronAPI.invoke('first-visit-state:delete', { workspaceId });
+        return await invoke('first-visit-state:delete', { workspaceId });
       }
       logger.warn('[FirstVisitStateClient] IPC not available');
       return false;
@@ -74,7 +75,7 @@ class FirstVisitStateClient {
   async exists(workspaceId: WorkspaceId): Promise<boolean> {
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        return await window.electronAPI.invoke('first-visit-state:exists', { workspaceId });
+        return await invoke('first-visit-state:exists', { workspaceId });
       }
       logger.warn('[FirstVisitStateClient] IPC not available');
       return false;

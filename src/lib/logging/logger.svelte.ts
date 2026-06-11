@@ -9,6 +9,7 @@ import {
   Logger as BaseLogger,
   type LogEntry as BaseLogEntry,
 } from '$shared/logger';
+import { invoke } from '$shared/generated/ipc-client';
 import { LOG_CHANNELS } from '$shared/ipc';
 
 // Configure log levels
@@ -91,10 +92,7 @@ class RendererLogger {
     this.#pendingLogs = [];
 
     try {
-      const electronAPI = (window as any).electronAPI;
-      if (electronAPI?.invoke) {
-        await electronAPI.invoke(LOG_CHANNELS.PERSIST_RENDERER_LOGS, logsToSend);
-      }
+      await invoke(LOG_CHANNELS.PERSIST_RENDERER_LOGS, logsToSend);
     } catch (error) {
       // Don't crash the renderer if IPC fails
       console.error('[RendererLogger] Failed to persist logs via IPC:', error);

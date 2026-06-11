@@ -192,8 +192,7 @@ function parseToolResultBlock(block: any): UIContentBlock {
   // Detect error from content text (e.g., "Error:" prefix or "Tool Error:")
   // Note: We no longer check for ❌ emoji as it may be used as a visual indicator in content
   const contentText = typeof content === 'string' ? content : '';
-  const hasErrorInContent =
-    contentText.startsWith('Error:') || contentText.includes('Tool Error:');
+  const hasErrorInContent = contentText.startsWith('Error:') || contentText.includes('Tool Error:');
 
   return {
     type: 'tool_result',
@@ -283,7 +282,7 @@ export class ACPStreamParser {
         {
           bufferSize: this.buffer.length,
           chunkSize: chunk.length,
-        }
+        },
       );
       this.reset();
 
@@ -295,7 +294,7 @@ export class ACPStreamParser {
           'ACPStreamParser: single chunk exceeds MAX_BUFFER_SIZE, dropping',
           {
             chunkSize: chunk.length,
-          }
+          },
         );
         return [];
       }
@@ -371,7 +370,7 @@ export class ACPStreamParser {
           'ACPStreamParser: Buffer reset due to unparseable content',
           {
             bufferSize: this.buffer.length,
-          }
+          },
         );
         this.buffer = '';
       }
@@ -387,7 +386,7 @@ export class ACPStreamParser {
     level: 'warn' | 'error',
     timestampField: 'lastLargeBufferWarningTime' | 'lastBufferResetErrorTime',
     message: string,
-    data: Record<string, any>
+    data: Record<string, any>,
   ): void {
     const now = Date.now();
     if (now - this[timestampField] >= this.LOG_RATE_LIMIT_MS) {
@@ -476,6 +475,13 @@ export class ACPStreamParser {
    */
   reset() {
     this.buffer = '';
+  }
+
+  /**
+   * Dispose parser state and release any retained partial input.
+   */
+  dispose(): void {
+    this.reset();
   }
 }
 

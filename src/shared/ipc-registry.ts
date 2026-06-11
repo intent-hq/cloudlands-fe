@@ -61,6 +61,10 @@ export const IPC_CHANNELS = {
     LOAD_RULES: 'workspace:load-rules',
     RENAME_BRANCH: 'workspace:rename-branch',
     GET_HOVER_STATUS: 'workspace:get-hover-status',
+    // On-demand summaries (kept out of metadata payloads)
+    GET_DIFF_SUMMARY: 'workspace:get-diff-summary',
+    GET_GIT_SUMMARY: 'workspace:get-git-summary',
+    GET_TASKS: 'workspace:get-tasks',
   },
 
   // Agent Management
@@ -1163,6 +1167,7 @@ export const EVENT_CHANNELS = [
   'workspace:changes',
   'workspace:file-changes',
   'workspace:metadata-changed',
+  'workspace:tasks-changed',
   'workspace:background-enrichment-complete',
   'file:changed',
   'file:created',

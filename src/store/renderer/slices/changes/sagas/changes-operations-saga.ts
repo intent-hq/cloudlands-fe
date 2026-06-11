@@ -4,11 +4,11 @@
  * Handles all file-tracking operations (stage, unstage, revert, refresh, sync, load)
  * as saga handlers triggered by request actions.
  *
- * Module-level deduplication state (pending operations, throttling) is kept as
- * saga-local closure variables, NOT in Redux state.
+ * Pending stage operation state stays saga-local; sync/load/refresh coordination
+ * is Redux-owned so follow-up orchestration can avoid recursive calls.
  */
 
-import { call, put, takeEvery, delay, fork, type SagaGenerator } from 'typed-redux-saga';
+import { call, put, takeEvery, fork, type SagaGenerator } from 'typed-redux-saga';
 import { invoke, invokeWithTimeout, IpcTimeoutError } from '$lib/electron-bridge';
 import { Logger } from '$lib/utils/logger';
 import {
@@ -34,6 +34,19 @@ import {
   trackChangeRequested,
   clearTrackedChangesRequested,
   loadOlderCommitsRequested,
+  changesSyncStarted,
+  changesDataUpdated,
+  changesSyncQueued,
+  changesSyncFinished,
+  changesSyncDirtyConsumed,
+  changesLoadStarted,
+  changesLoadQueued,
+  changesLoadFinished,
+  changesLoadDirtyConsumed,
+  changesRefreshStarted,
+  changesRefreshQueued,
+  changesRefreshFinished,
+  changesRefreshDirtyConsumed,
 } from '../changes-slice';
 import {
   selectFileTrackingChanges,
@@ -41,6 +54,15 @@ import {
   selectFileTrackingCommits,
   selectFileTrackingBoundarySha,
   selectCurrentWorkspaceId,
+  selectChangesLastSyncTime,
+  selectChangesSyncInProgress,
+  selectChangesSyncDirty,
+  selectChangesSyncDirtyForce,
+  selectChangesSyncThrottleMs,
+  selectChangesLoadInProgress,
+  selectChangesLoadDirty,
+  selectChangesRefreshInProgress,
+  selectChangesRefreshDirty,
 } from '../changes-selectors';
 import { ChangeStage, type FileTrackingSyncResult } from '$features/file-tracking/types';
 import type { TrackedChange, StageTransition, CommitInfo } from '../changes-types';
@@ -58,24 +80,13 @@ const IPC_SYNC_TIMEOUT_MS = 30000;
 const IPC_LOAD_TIMEOUT_MS = 30000;
 
 // ---------------------------------------------------------------------------
-// Saga-local deduplication state (closures, NOT Redux state)
+// Saga-local pending operation state (closures, NOT Redux state)
 // ---------------------------------------------------------------------------
 
 const pendingStageOperations = new Set<string>();
 const pendingStageOperationsByPath = new Set<string>();
 const recentOperationPaths = new Map<string, number>();
 const OPERATION_COOLDOWN_MS = 1000;
-
-let lastSyncTime = 0;
-let syncInProgress = false;
-let syncDirty = false;
-let syncDirtyForce = false;
-const SYNC_THROTTLE_MS = 10000;
-
-let loadInProgress = false;
-let loadDirty = false;
-let refreshInProgress = false;
-const pendingRefreshWorkspaceIds = new Set<string>();
 
 export function hasPendingOperations(): boolean {
   return pendingStageOperations.size > 0 || pendingStageOperationsByPath.size > 0;
@@ -85,21 +96,6 @@ export function resetTrackingState(): void {
   pendingStageOperations.clear();
   pendingStageOperationsByPath.clear();
   recentOperationPaths.clear();
-  lastSyncTime = 0;
-  syncInProgress = false;
-  syncDirty = false;
-  syncDirtyForce = false;
-  loadInProgress = false;
-  loadDirty = false;
-  refreshInProgress = false;
-  pendingRefreshWorkspaceIds.clear();
-}
-
-function takeNextPendingRefreshWorkspaceId(): string | undefined {
-  const next = pendingRefreshWorkspaceIds.values().next();
-  if (next.done) return undefined;
-  pendingRefreshWorkspaceIds.delete(next.value);
-  return next.value;
 }
 
 function clearPendingState(changeIds: string[], pendingPaths: string[]): void {
@@ -138,19 +134,20 @@ export function* doSyncWithGit(
 ): SagaGenerator<FileTrackingSyncResult | null> {
   if (!wsId) return null;
 
+  const syncInProgress = yield* selectChangesSyncInProgress.effect(wsId);
   if (syncInProgress) {
-    syncDirty = true;
-    syncDirtyForce = syncDirtyForce || force;
+    yield* put(changesSyncQueued(wsId, force));
     return null;
   }
 
   const now = Date.now();
-  if (!force && now - lastSyncTime < SYNC_THROTTLE_MS) {
+  const lastSyncTime = yield* selectChangesLastSyncTime.effect(wsId);
+  const syncThrottleMs = yield* selectChangesSyncThrottleMs.effect(wsId);
+  if (!force && now - lastSyncTime < syncThrottleMs) {
     return null;
   }
 
-  lastSyncTime = Date.now();
-  syncInProgress = true;
+  yield* put(changesSyncStarted(wsId, Date.now()));
 
   try {
     const result = (yield* call(
@@ -181,13 +178,12 @@ export function* doSyncWithGit(
     }
     return null;
   } finally {
-    syncInProgress = false;
+    yield* put(changesSyncFinished(wsId));
+    const syncDirty = yield* selectChangesSyncDirty.effect(wsId);
     if (syncDirty) {
-      const dirtyForce = syncDirtyForce;
-      syncDirty = false;
-      syncDirtyForce = false;
-      yield* delay(0);
-      yield* call(doSyncWithGit, wsId, dirtyForce);
+      const dirtyForce = yield* selectChangesSyncDirtyForce.effect(wsId);
+      yield* put(changesSyncDirtyConsumed(wsId));
+      yield* put(syncWithGitRequested(wsId, dirtyForce));
     }
   }
 }
@@ -211,12 +207,13 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
     return;
   }
 
+  const loadInProgress = yield* selectChangesLoadInProgress.effect(wsId);
   if (loadInProgress) {
-    loadDirty = true;
+    yield* put(changesLoadQueued(wsId));
     return;
   }
 
-  loadInProgress = true;
+  yield* put(changesLoadStarted(wsId));
 
   try {
     const [changesResponse, transitionsResponse, commitsResponse] = (yield* call(() =>
@@ -297,6 +294,7 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
     } else if (existingBoundarySha !== newBoundarySha) {
       yield* put(setCommitsData(wsId, existingCommits, newBoundarySha));
     }
+    yield* put(changesDataUpdated(wsId, Date.now()));
   } catch (error) {
     const currentWsId = yield* selectCurrentWorkspaceId.effect();
     if (currentWsId === wsId) {
@@ -308,11 +306,11 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
     }
   } finally {
     yield* put(setLoading(wsId, false));
-    loadInProgress = false;
+    yield* put(changesLoadFinished(wsId));
+    const loadDirty = yield* selectChangesLoadDirty.effect(wsId);
     if (loadDirty) {
-      loadDirty = false;
-      yield* delay(0);
-      yield* call(doLoadWorkspaceData, wsId);
+      yield* put(changesLoadDirtyConsumed(wsId));
+      yield* put(loadWorkspaceDataRequested(wsId));
     }
   }
 }
@@ -324,25 +322,30 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
 export function* handleRefresh(action: ReturnType<typeof refreshRequested>): SagaGenerator<void> {
   const wsId = action.payload[0];
   if (!wsId) return;
+  const refreshInProgress = yield* selectChangesRefreshInProgress.effect(wsId);
   if (refreshInProgress) {
-    pendingRefreshWorkspaceIds.add(wsId);
+    yield* put(changesRefreshQueued(wsId));
     return;
   }
 
-  refreshInProgress = true;
+  yield* put(changesRefreshStarted(wsId));
   try {
-    yield* call(doSyncWithGit, wsId, true);
-    const currentWsId = yield* selectCurrentWorkspaceId.effect();
-    if (currentWsId !== wsId) return;
-    yield* call(doLoadWorkspaceData, wsId);
+    yield* call(syncAndLoadWorkspaceData, wsId);
   } finally {
-    refreshInProgress = false;
-    const pendingWsId = takeNextPendingRefreshWorkspaceId();
-    if (pendingWsId) {
-      yield* delay(0);
-      yield* call(handleRefresh, refreshRequested(pendingWsId));
+    yield* put(changesRefreshFinished(wsId));
+    const refreshDirty = yield* selectChangesRefreshDirty.effect(wsId);
+    if (refreshDirty) {
+      yield* put(changesRefreshDirtyConsumed(wsId));
+      yield* put(refreshRequested(wsId));
     }
   }
+}
+
+function* syncAndLoadWorkspaceData(wsId: string): SagaGenerator<void> {
+  yield* call(doSyncWithGit, wsId, true);
+  const currentWsId = yield* selectCurrentWorkspaceId.effect();
+  if (currentWsId !== wsId) return;
+  yield* call(doLoadWorkspaceData, wsId);
 }
 
 // ---------------------------------------------------------------------------
@@ -583,8 +586,8 @@ function* handleRevertChange(
   try {
     yield* call(invoke, 'git:discard', { workspaceId: wsId, paths: [filePath] });
     clearPendingState([changeId], [filePath]);
-    // Fire-and-forget refresh after successful revert
-    yield* fork(handleRefresh, refreshRequested(wsId));
+    // Fire-and-forget sync/load after successful revert.
+    yield* fork(syncAndLoadWorkspaceData, wsId);
   } catch (error) {
     logger.error('Failed to revert change', error as Error, { filePath });
     clearPendingState([changeId], [filePath]);
@@ -618,7 +621,7 @@ function* handleRevertChanges(
   try {
     yield* call(invoke, 'git:discard', { workspaceId: wsId, paths: filePaths });
     clearPendingState(changeIds, filePaths);
-    yield* fork(handleRefresh, refreshRequested(wsId));
+    yield* fork(syncAndLoadWorkspaceData, wsId);
   } catch (error) {
     logger.error('Failed to revert changes', error as Error, { filePaths });
     clearPendingState(changeIds, filePaths);
@@ -646,7 +649,7 @@ function* handleRevertByPath(
       validPaths.forEach((path) => pendingStageOperationsByPath.add(path));
       yield* call(invoke, 'git:discard', { workspaceId: wsId, paths: validPaths });
       validPaths.forEach((path) => pendingStageOperationsByPath.delete(path));
-      yield* fork(handleRefresh, refreshRequested(wsId));
+      yield* fork(syncAndLoadWorkspaceData, wsId);
     } catch (error) {
       logger.error('Failed to revert by path', error as Error, { filePaths: validPaths });
       validPaths.forEach((path) => pendingStageOperationsByPath.delete(path));

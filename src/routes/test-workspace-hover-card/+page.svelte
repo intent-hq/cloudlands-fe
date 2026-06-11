@@ -1,11 +1,20 @@
 <script lang="ts">
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
-  import type { PullRequestInfo, Workspace, WorkspaceAgentInfo, WorkspaceTaskInfo } from '$shared/types';
+  import type {
+  PullRequestInfo,
+  Workspace,
+  WorkspaceDiffSummary,
+  WorkspaceGitSummary,
+  WorkspaceTask,
+} from '$shared/types';
   import {
   PullRequestStatus,
   WorkspaceStatusEnum,
 } from '$shared/types';
+  import { store as appStore } from '$store/renderer/store';
+  import { loadWorkspaceTasksSucceeded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+  import { loadWorkspaceSummariesSucceeded } from '$store/renderer/slices/workspace-summaries/workspace-summaries-slice';
 
   type HoverVariation = {
     label: string;
@@ -29,12 +38,36 @@
   let rightEdgeTriggerElement: HTMLDivElement | null = $state(null);
   let showPlacedCard = $state(true);
 
-  function agents(agentsList: WorkspaceAgentInfo[]) {
-    return { count: agentsList.length, agents: agentsList };
+  function agents(agentIds: string[]) {
+    return { agentIds };
   }
 
-  function tasks(total: number, completed: number, inProgress: number, taskList?: WorkspaceTaskInfo[]) {
-    return { total, completed, inProgress, tasks: taskList };
+  // Task/summary data now lives in Redux slices rather than on the Workspace
+  // entity; seed the slices per mock workspace ID so the cards render data
+  // without on-demand loading (loadWorkspaceData is false on this page).
+  function makeTasks(
+    wsId: string,
+    total: number,
+    completed: number,
+    inProgress: number,
+  ): WorkspaceTask[] {
+    return Array.from({ length: total }, (_, i) => ({
+      id: `${wsId}-task-${i + 1}`,
+      title: `Task ${i + 1}`,
+      status: i < completed ? 'complete' : i < completed + inProgress ? 'in_progress' : 'not_started',
+    }));
+  }
+
+  function seedTasks(wsId: string, tasks: WorkspaceTask[]) {
+    appStore.dispatch(loadWorkspaceTasksSucceeded(wsId, tasks));
+  }
+
+  function seedSummaries(
+    wsId: string,
+    diffSummary: WorkspaceDiffSummary | null,
+    gitSummary: WorkspaceGitSummary | null,
+  ) {
+    appStore.dispatch(loadWorkspaceSummariesSucceeded(wsId, diffSummary, gitSummary));
   }
 
   function pr(overrides: Partial<PullRequestInfo>): PullRequestInfo {
@@ -83,7 +116,6 @@
           description: 'Typical one-sentence high-level progress update.',
           workspace: workspace('short-status', 'Sidebar status polish', {
             statusMessage: 'Verifying the final sidebar hover-card presentation before review.',
-            taskStats: tasks(5, 3, 1),
           }),
         },
       ],
@@ -100,35 +132,25 @@
         {
           label: 'One background agent',
           description: 'Background agents render as running agent rows.',
+          activeAgentIds: ['agent-bg'],
           workspace: workspace('one-background-agent', 'Background verification', {
-            agentSummary: agents([
-              { id: 'agent-bg', name: 'Verifier', status: 'background', specialist: 'verifier' },
-            ]),
+            agentSummary: agents(['agent-bg']),
           }),
         },
         {
           label: 'Multiple active agents',
           description: 'Three running statuses render directly before overflow begins.',
+          activeAgentIds: ['agent-plan', 'agent-build'],
           workspace: workspace('multiple-agents', 'Parallel implementation', {
-            agentSummary: agents([
-              { id: 'agent-plan', name: 'Planner', status: 'running', specialist: 'spec-writer' },
-              { id: 'agent-build', name: 'Implementor', status: 'processing', specialist: 'implementor' },
-              { id: 'agent-review', name: 'Reviewer', status: 'waiting', specialist: 'verifier' },
-            ]),
-            taskStats: tasks(8, 2, 3),
+            agentSummary: agents(['agent-plan', 'agent-build', 'agent-review']),
           }),
         },
         {
           label: 'Overflow agents',
           description: 'Five active agents should show three rows plus “+2 more”.',
+          activeAgentIds: ['agent-1', 'agent-2', 'agent-3', 'agent-4', 'agent-5'],
           workspace: workspace('overflow-agents', 'Agent overflow review', {
-            agentSummary: agents([
-              { id: 'agent-1', name: 'Coordinator', status: 'running' },
-              { id: 'agent-2', name: 'Implementor A', status: 'streaming' },
-              { id: 'agent-3', name: 'Implementor B', status: 'processing' },
-              { id: 'agent-4', name: 'Verifier A', status: 'waiting' },
-              { id: 'agent-5', name: 'Verifier B', status: 'background' },
-            ]),
+            agentSummary: agents(['agent-1', 'agent-2', 'agent-3', 'agent-4', 'agent-5']),
             statusMessage: 'Several agents are active so designers can inspect list density and overflow spacing.',
           }),
         },
@@ -140,37 +162,26 @@
       variations: [
         {
           label: 'No tasks',
-          description: 'No taskStats means the progress section is omitted.',
+          description: 'No seeded tasks means the progress section is omitted.',
           workspace: workspace('no-tasks', 'Exploratory workspace'),
         },
         {
           label: '0 / 6 tasks',
           description: 'Shows all not-started progress.',
-          workspace: workspace('zero-progress', 'Spec ready for implementation', {
-            taskStats: tasks(6, 0, 0),
-          }),
+          workspace: workspace('zero-progress', 'Spec ready for implementation'),
         },
         {
           label: 'Partial with task statuses',
           description: 'Uses task-level segments for complete, in-progress, waiting, and review-required.',
+          activeAgentIds: ['agent-active'],
           workspace: workspace('partial-progress', 'Hover-card component polish', {
-            taskStats: tasks(6, 2, 2, [
-              { title: 'Design states', status: 'complete' },
-              { title: 'Attach surfaces', status: 'complete' },
-              { title: 'Implement route', status: 'in_progress' },
-              { title: 'Visual QA', status: 'review_required' },
-              { title: 'Coordinator approval', status: 'waiting' },
-              { title: 'Ship', status: 'not_started' },
-            ]),
-            agentSummary: agents([{ id: 'agent-active', name: 'Implementor', status: 'running' }]),
+            agentSummary: agents(['agent-active']),
           }),
         },
         {
           label: 'Complete',
           description: 'All tasks complete with no active agents.',
-          workspace: workspace('complete-progress', 'Final verification complete', {
-            taskStats: tasks(4, 4, 0),
-          }),
+          workspace: workspace('complete-progress', 'Final verification complete'),
         },
       ],
     },
@@ -186,25 +197,13 @@
         {
           label: 'Ahead / behind / unpushed',
           description: 'Concise git divergence summary.',
-          workspace: workspace('git-diverged', 'Sync workspace branch', {
-            gitSummary: { ahead: 3, behind: 1, hasUnpushed: true },
-          }),
+          workspace: workspace('git-diverged', 'Sync workspace branch'),
         },
         {
           label: 'Changed files plus git summary',
           description: 'Diff summary and git divergence combine into one comma-separated line.',
           lineStats: { additions: 42, deletions: 7 },
-          workspace: workspace('changed-files', 'Implement hover-card route', {
-            gitSummary: { ahead: 2, behind: 0, hasUnpushed: true },
-            diffSummary: {
-              schemaVersion: 1,
-              updatedAt: recent,
-              totalFiles: 3,
-              totalAdditions: 42,
-              totalDeletions: 7,
-              files: [],
-            },
-          }),
+          workspace: workspace('changed-files', 'Implement hover-card route'),
         },
         {
           label: 'Open PR with pending CI',
@@ -233,7 +232,6 @@
               status: PullRequestStatus.Merged,
               reviewDecision: 'APPROVED',
             }),
-            gitSummary: { ahead: 0, behind: 0, hasUnpushed: false },
           }),
         },
         {
@@ -268,8 +266,6 @@
                 'extremely-long-repository-name-that-should-truncate-cleanly-in-the-hover-card',
               statusMessage:
                 'This mocked status is deliberately long enough to wrap across several lines. It should remain readable, avoid clipping, and preserve the compact metadata rows below it while designers tune spacing.',
-              taskStats: tasks(12, 5, 3),
-              gitSummary: { ahead: 12, behind: 4, hasUnpushed: true },
             },
           ),
         },
@@ -298,12 +294,48 @@
   const bottomPlacementWorkspace = workspace('bottom-edge', 'Bottom-edge placement preview', {
     statusMessage:
       'This card is rendered through the shared HoverCard wrapper near the viewport bottom so side placement and vertical clamping can be smoke-tested visually.',
-    agentSummary: agents([
-      { id: 'agent-bottom-1', name: 'Viewport Agent', status: 'running' },
-      { id: 'agent-bottom-2', name: 'Background QA', status: 'background' },
-    ]),
-    taskStats: tasks(5, 3, 1),
-    diffSummary: {
+    agentSummary: agents(['agent-bottom-1', 'agent-bottom-2']),
+  });
+
+  const rightEdgePlacementWorkspace = workspace('right-edge', 'Right-edge flip preview', {
+    statusMessage:
+      'This trigger sits near the right viewport edge so the side placement should flip the card to the left instead of clipping.',
+    activePullRequest: pr({ number: 51, status: PullRequestStatus.Open }),
+  });
+
+  // Seed Redux task/summary state for the mock workspace IDs above.
+  seedTasks('short-status', makeTasks('short-status', 5, 3, 1));
+  seedTasks('zero-progress', makeTasks('zero-progress', 6, 0, 0));
+  seedTasks('partial-progress', [
+    { id: 'pp-1', title: 'Design states', status: 'complete' },
+    { id: 'pp-2', title: 'Attach surfaces', status: 'complete' },
+    { id: 'pp-3', title: 'Implement route', status: 'in_progress' },
+    { id: 'pp-4', title: 'Visual QA', status: 'review_required' },
+    { id: 'pp-5', title: 'Coordinator approval', status: 'waiting' },
+    { id: 'pp-6', title: 'Ship', status: 'not_started' },
+  ]);
+  seedTasks('complete-progress', makeTasks('complete-progress', 4, 4, 0));
+  seedTasks('long-content', makeTasks('long-content', 12, 5, 3));
+  seedTasks('bottom-edge', makeTasks('bottom-edge', 5, 3, 1));
+
+  seedSummaries('git-diverged', null, { ahead: 3, behind: 1, hasUnpushed: true });
+  seedSummaries(
+    'changed-files',
+    {
+      schemaVersion: 1,
+      updatedAt: recent,
+      totalFiles: 3,
+      totalAdditions: 42,
+      totalDeletions: 7,
+      files: [],
+    },
+    { ahead: 2, behind: 0, hasUnpushed: true },
+  );
+  seedSummaries('merged-pr', null, { ahead: 0, behind: 0, hasUnpushed: false });
+  seedSummaries('long-content', null, { ahead: 12, behind: 4, hasUnpushed: true });
+  seedSummaries(
+    'bottom-edge',
+    {
       schemaVersion: 1,
       updatedAt: recent,
       totalFiles: 2,
@@ -311,14 +343,9 @@
       totalDeletions: 8,
       files: [],
     },
-  });
-
-  const rightEdgePlacementWorkspace = workspace('right-edge', 'Right-edge flip preview', {
-    statusMessage:
-      'This trigger sits near the right viewport edge so the side placement should flip the card to the left instead of clipping.',
-    activePullRequest: pr({ number: 51, status: PullRequestStatus.Open }),
-    gitSummary: { ahead: 1, behind: 0, hasUnpushed: true },
-  });
+    null,
+  );
+  seedSummaries('right-edge', null, { ahead: 1, behind: 0, hasUnpushed: true });
 
   const sections = statusSections;
 </script>
@@ -358,6 +385,7 @@
                   lineStats={variation.lineStats}
                   activeAgentIds={variation.activeAgentIds ?? []}
                   loadAgentSessions={false}
+                  loadWorkspaceData={false}
                 />
               </div>
             </article>
@@ -413,7 +441,11 @@
             anchorElement={rightEdgeTriggerElement}
             class="w-auto border-0 bg-transparent shadow-xl"
           >
-            <WorkspaceHoverCard workspace={rightEdgePlacementWorkspace} loadAgentSessions={false} />
+            <WorkspaceHoverCard
+              workspace={rightEdgePlacementWorkspace}
+              loadAgentSessions={false}
+              loadWorkspaceData={false}
+            />
           </HoverCard>
           <HoverCard
             anchor="--workspace-hover-card-bottom-edge"
@@ -421,7 +453,12 @@
             anchorElement={bottomTriggerElement}
             class="w-auto border-0 bg-transparent shadow-xl"
           >
-            <WorkspaceHoverCard workspace={bottomPlacementWorkspace} loadAgentSessions={false} />
+            <WorkspaceHoverCard
+              workspace={bottomPlacementWorkspace}
+              activeAgentIds={['agent-bottom-1']}
+              loadAgentSessions={false}
+              loadWorkspaceData={false}
+            />
           </HoverCard>
         {/if}
       </div>

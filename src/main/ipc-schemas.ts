@@ -309,6 +309,19 @@ export const WorkspaceGetHoverStatusSchema = z.object({
   workspaceId: WorkspaceIdSchema,
 });
 
+// On-demand summary endpoints (data intentionally excluded from workspace metadata payloads)
+export const WorkspaceGetDiffSummarySchema = z.object({
+  workspaceId: WorkspaceIdSchema,
+});
+
+export const WorkspaceGetGitSummarySchema = z.object({
+  workspaceId: WorkspaceIdSchema,
+});
+
+export const WorkspaceGetTasksSchema = z.object({
+  workspaceId: WorkspaceIdSchema,
+});
+
 export const WorkspaceValidateSchema = z.object({
   id: WorkspaceIdSchema,
 });
@@ -1553,6 +1566,7 @@ export const AgentContextGetBySessionSchema = z.string().min(1, 'Session ID is r
 
 export const NotesListSchema = z.object({
   workspaceId: WorkspaceIdSchema,
+  summariesOnly: z.boolean().optional(),
 });
 
 export const NotesGetSchema = z.object({

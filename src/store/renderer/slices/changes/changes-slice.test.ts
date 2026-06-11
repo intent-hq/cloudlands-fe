@@ -23,6 +23,10 @@ import {
   clearAllChanges,
   setMainPanelView,
   clearMainPanelView,
+  requestAgentLineStats,
+  agentLineStatsRequestStarted,
+  agentLineStatsRequestSucceeded,
+  agentLineStatsRequestFailed,
   updateAgentStats,
   updateAgentStatsBatch,
   clearAgentStats,
@@ -34,6 +38,20 @@ import {
   startBackgroundOperation,
   resetAcceptChangesOperations,
   setCachedGitStatus,
+  resetChangesCoordination,
+  changesSyncStarted,
+  changesDataUpdated,
+  changesSyncQueued,
+  changesSyncFinished,
+  changesSyncDirtyConsumed,
+  changesLoadStarted,
+  changesLoadQueued,
+  changesLoadFinished,
+  changesLoadDirtyConsumed,
+  changesRefreshStarted,
+  changesRefreshQueued,
+  changesRefreshFinished,
+  changesRefreshDirtyConsumed,
 } from "./changes-slice";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import {
@@ -47,6 +65,21 @@ import {
   selectUnstagedWorkingChanges,
   selectAgentLineStats,
   selectAllAgentStats,
+  selectAgentLineStatsRequest,
+  selectIsAgentLineStatsRequestInFlight,
+  selectAgentLineStatsRequestError,
+  selectShouldRequestAgentLineStats,
+  selectChangesCoordinationState,
+  selectChangesLastSyncTime,
+  selectChangesLastUpdatedAt,
+  selectChangesSyncInProgress,
+  selectChangesSyncDirty,
+  selectChangesSyncDirtyForce,
+  selectChangesSyncThrottleMs,
+  selectChangesLoadInProgress,
+  selectChangesLoadDirty,
+  selectChangesRefreshInProgress,
+  selectChangesRefreshDirty,
 } from "./changes-selectors";
 import type { LineChangeStats } from "./changes-types";
 
@@ -102,6 +135,91 @@ describe("fileTrackingReducer", () => {
   it("setHasLoadedInitialData updates flag", () => {
     const state = fileTrackingReducer(initialState, setHasLoadedInitialData(WS, true));
     expect(state.byWorkspaceId[WS].hasLoadedInitialData).toBe(true);
+  });
+
+  it("initializes serializable changes coordination state with the default sync throttle", () => {
+    const state = fileTrackingReducer(initialState, changesSyncStarted(WS, 1234));
+
+    expect(state.byWorkspaceId[WS].coordination).toEqual({
+      lastSyncTime: 1234,
+      lastUpdatedAt: 0,
+      syncInProgress: true,
+      syncDirty: false,
+      syncDirtyForce: false,
+      syncThrottleMs: 10000,
+      loadInProgress: false,
+      loadDirty: false,
+      refreshInProgress: false,
+      refreshDirty: false,
+    });
+    expect(JSON.parse(JSON.stringify(state.byWorkspaceId[WS].coordination))).toEqual(
+      state.byWorkspaceId[WS].coordination,
+    );
+  });
+
+  it("tracks sync coordination transitions and preserves queued force", () => {
+    let state = fileTrackingReducer(initialState, changesSyncStarted(WS, 111));
+    state = fileTrackingReducer(state, changesDataUpdated(WS, 222));
+    state = fileTrackingReducer(state, changesSyncQueued(WS, false));
+    state = fileTrackingReducer(state, changesSyncQueued(WS, true));
+    state = fileTrackingReducer(state, changesSyncFinished(WS));
+
+    expect(state.byWorkspaceId[WS].coordination).toMatchObject({
+      lastSyncTime: 111,
+      lastUpdatedAt: 222,
+      syncInProgress: false,
+      syncDirty: true,
+      syncDirtyForce: true,
+      syncThrottleMs: 10000,
+    });
+
+    state = fileTrackingReducer(state, changesSyncDirtyConsumed(WS));
+    expect(state.byWorkspaceId[WS].coordination.syncDirty).toBe(false);
+    expect(state.byWorkspaceId[WS].coordination.syncDirtyForce).toBe(false);
+  });
+
+  it("tracks load and refresh coordination transitions without recursive state", () => {
+    let state = fileTrackingReducer(initialState, changesLoadStarted(WS));
+    state = fileTrackingReducer(state, changesLoadQueued(WS));
+    state = fileTrackingReducer(state, changesLoadFinished(WS));
+    state = fileTrackingReducer(state, changesRefreshStarted(WS));
+    state = fileTrackingReducer(state, changesRefreshQueued(WS));
+    state = fileTrackingReducer(state, changesRefreshFinished(WS));
+
+    expect(state.byWorkspaceId[WS].coordination).toMatchObject({
+      loadInProgress: false,
+      loadDirty: true,
+      refreshInProgress: false,
+      refreshDirty: true,
+    });
+
+    state = fileTrackingReducer(state, changesLoadDirtyConsumed(WS));
+    state = fileTrackingReducer(state, changesRefreshDirtyConsumed(WS));
+    expect(state.byWorkspaceId[WS].coordination.loadDirty).toBe(false);
+    expect(state.byWorkspaceId[WS].coordination.refreshDirty).toBe(false);
+  });
+
+  it("resets coordination state and keeps no-op coordination transitions by reference", () => {
+    let state = fileTrackingReducer(initialState, changesSyncStarted(WS, 222));
+    state = fileTrackingReducer(state, changesLoadStarted(WS));
+    state = fileTrackingReducer(state, changesRefreshQueued(WS));
+
+    const reset = fileTrackingReducer(state, resetChangesCoordination(WS));
+    expect(reset.byWorkspaceId[WS].coordination).toEqual({
+      lastSyncTime: 0,
+      lastUpdatedAt: 0,
+      syncInProgress: false,
+      syncDirty: false,
+      syncDirtyForce: false,
+      syncThrottleMs: 10000,
+      loadInProgress: false,
+      loadDirty: false,
+      refreshInProgress: false,
+      refreshDirty: false,
+    });
+
+    expect(fileTrackingReducer(initialState, changesLoadFinished(WS))).toBe(initialState);
+    expect(fileTrackingReducer(initialState, changesSyncDirtyConsumed(WS))).toBe(initialState);
   });
 
   it("setChangesData stores changes, truncated, and totalCount", () => {
@@ -199,6 +317,60 @@ describe("fileTrackingReducer", () => {
   });
 
   // Agent stats tests (absorbed from line-changes)
+  it("requestAgentLineStats creates a per-agent request action", () => {
+    expect(requestAgentLineStats("agent-1")).toMatchObject({
+      type: "changes/requestAgentLineStats",
+      payload: { agentId: "agent-1", forceRefresh: false },
+    });
+    expect(requestAgentLineStats("agent-1", true).payload.forceRefresh).toBe(true);
+  });
+
+  it("stores serializable per-agent line-stat request lifecycle", () => {
+    let state = fileTrackingReducer(
+      initialState,
+      agentLineStatsRequestStarted("agent-1", "2026-01-01T00:00:00.000Z"),
+    );
+
+    expect(state.agentLineStatsRequests["agent-1"]).toEqual({
+      isLoading: true,
+      error: null,
+      lastRequestedAt: "2026-01-01T00:00:00.000Z",
+      lastFinishedAt: null,
+    });
+
+    state = fileTrackingReducer(
+      state,
+      agentLineStatsRequestSucceeded("agent-1", "2026-01-01T00:00:01.000Z"),
+    );
+
+    expect(state.agentLineStatsRequests["agent-1"]).toEqual({
+      isLoading: false,
+      error: null,
+      lastRequestedAt: "2026-01-01T00:00:00.000Z",
+      lastFinishedAt: "2026-01-01T00:00:01.000Z",
+    });
+    expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+  });
+
+  it("clears line-stat request loading state on failure", () => {
+    let state = fileTrackingReducer(
+      initialState,
+      agentLineStatsRequestStarted("agent-1", "2026-01-01T00:00:00.000Z"),
+    );
+
+    state = fileTrackingReducer(
+      state,
+      agentLineStatsRequestFailed("agent-1", "boom", "2026-01-01T00:00:01.000Z"),
+    );
+
+    expect(state.agentLineStatsRequests["agent-1"]).toEqual({
+      isLoading: false,
+      error: "boom",
+      lastRequestedAt: "2026-01-01T00:00:00.000Z",
+      lastFinishedAt: "2026-01-01T00:00:01.000Z",
+    });
+  });
+
   it("updateAgentStats sets agent stats", () => {
     const stats: LineChangeStats = { additions: 3, deletions: 1, timestamp: "2025-01-01T00:00:00Z" };
     const state = fileTrackingReducer(initialState, updateAgentStats("agent-1", stats));
@@ -215,8 +387,10 @@ describe("fileTrackingReducer", () => {
 
   it("clearAgentStats removes agent stats", () => {
     let state = fileTrackingReducer(initialState, updateAgentStats("agent-1", { additions: 1, deletions: 0, timestamp: "" }));
+    state = fileTrackingReducer(state, agentLineStatsRequestStarted("agent-1", "2026-01-01T00:00:00.000Z"));
     state = fileTrackingReducer(state, clearAgentStats("agent-1"));
     expect(state.agentStats["agent-1"]).toBeUndefined();
+    expect(state.agentLineStatsRequests["agent-1"]).toBeUndefined();
   });
 
   it("workspaceUnmounted clears workspace state", () => {
@@ -345,6 +519,31 @@ describe("changes selectors", () => {
     expect(selectFileTrackingChanges.select(asStoreState(initialState), WS)).toEqual([]);
   });
 
+  it("selects saga-readable changes coordination state", () => {
+    let state = fileTrackingReducer(initialState, changesSyncStarted(WS, 333));
+    state = fileTrackingReducer(state, changesSyncQueued(WS, true));
+    state = fileTrackingReducer(state, changesLoadStarted(WS));
+    state = fileTrackingReducer(state, changesLoadQueued(WS));
+    state = fileTrackingReducer(state, changesRefreshStarted(WS));
+    state = fileTrackingReducer(state, changesRefreshQueued(WS));
+    const storeState = asStoreState(state);
+
+    expect(selectChangesCoordinationState.select(storeState, WS)).toBe(state.byWorkspaceId[WS].coordination);
+    expect(selectChangesLastSyncTime.select(storeState, WS)).toBe(333);
+    state = fileTrackingReducer(state, changesDataUpdated(WS, 444));
+    const updatedStoreState = asStoreState(state);
+    expect(selectChangesLastUpdatedAt.select(updatedStoreState, WS)).toBe(444);
+    expect(selectChangesCoordinationState.select(updatedStoreState, WS)).toBe(state.byWorkspaceId[WS].coordination);
+    expect(selectChangesSyncInProgress.select(storeState, WS)).toBe(true);
+    expect(selectChangesSyncDirty.select(storeState, WS)).toBe(true);
+    expect(selectChangesSyncDirtyForce.select(storeState, WS)).toBe(true);
+    expect(selectChangesSyncThrottleMs.select(storeState, WS)).toBe(10000);
+    expect(selectChangesLoadInProgress.select(storeState, WS)).toBe(true);
+    expect(selectChangesLoadDirty.select(storeState, WS)).toBe(true);
+    expect(selectChangesRefreshInProgress.select(storeState, WS)).toBe(true);
+    expect(selectChangesRefreshDirty.select(storeState, WS)).toBe(true);
+  });
+
   it("selectStagedWorkingChanges and selectUnstagedWorkingChanges separate staged and unstaged", () => {
     const changes = [
       mockChange("a", ChangeStage.Unstaged),
@@ -380,6 +579,42 @@ describe("changes selectors", () => {
     state = fileTrackingReducer(state, updateAgentStats("a2", { additions: 2, deletions: 0, timestamp: "" }));
     const all = selectAllAgentStats.select(asStoreState(state));
     expect(Object.keys(all)).toHaveLength(2);
+  });
+
+  it("selects line-stat request lifecycle state", () => {
+    let state = fileTrackingReducer(
+      initialState,
+      agentLineStatsRequestStarted("agent-1", "2026-01-01T00:00:00.000Z"),
+    );
+    state = fileTrackingReducer(
+      state,
+      agentLineStatsRequestFailed("agent-1", "boom", "2026-01-01T00:00:01.000Z"),
+    );
+
+    expect(selectAgentLineStatsRequest.select(asStoreState(state), "agent-1")).toEqual({
+      isLoading: false,
+      error: "boom",
+      lastRequestedAt: "2026-01-01T00:00:00.000Z",
+      lastFinishedAt: "2026-01-01T00:00:01.000Z",
+    });
+    expect(selectIsAgentLineStatsRequestInFlight.select(asStoreState(state), "agent-1")).toBe(false);
+    expect(selectAgentLineStatsRequestError.select(asStoreState(state), "agent-1")).toBe("boom");
+  });
+
+  it("selectShouldRequestAgentLineStats dedupes cache and in-flight state while allowing force refresh", () => {
+    const cached = fileTrackingReducer(
+      initialState,
+      updateAgentStats("agent-1", { additions: 1, deletions: 0, timestamp: "t" }),
+    );
+    const inFlight = fileTrackingReducer(
+      cached,
+      agentLineStatsRequestStarted("agent-1", "2026-01-01T00:00:00.000Z"),
+    );
+
+    expect(selectShouldRequestAgentLineStats.select(asStoreState(initialState), "agent-1", false)).toBe(true);
+    expect(selectShouldRequestAgentLineStats.select(asStoreState(cached), "agent-1", false)).toBe(false);
+    expect(selectShouldRequestAgentLineStats.select(asStoreState(cached), "agent-1", true)).toBe(true);
+    expect(selectShouldRequestAgentLineStats.select(asStoreState(inFlight), "agent-1", true)).toBe(false);
   });
 });
 

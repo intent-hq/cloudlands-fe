@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { expectSaga } from 'redux-saga-test-plan';
-import { dynamic } from 'redux-saga-test-plan/providers';
 import * as sagaEffects from 'redux-saga/effects';
 
 vi.mock('typed-redux-saga', () => ({
@@ -50,8 +50,16 @@ import {
   initialState,
   refreshRequested,
   setChangesData,
+  changesDataUpdated,
+  changesRefreshStarted,
+  changesRefreshQueued,
+  changesRefreshDirtyConsumed,
+  syncWithGitRequested,
+  loadWorkspaceDataRequested,
 } from '../changes-slice';
 import {
+  selectChangesCoordinationState,
+  selectChangesLastUpdatedAt,
   selectCurrentChanges,
   selectCurrentUnstagedWorkingChanges,
   selectFileTrackingChanges,
@@ -118,6 +126,11 @@ function mockLoadResponse(changes: TrackedChange[]) {
   }) as any);
 }
 
+function expectSelectForWs(effect: any, wsId: string): void {
+  expect(effect.type).toBe('SELECT');
+  expect(effect.payload.args).toEqual([wsId]);
+}
+
 function mockSyncAndLoadResponse(changes: TrackedChange[]) {
   vi.mocked(invokeWithTimeout).mockImplementation((async (channel: string) => {
     if (channel === 'file-tracking:sync') {
@@ -142,12 +155,17 @@ describe('changes operations saga open-file refresh bridge', () => {
   it('requests open file content refreshes for unstaged paths discovered by changes load', async () => {
     const change = makeChange(PATH);
     mockLoadResponse([change]);
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(123_456);
 
-    await expectSaga(doLoadWorkspaceData, WS_ID)
-      .withState(stateWithChanges())
+    const result = await expectSaga(doLoadWorkspaceData, WS_ID)
+      .withReducer(reduceStoreState, stateWithChanges())
       .put(setChangesData(WS_ID, [change], false, 1))
       .put(refreshOpenFileContentForPathsRequested(WS_ID, [PATH]))
+      .put(changesDataUpdated(WS_ID, 123_456))
       .silentRun(50);
+
+    expect(selectChangesLastUpdatedAt.select(result.storeState as any, WS_ID)).toBe(123_456);
+    nowSpy.mockRestore();
   });
 
   it('still requests open file refresh when changes data is unchanged', async () => {
@@ -207,22 +225,18 @@ describe('changes operations saga open-file refresh bridge', () => {
       code: 'GIT_INTEGRATION_NOT_READY',
       error: 'Git integration is not ready for this workspace',
     };
-    const dispatched: any[] = [];
     vi.mocked(invokeWithTimeout).mockResolvedValue(notReadyResult as any);
 
     const result = await expectSaga(doSyncWithGit, WS_ID, true)
-      .provide([
-        {
-          put: dynamic(({ action }: any) => {
-            dispatched.push(action);
-            return undefined;
-          }),
-        },
-      ])
+      .withReducer(reduceStoreState, stateWithChanges())
       .silentRun(50);
 
     expect(result.returnValue).toEqual(notReadyResult);
-    expect(dispatched).toEqual([]);
+    expect(selectChangesCoordinationState.select(result.storeState as any, WS_ID)).toMatchObject({
+      syncInProgress: false,
+      syncDirty: false,
+      syncDirtyForce: false,
+    });
     expect(invokeWithTimeout).toHaveBeenCalledWith(
       'file-tracking:sync',
       { workspaceId: WS_ID, force: true },
@@ -230,48 +244,62 @@ describe('changes operations saga open-file refresh bridge', () => {
     );
   });
 
-  it('serializes overlapping refresh requests into one follow-up sync/load', () => {
-    const firstRefresh = handleRefresh(refreshRequested(WS_ID));
-
-    expect(firstRefresh.next().value).toEqual(sagaEffects.call(doSyncWithGit, WS_ID, true));
-
+  it('serializes overlapping refresh requests into one action-driven follow-up refresh', async () => {
     const overlappingRefresh = handleRefresh(refreshRequested(WS_ID));
+    expectSelectForWs(overlappingRefresh.next().value, WS_ID);
+    expect(overlappingRefresh.next(true).value).toEqual(sagaEffects.put(changesRefreshQueued(WS_ID)));
     expect(overlappingRefresh.next().done).toBe(true);
 
-    firstRefresh.next();
-    expect(firstRefresh.next(WS_ID).value).toEqual(sagaEffects.call(doLoadWorkspaceData, WS_ID));
-    expect(firstRefresh.next().value).toEqual(sagaEffects.delay(0));
-    expect(firstRefresh.next().value).toEqual(sagaEffects.call(handleRefresh, refreshRequested(WS_ID)));
-    expect(firstRefresh.next().done).toBe(true);
+    mockSyncAndLoadResponse([]);
+    const dirtyRefreshState = stateWithChanges();
+    dirtyRefreshState.changes.byWorkspaceId[WS_ID].coordination = {
+      ...dirtyRefreshState.changes.byWorkspaceId[WS_ID].coordination,
+      refreshDirty: true,
+    };
+
+    await expectSaga(handleRefresh, refreshRequested(WS_ID))
+      .withState(dirtyRefreshState)
+      .put(changesRefreshDirtyConsumed(WS_ID))
+      .put(refreshRequested(WS_ID))
+      .silentRun(100);
   });
 
-  it('replays the queued workspace when a different workspace refresh overlaps', () => {
+  it('coordinates different workspace refreshes independently', () => {
     const firstRefresh = handleRefresh(refreshRequested('ws-a'));
 
-    expect(firstRefresh.next().value).toEqual(sagaEffects.call(doSyncWithGit, 'ws-a', true));
+    expectSelectForWs(firstRefresh.next().value, 'ws-a');
+    expect(firstRefresh.next(false).value).toEqual(sagaEffects.put(changesRefreshStarted('ws-a')));
 
-    const overlappingRefresh = handleRefresh(refreshRequested('ws-b'));
-    expect(overlappingRefresh.next().done).toBe(true);
-
-    firstRefresh.next();
-    expect(firstRefresh.next('ws-a').value).toEqual(sagaEffects.call(doLoadWorkspaceData, 'ws-a'));
-    expect(firstRefresh.next().value).toEqual(sagaEffects.delay(0));
-    expect(firstRefresh.next().value).toEqual(sagaEffects.call(handleRefresh, refreshRequested('ws-b')));
-    expect(firstRefresh.next().done).toBe(true);
+    const otherWorkspaceRefresh = handleRefresh(refreshRequested('ws-b'));
+    expectSelectForWs(otherWorkspaceRefresh.next().value, 'ws-b');
+    expect(otherWorkspaceRefresh.next(false).value).toEqual(
+      sagaEffects.put(changesRefreshStarted('ws-b')),
+    );
   });
 
-  it('clears queued refresh work on reset', () => {
-    const firstRefresh = handleRefresh(refreshRequested('ws-a'));
+  it('does not replay refresh when Redux dirty state is clear', async () => {
+    mockSyncAndLoadResponse([]);
 
-    expect(firstRefresh.next().value).toEqual(sagaEffects.call(doSyncWithGit, 'ws-a', true));
+    await expectSaga(handleRefresh, refreshRequested(WS_ID))
+      .withState(stateWithChanges())
+      .not.put(refreshRequested(WS_ID))
+      .silentRun(100);
+  });
 
-    const overlappingRefresh = handleRefresh(refreshRequested('ws-b'));
-    expect(overlappingRefresh.next().done).toBe(true);
+  it('dispatches queued sync/load request actions instead of recursive worker calls', () => {
+    const source = readFileSync('src/store/renderer/slices/changes/sagas/changes-operations-saga.ts', 'utf8');
 
-    resetTrackingState();
+    expect(source).toMatch(/changesSyncDirtyConsumed\(wsId\)[\s\S]{0,160}put\(syncWithGitRequested\(wsId, dirtyForce\)\)/);
+    expect(source).toMatch(/changesLoadDirtyConsumed\(wsId\)[\s\S]{0,160}put\(loadWorkspaceDataRequested\(wsId\)\)/);
+    expect(source).toMatch(/changesRefreshDirtyConsumed\(wsId\)[\s\S]{0,160}put\(refreshRequested\(wsId\)\)/);
+    expect(source).not.toMatch(/changesSyncDirtyConsumed\(wsId\)[\s\S]{0,160}call\(doSyncWithGit/);
+    expect(source).not.toMatch(/changesLoadDirtyConsumed\(wsId\)[\s\S]{0,160}call\(doLoadWorkspaceData/);
+    expect(source).not.toMatch(/changesRefreshDirtyConsumed\(wsId\)[\s\S]{0,160}call\(handleRefresh/);
+  });
 
-    firstRefresh.next();
-    expect(firstRefresh.next('ws-a').value).toEqual(sagaEffects.call(doLoadWorkspaceData, 'ws-a'));
-    expect(firstRefresh.next().done).toBe(true);
+  it('keeps queued follow-up actions canonical', () => {
+    expect(syncWithGitRequested(WS_ID, true).type).toBe('changes/syncWithGitRequested');
+    expect(loadWorkspaceDataRequested(WS_ID).type).toBe('changes/loadWorkspaceDataRequested');
+    expect(refreshRequested(WS_ID).type).toBe('changes/refreshRequested');
   });
 });

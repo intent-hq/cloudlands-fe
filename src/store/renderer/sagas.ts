@@ -29,6 +29,8 @@ import { workspaceOperationsSaga } from "./slices/workspace-operations/sagas/wor
 import { workspaceSaga } from "./slices/workspace/sagas/workspace-saga";
 import { workspaceAgentsSaga } from "./slices/workspace-agents/sagas/workspace-agents-saga";
 import { workspaceNotesSaga } from "./slices/workspace-notes/sagas/workspace-notes-saga";
+import { workspaceTasksSaga } from "./slices/workspace-tasks/sagas/workspace-tasks-saga";
+import { workspaceSummariesSaga } from "./slices/workspace-summaries/sagas/workspace-summaries-saga";
 import { workspaceEventsSaga as workspaceEventsRendererSaga } from "./slices/workspace-events/sagas/workspace-events-saga";
 import { paletteSaga } from "./slices/palette/sagas/palette-saga";
 import { authSaga } from "./slices/auth/sagas/auth-saga";
@@ -64,7 +66,6 @@ import { sidebarNavSaga } from "./slices/sidebar-nav/sagas/sidebar-nav-saga";
 import { scriptsSaga } from "./slices/scripts/sagas/scripts-saga";
 import { agentFollowSaga } from "./slices/agent-follow/sagas/agent-follow-saga";
 import { gitSaga as gitStatusSaga } from "./slices/git/sagas/git-saga";
-import { agentOverviewSaga } from "./slices/agent-overview/sagas/agent-overview-saga";
 import { changesSaga } from "./slices/changes/sagas/changes-saga";
 import { agentLockSaga } from "./slices/agent-lock/sagas/agent-lock-saga";
 import { panelLayoutSaga } from "./slices/panel-layout/sagas/panel-layout-saga";
@@ -79,6 +80,7 @@ import { fileExplorerSaga } from "./slices/file-explorer/sagas/file-explorer-sag
 import { filesSaga } from "./slices/files/sagas/files-saga";
 import { agentQueueSaga } from "./slices/agent-queue/sagas/agent-queue-saga";
 import { agentIpcSaga } from "./slices/workspace-agents/sagas/agent-ipc-saga";
+import { agentSessionSaga } from "./slices/agent-session/sagas/agent-session-saga";
 import { agentChatEffectsSaga } from "./slices/agent-session/sagas/agent-chat-effects-saga";
 import { agentStreamSaga } from "./slices/agent-session/sagas/agent-stream-saga";
 import { agentSubscriptionUISaga } from "./slices/agent-subscription-ui/sagas/agent-subscription-ui-saga";
@@ -122,6 +124,8 @@ export const sagas = [
   gitOperationsSaga,
   changesSaga,
   workspaceNotesSaga,
+  workspaceTasksSaga,
+  workspaceSummariesSaga,
   workspaceEventsRendererSaga,
   paletteSaga,
   workspaceAgentsSaga,
@@ -157,7 +161,6 @@ export const sagas = [
   scriptsSaga,
   agentFollowSaga,
   gitStatusSaga,
-  agentOverviewSaga,
   agentLockSaga,
   panelLayoutSaga,
   unreadTrackingSaga,
@@ -170,6 +173,7 @@ export const sagas = [
   filesSaga,
   agentQueueSaga,
   agentIpcSaga,
+  agentSessionSaga,
   agentChatEffectsSaga,
   agentStreamSaga,
   agentSubscriptionUISaga,

@@ -24,6 +24,11 @@ const { stateRef, listeners, appStoreMock } = vi.hoisted(() => {
   const listeners = new Set<(state: any) => void>();
   const appStoreMock = {
     dispatch: vi.fn(),
+	    getState: vi.fn(() => stateRef.current),
+	    subscribe: vi.fn((listener: (state: any) => void) => {
+	      listeners.add(listener);
+	      return () => listeners.delete(listener);
+	    }),
     get state() {
       return stateRef.current;
     },
@@ -178,7 +183,7 @@ function collectChannelEvents(
 
 async function createTestAgentStateChannel() {
   return await runSaga(
-    { context: { readableStoreState: appStoreMock.getReadableState() } },
+	    { context: { reduxStore: appStoreMock, readableStoreState: appStoreMock.getReadableState() } },
     createAgentStateChannel,
     agentId,
     wsId,

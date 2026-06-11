@@ -2,6 +2,7 @@ import {
   call,
   put,
 } from "typed-redux-saga";
+import { invoke } from "$shared/generated/ipc-client";
 import { getLocalStorageJSON } from "$store/renderer/utils/safe-local-storage-saga";
 import { SPECIALISTS_CHANNELS } from "$shared/ipc/channels";
 import type { Specialist } from "$lib/constants/specialists";
@@ -22,7 +23,7 @@ import {
 function* loadBundledSpecialists() {
     try {
         if (typeof window !== "undefined" && window.electronAPI) {
-            const result: any = yield* call([window.electronAPI, window.electronAPI.invoke], SPECIALISTS_CHANNELS.LIST_BUNDLED, {});
+            const result: any = yield* call(invoke, SPECIALISTS_CHANNELS.LIST_BUNDLED, {});
             if (result?.success && result.data?.specialists) {
                 const specialists: Specialist[] = result.data.specialists.map((spec: any) => ({
                     id: spec.id,
@@ -52,7 +53,7 @@ function* loadFileSpecialistsData() {
         if (typeof window !== "undefined" && window.electronAPI) {
             const workspace = yield* selectActiveWorkspace.effect();
             const workspacePath: string | undefined = workspace?.worktreePath ?? workspace?.repositoryPath ?? workspace?.path;
-            const result: any = yield* call([window.electronAPI, window.electronAPI.invoke], SPECIALISTS_CHANNELS.LIST_FILES, { workspacePath });
+            const result: any = yield* call(invoke, SPECIALISTS_CHANNELS.LIST_FILES, { workspacePath });
             if (result?.success && result.data) {
                 const { specialists, errors } = result.data;
                 const fileSpecs: FileSpecialist[] = specialists.map((s: any) => ({
@@ -82,7 +83,7 @@ function* loadFileSpecialistsData() {
 function* loadFolderPath() {
     try {
         if (typeof window !== "undefined" && window.electronAPI) {
-            const result: any = yield* call([window.electronAPI, window.electronAPI.invoke], SPECIALISTS_CHANNELS.GET_FOLDER_PATH, {});
+            const result: any = yield* call(invoke, SPECIALISTS_CHANNELS.GET_FOLDER_PATH, {});
             if (result?.success && result.data) {
                 yield* put(setSpecialistsFolderPath(result.data));
             }

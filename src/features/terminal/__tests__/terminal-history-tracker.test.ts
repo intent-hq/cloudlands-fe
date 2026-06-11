@@ -73,6 +73,17 @@ describe('TerminalHistoryTracker', () => {
     expect(history?.lastOutput?.endsWith('...')).toBe(true);
   });
 
+  it('should keep in-progress output bounded across repeated chunks', () => {
+    terminalHistoryTracker.onCommandStart(terminalId, workspaceId, 'long-running-command');
+
+    for (let i = 0; i < 20; i++) {
+      terminalHistoryTracker.onOutput(terminalId, workspaceId, 'x'.repeat(100));
+    }
+
+    const history = terminalHistoryTracker.getHistory(terminalId);
+    expect(history?.currentOutput.length).toBeLessThanOrEqual(503);
+  });
+
   it('should persist history to localStorage', () => {
     const command = 'echo "test"';
     const output = 'test\n';

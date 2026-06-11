@@ -20,11 +20,6 @@ import {
   getDefaultProviderId,
   PROVIDER_MODEL_TIERS,
 } from '../../../shared/config/provider-config';
-import {
-  getSpecTaskNotes,
-  EXCLUDED_STATUSES,
-  IN_PROGRESS_STATUSES,
-} from '../../../shared/utils/task-stats';
 import * as Errors from '../../../shared/errors';
 import {
   execAsync,
@@ -48,12 +43,7 @@ import type {
   Result,
   UpdateWorkspaceRequest,
   Workspace,
-  WorkspaceAgentInfo,
-  WorkspaceAgentSummary,
-  WorkspaceDiffSummary,
-  WorkspaceGitSummary,
-  WorkspaceTaskInfo,
-  WorkspaceTaskStats,
+  WorkspaceMetadata,
   WorkspaceUIContext,
 } from '../../../shared/types';
 import {
@@ -92,7 +82,6 @@ import {
   appendSlugSuffix,
   extractBaseSlug,
 } from '../../../shared/services/workspace-slug';
-import { DiffSummaryRepository } from './diff-summary.repository';
 import {
   parseBranchName,
   parseRemoteBranchName,
@@ -160,10 +149,6 @@ type BackgroundEnrichmentWorkspaceUpdates = Partial<
     | 'prNumber'
     | 'prUrl'
     | 'pullRequests'
-    | 'diffSummary'
-    | 'agentSummary'
-    | 'taskStats'
-    | 'gitSummary'
   >
 >;
 
@@ -179,12 +164,13 @@ function stableStringify(value: unknown): string {
 
 export class WorkspaceService {
   private readonly store: any;
+  // Metadata/UI-only cache: current-context snapshots are not Workspace JSON and are bounded by LRU.
   private lastContextCache: Map<string, WorkspaceUIContext> = new Map();
   private contextCacheOrder: string[] = []; // Track access order for LRU
+  // Background enrichment coordination only stores workspace IDs/timestamps, never full Workspace JSON.
   private readonly pendingBackgroundEnrichment = new Set<WorkspaceId>();
-  private readonly MAX_CONTEXT_CACHE_SIZE = 50; // Limit cache size to prevent unbounded growth
+  private readonly MAX_CONTEXT_CACHE_SIZE = 25; // Limit cache size to prevent unbounded growth
   private readonly backgroundEnrichmentQueue: WorkspaceId[] = [];
-  private readonly backgroundSummaryHydratedAt = new Map<WorkspaceId, number>();
   private readonly dirtyBackgroundEnrichment = new Set<WorkspaceId>();
   private backgroundEnrichmentTimer: NodeJS.Timeout | null = null;
   private activeBackgroundEnrichmentCount = 0;
@@ -195,19 +181,14 @@ export class WorkspaceService {
   private readonly PR_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
   private readonly LIST_ENRICHMENT_CONCURRENCY = 3;
   private readonly BACKGROUND_ENRICHMENT_CONCURRENCY = 3;
-  private readonly BACKGROUND_SUMMARY_TTL_MS = 5 * 60 * 1000;
   // Domain event listeners (workspace:deleted, note:created, note:deleted, git:status-changed)
   // are now handled by sagas in domain-event-listener-sagas.ts.
-
-  // Short-lived cache for getWorkspace to reduce redundant fetches during bulk operations
-  // (e.g., delegating multiple tasks in parallel)
-  private workspaceCache = new Map<string, { workspace: Workspace; timestamp: number }>();
-  private readonly WORKSPACE_CACHE_TTL = 5000; // 5 seconds - short TTL for bulk operations
 
   // PERF: Track when workspace creation is in progress to enable lite mode in listWorkspaces
   // This prevents heavy list operations from blocking workspace:create IPC responses
   // Using a counter instead of boolean to handle concurrent creations properly
   private creationInProgressCount = 0;
+  // In-flight create dedupe only holds promises until they settle; it is not a request-read cache.
   private pendingWorkspaceCreates = new Map<string, Promise<Result<Workspace, string>>>();
 
   // FIX: Serialize git worktree operations per repository to prevent corruption
@@ -220,12 +201,12 @@ export class WorkspaceService {
   // We use a Set with TTL-based cleanup to prevent these zombie events from triggering
   // expensive operations like updateWorkspace and listWorkspaces
   private recentlyDeletedWorkspaces = new Set<string>();
+  private recentlyDeletedCleanupTimers = new Map<string, NodeJS.Timeout>();
   private readonly RECENTLY_DELETED_TTL = 60000; // 60 seconds - long enough for zombie events to settle
 
   constructor(
     private readonly repository: WorkspaceRepository = new FileSystemWorkspaceRepository(),
     private readonly notesRepository: NotesRepository = new FolderBasedNotesRepository(),
-    private readonly diffSummaryRepository: DiffSummaryRepository = new DiffSummaryRepository(),
     private readonly idService: UnifiedIdService = unifiedIdService,
   ) {
     this.store = new ElectronStore();
@@ -266,80 +247,6 @@ export class WorkspaceService {
     } catch (error) {
       logger.error('Error loading diffs', error as Error, { workspaceId });
       return [];
-    }
-  }
-
-  private async getWorkspaceDiffSummary(
-    workspaceId: WorkspaceId,
-    worktreePath?: string,
-  ): Promise<WorkspaceDiffSummary | undefined> {
-    try {
-      // Try to get real-time file count from git status first
-      if (worktreePath) {
-        try {
-          // Get changed files from git (both staged and unstaged vs HEAD)
-          const { stdout } = await execFileAsync('git', [
-            'diff', '--name-only', 'HEAD'
-          ], {
-            cwd: worktreePath,
-            timeout: 5000,
-          });
-
-          // Also get untracked files
-          const { stdout: untrackedStdout } = await execFileAsync('git', [
-            'ls-files', '--others', '--exclude-standard'
-          ], {
-            cwd: worktreePath,
-            timeout: 5000,
-          });
-
-          const changedFiles = stdout.trim().split('\n').filter(Boolean);
-          const untrackedFiles = untrackedStdout.trim().split('\n').filter(Boolean);
-          const totalFiles = new Set([...changedFiles, ...untrackedFiles]).size;
-
-          if (totalFiles > 0) {
-            // Get line stats too
-            let totalAdditions = 0;
-            let totalDeletions = 0;
-            try {
-              const { stdout: numstatStdout } = await execFileAsync('git', [
-                'diff', '--numstat', 'HEAD'
-              ], {
-                cwd: worktreePath,
-                timeout: 5000,
-              });
-              for (const line of numstatStdout.trim().split('\n').filter(Boolean)) {
-                const [additions, deletions] = line.split('\t');
-                if (additions !== '-') totalAdditions += parseInt(additions, 10) || 0;
-                if (deletions !== '-') totalDeletions += parseInt(deletions, 10) || 0;
-              }
-            } catch {
-              // Non-fatal, just won't have line stats
-            }
-
-            return {
-              schemaVersion: 1,
-              updatedAt: new Date().toISOString(),
-              totalFiles,
-              totalAdditions,
-              totalDeletions,
-              files: [],
-            };
-          }
-
-          // If git reports 0 changes, return undefined (no changes)
-          return undefined;
-        } catch {
-          // Git command failed, fall back to persisted summary
-        }
-      }
-
-      // Fall back to persisted summary
-      const summary = await this.diffSummaryRepository.load(workspaceId);
-      return summary ?? undefined;
-    } catch (error) {
-      logger.error('Error loading diff summary', error as Error, { workspaceId });
-      return undefined;
     }
   }
 
@@ -2089,10 +1996,17 @@ task:
       return workspace;
     }
 
-    const repairedWorkspace = { ...workspace, lastActivity };
-    await this.saveWorkspace(repairedWorkspace);
-    this.workspaceCache.delete(workspace.id);
-    return repairedWorkspace;
+    const currentWorkspace = await this.repository.findById(workspace.id);
+    if (!currentWorkspace) {
+      return workspace;
+    }
+
+    if (this.isValidActivityTimestamp(currentWorkspace.lastActivity)) {
+      return currentWorkspace;
+    }
+
+    const repairedWorkspace = await this.saveWorkspaceUpdates(workspace.id, { lastActivity });
+    return repairedWorkspace ?? currentWorkspace;
   }
 
   private async repairWorkspaceActivityTimestamps(workspaces: Workspace[]): Promise<Workspace[]> {
@@ -2238,7 +2152,9 @@ task:
     offset?: number;
     includeArchived?: boolean;
     lite?: boolean; // Defaults to true; pass false to opt into bounded list enrichment
-  }): Promise<Result<{ workspaces: Workspace[]; total: number; hasMore: boolean }, string>> {
+  }): Promise<
+    Result<{ workspaces: WorkspaceMetadata[]; total: number; hasMore: boolean }, string>
+  > {
     try {
       const allWorkspaces = await this.repository.findAll();
 
@@ -2262,7 +2178,7 @@ task:
       const limit = options?.limit || repairedWorkspaces.length;
       const paginatedWorkspaces = repairedWorkspaces.slice(offset, offset + limit);
 
-      let sanitizedWorkspaces: Workspace[];
+      let sanitizedWorkspaces: WorkspaceMetadata[];
       // PERF: Default workspace lists to lite mode so startup and validation flows
       // never trigger unbounded per-workspace enrichment. Callers must opt into
       // full enrichment explicitly, and even then we cap concurrency.
@@ -2271,9 +2187,9 @@ task:
       // avoid blocking create IPC responses.
       const useLiteMode = requestedLiteMode || this.creationInProgressCount > 0;
       if (useLiteMode) {
-        // PERF: In lite mode, skip heavy buildListWorkspace() computations
-        // (git diffs, git log, agent state, GitHub API) but still compute taskStats
-        // because it only reads note JSON files and is needed for progress indicators.
+        // PERF: In lite mode, skip heavy buildListWorkspace() computations.
+        // Workspace payloads are metadata-only; diff/git/task summaries are
+        // fetched on demand via dedicated endpoints.
         if (this.creationInProgressCount > 0) {
           logger.debug(
             'Using lite mode for workspace list - creation in progress, skipping heavy computations',
@@ -2282,79 +2198,29 @@ task:
           logger.debug('Using lite mode for workspace list - skipping heavy computations');
         }
 
-        // Compute taskStats in parallel with bounded concurrency — it's cheap (just note reads)
-        // but we still don't want 200 concurrent file reads.
-        const TASK_STATS_CONCURRENCY = 10;
-        const taskStatsResults = new Array<WorkspaceTaskStats | undefined>(
-          paginatedWorkspaces.length,
-        );
-        let taskStatsNextIndex = 0;
+        // Fetch agent IDs with bounded concurrency — it's cheap (directory listings)
+        // but we still don't want 200 concurrent reads.
+        const AGENT_IDS_CONCURRENCY = 10;
+        const agentIdsResults = new Array<string[]>(paginatedWorkspaces.length);
+        let agentIdsNextIndex = 0;
         await Promise.all(
           Array.from(
-            { length: Math.min(TASK_STATS_CONCURRENCY, paginatedWorkspaces.length) },
+            { length: Math.min(AGENT_IDS_CONCURRENCY, paginatedWorkspaces.length) },
             async () => {
               while (true) {
-                const idx = taskStatsNextIndex++;
+                const idx = agentIdsNextIndex++;
                 if (idx >= paginatedWorkspaces.length) return;
-                try {
-                  taskStatsResults[idx] = await this.getWorkspaceTaskStats(
-                    paginatedWorkspaces[idx]!.id,
-                  );
-                } catch {
-                  taskStatsResults[idx] = undefined;
-                }
+                agentIdsResults[idx] = await this.getWorkspaceAgentIds(
+                  paginatedWorkspaces[idx]!.id,
+                );
               }
             },
           ),
         );
 
-        // Also compute agentSummary in lite mode — it's relatively cheap (reads agent JSON files)
-        // and is needed for agent status dots in the workspace list.
-        const AGENT_SUMMARY_CONCURRENCY = 10;
-        const agentSummaryResults = new Array<WorkspaceAgentSummary | undefined>(
-          paginatedWorkspaces.length,
+        sanitizedWorkspaces = paginatedWorkspaces.map((workspace, i) =>
+          this.toWorkspaceMetadata(workspace, agentIdsResults[i]),
         );
-        let agentSummaryNextIndex = 0;
-        await Promise.all(
-          Array.from(
-            { length: Math.min(AGENT_SUMMARY_CONCURRENCY, paginatedWorkspaces.length) },
-            async () => {
-              while (true) {
-                const idx = agentSummaryNextIndex++;
-                if (idx >= paginatedWorkspaces.length) return;
-                try {
-                  agentSummaryResults[idx] = await this.getWorkspaceAgentSummary(
-                    paginatedWorkspaces[idx]!.id,
-                  );
-                } catch {
-                  agentSummaryResults[idx] = undefined;
-                }
-              }
-            },
-          ),
-        );
-
-        sanitizedWorkspaces = paginatedWorkspaces.map((workspace, i) => {
-          const agentSummary = agentSummaryResults[i];
-          // Use the most recent agent activity as workspace lastActivity if newer
-          let lastActivity = workspace.lastActivity;
-          if (agentSummary?.agents) {
-            for (const agent of agentSummary.agents) {
-              if (agent.lastActivity && (!lastActivity || agent.lastActivity > lastActivity)) {
-                lastActivity = agent.lastActivity;
-              }
-            }
-          }
-          return {
-            ...workspace,
-            diffs: undefined,
-            diffSummary: undefined,
-            agentSummary,
-            taskStats: taskStatsResults[i],
-            gitSummary: undefined,
-            lastActivity,
-          };
-        });
       } else {
         sanitizedWorkspaces = await this.buildListWorkspacesWithConcurrency(
           paginatedWorkspaces,
@@ -2362,7 +2228,7 @@ task:
         );
       }
 
-      // Hydrate repo/PR/list-summary data incrementally in the background.
+      // Hydrate repo/PR data incrementally in the background.
       // This keeps the bulk list response cheap while still filling in richer data.
       this.scheduleBackgroundEnrichment(sanitizedWorkspaces);
 
@@ -2389,7 +2255,9 @@ task:
    * The frontend is responsible for filtering based on the "Show archived" toggle.
    * @param options.lite When true, skip heavy computations to avoid blocking other IPC operations
    */
-  async listAllWorkspaces(options?: { lite?: boolean }): Promise<Result<Workspace[], string>> {
+  async listAllWorkspaces(options?: {
+    lite?: boolean;
+  }): Promise<Result<WorkspaceMetadata[], string>> {
     const result = await this.listWorkspaces({ includeArchived: true, lite: options?.lite });
     if (result.ok) {
       return { ok: true, data: result.data.workspaces };
@@ -2397,45 +2265,22 @@ task:
     return { ok: false, error: (result as any).error };
   }
 
-  private async buildListWorkspace(workspace: Workspace): Promise<Workspace> {
-    // Load diff summary, agent summary, task stats, and git summary in parallel for performance
-    const [diffSummary, agentSummary, taskStats, gitSummary] = await Promise.all([
-      this.getWorkspaceDiffSummary(workspace.id, workspace.worktreePath),
-      this.getWorkspaceAgentSummary(workspace.id),
-      this.getWorkspaceTaskStats(workspace.id),
-      this.getWorkspaceGitSummary(workspace),
-    ]);
-
-    // Use the most recent agent activity as workspace lastActivity if newer
-    let lastActivity = workspace.lastActivity;
-    if (agentSummary?.agents) {
-      for (const agent of agentSummary.agents) {
-        if (agent.lastActivity && (!lastActivity || agent.lastActivity > lastActivity)) {
-          lastActivity = agent.lastActivity;
-        }
-      }
-    }
-
-    return {
-      ...workspace,
-      diffs: undefined,
-      diffSummary: diffSummary ?? undefined,
-      agentSummary: agentSummary ?? undefined,
-      taskStats: taskStats ?? undefined,
-      gitSummary: gitSummary ?? undefined,
-      lastActivity,
-    };
+  private async buildListWorkspace(workspace: Workspace): Promise<WorkspaceMetadata> {
+    // Workspace payloads are metadata-only: agent summary carries IDs only, and
+    // diff/git/task summaries are served by dedicated on-demand endpoints.
+    const agentIds = await this.getWorkspaceAgentIds(workspace.id);
+    return this.toWorkspaceMetadata(workspace, agentIds);
   }
 
   private async buildListWorkspacesWithConcurrency(
     workspaces: Workspace[],
     concurrency: number,
-  ): Promise<Workspace[]> {
+  ): Promise<WorkspaceMetadata[]> {
     if (workspaces.length === 0) {
       return [];
     }
 
-    const results = new Array<Workspace>(workspaces.length);
+    const results = new Array<WorkspaceMetadata>(workspaces.length);
     let nextIndex = 0;
     const workerCount = Math.max(1, Math.min(concurrency, workspaces.length));
 
@@ -2456,287 +2301,59 @@ task:
   }
 
   /**
-   * Get a lightweight summary of agents for a workspace (for list views)
+   * Get the agent IDs for a workspace. Workspace payloads carry agent IDs only;
+   * detailed agent state is served by agent endpoints.
    */
-  private async getWorkspaceAgentSummary(
-    workspaceId: WorkspaceId,
-  ): Promise<WorkspaceAgentSummary | undefined> {
+  private async getWorkspaceAgentIds(workspaceId: WorkspaceId): Promise<string[]> {
     try {
-      // Get list of agent IDs for this workspace
-      const agentIds = await agentPersistence.listAgents(workspaceId);
-
-      if (agentIds.length === 0) {
-        return undefined;
-      }
-
-      // Load minimal agent data for each (agentPersistence caches these)
-      const agents: WorkspaceAgentInfo[] = [];
-
-      // Load agents in parallel for performance
-      const loadResults = await Promise.all(
-        agentIds.map(async (agentId) => {
-          try {
-            const result = await agentPersistence.loadAgent(agentId as AgentId, workspaceId);
-            if (result.success && result.data) {
-              return result.data;
-            }
-            return null;
-          } catch {
-            return null;
-          }
-        }),
-      );
-
-      // Build a map of in-memory agent states for real-time overlay.
-      // Persisted status can be stale (e.g., "idle", "completed") while the agent
-      // is actually "streaming" or "responding" in memory.
-      let inMemoryStateMap: Map<string, { status: string; isStreaming: boolean; isResponding: boolean }> | undefined;
-      try {
-        const { AgentBackendHandler } = await import(
-          '../../agent/main/agent-backend-handler.service'
-        );
-        const handler = AgentBackendHandler.getInstance();
-        const activeStreamAgentIds = new Set(handler.getActiveStreams().map(s => s.agentId));
-        const inMemorySessions = await handler.listAgents(workspaceId as string);
-        if (inMemorySessions.length > 0) {
-          inMemoryStateMap = new Map();
-          for (const session of inMemorySessions) {
-            if (session.id) {
-              const agentId = String(session.id);
-              // Check active streams for real-time streaming state
-              const isCurrentlyStreaming = activeStreamAgentIds.has(agentId);
-              inMemoryStateMap.set(agentId, {
-                status: isCurrentlyStreaming ? 'streaming' : String(session.status || 'active'),
-                isStreaming: isCurrentlyStreaming || !!session.isStreaming,
-                isResponding: isCurrentlyStreaming || !!(session as any).isResponding,
-              });
-            }
-          }
-        }
-      } catch {
-        // AgentBackendHandler may not be available yet, use persisted status
-      }
-
-      for (const agentData of loadResults) {
-        if (agentData) {
-          // Convert Date to string if needed
-          const lastActivityRaw = agentData.lastActivity || agentData.updatedAt;
-          const lastActivity =
-            lastActivityRaw instanceof Date
-              ? lastActivityRaw.toISOString()
-              : typeof lastActivityRaw === 'string'
-                ? lastActivityRaw
-                : undefined;
-
-          // Overlay in-memory state if available (more current than disk)
-          const inMemoryState = inMemoryStateMap?.get(String(agentData.id));
-          const status = inMemoryState?.status || agentData.status || 'ready';
-
-          // Debug: log agent status resolution for WebSocket clients
-          if (inMemoryState) {
-            logger.debug('Agent summary status resolution', {
-              agentId: agentData.id,
-              workspaceId,
-              resolvedStatus: status,
-              inMemoryStatus: inMemoryState.status,
-              persistedStatus: agentData.status,
-              isStreaming: inMemoryState.isStreaming,
-              isResponding: inMemoryState.isResponding,
-            });
-          }
-
-          agents.push({
-            id: agentData.id,
-            name: agentData.name || 'Agent',
-            status,
-            specialist: agentData.metadata?.specialist as WorkspaceAgentInfo['specialist'],
-            lastActivity,
-            isStreaming: inMemoryState?.isStreaming ?? false,
-            isResponding: inMemoryState?.isResponding ?? false,
-          });
-        }
-      }
-
-      return {
-        count: agents.length,
-        agents,
-      };
+      return await agentPersistence.listAgents(workspaceId);
     } catch (error) {
-      logger.warn('Failed to load agent summary for workspace', {
+      logger.warn('Failed to list agent IDs for workspace', {
         workspaceId,
         error: (error as Error).message,
       });
-      return undefined;
+      return [];
     }
   }
 
   /**
-   * Get task stats for a workspace (for list views - like flame graph progress)
+   * Convert a workspace to its metadata-only payload shape: high-frequency
+   * summary fields are stripped and agent summary carries IDs only.
    */
-  private async getWorkspaceTaskStats(
-    workspaceId: WorkspaceId,
-  ): Promise<WorkspaceTaskStats | undefined> {
-    try {
-      // Get notes for this workspace
-      const result = await notesService.listNotes(workspaceId);
-      if (!result.ok) {
-        // PERF: Changed from INFO to DEBUG to reduce log spam during bulk operations
-        logger.debug('[TaskStats] Failed to list notes', { workspaceId, error: result.error });
-        return undefined;
-      }
+  private toWorkspaceMetadata(workspace: Workspace, agentIds?: string[]): WorkspaceMetadata {
+    const {
+      diffs: _diffs,
+      diffSummary: _diffSummary,
+      agentSummary: _agentSummary,
+      taskStats: _taskStats,
+      gitSummary: _gitSummary,
+      ...metadata
+    } = workspace;
 
-      const notes = result.data.notes;
-
-      // Use the shared canonical filter (see $shared/utils/task-stats.ts).
-      // This keeps the server in sync with every client-side progress indicator.
-      const taskNotes = getSpecTaskNotes(notes);
-
-      if (taskNotes.length === 0) {
-        return undefined;
-      }
-
-      let total = 0;
-      let completed = 0;
-      let inProgress = 0;
-      const inProgressTasks: WorkspaceTaskInfo[] = [];
-      const notStartedTasks: WorkspaceTaskInfo[] = [];
-      const completedTasks: WorkspaceTaskInfo[] = [];
-
-      for (const note of taskNotes) {
-        const status = note.metadata?.task?.status;
-        if (status && EXCLUDED_STATUSES.has(status)) continue;
-        total++;
-        const taskInfo: WorkspaceTaskInfo = {
-          title: note.title || 'Untitled task',
-          status: (status ?? 'not_started') as WorkspaceTaskInfo['status'],
-        };
-        if (status === 'complete') {
-          completed++;
-          completedTasks.push(taskInfo);
-        } else if (status && IN_PROGRESS_STATUSES.has(status)) {
-          inProgress++;
-          inProgressTasks.push(taskInfo);
-        } else {
-          notStartedTasks.push(taskInfo);
-        }
-      }
-
-      if (total === 0) {
-        return undefined;
-      }
-
-      // Order: in_progress first, then not_started, then completed
-      const tasks = [...inProgressTasks, ...notStartedTasks, ...completedTasks];
-
-      // PERF: Changed from INFO to DEBUG to reduce log spam during bulk operations
-      // TaskStats is computed for every workspace on every list call, which creates excessive logs
-      logger.debug('[TaskStats] Computed stats for workspace', {
-        workspaceId,
-        total,
-        completed,
-        inProgress,
-        taskNoteCount: taskNotes.length,
-      });
-
-      return { total, completed, inProgress, tasks };
-    } catch (error) {
-      logger.warn('Failed to load task stats for workspace', {
-        workspaceId,
-        error: (error as Error).message,
-      });
-      return undefined;
-    }
+    return {
+      ...metadata,
+      ...(agentIds && agentIds.length > 0 ? { agentSummary: { agentIds } } : {}),
+    };
   }
 
   /**
-   * Get git summary for a workspace (for list views - commits ahead/behind)
+   * Strip high-frequency summary fields from a workspace so returned payloads
+   * stay metadata-only. Fetch summaries on demand via dedicated endpoints.
    */
-  private async getWorkspaceGitSummary(
-    workspace: Workspace,
-  ): Promise<WorkspaceGitSummary | undefined> {
-    try {
-      const worktreePath = workspace.worktreePath;
-      if (!worktreePath) {
-        return undefined;
-      }
+  private stripWorkspaceSummaries(workspace: Workspace): Workspace {
+    const {
+      diffs: _diffs,
+      diffSummary: _diffSummary,
+      agentSummary: _agentSummary,
+      taskStats: _taskStats,
+      gitSummary: _gitSummary,
+      ...metadata
+    } = workspace;
 
-      // Get ahead/behind counts
-      const baseRef = workspace.baseRef || 'main';
-
-      // Get number of commits ahead of base
-      let ahead = 0;
-      let behind = 0;
-      let hasUnpushed = false;
-      let commits: { sha: string; title: string }[] = [];
-      const devNull = process.platform === 'win32' ? 'NUL' : '/dev/null';
-
-      try {
-        // Count commits ahead of baseRef
-        const { stdout: aheadOutput } = await execAsync(
-          `git rev-list --count ${baseRef}..HEAD 2>${devNull} || echo "0"`,
-          { cwd: worktreePath },
-        );
-        ahead = parseInt(aheadOutput.trim(), 10) || 0;
-
-        // Count commits behind baseRef
-        const { stdout: behindOutput } = await execAsync(
-          `git rev-list --count HEAD..${baseRef} 2>${devNull} || echo "0"`,
-          { cwd: worktreePath },
-        );
-        behind = parseInt(behindOutput.trim(), 10) || 0;
-
-        // Check if there are unpushed commits (compare with remote tracking branch)
-        const { stdout: trackingBranch } = await execAsync(
-          `git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>${devNull} || echo ""`,
-          { cwd: worktreePath },
-        );
-
-        if (trackingBranch.trim()) {
-          const { stdout: unpushedCount } = await execAsync(
-            `git rev-list --count ${trackingBranch.trim()}..HEAD 2>${devNull} || echo "0"`,
-            { cwd: worktreePath },
-          );
-          hasUnpushed = (parseInt(unpushedCount.trim(), 10) || 0) > 0;
-        } else {
-          // No upstream tracking branch - all commits are unpushed
-          hasUnpushed = ahead > 0;
-        }
-
-        // Get commit titles for tooltips (only if we have commits ahead, limit to 6)
-        if (ahead > 0) {
-          const { stdout: logOutput } = await execAsync(
-            `git log ${baseRef}..HEAD --format="%h|%s" -n 6 2>${devNull} || echo ""`,
-            { cwd: worktreePath },
-          );
-          commits = logOutput
-            .trim()
-            .split('\n')
-            .filter(Boolean)
-            .map((line) => {
-              const [sha, ...titleParts] = line.split('|');
-              return { sha: sha || '', title: titleParts.join('|') || '' };
-            });
-        }
-      } catch {
-        // Git commands failed - likely not a git repo or no commits
-        return undefined;
-      }
-
-      if (ahead === 0 && behind === 0) {
-        return undefined;
-      }
-
-      return { ahead, behind, hasUnpushed, commits };
-    } catch (error) {
-      logger.warn('Failed to load git summary for workspace', {
-        workspaceId: workspace.id,
-        error: (error as Error).message,
-      });
-      return undefined;
-    }
+    return metadata;
   }
 
-  private scheduleBackgroundEnrichment(workspaces: Workspace[]): void {
+  private scheduleBackgroundEnrichment(workspaces: WorkspaceMetadata[]): void {
     const candidates = workspaces.filter((workspace) => this.workspaceNeedsEnrichment(workspace));
 
     if (candidates.length === 0) {
@@ -2766,7 +2383,6 @@ task:
       return;
     }
 
-    this.backgroundSummaryHydratedAt.delete(workspaceId);
     this.queueBackgroundEnrichment(workspaceId, reason);
     this.processBackgroundEnrichmentQueue();
   }
@@ -2787,7 +2403,7 @@ task:
     logger.debug('Queued background enrichment', { workspaceId, reason });
   }
 
-  private workspaceNeedsEnrichment(workspace: Workspace): boolean {
+  private workspaceNeedsEnrichment(workspace: WorkspaceMetadata): boolean {
     if (workspace.status === WorkspaceStatus.Archived) {
       return false;
     }
@@ -2796,7 +2412,7 @@ task:
       Boolean(workspace.repositoryPath) &&
       (!workspace.repositoryOwner || !workspace.repositoryName);
 
-    const hasPersistedDiffs = Array.isArray(workspace.diffs) && workspace.diffs.length > 0;
+    const hasPersistedDiffs = false;
 
     // Check if workspace has an open PR that's missing ciStatus or reviewDecision
     const needsPREnrichment = Boolean(
@@ -2807,23 +2423,7 @@ task:
         workspace.activePullRequest.reviewDecision === undefined),
     );
 
-    const needsListSummaryHydration = this.needsListSummaryHydration(workspace);
-
-    return missingGitInfo || hasPersistedDiffs || needsPREnrichment || needsListSummaryHydration;
-  }
-
-  private needsListSummaryHydration(workspace: Workspace): boolean {
-    const lastHydratedAt = this.backgroundSummaryHydratedAt.get(workspace.id);
-    if (lastHydratedAt && Date.now() - lastHydratedAt < this.BACKGROUND_SUMMARY_TTL_MS) {
-      return false;
-    }
-
-    return (
-      workspace.diffSummary === undefined ||
-      workspace.agentSummary === undefined ||
-      workspace.taskStats === undefined ||
-      workspace.gitSummary === undefined
-    );
+    return missingGitInfo || hasPersistedDiffs || needsPREnrichment;
   }
 
   private processBackgroundEnrichmentQueue(): void {
@@ -2899,6 +2499,7 @@ task:
 
       let updatedWorkspace = workspace;
       let updated = false;
+      const canonicalUpdates: Partial<Workspace> = {};
       const rendererUpdates: BackgroundEnrichmentWorkspaceUpdates = {};
 
       if (workspace.repositoryPath && (!workspace.repositoryOwner || !workspace.repositoryName)) {
@@ -2916,6 +2517,8 @@ task:
             repositoryOwner: owner,
             repositoryName: name,
           };
+          canonicalUpdates.repositoryOwner = owner;
+          canonicalUpdates.repositoryName = name;
           rendererUpdates.repositoryOwner = owner;
           rendererUpdates.repositoryName = name;
           updated = true;
@@ -2927,6 +2530,7 @@ task:
           ...updatedWorkspace,
           diffs: undefined,
         };
+        canonicalUpdates.diffs = undefined;
         updated = true;
       }
 
@@ -2985,8 +2589,13 @@ task:
                   activePullRequest: undefined,
                   pullRequests: updatedPullRequests,
                 };
+                canonicalUpdates.prNumber = undefined;
+                canonicalUpdates.prUrl = undefined;
+                canonicalUpdates.prStatus = undefined;
+                canonicalUpdates.activePullRequest = undefined;
+                canonicalUpdates.pullRequests = updatedPullRequests;
                 updated = true;
-                await this.saveWorkspace(updatedWorkspace);
+                await this.saveWorkspaceUpdates(workspaceId, canonicalUpdates);
                 await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
                   ...rendererUpdates,
                   activePullRequest: undefined,
@@ -3069,11 +2678,14 @@ task:
             }
 
             rendererUpdates.activePullRequest = enrichedPR;
+            canonicalUpdates.activePullRequest = enrichedPR;
             if (enrichedPR.status !== pr.status) {
               rendererUpdates.prStatus = enrichedPR.status;
+              canonicalUpdates.prStatus = enrichedPR.status;
             }
             if (updatedWorkspace.pullRequests) {
               rendererUpdates.pullRequests = updatedWorkspace.pullRequests;
+              canonicalUpdates.pullRequests = updatedWorkspace.pullRequests;
             }
             updated = true;
             logger.debug('Enriched PR status for workspace', {
@@ -3093,17 +2705,11 @@ task:
         }
       }
 
-      if (this.needsListSummaryHydration(updatedWorkspace)) {
-        const listWorkspace = await this.buildListWorkspace(updatedWorkspace);
-        rendererUpdates.diffSummary = listWorkspace.diffSummary;
-        rendererUpdates.agentSummary = listWorkspace.agentSummary;
-        rendererUpdates.taskStats = listWorkspace.taskStats;
-        rendererUpdates.gitSummary = listWorkspace.gitSummary;
-        this.backgroundSummaryHydratedAt.set(workspaceId, Date.now());
-      }
-
       if (updated) {
-        await this.saveWorkspace(updatedWorkspace);
+        const savedWorkspace = await this.saveWorkspaceUpdates(workspaceId, canonicalUpdates);
+        if (savedWorkspace) {
+          updatedWorkspace = savedWorkspace;
+        }
       }
 
       await this.broadcastBackgroundEnrichmentUpdate(workspaceId, rendererUpdates);
@@ -3243,15 +2849,13 @@ task:
             const updatedPullRequests = (workspace.pullRequests || []).filter(
               (p) => p.number !== pr.number,
             );
-            const clearedWorkspace = {
-              ...workspace,
+            await this.saveWorkspaceUpdates(workspaceId, {
               prNumber: undefined,
               prUrl: undefined,
               prStatus: undefined,
               activePullRequest: undefined,
               pullRequests: updatedPullRequests,
-            };
-            await this.saveWorkspace(clearedWorkspace);
+            });
             await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
               activePullRequest: undefined,
               prNumber: undefined,
@@ -3308,7 +2912,7 @@ task:
         enrichedPR.mergeableState !== pr.mergeableState ||
         enrichedPR.status !== pr.status
       ) {
-        let updatedWorkspace = {
+        let updatedWorkspace: Workspace = {
           ...workspace,
           activePullRequest: enrichedPR,
           ...(enrichedPR.status !== pr.status && { prStatus: enrichedPR.status }),
@@ -3324,7 +2928,18 @@ task:
           };
         }
 
-        await this.saveWorkspace(updatedWorkspace);
+        const canonicalUpdates: Partial<Workspace> = {
+          activePullRequest: enrichedPR,
+          ...(enrichedPR.status !== pr.status && { prStatus: enrichedPR.status }),
+        };
+        if (updatedWorkspace.pullRequests) {
+          canonicalUpdates.pullRequests = updatedWorkspace.pullRequests;
+        }
+
+        const savedWorkspace = await this.saveWorkspaceUpdates(workspaceId, canonicalUpdates);
+        if (savedWorkspace) {
+          updatedWorkspace = savedWorkspace;
+        }
 
         // Broadcast to renderer windows using the same format as background enrichment
         const rendererUpdates: BackgroundEnrichmentWorkspaceUpdates = {
@@ -3389,14 +3004,7 @@ task:
 
       if (id === CHIEF_WORKSPACE_ID) {
         const workspace = getChiefWorkspace();
-        this.workspaceCache.set(id, { workspace, timestamp: Date.now() });
         return { ok: true, data: workspace };
-      }
-
-      // Check short-lived cache first (for bulk operations like task delegation)
-      const cached = this.workspaceCache.get(id);
-      if (cached && Date.now() - cached.timestamp < this.WORKSPACE_CACHE_TTL) {
-        return { ok: true, data: cached.workspace };
       }
 
       // Use repository to get workspace
@@ -3412,6 +3020,7 @@ task:
       workspace = await this.repairWorkspaceActivityTimestamp(workspace);
 
       let updated = false;
+      const canonicalUpdates: Partial<Workspace> = {};
 
       // Validate worktree path exists, clear it if not
       // Skip validation for remote workspaces — their worktree paths only exist on the SSH host
@@ -3432,6 +3041,7 @@ task:
             ...workspace,
             worktreePath: undefined,
           };
+          canonicalUpdates.worktreePath = undefined;
           updated = true;
         }
       } else if (
@@ -3461,6 +3071,8 @@ task:
               repositoryOwner: newOwner,
               repositoryName: newName,
             };
+            canonicalUpdates.repositoryOwner = newOwner;
+            canonicalUpdates.repositoryName = newName;
             updated = true;
           }
         }
@@ -3477,28 +3089,26 @@ task:
       // We could do a deeper comparison if needed
       if (newDiffsLength > 0 && newDiffsLength !== existingDiffsLength) {
         workspace = { ...workspace, diffs };
+        canonicalUpdates.diffs = diffs;
         updated = true;
       } else if (newDiffsLength === 0 && existingDiffsLength > 0) {
         // Clear diffs if they were removed
         workspace = { ...workspace, diffs: [] };
+        canonicalUpdates.diffs = [];
         updated = true;
       }
 
       // Save enriched data back if updated
       if (updated) {
-        await this.saveWorkspace(workspace);
+        const savedWorkspace = await this.saveWorkspaceUpdates(id, canonicalUpdates);
+        if (savedWorkspace) {
+          workspace = savedWorkspace;
+        }
       }
 
-      const diffSummary = await this.getWorkspaceDiffSummary(workspace.id, workspace.worktreePath);
-      const workspaceWithSummary = {
-        ...workspace,
-        diffSummary: diffSummary ?? undefined,
-      };
-
-      // Update short-lived cache for bulk operations
-      this.workspaceCache.set(id, { workspace: workspaceWithSummary, timestamp: Date.now() });
-
-      return { ok: true, data: workspaceWithSummary };
+      // Workspace payloads are metadata-only; diff/git/task summaries are
+      // fetched on demand via dedicated endpoints.
+      return { ok: true, data: this.stripWorkspaceSummaries(workspace) };
     } catch (error) {
       logger.error('Failed to get workspace', error as Error, { workspaceId: id });
       return {
@@ -3554,20 +3164,31 @@ task:
           requestedPrUrl === null || requestedPrUrl === '' ? undefined : requestedPrUrl;
       }
 
-      const workspace: Workspace = {
-        ...existingResult.data,
-        ...(rest as any),
-        prStatus: normalizedPrStatus,
-        prUrl: normalizedPrUrl,
-        id: request.id, // Ensure ID doesn't change
+      const updates: Partial<Workspace> = {
+        ...(rest as Partial<Workspace>),
         updatedAt: new Date().toISOString(),
       };
+      if (requestedPrStatus !== undefined) {
+        updates.prStatus = normalizedPrStatus;
+      }
+      if (requestedPrUrl !== undefined) {
+        updates.prUrl = normalizedPrUrl;
+      }
 
       // Save updated workspace
-      await this.saveWorkspace(workspace);
-
-      // Invalidate cache on update
-      this.workspaceCache.delete(workspace.id);
+      const savedWorkspace = await this.saveWorkspaceUpdates(request.id as WorkspaceId, updates);
+      if (!savedWorkspace) {
+        return {
+          ok: false,
+          error: 'Workspace not found',
+        };
+      }
+      // Strip summaries that may linger in older persisted JSON so the
+      // returned payload stays metadata-only.
+      const workspace: Workspace = this.stripWorkspaceSummaries({
+        ...existingResult.data,
+        ...savedWorkspace,
+      });
 
       // Emit event
       mainDispatch(
@@ -3946,18 +3567,24 @@ task:
         return workspaceResult;
       }
 
-      const workspace = {
-        ...workspaceResult.data,
+      const updates: Partial<Workspace> = {
         status: WorkspaceStatus.Archived,
         archived: true,
         archivedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
-      await this.saveWorkspace(workspace);
-
-      // Invalidate cache on archive
-      this.workspaceCache.delete(id);
+      const savedWorkspace = await this.saveWorkspaceUpdates(id, updates);
+      if (!savedWorkspace) {
+        return {
+          ok: false,
+          error: 'Workspace not found',
+        };
+      }
+      const workspace: Workspace = {
+        ...workspaceResult.data,
+        ...savedWorkspace,
+      };
 
       // Emit event
       mainDispatch(
@@ -3988,18 +3615,24 @@ task:
         return workspaceResult;
       }
 
-      const workspace = {
-        ...workspaceResult.data,
+      const updates: Partial<Workspace> = {
         status: WorkspaceStatus.Active,
         archived: false,
         archivedAt: undefined,
         updatedAt: new Date().toISOString(),
       };
 
-      await this.saveWorkspace(workspace);
-
-      // Invalidate cache on unarchive
-      this.workspaceCache.delete(id);
+      const savedWorkspace = await this.saveWorkspaceUpdates(id, updates);
+      if (!savedWorkspace) {
+        return {
+          ok: false,
+          error: 'Workspace not found',
+        };
+      }
+      const workspace: Workspace = {
+        ...workspaceResult.data,
+        ...savedWorkspace,
+      };
 
       // Emit event
       mainDispatch(
@@ -4277,10 +3910,8 @@ task:
           error: this.extractErrorMessage(error),
         });
 
-        workspace.worktreePath = undefined;
-
         try {
-          await this.repository.save(workspace);
+          await this.saveWorkspaceUpdates(workspace.id, { worktreePath: undefined });
         } catch (saveError) {
           logger.warn(
             'Failed to persist cleared worktree path during purge; leaving workspace intact',
@@ -4482,10 +4113,6 @@ task:
         }
       }
 
-      // Clear all caches after purge
-      this.workspaceCache.clear();
-      this.repository.clearListCache();
-
       logger.info('Workspace purge completed', { removed, orphans });
 
       return { ok: true, data: { removed, orphans } };
@@ -4566,6 +4193,7 @@ task:
   private clearWorkspaceCache(workspaceId: WorkspaceId): void {
     // Remove from cache
     this.lastContextCache.delete(workspaceId);
+    this.dirtyBackgroundEnrichment.delete(workspaceId);
 
     // Remove from order tracking
     const index = this.contextCacheOrder.indexOf(workspaceId);
@@ -4573,10 +4201,39 @@ task:
       this.contextCacheOrder.splice(index, 1);
     }
 
+    let queueIndex = this.backgroundEnrichmentQueue.indexOf(workspaceId);
+    while (queueIndex > -1) {
+      this.backgroundEnrichmentQueue.splice(queueIndex, 1);
+      queueIndex = this.backgroundEnrichmentQueue.indexOf(workspaceId);
+    }
+
     // Cancel any pending background enrichment for this workspace
     this.pendingBackgroundEnrichment.delete(workspaceId);
 
     logger.debug('Cleared workspace cache', { workspaceId });
+  }
+
+  /**
+   * Drop heavyweight in-memory caches for workspaces that no window/tab reports as open.
+   * Persisted workspace data is untouched; closed workspaces will be re-read on demand.
+   */
+  public trimCachesToOpenWorkspaces(openWorkspaceIds: Iterable<string>): void {
+    const openWorkspaceIdSet = new Set(openWorkspaceIds);
+    let evictedContexts = 0;
+
+    for (const workspaceId of Array.from(this.lastContextCache.keys())) {
+      if (!openWorkspaceIdSet.has(workspaceId)) {
+        this.clearWorkspaceCache(workspaceId as WorkspaceId);
+        evictedContexts += 1;
+      }
+    }
+
+    if (evictedContexts > 0) {
+      logger.debug('Trimmed workspace metadata caches to open workspaces', {
+        evictedContexts,
+        openWorkspaceCount: openWorkspaceIdSet.size,
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -4586,12 +4243,18 @@ task:
   /** Handle workspace:deleted domain event (saga entry point). */
   public onWorkspaceDeleted({ workspaceId }: { workspaceId: WorkspaceId }): void {
     this.clearWorkspaceCache(workspaceId);
-    this.workspaceCache.delete(workspaceId);
     this.recentlyDeletedWorkspaces.add(workspaceId);
-    setTimeout(() => {
+    const existingTimer = this.recentlyDeletedCleanupTimers.get(workspaceId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    const cleanupTimer = setTimeout(() => {
       this.recentlyDeletedWorkspaces.delete(workspaceId);
+      this.recentlyDeletedCleanupTimers.delete(workspaceId);
       logger.debug('Cleared workspace from recently deleted tracking', { workspaceId });
     }, this.RECENTLY_DELETED_TTL);
+    this.recentlyDeletedCleanupTimers.set(workspaceId, cleanupTimer);
   }
 
   /** Handle note:created domain event (saga entry point). */
@@ -4664,10 +4327,14 @@ task:
     this.pendingBackgroundEnrichment.clear();
     this.backgroundEnrichmentQueue.length = 0;
     this.activeBackgroundEnrichmentCount = 0;
-    this.backgroundSummaryHydratedAt.clear();
     this.dirtyBackgroundEnrichment.clear();
+    for (const timeout of this.recentlyDeletedCleanupTimers.values()) {
+      clearTimeout(timeout);
+    }
+    this.recentlyDeletedCleanupTimers.clear();
+    this.recentlyDeletedWorkspaces.clear();
 
-    // Clear all caches
+    // Clear metadata/UI-only caches.
     this.lastContextCache.clear();
     this.contextCacheOrder = [];
 
@@ -4682,6 +4349,33 @@ task:
     };
 
     await this.repository.save(sanitizedWorkspace);
+  }
+
+  private async saveWorkspaceUpdates(
+    workspaceId: WorkspaceId,
+    updates: Partial<Workspace>,
+  ): Promise<Workspace | null> {
+    if (workspaceId === CHIEF_WORKSPACE_ID) {
+      return {
+        ...getChiefWorkspace(),
+        ...updates,
+        id: CHIEF_WORKSPACE_ID,
+      };
+    }
+
+    const currentWorkspace = await this.repository.findById(workspaceId);
+    if (!currentWorkspace) {
+      return null;
+    }
+
+    const updatedWorkspace: Workspace = {
+      ...currentWorkspace,
+      ...updates,
+      id: currentWorkspace.id,
+    };
+
+    await this.saveWorkspace(updatedWorkspace);
+    return updatedWorkspace;
   }
 
   /**

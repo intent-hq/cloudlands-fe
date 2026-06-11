@@ -31,6 +31,14 @@ export interface AgentSessionSendMessageOptions {
   model?: string;
   agentId?: string;
   contextReferences?: AgentSessionContextReference[];
+  /**
+   * Pre-generated logical app message ID for the user message. When the send
+   * path stages an optimistic user message, the canonical user message reuses
+   * this ID so the two merge via appMessageId dedup instead of duplicating.
+   */
+  userAppMessageId?: string;
+  /** Local ID of the staged optimistic user message, used to mark it with an error on send failure. */
+  optimisticMessageId?: string;
 }
 
 export interface AgentSessionForkOptions {

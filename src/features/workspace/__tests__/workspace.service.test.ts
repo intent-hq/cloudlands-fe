@@ -21,6 +21,7 @@ import {
   workspaceArchived,
 } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
+import { type Workspace, WorkspaceStatus } from '../../../shared/types';
 
 // Mock mainDispatch
 vi.mock('../../../store/main/redux-store-bridge', () => ({
@@ -128,6 +129,22 @@ describe('WorkspaceService', () => {
   let service: WorkspaceService;
   let workspaceRepository: InMemoryWorkspaceRepository;
   let notesRepository: InMemoryNotesRepository;
+
+  async function saveBackingWorkspace(
+    workspaceId: Workspace['id'],
+    patch: Partial<Workspace>,
+  ): Promise<void> {
+    const backingWorkspace = await workspaceRepository.findById(workspaceId);
+    expect(backingWorkspace).not.toBeNull();
+    if (!backingWorkspace) return;
+
+    await workspaceRepository.save({
+      ...backingWorkspace,
+      ...patch,
+      id: workspaceId,
+    });
+  }
+
   beforeEach(() => {
     workspaceRepository = new InMemoryWorkspaceRepository();
     notesRepository = new InMemoryNotesRepository();
@@ -410,6 +427,26 @@ describe('WorkspaceService', () => {
       expect(result.ok).toBe(true);
       expect(buildListWorkspacesWithConcurrencySpy).toHaveBeenCalledTimes(1);
     });
+
+    it('should read fresh backing repository state on consecutive list calls', async () => {
+      const created = await service.createWorkspace({ title: 'Original List Title' });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+
+      const firstList = await service.listWorkspaces();
+      expect(firstList.ok).toBe(true);
+
+      await saveBackingWorkspace(created.data.id, { title: 'External List Title' });
+
+      const secondList = await service.listWorkspaces();
+
+      expect(secondList.ok).toBe(true);
+      if (secondList.ok) {
+        expect(secondList.data.workspaces.find((w) => w.id === created.data.id)?.title).toBe(
+          'External List Title',
+        );
+      }
+    });
   });
 
   describe('getWorkspace', () => {
@@ -440,6 +477,27 @@ describe('WorkspaceService', () => {
       if (result.ok) {
         expect(result.data.id).toBe(created.data.id);
         expect(result.data.title).toBe('Test Workspace');
+      }
+    });
+
+    it('should read fresh backing repository state on consecutive get calls', async () => {
+      const created = await service.createWorkspace({ title: 'Original Title' });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+
+      const firstResult = await service.getWorkspace(created.data.id);
+      expect(firstResult.ok).toBe(true);
+      if (firstResult.ok) {
+        expect(firstResult.data.title).toBe('Original Title');
+      }
+
+      await saveBackingWorkspace(created.data.id, { title: 'External Title' });
+
+      const secondResult = await service.getWorkspace(created.data.id);
+
+      expect(secondResult.ok).toBe(true);
+      if (secondResult.ok) {
+        expect(secondResult.data.title).toBe('External Title');
       }
     });
 
@@ -504,6 +562,71 @@ describe('WorkspaceService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toContain('not found');
+      }
+    });
+
+    it('should merge updates with fresh backing repository state', async () => {
+      const created = await service.createWorkspace({ title: 'Original Title' });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+
+      await service.getWorkspace(created.data.id);
+      await saveBackingWorkspace(created.data.id, { branch: 'external-branch' });
+
+      const result = await service.updateWorkspace({
+        id: created.data.id,
+        title: 'Updated Title',
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.title).toBe('Updated Title');
+        expect(result.data.branch).toBe('external-branch');
+      }
+    });
+
+    it('should preserve backing changes that land after the initial update read', async () => {
+      const created = await service.createWorkspace({ title: 'Original Title' });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+
+      await saveBackingWorkspace(created.data.id, { lastActivity: created.data.createdAt });
+
+      const originalFindById = workspaceRepository.findById.bind(workspaceRepository);
+      const originalSave = workspaceRepository.save.bind(workspaceRepository);
+      let injectedConcurrentChange = false;
+      const findByIdSpy = vi.spyOn(workspaceRepository, 'findById').mockImplementation(async (id) => {
+        const workspace = await originalFindById(id);
+        if (id === created.data.id && workspace && !injectedConcurrentChange) {
+          injectedConcurrentChange = true;
+          await originalSave({
+            ...workspace,
+            branch: 'concurrent-branch-change',
+            prUrl: 'https://github.com/test/repo/pull/1',
+          });
+        }
+        return workspace;
+      });
+
+      try {
+        const result = await service.updateWorkspace({
+          id: created.data.id,
+          title: 'Updated Title',
+        });
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.data.title).toBe('Updated Title');
+          expect(result.data.branch).toBe('concurrent-branch-change');
+          expect(result.data.prUrl).toBe('https://github.com/test/repo/pull/1');
+        }
+
+        const persisted = await originalFindById(created.data.id);
+        expect(persisted?.title).toBe('Updated Title');
+        expect(persisted?.branch).toBe('concurrent-branch-change');
+        expect(persisted?.prUrl).toBe('https://github.com/test/repo/pull/1');
+      } finally {
+        findByIdSpy.mockRestore();
       }
     });
   });
@@ -584,6 +707,24 @@ describe('WorkspaceService', () => {
       }
     });
 
+    it('should archive fresh backing repository state', async () => {
+      const created = await service.createWorkspace({ title: 'Original Archive Title' });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+
+      await service.getWorkspace(created.data.id);
+      await saveBackingWorkspace(created.data.id, { title: 'External Archive Title' });
+
+      const result = await service.archiveWorkspace(created.data.id);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.title).toBe('External Archive Title');
+        expect(result.data.archived).toBe(true);
+        expect(result.data.status).toBe(WorkspaceStatus.Archived);
+      }
+    });
+
     it('should emit workspace:archived event', async () => {
       const created = await service.createWorkspace({ title: 'Test Workspace' });
 
@@ -599,6 +740,31 @@ describe('WorkspaceService', () => {
           }),
         ),
       );
+    });
+  });
+
+  describe('unarchiveWorkspace', () => {
+    it('should unarchive fresh backing repository state', async () => {
+      const created = await service.createWorkspace({ title: 'Original Unarchive Title' });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+
+      await service.getWorkspace(created.data.id);
+      await saveBackingWorkspace(created.data.id, {
+        title: 'External Unarchive Title',
+        status: WorkspaceStatus.Archived,
+        archived: true,
+        archivedAt: '2026-06-09T00:00:00.000Z',
+      });
+
+      const result = await service.unarchiveWorkspace(created.data.id);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.title).toBe('External Unarchive Title');
+        expect(result.data.archived).toBe(false);
+        expect(result.data.status).toBe(WorkspaceStatus.Active);
+      }
     });
   });
 });

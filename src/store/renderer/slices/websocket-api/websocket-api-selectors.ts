@@ -38,6 +38,11 @@ export const selectWebSocketApiDiscoveryCountdownState = store.createSelector((s
   discoveryCountdownNow: state.websocketApi.discoveryCountdownNow,
 }));
 
+export const selectWebSocketApiActiveDiscoveryExpiresAt = store.createSelector((state) => {
+  const { discoveryEnabled, discoveryExpiresAt } = state.websocketApi;
+  return discoveryEnabled && discoveryExpiresAt ? discoveryExpiresAt : null;
+});
+
 export const selectWebSocketApiDiscoveryCountdown = store.createSelector((state) => {
   const { discoveryEnabled, discoveryExpiresAt, discoveryCountdownNow } = state.websocketApi;
   if (!discoveryEnabled || !discoveryExpiresAt || !discoveryCountdownNow) return "";

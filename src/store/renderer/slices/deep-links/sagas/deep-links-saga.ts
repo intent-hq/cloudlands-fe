@@ -31,6 +31,7 @@ import {
 import { WorkspaceId } from "$shared/types/branded-ids";
 import { Logger } from "$shared/logger";
 import { dispatchWindowEvent } from "$lib/utils/window-events";
+import { invoke } from "$shared/generated/ipc-client";
 
 const logger = new Logger("DeepLinkSaga");
 
@@ -129,10 +130,7 @@ function replaceBrowserUrl(url: string): void {
 async function validateWorkspace(
   id: string,
 ): Promise<{ success: boolean; exists: boolean }> {
-  return (window as any).electronAPI.invoke(
-    "deep-link:validate-workspace",
-    { id },
-  );
+  return invoke("deep-link:validate-workspace", { id });
 }
 
 async function showSuccessToast(message: string): Promise<void> {

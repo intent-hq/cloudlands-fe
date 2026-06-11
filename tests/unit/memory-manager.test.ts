@@ -132,6 +132,49 @@ describe('MemoryManager', () => {
       vi.advanceTimersByTime(1000);
       expect(callback).not.toHaveBeenCalled();
     });
+
+    it('should untrack global timers when returned cleanup is called', () => {
+      const callback = vi.fn();
+
+      const cleanup = manager.registerTimer(callback, 1000, 'timeout');
+      expect(manager.getMemoryReport().resourceCount).toBe(1);
+
+      cleanup();
+      cleanup();
+
+      expect(manager.getMemoryReport().resourceCount).toBe(0);
+      vi.advanceTimersByTime(1000);
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('should untrack one-shot global timers after they fire', () => {
+      const callback = vi.fn();
+
+      manager.registerTimer(callback, 1000, 'timeout');
+      expect(manager.getMemoryReport().resourceCount).toBe(1);
+
+      vi.advanceTimersByTime(1000);
+
+      expect(callback).toHaveBeenCalledOnce();
+      expect(manager.getMemoryReport().resourceCount).toBe(0);
+    });
+  });
+
+  describe('Global Listener Cleanup Handles', () => {
+    it('should untrack global listeners when returned cleanup is called', () => {
+      const element = new EventTarget();
+      const handler = vi.fn();
+
+      const cleanup = manager.registerListener(element, 'click', handler);
+      expect(manager.getMemoryReport().resourceCount).toBe(1);
+
+      cleanup();
+      cleanup();
+
+      expect(manager.getMemoryReport().resourceCount).toBe(0);
+      element.dispatchEvent(new Event('click'));
+      expect(handler).not.toHaveBeenCalled();
+    });
   });
 
   describe('Subscription Management', () => {

@@ -67,6 +67,16 @@ vi.mock('$store/renderer/slices/unread-tracking/unread-tracking-selectors', () =
   selectUnreadAgentIdsForWorkspace: { select: vi.fn(() => []) },
 }));
 
+vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
+  selectWorkspaceTasksByWorkspaceId: Object.assign(
+    () => mocks.readable(() => ({})),
+    { select: vi.fn(() => ({})) },
+  ),
+  selectWorkspaceTaskProgress: Object.assign(vi.fn(), {
+    select: vi.fn(() => ({ total: 0, completed: 0, inProgress: 0 })),
+  }),
+}));
+
 vi.mock('$store/renderer/slices/permission/permission-selectors', () => ({
   selectPermissionRequests: () => mocks.readable(() => []),
 }));

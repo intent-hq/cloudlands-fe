@@ -11,14 +11,17 @@ import { testSaga } from "redux-saga-test-plan";
 const {
   activeStreamsListeners,
   startPollingMock,
+  stopPollingMock,
 } = vi.hoisted(() => ({
   activeStreamsListeners: new Set<() => void>(),
   startPollingMock: vi.fn(),
+  stopPollingMock: vi.fn(),
 }));
 
 vi.mock("$features/agent/services/active-streams-tracker", () => ({
   activeStreamsTracker: {
     startPolling: startPollingMock,
+    stopPolling: stopPollingMock,
     subscribe: (listener: () => void) => {
       activeStreamsListeners.add(listener);
       return () => activeStreamsListeners.delete(listener);
@@ -64,6 +67,7 @@ describe("sidebarNav persistence sagas", () => {
   beforeEach(() => {
     activeStreamsListeners.clear();
     startPollingMock.mockClear();
+    stopPollingMock.mockClear();
   });
 
   it("replays persisted sidebar UI hydration for an already-active workspace", () => {
@@ -226,5 +230,6 @@ describe("sidebarNav persistence sagas", () => {
     task.cancel();
     await task.toPromise();
     expect(activeStreamsListeners.size).toBe(0);
+    expect(stopPollingMock).toHaveBeenCalledTimes(1);
   });
 });

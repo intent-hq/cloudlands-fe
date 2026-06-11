@@ -148,6 +148,8 @@ class GlobalCleanupService {
 
     // Clear all event listeners (best effort)
     this.clearEventListeners();
+    this.cleanupHandlers.clear();
+    this.isInitialized = false;
 
     logger.debug('Global cleanup completed');
   }
@@ -196,15 +198,39 @@ class GlobalCleanupService {
     logger.warn('Force cleanup triggered');
     this.performCleanup();
   }
+
+  /**
+   * Dispose this singleton's own global listeners without running destructive
+   * cleanup handlers. Used by Vite HMR before a replacement module creates a
+   * new singleton instance.
+   */
+  dispose(): void {
+    this.clearEventListeners();
+    this.cleanupHandlers.clear();
+    this.isInitialized = false;
+  }
 }
 
 // Export singleton instance
 export const globalCleanupService = new GlobalCleanupService();
 
+let autoInitializeTimer: ReturnType<typeof setTimeout> | undefined;
+
 // Auto-initialize when imported in browser environment
 if (typeof window !== 'undefined') {
   // Initialize on next tick to ensure all services are loaded
-  setTimeout(() => {
+  autoInitializeTimer = setTimeout(() => {
+    autoInitializeTimer = undefined;
     globalCleanupService.initialize();
   }, 0);
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    if (autoInitializeTimer) {
+      clearTimeout(autoInitializeTimer);
+      autoInitializeTimer = undefined;
+    }
+    globalCleanupService.dispose();
+  });
 }

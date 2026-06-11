@@ -6,6 +6,7 @@
  */
 
 import type { Result, CommandResponse, NoteComment } from '../../shared/types';
+import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 import { COMMENTS_CHANNELS } from '$shared/ipc/channels';
 
 export interface ListCommentsParams {
@@ -62,7 +63,7 @@ class CommentsClient {
   private async invoke<T>(channel: string, data?: any): Promise<Result<T, string>> {
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const response = await window.electronAPI.invoke(channel, data);
+        const response = await invokeIpc<CommandResponse<T>>(channel, data);
         return this.commandResponseToResult<T>(response);
       }
       return { ok: false, error: 'IPC not available' };

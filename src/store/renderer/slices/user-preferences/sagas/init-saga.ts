@@ -1,5 +1,5 @@
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { invoke } from '$lib/electron-bridge';
+import { invoke } from '$shared/generated/ipc-client';
 import { getLocalStorageJSON } from '$store/renderer/utils/safe-local-storage-saga';
 import {
   call,
@@ -106,7 +106,7 @@ function sanitizePromoBannerInteractions(
 async function loadBetaUpdatesFromIPC(): Promise<boolean | null> {
   try {
     if (typeof window !== 'undefined' && window.electronAPI) {
-      const result = await window.electronAPI.invoke('settings:get', {
+      const result = await invoke<{ success?: boolean; data?: boolean }>('settings:get', {
         key: BETA_UPDATES_STORAGE_KEY,
       });
       if (result?.success && typeof result.data === 'boolean') {
@@ -188,7 +188,7 @@ async function loadSystemFonts(): Promise<string[]> {
 async function loadNotificationSettingsFromIPC(): Promise<NotificationSettingsState | null> {
   try {
     if (typeof window !== 'undefined' && window.electronAPI) {
-      const result = await window.electronAPI.invoke('settings:get', {
+      const result = await invoke<{ success?: boolean; data?: NotificationSettingsState }>('settings:get', {
         key: NOTIFICATION_STORAGE_KEY,
       });
       if (result?.success && result.data) {
@@ -206,8 +206,7 @@ function fetchZoomFactor(): Promise<number> {
     return Promise.resolve(1.0);
   }
 
-  return window.electronAPI
-    .invoke(IPC_CHANNELS.WINDOW.GET_ZOOM_FACTOR, undefined)
+  return invoke(IPC_CHANNELS.WINDOW.GET_ZOOM_FACTOR, undefined)
     .then((result: any) => {
       if (result?.success && typeof result.data === 'number' && result.data > 0) {
         return result.data;

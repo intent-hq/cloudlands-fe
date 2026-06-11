@@ -87,6 +87,8 @@ export class ChangeDetectorRefactored extends EventEmitter {
   private attributionEngine = getAttributionEngine();
   private performanceMonitor: PerformanceMonitor;
   private adaptivePolling: AdaptivePollingManager;
+  private thresholdExceededHandler: ((alerts: string[]) => void) | null = null;
+  private resourcesCleanedUp = false;
 
   // Configuration
   private config = TRACKING_CONFIG.changeDetection;
@@ -203,14 +205,15 @@ export class ChangeDetectorRefactored extends EventEmitter {
     });
 
     // Performance threshold events - trigger cleanup when memory is high
-    this.performanceMonitor.on('threshold-exceeded', (alerts: string[]) => {
+    this.thresholdExceededHandler = (alerts: string[]) => {
       const memoryAlert = alerts.find((a) => a.includes('Memory usage'));
       if (memoryAlert) {
         // Use debug level - PerformanceMonitor already logs the warning (throttled)
         logger.debug('Memory threshold exceeded, triggering cleanup', { alerts });
         this.triggerMemoryCleanup();
       }
-    });
+    };
+    this.performanceMonitor.on('threshold-exceeded', this.thresholdExceededHandler);
   }
 
   /**
@@ -325,6 +328,14 @@ export class ChangeDetectorRefactored extends EventEmitter {
         });
     } catch (error) {
       logger.error('Failed to start change detector:', error);
+      try {
+        await this.cleanupRuntimeResources();
+      } catch (cleanupError) {
+        logger.warn('Failed to clean up after change detector startup failure', {
+          workspaceId: this.workspaceId,
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      }
       throw error;
     }
   }
@@ -333,19 +344,36 @@ export class ChangeDetectorRefactored extends EventEmitter {
    * Stop the change detector
    */
   async stop(): Promise<void> {
-    // Always clean up the singleton listener, even if start() failed before isRunning was set.
-    // The handler is registered in start() when periodic polling is needed,
-    // so it needs unconditional cleanup to prevent GC reference leaks.
+    const wasRunning = this.isRunning;
+
+    if (wasRunning) {
+      logger.info('Stopping change detector');
+    }
+
+    await this.cleanupRuntimeResources();
+
+    if (!wasRunning) return;
+
+    this.isRunning = false;
+    this.emit('stopped');
+
+    logger.info('Change detector stopped');
+  }
+
+  private async cleanupRuntimeResources(): Promise<void> {
+    if (this.resourcesCleanedUp) return;
+    this.resourcesCleanedUp = true;
+
+    // Always clean up singleton listeners, even if start() failed before isRunning was set.
+    if (this.thresholdExceededHandler) {
+      this.performanceMonitor.off('threshold-exceeded', this.thresholdExceededHandler);
+      this.thresholdExceededHandler = null;
+    }
+
     if (this.intervalChangedHandler) {
       this.adaptivePolling.off('intervalChanged', this.intervalChangedHandler);
       this.intervalChangedHandler = null;
     }
-
-    if (!this.isRunning) {
-      return;
-    }
-
-    logger.info('Stopping change detector');
 
     // Stop performance monitoring
     this.performanceMonitor.stop();
@@ -366,11 +394,6 @@ export class ChangeDetectorRefactored extends EventEmitter {
     // Clean up components
     this.changeProcessor.destroy();
     await this.eventCoordinator.destroy();
-
-    this.isRunning = false;
-    this.emit('stopped');
-
-    logger.info('Change detector stopped');
   }
 
   /**

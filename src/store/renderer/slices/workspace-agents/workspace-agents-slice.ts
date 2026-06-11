@@ -8,6 +8,10 @@ import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { omitKey } from "../../utils/utils";
 import { upsertSession } from "../agent-session/agent-session-slice";
+export {
+  agentStreamUpdateReceived,
+  type AgentStreamUpdatePayload,
+} from "./workspace-agents-stream-slice";
 
 export interface InitialAgentConfig {
   agentId: string;
@@ -56,25 +60,6 @@ export interface WorkspaceAgentState {
 
 export interface WorkspaceAgentsState {
   byWorkspaceId: Record<string, WorkspaceAgentState>;
-}
-
-export interface AgentStreamUpdatePayload {
-  workspaceId?: string;
-  agentId: string;
-  handlerSessionId: string;
-  source: "sendMessage" | "restored";
-  eventType: "started" | "chunk" | "content-blocks" | "complete" | "error" | "timeout";
-  timestamp?: number;
-  assistantMessageId?: string;
-  assistantAppMessageId?: string;
-  contentBlocks?: ContentBlock[];
-  rawContentBlocks?: ContentBlock[];
-  chunk?: string;
-  completeMessage?: unknown;
-  finishReason?: string;
-  error?: string;
-  createInitialPlaceholder?: boolean;
-  streamId?: string;
 }
 
 export interface BackendActiveStreamPayload {
@@ -369,15 +354,6 @@ export const reconnectStreamHandlersForWorkspaceRequested = createAction<[worksp
 export const backendStreamsReconnectResultReceived = createAction<[
   streams: BackendActiveStreamPayload[],
 ]>("workspaceAgents/backendStreamsReconnectResultReceived");
-
-/** Raw stream update from the thin lifecycle adapter; reducers/sagas derive serializable state. */
-export const agentStreamUpdateReceived = createAction<
-  [payload: AgentStreamUpdatePayload],
-  [payload: AgentStreamUpdatePayload & { timestamp: number }]
->(
-  "workspaceAgents/agentStreamUpdateReceived",
-  (payload) => [{ ...payload, timestamp: payload.timestamp ?? Date.now() }]
-);
 
 /** Clear stale streaming assistant messages before a new stream mutates state. */
 export const agentStreamResetStreamingMessagesRequested = createAction<[

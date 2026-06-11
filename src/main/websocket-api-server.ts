@@ -30,6 +30,7 @@ import {
   handleSubscribe,
   handleUnsubscribe,
   cleanupClient,
+  cleanupAllClients,
   registerSendCallback,
 } from './websocket-event-bridge';
 import { ensureTlsCertificate, getCertFingerprint } from './websocket-tls';
@@ -106,6 +107,7 @@ export class WebSocketApiServer {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private clients: Map<WebSocket, ClientMeta> = new Map();
   private clientsById: Map<string, WebSocket> = new Map();
+  private unregisterSendCallback: (() => void) | null = null;
   private httpServer: HttpsServer | null = null;
   private started = false;
   private port: number;
@@ -374,8 +376,10 @@ export class WebSocketApiServer {
     this.wss = boundWss;
     this.actualPort = boundPort;
 
-    // Register send callback for the event bridge
-    registerSendCallback((targetClientId: string, message: string) => {
+    // Register send callback for the event bridge. Keep the unregister handle
+    // so stop() releases the process-global closure over this server instance.
+    this.unregisterSendCallback?.();
+    this.unregisterSendCallback = registerSendCallback((targetClientId: string, message: string) => {
       const targetWs = this.clientsById.get(targetClientId);
       if (targetWs && targetWs.readyState === WebSocket.OPEN) {
         targetWs.send(message);
@@ -422,6 +426,8 @@ export class WebSocketApiServer {
 
     if (!this.started) {
       // Nothing was published; still clear any partial state.
+      this.unregisterSendCallback?.();
+      this.unregisterSendCallback = null;
       this.actualPort = 0;
       return;
     }
@@ -434,6 +440,7 @@ export class WebSocketApiServer {
     for (const [clientId] of this.clientsById) {
       cleanupClient(clientId);
     }
+    cleanupAllClients();
 
     // Close every client
     for (const [ws] of this.clients) {
@@ -445,6 +452,8 @@ export class WebSocketApiServer {
     }
     this.clients.clear();
     this.clientsById.clear();
+    this.unregisterSendCallback?.();
+    this.unregisterSendCallback = null;
 
     // Remove the 'upgrade' listener BEFORE nulling/closing wss so an
     // in-flight upgrade can't reach handleUpgrade after this.wss is null.

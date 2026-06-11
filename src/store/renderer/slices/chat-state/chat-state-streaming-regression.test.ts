@@ -14,7 +14,7 @@ import {
 import {
   agentSessionReducer,
   initialState as sessionInitialState,
-  upsertSession,
+  bulkUpsertSessions,
 } from '../agent-session/agent-session-slice';
 import {
   chatSendStarted,
@@ -45,7 +45,10 @@ function getSession(state: ReturnType<typeof agentSessionReducer>, agentId: stri
 
 /** Produce a mid-stream state: session exists, isStreaming + isProcessing true */
 function midStreamState() {
-  let s = agentSessionReducer(sessionInitialState, upsertSession({ ...dummySession }));
+  let s = agentSessionReducer(
+    sessionInitialState,
+    bulkUpsertSessions([{ ...dummySession }], { preserveExplicitRuntimeFlags: false }),
+  );
   s = agentSessionReducer(s, chatSendStarted(AGENT));
   return s;
 }
@@ -65,7 +68,10 @@ describe('OR-latch regression: isStreaming/isProcessing parity (agent-session)',
   });
 
   it('chatSendFailed clears both flags atomically', () => {
-    let s = agentSessionReducer(sessionInitialState, upsertSession({ ...dummySession }));
+    let s = agentSessionReducer(
+      sessionInitialState,
+      bulkUpsertSessions([{ ...dummySession }], { preserveExplicitRuntimeFlags: false }),
+    );
     s = agentSessionReducer(s, chatSendStarted(AGENT));
     s = agentSessionReducer(s, chatSendFailed(AGENT, 'network'));
     expect(getSession(s, AGENT).isStreaming).toBe(false);
@@ -129,8 +135,14 @@ describe('RAF interleaving regression (agent-session)', () => {
   it('multiple agents streaming independently do not interfere', () => {
     const A = 'agent-A';
     const B = 'agent-B';
-    let s = agentSessionReducer(sessionInitialState, upsertSession({ ...dummySession, id: A }));
-    s = agentSessionReducer(s, upsertSession({ ...dummySession, id: B }));
+    let s = agentSessionReducer(
+      sessionInitialState,
+      bulkUpsertSessions([{ ...dummySession, id: A }], { preserveExplicitRuntimeFlags: false }),
+    );
+    s = agentSessionReducer(
+      s,
+      bulkUpsertSessions([{ ...dummySession, id: B }], { preserveExplicitRuntimeFlags: false }),
+    );
     s = agentSessionReducer(s, chatSendStarted(A));
     s = agentSessionReducer(s, chatSendStarted(B));
 

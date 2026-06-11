@@ -8,7 +8,6 @@
  * and $effect inside functions that return reactive objects.
  */
 
-export { useSidebarState, type UseSidebarStateOptions } from './use-sidebar-state.svelte';
 export { useTabManagement, type UseTabManagementOptions } from './use-tab-management.svelte';
 export { useWorkspaceLoader, type UseWorkspaceLoaderOptions } from './use-workspace-loader.svelte';
 export { usePanelActions, type UsePanelActionsOptions } from './use-panel-actions.svelte';

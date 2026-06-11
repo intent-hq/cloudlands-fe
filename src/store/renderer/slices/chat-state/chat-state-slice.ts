@@ -1,6 +1,5 @@
 import { createAction } from 'ag-redux-toolkit/utils/store/create-action';
 import { createReducer } from 'ag-redux-toolkit/utils/store/create-reducer';
-import type { StoreActionCreator } from 'ag-redux-toolkit/types';
 import type {
   ChatAgentState,
   ChatStateSlice,
@@ -13,7 +12,10 @@ import type {
   StreamStatusContext,
 } from './chat-state-types';
 import { sanitizeStatusEvent } from './chat-state-serialization';
-import type { AgentStreamUpdatePayload } from '../workspace-agents/workspace-agents-slice';
+import {
+  agentStreamUpdateReceived,
+  type AgentStreamUpdatePayload,
+} from '../workspace-agents/workspace-agents-stream-slice';
 
 // ============================================================================
 // Initial State
@@ -320,10 +322,6 @@ export const sendMessage = createAction(
   (agentId: string, payload: SendMessagePayload & { wsId: string }) => ({ agentId, payload }),
 );
 
-const agentStreamUpdateReceivedAction = {
-  type: 'workspaceAgents/agentStreamUpdateReceived',
-} as StoreActionCreator<[payload: AgentStreamUpdatePayload]>;
-
 // ============================================================================
 // Reducer
 // ============================================================================
@@ -409,7 +407,7 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     }
     return state;
   })
-  .with(agentStreamUpdateReceivedAction, (state, { payload: [payload] }) =>
+  .with(agentStreamUpdateReceived, (state, { payload: [payload] }) =>
     reduceAgentStreamUpdate(state, payload),
   )
   .with(streamCompleted, (state, { payload: [agentId, data] }) =>

@@ -72,11 +72,7 @@ describe('workspace-utils', () => {
 
     it('should return "in-progress" when there are code changes', () => {
       const workspace = createWorkspace({
-        diffSummary: {
-          totalFiles: 5,
-          additions: 100,
-          deletions: 50,
-        },
+        diffs: [{ file: 'file.ts', chunks: [] }],
       });
       expect(getWorkspaceStage(workspace)).toBe('in-progress');
     });

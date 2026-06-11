@@ -201,11 +201,20 @@ export class MemoryManager {
   ): () => void {
     target.addEventListener(event, handler);
 
+    let resource: Resource;
+    let cleaned = false;
     const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
       target.removeEventListener(event, handler);
+      if (owner) {
+        this.resources.get(owner)?.delete(resource);
+      } else {
+        this.globalResources.delete(resource);
+      }
     };
 
-    const resource: Resource = {
+    resource = {
       type: 'listener',
       cleanup,
       created: Date.now(),
@@ -230,17 +239,43 @@ export class MemoryManager {
     type: 'timeout' | 'interval',
     owner?: object,
   ): () => void {
-    const timerId = type === 'timeout' ? setTimeout(callback, delay) : setInterval(callback, delay);
+    let resource: Resource;
+    let timerId: NodeJS.Timeout;
+    let cleaned = false;
+
+    const untrack = () => {
+      if (owner) {
+        this.resources.get(owner)?.delete(resource);
+      } else {
+        this.globalResources.delete(resource);
+      }
+    };
+
+    const timerCallback = () => {
+      if (type === 'timeout') {
+        if (cleaned) return;
+        cleaned = true;
+        untrack();
+      }
+      callback();
+    };
+
+    timerId = type === 'timeout'
+      ? setTimeout(timerCallback, delay)
+      : setInterval(timerCallback, delay);
 
     const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
       if (type === 'timeout') {
         clearTimeout(timerId as NodeJS.Timeout);
       } else {
         clearInterval(timerId as NodeJS.Timeout);
       }
+      untrack();
     };
 
-    const resource: Resource = {
+    resource = {
       type: 'timer',
       cleanup,
       created: Date.now(),
@@ -260,9 +295,22 @@ export class MemoryManager {
    * Register a subscription with automatic cleanup
    */
   registerSubscription(unsubscribe: () => void, owner?: object): void {
-    const resource: Resource = {
+    let resource: Resource;
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      unsubscribe();
+      if (owner) {
+        this.resources.get(owner)?.delete(resource);
+      } else {
+        this.globalResources.delete(resource);
+      }
+    };
+
+    resource = {
       type: 'subscription',
-      cleanup: unsubscribe,
+      cleanup,
       created: Date.now(),
     };
 
@@ -283,10 +331,10 @@ export class MemoryManager {
     if (!resources) return;
 
     let count = 0;
-    resources.forEach((resource) => {
+    for (const resource of Array.from(resources)) {
       resource.cleanup();
       count++;
-    });
+    }
 
     this.resources.delete(owner);
     logger.debug('Resources cleaned up', { count });
@@ -297,10 +345,10 @@ export class MemoryManager {
    */
   cleanupGlobal(): void {
     let count = 0;
-    this.globalResources.forEach((resource) => {
+    for (const resource of Array.from(this.globalResources)) {
       resource.cleanup();
       count++;
-    });
+    }
 
     this.globalResources.clear();
     logger.info('Global resources cleaned up', { count });

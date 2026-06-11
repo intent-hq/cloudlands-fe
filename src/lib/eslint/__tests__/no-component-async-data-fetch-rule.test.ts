@@ -122,11 +122,12 @@ describe('no-component-async-data-fetch ESLint rule', () => {
 
         import { workspaceApi } from '$lib/api/workspace-api';
         import { issueClient } from '$lib/clients/issue-client';
+        import { invoke } from '$shared/generated/ipc-client';
 
         onMount(async () => {
           const workspace = await workspaceApi.get('workspace-id');
           const issues = await issueClient.list('workspace-id');
-          const settings = await window.electronAPI.invoke('settings:get', {});
+          const settings = await invoke('settings:get', {});
         });
       </script>
     `);

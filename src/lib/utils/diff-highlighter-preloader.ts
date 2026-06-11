@@ -59,6 +59,27 @@ const THEMES = { dark: 'github-dark', light: 'github-light' } as const;
 
 let workerPool: WorkerPoolManager | null = null;
 let initPromise: Promise<WorkerPoolManager> | null = null;
+let activeWorkerPoolLeases = 0;
+let idleTerminationTimer: ReturnType<typeof setTimeout> | null = null;
+
+export const DIFF_WORKER_POOL_IDLE_TERMINATION_MS = 30_000;
+
+function clearIdleTerminationTimer(): void {
+  if (idleTerminationTimer !== null) {
+    clearTimeout(idleTerminationTimer);
+    idleTerminationTimer = null;
+  }
+}
+
+function scheduleIdleTermination(): void {
+  clearIdleTerminationTimer();
+  idleTerminationTimer = setTimeout(() => {
+    idleTerminationTimer = null;
+    if (activeWorkerPoolLeases === 0) {
+      terminateDiffWorkerPool();
+    }
+  }, DIFF_WORKER_POOL_IDLE_TERMINATION_MS);
+}
 
 /**
  * Creates a worker for the diff highlighter pool.
@@ -111,6 +132,33 @@ export function getDiffWorkerPool(): WorkerPoolManager {
   logger.info(`Diff highlighter worker pool created in ${duration.toFixed(0)}ms (poolSize=${poolSize})`);
 
   return workerPool;
+}
+
+/**
+ * Acquire an active diff viewer lease on the worker pool.
+ * The pool is kept alive until every active FileDiff releases its lease, then
+ * terminated after a short idle window to preserve warm-cache repeated use.
+ */
+export function acquireDiffWorkerPool(): WorkerPoolManager {
+  clearIdleTerminationTimer();
+  const pool = getDiffWorkerPool();
+  activeWorkerPoolLeases += 1;
+  return pool;
+}
+
+/**
+ * Release a diff viewer lease and schedule idle cleanup when the last viewer closes.
+ */
+export function releaseDiffWorkerPool(): void {
+  if (activeWorkerPoolLeases === 0) {
+    logger.warn('Diff worker pool lease released with no active leases');
+    return;
+  }
+
+  activeWorkerPoolLeases -= 1;
+  if (activeWorkerPoolLeases === 0) {
+    scheduleIdleTermination();
+  }
 }
 
 /**
@@ -198,6 +246,9 @@ export async function waitForDiffHighlighterPreload(): Promise<void> {
  * Call this when the app is closing or navigating away.
  */
 export function terminateDiffWorkerPool(): void {
+  clearIdleTerminationTimer();
+  activeWorkerPoolLeases = 0;
+
   if (workerPool) {
     terminateWorkerPoolSingleton();
     workerPool = null;

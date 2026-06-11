@@ -21,9 +21,6 @@ import {
 
 const logger = new Logger({ category: 'RepoConfigService' });
 
-// In-memory cache of loaded configs keyed by repo path
-const configCache = new Map<string, { config: RepoConfig; mtime: number }>();
-
 /**
  * Get the path to the .intent directory for a repository.
  */
@@ -41,21 +38,11 @@ export function getConfigFilePath(repoPath: string): string {
 /**
  * Read the repo config from `.intent/config.json`.
  * Returns an empty config object if the file doesn't exist or is invalid.
- * Uses a simple mtime-based cache to avoid redundant reads.
  */
 export async function readRepoConfig(repoPath: string): Promise<RepoConfig> {
   const configPath = getConfigFilePath(repoPath);
 
   try {
-    const stat = await fs.stat(configPath);
-    const mtime = stat.mtimeMs;
-
-    // Check cache
-    const cached = configCache.get(repoPath);
-    if (cached && cached.mtime === mtime) {
-      return cached.config;
-    }
-
     const content = await fs.readFile(configPath, 'utf-8');
     const config = JSON.parse(content) as RepoConfig;
 
@@ -65,7 +52,6 @@ export async function readRepoConfig(repoPath: string): Promise<RepoConfig> {
       return {};
     }
 
-    configCache.set(repoPath, { config, mtime });
     logger.debug('Loaded repo config', { repoPath, keys: Object.keys(config) });
     return config;
   } catch (error: unknown) {
@@ -103,10 +89,6 @@ export async function writeRepoConfig(repoPath: string, config: RepoConfig): Pro
     // Write config with pretty formatting
     const content = JSON.stringify(config, null, 2) + '\n';
     await fs.writeFile(configPath, content, 'utf-8');
-
-    // Update cache
-    const stat = await fs.stat(configPath);
-    configCache.set(repoPath, { config, mtime: stat.mtimeMs });
 
     logger.info('Wrote repo config', { repoPath, keys: Object.keys(config) });
   } catch (error) {
@@ -169,19 +151,4 @@ export async function getRepoSetupScript(repoPath: string): Promise<string | und
 export async function getRepoInstructions(repoPath: string): Promise<string | undefined> {
   const config = await readRepoConfig(repoPath);
   return config.instructions;
-}
-
-/**
- * Invalidate the cached config for a repo.
- * Call this when you know the config file has changed externally.
- */
-export function invalidateRepoConfigCache(repoPath: string): void {
-  configCache.delete(repoPath);
-}
-
-/**
- * Clear the entire config cache.
- */
-export function clearRepoConfigCache(): void {
-  configCache.clear();
 }

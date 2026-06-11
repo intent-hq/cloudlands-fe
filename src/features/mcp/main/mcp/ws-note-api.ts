@@ -248,6 +248,7 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
   };
 
   const findAllOccurrences = (content: string, searchText: string) => {
+    if (searchText.length === 0) return [];
     const matches: Array<{ from: number; to: number; line: number; surroundingText: string }> = [];
     let searchFrom = 0;
 
@@ -261,20 +262,22 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
       if (contextStart > 0) surroundingText = `...${surroundingText}`;
       if (contextEnd < content.length) surroundingText = `${surroundingText}...`;
       matches.push({ from: index, to: index + searchText.length, line, surroundingText });
-      searchFrom = index + 1;
+      searchFrom = index + searchText.length;
     }
 
     return matches;
   };
 
   const countOccurrences = (content: string, searchText: string) => {
+    if (searchText.length === 0) return 0;
+
     let count = 0;
     let searchFrom = 0;
     while (true) {
       const index = content.indexOf(searchText, searchFrom);
       if (index === -1) break;
       count++;
-      searchFrom = index + 1;
+      searchFrom = index + searchText.length;
     }
     return count;
   };

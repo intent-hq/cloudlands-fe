@@ -14,7 +14,7 @@
 } from 'svelte';
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
-  import { invoke } from '$lib/electron-bridge';
+  import { invoke } from '$shared/generated/ipc-client';
   import { v4 as uuidv4 } from 'uuid';
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
@@ -154,9 +154,12 @@
 
     (async () => {
       try {
-        const response = await window.electronAPI?.invoke('git-tracking:get-remote-url', {
-          repoPath: path,
-        });
+        const response =
+          typeof window !== 'undefined' && window.electronAPI
+            ? await invoke<any>('git-tracking:get-remote-url', {
+              repoPath: path,
+            })
+            : undefined;
         if (response?.success && response.data?.owner && response.data?.repo) {
           detectedGitHubOwner = response.data.owner;
           detectedGitHubRepo = response.data.repo;
@@ -546,7 +549,7 @@
       lastFetchedPRIdentifier = prToFetch.identifier;
       (async () => {
         try {
-          const response = await window.electronAPI.invoke('git-tracking:get-pull-request', {
+          const response = await invoke<any>('git-tracking:get-pull-request', {
             owner: prToFetch.owner,
             repo: prToFetch.repo,
             number: prToFetch.number,
@@ -662,10 +665,13 @@
           behind: onboardingBranchBehind,
         });
         try {
-          const pullResult = await window.electronAPI?.invoke('git:pullBranch', {
-            repoPath: projectSelection.repoPath,
-            branchName: projectSelection.branch,
-          });
+          const pullResult =
+            typeof window !== 'undefined' && window.electronAPI
+              ? await invoke<any>('git:pullBranch', {
+                repoPath: projectSelection.repoPath,
+                branchName: projectSelection.branch,
+              })
+              : undefined;
           if (!pullResult?.success) {
             onboardingPullError = pullResult?.error || 'Failed to pull changes';
             onboardingShowPullConflictDialog = true;

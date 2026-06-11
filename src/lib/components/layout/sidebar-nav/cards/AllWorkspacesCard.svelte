@@ -43,6 +43,11 @@
 } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
   import WorkspaceCard from '$lib/components/workspace/WorkspaceCard.svelte';
+  import {
+  selectWorkspaceTaskProgress,
+  selectWorkspaceTasksByWorkspaceId,
+} from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
+  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 
   function getGitHubAvatarUrl(owner: string, size: number = 24): string {
     return `https://github.com/${owner}.png?size=${size}`;
@@ -53,6 +58,7 @@
   const unreadAgentIds$ = selectUnreadAgentIds();
   const pinnedIds$ = selectPinnedWorkspaceIds();
   const viewMode$ = selectAllSpacesViewMode();
+  const workspaceTasksByWorkspaceId$ = selectWorkspaceTasksByWorkspaceId();
 
   interface Props {
     expanded?: boolean;
@@ -126,10 +132,14 @@
       }
       return 'pr_open';
     }
-    const taskStats = ws.taskStats;
-    if (taskStats) {
-      if (taskStats.completed > 0 && taskStats.completed === taskStats.total) return 'complete';
-      if (taskStats.inProgress > 0 || taskStats.completed > 0) return 'in_progress';
+    // Reference task map for reactivity when canonical tasks load
+    void $workspaceTasksByWorkspaceId$;
+    const taskProgress = selectWorkspaceTaskProgress.select(appStore.state, ws.id);
+    if (taskProgress.total > 0) {
+      if (taskProgress.completed > 0 && taskProgress.completed === taskProgress.total) {
+        return 'complete';
+      }
+      if (taskProgress.inProgress > 0 || taskProgress.completed > 0) return 'in_progress';
     }
     return 'not_started';
   }
@@ -142,6 +152,14 @@
         (w.title || '').toLowerCase().includes(q) ||
         (w.repositoryName || '').toLowerCase().includes(q),
     );
+  });
+
+  // Load canonical tasks for listed workspaces while expanded (no-op once initialized).
+  $effect(() => {
+    if (!expanded) return;
+    for (const ws of filteredWorkspaces) {
+      appStore.dispatch(ensureWorkspaceTasksLoaded(String(ws.id)));
+    }
   });
 
   // Build a lookup from repositoryPath → {owner, name} so workspaces missing

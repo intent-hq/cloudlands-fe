@@ -24,6 +24,8 @@ import type {
   CommitInfo,
   FileListViewMode,
   LineChangeStats,
+  AgentLineStatsRequestState,
+  ChangesCoordinationState,
 } from "./changes-types";
 
 // ---------------------------------------------------------------------------
@@ -50,6 +52,21 @@ export function createEmptyAcceptChangesState(): AcceptChangesState {
   };
 }
 
+export function createEmptyChangesCoordinationState(): ChangesCoordinationState {
+  return {
+    lastSyncTime: 0,
+    lastUpdatedAt: 0,
+    syncInProgress: false,
+    syncDirty: false,
+    syncDirtyForce: false,
+    syncThrottleMs: 10000,
+    loadInProgress: false,
+    loadDirty: false,
+    refreshInProgress: false,
+    refreshDirty: false,
+  };
+}
+
 export const emptyWorkspaceState: FileTrackingWorkspaceState = {
   changes: [],
   transitions: [],
@@ -63,6 +80,7 @@ export const emptyWorkspaceState: FileTrackingWorkspaceState = {
   totalChangesCount: 0,
   hasLoadedInitialData: false,
   acceptChanges: createEmptyAcceptChangesState(),
+  coordination: createEmptyChangesCoordinationState(),
 };
 
 export const initialState: FileTrackingState = {
@@ -70,10 +88,45 @@ export const initialState: FileTrackingState = {
   fileListViewMode: "flat",
   mainPanelView: null,
   agentStats: {},
+  agentLineStatsRequests: {},
+};
+
+export const emptyAgentLineStatsRequestState: AgentLineStatsRequestState = {
+  isLoading: false,
+  error: null,
+  lastRequestedAt: null,
+  lastFinishedAt: null,
 };
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyWorkspaceState);
+
+function areChangesCoordinationStatesEqual(
+  left: ChangesCoordinationState,
+  right: ChangesCoordinationState,
+): boolean {
+  return left.lastSyncTime === right.lastSyncTime
+    && left.lastUpdatedAt === right.lastUpdatedAt
+    && left.syncInProgress === right.syncInProgress
+    && left.syncDirty === right.syncDirty
+    && left.syncDirtyForce === right.syncDirtyForce
+    && left.syncThrottleMs === right.syncThrottleMs
+    && left.loadInProgress === right.loadInProgress
+    && left.loadDirty === right.loadDirty
+    && left.refreshInProgress === right.refreshInProgress
+    && left.refreshDirty === right.refreshDirty;
+}
+
+function updateCoordinationState(
+  state: FileTrackingState,
+  wsId: string,
+  update: (coordination: ChangesCoordinationState) => ChangesCoordinationState,
+): FileTrackingState {
+  const ws = getWorkspaceState(state, wsId);
+  const coordination = update(ws.coordination);
+  if (areChangesCoordinationStatesEqual(ws.coordination, coordination)) return state;
+  return setWorkspaceState(state, wsId, { ...ws, coordination });
+}
 
 // ---------------------------------------------------------------------------
 // Actions
@@ -207,6 +260,50 @@ export const loadOlderCommitsRequested = createAction(
   })
 );
 
+// Coordination state actions for changes operation sagas
+export const resetChangesCoordination = createAction<[wsId: string]>(
+  "changes/resetChangesCoordination"
+);
+export const changesSyncStarted = createAction<[wsId: string, lastSyncTime: number]>(
+  "changes/changesSyncStarted"
+);
+export const changesDataUpdated = createAction<[wsId: string, lastUpdatedAt: number]>(
+  "changes/changesDataUpdated"
+);
+export const changesSyncQueued = createAction<[wsId: string, force: boolean]>(
+  "changes/changesSyncQueued"
+);
+export const changesSyncFinished = createAction<[wsId: string]>(
+  "changes/changesSyncFinished"
+);
+export const changesSyncDirtyConsumed = createAction<[wsId: string]>(
+  "changes/changesSyncDirtyConsumed"
+);
+export const changesLoadStarted = createAction<[wsId: string]>(
+  "changes/changesLoadStarted"
+);
+export const changesLoadQueued = createAction<[wsId: string]>(
+  "changes/changesLoadQueued"
+);
+export const changesLoadFinished = createAction<[wsId: string]>(
+  "changes/changesLoadFinished"
+);
+export const changesLoadDirtyConsumed = createAction<[wsId: string]>(
+  "changes/changesLoadDirtyConsumed"
+);
+export const changesRefreshStarted = createAction<[wsId: string]>(
+  "changes/changesRefreshStarted"
+);
+export const changesRefreshQueued = createAction<[wsId: string]>(
+  "changes/changesRefreshQueued"
+);
+export const changesRefreshFinished = createAction<[wsId: string]>(
+  "changes/changesRefreshFinished"
+);
+export const changesRefreshDirtyConsumed = createAction<[wsId: string]>(
+  "changes/changesRefreshDirtyConsumed"
+);
+
 // ---------------------------------------------------------------------------
 // Agent stats actions (absorbed from line-changes slice)
 // ---------------------------------------------------------------------------
@@ -215,6 +312,27 @@ export const loadOlderCommitsRequested = createAction(
 export const updateAgentStats = createAction(
   "changes/updateAgentStats",
   (agentId: string, stats: LineChangeStats) => ({ agentId, stats }),
+);
+
+/** Saga trigger: request line-change stats for a single agent */
+export const requestAgentLineStats = createAction(
+  "changes/requestAgentLineStats",
+  (agentId: string, forceRefresh = false) => ({ agentId, forceRefresh }),
+);
+
+export const agentLineStatsRequestStarted = createAction(
+  "changes/agentLineStatsRequestStarted",
+  (agentId: string, requestedAt: string) => ({ agentId, requestedAt }),
+);
+
+export const agentLineStatsRequestSucceeded = createAction(
+  "changes/agentLineStatsRequestSucceeded",
+  (agentId: string, finishedAt: string) => ({ agentId, finishedAt }),
+);
+
+export const agentLineStatsRequestFailed = createAction(
+  "changes/agentLineStatsRequestFailed",
+  (agentId: string, error: string, finishedAt: string) => ({ agentId, error, finishedAt }),
 );
 
 /** Update agent stats for many agents in one action (merge with existing) */
@@ -315,6 +433,92 @@ export const fileTrackingReducer = createReducer<FileTrackingState>(initialState
     clearWorkspaceState(state, wsId)
   )
   .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId))
+
+  // Changes operation coordination state
+  .with(resetChangesCoordination, (state, { payload: [wsId] }) =>
+    updateCoordinationState(state, wsId, () => createEmptyChangesCoordinationState())
+  )
+  .with(changesSyncStarted, (state, { payload: [wsId, lastSyncTime] }) =>
+    updateCoordinationState(state, wsId, (coordination) => ({
+      ...coordination,
+      lastSyncTime,
+      syncInProgress: true,
+    }))
+  )
+  .with(changesDataUpdated, (state, { payload: [wsId, lastUpdatedAt] }) =>
+    updateCoordinationState(state, wsId, (coordination) => ({
+      ...coordination,
+      lastUpdatedAt,
+    }))
+  )
+  .with(changesSyncQueued, (state, { payload: [wsId, force] }) =>
+    updateCoordinationState(state, wsId, (coordination) => ({
+      ...coordination,
+      syncDirty: true,
+      syncDirtyForce: coordination.syncDirtyForce || force,
+    }))
+  )
+  .with(changesSyncFinished, (state, { payload: [wsId] }) =>
+    updateCoordinationState(state, wsId, (coordination) => ({
+      ...coordination,
+      syncInProgress: false,
+    }))
+  )
+  .with(changesSyncDirtyConsumed, (state, { payload: [wsId] }) =>
+    updateCoordinationState(state, wsId, (coordination) => ({
+      ...coordination,
+      syncDirty: false,
+      syncDirtyForce: false,
+    }))
+  )
+  .with(changesLoadStarted, (state, { payload: [wsId] }) =>
+    updateCoordinationState(state, wsId, (coordination) => ({
+      ...coordination,
+      loadInProgress: true,
+    }))
+  )
+  .with(changesLoadQueued, (state, { payload: [wsId] }) =>
+    updateCoordinationState(state, wsId, (coordination) => ({
+      ...coordination,
+      loadDirty: true,
+    }))
+  )
+  .with(changesLoadFinished, (state, { payload: [wsId] }) =>
+    updateCoordinationState(state, wsId, (coordination) => ({
+      ...coordination,
+      loadInProgress: false,
+    }))
+  )
+  .with(changesLoadDirtyConsumed, (state, { payload: [wsId] }) =>
+    updateCoordinationState(state, wsId, (coordination) => ({
+      ...coordination,
+      loadDirty: false,
+    }))
+  )
+  .with(changesRefreshStarted, (state, { payload: [wsId] }) =>
+    updateCoordinationState(state, wsId, (coordination) => ({
+      ...coordination,
+      refreshInProgress: true,
+    }))
+  )
+  .with(changesRefreshQueued, (state, { payload: [wsId] }) =>
+    updateCoordinationState(state, wsId, (coordination) => ({
+      ...coordination,
+      refreshDirty: true,
+    }))
+  )
+  .with(changesRefreshFinished, (state, { payload: [wsId] }) =>
+    updateCoordinationState(state, wsId, (coordination) => ({
+      ...coordination,
+      refreshInProgress: false,
+    }))
+  )
+  .with(changesRefreshDirtyConsumed, (state, { payload: [wsId] }) =>
+    updateCoordinationState(state, wsId, (coordination) => ({
+      ...coordination,
+      refreshDirty: false,
+    }))
+  )
 
   // Loading / error
   .with(setLoading, (state, { payload: [wsId, loading] }) => {
@@ -423,13 +627,51 @@ export const fileTrackingReducer = createReducer<FileTrackingState>(initialState
     };
   })
   .with(clearAgentStats, (state, { payload: [agentId] }) => {
-     
+    if (!state.agentStats[agentId] && !state.agentLineStatsRequests[agentId]) return state;
     const { [agentId]: _as, ...remainingAgentStats } = state.agentStats;
+    const { [agentId]: _request, ...remainingRequests } = state.agentLineStatsRequests;
     return {
       ...state,
       agentStats: remainingAgentStats,
+      agentLineStatsRequests: remainingRequests,
     };
   })
+  .with(agentLineStatsRequestStarted, (state, { payload }) => ({
+    ...state,
+    agentLineStatsRequests: {
+      ...state.agentLineStatsRequests,
+      [payload.agentId]: {
+        isLoading: true,
+        error: null,
+        lastRequestedAt: payload.requestedAt,
+        lastFinishedAt: state.agentLineStatsRequests[payload.agentId]?.lastFinishedAt ?? null,
+      },
+    },
+  }))
+  .with(agentLineStatsRequestSucceeded, (state, { payload }) => ({
+    ...state,
+    agentLineStatsRequests: {
+      ...state.agentLineStatsRequests,
+      [payload.agentId]: {
+        ...(state.agentLineStatsRequests[payload.agentId] ?? emptyAgentLineStatsRequestState),
+        isLoading: false,
+        error: null,
+        lastFinishedAt: payload.finishedAt,
+      },
+    },
+  }))
+  .with(agentLineStatsRequestFailed, (state, { payload }) => ({
+    ...state,
+    agentLineStatsRequests: {
+      ...state.agentLineStatsRequests,
+      [payload.agentId]: {
+        ...(state.agentLineStatsRequests[payload.agentId] ?? emptyAgentLineStatsRequestState),
+        isLoading: false,
+        error: payload.error,
+        lastFinishedAt: payload.finishedAt,
+      },
+    },
+  }))
 
   // Accept changes state (moved from transient-ui slice)
   .with(setCommitMessage, (state, { payload: [wsId, message] }) => {

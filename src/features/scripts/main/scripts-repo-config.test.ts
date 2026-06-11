@@ -12,7 +12,6 @@ import * as path from 'path';
 import {
   readRepoConfig,
   writeRepoConfig,
-  clearRepoConfigCache,
 } from '../../workspace/main/repo-config.service';
 import { readRepoScripts } from './scripts-persistence';
 import type { RepoScript, RepoConfig } from '../../../shared/types/repo-config.types';
@@ -22,11 +21,9 @@ let repoPath: string;
 
 beforeEach(async () => {
   repoPath = await fs.mkdtemp(path.join(os.tmpdir(), 'repo-config-scripts-test-'));
-  clearRepoConfigCache();
 });
 
 afterEach(async () => {
-  clearRepoConfigCache();
   await fs.rm(repoPath, { recursive: true, force: true });
 });
 
@@ -37,7 +34,6 @@ describe('RepoConfig scripts', () => {
     ];
 
     await writeRepoConfig(repoPath, { scripts });
-    clearRepoConfigCache();
     const config = await readRepoConfig(repoPath);
 
     expect(config.scripts).toEqual(scripts);
@@ -86,7 +82,6 @@ describe('RepoConfig scripts', () => {
     await writeRepoConfig(repoPath, { scripts: repoScripts });
     await fs.unlink(path.join(intentDir, 'scripts.json'));
 
-    clearRepoConfigCache();
     const config = await readRepoConfig(repoPath);
     expect(config.scripts).toHaveLength(1);
     expect(config.scripts![0].name).toBe('dev');
@@ -97,7 +92,6 @@ describe('RepoConfig scripts', () => {
 
   it('preserves explicit empty scripts array', async () => {
     await writeRepoConfig(repoPath, { scripts: [] });
-    clearRepoConfigCache();
     const config = await readRepoConfig(repoPath);
 
     // scripts: [] means "intentionally empty", not undefined
@@ -112,7 +106,6 @@ describe('RepoConfig scripts', () => {
     };
 
     await writeRepoConfig(repoPath, config);
-    clearRepoConfigCache();
     const read = await readRepoConfig(repoPath);
 
     expect(read.branchPrefix).toBe('feat/');

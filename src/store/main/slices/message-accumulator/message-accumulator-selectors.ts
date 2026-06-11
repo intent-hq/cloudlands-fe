@@ -2,64 +2,47 @@
  * Message Accumulator Selectors (Main Process)
  */
 
-import { store } from "../../configured-store";
-import type { ContentBlock } from "../../../../shared/types";
-import type {
-  AccumulatorStats,
-  SerializedAccumulatedMessage,
-} from "./message-accumulator-types";
-import { EMPTY_STATS } from "./message-accumulator-types";
+import { store } from '../../configured-store';
+import type { ContentBlock } from '../../../../shared/types';
+import { buildOrderedContentBlocks } from '../../../../shared/utils/content-block-utils';
+import type { AccumulatorStats, SerializedAccumulatedMessage } from './message-accumulator-types';
+import { EMPTY_STATS } from './message-accumulator-types';
 
 // ---------------------------------------------------------------------------
 // Individual accumulator
 // ---------------------------------------------------------------------------
 
-export const selectAccumulator = store.createSelector<[sessionId: string], SerializedAccumulatedMessage | undefined>(
-  (state, sessionId) => state.messageAccumulator.accumulators[sessionId],
-);
+export const selectAccumulator = store.createSelector<
+  [sessionId: string],
+  SerializedAccumulatedMessage | undefined
+>((state, sessionId) => state.messageAccumulator.accumulators[sessionId]);
 
-export const selectPartialContent = store.createSelector<[sessionId: string], { content: string; contentBlocks: ContentBlock[] }>(
-  (state, sessionId) => {
-    const acc = state.messageAccumulator.accumulators[sessionId];
-    if (!acc) return { content: "", contentBlocks: [] };
+export const selectPartialContent = store.createSelector<
+  [sessionId: string],
+  { content: string; contentBlocks: ContentBlock[] }
+>((state, sessionId) => {
+  const acc = state.messageAccumulator.accumulators[sessionId];
+  if (!acc) return { content: '', contentBlocks: [] };
 
-    // Build ordered content blocks from ordered items
-    const blocks: ContentBlock[] = [];
-    let currentText = "";
+  const blocks = buildContentBlocksFromRanges(acc);
 
-    for (const item of acc.orderedItems) {
-      if (item.type === "text") {
-        currentText += item.content as string;
-      } else {
-        if (currentText) {
-          blocks.push({ type: "text", text: currentText } as ContentBlock);
-          currentText = "";
-        }
-        blocks.push(item.content as ContentBlock);
-      }
+  // Backward compatibility fallback
+  if (acc.orderedItems.length === 0 && blocks.length === 0) {
+    if (acc.content) {
+      blocks.push({ type: 'text', text: acc.content } as ContentBlock);
     }
-    if (currentText) {
-      blocks.push({ type: "text", text: currentText } as ContentBlock);
-    }
+    blocks.push(...acc.contentBlocks);
+  }
 
-    // Backward compatibility fallback
-    if (acc.orderedItems.length === 0 && blocks.length === 0) {
-      if (acc.content) {
-        blocks.push({ type: "text", text: acc.content } as ContentBlock);
-      }
-      blocks.push(...acc.contentBlocks);
-    }
-
-    return { content: acc.content || "", contentBlocks: blocks };
-  },
-);
+  return { content: acc.content || '', contentBlocks: blocks };
+});
 
 // ---------------------------------------------------------------------------
 // Collection queries
 // ---------------------------------------------------------------------------
 
-export const selectActiveSessionIds = store.createSelector<[], string[]>(
-  (state) => Object.keys(state.messageAccumulator.accumulators),
+export const selectActiveSessionIds = store.createSelector<[], string[]>((state) =>
+  Object.keys(state.messageAccumulator.accumulators),
 );
 
 export const selectAccumulatorStats = store.createSelector<[], AccumulatorStats>(
@@ -70,3 +53,16 @@ export const selectHasAccumulator = store.createSelector<[sessionId: string], bo
   (state, sessionId) => sessionId in state.messageAccumulator.accumulators,
 );
 
+function buildContentBlocksFromRanges(acc: SerializedAccumulatedMessage): ContentBlock[] {
+  return buildOrderedContentBlocks(
+    acc.orderedItems.map((item) => {
+      if (item.type === 'block') return item;
+      return {
+        sequence: item.sequence,
+        type: 'text' as const,
+        content: acc.content.slice(item.contentRange.start, item.contentRange.end),
+      };
+    }),
+    '',
+  );
+}

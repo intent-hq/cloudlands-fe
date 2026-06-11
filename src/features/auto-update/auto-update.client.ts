@@ -7,6 +7,13 @@
 
 import type { UpdateChannel, UpdateProgress, UpdateState } from './types';
 import { AUTO_UPDATE_CHANNELS } from './types';
+import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
+
+interface AutoUpdateResponse<T> {
+  success: boolean;
+  data: T;
+  error?: { message?: string };
+}
 
 /**
  * Auto-update client for renderer process
@@ -16,7 +23,7 @@ export const autoUpdateClient = {
    * Check for available updates
    */
   async checkForUpdates(): Promise<UpdateState> {
-    const response = await window.electronAPI.invoke(AUTO_UPDATE_CHANNELS.CHECK);
+    const response = await invokeIpc<AutoUpdateResponse<UpdateState>>(AUTO_UPDATE_CHANNELS.CHECK);
     if (!response.success) {
       throw new Error(response.error?.message || 'Failed to check for updates');
     }
@@ -27,7 +34,9 @@ export const autoUpdateClient = {
    * Manually check for updates (triggers "up to date" notification if no updates)
    */
   async checkForUpdatesManual(): Promise<UpdateState> {
-    const response = await window.electronAPI.invoke(AUTO_UPDATE_CHANNELS.CHECK_MANUAL);
+    const response = await invokeIpc<AutoUpdateResponse<UpdateState>>(
+      AUTO_UPDATE_CHANNELS.CHECK_MANUAL,
+    );
     if (!response.success) {
       throw new Error(response.error?.message || 'Failed to check for updates');
     }
@@ -38,7 +47,7 @@ export const autoUpdateClient = {
    * Download the available update
    */
   async downloadUpdate(): Promise<void> {
-    const response = await window.electronAPI.invoke(AUTO_UPDATE_CHANNELS.DOWNLOAD);
+    const response = await invokeIpc<AutoUpdateResponse<void>>(AUTO_UPDATE_CHANNELS.DOWNLOAD);
     if (!response.success) {
       throw new Error(response.error?.message || 'Failed to download update');
     }
@@ -48,7 +57,7 @@ export const autoUpdateClient = {
    * Install the downloaded update and restart the app
    */
   async installUpdate(): Promise<void> {
-    await window.electronAPI.invoke(AUTO_UPDATE_CHANNELS.INSTALL);
+    await invokeIpc(AUTO_UPDATE_CHANNELS.INSTALL);
     // App will restart, so we don't need to handle the response
   },
 
@@ -56,7 +65,7 @@ export const autoUpdateClient = {
    * Get the current update state
    */
   async getState(): Promise<UpdateState> {
-    const response = await window.electronAPI.invoke(AUTO_UPDATE_CHANNELS.GET_STATE);
+    const response = await invokeIpc<AutoUpdateResponse<UpdateState>>(AUTO_UPDATE_CHANNELS.GET_STATE);
     if (!response.success) {
       throw new Error(response.error?.message || 'Failed to get update state');
     }
@@ -67,7 +76,9 @@ export const autoUpdateClient = {
    * Set the update channel (stable, beta, alpha)
    */
   async setChannel(channel: UpdateChannel): Promise<void> {
-    const response = await window.electronAPI.invoke(AUTO_UPDATE_CHANNELS.SET_CHANNEL, { channel });
+    const response = await invokeIpc<AutoUpdateResponse<void>>(AUTO_UPDATE_CHANNELS.SET_CHANNEL, {
+      channel,
+    });
     if (!response.success) {
       throw new Error(response.error?.message || 'Failed to set update channel');
     }

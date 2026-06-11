@@ -1,7 +1,7 @@
 /**
  * Scripts IPC Client
  *
- * Thin wrapper around window.electronAPI.invoke for all script IPC calls.
+ * Thin wrapper around the generated IPC invoke helper for all script IPC calls.
  * Used by the renderer process to communicate with the main process.
  */
 
@@ -15,6 +15,7 @@ import type {
 } from './types';
 import { IPC_CHANNELS } from '../../shared/ipc-registry';
 import { createLogger } from '$lib/utils/client-logger';
+import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 
 const logger = createLogger('ScriptsClient');
 
@@ -52,7 +53,7 @@ interface CommandResponse<T = unknown> {
 async function invoke<T>(channel: string, data?: unknown): Promise<CommandResponse<T>> {
   if (typeof window !== 'undefined' && window.electronAPI) {
     try {
-      return await window.electronAPI.invoke(channel, data);
+      return await invokeIpc<CommandResponse<T>>(channel, data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'IPC call failed';
       logger.error(`IPC call to ${channel} failed`, { error: message });
@@ -119,7 +120,7 @@ export const scriptsClient = {
   ): Promise<{ success: boolean; status?: ScriptRuntimeState; error?: string }> {
     if (typeof window !== 'undefined' && window.electronAPI) {
       try {
-        return await window.electronAPI.invoke(IPC_CHANNELS.SCRIPTS.GET_STATUS, { workspaceId, scriptId });
+        return await invokeIpc(IPC_CHANNELS.SCRIPTS.GET_STATUS, { workspaceId, scriptId });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'IPC call failed';
         logger.error(`IPC call to ${IPC_CHANNELS.SCRIPTS.GET_STATUS} failed`, { error: message });
@@ -137,7 +138,7 @@ export const scriptsClient = {
   ): Promise<{ success: boolean; lines: Array<{ text: string; stream: 'stdout' | 'stderr'; timestamp: number }>; error?: string }> {
     if (typeof window !== 'undefined' && window.electronAPI) {
       try {
-        return await window.electronAPI.invoke(IPC_CHANNELS.SCRIPTS.GET_OUTPUT, { workspaceId, scriptId, lastN });
+        return await invokeIpc(IPC_CHANNELS.SCRIPTS.GET_OUTPUT, { workspaceId, scriptId, lastN });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'IPC call failed';
         logger.error(`IPC call to ${IPC_CHANNELS.SCRIPTS.GET_OUTPUT} failed`, { error: message });
@@ -151,7 +152,7 @@ export const scriptsClient = {
   async detect(workspaceId: string): Promise<{ success: boolean; detected?: number; added?: number; removed?: number; packageManager?: string; error?: string }> {
     if (typeof window !== 'undefined' && window.electronAPI) {
       try {
-        return await window.electronAPI.invoke(IPC_CHANNELS.SCRIPTS.DETECT, { workspaceId });
+        return await invokeIpc(IPC_CHANNELS.SCRIPTS.DETECT, { workspaceId });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'IPC call failed';
         logger.error(`IPC call to ${IPC_CHANNELS.SCRIPTS.DETECT} failed`, { error: message });

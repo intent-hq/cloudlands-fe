@@ -6,10 +6,14 @@ import {
   vi,
 } from "vitest";
 import { testSaga } from "redux-saga-test-plan";
+import { channel } from "redux-saga";
 import * as sagaEffects from "redux-saga/effects";
 import { workspaceClient } from "$store/renderer/slices/workspace/utils/workspace.client";
 
 vi.mock("typed-redux-saga", () => ({
+  actionChannel: function* (pattern: any, buffer?: any) {
+    return yield sagaEffects.actionChannel(pattern, buffer);
+  },
   call: function* (fnOrDescriptor: any, ...args: any[]) {
     return yield Array.isArray(fnOrDescriptor)
       ? sagaEffects.call(fnOrDescriptor as [any, any], ...args)
@@ -20,6 +24,9 @@ vi.mock("typed-redux-saga", () => ({
   },
   fork: function* (fn: any, ...args: any[]) {
     return yield sagaEffects.fork(fn, ...args);
+  },
+  flush: function* (channel: any) {
+    return yield sagaEffects.flush(channel);
   },
   put: function* (action: any) {
     return yield sagaEffects.put(action);
@@ -142,7 +149,7 @@ import {
   setLocalStorageJSON,
 } from "$store/renderer/utils/safe-local-storage-saga";
 import {
-  applyOptimisticTaskStatusUpdate,
+  bulkUpdateWorkspaceEntities,
   createWorkspaceRequested,
   cleanupRecency,
   deleteWorkspaceRequested,
@@ -173,8 +180,11 @@ import {
   initializeWorkspaceRecencySaga,
   performLoadWorkspaces,
   persistWorkspaceRecency,
+  watchBatchedWorkspaceEntityUpdatesSaga,
   watchWorkspaceLoadRequestsSaga,
   watchWorkspaceRecencyPersistenceSaga,
+  WORKSPACE_ENTITY_UPDATE_BUFFER_LIMIT,
+  WORKSPACE_ENTITY_UPDATE_BATCH_MS,
   WORKSPACE_RECENCY_STORAGE_KEY,
   workspaceSaga,
 } from "./workspace-saga";
@@ -188,7 +198,8 @@ import {
   workspaceCrudSaga,
 } from "./workspace-crud-saga";
 import {
-  watchTaskStatusChangedSaga,
+  watchCoalescedWorkspaceUpdatesOnMountSaga,
+  watchMountedWorkspaceInterestCleanupSaga,
   watchWorkspaceBeforeUnloadSaga,
   watchWorkspaceBackgroundEnrichmentSaga,
   watchWorkspaceUpdatedSaga,
@@ -207,6 +218,15 @@ function getElectronHandler(eventName: string) {
   const call = takeEveryFromElectronChannelMock.mock.calls.find(([name]) => name === eventName);
   expect(call).toBeDefined();
   return call![1] as (data: any) => Generator;
+}
+
+function expectBoundedActionChannel(effect: any, pattern: unknown, limit: number) {
+  expect(effect.type).toBe("ACTION_CHANNEL");
+  expect(effect.payload.pattern).toBe(pattern);
+  const buffer = effect.payload.buffer;
+  expect(buffer).toBeDefined();
+  for (let i = 0; i <= limit; i++) buffer.put(i);
+  expect(buffer.take()).toBe(1);
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +248,8 @@ describe("workspaceSaga", () => {
   it("forks all workspace sub-sagas", () => {
     testSaga(workspaceSaga)
       .next()
+      .fork(watchBatchedWorkspaceEntityUpdatesSaga)
+      .next()
       .fork(workspaceIpcSaga)
       .next()
       .fork(workspaceCrudSaga)
@@ -241,6 +263,42 @@ describe("workspaceSaga", () => {
       .isDone();
   });
 
+  it("batches workspace entity updates behind an event-gated action channel", () => {
+    const iterator = watchBatchedWorkspaceEntityUpdatesSaga();
+    const updateActions = channel<ReturnType<typeof updateWorkspaceEntity>>();
+    const firstAction = updateWorkspaceEntity("ws-1", { title: "First" });
+    const secondAction = updateWorkspaceEntity("ws-2", { title: "Second" });
+    const thirdAction = updateWorkspaceEntity("ws-1", { branch: "feature" });
+
+    expectBoundedActionChannel(iterator.next().value, updateWorkspaceEntity, WORKSPACE_ENTITY_UPDATE_BUFFER_LIMIT);
+    expect(iterator.next(updateActions as any).value).toEqual(sagaEffects.take(updateActions));
+    expect(iterator.next(firstAction as any).value).toEqual(
+      sagaEffects.delay(WORKSPACE_ENTITY_UPDATE_BATCH_MS)
+    );
+    expect(iterator.next().value).toEqual(sagaEffects.flush(updateActions));
+    expect(iterator.next([secondAction, thirdAction] as any).value).toEqual(
+      sagaEffects.put(bulkUpdateWorkspaceEntities([firstAction, secondAction, thirdAction]))
+    );
+    expect(iterator.next().value).toEqual(sagaEffects.take(updateActions));
+  });
+
+  it("preserves the first workspace entity update when the flush is empty", () => {
+    const iterator = watchBatchedWorkspaceEntityUpdatesSaga();
+    const updateActions = channel<ReturnType<typeof updateWorkspaceEntity>>();
+    const firstAction = updateWorkspaceEntity("ws-1", { title: "First" });
+
+    expectBoundedActionChannel(iterator.next().value, updateWorkspaceEntity, WORKSPACE_ENTITY_UPDATE_BUFFER_LIMIT);
+    expect(iterator.next(updateActions as any).value).toEqual(sagaEffects.take(updateActions));
+    expect(iterator.next(firstAction as any).value).toEqual(
+      sagaEffects.delay(WORKSPACE_ENTITY_UPDATE_BATCH_MS)
+    );
+    expect(iterator.next().value).toEqual(sagaEffects.flush(updateActions));
+    expect(iterator.next([] as any).value).toEqual(
+      sagaEffects.put(bulkUpdateWorkspaceEntities([firstAction]))
+    );
+    expect(iterator.next().value).toEqual(sagaEffects.take(updateActions));
+  });
+
   it("forks all workspace IPC sub-sagas", () => {
     testSaga(workspaceIpcSaga)
       .next()
@@ -248,7 +306,9 @@ describe("workspaceSaga", () => {
       .next()
       .fork(watchWorkspaceBackgroundEnrichmentSaga)
       .next()
-      .fork(watchTaskStatusChangedSaga)
+      .fork(watchCoalescedWorkspaceUpdatesOnMountSaga)
+      .next()
+      .fork(watchMountedWorkspaceInterestCleanupSaga)
       .next()
       .fork(watchWorkspaceBeforeUnloadSaga)
       .next()
@@ -268,7 +328,9 @@ describe("workspaceSaga", () => {
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
 
-    const effect = getListenSyncHandler("workspace:updated")(data).next().value as any;
+    const handler = getListenSyncHandler("workspace:updated")(data);
+    expect((handler.next().value as any).type).toBe("SELECT");
+    const effect = handler.next("ws-1").value as any;
     expect(effect.type).toBe("PUT");
     expect(effect.payload.action).toEqual(updateWorkspaceEntity("ws-1", { title: "Updated title" }));
   });
@@ -282,7 +344,8 @@ describe("workspaceSaga", () => {
     iterator.next(); // register listener
 
     const handler = getListenSyncHandler("workspace:updated")(data);
-    const putEffect = handler.next().value as any;
+    expect((handler.next().value as any).type).toBe("SELECT");
+    const putEffect = handler.next("ws-1").value as any;
     expect(putEffect.type).toBe("PUT");
     expect(putEffect.payload.action).toEqual(
       updateWorkspaceEntity("ws-1", { title: "IPC Updated" }),
@@ -292,31 +355,18 @@ describe("workspaceSaga", () => {
   it("dispatches enrichment updates from the background enrichment channel", () => {
     const data = {
       workspaceId: "ws-1",
-      updates: { diffSummary: "Fresh summary" },
+      updates: { prUrl: "https://example.com/pr/1" },
     };
 
     watchWorkspaceBackgroundEnrichmentSaga().next();
-    const putEffect = getElectronHandler("workspace:background-enrichment-complete")(data).next()
-      .value as any;
+    const handler = getElectronHandler("workspace:background-enrichment-complete")(data);
+    expect((handler.next().value as any).type).toBe("SELECT");
+    const putEffect = handler.next("ws-1").value as any;
 
     expect(putEffect.type).toBe("PUT");
     expect(putEffect.payload.action).toEqual(
-      updateWorkspaceEntity("ws-1", { diffSummary: "Fresh summary" }),
+      updateWorkspaceEntity("ws-1", { prUrl: "https://example.com/pr/1" }),
     );
-  });
-
-  it("dispatches optimistic task stat updates from task:status-changed", () => {
-    const payload = {
-      workspaceId: "ws-1",
-      previousStatus: "in_progress",
-      newStatus: "complete",
-    };
-
-    watchTaskStatusChangedSaga().next();
-    const putEffect = getListenSyncHandler("task:status-changed")(payload).next().value as any;
-
-    expect(putEffect.type).toBe("PUT");
-    expect(putEffect.payload.action).toEqual(applyOptimisticTaskStatusUpdate(payload));
   });
 
   it("registers a beforeunload listener that flushes pending deletions", () => {

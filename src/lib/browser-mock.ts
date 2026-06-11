@@ -31,8 +31,7 @@ const MOCK_WORKSPACES = [
     repositoryOwner: 'demo',
     repositoryName: 'example-project',
     tags: [],
-    taskStats: { total: 3, completed: 1, inProgress: 1 },
-    agentSummary: { count: 1, agents: [{ id: 'agent-1', name: 'Agent', status: 'idle' }] },
+    agentSummary: { agentIds: ['agent-1'] },
   },
   {
     id: 'mock-ws-2',

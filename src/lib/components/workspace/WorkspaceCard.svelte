@@ -24,14 +24,17 @@
     incrementContextMenuOpen,
     decrementContextMenuOpen,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import type { Workspace } from '$shared/types';
+  import type { Workspace, WorkspaceAgentInfo } from '$shared/types';
   import { PullRequestStatus } from '$shared/types';
+  import { writable } from 'svelte/store';
   import { store as appStore } from "$store/renderer/store";
   import {
     selectAgentIsResponding,
     selectAgentIsWaiting,
     selectAgentSession,
   } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
+  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import {
     requestArchiveWorkspace,
     requestDeleteWorkspace,
@@ -119,13 +122,31 @@
   // Lazy dispatch access to avoid Store.init() errors in tests
   const getDispatch = () => appStore.dispatch.bind(appStore);
 
+  const workspaceIdStore = writable('');
+  $effect(() => {
+    workspaceIdStore.set(workspace?.id ?? '');
+  });
+  const workspaceTaskProgress$ = selectWorkspaceTaskProgress(workspaceIdStore);
+
+  // Load canonical tasks for progress display (no-op once initialized).
+  $effect(() => {
+    const workspaceId = workspace?.id;
+    if (!workspaceId) return;
+    getDispatch()(ensureWorkspaceTasksLoaded(String(workspaceId)));
+  });
+
   const workspacePhaseInfo = $derived(
-    workspace ? deriveWorkspacePhase(workspace, { hasActiveAgents: isRunning }) : undefined,
+    workspace
+      ? deriveWorkspacePhase(workspace, {
+          hasActiveAgents: isRunning,
+          taskProgress: $workspaceTaskProgress$,
+        })
+      : undefined,
   );
   const workspaceBuildProgress = $derived.by(() => {
-    const total = workspace?.taskStats?.total ?? 0;
+    const { total, completed } = $workspaceTaskProgress$;
     if (total === 0) return 0;
-    return (workspace?.taskStats?.completed ?? 0) / total;
+    return completed / total;
   });
   let isCurrent = $derived(workspace ? page.url.pathname === `/workspace/${workspace.id}` : false);
   let hoverCardVisible = $state(false);
@@ -168,16 +189,15 @@
     return getPRTooltipContent(activePR ?? undefined);
   });
 
-  const activeAgentStatuses = new Set(['streaming', 'processing', 'busy', 'responding']);
-  function getSummaryAgentState(agent: { id: string; status?: string }): AvatarState {
+  function getSummaryAgentState(agent: { id: string }): AvatarState {
     const reduxState = appStore.state;
     const loadedSession = selectAgentSession.select(reduxState, agent.id);
     const isWaiting = loadedSession
       ? selectAgentIsWaiting.select(reduxState, agent.id)
-      : agent.status === 'waiting';
+      : false;
     const isResponding = loadedSession
       ? selectAgentIsResponding.select(reduxState, agent.id)
-      : activeAgentStatuses.has(agent.status ?? '');
+      : streamingAgentIds.includes(agent.id);
 
     if (isWaiting) return 'waiting';
     if (isResponding) return 'running';
@@ -185,9 +205,15 @@
   }
 
   const agentInfos = $derived.by(() => {
-    const all = workspace?.agentSummary?.agents ?? [];
+    const memberIds = workspace?.agentSummary?.agentIds ?? [];
     const unreadSet = new Set(unreadAgentIds);
-    return all.filter((agent) => getSummaryAgentState(agent) !== 'idle' || unreadSet.has(agent.id));
+    return memberIds
+      .map((id) => ({
+        id,
+        specialist: (selectAgentSession.select(appStore.state, id)?.metadata?.specialist ??
+          null) as WorkspaceAgentInfo['specialist'],
+      }))
+      .filter((agent) => getSummaryAgentState(agent) !== 'idle' || unreadSet.has(agent.id));
   });
 
   function handleKeydown(e: KeyboardEvent) {

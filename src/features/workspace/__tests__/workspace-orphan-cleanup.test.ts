@@ -87,7 +87,6 @@ describe('workspace orphan cleanup', () => {
       readGitConfig: vi.fn().mockResolvedValue(''),
       scanDirectory: vi.fn().mockResolvedValue([]),
       cleanCache: vi.fn().mockResolvedValue(undefined),
-      clearListCache: vi.fn(),
       ...overrides,
     }) as unknown as WorkspaceRepository;
 
@@ -368,8 +367,11 @@ describe('workspace orphan cleanup', () => {
     const metadataDir = path.join(workspacePath, WorkspaceConfig.METADATA_FOLDER);
     const metadataPath = path.join(metadataDir, WorkspaceConfig.WORKSPACE_METADATA_FILE);
     const save = vi.fn().mockRejectedValue(new Error('save failed'));
+    const workspaceFixture = createWorkspaceFixture(workspaceId, {
+      worktreePath: path.join(baseDir, 'missing-worktree'),
+    });
     const repository = {
-      findById: vi.fn(),
+      findById: vi.fn().mockResolvedValue(workspaceFixture),
       findAll: vi.fn(),
       save,
       delete: vi.fn(),
@@ -380,19 +382,11 @@ describe('workspace orphan cleanup', () => {
       readGitConfig: vi.fn(),
       scanDirectory: vi.fn(),
       cleanCache: vi.fn(),
-      clearListCache: vi.fn(),
     } as unknown as WorkspaceRepository;
     const service = new WorkspaceService(repository, new InMemoryNotesRepository());
 
     await fs.mkdir(metadataDir, { recursive: true });
-    await fs.writeFile(
-      metadataPath,
-      JSON.stringify(
-        createWorkspaceFixture(workspaceId, {
-          worktreePath: path.join(baseDir, 'missing-worktree'),
-        }),
-      ),
-    );
+    await fs.writeFile(metadataPath, JSON.stringify(workspaceFixture));
 
     try {
       const result = await service.purgeDeletedWorkspaces();

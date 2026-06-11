@@ -8,7 +8,7 @@
  *   pnpm tsx test/test-accessibility-tree.ts
  *
  * Prerequisites:
- *   - Electron app running with CDP enabled on port 9222
+ *   - Electron app running with CDP enabled on port 9223
  *   - Run: pnpm run dev:cdp
  */
 
@@ -26,7 +26,7 @@ class AccessibilityTreeTestHarness {
   private results: TestResult[] = [];
 
   async connect() {
-    const port = parseInt(process.env.CDP_PORT || '9222', 10);
+    const port = parseInt(process.env.CDP_PORT || '9223', 10);
     console.log(`\n🔌 Connecting to CDP on port ${port}...`);
 
     try {

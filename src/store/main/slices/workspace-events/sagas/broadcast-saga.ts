@@ -2,7 +2,7 @@
  * Broadcast saga for workspace events.
  *
  * On `workspaceEventAccepted`, broadcasts to:
- * 1. Renderer windows via IPC (`events:new` channel) — workspace-scoped or global
+ * 1. Renderer windows via IPC (`events:new` channel) — workspace-targeted when possible
  * 2. Browser-mode IPC WebSocket clients via `sendToWorkspaceWindows`'s named adapter
  * 3. STDIO connection for MCP clients
  *
@@ -24,11 +24,11 @@ import { workspaceEventAccepted } from "../workspace-events-slice";
 // ---------------------------------------------------------------------------
 
 /**
- * Event types that must be broadcast to ALL windows regardless of workspace
- * routing. The renderer already filters by workspaceId in its event handlers,
- * so global broadcast is safe and avoids multi-window routing issues.
+ * Event types that are safe to broadcast globally only when the accepted event
+ * has no workspaceId. When a workspaceId is present, these are workspace-targeted
+ * like any other workspace event so unrelated renderer windows do not churn.
  */
-const GLOBAL_BROADCAST_EVENT_TYPES = new Set([
+const PAYLOAD_LIGHT_GLOBAL_FALLBACK_EVENT_TYPES = new Set([
   "agent:subscribed",
   "agent:unsubscribed",
   "agent:subscriptions-changed",
@@ -51,11 +51,13 @@ export async function broadcastEvent(event: WorkspaceEvent): Promise<void> {
     "../../../../../features/system/main/system.ipc"
   );
 
-  // Subscription-related events broadcast globally (to all windows) so that
-  // multi-window setups always receive them. The renderer filters by
-  // workspaceId in its own event handlers, preventing cross-workspace leaks.
-  const isGlobal = GLOBAL_BROADCAST_EVENT_TYPES.has(event.type);
-  const targetWorkspaceId = isGlobal ? undefined : event.workspaceId;
+  // Subscription/status events are payload-light enough to remain global only
+  // when the event itself has no workspace scope. If workspaceId is present,
+  // route to interested workspace windows instead of relying on renderer-side
+  // filtering in every window.
+  const isGlobalFallback =
+    !event.workspaceId && PAYLOAD_LIGHT_GLOBAL_FALLBACK_EVENT_TYPES.has(event.type);
+  const targetWorkspaceId = isGlobalFallback ? undefined : event.workspaceId;
 
   // Send on 'events:new' channel (used by ActivityTimeline and other UI components)
   sendToWorkspaceWindows(targetWorkspaceId, "events:new", {

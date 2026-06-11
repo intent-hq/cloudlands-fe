@@ -172,6 +172,18 @@ export const CHANNEL_METADATA: Record<
     description: 'List all spaces',
     category: 'workspace',
   },
+  [WORKSPACE_CHANNELS.GET_DIFF_SUMMARY]: {
+    description: 'Get on-demand diff summary for a workspace (not embedded in metadata payloads)',
+    category: 'workspace',
+  },
+  [WORKSPACE_CHANNELS.GET_GIT_SUMMARY]: {
+    description: 'Get on-demand git summary for a workspace (not embedded in metadata payloads)',
+    category: 'workspace',
+  },
+  [WORKSPACE_CHANNELS.GET_TASKS]: {
+    description: 'Get on-demand task list for a workspace (not embedded in metadata payloads)',
+    category: 'workspace',
+  },
 
   // File channels
   [FILE_CHANNELS.READ]: {

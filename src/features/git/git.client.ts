@@ -14,6 +14,7 @@ import type {
   CommandResponse,
 } from '../../shared/types';
 import { GIT_CHANNELS } from '../../shared/ipc';
+import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 
 class GitClient {
   private async invoke<T>(channel: string, data?: any): Promise<Result<T, string>> {
@@ -24,7 +25,7 @@ class GitClient {
     while (retries > 0) {
       try {
         if (typeof window !== 'undefined' && window.electronAPI) {
-          const response = await window.electronAPI.invoke(channel, data);
+          const response = await invokeIpc<CommandResponse<T>>(channel, data);
           // Convert CommandResponse to Result type
           return this.commandResponseToResult<T>(response);
         }

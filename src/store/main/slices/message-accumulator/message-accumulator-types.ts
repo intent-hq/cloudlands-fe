@@ -6,45 +6,63 @@
  * Timestamps are stored as epoch milliseconds (number).
  */
 
-import type { ContentBlock } from "../../../../shared/types";
+import type { ContentBlock } from '../../../../shared/types';
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
 export interface AccumulatorConfig {
-  maxMessageSize: number;       // Maximum size of accumulated message (bytes)
-  flushInterval: number;        // Interval to flush partial messages (ms)
-  enableCheckpoints: boolean;   // Save checkpoints for recovery
-  checkpointInterval: number;   // Checkpoint save interval (ms)
+  maxMessageSize: number; // Maximum size of accumulated message (bytes)
+  flushInterval: number; // Interval to flush partial messages (ms)
+  enableCheckpoints: boolean; // Save checkpoints for recovery
+  checkpointInterval: number; // Checkpoint save interval (ms)
 }
 
 export const DEFAULT_ACCUMULATOR_CONFIG: AccumulatorConfig = {
   maxMessageSize: 20 * 1024 * 1024, // 20MB
-  flushInterval: 5000,               // 5 seconds
+  flushInterval: 5000, // 5 seconds
   enableCheckpoints: true,
-  checkpointInterval: 1000,          // 1 second
+  checkpointInterval: 1000, // 1 second
 };
 
 // ---------------------------------------------------------------------------
 // Per-session state (serializable)
 // ---------------------------------------------------------------------------
 
-/** A single chunk record (kept for duplicate detection, last 20 only) */
+/** A single chunk metadata record (kept for duplicate detection, last 20 only) */
 export interface SerializedChunk {
-  content: string;
-  timestamp: number;       // epoch ms
+  contentHash: string;
+  byteSize: number;
+  startOffset: number;
+  endOffset: number;
+  timestamp: number; // epoch ms
   sequenceNumber: number;
-  metadata?: Record<string, unknown>;
 }
 
-/** An ordered item in the accumulation (text or content block) */
-export interface SerializedAccumulationItem {
-  sequence: number;
-  type: "text" | "block";
-  content: string | ContentBlock;
-  timestamp: number;       // epoch ms
+export interface SerializedTextRange {
+  start: number;
+  end: number;
 }
+
+export interface SerializedTextAccumulationItem {
+  sequence: number;
+  type: 'text';
+  contentRange: SerializedTextRange;
+  timestamp: number; // epoch ms
+}
+
+export interface SerializedBlockAccumulationItem {
+  sequence: number;
+  type: 'block';
+  content: ContentBlock;
+  timestamp: number; // epoch ms
+}
+
+/** An ordered item in the accumulation (text range or content block) */
+export type SerializedAccumulationItem =
+  | SerializedTextAccumulationItem
+  | SerializedBlockAccumulationItem;
 
 /** The complete accumulated message state (serializable) */
 export interface SerializedAccumulatedMessage {
@@ -53,8 +71,8 @@ export interface SerializedAccumulatedMessage {
   chunks: SerializedChunk[];
   contentBlocks: ContentBlock[];
   orderedItems: SerializedAccumulationItem[];
-  startTime: number;       // epoch ms
-  lastUpdateTime: number;  // epoch ms
+  startTime: number; // epoch ms
+  lastUpdateTime: number; // epoch ms
   byteSize: number;
   chunkCount: number;
   isComplete: boolean;
@@ -99,4 +117,3 @@ export const EMPTY_ACCUMULATOR_STATE: MessageAccumulatorState = {
   sequenceCounters: {},
   stats: { ...EMPTY_STATS },
 };
-

@@ -318,8 +318,13 @@ function createActiveStreamsTrackerChannel() {
   return eventChannel<"changed">((emitter) => {
     activeStreamsTracker.startPolling();
     const unsubscribe = activeStreamsTracker.subscribe(() => emitter("changed"));
-    return unsubscribe;
-  }, buffers.expanding<"changed">());
+    return () => {
+      unsubscribe();
+      activeStreamsTracker.stopPolling();
+    };
+  // The callback only invalidates derived active-stream selectors, so multiple
+  // pending bumps coalesce to one latest notification under producer storms.
+  }, buffers.sliding<"changed">(1));
 }
 
 /** @internal Exported for testing only. */

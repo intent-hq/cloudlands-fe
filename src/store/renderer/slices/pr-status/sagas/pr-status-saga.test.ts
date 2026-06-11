@@ -92,7 +92,10 @@ import {
   prStatusRefreshCompleted,
 } from "../pr-status-slice";
 import { selectPRStatusLastRefreshTime } from "../pr-status-selectors";
-import { selectWorkspaceById } from "$store/renderer/slices/workspace/workspace-selectors";
+import {
+  selectActiveWorkspace,
+  selectWorkspaceById,
+} from "$store/renderer/slices/workspace/workspace-selectors";
 import {
   initialState as workspaceInitialState,
   updateWorkspaceEntity,
@@ -123,10 +126,28 @@ const mockWorkspace = {
 
 const timestamp = "2026-01-01T00:00:00.000Z";
 
+function isDelayEffect(effect: { fn?: { name?: string }; args?: unknown[]; payload?: { fn?: { name?: string }; args?: unknown[] } }): boolean {
+  const delayEffect = effect.fn ? effect : effect.payload;
+  return delayEffect?.fn?.name === "delayP" && typeof delayEffect.args?.[0] === "number";
+}
+
 const createReadableStoreState = () => readable({
   "@internal_storeUtility": { updatesLocked: false },
   workspace: workspaceInitialState,
 } as any as StoreState);
+
+const createReduxStoreContext = () => {
+  const state = {
+    "@internal_storeUtility": { updatesLocked: false },
+    workspace: workspaceInitialState,
+  } as any as StoreState;
+
+  return {
+    getState: () => state,
+    dispatch: vi.fn(),
+    subscribe: (_listener: () => void) => () => {},
+  };
+};
 
 function makePR(overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
   return {
@@ -156,10 +177,12 @@ describe("PR Status Saga", () => {
   describe("handleRefreshPRStatus", () => {
     it("skips refresh when rate limited", async () => {
       const storeState = createReadableStoreState();
+	      const reduxStore = createReduxStoreContext();
       const { prStatusSaga } = await import("./pr-status-saga");
 
       await expectSaga(prStatusSaga)
         .provide([
+	          [matchers.getContext("reduxStore"), reduxStore],
           [matchers.getContext("readableStoreState"), storeState],
           [matchers.select.selector(selectPRStatusLastRefreshTime.select), Date.now() - 1000],
           [matchers.select.selector(selectWorkspaceById.select), mockWorkspace],
@@ -171,10 +194,12 @@ describe("PR Status Saga", () => {
 
     it("returns error when workspace not found", async () => {
       const storeState = createReadableStoreState();
+	      const reduxStore = createReduxStoreContext();
       const { prStatusSaga } = await import("./pr-status-saga");
 
       await expectSaga(prStatusSaga)
         .provide([
+	          [matchers.getContext("reduxStore"), reduxStore],
           [matchers.getContext("readableStoreState"), storeState],
           [matchers.select.selector(selectPRStatusLastRefreshTime.select), null],
           [matchers.select.selector(selectWorkspaceById.select), undefined],
@@ -186,10 +211,12 @@ describe("PR Status Saga", () => {
 
     it("returns error when missing repo info", async () => {
       const storeState = createReadableStoreState();
+	      const reduxStore = createReduxStoreContext();
       const { prStatusSaga } = await import("./pr-status-saga");
 
       await expectSaga(prStatusSaga)
         .provide([
+	          [matchers.getContext("reduxStore"), reduxStore],
           [matchers.getContext("readableStoreState"), storeState],
           [matchers.select.selector(selectPRStatusLastRefreshTime.select), null],
           [matchers.select.selector(selectWorkspaceById.select), { ...mockWorkspace, repositoryOwner: null }],
@@ -201,6 +228,7 @@ describe("PR Status Saga", () => {
 
     it("dispatches activePullRequest null when a tracked PR refreshes as merged", async () => {
       const storeState = createReadableStoreState();
+	      const reduxStore = createReduxStoreContext();
       const { prStatusSaga } = await import("./pr-status-saga");
       const openPR = makePR({ status: PullRequestStatus.Open });
       const mergedPR = makePR({
@@ -218,6 +246,7 @@ describe("PR Status Saga", () => {
 
       await expectSaga(prStatusSaga)
         .provide([
+	          [matchers.getContext("reduxStore"), reduxStore],
           [matchers.getContext("readableStoreState"), storeState],
           [matchers.select.selector(selectPRStatusLastRefreshTime.select), null],
           [matchers.select.selector(selectWorkspaceById.select), workspace],
@@ -233,6 +262,68 @@ describe("PR Status Saga", () => {
           pullRequests: [mergedPR],
         }))
         .silentRun(100);
+    });
+  });
+
+  describe("active workspace polling", () => {
+    it("polls the active workspace from one polling flow", async () => {
+      const { pollActiveWorkspacePRStatus } = await import("./pr-status-saga");
+      const activePR = makePR();
+      let delayCount = 0;
+
+      await expectSaga(pollActiveWorkspacePRStatus)
+        .provide({
+          call(effect, next) {
+            if (isDelayEffect(effect)) {
+              delayCount += 1;
+              return delayCount === 1 ? undefined : new Promise(() => {});
+            }
+            return next();
+          },
+          select(effect, next) {
+            if (effect.selector === selectActiveWorkspace.select) {
+              return { ...mockWorkspace, id: "ws-active", activePullRequest: activePR };
+            }
+            return next();
+          },
+        })
+        .put(refreshPRStatusRequested("ws-active", false, false))
+        .silentRun(50);
+    });
+
+    it("registers a single global polling loop from the root saga", async () => {
+      const { prStatusSaga, pollActiveWorkspacePRStatus } = await import("./pr-status-saga");
+      const generator = prStatusSaga();
+
+      const focusWatcher = generator.next().value as any;
+      expect(focusWatcher.type).toBe("FORK");
+      expect(focusWatcher.payload.fn.name).toBe("watchWindowFocus");
+
+      expect(generator.next().value).toEqual(
+        sagaEffects.fork(pollActiveWorkspacePRStatus),
+      );
+
+      const refreshWatcher = generator.next().value as any;
+      expect(refreshWatcher.type).toBe("FORK");
+      expect(refreshWatcher.payload.args[0]).toBe(refreshPRStatusRequested);
+    });
+
+    it("keeps the global polling loop idle when there is no active pull request", async () => {
+      const { pollActiveWorkspacePRStatus } = await import("./pr-status-saga");
+      const generator = pollActiveWorkspacePRStatus();
+
+      expect(isDelayEffect(generator.next().value as any)).toBe(true);
+      expect(generator.next().value).toEqual(
+        sagaEffects.select(selectActiveWorkspace.select),
+      );
+      expect(isDelayEffect(generator.next(undefined).value as any)).toBe(true);
+
+      expect(generator.next().value).toEqual(
+        sagaEffects.select(selectActiveWorkspace.select),
+      );
+      expect(isDelayEffect(
+        generator.next({ ...mockWorkspace, activePullRequest: null }).value as any,
+      )).toBe(true);
     });
   });
 

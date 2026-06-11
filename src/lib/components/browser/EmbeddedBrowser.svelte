@@ -15,6 +15,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
+  import { invoke } from '$shared/generated/ipc-client';
   import {
   BROWSER_PANEL_PARTITION,
   BROWSER_PROTOCOLS,
@@ -316,24 +317,23 @@
 
   // Set up webview listeners whenever webviewRef changes (including after {#key} recreates it)
   $effect(() => {
-    if (webviewRef) {
+    const currentWebview = webviewRef;
+    if (currentWebview) {
       // Ensure critical attributes are set on the webview DOM element.
       // Svelte may not reliably set attributes on custom elements like <webview>,
       // so we set them programmatically as a safety net.
       // - partition: isolates cookies/storage from the main app session
       // - allowpopups: enables popup windows (required for OAuth flows)
       // These MUST be set before the first navigation (Electron requirement for partition).
-      if (!webviewRef.getAttribute('partition')) {
-        webviewRef.setAttribute('partition', BROWSER_PANEL_PARTITION);
+      if (!currentWebview.getAttribute('partition')) {
+        currentWebview.setAttribute('partition', BROWSER_PANEL_PARTITION);
         logger.debug('Set partition attribute on webview', { partition: BROWSER_PANEL_PARTITION });
       }
-      if (!webviewRef.hasAttribute('allowpopups')) {
-        webviewRef.setAttribute('allowpopups', '');
+      if (!currentWebview.hasAttribute('allowpopups')) {
+        currentWebview.setAttribute('allowpopups', '');
         logger.debug('Set allowpopups attribute on webview');
       }
 
-      // Clear previous listeners array (the old webview is already destroyed by Svelte)
-      webviewListeners = [];
       setupWebviewListeners();
       // Wait for webview to be ready
       const handleDomReady = () => {
@@ -363,15 +363,19 @@
           }
         }
       };
-      webviewRef.addEventListener('dom-ready', handleDomReady, { once: true });
+      currentWebview.addEventListener('dom-ready', handleDomReady, { once: true });
       webviewListeners.push({ event: 'dom-ready', handler: handleDomReady });
 
       // Re-inject keyboard interceptor after every navigation (page changes clear the injected script)
       const handleDidFinishLoad = () => {
         injectKeyboardInterceptor();
       };
-      webviewRef.addEventListener('did-finish-load', handleDidFinishLoad);
+      currentWebview.addEventListener('did-finish-load', handleDidFinishLoad);
       webviewListeners.push({ event: 'did-finish-load', handler: handleDidFinishLoad });
+
+      return () => {
+        cleanupWebviewListeners(currentWebview);
+      };
     }
   });
 
@@ -475,11 +479,11 @@
     };
   });
 
-  function cleanupWebviewListeners() {
-    if (webviewRef) {
+  function cleanupWebviewListeners(target: typeof webviewRef = webviewRef) {
+    if (target) {
       for (const { event, handler } of webviewListeners) {
         try {
-          webviewRef.removeEventListener?.(event, handler);
+          target.removeEventListener?.(event, handler);
         } catch {
           // Ignore errors during cleanup - webview may already be destroyed
         }
@@ -715,8 +719,8 @@
   }
 
   function openExternal() {
-    if (displayUrl) {
-      window.electronAPI?.invoke('shell:openExternal', { url: displayUrl });
+    if (displayUrl && typeof window !== 'undefined' && window.electronAPI) {
+      void invoke('shell:openExternal', { url: displayUrl });
     }
   }
 

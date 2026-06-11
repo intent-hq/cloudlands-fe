@@ -9,8 +9,6 @@ import { expectSaga } from "redux-saga-test-plan";
 import * as matchers from "redux-saga-test-plan/matchers";
 import {
   call,
-  take,
-  delay,
 } from "typed-redux-saga";
 
 /**
@@ -2483,17 +2481,13 @@ describe("sweep catch-up double-delivery prevention", () => {
 
 
 // ---------------------------------------------------------------------------
-// Regression: matchingSaga must block indefinitely (PR #461 follow-up)
+// Regression: matchingSaga must block indefinitely as a direct startup saga
 // ---------------------------------------------------------------------------
 
 describe("matchingSaga blocking behavior", () => {
   it("does not return after registering takeEvery watchers", async () => {
     // matchingSaga registers takeEvery watchers (non-blocking) and then must
-    // block indefinitely. If it returns, the crash-recovery wrapper would loop
-    // and re-register duplicate watchers.
-    //
-    // Strategy: run the saga in the crash-recovery wrapper pattern and verify
-    // it does NOT loop (i.e., the "restarting" log never fires).
+    // block indefinitely as the direct Store.runSaga startup entry.
     let loopCount = 0;
 
     function* testWrapper() {
@@ -2513,14 +2507,13 @@ describe("matchingSaga blocking behavior", () => {
 });
 
 // ---------------------------------------------------------------------------
-// delegationGroupSaga restart wrapper behavior
+// delegationGroupSaga blocking behavior
 // ---------------------------------------------------------------------------
 
-describe("delegationGroupSaga restart wrapper behavior", () => {
+describe("delegationGroupSaga blocking behavior", () => {
   it("does not spin when healthy because delegationGroupSaga blocks", async () => {
     // delegationGroupSaga registers takeEvery watchers and then blocks on
-    // take("@@NEVER_RESOLVE"). The crash-recovery wrapper should therefore
-    // never loop.
+    // take("@@NEVER_RESOLVE") as the direct Store.runSaga startup entry.
     let loopCount = 0;
 
     function* testWrapper() {
@@ -2536,95 +2529,6 @@ describe("delegationGroupSaga restart wrapper behavior", () => {
       .run({ timeout: 200, silenceTimeout: true });
 
     expect(loopCount).toBe(0);
-  });
-
-  it("restarts after a thrown error with a delay", async () => {
-    // Simulate delegationGroupSaga throwing an error. The wrapper should
-    // catch the error and delay 1 second before restarting.
-    let restartCount = 0;
-    let delayCallCount = 0;
-    const crashError = new Error("saga boom");
-
-    function* fakeDelegationGroupSaga(): Generator {
-      restartCount++;
-      if (restartCount <= 2) {
-        throw crashError;
-      }
-      // On third call, block forever (healthy state)
-      yield* take("@@NEVER_RESOLVE");
-    }
-
-    function* testWrapper() {
-      while (true) {
-        try {
-          yield* call(fakeDelegationGroupSaga);
-        } catch (_error) {
-          // Mirrors the real wrapper: catch, then delay before restart
-        }
-        yield* delay(1000);
-        delayCallCount++;
-      }
-    }
-
-    await expectSaga(testWrapper)
-      .provide({
-        call(effect, next) {
-          // Resolve delay() immediately so the loop can iterate within timeout
-          if (isDelayEffect(effect)) return undefined;
-          return next();
-        },
-      })
-      .run({ timeout: 500, silenceTimeout: true });
-
-    // The saga should have been called 3 times: two crashes + one healthy block
-    expect(restartCount).toBe(3);
-
-    // Verify that delay was called at least twice (once per crash)
-    expect(delayCallCount).toBeGreaterThanOrEqual(2);
-  });
-
-  it("restarts after an unexpected normal exit with a delay", async () => {
-    // Simulate delegationGroupSaga returning normally (unexpected).
-    // The wrapper should delay 1 second before restarting.
-    let callCount = 0;
-    let delayCallCount = 0;
-
-    function* fakeDelegationGroupSaga(): Generator {
-      callCount++;
-      if (callCount <= 1) {
-        // Return normally on first call (simulates unexpected exit)
-        return;
-      }
-      // Block forever on subsequent calls
-      yield* take("@@NEVER_RESOLVE");
-    }
-
-    function* testWrapper() {
-      while (true) {
-        try {
-          yield* call(fakeDelegationGroupSaga);
-        } catch (_error) {
-          // catch path
-        }
-        yield* delay(1000);
-        delayCallCount++;
-      }
-    }
-
-    await expectSaga(testWrapper)
-      .provide({
-        call(effect, next) {
-          if (isDelayEffect(effect)) return undefined;
-          return next();
-        },
-      })
-      .run({ timeout: 500, silenceTimeout: true });
-
-    // Called twice: one unexpected exit + one healthy block
-    expect(callCount).toBe(2);
-
-    // At least one delay for the restart after the unexpected exit
-    expect(delayCallCount).toBeGreaterThanOrEqual(1);
   });
 });
 

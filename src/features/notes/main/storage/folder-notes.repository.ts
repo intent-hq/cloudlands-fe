@@ -109,6 +109,10 @@ function toNote(
   };
 }
 
+function toNoteSummary(note: Note): Note {
+  return { ...note, content: '', versions: [] };
+}
+
 /**
  * Convert Note to frontmatter
  */
@@ -280,6 +284,36 @@ export class FolderBasedNotesRepository implements NotesRepository {
     }
   }
 
+  private async findSummaryById(workspaceId: WorkspaceId, noteId: NoteId): Promise<Note | null> {
+    const fs = this.metadataFSResolver(workspaceId);
+    const paths = getNoteStoragePaths(workspaceId, noteId);
+
+    try {
+      const [fileContent, stats] = await Promise.all([
+        fs.readFile(paths.contentFile, 'utf-8'),
+        fs.stat(paths.contentFile),
+      ]);
+      const { frontmatter, content } = parseFrontmatter(fileContent);
+
+      if (frontmatter) {
+        return toNote(workspaceId, frontmatter, '', [], stats.mtime);
+      }
+
+      const legacyFlatNote = await this.loadLegacyFlatNote(workspaceId, noteId, content);
+      return legacyFlatNote ? toNoteSummary(legacyFlatNote) : null;
+    } catch {
+      try {
+        const folderPath = getLegacyFolderPath(workspaceId, noteId);
+        const metaRaw = await fs.readFile(path.join(folderPath, 'meta.json'), 'utf-8');
+        const meta = JSON.parse(metaRaw);
+        return toNoteSummary(this.legacyMetaToNote(workspaceId, meta, ''));
+      } catch {
+        const legacyNote = await this.loadLegacyJsonNote(workspaceId, noteId);
+        return legacyNote ? toNoteSummary(legacyNote) : null;
+      }
+    }
+  }
+
   private legacyMetaToNote(
     workspaceId: WorkspaceId,
     meta: Record<string, unknown>,
@@ -359,6 +393,58 @@ export class FolderBasedNotesRepository implements NotesRepository {
       return notes;
     } catch (error) {
       logger.error('Failed to find notes by workspace', error as Error, { workspaceId });
+      return [];
+    }
+  }
+
+  async findSummariesByWorkspace(workspaceId: WorkspaceId): Promise<Note[]> {
+    const fs = this.metadataFSResolver(workspaceId);
+    const notesDir = WorkspaceConfig.paths.notes(workspaceId);
+    const metaDir = path.join(notesDir, STORAGE_FILES.META_DIR);
+
+    try {
+      await fs.mkdir(notesDir, { recursive: true });
+      await fs.mkdir(metaDir, { recursive: true });
+
+      const entries = await fs.readdir(notesDir, { withFileTypes: true });
+      const notes: Note[] = [];
+      const loadedNoteIds = new Set<string>();
+      const loadPromises: Promise<void>[] = [];
+
+      for (const entry of entries) {
+        let noteId: NoteId | null = null;
+
+        if (entry.isFile() && entry.name.endsWith('.md')) {
+          noteId = entry.name.replace('.md', '') as NoteId;
+        } else if (
+          entry.isDirectory() &&
+          entry.name !== STORAGE_FILES.META_DIR &&
+          entry.name !== '.git'
+        ) {
+          noteId = entry.name as NoteId;
+        } else if (
+          entry.isFile() &&
+          entry.name.endsWith('.json') &&
+          !entry.name.endsWith('.comments.json') &&
+          !entry.name.endsWith('.edits.meta.json')
+        ) {
+          noteId = entry.name.replace('.json', '') as NoteId;
+        }
+
+        if (noteId && !loadedNoteIds.has(noteId)) {
+          loadedNoteIds.add(noteId);
+          loadPromises.push(
+            this.findSummaryById(workspaceId, noteId).then((note) => {
+              if (note) notes.push(note);
+            }),
+          );
+        }
+      }
+
+      await Promise.all(loadPromises);
+      return notes;
+    } catch (error) {
+      logger.error('Failed to find note summaries by workspace', error as Error, { workspaceId });
       return [];
     }
   }

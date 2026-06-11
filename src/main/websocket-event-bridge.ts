@@ -73,11 +73,34 @@ let sendToClient: SendToClientFn | null = null;
 
 /**
  * Register the callback used to send messages to WebSocket clients.
- * Called once by the WebSocket server during setup.
+ * Returns an idempotent unregister function so a stopped WebSocket server does
+ * not remain reachable through this process-global callback.
  */
-export function registerSendCallback(fn: SendToClientFn): void {
+export function registerSendCallback(fn: SendToClientFn): () => void {
   sendToClient = fn;
   logger.info('Send callback registered');
+
+  let unregistered = false;
+  return () => {
+    if (unregistered) return;
+    unregistered = true;
+    clearSendCallback(fn);
+  };
+}
+
+/**
+ * Clear the registered send callback. When `expectedFn` is provided, only clear
+ * the callback if it is still the same registration; this prevents an older
+ * server's stop() from clobbering a newer server's callback.
+ */
+export function clearSendCallback(expectedFn?: SendToClientFn): boolean {
+  if (!sendToClient || (expectedFn && sendToClient !== expectedFn)) {
+    return false;
+  }
+
+  sendToClient = null;
+  logger.info('Send callback cleared');
+  return true;
 }
 
 /**
@@ -202,6 +225,24 @@ export function cleanupClient(clientId: string): void {
 
   clientSubscriptions.delete(clientId);
   logger.info('Client cleaned up', { clientId, subscriptionCount: subs.length });
+}
+
+/**
+ * Clean up all transport-local subscriptions. Intended for full WebSocket API
+ * transport shutdown and tests; individual disconnects should use cleanupClient.
+ */
+export function cleanupAllClients(): void {
+  const clientCount = clientSubscriptions.size;
+  const subscriptionCount = allSubscriptions.size;
+  clientSubscriptions.clear();
+  allSubscriptions.clear();
+
+  if (clientCount > 0 || subscriptionCount > 0) {
+    logger.info('All WebSocket event subscriptions cleaned up', {
+      clientCount,
+      subscriptionCount,
+    });
+  }
 }
 
 /**

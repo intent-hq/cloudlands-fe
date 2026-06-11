@@ -24,21 +24,12 @@ import { isValidMessageId } from '$shared/types/branded-ids';
 import { validateAgentSession } from '$shared/schemas';
 import { AgentStatus } from '$shared/types/agent.types';
 import { WorkspaceConfig } from '$shared/main/config';
-import {
-  fsyncFile,
-  renameWithRetry,
-} from '$shared/main/file-sync-utils';
+import { fsyncFile, renameWithRetry } from '$shared/main/file-sync-utils';
 import type { IMetadataFS } from '../../metadata-fs/main/metadata-fs';
 import { LocalMetadataFS } from '../../metadata-fs/main/local-metadata-fs';
 import { truncateLargeFields } from './persistence-truncation';
-import {
-  isGenericAgentName,
-  isRandomAgentName,
-} from '$shared/utils/agent-name-utils';
-import {
-  deduplicateAgentMessages,
-  normalizeAgentMessage,
-} from '$shared/utils/message-dedup';
+import { isGenericAgentName, isRandomAgentName } from '$shared/utils/agent-name-utils';
+import { deduplicateAgentMessages, normalizeAgentMessage } from '$shared/utils/message-dedup';
 
 const logger = new Logger('UnifiedPersistence');
 
@@ -136,6 +127,7 @@ export class UnifiedPersistence {
       loadPromise?: Promise<LoadResult<AgentSession>>;
     }
   >();
+  private inactiveLoadCacheWorkspaces = new Set<string>();
   private readonly LOAD_CACHE_TTL_MS = 2000; // 2 second TTL - enough to dedupe rapid calls
 
   /**
@@ -167,6 +159,255 @@ export class UnifiedPersistence {
       averageReadTime: 0,
       failedOperations: 0,
       successfulOperations: 0,
+    };
+  }
+
+  private unwrapVersionedAgentData(parsed: any, agentId: AgentId): any {
+    if ((parsed.version === 1 || parsed.version === 2) && parsed.data) {
+      logger.debug('Detected versioned agent data format', { agentId, version: parsed.version });
+      parsed = parsed.data;
+    }
+
+    if (parsed.config) {
+      if (parsed.config.systemPrompt) {
+        parsed.systemPrompt = parsed.config.systemPrompt;
+      }
+      if (parsed.config.name && !parsed.name) {
+        parsed.name = parsed.config.name;
+      }
+      if (parsed.config.metadata && !parsed.metadata) {
+        parsed.metadata = parsed.config.metadata;
+      }
+      if (parsed.config.agentType) {
+        if (!parsed.metadata) {
+          parsed.metadata = {};
+        }
+        parsed.metadata.agentType = parsed.config.agentType;
+      }
+      if (parsed.config.provider && !parsed.provider) {
+        parsed.provider = parsed.config.provider;
+      }
+    }
+
+    return parsed;
+  }
+
+  private normalizeAgentDates(agent: AgentSession): void {
+    agent.createdAt = this.normalizeDate(agent.createdAt);
+    agent.updatedAt = this.normalizeDate(agent.updatedAt);
+    if (agent.lastActivity) {
+      agent.lastActivity = this.normalizeDate(agent.lastActivity);
+    }
+    if (agent.startedAt) {
+      agent.startedAt = this.normalizeDate(agent.startedAt);
+    }
+    if (agent.endedAt) {
+      agent.endedAt = this.normalizeDate(agent.endedAt);
+    }
+  }
+
+  private skipJsonWhitespace(raw: string, index: number): number {
+    while (index < raw.length && /\s/.test(raw[index])) {
+      index++;
+    }
+    return index;
+  }
+
+  private findJsonStringEnd(raw: string, start: number): number {
+    let escaped = false;
+    for (let index = start + 1; index < raw.length; index++) {
+      const char = raw[index];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        return index + 1;
+      }
+    }
+    throw new Error('Unterminated JSON string');
+  }
+
+  private findJsonValueEnd(raw: string, start: number): number {
+    start = this.skipJsonWhitespace(raw, start);
+    const opening = raw[start];
+    if (opening === '"') {
+      return this.findJsonStringEnd(raw, start);
+    }
+
+    if (opening === '{' || opening === '[') {
+      const closing = opening === '{' ? '}' : ']';
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      for (let index = start; index < raw.length; index++) {
+        const char = raw[index];
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+          } else if (char === '\\') {
+            escaped = true;
+          } else if (char === '"') {
+            inString = false;
+          }
+          continue;
+        }
+        if (char === '"') {
+          inString = true;
+        } else if (char === opening) {
+          depth++;
+        } else if (char === closing) {
+          depth--;
+          if (depth === 0) {
+            return index + 1;
+          }
+        }
+      }
+      throw new Error('Unterminated JSON value');
+    }
+
+    let index = start;
+    while (index < raw.length && raw[index] !== ',' && raw[index] !== '}' && raw[index] !== ']') {
+      index++;
+    }
+    return index;
+  }
+
+  private findTopLevelJsonProperty(
+    raw: string,
+    propertyName: string,
+    objectStart = 0,
+    objectEnd = raw.length,
+  ): { valueStart: number; valueEnd: number; valueText: string } | null {
+    let index = this.skipJsonWhitespace(raw, objectStart);
+    if (raw[index] !== '{') {
+      return null;
+    }
+    index++;
+
+    while (index < objectEnd) {
+      index = this.skipJsonWhitespace(raw, index);
+      if (raw[index] === '}') {
+        return null;
+      }
+      if (raw[index] === ',') {
+        index++;
+        continue;
+      }
+      if (raw[index] !== '"') {
+        return null;
+      }
+
+      const keyEnd = this.findJsonStringEnd(raw, index);
+      const key = JSON.parse(raw.slice(index, keyEnd));
+      const colonIndex = this.skipJsonWhitespace(raw, keyEnd);
+      if (raw[colonIndex] !== ':') {
+        return null;
+      }
+
+      const valueStart = this.skipJsonWhitespace(raw, colonIndex + 1);
+      const valueEnd = this.findJsonValueEnd(raw, valueStart);
+      if (key === propertyName) {
+        return { valueStart, valueEnd, valueText: raw.slice(valueStart, valueEnd) };
+      }
+      index = valueEnd;
+    }
+
+    return null;
+  }
+
+  private countJsonArrayElements(rawArray: string): number {
+    let index = this.skipJsonWhitespace(rawArray, 0);
+    if (rawArray[index] !== '[') {
+      return 0;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let expectingValue = true;
+    let count = 0;
+
+    for (; index < rawArray.length; index++) {
+      const char = rawArray[index];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (char === '\\') {
+          escaped = true;
+        } else if (char === '"') {
+          inString = false;
+        }
+        continue;
+      }
+      if (char === '"') {
+        if (depth === 1 && expectingValue) {
+          count++;
+          expectingValue = false;
+        }
+        inString = true;
+        continue;
+      }
+      if (char === '[' || char === '{') {
+        if (depth === 1 && expectingValue) {
+          count++;
+          expectingValue = false;
+        }
+        depth++;
+        continue;
+      }
+      if (char === ']' || char === '}') {
+        depth--;
+        if (depth === 0) {
+          return count;
+        }
+        continue;
+      }
+      if (depth === 1 && char === ',') {
+        expectingValue = true;
+        continue;
+      }
+      if (depth === 1 && expectingValue && !/\s/.test(char)) {
+        count++;
+        expectingValue = false;
+      }
+    }
+
+    return count;
+  }
+
+  private summarizeAgentJson(raw: string, agentId: AgentId): { raw: string; messageCount: number } {
+    const versionProperty = this.findTopLevelJsonProperty(raw, 'version');
+    const version = versionProperty ? JSON.parse(versionProperty.valueText) : undefined;
+    const dataProperty = this.findTopLevelJsonProperty(raw, 'data');
+    const agentObjectStart =
+      (version === 1 || version === 2) && dataProperty ? dataProperty.valueStart : 0;
+    const agentObjectEnd =
+      (version === 1 || version === 2) && dataProperty ? dataProperty.valueEnd : raw.length;
+    const messagesProperty = this.findTopLevelJsonProperty(
+      raw,
+      'messages',
+      agentObjectStart,
+      agentObjectEnd,
+    );
+
+    if (!messagesProperty) {
+      return { raw, messageCount: 0 };
+    }
+
+    const messageCount = this.countJsonArrayElements(messagesProperty.valueText);
+    logger.debug('Summarized agent JSON without parsing message array', {
+      agentId,
+      messageCount,
+    });
+
+    return {
+      raw: `${raw.slice(0, messagesProperty.valueStart)}[]${raw.slice(messagesProperty.valueEnd)}`,
+      messageCount,
     };
   }
 
@@ -547,7 +788,8 @@ export class UnifiedPersistence {
       //    (protects user/agent-set names from text-derived names like "Repo overview")
       // 2. The disk has a non-generic/non-random name but the incoming save has a generic/random name
       if (existingAgent.name && typeof existingAgent.name === 'string') {
-        const incomingName = typeof (agent as any).name === 'string' ? (agent as any).name : undefined;
+        const incomingName =
+          typeof (agent as any).name === 'string' ? (agent as any).name : undefined;
 
         const incomingExplicitlySet = !!(agent as any).nameExplicitlySet;
 
@@ -557,13 +799,13 @@ export class UnifiedPersistence {
           preservedName = existingAgent.name;
           preservedNameExplicitlySet = true;
         } else if (
-          !incomingExplicitlySet && (
-            (!incomingName || incomingName.trim() === '') ||
+          !incomingExplicitlySet &&
+          (!incomingName ||
+            incomingName.trim() === '' ||
             (isGenericAgentName(incomingName) && !isGenericAgentName(existingAgent.name)) ||
             (isRandomAgentName(incomingName) &&
               !isRandomAgentName(existingAgent.name) &&
-              !isGenericAgentName(existingAgent.name))
-          )
+              !isGenericAgentName(existingAgent.name)))
         ) {
           preservedName = existingAgent.name;
         }
@@ -593,7 +835,6 @@ export class UnifiedPersistence {
           preservedCompletionReportTimestamp = existingMetadata.completionReportTimestamp;
         }
       }
-
     } catch {
       // File doesn't exist or can't be read - that's fine, nothing to preserve
     }
@@ -633,24 +874,30 @@ export class UnifiedPersistence {
           shouldPreserveMissingUsers &&
           missingUserMessages.length > 0
         ) {
-          logger.warn('saveAgent - preserving user messages from disk that stale backend save is missing', {
-            agentId,
-            missingCount: missingUserMessages.length,
-            incomingCount: messagesWithPreservedUserMsgs.length,
-          });
+          logger.warn(
+            'saveAgent - preserving user messages from disk that stale backend save is missing',
+            {
+              agentId,
+              missingCount: missingUserMessages.length,
+              incomingCount: messagesWithPreservedUserMsgs.length,
+            },
+          );
 
           const existingOrderById = new Map(
             existingMessagesOnDisk.map((message: any, index) => [message.id, index]),
           );
-          const timestampedMessages = [...messagesWithPreservedUserMsgs, ...missingUserMessages].map(
-            (message: any, index) => {
-              const timestamp = message.timestamp instanceof Date
+          const timestampedMessages = [
+            ...messagesWithPreservedUserMsgs,
+            ...missingUserMessages,
+          ].map((message: any, index) => {
+            const timestamp =
+              message.timestamp instanceof Date
                 ? message.timestamp.getTime()
                 : Date.parse(message.timestamp);
-              const order = existingOrderById.get(message.id) ?? existingMessagesOnDisk.length + index;
-              return { message, order, timestamp };
-            },
-          );
+            const order =
+              existingOrderById.get(message.id) ?? existingMessagesOnDisk.length + index;
+            return { message, order, timestamp };
+          });
 
           if (timestampedMessages.every(({ timestamp }) => Number.isFinite(timestamp))) {
             messagesWithPreservedUserMsgs = timestampedMessages
@@ -658,7 +905,10 @@ export class UnifiedPersistence {
               .map(({ message }) => message);
           } else {
             // Fall back to the legacy behavior when timestamps do not establish order.
-            messagesWithPreservedUserMsgs = [...missingUserMessages, ...messagesWithPreservedUserMsgs];
+            messagesWithPreservedUserMsgs = [
+              ...missingUserMessages,
+              ...messagesWithPreservedUserMsgs,
+            ];
           }
         }
       }
@@ -669,7 +919,9 @@ export class UnifiedPersistence {
     // the persisted data is always clean regardless of how we got here.
     let deduplicatedMessages = messagesWithPreservedUserMsgs;
     if (messagesWithPreservedUserMsgs.length > 0) {
-      const normalizedMessages = messagesWithPreservedUserMsgs.map((msg) => normalizeAgentMessage(msg));
+      const normalizedMessages = messagesWithPreservedUserMsgs.map((msg) =>
+        normalizeAgentMessage(msg),
+      );
       const uniqueMessages = deduplicateAgentMessages(normalizedMessages);
       const duplicatesRemoved = normalizedMessages.length - uniqueMessages.length;
 
@@ -719,7 +971,6 @@ export class UnifiedPersistence {
           }),
         },
       }),
-
     };
 
     // Remove null values that should be undefined
@@ -914,71 +1165,61 @@ export class UnifiedPersistence {
     const previous = this.writeQueue.get(brandedAgentId) ?? Promise.resolve();
     this.writeInProgress.set(brandedAgentId, true);
 
-    const work: Promise<{ ok: boolean; name: string; skipped?: boolean; error?: string }> =
-      previous
-        .catch(() => undefined)
-        .then(async () => {
-          // Invalidate the load cache before reading so we always see the
-          // latest bytes on disk rather than a stale cached entry.
-          this.invalidateLoadCache(brandedAgentId, brandedWorkspaceId);
+    const work: Promise<{ ok: boolean; name: string; skipped?: boolean; error?: string }> = previous
+      .catch(() => undefined)
+      .then(async () => {
+        // Invalidate the load cache before reading so we always see the
+        // latest bytes on disk rather than a stale cached entry.
+        this.invalidateLoadCache(brandedAgentId, brandedWorkspaceId);
 
-          const loadResult = await this.loadAgent(
-            brandedAgentId,
-            brandedWorkspaceId,
-            workspacePath,
-          );
-          if (!loadResult.success || !loadResult.data) {
-            return {
-              ok: false,
-              name: trimmedName,
-              error: loadResult.error || 'Failed to load agent session',
-            };
-          }
-
-          const session = loadResult.data;
-          const existingName = session.name ?? '';
-          const existingExplicitlySet = Boolean(
-            (session as unknown as { nameExplicitlySet?: boolean }).nameExplicitlySet,
-          );
-
-          if (skipIfExplicitlySet && existingExplicitlySet) {
-            return { ok: true, name: existingName, skipped: true };
-          }
-
-          const patched = {
-            ...(session as unknown as Record<string, unknown>),
+        const loadResult = await this.loadAgent(brandedAgentId, brandedWorkspaceId, workspacePath);
+        if (!loadResult.success || !loadResult.data) {
+          return {
+            ok: false,
             name: trimmedName,
-            nameExplicitlySet: true,
+            error: loadResult.error || 'Failed to load agent session',
           };
+        }
 
-          const agentPath = this.getAgentPath(agentId, workspaceId, workspacePath);
-          const metadataFS = workspacePath
-            ? new LocalMetadataFS()
-            : this.getFS(workspaceId);
+        const session = loadResult.data;
+        const existingName = session.name ?? '';
+        const existingExplicitlySet = Boolean(
+          (session as unknown as { nameExplicitlySet?: boolean }).nameExplicitlySet,
+        );
 
-          const writeResult = await Promise.race([
-            this.performAtomicWrite(agentPath, patched, metadataFS),
-            new Promise<SaveResult>((_, reject) =>
-              setTimeout(
-                () => reject(new Error('Write timeout')),
-                this.config.writeTimeout,
-              ),
-            ),
-          ]);
+        if (skipIfExplicitlySet && existingExplicitlySet) {
+          return { ok: true, name: existingName, skipped: true };
+        }
 
-          if (!writeResult.success) {
-            return {
-              ok: false,
-              name: trimmedName,
-              error: writeResult.error,
-            };
-          }
+        const patched = {
+          ...(session as unknown as Record<string, unknown>),
+          name: trimmedName,
+          nameExplicitlySet: true,
+        };
 
-          // Invalidate the load cache so the next read returns the renamed session.
-          this.invalidateLoadCache(brandedAgentId, brandedWorkspaceId);
+        const agentPath = this.getAgentPath(agentId, workspaceId, workspacePath);
+        const metadataFS = workspacePath ? new LocalMetadataFS() : this.getFS(workspaceId);
 
-          return { ok: true, name: trimmedName };
-        });
+        const writeResult = await Promise.race([
+          this.performAtomicWrite(agentPath, patched, metadataFS),
+          new Promise<SaveResult>((_, reject) =>
+            setTimeout(() => reject(new Error('Write timeout')), this.config.writeTimeout),
+          ),
+        ]);
+
+        if (!writeResult.success) {
+          return {
+            ok: false,
+            name: trimmedName,
+            error: writeResult.error,
+          };
+        }
+
+        // Invalidate the load cache so the next read returns the renamed session.
+        this.invalidateLoadCache(brandedAgentId, brandedWorkspaceId);
+
+        return { ok: true, name: trimmedName };
+      });
 
     // Register the work in the queue synchronously so any concurrent save/
     // rename sees an entry to await. The SaveResult cast is safe because
@@ -990,10 +1231,7 @@ export class UnifiedPersistence {
     } finally {
       // Only clear the flags if our work is still the current entry —
       // avoids clobbering a newer operation that may have chained onto us.
-      if (
-        this.writeQueue.get(brandedAgentId) ===
-        (work as unknown as Promise<SaveResult>)
-      ) {
+      if (this.writeQueue.get(brandedAgentId) === (work as unknown as Promise<SaveResult>)) {
         this.writeQueue.delete(brandedAgentId);
         this.writeInProgress.delete(brandedAgentId);
       }
@@ -1019,6 +1257,7 @@ export class UnifiedPersistence {
         this.loadCache.delete(key);
       }
     }
+    this.inactiveLoadCacheWorkspaces.delete(workspaceId);
   }
 
   /**
@@ -1026,6 +1265,85 @@ export class UnifiedPersistence {
    */
   invalidateAllLoadCaches(): void {
     this.loadCache.clear();
+    this.inactiveLoadCacheWorkspaces.clear();
+  }
+
+  /**
+   * Evict completed agent-session load cache entries for workspaces that are no longer open.
+   * In-flight promises are retained so concurrent callers still dedupe, but their resolved
+   * full session data is not kept while the workspace remains inactive.
+   */
+  trimLoadCachesToOpenWorkspaces(openWorkspaceIds: Iterable<string>): void {
+    const openWorkspaceIdSet = new Set(openWorkspaceIds);
+
+    for (const workspaceId of openWorkspaceIdSet) {
+      this.inactiveLoadCacheWorkspaces.delete(workspaceId);
+    }
+
+    for (const [cacheKey, cached] of this.loadCache) {
+      const separatorIndex = cacheKey.indexOf('/');
+      const workspaceId = separatorIndex >= 0 ? cacheKey.slice(0, separatorIndex) : cacheKey;
+      if (openWorkspaceIdSet.has(workspaceId)) continue;
+
+      if (cached.loadPromise) {
+        this.inactiveLoadCacheWorkspaces.add(workspaceId);
+      } else {
+        this.loadCache.delete(cacheKey);
+      }
+    }
+  }
+
+  /**
+   * Load lightweight agent metadata for list/status surfaces without retaining message history.
+   * Full message hydration remains on-demand through loadAgent().
+   */
+  async loadAgentSummary(
+    agentId: AgentId,
+    workspaceId: WorkspaceId,
+    workspacePath?: string,
+  ): Promise<LoadResult<AgentSession>> {
+    const pendingAgent = this.getPendingAgent(agentId);
+    if (pendingAgent) {
+      return {
+        success: true,
+        data: {
+          ...pendingAgent,
+          messages: [],
+          metadata: {
+            ...pendingAgent.metadata,
+            messageCount: pendingAgent.messages?.length ?? 0,
+          },
+        },
+      };
+    }
+
+    const agentPath = this.getAgentPath(agentId, workspaceId, workspacePath);
+    const metadataFS = workspacePath ? new LocalMetadataFS() : this.getFS(workspaceId);
+
+    try {
+      const data = await metadataFS.readFile(agentPath, 'utf-8');
+      const summaryJson = this.summarizeAgentJson(data, agentId);
+      let parsed = this.unwrapVersionedAgentData(JSON.parse(summaryJson.raw), agentId);
+      parsed = {
+        ...parsed,
+        messages: [],
+        metadata: {
+          ...parsed.metadata,
+          messageCount: summaryJson.messageCount,
+        },
+      };
+
+      const agent = validateAgentSession(parsed) as AgentSession;
+      this.normalizeAgentDates(agent);
+
+      return { success: true, data: agent };
+    } catch (error) {
+      logger.warn('Failed to load agent summary', { agentId, error });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Agent not found',
+      };
+    }
   }
 
   /**
@@ -1084,6 +1402,11 @@ export class UnifiedPersistence {
     // Execute the load and cache the result
     const result = await loadPromise;
 
+    if (this.inactiveLoadCacheWorkspaces.has(workspaceId)) {
+      this.loadCache.delete(cacheKey);
+      return result;
+    }
+
     // Update cache with the result
     this.loadCache.set(cacheKey, {
       data: result,
@@ -1107,39 +1430,7 @@ export class UnifiedPersistence {
       // Try to load main file
       const metadataFS = useLocalFS ? new LocalMetadataFS() : this.getFS(workspaceId);
       const data = await metadataFS.readFile(agentPath, 'utf-8');
-      let parsed = JSON.parse(data);
-
-      // Handle versioned format (from workspace creation or persistence service)
-      if ((parsed.version === 1 || parsed.version === 2) && parsed.data) {
-        logger.debug('Detected versioned agent data format', { agentId, version: parsed.version });
-        parsed = parsed.data;
-      }
-
-      // Extract systemPrompt from config if it exists (for initial agents)
-      if (parsed.config) {
-        if (parsed.config.systemPrompt) {
-          parsed.systemPrompt = parsed.config.systemPrompt;
-        }
-        // Also extract the name from config if not present at top level
-        if (parsed.config.name && !parsed.name) {
-          parsed.name = parsed.config.name;
-        }
-        // Extract metadata from config if it exists
-        if (parsed.config.metadata && !parsed.metadata) {
-          parsed.metadata = parsed.config.metadata;
-        }
-        // Extract agentType from config and ensure it's in metadata
-        if (parsed.config.agentType) {
-          if (!parsed.metadata) {
-            parsed.metadata = {};
-          }
-          parsed.metadata.agentType = parsed.config.agentType;
-        }
-        // Extract provider from config if not present at top level
-        if (parsed.config.provider && !parsed.provider) {
-          parsed.provider = parsed.config.provider;
-        }
-      }
+      let parsed = this.unwrapVersionedAgentData(JSON.parse(data), agentId);
 
       // Log what we loaded from disk - use debug level for routine operations
       logger.debug('Loaded data from disk', {
@@ -1188,17 +1479,7 @@ export class UnifiedPersistence {
       }
 
       // Normalize dates
-      agent.createdAt = this.normalizeDate(agent.createdAt);
-      agent.updatedAt = this.normalizeDate(agent.updatedAt);
-      if (agent.lastActivity) {
-        agent.lastActivity = this.normalizeDate(agent.lastActivity);
-      }
-      if (agent.startedAt) {
-        agent.startedAt = this.normalizeDate(agent.startedAt);
-      }
-      if (agent.endedAt) {
-        agent.endedAt = this.normalizeDate(agent.endedAt);
-      }
+      this.normalizeAgentDates(agent);
 
       // Normalize message timestamps and deduplicate logical messages
       if (agent.messages) {
@@ -1352,6 +1633,9 @@ export class UnifiedPersistence {
 
       logger.debug('Deleted agent', { agentId });
 
+      this.clearAgentPending(agentId);
+      this.invalidateLoadCache(agentId as AgentId, workspaceId as WorkspaceId);
+
       return { success: true };
     } catch (error) {
       logger.error('Failed to delete agent', { agentId, error });
@@ -1372,7 +1656,9 @@ export class UnifiedPersistence {
     try {
       const entries = await metadataFS.readdir(agentsPath, { withFileTypes: true });
       const agentIds = entries
-        .filter((entry) => entry.isFile() && entry.name.endsWith('.json') && !entry.name.includes('.tmp'))
+        .filter(
+          (entry) => entry.isFile() && entry.name.endsWith('.json') && !entry.name.includes('.tmp'),
+        )
         .map((entry) => entry.name.replace('.json', ''))
         .filter((id) => unifiedIdService.isValidAgentId(id));
 
@@ -1389,7 +1675,11 @@ export class UnifiedPersistence {
    * When metadataFS is provided, the final write goes through IMetadataFS
    * (supporting remote workspaces). Temp files and backups always use local fs.
    */
-  private async performAtomicWrite(filePath: string, data: any, metadataFS?: IMetadataFS): Promise<SaveResult> {
+  private async performAtomicWrite(
+    filePath: string,
+    data: any,
+    metadataFS?: IMetadataFS,
+  ): Promise<SaveResult> {
     // Use a unique temp file name to avoid race conditions
     const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const tempPath = `${filePath}.tmp.${uniqueSuffix}`;
@@ -2067,6 +2357,12 @@ export class UnifiedPersistence {
         await fs.rm(workspacePath, { recursive: true, force: true });
         logger.info('Cleared workspace', { workspaceId });
       }
+      this.invalidateLoadCachesForWorkspace(workspaceId as WorkspaceId);
+      for (const [agentId, agent] of this.pendingAgents) {
+        if (agent.workspaceId === workspaceId) {
+          this.pendingAgents.delete(agentId);
+        }
+      }
     } catch (error) {
       logger.error('Failed to clear workspace', { workspaceId, error });
       throw error;
@@ -2092,6 +2388,9 @@ export class UnifiedPersistence {
 
       // Sync file to disk for durability
       await fsyncFile(cleanupPath);
+
+      this.invalidateAllLoadCaches();
+      this.pendingAgents.clear();
     } catch (error) {
       logger.error('Failed to clear all data', error as Error);
       throw error;
@@ -2140,6 +2439,8 @@ export class UnifiedPersistence {
 
     this.writeQueue.clear();
     this.writeInProgress.clear();
+    this.pendingAgents.clear();
+    this.invalidateAllLoadCaches();
     logger.info('Persistence service shutdown complete');
   }
 }

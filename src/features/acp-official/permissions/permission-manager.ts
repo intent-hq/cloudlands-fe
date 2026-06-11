@@ -8,6 +8,7 @@
 import { EventEmitter } from '../utils/browser-event-emitter';
 import type { AgentId } from '$shared/types/branded-ids';
 import { Logger } from '../../../shared/logger';
+import { invoke as invokeIpc } from '../../../shared/generated/ipc-client';
 import type { PermissionOption, RequestPermissionOutcome } from '../types/base';
 
 const logger = new Logger('PermissionManager');
@@ -41,6 +42,11 @@ interface PermissionRule {
   action: 'allow' | 'deny' | 'ask';
   scope?: 'session' | 'agent' | 'global';
   expiresAt?: number;
+}
+
+interface ConfigSetResponse {
+  success: boolean;
+  error?: unknown;
 }
 
 export class PermissionManager extends EventEmitter {
@@ -328,10 +334,10 @@ export class PermissionManager extends EventEmitter {
           this.rules = JSON.parse(saved);
           logger.info('Loaded permission rules from localStorage', { count: this.rules.length });
         }
-      } else if (typeof window !== 'undefined' && (window as any).electronAPI) {
+      } else if (typeof window !== 'undefined' && window.electronAPI) {
         // Electron renderer: use IPC to access config store
         try {
-          const saved = await (window as any).electronAPI.invoke('config:get', {
+          const saved = await invokeIpc<PermissionRule[]>('config:get', {
             key: 'permissions.rules',
           });
           if (saved && Array.isArray(saved)) {
@@ -366,10 +372,10 @@ export class PermissionManager extends EventEmitter {
         // Browser environment: use localStorage
         localStorage.setItem(PERMISSION_RULES_KEY, JSON.stringify(this.rules));
         logger.debug('Saved permission rules to localStorage');
-      } else if (typeof window !== 'undefined' && (window as any).electronAPI) {
+      } else if (typeof window !== 'undefined' && window.electronAPI) {
         // Electron renderer: use IPC to save to config store
         try {
-          const result = await (window as any).electronAPI.invoke('config:set', {
+          const result = await invokeIpc<ConfigSetResponse>('config:set', {
             key: 'permissions.rules',
             value: this.rules,
           });

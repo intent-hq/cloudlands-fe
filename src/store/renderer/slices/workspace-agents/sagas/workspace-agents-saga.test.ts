@@ -144,7 +144,9 @@ import { clearCurrentlyViewed } from "../../note-read-tracking/note-read-trackin
 import { clearWorkspaceUnread } from "../../unread-tracking/unread-tracking-slice";
 import {
   addAgent,
+  emptyWorkspaceAgentState,
   removeAgent,
+  removeWorkspaceAgentState,
   reconnectStreamHandlersForWorkspaceRequested,
   setAgentsLoaded,
   setInitialAgentConfig,
@@ -152,6 +154,7 @@ import {
   setIsLoadingAgents,
   setWaitingForFirstMessage,
   triggerBackendStreamReconnect,
+  workspaceAgentsReducer,
 } from "../workspace-agents-slice";
 import {
   removeSession as removeAgentSession,
@@ -250,7 +253,40 @@ describe("workspaceAgentsSaga", () => {
 
     const cancelIterator = cancelWorkspaceAgentEventsForWorkspaceSaga(workspaceUnmounted("ws-1"));
 
+    expect((cancelIterator.next().value as any).type).toBe("SELECT");
+    expect((cancelIterator.next([]).value as any).type).toBe("SELECT");
+    expect((cancelIterator.next([]).value as any).type).toBe("SELECT");
+    expect((cancelIterator.next(false).value as any).type).toBe("SELECT");
+    expect(cancelIterator.next(false)).toEqual({
+      value: sagaEffects.put(clearCurrentlyViewed()),
+      done: false,
+    });
     expect(cancelIterator.next()).toEqual({
+      value: cancelEffect(drawerGuardTask),
+      done: false,
+    });
+    expect(cancelIterator.next()).toEqual({
+      value: sagaEffects.put(removeWorkspaceAgentState("ws-1")),
+      done: false,
+    });
+    expect(cancelIterator.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("preserves workspace-agent state on unmount while agents are still streaming", () => {
+    const drawerGuardTask = { type: "drawer-guard-task" } as const;
+    const mount = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-streaming"));
+    mount.next();
+    mount.next();
+    mount.next({ type: "file-tracking-init-task" });
+    mount.next(drawerGuardTask);
+    mount.next();
+
+    const cancelIterator = cancelWorkspaceAgentEventsForWorkspaceSaga(workspaceUnmounted("ws-streaming"));
+    expect((cancelIterator.next().value as any).type).toBe("SELECT");
+    expect((cancelIterator.next([{ ...mockAgent("agent-1", "ws-streaming", "Agent"), isStreaming: true }]).value as any).type).toBe("SELECT");
+    expect((cancelIterator.next([]).value as any).type).toBe("SELECT");
+    expect((cancelIterator.next(false).value as any).type).toBe("SELECT");
+    expect(cancelIterator.next(false)).toEqual({
       value: sagaEffects.put(clearCurrentlyViewed()),
       done: false,
     });
@@ -259,6 +295,148 @@ describe("workspaceAgentsSaga", () => {
       done: false,
     });
     expect(cancelIterator.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("preserves workspace-agent state on unmount for subscribed non-streaming workspaces", () => {
+    const drawerGuardTask = { type: "drawer-guard-task" } as const;
+    const mount = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-subscribed"));
+    mount.next();
+    mount.next();
+    mount.next({ type: "file-tracking-init-task" });
+    mount.next(drawerGuardTask);
+    mount.next();
+
+    const parent = mockAgent("agent-parent", "ws-subscribed", "Parent");
+    const child = {
+      ...mockAgent("agent-child", "ws-subscribed", "Child"),
+      metadata: { createdByAgentId: "agent-parent" },
+    };
+    const cancelIterator = cancelWorkspaceAgentEventsForWorkspaceSaga(workspaceUnmounted("ws-subscribed"));
+
+    expect((cancelIterator.next().value as any).type).toBe("SELECT");
+    expect((cancelIterator.next([parent, child]).value as any).type).toBe("SELECT");
+    expect((cancelIterator.next([]).value as any).type).toBe("SELECT");
+    expect((cancelIterator.next(false).value as any).type).toBe("SELECT");
+    expect(cancelIterator.next(true)).toEqual({
+      value: sagaEffects.put(clearCurrentlyViewed()),
+      done: false,
+    });
+    expect(cancelIterator.next()).toEqual({
+      value: cancelEffect(drawerGuardTask),
+      done: false,
+    });
+    expect(cancelIterator.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("preserves workspace-agent state on unmount for open but unmounted workspace tabs", () => {
+    const drawerGuardTask = { type: "drawer-guard-task" } as const;
+    const mount = watchWorkspaceAgentEventsForWorkspaceSaga(workspaceMounted("ws-tab"));
+    mount.next();
+    mount.next();
+    mount.next({ type: "file-tracking-init-task" });
+    mount.next(drawerGuardTask);
+    mount.next();
+
+    const cancelIterator = cancelWorkspaceAgentEventsForWorkspaceSaga(workspaceUnmounted("ws-tab"));
+    expect((cancelIterator.next().value as any).type).toBe("SELECT");
+    expect((cancelIterator.next([]).value as any).type).toBe("SELECT");
+    expect((cancelIterator.next([]).value as any).type).toBe("SELECT");
+    expect((cancelIterator.next(true).value as any).type).toBe("SELECT");
+    expect(cancelIterator.next(false)).toEqual({
+      value: sagaEffects.put(clearCurrentlyViewed()),
+      done: false,
+    });
+    expect(cancelIterator.next()).toEqual({
+      value: cancelEffect(drawerGuardTask),
+      done: false,
+    });
+    expect(cancelIterator.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("retains subscribed workspace-agent index and child metadata inputs through unmount compaction", async () => {
+    const wsId = "ws-subscribed-stateful";
+    const parent = mockAgent("agent-parent", wsId, "Parent");
+    const child = {
+      ...mockAgent("agent-child", wsId, "Child"),
+      metadata: { createdByAgentId: "agent-parent" },
+    };
+    const state = {
+      workspaceAgents: {
+        byWorkspaceId: {
+          [wsId]: { ...emptyWorkspaceAgentState, agentIds: ["agent-parent", "agent-child"] },
+        },
+      },
+      agentSessions: {
+        byAgentId: { "agent-parent": parent, "agent-child": child },
+        agentIdsByWorkspace: { [wsId]: ["agent-parent", "agent-child"] },
+      },
+      tabState: { openTabs: {} },
+      agentSubscriptionUI: {
+        entries: {
+          [`${wsId}:agent-child`]: {
+            subscriptions: [{
+              id: "sub-1",
+              agentId: "agent-child",
+              eventTypes: ["agent:*"],
+              actorIds: [],
+              createdAt: "2026-03-19T00:00:00.000Z",
+              description: "test",
+            }],
+            delegationGroups: [],
+            agentStatuses: {},
+            waitingState: "waiting",
+            wokenUpInfo: null,
+          },
+        },
+      },
+    };
+    const dispatched: any[] = [];
+
+    await runSaga(
+      { dispatch: (action) => dispatched.push(action), getState: () => state },
+      cancelWorkspaceAgentEventsForWorkspaceSaga,
+      workspaceUnmounted(wsId),
+    ).toPromise();
+
+    expect(dispatched).toEqual([clearCurrentlyViewed()]);
+    const reduced = dispatched.reduce(
+      (nextState, action) => workspaceAgentsReducer(nextState, action),
+      state.workspaceAgents,
+    );
+    expect(reduced.byWorkspaceId[wsId].agentIds).toEqual(["agent-parent", "agent-child"]);
+    expect(state.agentSessions.byAgentId["agent-child"].metadata?.createdByAgentId).toBe("agent-parent");
+  });
+
+  it("retains open-tab workspace-agent index through unmount compaction", async () => {
+    const wsId = "ws-open-stateful";
+    const agent = mockAgent("agent-open", wsId, "Open");
+    const state = {
+      workspaceAgents: {
+        byWorkspaceId: {
+          [wsId]: { ...emptyWorkspaceAgentState, agentIds: ["agent-open"] },
+        },
+      },
+      agentSessions: {
+        byAgentId: { "agent-open": agent },
+        agentIdsByWorkspace: { [wsId]: ["agent-open"] },
+      },
+      tabState: { openTabs: { [wsId]: true } },
+      agentSubscriptionUI: { entries: {} },
+    };
+    const dispatched: any[] = [];
+
+    await runSaga(
+      { dispatch: (action) => dispatched.push(action), getState: () => state },
+      cancelWorkspaceAgentEventsForWorkspaceSaga,
+      workspaceUnmounted(wsId),
+    ).toPromise();
+
+    expect(dispatched).toEqual([clearCurrentlyViewed()]);
+    const reduced = dispatched.reduce(
+      (nextState, action) => workspaceAgentsReducer(nextState, action),
+      state.workspaceAgents,
+    );
+    expect(reduced.byWorkspaceId[wsId].agentIds).toEqual(["agent-open"]);
   });
 
   it("removes an agent when agent:deleted is received (global, uses payload workspaceId)", () => {
@@ -272,7 +450,8 @@ describe("workspaceAgentsSaga", () => {
 
     const handler = getElectronHandler("agent:deleted")({ agentId: "agent-1", workspaceId: "ws-1" });
     // Dual-dispatch: agent-session first, then workspace-agents
-    expect(handler.next()).toEqual({
+    expect((handler.next().value as any).type).toBe("SELECT");
+    expect(handler.next("ws-1")).toEqual({
       value: sagaEffects.put(removeAgentSession("agent-1")),
       done: false,
     });
@@ -287,12 +466,46 @@ describe("workspaceAgentsSaga", () => {
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
     const handler = getElectronHandler("agent:deleted")({ agentId: "agent-1", workspaceId: "ws-2" });
-    expect(handler.next()).toEqual({
+    expect((handler.next().value as any).type).toBe("SELECT");
+    expect(handler.next("ws-2")).toEqual({
       value: sagaEffects.put(removeAgentSession("agent-1")),
       done: false,
     });
     expect(handler.next()).toEqual({
       value: sagaEffects.put(removeAgent("ws-2", "agent-1")),
+      done: false,
+    });
+  });
+
+  it("skips inactive workspace-agent index removal while keeping canonical session deletion", () => {
+    watchAgentDeletedSaga().next();
+
+    const handler = getElectronHandler("agent:deleted")({ agentId: "agent-1", workspaceId: "ws-inactive" });
+    expect((handler.next().value as any).type).toBe("SELECT");
+    expect((handler.next("ws-active").value as any).type).toBe("SELECT");
+    expect((handler.next(false).value as any).type).toBe("SELECT");
+    expect((handler.next(false).value as any).type).toBe("SELECT");
+    expect(handler.next([])).toEqual({
+      value: sagaEffects.put(removeAgentSession("agent-1")),
+      done: false,
+    });
+    expect(handler.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("keeps workspace-agent index deletion for retained agent workspaces", () => {
+    watchAgentDeletedSaga().next();
+
+    const handler = getElectronHandler("agent:deleted")({ agentId: "agent-1", workspaceId: "ws-retained" });
+    expect((handler.next().value as any).type).toBe("SELECT");
+    expect((handler.next("ws-active").value as any).type).toBe("SELECT");
+    expect((handler.next(false).value as any).type).toBe("SELECT");
+    expect((handler.next(false).value as any).type).toBe("SELECT");
+    expect(handler.next([{ ...mockAgent("agent-1", "ws-retained"), isProcessing: true }])).toEqual({
+      value: sagaEffects.put(removeAgentSession("agent-1")),
+      done: false,
+    });
+    expect(handler.next()).toEqual({
+      value: sagaEffects.put(removeAgent("ws-retained", "agent-1")),
       done: false,
     });
   });
@@ -337,7 +550,8 @@ describe("workspaceAgentsSaga", () => {
 
     // Dual-dispatch mirrors the agent:deleted path in reverse: repopulate
     // the full session, then re-register the agent in the workspace list.
-    expect(handler.next()).toEqual({
+    expect((handler.next().value as any).type).toBe("SELECT");
+    expect(handler.next("ws-1")).toEqual({
       value: sagaEffects.put(upsertSession({
         ...restoredSession,
         workspaceId: "ws-1" as AgentSession['workspaceId'],
@@ -360,6 +574,23 @@ describe("workspaceAgentsSaga", () => {
       session: null,
     });
     expect(handler.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("skips inactive restored snapshots unless a retained session keeps workspace interest", () => {
+    watchAgentRestoredSaga().next();
+
+    const handler = getElectronHandler("agent:restored")({
+      agentId: "agent-1",
+      workspaceId: "ws-inactive",
+      session: mockAgent("agent-1", "ws-inactive"),
+    });
+
+    expect((handler.next().value as any).type).toBe("SELECT");
+    expect((handler.next("ws-active").value as any).type).toBe("SELECT");
+    expect((handler.next(false).value as any).type).toBe("SELECT");
+    expect((handler.next(false).value as any).type).toBe("SELECT");
+    expect((handler.next([]).value as any).type).toBe("SELECT");
+    expect(handler.next(undefined)).toEqual({ value: undefined, done: true });
   });
 
   it("ignores agent:restored events missing agentId or workspaceId", () => {
@@ -390,7 +621,8 @@ describe("workspaceAgentsSaga", () => {
       payload: { agentId: "agent-1", workspaceId: "ws-1", name: "Renamed" },
     });
     // Dual-dispatch: agent-session first, then workspace-agents
-    expect(handler.next()).toEqual({
+    expect((handler.next().value as any).type).toBe("SELECT");
+    expect(handler.next("ws-1")).toEqual({
       value: sagaEffects.put(renameAgentSession("agent-1", "Renamed")),
       done: false,
     });
@@ -407,12 +639,50 @@ describe("workspaceAgentsSaga", () => {
     const handler = getElectronHandler("agent:renamed")({
       payload: { agentId: "agent-2", workspaceId: "ws-other", name: "Other" },
     });
-    expect(handler.next()).toEqual({
+    expect((handler.next().value as any).type).toBe("SELECT");
+    expect(handler.next("ws-other")).toEqual({
       value: sagaEffects.put(renameAgentSession("agent-2", "Other")),
       done: false,
     });
     expect(handler.next()).toEqual({
       value: sagaEffects.put(renameAgent("ws-other", "agent-2", "Other")),
+      done: false,
+    });
+  });
+
+  it("keeps workspace-agent index rename for explicitly subscribed workspaces", () => {
+    watchAgentRenamedSaga().next();
+
+    const handler = getElectronHandler("agent:renamed")({
+      payload: { agentId: "agent-sub", workspaceId: "ws-subscribed", name: "Subscribed" },
+    });
+    expect((handler.next().value as any).type).toBe("SELECT");
+    expect((handler.next("ws-active").value as any).type).toBe("SELECT");
+    expect((handler.next(false).value as any).type).toBe("SELECT");
+    expect(handler.next(true)).toEqual({
+      value: sagaEffects.put(renameAgentSession("agent-sub", "Subscribed")),
+      done: false,
+    });
+    expect(handler.next()).toEqual({
+      value: sagaEffects.put(renameAgent("ws-subscribed", "agent-sub", "Subscribed")),
+      done: false,
+    });
+  });
+
+  it("keeps workspace-agent index rename for open but unmounted workspace tabs", () => {
+    watchAgentRenamedSaga().next();
+
+    const handler = getElectronHandler("agent:renamed")({
+      payload: { agentId: "agent-tab", workspaceId: "ws-tab", name: "Open Tab" },
+    });
+    expect((handler.next().value as any).type).toBe("SELECT");
+    expect((handler.next("ws-active").value as any).type).toBe("SELECT");
+    expect(handler.next(true)).toEqual({
+      value: sagaEffects.put(renameAgentSession("agent-tab", "Open Tab")),
+      done: false,
+    });
+    expect(handler.next()).toEqual({
+      value: sagaEffects.put(renameAgent("ws-tab", "agent-tab", "Open Tab")),
       done: false,
     });
   });
@@ -431,7 +701,8 @@ describe("workspaceAgentsSaga", () => {
       actor: { type: "user", id: "user" },
       metadata: {},
     });
-    expect(handler.next()).toEqual({
+    expect((handler.next().value as any).type).toBe("SELECT");
+    expect(handler.next("ws-event")).toEqual({
       value: sagaEffects.put(renameAgentSession("agent-ws-event", "WS Event Name")),
       done: false,
     });
@@ -450,7 +721,9 @@ describe("workspaceAgentsSaga", () => {
       expect.any(Function),
     );
 
-    expect(getWindowHandler("workspace:waiting-for-first-message")({ agentId: "agent-1", workspaceId: "ws-1" }).next()).toEqual({
+    const handler = getWindowHandler("workspace:waiting-for-first-message")({ agentId: "agent-1", workspaceId: "ws-1" });
+    expect((handler.next().value as any).type).toBe("SELECT");
+    expect(handler.next("ws-1")).toEqual({
       value: sagaEffects.put(setWaitingForFirstMessage("ws-1", "agent-1", true)),
       done: false,
     });
@@ -460,7 +733,9 @@ describe("workspaceAgentsSaga", () => {
     const iterator = watchWaitingForFirstMessageSaga();
 
     expect(iterator.next()).toEqual({ value: undefined, done: true });
-    expect(getWindowHandler("workspace:waiting-for-first-message")({ agentId: "agent-1", workspaceId: "ws-2" }).next()).toEqual({
+    const handler = getWindowHandler("workspace:waiting-for-first-message")({ agentId: "agent-1", workspaceId: "ws-2" });
+    expect((handler.next().value as any).type).toBe("SELECT");
+    expect(handler.next("ws-2")).toEqual({
       value: sagaEffects.put(setWaitingForFirstMessage("ws-2", "agent-1", true)),
       done: false,
     });

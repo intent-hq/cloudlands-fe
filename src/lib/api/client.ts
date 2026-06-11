@@ -1,4 +1,5 @@
 // Use window.electronAPI for IPC communication in Electron
+import { invoke as ipcInvoke } from '$shared/generated/ipc-client';
 import { Logger } from '$shared/logger';
 import type { CommandResponse, DiffChunk, Workspace } from '$shared/types';
 
@@ -12,7 +13,7 @@ function isElectron(): boolean {
 // Helper function to invoke IPC methods
 async function invoke<T>(channel: string, args?: any): Promise<CommandResponse<T>> {
   if (isElectron()) {
-    return await window.electronAPI.invoke(channel, args ?? undefined);
+    return await ipcInvoke<CommandResponse<T>>(channel, args ?? undefined);
   }
   // Fallback for development/testing - return success: false instead of throwing
   logger.warn(`Electron IPC not available for channel: ${channel}`);

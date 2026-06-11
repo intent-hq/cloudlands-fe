@@ -115,15 +115,14 @@
     };
   });
 
-  // Get agent display info for a workspace from agentSummary
+  // Get agent display info for a workspace from its member agent IDs
   // Only returns agents that are ACTIVE (streaming/busy) or have UNREAD messages
   function getWorkspaceAgentInfo(ws: Workspace): AgentDisplayInfo[] {
     // Reference version for reactivity
     void activeStreamsVersion;
-    const summary = ws.agentSummary;
-    const summaryAgents = summary?.agents || [];
+    const memberAgentIds = ws.agentSummary?.agentIds ?? [];
 
-    if (summaryAgents.length === 0) {
+    if (memberAgentIds.length === 0) {
       return [];
     }
 
@@ -131,21 +130,22 @@
     const unreadAgentIds = new Set($unreadAgentIdsByWorkspace$[ws.id] ?? []);
     const reduxState = appStore.state;
 
-    return summaryAgents
-      .map((agent) => {
-        const loadedSession = selectAgentSession.select(reduxState, agent.id);
+    return memberAgentIds
+      .map((agentId) => {
+        const loadedSession = selectAgentSession.select(reduxState, agentId);
         const isWaiting = loadedSession
-          ? selectAgentIsWaiting.select(reduxState, agent.id)
-          : agent.status === 'waiting';
+          ? selectAgentIsWaiting.select(reduxState, agentId)
+          : false;
         const isResponding = loadedSession
-          ? selectAgentIsResponding.select(reduxState, agent.id)
-          : activeStreamsTracker.isAgentStreaming(agent.id) || agent.status === 'busy' || agent.status === 'processing';
-        const isUnread = unreadAgentIds.has(agent.id);
+          ? selectAgentIsResponding.select(reduxState, agentId)
+          : activeStreamsTracker.isAgentStreaming(agentId);
+        const isUnread = unreadAgentIds.has(agentId);
+        const sessionStatus = loadedSession?.status as string | undefined;
 
-        // Determine avatar state using canonical selectors when the session is loaded;
-        // otherwise fall back to persisted cross-workspace summary data.
+        // Determine avatar state using canonical selectors when the session is
+        // loaded; otherwise fall back to streaming-tracker data only.
         let state: AvatarState = 'idle';
-        if (agent.status === 'error' || agent.status === 'failed') {
+        if (sessionStatus === 'error' || sessionStatus === 'failed') {
           state = 'failed';
         } else if (isWaiting) {
           state = 'waiting';
@@ -154,9 +154,9 @@
         }
 
         return {
-          id: agent.id,
+          id: agentId,
           state,
-          specialist: agent.specialist,
+          specialist: (loadedSession?.metadata?.specialist ?? null) as AgentDisplayInfo['specialist'],
           isActive: isResponding && !isWaiting,
           isUnread,
         };

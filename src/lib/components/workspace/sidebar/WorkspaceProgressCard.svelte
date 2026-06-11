@@ -39,9 +39,11 @@
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { goto } from '$app/navigation';
   import {
+  onDestroy,
   tick,
   onMount,
 } from 'svelte';
+  import { writable } from 'svelte/store';
   import {
   logger,
   createLogger,
@@ -96,11 +98,16 @@
 
   let { workspaceId, onOpenNote, onAcceptChanges, compact = false, onClick }: Props = $props();
 
+  const workspaceIdStore = writable('');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId ?? '');
+  });
+
   // ✅ At component init — selectors use getContext(); dispatch uses the configured app store
   const sidebarSide$ = selectSidebarSide();
-  const notes = $derived(selectAllNotes(workspaceId));
-  const workspace = $derived(selectWorkspaceById(workspaceId ?? ''));
-  const activePullRequest$ = $derived(selectWorkspaceActivePullRequest(workspaceId ?? ''));
+  const notes = selectAllNotes(workspaceIdStore);
+  const workspace = selectWorkspaceById(workspaceIdStore);
+  const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
 
   // Git status state for workflow awareness
   let gitStatus = $state<WorkspaceGitStatus | null>(null);
@@ -285,6 +292,13 @@
       logger.error('Failed to copy path:', error);
     }
   }
+
+  onDestroy(() => {
+    if (copyRepoPathTimeout) {
+      clearTimeout(copyRepoPathTimeout);
+      copyRepoPathTimeout = null;
+    }
+  });
 
   // Check if workspace is archived
   let isArchived = $derived($workspace?.status === WorkspaceStatusEnum.Archived);
@@ -764,7 +778,7 @@
   // Track if any agent is currently working (streaming).
   // Uses workspace-agents membership to check streaming state per workspace.
   // ✅ Selector called at component init time (uses getContext internally)
-  const workspaceAgentSessions$ = selectAllWorkspaceAgents(workspaceId ?? '');
+  const workspaceAgentSessions$ = selectAllWorkspaceAgents(workspaceIdStore);
   const isAgentWorking = $derived(
     compact ? false : $workspaceAgentSessions$.some((s) => s.isStreaming),
   );

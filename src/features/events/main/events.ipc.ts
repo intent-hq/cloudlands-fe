@@ -35,6 +35,9 @@ import {
 } from '../../../main/ipc-schemas';
 import { getBlob } from '../../../shared/git/git-blob-storage';
 import {
+  addRendererSubscription,
+  clearRendererSubscriptions,
+  removeRendererSubscription,
   rendererSubscriptions,
   windowCloseListeners,
 } from './renderer-subscription-registry';
@@ -80,6 +83,15 @@ export function setupEventsIPC(): void {
       async (event, validated) => {
         try {
           const windowId = event.sender.id;
+          const win = BrowserWindow.fromId(windowId);
+
+          if (!win || win.isDestroyed()) {
+            logger.debug('Skipping renderer subscription for destroyed window', {
+              windowId,
+              subscriptionId: validated.subscriptionId,
+            });
+            return { success: true, subscriptionId: validated.subscriptionId };
+          }
 
           // Send historical events if requested
           if (validated.includeHistorical) {
@@ -95,51 +107,44 @@ export function setupEventsIPC(): void {
               .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
               .slice(-(validated.historicalLimit ?? 50));
 
-            const window = BrowserWindow.fromId(windowId);
-            if (window && !window.isDestroyed()) {
-              for (const evt of matching) {
-                window.webContents.send('workspace:event', evt);
-              }
+            for (const evt of matching) {
+              win.webContents.send('workspace:event', evt);
             }
           }
 
           // Register subscription — the renderer-subscription saga delivers
           // new events via takeEvery(emitWorkspaceEvent), so no store.subscribe()
           // is needed. Performance is proportional to event rate, not action rate.
-          rendererSubscriptions.set(validated.subscriptionId, {
+          addRendererSubscription(validated.subscriptionId, {
             windowId,
             filters: validated.filters,
           });
 
           // Register cleanup when the BrowserWindow closes so we don't leak
           // subscriptions after the renderer is gone.
-          const win = BrowserWindow.fromId(windowId);
-          if (win && !win.isDestroyed()) {
-            const subId = validated.subscriptionId;
-            const onClosed = () => {
-              const toRemove: string[] = [];
-              for (const [id, info] of rendererSubscriptions.entries()) {
-                if (info.windowId === windowId) {
-                  toRemove.push(id);
-                }
+          const subId = validated.subscriptionId;
+          const onClosed = () => {
+            const toRemove: string[] = [];
+            for (const [id, info] of rendererSubscriptions.entries()) {
+              if (info.windowId === windowId) {
+                toRemove.push(id);
               }
-              for (const id of toRemove) {
-                rendererSubscriptions.delete(id);
-                windowCloseListeners.delete(id);
-              }
-              if (toRemove.length > 0) {
-                logger.info('Cleaned up renderer subscriptions on window close', {
-                  windowId,
-                  count: toRemove.length,
-                });
-              }
-            };
-            win.once('closed', onClosed);
+            }
+            for (const id of toRemove) {
+              removeRendererSubscription(id);
+            }
+            if (toRemove.length > 0) {
+              logger.info('Cleaned up renderer subscriptions on window close', {
+                windowId,
+                count: toRemove.length,
+              });
+            }
+          };
+          win.once('closed', onClosed);
 
-            // Track the window listener so we can remove it if the subscription
-            // is explicitly unsubscribed before the window closes.
-            windowCloseListeners.set(subId, { window: win, listener: onClosed });
-          }
+          // Track the window listener so we can remove it if the subscription
+          // is explicitly unsubscribed before the window closes.
+          windowCloseListeners.set(subId, { window: win, listener: onClosed });
 
           logger.debug('Renderer subscription created', {
             windowId,
@@ -164,17 +169,7 @@ export function setupEventsIPC(): void {
       EventsUnsubscribeSchema,
       async (_event, validated) => {
         try {
-          const sub = rendererSubscriptions.get(validated.subscriptionId);
-          if (sub) {
-            rendererSubscriptions.delete(validated.subscriptionId);
-
-            // Remove the window close listener since we already cleaned up
-            const wcl = windowCloseListeners.get(validated.subscriptionId);
-            if (wcl) {
-              wcl.window.removeListener('closed', wcl.listener);
-              windowCloseListeners.delete(validated.subscriptionId);
-            }
-          }
+          removeRendererSubscription(validated.subscriptionId);
 
           logger.debug('Renderer subscription removed', {
             subscriptionId: validated.subscriptionId,
@@ -493,7 +488,7 @@ export function cleanupEventsIPC(): void {
 
   // Clear all renderer subscriptions (no store.subscribe to tear down —
   // event delivery is handled by the renderer-subscription saga)
-  rendererSubscriptions.clear();
+  clearRendererSubscriptions();
 
   // Remove all window close listeners
   for (const wcl of windowCloseListeners.values()) {

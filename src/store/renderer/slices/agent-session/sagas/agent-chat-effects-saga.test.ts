@@ -42,8 +42,10 @@ import {
   agentSessionSendMessageRequested,
   agentSessionStopChatRequested,
   agentSessionReducer,
+  bulkUpsertSessions,
   initialState,
   replaceMessages,
+  updateMessage,
   upsertSession,
 } from '../agent-session-slice';
 import {
@@ -130,7 +132,10 @@ function makeState(
     ...sessionOverride,
   } as AgentSession;
   return {
-    agentSessions: agentSessionReducer(initialState, upsertSession(session)),
+    agentSessions: agentSessionReducer(
+      initialState,
+      bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false }),
+    ),
     workspace: workspaceReducer(workspaceInitialState, replaceWorkspaceList([workspace])),
     chatState: {
       byAgentId: {
@@ -161,6 +166,14 @@ async function runHandler(handler: any, action: any, state: any, options: RunHan
   const dispatched: any[] = [];
   const subscribers = new Set<(state: any) => void>();
   const notify = () => subscribers.forEach((subscriber) => subscriber(state));
+  const reduxStore = {
+    getState: () => state,
+    dispatch: (dispatchedAction: any) => dispatch(dispatchedAction),
+    subscribe: (subscriber: (state: any) => void) => {
+      subscribers.add(subscriber);
+      return () => subscribers.delete(subscriber);
+    },
+  };
   const reduce = (dispatchedAction: any, afterReduce?: (state: any) => void) => {
     state = {
       ...state,
@@ -207,7 +220,10 @@ async function runHandler(handler: any, action: any, state: any, options: RunHan
           isProcessing: false,
           messages: [],
         } as AgentSession);
-        reduce(upsertSession(activatedSession), options.onActivationStateApplied);
+        reduce(
+          bulkUpsertSessions([activatedSession], { preserveExplicitRuntimeFlags: false }),
+          options.onActivationStateApplied,
+        );
         if (options.resolveActivationPromise !== false) {
           dispatchedAction.success(activatedSession);
         }
@@ -224,6 +240,7 @@ async function runHandler(handler: any, action: any, state: any, options: RunHan
       getState: () => state,
       dispatch,
       context: {
+        reduxStore,
         readableStoreState: {
           subscribe: (subscriber: (state: any) => void) => {
             subscribers.add(subscriber);
@@ -412,6 +429,53 @@ describe('agent-chat-effects saga migrated flows', () => {
     expect(dispatched.map((item) => item.type)).toContain(action.failure.type);
     expect(toastErrorMock).toHaveBeenCalledWith('Network failure');
     expect(await rejection).toBe('Network failure');
+  });
+
+  it('forwards userAppMessageId to the stream lifecycle send so the canonical message merges with the optimistic one', async () => {
+    const action = agentSessionSendMessageRequested(AGENT, WS, 'hello', {
+      userAppMessageId: 'app_msg_optimistic-test',
+      optimisticMessageId: 'optimistic_test-1',
+    });
+    await runHandler(
+      handleAgentSessionSendMessageRequested,
+      action,
+      makeState([textMessage('u1', 'user', 'First request')]),
+    );
+
+    expect(sendAgentMessage).toHaveBeenCalledWith(
+      AGENT,
+      'hello',
+      workspace,
+      expect.objectContaining({ userAppMessageId: 'app_msg_optimistic-test' }),
+    );
+  });
+
+  it('marks the optimistic user message with an error on send failure instead of removing it', async () => {
+    vi.mocked(sendAgentMessage).mockRejectedValueOnce(new Error('Network failure'));
+    const optimisticMessage = {
+      ...textMessage('optimistic_test-1', 'user', 'send fails'),
+      appMessageId: 'app_msg_optimistic-test',
+    };
+    const action = agentSessionSendMessageRequested(AGENT, WS, 'send fails', {
+      userAppMessageId: 'app_msg_optimistic-test',
+      optimisticMessageId: 'optimistic_test-1',
+    });
+    action.promise.catch(() => undefined);
+
+    const dispatched = await runHandler(
+      handleAgentSessionSendMessageRequested,
+      action,
+      makeState([optimisticMessage]),
+    );
+    await vi.dynamicImportSettled();
+
+    const updateAction = first(dispatched, updateMessage.type);
+    expect(updateAction).toBeDefined();
+    expect(updateAction.payload).toEqual([
+      AGENT,
+      'optimistic_test-1',
+      { error: 'Network failure' },
+    ]);
   });
 
   it('logs the underlying error object so message and stack are not swallowed', async () => {

@@ -286,14 +286,14 @@ export class ProtocolAdapter {
     }
   }
 
-  async listNotes(workspaceId: string): Promise<any> {
+  async listNotes(workspaceId: string, options?: { summariesOnly?: boolean }): Promise<any> {
     // Validate workspaceId
     if (!workspaceId) {
       logger.error('[ProtocolAdapter] listNotes called without workspaceId');
       return [];
     }
 
-    const result = await this.notesService.listNotes(createWorkspaceId(workspaceId));
+    const result = await this.notesService.listNotes(createWorkspaceId(workspaceId), options);
 
     // Check if this is being called from MCP (based on call stack or return type expectation)
     // For now, we'll return the data directly for MCP compatibility
@@ -303,7 +303,7 @@ export class ProtocolAdapter {
   }
 
   async getNote(
-    workspaceIdOrParams: string | { workspaceId: string; noteId: string },
+    workspaceIdOrParams: string | { workspaceId: string; noteId: string; initializeCRDT?: boolean },
     noteId?: string,
   ): Promise<any> {
     // Handle both call signatures for compatibility
@@ -328,6 +328,10 @@ export class ProtocolAdapter {
     const result = await this.notesService.getNote(
       createWorkspaceId(actualWorkspaceId),
       createNoteId(actualNoteId),
+      {
+        initializeCRDT:
+          typeof workspaceIdOrParams === 'string' ? false : workspaceIdOrParams.initializeCRDT === true,
+      },
     );
 
     // For MCP tools, return the data directly or null

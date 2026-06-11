@@ -102,7 +102,13 @@
     workspace = null,
   }: Props = $props();
 
-  const agentPermCount = selectPendingCount(agentId);
+  // svelte-ignore state_referenced_locally -- selectors are initialized with the current agent; the effect below mirrors prop changes.
+  const agentIdStore = writable(agentId);
+  $effect(() => {
+    agentIdStore.set(agentId);
+  });
+
+  const agentPermCount = selectPendingCount(agentIdStore);
 
   $effect(() => {
     const wsId = workspace?.id;
@@ -112,9 +118,9 @@
   });
 
   // Agent stats selectors (for tooltip)
-  const agentStats$ = selectAgentStats(agentId);
-  const agentStatsLoading$ = selectIsLoadingAgentStats(agentId);
-  const agentStatsError$ = selectAgentStatsError(agentId);
+  const agentStats$ = selectAgentStats(agentIdStore);
+  const agentStatsLoading$ = selectIsLoadingAgentStats(agentIdStore);
+  const agentStatsError$ = selectAgentStatsError(agentIdStore);
 
   // Tooltip state
   let tooltipOpen = $state(false);
@@ -383,9 +389,9 @@
 
   // Reactive agent session from Redux; ensureAgentSessionLoaded dispatch
   // above handles the disk restore.
-  const agent$ = selectAgentSession(agentId);
-  const agentIsResponding$ = selectAgentIsResponding(agentId);
-  const agentIsWaiting$ = selectAgentIsWaiting(agentId);
+  const agent$ = selectAgentSession(agentIdStore);
+  const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
+  const agentIsWaiting$ = selectAgentIsWaiting(agentIdStore);
   const showAgentStatsTooltip = $derived(!!$agent$ && isAuggieSession($agent$));
   const agentStatsEmptyState = $derived.by(() => {
     if (!$agent$) return undefined;
@@ -409,10 +415,10 @@
   const delegatedByName = $derived(parentAgentId ? $parentAgent$?.name : undefined);
 
   // Get line changes for this agent
-  const lineChanges$ = selectAgentLineStats(agentId);
+  const lineChanges$ = selectAgentLineStats(agentIdStore);
 
   // Streaming state is derived from Redux-owned stream lifecycle/message state.
-  const streamingContent$ = selectAgentSessionStreamingContent(agentId);
+  const streamingContent$ = selectAgentSessionStreamingContent(agentIdStore);
   const streamingBuffer = $derived($streamingContent$);
   const isStreamActive = $derived($agentIsResponding$ && !$agentIsWaiting$);
 

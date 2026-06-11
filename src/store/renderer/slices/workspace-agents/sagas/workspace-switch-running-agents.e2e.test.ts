@@ -42,6 +42,9 @@ import type { AgentSession } from "$shared/types";
 // -------------------------------------------------------------------------
 
 vi.mock("typed-redux-saga", () => ({
+  actionChannel: function* (pattern: any, buffer: any) {
+    return yield sagaEffects.actionChannel(pattern, buffer);
+  },
   call: function* (fnOrDescriptor: any, ...args: any[]) {
     return yield Array.isArray(fnOrDescriptor)
       ? sagaEffects.call(fnOrDescriptor as [any, any], ...args)
@@ -58,6 +61,9 @@ vi.mock("typed-redux-saga", () => ({
   },
   fork: function* (fn: any, ...args: any[]) {
     return yield sagaEffects.fork(fn, ...args);
+  },
+  flush: function* (channel: any) {
+    return yield sagaEffects.flush(channel);
   },
   cancel: function* (task: any) {
     return yield sagaEffects.cancel(task);
@@ -125,6 +131,7 @@ import {
   initialState as agentSessionInitialState,
   addMessage as addAgentSessionMessage,
   upsertSession,
+  bulkUpsertSessions,
 } from "../../agent-session/agent-session-slice";
 import {
   chatStateReducer,
@@ -198,6 +205,7 @@ describe("workspace switch while agents are streaming (Task D)", () => {
     const { chatStateSaga, __getActiveSendTasksForTesting } = await import(
       "../../chat-state/sagas/chat-state-saga"
     );
+    const { agentSessionSaga } = await import("../../agent-session/sagas/agent-session-saga");
     __getActiveSendTasksForTesting().clear();
 
     const PARENT_ID = "agent-parent";
@@ -237,7 +245,8 @@ describe("workspace switch while agents are streaming (Task D)", () => {
       channel.put(action);
     };
 
-    runSaga({ channel, dispatch, getState: () => state }, chatStateSaga);
+    const chatTask = runSaga({ channel, dispatch, getState: () => state }, chatStateSaga);
+    const agentSessionTask = runSaga({ channel, dispatch, getState: () => state }, agentSessionSaga);
 
     // 1. Mount workspace A and seed parent + sub agent.
     dispatch(workspaceMounted(WS_A));
@@ -249,6 +258,9 @@ describe("workspace switch while agents are streaming (Task D)", () => {
     });
     dispatch(upsertSession({ ...parent, workspaceId: WS_A as AgentSession["workspaceId"] }));
     dispatch(upsertSession({ ...sub, workspaceId: WS_A as AgentSession["workspaceId"] }));
+    await vi.advanceTimersByTimeAsync(120);
+
+    expect(state.agentSessions.byAgentId[SUB_ID].metadata?.createdByAgentId).toBe(PARENT_ID);
 
     // 2. Both agents start streaming.
     dispatch(chatSendStarted(PARENT_ID, WS_A));
@@ -323,6 +335,13 @@ describe("workspace switch while agents are streaming (Task D)", () => {
     const ownedByWsA = dispatched.filter((a) => a.type === upsertSession.type);
     expect(ownedByWsA.length).toBeGreaterThan(0);
     expect(ownedByWsA.every((a) => a.payload[0].workspaceId === WS_A)).toBe(true);
+    const storedForWsA = dispatched.filter((a) => a.type === bulkUpsertSessions.type);
+    expect(storedForWsA.length).toBeGreaterThan(0);
+    expect(
+      storedForWsA.every((a) =>
+        a.payload[0].every((s: AgentSession) => s.workspaceId === WS_A),
+      ),
+    ).toBe(true);
 
     // 6. Switch back to A.
     dispatch(workspaceUnmounted(WS_B));
@@ -345,6 +364,10 @@ describe("workspace switch while agents are streaming (Task D)", () => {
     expect(finalParent.isProcessing).toBe(false);
     expect(finalSub.isStreaming).toBe(false);
     expect(finalSub.isProcessing).toBe(false);
+
+    chatTask.cancel();
+    agentSessionTask.cancel();
+    await Promise.all([chatTask.toPromise(), agentSessionTask.toPromise()]);
   });
 });
 

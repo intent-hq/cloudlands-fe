@@ -6,8 +6,9 @@
  *   setAgentStreaming(false), the isProcessing flag was NOT cleared.
  *   This caused agents to appear "busy" (spinner) when actually idle.
  *
- * The fix: the safety timeout now dispatches upsertSession with
- * both isStreaming: false AND isProcessing: false.
+ * The fix: the safety timeout dispatches upsertSession with both
+ * isStreaming: false AND isProcessing: false, and batched storage preserves
+ * those explicit false values.
  *
  * This test verifies at the reducer level that the safety timeout's
  * dispatched actions correctly clear both flags.
@@ -20,9 +21,9 @@ import {
 } from 'vitest';
 import {
   agentSessionReducer,
+  bulkUpsertSessions,
   initialState as sessionInitialState,
   setAgentStreaming,
-  upsertSession,
 } from '../agent-session-slice';
 import { chatSendStarted } from '../../chat-state/chat-state-slice';
 import type { AgentSession } from '$shared/types';
@@ -42,9 +43,13 @@ function getSession(state: ReturnType<typeof agentSessionReducer>, agentId: stri
   return state.byAgentId[agentId];
 }
 
+function applyBatchedUpsert(session: AgentSession) {
+  return bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false });
+}
+
 /** Produce a mid-stream state: isStreaming=true, isProcessing=true */
 function midStreamState() {
-  let s = agentSessionReducer(sessionInitialState, upsertSession({ ...dummySession }));
+  let s = agentSessionReducer(sessionInitialState, applyBatchedUpsert({ ...dummySession }));
   s = agentSessionReducer(s, chatSendStarted(AGENT));
   return s;
 }
@@ -68,19 +73,19 @@ describe('Bug 10: Safety timeout must clear isProcessing', () => {
     expect(session.isProcessing).toBe(true); // BUG: still true!
   });
 
-  it('safety timeout fix: upsertSession with isProcessing=false clears both flags', () => {
+  it('safety timeout fix: batched upsert storage with isProcessing=false clears both flags', () => {
     let state = midStreamState();
 
     // Step 1: dispatch setAgentStreaming(false) — clears isStreaming
     state = agentSessionReducer(state, setAgentStreaming(AGENT, false));
 
-    // Step 2: dispatch upsertSession with both flags cleared (the fix)
+    // Step 2: apply the batched upsert with both flags cleared (the fix)
     const updatedSession = {
       ...getSession(state, AGENT),
       isStreaming: false,
       isProcessing: false,
     };
-    state = agentSessionReducer(state, upsertSession(updatedSession));
+    state = agentSessionReducer(state, applyBatchedUpsert(updatedSession));
 
     const session = getSession(state, AGENT);
     expect(session.isStreaming).toBe(false); // cleared ✓
@@ -91,7 +96,7 @@ describe('Bug 10: Safety timeout must clear isProcessing', () => {
     let state = midStreamState();
 
     // OLD behavior: safety timeout only dispatches setAgentStreaming(false)
-    // and upsertSession with isStreaming: false but NOT isProcessing: false
+    // and batched upsert storage with isStreaming: false but NOT isProcessing: false
     state = agentSessionReducer(state, setAgentStreaming(AGENT, false));
 
     const oldBehaviorSession = {
@@ -99,7 +104,7 @@ describe('Bug 10: Safety timeout must clear isProcessing', () => {
       isStreaming: false,
       // BUG: isProcessing NOT explicitly set to false
     };
-    state = agentSessionReducer(state, upsertSession(oldBehaviorSession));
+    state = agentSessionReducer(state, applyBatchedUpsert(oldBehaviorSession));
 
     const session = getSession(state, AGENT);
     expect(session.isStreaming).toBe(false);
@@ -108,22 +113,22 @@ describe('Bug 10: Safety timeout must clear isProcessing', () => {
   });
 
   it('safety timeout fix is safe when isProcessing is already false', () => {
-    // Edge case: agent finished normally but safety timeout still fires.
+    // Edge case: agent finished normally but safety timeout still fires later.
     // Dispatching isProcessing: false should be a no-op, not throw or corrupt state.
-    let state = agentSessionReducer(sessionInitialState, upsertSession({ ...dummySession }));
+    let state = agentSessionReducer(sessionInitialState, applyBatchedUpsert({ ...dummySession }));
 
     // Agent completed normally: both flags are already false
     expect(getSession(state, AGENT).isStreaming).toBe(false);
     expect(getSession(state, AGENT).isProcessing).toBe(false);
 
-    // Safety timeout fires anyway (race condition)
+    // Safety timeout fires anyway after normal completion
     state = agentSessionReducer(state, setAgentStreaming(AGENT, false));
     const updatedSession = {
       ...getSession(state, AGENT),
       isStreaming: false,
       isProcessing: false,
     };
-    state = agentSessionReducer(state, upsertSession(updatedSession));
+    state = agentSessionReducer(state, applyBatchedUpsert(updatedSession));
 
     // Should remain false without errors
     const session = getSession(state, AGENT);

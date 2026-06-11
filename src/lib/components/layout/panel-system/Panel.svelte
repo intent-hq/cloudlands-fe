@@ -15,12 +15,19 @@
   import PanelDropZones from './PanelDropZones.svelte';
   import { createPanelHeaderContext } from './panel-header-context.svelte';
   import { setPanelContext } from './panel-context';
+  import {
+    arePanelTabCachesEqual,
+    getNextPanelTabCacheExpiryDelay,
+    MAX_CACHED_INACTIVE_TABS,
+    PANEL_TAB_CACHE_TTL_MS,
+    updatePanelTabCache,
+  } from './panel-tab-cache';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
-  onMount,
-  untrack,
-  type Snippet,
-} from 'svelte';
+    onMount,
+    untrack,
+    type Snippet,
+  } from 'svelte';
 
   export type DropZone = 'top' | 'bottom' | 'left' | 'right' | 'center';
 
@@ -98,48 +105,51 @@
   let activeTab = $derived(panel?.tabs?.find((t) => t.id === panel.activeTabId) ?? null);
 
   // Keep recently-visited tabs mounted for faster switching
-  // Tabs are kept for CACHE_TTL_MS after switching away, then unmounted
-  const CACHE_TTL_MS = 30_000; // 30 seconds
-  const MAX_CACHED_TABS = 3; // Maximum number of inactive tabs to keep mounted
+  // Tabs are kept for PANEL_TAB_CACHE_TTL_MS after switching away, then unmounted
+  const tabCacheOptions = {
+    ttlMs: PANEL_TAB_CACHE_TTL_MS,
+    maxInactiveTabs: MAX_CACHED_INACTIVE_TABS,
+  };
 
   // Track which tabs should remain mounted (active + recently visited)
   let cachedTabIds = $state<Map<string, number>>(new Map()); // tabId -> timestamp when last active
 
-  // Update cache when active tab changes - use untrack to prevent infinite loops
-  $effect(() => {
-    const currentActiveId = panel.activeTabId;
-    if (!currentActiveId) return;
-
-    // Read current cache state without tracking to avoid loops
-    untrack(() => {
-      const newCache = new Map(cachedTabIds);
-      const now = Date.now();
-
-      // Add current tab to cache with current timestamp
-      newCache.set(currentActiveId, now);
-
-      // Remove expired tabs (older than TTL)
-      for (const [tabId, timestamp] of newCache.entries()) {
-        if (tabId !== currentActiveId && now - timestamp > CACHE_TTL_MS) {
-          newCache.delete(tabId);
-        }
-      }
-
-      // If still over limit, remove oldest inactive tabs
-      const inactiveEntries = Array.from(newCache.entries())
-        .filter(([id]) => id !== currentActiveId)
-        .sort((a, b) => a[1] - b[1]); // oldest first
-
-      while (inactiveEntries.length > MAX_CACHED_TABS) {
-        const oldest = inactiveEntries.shift();
-        if (oldest) {
-          newCache.delete(oldest[0]);
-        }
-      }
-
-      // Only update if changed
-      cachedTabIds = newCache;
+  function applyTabCacheUpdate(
+    tabs = panel.tabs,
+    activeTabId = panel.activeTabId,
+    now = Date.now(),
+  ) {
+    const { currentCache, nextCache } = untrack(() => {
+      const currentCache = cachedTabIds;
+      return {
+        currentCache,
+        nextCache: updatePanelTabCache(currentCache, tabs, activeTabId, now, tabCacheOptions),
+      };
     });
+
+    if (!arePanelTabCachesEqual(currentCache, nextCache)) {
+      cachedTabIds = nextCache;
+    }
+  }
+
+  // Update cache when active tab or tab membership changes.
+  $effect(() => {
+    applyTabCacheUpdate(panel.tabs, panel.activeTabId);
+  });
+
+  // Enforce the TTL even when the active tab does not change again. Without
+  // this timer, inactive browser/editor/diff tabs can stay mounted forever.
+  $effect(() => {
+    const delay = getNextPanelTabCacheExpiryDelay(
+      cachedTabIds,
+      panel.activeTabId,
+      Date.now(),
+      PANEL_TAB_CACHE_TTL_MS,
+    );
+    if (delay === null) return;
+
+    const timeout = setTimeout(() => applyTabCacheUpdate(panel.tabs, panel.activeTabId), delay);
+    return () => clearTimeout(timeout);
   });
 
   // Get tabs that should be rendered (exist in panel AND are in cache)

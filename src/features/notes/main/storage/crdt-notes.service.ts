@@ -8,6 +8,8 @@
  * - Conflict-free merging of concurrent edits
  */
 
+import flatstr from 'flatstr';
+
 import { Logger } from '../../../../shared/logger';
 import { crdtDocumentManager } from './crdt-document-manager';
 import { FolderBasedNotesRepository } from './folder-notes.repository';
@@ -203,7 +205,8 @@ export class CRDTNotesService {
     // Update the file-based storage
     const note = await this.repository.findById(workspaceId, noteId);
     if (note) {
-      note.content = newContent;
+      // Flatten before retaining indefinitely in note content and version history
+      note.content = flatstr(newContent);
       note.updatedAt = new Date().toISOString();
 
       // Add version
@@ -211,7 +214,7 @@ export class CRDTNotesService {
       note.versions.push({
         versionId: crypto.randomUUID(),
         versionNumber: note.versions.length + 1,
-        content: newContent,
+        content: flatstr(newContent),
         title: note.title,
         author: author || { id: 'unknown', name: 'Unknown', type: AuthorType.System },
         createdAt: new Date().toISOString(),

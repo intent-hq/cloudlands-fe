@@ -2,19 +2,9 @@
  * Event Store Memory Management Tests
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-  vi,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventStore } from '../main/event-store';
-import {
-  WorkspaceEvent,
-  WorkspaceEventType,
-} from '../types';
+import { WorkspaceEvent, WorkspaceEventType } from '../types';
 
 describe('EventStore Memory Management', () => {
   let store: EventStore;
@@ -87,6 +77,27 @@ describe('EventStore Memory Management', () => {
       // Memory usage should be managed
       const usage = store.getMemoryUsage();
       expect(usage.eventCount).toBeLessThanOrEqual(5000);
+    });
+
+    it('should not retain pending append references when persistence is disabled', async () => {
+      store = new EventStore(workspaceId, {
+        maxEvents: 100,
+        persistToDisk: false,
+      });
+
+      for (let i = 0; i < 25; i++) {
+        store.add({
+          id: `event-${i}`,
+          type: 'file:changed' as WorkspaceEventType,
+          workspaceId,
+          timestamp: new Date().toISOString(),
+          actor: { type: 'user', name: 'test' },
+          data: { path: `file-${i}.ts`, diff: 'x'.repeat(100000) },
+        });
+      }
+
+      expect((store as any).pendingEvents).toHaveLength(0);
+      expect((store.getAll()[0].data as any).diff.length).toBeLessThan(100000);
     });
 
     it('should trigger compaction automatically', async () => {
@@ -191,6 +202,38 @@ describe('EventStore Memory Management', () => {
       // Memory usage should reflect correct counts
       const usage = store.getMemoryUsage();
       expect(usage.eventCount).toBe(10);
+      expect((store as any).eventIndex.has('event-0')).toBe(false);
+      expect((store as any).typeIndex.get('file:changed')?.has('event-0')).toBe(false);
+    });
+
+    it('should delete empty index buckets after stale events are removed', async () => {
+      store = new EventStore(workspaceId, {
+        maxEvents: 1,
+        persistToDisk: false,
+        indexByType: true,
+        indexByActor: true,
+      });
+
+      store.add({
+        id: 'old-event',
+        type: 'file:created' as WorkspaceEventType,
+        workspaceId,
+        timestamp: '2026-01-01T00:00:00Z',
+        actor: { type: 'agent', name: 'old-agent' },
+        data: { path: 'old.ts' },
+      });
+      store.add({
+        id: 'new-event',
+        type: 'file:changed' as WorkspaceEventType,
+        workspaceId,
+        timestamp: '2026-01-02T00:00:00Z',
+        actor: { type: 'user', name: 'new-user' },
+        data: { path: 'new.ts' },
+      });
+
+      expect((store as any).typeIndex.has('file:created')).toBe(false);
+      expect((store as any).actorIndex.has('agent:old-agent')).toBe(false);
+      expect((store as any).dateIndex.has('2026-01-01')).toBe(false);
     });
   });
 

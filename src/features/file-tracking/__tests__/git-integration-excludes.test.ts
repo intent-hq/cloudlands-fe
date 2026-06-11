@@ -238,4 +238,44 @@ describe('GitIntegrationService startup catch-up', () => {
       source: 'git',
     });
   });
+
+  it('clears pending debounce, dedup keys, stage suppression, and detector references on stop', async () => {
+    vi.useFakeTimers();
+    try {
+      const detector = {
+        on: vi.fn(),
+        off: vi.fn(),
+        getStats: vi.fn(() => ({ totalChangesDetected: 0 })),
+        getCurrentChanges: vi.fn(),
+      };
+
+      await service.startListening(detector, { skipInitialSync: true });
+      const processQueue = vi.fn();
+      (service as any).processChangeQueue = processQueue;
+
+      service.beginStageOperation(['src/app.ts']);
+      await (service as any).handleGitChangesWithDedup({
+        id: 'queued-change',
+        provenance: { source: 'git' },
+        files: [{ path: 'src/app.ts', action: 'Modify', additions: 1, deletions: 0 }],
+      });
+
+      expect((service as any).changeQueue.size).toBe(1);
+      expect((service as any).recentChangeKeys.size).toBe(1);
+      expect((service as any).stageOperationTimeout).not.toBeNull();
+
+      service.stopListening();
+      vi.advanceTimersByTime(600);
+
+      expect(detector.off).toHaveBeenCalledWith('changes', expect.any(Function));
+      expect(detector.off).toHaveBeenCalledWith('committed-changes', expect.any(Function));
+      expect(processQueue).not.toHaveBeenCalled();
+      expect((service as any).changeQueue.size).toBe(0);
+      expect((service as any).recentChangeKeys.size).toBe(0);
+      expect((service as any).stageOperationTimeout).toBeNull();
+      expect((service as any).changeDetector).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

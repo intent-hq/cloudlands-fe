@@ -25,11 +25,11 @@ import {
   selectAgentIsResponding,
   selectAgentIsWaitingForOtherAgents,
 } from "$store/renderer/slices/agent-session/agent-session-selectors";
-import type { AgentOverviewWorkspaceState } from "./agent-overview-types";
 import { ACTIVE_EDGE_WINDOW_MS } from "$lib/components/agent-overview/constants";
 import {
   getNodeStatus,
   getStreamingState,
+  convertToInteractionEvent,
   extractFileChangesFromMessages,
   extractNoteChangesFromMessages,
   extractTaskChangesFromMessages,
@@ -41,38 +41,27 @@ import type { AgentSession,
 import { selectAllWorkspaceAgents } from "$store/renderer/slices/workspace-agents/workspace-agents-selectors";
 
 // ============================================================================
-// Simple selectors
+// Private graph derivation helpers
 // ============================================================================
 
-const emptyWorkspaceState: AgentOverviewWorkspaceState = {
-  events: [],
-  currentTime: new Date().toISOString(),
-  isLive: true,
-};
+function deriveInteractionEvents(state: StoreState, workspaceId: string): InteractionEvent[] {
+  const workspaceEvents = state.workspaceEvents.byWorkspaceId[workspaceId]?.events ?? [];
+  const interactions: InteractionEvent[] = [];
 
-/** Select the per-workspace agent overview state */
-export const selectAgentOverviewWorkspace = store.createSelector(
-  (state, workspaceId: string): AgentOverviewWorkspaceState =>
-    state.agentOverview.byWorkspaceId[workspaceId] ?? emptyWorkspaceState,
-);
+  for (const event of workspaceEvents) {
+    const interaction = convertToInteractionEvent(event);
+    if (interaction) interactions.push(interaction);
+  }
 
-/** Select whether the overview is in live mode */
-export const selectIsLive = store.createSelector(
-  (state, workspaceId: string): boolean =>
-    (state.agentOverview.byWorkspaceId[workspaceId]?.isLive) ?? true,
-);
+  return interactions.sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+  );
+}
 
-/** Select the current time position */
-export const selectCurrentTime = store.createSelector(
-  (state, workspaceId: string): string =>
-    (state.agentOverview.byWorkspaceId[workspaceId]?.currentTime) ?? new Date().toISOString(),
-);
-
-/** Select the interaction events */
-export const selectEvents = store.createSelector(
-  (state, workspaceId: string): InteractionEvent[] =>
-    (state.agentOverview.byWorkspaceId[workspaceId]?.events) ?? [],
-);
+function deriveCurrentTime(events: InteractionEvent[]): string {
+  if (events.length === 0) return new Date().toISOString();
+  return new Date(Math.max(...events.map((event) => new Date(event.timestamp).getTime()))).toISOString();
+}
 
 // ============================================================================
 // Graph state selector — the main computed value
@@ -84,7 +73,8 @@ export const selectEvents = store.createSelector(
  */
 export const selectGraphState = store.createSelector(
   (state, workspaceId: string): GraphState => {
-    const ws = state.agentOverview.byWorkspaceId[workspaceId] ?? emptyWorkspaceState;
+    const events = deriveInteractionEvents(state, workspaceId);
+    const currentTime = deriveCurrentTime(events);
     const fileChanges: FileLineChange[] = selectWorkspaceFileChanges.select(state, workspaceId);
 
     // Derive agents from workspace agentIds + the canonical agent-session slice.
@@ -103,10 +93,10 @@ export const selectGraphState = store.createSelector(
     }
 
     return computeGraphState(
-      ws.events,
+      events,
       agents,
-      ws.currentTime,
-      ws.isLive,
+      currentTime,
+      true,
       fileChanges,
       state,
       notesMap,
@@ -283,7 +273,18 @@ function computeGraphState(
   }
 
   // STEP 4: Process events for additional nodes and edges
-  processVisibleEvents(visibleEvents, isLive, currentTimestamp, agents, fileChangesMap, getNoteTitle, nodeMap, nodes, edgeSet, pendingEdges, edges);
+  processVisibleEvents(
+    visibleEvents,
+    isLive,
+    currentTimestamp,
+    agents,
+    fileChangesMap,
+    getNoteTitle,
+    nodeMap,
+    nodes,
+    edgeSet,
+    pendingEdges,
+  );
 
   // STEP 4b: Fallback file nodes from workspace-level changes
   createFallbackFileNodes(nodes, fileChanges, agents, coordinatorId, nodeMap, edgeSet, edges, isLive, currentTime, state);
@@ -461,8 +462,6 @@ function processVisibleEvents(
   nodes: GraphNode[],
   edgeSet: Set<string>,
   pendingEdges: PendingEdge[],
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  edges: GraphEdge[],
 ) {
   for (const event of visibleEvents) {
     const eventTime = new Date(event.timestamp).getTime();

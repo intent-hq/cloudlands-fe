@@ -11,6 +11,7 @@ const logger = createLogger('workspace-storage-manager');
 
 // Storage version for migration support
 const STORAGE_VERSION = 2;
+const MAX_MEMORY_CACHE_ENTRIES = 100;
 
 export interface WorkspaceStorageState {
   version: number;
@@ -88,7 +89,7 @@ export class WorkspaceStorageManager {
         try {
           const newState = JSON.parse(event.newValue) as WorkspaceStorageState;
           // Update memory cache with the new state
-          this.memoryCache.set(event.key, newState);
+          this.setMemoryCacheEntry(event.key, newState);
 
           // Notify cross-window listeners for this workspace
           const listeners = this.crossWindowListeners.get(workspaceId);
@@ -141,6 +142,17 @@ export class WorkspaceStorageManager {
     return `workspace:state:${workspaceId}`;
   }
 
+  private setMemoryCacheEntry(key: string, state: WorkspaceStorageState): void {
+    this.memoryCache.delete(key);
+    this.memoryCache.set(key, state);
+
+    while (this.memoryCache.size > MAX_MEMORY_CACHE_ENTRIES) {
+      const oldestKey = this.memoryCache.keys().next().value;
+      if (oldestKey === undefined) break;
+      this.memoryCache.delete(oldestKey);
+    }
+  }
+
   /**
    * Save workspace state to localStorage
    */
@@ -176,7 +188,7 @@ export class WorkspaceStorageManager {
         };
 
         // Update memory cache
-        this.memoryCache.set(key, newState);
+        this.setMemoryCacheEntry(key, newState);
 
         // Save to localStorage
         localStorage.setItem(key, JSON.stringify(newState));
@@ -234,7 +246,7 @@ export class WorkspaceStorageManager {
       }
 
       // Update memory cache
-      this.memoryCache.set(key, state);
+      this.setMemoryCacheEntry(key, state);
 
       return state;
     } catch (error) {
@@ -254,7 +266,7 @@ export class WorkspaceStorageManager {
     }
 
     const key = this.getStorageKey(workspaceId);
-    this.memoryCache.set(key, state);
+    this.setMemoryCacheEntry(key, state);
     logger.debug('Updated memory cache', { workspaceId, drawer: state.drawer });
   }
 
@@ -405,6 +417,7 @@ export class WorkspaceStorageManager {
 
     keysToRemove.forEach((key) => {
       localStorage.removeItem(key);
+      this.memoryCache.delete(key);
       logger.debug('Cleaned up old workspace state', { key });
     });
   }

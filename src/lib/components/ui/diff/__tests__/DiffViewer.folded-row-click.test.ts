@@ -40,8 +40,9 @@ vi.mock('$store/renderer/slices/theme/theme-selectors', () => ({
 }));
 
 vi.mock('$lib/utils/diff-highlighter-preloader', () => ({
-  getDiffWorkerPool: () => undefined,
+  acquireDiffWorkerPool: () => undefined,
   getSafeDiffLanguage: (language?: string) => language ?? 'text',
+  releaseDiffWorkerPool: () => undefined,
 }));
 
 vi.mock('svelte-fa', async () => {

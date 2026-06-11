@@ -5,6 +5,7 @@
  */
 
 import { IPC_CHANNELS } from '../../shared/ipc-registry';
+import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 import type { WorkspaceId } from '../../shared/types/branded-ids';
 import type {
   WorkspaceGitStatus,
@@ -28,7 +29,7 @@ export class AcceptChangesClient {
     if (typeof window === 'undefined' || !window.electronAPI) {
       throw new Error('IPC not available');
     }
-    return window.electronAPI.invoke(channel, data) as Promise<IPCResponse<T>>;
+    return invokeIpc<IPCResponse<T>>(channel, data);
   }
 
   /**

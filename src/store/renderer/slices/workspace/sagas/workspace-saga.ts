@@ -1,19 +1,24 @@
 import { workspaceClient } from "$store/renderer/slices/workspace/utils/workspace.client";
+import { buffers } from "redux-saga";
 import {
   getLocalStorageJSON,
   setLocalStorageJSON,
 } from "$store/renderer/utils/safe-local-storage-saga";
 import {
+  actionChannel,
   call,
   cancelled,
   delay,
   fork,
+  flush,
   put,
+  take,
   takeEvery,
   takeLatest,
   type SagaGenerator,
 } from "typed-redux-saga";
 import {
+  bulkUpdateWorkspaceEntities,
   cleanupRecency,
   loadRecencyData,
   loadWorkspacesRequested,
@@ -22,6 +27,7 @@ import {
   setWorkspaceError,
   setWorkspaceHasLoaded,
   setWorkspaceLoading,
+  updateWorkspaceEntity,
   type WorkspaceRecencyState,
 } from "../workspace-slice";
 import {
@@ -34,6 +40,8 @@ import { workspaceIpcSaga } from "./workspace-ipc-saga";
 export const WORKSPACE_RECENCY_STORAGE_KEY = "workspace-recency";
 export const WORKSPACE_LOAD_MAX_RETRIES = 2;
 export const WORKSPACE_LOAD_RETRY_DELAY_MS = 1000;
+export const WORKSPACE_ENTITY_UPDATE_BATCH_MS = 500;
+export const WORKSPACE_ENTITY_UPDATE_BUFFER_LIMIT = 1_000;
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -128,11 +136,32 @@ export function* watchWorkspaceLoadRequestsSaga() {
   yield* takeLatest(loadWorkspacesRequested, handleLoadWorkspaces);
 }
 
+export function* watchBatchedWorkspaceEntityUpdatesSaga() {
+  const updateActions = yield* actionChannel<ReturnType<typeof updateWorkspaceEntity>>(
+    updateWorkspaceEntity,
+    buffers.sliding<ReturnType<typeof updateWorkspaceEntity>>(
+      WORKSPACE_ENTITY_UPDATE_BUFFER_LIMIT,
+    ),
+  );
+
+  try {
+    while (true) {
+      const firstAction = yield* take(updateActions);
+      yield* delay(WORKSPACE_ENTITY_UPDATE_BATCH_MS);
+      const flushedActions = yield* flush(updateActions);
+      yield* put(bulkUpdateWorkspaceEntities([firstAction, ...flushedActions]));
+    }
+  } finally {
+    updateActions.close();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Root saga
 // ---------------------------------------------------------------------------
 
 export function* workspaceSaga() {
+  yield* fork(watchBatchedWorkspaceEntityUpdatesSaga);
   yield* fork(workspaceIpcSaga);
   yield* fork(workspaceCrudSaga);
   yield* fork(watchWorkspaceLoadRequestsSaga);

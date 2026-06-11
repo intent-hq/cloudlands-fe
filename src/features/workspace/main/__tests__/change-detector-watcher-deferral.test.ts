@@ -10,6 +10,7 @@ const mockPerformanceMonitor = {
   start: vi.fn(),
   stop: vi.fn(),
   on: vi.fn(),
+  off: vi.fn(),
   incrementCounter: vi.fn(),
   recordChange: vi.fn(),
   recordEvent: vi.fn(),
@@ -176,6 +177,11 @@ describe('ChangeDetectorRefactored watcher deferral startup', () => {
     expect(mockAdaptivePolling.on).toHaveBeenCalledWith('intervalChanged', expect.any(Function));
 
     await detector.stop();
+
+    expect(mockPerformanceMonitor.off).toHaveBeenCalledWith(
+      'threshold-exceeded',
+      mockPerformanceMonitor.on.mock.calls[0][1],
+    );
   });
 
   it('surfaces plain prefixed watcher startup errors as unexpected', async () => {
@@ -195,5 +201,10 @@ describe('ChangeDetectorRefactored watcher deferral startup', () => {
       fileWatcherEnabled: false,
     });
     expect(mockAdaptivePolling.on).not.toHaveBeenCalled();
+    expect(mockPerformanceMonitor.off).toHaveBeenCalledWith(
+      'threshold-exceeded',
+      mockPerformanceMonitor.on.mock.calls[0][1],
+    );
+    expect(mocks.changeProcessors[0]?.destroy).toHaveBeenCalled();
   });
 });

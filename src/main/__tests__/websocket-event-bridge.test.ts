@@ -14,9 +14,11 @@ vi.mock('electron', () => ({
 
 import {
   registerSendCallback,
+  clearSendCallback,
   handleSubscribe,
   handleUnsubscribe,
   cleanupClient,
+  cleanupAllClients,
   getClientSubscriptionCount,
   getTrackedClientCount,
   deliverEventToWebSocketSubscriptions,
@@ -25,14 +27,58 @@ import {
 describe('WebSocket Event Bridge', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    cleanupClient('client-1');
-    cleanupClient('client-2');
+    clearSendCallback();
+    cleanupAllClients();
   });
 
   describe('registerSendCallback()', () => {
     it('stores the callback without throwing', () => {
       const sendFn = vi.fn();
       expect(() => registerSendCallback(sendFn)).not.toThrow();
+    });
+
+    it('returns an idempotent unregister function that clears the callback', () => {
+      const sendFn = vi.fn();
+      const unregister = registerSendCallback(sendFn);
+      handleSubscribe('client-1', { eventTypes: ['file:changed'] });
+
+      unregister();
+      unregister();
+
+      deliverEventToWebSocketSubscriptions({
+        type: 'file:changed',
+        workspaceId: 'ws-1',
+        id: 'evt-unregistered',
+        timestamp: '2026-01-01T00:00:00Z',
+        actor: { type: 'system', id: 'system' },
+        data: { path: '/test.ts' },
+        metadata: {},
+      });
+
+      expect(sendFn).not.toHaveBeenCalled();
+    });
+
+    it('does not let an older unregister clear a newer callback', () => {
+      const oldSendFn = vi.fn();
+      const newSendFn = vi.fn();
+      const unregisterOld = registerSendCallback(oldSendFn);
+      registerSendCallback(newSendFn);
+      handleSubscribe('client-1', { eventTypes: ['file:changed'] });
+
+      unregisterOld();
+
+      deliverEventToWebSocketSubscriptions({
+        type: 'file:changed',
+        workspaceId: 'ws-1',
+        id: 'evt-current-callback',
+        timestamp: '2026-01-01T00:00:00Z',
+        actor: { type: 'system', id: 'system' },
+        data: { path: '/test.ts' },
+        metadata: {},
+      });
+
+      expect(oldSendFn).not.toHaveBeenCalled();
+      expect(newSendFn).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -135,6 +181,62 @@ describe('WebSocket Event Bridge', () => {
         metadata: {},
       });
 
+      expect(sendFn).not.toHaveBeenCalled();
+    });
+
+    it('does not retain subscriptions across repeated subscribe, unsubscribe, and cleanup cycles', () => {
+      const sendFn = vi.fn();
+      registerSendCallback(sendFn);
+
+      for (let cycle = 0; cycle < 25; cycle++) {
+        const clientId = `client-${cycle}`;
+        const { subscriptionId } = handleSubscribe(clientId, { eventTypes: ['file:changed'] });
+        handleSubscribe(clientId, { eventTypes: ['agent:started'] });
+        expect(getClientSubscriptionCount(clientId)).toBe(2);
+
+        expect(handleUnsubscribe(clientId, { subscriptionId })).toBe(true);
+        expect(getClientSubscriptionCount(clientId)).toBe(1);
+
+        cleanupClient(clientId);
+        expect(getClientSubscriptionCount(clientId)).toBe(0);
+        expect(getTrackedClientCount()).toBe(0);
+
+        deliverEventToWebSocketSubscriptions({
+          type: 'agent:started',
+          workspaceId: 'ws-1',
+          id: `evt-cleaned-${cycle}`,
+          timestamp: '2026-01-01T00:00:00Z',
+          actor: { type: 'system', id: 'system' },
+          data: { agentId: `agent-${cycle}` },
+          metadata: {},
+        });
+      }
+
+      expect(sendFn).not.toHaveBeenCalled();
+      expect(getTrackedClientCount()).toBe(0);
+    });
+  });
+
+  describe('cleanupAllClients()', () => {
+    it('clears all transport-local subscription state', () => {
+      const sendFn = vi.fn();
+      registerSendCallback(sendFn);
+      handleSubscribe('client-1', { eventTypes: ['file:changed'] });
+      handleSubscribe('client-2', { eventTypes: ['agent:started'] });
+
+      cleanupAllClients();
+
+      expect(getTrackedClientCount()).toBe(0);
+      expect(getClientSubscriptionCount('client-1')).toBe(0);
+      deliverEventToWebSocketSubscriptions({
+        type: 'file:changed',
+        workspaceId: 'ws-1',
+        id: 'evt-all-cleaned',
+        timestamp: '2026-01-01T00:00:00Z',
+        actor: { type: 'system', id: 'system' },
+        data: { path: '/test.ts' },
+        metadata: {},
+      });
       expect(sendFn).not.toHaveBeenCalled();
     });
   });

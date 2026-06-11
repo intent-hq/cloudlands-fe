@@ -5,24 +5,85 @@ import {
 } from "$store/renderer/utils/ipc-channel";
 import { takeLatestFromSelector } from "ag-redux-toolkit/utils/sagas/selector-channel-effects";
 import { WorkspaceId } from "$shared/types/branded-ids";
+import type { Workspace } from "$shared/types";
 import {
   call,
   delay,
   fork,
   put,
+  takeEvery,
 } from "typed-redux-saga";
+import { selectAllRetainedAgentSessions } from "../../agent-session/agent-session-selectors";
+import { selectWorkspaceHasActiveSubscriptions } from "../../agent-subscription-ui/agent-subscription-ui-selectors";
+import { selectIsWorkspaceTabOpen } from "../../tab-state/tab-state-selectors";
 import type {
-  OptimisticTaskStatusPayload,
   WorkspaceBackgroundEnrichmentEvent,
   WorkspaceUpdatedEvent,
 } from "../workspace-slice";
+import { updateWorkspaceEntity } from "../workspace-slice";
 import {
-  applyOptimisticTaskStatusUpdate,
-  updateWorkspaceEntity,
-} from "../workspace-slice";
-import { selectWorkspacePendingDeletions } from "../workspace-selectors";
+  selectActiveWorkspaceId,
+  selectWorkspacePendingDeletions,
+} from "../workspace-selectors";
+import {
+  workspaceMounted,
+  workspaceUnmounted,
+} from "../../workspace-lifecycle/workspace-lifecycle-slice";
 
 export const WORKSPACE_BEFORE_UNLOAD_POLL_MS = 60_000;
+
+const coalescedInactiveWorkspaceUpdates = new Map<string, Partial<Workspace>>();
+const mountedWorkspaceIds = new Set<string>();
+
+function coalesceInactiveWorkspaceUpdate(wsId: string, changes: Partial<Workspace>): void {
+  const existing = coalescedInactiveWorkspaceUpdates.get(wsId) ?? {};
+  coalescedInactiveWorkspaceUpdates.set(wsId, { ...existing, ...changes });
+}
+
+function* isWorkspaceOfInterest(wsId: string) {
+  const activeWorkspaceId = yield* selectActiveWorkspaceId.effect();
+  if (activeWorkspaceId === wsId || mountedWorkspaceIds.has(wsId)) {
+    return true;
+  }
+
+  if (yield* selectIsWorkspaceTabOpen.effect(wsId)) {
+    return true;
+  }
+
+  if (yield* selectWorkspaceHasActiveSubscriptions.effect(wsId)) {
+    return true;
+  }
+
+  const retainedAgents = yield* selectAllRetainedAgentSessions.effect();
+  return retainedAgents.some((agent) => String(agent.workspaceId) === wsId);
+}
+
+export function __resetWorkspaceIpcCoalescingForTesting(): void {
+  coalescedInactiveWorkspaceUpdates.clear();
+  mountedWorkspaceIds.clear();
+}
+
+/** @internal Exported for focused saga tests. */
+export function* flushCoalescedWorkspaceUpdateOnMountSaga(
+  action: ReturnType<typeof workspaceMounted>,
+) {
+  const [wsId] = action.payload;
+  mountedWorkspaceIds.add(wsId);
+  const changes = coalescedInactiveWorkspaceUpdates.get(wsId);
+  if (!changes) {
+    return;
+  }
+
+  coalescedInactiveWorkspaceUpdates.delete(wsId);
+  yield* put(updateWorkspaceEntity(wsId, changes));
+}
+
+export function* clearMountedWorkspaceInterestOnUnmountSaga(
+  action: ReturnType<typeof workspaceUnmounted>,
+) {
+  const [wsId] = action.payload;
+  mountedWorkspaceIds.delete(wsId);
+}
 
 function registerBeforeUnloadFlush(handler: () => void): () => void {
   if (typeof window === "undefined") {
@@ -37,6 +98,15 @@ function registerBeforeUnloadFlush(handler: () => void): () => void {
 
 export function* watchWorkspaceUpdatedSaga() {
   yield* takeEveryFromListenSync<WorkspaceUpdatedEvent>("workspace:updated", function* (data) {
+    if (!data.workspaceId) {
+      return;
+    }
+
+    if (!(yield* isWorkspaceOfInterest(data.workspaceId))) {
+      coalesceInactiveWorkspaceUpdate(data.workspaceId, data.changes);
+      return;
+    }
+
     yield* put(updateWorkspaceEntity(data.workspaceId, data.changes));
   });
 }
@@ -49,15 +119,22 @@ export function* watchWorkspaceBackgroundEnrichmentSaga() {
         return;
       }
 
+      if (!(yield* isWorkspaceOfInterest(data.workspaceId))) {
+        coalesceInactiveWorkspaceUpdate(data.workspaceId, data.updates);
+        return;
+      }
+
       yield* put(updateWorkspaceEntity(data.workspaceId, data.updates));
     }
   );
 }
 
-export function* watchTaskStatusChangedSaga() {
-  yield* takeEveryFromListenSync<OptimisticTaskStatusPayload>("task:status-changed", function* (data) {
-    yield* put(applyOptimisticTaskStatusUpdate(data));
-  });
+export function* watchCoalescedWorkspaceUpdatesOnMountSaga() {
+  yield* takeEvery(workspaceMounted, flushCoalescedWorkspaceUpdateOnMountSaga);
+}
+
+export function* watchMountedWorkspaceInterestCleanupSaga() {
+  yield* takeEvery(workspaceUnmounted, clearMountedWorkspaceInterestOnUnmountSaga);
 }
 
 export function* watchWorkspaceBeforeUnloadSaga() {
@@ -88,6 +165,7 @@ export function* watchWorkspaceBeforeUnloadSaga() {
 export function* workspaceIpcSaga() {
   yield* fork(watchWorkspaceUpdatedSaga);
   yield* fork(watchWorkspaceBackgroundEnrichmentSaga);
-  yield* fork(watchTaskStatusChangedSaga);
+  yield* fork(watchCoalescedWorkspaceUpdatesOnMountSaga);
+  yield* fork(watchMountedWorkspaceInterestCleanupSaga);
   yield* fork(watchWorkspaceBeforeUnloadSaga);
 }

@@ -6,6 +6,7 @@
 
 import type { WorkspaceId } from '../../shared/types';
 import { createLogger } from '$lib/utils/client-logger';
+import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 
 const logger = createLogger('PanelLayoutHistoryClient');
 
@@ -37,7 +38,7 @@ class PanelLayoutHistoryClient {
   async load(workspaceId: WorkspaceId): Promise<PanelLayoutHistoryData | null> {
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        return await window.electronAPI.invoke('panel-layout:load', { workspaceId });
+        return await invokeIpc<PanelLayoutHistoryData | null>('panel-layout:load', { workspaceId });
       }
       logger.warn('[PanelLayoutHistoryClient] IPC not available');
       return null;
@@ -56,7 +57,7 @@ class PanelLayoutHistoryClient {
   async save(workspaceId: WorkspaceId, data: PanelLayoutHistoryData): Promise<boolean> {
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        return await window.electronAPI.invoke('panel-layout:save', { workspaceId, data });
+        return await invokeIpc<boolean>('panel-layout:save', { workspaceId, data });
       }
       logger.warn('[PanelLayoutHistoryClient] IPC not available');
       return false;

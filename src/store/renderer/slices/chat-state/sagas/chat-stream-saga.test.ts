@@ -269,4 +269,19 @@ describe('chat-stream-saga timeout ownership', () => {
     task.cancel();
     await task.toPromise().catch(() => undefined);
   });
+
+  it('clearAllStreamTimeouts invokes registered cleanup handlers before dropping entries', () => {
+    const cleanupA = vi.fn();
+    const cleanupB = vi.fn();
+
+    registry.setStreamTimeout('session-a', { cleanup: cleanupA });
+    registry.setStreamTimeout('session-b', { cleanup: cleanupB });
+
+    registry.clearAllStreamTimeouts();
+
+    expect(cleanupA).toHaveBeenCalledTimes(1);
+    expect(cleanupB).toHaveBeenCalledTimes(1);
+    expect(registry.getStreamTimeout('session-a')).toBeUndefined();
+    expect(registry.getStreamTimeout('session-b')).toBeUndefined();
+  });
 });

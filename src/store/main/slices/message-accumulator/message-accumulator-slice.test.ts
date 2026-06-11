@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from "vitest";
+import { describe, expect, it } from 'vitest';
 import {
   messageAccumulatorReducer,
   initialState,
@@ -14,215 +10,250 @@ import {
   clearAccumulator,
   clearAllAccumulators,
   cleanupStaleAccumulators,
-} from "./message-accumulator-slice";
-import type { MessageAccumulatorState } from "./message-accumulator-types";
-import type { ContentBlock } from "../../../../shared/types";
+} from './message-accumulator-slice';
+import { selectPartialContent } from './message-accumulator-selectors';
+import type { MessageAccumulatorState } from './message-accumulator-types';
+import type { ContentBlock } from '../../../../shared/types';
 
-const SID = "session-1";
+const SID = 'session-1';
 
 function applyActions(
   state: MessageAccumulatorState,
   ...actions: { type: string; payload?: unknown }[]
 ): MessageAccumulatorState {
-  return actions.reduce(
-    (s, a) => messageAccumulatorReducer(s, a),
-    state,
-  );
+  return actions.reduce((s, a) => messageAccumulatorReducer(s, a), state);
 }
 
-describe("message-accumulator-slice", () => {
-  describe("startAccumulation", () => {
-    it("creates a new accumulator for a session", () => {
+describe('message-accumulator-slice', () => {
+  describe('startAccumulation', () => {
+    it('creates a new accumulator for a session', () => {
       const state = messageAccumulatorReducer(initialState, startAccumulation(SID));
       expect(state.accumulators[SID]).toBeDefined();
       expect(state.accumulators[SID].sessionId).toBe(SID);
-      expect(state.accumulators[SID].content).toBe("");
+      expect(state.accumulators[SID].content).toBe('');
       expect(state.accumulators[SID].isComplete).toBe(false);
       expect(state.stats.activeAccumulators).toBe(1);
     });
 
-    it("stores metadata", () => {
-      const meta = { role: "assistant", messageId: "m-1" };
+    it('stores metadata', () => {
+      const meta = { role: 'assistant', messageId: 'm-1' };
       const state = messageAccumulatorReducer(initialState, startAccumulation(SID, meta));
       expect(state.accumulators[SID].metadata).toEqual(meta);
     });
 
-    it("restarts an existing session (clears old data)", () => {
-      let state = applyActions(
-        initialState,
-        startAccumulation(SID),
-        addChunk(SID, "hello", 5),
-      );
-      expect(state.accumulators[SID].content).toBe("hello");
+    it('restarts an existing session (clears old data)', () => {
+      let state = applyActions(initialState, startAccumulation(SID), addChunk(SID, 'hello', 5));
+      expect(state.accumulators[SID].content).toBe('hello');
 
       state = messageAccumulatorReducer(state, startAccumulation(SID));
-      expect(state.accumulators[SID].content).toBe("");
+      expect(state.accumulators[SID].content).toBe('');
       expect(state.accumulators[SID].chunkCount).toBe(0);
       // activeAccumulators should stay the same (restart, not new)
       expect(state.stats.activeAccumulators).toBe(1);
     });
   });
 
-  describe("addChunk", () => {
-    it("appends text content", () => {
+  describe('addChunk', () => {
+    it('appends text content', () => {
       const state = applyActions(
         initialState,
         startAccumulation(SID),
-        addChunk(SID, "Hello, ", 7),
-        addChunk(SID, "world!", 6),
+        addChunk(SID, 'Hello, ', 7),
+        addChunk(SID, 'world!', 6),
       );
-      expect(state.accumulators[SID].content).toBe("Hello, world!");
+      expect(state.accumulators[SID].content).toBe('Hello, world!');
       expect(state.accumulators[SID].chunkCount).toBe(2);
       expect(state.accumulators[SID].byteSize).toBe(13);
     });
 
-    it("ignores chunks for non-existent sessions", () => {
-      const state = messageAccumulatorReducer(initialState, addChunk("nope", "x", 1));
+    it('ignores chunks for non-existent sessions', () => {
+      const state = messageAccumulatorReducer(initialState, addChunk('nope', 'x', 1));
       expect(state).toBe(initialState);
     });
 
-    it("ignores chunks for completed sessions", () => {
+    it('ignores chunks for completed sessions', () => {
       let state = applyActions(
         initialState,
         startAccumulation(SID),
-        addChunk(SID, "done", 4),
+        addChunk(SID, 'done', 4),
         completeAccumulation(SID),
       );
       const before = state.accumulators[SID];
-      state = messageAccumulatorReducer(state, addChunk(SID, "late", 4));
+      state = messageAccumulatorReducer(state, addChunk(SID, 'late', 4));
       expect(state.accumulators[SID]).toBe(before);
     });
 
-    it("detects duplicate chunks by sequenceNumber and content", () => {
+    it('detects duplicate chunks by sequenceNumber and content hash', () => {
       const state = applyActions(
         initialState,
         startAccumulation(SID),
-        addChunk(SID, "a", 1, { sequenceNumber: 1 }),
-        addChunk(SID, "a", 1, { sequenceNumber: 1 }), // duplicate
+        addChunk(SID, 'a', 1, { sequenceNumber: 1 }),
+        addChunk(SID, 'a', 1, { sequenceNumber: 1 }), // duplicate
       );
-      expect(state.accumulators[SID].content).toBe("a");
+      expect(state.accumulators[SID].content).toBe('a');
       expect(state.accumulators[SID].chunkCount).toBe(1);
     });
 
-    it("consolidates consecutive text items in orderedItems", () => {
+    it('tracks consecutive text items as one range into canonical content', () => {
       const state = applyActions(
         initialState,
         startAccumulation(SID),
-        addChunk(SID, "a", 1),
-        addChunk(SID, "b", 1),
+        addChunk(SID, 'a', 1),
+        addChunk(SID, 'b', 1),
       );
-      // Should be a single text item "ab", not two items
+      // Should be a single text range "ab", not another retained text copy.
       expect(state.accumulators[SID].orderedItems).toHaveLength(1);
-      expect(state.accumulators[SID].orderedItems[0].content).toBe("ab");
+      expect(state.accumulators[SID].orderedItems[0]).toMatchObject({
+        type: 'text',
+        contentRange: { start: 0, end: 2 },
+      });
     });
 
-    it("updates global statistics", () => {
+    it('does not retain large active stream text in chunks or orderedItems', () => {
+      const largeChunk = 'x'.repeat(4096);
       const state = applyActions(
         initialState,
         startAccumulation(SID),
-        addChunk(SID, "abc", 3),
+        addChunk(SID, largeChunk, largeChunk.length),
       );
+
+      const accumulator = state.accumulators[SID];
+      expect(accumulator.content).toBe(largeChunk);
+      expect(JSON.stringify(accumulator.chunks)).not.toContain(largeChunk);
+      expect(JSON.stringify(accumulator.orderedItems)).not.toContain(largeChunk);
+      expect(accumulator.chunks[0]).toMatchObject({
+        byteSize: largeChunk.length,
+        startOffset: 0,
+        endOffset: largeChunk.length,
+      });
+    });
+
+    it('updates global statistics', () => {
+      const state = applyActions(initialState, startAccumulation(SID), addChunk(SID, 'abc', 3));
       expect(state.stats.totalBytesAccumulated).toBe(3);
       expect(state.stats.totalChunksProcessed).toBe(1);
       expect(state.stats.largestMessage).toBe(3);
     });
 
-    it("keeps at most 20 recent chunks", () => {
+    it('keeps at most 20 recent chunks', () => {
       const actions: { type: string; payload?: unknown }[] = [startAccumulation(SID)];
       for (let i = 0; i < 25; i++) {
         actions.push(addChunk(SID, `c${i}`, 2));
       }
       const state = applyActions(initialState, ...actions);
       expect(state.accumulators[SID].chunks.length).toBeLessThanOrEqual(20);
+      expect(state.accumulators[SID].chunks.every((chunk) => !('content' in chunk))).toBe(true);
     });
   });
 
-  describe("addContentBlock / updateContentBlock", () => {
-    const block: ContentBlock = { type: "tool_use", id: "b-1", name: "read" } as ContentBlock;
+  describe('addContentBlock / updateContentBlock', () => {
+    const block: ContentBlock = { type: 'tool_use', id: 'b-1', name: 'read' } as ContentBlock;
 
-    it("adds a content block and creates an ordered item", () => {
-      const state = applyActions(
-        initialState,
-        startAccumulation(SID),
-        addContentBlock(SID, block),
-      );
+    it('adds a content block and creates an ordered item', () => {
+      const state = applyActions(initialState, startAccumulation(SID), addContentBlock(SID, block));
       expect(state.accumulators[SID].contentBlocks).toHaveLength(1);
       expect(state.accumulators[SID].orderedItems).toHaveLength(1);
-      expect(state.accumulators[SID].orderedItems[0].type).toBe("block");
+      expect(state.accumulators[SID].orderedItems[0].type).toBe('block');
     });
 
-    it("updates an existing content block by id", () => {
-      const updated = { ...block, name: "write" };
+    it('updates an existing content block by id', () => {
+      const updated = { ...block, name: 'write' };
       const state = applyActions(
         initialState,
         startAccumulation(SID),
         addContentBlock(SID, block),
         updateContentBlock(SID, updated),
       );
-      expect((state.accumulators[SID].contentBlocks[0] as any).name).toBe("write");
+      expect((state.accumulators[SID].contentBlocks[0] as any).name).toBe('write');
     });
 
-    it("returns unchanged state when updating a non-existent block", () => {
+    it('returns unchanged state when updating a non-existent block', () => {
       let state = applyActions(initialState, startAccumulation(SID));
       const before = state;
-      state = messageAccumulatorReducer(state, updateContentBlock(SID, { type: "text", id: "nope" } as ContentBlock));
+      state = messageAccumulatorReducer(
+        state,
+        updateContentBlock(SID, { type: 'text', id: 'nope' } as ContentBlock),
+      );
       expect(state).toBe(before);
     });
   });
 
-  describe("completeAccumulation", () => {
-    it("marks the accumulator as complete", () => {
+  describe('completeAccumulation', () => {
+    it('marks the accumulator as complete', () => {
       const state = applyActions(
         initialState,
         startAccumulation(SID),
-        addChunk(SID, "hello", 5),
+        addChunk(SID, 'hello', 5),
         completeAccumulation(SID),
       );
       expect(state.accumulators[SID].isComplete).toBe(true);
+      expect(state.accumulators[SID].chunks).toEqual([]);
     });
 
-    it("builds final content from ordered items", () => {
-      const block: ContentBlock = { type: "tool_use", id: "b-1", name: "read" } as ContentBlock;
+    it('builds final content from ordered items', () => {
+      const block: ContentBlock = { type: 'tool_use', id: 'b-1', name: 'read' } as ContentBlock;
       const state = applyActions(
         initialState,
         startAccumulation(SID),
-        addChunk(SID, "before ", 7),
+        addChunk(SID, 'before ', 7),
         addContentBlock(SID, block),
-        addChunk(SID, "after", 5),
+        addChunk(SID, 'after', 5),
         completeAccumulation(SID),
       );
-      // Content blocks should contain text + block + text
-      expect(state.accumulators[SID].contentBlocks.length).toBeGreaterThanOrEqual(2);
+      expect(state.accumulators[SID].contentBlocks).toEqual([
+        { type: 'text', text: 'before ' },
+        block,
+        { type: 'text', text: 'after' },
+      ]);
+    });
+
+    it('selects partial content blocks from text ranges during active streaming', () => {
+      const block: ContentBlock = { type: 'tool_use', id: 'b-1', name: 'read' } as ContentBlock;
+      const state = applyActions(
+        initialState,
+        startAccumulation(SID),
+        addChunk(SID, 'before ', 7),
+        addContentBlock(SID, block),
+        addChunk(SID, 'after', 5),
+      );
+
+      const partial = selectPartialContent.select({ messageAccumulator: state } as any, SID);
+      expect(partial.content).toBe('before after');
+      expect(partial.contentBlocks).toEqual([
+        { type: 'text', text: 'before ' },
+        block,
+        { type: 'text', text: 'after' },
+      ]);
     });
   });
 
-  describe("clearAccumulator", () => {
-    it("removes a specific session", () => {
+  describe('clearAccumulator', () => {
+    it('removes a specific session', () => {
       let state = applyActions(
         initialState,
         startAccumulation(SID),
-        startAccumulation("session-2"),
+        startAccumulation('session-2'),
       );
       expect(state.stats.activeAccumulators).toBe(2);
 
       state = messageAccumulatorReducer(state, clearAccumulator(SID));
       expect(state.accumulators[SID]).toBeUndefined();
-      expect(state.accumulators["session-2"]).toBeDefined();
+      expect(state.accumulators['session-2']).toBeDefined();
       expect(state.stats.activeAccumulators).toBe(1);
     });
 
-    it("no-ops on non-existent session", () => {
-      const state = messageAccumulatorReducer(initialState, clearAccumulator("nope"));
+    it('no-ops on non-existent session', () => {
+      const state = messageAccumulatorReducer(initialState, clearAccumulator('nope'));
       expect(state).toBe(initialState);
     });
   });
 
-  describe("clearAllAccumulators", () => {
-    it("removes all accumulators and resets active count", () => {
+  describe('clearAllAccumulators', () => {
+    it('removes all accumulators and resets active count', () => {
       let state = applyActions(
         initialState,
         startAccumulation(SID),
-        startAccumulation("session-2"),
+        startAccumulation('session-2'),
       );
       state = messageAccumulatorReducer(state, clearAllAccumulators());
       expect(Object.keys(state.accumulators)).toHaveLength(0);
@@ -230,22 +261,22 @@ describe("message-accumulator-slice", () => {
     });
   });
 
-  describe("cleanupStaleAccumulators", () => {
-    it("removes specified stale sessions", () => {
+  describe('cleanupStaleAccumulators', () => {
+    it('removes specified stale sessions', () => {
       let state = applyActions(
         initialState,
         startAccumulation(SID),
-        startAccumulation("session-2"),
-        startAccumulation("session-3"),
+        startAccumulation('session-2'),
+        startAccumulation('session-3'),
       );
-      state = messageAccumulatorReducer(state, cleanupStaleAccumulators([SID, "session-3"]));
+      state = messageAccumulatorReducer(state, cleanupStaleAccumulators([SID, 'session-3']));
       expect(state.accumulators[SID]).toBeUndefined();
-      expect(state.accumulators["session-2"]).toBeDefined();
-      expect(state.accumulators["session-3"]).toBeUndefined();
+      expect(state.accumulators['session-2']).toBeDefined();
+      expect(state.accumulators['session-3']).toBeUndefined();
       expect(state.stats.activeAccumulators).toBe(1);
     });
 
-    it("no-ops on empty list", () => {
+    it('no-ops on empty list', () => {
       const state = applyActions(initialState, startAccumulation(SID));
       const result = messageAccumulatorReducer(state, cleanupStaleAccumulators([]));
       expect(result).toBe(state);

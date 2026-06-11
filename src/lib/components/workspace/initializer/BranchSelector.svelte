@@ -8,6 +8,7 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { debugConfig } from '$lib/config/debug';
   import { createLogger } from '$lib/utils/client-logger';
+  import { invoke } from '$shared/generated/ipc-client';
   import { performanceMonitor } from '$lib/utils/performance';
 
   import { setWorkspaceInitializerBranchForRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
@@ -453,7 +454,7 @@
       if (effectiveRepoType === 'local') {
         // Fetch branches from local git repo
         if (typeof window !== 'undefined' && window.electronAPI) {
-          const result = await window.electronAPI.invoke('git:getBranches', { repoPath });
+          const result = await invoke<any>('git:getBranches', { repoPath });
           if (result.success && result.data) {
             branches = result.data.branches;
             defaultBranch = result.data.defaultBranch || 'main';
@@ -510,7 +511,7 @@
           let ipcNotAuthenticated = false;
           if (typeof window !== 'undefined' && window.electronAPI) {
             try {
-              const ipcResult = await window.electronAPI.invoke(
+              const ipcResult = await invoke<any>(
                 'git-tracking:get-github-branches',
                 { owner, repo },
               );
@@ -789,7 +790,7 @@
 
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await window.electronAPI.invoke('git:getBranches', {
+        const result = await invoke<any>('git:getBranches', {
           repoPath,
           includeRemote: true,
         });
@@ -858,7 +859,7 @@
 
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await window.electronAPI.invoke('git:getBranchStatus', {
+        const result = await invoke<any>('git:getBranchStatus', {
           repoPath,
           branchName,
         });

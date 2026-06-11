@@ -12,11 +12,11 @@ vi.mock(
 );
 
 vi.mock(
-  '$lib/electron-bridge',
+  '$shared/generated/ipc-client',
   async () => await import('$store/renderer/utils/test-helpers/electron-bridge-mock'),
 );
 
-import { invoke } from '$lib/electron-bridge';
+import { invoke } from '$shared/generated/ipc-client';
 import { getLocalStorageJSON } from '$store/renderer/utils/safe-local-storage-saga';
 import {
   hydrateActivityLogPresets,

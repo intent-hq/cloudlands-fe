@@ -141,6 +141,22 @@ describe('MetadataSyncService', () => {
       expect(mockRpcClient.watchDirectory).toHaveBeenCalledTimes(1);
     });
 
+    it('stops the previous service for a workspace before starting a replacement', async () => {
+      await service.start();
+
+      const replacement = new MetadataSyncService(config);
+      await replacement.start();
+      service = replacement;
+
+      expect(mockRpcClient.removeDirectoryChangesListener).toHaveBeenCalledTimes(1);
+      expect(mockRpcClient.removeCloseListener).toHaveBeenCalledTimes(1);
+      expect(mockRpcClient.watchDirectoryUnsubscribe).toHaveBeenCalledWith({
+        subscriptionId: 'sub-123',
+      });
+      expect(mockRpcClient._directoryChangesHandlers).toHaveLength(1);
+      expect(mockRpcClient._closeHandlers).toHaveLength(1);
+    });
+
     it('emits sync:started and sync:complete on successful start', async () => {
       const events: string[] = [];
       service.on('sync:started', () => events.push('started'));
@@ -557,6 +573,16 @@ describe('MetadataSyncService', () => {
 
       // Should have emitted sync:error
       expect(errors.length).toBeGreaterThanOrEqual(1);
+      expect(service.getIsRunning()).toBe(false);
+
+      const stopSpy = vi.spyOn(service, 'stop');
+      (remoteRPCManager.getClient as ReturnType<typeof vi.fn>).mockResolvedValue(mockRpcClient);
+
+      const replacement = new MetadataSyncService(config);
+      await replacement.start();
+      await replacement.stop();
+
+      expect(stopSpy).not.toHaveBeenCalled();
     });
   });
 

@@ -301,29 +301,40 @@ export function persistForHmr(): void {
     (window as any)[HMR_CLEANUP_KEY] = {
       activeStreamHandlers,
       activePingHandlers,
+      disposeAllStreamState,
     };
   }
 }
 
 /** Clean up orphaned handlers from previous HMR cycle */
 export function cleanupPreviousHmrState(): void {
-  if (typeof window === 'undefined' || !window.electronAPI) return;
+  if (typeof window === 'undefined') return;
 
   const prev = (window as any)[HMR_CLEANUP_KEY] as
     | {
         activeStreamHandlers?: Map<string, { channel: string; listenerId?: string }>;
         activePingHandlers?: Map<string, { channel: string; listenerId?: string }>;
+        disposeAllStreamState?: () => void;
       }
     | undefined;
 
   if (!prev) return;
+
+  if (typeof prev.disposeAllStreamState === 'function') {
+    try {
+      prev.disposeAllStreamState();
+      return;
+    } catch (e) {
+      logger.debug('HMR cleanup: previous stream state disposer failed, falling back', { error: e });
+    }
+  }
 
   if (prev.activeStreamHandlers?.size) {
     logger.info('HMR cleanup: removing orphaned stream handlers', {
       count: prev.activeStreamHandlers.size,
     });
     for (const [, handler] of prev.activeStreamHandlers.entries()) {
-      if (handler.listenerId) {
+      if (handler.listenerId && window.electronAPI) {
         window.electronAPI.offById(handler.channel, handler.listenerId);
       }
     }
@@ -335,7 +346,7 @@ export function cleanupPreviousHmrState(): void {
       count: prev.activePingHandlers.size,
     });
     for (const [, handler] of prev.activePingHandlers.entries()) {
-      if (handler.listenerId) {
+      if (handler.listenerId && window.electronAPI) {
         window.electronAPI.offById(handler.channel, handler.listenerId);
       }
     }

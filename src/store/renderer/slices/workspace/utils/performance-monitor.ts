@@ -30,6 +30,8 @@ export class PerformanceMonitor {
 
   private observers: PerformanceObserver[] = [];
   private rafHandle: number | null = null;
+  private memoryTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  private domTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
   private monitoring = false;
   private slowOperationThreshold = 100; // ms
   private memoryWarningThreshold = 100 * 1024 * 1024; // 100MB
@@ -83,6 +85,16 @@ export class PerformanceMonitor {
       cancelAnimationFrame(this.rafHandle);
       this.rafHandle = null;
     }
+
+    if (this.memoryTimeoutHandle) {
+      clearTimeout(this.memoryTimeoutHandle);
+      this.memoryTimeoutHandle = null;
+    }
+
+    if (this.domTimeoutHandle) {
+      clearTimeout(this.domTimeoutHandle);
+      this.domTimeoutHandle = null;
+    }
   }
 
   /**
@@ -103,7 +115,10 @@ export class PerformanceMonitor {
 
     // Check again in 5 seconds
     if (this.monitoring) {
-      setTimeout(() => this.monitorMemory(), 5000);
+      this.memoryTimeoutHandle = setTimeout(() => {
+        this.memoryTimeoutHandle = null;
+        this.monitorMemory();
+      }, 5000);
     }
   }
 
@@ -114,6 +129,7 @@ export class PerformanceMonitor {
     if (!this.monitoring) return;
 
     this.rafHandle = requestAnimationFrame(() => {
+      this.rafHandle = null;
       this.metrics.domNodes = document.getElementsByTagName('*').length;
 
       if (this.metrics.domNodes > 10000) {
@@ -128,7 +144,10 @@ export class PerformanceMonitor {
 
       // Continue monitoring
       if (this.monitoring) {
-        setTimeout(() => this.monitorDOM(), 10000); // Check every 10 seconds
+        this.domTimeoutHandle = setTimeout(() => {
+          this.domTimeoutHandle = null;
+          this.monitorDOM();
+        }, 10000); // Check every 10 seconds
       }
     });
   }

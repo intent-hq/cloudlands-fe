@@ -7040,6 +7040,7 @@ export class ACPProvider extends BaseAgentProvider {
 
     this.sessionId = undefined;
     this.currentStreamingRequestId = null;
+    this.streamParser.reset();
 
     // If force cleanup is requested (e.g., workspace deletion), clean up all streaming callbacks
     // This prevents the "janky hang" where streams are kept alive waiting for model fallback
@@ -7194,6 +7195,7 @@ export class ACPProvider extends BaseAgentProvider {
     // Clear session state
     this.sessionId = undefined;
     this.currentStreamingRequestId = null;
+    this.streamParser.reset();
 
     // Reset streaming state
     this.isStreaming = false;
@@ -10677,6 +10679,7 @@ export class ACPProvider extends BaseAgentProvider {
 
     // Now safe to clear the reference
     this.agentProcess = undefined;
+    this.streamParser.reset();
 
     // If this was an intentional stop (e.g., model fallback), don't clean up streams
     // The process will be restarted with a new model and the stream will continue

@@ -5,6 +5,7 @@
     faNoteSticky,
     faClipboard,
     faSquare,
+    faCircleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
@@ -1059,6 +1060,17 @@
                   <span class="truncate max-w-[150px]">{fileBlock.fileName}</span>
                 </button>
               {/each}
+            </div>
+          {/if}
+
+          <!-- Send failure indicator for optimistic user messages -->
+          {#if message?.error}
+            <div
+              class="flex items-center gap-2 text-destructive font-medium text-xs mt-2"
+              title={message.error}
+            >
+              <Fa icon={faCircleExclamation} class="size-2.5 mt-px" />
+              <span>Failed to send</span>
             </div>
           {/if}
         </div>

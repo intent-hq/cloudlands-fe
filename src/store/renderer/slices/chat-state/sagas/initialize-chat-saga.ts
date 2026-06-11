@@ -50,6 +50,7 @@ import { waitFor } from 'ag-redux-toolkit/saga';
 import type { StoreSelector as PackageStoreSelector } from 'ag-redux-toolkit/types';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import { compareMessageCompleteness } from '$shared/utils/message-comparator';
+import { invoke } from '$shared/generated/ipc-client';
 import { restoreSessionFromDiskWithoutBackend } from '../../workspace-agents/sagas/agent-session-restore-utils';
 import type {
   InitializeChatOptions,
@@ -138,15 +139,9 @@ function hasPersistedStreamingSignal(session: AgentSession, messages: AgentMessa
 
 async function getActiveStreamAgentIds(): Promise<Set<string> | null> {
   try {
-    if (typeof window === 'undefined') return null;
-    const electronAPI = (
-      window as typeof window & {
-        electronAPI?: { invoke?: (channel: string, payload?: unknown) => Promise<unknown> };
-      }
-    ).electronAPI;
-    if (!electronAPI?.invoke) return null;
+    if (typeof window === 'undefined' || !window.electronAPI) return null;
 
-    const result = (await electronAPI.invoke('agent:get-active-streams')) as ActiveStreamsResult;
+    const result = await invoke<ActiveStreamsResult>('agent:get-active-streams');
     const streams = result?.success !== false && Array.isArray(result?.data) ? result.data : [];
     return new Set(
       streams

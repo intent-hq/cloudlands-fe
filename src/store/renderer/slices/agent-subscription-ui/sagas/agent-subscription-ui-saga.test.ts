@@ -114,6 +114,7 @@ const AGENT = 'agent-test';
 describe('agent-subscription-ui-saga', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    handleWorkspaceUnmounted(workspaceUnmounted(WS)).next();
   });
 
   describe('agentSubscriptionUISaga (root)', () => {
@@ -140,7 +141,7 @@ describe('agent-subscription-ui-saga', () => {
         const effect = iterator.next().value as any;
         expect(effect.type).toBe('FORK');
         expect(effect.payload.fn).not.toBe(takeEveryFromListenSync);
-        expect(effect.payload.args).toEqual([eventName, handler]);
+        expect(effect.payload.args).toEqual([eventName, handler, {}]);
       }
 
       expect(iterator.next().value).toEqual(
@@ -290,6 +291,10 @@ describe('agent-subscription-ui-saga', () => {
       const resetEff = inner.next({ success: true, data: [], delegationGroups: [] });
       expect(resetEff.done).toBe(false);
       expect((resetEff.value as any)?.payload?.action?.type).toBe(resetSubscriptionUI(WS, AGENT).type);
+
+      const done = inner.next();
+      expect(done.done).toBe(true);
+      expect(_getCompletionGeneration(key)).toBe(0);
     });
 
     it('transitions to completed when previously woken and snapshot is empty', () => {
@@ -336,6 +341,7 @@ describe('agent-subscription-ui-saga', () => {
       inner1.next(); // delay
       const after1 = inner1.next(); // check generation
       expect(after1.done).toBe(true); // No reset dispatched
+      expect(_getCompletionGeneration(key)).toBe(gen2);
 
       // Second fork's cleanup fires — generation matches → SHOULD resetSubscriptionUI
       const innerFn2 = (fork2.value as any)?.payload?.fn;
@@ -347,6 +353,41 @@ describe('agent-subscription-ui-saga', () => {
       const resetEff = inner2.next({ success: true, data: [], delegationGroups: [] });
       expect(resetEff.done).toBe(false);
       expect((resetEff.value as any)?.payload?.action?.type).toBe(resetSubscriptionUI(WS, AGENT).type);
+
+      const done = inner2.next();
+      expect(done.done).toBe(true);
+      expect(_getCompletionGeneration(key)).toBe(0);
+    });
+
+    it('does not let stale pre-unmount completion cleanup reset remounted state', () => {
+      selectWaitingStateMock.mockReturnValue('waiting');
+      const key = `${WS}:${AGENT}`;
+
+      const beforeUnmount = fetchAndDispatchSnapshot(WS, AGENT);
+      beforeUnmount.next(); // select
+      beforeUnmount.next('waiting'); // call invoke
+      beforeUnmount.next({ success: true, data: [], delegationGroups: [], agentStatuses: {} }); // put
+      const staleFork = beforeUnmount.next(); // fork
+      const staleGen = _getCompletionGeneration(key);
+      expect(staleGen).toBeGreaterThan(0);
+
+      handleWorkspaceUnmounted(workspaceUnmounted(WS)).next();
+      expect(_getCompletionGeneration(key)).toBe(0);
+
+      const afterRemount = fetchAndDispatchSnapshot(WS, AGENT);
+      afterRemount.next(); // select
+      afterRemount.next('waiting'); // call invoke
+      afterRemount.next({ success: true, data: [], delegationGroups: [], agentStatuses: {} }); // put
+      afterRemount.next(); // fork
+      const remountedGen = _getCompletionGeneration(key);
+      expect(remountedGen).toBeGreaterThan(staleGen);
+
+      const staleInnerFn = (staleFork.value as any)?.payload?.fn;
+      const staleInner = staleInnerFn();
+      staleInner.next(); // delay
+      const afterDelay = staleInner.next();
+      expect(afterDelay.done).toBe(true);
+      expect(_getCompletionGeneration(key)).toBe(remountedGen);
     });
   });
 
@@ -531,25 +572,22 @@ describe('agent-subscription-ui-saga', () => {
       const gen2 = _getWakeupGeneration(key);
       expect(gen2).toBe(gen1 + 1);
 
-      // Now run the first fork's inner generator.
-      // It should set wokenUp then delay then check generation → skip clearWokenUp
+      // Now run the first fork's inner generator. A newer wakeup alone should
+      // not suppress the valid initial setWokenUp; it should only prevent the
+      // stale auto-dismiss clear after the delay.
       const innerFn1 = (fork1.value as any)?.payload?.fn;
       const inner1 = innerFn1();
 
-      // put setWokenUp
       const putWoken1 = inner1.next();
       expect(putWoken1.done).toBe(false);
       expect((putWoken1.value as any)?.payload?.action?.type).toBe(setWokenUp(WS, AGENT, { eventCount: 1, eventTypes: ['file:*'], timestamp: 0 }).type);
 
-      // delay 5000
       const delayEff1 = inner1.next();
       expect(delayEff1.done).toBe(false);
 
-      // After delay completes, the fork checks generation.
-      // Since gen2 > gen1, it should NOT dispatch clearWokenUp — just return.
       const afterDelay1 = inner1.next();
       expect(afterDelay1.done).toBe(true);
-      // Verify no clearWokenUp was dispatched (done is true, no more effects)
+      expect(_getWakeupGeneration(key)).toBe(gen2);
 
       // The second fork SHOULD clear, because no newer wakeup superseded it.
       const innerFn2 = (fork2.value as any)?.payload?.fn;
@@ -560,6 +598,10 @@ describe('agent-subscription-ui-saga', () => {
       const clearEff = inner2.next();
       expect(clearEff.done).toBe(false);
       expect((clearEff.value as any)?.payload?.action?.type).toBe(clearWokenUp(WS, AGENT).type);
+
+      const done = inner2.next();
+      expect(done.done).toBe(true);
+      expect(_getWakeupGeneration(key)).toBe(0);
     });
 
     it('generation counter works correctly for 3+ rapid wakeups (Bug 1 edge case)', () => {
@@ -604,21 +646,24 @@ describe('agent-subscription-ui-saga', () => {
       const gen3 = _getWakeupGeneration(key);
       expect(gen3).toBe(gen2 + 1);
 
-      // Fork 1 delay finishes — generation mismatch → should NOT clearWokenUp
+      // Fork 1 starts after newer generations exist without workspace unmount:
+      // it may set wakeup state, but must not clear the newer generation.
       const innerFn1 = (fork1.value as any)?.payload?.fn;
       const inner1 = innerFn1();
       inner1.next(); // put setWokenUp
       inner1.next(); // delay 5000
       const after1 = inner1.next();
       expect(after1.done).toBe(true); // No clearWokenUp dispatched
+      expect(_getWakeupGeneration(key)).toBe(gen3);
 
-      // Fork 2 delay finishes — generation mismatch → should NOT clearWokenUp
+      // Fork 2 follows the same rule: valid set, stale clear skipped.
       const innerFn2 = (fork2.value as any)?.payload?.fn;
       const inner2 = innerFn2();
       inner2.next(); // put setWokenUp
       inner2.next(); // delay 5000
       const after2 = inner2.next();
       expect(after2.done).toBe(true); // No clearWokenUp dispatched
+      expect(_getWakeupGeneration(key)).toBe(gen3);
 
       // Fork 3 delay finishes — generation MATCHES → SHOULD clearWokenUp
       const innerFn3 = (fork3.value as any)?.payload?.fn;
@@ -628,6 +673,127 @@ describe('agent-subscription-ui-saga', () => {
       const clearEff3 = inner3.next();
       expect(clearEff3.done).toBe(false);
       expect((clearEff3.value as any)?.payload?.action?.type).toBe(clearWokenUp(WS, AGENT).type);
+
+      const done = inner3.next();
+      expect(done.done).toBe(true);
+      expect(_getWakeupGeneration(key)).toBe(0);
+    });
+
+    it('does not let stale pre-unmount wakeup cleanup clear remounted state', () => {
+      const key = `${WS}:${AGENT}`;
+
+      const beforeUnmount = handleAgentWokenBySubscriptionEvent({
+        workspaceId: WS,
+        agentId: AGENT,
+        eventCount: 1,
+        eventTypes: ['file:*'],
+      });
+      beforeUnmount.next(); // call fetchAndDispatchSnapshot
+      const staleFork = beforeUnmount.next(); // fork
+      const staleGen = _getWakeupGeneration(key);
+      expect(staleGen).toBeGreaterThan(0);
+
+      const staleInnerFn = (staleFork.value as any)?.payload?.fn;
+      const staleInner = staleInnerFn();
+      staleInner.next(); // put setWokenUp before unmount
+      staleInner.next(); // delay is now pending
+
+      handleWorkspaceUnmounted(workspaceUnmounted(WS)).next();
+      expect(_getWakeupGeneration(key)).toBe(0);
+
+      const afterRemount = handleAgentWokenBySubscriptionEvent({
+        workspaceId: WS,
+        agentId: AGENT,
+        eventCount: 2,
+        eventTypes: ['agent:*'],
+      });
+      afterRemount.next(); // call fetchAndDispatchSnapshot
+      afterRemount.next(); // fork
+      const remountedGen = _getWakeupGeneration(key);
+      expect(remountedGen).toBeGreaterThan(staleGen);
+
+      const afterDelay = staleInner.next();
+      expect(afterDelay.done).toBe(true);
+      expect(_getWakeupGeneration(key)).toBe(remountedGen);
+    });
+
+    it('does not let stale pre-unmount wakeup fork set remounted state before delay', () => {
+      const key = `${WS}:${AGENT}`;
+
+      const beforeUnmount = handleAgentWokenBySubscriptionEvent({
+        workspaceId: WS,
+        agentId: AGENT,
+        eventCount: 1,
+        eventTypes: ['file:*'],
+      });
+      beforeUnmount.next(); // call fetchAndDispatchSnapshot
+      const staleFork = beforeUnmount.next(); // fork
+      const staleGen = _getWakeupGeneration(key);
+      expect(staleGen).toBeGreaterThan(0);
+
+      handleWorkspaceUnmounted(workspaceUnmounted(WS)).next();
+      expect(_getWakeupGeneration(key)).toBe(0);
+
+      const afterRemount = handleAgentWokenBySubscriptionEvent({
+        workspaceId: WS,
+        agentId: AGENT,
+        eventCount: 2,
+        eventTypes: ['agent:*'],
+      });
+      afterRemount.next(); // call fetchAndDispatchSnapshot
+      afterRemount.next(); // fork
+      const remountedGen = _getWakeupGeneration(key);
+      expect(remountedGen).toBeGreaterThan(staleGen);
+
+      const staleInnerFn = (staleFork.value as any)?.payload?.fn;
+      const staleInner = staleInnerFn();
+      const staleResult = staleInner.next();
+      expect(staleResult.done).toBe(true);
+      expect(_getWakeupGeneration(key)).toBe(remountedGen);
+    });
+
+    it('prunes generation counters for a workspace on unmount', () => {
+      const otherWs = 'ws-other';
+      const otherAgent = 'agent-other';
+      const completionKey = `${WS}:${AGENT}`;
+      const wakeupKey = `${WS}:${AGENT}`;
+      const otherCompletionKey = `${otherWs}:${otherAgent}`;
+      const otherWakeupKey = `${otherWs}:${otherAgent}`;
+
+      const completion = fetchAndDispatchSnapshot(WS, AGENT);
+      completion.next();
+      completion.next('waiting');
+      completion.next({ success: true, data: [], delegationGroups: [], agentStatuses: {} });
+      completion.next();
+
+      const otherCompletion = fetchAndDispatchSnapshot(otherWs, otherAgent);
+      otherCompletion.next();
+      otherCompletion.next('waiting');
+      otherCompletion.next({ success: true, data: [], delegationGroups: [], agentStatuses: {} });
+      otherCompletion.next();
+
+      const wakeup = handleAgentWokenBySubscriptionEvent({ workspaceId: WS, agentId: AGENT });
+      wakeup.next();
+      wakeup.next();
+
+      const otherWakeup = handleAgentWokenBySubscriptionEvent({ workspaceId: otherWs, agentId: otherAgent });
+      otherWakeup.next();
+      otherWakeup.next();
+
+      expect(_getCompletionGeneration(completionKey)).toBeGreaterThan(0);
+      expect(_getWakeupGeneration(wakeupKey)).toBeGreaterThan(0);
+      expect(_getCompletionGeneration(otherCompletionKey)).toBeGreaterThan(0);
+      expect(_getWakeupGeneration(otherWakeupKey)).toBeGreaterThan(0);
+
+      const unmount = handleWorkspaceUnmounted(workspaceUnmounted(WS));
+      expect(unmount.next().done).toBe(true);
+
+      expect(_getCompletionGeneration(completionKey)).toBe(0);
+      expect(_getWakeupGeneration(wakeupKey)).toBe(0);
+      expect(_getCompletionGeneration(otherCompletionKey)).toBeGreaterThan(0);
+      expect(_getWakeupGeneration(otherWakeupKey)).toBeGreaterThan(0);
+
+      handleWorkspaceUnmounted(workspaceUnmounted(otherWs)).next();
     });
   });
 });

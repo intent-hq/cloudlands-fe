@@ -5,18 +5,12 @@
  * Uses JSONL format (one event per line) for efficient append-only writes.
  */
 
-import {
-  WorkspaceEvent,
-  WorkspaceEventType,
-} from '../types';
+import { WorkspaceEvent, WorkspaceEventType } from '../types';
 import { Logger } from '../../../shared/logger';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import {
-  existsSync,
-  createReadStream,
-} from 'fs';
+import { existsSync, createReadStream } from 'fs';
 import { createInterface } from 'readline';
 
 const logger = new Logger('EventStore');
@@ -28,7 +22,13 @@ const logger = new Logger('EventStore');
  * because it is the primary source of truth for displaying changes in the activity log,
  * especially for agent-generated changes that may not yet be committed to git.
  */
-const MAX_DIFF_SIZE = 50_000; // ~50KB cap for stored diffs
+const MAX_DIFF_SIZE = 20_000; // ~20KB cap for retained/stored diffs
+const DIFF_TRUNCATION_MARKER = '\n[diff truncated]';
+
+function truncateString(value: string, maxLength: number, marker: string): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength)}${marker}`;
+}
 
 function sanitizeEventForStorage(event: WorkspaceEvent): WorkspaceEvent {
   const data = (event as any).data;
@@ -38,8 +38,10 @@ function sanitizeEventForStorage(event: WorkspaceEvent): WorkspaceEvent {
   if (event.type === 'file:changed' || event.type === 'file:created') {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { oldContent, newContent, content, diff, ...restData } = data;
-    // Keep diff if it's within the size cap; drop it if too large
-    const sanitizedDiff = diff && diff.length <= MAX_DIFF_SIZE ? diff : undefined;
+    const sanitizedDiff =
+      typeof diff === 'string'
+        ? truncateString(diff, MAX_DIFF_SIZE, DIFF_TRUNCATION_MARKER)
+        : undefined;
     return {
       ...event,
       data: { ...restData, ...(sanitizedDiff !== undefined && { diff: sanitizedDiff }) },
@@ -202,8 +204,11 @@ export class EventStore {
     // Update indexes
     this.addToIndexes(sanitizedEvent);
 
-    // Track for JSONL append
-    this.pendingEvents.push(sanitizedEvent);
+    // Track for JSONL append only when persistence is enabled and an append is useful.
+    // Otherwise this would retain duplicate references that a pending full rewrite does not need.
+    if (this.persistToDisk && !this.needsFullRewrite) {
+      this.pendingEvents.push(sanitizedEvent);
+    }
 
     // Trim if over limit - triggers full rewrite
     if (this.events.length > this.maxEvents) {
@@ -212,6 +217,7 @@ export class EventStore {
         this.removeFromIndexes(removed);
         this.eventIndex.delete(removed.id);
         this.needsFullRewrite = true; // Can't just append if we removed events
+        this.pendingEvents = []; // Full rewrite uses this.events; release duplicate append refs
       }
     }
 
@@ -269,18 +275,30 @@ export class EventStore {
   private removeFromIndexes(event: WorkspaceEvent): void {
     // Type index
     if (this.indexByType) {
-      this.typeIndex.get(event.type)?.delete(event.id);
+      const typeSet = this.typeIndex.get(event.type);
+      typeSet?.delete(event.id);
+      if (typeSet?.size === 0) {
+        this.typeIndex.delete(event.type);
+      }
     }
 
     // Actor index
     if (this.indexByActor) {
       const actorKey = `${event.actor.type}:${event.actor.name}`;
-      this.actorIndex.get(actorKey)?.delete(event.id);
+      const actorSet = this.actorIndex.get(actorKey);
+      actorSet?.delete(event.id);
+      if (actorSet?.size === 0) {
+        this.actorIndex.delete(actorKey);
+      }
     }
 
     // Date index
     const dateKey = event.timestamp.substring(0, 10);
-    this.dateIndex.get(dateKey)?.delete(event.id);
+    const dateSet = this.dateIndex.get(dateKey);
+    dateSet?.delete(event.id);
+    if (dateSet?.size === 0) {
+      this.dateIndex.delete(dateKey);
+    }
   }
 
   /**
@@ -725,6 +743,7 @@ export class EventStore {
       const content = await fs.readFile(this.storageFile, 'utf-8');
       const lines = content.split('\n');
       const loadedEvents: WorkspaceEvent[] = [];
+      let sanitizedLoadedEvents = false;
 
       for (let i = 0; i < lines.length; i++) {
         const trimmed = lines[i].trim();
@@ -732,7 +751,11 @@ export class EventStore {
 
         try {
           const event = JSON.parse(trimmed) as WorkspaceEvent;
-          loadedEvents.push(event);
+          const sanitizedEvent = sanitizeEventForStorage(event);
+          if (JSON.stringify(sanitizedEvent) !== trimmed) {
+            sanitizedLoadedEvents = true;
+          }
+          loadedEvents.push(sanitizedEvent);
         } catch (parseError) {
           logger.warn('Failed to parse JSONL line', {
             lineNumber: i + 1,
@@ -747,6 +770,10 @@ export class EventStore {
         this.needsFullRewrite = true; // Rewrite to trim file
       } else {
         this.events = loadedEvents;
+      }
+
+      if (sanitizedLoadedEvents) {
+        this.needsFullRewrite = true;
       }
 
       // Rebuild all indexes
@@ -778,6 +805,7 @@ export class EventStore {
     const rl = createInterface({ input: fileStream, crlfDelay: Infinity });
     const loadedEvents: WorkspaceEvent[] = [];
     let lineNumber = 0;
+    let sanitizedLoadedEvents = false;
 
     for await (const line of rl) {
       lineNumber++;
@@ -786,7 +814,11 @@ export class EventStore {
 
       try {
         const event = JSON.parse(trimmed) as WorkspaceEvent;
-        loadedEvents.push(event);
+        const sanitizedEvent = sanitizeEventForStorage(event);
+        if (JSON.stringify(sanitizedEvent) !== trimmed) {
+          sanitizedLoadedEvents = true;
+        }
+        loadedEvents.push(sanitizedEvent);
       } catch (parseError) {
         logger.warn('Failed to parse JSONL line', {
           lineNumber,
@@ -800,6 +832,10 @@ export class EventStore {
       this.needsFullRewrite = true;
     } else {
       this.events = loadedEvents;
+    }
+
+    if (sanitizedLoadedEvents) {
+      this.needsFullRewrite = true;
     }
 
     this.rebuildAllIndexes();

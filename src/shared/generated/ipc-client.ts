@@ -19,6 +19,27 @@ import { z } from 'zod';
 // Use the existing global electronAPI declaration from src/types/electron.d.ts
 // No need to redeclare it here
 
+export type IpcInvokeChannel = string;
+
+/**
+ * Raw renderer IPC invoke boundary.
+ *
+ * Use this for legacy/non-contract channels that need the existing response
+ * payload returned unchanged (for example CommandResponse-shaped results).
+ */
+export async function invoke<TResponse = unknown>(
+  channel: IpcInvokeChannel,
+  ...args: unknown[]
+): Promise<TResponse> {
+  if (!window.electronAPI) {
+    throw new Error('Electron IPC not available');
+  }
+
+  console.log(`[IPC Client] Invoking channel: ${channel}`, { args });
+
+  return window.electronAPI.invoke(channel, ...args) as Promise<TResponse>;
+}
+
 export class TypedIpcClient {
   /**
    * Make a type-safe IPC call
@@ -34,10 +55,7 @@ export class TypedIpcClient {
     }
 
     // Make IPC call
-    if (!window.electronAPI) {
-      throw new Error('Electron IPC not available');
-    }
-    const response = await window.electronAPI.invoke(channel, validation.data);
+    const response = await invoke<any>(channel, validation.data);
 
     // Handle error response
     if (response && !response.success && response.validationErrors) {

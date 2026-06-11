@@ -33,8 +33,6 @@ const OPENCODE_PATHS = [
     : []),
 ];
 
-let cachedOpencodePath: string | null = null;
-
 // Model list cache — avoids re-shelling to `opencode models` on every call.
 type OpencodeModel = { value: string; label: string; provider?: string };
 let cachedOpencodeModels: OpencodeModel[] | null = null;
@@ -123,15 +121,10 @@ export async function getCachedOpencodeModels(): Promise<string[] | null> {
  * Find the opencode executable path
  */
 async function findOpencodePath(): Promise<string | null> {
-  if (cachedOpencodePath) {
-    return cachedOpencodePath;
-  }
-
   const { existsSync } = await import('fs');
 
   for (const p of OPENCODE_PATHS) {
     if (existsSync(p)) {
-      cachedOpencodePath = p;
       return p;
     }
   }

@@ -8,7 +8,7 @@ import fs from 'fs/promises';
 import path from 'path';
 
 async function testRealWorld() {
-  const port = parseInt(process.env.CDP_PORT || '9222', 10);
+  const port = parseInt(process.env.CDP_PORT || '9223', 10);
   console.log(`🔌 Connecting to CDP on port ${port}...`);
 
   const client = await CDP({ port });

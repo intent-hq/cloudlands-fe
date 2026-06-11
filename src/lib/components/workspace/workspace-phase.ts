@@ -9,9 +9,11 @@
  *
  * ## Data Flow & Consistency Notes
  *
- * Workspace objects come from Redux workspace state which loads in two passes:
- *  - **Lite mode**: taskStats, diffSummary, agentSummary, gitSummary are undefined.
- *  - **Full mode** (500ms later): enrichment fields are populated.
+ * Workspace entities carry only metadata (PR status, etc.). Task progress and
+ * change/commit data live in separated sources (workspace-tasks slice,
+ * workspace-summaries slice, changes slice); callers pass them via the
+ * `taskProgress` / `hasChangedFiles` opts and the `deriveWorkspaceStats` data
+ * parameter.
  *
  * All callers MUST pass `{ hasActiveAgents }` from activeStreamsTracker when
  * the calling component has access to agent streaming state. Without it, the
@@ -64,13 +66,23 @@ export const PHASE_META: Record<WorkspacePhase, { label: string; description: st
   },
 };
 
-/** Derive the current phase of a workspace from its data. */
+export interface WorkspaceTaskProgressLike {
+  total: number;
+  completed: number;
+  inProgress: number;
+}
+
+/** Derive the current phase of a workspace from its metadata plus separated task/change data. */
 export function deriveWorkspacePhase(
   workspace: Workspace,
   opts?: {
     hasActiveAgents?: boolean;
     hasSpecContent?: boolean;
     isAgentCreatingSpec?: boolean;
+    /** Task progress from the workspace-tasks slice (selectWorkspaceTaskProgress). */
+    taskProgress?: WorkspaceTaskProgressLike;
+    /** Whether the workspace has changed files; only affects 'reviewing' subtitle wording. */
+    hasChangedFiles?: boolean;
   },
 ): WorkspacePhaseInfo {
   const prs = workspace.pullRequests || [];
@@ -87,11 +99,11 @@ export function deriveWorkspacePhase(
     prs.some((p) => p.status === PullRequestStatus.Open || p.status === PullRequestStatus.Draft) ||
     activePRStatus === PullRequestStatus.Open ||
     activePRStatus === PullRequestStatus.Draft;
-  const t = workspace.taskStats?.total ?? 0;
-  const c = workspace.taskStats?.completed ?? 0;
-  const ip = workspace.taskStats?.inProgress ?? 0;
+  const t = opts?.taskProgress?.total ?? 0;
+  const c = opts?.taskProgress?.completed ?? 0;
+  const ip = opts?.taskProgress?.inProgress ?? 0;
   const allDone = t > 0 && c === t;
-  const hasFiles = (workspace.diffSummary?.totalFiles ?? 0) > 0;
+  const hasFiles = opts?.hasChangedFiles ?? false;
 
   if (hasMerged) {
     const pr = prs.find((p) => p.status === PullRequestStatus.Merged);
@@ -145,12 +157,22 @@ export function deriveWorkspacePhase(
   };
 }
 
-/** Extract stats from workspace data for display in cards. */
-export function deriveWorkspaceStats(ws: Workspace): WorkspacePhaseStats {
+/** Assemble display stats from workspace PR metadata plus separated task/change/commit data. */
+export function deriveWorkspaceStats(
+  ws: Workspace,
+  data?: {
+    /** Task progress from the workspace-tasks slice (selectWorkspaceTaskProgress). */
+    taskProgress?: WorkspaceTaskProgressLike;
+    /** File change totals from the changes slice or workspace-summaries diff summary. */
+    files?: { changed: number; additions: number; deletions: number };
+    /** Commit counts from the changes slice or workspace-summaries git summary. */
+    commits?: { total: number; unpushed: number };
+  },
+): WorkspacePhaseStats {
   const prs = ws.pullRequests || [];
-  const t = ws.taskStats?.total ?? 0;
-  const c = ws.taskStats?.completed ?? 0;
-  const ip = ws.taskStats?.inProgress ?? 0;
+  const t = data?.taskProgress?.total ?? 0;
+  const c = data?.taskProgress?.completed ?? 0;
+  const ip = data?.taskProgress?.inProgress ?? 0;
   const activePRStatus = ws.activePullRequest?.status;
   const hasMerged =
     ws.prStatus === PullRequestStatus.Merged ||
@@ -182,13 +204,13 @@ export function deriveWorkspaceStats(ws: Workspace): WorkspacePhaseStats {
       notStarted: Math.max(0, t - c - ip),
     },
     files: {
-      changed: ws.diffSummary?.totalFiles ?? 0,
-      additions: ws.diffSummary?.totalAdditions ?? 0,
-      deletions: ws.diffSummary?.totalDeletions ?? 0,
+      changed: data?.files?.changed ?? 0,
+      additions: data?.files?.additions ?? 0,
+      deletions: data?.files?.deletions ?? 0,
     },
     commits: {
-      total: ws.gitSummary?.ahead ?? 0,
-      unpushed: ws.gitSummary?.hasUnpushed ? (ws.gitSummary?.ahead ?? 0) : 0,
+      total: data?.commits?.total ?? 0,
+      unpushed: data?.commits?.unpushed ?? 0,
     },
     pr: {
       hasOpen,

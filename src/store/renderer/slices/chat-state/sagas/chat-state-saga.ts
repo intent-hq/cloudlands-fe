@@ -69,6 +69,7 @@ import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycl
 import { sanitizeStatusEvents } from '../chat-state-serialization';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { AgentActivationState } from '$shared/types/agent-session';
+import { invoke } from '$shared/generated/ipc-client';
 
 const logger = createLogger('ChatStateSaga');
 
@@ -137,7 +138,7 @@ function* stallDetectionLoop(agentId: string): SagaGenerator<void> {
 async function getActiveStreams(): Promise<{ agentId: string }[] | null> {
   try {
     if (typeof window !== 'undefined' && window.electronAPI) {
-      const result = await window.electronAPI.invoke('agent:get-active-streams');
+      const result = await invoke<{ data?: { agentId: string }[] }>('agent:get-active-streams');
       return result?.data || [];
     }
   } catch {

@@ -8,6 +8,7 @@
 import { Logger } from '$lib/utils/logger';
 
 const logger = new Logger({ category: 'WorkspaceMetrics' });
+const MAX_WORKSPACE_METRICS = 100;
 
 interface MetricEntry {
   startTime: number;
@@ -38,10 +39,17 @@ class WorkspaceMetricsTracker {
    */
   startWorkspaceCreation(workspaceId: string): void {
     const now = Date.now();
+    this.metrics.delete(workspaceId);
     this.metrics.set(workspaceId, {
       workspaceId,
       creationStarted: now,
     });
+
+    while (this.metrics.size > MAX_WORKSPACE_METRICS) {
+      const oldestKey = this.metrics.keys().next().value;
+      if (oldestKey === undefined) break;
+      this.metrics.delete(oldestKey);
+    }
 
     logger.info('Started tracking workspace creation', { workspaceId });
   }
@@ -137,6 +145,8 @@ class WorkspaceMetricsTracker {
       duration: `${operation.duration}ms`,
       metadata: operation.metadata,
     });
+
+    this.operations.delete(operationId);
 
     return operation.duration;
   }

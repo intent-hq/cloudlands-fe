@@ -64,6 +64,41 @@ interface RemoteShellSession {
 
 const remoteShellSessions = new Map<string, RemoteShellSession>();
 
+async function cleanupRemoteShellSession(
+  terminalId: string,
+  reason: string,
+  options: { closeSession?: boolean } = {},
+): Promise<void> {
+  const session = remoteShellSessions.get(terminalId);
+  if (!session) return;
+
+  remoteShellSessions.delete(terminalId);
+
+  if (options.closeSession !== false) {
+    try {
+      session.close();
+    } catch (error) {
+      logger.warn(`[Terminal] Failed to close remote terminal ${terminalId} during ${reason}:`, error);
+    }
+  }
+
+  try {
+    await sshManager.disconnect(session.connectionId);
+  } catch (error) {
+    logger.warn(`[Terminal] Failed to disconnect SSH for terminal ${terminalId} during ${reason}:`, error);
+  }
+}
+
+function cleanupRemoteShellSessionInBackground(
+  terminalId: string,
+  reason: string,
+  options: { closeSession?: boolean } = {},
+): void {
+  cleanupRemoteShellSession(terminalId, reason, options).catch((error) => {
+    logger.warn(`[Terminal] Failed remote terminal cleanup for ${terminalId} during ${reason}:`, error);
+  });
+}
+
 // Constants for workspace info retry logic
 const WORKSPACE_INFO_RETRY_DELAY_MS = 300;
 const WORKSPACE_INFO_MAX_RETRIES = 5;
@@ -589,8 +624,7 @@ export function registerTerminalHandlers() {
                 logger.warn(
                   `[Terminal] Remote terminal ${providedId} belongs to workspace ${existingSession.workspaceId}, not ${workspaceId}. Creating new terminal.`,
                 );
-                // Don't reconnect to a terminal from a different workspace
-                // Fall through to create a new terminal
+                await cleanupRemoteShellSession(providedId, 'workspace mismatch replacement');
               } else if (existingSession.isAlive()) {
                 logger.info(`[Terminal] Reconnecting to existing remote terminal: ${providedId}`);
                 existingSession.resize(cols, rows);
@@ -602,7 +636,7 @@ export function registerTerminalHandlers() {
                 };
               } else {
                 // Clean up dead session
-                remoteShellSessions.delete(providedId);
+                await cleanupRemoteShellSession(providedId, 'dead session replacement');
               }
             }
 
@@ -647,11 +681,15 @@ export function registerTerminalHandlers() {
                       signal: null,
                     }),
                   );
-                  remoteShellSessions.delete(terminalId);
+                  cleanupRemoteShellSessionInBackground(terminalId, 'remote terminal exit', {
+                    closeSession: false,
+                  });
                 },
                 onError: (error: Error) => {
                   logger.error(`[Terminal] Remote terminal ${terminalId} error:`, error);
-                  remoteShellSessions.delete(terminalId);
+                  cleanupRemoteShellSessionInBackground(terminalId, 'remote terminal error', {
+                    closeSession: false,
+                  });
                 },
               });
 
@@ -1145,7 +1183,7 @@ export function registerTerminalHandlers() {
           if (remoteSession) {
             if (!remoteSession.isAlive()) {
               logger.error(`[Terminal] Remote terminal ${terminalId} is no longer alive`);
-              remoteShellSessions.delete(terminalId);
+              await cleanupRemoteShellSession(terminalId, 'dead session write');
               throw new Error(`Remote terminal is no longer connected: ${terminalId}`);
             }
             remoteSession.write(data);
@@ -1205,6 +1243,10 @@ export function registerTerminalHandlers() {
           // Check for remote terminal first
           const remoteSession = remoteShellSessions.get(terminalId);
           if (remoteSession) {
+            if (!remoteSession.isAlive()) {
+              await cleanupRemoteShellSession(terminalId, 'dead session resize');
+              return { success: false, error: 'Remote terminal is no longer connected' };
+            }
             if (remoteSession.isAlive()) {
               remoteSession.resize(cols, rows);
             }
@@ -1255,6 +1297,13 @@ export function registerTerminalHandlers() {
           // Check for remote terminal first
           const remoteSession = remoteShellSessions.get(terminalId);
           if (remoteSession) {
+            if (!remoteSession.isAlive()) {
+              await cleanupRemoteShellSession(terminalId, 'dead session info');
+              return {
+                success: false,
+                error: `Terminal not found: ${terminalId}`,
+              };
+            }
             return {
               success: true,
               info: {
@@ -1350,6 +1399,10 @@ export function registerTerminalHandlers() {
           // Check for remote terminal first
           const remoteSession = remoteShellSessions.get(terminalId);
           if (remoteSession) {
+            if (!remoteSession.isAlive()) {
+              await cleanupRemoteShellSession(terminalId, 'dead session refresh');
+              return { success: false, error: 'Remote terminal is no longer connected' };
+            }
             if (remoteSession.isAlive()) {
               // Send a carriage return to trigger prompt display
               remoteSession.write('\r');
@@ -1406,10 +1459,7 @@ export function registerTerminalHandlers() {
           const remoteSession = remoteShellSessions.get(terminalId);
           if (remoteSession) {
             logger.info(`[Terminal] Disposing remote terminal: ${terminalId}`);
-            remoteSession.close();
-            remoteShellSessions.delete(terminalId);
-            // Also disconnect the SSH connection
-            await sshManager.disconnect(remoteSession.connectionId);
+            await cleanupRemoteShellSession(terminalId, 'explicit dispose');
             return { success: true };
           }
 
@@ -1710,11 +1760,15 @@ export async function createTerminalFromBackend(options: {
                 signal: null,
               }),
             );
-            remoteShellSessions.delete(terminalId);
+            cleanupRemoteShellSessionInBackground(terminalId, 'backend remote terminal exit', {
+              closeSession: false,
+            });
           },
           onError: (error: Error) => {
             logger.error(`[Terminal] Remote terminal ${terminalId} error:`, error);
-            remoteShellSessions.delete(terminalId);
+            cleanupRemoteShellSessionInBackground(terminalId, 'backend remote terminal error', {
+              closeSession: false,
+            });
           },
         });
 

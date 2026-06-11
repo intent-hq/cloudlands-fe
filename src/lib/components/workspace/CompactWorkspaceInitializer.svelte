@@ -675,7 +675,10 @@
     // Check git availability
     (async () => {
       try {
-        const result = await window.electronAPI?.invoke('system:check-git');
+        const result =
+          typeof window !== 'undefined' && window.electronAPI
+            ? await invoke<any>('system:check-git')
+            : undefined;
         if (result?.success && result.data) {
           gitAvailable = result.data.available;
           if (!result.data.available) {
@@ -962,7 +965,7 @@
             repo,
             number,
           });
-          const response = await window.electronAPI.invoke('git-tracking:get-pull-request', {
+          const response = await invoke<any>('git-tracking:get-pull-request', {
             owner,
             repo,
             number,
@@ -1071,9 +1074,12 @@
     // Fetch the remote URL for the local repo
     (async () => {
       try {
-        const response = await window.electronAPI?.invoke('git-tracking:get-remote-url', {
-          repoPath: path,
-        });
+        const response =
+          typeof window !== 'undefined' && window.electronAPI
+            ? await invoke<any>('git-tracking:get-remote-url', {
+              repoPath: path,
+            })
+            : undefined;
         if (response?.success && response.data?.owner && response.data?.repo) {
           detectedGitHubOwner = response.data.owner;
           detectedGitHubRepo = response.data.repo;
@@ -1396,10 +1402,13 @@
           behind: branchBehind,
         });
         try {
-          const pullResult = await window.electronAPI?.invoke('git:pullBranch', {
-            repoPath,
-            branchName: branch,
-          });
+          const pullResult =
+            typeof window !== 'undefined' && window.electronAPI
+              ? await invoke<any>('git:pullBranch', {
+                repoPath,
+                branchName: branch,
+              })
+              : undefined;
           if (!pullResult?.success) {
             pullError = pullResult?.error || 'Failed to pull changes';
             showPullConflictDialog = true;
@@ -1906,20 +1915,7 @@
         appStore.dispatch(
           updateWorkspaceEntity(workspace.id, {
             agentSummary: {
-              count: 1,
-              agents: [
-                {
-                  id: initialAgent.agentId,
-                  name: agentName,
-                  status: 'busy',
-                  specialist: (specialistId ?? null) as
-                    | 'spec-writer'
-                    | 'implementor'
-                    | 'verifier'
-                    | null, // Cast to WorkspaceAgentInfo specialist type
-                  lastActivity: new Date().toISOString(),
-                },
-              ],
+              agentIds: [initialAgent.agentId],
             },
           }),
         );
@@ -2343,7 +2339,7 @@
       // Fetch asynchronously without blocking the change handler
       (async () => {
         try {
-          const response = await window.electronAPI.invoke('git-tracking:get-pull-request', {
+          const response = await invoke<any>('git-tracking:get-pull-request', {
             owner,
             repo,
             number,
@@ -2562,7 +2558,7 @@
                 class="mt-2 text-primary hover:text-primary/80 underline cursor-pointer"
                 onclick={() => {
                   if (typeof window !== 'undefined' && window.electronAPI) {
-                    window.electronAPI.invoke('shell:openExternal', {
+                    invoke('shell:openExternal', {
                       url: 'https://git-scm.com/downloads',
                     });
                   }

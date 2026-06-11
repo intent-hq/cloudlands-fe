@@ -1,7 +1,7 @@
 /**
  * Test harness for CDP helpers
  *
- * This connects directly to the Electron instance on port 9222
+ * This connects directly to the Electron instance on port 9223
  * and tests the CDP helper functions without going through the MCP layer.
  *
  * Usage:
@@ -24,7 +24,7 @@ class CdpHelpersTestHarness {
   private helpersCode: string = '';
 
   async connect() {
-    const port = parseInt(process.env.CDP_PORT || '9222', 10);
+    const port = parseInt(process.env.CDP_PORT || '9223', 10);
     console.log(`🔌 Connecting to CDP on port ${port}...`);
 
     try {
@@ -33,7 +33,7 @@ class CdpHelpersTestHarness {
       console.log('✅ Connected to CDP\n');
     } catch (error: any) {
       console.error('❌ Failed to connect to CDP:', error.message);
-      console.error('   Make sure Electron is running with --remote-debugging-port=9222');
+      console.error(`   Make sure Electron is running with --remote-debugging-port=${port}`);
       throw error;
     }
   }

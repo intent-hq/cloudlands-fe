@@ -20,6 +20,128 @@ type WindowEventChannelOptions = {
   stopImmediatePropagation?: boolean;
 };
 
+export type IpcChannelBufferPolicy =
+  | { kind: "lossless"; rationale: string }
+  | { kind: "sliding"; limit: number; rationale: string }
+  | { kind: "dropping"; limit: number; rationale: string }
+  | { kind: "none"; rationale: string };
+
+export type IpcChannelOptions = {
+  bufferPolicy?: IpcChannelBufferPolicy;
+};
+
+export const DEFAULT_IPC_BUFFER_LIMIT = 1_000;
+export const HIGH_VOLUME_IPC_BUFFER_LIMIT = 1_000;
+export const LATEST_ONLY_IPC_BUFFER_LIMIT = 1;
+
+const DEFAULT_BOUNDED_IPC_POLICY: IpcChannelBufferPolicy = {
+  kind: "sliding",
+  limit: DEFAULT_IPC_BUFFER_LIMIT,
+  rationale:
+    "Default renderer IPC policy: bounded sliding queue prevents pathological producer storms from retaining unbounded payloads.",
+};
+
+// Renderer IPC buffer policy inventory:
+// - lossless: lifecycle, creation/deletion, backend handshakes, and request facts
+//   without guaranteed snapshot repair; correctness wins over bounded memory.
+// - latest-only: progress/status channels where stale intermediate payloads are
+//   invalidated by newer payloads.
+// - bounded queue: high-volume update streams with reducer coalescing, debounce,
+//   or explicit reload/snapshot repair paths.
+// - default bounded queue: low-volume renderer notifications/menu events. Callers
+//   must opt into lossless when dropping any queued payload would break state.
+const LOSSLESS_REQUIRED_IPC_EVENTS = new Set<ElectronEventName>([
+  "agent:created",
+  "agent:deleted",
+  "agent:prepare-handler",
+  "agent:queue:processing",
+  "agent:queue:processing-cancelled",
+  "agent:restored",
+  "agent:stream-starting",
+  "events:cleared",
+  "note:created",
+  "note:deleted",
+  "note:updated",
+  "permission:event",
+  "script:error",
+  "script:started",
+  "script:stopped",
+  "script:url-detected",
+  "task:status-changed",
+  "terminal:created",
+  "terminal:disposed",
+]);
+
+const LATEST_ONLY_IPC_EVENTS = new Set<ElectronEventName>([
+  "agent:idle",
+  "agent:status-changed",
+  "auto-update:progress",
+  "auto-update:status-changed",
+  "codex/managed-install/progress",
+  "codex/managed-install/status",
+  "window:zoom-changed",
+]);
+
+const HIGH_VOLUME_BOUNDED_IPC_EVENTS = new Set<ElectronEventName>([
+  "events:new",
+  "file-tracking:agent-file-changed",
+  "file-tracking:changes-updated",
+  "file:changed",
+  "file:content-changed",
+  "script:output",
+  "watcher:file-changed",
+  "workspace-changes",
+  "workspace:background-enrichment-complete",
+  "workspace:updated",
+]);
+
+export function resolveIpcChannelBufferPolicy(
+  eventName: ElectronEventName,
+  options: IpcChannelOptions = {},
+): IpcChannelBufferPolicy {
+  if (options.bufferPolicy) return options.bufferPolicy;
+
+  if (LOSSLESS_REQUIRED_IPC_EVENTS.has(eventName)) {
+    return {
+      kind: "lossless",
+      rationale:
+        "Lossless-required lifecycle/request event; dropping can leave renderer state stale without a guaranteed later snapshot repair.",
+    };
+  }
+
+  if (LATEST_ONLY_IPC_EVENTS.has(eventName)) {
+    return {
+      kind: "sliding",
+      limit: LATEST_ONLY_IPC_BUFFER_LIMIT,
+      rationale: "Latest-only status/progress event; stale intermediate payloads may be dropped safely.",
+    };
+  }
+
+  if (HIGH_VOLUME_BOUNDED_IPC_EVENTS.has(eventName)) {
+    return {
+      kind: "sliding",
+      limit: HIGH_VOLUME_IPC_BUFFER_LIMIT,
+      rationale:
+        "High-volume renderer update stream; reducers or follow-up loads coalesce state, so bound queued IPC payloads.",
+    };
+  }
+
+  return DEFAULT_BOUNDED_IPC_POLICY;
+}
+
+function createIpcBuffer<T>(policy: IpcChannelBufferPolicy) {
+  switch (policy.kind) {
+    case "lossless":
+      return buffers.expanding<T>();
+    case "sliding":
+      return buffers.sliding<T>(policy.limit);
+    case "dropping":
+      return buffers.dropping<T>(policy.limit);
+    case "none":
+      return buffers.none<T>();
+  }
+}
+
 export type { WindowEventName } from "$lib/utils/window-events";
 
 export function createWindowEventChannel<T extends object>(
@@ -133,11 +255,12 @@ export function* takeLatestFromWindowEvent<T extends object>(
  *   }
  * }
  */
-export function createListenSyncChannel<T extends NotUndefined>(eventName: ElectronEventName): EventChannel<T> {
-  // Use an expanding buffer so IPC events arriving while the saga handler
-  // is yielded (processing a previous event) are queued instead of dropped.
-  // The default buffer is buffers.none() which silently drops events when
-  // no take() is pending — causing lost updates (e.g. converted task content).
+export function createListenSyncChannel<T extends NotUndefined>(
+  eventName: ElectronEventName,
+  options: IpcChannelOptions = {},
+): EventChannel<T> {
+  const bufferPolicy = resolveIpcChannelBufferPolicy(eventName, options);
+
   return eventChannel<T>((emitter) => {
     if (typeof window === "undefined" || !window.electronAPI) {
       emitter(END as any);
@@ -151,14 +274,15 @@ export function createListenSyncChannel<T extends NotUndefined>(eventName: Elect
     // Return the unsubscribe function — called when channel.close() is invoked
     // or when the saga using this channel is cancelled
     return cleanup;
-  }, buffers.expanding<T>());
+  }, createIpcBuffer<T>(bufferPolicy));
 }
 
 function* takeEveryFromListenSyncLoop<T extends NotUndefined>(
   eventName: ElectronEventName,
   handler: (data: T) => Generator,
+  options: IpcChannelOptions = {},
 ): Generator<any, void, any> {
-  const channel = createListenSyncChannel<T>(eventName);
+  const channel = createListenSyncChannel<T>(eventName, options);
 
   try {
     while (true) {
@@ -174,13 +298,17 @@ function* takeEveryFromListenSyncLoop<T extends NotUndefined>(
 export function* takeEveryFromListenSync<T extends NotUndefined>(
   eventName: ElectronEventName,
   handler: (data: T) => Generator,
+  options: IpcChannelOptions = {},
 ): Generator<any, Task, any> {
-  return yield* fork(takeEveryFromListenSyncLoop<T>, eventName, handler);
+  return yield* fork(takeEveryFromListenSyncLoop<T>, eventName, handler, options);
 }
 
-export function createElectronChannel<T extends NotUndefined>(eventName: ElectronEventName): EventChannel<T> {
-  // Use an expanding buffer so Electron events emitted before the saga has
-  // registered the next take are queued instead of silently dropped.
+export function createElectronChannel<T extends NotUndefined>(
+  eventName: ElectronEventName,
+  options: IpcChannelOptions = {},
+): EventChannel<T> {
+  const bufferPolicy = resolveIpcChannelBufferPolicy(eventName, options);
+
   return eventChannel<T>((emitter) => {
     if (typeof window === "undefined" || !window.electronAPI) {
       emitter(END as any);
@@ -196,14 +324,15 @@ export function createElectronChannel<T extends NotUndefined>(eventName: Electro
         window.electronAPI.offById(eventName, listenerId);
       }
     };
-  }, buffers.expanding<T>());
+  }, createIpcBuffer<T>(bufferPolicy));
 }
 
 function* takeEveryFromElectronChannelLoop<T extends NotUndefined>(
   eventName: ElectronEventName,
   handler: (data: T) => Generator,
+  options: IpcChannelOptions = {},
 ): Generator<any, void, any> {
-  const channel = createElectronChannel<T>(eventName);
+  const channel = createElectronChannel<T>(eventName, options);
 
   try {
     while (true) {
@@ -219,7 +348,8 @@ function* takeEveryFromElectronChannelLoop<T extends NotUndefined>(
 export function* takeEveryFromElectronChannel<T extends NotUndefined>(
   eventName: ElectronEventName,
   handler: (data: T) => Generator,
+  options: IpcChannelOptions = {},
 ): Generator<any, Task, any> {
-  return yield* fork(takeEveryFromElectronChannelLoop<T>, eventName, handler);
+  return yield* fork(takeEveryFromElectronChannelLoop<T>, eventName, handler, options);
 }
 

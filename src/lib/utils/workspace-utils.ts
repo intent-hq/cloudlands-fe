@@ -42,9 +42,8 @@ export function getWorkspaceStage(workspace: Workspace): WorkspaceStage {
     return 'pr-open';
   }
 
-  // Check if there are code changes (diff summary, diffs, or changesets)
+  // Check if there are code changes (diffs or changesets)
   const hasCodeChanges =
-    (workspace.diffSummary?.totalFiles ?? 0) > 0 ||
     (workspace.diffs && workspace.diffs.length > 0) ||
     (workspace.changesets && workspace.changesets.length > 0);
 

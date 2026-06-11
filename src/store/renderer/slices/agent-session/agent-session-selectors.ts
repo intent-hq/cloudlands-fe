@@ -295,6 +295,26 @@ export const selectAllStreamingAgents = store.createSelector(
   },
 );
 
+/** Select all agents with live work that should retain workspace interest. */
+export const selectAllRetainedAgentSessions = store.createSelector(
+  (state): AgentSession[] => {
+    const byAgentId = state.agentSessions?.byAgentId ?? {};
+    const result: AgentSession[] = [];
+    for (const id of Object.keys(byAgentId)) {
+      const stored = byAgentId[id];
+      if (
+        stored?.isStreaming === true ||
+        stored?.isProcessing === true ||
+        stored?.isResponding === true
+      ) {
+        const materialized = materializeSession(stored);
+        if (materialized) result.push(materialized);
+      }
+    }
+    return result;
+  },
+);
+
 /**
  * Canonical selector for active agent thread state that drives the Agent Overview
  * `Thinking...` label and specialist avatar animation.

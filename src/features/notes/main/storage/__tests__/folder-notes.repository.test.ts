@@ -207,6 +207,21 @@ describe('FolderBasedNotesRepository', () => {
     });
   });
 
+  describe('findSummariesByWorkspace', () => {
+    it('returns note metadata without content or versions', async () => {
+      const note = createTestNote({ id: 'summary-note' as NoteId });
+      await repository.save(note);
+
+      const summaries = await repository.findSummariesByWorkspace(TEST_WORKSPACE_ID);
+      const summary = summaries.find((candidate) => candidate.id === note.id);
+
+      expect(summary).toBeDefined();
+      expect(summary!.title).toBe(note.title);
+      expect(summary!.content).toBe('');
+      expect(summary!.versions).toEqual([]);
+    });
+  });
+
   describe('CRDT integration', () => {
     it('should initialize CRDT document with content', async () => {
       const note = createTestNote();
@@ -262,6 +277,27 @@ describe('FolderBasedNotesRepository', () => {
 
       // CRDT is session-only, so no .crdt file should exist
       // (CRDT state is not persisted to disk in the new design)
+    });
+
+    it('should trim CRDT sessions for inactive workspaces', async () => {
+      const inactiveWorkspaceId = 'inactive-workspace-storage' as WorkspaceId;
+      const inactiveNoteId = 'inactive-note' as NoteId;
+
+      await crdtDocumentManager.initializeWithContent(
+        TEST_WORKSPACE_ID,
+        TEST_NOTE_ID,
+        'active content',
+      );
+      await crdtDocumentManager.initializeWithContent(
+        inactiveWorkspaceId,
+        inactiveNoteId,
+        'inactive content',
+      );
+
+      crdtDocumentManager.trimCachesToOpenWorkspaces([TEST_WORKSPACE_ID]);
+
+      expect(crdtDocumentManager.hasSession(TEST_WORKSPACE_ID, TEST_NOTE_ID)).toBe(true);
+      expect(crdtDocumentManager.hasSession(inactiveWorkspaceId, inactiveNoteId)).toBe(false);
     });
   });
 

@@ -278,6 +278,22 @@ export class CRDTDocumentManager {
   }
 
   /**
+   * Drop CRDT sessions for workspaces that no longer have an open window/tab.
+   */
+  trimCachesToOpenWorkspaces(openWorkspaceIds: Iterable<string>): void {
+    const openWorkspaceIdSet = new Set(openWorkspaceIds);
+
+    for (const [key, session] of documentCache.entries()) {
+      const separatorIndex = key.indexOf(':');
+      const workspaceId = separatorIndex >= 0 ? key.slice(0, separatorIndex) : key;
+      if (openWorkspaceIdSet.has(workspaceId)) continue;
+
+      session.doc.destroy();
+      documentCache.delete(key);
+    }
+  }
+
+  /**
    * Stop the cleanup interval (for testing/shutdown)
    */
   stopCleanup(): void {

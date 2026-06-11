@@ -21,7 +21,11 @@
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { writable } from 'svelte/store';
   import Button from '../ui/button/button.svelte';
+  import { store as appStore } from '$store/renderer/store';
+  import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
+  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 
   import AgentCard from '$lib/components/chat/AgentCard.svelte';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
@@ -68,17 +72,29 @@
   // Check if workspace is archived
   const isArchived = $derived(ws.status === WorkspaceStatusEnum.Archived);
 
+  const workspaceIdStore = writable('');
+  $effect(() => {
+    workspaceIdStore.set(ws.id ?? '');
+  });
+  const workspaceTaskProgress$ = selectWorkspaceTaskProgress(workspaceIdStore);
+
+  // Load canonical tasks for progress display (no-op once initialized).
+  $effect(() => {
+    if (!ws.id) return;
+    appStore.dispatch(ensureWorkspaceTasksLoaded(String(ws.id)));
+  });
+
   // Compute workspace phase
   const workspacePhase = $derived.by(() => {
     const hasActiveAgents = agents.some((a) => a.isActive);
-    return deriveWorkspacePhase(ws, { hasActiveAgents });
+    return deriveWorkspacePhase(ws, { hasActiveAgents, taskProgress: $workspaceTaskProgress$ });
   });
 
   // Task progress for building phase pie chart (0–1)
   const buildProgress = $derived.by(() => {
-    const t = ws.taskStats?.total ?? 0;
-    if (t === 0) return 0;
-    return (ws.taskStats?.completed ?? 0) / t;
+    const { total, completed } = $workspaceTaskProgress$;
+    if (total === 0) return 0;
+    return completed / total;
   });
 
   // PR status

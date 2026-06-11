@@ -4,18 +4,9 @@
  * Tests the JSONL file format, append-only writes, migration, and error handling.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { EventStore } from '../main/event-store';
-import {
-  WorkspaceEvent,
-  WorkspaceEventType,
-} from '../types';
+import { WorkspaceEvent, WorkspaceEventType } from '../types';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { existsSync } from 'fs';
@@ -199,14 +190,14 @@ describe('EventStore JSONL Persistence', () => {
       expect(savedEvent.data.deletions).toBe(2);
     });
 
-    it('should strip oversized diffs that exceed the size cap', async () => {
+    it('should truncate oversized diffs that exceed the size cap', async () => {
       store = new EventStore(workspaceId, {
         persistToDisk: true,
         storageDir: testDir,
         maxEvents: 100,
       });
 
-      // Add event with a diff that exceeds the 50KB cap
+      // Add event with a diff that exceeds the retained diff cap
       const eventWithHugeDiff: WorkspaceEvent = {
         id: 'huge-diff-1',
         type: 'file:changed' as WorkspaceEventType,
@@ -215,7 +206,7 @@ describe('EventStore JSONL Persistence', () => {
         actor: { type: 'user', name: 'test' },
         data: {
           path: 'big-file.ts',
-          diff: 'x'.repeat(60000), // Over 50KB cap - should be stripped
+          diff: 'x'.repeat(60000), // Over cap - should be truncated
           additions: 100,
           deletions: 50,
         },
@@ -228,12 +219,50 @@ describe('EventStore JSONL Persistence', () => {
       const content = await fs.readFile(filePath, 'utf-8');
       const savedEvent = JSON.parse(content.trim());
 
-      // Oversized diff is stripped
-      expect(savedEvent.data.diff).toBeUndefined();
+      // Oversized diff is bounded and documented as truncated
+      expect(savedEvent.data.diff.length).toBeLessThan(60000);
+      expect(savedEvent.data.diff).toContain('[diff truncated]');
       // Other fields preserved
       expect(savedEvent.data.path).toBe('big-file.ts');
       expect(savedEvent.data.additions).toBe(100);
       expect(savedEvent.data.deletions).toBe(50);
+    });
+
+    it('should sanitize loaded JSONL events before retaining them in memory', async () => {
+      const filePath = path.join(testDir, 'events.jsonl');
+      const legacyLargeEvent: WorkspaceEvent = {
+        id: 'legacy-large-jsonl',
+        type: 'file:changed' as WorkspaceEventType,
+        workspaceId,
+        timestamp: new Date().toISOString(),
+        actor: { type: 'user', name: 'test' },
+        data: {
+          path: 'large.ts',
+          oldContent: 'o'.repeat(100000),
+          newContent: 'n'.repeat(100000),
+          content: 'c'.repeat(100000),
+          diff: 'd'.repeat(100000),
+          additions: 10,
+        },
+      };
+      await fs.writeFile(filePath, `${JSON.stringify(legacyLargeEvent)}\n`, 'utf-8');
+
+      store = new EventStore(workspaceId, {
+        persistToDisk: true,
+        storageDir: testDir,
+        maxEvents: 100,
+      });
+
+      await store.initialize();
+
+      const [loadedEvent] = store.getAll();
+      const data = loadedEvent.data as any;
+      expect(data.oldContent).toBeUndefined();
+      expect(data.newContent).toBeUndefined();
+      expect(data.content).toBeUndefined();
+      expect(data.diff.length).toBeLessThan(100000);
+      expect(data.diff).toContain('[diff truncated]');
+      expect(data.additions).toBe(10);
     });
 
     it('should truncate large terminal output', async () => {

@@ -94,6 +94,13 @@ describe('WorkspaceMetricsTracker', () => {
       workspaceMetrics.endOperation('op-1', { final: true });
       // Operation completed successfully
     });
+
+    it('removes completed operation entries after end', () => {
+      workspaceMetrics.startOperation('op-1', { type: 'test' });
+
+      expect(workspaceMetrics.endOperation('op-1')).toBe(0);
+      expect(workspaceMetrics.endOperation('op-1')).toBeNull();
+    });
   });
 
   describe('getMetrics', () => {
@@ -110,6 +117,19 @@ describe('WorkspaceMetricsTracker', () => {
 
       workspaceMetrics.clearMetrics('ws-1');
       expect(workspaceMetrics.getMetrics('ws-1')).toBeUndefined();
+    });
+
+    it('evicts oldest workspace metrics when the metrics cap is exceeded', () => {
+      for (let i = 0; i <= 100; i++) {
+        workspaceMetrics.startWorkspaceCreation(`ws-${i}`);
+      }
+
+      expect(workspaceMetrics.getMetrics('ws-0')).toBeUndefined();
+      expect(workspaceMetrics.getMetrics('ws-100')).toBeDefined();
+
+      for (let i = 1; i <= 100; i++) {
+        workspaceMetrics.clearMetrics(`ws-${i}`);
+      }
     });
   });
 

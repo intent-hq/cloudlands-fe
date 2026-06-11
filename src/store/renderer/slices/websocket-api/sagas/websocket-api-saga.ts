@@ -10,6 +10,7 @@ import {
   takeEvery,
 } from "typed-redux-saga";
 import type { SagaGenerator } from "typed-redux-saga";
+import { takeLatestFromSelector } from "ag-redux-toolkit/saga";
 import {
   loadWebSocketApiStatus,
   regenerateWebSocketApiToken,
@@ -26,6 +27,7 @@ import {
   webSocketApiStatusLoaded,
 } from "../websocket-api-slice";
 import {
+  selectWebSocketApiActiveDiscoveryExpiresAt,
   selectWebSocketApiDiscoveryCountdownState,
   selectWebSocketApiEnabled,
 } from "../websocket-api-selectors";
@@ -228,23 +230,28 @@ export function* handleDiscoveryAutoDisabled(): SagaGenerator<void> {
 }
 
 export function* discoveryCountdownTickerSaga(): SagaGenerator<void> {
-  while (true) {
-    const state: DiscoveryCountdownState =
-      yield* selectWebSocketApiDiscoveryCountdownState.effect();
-
-    if (state.discoveryEnabled && state.discoveryExpiresAt) {
-      const now = Date.now();
-      if (state.discoveryExpiresAt <= now) {
-        yield* put(webSocketApiDiscoveryAutoDisabled());
-      } else {
-        yield* put(setWebSocketApiDiscoveryCountdownNow(now));
+  yield* takeLatestFromSelector(
+    selectWebSocketApiActiveDiscoveryExpiresAt,
+    function* ({ payload: expiresAt }): SagaGenerator<void> {
+      if (expiresAt === null) {
+        const state: DiscoveryCountdownState =
+          yield* selectWebSocketApiDiscoveryCountdownState.effect();
+        if (state.discoveryCountdownNow !== null) {
+          yield* put(setWebSocketApiDiscoveryCountdownNow(null));
+        }
+        return;
       }
-    } else if (state.discoveryCountdownNow !== null) {
-      yield* put(setWebSocketApiDiscoveryCountdownNow(null));
-    }
 
-    yield* delay(DISCOVERY_TICK_MS);
-  }
+      let now = Date.now();
+      while (now < expiresAt) {
+        yield* put(setWebSocketApiDiscoveryCountdownNow(now));
+        yield* delay(DISCOVERY_TICK_MS);
+        now = Date.now();
+      }
+
+      yield* put(webSocketApiDiscoveryAutoDisabled());
+    },
+  );
 }
 
 function* watchDiscoveryAutoDisabledSaga(): SagaGenerator<void> {

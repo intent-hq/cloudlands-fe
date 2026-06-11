@@ -146,7 +146,7 @@
   async function getDirectoryStatus(path: string): Promise<DirectoryStatus | null> {
     if (typeof window === 'undefined' || !window.electronAPI) return null;
     try {
-      const result = await window.electronAPI.invoke('file:getDirectoryStatus', { path });
+      const result = await invoke<any>('file:getDirectoryStatus', { path });
       return result?.success && result.data ? result.data : null;
     } catch (err) {
       logger.warn('Failed to check directory status', { path, error: String(err) });
@@ -171,7 +171,7 @@
   async function handleSelectFolder() {
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await window.electronAPI.invoke('dialog:open', {
+        const result = await invoke<any>('dialog:open', {
           directory: true,
           title: 'Select Repository Folder',
           createDirectory: true,

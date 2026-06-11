@@ -100,6 +100,13 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: { select: vi.fn(() => null) },
 }));
 
+vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
+  selectWorkspaceTaskProgress: Object.assign(
+    () => mocks.readable(() => ({ total: 0, completed: 0, inProgress: 0 })),
+    { select: vi.fn(() => ({ total: 0, completed: 0, inProgress: 0 })) },
+  ),
+}));
+
 const workspace = (id: string, title: string): Workspace => ({
   id,
   title,

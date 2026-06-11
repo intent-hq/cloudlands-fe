@@ -111,13 +111,6 @@ export class AttributionEngine {
   // TTL for agent writes (24 hours) - after this, old writes are cleaned up
   private readonly AGENT_WRITE_TTL_MS = 24 * 60 * 60 * 1000;
 
-  // Cache for attribution results to avoid redundant work on repeated polls
-  // Map of "workspaceId:filePath:contentHash" -> { result: AgentWrite | null, timestamp: number }
-  private attributionCache: Map<string, { result: AgentWrite | null; timestamp: number }> =
-    new Map();
-  // Cache TTL (5 minutes) - attributions are stable unless agent writes change
-  private readonly ATTRIBUTION_CACHE_TTL_MS = 5 * 60 * 1000;
-
   constructor(options?: { debug?: boolean; agentContextTTL?: number }) {
     this.debug = options?.debug ?? false;
     this.contextManager = getProvenanceContextManager({ debug: options?.debug });
@@ -130,13 +123,7 @@ export class AttributionEngine {
    */
   private startPeriodicCleanup(): void {
     // Clean up old writes every hour
-    this.cleanupTimer = setInterval(
-      () => {
-        this.cleanupOldWrites();
-        this.cleanupAttributionCache();
-      },
-      60 * 60 * 1000,
-    );
+    this.cleanupTimer = setInterval(() => this.cleanupOldWrites(), 60 * 60 * 1000);
   }
 
   /**
@@ -167,34 +154,6 @@ export class AttributionEngine {
       // Persist the cleanup for each affected workspace
       for (const workspaceId of workspacesToSave) {
         this.persistAgentWrites(workspaceId);
-      }
-    }
-  }
-
-  /**
-   * Invalidate attribution cache entries for a specific file path.
-   * Called when a new agent write is recorded to ensure the next poll
-   * re-evaluates attribution.
-   */
-  private invalidateAttributionCache(filePath: string, workspaceId?: string): void {
-    // Remove all cache entries for this file path (across all content hashes)
-    const prefix = `${workspaceId || ''}:${filePath}:`;
-    for (const key of this.attributionCache.keys()) {
-      if (key.startsWith(prefix)) {
-        this.attributionCache.delete(key);
-      }
-    }
-  }
-
-  /**
-   * Clean up expired attribution cache entries.
-   * Called periodically to prevent memory growth.
-   */
-  private cleanupAttributionCache(): void {
-    const now = Date.now();
-    for (const [key, entry] of this.attributionCache.entries()) {
-      if (now - entry.timestamp > this.ATTRIBUTION_CACHE_TTL_MS) {
-        this.attributionCache.delete(key);
       }
     }
   }
@@ -363,10 +322,6 @@ export class AttributionEngine {
       workspaceId,
     });
 
-    // Invalidate attribution cache for this file path
-    // This ensures the next poll will re-evaluate attribution with the new agent write
-    this.invalidateAttributionCache(normalizedPath, workspaceId);
-
     // Always log agent writes - this is critical for debugging attribution issues
     logger.info('[AttributionEngine] Recorded agent write', {
       originalPath: filePath,
@@ -473,23 +428,11 @@ export class AttributionEngine {
 
     const normalizedPath = this.normalizePath(filePath);
 
-    // Compute content hash early - used for both caching and matching
     const contentHash = hashContent(content);
-
-    // Check cache first to avoid redundant work on repeated polls
-    const cacheKey = `${workspaceId || ''}:${normalizedPath}:${contentHash}`;
-    const cached = this.attributionCache.get(cacheKey);
-    const now = Date.now();
-    if (cached && now - cached.timestamp < this.ATTRIBUTION_CACHE_TTL_MS) {
-      // Cache hit - return cached result without logging
-      return cached.result;
-    }
 
     const write = this.agentWrites.get(normalizedPath);
 
     if (!write) {
-      // No agent write for this path - cache the null result
-      this.attributionCache.set(cacheKey, { result: null, timestamp: now });
       return null;
     }
 
@@ -506,15 +449,11 @@ export class AttributionEngine {
         contentHash,
       });
 
-      // Cache the positive result
-      this.attributionCache.set(cacheKey, { result: write, timestamp: now });
       return write;
     }
 
-    // Content doesn't match - cache the negative result
-    this.attributionCache.set(cacheKey, { result: null, timestamp: now });
-
     // Log mismatch for debugging (only when there was a potential match)
+    const now = Date.now();
     const timeSinceWrite = now - write.timestamp;
     logger.debug('[AttributionEngine] Content hash mismatch for agent write', {
       filePath: normalizedPath,
@@ -897,7 +836,6 @@ export class AttributionEngine {
 
     this.agentWrites.clear();
     this.loadedWorkspaces.clear();
-    this.attributionCache.clear();
   }
 }
 

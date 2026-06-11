@@ -1,5 +1,6 @@
 <script lang="ts">
   import { logger } from '../../shared/logger';
+  import { invoke } from '$shared/generated/ipc-client';
 
   import { page } from '$app/state';
   import {
@@ -223,7 +224,7 @@
     // Get app version from Electron
     if (window.electronAPI) {
       try {
-        const result = await window.electronAPI.invoke('app:version', undefined);
+        const result = await invoke<any>('app:version', undefined);
         appVersion = result?.data || 'unknown';
       } catch {
         appVersion = 'unknown';
@@ -728,9 +729,11 @@
               flashCopied(anchor);
             } else {
               try {
-                await window.electronAPI?.invoke('shell:openExternal', {
-                  url: 'mailto:intentfeedback@augmentcode.com',
-                });
+                if (typeof window !== 'undefined' && window.electronAPI) {
+                  await invoke('shell:openExternal', {
+                    url: 'mailto:intentfeedback@augmentcode.com',
+                  });
+                }
               } catch {
                 // Fallback: copy to clipboard if mailto fails
                 await navigator.clipboard.writeText('intentfeedback@augmentcode.com');

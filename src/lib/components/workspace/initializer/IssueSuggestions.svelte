@@ -2,6 +2,7 @@
   import type { LinearIssueResult } from '$features/linear-auth/renderer/linear-auth.client';
   import type { SentryIssueResult } from '$store/renderer/slices/sentry-auth/sentry-auth-types';
   import { createLogger } from '$lib/utils/client-logger';
+  import { invoke } from '$shared/generated/ipc-client';
 
   const preloadLogger = createLogger('IssueSuggestions:preload');
 
@@ -663,7 +664,7 @@
 
         try {
           // Use search API with is:issue filter to get only actual issues (not PRs)
-          const response = await window.electronAPI.invoke('git-tracking:search-github-issues', {
+          const response = await invoke<any>('git-tracking:search-github-issues', {
             owner: repositoryOwner,
             repo: repositoryName,
             options: { state: 'open', per_page: 20, filter: 'all' },
@@ -728,7 +729,7 @@
     owner: string,
     repo: string,
   ): Promise<GitHubPRLocal[]> {
-    const response = await window.electronAPI.invoke('git-tracking:search-pull-requests', {
+    const response = await invoke<any>('git-tracking:search-pull-requests', {
       owner,
       repo,
       options: { state: 'open', per_page: 50, filter },
@@ -936,7 +937,7 @@
 
     if (!sourceBranch && typeof window !== 'undefined' && window.electronAPI) {
       try {
-        const response = await window.electronAPI.invoke('git-tracking:get-pull-request', {
+        const response = await invoke<any>('git-tracking:get-pull-request', {
           owner: pr.owner,
           repo: pr.repo,
           number: pr.number,

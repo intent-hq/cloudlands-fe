@@ -6,7 +6,12 @@ import {
   it,
   vi,
 } from "vitest";
-import { runSaga } from "redux-saga";
+import {
+  channel,
+  runSaga,
+  type Task,
+} from "redux-saga";
+import type { SagaGenerator } from "typed-redux-saga";
 
 vi.mock(
   "typed-redux-saga",
@@ -31,9 +36,30 @@ vi.mock(
   async () => await import("$store/renderer/utils/test-helpers/electron-bridge-mock"),
 );
 
+const { selectorChannelRef } = vi.hoisted(() => ({
+  selectorChannelRef: { current: null as any },
+}));
+
+vi.mock("ag-redux-toolkit/saga", async () => {
+  const sagaEffects = await vi.importActual<typeof import("redux-saga/effects")>(
+    "redux-saga/effects",
+  );
+
+  return {
+    takeLatestFromSelector: function* (_selector: any, worker: any): SagaGenerator<Task> {
+      if (!selectorChannelRef.current) {
+        throw new Error("Test selector channel was not initialized");
+      }
+
+      return yield sagaEffects.takeLatest(selectorChannelRef.current, worker);
+    },
+  };
+});
+
 import { invoke } from "$lib/electron-bridge";
 import { WEBSOCKET_API_CHANNELS } from "$shared/ipc/channels";
 import {
+  discoveryCountdownTickerSaga,
   handleDiscoveryAutoDisabled,
   handleLoadWebSocketApiStatus,
   handleRegenerateWebSocketApiToken,
@@ -58,6 +84,11 @@ const mockInvoke = vi.mocked(invoke);
 
 type DispatchedAction = { type: string; payload?: unknown };
 
+type SelectorPayload = {
+  payload: number | null;
+  prevPayload?: number | null;
+};
+
 async function runWebSocketSaga(
   saga: (...args: any[]) => Generator,
   args: any[] = [],
@@ -77,6 +108,39 @@ async function runWebSocketSaga(
   return dispatched;
 }
 
+function startDiscoveryCountdownTickerSaga(state = initialState): {
+  dispatched: DispatchedAction[];
+  emit: (payload: number | null, prevPayload?: number | null) => void;
+  setState: (nextState: typeof initialState) => void;
+  stop: () => void;
+} {
+  const dispatched: DispatchedAction[] = [];
+  const selectorChannel = channel<SelectorPayload>();
+  const stateRef = { current: { websocketApi: state } };
+  selectorChannelRef.current = selectorChannel;
+
+  const task = runSaga(
+    {
+      dispatch: (action: DispatchedAction) => dispatched.push(action),
+      getState: () => stateRef.current,
+    },
+    discoveryCountdownTickerSaga,
+  );
+
+  return {
+    dispatched,
+    emit: (payload, prevPayload) => selectorChannel.put({ payload, prevPayload }),
+    setState: (nextState) => {
+      stateRef.current = { websocketApi: nextState };
+    },
+    stop: () => {
+      selectorChannel.close();
+      task.cancel();
+      selectorChannelRef.current = null;
+    },
+  };
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(1000);
@@ -84,7 +148,114 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  selectorChannelRef.current?.close?.();
+  selectorChannelRef.current = null;
   vi.useRealTimers();
+});
+
+describe("discoveryCountdownTickerSaga", () => {
+  it("does not tick while active discovery expiry is null", async () => {
+    const ticker = startDiscoveryCountdownTickerSaga();
+    await vi.advanceTimersByTimeAsync(0);
+
+    ticker.emit(null);
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(ticker.dispatched).toEqual([]);
+    ticker.stop();
+  });
+
+  it("ticks every second while discovery is active", async () => {
+    const ticker = startDiscoveryCountdownTickerSaga({
+      ...initialState,
+      discoveryEnabled: true,
+      discoveryExpiresAt: 5000,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    ticker.emit(5000);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(ticker.dispatched).toContainEqual(
+      setWebSocketApiDiscoveryCountdownNow(1000),
+    );
+    expect(ticker.dispatched).toContainEqual(
+      setWebSocketApiDiscoveryCountdownNow(2000),
+    );
+    ticker.stop();
+  });
+
+  it("auto-disables discovery when the active expiry is reached", async () => {
+    const ticker = startDiscoveryCountdownTickerSaga({
+      ...initialState,
+      discoveryEnabled: true,
+      discoveryExpiresAt: 2500,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    ticker.emit(2500);
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(ticker.dispatched).toContainEqual(
+      setWebSocketApiDiscoveryCountdownNow(1000),
+    );
+    expect(ticker.dispatched).toContainEqual(
+      setWebSocketApiDiscoveryCountdownNow(2000),
+    );
+    expect(ticker.dispatched).toContainEqual(webSocketApiDiscoveryAutoDisabled());
+    ticker.stop();
+  });
+
+  it("cancels active ticking and clears countdownNow when discovery turns inactive", async () => {
+    const ticker = startDiscoveryCountdownTickerSaga({
+      ...initialState,
+      discoveryEnabled: true,
+      discoveryExpiresAt: 5000,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    ticker.emit(5000);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    ticker.setState({
+      ...initialState,
+      discoveryCountdownNow: 2000,
+    });
+    ticker.emit(null, 5000);
+    await vi.advanceTimersByTimeAsync(4000);
+
+    expect(ticker.dispatched).toContainEqual(
+      setWebSocketApiDiscoveryCountdownNow(null),
+    );
+    expect(ticker.dispatched).not.toContainEqual(webSocketApiDiscoveryAutoDisabled());
+    expect(
+      ticker.dispatched.filter(
+        (action) => action.type === setWebSocketApiDiscoveryCountdownNow.type,
+      ),
+    ).toEqual([
+      setWebSocketApiDiscoveryCountdownNow(1000),
+      setWebSocketApiDiscoveryCountdownNow(2000),
+      setWebSocketApiDiscoveryCountdownNow(null),
+    ]);
+    ticker.stop();
+  });
+
+  it("clears stale countdownNow when discovery is inactive", async () => {
+    const ticker = startDiscoveryCountdownTickerSaga({
+      ...initialState,
+      discoveryCountdownNow: 1000,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    ticker.emit(null);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(ticker.dispatched).toEqual([
+      setWebSocketApiDiscoveryCountdownNow(null),
+    ]);
+    ticker.stop();
+  });
 });
 
 describe("handleLoadWebSocketApiStatus", () => {

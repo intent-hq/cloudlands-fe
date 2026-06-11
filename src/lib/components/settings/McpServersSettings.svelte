@@ -1,5 +1,6 @@
 <script lang="ts">
   import { logger } from '../../../shared/logger';
+  import { invoke } from '$shared/generated/ipc-client';
   import { onMount } from 'svelte';
   import type { McpServerConfig, McpServerWithStatus, McpServerFormState } from './mcp/types';
   import { serverToFormState } from './mcp/types';
@@ -105,7 +106,7 @@
   async function loadSettingsFile() {
     if (!window.electronAPI) return;
     try {
-      const contentResult = await window.electronAPI.invoke(
+      const contentResult = await invoke<any>(
         'user-mcp:get-settings-file',
         undefined,
       );
@@ -115,7 +116,7 @@
         userMcpSettingsContent = JSON.stringify({ mcpServers: {} }, null, 2);
       }
 
-      const pathResult = await window.electronAPI.invoke('user-mcp:get-settings-path', undefined);
+      const pathResult = await invoke<any>('user-mcp:get-settings-path', undefined);
       if (pathResult?.success) {
         userMcpSettingsPath = pathResult.data;
       }
@@ -157,7 +158,7 @@
     isOpeningDiagnosticTerminal = true;
 
     try {
-      const result = await window.electronAPI.invoke('system:execute-command', {
+      const result = await invoke<any>('system:execute-command', {
         command:
           'osascript -e \'tell application "Terminal" to activate\' -e \'tell application "Terminal" to do script "auggie mcp list"\'',
       });
@@ -251,10 +252,13 @@
       });
 
       try {
-        const result = await window.electronAPI?.invoke('user-mcp:initiate-oauth', {
-          name: server.name,
-          url: server.url,
-        });
+        const result =
+          typeof window !== 'undefined' && window.electronAPI
+            ? await invoke<any>('user-mcp:initiate-oauth', {
+              name: server.name,
+              url: server.url,
+            })
+            : undefined;
 
         if (result?.success) {
           toast.success('Authentication successful', {
@@ -409,7 +413,7 @@
     userMcpSaveError = '';
 
     try {
-      const result = await window.electronAPI.invoke('user-mcp:write-settings-file', {
+      const result = await invoke<any>('user-mcp:write-settings-file', {
         content: userMcpSettingsContent,
       });
       if (result?.success) {

@@ -1,12 +1,22 @@
 import { invoke } from '$lib/electron-bridge';
-import { takeEveryFromListenSync } from '$store/renderer/utils/ipc-channel';
 import {
+  HIGH_VOLUME_IPC_BUFFER_LIMIT,
+  takeEveryFromListenSync,
+} from '$store/renderer/utils/ipc-channel';
+import type { WorkspaceEvent } from '$features/events/types';
+import { buffers } from 'redux-saga';
+import {
+  actionChannel,
   call,
+  delay,
+  flush,
   fork,
   put,
+  take,
   takeEvery,
 } from 'typed-redux-saga';
 import {
+  bulkEventsReceived,
   eventReceived,
   eventsCleared,
   eventsLoaded,
@@ -43,7 +53,13 @@ interface EventsQueryResponse {
 // ---------------------------------------------------------------------------
 
 const DEDUP_MAX = 200;
+const EVENT_BATCH_FLUSH_INTERVAL_MS = 1_000;
+export const EVENT_BATCH_ACTION_BUFFER_LIMIT = 1_000;
+export const EVENTS_NEW_IPC_BUFFER_LIMIT = HIGH_VOLUME_IPC_BUFFER_LIMIT;
 const recentEventIds = new Set<string>();
+
+type PendingEventsByWorkspace = Record<string, WorkspaceEvent[]>;
+type EventReceivedAction = ReturnType<typeof eventReceived>;
 
 function isDuplicate(eventId: string): boolean {
   if (recentEventIds.has(eventId)) return true;
@@ -69,6 +85,13 @@ export function* watchEventsNewSaga() {
     if (!event) return;
     if (isDuplicate(event.id)) return;
     yield* put(eventReceived(data.workspaceId, event));
+  }, {
+    bufferPolicy: {
+      kind: 'sliding',
+      limit: EVENTS_NEW_IPC_BUFFER_LIMIT,
+      rationale:
+        'events:new is a high-volume audit stream; downstream storage is already bounded/batched and can load recent events again if pathological storms drop oldest queued IPC payloads.',
+    },
   });
 }
 
@@ -113,6 +136,42 @@ export function* watchLoadEventsRequestedSaga() {
 }
 
 // ---------------------------------------------------------------------------
+// Batched reducer storage
+// ---------------------------------------------------------------------------
+
+export function* watchBatchedEventStorageSaga() {
+  const eventActions = yield* actionChannel<EventReceivedAction>(
+    eventReceived,
+    buffers.sliding<EventReceivedAction>(EVENT_BATCH_ACTION_BUFFER_LIMIT),
+  );
+  try {
+    while (true) {
+      const firstAction = yield* take(eventActions);
+      yield* delay(EVENT_BATCH_FLUSH_INTERVAL_MS);
+      const flushedActions = yield* flush(eventActions);
+      const actions = [firstAction, ...flushedActions];
+
+      const pendingByWorkspace: PendingEventsByWorkspace = {};
+
+      for (const action of actions) {
+        const [workspaceId, event] = action.payload;
+        pendingByWorkspace[workspaceId] = [
+          ...(pendingByWorkspace[workspaceId] ?? []),
+          event,
+        ];
+      }
+
+      for (const [workspaceId, events] of Object.entries(pendingByWorkspace)) {
+        if (events.length === 0) continue;
+        yield* put(bulkEventsReceived(workspaceId, events));
+      }
+    }
+  } finally {
+    eventActions.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Workspace mount handler — load events when workspace mounts
 // ---------------------------------------------------------------------------
 
@@ -130,5 +189,8 @@ export function* workspaceEventsSaga() {
   yield* fork(watchEventsNewSaga);
   yield* fork(watchEventsClearedSaga);
   yield* fork(watchLoadEventsRequestedSaga);
+  // Canonical storage watcher for eventReceived; other sagas may still use
+  // eventReceived as an individual fan-out action for side effects.
+  yield* fork(watchBatchedEventStorageSaga);
   yield* takeEvery(workspaceMounted, handleWorkspaceMounted);
 }

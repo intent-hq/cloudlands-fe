@@ -4,6 +4,7 @@
    * Shows the git workflow as a vertical timeline: Unstaged → Staged → Commits → PRs
    */
   import { backgroundGitActionsService } from '$features/accept-changes/background-git-actions.service';
+  import { invoke } from '$shared/generated/ipc-client';
 
   import { recomputeAgentLocks } from '$store/renderer/slices/agent-lock/agent-lock-slice';
   import {
@@ -879,7 +880,7 @@
       const rebaseCommand = `git fetch origin ${targetBranch || trunkBranch} && git rebase origin/${targetBranch || trunkBranch}`;
 
       // Create terminal with the rebase command
-      const result = await window.electronAPI.invoke('terminal:createWithCommand', {
+      const result = await invoke<any>('terminal:createWithCommand', {
         workspaceId,
         command: rebaseCommand,
         cwd: worktreePath,

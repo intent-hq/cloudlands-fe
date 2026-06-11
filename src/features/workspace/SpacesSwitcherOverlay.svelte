@@ -49,6 +49,11 @@
   import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
   import WorkspacePhaseIndicator from '$lib/components/workspace/WorkspacePhaseIndicator.svelte';
   import { deriveWorkspacePhase } from '$lib/components/workspace/workspace-phase';
+  import {
+  selectWorkspaceTaskProgress,
+  selectWorkspaceTasksByWorkspaceId,
+} from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
+  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
   import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
   import { getWorkspaceActivityDisplayTime } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
@@ -59,6 +64,7 @@
   const currentWorkspaceId = selectActiveWorkspaceId();
   const unreadAgentIds$ = selectUnreadAgentIds();
   const allPermissionRequests = selectPermissionRequests();
+  const workspaceTasksByWorkspaceId$ = selectWorkspaceTasksByWorkspaceId();
   const isOpen = $derived(!$switcherState.selectionHandled);
   const orderedWorkspaces = $derived.by(() => {
     const byId = new Map($workspaces.map((workspace) => [workspace.id, workspace]));
@@ -93,6 +99,14 @@
     });
   });
 
+  // Load canonical tasks for listed workspaces while open (no-op once initialized).
+  $effect(() => {
+    if (!isOpen) return;
+    for (const workspace of orderedWorkspaces) {
+      appStore.dispatch(ensureWorkspaceTasksLoaded(String(workspace.id)));
+    }
+  });
+
   // Agent display info
   interface AgentDisplayInfo {
     id: string;
@@ -120,14 +134,19 @@
 
   // Derive workspace phase info (matches WorkspaceListItem / WorkspaceTableRow logic)
   function getPhaseInfo(ws: Workspace, agents: AgentDisplayInfo[]) {
+    // Reference task map for reactivity when canonical tasks load
+    void $workspaceTasksByWorkspaceId$;
     const hasActiveAgents = agents.some((a) => a.isActive);
-    return deriveWorkspacePhase(ws, { hasActiveAgents });
+    const taskProgress = selectWorkspaceTaskProgress.select(appStore.state, ws.id);
+    return deriveWorkspacePhase(ws, { hasActiveAgents, taskProgress });
   }
 
   function getBuildProgress(ws: Workspace): number {
-    const t = ws.taskStats?.total ?? 0;
-    if (t === 0) return 0;
-    return (ws.taskStats?.completed ?? 0) / t;
+    // Reference task map for reactivity when canonical tasks load
+    void $workspaceTasksByWorkspaceId$;
+    const { total, completed } = selectWorkspaceTaskProgress.select(appStore.state, ws.id);
+    if (total === 0) return 0;
+    return completed / total;
   }
 
   // Get agent display info for a workspace
@@ -136,26 +155,26 @@
     void activeStreamsVersion;
     void $unreadAgentIds$;
     const reduxState = appStore.state;
-    const summary = ws.agentSummary;
-    const summaryAgents = summary?.agents || [];
-    if (summaryAgents.length === 0) return [];
+    const memberAgentIds = ws.agentSummary?.agentIds ?? [];
+    if (memberAgentIds.length === 0) return [];
 
     const unreadAgentIdsForWs = new Set(selectUnreadAgentIdsForWorkspace.select(reduxState, ws.id));
 
-    return summaryAgents
-      .map((agent) => {
-        const loadedSession = selectAgentSession.select(reduxState, agent.id);
+    return memberAgentIds
+      .map((agentId) => {
+        const loadedSession = selectAgentSession.select(reduxState, agentId);
         const isWaiting = loadedSession
-          ? selectAgentIsWaiting.select(reduxState, agent.id)
-          : agent.status === 'waiting';
+          ? selectAgentIsWaiting.select(reduxState, agentId)
+          : false;
         const isResponding = loadedSession
-          ? selectAgentIsResponding.select(reduxState, agent.id)
-          : activeStreamsTracker.isAgentStreaming(agent.id) || agent.status === 'busy' || agent.status === 'processing';
-        const isUnread = unreadAgentIdsForWs.has(agent.id);
+          ? selectAgentIsResponding.select(reduxState, agentId)
+          : activeStreamsTracker.isAgentStreaming(agentId);
+        const isUnread = unreadAgentIdsForWs.has(agentId);
+        const sessionStatus = loadedSession?.status as string | undefined;
 
-        const hasPermissionRequest = $allPermissionRequests.some((r) => r.sessionId === agent.id);
+        const hasPermissionRequest = $allPermissionRequests.some((r) => r.sessionId === agentId);
         let state: AvatarState = 'idle';
-        if (agent.status === 'error' || agent.status === 'failed') {
+        if (sessionStatus === 'error' || sessionStatus === 'failed') {
           state = 'failed';
         } else if (hasPermissionRequest) {
           state = 'needs-permission';
@@ -166,9 +185,9 @@
         }
 
         return {
-          id: agent.id,
+          id: agentId,
           state,
-          specialist: agent.specialist,
+          specialist: (loadedSession?.metadata?.specialist ?? null) as BuiltinSpecialistId | null,
           isActive: isResponding && !isWaiting,
           isUnread,
         };

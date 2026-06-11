@@ -449,7 +449,7 @@
         return;
       }
       try {
-        const result = await window.electronAPI.invoke('file:getDirectoryStatus', { path });
+        const result = await invoke<any>('file:getDirectoryStatus', { path });
         if (result.success && result.data) {
           newRepoPathStatus = result.data;
         } else {
@@ -721,7 +721,7 @@
     if (typeof window === 'undefined' || !window.electronAPI) return;
 
     try {
-      const result = await window.electronAPI.invoke('file:getDirectoryStatus', { path });
+      const result = await invoke<any>('file:getDirectoryStatus', { path });
       if (result.success && result.data) {
         directoryStatus = result.data;
         // Determine if this is a new repo scenario
@@ -881,7 +881,7 @@
     try {
       // Check if we're in Electron environment
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await window.electronAPI.invoke('dialog:open', {
+        const result = await invoke<any>('dialog:open', {
           directory: true,
           title: 'Select Repository Folder',
           createDirectory: true, // Allow creating new folders in the dialog (macOS)
@@ -988,7 +988,7 @@
     isDialogOpen = true;
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await window.electronAPI.invoke('dialog:open', {
+        const result = await invoke<any>('dialog:open', {
           directory: true,
           title: 'Select Parent Folder for New Repository',
           buttonLabel: 'Select',
@@ -1056,7 +1056,7 @@
     isDialogOpen = true;
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await window.electronAPI.invoke('dialog:open', {
+        const result = await invoke<any>('dialog:open', {
           directory: true,
           title: 'Select Folder to Clone Repository Into',
           buttonLabel: 'Select',

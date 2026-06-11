@@ -887,16 +887,23 @@ export class StreamManager extends EventEmitter implements IDisposable {
       agentId: session.config.agentId,
     });
 
-    // Mark for cleanup but don't remove immediately (for testing/debugging)
-    // The session will be cleaned up by the periodic cleanup or on destroy
+    // Mark for cleanup and schedule prompt resource release. Relying only on the
+    // periodic cleanup interval would retain callbacks, registered listener
+    // cleanups, timers, and session data long after stop/error.
     session.markedForCleanup = true;
+    const cleanupTimer = setTimeout(() => {
+      if (this.sessions.get(session.config.agentId) === session) {
+        this.cleanupSession(session.config.agentId);
+      }
+    }, 1000);
+    session.timers.add(cleanupTimer);
   }
 
   /**
    * Clean up a session by stream ID
    */
   public cleanupSession(id: string): void {
-    const session = this.sessions.get(id);
+    const session = this.getSession(id);
     if (!session) return;
 
     logger.info('Cleaning up stream session', {
@@ -986,21 +993,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
     // Mark as complete and clean up
     session.isComplete = true;
     session.isActive = false;
-
-    // Clean up timers
-    for (const timer of session.timers) {
-      clearTimeout(timer);
-    }
-    session.timers.clear();
-
-    // Clean up listeners
-    session.listeners.clear();
-
-    // Remove from sessions (keyed by agentId)
-    this.sessions.delete(session.config.agentId);
-
-    // Remove callbacks (keyed by agentId)
-    this.callbacks.delete(session.config.agentId);
+    this.cleanupSession(session.config.agentId);
   }
 
   /**

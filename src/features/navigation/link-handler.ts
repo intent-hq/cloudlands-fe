@@ -24,6 +24,7 @@ import {
 } from '$shared/utils/link-helpers';
 import { openTerminalTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { store as appStore } from '$store/renderer/store';
+import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 
 const logger = new Logger('LinkHandler');
 
@@ -174,7 +175,7 @@ async function openInBrowserPanel(url: string, workspaceId: WorkspaceId): Promis
 async function openInExternalBrowser(url: string): Promise<boolean> {
   try {
     if (typeof window !== 'undefined' && window.electronAPI) {
-      await window.electronAPI.invoke('shell:openExternal', { url });
+      await invokeIpc('shell:openExternal', { url });
       logger.debug('Opened URL in external browser', { url });
       return true;
     }
@@ -196,7 +197,7 @@ async function openInExternalEditor(url: string): Promise<boolean> {
     const filePath = url.replace('file://', '');
 
     if (typeof window !== 'undefined' && window.electronAPI) {
-      await window.electronAPI.invoke('shell:openExternal', { url: `vscode://file/${filePath}` });
+      await invokeIpc('shell:openExternal', { url: `vscode://file/${filePath}` });
       logger.debug('Opened file in external editor', { filePath });
       return true;
     }

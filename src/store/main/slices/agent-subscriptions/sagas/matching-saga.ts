@@ -654,11 +654,8 @@ export function* matchingSaga() {
     yield* takeEvery(workspaceEventAccepted, handleMatchEvent);
     yield* takeEvery(addSubscription, handleNewSubscriptionCatchUp);
 
-    // Block indefinitely so the crash-recovery wrapper in
-    // supervisedMatchingSaga only restarts when this saga actually throws.
-    // Without this, matchingSaga returns immediately after the non-blocking
-    // takeEvery registrations, causing the while(true) wrapper to re-register
-    // duplicate watchers every ~1 second.
+    // Block indefinitely so this startup saga remains the stable owner of its
+    // watcher registrations after Store.runSaga starts it directly.
     yield* take("@@matching-saga/NEVER_RESOLVE");
   } finally {
     if (yield* cancelled()) {

@@ -295,7 +295,6 @@
       createdAt: longTitleRegressionUpdatedAt,
       lastActivity: longTitleRegressionUpdatedAt,
       status: WorkspaceStatusEnum.Active,
-      taskStats: { total: 3, completed: 1, inProgress: 1 },
       timeline: [],
       updatedAt: longTitleRegressionUpdatedAt,
       ...overrides,

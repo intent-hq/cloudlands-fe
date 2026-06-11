@@ -2,6 +2,7 @@
 // This provides a compatibility layer for the Tauri API
 
 import type { DynamicElectronEventName, ElectronEventName } from '$shared/ipc-registry';
+import { invoke as ipcInvoke } from '$shared/generated/ipc-client';
 import { Logger } from '$shared/logger';
 
 const logger = new Logger('ElectronBridge');
@@ -105,7 +106,7 @@ export function isElectron(): boolean {
  */
 export async function invoke<T>(channel: string, data?: any): Promise<T> {
   if (isElectron()) {
-    return await (window as any).electronAPI.invoke(channel, data);
+    return await ipcInvoke<T>(channel, data);
   }
   throw new Error('Electron IPC not available - are you running in the Electron app?');
 }
@@ -162,8 +163,7 @@ export async function invokeWithTimeout<T>(
       }
     }, timeoutMs);
 
-    (window as any).electronAPI
-      .invoke(channel, data)
+    ipcInvoke<T>(channel, data)
       .then((result: T) => {
         if (!settled) {
           settled = true;
@@ -313,7 +313,7 @@ export const dialog = {
   }): Promise<string | string[] | null> {
     if (typeof window !== 'undefined' && window.electronAPI) {
       logger.debug('Invoking dialog:open with options', { hasOptions: !!options });
-      const response = await window.electronAPI.invoke('dialog:open', options || {});
+      const response = await invoke<any>('dialog:open', options || {});
       logger.debug('Response received from dialog:open');
       // Handle both wrapped response format and raw file paths
       if (response && typeof response === 'object' && 'data' in response) {
@@ -346,7 +346,7 @@ export const dialog = {
     title?: string;
   }): Promise<string | null> {
     if (typeof window !== 'undefined' && window.electronAPI) {
-      const response = await window.electronAPI.invoke('dialog:save', options || {});
+      const response = await invoke<any>('dialog:save', options || {});
       // Handle both wrapped response format and raw file path
       if (response && typeof response === 'object' && 'data' in response) {
         // Response is wrapped: { success: true, data: { canceled, filePath } }
@@ -370,7 +370,7 @@ export const dialog = {
     },
   ): Promise<number> {
     if (typeof window !== 'undefined' && window.electronAPI) {
-      return await window.electronAPI.invoke('dialog:message', {
+      return await invoke<number>('dialog:message', {
         message,
         ...options,
       });
@@ -383,7 +383,7 @@ export const dialog = {
 export const shell = {
   async open(url: string): Promise<void> {
     if (typeof window !== 'undefined' && window.electronAPI) {
-      await window.electronAPI.invoke('shell:openExternal', { url });
+      await invoke('shell:openExternal', { url });
     }
   },
 };

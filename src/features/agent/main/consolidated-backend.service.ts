@@ -138,12 +138,15 @@ interface UnifiedSessionRecord {
   sessionId: AgentId;
   workspaceId: WorkspaceId;
   session: AgentSession;
+  messagesEvicted?: boolean;
   streamBuffer: string[];
   messageCount: number;
   lastActivity: Date;
   errors: Error[];
   provider?: any; // BaseAgentProvider when available
 }
+
+const MESSAGE_PAYLOAD_EVICTION_IDLE_THRESHOLD_MS = 2 * 60 * 1000;
 
 /**
  * Consolidated backend service - single source of truth for agent operations.
@@ -270,7 +273,11 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     try {
       const id = createAgentId(agentId);
       const record = this.sessions.get(id);
-      return record?.session || null;
+      if (!record) return null;
+      if (record.messagesEvicted) {
+        return await this.restoreEvictedMessagePayload(record);
+      }
+      return record.session;
     } catch (error) {
       logger.error('[getAgent] Error getting agent', error);
       return null;
@@ -298,7 +305,9 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
       // Check if already in memory
       if (this.sessions.has(agentId)) {
         const existingRecord = this.sessions.get(agentId)!;
-        const existingMessages = existingRecord.session.messages || [];
+        const existingMessages = existingRecord.messagesEvicted
+          ? []
+          : existingRecord.session.messages || [];
         const incomingMessages = agentSession.messages || [];
 
         // If the incoming session has more messages (e.g., frontend saved a user message
@@ -311,7 +320,11 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         // 5. skipUserMessage=true prevented re-adding, so backend session never got the user message
         // 6. onComplete saved backend session (missing user message) → overwrote frontend's save
         if (incomingMessages.length > existingMessages.length) {
-          existingRecord.session.messages = [...incomingMessages];
+          existingRecord.session = {
+            ...existingRecord.session,
+            messages: [...incomingMessages],
+          };
+          existingRecord.messagesEvicted = false;
           existingRecord.messageCount = incomingMessages.length;
           existingRecord.lastActivity = new Date();
           existingRecord.session.updatedAt = new Date().toISOString();
@@ -938,6 +951,7 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
       }
 
       logger.info('[saveAgent] Agent saved', { agentId });
+      await this.evictMessagePayloadIfSafe(id, record, 'post-save');
       return { success: true };
     } catch (error) {
       logger.error('[saveAgent] Error saving agent', error);
@@ -1014,6 +1028,7 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
 
       // Store session
       this.sessions.set(id, record);
+      await this.evictMessagePayloadIfSafe(id, record, 'load-agent');
 
       // Register in session registry
       // Session registered in state
@@ -1122,6 +1137,7 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
             };
 
             this.sessions.set(session.id, record);
+            await this.evictMessagePayloadIfSafe(session.id, record, 'load-persisted-sessions');
             loadedCount++;
           }
         } catch (error) {
@@ -1140,6 +1156,172 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     } catch (error) {
       logger.error('[loadPersistedSessions] Failed to load persisted sessions', { error });
       return 0;
+    }
+  }
+
+  private hasStreamingMessage(session: AgentSession | undefined): boolean {
+    if (!session?.messages) return false;
+    for (const message of session.messages) {
+      if ((message as any)?.isStreaming === true) return true;
+    }
+    return false;
+  }
+
+  private hasActiveStream(agentId: AgentId): boolean {
+    try {
+      const isActive = (this.streaming as unknown as { isActive?: (id: string) => boolean })
+        .isActive;
+      return (
+        typeof isActive === 'function' && isActive.call(this.streaming, agentId.toString()) === true
+      );
+    } catch {
+      return true;
+    }
+  }
+
+  private isSessionActiveOrStreaming(agentId: AgentId, record: UnifiedSessionRecord): boolean {
+    const status = record.session.status;
+    return (
+      status === AgentStatus.Active ||
+      status === AgentStatus.Processing ||
+      status === AgentStatus.Pending ||
+      record.session.isStreaming === true ||
+      record.session.isProcessing === true ||
+      record.session.isResponding === true ||
+      (record.session.queuedMessages?.length ?? 0) > 0 ||
+      this.hasStreamingMessage(record.session) ||
+      this.hasActiveStream(agentId)
+    );
+  }
+
+  private isTerminalStatus(status: AgentStatus): boolean {
+    return (
+      status === AgentStatus.Completed ||
+      status === AgentStatus.Error ||
+      status === AgentStatus.Deleted
+    );
+  }
+
+  private isIdlePayloadEvictionStatus(status: AgentStatus): boolean {
+    return (
+      status === AgentStatus.Idle || status === AgentStatus.RuntimeIdle || String(status) === 'idle'
+    );
+  }
+
+  private async hasActiveSubscriptions(record: UnifiedSessionRecord): Promise<boolean> {
+    try {
+      const [{ getMainState }, { selectAgentSubscriptions }] = await Promise.all([
+        import('$store/main/redux-store-bridge'),
+        import('$store/main/slices/agent-subscriptions/agent-subscriptions-selectors'),
+      ]);
+      const subscriptions = selectAgentSubscriptions.select(
+        getMainState(),
+        record.workspaceId.toString(),
+        record.agentId.toString(),
+      );
+      return subscriptions.length > 0;
+    } catch (error) {
+      logger.warn('[session-payload-eviction] Retaining payload; subscription check failed', {
+        agentId: record.agentId.toString(),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return true;
+    }
+  }
+
+  private async canEvictMessagePayload(
+    agentId: AgentId,
+    record: UnifiedSessionRecord,
+  ): Promise<boolean> {
+    if (!this.config.persistenceEnabled || record.messagesEvicted) return false;
+    if ((record.session.messages?.length ?? 0) === 0) return false;
+    if (this.isSessionActiveOrStreaming(agentId, record)) return false;
+
+    const status = record.session.status;
+    const isTerminal = this.isTerminalStatus(status);
+    const isIdlePastThreshold =
+      this.isIdlePayloadEvictionStatus(status) &&
+      Date.now() - record.lastActivity.getTime() >= MESSAGE_PAYLOAD_EVICTION_IDLE_THRESHOLD_MS;
+
+    if (!isTerminal && !isIdlePastThreshold) return false;
+    if (await this.hasActiveSubscriptions(record)) return false;
+
+    return true;
+  }
+
+  private async canEvictRecordFromMemory(
+    agentId: AgentId,
+    record: UnifiedSessionRecord,
+  ): Promise<boolean> {
+    if (!this.config.persistenceEnabled) return false;
+    if (this.isSessionActiveOrStreaming(agentId, record)) return false;
+    if (await this.hasActiveSubscriptions(record)) return false;
+    return true;
+  }
+
+  private async evictMessagePayloadIfSafe(
+    agentId: AgentId,
+    record: UnifiedSessionRecord,
+    reason: string,
+  ): Promise<void> {
+    if (!(await this.canEvictMessagePayload(agentId, record))) return;
+
+    const messageCount = record.session.messages.length;
+    record.session = {
+      ...record.session,
+      messages: [],
+    };
+    record.messagesEvicted = true;
+    record.messageCount = Math.max(record.messageCount, messageCount);
+    record.streamBuffer = [];
+
+    logger.info('[session-payload-eviction] Evicted persisted session messages from memory', {
+      agentId: agentId.toString(),
+      status: record.session.status,
+      messageCount,
+      reason,
+    });
+  }
+
+  private async restoreEvictedMessagePayload(
+    record: UnifiedSessionRecord,
+  ): Promise<AgentSession | null> {
+    if (!record.messagesEvicted) return record.session;
+
+    try {
+      let result: { success: boolean; data?: AgentSession; error?: string };
+      if (isMainProcess()) {
+        const { agentPersistence } = await getNodeModules();
+        if (!agentPersistence) {
+          return record.session;
+        }
+        result = await agentPersistence.loadAgent(record.agentId, record.workspaceId);
+      } else {
+        const invoke = await getInvoke();
+        result = (await invoke(PERSISTENCE_CHANNELS.LOAD, {
+          agentId: record.agentId.toString(),
+        })) as { success: boolean; data?: AgentSession; error?: string };
+      }
+
+      if (!result.success || !result.data) {
+        logger.warn('[session-payload-eviction] Failed to restore evicted payload', {
+          agentId: record.agentId.toString(),
+          error: result.error,
+        });
+        return record.session;
+      }
+
+      record.session = result.data;
+      record.messagesEvicted = false;
+      record.messageCount = result.data.messages?.length ?? record.messageCount;
+      record.lastActivity = new Date();
+      return record.session;
+    } catch (error) {
+      logger.warn('[session-payload-eviction] Error restoring evicted payload', {
+        agentId: record.agentId.toString(),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return record.session;
     }
   }
 
@@ -1289,16 +1471,16 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         this.lastMemoryWarningTime = now;
         logger.warn('[checkHealth] Memory usage high, triggering cleanup', { memUsageMB });
       }
-      this.cleanupInactiveSessions();
+      void this.cleanupInactiveSessions();
     }
 
     // Proactively cleanup completed agents that have been idle for 10+ minutes
     // This prevents memory accumulation from delegation chains
-    this.cleanupCompletedAgents();
+    void this.cleanupCompletedAgents();
 
     // Enforce max sessions in memory (LRU eviction when over 80% capacity)
     if (this.sessions.size > this.config.maxConcurrentAgents * 0.8) {
-      this.evictLRUSessions();
+      void this.evictLRUSessions();
     }
   }
 
@@ -1306,7 +1488,7 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
    * Cleanup completed agents that have been idle for a short period.
    * More aggressive than cleanupInactiveSessions for completed agents.
    */
-  private cleanupCompletedAgents(): void {
+  private async cleanupCompletedAgents(): Promise<void> {
     const now = Date.now();
     const completedIdleThreshold = 10 * 60 * 1000; // 10 minutes for completed agents
 
@@ -1317,7 +1499,15 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
       const inactiveTime = now - record.lastActivity.getTime();
       const isTerminal = terminalStatuses.includes(record.session.status);
 
-      if (isTerminal && inactiveTime > completedIdleThreshold) {
+      if (isTerminal) {
+        await this.evictMessagePayloadIfSafe(agentId, record, 'completed-cleanup');
+      }
+
+      if (
+        isTerminal &&
+        inactiveTime > completedIdleThreshold &&
+        (await this.canEvictRecordFromMemory(agentId, record))
+      ) {
         logger.debug('[cleanupCompletedAgents] Evicting completed idle agent from memory', {
           agentId: agentId.toString(),
           status: record.session.status,
@@ -1332,7 +1522,7 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
    * Evict least recently used sessions when approaching capacity.
    * Prioritizes evicting completed/terminal agents first.
    */
-  private evictLRUSessions(): void {
+  private async evictLRUSessions(): Promise<void> {
     const targetSize = Math.floor(this.config.maxConcurrentAgents * 0.7); // Evict down to 70%
     const sessionsToEvict = this.sessions.size - targetSize;
 
@@ -1357,8 +1547,9 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     });
 
     let evicted = 0;
-    for (const [agentId] of sortedSessions) {
+    for (const [agentId, record] of sortedSessions) {
       if (evicted >= sessionsToEvict) break;
+      if (!(await this.canEvictRecordFromMemory(agentId, record))) continue;
       this.evictFromMemory(agentId.toString());
       evicted++;
     }
@@ -1374,14 +1565,20 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
    * This does NOT delete from persistence - agents can be reloaded from disk when needed.
    * This is a memory optimization, not a deletion operation.
    */
-  private cleanupInactiveSessions(): void {
+  private async cleanupInactiveSessions(): Promise<void> {
     const now = Date.now();
     const inactiveThreshold = 30 * 60 * 1000; // 30 minutes
 
     for (const [agentId, record] of this.sessions.entries()) {
       const inactiveTime = now - record.lastActivity.getTime();
 
-      if (inactiveTime > inactiveThreshold && record.session.status !== AgentStatus.Active) {
+      await this.evictMessagePayloadIfSafe(agentId, record, 'inactive-cleanup');
+
+      if (
+        inactiveTime > inactiveThreshold &&
+        record.session.status !== AgentStatus.Active &&
+        (await this.canEvictRecordFromMemory(agentId, record))
+      ) {
         logger.info(
           '[cleanupInactiveSessions] Evicting inactive session from memory (not deleting from disk)',
           {

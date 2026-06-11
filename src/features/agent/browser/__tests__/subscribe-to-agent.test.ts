@@ -19,7 +19,7 @@ import {
 } from 'redux';
 import {
   agentSessionReducer,
-  upsertSession,
+  bulkUpsertSessions,
   renameSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 
@@ -110,7 +110,7 @@ describe('subscribeToAgent (Redux-reactive)', () => {
 
   it('invokes the callback synchronously with the current value on subscribe', () => {
     const agent = makeAgent();
-    store.dispatch(upsertSession(agent));
+    store.dispatch(bulkUpsertSessions([agent], { preserveExplicitRuntimeFlags: false }));
 
     const cb = vi.fn();
     const unsubscribe = subscribeToAgent('agent-1', cb);
@@ -130,7 +130,7 @@ describe('subscribeToAgent (Redux-reactive)', () => {
   });
 
   it('fires callbacks when the agent-session reference changes via rename', () => {
-    store.dispatch(upsertSession(makeAgent()));
+    store.dispatch(bulkUpsertSessions([makeAgent()], { preserveExplicitRuntimeFlags: false }));
     const cb = vi.fn();
     const unsubscribe = subscribeToAgent('agent-1', cb);
     cb.mockClear();
@@ -143,7 +143,7 @@ describe('subscribeToAgent (Redux-reactive)', () => {
   });
 
   it('does not fire callbacks when an unrelated slice changes', () => {
-    store.dispatch(upsertSession(makeAgent()));
+    store.dispatch(bulkUpsertSessions([makeAgent()], { preserveExplicitRuntimeFlags: false }));
     const cb = vi.fn();
     const unsubscribe = subscribeToAgent('agent-1', cb);
     cb.mockClear();
@@ -156,7 +156,7 @@ describe('subscribeToAgent (Redux-reactive)', () => {
   });
 
   it('does not re-fire when the same session reference is seen twice', () => {
-    store.dispatch(upsertSession(makeAgent()));
+    store.dispatch(bulkUpsertSessions([makeAgent()], { preserveExplicitRuntimeFlags: false }));
     const cb = vi.fn();
     const unsubscribe = subscribeToAgent('agent-1', cb);
     cb.mockClear();
@@ -169,7 +169,7 @@ describe('subscribeToAgent (Redux-reactive)', () => {
   });
 
   it('unsubscribe removes the callback so later store changes do not fire it', () => {
-    store.dispatch(upsertSession(makeAgent()));
+    store.dispatch(bulkUpsertSessions([makeAgent()], { preserveExplicitRuntimeFlags: false }));
     const cb = vi.fn();
     const unsubscribe = subscribeToAgent('agent-1', cb);
     cb.mockClear();
@@ -205,7 +205,7 @@ describe('subscribeToAgent (Redux-reactive)', () => {
   });
 
   it('notifyAgentSubscribers forces a callback dispatch for the given agent id', () => {
-    store.dispatch(upsertSession(makeAgent()));
+    store.dispatch(bulkUpsertSessions([makeAgent()], { preserveExplicitRuntimeFlags: false }));
     const cb = vi.fn();
     const unsubscribe = subscribeToAgent('agent-1', cb);
     cb.mockClear();
@@ -218,7 +218,7 @@ describe('subscribeToAgent (Redux-reactive)', () => {
   });
 
   it('notifyAgentSubscribers keeps the shared listener quiet for the same snapshot', () => {
-    store.dispatch(upsertSession(makeAgent()));
+    store.dispatch(bulkUpsertSessions([makeAgent()], { preserveExplicitRuntimeFlags: false }));
     const cb = vi.fn();
     const unsubscribe = subscribeToAgent('agent-1', cb);
     cb.mockClear();

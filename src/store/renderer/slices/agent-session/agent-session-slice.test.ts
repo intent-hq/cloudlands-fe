@@ -16,7 +16,7 @@ import {
 import {
   agentSessionReducer,
   initialState,
-  upsertSession,
+  upsertSession as upsertSessionAction,
   removeSession,
   setSessionStreaming,
   addMessage,
@@ -132,6 +132,10 @@ function makeSession(
   };
 }
 
+function upsertSession(session: AgentSession) {
+  return bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false });
+}
+
 /**
  * Accepts a raw agent-session state shape whose sessions carry the same ordered
  * `messages: AgentMessage[]` storage used by the slice at runtime.
@@ -176,7 +180,14 @@ describe('agent-session-slice reducer', () => {
     expect(state).toEqual(initialState);
   });
 
-  describe('upsertSession', () => {
+  describe('upsertSession fan-out action', () => {
+    it('does not mutate reducer storage directly', () => {
+      const state = agentSessionReducer(initialState, upsertSessionAction(makeSession('a1', 'ws-1')));
+      expect(state).toBe(initialState);
+    });
+  });
+
+  describe('bulkUpsertSessions batched upsert storage semantics', () => {
     it('adds a new session by agent ID', () => {
       const session = makeSession('a1', 'ws-1');
       const state = agentSessionReducer(initialState, upsertSession(session));
@@ -866,6 +877,38 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].isStreaming).toBe(true);
       expect(state.byAgentId['a1'].isProcessing).toBe(true);
       expect(state.byAgentId['a1'].name).toBe('Loaded Agent');
+    });
+
+    it('lets batched upsert storage clear runtime flags with explicit false', () => {
+      let state = agentSessionReducer(initialState, chatSendStarted('a1', 'ws-1'));
+      expect(state.byAgentId['a1'].isStreaming).toBe(true);
+      expect(state.byAgentId['a1'].isProcessing).toBe(true);
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', {
+            isStreaming: false,
+            isProcessing: false,
+          }),
+        ], { preserveExplicitRuntimeFlags: false }),
+      );
+
+      expect(state.byAgentId['a1'].isStreaming).toBe(false);
+      expect(state.byAgentId['a1'].isProcessing).toBe(false);
+    });
+
+    it('applies same-agent batched upserts in original order', () => {
+      const state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', { name: 'First' }),
+          makeSession('a1', 'ws-1', { name: 'Second' }),
+        ], { preserveExplicitRuntimeFlags: false }),
+      );
+
+      expect(state.byAgentId['a1'].name).toBe('Second');
+      expect(state.agentIdsByWorkspace['ws-1']).toEqual(['a1']);
     });
 
     it('does NOT force flags true when existing session had them false', () => {
@@ -1641,7 +1684,7 @@ describe('upsertSession — preserves isProcessing/isStreaming from placeholder 
 
 describe('chatInitialized — does not override agent:idle cleanup', () => {
   it('does NOT re-set isStreaming=true when session is authoritatively idle', () => {
-    // Simulate the race condition:
+    // Simulate the late stale initialization condition:
     // 1. chatSendStarted sets isStreaming=true
     // 2. agent:idle event clears isStreaming and sets status='idle', stopReason='end_turn'
     // 3. chatInitialized arrives with stale isStreaming=true from saga

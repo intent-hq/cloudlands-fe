@@ -4,26 +4,14 @@ import {
   it,
 } from "vitest";
 import type { AgentSession } from "$shared/types";
-import type { InteractionEvent } from "$lib/components/agent-overview/types";
+import type { WorkspaceEvent } from "$features/events/types";
 import type { StoreState } from "../../types";
-import {
-  agentOverviewReducer,
-  initialState,
-  processWorkspaceEvents,
-  addRealtimeEvent,
-  clearAgentOverview,
-} from "./agent-overview-slice";
 import { selectGraphState } from "./agent-overview-selectors";
 
 const WS = "ws-test";
 
-function makeOverviewState(session: AgentSession): StoreState {
+function makeOverviewState(session: AgentSession, workspaceEvents: WorkspaceEvent[] = []): StoreState {
   return {
-    agentOverview: {
-      byWorkspaceId: {
-        [WS]: { events: [], currentTime: "2026-03-20T14:00:00.000Z", isLive: true },
-      },
-    },
     agentSessions: {
       byAgentId: {
         [session.id]: {
@@ -52,61 +40,54 @@ function makeOverviewState(session: AgentSession): StoreState {
     },
     changes: { byWorkspaceId: {}, fileListViewMode: "flat", mainPanelView: null, agentStats: {} },
     workspaceNotes: { byWorkspaceId: {} },
+    workspaceEvents: {
+      byWorkspaceId: workspaceEvents.length > 0
+        ? { [WS]: { events: workspaceEvents, loading: false } }
+        : {},
+    },
   } as unknown as StoreState;
 }
 
-describe("agentOverviewReducer", () => {
-  it("returns the initial state", () => {
-    expect(agentOverviewReducer(undefined, { type: "@@INIT" })).toEqual(initialState);
-  });
-
-  it("stores and sorts events via processWorkspaceEvents", () => {
-    const events: InteractionEvent[] = [
-      { type: "file-write", timestamp: "2026-03-20T13:00:00.000Z", agentId: "a1" },
-      { type: "file-read", timestamp: "2026-03-20T12:00:00.000Z", agentId: "a1" },
-    ];
-
-    const state = agentOverviewReducer(initialState, processWorkspaceEvents(WS, events));
-    const ws = state.byWorkspaceId[WS];
-
-    expect(ws.events).toHaveLength(2);
-    // Events should be sorted chronologically
-    expect(ws.events[0].timestamp).toBe("2026-03-20T12:00:00.000Z");
-    expect(ws.events[1].timestamp).toBe("2026-03-20T13:00:00.000Z");
-  });
-
-  it("appends event and updates currentTime when live via addRealtimeEvent", () => {
-    const event: InteractionEvent = {
-      type: "file-write",
-      timestamp: "2026-03-20T14:00:00.000Z",
-      agentId: "a1",
-    };
-
-    const state = agentOverviewReducer(initialState, addRealtimeEvent(WS, event));
-    const ws = state.byWorkspaceId[WS];
-
-    expect(ws.events).toHaveLength(1);
-    expect(ws.events[0]).toEqual(event);
-    // isLive defaults to true, so currentTime should be updated
-    expect(ws.currentTime).toBeTruthy();
-    expect(ws.isLive).toBe(true);
-  });
-
-  it("clears workspace state via clearAgentOverview", () => {
-    // First add some data
-    const events: InteractionEvent[] = [
-      { type: "file-write", timestamp: "2026-03-20T13:00:00.000Z", agentId: "a1" },
-    ];
-    let state = agentOverviewReducer(initialState, processWorkspaceEvents(WS, events));
-    expect(state.byWorkspaceId[WS]).toBeDefined();
-
-    // Clear it
-    state = agentOverviewReducer(state, clearAgentOverview(WS));
-    expect(state.byWorkspaceId[WS]).toBeUndefined();
-  });
-});
+function makeWorkspaceEvent(overrides: Partial<WorkspaceEvent>): WorkspaceEvent {
+  return {
+    id: "event-1",
+    workspaceId: WS,
+    timestamp: "2026-03-20T13:30:00.000Z",
+    type: "file:changed",
+    actor: { type: "agent", id: "a1", name: "Agent a1" },
+    data: {
+      path: "src/actual.ts",
+      relativePath: "src/actual.ts",
+      action: "modify",
+    },
+    ...overrides,
+  } as WorkspaceEvent;
+}
 
 describe("selectGraphState", () => {
+  it("derives graph interactions from canonical workspace events via .select", () => {
+    const session: AgentSession = {
+      id: "a1" as any,
+      backendSessionId: null,
+      workspaceId: WS as any,
+      name: "Agent a1",
+      status: "idle" as any,
+      messages: [],
+      createdAt: "2026-03-20T13:00:00.000Z",
+      updatedAt: "2026-03-20T13:00:00.000Z",
+    };
+
+    const graph = selectGraphState.select(
+      makeOverviewState(session, [makeWorkspaceEvent({ id: "file-event" })]),
+      WS,
+    );
+
+    expect(graph.nodes).toContainEqual(expect.objectContaining({ type: "file", path: "src/actual.ts" }));
+    expect(graph.edges).toContainEqual(
+      expect.objectContaining({ type: "file-write", agentId: "a1", filePath: "src/actual.ts" }),
+    );
+  });
+
   it("uses the centralized agent responding selector for graph status without re-exposing transport flags", () => {
     const session: AgentSession = {
       id: "a1" as any,

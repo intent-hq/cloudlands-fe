@@ -6,10 +6,7 @@
  */
 
 import { net } from 'electron';
-import {
-  existsSync,
-  readFileSync,
-} from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import yaml from 'js-yaml';
@@ -991,13 +988,13 @@ export class AugmentApiClient {
       per_page?: number;
     },
   ): Promise<GithubPullRequest[]> {
-    // Cap per_page to keep responses below the github-api tool's ~256KB
-    // truncation threshold. With details:true each PR runs ~4–5KB, so 30
-    // gives us headroom while still returning the fields the PR list UI
-    // needs (head_ref, base_ref, head_sha, merged, draft, counts).
+    // Keep list responses below the github-api tool's truncation threshold.
+    // The list UI can render from the default compact github-api fields and
+    // converter defaults fill optional details that are omitted.
+    const PR_LIST_DEFAULT_PAGE_SIZE = 10;
     const PR_LIST_PAGE_SIZE_CAP = 30;
-    let effectivePerPage = options?.per_page;
-    if (effectivePerPage !== undefined && effectivePerPage > PR_LIST_PAGE_SIZE_CAP) {
+    let effectivePerPage = options?.per_page ?? PR_LIST_DEFAULT_PAGE_SIZE;
+    if (effectivePerPage > PR_LIST_PAGE_SIZE_CAP) {
       logger.debug('Clamping listGitHubPullRequests per_page to cap', {
         requested: effectivePerPage,
         cap: PR_LIST_PAGE_SIZE_CAP,
@@ -1021,7 +1018,7 @@ export class AugmentApiClient {
       summary: `List pull requests for ${owner}/${repo}`,
       method: 'GET',
       path,
-      details: true,
+      details: false,
     };
 
     logger.info('Listing PRs via github-api remote tool', { path });
@@ -1866,29 +1863,254 @@ export class AugmentApiClient {
       const parsed = yaml.load(yamlOutput);
 
       // Handle both array and single object responses
-      const items = Array.isArray(parsed) ? parsed : [parsed];
+      const items = Array.isArray(parsed)
+        ? this.dropTrailingIncompletePullRequestItems(parsed)
+        : [parsed];
 
-      const prs: GithubPullRequest[] = [];
-      for (const item of items) {
-        if (item && typeof item === 'object') {
-          const pr = this.convertParsedToPullRequest(item as Record<string, unknown>);
-          if (pr) prs.push(pr);
-        }
-      }
+      const prs = this.convertParsedPullRequestItems(items);
 
       logger.info('Parsed GitHub pull requests', { count: prs.length });
       return prs;
     } catch (error) {
+      const recoveredItems = this.parseCompletePullRequestItemsFromTruncatedYaml(yamlOutput);
+      if (recoveredItems.length > 0) {
+        const prs = this.convertParsedPullRequestItems(recoveredItems);
+        logger.info('Recovered GitHub pull requests from truncated YAML', { count: prs.length });
+        return prs;
+      }
+
       logger.error('Failed to parse YAML pull request list', error as Error);
       return [];
     }
+  }
+
+  private convertParsedPullRequestItems(items: unknown[]): GithubPullRequest[] {
+    const prs: GithubPullRequest[] = [];
+    for (const item of items) {
+      if (item && typeof item === 'object') {
+        const pr = this.convertParsedToPullRequest(item as Record<string, unknown>);
+        if (pr) prs.push(pr);
+      }
+    }
+    return prs;
+  }
+
+  private parseCompletePullRequestItemsFromTruncatedYaml(
+    yamlOutput: string,
+  ): Array<Record<string, unknown>> {
+    const itemChunks = this.splitTopLevelYamlListItems(
+      this.stripRemoteToolTruncationMarker(yamlOutput),
+    );
+    const items: Array<Record<string, unknown>> = [];
+
+    for (const itemChunk of itemChunks) {
+      const recoveredItem = this.parsePullRequestItemChunkFromTruncatedYaml(itemChunk);
+      if (recoveredItem) {
+        items.push(recoveredItem);
+      }
+    }
+
+    return items;
+  }
+
+  private parsePullRequestItemChunkFromTruncatedYaml(
+    itemChunk: string,
+  ): Record<string, unknown> | null {
+    try {
+      const parsed = yaml.load(itemChunk);
+      const item = Array.isArray(parsed) ? parsed[0] : parsed;
+      if (isPlainObject(item) && this.isRecoverablePullRequestListItem(item)) {
+        return item;
+      }
+    } catch {
+      // Fall through to scalar recovery for chunks cut inside nested data.
+    }
+
+    return this.recoverPullRequestListFieldsFromChunk(itemChunk);
+  }
+
+  private recoverPullRequestListFieldsFromChunk(itemChunk: string): Record<string, unknown> | null {
+    const recovered: Record<string, unknown> = {};
+    let currentTopLevelKey: string | undefined;
+
+    for (const line of itemChunk.split(/\r?\n/)) {
+      const listItemMatch = /^-\s+(.*)$/.exec(line);
+      const indentedMatch = /^(\s*)(.*)$/.exec(line);
+      const indent = indentedMatch?.[1].length ?? 0;
+      const content = listItemMatch ? listItemMatch[1] : line.slice(indent);
+
+      if (listItemMatch || indent === 2) {
+        const fieldMatch = /^([A-Za-z_][A-Za-z0-9_]*):(?:\s*(.*))?$/.exec(content);
+        currentTopLevelKey = fieldMatch?.[1];
+
+        if (fieldMatch) {
+          this.recoverPullRequestScalarField(recovered, fieldMatch[1], fieldMatch[2]);
+        }
+      } else if (indent === 4 && currentTopLevelKey) {
+        const nestedMatch = /^([A-Za-z_][A-Za-z0-9_]*):(?:\s*(.*))?$/.exec(content);
+        if (nestedMatch) {
+          this.recoverPullRequestNestedScalarField(
+            recovered,
+            currentTopLevelKey,
+            nestedMatch[1],
+            nestedMatch[2],
+          );
+        }
+      }
+    }
+
+    return this.isRecoverablePullRequestListItem(recovered) ? recovered : null;
+  }
+
+  private recoverPullRequestScalarField(
+    target: Record<string, unknown>,
+    key: string,
+    rawValue: string | undefined,
+  ): void {
+    if (
+      ![
+        'number',
+        'title',
+        'state',
+        'html_url',
+        'url',
+        'created_at',
+        'updated_at',
+        'head_ref',
+        'base_ref',
+        'head_sha',
+        'base_sha',
+      ].includes(key)
+    ) {
+      return;
+    }
+
+    const value = this.parseRecoverableYamlScalar(rawValue);
+    if (value !== undefined) {
+      target[key] = value;
+    }
+  }
+
+  private recoverPullRequestNestedScalarField(
+    target: Record<string, unknown>,
+    topLevelKey: string,
+    key: string,
+    rawValue: string | undefined,
+  ): void {
+    if (topLevelKey === 'user' && ['login', 'avatar_url', 'html_url'].includes(key)) {
+      const value = this.parseRecoverableYamlScalar(rawValue);
+      if (value !== undefined) {
+        target.user = { ...((target.user as Record<string, unknown>) ?? {}), [key]: value };
+      }
+    }
+
+    if (['head', 'base'].includes(topLevelKey) && ['ref', 'sha'].includes(key)) {
+      const value = this.parseRecoverableYamlScalar(rawValue);
+      if (value !== undefined) {
+        target[topLevelKey] = {
+          ...((target[topLevelKey] as Record<string, unknown>) ?? {}),
+          [key]: value,
+        };
+      }
+    }
+  }
+
+  private parseRecoverableYamlScalar(rawValue: string | undefined): unknown {
+    const trimmedValue = rawValue?.trim();
+    if (!trimmedValue || ['|', '|-', '|+', '>', '>-', '>+'].includes(trimmedValue)) {
+      return undefined;
+    }
+
+    try {
+      const parsed = yaml.load(trimmedValue);
+      return isPlainObject(parsed) || Array.isArray(parsed) ? trimmedValue : parsed;
+    } catch {
+      return trimmedValue.replace(/^['"](.*)['"]$/, '$1');
+    }
+  }
+
+  private splitTopLevelYamlListItems(yamlOutput: string): string[] {
+    const chunks: string[][] = [];
+    let currentChunk: string[] = [];
+
+    for (const line of yamlOutput.split(/\r?\n/)) {
+      if (line.startsWith('- ')) {
+        if (currentChunk.length > 0) {
+          chunks.push(currentChunk);
+        }
+        currentChunk = [line];
+      } else if (currentChunk.length > 0) {
+        currentChunk.push(line);
+      }
+    }
+
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk);
+    }
+
+    return chunks.map((chunk) => chunk.join('\n').trimEnd()).filter(Boolean);
+  }
+
+  private stripRemoteToolTruncationMarker(yamlOutput: string): string {
+    const lines = yamlOutput.split(/\r?\n/);
+    const markerLineIndex = lines.findIndex(
+      (line) => line.includes('Output truncated') || line.trimStart().startsWith('⚠️'),
+    );
+
+    if (markerLineIndex === -1) {
+      return yamlOutput;
+    }
+
+    return lines.slice(0, markerLineIndex).join('\n').trimEnd();
+  }
+
+  private dropTrailingIncompletePullRequestItems(items: unknown[]): unknown[] {
+    let lastCompleteItemIndex = -1;
+
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      if (isPlainObject(item) && this.isRecoverablePullRequestListItem(item)) {
+        lastCompleteItemIndex = index;
+      }
+    }
+
+    if (lastCompleteItemIndex === -1 && items.some(isPlainObject)) {
+      return [];
+    }
+
+    if (lastCompleteItemIndex >= 0 && lastCompleteItemIndex < items.length - 1) {
+      return items.slice(0, lastCompleteItemIndex + 1);
+    }
+
+    return items;
+  }
+
+  private isRecoverablePullRequestListItem(item: Record<string, unknown>): boolean {
+    const hasNonEmptyString = (value: unknown): boolean =>
+      typeof value === 'string' && value.trim().length > 0;
+    const url = item.html_url ?? item.url;
+
+    return (
+      this.normalizePullRequestNumber(item.number) !== null &&
+      hasNonEmptyString(item.title) &&
+      hasNonEmptyString(item.state) &&
+      hasNonEmptyString(url)
+    );
+  }
+
+  private normalizePullRequestNumber(value: unknown): number | null {
+    const numberValue = typeof value === 'string' ? Number(value) : value;
+    return typeof numberValue === 'number' && Number.isFinite(numberValue) && numberValue > 0
+      ? numberValue
+      : null;
   }
 
   /**
    * Convert parsed YAML object to GithubPullRequest
    */
   private convertParsedToPullRequest(parsed: Record<string, unknown>): GithubPullRequest | null {
-    if (!parsed.number) {
+    const number = this.normalizePullRequestNumber(parsed.number);
+    if (number === null) {
       return null;
     }
 
@@ -1907,11 +2129,11 @@ export class AugmentApiClient {
     }
 
     return {
-      number: parsed.number as number,
+      number,
       title: (parsed.title as string) || '',
       body: (parsed.body as string) || '',
       state,
-      html_url: (parsed.html_url as string) || '',
+      html_url: (parsed.html_url as string) || (parsed.url as string) || '',
       created_at: normalizeToString(parsed.created_at) || '',
       updated_at: normalizeToString(parsed.updated_at) || '',
       merged_at: mergedAtValue,

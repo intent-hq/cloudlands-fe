@@ -2,14 +2,7 @@
  * Tests for Terminal Buffer Manager
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TerminalBufferManager } from '../terminal-buffer-manager';
 import { installLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 
@@ -70,6 +63,15 @@ describe('TerminalBufferManager', () => {
       const stored = localStorageMock.setItem.mock.calls[0][1];
       const snapshot = JSON.parse(stored);
       expect(snapshot.lines[0].length).toBeLessThanOrEqual(1001); // 1000 + ellipsis
+    });
+
+    it('should limit total retained lines', async () => {
+      const lines = Array.from({ length: 10050 }, (_, index) => `line ${index}`);
+      await manager.saveBuffer(lines, 0, 0);
+      const stored = localStorageMock.setItem.mock.calls[0][1];
+      const snapshot = JSON.parse(stored);
+      expect(snapshot.lines).toHaveLength(10000);
+      expect(snapshot.lines[0]).toBe('line 50');
     });
   });
 

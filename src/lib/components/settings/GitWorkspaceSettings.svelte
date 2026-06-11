@@ -1,5 +1,6 @@
 <script lang="ts">
   import { logger } from '../../../shared/logger';
+  import { invoke } from '$shared/generated/ipc-client';
   import Fa from 'svelte-fa';
   import {
   faFolder,
@@ -48,7 +49,7 @@
   async function loadSettings() {
     if (window.electronAPI) {
       try {
-        const result = await window.electronAPI.invoke('settings:getAll', undefined);
+        const result = await invoke<any>('settings:getAll', undefined);
         const settings = (result && result.data) || {};
         worktreesLocation = settings.worktreesLocation || '';
         sshKeyPath = settings.sshKeyPath || '';
@@ -65,7 +66,7 @@
   async function handleSave() {
     if (window.electronAPI) {
       try {
-        await window.electronAPI.invoke('settings:update', {
+        await invoke<any>('settings:update', {
           settings: {
             worktreesLocation,
             sshKeyPath,
@@ -101,7 +102,7 @@
 
   async function selectWorktreesDirectory() {
     if (window.electronAPI) {
-      const result = await window.electronAPI.invoke('dialog:open', {
+      const result = await invoke<any>('dialog:open', {
         directory: true,
         title: 'Select Worktrees Directory',
       });
@@ -114,7 +115,7 @@
 
   async function selectSshKeyFile() {
     if (window.electronAPI) {
-      const result = await window.electronAPI.invoke('dialog:open', {
+      const result = await invoke<any>('dialog:open', {
         directory: false,
         title: 'Select SSH Key File',
       });

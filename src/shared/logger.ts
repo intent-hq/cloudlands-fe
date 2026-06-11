@@ -5,6 +5,8 @@
  * Consolidates logging from multiple implementations into a single, flexible system.
  */
 
+import flatstr from 'flatstr';
+
 import {
   getLogLevel,
   LogLevel,
@@ -74,10 +76,12 @@ export class Logger {
 
   private formatMessage(level: string, message: string): string {
     const timestamp = new Date().toISOString();
-    return `[${timestamp}] [${level}] [${this.context}] ${message}`;
+    return flatstr(`[${timestamp}] [${level}] [${this.context}] ${message}`);
   }
 
   protected addLogEntry(entry: LogEntry): void {
+    // Flatten concatenated messages so the ring buffer retains flat strings, not cons trees
+    entry.message = flatstr(entry.message);
     this.logs.push(entry);
     if (this.logs.length > this.maxEntries) {
       this.logs = this.logs.slice(-this.maxEntries);

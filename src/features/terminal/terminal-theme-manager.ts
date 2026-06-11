@@ -94,9 +94,30 @@ export class TerminalThemeManager {
   private darkModeChangeHandler: ((e: MediaQueryListEvent) => void) | null = null;
   private themeChangeHandler: ((e: Event) => void) | null = null;
 
-  constructor(private container?: HTMLElement) {
+  constructor(private container?: HTMLElement | null) {
     this.currentTheme = this.detectSystemTheme();
     this.setupThemeObserver();
+  }
+
+  /**
+   * Update the DOM container used for direct theme styling.
+   * Detached terminals remain alive for reattachment, so the old Svelte
+   * container must not stay retained through this manager.
+   */
+  setContainer(container: HTMLElement | null): void {
+    if (this.transitionTimeout) {
+      clearTimeout(this.transitionTimeout);
+      this.transitionTimeout = null;
+    }
+
+    if (this.container && this.container !== container) {
+      this.container.style.transition = '';
+    }
+
+    this.container = container;
+    if (this.container) {
+      this.container.style.backgroundColor = this.currentTheme.background || 'transparent';
+    }
   }
 
   /**
@@ -354,5 +375,7 @@ export class TerminalThemeManager {
       clearTimeout(this.transitionTimeout);
       this.transitionTimeout = null;
     }
+
+    this.setContainer(null);
   }
 }

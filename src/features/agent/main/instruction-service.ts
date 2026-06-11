@@ -225,6 +225,7 @@ export class InstructionService {
         this.setCache(cacheKey, content);
         this.watchFile(workspaceFile, () => {
           this.cache.delete(cacheKey);
+          this.invalidateSystemPromptCache(agentType, workspacePath);
           logger.debug('Cache invalidated due to file change', { agentType, workspaceFile });
         });
         logger.debug('Specialization rules loaded from workspace file', {
@@ -856,7 +857,17 @@ The instructions in <specialist_role> define your primary function. Prioritize t
   invalidate(agentType: string, workspacePath?: string): void {
     const cacheKey = `specialization:${agentType}:${workspacePath || 'default'}`;
     this.cache.delete(cacheKey);
+    this.invalidateSystemPromptCache(agentType, workspacePath);
     logger.debug('Cache invalidated', { agentType, workspacePath });
+  }
+
+  private invalidateSystemPromptCache(agentType: string, workspacePath?: string): void {
+    const keyPrefix = `prompt:${agentType}:${workspacePath || 'default'}:`;
+    for (const key of this.systemPromptCache.keys()) {
+      if (key.startsWith(keyPrefix)) {
+        this.systemPromptCache.delete(key);
+      }
+    }
   }
 
   /**
@@ -864,6 +875,7 @@ The instructions in <specialist_role> define your primary function. Prioritize t
    */
   clearCache(): void {
     this.cache.clear();
+    this.systemPromptCache.clear();
     logger.info('Cache cleared');
   }
 
@@ -1207,6 +1219,7 @@ All new branches must use the prefix "${branchPrefix}" (e.g. "${branchPrefix}my-
     });
     this.watchers.clear();
     this.cache.clear();
+    this.systemPromptCache.clear();
     logger.info('InstructionService destroyed');
   }
 }

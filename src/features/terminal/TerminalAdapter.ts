@@ -15,6 +15,7 @@ import * as AddOnSearch from '@xterm/addon-search';
 const SearchAddon = AddOnSearch.SearchAddon;
 import '@xterm/xterm/css/xterm.css';
 import { Logger } from '../../shared/logger';
+import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 import {
   TerminalStateMachine,
   TerminalState,
@@ -32,6 +33,21 @@ import {
 } from '$store/renderer/slices/terminals/terminals-slice';
 
 const logger = new Logger('TerminalAdapter');
+
+interface TerminalInfoResponse {
+  success: boolean;
+  info?: unknown;
+}
+
+interface TerminalBufferResponse {
+  success: boolean;
+  buffer?: string;
+}
+
+interface TerminalCreateResponse {
+  success: boolean;
+  error?: string;
+}
 
 export interface TerminalCallbacks {
   onReady?: () => void;
@@ -79,7 +95,7 @@ export class TerminalAdapter {
 
   private terminalId: string;
   private workspaceId: string;
-  private container: HTMLElement;
+  private container: HTMLElement | null;
 
   private eventListeners: Array<() => void> = [];
   private resizeObserver: ResizeObserver | null = null;
@@ -93,6 +109,7 @@ export class TerminalAdapter {
   private ipcCleanup: (() => void) | null = null; // Cleanup function for IPC handlers
   private themeCleanup: (() => void) | null = null; // Cleanup function for theme handler
   private webglContextLostCleanup: (() => void) | null = null; // Cleanup for WebGL context loss listener
+  private pasteListenerContainer: HTMLElement | null = null;
 
   private isDisposed: boolean = false;
   private isXtermOpened: boolean = false; // Track if xterm.open() has been called
@@ -248,6 +265,12 @@ export class TerminalAdapter {
       throw new Error('Cannot initialize disposed terminal');
     }
 
+    if (!this.container) {
+      throw new Error('Cannot initialize terminal without a container');
+    }
+
+    const container = this.container;
+
     if (!this.stateMachine.canTransition('initialize')) {
       throw new Error(`Cannot initialize terminal in state ${this.stateMachine.getState()}`);
     }
@@ -257,7 +280,7 @@ export class TerminalAdapter {
     try {
       // Open XTerm in the container - only if not already opened
       if (!this.isXtermOpened) {
-        this.xterm.open(this.container);
+        this.xterm.open(container);
         this.isXtermOpened = true;
         logger.info(`[initialize] XTerm opened for terminal ${this.terminalId}`);
       } else {
@@ -280,7 +303,7 @@ export class TerminalAdapter {
       this.themeManager.applyTheme(this.xterm);
 
       // Ensure container has dimensions before fitting
-      const containerRect = this.container.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
 
       if (containerRect.width > 0 && containerRect.height > 0) {
         // Fit to container
@@ -309,10 +332,10 @@ export class TerminalAdapter {
       // Check if terminal exists on backend
       let terminalExists = false;
       try {
-        const info = await window.electronAPI.invoke('terminal:professional:info', {
+        const info = await invokeIpc<TerminalInfoResponse>('terminal:professional:info', {
           terminalId: this.terminalId,
         });
-        terminalExists = info.success && info.info;
+        terminalExists = info.success && Boolean(info.info);
       } catch (error) {
         logger.warn(`Could not check terminal existence: ${error}`);
       }
@@ -324,7 +347,7 @@ export class TerminalAdapter {
         if (terminalExists) {
           // Terminal exists on backend - restore from backend buffer
           try {
-            const bufferResult = await window.electronAPI.invoke(
+            const bufferResult = await invokeIpc<TerminalBufferResponse>(
               'terminal:professional:get-buffer',
               {
                 terminalId: this.terminalId,
@@ -392,7 +415,7 @@ export class TerminalAdapter {
    */
   private async openPtyConnection(cols: number, rows: number): Promise<void> {
     try {
-      const result = await window.electronAPI.invoke('terminal:professional:create', {
+      const result = await invokeIpc<TerminalCreateResponse>('terminal:professional:create', {
         terminalId: this.terminalId,
         workspaceId: this.workspaceId,
         cols,
@@ -421,6 +444,12 @@ export class TerminalAdapter {
    * Setup XTerm event handlers
    */
   private setupXTermEventHandlers(): void {
+    if (!this.container) {
+      return;
+    }
+
+    const container = this.container;
+
     // Dispose old handlers if they exist to prevent duplicates
     if (this.dataDisposable) {
       this.dataDisposable.dispose();
@@ -526,7 +555,9 @@ export class TerminalAdapter {
     // We use a paste event listener rather than keyboard handler because:
     // 1. Keyboard handlers can't fully prevent browser paste behavior
     // 2. This also handles right-click paste and other paste methods
-    this.container.addEventListener('paste', this.handlePasteEvent);
+    this.cleanupPasteEventListener();
+    container.addEventListener('paste', this.handlePasteEvent);
+    this.pasteListenerContainer = container;
 
     // Handle user input - write method handles state checks
     this.dataDisposable = this.xterm.onData((data) => {
@@ -676,6 +707,12 @@ export class TerminalAdapter {
    * Setup resize observer with debouncing
    */
   private setupResizeObserver(): void {
+    if (!this.container) {
+      return;
+    }
+
+    const container = this.container;
+
     // Disconnect old observer if it exists to prevent duplicates
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
@@ -701,7 +738,7 @@ export class TerminalAdapter {
       }, 100);
     });
 
-    this.resizeObserver.observe(this.container);
+    this.resizeObserver.observe(container);
 
     // Setup visibility observer to reconnect ResizeObserver when container becomes visible
     this.setupVisibilityObserver();
@@ -713,6 +750,12 @@ export class TerminalAdapter {
    * and call fitAddon.fit() so PTY dimensions stay in sync.
    */
   private setupVisibilityObserver(): void {
+    if (!this.container) {
+      return;
+    }
+
+    const container = this.container;
+
     // Clean up existing observer
     if (this.visibilityObserver) {
       this.visibilityObserver.disconnect();
@@ -739,7 +782,7 @@ export class TerminalAdapter {
                 }
               }, 100);
             });
-            this.resizeObserver.observe(this.container);
+            this.resizeObserver.observe(container);
           }
 
           // Fit immediately to sync PTY dimensions
@@ -752,7 +795,7 @@ export class TerminalAdapter {
       }
     });
 
-    this.visibilityObserver.observe(this.container);
+    this.visibilityObserver.observe(container);
   }
 
   /**
@@ -1248,6 +1291,13 @@ export class TerminalAdapter {
     this.xterm.write('\x1b[0m');
   };
 
+  private cleanupPasteEventListener(): void {
+    if (this.pasteListenerContainer) {
+      this.pasteListenerContainer.removeEventListener('paste', this.handlePasteEvent);
+      this.pasteListenerContainer = null;
+    }
+  }
+
   /**
    * Resize terminal
    */
@@ -1320,7 +1370,7 @@ export class TerminalAdapter {
       );
       // Check if terminal exists on backend and transition accordingly
       try {
-        const info = await window.electronAPI.invoke('terminal:professional:info', {
+        const info = await invokeIpc<TerminalInfoResponse>('terminal:professional:info', {
           terminalId: this.terminalId,
         });
         if (info.success && info.info) {
@@ -1352,6 +1402,7 @@ export class TerminalAdapter {
 
       // Update container reference
       this.container = container;
+      this.themeManager.setContainer(container);
 
       // Dispose and recreate WebGL addon (it loses context when moved)
       this.disposeWebglAddon();
@@ -1424,6 +1475,7 @@ export class TerminalAdapter {
 
     // Set new container
     this.container = container;
+    this.themeManager.setContainer(container);
 
     // Reopen xterm in new container - but warn if already opened (indicates a problem)
     if (this.isXtermOpened) {
@@ -1590,7 +1642,7 @@ export class TerminalAdapter {
     try {
       // Race the info call against a timeout
       const result = await Promise.race([
-        window.electronAPI.invoke('terminal:professional:info', {
+        invokeIpc<TerminalInfoResponse>('terminal:professional:info', {
           terminalId: this.terminalId,
         }),
         new Promise<never>((_, reject) => {
@@ -1694,7 +1746,7 @@ export class TerminalAdapter {
 
     try {
       // Check if PTY still exists on backend
-      const info = await window.electronAPI.invoke('terminal:professional:info', {
+      const info = await invokeIpc<TerminalInfoResponse>('terminal:professional:info', {
         terminalId: this.terminalId,
       });
 
@@ -1760,7 +1812,9 @@ export class TerminalAdapter {
           uri,
           workspaceId: this.workspaceId,
         });
-        window.electronAPI?.invoke('shell:openExternal', { url: uri });
+        if (typeof window !== 'undefined' && window.electronAPI) {
+          void invokeIpc('shell:openExternal', { url: uri });
+        }
         return;
       }
 
@@ -1777,12 +1831,16 @@ export class TerminalAdapter {
             error: err,
           });
           // Fallback to external browser
-          window.electronAPI?.invoke('shell:openExternal', { url: uri });
+          if (typeof window !== 'undefined' && window.electronAPI) {
+            void invokeIpc('shell:openExternal', { url: uri });
+          }
         });
     } catch (err) {
       logger.warn('Failed to handle link click', { uri, error: err });
       // Fallback to external browser
-      window.electronAPI?.invoke('shell:openExternal', { url: uri });
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        void invokeIpc('shell:openExternal', { url: uri });
+      }
     }
   }
 
@@ -1806,7 +1864,7 @@ export class TerminalAdapter {
       const rows = this.xterm.rows;
 
       // Create new PTY connection
-      const result = await window.electronAPI.invoke('terminal:professional:create', {
+      const result = await invokeIpc<TerminalCreateResponse>('terminal:professional:create', {
         terminalId: this.terminalId,
         workspaceId: this.workspaceId,
         cols,
@@ -1835,6 +1893,8 @@ export class TerminalAdapter {
    * Detach terminal from container (for reuse)
    */
   detach(): void {
+    this.cleanupPasteEventListener();
+
     // Clean up IPC handlers to prevent stale handlers during detach
     if (this.ipcCleanup) {
       this.ipcCleanup();
@@ -1872,6 +1932,8 @@ export class TerminalAdapter {
 
     // Note: We don't dispose xterm here as we want to reuse it
     // The terminal remains in memory for reattachment
+    this.themeManager.setContainer(null);
+    this.container = null;
   }
 
   /**
@@ -1965,7 +2027,7 @@ export class TerminalAdapter {
     }
 
     // Remove paste event listener
-    this.container?.removeEventListener('paste', this.handlePasteEvent);
+    this.cleanupPasteEventListener();
 
     // Remove any remaining event listeners
     this.eventListeners.forEach((cleanup) => {

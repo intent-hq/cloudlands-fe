@@ -141,13 +141,14 @@ export function* watchDockNavigationForWorkspaceSaga() {
                 yield* put(createTerminalRequested(wsId));
                 continue;
             }
-            const agents: AgentSession[] = yield* selectForegroundWorkspaceAgents.effect(wsId);
-            const terminals: WorkspaceTerminal[] = yield* selectLoadedWorkspaceTerminals.effect(wsId);
+            
             const drawerState: WorkspaceNavigationDrawerState = yield* selectWorkspaceNavigationDrawer.effect(wsId);
             const currentAgentId = getCurrentDrawerAgentId(drawerState);
             if (currentAgentId && (yield* selectAgentIsResponding.effect(currentAgentId))) {
                 continue;
             }
+            const agents: AgentSession[] = yield* selectForegroundWorkspaceAgents.effect(wsId);
+            const terminals: WorkspaceTerminal[] = yield* selectLoadedWorkspaceTerminals.effect(wsId);
             const nextItem = getNextDockItem(drawerState, getDockItems(agents, terminals), shortcut.direction);
             if (!nextItem)
                 continue;

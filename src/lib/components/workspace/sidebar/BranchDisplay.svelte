@@ -14,6 +14,7 @@
   import { getBranchNameValidationError } from './sidebar-changes-utils';
   import { logger } from '$lib/utils/client-logger';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
+  import { invoke } from '$shared/generated/ipc-client';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -99,7 +100,7 @@
 
     branchRename.saving = true;
     try {
-      const result = await window.electronAPI.invoke(WORKSPACE_CHANNELS.RENAME_BRANCH, {
+      const result = await invoke<any>(WORKSPACE_CHANNELS.RENAME_BRANCH, {
         id: $workspace.id,
         newBranchName: newBranch,
       });

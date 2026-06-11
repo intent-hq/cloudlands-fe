@@ -220,7 +220,7 @@ export class ClientEventCollector {
     // Send to main process via IPC if available
     if (typeof window !== 'undefined' && window.electronAPI) {
       try {
-        //         await window.electronAPI.invoke('observability:collect-event', fullEvent); // DISABLED: Channel not registered
+        //         IPC invoke for 'observability:collect-event' intentionally disabled: channel not registered
       } catch (error) {
         logger.error('Failed to send event via IPC:', error);
       }

@@ -35,7 +35,9 @@ const {
   mockIsDiscoveryEnabled,
   mockStartDiscovery,
   mockStopDiscovery,
+  mockClearDiscoveryAutoOffTimer,
   wsApiServerNextStart,
+  createdWsApiServers,
 } = vi.hoisted(() => {
   const mockFromWebContents = vi.fn().mockReturnValue(null);
   const mockExpressApp: any = {
@@ -87,6 +89,8 @@ const {
   // Tracks every WebSocketServer instance the factory creates.
   const createdWssInstances: any[] = [];
 
+  const createdWsApiServers: any[] = [];
+
   return {
     mockCreateWorkspaceMCPServer: vi.fn().mockResolvedValue({
       getTools: vi.fn().mockReturnValue([{ name: 'test_tool' }]),
@@ -118,6 +122,8 @@ const {
     mockIsDiscoveryEnabled: vi.fn().mockReturnValue(false),
     mockStartDiscovery: vi.fn(),
     mockStopDiscovery: vi.fn(),
+    mockClearDiscoveryAutoOffTimer: vi.fn(),
+    createdWsApiServers,
     // Per-test override for what the next `new WebSocketApiServer().start()`
     // returns. Default: a resolved Promise (no-op).
     wsApiServerNextStart: { value: () => Promise.resolve() as Promise<void> },
@@ -239,6 +245,7 @@ vi.mock('../websocket-api-server', () => {
       getPort: () => port,
       getCertFingerprint: () => 'AA:BB',
     };
+    createdWsApiServers.push(self);
     return self;
   }
   return { WebSocketApiServer: MockWebSocketApiServer };
@@ -268,6 +275,8 @@ import { __resolveWsModuleForTests } from '../utils/ws-runtime';
 import { HttpMcpBridge } from '../http-mcp-bridge';
 
 const originalNodeEnv = process.env.NODE_ENV;
+const originalClearDiscoveryAutoOffTimer = (globalThis as any)
+  .__clearWebSocketDiscoveryAutoOffTimer;
 
 function setNodeEnv(value: string | undefined) {
   if (value === undefined) {
@@ -363,6 +372,10 @@ describe('HttpMcpBridge', () => {
     clearEventHandlers();
     createdWssInstances.length = 0;
     createdHttpServers.length = 0;
+    createdWsApiServers.length = 0;
+    mockIsWebSocketApiEnabled.mockReturnValue(false);
+    mockIsDiscoveryEnabled.mockReturnValue(false);
+    wsApiServerNextStart.value = () => Promise.resolve();
     // Reset the listen mock to call callback synchronously
     mockHttpServer.listen.mockImplementation((_port: number, _host: string, cb: Function) => {
       cb();
@@ -373,6 +386,7 @@ describe('HttpMcpBridge', () => {
     mockHttpServer.removeListener.mockImplementation(() => {});
     mockHttpServer.close.mockImplementation((cb?: Function) => cb?.());
     mockElectronApp.isPackaged = false;
+    (globalThis as any).__clearWebSocketDiscoveryAutoOffTimer = mockClearDiscoveryAutoOffTimer;
     setNodeEnv(originalNodeEnv);
   });
 
@@ -380,6 +394,15 @@ describe('HttpMcpBridge', () => {
     // HttpMcpBridge starts a setInterval in its constructor (startCacheCleanupInterval).
     // Always call stop() to clear it and prevent leaked timers / flaky hangs.
     await bridge?.stop();
+  });
+
+  afterEach(() => {
+    if (originalClearDiscoveryAutoOffTimer) {
+      (globalThis as any).__clearWebSocketDiscoveryAutoOffTimer =
+        originalClearDiscoveryAutoOffTimer;
+    } else {
+      delete (globalThis as any).__clearWebSocketDiscoveryAutoOffTimer;
+    }
   });
 
   afterEach(async () => {
@@ -618,6 +641,12 @@ describe('HttpMcpBridge', () => {
       await bridge.stop();
       expect(clearIntervalSpy).toHaveBeenCalled();
       clearIntervalSpy.mockRestore();
+    });
+
+    it('stop() clears the WebSocket discovery auto-off timer hook', async () => {
+      await bridge.stop();
+
+      expect(mockClearDiscoveryAutoOffTimer).toHaveBeenCalledTimes(1);
     });
 
     it('stop() clears all cached MCP servers', async () => {
@@ -1043,6 +1072,19 @@ describe('HttpMcpBridge', () => {
       expect(startSpy).toHaveBeenCalledTimes(1);
     });
 
+    it('restart() preserves the WebSocket discovery auto-off timer hook', async () => {
+      mockIsWebSocketApiEnabled.mockReturnValue(true);
+      mockIsDiscoveryEnabled.mockReturnValue(true);
+      await startBridge(bridge);
+      mockClearDiscoveryAutoOffTimer.mockClear();
+      mockStartDiscovery.mockClear();
+
+      await bridge.restart();
+
+      expect(mockClearDiscoveryAutoOffTimer).not.toHaveBeenCalled();
+      expect(mockStartDiscovery).toHaveBeenCalledWith(5180, 'AA:BB');
+    });
+
     it('ensureHealthy() returns true without restarting when /health is ok', async () => {
       await startBridge(bridge);
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
@@ -1171,10 +1213,60 @@ describe('HttpMcpBridge', () => {
             timestamp: expect.any(Number),
           }),
         );
+        expect(bridge.getWebSocketApiServer()).toBeNull();
       } finally {
         off();
         mockIsWebSocketApiEnabled.mockReturnValue(false);
         wsApiServerNextStart.value = () => Promise.resolve();
+      }
+    });
+
+    it('updateWebSocketApiServer() releases stopped dynamic server before toggle-on creates a replacement', async () => {
+      await startBridge(bridge);
+
+      mockIsWebSocketApiEnabled.mockReturnValue(true);
+      await bridge.updateWebSocketApiServer();
+      const firstServer = createdWsApiServers[0];
+      expect(firstServer).toBeDefined();
+      expect(bridge.getWebSocketApiServer()).toBe(firstServer);
+
+      mockIsWebSocketApiEnabled.mockReturnValue(false);
+      await bridge.updateWebSocketApiServer();
+      expect(firstServer.stop).toHaveBeenCalledTimes(1);
+      expect(bridge.getWebSocketApiServer()).toBeNull();
+
+      await bridge.updateWebSocketApiServer();
+      expect(firstServer.stop).toHaveBeenCalledTimes(1);
+
+      mockIsWebSocketApiEnabled.mockReturnValue(true);
+      await bridge.updateWebSocketApiServer();
+      const secondServer = createdWsApiServers[1];
+      expect(secondServer).toBeDefined();
+      expect(secondServer).not.toBe(firstServer);
+      expect(bridge.getWebSocketApiServer()).toBe(secondServer);
+    });
+
+    it('repeated WebSocket API enable and disable cycles release stopped dynamic servers', async () => {
+      await startBridge(bridge);
+
+      for (let cycle = 0; cycle < 5; cycle++) {
+        mockIsWebSocketApiEnabled.mockReturnValue(true);
+        await bridge.updateWebSocketApiServer();
+        const currentServer = bridge.getWebSocketApiServer();
+        expect(currentServer).toBe(createdWsApiServers[cycle]);
+        expect(currentServer?.isRunning()).toBe(true);
+
+        mockIsWebSocketApiEnabled.mockReturnValue(false);
+        await bridge.updateWebSocketApiServer();
+        expect(currentServer?.stop).toHaveBeenCalledTimes(1);
+        expect(currentServer?.isRunning()).toBe(false);
+        expect(bridge.getWebSocketApiServer()).toBeNull();
+      }
+
+      expect(createdWsApiServers).toHaveLength(5);
+      expect(new Set(createdWsApiServers).size).toBe(5);
+      for (const stoppedServer of createdWsApiServers) {
+        expect(stoppedServer.stop).toHaveBeenCalledTimes(1);
       }
     });
   });

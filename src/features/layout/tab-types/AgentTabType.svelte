@@ -5,7 +5,8 @@
    * Renders an agent chat panel with header actions for copy, delete, task note, and font style.
    */
 
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
+  import { writable } from 'svelte/store';
   import type { TabTypeComponentProps } from './registry';
   import { closeTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
   import { getPanelHeaderContext } from '$lib/components/layout/panel-system/panel-header-context.svelte';
@@ -67,15 +68,24 @@
 
   const headerContext = getPanelHeaderContext();
 
+  const workspaceIdStore = writable('');
+  const agentIdStore = writable('');
+  $effect(() => {
+    workspaceIdStore.set(workspaceId);
+  });
+  $effect(() => {
+    agentIdStore.set(tab.agentId ?? '');
+  });
+
   // Cache $workspace to prevent destruction during store reloads
-  const workspace = $derived(selectWorkspaceById(workspaceId));
-  const defaultModel = $derived(selectWorkspaceDefaultModel(workspaceId));
+  const workspace = selectWorkspaceById(workspaceIdStore);
+  const defaultModel = selectWorkspaceDefaultModel(workspaceIdStore);
 
   // Reactive store subscription for specialist names
   const specialists$ = selectSpecialists();
 
   // Check if this agent is the initial workspace agent (created during onboarding)
-  const initialAgentId$ = selectInitialAgentId(workspaceId);
+  const initialAgentId$ = selectInitialAgentId(workspaceIdStore);
   const isInitialWorkspaceAgent = $derived(
     !!(workspaceId && tab.agentId && $initialAgentId$ === tab.agentId),
   );
@@ -124,9 +134,9 @@
   // Agent stats selectors (for info-circle tooltip). Mirrors AgentCard.svelte.
   // Fall back to empty-string arg so the derived value is always a Readable;
   // rendering is gated on tab.agentId in the template.
-  const agentStats$ = $derived(selectAgentStats(tab.agentId ?? ''));
-  const agentStatsLoading$ = $derived(selectIsLoadingAgentStats(tab.agentId ?? ''));
-  const agentStatsError$ = $derived(selectAgentStatsError(tab.agentId ?? ''));
+  const agentStats$ = selectAgentStats(agentIdStore);
+  const agentStatsLoading$ = selectIsLoadingAgentStats(agentIdStore);
+  const agentStatsError$ = selectAgentStatsError(agentIdStore);
   let statsTooltipOpen = $state(false);
   let agentStatsFetchPending = $state(false);
   let ignoredAgentStatsError: string | undefined = $state(undefined);
@@ -213,6 +223,13 @@
   let agentCopyFeedback = $state<string | null>(null);
   let agentCopyTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let isAgentDeleting = $state(false);
+
+  onDestroy(() => {
+    if (agentCopyTimeoutId) {
+      clearTimeout(agentCopyTimeoutId);
+      agentCopyTimeoutId = null;
+    }
+  });
 
   function handleGoToTaskNote(e?: MouseEvent) {
     if (!agentTaskNoteId) return;

@@ -24,24 +24,42 @@ const mocks = vi.hoisted(() => {
   const streamingAgentIds: string[] = [];
   const unreadAgentIds: string[] = [];
   const agentSessionsByWorkspace: Record<string, AgentSession[]> = {};
+  const tasksByWorkspace: Record<string, { id: string; title: string; status: string }[]> = {};
+  const diffSummaryByWorkspace: Record<string, unknown> = {};
+  const gitSummaryByWorkspace: Record<string, unknown> = {};
   const readable = <T>(value: T) => ({
     subscribe(run: (value: T) => void) {
       run(value);
       return () => {};
     },
   });
-  const createWorkspaceSessionReadable = (workspaceIdArg: string | { subscribe: (run: (value: string) => void) => () => void }) => {
-    const resolve = (workspaceId: string) => agentSessionsByWorkspace[workspaceId] ?? [];
-    if (workspaceIdArg && typeof workspaceIdArg === 'object' && 'subscribe' in workspaceIdArg) {
-      return {
-        subscribe(run: (value: AgentSession[]) => void) {
-          return workspaceIdArg.subscribe((workspaceId) => run(resolve(workspaceId)));
-        },
-      };
-    }
-    return readable(resolve(workspaceIdArg));
+  const createWorkspaceValueReadable =
+    <T>(resolve: (workspaceId: string) => T) =>
+    (workspaceIdArg: string | { subscribe: (run: (value: string) => void) => () => void }) => {
+      if (workspaceIdArg && typeof workspaceIdArg === 'object' && 'subscribe' in workspaceIdArg) {
+        return {
+          subscribe(run: (value: T) => void) {
+            return workspaceIdArg.subscribe((workspaceId) => run(resolve(workspaceId)));
+          },
+        };
+      }
+      return readable(resolve(workspaceIdArg));
+    };
+  const createWorkspaceSessionReadable = createWorkspaceValueReadable(
+    (workspaceId: string) => agentSessionsByWorkspace[workspaceId] ?? [],
+  );
+  return {
+    dispatch,
+    streamingAgentIds,
+    unreadAgentIds,
+    agentSessionsByWorkspace,
+    tasksByWorkspace,
+    diffSummaryByWorkspace,
+    gitSummaryByWorkspace,
+    readable,
+    createWorkspaceValueReadable,
+    createWorkspaceSessionReadable,
   };
-  return { dispatch, streamingAgentIds, unreadAgentIds, agentSessionsByWorkspace, readable, createWorkspaceSessionReadable };
 });
 
 vi.mock('$features/agent/services/active-streams-tracker', () => ({
@@ -75,6 +93,44 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
       (_state: unknown, workspaceId: string) => mocks.agentSessionsByWorkspace[workspaceId] ?? [],
     ),
   }),
+}));
+
+vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => {
+  const taskProgress = (workspaceId: string) => {
+    const tasks = mocks.tasksByWorkspace[workspaceId] ?? [];
+    let total = 0;
+    let completed = 0;
+    let inProgress = 0;
+    for (const task of tasks) {
+      if (task.status === 'cancelled') continue;
+      total++;
+      if (task.status === 'complete') completed++;
+      else if (task.status === 'in_progress' || task.status === 'review_required') inProgress++;
+    }
+    return { total, completed, inProgress };
+  };
+  return {
+    selectWorkspaceTaskProgress: vi.fn(mocks.createWorkspaceValueReadable(taskProgress)),
+    selectWorkspaceTaskDisplayList: vi.fn(
+      mocks.createWorkspaceValueReadable(
+        (workspaceId: string) =>
+          (mocks.tasksByWorkspace[workspaceId] ?? []).filter((task) => task.status !== 'cancelled'),
+      ),
+    ),
+  };
+});
+
+vi.mock('$store/renderer/slices/workspace-summaries/workspace-summaries-selectors', () => ({
+  selectWorkspaceDiffSummary: vi.fn(
+    mocks.createWorkspaceValueReadable(
+      (workspaceId: string) => mocks.diffSummaryByWorkspace[workspaceId] ?? null,
+    ),
+  ),
+  selectWorkspaceGitSummary: vi.fn(
+    mocks.createWorkspaceValueReadable(
+      (workspaceId: string) => mocks.gitSummaryByWorkspace[workspaceId] ?? null,
+    ),
+  ),
 }));
 
 vi.mock('$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
@@ -126,8 +182,15 @@ describe('WorkspaceHoverCard', () => {
     mocks.dispatch.mockClear();
     mocks.streamingAgentIds.length = 0;
     mocks.unreadAgentIds.length = 0;
-    for (const workspaceId of Object.keys(mocks.agentSessionsByWorkspace)) {
-      delete mocks.agentSessionsByWorkspace[workspaceId];
+    for (const record of [
+      mocks.agentSessionsByWorkspace,
+      mocks.tasksByWorkspace,
+      mocks.diffSummaryByWorkspace,
+      mocks.gitSummaryByWorkspace,
+    ]) {
+      for (const workspaceId of Object.keys(record)) {
+        delete record[workspaceId];
+      }
     }
   });
 
@@ -152,7 +215,7 @@ describe('WorkspaceHoverCard', () => {
     await waitFor(() => expect(screen.getByText('Loaded Workspace Agent')).toBeTruthy());
   });
 
-  it('prefers live session status while preserving summary display metadata', async () => {
+  it('renders live session names and statuses for member agent IDs', async () => {
     mocks.agentSessionsByWorkspace['ws-1'] = [
       {
         id: 'agent-duplicate',
@@ -169,30 +232,17 @@ describe('WorkspaceHoverCard', () => {
 
     await renderHoverCard({
       agentSummary: {
-        count: 2,
-        agents: [
-          {
-            id: 'agent-duplicate',
-            name: 'Snapshot Specialist Agent',
-            status: 'waiting',
-            specialist: 'implementor',
-            lastActivity: '2026-05-05T18:00:00.000Z',
-          },
-          {
-            id: 'agent-live-name',
-            name: 'Stale Snapshot Agent',
-            status: 'waiting',
-          },
-        ],
+        agentIds: ['agent-duplicate', 'agent-live-name', 'agent-unloaded'],
       },
     });
 
-    const row = screen.getAllByRole('listitem')[0];
-    expect(screen.getByText('Snapshot Specialist Agent')).toBeTruthy();
+    // Loaded sessions provide names/statuses; the unloaded member renders as
+    // an idle placeholder and is excluded from the running agent list.
+    const rows = screen.getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
     expect(screen.getByText('Live Named Agent')).toBeTruthy();
-    expect(screen.queryByText('Stale Snapshot Agent')).toBeNull();
-    expect(row.getAttribute('aria-label')).toContain('Processing');
-    expect(row.getAttribute('aria-label')).not.toContain('Waiting');
+    expect(rows[0].getAttribute('aria-label')).toContain('Processing');
+    expect(rows[0].getAttribute('aria-label')).not.toContain('Waiting');
   });
 
   it('renders the workspace status message prominently without truncation classes', async () => {
@@ -235,17 +285,30 @@ describe('WorkspaceHoverCard', () => {
   it('summarizes available repo, task, PR, and combined change metadata without branch', async () => {
     mocks.streamingAgentIds.push('agent-2');
     mocks.unreadAgentIds.push('agent-3');
+    mocks.agentSessionsByWorkspace['ws-1'] = [
+      { id: 'agent-1', name: 'Planner', status: 'active', messages: [] } as AgentSession,
+      { id: 'agent-2', name: 'Implementor', status: 'processing', messages: [] } as AgentSession,
+      { id: 'agent-3', name: 'Verifier', status: 'idle', messages: [] } as AgentSession,
+    ];
+    mocks.tasksByWorkspace['ws-1'] = [
+      { id: 't-1', title: 'Task 1', status: 'complete' },
+      { id: 't-2', title: 'Task 2', status: 'complete' },
+      { id: 't-3', title: 'Task 3', status: 'in_progress' },
+      { id: 't-4', title: 'Task 4', status: 'not_started' },
+      { id: 't-5', title: 'Task 5', status: 'not_started' },
+    ];
+    mocks.gitSummaryByWorkspace['ws-1'] = { ahead: 2, behind: 1, hasUnpushed: true };
+    mocks.diffSummaryByWorkspace['ws-1'] = {
+      schemaVersion: 1,
+      updatedAt: '2026-05-05T19:00:00.000Z',
+      totalFiles: 3,
+      totalAdditions: 42,
+      totalDeletions: 7,
+      files: [],
+    };
 
     await renderHoverCard({
-      agentSummary: {
-        count: 3,
-        agents: [
-          { id: 'agent-1', name: 'Planner', status: 'active' },
-          { id: 'agent-2', name: 'Implementor', status: 'processing' },
-          { id: 'agent-3', name: 'Verifier', status: 'Idle' },
-        ],
-      },
-      taskStats: { total: 5, completed: 2, inProgress: 1 },
+      agentSummary: { agentIds: ['agent-1', 'agent-2', 'agent-3'] },
       activePullRequest: {
         id: 'pr-12',
         number: 12,
@@ -255,15 +318,6 @@ describe('WorkspaceHoverCard', () => {
         createdAt: '2026-05-05T00:00:00.000Z',
         updatedAt: '2026-05-05T00:00:00.000Z',
         ciStatus: { total: 4, passed: 3, failed: 0, pending: 1 },
-      },
-      gitSummary: { ahead: 2, behind: 1, hasUnpushed: true },
-      diffSummary: {
-        schemaVersion: 1,
-        updatedAt: '2026-05-05T19:00:00.000Z',
-        totalFiles: 3,
-        totalAdditions: 42,
-        totalDeletions: 7,
-        files: [],
       },
     });
 
@@ -292,17 +346,17 @@ describe('WorkspaceHoverCard', () => {
     [{ ahead: 0, behind: 1, hasUnpushed: false }, '3 files +42 -7, 1 commit behind remote'],
     [{ ahead: 0, behind: 0, hasUnpushed: true }, '3 files +42 -7, Local commits not pushed'],
   ])('combines local changes with git summary copy', async (gitSummary, expected) => {
-    const { container } = await renderHoverCard({
-      gitSummary,
-      diffSummary: {
-        schemaVersion: 1,
-        updatedAt: '2026-05-05T19:00:00.000Z',
-        totalFiles: 3,
-        totalAdditions: 42,
-        totalDeletions: 7,
-        files: [],
-      },
-    });
+    mocks.gitSummaryByWorkspace['ws-1'] = gitSummary;
+    mocks.diffSummaryByWorkspace['ws-1'] = {
+      schemaVersion: 1,
+      updatedAt: '2026-05-05T19:00:00.000Z',
+      totalFiles: 3,
+      totalAdditions: 42,
+      totalDeletions: 7,
+      files: [],
+    };
+
+    const { container } = await renderHoverCard();
 
     expect(screen.queryByText('Git')).toBeNull();
     expectVisibleChangesRow(expected);
@@ -317,7 +371,9 @@ describe('WorkspaceHoverCard', () => {
     [{ ahead: 3, behind: 1, hasUnpushed: true }, '+3 -1'],
     [{ ahead: 0, behind: 0, hasUnpushed: true }, 'Local commits not pushed'],
   ])('formats git-only summary copy without labels or middle dots', async (gitSummary, expected) => {
-    const { container } = await renderHoverCard({ gitSummary });
+    mocks.gitSummaryByWorkspace['ws-1'] = gitSummary;
+
+    const { container } = await renderHoverCard();
 
     expect(screen.queryByText('Git')).toBeNull();
     expectVisibleChangesRow(expected);
@@ -333,15 +389,14 @@ describe('WorkspaceHoverCard', () => {
   });
 
   it('renders running and background agent statuses as compact rows', async () => {
+    mocks.agentSessionsByWorkspace['ws-1'] = [
+      { id: 'agent-running', name: 'Running Agent', status: 'running', messages: [] } as AgentSession,
+      { id: 'agent-background', name: 'Worker Agent', status: 'background', messages: [] } as AgentSession,
+      { id: 'agent-waiting', name: 'Waiting Agent', status: 'waiting', messages: [] } as AgentSession,
+    ];
+
     await renderHoverCard({
-      agentSummary: {
-        count: 3,
-        agents: [
-          { id: 'agent-running', name: 'Running Agent', status: 'running' },
-          { id: 'agent-background', name: 'Worker Agent', status: 'background' },
-          { id: 'agent-waiting', name: 'Waiting Agent', status: 'waiting' },
-        ],
-      },
+      agentSummary: { agentIds: ['agent-running', 'agent-background', 'agent-waiting'] },
     });
 
     expect(screen.getByRole('list', { name: 'Running agents' })).toBeTruthy();

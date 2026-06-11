@@ -59,6 +59,7 @@ export type MetadataSyncEvent =
   | 'sync:file-changed';
 
 export class MetadataSyncService extends EventEmitter {
+  private static activeServices = new Map<string, MetadataSyncService>();
   private config: MetadataSyncConfig;
   private isRunning = false;
 
@@ -87,7 +88,14 @@ export class MetadataSyncService extends EventEmitter {
    */
   async start(): Promise<void> {
     if (this.isRunning) return;
+
+    const activeService = MetadataSyncService.activeServices.get(this.config.workspaceId);
+    if (activeService && activeService !== this) {
+      await activeService.stop();
+    }
+
     this.isRunning = true;
+    MetadataSyncService.activeServices.set(this.config.workspaceId, this);
 
     logger.info('[MetadataSyncService] Starting', {
       workspaceId: this.config.workspaceId,
@@ -111,7 +119,12 @@ export class MetadataSyncService extends EventEmitter {
    * Stop syncing: unsubscribe from watch, clean up timers.
    */
   async stop(): Promise<void> {
-    if (!this.isRunning) return;
+    if (!this.isRunning) {
+      if (MetadataSyncService.activeServices.get(this.config.workspaceId) === this) {
+        MetadataSyncService.activeServices.delete(this.config.workspaceId);
+      }
+      return;
+    }
     this.isRunning = false;
 
     logger.info('[MetadataSyncService] Stopping', {
@@ -119,6 +132,9 @@ export class MetadataSyncService extends EventEmitter {
     });
 
     this.cleanup();
+    if (MetadataSyncService.activeServices.get(this.config.workspaceId) === this) {
+      MetadataSyncService.activeServices.delete(this.config.workspaceId);
+    }
   }
 
   /**
@@ -366,12 +382,18 @@ export class MetadataSyncService extends EventEmitter {
     this.reconnectAttempts++;
 
     if (this.reconnectAttempts > MetadataSyncService.MAX_RECONNECT_ATTEMPTS) {
+      const error = new Error('Max reconnect attempts exceeded');
       logger.error(
         '[MetadataSyncService] Max reconnect attempts reached, giving up',
-        new Error('Max reconnect attempts exceeded'),
+        error,
         { attempts: this.reconnectAttempts, workspaceId: this.config.workspaceId },
       );
-      this.emit('sync:error', new Error('Max reconnect attempts exceeded'));
+      this.isRunning = false;
+      this.cleanup();
+      if (MetadataSyncService.activeServices.get(this.config.workspaceId) === this) {
+        MetadataSyncService.activeServices.delete(this.config.workspaceId);
+      }
+      this.emit('sync:error', error);
       return;
     }
 

@@ -10,6 +10,7 @@
   cancelGitHubAuth,
   clearGitHubAuthError,
 } from '$store/renderer/slices/github-auth/github-auth-slice';
+  import { invoke } from '$shared/generated/ipc-client';
   import {
   selectGitHubAuthIsAuthenticated,
   selectGitHubAuthIsAuthenticating,
@@ -74,7 +75,9 @@
     hasOpenedBrowser = true;
 
     // Open in external browser
-    window.electronAPI?.invoke('shell:openExternal', { url });
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      void invoke('shell:openExternal', { url });
+    }
   }
 
   function handleCancel() {

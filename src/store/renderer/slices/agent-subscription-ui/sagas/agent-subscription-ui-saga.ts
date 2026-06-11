@@ -98,36 +98,39 @@ export function* fetchAndDispatchSnapshot(wsId: string, agentId: string): Genera
 
         // Fork delayed cleanup
         const key = makeKey(wsId, agentId);
-        const gen = (completionGeneration.get(key) ?? 0) + 1;
-        completionGeneration.set(key, gen);
+        const gen = setNextCompletionGeneration(key);
         yield* fork(function* () {
-          yield* delay(COMPLETED_DISPLAY_DURATION);
-          // Only clean up if no newer completion arrived during the delay
-          if (completionGeneration.get(key) !== gen) return;
-
-          // Re-fetch snapshot to check if new subscriptions or delegation
-          // groups arrived during the "completed" display window.  If the
-          // agent now has active data, skip the reset to avoid wiping it.
           try {
-            const freshResult: any = yield* call(invoke, 'events:get-agent-subscriptions', {
-              workspaceId: wsId,
-              agentId,
-            });
-            if (freshResult?.success) {
-              const freshSubs: Subscription[] = freshResult.data ?? [];
-              const freshGroups: DelegationGroupStatus[] = freshResult.delegationGroups ?? [];
-              if (freshSubs.length > 0 || freshGroups.length > 0) {
-                // New active data appeared — refresh instead of resetting
-                yield* call(fetchAndDispatchSnapshot, wsId, agentId);
-                return;
-              }
-            }
-          } catch {
-            // If the re-fetch fails, proceed with reset — the original
-            // snapshot already showed empty data.
-          }
+            yield* delay(COMPLETED_DISPLAY_DURATION);
+            // Only clean up if no newer completion arrived during the delay
+            if (!isCurrentGeneration(completionGeneration, key, gen)) return;
 
-          yield* put(resetSubscriptionUI(wsId, agentId));
+            // Re-fetch snapshot to check if new subscriptions or delegation
+            // groups arrived during the "completed" display window.  If the
+            // agent now has active data, skip the reset to avoid wiping it.
+            try {
+              const freshResult: any = yield* call(invoke, 'events:get-agent-subscriptions', {
+                workspaceId: wsId,
+                agentId,
+              });
+              if (freshResult?.success) {
+                const freshSubs: Subscription[] = freshResult.data ?? [];
+                const freshGroups: DelegationGroupStatus[] = freshResult.delegationGroups ?? [];
+                if (freshSubs.length > 0 || freshGroups.length > 0) {
+                  // New active data appeared — refresh instead of resetting
+                  yield* call(fetchAndDispatchSnapshot, wsId, agentId);
+                  return;
+                }
+              }
+            } catch {
+              // If the re-fetch fails, proceed with reset — the original
+              // snapshot already showed empty data.
+            }
+
+            yield* put(resetSubscriptionUI(wsId, agentId));
+          } finally {
+            deleteGenerationIfCurrent(completionGeneration, key, gen);
+          }
         });
         return;
       }
@@ -156,6 +159,35 @@ export function* fetchAndDispatchSnapshot(wsId: string, agentId: string): Genera
 // ---------------------------------------------------------------------------
 
 const wakeupGeneration = new Map<string, number>();
+let nextWakeupGeneration = 1;
+const invalidatedWakeupGenerations = new Set<number>();
+
+const completionGeneration = new Map<string, number>();
+let nextCompletionGeneration = 1;
+
+function setNextWakeupGeneration(key: string): number {
+  const gen = nextWakeupGeneration;
+  nextWakeupGeneration += 1;
+  wakeupGeneration.set(key, gen);
+  return gen;
+}
+
+function setNextCompletionGeneration(key: string): number {
+  const gen = nextCompletionGeneration;
+  nextCompletionGeneration += 1;
+  completionGeneration.set(key, gen);
+  return gen;
+}
+
+function isCurrentGeneration(generations: Map<string, number>, key: string, gen: number): boolean {
+  return generations.get(key) === gen;
+}
+
+function deleteGenerationIfCurrent(generations: Map<string, number>, key: string, gen: number): void {
+  if (isCurrentGeneration(generations, key, gen)) {
+    generations.delete(key);
+  }
+}
 
 /** @internal Exported for testing only. */
 export function _getWakeupGeneration(key: string): number {
@@ -166,8 +198,6 @@ export function _getWakeupGeneration(key: string): number {
 // Per-agent completion generation tracker: prevents a stale cleanup fork
 // from resetting the UI when a new completion arrives.
 // ---------------------------------------------------------------------------
-
-const completionGeneration = new Map<string, number>();
 
 /** @internal Exported for testing only. */
 export function _getCompletionGeneration(key: string): number {
@@ -271,14 +301,19 @@ export function* handleAgentWokenBySubscriptionEvent(event: WokenBySubscriptionP
     timestamp: Date.now(),
   };
   const key = `${wsId}:${agentId}`;
-  const gen = (wakeupGeneration.get(key) ?? 0) + 1;
-  wakeupGeneration.set(key, gen);
+  const gen = setNextWakeupGeneration(key);
   yield* fork(function* () {
-    yield* put(setWokenUp(wsId, agentId, info));
-    yield* delay(5000);
-    // Only clear if no newer wakeup arrived during the delay
-    if (wakeupGeneration.get(key) === gen) {
-      yield* put(clearWokenUp(wsId, agentId));
+    try {
+      if (invalidatedWakeupGenerations.has(gen)) return;
+      yield* put(setWokenUp(wsId, agentId, info));
+      yield* delay(5000);
+      // Only clear if no newer wakeup arrived during the delay
+      if (isCurrentGeneration(wakeupGeneration, key, gen)) {
+        yield* put(clearWokenUp(wsId, agentId));
+      }
+    } finally {
+      invalidatedWakeupGenerations.delete(gen);
+      deleteGenerationIfCurrent(wakeupGeneration, key, gen);
     }
   });
 }
@@ -322,6 +357,10 @@ export function* handleWorkspaceUnmounted(action: ReturnType<typeof workspaceUnm
   const prefix = `${wsId}:`;
   for (const key of wakeupGeneration.keys()) {
     if (key.startsWith(prefix)) {
+      const gen = wakeupGeneration.get(key);
+      if (gen !== undefined) {
+        invalidatedWakeupGenerations.add(gen);
+      }
       wakeupGeneration.delete(key);
     }
   }

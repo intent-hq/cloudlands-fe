@@ -11,6 +11,7 @@
  */
 
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { invoke } from '$shared/generated/ipc-client';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 import {
   type SpaceLiveStatus,
@@ -32,7 +33,13 @@ interface IPCResponse<T> {
 class SpaceStatusClient {
   private static instance: SpaceStatusClient;
   private cache = new Map<string, CachedSpaceStatus>();
-  private pendingRequests = new Map<string, Promise<SpaceLiveStatus | null>>();
+  private pendingRequests = new Map<string, {
+    promise: Promise<SpaceLiveStatus | null>;
+    version: number;
+  }>();
+  private invalidationVersions = new Map<string, number>();
+  private pendingInvalidations = new Set<string>();
+  private invalidationFlushTimer: ReturnType<typeof setTimeout> | null = null;
   private config: SpaceStatusCacheConfig;
   private listenerIds: Array<{ channel: string; id: string }> = [];
   private isSubscribed = false;
@@ -110,6 +117,8 @@ class SpaceStatusClient {
     }
     this.listenerIds = [];
     this.isSubscribed = false;
+    this.clearInvalidationFlushTimer();
+    this.pendingInvalidations.clear();
   }
 
   /**
@@ -121,25 +130,28 @@ class SpaceStatusClient {
 
     // Check cache first
     const cached = this.cache.get(cacheKey);
-    if (cached && this.isCacheValid(cached)) {
+    if (cached && this.isCacheValid(cached) && !this.pendingInvalidations.has(cacheKey)) {
       return cached.status;
     }
 
     // Check for pending request to avoid duplicate fetches
+    const currentVersion = this.getInvalidationVersion(cacheKey);
     const pending = this.pendingRequests.get(cacheKey);
-    if (pending) {
-      return pending;
+    if (pending && pending.version === currentVersion) {
+      return pending.promise;
     }
 
     // Fetch fresh data
-    const fetchPromise = this.fetchStatus(workspaceId);
-    this.pendingRequests.set(cacheKey, fetchPromise);
+    const fetchPromise = this.fetchStatus(workspaceId, currentVersion);
+    this.pendingRequests.set(cacheKey, { promise: fetchPromise, version: currentVersion });
 
     try {
       const status = await fetchPromise;
       return status;
     } finally {
-      this.pendingRequests.delete(cacheKey);
+      if (this.pendingRequests.get(cacheKey)?.promise === fetchPromise) {
+        this.pendingRequests.delete(cacheKey);
+      }
     }
   }
 
@@ -148,13 +160,21 @@ class SpaceStatusClient {
    * Called when we know the workspace data has changed.
    */
   invalidate(workspaceId: WorkspaceId): void {
-    this.cache.delete(workspaceId);
+    const cacheKey = workspaceId;
+    this.invalidationVersions.set(cacheKey, this.getInvalidationVersion(cacheKey) + 1);
+    this.pendingInvalidations.add(cacheKey);
+    this.scheduleInvalidationFlush();
   }
 
   /**
    * Invalidate all cached statuses.
    */
   invalidateAll(): void {
+    this.clearInvalidationFlushTimer();
+    this.pendingInvalidations.clear();
+    for (const workspaceId of this.cache.keys()) {
+      this.invalidationVersions.set(workspaceId, this.getInvalidationVersion(workspaceId) + 1);
+    }
     this.cache.clear();
   }
 
@@ -163,36 +183,67 @@ class SpaceStatusClient {
    */
   getCached(workspaceId: WorkspaceId): SpaceLiveStatus | null {
     const cached = this.cache.get(workspaceId);
-    if (cached && this.isCacheValid(cached)) {
+    if (cached && this.isCacheValid(cached) && !this.pendingInvalidations.has(workspaceId)) {
       return cached.status;
     }
     return null;
+  }
+
+  private getInvalidationVersion(workspaceId: string): number {
+    return this.invalidationVersions.get(workspaceId) ?? 0;
+  }
+
+  private scheduleInvalidationFlush(): void {
+    if (this.invalidationFlushTimer) return;
+    this.invalidationFlushTimer = setTimeout(() => {
+      this.invalidationFlushTimer = null;
+      this.flushPendingInvalidations();
+    }, 0);
+  }
+
+  private clearInvalidationFlushTimer(): void {
+    if (!this.invalidationFlushTimer) return;
+    clearTimeout(this.invalidationFlushTimer);
+    this.invalidationFlushTimer = null;
+  }
+
+  private flushPendingInvalidations(): void {
+    for (const workspaceId of this.pendingInvalidations) {
+      this.cache.delete(workspaceId);
+    }
+    this.pendingInvalidations.clear();
   }
 
   private isCacheValid(cached: CachedSpaceStatus): boolean {
     return Date.now() - cached.fetchedAt < this.config.ttlMs;
   }
 
-  private async fetchStatus(workspaceId: WorkspaceId): Promise<SpaceLiveStatus | null> {
+  private async fetchStatus(
+    workspaceId: WorkspaceId,
+    invalidationVersion: number,
+  ): Promise<SpaceLiveStatus | null> {
     if (typeof window === 'undefined' || !window.electronAPI) {
       return null;
     }
 
     try {
-      const response = (await window.electronAPI.invoke(
+      const response = await invoke<IPCResponse<SpaceLiveStatus>>(
         IPC_CHANNELS.WORKSPACE.GET_HOVER_STATUS,
         { workspaceId },
-      )) as IPCResponse<SpaceLiveStatus>;
+      );
 
       if (!response.ok || !response.data) {
         return null;
       }
 
-      // Update cache
-      this.cache.set(workspaceId, {
-        status: response.data,
-        fetchedAt: Date.now(),
-      });
+      // Update cache only if no newer invalidation arrived while the request was in flight.
+      if (this.getInvalidationVersion(workspaceId) === invalidationVersion) {
+        this.pendingInvalidations.delete(workspaceId);
+        this.cache.set(workspaceId, {
+          status: response.data,
+          fetchedAt: Date.now(),
+        });
+      }
 
       // Enforce max cache size (LRU-like: remove oldest entries)
       this.enforceMaxCacheSize();

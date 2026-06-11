@@ -2,13 +2,7 @@
  * Tests for ACP Message Parser
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   parseACPMessage,
   ACPStreamParser,
@@ -131,6 +125,17 @@ describe('acp-message-parser', () => {
       expect(messages[0].method).toBe('fresh');
     });
 
+    it('should dispose partial buffered input', () => {
+      parser.parseChunk('{"method":"stale"');
+      parser.dispose();
+
+      expect(parser.parseChunk(',"ignored":true}\n')).toHaveLength(0);
+
+      const messages = parser.parseChunk('{"method":"fresh_after_dispose"}\n');
+      expect(messages).toHaveLength(1);
+      expect(messages[0].method).toBe('fresh_after_dispose');
+    });
+
     it('should parse messages slightly larger than 1MB', () => {
       // Create a message with ~1.1MB of content (this would fail with old 1MB threshold)
       const largeText = 'x'.repeat(1.1 * 1024 * 1024);
@@ -243,7 +248,6 @@ describe('acp-message-parser', () => {
       const messages = rateLimitParser.parseChunk('{"method":"after_rate_limit"}\n');
       expect(messages).toHaveLength(1);
       expect(messages[0].method).toBe('after_rate_limit');
-
     });
   });
 

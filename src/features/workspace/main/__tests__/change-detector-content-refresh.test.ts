@@ -14,6 +14,7 @@ const mockPerformanceMonitor = {
   start: vi.fn(),
   stop: vi.fn(),
   on: vi.fn(),
+  off: vi.fn(),
   incrementCounter: vi.fn(),
   recordChange: vi.fn(),
   recordEvent: vi.fn(),

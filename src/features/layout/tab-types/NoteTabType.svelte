@@ -1,4 +1,5 @@
 <script lang="ts">
+import { onDestroy } from 'svelte';
 import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   /**
    * Note Tab Type Component
@@ -78,6 +79,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   let noteCopyFeedback = $state<string | null>(null);
   let noteCopyTimeoutId: ReturnType<typeof setTimeout> | null = null;
   let isNoteDeleting = $state(false);
+
+  onDestroy(() => {
+    if (noteCopyTimeoutId) {
+      clearTimeout(noteCopyTimeoutId);
+      noteCopyTimeoutId = null;
+    }
+  });
 
   // Get actual workspace root for file path
   let actualWorkspaceRoot = $state<string | null>(null);

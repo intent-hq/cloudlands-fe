@@ -61,20 +61,12 @@ export interface WorkspaceRepository {
   readGitConfig(repoPath: string): Promise<string>;
   scanDirectory(dir: string, depth?: number): Promise<string[]>;
   cleanCache(id: WorkspaceId): Promise<void>;
-  clearListCache(): void;
 }
 
 /**
  * File system implementation of WorkspaceRepository
  */
 export class FileSystemWorkspaceRepository implements WorkspaceRepository {
-  // Simple in-memory cache to avoid redundant file reads
-  private cache = new Map<WorkspaceId, { workspace: Workspace; timestamp: number }>();
-  private listCache: { workspaces: Workspace[]; timestamp: number } | null = null;
-  private readonly CACHE_TTL = 1000; // 1 second TTL for cache
-  private readonly LIST_CACHE_TTL = 5000; // 5 seconds for list cache
-
-
   /**
    * Find workspace by ID
    */
@@ -94,13 +86,6 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
         return null;
       }
 
-      // Check cache first
-      const cached = this.cache.get(id);
-      if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
-        // Don't log cache hits in normal operation - too noisy
-        return cached.workspace;
-      }
-
       const metadataPath = WorkspaceConfig.paths.workspaceMetadata(id);
 
       // Check if file exists
@@ -113,8 +98,6 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
           metadataPath,
           error: (accessError as Error).message,
         });
-        // Clear from cache if file doesn't exist
-        this.cache.delete(id);
         return null;
       }
 
@@ -132,17 +115,11 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
         // Return anyway but log warning
       }
 
-      // Update cache
-      this.cache.set(id, { workspace, timestamp: Date.now() });
-
       // Register the slug so isWorkspaceSlug() recognizes intent-based slugs
       registerWorkspaceSlug(id);
 
       return workspace;
     } catch (error) {
-      // Clear from cache on error
-      this.cache.delete(id);
-
       if (error instanceof SyntaxError) {
         throw new FileReadError(
           WorkspaceConfig.paths.workspaceMetadata(id),
@@ -158,12 +135,6 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
    */
   async findAll(): Promise<Workspace[]> {
     try {
-      // Check list cache first
-      if (this.listCache && Date.now() - this.listCache.timestamp < this.LIST_CACHE_TTL) {
-        logger.debug('Using cached workspace list');
-        return this.listCache.workspaces;
-      }
-
       // Ensure canonical workspaces directory exists
       await fs.mkdir(WorkspaceConfig.WORKSPACES_BASE, { recursive: true });
 
@@ -242,12 +213,6 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
       // Filter out null results (failed loads)
       const workspaces = results.filter((w): w is Workspace => w !== null);
 
-      // Update list cache
-      this.listCache = {
-        workspaces,
-        timestamp: Date.now(),
-      };
-
       return workspaces;
     } catch (error) {
       logger.error('Failed to list workspaces', error as Error);
@@ -261,16 +226,11 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
   async save(workspace: Workspace): Promise<void> {
     try {
       if (WorkspaceConfig.isVirtualWorkspace(workspace.id)) {
-        this.cache.delete(workspace.id);
-        this.listCache = null;
         return;
       }
 
       // Validate workspace before saving
       validateWorkspace(workspace);
-
-      // Invalidate list cache when saving
-      this.listCache = null;
 
       // Check if workspace directory exists before creating
       const workspaceDir = WorkspaceConfig.paths.workspace(workspace.id);
@@ -352,9 +312,6 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
 
         logger.debug('Workspace saved successfully', { workspaceId: workspace.id });
 
-        // Update cache with the new workspace data
-        this.cache.set(workspace.id, { workspace, timestamp: Date.now() });
-
         // Register the slug so isWorkspaceSlug() recognizes intent-based slugs
         registerWorkspaceSlug(workspace.id);
       }
@@ -379,8 +336,6 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
   async delete(id: WorkspaceId): Promise<void> {
     try {
       if (WorkspaceConfig.isVirtualWorkspace(id)) {
-        this.cache.delete(id);
-        this.listCache = null;
         return;
       }
 
@@ -397,10 +352,6 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
       // maxRetries handles ENOTEMPTY errors from concurrent file writes during deletion
       await fs.rm(workspacePath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 
-      // Clear from cache
-      this.cache.delete(id);
-      // Invalidate list cache
-      this.listCache = null;
       // Unregister from slug registry
       unregisterWorkspaceSlug(id);
 
@@ -586,7 +537,6 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
    */
   async cleanCache(id: WorkspaceId): Promise<void> {
     if (WorkspaceConfig.isVirtualWorkspace(id)) {
-      this.cache.delete(id);
       logger.debug('Virtual workspace cache cleanup skipped', { workspaceId: id });
       return;
     }
@@ -595,20 +545,11 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
       const cachePath = WorkspaceConfig.paths.cache(id);
       await fs.rm(cachePath, { recursive: true, force: true });
 
-      // Also clear the in-memory cache for this workspace
-      this.cache.delete(id);
-
-      logger.debug('Cache directory and memory cache cleaned', { workspaceId: id });
+      logger.debug('Cache directory cleaned', { workspaceId: id });
     } catch {
       // Directory might not exist, that's okay
-      // Still clear the in-memory cache
-      this.cache.delete(id);
       logger.debug('Cache cleanup - directory might not exist', { workspaceId: id });
     }
-  }
-
-  clearListCache(): void {
-    this.listCache = null;
   }
 }
 
@@ -700,10 +641,6 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
   async cleanCache(id: WorkspaceId): Promise<void> {
     // In-memory implementation doesn't have cache
     logger.debug('In-memory cache cleanup called', { workspaceId: id });
-  }
-
-  clearListCache(): void {
-    // No-op: in-memory implementation doesn't have a list cache
   }
 
   // Test helpers

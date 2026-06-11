@@ -27,6 +27,7 @@
   markNoteRead,
   refreshUnreadNotes,
 } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
+  import { initializeNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import {
   selectAllWorkspaceAgents,
   selectForegroundWorkspaceAgents,
@@ -83,7 +84,10 @@
   import WorkspaceAgentsList from './WorkspaceAgentsList.svelte';
   import { selectEffectiveFileExplorerWorkspacePath } from '$store/renderer/slices/file-explorer/file-explorer-selectors';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
+  import {
+  selectAllNotes,
+  selectNotesLoading,
+} from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import {
   openWorkspaceCommitChangeset,
   openWorkspaceDiff,
@@ -98,58 +102,32 @@
   selectMultiSelectSidebarTabOrder,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
+  import { ensureWorkspaceTasksLoaded } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 
   interface Props {
     workspaceId: string;
-    notesLoading?: boolean;
-    selectedNoteId?: string | null;
-    onOpenNote?: (noteId: string) => void;
-    onOpenAgent?: (agentId: string) => void;
-    onReorderNotes?: (noteIds: string[]) => void;
     onCreateNote?: () => void;
-    selectedFile?: string | null;
-    onOpenFile?: (filePath: string) => void;
     onCreateFile?: (folderPath: string, fileName?: string) => void | Promise<void>;
     onFileRenamed?: (oldPath: string, newPath: string) => void;
-    activeFilePath?: string | null;
-    activeFileStaged?: boolean | null;
-    isAllChangesViewActive?: boolean;
     isNewWorkspaceSession?: boolean;
     onCreateAgent?: () => void;
     onCreateAgentWithSpecialist?: (specialistId: string | null) => void;
-    onCreateAgentWithPrompt?: (prompt: string, name: string) => void;
-    onShowAgent?: (agentId: string) => void;
-    onOpenTerminal?: (terminalId: string) => void;
-    onCreateTerminal?: () => void;
-    onOpenAcceptChanges?: () => void;
     onAcceptChanges?: () => void;
     class?: string;
-    [key: string]: unknown;
   }
 
   let {
     workspaceId,
-    notesLoading = false,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    selectedNoteId = null,
-    onReorderNotes,
     onCreateNote,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    selectedFile = null,
     onCreateFile,
     onFileRenamed,
     isNewWorkspaceSession = false,
     onCreateAgent,
     onCreateAgentWithSpecialist,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    onCreateTerminal,
-    onOpenAcceptChanges,
     onAcceptChanges,
     class: className,
-    ...restProps
   }: Props = $props();
-
-  void restProps;
 
 
   // Reactive writable store that mirrors workspaceId so Redux selectors
@@ -232,6 +210,7 @@
   // auto-subscribe in templates/derivations via $workspace, $notes, etc.
   const workspace = selectWorkspaceById(workspaceIdStore);
   const notes = selectAllNotes(workspaceIdStore);
+  const notesLoading$ = selectNotesLoading(workspaceIdStore);
   const allWorkspaceAgents = selectAllWorkspaceAgents(workspaceIdStore);
   const foregroundWorkspaceAgents = selectForegroundWorkspaceAgents(workspaceIdStore);
   const agentsLoading = selectIsLoadingAgents(workspaceIdStore);
@@ -435,6 +414,20 @@
     persistSelectedTabs(new Set([id]));
   }
 
+  // Core state and handlers (same as StackedSidebar)
+  const ftCurrentWsId$ = selectCurrentWorkspaceId();
+  const ftStagedChanges$ = selectCurrentStagedWorkingChanges();
+  const ftUnstagedChanges$ = selectCurrentUnstagedWorkingChanges();
+  const ftCommits$ = selectCurrentCommits();
+  const storeHasCorrectWorkspace = $derived($ftCurrentWsId$ === workspaceId);
+
+  // Canonical task progress for phase/stats derivation.
+  const workspaceTaskProgress$ = selectWorkspaceTaskProgress(workspaceIdStore);
+  $effect(() => {
+    if (!workspaceId) return;
+    appStore.dispatch(ensureWorkspaceTasksLoaded(String(workspaceId)));
+  });
+
   // Workspace phase derivation for Overview tab
   // Memoize to avoid creating new object references on every evaluation
   const defaultPhaseInfo: WorkspacePhaseInfo = {
@@ -451,10 +444,19 @@
   };
   let cachedPhaseInfo: WorkspacePhaseInfo = defaultPhaseInfo;
   let cachedPhaseStats: WorkspacePhaseStats = defaultPhaseStats;
+  // Working changes/commits from the canonical changes slice (current-workspace scoped).
+  const phaseChangedFiles = $derived(
+    storeHasCorrectWorkspace ? [...$ftStagedChanges$, ...$ftUnstagedChanges$] : undefined,
+  );
+  const phaseCommits = $derived(storeHasCorrectWorkspace ? $ftCommits$ : undefined);
   const workspacePhaseInfo = $derived.by(() => {
     if (!$workspace) return defaultPhaseInfo;
     const hasActiveAgents = $allWorkspaceAgents.some((a) => isAgentCurrentlyRunning(a.id));
-    const next = deriveWorkspacePhase($workspace, { hasActiveAgents });
+    const next = deriveWorkspacePhase($workspace, {
+      hasActiveAgents,
+      taskProgress: $workspaceTaskProgress$,
+      hasChangedFiles: phaseChangedFiles ? phaseChangedFiles.length > 0 : undefined,
+    });
     if (
       next.phase !== cachedPhaseInfo.phase ||
       next.label !== cachedPhaseInfo.label ||
@@ -467,20 +469,27 @@
   });
   const workspacePhaseStats = $derived.by(() => {
     if (!$workspace) return defaultPhaseStats;
-    const next = deriveWorkspaceStats($workspace);
+    const next = deriveWorkspaceStats($workspace, {
+      taskProgress: $workspaceTaskProgress$,
+      files: phaseChangedFiles
+        ? {
+            changed: phaseChangedFiles.length,
+            additions: phaseChangedFiles.reduce((sum, c) => sum + (c.stats?.additions ?? 0), 0),
+            deletions: phaseChangedFiles.reduce((sum, c) => sum + (c.stats?.deletions ?? 0), 0),
+          }
+        : undefined,
+      commits: phaseCommits
+        ? {
+            total: phaseCommits.length,
+            unpushed: phaseCommits.filter((c) => !(c.isPushed ?? (c.stage !== 'local'))).length,
+          }
+        : undefined,
+    });
     if (JSON.stringify(next) !== JSON.stringify(cachedPhaseStats)) {
       cachedPhaseStats = next;
     }
     return cachedPhaseStats;
   });
-
-  // Core state and handlers (same as StackedSidebar)
-  const handleOpenAcceptChanges = $derived(onOpenAcceptChanges || onAcceptChanges);
-  const ftCurrentWsId$ = selectCurrentWorkspaceId();
-  const ftStagedChanges$ = selectCurrentStagedWorkingChanges();
-  const ftUnstagedChanges$ = selectCurrentUnstagedWorkingChanges();
-  const ftCommits$ = selectCurrentCommits();
-  const storeHasCorrectWorkspace = $derived($ftCurrentWsId$ === workspaceId);
   const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
   // Use reactive selector subscription for focused tab state
   const activeTab$ = selectActiveTab(workspaceIdStore);
@@ -490,6 +499,14 @@
   const focusedContentAgentId = $derived($activeTab$?.agentId ?? null);
   const focusedContentFilePath = $derived($activeTab$?.filePath ?? null);
   const focusedContentDiffPath = $derived($activeTab$?.diffPath ?? null);
+  let lastInitializedNotesWorkspaceId: string | null = null;
+
+  $effect(() => {
+    if (!workspaceId || lastInitializedNotesWorkspaceId === workspaceId) return;
+    lastInitializedNotesWorkspaceId = workspaceId;
+    const initialSelectedNoteId = focusedContentType === 'note' ? focusedContentNoteId : undefined;
+    appStore.dispatch(initializeNotes(workspaceId, initialSelectedNoteId ?? undefined));
+  });
 
   const effectiveSelectedNoteId = $derived(
     focusedContentType === 'note' ? focusedContentNoteId : null,
@@ -1065,7 +1082,7 @@
                     activeFilePath={effectiveActiveFilePath}
                     activeCommitHash={effectiveActiveCommitHash}
                     agentsLoading={$agentsLoading}
-                    {notesLoading}
+                    notesLoading={$notesLoading$}
                     changesLoading={!storeHasCorrectWorkspace}
                     onSwitchTab={switchToTab}
                     onOpenNote={(noteId) => handleOpenNoteInPanel(noteId)}
@@ -1101,9 +1118,8 @@
                       selectedNoteId={effectiveSelectedNoteId}
                       onOpenNote={handleOpenNoteInPanel}
                       onOpenAgent={handleOpenAgentInPanel}
-                      {onReorderNotes}
                       {onCreateNote}
-                      loading={notesLoading}
+                      loading={$notesLoading$}
                       showAddSection={false}
                     />
                   </div>
@@ -1123,7 +1139,7 @@
                             }),
                           );
                         }}
-                        onOpenFullPanel={handleOpenAcceptChanges}
+                        onOpenFullPanel={onAcceptChanges}
                         onOpenNote={handleOpenNoteInPanel}
                         onOpenCodeReview={handleOpenCodeReviewInPanel}
                       />

@@ -33,15 +33,18 @@
   let streamContent = $state('');
   let contentBlocks = $state<ContentBlock[]>([]);
   let error = $state<string | null>(null);
+  let isComponentMounted = false;
   let streamCleanup: (() => void) | null = null;
   let generatedScript = $state<{ name: string; description: string; content: string } | null>(null);
 
   // Start the agent when mounted
   onMount(() => {
-    startAgent();
+    isComponentMounted = true;
+    void startAgent();
   });
 
   onDestroy(() => {
+    isComponentMounted = false;
     cleanup();
   });
 
@@ -69,6 +72,17 @@
         agentId,
       });
 
+      if (!isComponentMounted) {
+        if (result.streamId) {
+          try {
+            await invoke('setup-scripts:stop-agent', { agentId });
+          } catch (stopError) {
+            logger.error('Failed to stop setup script agent after unmount', stopError);
+          }
+        }
+        return;
+      }
+
       if (!result.success) {
         error = result.error || 'Failed to start agent';
         isStreaming = false;
@@ -82,12 +96,21 @@
       }
     } catch (err) {
       logger.error('Failed to start setup script agent', err);
+      if (!isComponentMounted) {
+        return;
+      }
       error = err instanceof Error ? err.message : 'Failed to start agent';
       isStreaming = false;
     }
   }
 
   function setupStreamListener(streamId: string) {
+    if (!isComponentMounted) {
+      return;
+    }
+
+    cleanup();
+
     // Listen for stream chunks - electronAPI.on passes data directly (not as second param)
     const handleChunk = (data: { streamId: string; chunk: string }) => {
       if (data.streamId === streamId) {

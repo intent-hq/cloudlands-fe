@@ -12,11 +12,16 @@ import type {
   UpdateWorkspaceRequest,
   Result,
   WorkspaceUIContext,
+  WorkspaceDiffSummary,
+  WorkspaceGitSummary,
+  WorkspaceTask,
 } from '$shared/types';
 import { Logger } from '$shared/logger';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
+import { invoke as invokeIpc } from '$shared/generated/ipc-client';
 
 const logger = new Logger('WorkspaceClient');
+const WORKSPACE_CLIENT_CACHE_MAX_ENTRIES = 100;
 
 /**
  * Normalize workspace path fields to use forward slashes.
@@ -68,6 +73,26 @@ export class WorkspaceClient {
     return `${channel}:${JSON.stringify(data || {})}`;
   }
 
+  private pruneExpiredCacheEntries(now = Date.now()): void {
+    for (const [key, entry] of this.cache) {
+      if (now - entry.timestamp >= this.CACHE_TTL) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
+  private setCacheEntry(key: string, data: any): void {
+    this.pruneExpiredCacheEntries();
+    this.cache.delete(key);
+    this.cache.set(key, { data, timestamp: Date.now() });
+
+    while (this.cache.size > WORKSPACE_CLIENT_CACHE_MAX_ENTRIES) {
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey === undefined) break;
+      this.cache.delete(oldestKey);
+    }
+  }
+
   /**
    * Invoke an IPC call with caching and deduplication.
    *
@@ -80,6 +105,7 @@ export class WorkspaceClient {
       const requestMutationCounter = this.mutationCounter;
       // Check for pending request (deduplication)
       const cacheKey = this.getCacheKey(channel, data);
+      this.pruneExpiredCacheEntries();
       const pending = this.pendingRequests.get(cacheKey);
       if (pending) {
         logger.debug(`[WorkspaceClient] Reusing pending request for ${channel}`);
@@ -92,6 +118,9 @@ export class WorkspaceClient {
         if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
           logger.debug(`[WorkspaceClient] Using cached response for ${channel}`);
           return { ok: true, data: cached.data };
+        }
+        if (cached) {
+          this.cache.delete(cacheKey);
         }
       }
 
@@ -129,14 +158,14 @@ export class WorkspaceClient {
             }
           }
 
-          const response = await window.electronAPI.invoke(channel, serializedData);
+          const response = await invokeIpc(channel, serializedData);
           // Handle both Result and CommandResponse formats
           const result = this.normalizeResponse<T>(response);
 
           // Cache successful GET operations only if no mutation occurred during this request
           if (result.ok && (channel.includes(':get') || channel.includes(':list'))) {
             if (requestMutationCounter === this.mutationCounter) {
-              this.cache.set(cacheKey, { data: result.data, timestamp: Date.now() });
+              this.setCacheEntry(cacheKey, result.data);
             }
           }
 
@@ -373,13 +402,57 @@ export class WorkspaceClient {
     return result;
   }
 
+  /**
+   * Invoke an IPC call bypassing the client cache and deduplication.
+   * Used for on-demand summary endpoints whose freshness is event-driven
+   * (e.g., refreshed by 'workspace:tasks-changed') rather than TTL-based.
+   */
+  private async invokeFresh<T>(channel: string, data?: any): Promise<Result<T, string>> {
+    try {
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        const response = await invokeIpc(channel, data);
+        return this.normalizeResponse<T>(response);
+      }
+      return { ok: false, error: 'IPC not available' };
+    } catch (error) {
+      logger.error(`[WorkspaceClient] IPC error for ${channel}:`, error);
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'IPC call failed',
+      };
+    }
+  }
+
+  /** Fetch the on-demand diff summary for a workspace (null when unavailable). */
+  async getDiffSummary(
+    workspaceId: WorkspaceId,
+  ): Promise<Result<WorkspaceDiffSummary | null, string>> {
+    return this.invokeFresh<WorkspaceDiffSummary | null>(WORKSPACE_CHANNELS.GET_DIFF_SUMMARY, {
+      workspaceId,
+    });
+  }
+
+  /** Fetch the on-demand git summary for a workspace (null when unavailable). */
+  async getGitSummary(
+    workspaceId: WorkspaceId,
+  ): Promise<Result<WorkspaceGitSummary | null, string>> {
+    return this.invokeFresh<WorkspaceGitSummary | null>(WORKSPACE_CHANNELS.GET_GIT_SUMMARY, {
+      workspaceId,
+    });
+  }
+
+  /** Fetch the on-demand canonical task list for a workspace. */
+  async getTasks(workspaceId: WorkspaceId): Promise<Result<WorkspaceTask[], string>> {
+    return this.invokeFresh<WorkspaceTask[]>(WORKSPACE_CHANNELS.GET_TASKS, { workspaceId });
+  }
+
   async triggerCheck(workspaceId: string, reason?: string): Promise<Result<void, string>> {
     logger.info('[WorkspaceClient] Triggering check:', { workspaceId, reason });
 
     // Bypass cache and deduplication for trigger-check since we always want it to execute
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const response = await window.electronAPI.invoke(WORKSPACE_CHANNELS.TRIGGER_CHECK, {
+        const response = await invokeIpc(WORKSPACE_CHANNELS.TRIGGER_CHECK, {
           workspaceId,
           reason,
         });

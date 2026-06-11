@@ -6,15 +6,14 @@
  * Handles:
  * - IPC event listeners (file-tracking:changes-updated, workspace-changes, etc.)
  * - Workspace initialization flow
- * - Periodic sync of agent stats with main process (safety net)
+ * - Requested agent line-stat loads from the main process
  */
 
 import {
-  all,
   call,
   put,
+  takeEvery,
   takeLatest,
-  delay,
   fork,
   cancel,
   type SagaGenerator,
@@ -25,7 +24,6 @@ import {
   IpcTimeoutError,
 } from '$lib/electron-bridge';
 import { Logger } from '$lib/utils/logger';
-import { TRACKING_CONFIG } from '$features/file-tracking/tracking.config';
 import { takeEveryFromElectronChannel } from '$store/renderer/utils/ipc-channel';
 import {
   initWorkspace,
@@ -33,13 +31,22 @@ import {
   setLoading,
   setError,
   setHasLoadedInitialData,
-  updateAgentStatsBatch,
+  requestAgentLineStats,
+  updateAgentStats,
+  agentLineStatsRequestStarted,
+  agentLineStatsRequestSucceeded,
+  agentLineStatsRequestFailed,
 } from '../changes-slice';
 import type { LineChangeStats } from '../changes-types';
+import {
+  selectChangesLastUpdatedAt,
+  selectShouldRequestAgentLineStats,
+} from '../changes-selectors';
 import { openWorkspaceLocalChanges } from '../../workspace-navigation/workspace-navigation-slice';
 import { selectActiveWorkspaceId } from '../../workspace/workspace-selectors';
-import { selectAllWorkspaceAgents } from '../../workspace-agents/workspace-agents-selectors';
-import { setGitStatus } from '../../git/git-slice';
+import { workspaceUnmounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
+import { streamCompleted } from '../../chat-state/chat-state-slice';
+import { selectAgentSessionWorkspaceId } from '../../agent-session/agent-session-selectors';
 import {
   doSyncWithGit,
   doLoadWorkspaceData,
@@ -48,13 +55,13 @@ import {
 } from './changes-operations-saga';
 import { lineChangesClient } from '$features/line-changes/line-changes.client';
 import { createLogger } from '$lib/utils/client-logger';
+import type { AgentId } from '$shared/types/branded-ids';
 
 const logger = new Logger({ category: 'ChangesSaga' });
 const agentStatsLogger = createLogger('ChangesSaga:AgentStats');
 
 const IPC_INIT_TIMEOUT_MS = 10000;
-const config = TRACKING_CONFIG.fileTracking;
-const AGENT_STATS_SYNC_INTERVAL = 60000; // 60 seconds safety net
+export const CHANGES_AUTO_REFRESH_FRESHNESS_MS = 60_000;
 
 // ---------------------------------------------------------------------------
 // IPC Listener Sagas
@@ -69,13 +76,43 @@ type FileTrackingEvent = {
 
 const pendingTrackingReadyWorkspaceIds = new Set<string>();
 
-function* watchChangesUpdated(wsId: string) {
+export function resetChangesSagaPendingState(): void {
+  pendingTrackingReadyWorkspaceIds.clear();
+}
+
+export function isChangesAutomaticRefreshStale(lastUpdatedAt: number, now: number): boolean {
+  return lastUpdatedAt <= 0 || now - lastUpdatedAt > CHANGES_AUTO_REFRESH_FRESHNESS_MS;
+}
+
+function* requestAutomaticChangesRefreshIfStale(wsId: string): SagaGenerator<void> {
+  const lastUpdatedAt = yield* selectChangesLastUpdatedAt.effect(wsId);
+  if (!isChangesAutomaticRefreshStale(lastUpdatedAt, Date.now())) return;
+  yield* put(refreshRequested(wsId));
+}
+
+function getCurrentIsoTimestamp(): string {
+  return new Date().toISOString();
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function* handleChangesUpdatedEvent(
+  wsId: string,
+  data: FileTrackingEvent,
+): SagaGenerator<void> {
+  if (data.workspaceId !== wsId) return;
+  logger.debug('Ignoring changes-updated as an automatic changes refresh trigger', {
+    wsId,
+  });
+}
+
+function* watchChangesUpdated(wsId: string): SagaGenerator<void> {
   yield* takeEveryFromElectronChannel<FileTrackingEvent>(
     'file-tracking:changes-updated',
     function* (data) {
-      if (data.workspaceId !== wsId) return;
-      yield* delay(config.updateDebounce);
-      yield* call(doLoadWorkspaceData, wsId);
+      yield* call(handleChangesUpdatedEvent, wsId, data);
     },
   );
 }
@@ -83,20 +120,12 @@ function* watchChangesUpdated(wsId: string) {
 export function* handleTrackingReadyEvent(data: { workspaceId?: string }): SagaGenerator<void> {
   const wsId = data.workspaceId;
   if (!wsId) return;
-  const currentWsId = yield* selectActiveWorkspaceId.effect();
-  if (currentWsId !== wsId) {
-    pendingTrackingReadyWorkspaceIds.add(wsId);
-    return;
-  }
-  yield* put(refreshRequested(wsId));
+  logger.debug('Ignoring listener-ready as an automatic changes refresh trigger', { wsId });
 }
 
 export function* replayPendingTrackingReadyForWorkspace(wsId: string): SagaGenerator<void> {
   if (!pendingTrackingReadyWorkspaceIds.has(wsId)) return;
-  const currentWsId = yield* selectActiveWorkspaceId.effect();
-  if (currentWsId !== wsId) return;
   pendingTrackingReadyWorkspaceIds.delete(wsId);
-  yield* put(refreshRequested(wsId));
 }
 
 export function* watchGlobalTrackingReady() {
@@ -108,14 +137,32 @@ export function* watchGlobalTrackingReady() {
   );
 }
 
-function* watchAgentFileChanged(wsId: string) {
+export function* handleWorkspaceUnmountedForChanges(
+  action: ReturnType<typeof workspaceUnmounted>,
+): SagaGenerator<void> {
+  const [wsId] = action.payload;
+  pendingTrackingReadyWorkspaceIds.delete(wsId);
+}
+
+export function* watchWorkspaceUnmountedForChanges(): SagaGenerator<void> {
+  yield* takeEvery(workspaceUnmounted, handleWorkspaceUnmountedForChanges);
+}
+
+export function* handleAgentFileChangedEvent(
+  wsId: string,
+  data: FileTrackingEvent,
+): SagaGenerator<void> {
+  if (data.workspaceId !== wsId) return;
+  logger.debug('Ignoring agent-file-changed as an automatic changes refresh trigger', {
+    wsId,
+  });
+}
+
+function* watchAgentFileChanged(wsId: string): SagaGenerator<void> {
   yield* takeEveryFromElectronChannel<FileTrackingEvent>(
     'file-tracking:agent-file-changed',
     function* (data) {
-      if (data.workspaceId !== wsId) return;
-      yield* delay(50);
-      yield* call(doSyncWithGit, wsId, true);
-      yield* call(doLoadWorkspaceData, wsId);
+      yield* call(handleAgentFileChangedEvent, wsId, data);
     },
   );
 }
@@ -125,9 +172,9 @@ export function* handleWorkspaceChangesEvent(
   data: { workspaceId?: string },
 ): SagaGenerator<void> {
   if (data.workspaceId !== wsId) return;
-  yield* delay(config.updateDebounce);
-  yield* call(doSyncWithGit, wsId, true);
-  yield* call(doLoadWorkspaceData, wsId);
+  logger.debug('Ignoring workspace-changes as an automatic changes refresh trigger', {
+    wsId,
+  });
 }
 
 function* watchWorkspaceChanges(wsId: string) {
@@ -139,15 +186,6 @@ function* watchWorkspaceChanges(wsId: string) {
   );
 }
 
-function* watchGitStatusAction(wsId: string): SagaGenerator<void> {
-  yield* takeLatest(setGitStatus, function* (action) {
-    const { wsId: actionWsId } = action.payload;
-    if (actionWsId !== wsId) return;
-    yield* delay(config.updateDebounce);
-    yield* call(doLoadWorkspaceData, wsId);
-  });
-}
-
 export function* handleOpenWorkspaceLocalChanges(
   action: ReturnType<typeof openWorkspaceLocalChanges>,
 ): SagaGenerator<void> {
@@ -155,71 +193,64 @@ export function* handleOpenWorkspaceLocalChanges(
   if (!wsId) return;
   const currentWsId = yield* selectActiveWorkspaceId.effect();
   if (currentWsId !== wsId) return;
-  yield* put(refreshRequested(wsId));
+  yield* requestAutomaticChangesRefreshIfStale(wsId);
 }
 
 function* watchOpenWorkspaceLocalChanges(): SagaGenerator<void> {
   yield* takeLatest(openWorkspaceLocalChanges, handleOpenWorkspaceLocalChanges);
 }
 
+export function* handleAgentStreamCompletedForChanges(
+  action: ReturnType<typeof streamCompleted>,
+): SagaGenerator<void> {
+  const [agentId] = action.payload;
+  const wsId = yield* selectAgentSessionWorkspaceId.effect(agentId);
+  if (!wsId) return;
+  const currentWsId = yield* selectActiveWorkspaceId.effect();
+  if (currentWsId !== wsId) return;
+  yield* requestAutomaticChangesRefreshIfStale(wsId);
+}
+
+function* watchAgentStreamCompletedForChanges(): SagaGenerator<void> {
+  yield* takeEvery(streamCompleted, handleAgentStreamCompletedForChanges);
+}
+
 export function* watchWorkspaceIpcListeners(wsId: string): SagaGenerator<void> {
   yield* fork(watchChangesUpdated, wsId);
   yield* fork(watchAgentFileChanged, wsId);
   yield* fork(watchWorkspaceChanges, wsId);
-  yield* fork(watchGitStatusAction, wsId);
 }
 
 // ---------------------------------------------------------------------------
-// Agent stats periodic sync (absorbed from line-changes-saga)
+// Requested agent line stats (absorbed from line-changes-saga)
 // ---------------------------------------------------------------------------
 
-function* fetchAgentStatsWorker(
-  agentId: string,
-): SagaGenerator<{ id: string; stats: LineChangeStats } | null> {
+export function* handleRequestAgentLineStats(
+  action: ReturnType<typeof requestAgentLineStats>,
+): SagaGenerator<void> {
+  const { agentId, forceRefresh } = action.payload;
+
+  const shouldRequest = yield* selectShouldRequestAgentLineStats.effect(agentId, forceRefresh);
+  if (!shouldRequest) return;
+
+  yield* put(agentLineStatsRequestStarted(agentId, getCurrentIsoTimestamp()));
   try {
-    const stats = yield* call([lineChangesClient, lineChangesClient.getAgentStats], agentId as any);
-    return stats ? { id: agentId, stats } : null;
-  } catch {
-    // Best effort: one agent's failure must not abort the batch
-    return null;
-  }
-}
-
-export function* syncAgentStatsFromMain() {
-  try {
-    const wsId = yield* selectActiveWorkspaceId.effect();
-    if (!wsId) return;
-
-    // Use canonical workspace agents list instead of only already-known stats keys
-    const agents = yield* selectAllWorkspaceAgents.effect(wsId);
-    if (agents.length === 0) return;
-
-    const results = yield* all(agents.map((agent) => call(fetchAgentStatsWorker, agent.id)));
-
-    const batch: Record<string, LineChangeStats> = {};
-    for (const result of results) {
-      if (result) {
-        batch[result.id] = result.stats;
-      }
+    const stats: LineChangeStats | null = yield* call(
+      [lineChangesClient, lineChangesClient.getAgentStats],
+      agentId as AgentId,
+    );
+    if (stats) {
+      yield* put(updateAgentStats(agentId, stats));
     }
-
-    if (Object.keys(batch).length > 0) {
-      yield* put(updateAgentStatsBatch(batch));
-    }
+    yield* put(agentLineStatsRequestSucceeded(agentId, getCurrentIsoTimestamp()));
   } catch (error) {
-    agentStatsLogger.error('Failed to sync agent stats from main process:', error as Error);
+    agentStatsLogger.warn('Failed to load requested agent line stats', { agentId, error });
+    yield* put(agentLineStatsRequestFailed(agentId, getErrorMessage(error), getCurrentIsoTimestamp()));
   }
 }
 
-function* periodicAgentStatsSyncSaga() {
-  // Initial sync
-  yield* call(syncAgentStatsFromMain);
-
-  // Then periodic
-  while (true) {
-    yield* delay(AGENT_STATS_SYNC_INTERVAL);
-    yield* call(syncAgentStatsFromMain);
-  }
+export function* watchRequestedAgentLineStats(): SagaGenerator<void> {
+  yield* takeEvery(requestAgentLineStats, handleRequestAgentLineStats);
 }
 
 // ---------------------------------------------------------------------------
@@ -304,14 +335,20 @@ export function* changesSaga(): SagaGenerator<void> {
   // Fork the operations saga to handle all operation request actions
   yield* fork(fileTrackingOperationsSaga);
 
-  // Fork agent stats periodic sync
-  yield* fork(periodicAgentStatsSyncSaga);
+  // Watch explicit requested agent line-stat loads
+  yield* fork(watchRequestedAgentLineStats);
 
   // Watch tab-open intent actions and route refresh through changes operations
   yield* fork(watchOpenWorkspaceLocalChanges);
 
+  // Watch existing agent done Redux signal; agent:idle is normalized to streamCompleted upstream.
+  yield* fork(watchAgentStreamCompletedForChanges);
+
   // Watch global listener-ready events before workspace-scoped init listeners exist
   yield* fork(watchGlobalTrackingReady);
+
+  // Drop stale deferred listener-ready workspace IDs when a workspace unmounts.
+  yield* fork(watchWorkspaceUnmountedForChanges);
 
   // Watch for workspace init and set up listeners before initial sync/load
   yield* takeLatest(initWorkspace, handleInitWorkspaceWithListeners);

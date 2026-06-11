@@ -42,9 +42,10 @@
   import type { PureDiffProps } from './types.js';
   import DiffHeader from './DiffHeader.svelte';
   import {
-  getDiffWorkerPool,
-  getSafeDiffLanguage,
-} from '$lib/utils/diff-highlighter-preloader';
+    acquireDiffWorkerPool,
+    getSafeDiffLanguage,
+    releaseDiffWorkerPool,
+  } from '$lib/utils/diff-highlighter-preloader';
   import { selectCodeFontFamilyCSS } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
@@ -154,6 +155,7 @@
   // State
   let containerRef: HTMLDivElement | undefined = $state();
   let fileDiffInstance: FileDiff | undefined = $state();
+  let fileDiffOwnsWorkerPool = false;
   let collapsed = $state(false);
 
   const FOLDED_ROW_SELECTOR = "[data-separator='line-info'], [data-separator='line-info-basic']";
@@ -853,14 +855,38 @@
   let lastVirtualizerRef: typeof virtualizer | undefined;
 
   function createFileDiffInstance(options: ReturnType<typeof buildFileDiffOptions>): FileDiff {
+    const workerPool = acquireDiffWorkerPool();
+
     // When a Virtualizer is supplied (multi-file diff list, e.g.
     // `ChatChangesPanel`), use `VirtualizedFileDiff` so the virtualizer
     // swaps off-screen files to height-preserving placeholders and only
     // on-screen files hold live hunk DOM. Otherwise fall back to the
     // plain `FileDiff` path used by single-diff callsites.
-    return virtualizer
-      ? new VirtualizedFileDiff(options, virtualizer, undefined, getDiffWorkerPool())
-      : new FileDiff(options, getDiffWorkerPool());
+    try {
+      const instance = virtualizer
+        ? new VirtualizedFileDiff(options, virtualizer, undefined, workerPool)
+        : new FileDiff(options, workerPool);
+      fileDiffOwnsWorkerPool = true;
+      return instance;
+    } catch (error) {
+      releaseDiffWorkerPool();
+      throw error;
+    }
+  }
+
+  function cleanupFileDiffInstance(): void {
+    const instance = fileDiffInstance;
+    if (!instance) return;
+
+    fileDiffInstance = undefined;
+    try {
+      instance.cleanUp();
+    } finally {
+      if (fileDiffOwnsWorkerPool) {
+        fileDiffOwnsWorkerPool = false;
+        releaseDiffWorkerPool();
+      }
+    }
   }
 
   // Initialize / update the FileDiff instance.
@@ -881,8 +907,7 @@
     lastStructuralSig = getStructuralSignature();
 
     if (fileDiffInstance && virtualizer !== lastVirtualizerRef) {
-      fileDiffInstance.cleanUp();
-      fileDiffInstance = undefined;
+      cleanupFileDiffInstance();
     }
 
     if (!fileDiffInstance) {
@@ -1009,7 +1034,7 @@
   // Cleanup on destroy
   onDestroy(() => {
     cancelSearchDebounce();
-    fileDiffInstance?.cleanUp();
+    cleanupFileDiffInstance();
   });
 </script>
 

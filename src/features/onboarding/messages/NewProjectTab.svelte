@@ -6,6 +6,7 @@
    */
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { invoke } from '$shared/generated/ipc-client';
   import Input from '$lib/components/ui/input/input.svelte';
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -39,7 +40,7 @@
   async function handleSelectParentFolder() {
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await window.electronAPI.invoke('dialog:open', {
+        const result = await invoke<any>('dialog:open', {
           directory: true,
           title: 'Select Parent Folder',
           createDirectory: true,

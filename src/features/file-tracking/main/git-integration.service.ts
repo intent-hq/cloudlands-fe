@@ -25,15 +25,29 @@ import {
 const logger = new Logger({ category: 'GitIntegrationService' });
 
 // Debounce helper
+type DebouncedFunction<T extends (...args: any[]) => any> = ((
+  ...args: Parameters<T>
+) => void) & { cancel: () => void };
+
 function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number,
-): (...args: Parameters<T>) => void {
+): DebouncedFunction<T> {
   let timeout: NodeJS.Timeout | null = null;
-  return function (...args: Parameters<T>) {
+  const debounced = function (...args: Parameters<T>) {
     if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
+    timeout = setTimeout(() => {
+      timeout = null;
+      func(...args);
+    }, wait);
+  } as DebouncedFunction<T>;
+  debounced.cancel = () => {
+    if (timeout) {
+      clearTimeout(timeout);
+      timeout = null;
+    }
   };
+  return debounced;
 }
 
 export class GitIntegrationService extends EventEmitter {
@@ -48,7 +62,7 @@ export class GitIntegrationService extends EventEmitter {
   private processingChanges = false;
   private lastProcessedChangeId: string | null = null;
   private changeQueue: Map<string, any> = new Map(); // Queue for batch processing
-  private debouncedProcessQueue: () => void;
+  private debouncedProcessQueue: DebouncedFunction<() => void>;
   private recentChangeKeys = new Map<string, number>();
   private static readonly DEDUP_WINDOW_MS = 2000;
   private lastSyncTime: number = 0;
@@ -201,21 +215,23 @@ export class GitIntegrationService extends EventEmitter {
    * Stop listening to git changes
    */
   stopListening(): void {
-    if (!this.isListening || !this.changeDetector) {
-      return;
-    }
-
     // Use the bound handlers for proper cleanup
-    if (this.boundHandleGitChanges) {
+    if (this.changeDetector && this.boundHandleGitChanges) {
       this.changeDetector.off('changes', this.boundHandleGitChanges);
     }
-    if (this.boundHandleCommittedChanges) {
+    if (this.changeDetector && this.boundHandleCommittedChanges) {
       this.changeDetector.off('committed-changes', this.boundHandleCommittedChanges);
     }
 
     this.isListening = false;
+    this.debouncedProcessQueue.cancel();
     this.changeQueue.clear();
+    this.recentChangeKeys.clear();
     this.lastProcessedChangeId = null;
+    this.boundHandleGitChanges = undefined;
+    this.boundHandleCommittedChanges = undefined;
+    this.changeDetector = undefined;
+    this.clearStageOperationSuppression();
     logger.debug('Stopped listening to git changes', { workspaceId: this.workspaceId });
   }
 
@@ -276,6 +292,14 @@ export class GitIntegrationService extends EventEmitter {
    * completes and the UI has had time to process the optimistic update.
    */
   endStageOperation(): void {
+    this.clearStageOperationSuppression();
+
+    logger.debug('Stage operation suppression ended', {
+      workspaceId: this.workspaceId,
+    });
+  }
+
+  private clearStageOperationSuppression(): void {
     this.stageOperationInProgress = false;
     this.stageOperationPaths.clear();
 
@@ -283,10 +307,6 @@ export class GitIntegrationService extends EventEmitter {
       clearTimeout(this.stageOperationTimeout);
       this.stageOperationTimeout = null;
     }
-
-    logger.debug('Stage operation suppression ended', {
-      workspaceId: this.workspaceId,
-    });
   }
 
   /**

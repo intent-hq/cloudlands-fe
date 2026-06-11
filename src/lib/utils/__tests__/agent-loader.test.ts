@@ -247,5 +247,30 @@ describe('agent-loader', () => {
       await getStoredAgentsFromDisk(workspaceId);
       expect(invoke).toHaveBeenCalledTimes(2);
     });
+
+    it('evicts oldest completed frontend cache entries when the workspace cache cap is exceeded', async () => {
+      vi.mocked(invoke).mockImplementation(async (_channel, payload: { workspaceId: string }) => ({
+        success: true,
+        data: [
+          {
+            id: `agent-${payload.workspaceId}`,
+            workspaceId: payload.workspaceId,
+            name: `Agent ${payload.workspaceId}`,
+            status: 'Active',
+            messages: [],
+            createdAt: '2025-01-01T00:00:00Z',
+            updatedAt: '2025-01-01T00:01:00Z',
+          },
+        ],
+      }));
+
+      for (let i = 0; i <= 50; i++) {
+        await getStoredAgentsFromDisk(`workspace-${i}`);
+      }
+
+      await getStoredAgentsFromDisk('workspace-0');
+
+      expect(invoke).toHaveBeenCalledTimes(52);
+    });
   });
 });

@@ -58,6 +58,7 @@ import {
   agentSessionSendMessageRequested,
   agentSessionStopChatRequested,
   replaceMessages,
+  updateMessage,
 } from '../agent-session-slice';
 import type {
   AgentSessionContextReference,
@@ -702,11 +703,21 @@ export function* handleAgentSessionSendMessageRequested(
       personality: options?.personality,
       resetHistory: options?.resetHistory,
       model: options?.model,
+      userAppMessageId: options?.userAppMessageId,
     });
     yield* put(action.success(undefined as void));
   } catch (error) {
     const errorMessage = getErrorMessage(error);
     const cleanMessage = cleanErrorMessage(errorMessage);
+    // Keep the optimistic user message visible and mark it with an error
+    // state. No-ops if the canonical message already replaced it.
+    if (options?.optimisticMessageId) {
+      yield* put(
+        updateMessage(agentId, options.optimisticMessageId, {
+          error: cleanMessage || 'Failed to send message',
+        }),
+      );
+    }
     if (isMessageGuardError(error)) {
       logger.info('Message blocked by guard, clearing send state', { agentId, reason: errorMessage });
       yield* put(chatSendFailed(agentId, ''));

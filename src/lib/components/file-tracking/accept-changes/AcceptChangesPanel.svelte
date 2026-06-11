@@ -20,6 +20,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import PanelWrapper from '$lib/components/ui/PanelWrapper.svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { invoke } from '$shared/generated/ipc-client';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import {
   selectStagedWorkingChanges as selectFtStagedChanges,
@@ -900,7 +901,9 @@
 
   async function handlePickExportFolder(): Promise<string | undefined> {
     try {
-      const result = await window.electronAPI?.invoke('dialog:open', {
+      if (typeof window === 'undefined' || !window.electronAPI) return undefined;
+
+      const result = await invoke<any>('dialog:open', {
         directory: true,
         title: 'Select Export Folder',
       });
@@ -1188,7 +1191,7 @@
       const rebaseCommand = `git fetch origin ${tb} && git rebase origin/${tb}`;
 
       // Create terminal with the rebase command
-      const result = await window.electronAPI.invoke('terminal:createWithCommand', {
+      const result = await invoke<any>('terminal:createWithCommand', {
         workspaceId,
         command: rebaseCommand,
         cwd: worktreePath,

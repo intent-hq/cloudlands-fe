@@ -12,11 +12,9 @@ import {
   delay,
   takeLatest,
   take,
-  cancel,
   cancelled,
 } from "typed-redux-saga";
 import type { SagaGenerator } from "typed-redux-saga";
-import type { Task } from "redux-saga";
 import {
   eventChannel,
   type EventChannel,
@@ -29,7 +27,6 @@ import {
   selectWorkspaceById,
   selectActiveWorkspace,
 } from "$store/renderer/slices/workspace/workspace-selectors";
-import { takeLatestFromSelector } from "ag-redux-toolkit/utils/sagas/selector-channel-effects";
 import { updateWorkspaceEntity } from "$store/renderer/slices/workspace/workspace-slice";
 import {
   PullRequestStatus,
@@ -44,9 +41,6 @@ import {
   refreshPRStatusRequested,
   prStatusRefreshStarted,
   prStatusRefreshCompleted,
-  cleanupPRStatusWorkspace,
-  startPRPolling,
-  stopPRPolling,
 } from "../pr-status-slice";
 import { selectPRStatusLastRefreshTime } from "../pr-status-selectors";
 import {
@@ -388,47 +382,20 @@ async function showToastError(message: string): Promise<void> {
 
 // ── Polling Saga ──
 
-/** Manages polling for a single workspace. Cancellable via fork/cancel. */
-function* pollWorkspacePRStatus(wsId: string): SagaGenerator<void> {
+/** Manages polling for the active workspace. Cancellable via fork/cancel. */
+export function* pollActiveWorkspacePRStatus(): SagaGenerator<void> {
   try {
     while (true) {
       yield* delay(POLLING_INTERVAL_MS);
 
-      // Only refresh if this workspace is still the active one
-      const currentWsId: string | null = yield* selectActiveWorkspaceId.effect();
-      if (currentWsId !== wsId) continue;
+      const activeWorkspace: Workspace | undefined = yield* selectActiveWorkspace.effect();
+      if (!activeWorkspace?.id || activeWorkspace.activePullRequest == null) continue;
 
-      yield* put(refreshPRStatusRequested(wsId, false, false));
+      yield* put(refreshPRStatusRequested(activeWorkspace.id, false, false));
     }
   } finally {
     if (yield* cancelled()) {
-      logger.debug("[PRStatusSaga] Polling cancelled", { wsId });
-    }
-  }
-}
-
-/** Watches for start/stop polling actions and manages polling tasks per workspace. */
-function* watchPolling(): SagaGenerator<void> {
-  const pollingTasks: Record<string, Task> = {};
-
-  while (true) {
-    const action: ReturnType<typeof startPRPolling> | ReturnType<typeof stopPRPolling> | ReturnType<typeof cleanupPRStatusWorkspace> =
-      yield* take([startPRPolling, stopPRPolling, cleanupPRStatusWorkspace]);
-
-    const wsId = Array.isArray(action.payload) ? action.payload[0] : action.payload;
-
-    if (action.type === startPRPolling.type) {
-      // Cancel existing polling for this workspace
-      if (pollingTasks[wsId]) {
-        yield* cancel(pollingTasks[wsId]);
-      }
-      pollingTasks[wsId] = yield* fork(pollWorkspacePRStatus, wsId);
-    } else {
-      // Stop polling (both stopPRPolling and cleanupPRStatusWorkspace)
-      if (pollingTasks[wsId]) {
-        yield* cancel(pollingTasks[wsId]);
-        delete pollingTasks[wsId];
-      }
+      logger.debug("[PRStatusSaga] Active workspace polling cancelled");
     }
   }
 }
@@ -476,35 +443,11 @@ function* watchWindowFocus(): SagaGenerator<void> {
   }
 }
 
-// ── Active PR Polling Watcher ──
-
-/**
- * Watches the active workspace's activePullRequest and starts/stops polling
- * accordingly. Replaces the component-side $effect that dispatched
- * startPRPolling / stopPRPolling.
- */
-function* watchActiveWorkspacePRPolling(): SagaGenerator<void> {
-  yield* takeLatestFromSelector<Workspace | undefined>(
-    selectActiveWorkspace,
-    function* ({ payload: workspace }) {
-      const wsId = workspace?.id;
-      if (!wsId) return;
-
-      if (workspace.activePullRequest != null) {
-        yield* put(startPRPolling(wsId));
-      } else {
-        yield* put(stopPRPolling(wsId));
-      }
-    }
-  );
-}
-
 // ── Root Saga ──
 
 export function* prStatusSaga(): SagaGenerator<void> {
-  yield* fork(watchPolling);
   yield* fork(watchWindowFocus);
-  yield* fork(watchActiveWorkspacePRPolling);
+  yield* fork(pollActiveWorkspacePRStatus);
   yield* takeLatest(refreshPRStatusRequested, handleRefreshPRStatus);
 }
 

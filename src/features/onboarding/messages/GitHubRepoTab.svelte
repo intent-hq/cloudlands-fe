@@ -18,6 +18,7 @@
   import { onMount } from 'svelte';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
+  import { invoke } from '$shared/generated/ipc-client';
   import { shell } from '$lib/electron-bridge';
   import Input from '$lib/components/ui/input/input.svelte';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
@@ -235,7 +236,7 @@
   async function handleSelectCloneFolder() {
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await window.electronAPI.invoke('dialog:open', {
+        const result = await invoke<any>('dialog:open', {
           directory: true,
           title: 'Select Clone Destination',
           createDirectory: true,

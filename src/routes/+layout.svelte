@@ -347,7 +347,7 @@
 
           // Get version and channel from main process
           const [versionResult, updateState] = await Promise.all([
-            window.electronAPI.invoke('app:version', undefined),
+            invoke<any>('app:version', undefined),
             autoUpdateClient.getState().catch(() => null),
           ]);
 

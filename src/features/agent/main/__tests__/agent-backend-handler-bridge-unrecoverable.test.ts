@@ -31,7 +31,9 @@ import {
 } from 'vitest';
 
 const mockPersistence = {
+  listAgents: vi.fn(),
   loadAgent: vi.fn(),
+  loadAgentSummary: vi.fn(),
   saveAgent: vi.fn(),
 };
 
@@ -114,7 +116,9 @@ describe('AgentBackendHandler httpBridgeUnrecoverable integration', () => {
     mockOnHttpBridgeUnrecoverable.__registered.length = 0;
     mockBroadcastToBrowserIpcClients.mockClear();
     mockBroadcastToBrowserIpcClients.mockReturnValue(true);
+    mockPersistence.listAgents.mockReset();
     mockPersistence.loadAgent.mockReset();
+    mockPersistence.loadAgentSummary.mockReset();
     mockPersistence.saveAgent.mockReset();
     mockPersistence.saveAgent.mockResolvedValue({ success: true });
   });
@@ -147,6 +151,87 @@ describe('AgentBackendHandler httpBridgeUnrecoverable integration', () => {
       },
       'ws-1',
     );
+  });
+
+  it('evicts inactive persistence-list cache entries while retaining active entries', () => {
+    const handler = Object.create(AgentBackendHandlerClass.prototype) as any;
+    const inFlightLoad = Promise.resolve([{ id: 'agent-inflight' }]);
+    handler.persistenceListCache = new Map([
+      ['ws-active', { agents: [{ id: 'agent-active' }], timestamp: Date.now() }],
+      ['ws-inactive', { agents: [{ id: 'agent-inactive' }], timestamp: Date.now() }],
+      [
+        'ws-inflight',
+        { agents: [{ id: 'agent-old' }], timestamp: Date.now(), loadPromise: inFlightLoad },
+      ],
+    ]);
+    handler.inactivePersistenceListCacheWorkspaces = new Set();
+
+    AgentBackendHandlerClass.prototype.trimPersistenceListCacheToOpenWorkspaces.call(handler, [
+      'ws-active',
+    ]);
+
+    expect(handler.persistenceListCache.has('ws-active')).toBe(true);
+    expect(handler.persistenceListCache.has('ws-inactive')).toBe(false);
+    expect(handler.persistenceListCache.get('ws-inflight')).toMatchObject({
+      agents: [],
+      loadPromise: inFlightLoad,
+    });
+    expect(handler.inactivePersistenceListCacheWorkspaces.has('ws-inflight')).toBe(true);
+  });
+
+  it('loads closed workspace persistence lists as agent summaries', async () => {
+    const handler = Object.create(AgentBackendHandlerClass.prototype) as any;
+    handler.persistenceListCache = new Map();
+    handler.inactivePersistenceListCacheWorkspaces = new Set();
+    handler.openWorkspaceIdsForAgentHydration = new Set(['ws-open']);
+
+    mockPersistence.listAgents.mockResolvedValue(['agent-closed']);
+    mockPersistence.loadAgentSummary.mockResolvedValue({
+      success: true,
+      data: { id: 'agent-closed', messages: [], metadata: { messageCount: 2 } },
+    });
+    mockPersistence.loadAgent.mockResolvedValue({
+      success: true,
+      data: { id: 'agent-closed', messages: [{ id: 'msg-1' }] },
+    });
+
+    const result = await AgentBackendHandlerClass.prototype.handlePersistenceList.call(
+      handler,
+      {} as any,
+      { workspaceId: 'ws-closed' },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      { id: 'agent-closed', messages: [], metadata: { messageCount: 2 } },
+    ]);
+    expect(mockPersistence.loadAgentSummary).toHaveBeenCalledWith('agent-closed', 'ws-closed');
+    expect(mockPersistence.loadAgent).not.toHaveBeenCalled();
+    expect(handler.persistenceListCache.get('ws-closed')?.hydratedMessages).toBe(false);
+  });
+
+  it('loads open workspace persistence lists with full agent messages', async () => {
+    const handler = Object.create(AgentBackendHandlerClass.prototype) as any;
+    handler.persistenceListCache = new Map();
+    handler.inactivePersistenceListCacheWorkspaces = new Set();
+    handler.openWorkspaceIdsForAgentHydration = new Set(['ws-open']);
+
+    mockPersistence.listAgents.mockResolvedValue(['agent-open']);
+    mockPersistence.loadAgent.mockResolvedValue({
+      success: true,
+      data: { id: 'agent-open', messages: [{ id: 'msg-1' }] },
+    });
+
+    const result = await AgentBackendHandlerClass.prototype.handlePersistenceList.call(
+      handler,
+      {} as any,
+      { workspaceId: 'ws-open' },
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockPersistence.loadAgent).toHaveBeenCalledWith('agent-open', 'ws-open');
+    expect(mockPersistence.loadAgentSummary).not.toHaveBeenCalled();
+    expect(handler.persistenceListCache.get('ws-open')?.hydratedMessages).toBe(true);
   });
 
   it('subscribes via onHttpBridgeUnrecoverable and the registered handler fires side effects on emit', async () => {

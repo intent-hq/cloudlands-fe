@@ -91,7 +91,10 @@ describe('pendingBackendDeliveries safety timeout', () => {
     handler.emptyResponseRetries = new Map();
     handler.queueAgentWorkspaceIds = new Map();
     handler.queueWatchdogInterval = null;
+    handler.inactivePersistenceListCacheWorkspaces = new Set();
+    handler.openWorkspaceIdsForAgentHydration = null;
     handler.sendToRenderer = vi.fn();
+    handler.emitQueueWorkspaceEvent = vi.fn();
     handler.getWorkspaceWindowsForAgent = vi.fn(() => []);
     return handler;
   }
@@ -251,5 +254,121 @@ describe('pendingBackendDeliveries safety timeout', () => {
       [101, 102],
       workspaceId,
     );
+  });
+
+  it('deletes empty per-agent queue state when the last queued message is removed', async () => {
+    vi.useFakeTimers();
+    const handler = createHandler();
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+    const agentId = 'test-agent-remove-drain';
+    const workspaceId = 'ws-remove-drain';
+    const queuedMessage = {
+      id: 'msg_remove_drain',
+      appMessageId: 'app_remove_drain',
+      content: 'remove me',
+      queuedAt: new Date().toISOString(),
+      position: 0,
+    };
+    handler.streamWorkspaceIds.set(agentId, workspaceId);
+    handler.queueAgentWorkspaceIds.set(agentId, workspaceId);
+    handler.messageQueues.set(agentId, [queuedMessage]);
+    handler.queueWatchdogInterval = setInterval(() => {}, 30_000);
+
+    const result = await handler.handleRemoveQueuedMessage(null, {
+      agentId,
+      messageId: queuedMessage.id,
+    });
+
+    expect(result.success).toBe(true);
+    expect(handler.messageQueues.has(agentId)).toBe(false);
+    expect(handler.queueAgentWorkspaceIds.has(agentId)).toBe(false);
+    expect(handler.queueWatchdogInterval).toBeNull();
+    expect(clearIntervalSpy).toHaveBeenCalled();
+
+    clearIntervalSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('deletes empty per-agent queue state after a queued message sends successfully', async () => {
+    const handler = createHandler();
+    const agentId = 'test-agent-process-drain';
+    const workspaceId = 'ws-process-drain';
+    const queuedMessage = {
+      id: 'msg_process_drain',
+      appMessageId: 'app_process_drain',
+      content: 'send me',
+      queuedAt: new Date().toISOString(),
+      position: 0,
+    };
+    handler.queueAgentWorkspaceIds.set(agentId, workspaceId);
+    handler.messageQueues.set(agentId, [queuedMessage]);
+    handler.handleBackendStreamMessage = vi.fn().mockResolvedValue({ success: true });
+
+    await handler.processNextQueuedMessage(agentId, workspaceId);
+
+    expect(handler.handleBackendStreamMessage).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        agentId,
+        content: queuedMessage.content,
+        queuedMessageId: queuedMessage.id,
+      }),
+    );
+    expect(handler.messageQueues.has(agentId)).toBe(false);
+    expect(handler.queueAgentWorkspaceIds.has(agentId)).toBe(false);
+    expect(handler.processingQueue.has(agentId)).toBe(false);
+  });
+
+  it('rejects queued messages when the per-agent queue is full', async () => {
+    const handler = createHandler();
+    handler.startQueueWatchdog = vi.fn();
+    const agentId = 'test-agent-full-queue';
+    const maxQueuedMessages = (HandlerClass as any).MAX_QUEUED_MESSAGES_PER_AGENT;
+    handler.messageQueues.set(
+      agentId,
+      Array.from({ length: maxQueuedMessages }, (_, index) => ({
+        id: `msg_full_${index}`,
+        appMessageId: `app_full_${index}`,
+        content: 'queued',
+        queuedAt: new Date().toISOString(),
+        position: index,
+      })),
+    );
+
+    const result = await handler.handleQueueMessage(null, {
+      agentId,
+      content: 'one too many',
+      workspaceId: 'ws-full-queue',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Agent queue is full');
+    expect(handler.messageQueues.get(agentId)).toHaveLength(maxQueuedMessages);
+    expect(handler.startQueueWatchdog).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized queued message payloads before retaining them', async () => {
+    const handler = createHandler();
+    handler.startQueueWatchdog = vi.fn();
+    const agentId = 'test-agent-oversized-queue';
+    const originalMaxBytes = (HandlerClass as any).MAX_QUEUED_MESSAGE_BYTES;
+    (HandlerClass as any).MAX_QUEUED_MESSAGE_BYTES = 16;
+
+    try {
+      const result = await handler.handleQueueMessage(null, {
+        agentId,
+        content: 'small',
+        workspaceId: 'ws-oversized-queue',
+        imageBlocks: [{ type: 'image', data: 'x'.repeat(32), mimeType: 'image/png' }],
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Queued message payload is too large');
+      expect(handler.messageQueues.has(agentId)).toBe(false);
+      expect(handler.queueAgentWorkspaceIds.has(agentId)).toBe(false);
+      expect(handler.startQueueWatchdog).not.toHaveBeenCalled();
+    } finally {
+      (HandlerClass as any).MAX_QUEUED_MESSAGE_BYTES = originalMaxBytes;
+    }
   });
 });

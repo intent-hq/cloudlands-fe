@@ -212,6 +212,29 @@ const defaultChatState = {
   statusEvents: [],
 };
 
+function createReduxStoreHarness(initialState: any) {
+  let currentState = initialState;
+  const subscribers = new Set<() => void>();
+
+  return {
+    reduxStore: {
+      getState: () => currentState,
+      dispatch: vi.fn(),
+      subscribe: (subscriber: () => void) => {
+        subscribers.add(subscriber);
+        return () => subscribers.delete(subscriber);
+      },
+    },
+    emitState(nextState: any) {
+      currentState = nextState;
+      for (const subscriber of [...subscribers]) subscriber();
+    },
+    get subscriberCount() {
+      return subscribers.size;
+    },
+  };
+}
+
 describe('initialize-chat-saga: disk message merge regression', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -302,6 +325,7 @@ describe('initialize-chat-saga: disk message merge regression', () => {
 
       const dispatched: any[] = [];
       const channel = stdChannel();
+	      const storeHarness = createReduxStoreHarness({ "@internal_storeUtility": { updatesLocked: false } });
 
       runSaga(
         {
@@ -311,14 +335,9 @@ describe('initialize-chat-saga: disk message merge regression', () => {
             channel.put(action);
           },
           context: {
-            readableStoreState: {
-              subscribe: (run: (state: any) => void) => {
-                run({ "@internal_storeUtility": { updatesLocked: false } });
-                return () => {};
-              },
-            },
+	            reduxStore: storeHarness.reduxStore,
           },
-          getState: () => ({ "@internal_storeUtility": { updatesLocked: false } }),
+	          getState: storeHarness.reduxStore.getState,
         },
         initializeChatSaga as any,
       );
@@ -365,6 +384,10 @@ describe('initialize-chat-saga: disk message merge regression', () => {
 
     const dispatched: any[] = [];
     const channel = stdChannel();
+	    const storeHarness = createReduxStoreHarness({
+	      "@internal_storeUtility": { updatesLocked: false },
+	      readySession: null,
+	    });
 
     runSaga(
       {
@@ -374,24 +397,19 @@ describe('initialize-chat-saga: disk message merge regression', () => {
           channel.put(action);
         },
         context: {
-          readableStoreState: {
-            subscribe: (run: (state: any) => void) => {
-              emitStoreState = run;
-              run({ "@internal_storeUtility": { updatesLocked: false }, readySession: null });
-              return () => {};
-            },
-          },
+	          reduxStore: storeHarness.reduxStore,
         },
-        getState: () => ({ "@internal_storeUtility": { updatesLocked: false } }),
+	        getState: storeHarness.reduxStore.getState,
       },
       initializeChatSaga as any,
     );
 
     channel.put(initializeChatRequested('agent-1', { wsId: 'ws-1' }));
-    for (let i = 0; i < 10 && !emitStoreState; i++) {
+	    for (let i = 0; i < 10 && storeHarness.subscriberCount === 0; i++) {
       await new Promise((r) => setTimeout(r, 0));
     }
-    expect(emitStoreState).toBeDefined();
+	    emitStoreState = storeHarness.emitState;
+	    expect(storeHarness.subscriberCount).toBeGreaterThan(0);
     isReady = true;
     emitStoreState!({ "@internal_storeUtility": { updatesLocked: false }, readySession });
 
@@ -468,6 +486,7 @@ describe('initialize-chat-saga: disk message merge regression', () => {
 
       const dispatched: any[] = [];
       const channel = stdChannel();
+	      const storeHarness = createReduxStoreHarness({ "@internal_storeUtility": { updatesLocked: false } });
 
       runSaga(
         {
@@ -477,14 +496,9 @@ describe('initialize-chat-saga: disk message merge regression', () => {
             channel.put(action);
           },
           context: {
-            readableStoreState: {
-              subscribe: (run: (state: any) => void) => {
-                run({ "@internal_storeUtility": { updatesLocked: false } });
-                return () => {};
-              },
-            },
+	            reduxStore: storeHarness.reduxStore,
           },
-          getState: () => ({ "@internal_storeUtility": { updatesLocked: false } }),
+	          getState: storeHarness.reduxStore.getState,
         },
         initializeChatSaga as any,
       );

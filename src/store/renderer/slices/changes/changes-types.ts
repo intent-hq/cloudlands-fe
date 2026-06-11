@@ -66,6 +66,19 @@ export interface AcceptChangesState {
   pendingAutoAction: PendingAutoAction | null;
 }
 
+export interface ChangesCoordinationState {
+  lastSyncTime: number;
+  lastUpdatedAt: number;
+  syncInProgress: boolean;
+  syncDirty: boolean;
+  syncDirtyForce: boolean;
+  syncThrottleMs: number;
+  loadInProgress: boolean;
+  loadDirty: boolean;
+  refreshInProgress: boolean;
+  refreshDirty: boolean;
+}
+
 /**
  * Main panel view state — controls what's displayed in the changes main panel.
  */
@@ -95,6 +108,7 @@ export type FileTrackingWorkspaceState = {
   totalChangesCount: number;
   hasLoadedInitialData: boolean;
   acceptChanges: AcceptChangesState;
+  coordination: ChangesCoordinationState;
 };
 
 // ---------------------------------------------------------------------------
@@ -105,6 +119,13 @@ export type LineChangeStats = {
   additions: number;
   deletions: number;
   timestamp: string;
+};
+
+export type AgentLineStatsRequestState = {
+  isLoading: boolean;
+  error: string | null;
+  lastRequestedAt: string | null;
+  lastFinishedAt: string | null;
 };
 
 export type FileLineChange = {
@@ -123,5 +144,7 @@ export type FileTrackingState = {
   mainPanelView: MainPanelViewState | null;
   /** Agent stats keyed by agent ID (absorbed from line-changes) */
   agentStats: Record<string, LineChangeStats>;
+  /** Agent stats request lifecycle keyed by agent ID */
+  agentLineStatsRequests: Record<string, AgentLineStatsRequestState>;
 };
 

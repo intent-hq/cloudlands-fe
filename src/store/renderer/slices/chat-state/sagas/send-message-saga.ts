@@ -20,13 +20,16 @@ import {
   takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
+import { v4 as uuidv4 } from 'uuid';
 import { createLogger } from '$lib/utils/client-logger';
 import { unifiedOrchestrator } from '$features/agent/services/consolidated-backend.service';
+import { createAppMessageId } from '$shared/utils/app-message-id';
 import {
   selectAgentIsResponding,
   selectAgentSession,
 } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import {
+  addMessage as addAgentSessionMessage,
   agentSessionStopChatRequested,
   agentSessionSendMessageRequested,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -402,6 +405,23 @@ function* handleSendPath(
       ...imageContextItems,
     ];
 
+    // Optimistic user message: render the sent message immediately from
+    // agent-session state. The canonical user message reuses userAppMessageId,
+    // so insertAgentMessageWithDedup merges the two instead of duplicating.
+    // If no session exists yet the reducer no-ops (ChatPanel's
+    // pendingInitialPrompt path covers brand-new agents).
+    const userAppMessageId = createAppMessageId();
+    const optimisticMessageId = `optimistic_${uuidv4()}`;
+    yield* put(
+      addAgentSessionMessage(agentId, {
+        id: optimisticMessageId,
+        appMessageId: userAppMessageId,
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: messageWithContext }],
+        timestamp: new Date().toISOString(),
+      }),
+    );
+
     const sendAction = agentSessionSendMessageRequested(agentId, wsId, messageWithContext, {
       // serializedContextItems have File objects stripped (serialized to base64 data),
       // so they satisfy the send context shape at runtime even though `file` is absent.
@@ -410,6 +430,8 @@ function* handleSendPath(
         : undefined,
       noteIds,
       agentId,
+      userAppMessageId,
+      optimisticMessageId,
     });
     yield* put(sendAction);
     yield* call(() => sendAction.promise);

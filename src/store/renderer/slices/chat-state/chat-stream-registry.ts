@@ -38,5 +38,8 @@ export function deleteStreamTimeout(sessionId: string): boolean {
 }
 
 export function clearAllStreamTimeouts(): void {
+  for (const timeout of streamTimeouts.values()) {
+    timeout.cleanup();
+  }
   streamTimeouts.clear();
 }

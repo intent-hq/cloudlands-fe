@@ -45,6 +45,7 @@
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { createLogger } from '$lib/utils/client-logger';
   import { onDestroy } from 'svelte';
+  import flatstr from 'flatstr';
 
   import {
     openWorkspaceFile,
@@ -429,8 +430,8 @@
     const grouped = groupParsedBlocks(parsed);
     const result = { blocks: grouped, setupScript };
 
-    // Cache the result
-    parsedTextCache.set(text, result);
+    // Cache the result (flatten accumulated streaming text so the Map retains flat strings)
+    parsedTextCache.set(flatstr(text), result);
 
     // Limit cache size (LRU-style: remove oldest entries)
     if (parsedTextCache.size > MAX_CACHE_SIZE) {

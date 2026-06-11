@@ -201,7 +201,41 @@ describe('WorkspaceJsApiTool integration', () => {
     const text = (chiefResult.content[0] as any).text;
     expect(text).toContain('Alpha Workspace');
     expect(text.indexOf('Alpha Workspace')).toBeLessThan(text.indexOf('Beta Workspace'));
+    expect(manager.listAllWorkspaces).toHaveBeenCalledWith({ lite: true });
     expect(normalResult.isError).toBe(true);
+  });
+
+  it('re-reads ws.app.workspaces.list data from the manager on each call', async () => {
+    const manager = {
+      listAllWorkspaces: vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, data: [workspaces[0]] })
+        .mockResolvedValueOnce({
+          ok: true,
+          data: [{ ...workspaces[0], title: 'Fresh Workspace Title' }],
+        }),
+      getWorkspace: vi.fn().mockResolvedValue(workspaces[0]),
+    };
+    const tool = new WorkspaceJsApiTool('/tmp/test-workspace', '__chief__', manager);
+
+    const firstResult = await tool.execute({
+      name: 'workspace_api',
+      arguments: { code: 'return await ws.app.workspaces.list()' },
+      context: {},
+    } as any);
+    const secondResult = await tool.execute({
+      name: 'workspace_api',
+      arguments: { code: 'return await ws.app.workspaces.list()' },
+      context: {},
+    } as any);
+
+    expect(firstResult.isError).toBe(false);
+    expect((firstResult.content[0] as any).text).toContain('Beta Workspace');
+    expect(secondResult.isError).toBe(false);
+    expect((secondResult.content[0] as any).text).toContain('Fresh Workspace Title');
+    expect(manager.listAllWorkspaces).toHaveBeenCalledTimes(2);
+    expect(manager.listAllWorkspaces).toHaveBeenNthCalledWith(1, { lite: true });
+    expect(manager.listAllWorkspaces).toHaveBeenNthCalledWith(2, { lite: true });
   });
 
   it('does not mount ws.app outside the Chief workspace', async () => {

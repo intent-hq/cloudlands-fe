@@ -15,6 +15,7 @@ import {
   on,
   off,
 } from '$lib/electron-bridge';
+import { invoke as invokeIpc } from '../../../shared/generated/ipc-client';
 
 const logger = createLogger('ActiveStreamsTracker');
 
@@ -103,7 +104,7 @@ class ActiveStreamsTracker {
     if (typeof window === 'undefined' || !window.electronAPI) return;
 
     try {
-      const result = await window.electronAPI.invoke('agent:get-active-streams');
+      const result = await invokeIpc<{ success: boolean; data?: unknown }>('agent:get-active-streams');
 
       if (result.success && Array.isArray(result.data)) {
         this.updateStreams(result.data);

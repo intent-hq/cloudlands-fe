@@ -1,3 +1,4 @@
+import flatstr from 'flatstr';
 import type { ContentBlock } from '$shared/types';
 import { normalizeContentBlocks } from '$shared/types';
 import {
@@ -22,7 +23,7 @@ export function dedupeStreamContentBlocks(blocks: readonly ContentBlock[]): Cont
       const { content: _content, ...lastWithoutContent } = last;
       result[result.length - 1] = {
         ...lastWithoutContent,
-        text: getContentBlockText(last) + getContentBlockText(block),
+        text: flatstr(getContentBlockText(last) + getContentBlockText(block)),
       };
       continue;
     }

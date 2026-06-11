@@ -117,6 +117,18 @@ describe('WorkspaceStorageManager', () => {
       manager.loadState('ws-1');
       expect(mockLocalStorage.getItem).not.toHaveBeenCalled();
     });
+
+    it('evicts oldest memory cache entries when the cache cap is exceeded', () => {
+      for (let i = 0; i <= 100; i++) {
+        manager.saveState(`ws-${i}`, { workspace: { id: `ws-${i}`, status: 'ready' } }, true);
+      }
+      mockLocalStorage.getItem.mockClear();
+
+      const loaded = manager.loadState('ws-0');
+
+      expect(loaded?.workspace.id).toBe('ws-0');
+      expect(mockLocalStorage.getItem).toHaveBeenCalledWith('workspace:state:ws-0');
+    });
   });
 
   describe('clearState', () => {
@@ -150,6 +162,25 @@ describe('WorkspaceStorageManager', () => {
       manager.cleanup();
       vi.advanceTimersByTime(300);
       expect(mockLocalStorage.setItem).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cleanupOldStates', () => {
+    it('removes old states from memory cache as well as localStorage', () => {
+      const oldState = {
+        version: 2,
+        workspace: { id: 'ws-old', status: 'ready' },
+        mainPanel: { type: 'notes' },
+        drawer: { open: false, type: null, itemId: null },
+        navigation: { history: [], currentIndex: -1 },
+        ui: { hasInitialized: true, lastUpdated: Date.now() - 31 * 24 * 60 * 60 * 1000 },
+      };
+      mockLocalStorage.setItem('workspace:state:ws-old', JSON.stringify(oldState));
+      expect(manager.loadState('ws-old')?.workspace.id).toBe('ws-old');
+
+      manager.cleanupOldStates();
+
+      expect(manager.loadState('ws-old')).toBeNull();
     });
   });
 });

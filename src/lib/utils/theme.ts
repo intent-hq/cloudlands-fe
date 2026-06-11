@@ -33,6 +33,11 @@ export class ThemeManager {
   private presetLightTheme: ParsedVSCodeTheme | null = null;
   private appliedCSSVariableKeys: string[] = [];
   private activePresetId: string | null = null;
+  private readonly handleSystemThemeChange = () => {
+    if (this.currentTheme === 'system') {
+      this.applyTheme();
+    }
+  };
 
   private constructor() {
     // Only initialize browser-dependent features when in browser context
@@ -52,6 +57,7 @@ export class ThemeManager {
 
   /** @internal Exposed for testing only */
   static resetInstance(): void {
+    ThemeManager.instance?.dispose();
     ThemeManager.instance = null;
   }
 
@@ -99,12 +105,13 @@ export class ThemeManager {
   private setupListeners() {
     // Listen for system theme changes
     if (this.mediaQuery) {
-      this.mediaQuery.addEventListener('change', () => {
-        if (this.currentTheme === 'system') {
-          this.applyTheme();
-        }
-      });
+      this.mediaQuery.addEventListener('change', this.handleSystemThemeChange);
     }
+  }
+
+  dispose(): void {
+    this.mediaQuery?.removeEventListener('change', this.handleSystemThemeChange);
+    this.mediaQuery = null;
   }
 
   setTheme(theme: Theme, options: SetThemeOptions = {}) {

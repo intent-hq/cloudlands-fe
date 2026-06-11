@@ -5,56 +5,67 @@
  * TextEncoder is kept outside Redux; periodic stale cleanup lives in the saga.
  */
 
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
-import type { ContentBlock } from "../../../../shared/types";
-import { buildOrderedContentBlocks } from "../../../../shared/utils/content-block-utils";
+import flatstr from 'flatstr';
+import { createAction } from 'ag-redux-toolkit/utils/store/create-action';
+import { createReducer } from 'ag-redux-toolkit/utils/store/create-reducer';
+import type { ContentBlock } from '../../../../shared/types';
+import { buildOrderedContentBlocks } from '../../../../shared/utils/content-block-utils';
 import type {
   MessageAccumulatorState,
   SerializedAccumulatedMessage,
   SerializedAccumulationItem,
   SerializedChunk,
-} from "./message-accumulator-types";
-import { EMPTY_ACCUMULATOR_STATE } from "./message-accumulator-types";
+} from './message-accumulator-types';
+import { EMPTY_ACCUMULATOR_STATE } from './message-accumulator-types';
+
+const RECENT_CHUNK_LIMIT = 20;
+const DUPLICATE_CHUNK_WINDOW = 10;
 
 // ============================================================================
 // Actions
 // ============================================================================
 
 export const startAccumulation = createAction(
-  "messageAccumulator/startAccumulation",
-  (sessionId: string, metadata?: Record<string, unknown>) => ({ sessionId, metadata, now: Date.now() }),
+  'messageAccumulator/startAccumulation',
+  (sessionId: string, metadata?: Record<string, unknown>) => ({
+    sessionId,
+    metadata,
+    now: Date.now(),
+  }),
 );
 
 export const addChunk = createAction(
-  "messageAccumulator/addChunk",
-  (sessionId: string, chunk: string, chunkByteSize: number, metadata?: Record<string, unknown>) => ({ sessionId, chunk, chunkByteSize, metadata, now: Date.now() }),
+  'messageAccumulator/addChunk',
+  (
+    sessionId: string,
+    chunk: string,
+    chunkByteSize: number,
+    metadata?: Record<string, unknown>,
+  ) => ({ sessionId, chunk, chunkByteSize, metadata, now: Date.now() }),
 );
 
 export const addContentBlock = createAction(
-  "messageAccumulator/addContentBlock",
+  'messageAccumulator/addContentBlock',
   (sessionId: string, block: ContentBlock) => ({ sessionId, block, now: Date.now() }),
 );
 
 export const updateContentBlock = createAction(
-  "messageAccumulator/updateContentBlock",
+  'messageAccumulator/updateContentBlock',
   (sessionId: string, block: ContentBlock) => ({ sessionId, block, now: Date.now() }),
 );
 
 export const completeAccumulation = createAction<[sessionId: string]>(
-  "messageAccumulator/completeAccumulation",
+  'messageAccumulator/completeAccumulation',
 );
 
 export const clearAccumulator = createAction<[sessionId: string]>(
-  "messageAccumulator/clearAccumulator",
+  'messageAccumulator/clearAccumulator',
 );
 
-export const clearAllAccumulators = createAction(
-  "messageAccumulator/clearAllAccumulators",
-);
+export const clearAllAccumulators = createAction('messageAccumulator/clearAllAccumulators');
 
 export const cleanupStaleAccumulators = createAction<[staleSessionIds: string[]]>(
-  "messageAccumulator/cleanupStaleAccumulators",
+  'messageAccumulator/cleanupStaleAccumulators',
 );
 
 // ============================================================================
@@ -70,15 +81,15 @@ export const initialState: MessageAccumulatorState = { ...EMPTY_ACCUMULATOR_STAT
 export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(initialState)
   .with(startAccumulation, (state, { payload: { sessionId, metadata, now } }) => {
     // If accumulator exists, clear it first (restart)
-     
+
     const { [sessionId]: _removed, ...restAccumulators } = state.accumulators;
-     
+
     const { [sessionId]: _removedSeq, ...restCounters } = state.sequenceCounters;
     const previouslyExisted = sessionId in state.accumulators;
 
     const accumulator: SerializedAccumulatedMessage = {
       sessionId,
-      content: "",
+      content: '',
       chunks: [],
       contentBlocks: [],
       orderedItems: [],
@@ -109,38 +120,42 @@ export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(
     const seqCounter = state.sequenceCounters[sessionId] ?? 0;
     const sequenceNumber = (metadata as any)?.sequenceNumber ?? seqCounter + 1;
 
-    // Duplicate detection on recent chunks
-    const recentChunks = accumulator.chunks.slice(-10);
+    const contentHash = hashChunkContent(chunk);
+
+    // Duplicate detection on recent chunk metadata only.
+    const recentChunks = accumulator.chunks.slice(-DUPLICATE_CHUNK_WINDOW);
     const isDuplicate = recentChunks.some(
-      (c) => c.sequenceNumber === sequenceNumber && c.content === chunk,
+      (c) =>
+        c.sequenceNumber === sequenceNumber &&
+        c.contentHash === contentHash &&
+        c.byteSize === chunkByteSize,
     );
     if (isDuplicate) return state;
 
+    const insertOffset = getChunkInsertOffset(accumulator, sequenceNumber);
+    const updatedContent = insertStringAt(accumulator.content, insertOffset, chunk);
+    const shiftedChunks = shiftChunkOffsets(accumulator.chunks, insertOffset, chunk.length);
+    const chunkEndOffset = insertOffset + chunk.length;
+
     const newChunk: SerializedChunk = {
-      content: chunk,
+      contentHash,
+      byteSize: chunkByteSize,
+      startOffset: insertOffset,
+      endOffset: chunkEndOffset,
       timestamp: now,
       sequenceNumber,
-      metadata: metadata as Record<string, unknown> | undefined,
     };
 
-    // Keep last 20 chunks
-    const updatedChunks = [...accumulator.chunks, newChunk];
-    if (updatedChunks.length > 20) updatedChunks.shift();
+    // Keep last 20 chunk metadata records only.
+    const updatedChunks = [...shiftedChunks, newChunk];
+    if (updatedChunks.length > RECENT_CHUNK_LIMIT) updatedChunks.shift();
 
-    // Consolidate consecutive text items
-    const lastItem = accumulator.orderedItems[accumulator.orderedItems.length - 1];
-    let updatedOrderedItems: SerializedAccumulationItem[];
-    if (lastItem && lastItem.type === "text") {
-      updatedOrderedItems = [
-        ...accumulator.orderedItems.slice(0, -1),
-        { ...lastItem, content: (lastItem.content as string) + chunk, timestamp: now },
-      ];
-    } else {
-      updatedOrderedItems = [
-        ...accumulator.orderedItems,
-        { sequence: accumulator.orderedItems.length, type: "text", content: chunk, timestamp: now },
-      ];
-    }
+    const updatedOrderedItems = updateOrderedTextRanges(
+      accumulator.orderedItems,
+      insertOffset,
+      chunkEndOffset,
+      now,
+    );
 
     const newByteSize = accumulator.byteSize + chunkByteSize;
     const newChunkCount = accumulator.chunkCount + 1;
@@ -151,7 +166,7 @@ export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(
         ...state.accumulators,
         [sessionId]: {
           ...accumulator,
-          content: accumulator.content + chunk,
+          content: updatedContent,
           chunks: updatedChunks,
           orderedItems: updatedOrderedItems,
           byteSize: newByteSize,
@@ -175,7 +190,7 @@ export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(
 
     const blockItem: SerializedAccumulationItem = {
       sequence: accumulator.orderedItems.length,
-      type: "block",
+      type: 'block',
       content: block,
       timestamp: now,
     };
@@ -201,7 +216,7 @@ export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(
     let found = false;
 
     const updatedOrderedItems = accumulator.orderedItems.map((item) => {
-      if (item.type === "block") {
+      if (item.type === 'block') {
         const existing = item.content as ContentBlock;
         if (existing.id === block.id) {
           found = true;
@@ -235,21 +250,12 @@ export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(
     const accumulator = state.accumulators[sessionId];
     if (!accumulator) return state;
 
-    // Rebuild content from sorted chunks if multiple exist
-    let finalContent = accumulator.content;
-    if (accumulator.chunks.length > 1) {
-      const sorted = [...accumulator.chunks].sort((a, b) => a.sequenceNumber - b.sequenceNumber);
-      finalContent = sorted.map((c) => c.content).join("");
-    }
-
     // Build final content blocks from ordered items
     const finalContentBlocks = buildOrderedContentBlocksFromAccumulator(accumulator);
 
     // Update average message size estimate
     const totalMessages =
-      state.stats.totalChunksProcessed > 0
-        ? Math.ceil(state.stats.totalChunksProcessed / 10)
-        : 1;
+      state.stats.totalChunksProcessed > 0 ? Math.ceil(state.stats.totalChunksProcessed / 10) : 1;
     const averageMessageSize = Math.round(state.stats.totalBytesAccumulated / totalMessages);
 
     return {
@@ -258,7 +264,7 @@ export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(
         ...state.accumulators,
         [sessionId]: {
           ...accumulator,
-          content: finalContent,
+          chunks: [],
           contentBlocks: finalContentBlocks,
           isComplete: true,
         },
@@ -272,9 +278,9 @@ export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(
 
   .with(clearAccumulator, (state, { payload: [sessionId] }) => {
     if (!(sessionId in state.accumulators)) return state;
-     
+
     const { [sessionId]: _removed, ...restAccumulators } = state.accumulators;
-     
+
     const { [sessionId]: _removedSeq, ...restCounters } = state.sequenceCounters;
     return {
       ...state,
@@ -330,13 +336,23 @@ export const messageAccumulatorReducer = createReducer<MessageAccumulatorState>(
 function buildOrderedContentBlocksFromAccumulator(
   accumulator: SerializedAccumulatedMessage,
 ): ContentBlock[] {
-  const blocks = buildOrderedContentBlocks(accumulator.orderedItems, '');
+  const blocks = buildOrderedContentBlocks(
+    accumulator.orderedItems.map((item) => {
+      if (item.type === 'block') return item;
+      return {
+        sequence: item.sequence,
+        type: 'text' as const,
+        content: accumulator.content.slice(item.contentRange.start, item.contentRange.end),
+      };
+    }),
+    '',
+  );
 
   // Backward compatibility fallback
   if (accumulator.orderedItems.length === 0 && blocks.length === 0) {
     const fallback: ContentBlock[] = [];
     if (accumulator.content) {
-      fallback.push({ type: "text", text: accumulator.content } as ContentBlock);
+      fallback.push({ type: 'text', text: accumulator.content } as ContentBlock);
     }
     fallback.push(...accumulator.contentBlocks);
     return fallback;
@@ -345,3 +361,114 @@ function buildOrderedContentBlocksFromAccumulator(
   return blocks;
 }
 
+function hashChunkContent(value: string): string {
+  let hash = 5381;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function getChunkInsertOffset(
+  accumulator: SerializedAccumulatedMessage,
+  sequenceNumber: number,
+): number {
+  const nextChunk = [...accumulator.chunks]
+    .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+    .find((chunk) => chunk.sequenceNumber > sequenceNumber);
+  return nextChunk?.startOffset ?? accumulator.content.length;
+}
+
+function insertStringAt(value: string, offset: number, inserted: string): string {
+  return flatstr(value.slice(0, offset) + inserted + value.slice(offset));
+}
+
+function shiftChunkOffsets(
+  chunks: SerializedChunk[],
+  insertOffset: number,
+  insertedLength: number,
+): SerializedChunk[] {
+  return chunks.map((chunk) => {
+    if (chunk.startOffset < insertOffset) return chunk;
+    return {
+      ...chunk,
+      startOffset: chunk.startOffset + insertedLength,
+      endOffset: chunk.endOffset + insertedLength,
+    };
+  });
+}
+
+function updateOrderedTextRanges(
+  items: SerializedAccumulationItem[],
+  startOffset: number,
+  endOffset: number,
+  timestamp: number,
+): SerializedAccumulationItem[] {
+  const insertedLength = endOffset - startOffset;
+  const lastItem = items[items.length - 1];
+
+  if (lastItem?.type === 'text' && lastItem.contentRange.end === startOffset) {
+    return [
+      ...items.slice(0, -1),
+      {
+        ...lastItem,
+        contentRange: { ...lastItem.contentRange, end: endOffset },
+        timestamp,
+      },
+    ];
+  }
+
+  const containingTextIndex = items.findIndex(
+    (item) =>
+      item.type === 'text' &&
+      startOffset >= item.contentRange.start &&
+      startOffset < item.contentRange.end,
+  );
+
+  if (containingTextIndex >= 0) {
+    return items.map((item, index) => {
+      if (item.type === 'block') return item;
+      if (index === containingTextIndex) {
+        return {
+          ...item,
+          contentRange: {
+            start: item.contentRange.start,
+            end: item.contentRange.end + insertedLength,
+          },
+          timestamp,
+        };
+      }
+      if (index > containingTextIndex) {
+        return {
+          ...item,
+          contentRange: {
+            start: item.contentRange.start + insertedLength,
+            end: item.contentRange.end + insertedLength,
+          },
+        };
+      }
+      return item;
+    });
+  }
+
+  return [
+    ...items.map((item) => {
+      if (item.type === 'block' || item.contentRange.start < startOffset) {
+        return item;
+      }
+      return {
+        ...item,
+        contentRange: {
+          start: item.contentRange.start + insertedLength,
+          end: item.contentRange.end + insertedLength,
+        },
+      };
+    }),
+    {
+      sequence: items.length,
+      type: 'text',
+      contentRange: { start: startOffset, end: endOffset },
+      timestamp,
+    },
+  ];
+}

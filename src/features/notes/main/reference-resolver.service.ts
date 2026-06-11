@@ -73,7 +73,6 @@ export interface ResolvedReference {
 
 export class ReferenceResolverService {
   private static instance: ReferenceResolverService;
-  private cache = new Map<string, ResolvedReference>();
 
   private constructor() {}
 
@@ -114,15 +113,8 @@ export class ReferenceResolverService {
   async resolve(
     workspaceId: string,
     semanticId: string,
-    useCache = true,
   ): Promise<{ ok: true; data: ResolvedReference } | { ok: false; error: string }> {
     try {
-      // Check cache
-      const cacheKey = `${workspaceId}:${semanticId}`;
-      if (useCache && this.cache.has(cacheKey)) {
-        return { ok: true, data: this.cache.get(cacheKey)! };
-      }
-
       // Parse semantic ID
       const parsed = parseSemanticId(semanticId);
       if (!parsed) {
@@ -144,9 +136,6 @@ export class ReferenceResolverService {
       } else {
         resolved = await this.resolveLines(workspaceId, parsed);
       }
-
-      // Cache result
-      this.cache.set(cacheKey, resolved);
 
       return { ok: true, data: resolved };
     } catch (error) {
@@ -316,24 +305,6 @@ export class ReferenceResolverService {
         endLine,
       },
     };
-  }
-
-  /**
-   * Clear the cache
-   */
-  clearCache(workspaceId?: string): void {
-    if (workspaceId) {
-      // Clear only entries for specific workspace
-      const prefix = `${workspaceId}:`;
-      for (const key of this.cache.keys()) {
-        if (key.startsWith(prefix)) {
-          this.cache.delete(key);
-        }
-      }
-    } else {
-      // Clear all
-      this.cache.clear();
-    }
   }
 
   /**

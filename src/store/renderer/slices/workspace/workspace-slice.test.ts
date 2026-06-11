@@ -15,7 +15,7 @@ import {
   getItems,
 } from "ag-redux-toolkit/utils/collections/collection-utils";
 import {
-  applyOptimisticTaskStatusUpdate,
+  bulkUpdateWorkspaceEntities,
   cleanupRecency,
   clearActiveWorkspace,
   clearPendingCreation,
@@ -160,7 +160,7 @@ describe("workspaceReducer", () => {
       const existing = makeWorkspace({
         id: "ws-1",
         title: "Existing",
-        taskStats: { total: 5, completed: 2, inProgress: 1 },
+        agentSummary: { agentIds: ["agent-1"] },
       });
       const pending = makeWorkspace({ id: "pending-1", title: "Pending" });
 
@@ -169,14 +169,19 @@ describe("workspaceReducer", () => {
       state = workspaceReducer(
         state,
         replaceWorkspaceList([
-          { ...existing, taskStats: undefined, status: WorkspaceStatusEnum.Active, archived: false },
+          {
+            ...existing,
+            agentSummary: undefined,
+            status: WorkspaceStatusEnum.Active,
+            archived: false,
+          },
           makeWorkspace({ id: "pending-1", title: "Pending From Backend" }),
           makeWorkspace({ id: "ws-2", title: "Second" }),
         ])
       );
 
       expect(state.workspaces.ids).toEqual(["ws-1", "pending-1", "ws-2"]);
-      expect(getItem(state.workspaces, "ws-1")?.taskStats).toEqual(existing.taskStats);
+      expect(getItem(state.workspaces, "ws-1")?.agentSummary).toEqual(existing.agentSummary);
       expect(state.pendingCreations).toEqual({});
     });
 
@@ -227,20 +232,127 @@ describe("workspaceReducer", () => {
   });
 
   describe("updateWorkspaceEntity", () => {
+    it("is a fan-out action and does not mutate workspace storage directly", () => {
+      const ws = makeWorkspace({ id: "ws-1", title: "Original" });
+      const state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+
+      const next = workspaceReducer(state, updateWorkspaceEntity("ws-1", { title: "Changed" }));
+
+      expect(next).toBe(state);
+      expect(getItem(next.workspaces, "ws-1")?.title).toBe("Original");
+    });
+  });
+
+  describe("bulkUpdateWorkspaceEntities", () => {
     it("merges partial changes into an existing workspace", () => {
       const ws = makeWorkspace({ id: "ws-1", title: "Original" });
-      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
-      state = workspaceReducer(state, updateWorkspaceEntity("ws-1", { title: "Changed" }));
-      expect(getItem(state.workspaces, "ws-1")?.title).toBe("Changed");
-      expect(getItem(state.workspaces, "ws-1")?.branch).toBe("main"); // untouched
+      const state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+      const next = workspaceReducer(
+        state,
+        bulkUpdateWorkspaceEntities([
+          updateWorkspaceEntity("ws-1", {
+            id: "ws-renamed" as WorkspaceId,
+            title: "Changed",
+            createdAt: "2026-02-01T00:00:00Z",
+            updatedAt: "2026-02-01T00:00:00Z",
+          }),
+        ])
+      );
+
+      expect(next).not.toBe(state);
+      expect(next.workspaces).not.toBe(state.workspaces);
+      expect(getItem(next.workspaces, "ws-1")?.title).toBe("Changed");
+      expect(getItem(next.workspaces, "ws-1")?.branch).toBe("main"); // untouched
+      expect(getItem(next.workspaces, "ws-1")?.id).toBe("ws-1");
+      expect(getItem(next.workspaces, "ws-1")?.createdAt).toBe(ws.createdAt);
+      expect(getItem(next.workspaces, "ws-1")?.updatedAt).toBe(ws.updatedAt);
     });
 
     it("is a no-op when workspace does not exist", () => {
       const state = workspaceReducer(
         initialState,
-        updateWorkspaceEntity("ws-missing", { title: "Nope" })
+        bulkUpdateWorkspaceEntities([updateWorkspaceEntity("ws-missing", { title: "Nope" })])
       );
       expect(state).toBe(initialState);
+    });
+
+    it("preserves state identity when changes are empty", () => {
+      const ws = makeWorkspace({ id: "ws-1", title: "Original" });
+      const state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+
+      const next = workspaceReducer(
+        state,
+        bulkUpdateWorkspaceEntities([updateWorkspaceEntity("ws-1", {})])
+      );
+
+      expect(next).toBe(state);
+    });
+
+    it("preserves state identity when changes match the existing workspace", () => {
+      const ws = makeWorkspace({ id: "ws-1", title: "Original" });
+      const state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+
+      const next = workspaceReducer(
+        state,
+        bulkUpdateWorkspaceEntities([updateWorkspaceEntity("ws-1", { title: "Original" })])
+      );
+
+      expect(next).toBe(state);
+    });
+
+    it("still applies pending archive overrides when effective fields change", () => {
+      const ws = makeWorkspace({ id: "ws-1", status: WorkspaceStatusEnum.Active, archived: false });
+      const state = {
+        ...workspaceReducer(initialState, setWorkspaceEntity(ws)),
+        pendingArchives: { "ws-1": true },
+      };
+
+      const next = workspaceReducer(
+        state,
+        bulkUpdateWorkspaceEntities([updateWorkspaceEntity("ws-1", {})])
+      );
+
+      expect(next).not.toBe(state);
+      expect(getItem(next.workspaces, "ws-1")?.status).toBe(WorkspaceStatusEnum.Archived);
+      expect(getItem(next.workspaces, "ws-1")?.archived).toBe(true);
+    });
+
+    it("applies updates in original order across multiple workspaces", () => {
+      let state = workspaceReducer(initialState, setWorkspaceEntity(makeWorkspace({ id: "ws-1" })));
+      state = workspaceReducer(state, setWorkspaceEntity(makeWorkspace({ id: "ws-2" })));
+
+      const next = workspaceReducer(
+        state,
+        bulkUpdateWorkspaceEntities([
+          updateWorkspaceEntity("ws-1", { title: "First" }),
+          updateWorkspaceEntity("ws-2", { title: "Second" }),
+          updateWorkspaceEntity("ws-1", { branch: "feature" }),
+          updateWorkspaceEntity("ws-1", { title: "Final" }),
+        ])
+      );
+
+      expect(getItem(next.workspaces, "ws-1")?.title).toBe("Final");
+      expect(getItem(next.workspaces, "ws-1")?.branch).toBe("feature");
+      expect(getItem(next.workspaces, "ws-2")?.title).toBe("Second");
+    });
+
+    it("preserves pending archive semantics across same-workspace updates", () => {
+      const ws = makeWorkspace({ id: "ws-1", status: WorkspaceStatusEnum.Active, archived: false });
+      const state = {
+        ...workspaceReducer(initialState, setWorkspaceEntity(ws)),
+        pendingArchives: { "ws-1": true },
+      };
+
+      const next = workspaceReducer(
+        state,
+        bulkUpdateWorkspaceEntities([
+          updateWorkspaceEntity("ws-1", { title: "Pending Archive" }),
+          updateWorkspaceEntity("ws-1", { status: WorkspaceStatusEnum.Active }),
+        ])
+      );
+
+      expect(getItem(next.workspaces, "ws-1")?.title).toBe("Pending Archive");
+      expect(getItem(next.workspaces, "ws-1")?.status).toBe(WorkspaceStatusEnum.Active);
     });
   });
 
@@ -275,45 +387,6 @@ describe("workspaceReducer", () => {
       state = workspaceReducer(state, removeWorkspaceEntity("ws-1"));
       expect(state.workspaces.ids).toEqual([]);
       expect(state.activeWorkspaceId).toBeNull();
-    });
-  });
-
-  describe("applyOptimisticTaskStatusUpdate", () => {
-    it("updates aggregate task stats from task status transitions", () => {
-      const ws = makeWorkspace({
-        id: "ws-1",
-        taskStats: { total: 5, completed: 2, inProgress: 1 },
-      });
-      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
-
-      state = workspaceReducer(
-        state,
-        applyOptimisticTaskStatusUpdate({
-          workspaceId: "ws-1",
-          previousStatus: "in_progress",
-          newStatus: "complete",
-        })
-      );
-
-      expect(getItem(state.workspaces, "ws-1")?.taskStats).toEqual({
-        total: 5,
-        completed: 3,
-        inProgress: 0,
-      });
-    });
-
-    it("is a no-op when the workspace has no task stats", () => {
-      const ws = makeWorkspace({ id: "ws-1" });
-      const state = workspaceReducer(
-        workspaceReducer(initialState, setWorkspaceEntity(ws)),
-        applyOptimisticTaskStatusUpdate({
-          workspaceId: "ws-1",
-          previousStatus: "in_progress",
-          newStatus: "complete",
-        })
-      );
-
-      expect(getItem(state.workspaces, "ws-1")?.taskStats).toBeUndefined();
     });
   });
 
@@ -371,8 +444,11 @@ describe("workspaceReducer", () => {
       let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
       state = workspaceReducer(state, setActiveWorkspaceId("ws-1"));
 
-      // Simulate workspace:updated IPC → updateWorkspaceEntity
-      state = workspaceReducer(state, updateWorkspaceEntity("ws-1", { title: "Updated Title" }));
+      // Simulate batched workspace:updated IPC storage
+      state = workspaceReducer(
+        state,
+        bulkUpdateWorkspaceEntities([updateWorkspaceEntity("ws-1", { title: "Updated Title" })])
+      );
 
       // Active workspace selector should reflect the update
       const fullState = { workspace: state } as any;

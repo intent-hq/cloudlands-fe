@@ -127,7 +127,11 @@ vi.mock('../utils/streaming-invariants', () => ({
 }));
 
 import { ensureStreamHandler } from '../agent-stream-lifecycle';
-import { disposeAllStreamState } from '../utils/stream-handler-registry';
+import {
+  cleanupPreviousHmrState,
+  disposeAllStreamState,
+  persistForHmr,
+} from '../utils/stream-handler-registry';
 
 function setupWindow() {
   mocks.ipcHandlers = [];
@@ -258,5 +262,17 @@ describe('Agent Stream Lifecycle Integration', () => {
         metadata: { modelUnavailable: false },
       },
     });
+  });
+
+  it('HMR cleanup disposes previous registry state through the persisted disposer', () => {
+    const previousDispose = vi.fn();
+    (window as any).__streamRegistry_hmr = { disposeAllStreamState: previousDispose };
+
+    cleanupPreviousHmrState();
+
+    expect(previousDispose).toHaveBeenCalledTimes(1);
+
+    persistForHmr();
+    expect((window as any).__streamRegistry_hmr.disposeAllStreamState).toBe(disposeAllStreamState);
   });
 });

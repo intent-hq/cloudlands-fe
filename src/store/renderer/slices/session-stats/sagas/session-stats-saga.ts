@@ -12,8 +12,9 @@ import {
   delay,
   fork,
   put,
-  takeEvery,
+  race,
   take,
+  takeEvery,
   type SagaGenerator,
 } from "typed-redux-saga";
 import type { Task } from "redux-saga";
@@ -22,6 +23,10 @@ import {
   isElectron,
 } from "$lib/electron-bridge";
 import { SESSION_STATS_CHANNELS } from "$shared/ipc/channels";
+import {
+  clearActiveWorkspace,
+  setActiveWorkspaceId,
+} from "../../workspace/workspace-slice";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import {
   selectAgentsLoaded,
@@ -298,31 +303,90 @@ function* waitForAgentsLoaded(wsId: string): SagaGenerator<void> {
   // Timed out — proceed anyway (agents may genuinely be empty)
 }
 
-/** Poll workspace stats on mount; cancelled externally on workspaceUnmounted. */
-function* watchWorkspaceStatsPollingSaga(wsId: string): SagaGenerator<void> {
-  // Wait for agents to finish loading from disk before first fetch
+function* refreshCurrentActiveWorkspaceStats(
+  unmountedWorkspaceIds: Set<string>,
+): SagaGenerator<void> {
+  const wsId: string | null = yield* selectActiveWorkspaceId.effect();
+  if (!wsId || unmountedWorkspaceIds.has(wsId)) {
+    return;
+  }
+
+  // Wait for agents to finish loading from disk before each refresh attempt.
   yield* call(waitForAgentsLoaded, wsId);
 
-  // Initial fetch
+  // Re-read active workspace after waiting so delayed disk loads cannot refresh
+  // a workspace that stopped being active while this loop stayed alive.
+  const currentWsId: string | null = yield* selectActiveWorkspaceId.effect();
+  if (currentWsId !== wsId || unmountedWorkspaceIds.has(wsId)) {
+    return;
+  }
+
   const sessionRequests: WorkspaceStatsSessionRequest[] = yield* call(
     getSessionRequestsForWorkspace,
     wsId,
   );
   yield* call(dispatchWorkspaceStatsOrClear, wsId, sessionRequests);
+}
 
-  // Periodic polling
-  while (true) {
-    yield* delay(POLL_INTERVAL_MS);
-    const currentWsId: string | null = yield* selectActiveWorkspaceId.effect();
-    if (currentWsId !== wsId) {
-      // Workspace changed, stop polling
-      return;
+type PollingWakeAction =
+  | ReturnType<typeof setActiveWorkspaceId>
+  | ReturnType<typeof clearActiveWorkspace>
+  | ReturnType<typeof workspaceMounted>
+  | ReturnType<typeof workspaceUnmounted>;
+
+function updateUnmountedPollingWorkspaces(
+  action: PollingWakeAction,
+  unmountedWorkspaceIds: Set<string>,
+): boolean {
+  const wsId = action.payload?.[0];
+
+  if (action.type === workspaceUnmounted.type) {
+    if (wsId) {
+      unmountedWorkspaceIds.add(wsId);
     }
-    const freshSessionRequests: WorkspaceStatsSessionRequest[] = yield* call(
-      getSessionRequestsForWorkspace,
-      wsId,
-    );
-    yield* call(dispatchWorkspaceStatsOrClear, wsId, freshSessionRequests);
+    return false;
+  }
+
+  if (action.type === workspaceMounted.type) {
+    return wsId ? unmountedWorkspaceIds.delete(wsId) : false;
+  }
+
+  if (action.type === setActiveWorkspaceId.type && wsId) {
+    unmountedWorkspaceIds.delete(wsId);
+  }
+
+  return true;
+}
+
+function* waitForNextPollingRefresh(
+  unmountedWorkspaceIds: Set<string>,
+): SagaGenerator<boolean> {
+  const result: { wakeAction?: PollingWakeAction } = yield* race({
+    interval: delay(POLL_INTERVAL_MS),
+    wakeAction: take([
+      setActiveWorkspaceId,
+      clearActiveWorkspace,
+      workspaceMounted,
+      workspaceUnmounted,
+    ]),
+  });
+
+  return result.wakeAction
+    ? updateUnmountedPollingWorkspaces(result.wakeAction, unmountedWorkspaceIds)
+    : true;
+}
+
+/** One long-lived polling owner. It selects the active workspace internally. */
+function* sessionStatsPollingLoop(): SagaGenerator<void> {
+  const unmountedWorkspaceIds = new Set<string>();
+  let shouldRefresh = true;
+
+  while (true) {
+    if (shouldRefresh) {
+      yield* call(refreshCurrentActiveWorkspaceStats, unmountedWorkspaceIds);
+    }
+
+    shouldRefresh = yield* call(waitForNextPollingRefresh, unmountedWorkspaceIds);
   }
 }
 
@@ -342,196 +406,163 @@ function* dispatchWorkspaceStatsOrClear(
   }
 }
 
+type AgentIdleEventReceivedAction = ReturnType<typeof eventReceived>;
+
+function isAgentIdleEventReceived(action: unknown): action is AgentIdleEventReceivedAction {
+  if (typeof action !== "object" || action === null) {
+    return false;
+  }
+
+  const candidate = action as Partial<AgentIdleEventReceivedAction>;
+  if (candidate.type !== eventReceived.type || !Array.isArray(candidate.payload)) {
+    return false;
+  }
+
+  const [, event] = candidate.payload;
+  return event?.type === "agent:idle";
+}
+
+function* waitForWorkspaceUnmount(wsId: string): SagaGenerator<void> {
+  while (true) {
+    const action: ReturnType<typeof workspaceUnmounted> = yield* take(workspaceUnmounted);
+    const [unmountedWsId] = action.payload;
+    if (unmountedWsId === wsId) return;
+  }
+}
+
+function* delayedAgentIdleRefetch(wsId: string): SagaGenerator<void> {
+  yield* delay(AGENT_ACTIVITY_DEBOUNCE_MS);
+  const sessionRequests: WorkspaceStatsSessionRequest[] = yield* call(
+    getSessionRequestsForWorkspace,
+    wsId,
+  );
+  yield* call(dispatchWorkspaceStatsOrClear, wsId, sessionRequests);
+}
+
+function* handleAgentIdleRefetch(action: AgentIdleEventReceivedAction): SagaGenerator<void> {
+  const [wsId] = action.payload;
+  yield* race({
+    refetched: call(delayedAgentIdleRefetch, wsId),
+    unmounted: call(waitForWorkspaceUnmount, wsId),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Root saga
 // ---------------------------------------------------------------------------
 
 export function* sessionStatsSaga(): SagaGenerator<void> {
-  /**
-   * Per-workspace polling tasks, keyed by workspace ID. Used to dedupe mount
-   * forks and to cancel the poll loop deterministically on unmount (rather than
-   * waiting for the next 60s delay to elapse).
-   */
-  const pollingTasks: Record<string, Task> = {};
-
-  function* startPolling(wsId: string): SagaGenerator<void> {
-    if (pollingTasks[wsId]) return;
-    // Wrap the polling saga so pollingTasks[wsId] is cleared on any exit path
-    // (cancel from stopPolling, early return on wsId change, or normal return).
-    // Single cleanup point avoids stale entries that would dedupe a later mount.
-    const task: Task = yield* fork(function* () {
-      try {
-        yield* call(watchWorkspaceStatsPollingSaga, wsId);
-      } finally {
-        delete pollingTasks[wsId];
-      }
-    });
-    pollingTasks[wsId] = task;
-  }
-
-  function* stopPolling(wsId: string): SagaGenerator<void> {
-    const task = pollingTasks[wsId];
-    if (task) {
-      yield* cancel(task);
-      // Cleanup of pollingTasks[wsId] is handled by the wrapper's finally block.
-    }
-  }
-
-  /**
-   * Per-workspace fetch tasks (keyed by wsId) and per-agent fetch tasks
-   * (keyed by agentId). Used to cancel in-flight fetches on clearSessionStats
-   * and to dedupe rapid same-agent fetches.
-   */
   const wsFetchTasks: Record<string, Task> = {};
   const agentFetchTasks: Record<string, Task> = {};
+  const agentActivityRefetchTasks: Record<string, Task> = {};
 
-  // Workspace stats: track task per wsId so clearSessionStats can cancel it.
-  yield* fork(function* () {
-    yield* takeEvery(fetchWorkspaceStats, function* (action) {
-      const [wsId] = action.payload;
-      // Cancel any previous in-flight fetch for this workspace
-      const prev = wsFetchTasks[wsId];
-      if (prev) {
-        yield* cancel(prev);
-      }
-      const task: Task = yield* fork(function* () {
-        try {
-          yield* call(handleFetchWorkspaceStats, action);
-        } finally {
-          if (wsFetchTasks[wsId] === task) {
-            delete wsFetchTasks[wsId];
-          }
-        }
-      });
-      wsFetchTasks[wsId] = task;
-    });
-  });
+  // Workspace stats: cancel/coalesce only the previous fetch for the same wsId.
+  yield* takeEvery(fetchWorkspaceStats, function* (action: ReturnType<typeof fetchWorkspaceStats>) {
+    const [wsId] = action.payload;
+    const prev = wsFetchTasks[wsId];
+    if (prev) {
+      yield* cancel(prev);
+    }
 
-  // Agent stats: cancel previous in-flight fetch for the same agentId.
-  yield* fork(function* () {
-    yield* takeEvery(fetchAgentStats, function* (action) {
-      const [agentId] = action.payload;
-      const prev = agentFetchTasks[agentId];
-      if (prev) {
-        yield* cancel(prev);
-      }
-      const task: Task = yield* fork(function* () {
-        try {
-          yield* call(handleFetchAgentStats, action);
-        } finally {
-          if (agentFetchTasks[agentId] === task) {
-            delete agentFetchTasks[agentId];
-          }
-        }
-      });
-      agentFetchTasks[agentId] = task;
-    });
-  });
-
-  // clearSessionStats: cancel in-flight workspace fetch and agent fetches
-  // for agents belonging to that workspace.
-  yield* fork(function* () {
-    yield* takeEvery(clearSessionStats, function* (action) {
-      const [wsId] = action.payload;
-      // Cancel workspace fetch task
-      const wsTask = wsFetchTasks[wsId];
-      if (wsTask) {
-        yield* cancel(wsTask);
-      }
-      // Cancel agent fetch tasks for agents in this workspace
-      const agents: Array<{ id: string }> = yield* selectAllWorkspaceAgents.effect(wsId);
-      for (const agent of agents) {
-        const agentTask = agentFetchTasks[agent.id];
-        if (agentTask) {
-          yield* cancel(agentTask);
-          yield* put(clearAgentStatsLoading(agent.id));
+    const task: Task = yield* fork(function* () {
+      try {
+        yield* call(handleFetchWorkspaceStats, action);
+      } finally {
+        if (wsFetchTasks[wsId] === task) {
+          delete wsFetchTasks[wsId];
         }
       }
     });
+    wsFetchTasks[wsId] = task;
   });
 
-  // removeAgent: cancel in-flight agent fetch for the removed agent.
-  yield* fork(function* () {
-    yield* takeEvery(removeAgent, function* (action) {
-      const [, agentId] = action.payload;
-      const agentTask = agentFetchTasks[agentId];
+  // Agent stats: cancel/coalesce only the previous fetch for the same agentId.
+  yield* takeEvery(fetchAgentStats, function* (action: ReturnType<typeof fetchAgentStats>) {
+    const [agentId] = action.payload;
+    const prev = agentFetchTasks[agentId];
+    if (prev) {
+      yield* cancel(prev);
+    }
+
+    const task: Task = yield* fork(function* () {
+      try {
+        yield* call(handleFetchAgentStats, action);
+      } finally {
+        if (agentFetchTasks[agentId] === task) {
+          delete agentFetchTasks[agentId];
+        }
+      }
+    });
+    agentFetchTasks[agentId] = task;
+  });
+
+  yield* takeEvery(clearSessionStats, function* (action: ReturnType<typeof clearSessionStats>) {
+    const [wsId] = action.payload;
+    const wsTask = wsFetchTasks[wsId];
+    if (wsTask) {
+      delete wsFetchTasks[wsId];
+      yield* cancel(wsTask);
+    }
+
+    const agents: Array<{ id: string }> = yield* selectAllWorkspaceAgents.effect(wsId);
+    for (const agent of agents) {
+      const agentTask = agentFetchTasks[agent.id];
       if (agentTask) {
+        delete agentFetchTasks[agent.id];
         yield* cancel(agentTask);
-        delete agentFetchTasks[agentId];
+        yield* put(clearAgentStatsLoading(agent.id));
       }
-    });
+    }
+  });
+
+  yield* takeEvery(removeAgent, function* (action: ReturnType<typeof removeAgent>) {
+    const [, agentId] = action.payload;
+    const agentTask = agentFetchTasks[agentId];
+    if (agentTask) {
+      delete agentFetchTasks[agentId];
+      yield* cancel(agentTask);
+    }
   });
 
   // Agent activity refetch: when an agent finishes a turn (`agent:idle`),
   // proactively refetch the workspace stats so the credit display reflects
   // newly-spent credits without waiting for the next 60s poll tick. Bursts of
   // idle events (parent + sub-agents finishing back-to-back) are coalesced
-  // into a single fetch per workspace via `takeLatest`-style debouncing.
-  const agentActivityRefetchTasks: Record<string, Task> = {};
-  yield* fork(function* () {
-    while (true) {
-      const action: ReturnType<typeof eventReceived> = yield* take(eventReceived);
-      const [wsId, event] = action.payload;
-      if (event?.type !== "agent:idle") continue;
-
-      // Cancel any pending debounced refetch for this workspace and start a
-      // fresh one — only the latest agent:idle in the burst wins.
-      const prev = agentActivityRefetchTasks[wsId];
-      if (prev) {
-        yield* cancel(prev);
-      }
-      const task: Task = yield* fork(function* () {
-        try {
-          yield* delay(AGENT_ACTIVITY_DEBOUNCE_MS);
-          const sessionRequests: WorkspaceStatsSessionRequest[] = yield* call(
-            getSessionRequestsForWorkspace,
-            wsId,
-          );
-          yield* call(dispatchWorkspaceStatsOrClear, wsId, sessionRequests);
-        } finally {
-          if (agentActivityRefetchTasks[wsId] === task) {
-            delete agentActivityRefetchTasks[wsId];
-          }
-        }
-      });
-      agentActivityRefetchTasks[wsId] = task;
+  // into a single fetch per workspace via keyed cancellation.
+  yield* takeEvery(isAgentIdleEventReceived, function* (action: AgentIdleEventReceivedAction) {
+    const [wsId] = action.payload;
+    const prev = agentActivityRefetchTasks[wsId];
+    if (prev) {
+      yield* cancel(prev);
     }
+
+    const task: Task = yield* fork(function* () {
+      try {
+        yield* call(handleAgentIdleRefetch, action);
+      } finally {
+        if (agentActivityRefetchTasks[wsId] === task) {
+          delete agentActivityRefetchTasks[wsId];
+        }
+      }
+    });
+    agentActivityRefetchTasks[wsId] = task;
   });
 
-  // Unmount: cancel the poller for this workspace and clear its stats.
-  // Also cancel any pending agent-activity debounce so an unmounted workspace
-  // doesn't fire a stale refetch after teardown.
+  // Unmount: clear stats for this workspace.
   yield* fork(function* () {
     while (true) {
       const action: ReturnType<typeof workspaceUnmounted> = yield* take(
         workspaceUnmounted,
       );
       const [wsId] = action.payload;
-      yield* call(stopPolling, wsId);
       const refetchTask = agentActivityRefetchTasks[wsId];
       if (refetchTask) {
+        delete agentActivityRefetchTasks[wsId];
         yield* cancel(refetchTask);
       }
       yield* put(clearSessionStats(wsId));
     }
   });
 
-  // For each workspace mount, start a polling saga (deduped per workspace).
-  yield* fork(function* () {
-    while (true) {
-      const action: ReturnType<typeof workspaceMounted> = yield* take(workspaceMounted);
-      const [wsId] = action.payload;
-      yield* call(startPolling, wsId);
-    }
-  });
-
-  // Retroactive mount check: if workspaceMounted fired before this saga
-  // registered its take, replay the mount so stats still load. The startPolling
-  // dedupe guards against the real workspaceMounted arriving concurrently.
-  yield* fork(function* retroactiveSessionStatsMountCheck() {
-    const activeWsId: string | null = yield* selectActiveWorkspaceId.effect();
-    if (activeWsId) {
-      yield* call(startPolling, activeWsId);
-    }
-  });
+  yield* fork(sessionStatsPollingLoop);
 }

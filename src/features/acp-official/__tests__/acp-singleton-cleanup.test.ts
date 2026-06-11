@@ -3,17 +3,15 @@
  *
  * Verifies that:
  * - AcpServer.dispose() clears SessionManager sessions and PermissionManager decisions
+ * - SessionManager spills heavy payloads to disk instead of deleting/truncating sessions
  * - PermissionManager.decisions are evicted per-request after handleDecision()
  * - PermissionManager.clearDecisions() clears remaining decisions
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SessionManager } from '../main/server/session-manager';
 import { PermissionManager } from '../permissions/permission-manager';
 import type { AgentId } from '$shared/types/branded-ids';
@@ -30,6 +28,31 @@ vi.mock('../main/server/handlers/file-system', () => {
   return {
     FileSystemHandler: class {},
   };
+});
+
+function makeMessage(text: string) {
+  return {
+    role: 'user',
+    content: [{ type: 'text', text }],
+  } as any;
+}
+
+const tempDirs: string[] = [];
+
+function makeTempDir(prefix = 'acp-session-manager-') {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+function messageTexts(session: { messages: any[] }) {
+  return session.messages.map((message) => message.content[0].text);
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 describe('P1 #1: SessionManager.clearAllSessions()', () => {
@@ -51,6 +74,147 @@ describe('P1 #1: SessionManager.clearAllSessions()', () => {
     expect(manager.getAllSessions()).toHaveLength(0);
     manager.clearAllSessions();
     expect(manager.getAllSessions()).toHaveLength(0);
+  });
+
+  it('spills old session payloads without deleting logical sessions', () => {
+    const manager = new SessionManager({
+      storageDirectory: makeTempDir(),
+      maxSessionAgeHours: 1,
+    });
+    const oldSession = manager.createSession({ test: 'old' });
+    manager.addMessage(oldSession.id, makeMessage('old payload'));
+    oldSession.lastActivity = new Date(Date.now() - 2 * 60 * 60 * 1000);
+
+    const newSession = manager.createSession({ test: 'new' });
+
+    expect(manager.getRetentionStats()).toMatchObject({
+      totalSessions: 2,
+      persistedPayloadSessions: 1,
+    });
+    expect(oldSession.messages).toHaveLength(0);
+    expect(manager.getAllSessions().map((session) => session.id)).toEqual([
+      oldSession.id,
+      newSession.id,
+    ]);
+    expect(messageTexts(manager.getSession(oldSession.id)!)).toEqual(['old payload']);
+  });
+
+  it('spills least recently active payloads above the configured memory bound', () => {
+    const manager = new SessionManager({ storageDirectory: makeTempDir(), maxSessions: 1 });
+    const first = manager.createSession({ order: 1 });
+    manager.addMessage(first.id, makeMessage('first payload'));
+    const second = manager.createSession({ order: 2 });
+    manager.addMessage(second.id, makeMessage('second payload'));
+
+    expect(manager.getRetentionStats()).toMatchObject({
+      totalSessions: 2,
+      inMemoryPayloadSessions: 1,
+      persistedPayloadSessions: 1,
+    });
+    expect(first.messages).toHaveLength(0);
+    expect(messageTexts(second)).toEqual(['second payload']);
+    expect(messageTexts(manager.getSession(first.id)!)).toEqual(['first payload']);
+  });
+
+  it('does not logically truncate message history when payloads spill to disk', () => {
+    const manager = new SessionManager({
+      storageDirectory: makeTempDir(),
+      maxSessions: 1,
+      maxMessagesPerSession: 2,
+    });
+    const session = manager.createSession();
+
+    manager.addMessage(session.id, makeMessage('one'));
+    manager.addMessage(session.id, makeMessage('two'));
+    manager.addMessage(session.id, makeMessage('three'));
+    const recent = manager.createSession();
+    manager.addMessage(recent.id, makeMessage('recent'));
+
+    expect(session.messages).toHaveLength(0);
+    expect(messageTexts(manager.getSession(session.id)!)).toEqual(['one', 'two', 'three']);
+  });
+
+  it('retains unsaved payloads in memory when persistence fails', () => {
+    const blockedStoragePath = path.join(makeTempDir(), 'not-a-directory');
+    fs.writeFileSync(blockedStoragePath, 'blocks mkdir');
+    const manager = new SessionManager({ storageDirectory: blockedStoragePath, maxSessions: 1 });
+    const first = manager.createSession();
+    manager.addMessage(first.id, makeMessage('first payload'));
+    const second = manager.createSession();
+    manager.addMessage(second.id, makeMessage('second payload'));
+
+    expect(messageTexts(first)).toEqual(['first payload']);
+    expect(messageTexts(second)).toEqual(['second payload']);
+    expect(manager.getRetentionStats()).toMatchObject({
+      totalSessions: 2,
+      inMemoryPayloadSessions: 2,
+      persistedPayloadSessions: 0,
+    });
+  });
+
+  it('rehydrates spilled payloads from disk in a fresh manager', () => {
+    const storageDirectory = makeTempDir();
+    const manager = new SessionManager({ storageDirectory, maxSessions: 1 });
+    const first = manager.createSession({ persisted: true });
+    manager.addMessage(first.id, makeMessage('first payload'));
+    const second = manager.createSession();
+    manager.addMessage(second.id, makeMessage('second payload'));
+
+    const reloadedManager = new SessionManager({ storageDirectory, maxSessions: 1 });
+    const reloaded = reloadedManager.getSession(first.id);
+
+    expect(reloaded?.metadata).toEqual({ persisted: true });
+    expect(messageTexts(reloaded!)).toEqual(['first payload']);
+  });
+});
+
+describe('ACP session/load rehydration', () => {
+  it('returns full spilled history through session/load', async () => {
+    const workspacePath = makeTempDir('acp-server-workspace-');
+    const storageDirectory = path.join(workspacePath, '.intent', 'acp-session-payloads');
+    const { ACPServer } = await import('../main/server/acp-server');
+    const server = new ACPServer({
+      clientInfo: { name: 'test', version: '1.0.0' },
+      workspacePath,
+      workspaceId: 'test-workspace',
+    });
+    (server as any).sessionManager = new SessionManager({ storageDirectory, maxSessions: 1 });
+
+    try {
+      const firstResponse = JSON.parse(
+        (await server.handleMessage(
+          JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'session/new', params: {} }),
+        ))!,
+      );
+      const firstId = firstResponse.result.sessionId as AgentId;
+      (server as any).sessionManager.addMessage(firstId, makeMessage('first payload'));
+
+      const secondResponse = JSON.parse(
+        (await server.handleMessage(
+          JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'session/new', params: {} }),
+        ))!,
+      );
+      const secondId = secondResponse.result.sessionId as AgentId;
+      (server as any).sessionManager.addMessage(secondId, makeMessage('second payload'));
+
+      const loadResponse = JSON.parse(
+        (await server.handleMessage(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: 3,
+            method: 'session/load',
+            params: { sessionId: firstId },
+          }),
+        ))!,
+      );
+
+      expect(loadResponse.error).toBeUndefined();
+      expect(loadResponse.result.messages.map((message: any) => message.content[0].text)).toEqual([
+        'first payload',
+      ]);
+    } finally {
+      await server.dispose();
+    }
   });
 });
 
@@ -187,4 +351,3 @@ describe('P1 #2: PermissionManager decisions per-request eviction', () => {
     }
   });
 });
-

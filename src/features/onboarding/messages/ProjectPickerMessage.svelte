@@ -10,6 +10,7 @@
    */
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
+  import { invoke } from '$shared/generated/ipc-client';
   import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import LocalRepoTab from './LocalRepoTab.svelte';
@@ -136,7 +137,7 @@
         return;
       }
       try {
-        const result = await window.electronAPI.invoke('file:getDirectoryStatus', {
+        const result = await invoke<any>('file:getDirectoryStatus', {
           path: targetPath,
         });
         if (result.success && result.data) {

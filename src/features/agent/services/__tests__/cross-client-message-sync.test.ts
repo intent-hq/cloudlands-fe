@@ -19,7 +19,7 @@ import type { AgentSession, AgentMessage } from '../../../../shared/types';
 import {
   agentSessionReducer,
   initialState as agentSessionInitialState,
-  upsertSession,
+  bulkUpsertSessions,
 } from '../../../../store/renderer/slices/agent-session/agent-session-slice';
 import { eventReceived } from '../../../../store/renderer/slices/workspace-events/workspace-events-slice';
 
@@ -51,7 +51,10 @@ describe('Cross-Client User Message Sync (iOS → Electron)', () => {
     session: AgentSession | null = agentSession,
   ) {
     const startState = session
-      ? agentSessionReducer(agentSessionInitialState, upsertSession(session))
+      ? agentSessionReducer(
+        agentSessionInitialState,
+        bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false }),
+      )
       : agentSessionInitialState;
     const workspaceId = (data?.workspaceId as string | undefined) ?? 'ws-test';
     return agentSessionReducer(

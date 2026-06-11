@@ -952,7 +952,7 @@
     kind?: 'file' | 'note' | 'spec' | 'diff';
   };
 
-  const mainPanel = $derived(selectWorkspaceNavigationMainPanel(workspace.id));
+  const mainPanel = selectWorkspaceNavigationMainPanel(workspaceIdStore);
   let currentMainPanelContext = $derived.by((): MainPanelContext | null => {
     if (!workspace?.id) return null;
 

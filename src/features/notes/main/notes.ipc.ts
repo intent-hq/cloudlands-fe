@@ -28,6 +28,7 @@ import {
 } from '$shared/types/branded-ids';
 import { flushPendingVersion } from './storage/version-manager';
 import { getNoteStoragePaths } from './storage/note-storage-paths';
+import { getAllOpenWorkspaceIds } from '../../system/main/system.ipc';
 
 const logger = new Logger('NotesIPC');
 
@@ -73,7 +74,9 @@ export function setupNotesIPC() {
       NotesListSchema,
       async (_, validated) => {
         // Protocol adapter now returns data directly for MCP compatibility
-        const notes = await protocolAdapter.listNotes(validated.workspaceId);
+        const notes = await protocolAdapter.listNotes(validated.workspaceId, {
+          summariesOnly: validated.summariesOnly === true,
+        });
 
         // Convert to CommandResponse format
         if (Array.isArray(notes)) {
@@ -111,6 +114,7 @@ export function setupNotesIPC() {
         const result = await protocolAdapter.getNote({
           workspaceId: validated.workspaceId,
           noteId: validated.noteId,
+          initializeCRDT: true,
         });
         return resultToCommandResponse(result);
       },
@@ -388,12 +392,15 @@ export function setupNotesIPC() {
       NotesBatchListSchema,
       async (_, validated) => {
         const { workspaceIds } = validated;
+        const openWorkspaceIds = new Set(getAllOpenWorkspaceIds());
         const result: Record<string, any[]> = {};
 
         // Load notes for each workspace in parallel
         const promises = workspaceIds.map(async (workspaceId: string) => {
           try {
-            const notes = await protocolAdapter.listNotes(workspaceId);
+            const notes = await protocolAdapter.listNotes(workspaceId, {
+              summariesOnly: !openWorkspaceIds.has(workspaceId),
+            });
             return { workspaceId, notes: Array.isArray(notes) ? notes : [] };
           } catch (error) {
             logger.warn('Failed to load notes for workspace', { workspaceId, error });

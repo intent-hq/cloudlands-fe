@@ -23,6 +23,8 @@ import { workspaceOperationsReducer } from "./slices/workspace-operations/worksp
 import { workspaceAgentsReducer } from "./slices/workspace-agents/workspace-agents-slice";
 import { workspaceNavigationReducer } from "./slices/workspace-navigation/workspace-navigation-slice";
 import { workspaceNotesReducer } from "./slices/workspace-notes/workspace-notes-slice";
+import { workspaceTasksReducer } from "./slices/workspace-tasks/workspace-tasks-slice";
+import { workspaceSummariesReducer } from "./slices/workspace-summaries/workspace-summaries-slice";
 import { workspaceSwitcherReducer } from "./slices/workspace-switcher/workspace-switcher-slice";
 import { workspaceEventsReducer } from "./slices/workspace-events/workspace-events-slice";
 import { paletteReducer } from "./slices/palette/palette-slice";
@@ -47,7 +49,6 @@ import { sidebarNavReducer } from "./slices/sidebar-nav/sidebar-nav-slice";
 import { scriptsReducer } from "./slices/scripts/scripts-slice";
 import { agentFollowReducer } from "./slices/agent-follow/agent-follow-slice";
 import { gitReducer } from "./slices/git/git-slice";
-import { agentOverviewReducer } from "./slices/agent-overview/agent-overview-slice";
 import { fileTrackingReducer } from "./slices/changes/changes-slice";
 import { agentLockReducer } from "./slices/agent-lock/agent-lock-slice";
 import { panelLayoutReducer } from "./slices/panel-layout/panel-layout-slice";
@@ -99,6 +100,8 @@ export const reducers = {
   workspaceAgents: workspaceAgentsReducer,
   workspaceNavigation: workspaceNavigationReducer,
   workspaceNotes: workspaceNotesReducer,
+  workspaceTasks: workspaceTasksReducer,
+  workspaceSummaries: workspaceSummariesReducer,
   workspaceOperations: workspaceOperationsReducer,
   workspaceSettings: workspaceSettingsReducer,
   workspaceSwitcher: workspaceSwitcherReducer,
@@ -125,7 +128,6 @@ export const reducers = {
   scripts: scriptsReducer,
   agentFollow: agentFollowReducer,
   git: gitReducer,
-  agentOverview: agentOverviewReducer,
   changes: fileTrackingReducer,
   agentLock: agentLockReducer,
   panelLayout: panelLayoutReducer,

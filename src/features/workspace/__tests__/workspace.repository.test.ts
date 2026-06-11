@@ -7,6 +7,7 @@ import {
   it,
   expect,
   beforeEach,
+  afterEach,
   vi,
 } from 'vitest';
 import {
@@ -17,7 +18,10 @@ import {
 import type { Workspace } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
+import { WorkspaceConfig } from '../../../shared/main/config';
 import { promises as fs } from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 import { randomUUID } from 'crypto';
 
@@ -173,6 +177,90 @@ describe('InMemoryWorkspaceRepository', () => {
       const workspaces = await repository.findAll();
       expect(workspaces).toEqual([]);
     });
+  });
+});
+
+describe('FileSystemWorkspaceRepository disk JSON freshness', () => {
+  let repository: FileSystemWorkspaceRepository;
+  let tempRoot: string;
+  let originalWorkspacesBaseDir: string | undefined;
+
+  const createFileSystemWorkspace = (overrides?: Partial<Workspace>): Workspace => ({
+    id: randomUUID(),
+    title: 'Disk Workspace',
+    branch: 'main',
+    changesets: [],
+    timeline: [],
+    conversationInfo: [],
+    status: WorkspaceStatus.Active,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  });
+
+  beforeEach(async () => {
+    originalWorkspacesBaseDir = process.env.WORKSPACES_BASE_DIR;
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'intent-workspace-repository-'));
+    process.env.WORKSPACES_BASE_DIR = tempRoot;
+    repository = new FileSystemWorkspaceRepository();
+  });
+
+  afterEach(async () => {
+    if (originalWorkspacesBaseDir === undefined) {
+      delete process.env.WORKSPACES_BASE_DIR;
+    } else {
+      process.env.WORKSPACES_BASE_DIR = originalWorkspacesBaseDir;
+    }
+
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  });
+
+  it('findById reads current workspace JSON from disk on repeated calls', async () => {
+    const workspace = createFileSystemWorkspace({ title: 'Original Title' });
+
+    await repository.save(workspace);
+    await expect(repository.findById(workspace.id)).resolves.toMatchObject({
+      title: 'Original Title',
+    });
+
+    const externallyUpdatedWorkspace = {
+      ...workspace,
+      title: 'Externally Updated Title',
+      updatedAt: new Date(Date.now() + 1000).toISOString(),
+    };
+    await fs.writeFile(
+      WorkspaceConfig.paths.workspaceMetadata(workspace.id),
+      JSON.stringify(externallyUpdatedWorkspace, null, 2),
+      'utf-8',
+    );
+
+    await expect(repository.findById(workspace.id)).resolves.toMatchObject({
+      title: 'Externally Updated Title',
+    });
+  });
+
+  it('findAll returns workspace objects parsed from current workspace JSON files', async () => {
+    const workspace = createFileSystemWorkspace({ title: 'List Original Title' });
+
+    await repository.save(workspace);
+    expect((await repository.findAll()).find((w) => w.id === workspace.id)?.title).toBe(
+      'List Original Title',
+    );
+
+    const externallyUpdatedWorkspace = {
+      ...workspace,
+      title: 'List Externally Updated Title',
+      updatedAt: new Date(Date.now() + 1000).toISOString(),
+    };
+    await fs.writeFile(
+      WorkspaceConfig.paths.workspaceMetadata(workspace.id),
+      JSON.stringify(externallyUpdatedWorkspace, null, 2),
+      'utf-8',
+    );
+
+    expect((await repository.findAll()).find((w) => w.id === workspace.id)?.title).toBe(
+      'List Externally Updated Title',
+    );
   });
 });
 

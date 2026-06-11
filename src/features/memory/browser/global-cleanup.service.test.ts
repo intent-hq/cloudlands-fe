@@ -84,4 +84,40 @@ describe('globalCleanupService visibility lifecycle', () => {
     expect(mockComponentDisposalManager.disposeAll).not.toHaveBeenCalled();
     expect(mockMemoryMonitor.stop).not.toHaveBeenCalled();
   });
+
+  it('disposes singleton listeners without running destructive cleanup handlers', async () => {
+    const addWindowListenerSpy = vi.spyOn(window, 'addEventListener');
+    const removeWindowListenerSpy = vi.spyOn(window, 'removeEventListener');
+
+    const { globalCleanupService } = await import('./global-cleanup.service');
+    vi.runOnlyPendingTimers();
+
+    const beforeUnloadListener = addWindowListenerSpy.mock.calls.find(
+      ([event]) => event === 'beforeunload',
+    )?.[1];
+    const unloadListener = addWindowListenerSpy.mock.calls.find(([event]) => event === 'unload')?.[1];
+
+    globalCleanupService.dispose();
+
+    expect(removeWindowListenerSpy).toHaveBeenCalledWith('beforeunload', beforeUnloadListener);
+    expect(removeWindowListenerSpy).toHaveBeenCalledWith('unload', unloadListener);
+    expect(mockMemoryLeakDetector.dispose).not.toHaveBeenCalled();
+    expect(mockComponentDisposalManager.disposeAll).not.toHaveBeenCalled();
+    expect(mockMemoryMonitor.stop).not.toHaveBeenCalled();
+  });
+
+  it('does not duplicate default handlers after force cleanup and reinitialize', async () => {
+    const { globalCleanupService } = await import('./global-cleanup.service');
+    vi.runOnlyPendingTimers();
+
+    globalCleanupService.forceCleanup();
+    vi.clearAllMocks();
+
+    globalCleanupService.initialize();
+    globalCleanupService.forceCleanup();
+
+    expect(mockMemoryLeakDetector.dispose).toHaveBeenCalledTimes(1);
+    expect(mockComponentDisposalManager.disposeAll).toHaveBeenCalledTimes(1);
+    expect(mockMemoryMonitor.stop).toHaveBeenCalledTimes(1);
+  });
 });

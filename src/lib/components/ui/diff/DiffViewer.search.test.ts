@@ -24,6 +24,11 @@ const testState = vi.hoisted(() => {
   return { readable };
 });
 
+const workerPoolState = vi.hoisted(() => ({
+  acquireDiffWorkerPool: vi.fn(() => undefined),
+  releaseDiffWorkerPool: vi.fn(),
+}));
+
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectCodeFontFamilyCSS: () => testState.readable('monospace'),
 }));
@@ -33,8 +38,9 @@ vi.mock('$store/renderer/slices/theme/theme-selectors', () => ({
 }));
 
 vi.mock('$lib/utils/diff-highlighter-preloader', () => ({
-  getDiffWorkerPool: () => undefined,
+  acquireDiffWorkerPool: workerPoolState.acquireDiffWorkerPool,
   getSafeDiffLanguage: (language?: string) => language ?? 'text',
+  releaseDiffWorkerPool: workerPoolState.releaseDiffWorkerPool,
 }));
 
 vi.mock('svelte-fa', async () => ({
@@ -96,6 +102,8 @@ vi.mock('@pierre/diffs', () => {
 });
 
 beforeEach(() => {
+  workerPoolState.acquireDiffWorkerPool.mockClear();
+  workerPoolState.releaseDiffWorkerPool.mockClear();
   vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([{ width: 10, height: 10 } as DOMRect]);
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
     top: 0,
@@ -114,6 +122,17 @@ afterEach(() => {
 });
 
 describe('DiffViewer search', () => {
+  it('releases diff worker pool ownership when unmounted', async () => {
+    const view = render(DiffViewer, { props: { oldContent: '', newContent: 'repeat' } });
+
+    await waitFor(() => expect(workerPoolState.acquireDiffWorkerPool).toHaveBeenCalledTimes(1));
+    expect(workerPoolState.releaseDiffWorkerPool).not.toHaveBeenCalled();
+
+    view.unmount();
+
+    expect(workerPoolState.releaseDiffWorkerPool).toHaveBeenCalledTimes(1);
+  });
+
   it('debounces non-empty input before walking and highlighting the diff DOM', async () => {
     vi.useFakeTimers();
     const { container } = render(DiffViewer, { props: { oldContent: '', newContent: 'repeat' } });

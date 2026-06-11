@@ -20,10 +20,11 @@ import { requestDeduplicator } from '$features/agent/browser/services/request-de
 import { invoke } from '$lib/electron-bridge';
 import { createLogger } from '$lib/utils/client-logger';
 import { takeEveryFromElectronChannel } from '$store/renderer/utils/ipc-channel';
+import { store as appStore } from '$store/renderer/store';
 import {
   END,
-  buffers,
   eventChannel,
+  type Task,
 } from 'redux-saga';
 import {
   call,
@@ -126,33 +127,24 @@ function normalizeBackendActiveStreamsResult(value: unknown): BackendActiveStrea
 }
 
 type PendingDeletion = {
-  timeoutId: ReturnType<typeof setTimeout>;
+  commitTask: Task;
   workspaceId: string;
   savedSession: AgentSession;
   toastId?: string | number;
 };
 
-type AgentDeletionCallbackAction =
-  | ReturnType<typeof commitPendingAgentDeletionRequested>
-  | ReturnType<typeof undoAgentDeletionRequested>;
-
 const pendingDeletions = new Map<string, PendingDeletion>();
-const agentDeletionCallbackListeners = new Set<(action: AgentDeletionCallbackAction) => void>();
 
-function emitAgentDeletionCallbackAction(action: AgentDeletionCallbackAction): void {
-  for (const listener of agentDeletionCallbackListeners) {
-    listener(action);
-  }
+function cancelPendingDeletionCommit(pending: PendingDeletion): void {
+  pending.commitTask.cancel();
 }
 
-function createAgentDeletionCallbackChannel() {
-  return eventChannel<AgentDeletionCallbackAction>((emitter) => {
-    const listener = (action: AgentDeletionCallbackAction) => emitter(action);
-    agentDeletionCallbackListeners.add(listener);
-    return () => {
-      agentDeletionCallbackListeners.delete(listener);
-    };
-  }, buffers.expanding<AgentDeletionCallbackAction>());
+function* commitPendingAgentDeletionAfterUndoWindow(
+  wsId: string,
+  agentId: string,
+): SagaGenerator<void> {
+  yield* delay(DELETE_UNDO_DURATION_MS);
+  yield* put(commitPendingAgentDeletionRequested(wsId, agentId));
 }
 
 function getErrorMessage(error: unknown): string {
@@ -179,7 +171,7 @@ function extractPendingAgentDeletions(
   const deletions: Array<{ agentId: string; workspaceId: string }> = [];
   for (const [agentId, pending] of [...pendingDeletions.entries()]) {
     if (wsId && pending.workspaceId !== wsId) continue;
-    clearTimeout(pending.timeoutId);
+    cancelPendingDeletionCommit(pending);
     pendingDeletions.delete(agentId);
     deletions.push({ agentId, workspaceId: pending.workspaceId });
   }
@@ -188,7 +180,7 @@ function extractPendingAgentDeletions(
 
 function resetAgentLifecycleRuntime(): void {
   for (const [, pending] of pendingDeletions.entries()) {
-    clearTimeout(pending.timeoutId);
+    cancelPendingDeletionCommit(pending);
   }
   pendingDeletions.clear();
 }
@@ -358,20 +350,20 @@ export function* handleDeleteAgentWithUndoRequested(
     }
 
     const displayName = agentName || saved.name || '';
-    const timeoutId = setTimeout(() => {
-      emitAgentDeletionCallbackAction(commitPendingAgentDeletionRequested(wsId, agentId));
-    }, DELETE_UNDO_DURATION_MS);
     const toastId = toast.warning(displayName ? `Deleted "${displayName}"` : 'Agent deleted', {
       duration: DELETE_UNDO_DURATION_MS,
       action: {
         label: 'Undo',
         onClick: () => {
-          emitAgentDeletionCallbackAction(undoAgentDeletionRequested(wsId, agentId));
+          appStore.dispatch(undoAgentDeletionRequested(wsId, agentId));
         },
       },
     }) as string | number;
 
-    pendingDeletions.set(agentId, { timeoutId, workspaceId: wsId, savedSession: saved, toastId });
+    const existing = pendingDeletions.get(agentId);
+    if (existing) cancelPendingDeletionCommit(existing);
+    const commitTask = yield* fork(commitPendingAgentDeletionAfterUndoWindow, wsId, agentId);
+    pendingDeletions.set(agentId, { commitTask, workspaceId: wsId, savedSession: saved, toastId });
     yield* put(action.success(saved));
   } catch (error) {
     logger.error('Failed to delete session with undo', { wsId, agentId, error });
@@ -389,7 +381,7 @@ export function* handleUndoAgentDeletionRequested(
       yield* put(action.success(false));
       return;
     }
-    clearTimeout(pending.timeoutId);
+    cancelPendingDeletionCommit(pending);
     pendingDeletions.delete(agentId);
     yield* put(
       upsertSession({
@@ -411,7 +403,7 @@ export function* handleCommitPendingAgentDeletionRequested(
   const [wsId, agentId] = action.payload;
   const pending = pendingDeletions.get(agentId);
   if (!pending || pending.workspaceId !== wsId) return;
-  clearTimeout(pending.timeoutId);
+  cancelPendingDeletionCommit(pending);
   pendingDeletions.delete(agentId);
   try {
     yield* call(deleteAgentSessionPermanently, wsId, agentId);
@@ -433,19 +425,6 @@ export function* handleFlushPendingAgentDeletionsRequested(
   } catch (error) {
     logger.error('Failed to flush pending deletions', { wsId, error });
     yield* put(action.failure(getErrorMessage(error)));
-  }
-}
-
-/** @internal Exported for testing only. */
-export function* watchAgentDeletionCallbackSaga(): SagaGenerator<void> {
-  const channel = createAgentDeletionCallbackChannel();
-  try {
-    while (true) {
-      const action: AgentDeletionCallbackAction = yield* take(channel);
-      yield* put(action);
-    }
-  } finally {
-    channel.close();
   }
 }
 
@@ -1247,7 +1226,6 @@ export function* agentIpcSaga() {
   yield* takeEvery(undoAgentDeletionRequested, handleUndoAgentDeletionRequested);
   yield* takeEvery(commitPendingAgentDeletionRequested, handleCommitPendingAgentDeletionRequested);
   yield* takeEvery(flushPendingAgentDeletionsRequested, handleFlushPendingAgentDeletionsRequested);
-  yield* fork(watchAgentDeletionCallbackSaga);
   yield* fork(watchAgentIdleSaga);
   yield* fork(watchStreamStartingSaga);
   yield* fork(watchPrepareHandlerSaga);

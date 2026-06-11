@@ -116,7 +116,7 @@ describe('BranchDisplay', () => {
     mockInvoke.mockReset();
     mocks.workspaceEntity.branch = 'feature/branch';
 
-    // Mock window.electronAPI.invoke
+    // Mock the generated IPC client's preload invoke dependency
     (window as unknown as { electronAPI: { invoke: typeof mockInvoke } }).electronAPI = {
       invoke: mockInvoke,
     };

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
+  import { invoke } from '$shared/generated/ipc-client';
 
   import { Button } from '$lib/components/ui/button';
   import {
@@ -250,7 +251,7 @@
 
     isSavingBranch = true;
     try {
-      const result = await window.electronAPI.invoke(WORKSPACE_CHANNELS.RENAME_BRANCH, {
+      const result = await invoke<any>(WORKSPACE_CHANNELS.RENAME_BRANCH, {
         id: workspace.id,
         newBranchName: newBranch,
       });

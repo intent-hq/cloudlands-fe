@@ -13,6 +13,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
   import { Logger } from '$shared/logger';
+  import { invoke } from '$shared/generated/ipc-client';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import Fa from 'svelte-fa';
   import {
@@ -59,21 +60,31 @@
 
   let unsubscribe: (() => void) | null = null;
   let autoRefreshInterval: NodeJS.Timeout | null = null;
+  let isDestroyed = false;
+  let subscriptionRequestId = 0;
 
-  onMount(async () => {
-    // Load initial events
-    await loadEvents();
+  onMount(() => {
+    void (async () => {
+      // Load initial events
+      await loadEvents();
 
-    // Subscribe to real-time events if in Electron
-    if (!isPaused && typeof window !== 'undefined' && window.electronAPI) {
-      await subscribeToEvents();
-    } else {
-      // For browser context, set up auto-refresh
-      startAutoRefresh();
-    }
+      if (isDestroyed) {
+        return;
+      }
+
+      // Subscribe to real-time events if in Electron
+      if (!isPaused && typeof window !== 'undefined' && window.electronAPI) {
+        await subscribeToEvents();
+      } else {
+        // For browser context, set up auto-refresh
+        startAutoRefresh();
+      }
+    })();
   });
 
   onDestroy(() => {
+    isDestroyed = true;
+    subscriptionRequestId += 1;
     if (unsubscribe) {
       unsubscribe();
     }
@@ -104,7 +115,7 @@
     try {
       // Check if we're in Electron context
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await window.electronAPI.invoke('observability:get-events', {
+        const result = await invoke<any>('observability:get-events', {
           filter: parseFilter(filter),
           limit: 1000,
         });
@@ -149,12 +160,17 @@
   }
 
   async function subscribeToEvents() {
+    const requestId = ++subscriptionRequestId;
     try {
       // Check if we're in Electron context
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await window.electronAPI.invoke('observability:subscribe', {
+        const result = await invoke<any>('observability:subscribe', {
           filter: parseFilter(filter),
         });
+
+        if (isDestroyed || requestId !== subscriptionRequestId || isPaused) {
+          return;
+        }
 
         if (result.success) {
           // Listen for events
@@ -175,11 +191,12 @@
           const listenerId = window.electronAPI.on('observability:event', handler);
 
           // Create unsubscribe function using ID-based removal
-          unsubscribe = () => {
+          const cleanup = () => {
             if (listenerId) {
               window.electronAPI.offById('observability:event', listenerId);
             }
           };
+          unsubscribe = cleanup;
         }
       } else {
         logger.warn('Electron API not available - real-time events require Electron app');
@@ -310,7 +327,7 @@
 
   async function exportEvents() {
     try {
-      const result = await window.electronAPI.invoke('observability:export', {
+      const result = await invoke<any>('observability:export', {
         filter: parseFilter(filter),
         format: 'json',
       });
@@ -348,9 +365,9 @@
       // Use the workspace store to open the file in the editor
       if (typeof window !== 'undefined' && window.electronAPI) {
         // Electron environment - open in VS Code or default editor
-        const homeDir = await window.electronAPI.invoke('system:home-directory', undefined);
+        const homeDir = await invoke<string>('system:home-directory', undefined);
         const fullPath = `${homeDir}/intent/${workspaceId}/${agentFilePath}`;
-        await window.electronAPI.invoke('shell:openPath', { path: fullPath });
+        await invoke('shell:openPath', { path: fullPath });
       } else {
         // Browser environment - navigate to the file viewer
         // Navigate to the workspace file viewer with the agent file

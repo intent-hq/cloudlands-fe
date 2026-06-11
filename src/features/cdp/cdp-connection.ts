@@ -23,7 +23,7 @@ export class CdpConnectionManager {
   private port: number;
   private consoleLogs: ConsoleLogEntry[] = [];
 
-  constructor(port: number = 9222) {
+  constructor(port: number = 9223) {
     this.port = port;
     this.logger = new Logger('CdpConnectionManager');
   }

@@ -1,8 +1,9 @@
 /**
  * Type-Safe IPC Invoke Wrapper
  *
- * Provides a type-safe wrapper around Electron's IPC invoke mechanism.
- * Ensures request and response types are correctly matched at compile time.
+ * Provides a type-safe wrapper around the generated renderer IPC client.
+ * Ensures request and response types are correctly matched at compile time while
+ * keeping raw Electron invoke access centralized in generated/ipc-client.
  *
  * Usage:
  *   const response = await typedInvoke('agent:create', {
@@ -16,6 +17,7 @@
 
 import type { IpcContractMap, IpcResponse } from './contracts';
 import { Logger } from '../logger';
+import { invoke as invokeIpc } from '../generated/ipc-client';
 
 const logger = new Logger('TypedInvoke');
 
@@ -43,17 +45,14 @@ export async function typedInvoke<K extends keyof IpcContractMap>(
   request: IpcContractMap[K][0],
 ): Promise<IpcResponse<IpcContractMap[K][1]>> {
   try {
-    // Get the electron IPC API from preload
-    const electronAPI = (window as any).electronAPI;
-
-    if (!electronAPI || !electronAPI.invoke) {
+    if (typeof window === 'undefined' || !window.electronAPI) {
       throw new Error('IPC renderer not available - electronAPI not exposed');
     }
 
     logger.debug(`Invoking IPC channel: ${String(channel)}`, { request });
 
-    // Invoke the channel with the request
-    const response = await electronAPI.invoke(channel, request);
+    // Invoke the channel through the generated IPC boundary
+    const response = await invokeIpc<IpcResponse<IpcContractMap[K][1]>>(String(channel), request);
 
     logger.debug(`IPC response from ${String(channel)}:`, { response });
 

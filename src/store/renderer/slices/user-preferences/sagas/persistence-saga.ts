@@ -1,4 +1,5 @@
 import { setLocalStorageJSON } from "$store/renderer/utils/safe-local-storage-saga";
+import { invoke } from "$shared/generated/ipc-client";
 import {
   call,
   delay,
@@ -68,7 +69,7 @@ export const PROMO_BANNER_STORAGE_KEY = "promoBannerInteractions";
 async function persistBetaUpdatesToIPC(enabled: boolean): Promise<void> {
   try {
     if (typeof window !== "undefined" && window.electronAPI) {
-      await window.electronAPI.invoke("settings:set", {
+      await invoke("settings:set", {
         key: BETA_UPDATES_STORAGE_KEY,
         value: enabled,
       });
@@ -109,7 +110,7 @@ async function persistNotificationSettingsToIPC(
 ): Promise<void> {
   try {
     if (typeof window !== "undefined" && window.electronAPI) {
-      await window.electronAPI.invoke("settings:set", {
+      await invoke("settings:set", {
         key: NOTIFICATION_STORAGE_KEY,
         value: settings,
       });

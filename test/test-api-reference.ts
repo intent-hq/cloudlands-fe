@@ -34,7 +34,7 @@ class MCPTestClient {
 
     this.process = spawn('node', ['cdp-mcp-server/dist/server.js'], {
       stdio: ['pipe', 'pipe', 'inherit'],
-      env: { ...process.env, CDP_PORT: '9222' },
+      env: { ...process.env, CDP_PORT: '9223' },
     });
 
     this.rl = readline.createInterface({

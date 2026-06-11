@@ -66,11 +66,13 @@ import {
   escapeShellArg,
 } from '../../agent/main/agent-providers/acp-provider';
 import { MetadataSyncService } from '../../metadata-fs/main/metadata-sync-service';
+import {
+  createMetadataSyncUiBridge,
+  type MetadataSyncUiBridge,
+} from './utils/metadata-sync-ui-bridge';
 import { clearMetadataFSCache } from '../../metadata-fs/main/metadata-fs-factory';
 import { notesService } from '../../notes/main/notes.service';
 import { deleteEventStoreForWorkspace } from '../../../store/main/slices/workspace-events/sagas/persistence-saga';
-import { createHash } from 'crypto';
-import * as path from 'path';
 
 const require = createRequire(import.meta.url);
 import { validateIPCString } from '../../ipc/ipc-validation';
@@ -144,8 +146,47 @@ const logger = new Logger('WorkspaceIPC');
 
 // Storage for MetadataSyncService instances per workspace
 const metadataSyncServices = new Map<string, MetadataSyncService>();
+const metadataSyncUiBridges = new Map<string, MetadataSyncUiBridge>();
 
 const editorRefreshUnsubscribers = new Map<string, () => void>();
+
+function disposeMetadataSyncUiBridge(workspaceId: string): void {
+  const bridge = metadataSyncUiBridges.get(workspaceId);
+  if (!bridge) return;
+
+  metadataSyncUiBridges.delete(workspaceId);
+  try {
+    bridge.dispose();
+  } catch (error) {
+    logger.warn('[WorkspaceIPC] Failed to dispose MetadataSyncService UI bridge', error as Error, {
+      workspaceId,
+    });
+  }
+}
+
+async function stopMetadataSyncServiceForWorkspace(
+  workspaceId: string,
+  reason: string,
+): Promise<boolean> {
+  disposeMetadataSyncUiBridge(workspaceId);
+
+  const syncService = metadataSyncServices.get(workspaceId);
+  if (!syncService) return false;
+
+  try {
+    await syncService.stop();
+    logger.info('[WorkspaceIPC] Stopped MetadataSyncService', { workspaceId, reason });
+  } catch (error) {
+    logger.warn('[WorkspaceIPC] Failed to stop MetadataSyncService', error as Error, {
+      workspaceId,
+      reason,
+    });
+  } finally {
+    metadataSyncServices.delete(workspaceId);
+  }
+
+  return true;
+}
 
 // Global storage for git integrations
 declare global {
@@ -610,18 +651,7 @@ export function setupWorkspaceIPC(): void {
           }
 
           // Stop MetadataSyncService for remote workspaces
-          if (metadataSyncServices.has(id)) {
-            try {
-              const syncService = metadataSyncServices.get(id);
-              await syncService?.stop();
-              metadataSyncServices.delete(id);
-              logger.info('[WorkspaceIPC] Stopped MetadataSyncService', { workspaceId: id });
-            } catch (error) {
-              logger.warn('[WorkspaceIPC] Failed to stop MetadataSyncService', error as Error, {
-                workspaceId: id,
-              });
-            }
-          }
+          await stopMetadataSyncServiceForWorkspace(id, 'workspace close');
           // Clear MetadataFS cache so it's re-created on next open
           clearMetadataFSCache();
 
@@ -934,6 +964,7 @@ export function setupWorkspaceIPC(): void {
               // Start MetadataSyncService to sync remote .workspace/ → local cache
               if (workspace.environmentConfig?.ssh) {
                 try {
+                  await stopMetadataSyncServiceForWorkspace(workspace.id, 'workspace open replacement');
                   const remoteWorkspacePath = `~/intent/workspaces/${workspace.id}/.workspace`;
                   const localCachePath = WorkspaceConfig.paths.metadata(workspace.id);
                   const syncService = new MetadataSyncService({
@@ -947,100 +978,13 @@ export function setupWorkspaceIPC(): void {
                     workspaceId: workspace.id,
                   });
 
-                  // ── Bridge: MetadataSyncService → UI domain events ──────────────
-                  // Translates sync:file-changed events (from remote → local cache writes)
-                  // into IPC events that the renderer's files slice and saga listeners already
-                  // listen for.
-                  //
-                  // SAFETY: This bridge only READS from local cache and SENDS to renderer.
-                  // It never writes back to the filesystem, so there is no risk of infinite loops.
-                  // The source is set to 'external' to distinguish from agent/user edits.
-                  //
-                  // Content hash deduplication: We track the last content hash sent per note
-                  // to avoid redundant UI refreshes when a file is synced but hasn't changed.
-                  const syncContentHashes = new Map<string, string>();
-
-                  // Debounce: Collect changed note IDs and flush after 500ms of quiet.
-                  // This prevents UI thrashing when many files change in rapid succession
-                  // (e.g., during streaming watch events from an active remote agent).
-                  let pendingNoteRefreshes = new Set<string>();
-                  let pendingNoteDeletes = new Set<string>();
-                  let pendingAgentRefresh = false;
-                  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-                  const flushPendingSyncEvents = async () => {
-                    const notesToRefresh = [...pendingNoteRefreshes];
-                    const notesToDelete = [...pendingNoteDeletes];
-                    const shouldRefreshAgents = pendingAgentRefresh;
-                    pendingNoteRefreshes = new Set();
-                    pendingNoteDeletes = new Set();
-                    pendingAgentRefresh = false;
-                    debounceTimer = null;
-
-                    // Handle note deletions
-                    for (const noteId of notesToDelete) {
-                      syncContentHashes.delete(noteId);
-                      sendToWorkspaceWindows(workspace.id, 'note:deleted', {
-                        workspaceId: workspace.id,
-                        noteId,
-                        source: 'external',
-                      });
-                      sendToWorkspaceWindows(workspace.id, `note:deleted:${workspace.id}`, {
-                        noteId,
-                        source: 'external',
-                        workspaceId: workspace.id,
-                      });
-                    }
-
-                    // Handle note creates/updates
-                    for (const noteId of notesToRefresh) {
-                      try {
-                        const notePath = path.join(localCachePath, 'notes', `${noteId}.md`);
-                        const content = await fs.readFile(notePath, 'utf-8');
-
-                        // Content hash dedup: skip if content hasn't changed since last send
-                        const hash = createHash('sha256').update(content).digest('hex');
-                        if (syncContentHashes.get(noteId) === hash) {
-                          continue;
-                        }
-                        syncContentHashes.set(noteId, hash);
-
-                        // Extract markdown content after YAML frontmatter for the UI
-                        let markdownContent = content;
-                        const trimmed = content.trim();
-                        if (trimmed.startsWith('---')) {
-                          const endIndex = trimmed.indexOf('---', 3);
-                          if (endIndex !== -1) {
-                            markdownContent = trimmed.slice(endIndex + 3).trim();
-                          }
-                        }
-
-                        sendToWorkspaceWindows(workspace.id, 'note:updated', {
-                          workspaceId: workspace.id,
-                          noteId,
-                          content: markdownContent,
-                          source: 'external',
-                        });
-                        sendToWorkspaceWindows(
-                          workspace.id,
-                          `note:content-changed:${workspace.id}`,
-                          {
-                            noteId,
-                            content: markdownContent,
-                            source: 'external',
-                            workspaceId: workspace.id,
-                          },
-                        );
-                      } catch (err) {
-                        logger.warn('[WorkspaceIPC] Failed to read synced note for UI refresh', {
-                          noteId,
-                          error: (err as Error).message,
-                        });
-                      }
-                    }
-
-                    // Handle agent list refresh
-                    if (shouldRefreshAgents) {
+                  const bridge = createMetadataSyncUiBridge({
+                    syncService,
+                    workspaceId: workspace.id,
+                    localCachePath,
+                    sendToWorkspaceWindows,
+                    logger,
+                    refreshAgents: () => {
                       mainDispatch(
                         agentSessionUpdated({
                           workspaceId: workspace.id,
@@ -1054,83 +998,9 @@ export function setupWorkspaceIPC(): void {
                           stopReason: null,
                         }),
                       );
-                    }
-                  };
-
-                  const scheduleSyncFlush = () => {
-                    if (debounceTimer) {
-                      clearTimeout(debounceTimer);
-                    }
-                    debounceTimer = setTimeout(() => {
-                      flushPendingSyncEvents().catch((err) => {
-                        logger.warn('[WorkspaceIPC] Error flushing sync events', {
-                          error: (err as Error).message,
-                        });
-                      });
-                    }, 500);
-                  };
-
-                  syncService.on(
-                    'sync:file-changed',
-                    ({ path: relativePath, action }: { path: string; action: string }) => {
-                      // ── Note files: notes/{noteId}.md ──
-                      if (
-                        relativePath.startsWith('notes/') &&
-                        relativePath.endsWith('.md') &&
-                        !relativePath.includes('.meta/')
-                      ) {
-                        const noteId = relativePath.replace('notes/', '').replace('.md', '');
-                        if (action === 'delete') {
-                          pendingNoteDeletes.add(noteId);
-                          pendingNoteRefreshes.delete(noteId); // Don't refresh a deleted note
-                        } else {
-                          pendingNoteRefreshes.add(noteId);
-                          pendingNoteDeletes.delete(noteId); // Create/modify overrides pending delete
-                        }
-                        scheduleSyncFlush();
-                        return;
-                      }
-
-                      // ── Note metadata: notes/.meta/{noteId}.*.json ──
-                      // When task metadata, comments, etc. change, refresh the parent note
-                      if (
-                        relativePath.startsWith('notes/.meta/') &&
-                        relativePath.endsWith('.json')
-                      ) {
-                        const fileName = path.basename(relativePath);
-                        // Extract noteId: e.g. "abc-123.comments.json" → "abc-123"
-                        const dotIndex = fileName.indexOf('.');
-                        if (dotIndex > 0) {
-                          const noteId = fileName.substring(0, dotIndex);
-                          pendingNoteRefreshes.add(noteId);
-                          scheduleSyncFlush();
-                        }
-                        return;
-                      }
-
-                      // ── Agent files: agents/{agentId}.json ──
-                      if (relativePath.startsWith('agents/') && relativePath.endsWith('.json')) {
-                        pendingAgentRefresh = true;
-                        scheduleSyncFlush();
-                        return;
-                      }
                     },
-                  );
-
-                  // After a full sync completes, flush all pending events immediately
-                  // to ensure the UI reflects the latest state.
-                  syncService.on('sync:complete', () => {
-                    // Full sync wrote all files to local cache. Trigger a full notes reload
-                    // by emitting note:updated without content — the store will call reloadNote().
-                    // We use a short delay to let the filesystem settle.
-                    setTimeout(() => {
-                      flushPendingSyncEvents().catch((err) => {
-                        logger.warn('[WorkspaceIPC] Error flushing sync events after full sync', {
-                          error: (err as Error).message,
-                        });
-                      });
-                    }, 200);
                   });
+                  metadataSyncUiBridges.set(workspace.id, bridge);
                 } catch (syncError) {
                   logger.warn('[WorkspaceIPC] Failed to start MetadataSyncService', {
                     workspaceId: workspace.id,
@@ -1477,20 +1347,7 @@ export function setupWorkspaceIPC(): void {
         }
 
         // Stop MetadataSyncService for remote workspaces
-        if (metadataSyncServices.has(validatedId)) {
-          try {
-            const syncService = metadataSyncServices.get(validatedId);
-            await syncService?.stop();
-            metadataSyncServices.delete(validatedId);
-            logger.info('Stopped MetadataSyncService for deleted workspace', {
-              workspaceId: validatedId,
-            });
-          } catch (error) {
-            logger.warn('Failed to stop MetadataSyncService during delete', error as Error, {
-              workspaceId: validatedId,
-            });
-          }
-        }
+        await stopMetadataSyncServiceForWorkspace(validatedId, 'workspace delete');
         // Clear MetadataFS cache for deleted workspace
         clearMetadataFSCache();
 

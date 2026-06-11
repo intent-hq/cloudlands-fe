@@ -262,9 +262,10 @@ describe("dockNavigationSaga", () => {
 
     iterator.next();
     iterator.next({ type: "dock", direction: "previous" });
-    iterator.next({ id: "ws-1" });
-    iterator.next([{ id: "agent-1", isBackground: false, metadata: {} }]);
-    iterator.next([]);
+    expect(iterator.next({ id: "ws-1" })).toEqual({
+      value: sagaEffects.select(selectWorkspaceNavigationDrawer.select, "ws-1"),
+      done: false,
+    });
     expect(iterator.next({ open: true, type: "agent", itemId: "agent-1" })).toEqual({
       value: sagaEffects.select(isRespondingMock, "agent-1"),
       done: false,
@@ -287,6 +288,10 @@ describe("dockNavigationSaga", () => {
       done: false,
     });
     expect(iterator.next({ id: "ws-1" })).toEqual({
+      value: sagaEffects.select(selectWorkspaceNavigationDrawer.select, "ws-1"),
+      done: false,
+    });
+    expect(iterator.next({ open: false, type: null, itemId: null })).toEqual({
       value: sagaEffects.select(selectForegroundWorkspaceAgents.select, "ws-1"),
       done: false,
     });
@@ -295,10 +300,6 @@ describe("dockNavigationSaga", () => {
       done: false,
     });
     expect(iterator.next([])).toEqual({
-      value: sagaEffects.select(selectWorkspaceNavigationDrawer.select, "ws-1"),
-      done: false,
-    });
-    expect(iterator.next({ open: false, type: null, itemId: null })).toEqual({
       value: sagaEffects.put(openWorkspaceDrawer("ws-1", "agent", "agent-1")),
       done: false,
     });
@@ -312,9 +313,7 @@ describe("dockNavigationSaga", () => {
 
     iterator.next(); // → take(channel)
     iterator.next({ type: "dock", direction: "next" });
-    iterator.next({ id: "ws-1" });
-    iterator.next([{ id: "agent-1", isBackground: false, metadata: {} }]);
-    expect(iterator.next([{ id: "terminal-1", type: "terminal" }])).toEqual({
+    expect(iterator.next({ id: "ws-1" })).toEqual({
       value: sagaEffects.select(selectWorkspaceNavigationDrawer.select, "ws-1"),
       done: false,
     });
@@ -323,6 +322,14 @@ describe("dockNavigationSaga", () => {
       done: false,
     });
     expect(iterator.next(false)).toEqual({
+      value: sagaEffects.select(selectForegroundWorkspaceAgents.select, "ws-1"),
+      done: false,
+    });
+    expect(iterator.next([{ id: "agent-1", isBackground: false, metadata: {} }])).toEqual({
+      value: sagaEffects.select(selectLoadedWorkspaceTerminals.select, "ws-1"),
+      done: false,
+    });
+    expect(iterator.next([{ id: "terminal-1", type: "terminal" }])).toEqual({
       value: sagaEffects.put(openTerminalOverlay("ws-1", "terminal-1")),
       done: false,
     });

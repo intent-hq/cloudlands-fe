@@ -5,8 +5,8 @@ import { AgentStatus } from '$shared/types';
 import { createAgentId, createWorkspaceId } from '$shared/types/branded-ids';
 import {
   agentSessionReducer,
+  bulkUpsertSessions,
   initialState as agentSessionInitialState,
-  upsertSession,
 } from '../agent-session/agent-session-slice';
 import { selectChiefThreadPreview, selectChiefThreads } from './sidebar-nav-selectors';
 import { CHIEF_WORKSPACE_ID } from './sidebar-nav-types';
@@ -154,7 +154,10 @@ describe('sidebar nav Chief selectors', () => {
       ...session('agent-chief-empty', CHIEF_WORKSPACE_ID, [], '2026-01-01T15:00:00.000Z'),
       name: 'Chief of Staff',
     };
-    const agentSessions = agentSessionReducer(agentSessionInitialState, upsertSession(chief));
+    const agentSessions = agentSessionReducer(
+      agentSessionInitialState,
+      bulkUpsertSessions([chief], { preserveExplicitRuntimeFlags: false }),
+    );
 
     const result = selectChiefThreads.select({ agentSessions } as unknown as StoreState);
 

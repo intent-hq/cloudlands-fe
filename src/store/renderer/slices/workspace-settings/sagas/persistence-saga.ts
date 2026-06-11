@@ -4,7 +4,7 @@ import {
 } from "typed-redux-saga";
 import { setAutoCommitEnabled } from "../workspace-settings-slice";
 import { selectAutoCommitEnabled } from "../workspace-settings-selectors";
-import { invoke } from "$lib/electron-bridge";
+import { invoke } from "$shared/generated/ipc-client";
 import {
   WORKSPACE_CHANNELS,
   SETTINGS_CHANNELS,
@@ -32,7 +32,7 @@ async function syncToMainProcess(workspaceId: string, autoCommitEnabled: boolean
   // Persist to electron-store so the setting survives app restarts
   try {
     if (typeof window !== "undefined" && window.electronAPI) {
-      await window.electronAPI.invoke(SETTINGS_CHANNELS.SET, {
+      await invoke(SETTINGS_CHANNELS.SET, {
         key: "autoCommit",
         value: autoCommitEnabled,
       });

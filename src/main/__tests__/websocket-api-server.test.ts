@@ -15,7 +15,7 @@ import { EventEmitter } from 'events';
 const {
   mockValidateToken, mockExtractBearerToken, mockIsWebSocketApiEnabled,
   mockHandleWebSocketMessage, mockRegisterSendCallback, mockHandleSubscribe,
-  mockHandleUnsubscribe, mockCleanupClient,
+  mockHandleUnsubscribe, mockCleanupClient, mockCleanupAllClients, mockUnregisterSendCallback,
   mockEnsureTlsCertificate, mockGetCertFingerprint,
   mockFindAvailablePort,
   // We store the latest WSS instance the mock created so tests can poke it
@@ -30,9 +30,11 @@ const {
     mockIsWebSocketApiEnabled: vi.fn().mockReturnValue(true),
     mockHandleWebSocketMessage: vi.fn().mockResolvedValue(null),
     mockRegisterSendCallback: vi.fn(),
+    mockUnregisterSendCallback: vi.fn(),
     mockHandleSubscribe: vi.fn(),
     mockHandleUnsubscribe: vi.fn(),
     mockCleanupClient: vi.fn(),
+    mockCleanupAllClients: vi.fn(),
     mockEnsureTlsCertificate: vi.fn(),
     mockGetCertFingerprint: vi.fn().mockReturnValue('AA:BB:CC:DD'),
     mockFindAvailablePort: vi.fn((port: number) => Promise.resolve(port)),
@@ -107,6 +109,7 @@ vi.mock('../websocket-event-bridge', () => ({
   handleSubscribe: mockHandleSubscribe,
   handleUnsubscribe: mockHandleUnsubscribe,
   cleanupClient: mockCleanupClient,
+  cleanupAllClients: mockCleanupAllClients,
   registerSendCallback: mockRegisterSendCallback,
 }));
 
@@ -131,6 +134,7 @@ describe('WebSocket API Server', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRegisterSendCallback.mockReturnValue(mockUnregisterSendCallback);
     // Default: findAvailablePort is a passthrough.
     mockFindAvailablePort.mockImplementation((port: number) => Promise.resolve(port));
     // Mock TLS cert to return our test cert
@@ -184,6 +188,57 @@ describe('WebSocket API Server', () => {
     it('start() registers send callback', async () => {
       await server.start();
       expect(mockRegisterSendCallback).toHaveBeenCalledTimes(1);
+    });
+
+    it('stop() unregisters the event bridge send callback', async () => {
+      await server.start();
+      await server.stop();
+
+      expect(mockUnregisterSendCallback).toHaveBeenCalledTimes(1);
+    });
+
+    it('stop() clears residual event bridge subscriptions', async () => {
+      await server.start();
+      await server.stop();
+
+      expect(mockCleanupAllClients).toHaveBeenCalledTimes(1);
+    });
+
+    it('repeated start, subscribe, and stop cycles release callbacks, subscriptions, and clients', async () => {
+      mockHandleSubscribe.mockReturnValue({ subscriptionId: 'sub-1' });
+
+      for (let cycle = 0; cycle < 3; cycle++) {
+        await server.start();
+
+        const fakeWs = new EventEmitter() as any;
+        fakeWs.readyState = 1;
+        fakeWs.send = vi.fn();
+        fakeWs.close = vi.fn(() => { fakeWs.readyState = 3; });
+        fakeWs.terminate = vi.fn(() => { fakeWs.readyState = 3; });
+        fakeWs.ping = vi.fn();
+
+        wssHolder.instance.emit('connection', fakeWs, {
+          url: '/ws',
+          socket: { remoteAddress: '127.0.0.1' },
+        });
+        expect(server.connectedClients).toBe(1);
+
+        fakeWs.emit('message', Buffer.from(JSON.stringify({
+          jsonrpc: '2.0',
+          id: cycle + 1,
+          method: 'events.subscribe',
+          params: { eventTypes: ['file:changed'] },
+        })));
+        expect(mockHandleSubscribe).toHaveBeenCalledTimes(cycle + 1);
+
+        await server.stop();
+        expect(server.connectedClients).toBe(0);
+        expect(server.getPort()).toBe(0);
+      }
+
+      expect(mockUnregisterSendCallback).toHaveBeenCalledTimes(3);
+      expect(mockCleanupClient).toHaveBeenCalledTimes(3);
+      expect(mockCleanupAllClients).toHaveBeenCalledTimes(3);
     });
 
     it('start() is idempotent', async () => {

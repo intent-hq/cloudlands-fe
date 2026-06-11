@@ -118,6 +118,14 @@ function createStoreState(
   };
 }
 
+function createReduxStoreContext<T>(state: T) {
+  return {
+    getState: () => state,
+    dispatch: vi.fn(),
+    subscribe: (_listener: () => void) => () => {},
+  };
+}
+
 describe("panelLayoutSaga", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -432,10 +440,14 @@ describe("panelLayoutSaga", () => {
         return () => {};
       },
     };
+	    const reduxStore = createReduxStoreContext(state);
 
     await expectSaga(panelLayoutSaga)
       .withState(state)
-      .provide([[matchers.getContext("readableStoreState"), readableStoreState]])
+	      .provide([
+	        [matchers.getContext("reduxStore"), reduxStore],
+	        [matchers.getContext("readableStoreState"), readableStoreState],
+	      ])
       .dispatch(action)
       .call(setLocalStorageJSON, `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${wsId}`, layout)
       .silentRun(0);

@@ -13,6 +13,11 @@ import {
 } from "redux-saga";
 import { expectSaga } from "redux-saga-test-plan";
 
+const { mockForkedSagaNames, mockTakeLatestRegistrations } = vi.hoisted(() => ({
+  mockForkedSagaNames: [] as string[],
+  mockTakeLatestRegistrations: [] as Array<{ patternType: string; workerName: string }>,
+}));
+
 // Must mock typed-redux-saga BEFORE importing saga modules
 vi.mock("typed-redux-saga", () => ({
   call: function* (fnOrDescriptor: any, ...args: any[]) {
@@ -29,7 +34,15 @@ vi.mock("typed-redux-saga", () => ({
   takeEvery: function* (pattern: any, worker: any) {
     return yield sagaEffects.takeEvery(pattern, worker);
   },
+  takeLatest: function* (pattern: any, worker: any) {
+    mockTakeLatestRegistrations.push({
+      patternType: pattern.type ?? pattern.name ?? String(pattern),
+      workerName: worker.name || "<anonymous>",
+    });
+    return yield sagaEffects.takeLatest(pattern, worker);
+  },
   fork: function* (fn: any, ...args: any[]) {
+    mockForkedSagaNames.push(fn.name || "<anonymous>");
     return yield sagaEffects.fork(fn, ...args);
   },
   cancel: function* (task: any) {
@@ -37,6 +50,12 @@ vi.mock("typed-redux-saga", () => ({
   },
   delay: function* (ms: any) {
     return yield sagaEffects.delay(ms);
+  },
+  race: function* (effects: any) {
+    return yield sagaEffects.race(effects);
+  },
+  getContext: function* (prop: string) {
+    return yield sagaEffects.getContext(prop);
   },
   select: function* (selector: any, ...args: any[]) {
     return yield sagaEffects.select(selector, ...args);
@@ -98,6 +117,10 @@ import {
   clearAgentStatsLoading,
 } from "../session-stats-slice";
 import {
+  clearActiveWorkspace,
+  setActiveWorkspaceId,
+} from "../../workspace/workspace-slice";
+import {
   workspaceMounted,
   workspaceUnmounted,
 } from "../../workspace-lifecycle/workspace-lifecycle-slice";
@@ -109,6 +132,22 @@ const WS = "ws-1";
 const SESSION_ID = "sess-1";
 const AGENT_ID = "agent-1";
 const FIXED_ISO = "2026-04-16T00:00:00.000Z";
+
+function createReduxStoreContext(state: any = {}) {
+  const subscribers = new Set<() => void>();
+  return {
+    reduxStore: {
+      getState: () => state,
+      subscribe: (listener: () => void) => {
+        subscribers.add(listener);
+        return () => subscribers.delete(listener);
+      },
+    },
+    notify: () => {
+      subscribers.forEach((listener) => listener());
+    },
+  };
+}
 
 function workspaceStatsRequest(
   agentId: string,
@@ -143,8 +182,24 @@ const rawIpcSuccess = {
   failedCount: 0,
 };
 
+function rawIpcSuccessFor(sessionId: string, messageCount = 3) {
+  return {
+    ...rawIpcSuccess,
+    sessions: [
+      {
+        ...rawIpcSuccess.sessions[0],
+        sessionId,
+        messageCount,
+      },
+    ],
+    totalMessageCount: messageCount,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mockForkedSagaNames.length = 0;
+  mockTakeLatestRegistrations.length = 0;
   mockSelectAllWorkspaceAgents.mockReturnValue([]);
   mockSelectAgentsLoaded.mockReturnValue(true);
   mockSelectActiveWorkspaceId.mockReturnValue(null);
@@ -158,7 +213,9 @@ afterEach(() => {
 describe("session-stats-saga — handlers", () => {
   it("handleFetchWorkspaceStats: success → workspaceStatsReceived", async () => {
     mockInvoke.mockResolvedValue({ success: true, data: rawIpcSuccess });
+    const { reduxStore } = createReduxStoreContext();
     await expectSaga(sessionStatsSaga)
+      .provide([[sagaEffects.getContext("reduxStore"), reduxStore]])
       .dispatch(fetchWorkspaceStats(WS, [SESSION_ID]))
       .put(
         workspaceStatsReceived(WS, {
@@ -177,7 +234,9 @@ describe("session-stats-saga — handlers", () => {
 
   it("handleFetchWorkspaceStats: IPC failure → workspaceStatsFailed", async () => {
     mockInvoke.mockResolvedValue({ success: false, error: "ipc exploded" });
+    const { reduxStore } = createReduxStoreContext();
     await expectSaga(sessionStatsSaga)
+      .provide([[sagaEffects.getContext("reduxStore"), reduxStore]])
       .dispatch(fetchWorkspaceStats(WS, [SESSION_ID]))
       .put(workspaceStatsFailed(WS, "ipc exploded"))
       .silentRun(50);
@@ -185,7 +244,9 @@ describe("session-stats-saga — handlers", () => {
 
   it("handleFetchAgentStats: success → agentStatsReceived", async () => {
     mockInvoke.mockResolvedValue({ success: true, data: rawIpcSuccess });
+    const { reduxStore } = createReduxStoreContext();
     await expectSaga(sessionStatsSaga)
+      .provide([[sagaEffects.getContext("reduxStore"), reduxStore]])
       .dispatch(fetchAgentStats(AGENT_ID, SESSION_ID))
       .put(
         agentStatsReceived(AGENT_ID, {
@@ -203,7 +264,9 @@ describe("session-stats-saga — handlers", () => {
 
   it("handleFetchAgentStats: IPC failure → agentStatsFailed", async () => {
     mockInvoke.mockResolvedValue({ success: false, error: "no sess" });
+    const { reduxStore } = createReduxStoreContext();
     await expectSaga(sessionStatsSaga)
+      .provide([[sagaEffects.getContext("reduxStore"), reduxStore]])
       .dispatch(fetchAgentStats(AGENT_ID, SESSION_ID))
       .put(agentStatsFailed(AGENT_ID, "no sess"))
       .silentRun(50);
@@ -214,7 +277,9 @@ describe("session-stats-saga — handlers", () => {
       success: true,
       data: { ...rawIpcSuccess, sessions: [] },
     });
+    const { reduxStore } = createReduxStoreContext();
     await expectSaga(sessionStatsSaga)
+      .provide([[sagaEffects.getContext("reduxStore"), reduxStore]])
       .dispatch(fetchAgentStats(AGENT_ID, SESSION_ID))
       .put(agentStatsFailed(AGENT_ID, "No stats returned for session"))
       .silentRun(50);
@@ -227,7 +292,9 @@ describe("session-stats-saga — handlers", () => {
       details: [{ path: ["sessionIds"], message: "bad" }],
     };
     mockInvoke.mockResolvedValue({ success: false, error: zodErr });
+    const { reduxStore } = createReduxStoreContext();
     await expectSaga(sessionStatsSaga)
+      .provide([[sagaEffects.getContext("reduxStore"), reduxStore]])
       .dispatch(fetchWorkspaceStats(WS, [SESSION_ID]))
       .put(workspaceStatsFailed(WS, JSON.stringify(zodErr)))
       .silentRun(50);
@@ -244,6 +311,7 @@ function startSaga(opts: { activeWorkspaceId?: string | null; state?: any } = {}
   const dispatched: DispatchedAction[] = [];
   const channel = stdChannel();
   mockSelectActiveWorkspaceId.mockReturnValue(opts.activeWorkspaceId ?? null);
+  const { reduxStore, notify } = createReduxStoreContext(opts.state ?? {});
   const task = runSaga(
     {
       channel,
@@ -252,11 +320,34 @@ function startSaga(opts: { activeWorkspaceId?: string | null; state?: any } = {}
         channel.put(action as any);
       },
       getState: () => opts.state ?? {},
+      context: { reduxStore },
     },
     sessionStatsSaga,
   );
-  return { task, dispatched, channel };
+  return {
+    task,
+    dispatched,
+    channel,
+    setActiveWorkspace: (wsId: string | null) => {
+      mockSelectActiveWorkspaceId.mockReturnValue(wsId);
+      notify();
+      channel.put((wsId ? setActiveWorkspaceId(wsId) : clearActiveWorkspace()) as any);
+    },
+  };
 }
+
+
+describe("session-stats-saga — watcher registration", () => {
+  it("does not register global takeLatest for keyed fetch and agent:idle paths", async () => {
+    const { task } = startSaga();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockTakeLatestRegistrations).toEqual([]);
+
+    task.cancel();
+  });
+});
 
 
 describe("session-stats-saga — polling lifecycle", () => {
@@ -274,28 +365,24 @@ describe("session-stats-saga — polling lifecycle", () => {
 
   const flush = async () => {
     // Let microtasks settle so forked sagas reach their next blocking effect
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let i = 0; i < 8; i++) {
+      await Promise.resolve();
+    }
   };
 
   it("skips IPC when no agents have acpSessionId (no fallback to agent IDs)", async () => {
     mockSelectAllWorkspaceAgents.mockReturnValue([
       { id: AGENT_ID, acpSessionId: null, provider: "auggie" } as any,
     ]);
-    const { task, dispatched, channel } = startSaga();
-    await flush();
-    channel.put(workspaceMounted(WS) as any);
+    const { task, dispatched } = startSaga({ activeWorkspaceId: WS });
     await flush();
     const fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
     expect(fetched).toHaveLength(0);
     task.cancel();
   });
 
-  it("dispatches fetchWorkspaceStats on workspaceMounted when a session ID exists", async () => {
-    const { task, dispatched, channel } = startSaga();
-    await flush();
-    channel.put(workspaceMounted(WS) as any);
+  it("dispatches fetchWorkspaceStats for the active workspace when a session ID exists", async () => {
+    const { task, dispatched } = startSaga({ activeWorkspaceId: WS });
     await flush();
     const fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
     expect(fetched).toHaveLength(1);
@@ -316,7 +403,8 @@ describe("session-stats-saga — polling lifecycle", () => {
         messages: [{}, {}, {}],
       } as any,
     ]);
-    const { task, dispatched, channel } = startSaga({
+    const { task, dispatched } = startSaga({
+      activeWorkspaceId: WS,
       state: {
         sessionStats: {
           agentStats: {
@@ -334,8 +422,6 @@ describe("session-stats-saga — polling lifecycle", () => {
       },
     });
 
-    await flush();
-    channel.put(workspaceMounted(WS) as any);
     await flush();
 
     expect(mockInvoke).not.toHaveBeenCalled();
@@ -356,7 +442,8 @@ describe("session-stats-saga — polling lifecycle", () => {
         messages: [{}, {}, {}],
       } as any,
     ]);
-    const { task, dispatched, channel } = startSaga({
+    const { task, dispatched } = startSaga({
+      activeWorkspaceId: WS,
       state: {
         sessionStats: {
           agentStats: {
@@ -374,8 +461,6 @@ describe("session-stats-saga — polling lifecycle", () => {
       },
     });
 
-    await flush();
-    channel.put(workspaceMounted(WS) as any);
     await flush();
 
     const fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
@@ -396,9 +481,7 @@ describe("session-stats-saga — polling lifecycle", () => {
       // Duplicate of agent-acp-only's session — must be deduped out.
       { id: "agent-dup", acpSessionId: "sess-acp", backendSessionId: null, provider: "auggie" } as any,
     ]);
-    const { task, dispatched, channel } = startSaga();
-    await flush();
-    channel.put(workspaceMounted(WS) as any);
+    const { task, dispatched } = startSaga({ activeWorkspaceId: WS });
     await flush();
     const fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
     expect(fetched).toHaveLength(1);
@@ -415,12 +498,10 @@ describe("session-stats-saga — polling lifecycle", () => {
   });
 
   it("clears stale stats when agents are removed between polls (empty sessionIds)", async () => {
-    const { task, dispatched, channel } = startSaga();
+    const { task, dispatched } = startSaga({ activeWorkspaceId: WS });
     await flush();
 
-    // Mount with a populated agent → first fetch dispatched.
-    channel.put(workspaceMounted(WS) as any);
-    await flush();
+    // Active workspace with a populated agent → first fetch dispatched.
     expect(
       dispatched.filter((a) => a.type === fetchWorkspaceStats.type),
     ).toHaveLength(1);
@@ -430,8 +511,6 @@ describe("session-stats-saga — polling lifecycle", () => {
 
     // All agents removed before the next poll tick; still the active workspace.
     mockSelectAllWorkspaceAgents.mockReturnValue([]);
-    mockSelectActiveWorkspaceId.mockReturnValue(WS);
-
     await vi.advanceTimersByTimeAsync(60_000);
     await flush();
 
@@ -448,10 +527,8 @@ describe("session-stats-saga — polling lifecycle", () => {
     task.cancel();
   });
 
-  it("cancels poll loop on workspaceUnmounted and puts clearSessionStats", async () => {
-    const { task, dispatched, channel } = startSaga();
-    await flush();
-    channel.put(workspaceMounted(WS) as any);
+  it("keeps polling loop alive on workspaceUnmounted and puts clearSessionStats", async () => {
+    const { task, dispatched, channel } = startSaga({ activeWorkspaceId: WS });
     await flush();
     expect(
       dispatched.filter((a) => a.type === fetchWorkspaceStats.type),
@@ -463,7 +540,8 @@ describe("session-stats-saga — polling lifecycle", () => {
       dispatched.some((a) => a.type === clearSessionStats.type),
     ).toBe(true);
 
-    // Advance past two poll intervals — cancelled task must not fire again.
+    // Advance past two poll intervals — the long-lived loop must stay alive but
+    // skip stale refresh work for the unmounted active workspace.
     await vi.advanceTimersByTimeAsync(180_000);
     await flush();
     expect(
@@ -472,10 +550,10 @@ describe("session-stats-saga — polling lifecycle", () => {
     task.cancel();
   });
 
-  it("dedupes retroactive mount against real workspaceMounted (no double poll)", async () => {
+  it("dedupes the active-workspace polling owner against workspaceMounted", async () => {
     const { task, dispatched, channel } = startSaga({ activeWorkspaceId: WS });
     await flush();
-    // Retroactive fork should have started polling already
+    // Selector startup should have started active-workspace polling already.
     const afterRetroactive = dispatched.filter(
       (a) => a.type === fetchWorkspaceStats.type,
     ).length;
@@ -483,50 +561,84 @@ describe("session-stats-saga — polling lifecycle", () => {
 
     channel.put(workspaceMounted(WS) as any);
     await flush();
-    // No new fetch — dedup kept the existing poller
+    // No new fetch — the single active polling owner kept the existing poller.
     expect(
       dispatched.filter((a) => a.type === fetchWorkspaceStats.type),
     ).toHaveLength(1);
     task.cancel();
   });
 
-  it("cleans up pollingTasks on wsId-change early return and on unmount so re-mount polls again", async () => {
-    const { task, dispatched, channel } = startSaga();
+  it("uses the single polling loop for active workspace changes and clear", async () => {
+    const { task, dispatched, setActiveWorkspace } = startSaga();
     await flush();
 
-    // Mount → first fetch
-    channel.put(workspaceMounted(WS) as any);
+    setActiveWorkspace(WS);
     await flush();
     expect(
       dispatched.filter((a) => a.type === fetchWorkspaceStats.type),
     ).toHaveLength(1);
 
-    // Active workspace switches under the poller; at the next tick the loop
-    // sees currentWsId !== wsId and returns early. The wrapper's finally must
-    // clear pollingTasks[wsId] so a later mount is not deduped.
-    mockSelectActiveWorkspaceId.mockReturnValue("ws-other");
+    setActiveWorkspace("ws-other");
+    await flush();
+    let fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
+    expect(fetched).toHaveLength(2);
+    expect(fetched[fetched.length - 1].payload[0]).toBe("ws-other");
+
     await vi.advanceTimersByTimeAsync(60_000);
     await flush();
+    fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
+    expect(fetched.filter((a) => a.payload[0] === WS)).toHaveLength(1);
+
+    setActiveWorkspace(null);
+    await flush();
+    const countAfterClear = dispatched.filter((a) => a.type === fetchWorkspaceStats.type).length;
+    await vi.advanceTimersByTimeAsync(180_000);
+    await flush();
+    expect(dispatched.filter((a) => a.type === fetchWorkspaceStats.type)).toHaveLength(countAfterClear);
+
+    task.cancel();
+  });
+
+  it("keeps one polling loop fork across active workspace changes", async () => {
+    const { task, setActiveWorkspace, channel } = startSaga({ activeWorkspaceId: WS });
+    await flush();
+
+    setActiveWorkspace("ws-other");
+    await flush();
+    setActiveWorkspace(null);
+    await flush();
+    channel.put(workspaceUnmounted("ws-other") as any);
+    await flush();
+    channel.put(workspaceMounted(WS) as any);
+    await flush();
+
+    expect(
+      mockForkedSagaNames.filter((name) => name === "sessionStatsPollingLoop"),
+    ).toHaveLength(1);
+
+    task.cancel();
+  });
+
+  it("refreshes the active workspace when it remounts after unmount", async () => {
+    const { task, dispatched, channel } = startSaga({ activeWorkspaceId: WS });
+    await flush();
     expect(
       dispatched.filter((a) => a.type === fetchWorkspaceStats.type),
     ).toHaveLength(1);
 
-    // Re-mount original wsId → fetch dispatched again (polling restarted).
+    channel.put(workspaceUnmounted(WS) as any);
+    await flush();
+    await vi.advanceTimersByTimeAsync(180_000);
+    await flush();
+    expect(
+      dispatched.filter((a) => a.type === fetchWorkspaceStats.type),
+    ).toHaveLength(1);
+
     channel.put(workspaceMounted(WS) as any);
     await flush();
     expect(
       dispatched.filter((a) => a.type === fetchWorkspaceStats.type),
     ).toHaveLength(2);
-
-    // Unmount cancels the poll; re-mount afterwards must also start fresh
-    // (proves the pollingTasks entry was cleared on cancel too).
-    channel.put(workspaceUnmounted(WS) as any);
-    await flush();
-    channel.put(workspaceMounted(WS) as any);
-    await flush();
-    expect(
-      dispatched.filter((a) => a.type === fetchWorkspaceStats.type),
-    ).toHaveLength(3);
 
     task.cancel();
   });
@@ -534,10 +646,10 @@ describe("session-stats-saga — polling lifecycle", () => {
 
 
 // ---------------------------------------------------------------------------
-// Fix B — cancel in-flight fetches
+// Keyed fetch cancellation
 // ---------------------------------------------------------------------------
 
-describe("session-stats-saga — cancel in-flight fetches", () => {
+describe("session-stats-saga — keyed fetch cancellation", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mockSelectAllWorkspaceAgents.mockReturnValue([
@@ -584,7 +696,7 @@ describe("session-stats-saga — cancel in-flight fetches", () => {
     task.cancel();
   });
 
-  it("rapid fetchAgentStats for same agentId cancels the first — only later result is put", async () => {
+  it("rapid fetchAgentStats cancels the first request — only later result is put", async () => {
     let callCount = 0;
     mockInvoke.mockImplementation(() => {
       callCount++;
@@ -626,6 +738,36 @@ describe("session-stats-saga — cancel in-flight fetches", () => {
     task.cancel();
   });
 
+  it("does not cancel in-flight fetchAgentStats for different agent IDs", async () => {
+    mockInvoke.mockImplementation((_channel, request: { sessionIds: string[] }) => {
+      const [sessionId] = request.sessionIds;
+      const delayMs = sessionId === SESSION_ID ? 5000 : 100;
+      const messageCount = sessionId === SESSION_ID ? 10 : 20;
+      return new Promise((resolve) =>
+        setTimeout(() => resolve({ success: true, data: rawIpcSuccessFor(sessionId, messageCount) }), delayMs),
+      );
+    });
+
+    const { task, dispatched, channel } = startSaga();
+    await flush();
+
+    channel.put(fetchAgentStats(AGENT_ID, SESSION_ID) as any);
+    await flush();
+    channel.put(fetchAgentStats("agent-2", "sess-2") as any);
+    await flush();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    await flush();
+
+    const received = dispatched.filter((a) => a.type === agentStatsReceived.type);
+    expect(received).toHaveLength(2);
+    expect(received.map((a) => a.payload[0])).toEqual(expect.arrayContaining([AGENT_ID, "agent-2"]));
+    expect(received.find((a) => a.payload[0] === AGENT_ID)?.payload[1].messageCount).toBe(10);
+    expect(received.find((a) => a.payload[0] === "agent-2")?.payload[1].messageCount).toBe(20);
+
+    task.cancel();
+  });
+
   it("clearSessionStats dispatches clearAgentStatsLoading for agents with in-flight fetches", async () => {
     // IPC resolves after a delay so the fetch is in-flight when clear arrives
     mockInvoke.mockImplementation(
@@ -652,10 +794,9 @@ describe("session-stats-saga — cancel in-flight fetches", () => {
     task.cancel();
   });
 
-  it("rapid fetchAgentStats: old task's finally does not delete new task's map entry", async () => {
-    // Both calls use the same delay so the race is about cancellation ordering,
-    // not speed.  The fix ensures the old task's `finally` only deletes its own
-    // entry — not the newer task's entry.
+  it("rapid fetchAgentStats keeps only the latest request across repeated cancellations", async () => {
+    // All calls use the same delay so the assertion is about latest-request
+    // cancellation, not speed.
     let callCount = 0;
     mockInvoke.mockImplementation(() => {
       callCount++;
@@ -674,21 +815,19 @@ describe("session-stats-saga — cancel in-flight fetches", () => {
     const { task, dispatched, channel } = startSaga();
     await flush();
 
-    // First dispatch — starts task A
+    // First dispatch — starts request A
     channel.put(fetchAgentStats(AGENT_ID, SESSION_ID) as any);
     await flush();
 
-    // Second dispatch — cancels task A, starts task B
+    // Second dispatch — cancels request A, starts request B
     channel.put(fetchAgentStats(AGENT_ID, SESSION_ID) as any);
     await flush();
 
-    // Let cancelled task A's finally run
+    // Let cancellation settle before dispatching the latest request.
     await vi.advanceTimersByTimeAsync(50);
     await flush();
 
-    // Now a *third* dispatch should still be able to cancel task B correctly.
-    // If A's finally wrongly deleted B's entry, B would never be cancelled
-    // and a stale result would leak.
+    // Third dispatch — cancels request B and becomes the latest request.
     channel.put(fetchAgentStats(AGENT_ID, SESSION_ID) as any);
     await flush();
 
@@ -704,7 +843,7 @@ describe("session-stats-saga — cancel in-flight fetches", () => {
     task.cancel();
   });
 
-  it("rapid fetchWorkspaceStats: old task's finally does not delete new task's map entry", async () => {
+  it("rapid fetchWorkspaceStats keeps only the latest request across repeated cancellations", async () => {
     let callCount = 0;
     mockInvoke.mockImplementation(() => {
       callCount++;
@@ -726,19 +865,19 @@ describe("session-stats-saga — cancel in-flight fetches", () => {
     const { task, dispatched, channel } = startSaga();
     await flush();
 
-    // First dispatch — starts task A
+    // First dispatch — starts request A
     channel.put(fetchWorkspaceStats(WS, [SESSION_ID]) as any);
     await flush();
 
-    // Second dispatch — cancels task A, starts task B
+    // Second dispatch — cancels request A, starts request B
     channel.put(fetchWorkspaceStats(WS, [SESSION_ID]) as any);
     await flush();
 
-    // Let cancelled task A's finally run
+    // Let cancellation settle before dispatching the latest request.
     await vi.advanceTimersByTimeAsync(50);
     await flush();
 
-    // Third dispatch — should still cancel task B correctly
+    // Third dispatch — cancels request B and becomes the latest request.
     channel.put(fetchWorkspaceStats(WS, [SESSION_ID]) as any);
     await flush();
 
@@ -750,6 +889,57 @@ describe("session-stats-saga — cancel in-flight fetches", () => {
     const received = dispatched.filter((a) => a.type === workspaceStatsReceived.type);
     expect(received).toHaveLength(1);
     expect(received[0].payload[1].totalMessageCount).toBe(30);
+
+    task.cancel();
+  });
+
+  it("does not cancel in-flight fetchWorkspaceStats for different workspace IDs", async () => {
+    mockInvoke.mockImplementation((_channel, request: { sessionIds: string[] }) => {
+      const [sessionId] = request.sessionIds;
+      const delayMs = sessionId === SESSION_ID ? 5000 : 100;
+      const messageCount = sessionId === SESSION_ID ? 10 : 20;
+      return new Promise((resolve) =>
+        setTimeout(() => resolve({ success: true, data: rawIpcSuccessFor(sessionId, messageCount) }), delayMs),
+      );
+    });
+
+    const { task, dispatched, channel } = startSaga();
+    await flush();
+
+    channel.put(fetchWorkspaceStats(WS, [SESSION_ID]) as any);
+    await flush();
+    channel.put(fetchWorkspaceStats("ws-2", ["sess-2"]) as any);
+    await flush();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    await flush();
+
+    const received = dispatched.filter((a) => a.type === workspaceStatsReceived.type);
+    expect(received).toHaveLength(2);
+    expect(received.map((a) => a.payload[0])).toEqual(expect.arrayContaining([WS, "ws-2"]));
+    expect(received.find((a) => a.payload[0] === WS)?.payload[1].totalMessageCount).toBe(10);
+    expect(received.find((a) => a.payload[0] === "ws-2")?.payload[1].totalMessageCount).toBe(20);
+
+    task.cancel();
+  });
+
+  it("removes completed agent fetch tasks so later clear does not retain stale loading", async () => {
+    mockInvoke.mockResolvedValue({ success: true, data: rawIpcSuccess });
+    mockSelectAllWorkspaceAgents.mockReturnValue([
+      { id: AGENT_ID, acpSessionId: SESSION_ID, provider: "auggie" } as any,
+    ]);
+    const { task, dispatched, channel } = startSaga();
+    await flush();
+
+    channel.put(fetchAgentStats(AGENT_ID, SESSION_ID) as any);
+    await flush();
+
+    expect(dispatched.filter((a) => a.type === agentStatsReceived.type)).toHaveLength(1);
+
+    channel.put(clearSessionStats(WS) as any);
+    await flush();
+
+    expect(dispatched.filter((a) => a.type === clearAgentStatsLoading.type)).toHaveLength(0);
 
     task.cancel();
   });
@@ -877,6 +1067,32 @@ describe("session-stats-saga — agent:idle refetch", () => {
     task.cancel();
   });
 
+  it("does not cancel pending agent:idle refetches for different workspaces", async () => {
+    const { task, dispatched, channel } = startSaga();
+    await flush();
+    const baseline = dispatched.filter((a) => a.type === fetchWorkspaceStats.type).length;
+
+    channel.put(eventReceived(WS, idleEvent(WS, "evt-ws-1") as any) as any);
+    await flush();
+    await vi.advanceTimersByTimeAsync(500);
+    channel.put(eventReceived("ws-2", idleEvent("ws-2", "evt-ws-2") as any) as any);
+    await flush();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await flush();
+    let fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
+    expect(fetched).toHaveLength(baseline + 1);
+    expect(fetched[fetched.length - 1].payload[0]).toBe(WS);
+
+    await vi.advanceTimersByTimeAsync(500);
+    await flush();
+    fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
+    expect(fetched).toHaveLength(baseline + 2);
+    expect(fetched[fetched.length - 1].payload[0]).toBe("ws-2");
+
+    task.cancel();
+  });
+
   it("ignores non-idle events (no fetch triggered by other event types)", async () => {
     const { task, dispatched, channel } = startSaga();
     await flush();
@@ -896,6 +1112,30 @@ describe("session-stats-saga — agent:idle refetch", () => {
     expect(
       dispatched.filter((a) => a.type === fetchWorkspaceStats.type),
     ).toHaveLength(baseline);
+
+    task.cancel();
+  });
+
+  it("does not let non-idle events cancel a pending agent:idle refetch", async () => {
+    const { task, dispatched, channel } = startSaga();
+    await flush();
+    channel.put(workspaceMounted(WS) as any);
+    await flush();
+    const baseline = dispatched.filter((a) => a.type === fetchWorkspaceStats.type).length;
+
+    channel.put(eventReceived(WS, idleEvent(WS) as any) as any);
+    await flush();
+    await vi.advanceTimersByTimeAsync(500);
+    channel.put(
+      eventReceived(WS, { ...idleEvent(WS, "evt-message"), type: "agent:message" as any } as any) as any,
+    );
+    await flush();
+    await vi.advanceTimersByTimeAsync(1000);
+    await flush();
+
+    expect(
+      dispatched.filter((a) => a.type === fetchWorkspaceStats.type),
+    ).toHaveLength(baseline + 1);
 
     task.cancel();
   });
@@ -921,6 +1161,30 @@ describe("session-stats-saga — agent:idle refetch", () => {
     expect(
       dispatched.filter((a) => a.type === clearSessionStats.type).length,
     ).toBe(clearsBefore + 1);
+
+    task.cancel();
+  });
+
+  it("cancels a delayed agent:idle refetch when the workspace unmounts", async () => {
+    const { task, dispatched, channel } = startSaga();
+    await flush();
+    const baseline = dispatched.filter((a) => a.type === fetchWorkspaceStats.type).length;
+
+    channel.put(eventReceived(WS, idleEvent(WS) as any) as any);
+    await flush();
+    await vi.advanceTimersByTimeAsync(500);
+    channel.put(workspaceUnmounted(WS) as any);
+    await flush();
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await flush();
+
+    expect(
+      dispatched.filter((a) => a.type === fetchWorkspaceStats.type),
+    ).toHaveLength(baseline);
+    expect(
+      dispatched.some((a) => a.type === clearSessionStats.type && a.payload?.[0] === WS),
+    ).toBe(true);
 
     task.cancel();
   });
@@ -957,10 +1221,7 @@ describe("session-stats-saga — gates to Auggie sessions only", () => {
       { id: "agent-cc", acpSessionId: "sess-cc", provider: "claude-code" } as any,
       { id: "agent-codex", acpSessionId: "sess-codex", provider: "codex" } as any,
     ]);
-    const { task, dispatched, channel } = startSaga();
-    await flush();
-
-    channel.put(workspaceMounted(WS) as any);
+    const { task, dispatched } = startSaga({ activeWorkspaceId: WS });
     await flush();
 
     const fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
@@ -986,10 +1247,7 @@ describe("session-stats-saga — gates to Auggie sessions only", () => {
       } as any,
       { id: "agent-codex", acpSessionId: "sess-codex", provider: "codex" } as any,
     ]);
-    const { task, dispatched, channel } = startSaga();
-    await flush();
-
-    channel.put(workspaceMounted(WS) as any);
+    const { task, dispatched } = startSaga({ activeWorkspaceId: WS });
     await flush();
 
     const fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);
@@ -1012,10 +1270,7 @@ describe("session-stats-saga — gates to Auggie sessions only", () => {
     mockSelectAllWorkspaceAgents.mockReturnValue([
       { id: AGENT_ID, acpSessionId: SESSION_ID } as any,
     ]);
-    const { task, dispatched, channel } = startSaga();
-    await flush();
-
-    channel.put(workspaceMounted(WS) as any);
+    const { task, dispatched } = startSaga({ activeWorkspaceId: WS });
     await flush();
 
     expect(
@@ -1032,10 +1287,7 @@ describe("session-stats-saga — gates to Auggie sessions only", () => {
     mockSelectAllWorkspaceAgents.mockReturnValue([
       { id: AGENT_ID, acpSessionId: SESSION_ID, model: "opus4.7" } as any,
     ]);
-    const { task, dispatched, channel } = startSaga();
-    await flush();
-
-    channel.put(workspaceMounted(WS) as any);
+    const { task, dispatched } = startSaga({ activeWorkspaceId: WS });
     await flush();
 
     const fetched = dispatched.filter((a) => a.type === fetchWorkspaceStats.type);

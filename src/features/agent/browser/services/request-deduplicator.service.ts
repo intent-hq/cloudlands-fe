@@ -323,6 +323,12 @@ export class RequestDeduplicator {
 // Export singleton instance
 export const requestDeduplicator = RequestDeduplicator.getInstance();
 
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    requestDeduplicator.dispose();
+  });
+}
+
 // Export static key generators for convenience
 export const { generateAgentCreationKey, generateMessageKey, generateSessionKey } =
   RequestDeduplicator;

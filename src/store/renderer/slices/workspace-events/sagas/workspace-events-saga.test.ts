@@ -5,18 +5,33 @@ import {
   it,
   vi,
 } from 'vitest';
+import { channel } from 'redux-saga';
 import * as sagaEffects from 'redux-saga/effects';
 import type { WorkspaceEvent } from '$features/events/types';
 
 vi.mock('typed-redux-saga', () => ({
-  call: function* (fn: any, ...args: any[]) {
-    return yield sagaEffects.call(fn, ...args);
+  actionChannel: function* (pattern: any, buffer?: any) {
+    return yield sagaEffects.actionChannel(pattern, buffer);
+  },
+  call: function* (fnOrDescriptor: any, ...args: any[]) {
+    return yield Array.isArray(fnOrDescriptor)
+      ? sagaEffects.call(fnOrDescriptor, ...args)
+      : sagaEffects.call(fnOrDescriptor, ...args);
+  },
+  delay: function* (ms: any, value?: any) {
+    return yield value === undefined ? sagaEffects.delay(ms) : sagaEffects.delay(ms, value);
   },
   fork: function* (fn: any, ...args: any[]) {
     return yield sagaEffects.fork(fn, ...args);
   },
+  flush: function* (channel: any) {
+    return yield sagaEffects.flush(channel);
+  },
   put: function* (action: any) {
     return yield sagaEffects.put(action);
+  },
+  take: function* (channelOrPattern: any) {
+    return yield sagaEffects.take(channelOrPattern);
   },
   takeEvery: function* (pattern: any, worker: any) {
     return yield sagaEffects.takeEvery(pattern, worker);
@@ -29,6 +44,7 @@ const { takeEveryFromListenSyncMock, invokeMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('$store/renderer/utils/ipc-channel', () => ({
+  HIGH_VOLUME_IPC_BUFFER_LIMIT: 1_000,
   takeEveryFromListenSync: takeEveryFromListenSyncMock,
 }));
 
@@ -37,6 +53,7 @@ vi.mock('$lib/electron-bridge', () => ({
 }));
 
 import {
+  bulkEventsReceived,
   eventReceived,
   eventsCleared,
   eventsLoaded,
@@ -44,7 +61,10 @@ import {
   setEventsLoading,
 } from '../workspace-events-slice';
 import {
+  EVENT_BATCH_ACTION_BUFFER_LIMIT,
+  EVENTS_NEW_IPC_BUFFER_LIMIT,
   handleLoadEventsRequested,
+  watchBatchedEventStorageSaga,
   watchEventsNewSaga,
   watchEventsClearedSaga,
   watchLoadEventsRequestedSaga,
@@ -68,6 +88,15 @@ function getListenSyncHandler(eventName: string) {
   return call![1] as (data: any) => Generator;
 }
 
+function expectBoundedActionChannel(effect: any, pattern: unknown, limit: number) {
+  expect(effect.type).toBe('ACTION_CHANNEL');
+  expect(effect.payload.pattern).toBe(pattern);
+  const buffer = effect.payload.buffer;
+  expect(buffer).toBeDefined();
+  for (let i = 0; i <= limit; i++) buffer.put(i);
+  expect(buffer.take()).toBe(1);
+}
+
 describe('workspaceEventsSaga', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -88,11 +117,78 @@ describe('workspaceEventsSaga', () => {
     const step3 = iterator.next().value as any;
     expect(step3.type).toBe('FORK');
     expect(step3.payload.fn).toBe(watchLoadEventsRequestedSaga);
-    // takeEvery(workspaceMounted, handleWorkspaceMounted)
+    // fork(watchBatchedEventStorageSaga)
     const step4 = iterator.next().value as any;
     expect(step4.type).toBe('FORK');
-    expect(step4.payload.args[0]).toBe(workspaceMounted);
+    expect(step4.payload.fn).toBe(watchBatchedEventStorageSaga);
+    // takeEvery(workspaceMounted, handleWorkspaceMounted)
+    const step5 = iterator.next().value as any;
+    expect(step5.type).toBe('FORK');
+    expect(step5.payload.args[0]).toBe(workspaceMounted);
     expect(iterator.next().done).toBe(true);
+  });
+
+  it('gates each storage batch on the first queued eventReceived action', () => {
+    const iterator = watchBatchedEventStorageSaga();
+    const first = mockEvent('evt-1');
+    const second = mockEvent('evt-2');
+    const third = mockEvent('evt-3');
+    const eventActions = channel<ReturnType<typeof eventReceived>>();
+    const firstAction = eventReceived('ws-1', first);
+
+    expectBoundedActionChannel(iterator.next().value, eventReceived, EVENT_BATCH_ACTION_BUFFER_LIMIT);
+    expect(iterator.next(eventActions as any).value).toEqual(sagaEffects.take(eventActions));
+    expect(iterator.next(firstAction as any).value).toEqual(sagaEffects.delay(1_000));
+    expect(iterator.next().value).toEqual(sagaEffects.flush(eventActions));
+    expect(
+      iterator.next([
+        eventReceived('ws-1', second),
+        eventReceived('ws-1', third),
+      ] as any).value,
+    ).toEqual(
+      sagaEffects.put(bulkEventsReceived('ws-1', [first, second, third])),
+    );
+    expect(iterator.next().value).toEqual(sagaEffects.take(eventActions));
+  });
+
+  it('keeps separate workspace batches isolated during event-gated storage flushes', () => {
+    const iterator = watchBatchedEventStorageSaga();
+    const first = mockEvent('evt-1', 'ws-1');
+    const second = mockEvent('evt-2', 'ws-2');
+    const eventActions = channel<ReturnType<typeof eventReceived>>();
+    const firstAction = eventReceived('ws-1', first);
+
+    expectBoundedActionChannel(iterator.next().value, eventReceived, EVENT_BATCH_ACTION_BUFFER_LIMIT);
+    expect(iterator.next(eventActions as any).value).toEqual(sagaEffects.take(eventActions));
+    expect(iterator.next(firstAction as any).value).toEqual(sagaEffects.delay(1_000));
+    expect(iterator.next().value).toEqual(sagaEffects.flush(eventActions));
+    expect(
+      iterator.next([
+        eventReceived('ws-2', second),
+      ] as any).value,
+    ).toEqual(
+      sagaEffects.put(bulkEventsReceived('ws-1', [first])),
+    );
+    expect(iterator.next().value).toEqual(
+      sagaEffects.put(bulkEventsReceived('ws-2', [second])),
+    );
+    expect(iterator.next().value).toEqual(sagaEffects.take(eventActions));
+  });
+
+  it('includes the first taken action when the following flush is empty', () => {
+    const iterator = watchBatchedEventStorageSaga();
+    const first = mockEvent('evt-1');
+    const eventActions = channel<ReturnType<typeof eventReceived>>();
+    const firstAction = eventReceived('ws-1', first);
+
+    expectBoundedActionChannel(iterator.next().value, eventReceived, EVENT_BATCH_ACTION_BUFFER_LIMIT);
+    expect(iterator.next(eventActions as any).value).toEqual(sagaEffects.take(eventActions));
+    expect(iterator.next(firstAction as any).value).toEqual(sagaEffects.delay(1_000));
+    expect(iterator.next().value).toEqual(sagaEffects.flush(eventActions));
+    expect(iterator.next([] as any).value).toEqual(
+      sagaEffects.put(bulkEventsReceived('ws-1', [first])),
+    );
+    expect(iterator.next().value).toEqual(sagaEffects.take(eventActions));
   });
 
   it('dispatches eventReceived on events:new IPC', () => {
@@ -103,6 +199,18 @@ describe('workspaceEventsSaga', () => {
     expect(gen.next()).toEqual({
       value: sagaEffects.put(eventReceived('ws-1', event)),
       done: false,
+    });
+  });
+
+  it('registers events:new with a bounded sliding IPC buffer', () => {
+    watchEventsNewSaga().next();
+
+    const call = takeEveryFromListenSyncMock.mock.calls.find(([name]: any) => name === 'events:new');
+    expect(call?.[2]).toMatchObject({
+      bufferPolicy: {
+        kind: 'sliding',
+        limit: EVENTS_NEW_IPC_BUFFER_LIMIT,
+      },
     });
   });
 

@@ -153,6 +153,7 @@ describe('NoteTabType raw note view toggle', () => {
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
   it('registers an accessible header toggle that dispatches raw view toggle', async () => {
@@ -179,5 +180,23 @@ describe('NoteTabType raw note view toggle', () => {
       expect(enabledToggle.className).toContain('bg-sidebar');
       expect(enabledToggle.className).not.toContain('text-primary');
     });
+  });
+
+  it('clears pending copy feedback timer when unmounted', async () => {
+    const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+
+    const { unmount } = render(NoteTabTypeHeaderHarness, {
+      props: { tab: { id: 'tab-1', type: 'note', title: 'Note', noteId: 'note-1' } },
+    });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Copy full note' }));
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith('Note content'));
+    const callsBeforeUnmount = clearTimeoutSpy.mock.calls.length;
+
+    unmount();
+
+    expect(clearTimeoutSpy.mock.calls.length).toBeGreaterThan(callsBeforeUnmount);
   });
 });

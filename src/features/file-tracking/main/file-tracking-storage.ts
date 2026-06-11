@@ -9,23 +9,19 @@ import * as path from 'path';
 import type { TrackedChange, StageTransition, AgentAttribution } from '../types';
 import { WorkspaceConfig } from '$shared/main/config';
 import { Logger } from '$lib/utils/logger';
-import {
-  fsyncFile,
-  fsyncDir,
-  renameWithRetry,
-} from '$shared/main/file-sync-utils';
-import {
-  getBlob,
-  isGitRepository,
-} from '../../../shared/git/git-blob-storage';
+import { fsyncFile, fsyncDir, renameWithRetry } from '$shared/main/file-sync-utils';
+import { getBlob, isGitRepository } from '../../../shared/git/git-blob-storage';
 
 const logger = new Logger({ category: 'FileTrackingStorage' });
 
 /**
- * Maximum per-change content size (bytes) that will be persisted.
- * Content larger than this is stripped before saving to prevent bloated JSON.
+ * Maximum per-change inline content size that will be retained in memory or persisted.
+ * Content larger than this is stripped before caching/saving to prevent bloated JSON and
+ * long-lived main-process string retention.
  */
-const MAX_PERSISTED_CONTENT_SIZE = 512 * 1024; // 512 KB per change
+const MAX_RETAINED_INLINE_CONTENT_SIZE = 64 * 1024; // 64 KB per old/new content field
+const MAX_RETAINED_DIFF_SIZE = 20 * 1024; // 20 KB per diff field
+const CONTENT_TRUNCATION_MARKER = '\n[truncated]';
 
 /**
  * Maximum file-tracking.json size (bytes) we will attempt to parse.
@@ -202,6 +198,8 @@ export class FileTrackingStorage {
 
       if (recentChanges.length < changes.length) {
         await this._doSave(recentChanges);
+        this.trackedChangesCache = recentChanges;
+        this.cacheTimestamp = Date.now();
         logger.info('Cleaned up old tracking data', {
           workspaceId: this.workspaceId,
           removed: changes.length - recentChanges.length,
@@ -224,6 +222,8 @@ export class FileTrackingStorage {
 
     // Remove from singleton instances
     FileTrackingStorage.instances.delete(this.workspaceId);
+    this.trackedChangesCache = null;
+    this.cacheTimestamp = 0;
 
     logger.debug('FileTrackingStorage cleaned up', { workspaceId: this.workspaceId });
   }
@@ -335,7 +335,19 @@ export class FileTrackingStorage {
         return [];
       }
 
-      const changes: TrackedChange[] = data.trackedChanges || [];
+      const rawChanges: TrackedChange[] = data.trackedChanges || [];
+      const { changes, sanitizedCount } = this.sanitizeChangesForRetention(rawChanges);
+
+      if (sanitizedCount > 0) {
+        try {
+          await this._doSave(changes);
+        } catch (rewriteError) {
+          logger.warn(
+            'Failed to rewrite sanitized file tracking data after load',
+            rewriteError as Error,
+          );
+        }
+      }
 
       // NOTE: SHA→content resolution is intentionally lazy.
       // SHAs (oldContentSha, newContentSha, diffSha) are preserved on the change objects
@@ -410,7 +422,6 @@ export class FileTrackingStorage {
     return { ...change, content: resolvedContent };
   }
 
-
   /**
    * Save tracked changes to storage atomically with locking
    * OPTIMIZED: Atomic write with lock to prevent data corruption and race conditions
@@ -419,6 +430,7 @@ export class FileTrackingStorage {
   async saveTrackedChanges(changes: TrackedChange[]): Promise<void> {
     // Deduplicate changes by file path (keep latest)
     const deduplicatedChanges = this.deduplicateChanges(changes);
+    const { changes: sanitizedChanges } = this.sanitizeChangesForRetention(deduplicatedChanges);
 
     // Wait for any existing save operation to complete
     if (this.saveLock) {
@@ -429,7 +441,7 @@ export class FileTrackingStorage {
     }
 
     // Create a new lock for this save operation
-    this.saveLock = this._doSave(deduplicatedChanges);
+    this.saveLock = this._doSave(sanitizedChanges);
 
     try {
       await this.saveLock;
@@ -468,37 +480,67 @@ export class FileTrackingStorage {
   }
 
   /**
-   * Strip oversized inline content from tracked changes before persisting.
-   * Content that exceeds MAX_PERSISTED_CONTENT_SIZE is removed to prevent
-   * bloated JSON files. The content can be re-fetched from git or the filesystem.
+   * Bound oversized inline content from tracked changes before caching/persisting.
+   * Large old/new content fields are removed and large diffs are truncated. Content can
+   * be re-fetched from git blobs or the filesystem on demand when available.
    */
-  private stripOversizedContent(changes: TrackedChange[]): TrackedChange[] {
-    let strippedCount = 0;
+  private sanitizeChangesForRetention(changes: TrackedChange[]): {
+    changes: TrackedChange[];
+    sanitizedCount: number;
+  } {
+    let sanitizedCount = 0;
     const result = changes.map((change) => {
       if (!change.content) return change;
 
-      const contentSize =
-        (change.content.newContent?.length || 0) +
-        (change.content.oldContent?.length || 0) +
-        (change.content.diff?.length || 0);
+      const content = { ...change.content };
+      let changed = false;
 
-      if (contentSize > MAX_PERSISTED_CONTENT_SIZE) {
-        strippedCount++;
-        // Remove oversized content but keep the rest of the change metadata
-        const { content, ...rest } = change;
-        return { ...rest, content: { diff: content.diff?.substring(0, 10000), isFullFileContent: content.isFullFileContent } };
+      if (content.oldContentSha && content.oldContent !== undefined) {
+        delete content.oldContent;
+        changed = true;
       }
-      return change;
+      if (content.newContentSha && content.newContent !== undefined) {
+        delete content.newContent;
+        changed = true;
+      }
+      if (content.diffSha && content.diff !== undefined) {
+        delete content.diff;
+        changed = true;
+      }
+
+      if (
+        typeof content.oldContent === 'string' &&
+        content.oldContent.length > MAX_RETAINED_INLINE_CONTENT_SIZE
+      ) {
+        delete content.oldContent;
+        changed = true;
+      }
+      if (
+        typeof content.newContent === 'string' &&
+        content.newContent.length > MAX_RETAINED_INLINE_CONTENT_SIZE
+      ) {
+        delete content.newContent;
+        changed = true;
+      }
+      if (typeof content.diff === 'string' && content.diff.length > MAX_RETAINED_DIFF_SIZE) {
+        content.diff = `${content.diff.slice(0, MAX_RETAINED_DIFF_SIZE)}${CONTENT_TRUNCATION_MARKER}`;
+        changed = true;
+      }
+
+      if (!changed) return change;
+
+      sanitizedCount++;
+      return { ...change, content };
     });
 
-    if (strippedCount > 0) {
-      logger.info('Stripped oversized content from tracked changes before save', {
-        strippedCount,
+    if (sanitizedCount > 0) {
+      logger.info('Sanitized oversized content from tracked changes', {
+        sanitizedCount,
         totalChanges: changes.length,
         workspaceId: this.workspaceId,
       });
     }
-    return result;
+    return { changes: result, sanitizedCount };
   }
 
   /**
@@ -517,7 +559,7 @@ export class FileTrackingStorage {
 
       // Strip oversized inline content before persisting to prevent bloated JSON.
       // Content can always be re-fetched from git blobs or the filesystem on demand.
-      const sanitizedChanges = this.stripOversizedContent(changes);
+      const { changes: sanitizedChanges } = this.sanitizeChangesForRetention(changes);
 
       logger.debug('Saving tracked changes', {
         count: sanitizedChanges.length,

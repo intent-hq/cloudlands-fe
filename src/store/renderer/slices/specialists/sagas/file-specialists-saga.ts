@@ -5,6 +5,7 @@ import {
   put,
   takeEvery,
 } from "typed-redux-saga";
+import { invoke } from "$shared/generated/ipc-client";
 import { SPECIALISTS_CHANNELS } from "$shared/ipc/channels";
 import {
   selectActiveWorkspace,
@@ -40,11 +41,7 @@ function* reloadFileSpecialists(wsId?: string) {
                 ? yield* selectWorkspaceById.effect(wsId)
                 : yield* selectActiveWorkspace.effect();
             const workspacePath = workspaceToPath(workspace);
-            const result: any = yield* call(
-                [window.electronAPI, window.electronAPI.invoke],
-                SPECIALISTS_CHANNELS.LIST_FILES,
-                { workspacePath },
-            );
+            const result: any = yield* call(invoke, SPECIALISTS_CHANNELS.LIST_FILES, { workspacePath });
             if (result?.success && result.data) {
                 const { specialists, errors } = result.data;
                 // Get current state to preserve existing codingAgent values
@@ -83,7 +80,7 @@ function* handleExportBuiltin(action: ReturnType<typeof exportBuiltinToFile>) {
     const [specialistId] = action.payload;
     try {
         if (typeof window !== "undefined" && window.electronAPI) {
-            const result: any = yield* call([window.electronAPI, window.electronAPI.invoke], SPECIALISTS_CHANNELS.EXPORT_BUILTIN, { id: specialistId });
+            const result: any = yield* call(invoke, SPECIALISTS_CHANNELS.EXPORT_BUILTIN, { id: specialistId });
             if (result?.success) {
                 yield* call(reloadFileSpecialists);
             }
@@ -98,7 +95,7 @@ function* handleSaveFileSpecialist(action: ReturnType<typeof saveFileSpecialist>
     const [specialist] = action.payload;
     try {
         if (typeof window !== "undefined" && window.electronAPI) {
-            const result: any = yield* call([window.electronAPI, window.electronAPI.invoke], SPECIALISTS_CHANNELS.WRITE_FILE, specialist);
+            const result: any = yield* call(invoke, SPECIALISTS_CHANNELS.WRITE_FILE, specialist);
             if (result?.success) {
                 yield* call(reloadFileSpecialists);
             }
@@ -113,11 +110,7 @@ function* handleDeleteFileSpecialist(action: ReturnType<typeof deleteFileSpecial
     const [specialist] = action.payload;
     try {
         if (typeof window !== "undefined" && window.electronAPI) {
-            const result: any = yield* call(
-                [window.electronAPI, window.electronAPI.invoke],
-                SPECIALISTS_CHANNELS.DELETE_FILE,
-                specialist,
-            );
+            const result: any = yield* call(invoke, SPECIALISTS_CHANNELS.DELETE_FILE, specialist);
             if (result?.success) {
                 yield* call(reloadFileSpecialists);
             }
@@ -131,7 +124,7 @@ function* handleDeleteFileSpecialist(action: ReturnType<typeof deleteFileSpecial
 function* handleOpenFolder() {
     try {
         if (typeof window !== "undefined" && window.electronAPI) {
-            yield* call([window.electronAPI, window.electronAPI.invoke], SPECIALISTS_CHANNELS.OPEN_FOLDER, {});
+            yield* call(invoke, SPECIALISTS_CHANNELS.OPEN_FOLDER, {});
         }
     }
     catch {

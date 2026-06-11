@@ -5,6 +5,7 @@
 } from '$features/linear-auth/constants';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import { Select } from '$lib/components/ui/select';
+  import { invoke } from '$shared/generated/ipc-client';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
@@ -47,7 +48,7 @@
   async function loadFilter() {
     if (typeof window !== 'undefined' && window.electronAPI) {
       try {
-        const result = await window.electronAPI.invoke('settings:get', {
+        const result = await invoke<any>('settings:get', {
           key: 'linearIssueFilter',
         });
         if (result?.data && typeof result.data === 'string') {
@@ -70,7 +71,7 @@
   async function saveFilter(filter: LinearIssueFilter) {
     if (typeof window !== 'undefined' && window.electronAPI) {
       try {
-        await window.electronAPI.invoke('settings:update', {
+        await invoke<any>('settings:update', {
           settings: { linearIssueFilter: filter },
         });
       } catch {

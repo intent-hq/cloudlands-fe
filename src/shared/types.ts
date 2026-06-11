@@ -249,6 +249,7 @@ export interface Workspace {
   setupScript?: string;
   isRemote?: boolean; // Added for remote workspace support
   diffs?: DiffChunk[];
+  /** @deprecated High-frequency data — fetch on demand via WORKSPACE_CHANNELS.GET_DIFF_SUMMARY. Excluded from WorkspaceMetadata payloads. */
   diffSummary?: WorkspaceDiffSummary;
   prUrl?: string;
   prNumber?: number;
@@ -260,10 +261,39 @@ export interface Workspace {
   archivedAt?: string;
   thirdPartySources?: ThirdPartySource[]; // Linked external sources
   defaultModel?: string; // Default model for new agents in this workspace
-  agentSummary?: WorkspaceAgentSummary; // Lightweight agent info for list views
+  /** IDs-only agent membership summary; derive counts from `agentIds.length` and fetch agent details from agent/session sources. */
+  agentSummary?: WorkspaceAgentIdSummary;
+  /** @deprecated High-frequency data — fetch on demand via WORKSPACE_CHANNELS.GET_TASKS. Excluded from WorkspaceMetadata payloads. */
   taskStats?: WorkspaceTaskStats; // Task progress for list views (like flame graph)
+  /** @deprecated High-frequency data — fetch on demand via WORKSPACE_CHANNELS.GET_GIT_SUMMARY. Excluded from WorkspaceMetadata payloads. */
   gitSummary?: WorkspaceGitSummary; // Git status for list views (commits ahead/behind)
 }
+
+/**
+ * Slim agent summary embedded in workspace metadata payloads.
+ * Contains only agent IDs; derive counts from `agentIds.length` and fetch
+ * detailed agent data from agent/session sources when needed.
+ */
+export interface WorkspaceAgentIdSummary {
+  agentIds: string[];
+}
+
+/**
+ * Metadata-only workspace payload for list/get/open responses.
+ * High-frequency summary fields are structurally excluded (`never`) so a
+ * metadata payload cannot carry diff/git summaries or task lists/stats;
+ * fetch those on demand via the dedicated WORKSPACE_CHANNELS endpoints.
+ */
+export type WorkspaceMetadata = Omit<
+  Workspace,
+  'diffSummary' | 'gitSummary' | 'taskStats' | 'agentSummary' | 'diffs'
+> & {
+  agentSummary?: WorkspaceAgentIdSummary;
+  diffs?: never;
+  diffSummary?: never;
+  gitSummary?: never;
+  taskStats?: never;
+};
 
 export interface EnvironmentConfig {
   type: 'local' | 'remote';
@@ -481,14 +511,6 @@ export interface WorkspaceAgentInfo {
 }
 
 /**
- * Summary of agents for a workspace (used in list views)
- */
-export interface WorkspaceAgentSummary {
-  count: number;
-  agents: WorkspaceAgentInfo[];
-}
-
-/**
  * Individual task info for workspace list view tooltips
  */
 export interface WorkspaceTaskInfo {
@@ -525,6 +547,27 @@ export interface WorkspaceGitSummary {
   behind: number; // Number of commits behind base
   hasUnpushed: boolean; // Has local commits not pushed
   commits?: WorkspaceCommitInfo[]; // Recent commits (up to 6) for tooltips
+}
+
+/**
+ * Canonical task facts for a workspace, returned by the on-demand
+ * WORKSPACE_CHANNELS.GET_TASKS endpoint. Renderer selectors derive counts,
+ * progress, and in-progress/completed groupings from this list.
+ */
+export interface WorkspaceTask {
+  /** Task note ID */
+  id: string;
+  title: string;
+  status: TaskStatus;
+  updatedAt?: string;
+}
+
+/**
+ * Payload for the 'workspace:tasks-changed' renderer event, emitted when a
+ * workspace's task set or task statuses may have changed.
+ */
+export interface WorkspaceTasksChangedEvent {
+  workspaceId: WorkspaceId;
 }
 
 export interface CodeChange {

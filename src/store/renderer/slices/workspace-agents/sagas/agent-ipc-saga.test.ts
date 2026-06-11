@@ -36,6 +36,7 @@ const {
   clearKeysForAgentMock,
   toastWarningMock,
   toastDismissMock,
+  storeDispatchMock,
   trackMock,
   eventCollectorTrackMock,
   selectState,
@@ -51,6 +52,7 @@ const {
   clearKeysForAgentMock: vi.fn(async () => {}),
   toastWarningMock: vi.fn(() => "toast-1"),
   toastDismissMock: vi.fn(),
+  storeDispatchMock: vi.fn(),
   trackMock: vi.fn(),
   eventCollectorTrackMock: vi.fn(),
   selectState: { results: [] as any[], index: 0 },
@@ -122,6 +124,12 @@ vi.mock("$features/agent/browser/services/request-deduplicator.service", () => (
 
 vi.mock("$lib/electron-bridge", () => ({
   invoke: invokeMock,
+}));
+
+vi.mock("$store/renderer/store", () => ({
+  store: {
+    dispatch: storeDispatchMock,
+  },
 }));
 
 vi.mock("svelte-sonner", () => ({
@@ -255,7 +263,6 @@ import {
   handleStopAgentSessionRequested,
   handleUndoAgentDeletionRequested,
   watchAgentCreatedIpcSaga,
-  watchAgentDeletionCallbackSaga,
   watchAgentIdleSaga,
   watchBackendStreamReconnectSaga,
   watchBeforeUnloadSaga,
@@ -304,6 +311,11 @@ const makeQueueSession = (overrides: Partial<AgentSession> = {}): AgentSession =
 } as AgentSession);
 
 const makeSession = makeQueueSession;
+
+async function waitForDeleteWithUndoPending(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(0);
+  await Promise.resolve();
+}
 
 const queueData = {
   agentId: "agent-1",
@@ -1076,7 +1088,6 @@ describe("agentIpcSaga lifecycle registrations", () => {
     expect(saga.next().value).toEqual(
       sagaEffects.takeEvery(flushPendingAgentDeletionsRequested, handleFlushPendingAgentDeletionsRequested),
     );
-    expect(saga.next().value).toEqual(sagaEffects.fork(watchAgentDeletionCallbackSaga));
     expect(saga.next().value).toEqual(sagaEffects.fork(watchAgentIdleSaga));
     expect(saga.next().value).toEqual(sagaEffects.fork(watchStreamStartingSaga));
     expect(saga.next().value).toEqual(sagaEffects.fork(watchPrepareHandlerSaga));
@@ -1214,11 +1225,12 @@ describe("migrated agent IPC lifecycle handlers", () => {
     const deleteAction = deleteAgentWithUndoRequested("ws-A", "agent-1", "Undo Me");
     const deleteDispatched: any[] = [];
 
-    await runSaga(
+    const deleteTask = runSaga(
       { dispatch: (a: any) => deleteDispatched.push(a), getState: () => ({}) },
       handleDeleteAgentWithUndoRequested,
       deleteAction,
-    ).toPromise();
+    );
+    await waitForDeleteWithUndoPending();
 
     expect(deleteDispatched.find((a) => a.type === removeAgent.type)?.payload).toEqual(["ws-A", "agent-1"]);
     expect(toastWarningMock).toHaveBeenCalledWith("Deleted \"Undo Me\"", expect.any(Object));
@@ -1237,79 +1249,72 @@ describe("migrated agent IPC lifecycle handlers", () => {
     ]);
     expect(toastDismissMock).toHaveBeenCalledWith("toast-1");
     expect(undoDispatched.find((a) => a.type === undoAgentDeletionRequested.success.type)?.payload.response).toBe(true);
+    await deleteTask.toPromise();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(deleteDispatched).not.toContainEqual(commitPendingAgentDeletionRequested("ws-A", "agent-1"));
   });
 
-  it("bridges delete undo toast callbacks through a saga-owned channel", async () => {
+  it("dispatches delete undo toast callbacks directly", async () => {
     const session = makeSession({ workspaceId: "ws-A" as any, name: "Undo Me" });
     selectState.results = [session, session];
-    const bridgedActions: any[] = [];
-    const bridgeTask = runSaga(
-      { dispatch: (a: any) => bridgedActions.push(a), getState: () => ({}) },
-      watchAgentDeletionCallbackSaga,
-    );
 
-    await runSaga(
+    const deleteTask = runSaga(
       { dispatch: vi.fn(), getState: () => ({}) },
       handleDeleteAgentWithUndoRequested,
       deleteAgentWithUndoRequested("ws-A", "agent-1", "Undo Me"),
-    ).toPromise();
+    );
+    await waitForDeleteWithUndoPending();
 
     const toastOptions = toastWarningMock.mock.calls[0]?.[1] as { action?: { onClick?: () => void } };
     toastOptions.action?.onClick?.();
-    await Promise.resolve();
 
-    expect(bridgedActions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: undoAgentDeletionRequested.type,
-          payload: ["ws-A", "agent-1"],
-        }),
-      ]),
-    );
+    expect(storeDispatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: undoAgentDeletionRequested.type,
+      payload: ["ws-A", "agent-1"],
+    }));
     await runSaga(
       { dispatch: vi.fn(), getState: () => ({}) },
       handleUndoAgentDeletionRequested,
       undoAgentDeletionRequested("ws-A", "agent-1"),
     ).toPromise();
-    bridgeTask.cancel();
-    await bridgeTask.toPromise();
+    await deleteTask.toPromise();
   });
 
-  it("bridges delete commit timeouts through a saga-owned channel", async () => {
+  it("forks a delayed task that dispatches pending deletion commit", async () => {
     const session = makeSession({ workspaceId: "ws-A" as any, name: "Commit Me" });
     selectState.results = [session, session];
-    const bridgedActions: any[] = [];
-    const bridgeTask = runSaga(
-      { dispatch: (a: any) => bridgedActions.push(a), getState: () => ({}) },
-      watchAgentDeletionCallbackSaga,
-    );
+    const dispatched: any[] = [];
 
-    await runSaga(
-      { dispatch: vi.fn(), getState: () => ({}) },
+    const deleteTask = runSaga(
+      { dispatch: (action: any) => dispatched.push(action), getState: () => ({}) },
       handleDeleteAgentWithUndoRequested,
       deleteAgentWithUndoRequested("ws-A", "agent-1", "Commit Me"),
-    ).toPromise();
+    );
+    await waitForDeleteWithUndoPending();
 
     await vi.advanceTimersByTimeAsync(15_000);
+    await deleteTask.toPromise();
 
-    expect(bridgedActions).toContainEqual(commitPendingAgentDeletionRequested("ws-A", "agent-1"));
+    expect(dispatched).toContainEqual(commitPendingAgentDeletionRequested("ws-A", "agent-1"));
+    selectState.index = 0;
+    selectState.results = [undefined];
     await runSaga(
       { dispatch: vi.fn(), getState: () => ({}) },
       handleCommitPendingAgentDeletionRequested,
       commitPendingAgentDeletionRequested("ws-A", "agent-1"),
     ).toPromise();
-    bridgeTask.cancel();
-    await bridgeTask.toPromise();
   });
 
   it("flushes pending agent deletions", async () => {
     const session = makeSession({ workspaceId: "ws-A" as any });
     selectState.results = [session, session];
-    await runSaga(
+    const deleteTask = runSaga(
       { dispatch: vi.fn(), getState: () => ({}) },
       handleDeleteAgentWithUndoRequested,
       deleteAgentWithUndoRequested("ws-A", "agent-1", "Flush Me"),
-    ).toPromise();
+    );
+    await waitForDeleteWithUndoPending();
 
     deleteAgentMock.mockClear();
     selectState.index = 0;
@@ -1324,16 +1329,18 @@ describe("migrated agent IPC lifecycle handlers", () => {
 
     expect(deleteAgentMock).toHaveBeenCalledWith("agent-1", expect.objectContaining({ id: "ws-A" }));
     expect(dispatched.find((a) => a.type === flushPendingAgentDeletionsRequested.success.type)).toBeDefined();
+    await deleteTask.toPromise();
   });
 
   it("beforeunload saves streaming sessions and flushes pending deletions", async () => {
     const pending = makeSession({ id: "agent-pending" as any, workspaceId: "ws-A" as any });
     selectState.results = [pending, pending];
-    await runSaga(
+    const deleteTask = runSaga(
       { dispatch: vi.fn(), getState: () => ({}) },
       handleDeleteAgentWithUndoRequested,
       deleteAgentWithUndoRequested("ws-A", "agent-pending", "Pending"),
-    ).toPromise();
+    );
+    await waitForDeleteWithUndoPending();
 
     const streaming = makeSession({
       id: "agent-streaming" as any,
@@ -1352,6 +1359,7 @@ describe("migrated agent IPC lifecycle handlers", () => {
 
     expect(saveSessionMock).toHaveBeenCalledWith(streaming, "ws-stream", { immediate: true });
     expect(deleteAgentMock).toHaveBeenCalledWith("agent-pending", expect.objectContaining({ id: "ws-A" }));
+    await deleteTask.toPromise();
     task.cancel();
     await task.toPromise();
   });
@@ -1379,11 +1387,12 @@ describe("migrated agent IPC lifecycle handlers", () => {
   it("pagehide without bfcache clears pending deletion runtime state", async () => {
     const session = makeSession({ workspaceId: "ws-A" as any });
     selectState.results = [session, session];
-    await runSaga(
+    const deleteTask = runSaga(
       { dispatch: vi.fn(), getState: () => ({}) },
       handleDeleteAgentWithUndoRequested,
       deleteAgentWithUndoRequested("ws-A", "agent-1", "Pagehide Me"),
-    ).toPromise();
+    );
+    await waitForDeleteWithUndoPending();
 
     const listeners = captureWindowListeners();
     const task = runSaga({ dispatch: vi.fn(), getState: () => ({}) }, watchPagehideSaga);
@@ -1391,6 +1400,7 @@ describe("migrated agent IPC lifecycle handlers", () => {
     await Promise.resolve();
     task.cancel();
     await task.toPromise();
+    await deleteTask.toPromise();
 
     const undoAction = undoAgentDeletionRequested("ws-A", "agent-1");
     const dispatched: any[] = [];

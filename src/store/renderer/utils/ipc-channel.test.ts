@@ -14,6 +14,9 @@ import {
   createElectronChannel,
   createListenSyncChannel,
   createWindowEventChannel,
+  HIGH_VOLUME_IPC_BUFFER_LIMIT,
+  LATEST_ONLY_IPC_BUFFER_LIMIT,
+  resolveIpcChannelBufferPolicy,
   takeEveryFromElectronChannel,
   takeEveryFromListenSync,
   takeEveryFromWindowEvent,
@@ -287,6 +290,41 @@ describe("createElectronChannel", () => {
     expect(emitted).toEqual([{ message: "first" }, { message: "second" }]);
   });
 
+  it("uses bounded sliding buffers for explicitly bounded IPC channels", () => {
+    const channel = createElectronChannel<{ message: string }>("agent:plan-required", {
+      bufferPolicy: {
+        kind: "sliding",
+        limit: 2,
+        rationale: "test bounded burst behavior",
+      },
+    });
+    const emitted: Array<{ message: string }> = [];
+
+    capturedHandler?.({ message: "first" });
+    capturedHandler?.({ message: "second" });
+    capturedHandler?.({ message: "third" });
+
+    channel.take((value) => emitted.push(value));
+    channel.take((value) => emitted.push(value));
+
+    expect(emitted).toEqual([{ message: "second" }, { message: "third" }]);
+  });
+
+  it("keeps lossless-required IPC channels lossless", () => {
+    const channel = createElectronChannel<{ id: string }>("agent:created");
+    const emitted: Array<{ id: string }> = [];
+
+    capturedHandler?.({ id: "first" });
+    capturedHandler?.({ id: "second" });
+    capturedHandler?.({ id: "third" });
+
+    channel.take((value) => emitted.push(value));
+    channel.take((value) => emitted.push(value));
+    channel.take((value) => emitted.push(value));
+
+    expect(emitted).toEqual([{ id: "first" }, { id: "second" }, { id: "third" }]);
+  });
+
   it("should remove the listener by id when the channel closes", () => {
     const channel = createElectronChannel("auto-update:up-to-date");
 
@@ -308,6 +346,25 @@ describe("createElectronChannel", () => {
     expect(mockOn).not.toHaveBeenCalled();
     expect(emitted).toBe(END);
     expect(() => channel.close()).not.toThrow();
+  });
+});
+
+describe("resolveIpcChannelBufferPolicy", () => {
+  it("classifies high-volume, latest-only, and lossless IPC events", () => {
+    expect(resolveIpcChannelBufferPolicy("events:new")).toMatchObject({
+      kind: "sliding",
+      limit: HIGH_VOLUME_IPC_BUFFER_LIMIT,
+    });
+    expect(resolveIpcChannelBufferPolicy("auto-update:progress")).toMatchObject({
+      kind: "sliding",
+      limit: LATEST_ONLY_IPC_BUFFER_LIMIT,
+    });
+    expect(resolveIpcChannelBufferPolicy("terminal:disposed")).toMatchObject({
+      kind: "lossless",
+    });
+    expect(resolveIpcChannelBufferPolicy("agent:queue:processing")).toMatchObject({
+      kind: "lossless",
+    });
   });
 });
 
@@ -359,7 +416,7 @@ describe("takeEvery helper effects", () => {
 
     const first = iterator.next().value as any;
     expect(first.type).toBe("FORK");
-    expect(first.payload.args).toEqual(["terminal:disposed", handler]);
+    expect(first.payload.args).toEqual(["terminal:disposed", handler, {}]);
     expect(iterator.next({} as any).done).toBe(true);
   });
 
@@ -371,7 +428,7 @@ describe("takeEvery helper effects", () => {
 
     const first = iterator.next().value as any;
     expect(first.type).toBe("FORK");
-    expect(first.payload.args).toEqual(["agent:plan-required", handler]);
+    expect(first.payload.args).toEqual(["agent:plan-required", handler, {}]);
     expect(iterator.next({} as any).done).toBe(true);
   });
 

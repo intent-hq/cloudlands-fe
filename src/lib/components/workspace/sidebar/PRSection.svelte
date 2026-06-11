@@ -59,6 +59,7 @@
   import { Textarea } from '$lib/components/ui/textarea';
   import { toast } from '$lib/components/ui/toast';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
+  import { invoke } from '$shared/generated/ipc-client';
   import {
   track,
   trackGitOp,
@@ -578,12 +579,16 @@
     try {
       const baseRef = $workspace$.baseRef || 'main';
       const [oldContentResult, newContentResult] = await Promise.all([
-        window.electronAPI?.invoke('git:show-file', {
-          workspaceId, filePath, ref: baseRef,
-        }) as Promise<{ success: boolean; data?: string; error?: string }>,
-        window.electronAPI?.invoke('git:show-file', {
-          workspaceId, filePath, ref: 'HEAD',
-        }) as Promise<{ success: boolean; data?: string; error?: string }>,
+        typeof window !== 'undefined' && window.electronAPI
+          ? invoke<{ success: boolean; data?: string; error?: string }>('git:show-file', {
+            workspaceId, filePath, ref: baseRef,
+          })
+          : Promise.resolve(undefined),
+        typeof window !== 'undefined' && window.electronAPI
+          ? invoke<{ success: boolean; data?: string; error?: string }>('git:show-file', {
+            workspaceId, filePath, ref: 'HEAD',
+          })
+          : Promise.resolve(undefined),
       ]);
       const oldContent = oldContentResult?.success ? oldContentResult.data || '' : '';
       const newContent = newContentResult?.success ? newContentResult.data || '' : '';

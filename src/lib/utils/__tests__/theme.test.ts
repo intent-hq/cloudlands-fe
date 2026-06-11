@@ -234,6 +234,31 @@ describe('ThemeManager custom theme support', () => {
     expect(document.documentElement.classList.contains('light')).toBe(true);
   });
 
+  it('removes the system theme listener when resetting the singleton', () => {
+    const originalMatchMedia = window.matchMedia;
+    const addEventListener = vi.fn();
+    const removeEventListener = vi.fn();
+
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({
+        matches: false,
+        media: '(prefers-color-scheme: dark)',
+        addEventListener,
+        removeEventListener,
+      })),
+    });
+
+    const instance = getManager();
+    expect(instance).toBeInstanceOf(ThemeManager);
+    const listener = addEventListener.mock.calls[0]?.[1];
+
+    ThemeManager.resetInstance();
+
+    expect(removeEventListener).toHaveBeenCalledWith('change', listener);
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: originalMatchMedia });
+  });
+
   it('custom theme takes precedence over base theme', () => {
     // Set base to light
     manager.setTheme('light');

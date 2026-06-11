@@ -89,6 +89,22 @@ export const selectTrackedAgentIds = store.createSelector<[workspaceId: string],
   },
 );
 
+/** Whether any renderer-visible agent subscription/delegation is active for a workspace. */
+export const selectWorkspaceHasActiveSubscriptions = store.createSelector<[workspaceId: string], boolean>(
+  (state, workspaceId) => {
+    const prefix = `${workspaceId}:`;
+    const entries = state.agentSubscriptionUI?.entries ?? {};
+    for (const key of Object.keys(entries)) {
+      if (!key.startsWith(prefix)) continue;
+      const entry = entries[key];
+      if (entry.subscriptions.length > 0 || entry.delegationGroups.length > 0) {
+        return true;
+      }
+    }
+    return false;
+  },
+);
+
 /**
  * Completion status across all delegation groups.
  * Returns { total, completed } counting all expected agents.

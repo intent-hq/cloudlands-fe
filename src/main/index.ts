@@ -330,6 +330,7 @@ import {
   cleanupNoteTerminals,
 } from '../features/notes/main/notes-primitives.ipc';
 import { setupNotesIPC } from '../features/notes/main/notes.ipc';
+import { crdtDocumentManager } from '../features/notes/main/storage';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
 import {
   setupObservabilityIPC,
@@ -370,12 +371,14 @@ import {
   initializeChangeDetectorManager,
   setupWorkspaceIPC,
 } from '../features/workspace/main/workspace.ipc';
+import { setupWorkspaceSummaryIPC } from '../features/workspace/main/workspace-summary.ipc';
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
 import { claimDownloadAttribution } from './download-attribution';
 import { HttpMcpBridge, setHttpMcpBridge, notifyCriticalMemoryPressure } from './http-mcp-bridge';
 
 import { agentBackendHandler } from '../features/agent/main/agent-backend-handler.service';
+import { agentPersistence } from '../features/agent/main/agent-persistence';
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { agentPoolService } from '../features/agent/main/agent-pool.service';
 import { cleanupStaleTempFiles } from '../features/agent/main/agent-providers/acp-provider';
@@ -383,6 +386,7 @@ import { cleanupBlankAgentSessions } from '../features/agent/main/cleanup-blank-
 import { initializeUnifiedAgentHandlers } from '../features/agent/main/init-unified-handlers';
 import { initSpecialistsService } from '../features/agent/main/specialists.service';
 import { initAppSettingsService } from '../features/workspace/main/app-settings.service';
+import { workspaceService } from '../features/workspace/main/workspace.service';
 
 import { registerDeepLinkHandlers } from '../features/deeplink/main/deeplink.ipc';
 import { DeepLinkHandler } from '../features/deeplink/deep-link-handler';
@@ -1352,6 +1356,17 @@ app.whenReady().then(async () => {
 
   // Rebuild menu when workspace state changes (enables/disables tab menu items)
   app.on('window-workspace-state-changed', () => {
+    const openWorkspaceIds = getAllOpenWorkspaceIds();
+    try {
+      workspaceService.trimCachesToOpenWorkspaces(openWorkspaceIds);
+      agentPersistence.trimLoadCachesToOpenWorkspaces(openWorkspaceIds);
+      agentBackendHandler.trimPersistenceListCacheToOpenWorkspaces(openWorkspaceIds);
+      crdtDocumentManager.trimCachesToOpenWorkspaces(openWorkspaceIds);
+    } catch (error) {
+      logger.warn('Failed to trim inactive workspace caches', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     rebuildMenu();
   });
 
@@ -1409,6 +1424,7 @@ app.whenReady().then(async () => {
   await initAppSettingsService();
 
   setupWorkspaceIPC();
+  setupWorkspaceSummaryIPC();
   setupNotesIPC();
   setupNotesPrimitivesIPC();
   setupFileIPC();

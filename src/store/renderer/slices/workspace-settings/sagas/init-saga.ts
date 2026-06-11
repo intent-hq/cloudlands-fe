@@ -1,4 +1,5 @@
 import { call } from "typed-redux-saga";
+import { invoke } from "$shared/generated/ipc-client";
 import { emptyWorkspaceSettings } from "../workspace-settings-slice";
 import { SETTINGS_CHANNELS } from "$shared/ipc/channels";
 
@@ -11,7 +12,7 @@ export function getGlobalAutoCommitDefault(): boolean {
 async function loadFromIPC(): Promise<boolean> {
   try {
     if (typeof window !== "undefined" && window.electronAPI) {
-      const result = await window.electronAPI.invoke(SETTINGS_CHANNELS.GET_ALL, undefined);
+      const result = await invoke<{ data?: { autoCommit?: boolean } }>(SETTINGS_CHANNELS.GET_ALL, undefined);
       const settings = (result && result.data) || {};
       return settings.autoCommit !== false;
     }

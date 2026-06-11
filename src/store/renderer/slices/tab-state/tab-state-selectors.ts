@@ -27,6 +27,10 @@ export const selectWorkspaceTabOrder = store.createSelector((state) => {
   return state.tabState.tabOrder;
 });
 
+export const selectIsWorkspaceTabOpen = store.createSelector((state, workspaceId: string) => {
+  return state.tabState.openTabs[workspaceId] === true;
+});
+
 export const selectPersistedWorkspaceTabsState = store.createSelector((state) => {
   return serializeWorkspaceTabsState(state.tabState);
 });

@@ -4,7 +4,7 @@
  * Memory Events CLI
  *
  * Query memory events captured by the instrumentation.
- * Uses DuckDB for efficient querying of JSONL data.
+ * Uses built-in JSONL summaries for common commands; DuckDB is optional for custom queries.
  *
  * Usage:
  *   pnpm memory-events                    # Show recent events
@@ -25,6 +25,15 @@ import path from 'path';
 
 const EVENTS_PATH = path.resolve(process.cwd(), '.augment/memory/memory-events.jsonl');
 
+interface MemoryEvent {
+  ts?: string;
+  event?: string;
+  agentId?: string | null;
+  heapUsedMB?: number;
+  deltaMB?: number;
+  context?: unknown;
+}
+
 function fileExists(): boolean {
   return fs.existsSync(EVENTS_PATH);
 }
@@ -36,95 +45,167 @@ function duckdb(query: string): string {
   try {
     // Replace placeholder with actual path
     const fullQuery = query.replace(/\$FILE/g, EVENTS_PATH);
-    return execSync(`duckdb -c "${fullQuery}"`, { encoding: 'utf-8' });
+    return execSync(`duckdb -c ${JSON.stringify(fullQuery)}`, { encoding: 'utf-8' });
   } catch (err: any) {
     return `DuckDB error: ${err.message}`;
   }
 }
 
+function loadEvents(): MemoryEvent[] {
+  if (!fileExists()) return [];
+  const lines = fs.readFileSync(EVENTS_PATH, 'utf-8').split('\n').filter(Boolean);
+  const events: MemoryEvent[] = [];
+  let invalid = 0;
+  for (const line of lines) {
+    try {
+      events.push(JSON.parse(line));
+    } catch {
+      invalid++;
+    }
+  }
+  if (invalid > 0) console.error(`Skipped ${invalid} invalid memory event line(s).`);
+  return events;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function isNumber(value: number | undefined): value is number {
+  return value != null;
+}
+
+function formatValue(value: unknown): string {
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  if (value == null) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function printRows(rows: Record<string, unknown>[]) {
+  if (rows.length === 0) {
+    console.log('No memory events found. Run the app to generate events.');
+    return;
+  }
+  const columns = Object.keys(rows[0]);
+  console.log(columns.join('\t'));
+  for (const row of rows) {
+    console.log(columns.map((column) => formatValue(row[column])).join('\t'));
+  }
+}
+
 function cmdRecent(count = 20) {
-  console.log(duckdb(`
-    SELECT ts, event, agentId, heapUsedMB, deltaMB, context
-    FROM read_json_auto('$FILE')
-    ORDER BY ts DESC
-    LIMIT ${count}
-  `));
+  const rows = loadEvents()
+    .slice(-count)
+    .reverse()
+    .map(({ ts, event, agentId, heapUsedMB, deltaMB, context }) => ({
+      ts,
+      event,
+      agentId,
+      heapUsedMB,
+      deltaMB,
+      context,
+    }));
+  printRows(rows);
 }
 
 function cmdSummary() {
   console.log('=== Memory Events Summary ===\n');
-  console.log(duckdb(`
-    SELECT
-      count(*) as total_events,
-      min(heapUsedMB) as min_heap_mb,
-      max(heapUsedMB) as max_heap_mb,
-      avg(heapUsedMB)::DECIMAL(10,2) as avg_heap_mb,
-      sum(CASE WHEN deltaMB > 0 THEN deltaMB ELSE 0 END)::DECIMAL(10,2) as total_growth_mb
-    FROM read_json_auto('$FILE')
-  `));
+  const events = loadEvents();
+  const heaps = events.map((event) => numberValue(event.heapUsedMB)).filter(isNumber);
+  const growth = events.reduce((sum, event) => sum + Math.max(numberValue(event.deltaMB) || 0, 0), 0);
+  printRows([{
+    total_events: events.length,
+    min_heap_mb: heaps.length ? Math.min(...heaps) : undefined,
+    max_heap_mb: heaps.length ? Math.max(...heaps) : undefined,
+    avg_heap_mb: heaps.length ? heaps.reduce((sum, value) => sum + value, 0) / heaps.length : undefined,
+    total_growth_mb: growth,
+  }]);
 
   console.log('\n=== Events by Type ===\n');
-  console.log(duckdb(`
-    SELECT event, count(*) as count, avg(deltaMB)::DECIMAL(10,2) as avg_delta_mb
-    FROM read_json_auto('$FILE')
-    GROUP BY event
-    ORDER BY count DESC
-  `));
+  const byType = new Map<string, { count: number; deltaTotal: number; deltaCount: number }>();
+  for (const event of events) {
+    const key = event.event || '(unknown)';
+    const current = byType.get(key) || { count: 0, deltaTotal: 0, deltaCount: 0 };
+    current.count++;
+    const delta = numberValue(event.deltaMB);
+    if (delta != null) {
+      current.deltaTotal += delta;
+      current.deltaCount++;
+    }
+    byType.set(key, current);
+  }
+  printRows([...byType.entries()]
+    .map(([event, stats]) => ({
+      event,
+      count: stats.count,
+      avg_delta_mb: stats.deltaCount ? stats.deltaTotal / stats.deltaCount : undefined,
+    }))
+    .sort((a, b) => Number(b.count) - Number(a.count)));
 }
 
 function cmdTrend() {
-  console.log(duckdb(`
-    SELECT
-      ts,
-      event,
-      heapUsedMB,
-      deltaMB,
-      SUM(COALESCE(deltaMB, 0)) OVER (ORDER BY ts) as cumulative_delta_mb
-    FROM read_json_auto('$FILE')
-    ORDER BY ts
-  `));
+  let cumulative = 0;
+  printRows(loadEvents().map(({ ts, event, heapUsedMB, deltaMB }) => {
+    cumulative += numberValue(deltaMB) || 0;
+    return { ts, event, heapUsedMB, deltaMB, cumulative_delta_mb: cumulative };
+  }));
 }
 
 function cmdByAgent() {
-  console.log(duckdb(`
-    SELECT
+  const byAgent = new Map<string, { events: number; heaps: number[]; growth: number }>();
+  for (const event of loadEvents()) {
+    if (!event.agentId) continue;
+    const current = byAgent.get(event.agentId) || { events: 0, heaps: [], growth: 0 };
+    current.events++;
+    const heap = numberValue(event.heapUsedMB);
+    if (heap != null) current.heaps.push(heap);
+    current.growth += Math.max(numberValue(event.deltaMB) || 0, 0);
+    byAgent.set(event.agentId, current);
+  }
+  printRows([...byAgent.entries()]
+    .map(([agentId, stats]) => ({
       agentId,
-      count(*) as events,
-      min(heapUsedMB) as min_heap,
-      max(heapUsedMB) as max_heap,
-      sum(CASE WHEN deltaMB > 0 THEN deltaMB ELSE 0 END)::DECIMAL(10,2) as growth_mb
-    FROM read_json_auto('$FILE')
-    WHERE agentId IS NOT NULL
-    GROUP BY agentId
-    ORDER BY growth_mb DESC
-  `));
+      events: stats.events,
+      min_heap: stats.heaps.length ? Math.min(...stats.heaps) : undefined,
+      max_heap: stats.heaps.length ? Math.max(...stats.heaps) : undefined,
+      growth_mb: stats.growth,
+    }))
+    .sort((a, b) => Number(b.growth_mb) - Number(a.growth_mb)));
 }
 
 function cmdLeaks(threshold = 1) {
   console.log(`Showing events with delta > ${threshold}MB:\n`);
-  console.log(duckdb(`
-    SELECT ts, event, agentId, heapUsedMB, deltaMB, context
-    FROM read_json_auto('$FILE')
-    WHERE deltaMB > ${threshold}
-    ORDER BY deltaMB DESC
-    LIMIT 50
-  `));
+  printRows(loadEvents()
+    .filter((event) => (numberValue(event.deltaMB) || 0) > threshold)
+    .sort((a, b) => (numberValue(b.deltaMB) || 0) - (numberValue(a.deltaMB) || 0))
+    .slice(0, 50)
+    .map(({ ts, event, agentId, heapUsedMB, deltaMB, context }) => ({
+      ts,
+      event,
+      agentId,
+      heapUsedMB,
+      deltaMB,
+      context,
+    })));
 }
 
 function cmdAround(eventType: string) {
-  console.log(duckdb(`
-    WITH events AS (
-      SELECT *, ROW_NUMBER() OVER (ORDER BY ts) as rn
-      FROM read_json_auto('$FILE')
-    ),
-    targets AS (
-      SELECT rn FROM events WHERE event = '${eventType}'
-    )
-    SELECT e.ts, e.event, e.agentId, e.heapUsedMB, e.deltaMB
-    FROM events e, targets t
-    WHERE e.rn BETWEEN t.rn - 3 AND t.rn + 3
-    ORDER BY e.ts
-  `));
+  const events = loadEvents();
+  const rows: Record<string, unknown>[] = [];
+  events.forEach((event, index) => {
+    if (event.event !== eventType) return;
+    events.slice(Math.max(0, index - 3), index + 4).forEach((nearby) => {
+      rows.push({
+        ts: nearby.ts,
+        event: nearby.event,
+        agentId: nearby.agentId,
+        heapUsedMB: nearby.heapUsedMB,
+        deltaMB: nearby.deltaMB,
+      });
+    });
+  });
+  printRows(rows);
 }
 
 function cmdClear(confirm: boolean) {

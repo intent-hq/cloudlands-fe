@@ -8,6 +8,7 @@
  * All `this` references have been replaced by module-level state or imported functions.
  */
 
+import flatstr from 'flatstr';
 import { v4 as uuidv4 } from 'uuid';
 import { createMessageId } from '$shared/types/branded-ids';
 import { invoke } from '$lib/electron-bridge';
@@ -361,7 +362,7 @@ function registerStreamHandlerForSession(
         eventType,
         assistantMessageId: reusableExistingMessageId,
         assistantAppMessageId: streamAppMessageId,
-        contentBlocks: buildOrderedContentBlocks(orderedItems, textBuffer),
+        contentBlocks: buildOrderedContentBlocks(orderedItems, flatstr(textBuffer)),
         rawContentBlocks: Array.isArray(data.data) ? data.data : undefined,
         chunk: eventType === 'chunk' ? data.data : undefined,
         completeMessage: data.message || data.data,
@@ -541,6 +542,12 @@ export async function sendMessage(
      * internal history so it only sees the truncated messages.
      */
     resetHistory?: boolean;
+    /**
+     * Pre-generated logical app message ID for the user message. The send path
+     * stages an optimistic user message with this ID so the canonical message
+     * dispatched here merges with it via appMessageId dedup.
+     */
+    userAppMessageId?: string;
   } = {},
 ): Promise<void> {
   // Wrap entire sendMessage operation with performance tracking
@@ -680,7 +687,7 @@ export async function sendMessage(
             });
           }
         }
-        const userAppMessageId = createAppMessageId();
+        const userAppMessageId = options.userAppMessageId ?? createAppMessageId();
         const userMessage: AgentMessage = {
           id: createMessageId(uuidv4()),
           appMessageId: userAppMessageId,
@@ -773,7 +780,7 @@ export async function sendMessage(
                         eventType: 'timeout',
                         assistantMessageId,
                         assistantAppMessageId,
-                        contentBlocks: buildOrderedContentBlocks(orderedItems, textBuffer),
+                        contentBlocks: buildOrderedContentBlocks(orderedItems, flatstr(textBuffer)),
                       }),
                     );
 
@@ -833,7 +840,7 @@ export async function sendMessage(
                             eventType: 'chunk',
                             assistantMessageId,
                             assistantAppMessageId,
-                            contentBlocks: buildOrderedContentBlocks(orderedItems, textBuffer),
+                            contentBlocks: buildOrderedContentBlocks(orderedItems, flatstr(textBuffer)),
                             chunk: data.data,
                             streamId: data.streamId,
                           }),
@@ -921,7 +928,7 @@ export async function sendMessage(
                             eventType: 'content-blocks',
                             assistantMessageId,
                             assistantAppMessageId,
-                            contentBlocks: buildOrderedContentBlocks(orderedItems, textBuffer),
+                            contentBlocks: buildOrderedContentBlocks(orderedItems, flatstr(textBuffer)),
                             rawContentBlocks: data.data,
                             streamId: data.streamId,
                           }),

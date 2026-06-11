@@ -856,10 +856,12 @@ describe('InstructionService', () => {
     it('should invalidate cache for specific agent type', async () => {
       // Load rules
       await service.getSpecializationRules('debug', workspacePath);
+      await service.buildSystemPrompt({ agentType: 'debug', workspacePath });
 
       // Verify cached
       const stats1 = service.getStats();
       expect(stats1.size).toBeGreaterThan(0);
+      expect((service as any).systemPromptCache.size).toBeGreaterThan(0);
 
       // Invalidate
       service.invalidate('debug', workspacePath);
@@ -867,6 +869,7 @@ describe('InstructionService', () => {
       // Cache should be smaller
       const stats2 = service.getStats();
       expect(stats2.size).toBeLessThan(stats1.size);
+      expect((service as any).systemPromptCache.size).toBe(0);
     });
 
     it('should clear entire cache', async () => {
@@ -874,10 +877,12 @@ describe('InstructionService', () => {
       await service.getSpecializationRules('debug');
       await service.getSpecializationRules('workspace');
       await service.getSpecializationRules('task-loop');
+      await service.buildSystemPrompt({ agentType: 'debug', workspacePath });
 
       // Verify cached
       const stats1 = service.getStats();
       expect(stats1.size).toBeGreaterThan(0);
+      expect((service as any).systemPromptCache.size).toBeGreaterThan(0);
 
       // Clear cache
       service.clearCache();
@@ -885,6 +890,7 @@ describe('InstructionService', () => {
       // Cache should be empty
       const stats2 = service.getStats();
       expect(stats2.size).toBe(0);
+      expect((service as any).systemPromptCache.size).toBe(0);
     });
 
     it('should track cache hits', async () => {
@@ -922,14 +928,44 @@ describe('InstructionService', () => {
       expect(stats.watcherCount).toBeGreaterThanOrEqual(0);
     });
 
+    it('should clear full prompt cache when watched workspace rules invalidate', async () => {
+      const rulesDir = path.join(workspacePath, '.augment', 'agent-rules');
+      await fs.mkdir(rulesDir, { recursive: true });
+      const rulesPath = path.join(rulesDir, 'debug.md');
+      await fs.writeFile(rulesPath, '# Rules');
+
+      let invalidateWatchedFile: (() => void) | undefined;
+      const watchFileSpy = vi
+        .spyOn(service as any, 'watchFile')
+        .mockImplementation((_filePath: string, onInvalidate: () => void) => {
+          invalidateWatchedFile = onInvalidate;
+        });
+
+      try {
+        await service.getSpecializationRules('debug', workspacePath);
+        await service.buildSystemPrompt({ agentType: 'debug', workspacePath });
+        expect((service as any).systemPromptCache.size).toBeGreaterThan(0);
+        expect(invalidateWatchedFile).toBeDefined();
+
+        invalidateWatchedFile?.();
+
+        expect((service as any).systemPromptCache.size).toBe(0);
+      } finally {
+        watchFileSpy.mockRestore();
+      }
+    });
+
     it('should clean up watchers on destroy', async () => {
       // Create workspace rules file
       const rulesDir = path.join(workspacePath, '.augment', 'agent-rules');
       await fs.mkdir(rulesDir, { recursive: true });
-      await fs.writeFile(path.join(rulesDir, 'debug.md'), '# Rules');
+      const rulesPath = path.join(rulesDir, 'debug.md');
+      await fs.writeFile(rulesPath, '# Rules');
 
       // Load rules (should create watcher)
       await service.getSpecializationRules('debug', workspacePath);
+      await service.buildSystemPrompt({ agentType: 'debug', workspacePath });
+      expect((service as any).systemPromptCache.size).toBeGreaterThan(0);
 
       // Destroy service
       service.destroy();
@@ -940,6 +976,7 @@ describe('InstructionService', () => {
 
       // Cache should also be cleared
       expect(stats2.size).toBe(0);
+      expect((service as any).systemPromptCache.size).toBe(0);
     });
   });
 

@@ -1,13 +1,9 @@
 import type {
   CreateWorkspaceRequest,
-  TaskStatus,
   Workspace,
 } from "$shared/types";
 import { WorkspaceStatusEnum } from "$shared/types";
-import {
-  EXCLUDED_STATUSES,
-  IN_PROGRESS_STATUSES,
-} from "$shared/utils/task-stats";
+import { shallowEqual } from "fast-equals";
 import {
   openTerminalOverlay,
   toggleTerminalOverlay,
@@ -41,22 +37,9 @@ export type WorkspaceBackgroundEnrichmentEvent = {
       | "prNumber"
       | "prUrl"
       | "pullRequests"
-      | "diffSummary"
       | "agentSummary"
-      | "taskStats"
-      | "gitSummary"
     >
   >;
-};
-
-export type OptimisticTaskStatusPayload = {
-  workspaceId?: string;
-  previousStatus?: TaskStatus;
-  newStatus?: TaskStatus;
-  data?: {
-    previousStatus?: TaskStatus;
-    newStatus?: TaskStatus;
-  };
 };
 
 export interface WorkspaceRecencyState {
@@ -137,10 +120,6 @@ export const clearPendingCreation = createAction<[wsId: string]>(
   "workspace/clearPendingCreation"
 );
 
-export const applyOptimisticTaskStatusUpdate = createAction<
-  [payload: OptimisticTaskStatusPayload]
->("workspace/applyOptimisticTaskStatusUpdate");
-
 export const resetWorkspaceState = createAction("workspace/resetWorkspaceState");
 
 /** Store a full workspace entity by ID. */
@@ -152,6 +131,11 @@ export const setWorkspaceEntity = createAction<[workspace: Workspace]>(
 export const updateWorkspaceEntity = createAction<
   [wsId: string, changes: Partial<Workspace>]
 >("workspace/updateWorkspaceEntity");
+
+/** Apply queued workspace entity update actions in order. */
+export const bulkUpdateWorkspaceEntities = createAction<
+  [actions: ReturnType<typeof updateWorkspaceEntity>[]]
+>("workspace/bulkUpdateWorkspaceEntities");
 
 /** Remove a workspace entity by ID. */
 export const removeWorkspaceEntity = createAction<[wsId: string]>(
@@ -220,10 +204,7 @@ function mergeWorkspaceEnrichment(existing: Workspace | undefined, incoming: Wor
 
   return {
     ...normalized,
-    taskStats: normalized.taskStats ?? existing.taskStats,
-    diffSummary: normalized.diffSummary ?? existing.diffSummary,
     agentSummary: normalized.agentSummary ?? existing.agentSummary,
-    gitSummary: normalized.gitSummary ?? existing.gitSummary,
     activePullRequest: normalized.activePullRequest ?? existing.activePullRequest,
   };
 }
@@ -402,23 +383,34 @@ export const workspaceReducer = createReducer<WorkspaceState>(initialState)
       workspaces: existing ? upsertItem(state.workspaces, merged) : addItem(state.workspaces, merged),
     };
   })
-  .with(updateWorkspaceEntity, (state, { payload: [wsId, changes] }) => {
-    const existing = getWorkspaceById(state.workspaces, wsId);
-    if (!existing) return state;
+  .with(bulkUpdateWorkspaceEntities, (state, { payload: [actions] }) => {
+    let workspaces = state.workspaces;
 
-    let updated = mergeLocalWorkspaceUpdate(existing, changes);
-    if (state.pendingArchives[wsId] && changes.status === undefined) {
-      updated = {
-        ...updated,
-        status: WorkspaceStatusEnum.Archived,
-        archived: true,
-        archivedAt: updated.archivedAt ?? existing.archivedAt,
-      };
+    for (const action of actions) {
+      const [wsId, changes] = action.payload;
+      const existing = getWorkspaceById(workspaces, wsId);
+      if (!existing) continue;
+
+      let updated = mergeLocalWorkspaceUpdate(existing, changes);
+      if (state.pendingArchives[wsId] && changes.status === undefined) {
+        updated = {
+          ...updated,
+          status: WorkspaceStatusEnum.Archived,
+          archived: true,
+          archivedAt: updated.archivedAt ?? existing.archivedAt,
+        };
+      }
+
+      if (shallowEqual(existing, updated)) continue;
+
+      workspaces = updateItem(workspaces, updated);
     }
+
+    if (workspaces === state.workspaces) return state;
 
     return {
       ...state,
-      workspaces: updateItem(state.workspaces, updated),
+      workspaces,
     };
   })
   .with(removeWorkspaceEntity, (state, { payload: [wsId] }) => {
@@ -427,52 +419,6 @@ export const workspaceReducer = createReducer<WorkspaceState>(initialState)
       ...state,
       activeWorkspaceId: state.activeWorkspaceId === wsId ? null : state.activeWorkspaceId,
       workspaces: removeItem(state.workspaces, wsId as Workspace["id"]),
-    };
-  })
-  .with(applyOptimisticTaskStatusUpdate, (state, { payload: [payload] }) => {
-    const workspaceId = payload.workspaceId;
-    const previousStatus = payload.previousStatus || payload.data?.previousStatus;
-    const newStatus = payload.newStatus || payload.data?.newStatus;
-
-    if (!workspaceId || !previousStatus || !newStatus) {
-      return state;
-    }
-
-    const workspace = getWorkspaceById(state.workspaces, workspaceId);
-    const taskStats = workspace?.taskStats;
-    if (!workspace || !taskStats) {
-      return state;
-    }
-
-    const wasExcluded = EXCLUDED_STATUSES.has(previousStatus);
-    const isExcluded = EXCLUDED_STATUSES.has(newStatus);
-    const wasInProgress = IN_PROGRESS_STATUSES.has(previousStatus);
-    const isInProgress = IN_PROGRESS_STATUSES.has(newStatus);
-    const wasCompleted = previousStatus === "complete";
-    const isCompleted = newStatus === "complete";
-
-    let total = taskStats.total;
-    let completed = taskStats.completed;
-    let inProgress = taskStats.inProgress;
-
-    if (!wasExcluded && isExcluded) total = Math.max(0, total - 1);
-    if (wasExcluded && !isExcluded) total += 1;
-    if (wasCompleted && !isCompleted) completed = Math.max(0, completed - 1);
-    if (!wasCompleted && isCompleted) completed += 1;
-    if (wasInProgress && !isInProgress) inProgress = Math.max(0, inProgress - 1);
-    if (!wasInProgress && isInProgress) inProgress += 1;
-
-    return {
-      ...state,
-      workspaces: updateItem(state.workspaces, {
-        ...workspace,
-        taskStats: {
-          ...taskStats,
-          total,
-          completed,
-          inProgress,
-        },
-      }),
     };
   })
   .with(recordWorkspaceView, (state, { payload: [wsId, viewedAt] }) => {
