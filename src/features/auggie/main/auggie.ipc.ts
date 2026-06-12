@@ -38,6 +38,7 @@ import {
   getEnhancedPath,
   saveAuggiePath,
 } from './auggie-path';
+import { createProviderModelCache } from '../../../main/utils/provider-model-cache';
 
 // Re-export path helpers for backwards compatibility with existing consumers.
 export { findAuggiePathAsync, getEnhancedPath };
@@ -67,9 +68,19 @@ type AuggieModel = {
   priority?: number;
 };
 
-let cachedAuggieModels: AuggieModel[] | null = null;
-let auggieCacheTimestamp = 0;
-const AUGGIE_MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const auggieModelCache = createProviderModelCache<AuggieModel>({
+  providerId: 'auggie',
+  // Must never throw: failures are logged inside fetchAuggieModels and
+  // surfaced as null so callers can distinguish "unavailable" from "empty".
+  fetch: async () => {
+    try {
+      return await fetchAuggieModels();
+    } catch (error) {
+      logger.error('Auggie model fetch failed', { error: (error as Error).message });
+      return null;
+    }
+  },
+});
 
 /**
  * Return the cached auggie model values (bare model IDs) if the cache is
@@ -92,18 +103,11 @@ export async function getCachedAuggieModels(): Promise<string[] | null> {
  * Returns `null` on failure; the cache is only populated on success.
  */
 async function getAuggieModelsWithCache(): Promise<AuggieModel[] | null> {
-  const now = Date.now();
-  if (cachedAuggieModels && now - auggieCacheTimestamp < AUGGIE_MODEL_CACHE_TTL_MS) {
-    logger.debug('Returning cached auggie models', { count: cachedAuggieModels.length });
-    return cachedAuggieModels;
-  }
+  return auggieModelCache.get();
+}
 
-  const fresh = await fetchAuggieModels();
-  if (fresh && fresh.length > 0) {
-    cachedAuggieModels = fresh;
-    auggieCacheTimestamp = Date.now();
-  }
-  return fresh;
+export async function hydrateAuggieModelCacheFromDisk(): Promise<void> {
+  await auggieModelCache.hydrateFromDisk();
 }
 
 /**
@@ -1745,17 +1749,17 @@ export function setupAuggieIPC() {
   ipcMain.handle(AUGGIE_CHANNELS.GET_MODELS, async () => {
     try {
       logger.info('Getting models from auggie CLI');
+      const models = await getAuggieModelsWithCache();
+      if (models && models.length > 0) {
+        logger.info(`Successfully retrieved ${models.length} models from auggie CLI`);
+        return { success: true, data: models };
+      }
       const auggiePath = await findAuggiePathAsync();
       if (!auggiePath) {
         return {
           success: false,
           error: 'Auggie CLI not found. Please install auggie first.',
         };
-      }
-      const models = await getAuggieModelsWithCache();
-      if (models && models.length > 0) {
-        logger.info(`Successfully retrieved ${models.length} models from auggie CLI`);
-        return { success: true, data: models };
       }
       if (models && models.length === 0) {
         logger.warn('Auggie model list returned no parseable models');

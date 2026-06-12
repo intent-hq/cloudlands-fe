@@ -367,6 +367,51 @@ describe('ModelPicker multi-provider mode', () => {
     expect(getModelsForProvider).toHaveBeenCalledWith('claude-code');
   });
 
+  it('renders the active provider models while another provider is still loading', async () => {
+    let resolveCodex: ((result: { models: { value: string; label: string; description: string }[] }) => void) | undefined;
+    vi.mocked(getModelsForProviderForLoadingState).mockImplementation((providerId) => {
+      if (providerId === 'auggie') {
+        return Promise.resolve({
+          models: [{ value: 'gpt5.4', label: 'GPT 5.4', description: 'Smart model' }],
+        });
+      }
+
+      if (providerId === 'codex') {
+        return new Promise((resolve) => {
+          resolveCodex = resolve;
+        });
+      }
+
+      return Promise.resolve({ models: [] });
+    });
+    enabledProviderIds$.set(['auggie', 'codex']);
+    activeProviderId$.set('auggie');
+
+    render(ModelPicker, {
+      props: {
+        selectedModel: 'gpt5.4',
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie');
+      expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('codex');
+    });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    expect(await screen.findByRole('option', { name: /GPT 5\.4/ })).toBeTruthy();
+    expect(screen.getByText('Loading OpenAI Codex models…')).toBeTruthy();
+    expect(screen.queryByText('No models available')).toBeNull();
+
+    resolveCodex?.({
+      models: [{ value: 'codex:gpt-5-codex', label: 'GPT-5 Codex', description: 'Smart' }],
+    });
+
+    expect(await screen.findByRole('option', { name: /GPT-5 Codex/ })).toBeTruthy();
+  });
+
   it('retries once per current provider when silent fallback sees unavailable models', async () => {
     const modelsByProvider = {
       auggie: [] as { value: string; label: string; description: string }[],

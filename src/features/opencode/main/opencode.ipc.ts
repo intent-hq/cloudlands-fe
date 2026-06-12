@@ -10,6 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { OPENCODE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
+import { createProviderModelCache } from '../../../main/utils/provider-model-cache';
 
 const logger = new Logger('OpenCodeIPC');
 
@@ -35,9 +36,10 @@ const OPENCODE_PATHS = [
 
 // Model list cache — avoids re-shelling to `opencode models` on every call.
 type OpencodeModel = { value: string; label: string; provider?: string };
-let cachedOpencodeModels: OpencodeModel[] | null = null;
-let opencodeModelCacheTimestamp = 0;
-const OPENCODE_MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const opencodeModelCache = createProviderModelCache<OpencodeModel>({
+  providerId: 'opencode',
+  fetch: () => fetchOpencodeModels(),
+});
 
 // Optional hidden provider prefixes (e.g., "bedrock", "meta") to filter noisy entries.
 // Controlled via OPENCODE_HIDDEN_PROVIDERS env var; by default, show everything.
@@ -58,11 +60,14 @@ function getHiddenProviders(): Set<string> {
  * empty results (no credentialed providers) cache as `[]`.
  */
 async function getOpencodeModelsWithCache(): Promise<OpencodeModel[] | null> {
-  const now = Date.now();
-  if (cachedOpencodeModels && now - opencodeModelCacheTimestamp < OPENCODE_MODEL_CACHE_TTL_MS) {
-    logger.debug('Returning cached opencode models', { count: cachedOpencodeModels.length });
-    return cachedOpencodeModels;
-  }
+  return await opencodeModelCache.get();
+}
+
+export async function hydrateOpencodeModelCacheFromDisk(): Promise<void> {
+  await opencodeModelCache.hydrateFromDisk();
+}
+
+async function fetchOpencodeModels(): Promise<OpencodeModel[] | null> {
   try {
     const opencodePath = await findOpencodePath();
     logger.info('Getting models from opencode CLI', { opencodePath });
@@ -95,8 +100,6 @@ async function getOpencodeModelsWithCache(): Promise<OpencodeModel[] | null> {
       }
     }
 
-    cachedOpencodeModels = models;
-    opencodeModelCacheTimestamp = Date.now();
     return models;
   } catch (error) {
     logger.warn('Could not get models from opencode CLI', { error: (error as Error).message });
@@ -109,7 +112,7 @@ async function getOpencodeModelsWithCache(): Promise<OpencodeModel[] | null> {
  *
  * Returns bare model value strings (e.g. `openai/gpt-5.2`,
  * `anthropic/claude-sonnet-4`) or `null` when the live list is unavailable.
- * Shares the module-level 5-minute TTL cache with the IPC handler.
+ * Shares the central 5-minute TTL provider model cache with the IPC handler.
  */
 export async function getCachedOpencodeModels(): Promise<string[] | null> {
   const models = await getOpencodeModelsWithCache();

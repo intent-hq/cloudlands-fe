@@ -22,6 +22,68 @@ import { Logger } from '../../shared/logger';
 
 const logger = new Logger('ModelPoolDispatcher');
 
+const PREFETCH_PROVIDER_IDS = ['auggie', 'claude-code', 'codex', 'opencode'] as const;
+
+export function prefetchProviderModelCaches(providerIds: readonly string[] = PREFETCH_PROVIDER_IDS): void {
+  for (const providerId of providerIds) {
+    void hydrateProviderModelCacheFromDisk(providerId).then(() => {
+      logger.debug('Provider model cache prefetch completed', {
+        providerId,
+      });
+    });
+  }
+}
+
+/**
+ * Passively hydrate a provider's in-memory model cache from persisted disk data.
+ *
+ * Unlike `getCachedModelsForProvider`, this never performs live CLI/ACP probes.
+ * It is safe to run at startup for providers the user has never enabled: if no
+ * persisted cache file exists, the provider helper is a pure no-op.
+ */
+export async function hydrateProviderModelCacheFromDisk(providerId: string): Promise<void> {
+  try {
+    switch (providerId) {
+      case 'auggie': {
+        const { hydrateAuggieModelCacheFromDisk } = await import(
+          '../../features/auggie/main/auggie.ipc'
+        );
+        await hydrateAuggieModelCacheFromDisk();
+        return;
+      }
+      case 'claude-code': {
+        const { hydrateClaudeCodeModelCacheFromDisk } = await import(
+          '../../features/claude-code/main/claude-code.ipc'
+        );
+        await hydrateClaudeCodeModelCacheFromDisk();
+        return;
+      }
+      case 'codex': {
+        const { hydrateCodexModelCacheFromDisk } = await import(
+          '../../features/codex/main/codex.ipc'
+        );
+        await hydrateCodexModelCacheFromDisk();
+        return;
+      }
+      case 'opencode': {
+        const { hydrateOpencodeModelCacheFromDisk } = await import(
+          '../../features/opencode/main/opencode.ipc'
+        );
+        await hydrateOpencodeModelCacheFromDisk();
+        return;
+      }
+      default:
+        // Unknown / unsupported provider — cortex, mock, or typo. Nothing to hydrate.
+        return;
+    }
+  } catch (error) {
+    logger.debug('hydrateProviderModelCacheFromDisk dispatch failed', {
+      providerId,
+      error: (error as Error).message,
+    });
+  }
+}
+
 /**
  * Look up the cached (or freshly fetched) live model IDs for a provider.
  *

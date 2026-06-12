@@ -11,13 +11,9 @@ import { CLAUDE_CODE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { killChildProcessTree } from '../../../shared/main/process-tree-kill';
 import { resolveClaudeCodeCommand } from './claude-code-resolver';
+import { createProviderModelCache } from '../../../main/utils/provider-model-cache';
 
 const logger = new Logger('ClaudeCodeIPC');
-
-// Cache for model listing results to avoid spawning a new process on every call
-let cachedModels: ClaudeCodeModel[] | null = null;
-let cacheTimestamp = 0;
-const MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 const DEFAULT_MODELS = [
   {
@@ -62,14 +58,31 @@ function parseModelsFromSessionUpdate(params: any): ClaudeCodeModel[] {
   return models;
 }
 
-async function listClaudeCodeModelsViaAcp(): Promise<ClaudeCodeModel[]> {
-  // Return cached results if still valid to avoid spawning a new process
-  const now = Date.now();
-  if (cachedModels && now - cacheTimestamp < MODEL_CACHE_TTL_MS) {
-    logger.debug('Returning cached Claude Code models', { count: cachedModels.length });
-    return cachedModels;
-  }
+// Cache for model listing results to avoid spawning a new process on every call
+const claudeCodeModelCache = createProviderModelCache<ClaudeCodeModel>({
+  providerId: 'claude-code',
+  // Must never throw: failures resolve to null so the cache only stores
+  // successful, non-empty probe results.
+  fetch: async () => {
+    try {
+      const models = await fetchClaudeCodeModelsViaAcp();
+      return models.length > 0 ? models : null;
+    } catch (error) {
+      logger.debug('Claude Code model fetch failed', { error: (error as Error).message });
+      return null;
+    }
+  },
+});
 
+async function listClaudeCodeModelsViaAcp(): Promise<ClaudeCodeModel[]> {
+  return (await claudeCodeModelCache.get()) ?? [];
+}
+
+export async function hydrateClaudeCodeModelCacheFromDisk(): Promise<void> {
+  await claudeCodeModelCache.hydrateFromDisk();
+}
+
+async function fetchClaudeCodeModelsViaAcp(): Promise<ClaudeCodeModel[]> {
   const resolved = await resolveClaudeCodeCommand();
   if (!resolved) return [];
 
@@ -102,11 +115,6 @@ async function listClaudeCodeModelsViaAcp(): Promise<ClaudeCodeModel[]> {
       // claude-agent-acp adapter runs as a grandchild and is left orphaned.
       // This was causing massive memory leaks (80GB+) from accumulated orphan processes.
       killChildProcessTree(child);
-      // Cache successful results to avoid spawning processes on every call
-      if (models.length > 0) {
-        cachedModels = models;
-        cacheTimestamp = Date.now();
-      }
       resolve(models);
     };
 
@@ -268,14 +276,14 @@ export function setupClaudeCodeIPC() {
   // Get available models for Claude Code
   ipcMain.handle(CLAUDE_CODE_CHANNELS.GET_MODELS, async () => {
     try {
-      const resolved = await resolveClaudeCodeCommand();
-      if (!resolved) {
-        return { success: true, data: [], warning: 'Claude Code not available' };
-      }
-
       const models = await listClaudeCodeModelsViaAcp();
       if (models.length > 0) {
         return { success: true, data: models };
+      }
+
+      const resolved = await resolveClaudeCodeCommand();
+      if (!resolved) {
+        return { success: true, data: [], warning: 'Claude Code not available' };
       }
 
       logger.info('Falling back to Claude Code default model list', {
@@ -307,12 +315,10 @@ export function setupClaudeCodeIPC() {
  * check overrides against the provider's real model set without going through
  * the IPC layer.
  *
- * Shares the module-level 5-minute TTL cache with the IPC handler.
+ * Shares the central provider model cache (5-minute TTL) with the IPC handler.
  */
 export async function getCachedClaudeCodeModels(): Promise<string[] | null> {
   try {
-    const resolved = await resolveClaudeCodeCommand();
-    if (!resolved) return null;
     const models = await listClaudeCodeModelsViaAcp();
     if (models.length === 0) return null;
     // Merge the curated DEFAULT_MODELS aliases (notably `default`) into the

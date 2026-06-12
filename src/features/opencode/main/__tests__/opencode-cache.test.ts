@@ -7,7 +7,7 @@
  * tests mock `child_process.spawn` directly so we can count invocations and
  * verify that:
  *   1. A second call within the TTL reads from the cache (no new spawn).
- *   2. A call after the TTL expires triggers a fresh spawn.
+ *   2. A call after the TTL expires returns stale data and refreshes in the background.
  *   3. A hard failure (exit 1) does NOT get cached (next call retries).
  *
  * The opencode IPC module owns the cache at module scope, so `vi.resetModules`
@@ -118,7 +118,7 @@ describe('opencode model cache', () => {
     expect(mockSpawn).toHaveBeenCalledTimes(1);
   });
 
-  it('re-fetches after the TTL window expires', async () => {
+  it('returns stale data and refreshes in the background after the TTL window expires', async () => {
     const { getCachedOpencodeModels } = await loadFreshIpc();
     queueSpawnSuccess('openai/gpt-5.2\n');
     const before = await getCachedOpencodeModels();
@@ -128,8 +128,11 @@ describe('opencode model cache', () => {
     Date.now = () => fixedLater;
 
     queueSpawnSuccess('openai/gpt-5.3\n');
+    const stale = await getCachedOpencodeModels();
+    await new Promise((resolve) => setImmediate(resolve));
     const refreshed = await getCachedOpencodeModels();
 
+    expect(stale).toEqual(['openai/gpt-5.2']);
     expect(refreshed).toEqual(['openai/gpt-5.3']);
     expect(mockSpawn).toHaveBeenCalledTimes(2);
   });

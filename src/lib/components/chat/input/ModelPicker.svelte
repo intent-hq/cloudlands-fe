@@ -12,7 +12,6 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import {
   Dropdown,
-  type DropdownGroup,
   type DropdownGroupProps,
   type DropdownItemProps,
   type DropdownOption,
@@ -57,7 +56,6 @@
 } from '$store/renderer/slices/model/model-utils';
 
   import {
-  ACP_PROVIDERS,
   getDefaultProviderId,
   getProviderConfig,
   parseCompoundModelId,
@@ -69,6 +67,7 @@
   formatProviderLoadError,
   type ProviderLoadError,
 } from './model-picker-provider-errors';
+  import { buildGroupedModelOptions } from './model-picker-groups';
   import {
   isUserProviderSettled,
   toDropdownOptions,
@@ -191,9 +190,23 @@
 
   let allProviderModels = $state<Record<string, DropdownOption[]>>({});
   let allProviderErrors = $state<Record<string, ProviderLoadError>>({});
+  let allProviderLoading = $state<Record<string, boolean>>({});
   let fetchGeneration = 0;
   let allProvidersLoaded = $state(false);
   let lastFetchedProviderIds = '';
+
+  function hasProviderResult(providerId: string): boolean {
+    return Object.prototype.hasOwnProperty.call(allProviderModels, providerId) || Boolean(allProviderErrors[providerId]);
+  }
+
+  function setProviderLoading(providerId: string, loading: boolean) {
+    const nextLoading = {
+      ...allProviderLoading,
+      [providerId]: loading,
+    };
+    allProviderLoading = nextLoading;
+    allProvidersLoaded = Object.values(nextLoading).every((isLoading) => !isLoading);
+  }
 
   async function fetchAllProviderModels(enabledIds: string[]) {
     const key = enabledIds.slice().sort().join(',');
@@ -204,43 +217,46 @@
     const currentGen = ++fetchGeneration;
 
     if (enabledIds.length === 0) {
+      allProviderModels = {};
       allProviderErrors = {};
+      allProviderLoading = {};
       allProvidersLoaded = true;
       return;
     }
 
-    const results = await Promise.allSettled(
-      enabledIds.map(async (pid) => {
-        const normalizedId = getProviderConfig(pid).id;
-        const result = await getModelsForProviderForLoadingState(normalizedId);
-        return [normalizedId, toDropdownOptions(result.models), result.warning] as const;
+    const providerIds = enabledIds.map((pid) => getProviderConfig(pid).id);
+    allProviderModels = Object.fromEntries(
+      Object.entries(allProviderModels).filter(([providerId]) => providerIds.includes(providerId)),
+    );
+    allProviderErrors = {};
+    allProviderLoading = Object.fromEntries(providerIds.map((providerId) => [providerId, true]));
+
+    await Promise.allSettled(
+      providerIds.map(async (providerId) => {
+        try {
+          const result = await getModelsForProviderForLoadingState(providerId);
+          if (fetchGeneration !== currentGen) return;
+          const { [providerId]: _clearedError, ...remainingErrors } = allProviderErrors;
+          allProviderErrors = remainingErrors;
+          allProviderModels = {
+            ...allProviderModels,
+            [providerId]: toDropdownOptions(result.models),
+          };
+          setProviderWarningState(providerId, result.warning);
+        } catch (err) {
+          if (fetchGeneration !== currentGen) return;
+          const providerError = formatProviderLoadError(providerId, err);
+          allProviderErrors = {
+            ...allProviderErrors,
+            [providerId]: providerError,
+          };
+          setProviderErrorState(providerId, providerError.displayText);
+        } finally {
+          if (fetchGeneration !== currentGen) return;
+          setProviderLoading(providerId, false);
+        }
       }),
     );
-
-    if (fetchGeneration !== currentGen) return;
-
-    const models: Record<string, DropdownOption[]> = {};
-    const errors: Record<string, ProviderLoadError> = {};
-    for (const [index, result] of results.entries()) {
-      if (result.status === 'fulfilled') {
-        const [pid, options, warning] = result.value;
-        models[pid] = options;
-        setProviderWarningState(pid, warning);
-      } else {
-        const providerId = getProviderConfig(enabledIds[index]).id;
-        const cachedModels = allProviderModels[providerId];
-        if (cachedModels && cachedModels.length > 0) {
-          models[providerId] = cachedModels;
-        }
-        const providerError = formatProviderLoadError(providerId, result.reason);
-        errors[providerId] = providerError;
-        setProviderErrorState(providerId, providerError.displayText);
-      }
-    }
-
-    allProviderModels = models;
-    allProviderErrors = errors;
-    allProvidersLoaded = true;
   }
 
   $effect(() => {
@@ -287,7 +303,10 @@
       : (agentProviderModels ?? $availableModels$),
   );
   const isLoadingModels = $derived(
-    isAgentProviderOverride ? agentProviderLoading : $isLoadingModels$ || !allProvidersLoaded,
+    isAgentProviderOverride
+      ? agentProviderLoading
+      : !hasProviderResult(effectiveProviderId) &&
+          ($isLoadingModels$ || allProviderLoading[effectiveProviderId] || !allProvidersLoaded),
   );
   const loadError = $derived(isAgentProviderOverride ? agentProviderError : $loadError$);
 
@@ -636,62 +655,19 @@
     };
   });
 
-  const groupedModelOptions = $derived.by<DropdownGroup[]>(() => {
-    const groups: DropdownGroup[] = [];
-
-    if (showDefaultOption) {
-      groups.push({
-        key: 'default',
-        label: '',
-        options: [useDefaultOption],
-      });
-    }
-
-    if (isAgentProviderOverride) {
-      const providerConfig = getProviderConfig(effectiveProviderId);
-      if (availableModels.length > 0) {
-        groups.push({
-          key: effectiveProviderId,
-          label: providerConfig.displayName,
-          options: toDropdownOptions(availableModels),
-        });
-      }
-    } else if (allProvidersLoaded) {
-      // Show all enabled providers only after ALL have loaded
-      // (prevents flash where partial results cause wrong highlight)
-      // Use ACP_PROVIDERS key order for consistent ordering
-      const providerOrder = Object.keys(ACP_PROVIDERS);
-      for (const pid of providerOrder) {
-        const models = allProviderModels[pid];
-        if (models && models.length > 0) {
-          const providerConfig = getProviderConfig(pid);
-          groups.push({
-            key: pid,
-            label: providerConfig.displayName,
-            options: models,
-          });
-        } else if (hasLoadedModelOptions && allProviderErrors[pid]) {
-          const error = allProviderErrors[pid];
-          groups.push({
-            key: pid,
-            label: error.providerName,
-            options: [
-              {
-                value: `provider-error:${pid}`,
-                label: error.displayText,
-                description: error.hint,
-                disabled: true,
-                class: 'cursor-default disabled:opacity-100',
-                data: { providerLoadError: error },
-              },
-            ],
-          });
-        }
-      }
-    }
-
-    return groups;
-  });
+  const groupedModelOptions = $derived.by(() =>
+    buildGroupedModelOptions({
+      showDefaultOption,
+      useDefaultOption,
+      isAgentProviderOverride,
+      effectiveProviderId,
+      availableModels,
+      enabledProviderIds: $enabledProviderIds$,
+      allProviderModels,
+      allProviderLoading,
+      allProviderErrors,
+    }),
+  );
 
   // The value to bind to the dropdown (convert undefined to USE_DEFAULT_VALUE)
   const dropdownValue = $derived(localModel ?? USE_DEFAULT_VALUE);
@@ -1107,9 +1083,17 @@
     {#snippet item({ option, selected }: DropdownItemProps)}
       {@const effortLevels = option.data?.effortLevels as string[] | undefined}
       {@const providerLoadError = option.data?.providerLoadError as ProviderLoadError | undefined}
+      {@const providerLoading = option.data?.providerLoading as boolean | undefined}
 
       <div class="flex gap-2 w-full min-w-0">
-        {#if providerLoadError}
+        {#if providerLoading}
+          <div class="flex items-center gap-2 text-muted-foreground text-sm">
+            <div
+              class="size-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin"
+            ></div>
+            <span>{option.label}</span>
+          </div>
+        {:else if providerLoadError}
           <ModelProviderErrorItem
             providerId={providerLoadError.providerId}
             providerLabel={providerLoadError.providerName}

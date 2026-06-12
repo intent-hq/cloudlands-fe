@@ -29,6 +29,7 @@ import {
   getManagedCodexAcpStatus,
   type ManagedCodexAcpStatus,
 } from './codex-acp-manager';
+import { createProviderModelCache } from '../../../main/utils/provider-model-cache';
 
 const logger = new Logger('CodexIPC');
 
@@ -53,9 +54,28 @@ type CodexManagedInstallStatusPayload = {
   error?: string;
   usingFallback?: boolean;
 };
-let cachedModels: CodexModel[] | null = null;
-let cacheTimestamp = 0;
-const MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+/**
+ * Outcome of the most recent live probe, kept so the cache-miss path can
+ * surface `{ source, attemptedSources }` alongside the fetched models.
+ */
+let lastProbeOutcome: CodexModelListProbeResult = {
+  models: [],
+  source: null,
+  attemptedSources: [],
+};
+
+const codexModelCache = createProviderModelCache<CodexModel>({
+  providerId: 'codex',
+  fetch: async () => {
+    try {
+      lastProbeOutcome = await fetchCodexModelsDynamically();
+    } catch (error) {
+      logger.warn('Could not get models for Codex', { error: (error as Error).message });
+      lastProbeOutcome = { models: [], source: null, attemptedSources: [] };
+    }
+    return lastProbeOutcome.models.length > 0 ? lastProbeOutcome.models : null;
+  },
+});
 
 /** Base models that get expanded into reasoning-effort variants */
 const EFFORT_VARIANT_MODELS = new Set(['gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.1-codex-max']);
@@ -434,13 +454,24 @@ async function probeCodexModelsViaAppServer(
  * Dynamically fetch available models from codex-acp.
  */
 async function listCodexModelsDynamically(): Promise<CodexModelListProbeResult> {
-  // Return cached results if still valid
-  const now = Date.now();
-  if (cachedModels && now - cacheTimestamp < MODEL_CACHE_TTL_MS) {
-    logger.debug('Returning cached Codex models', { count: cachedModels.length });
-    return { models: cachedModels, source: null, attemptedSources: [] };
+  await codexModelCache.hydrateFromDisk();
+  const cached = codexModelCache.peek();
+  if (cached) {
+    // Returns the cached list and kicks off a background refresh when stale.
+    void codexModelCache.get();
+    logger.debug('Returning cached Codex models', { count: cached.length });
+    return { models: cached, source: null, attemptedSources: [] };
   }
 
+  await codexModelCache.get();
+  return lastProbeOutcome;
+}
+
+export async function hydrateCodexModelCacheFromDisk(): Promise<void> {
+  await codexModelCache.hydrateFromDisk();
+}
+
+async function fetchCodexModelsDynamically(): Promise<CodexModelListProbeResult> {
   const startingStatus = getManagedCodexAcpStatus();
   if (startingStatus.state !== 'ready' && startingStatus.state !== 'unsupported') {
     publishManagedInstallProgress(
@@ -474,8 +505,6 @@ async function listCodexModelsDynamically(): Promise<CodexModelListProbeResult> 
         : await probeCodexModelsViaAcp(candidate);
 
     if (models.length > 0) {
-      cachedModels = models;
-      cacheTimestamp = Date.now();
       logger.info('Using dynamic Codex model list', { source, count: models.length });
       publishManagedInstallStatus({ downloadProgress: 1, usingFallback: false });
       return { models, source, attemptedSources };
@@ -558,7 +587,7 @@ export function setupCodexIPC() {
  * `gpt-5.3-codex/high`) as `string[]`, falling back to the static list when
  * the live ACP probe returns empty. Returns `null` only on hard failure.
  *
- * Shares the module-level 5-minute TTL cache with the IPC handler.
+ * Shares the central 5-minute TTL provider model cache with the IPC handler.
  */
 export async function getCachedCodexModels(): Promise<string[] | null> {
   try {

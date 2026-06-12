@@ -378,6 +378,7 @@ import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
 import { claimDownloadAttribution } from './download-attribution';
 import { HttpMcpBridge, setHttpMcpBridge, notifyCriticalMemoryPressure } from './http-mcp-bridge';
+import { prefetchProviderModelCaches } from './utils/model-pool';
 
 import { agentBackendHandler } from '../features/agent/main/agent-backend-handler.service';
 import { agentPersistence } from '../features/agent/main/agent-persistence';
@@ -1455,6 +1456,7 @@ app.whenReady().then(async () => {
   setupOpencodeIPC(); // Needed for opencode:get-models
   setupClaudeCodeIPC(); // Needed for claude-code:get-models
   setupCodexIPC(); // Needed for codex:get-models
+  prefetchProviderModelCaches(); // Warm persisted provider model caches without blocking startup
   setupCortexIPC(); // Needed for cortex:get-models
   setupDroidIPC(); // Needed for droid:get-models
   setupFeatureCodesIPC(); // Feature codes for gating features like Cortex
