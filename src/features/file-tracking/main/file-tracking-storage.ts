@@ -11,8 +11,12 @@ import { WorkspaceConfig } from '$shared/main/config';
 import { Logger } from '$lib/utils/logger';
 import { fsyncFile, fsyncDir, renameWithRetry } from '$shared/main/file-sync-utils';
 import { getBlob, isGitRepository } from '../../../shared/git/git-blob-storage';
+import { createCache, type Cache } from '../../../main/utils/cache';
 
 const logger = new Logger({ category: 'FileTrackingStorage' });
+
+/** Fixed key for the single-value tracked changes cache */
+const TRACKED_CHANGES_CACHE_KEY = 'tracked-changes';
 
 /**
  * Maximum per-change inline content size that will be retained in memory or persisted.
@@ -70,11 +74,11 @@ export class FileTrackingStorage {
   /** @property {number} DATA_RETENTION_DAYS - Number of days to retain data */
   private readonly DATA_RETENTION_DAYS = 7;
 
-  // Cache for tracked changes to reduce disk reads
-  /** @property {TrackedChange[] | null} trackedChangesCache - Cached tracked changes */
-  private trackedChangesCache: TrackedChange[] | null = null;
-  /** @property {number} cacheTimestamp - Timestamp when cache was last updated */
-  private cacheTimestamp = 0;
+  // Cache for tracked changes to reduce disk reads (single value under a fixed key)
+  /** @property {Cache<string, TrackedChange[]>} trackedChangesCache - Cached tracked changes */
+  private trackedChangesCache: Cache<string, TrackedChange[]> = createCache({
+    name: 'file-tracking:tracked-changes',
+  });
   /** @property {number} CACHE_TTL - Cache time-to-live for existing data in ms */
   private readonly CACHE_TTL = 5000; // 5 seconds cache TTL for existing data
   /** @property {number} CACHE_TTL_EMPTY - Cache time-to-live for non-existent files in ms */
@@ -198,8 +202,7 @@ export class FileTrackingStorage {
 
       if (recentChanges.length < changes.length) {
         await this._doSave(recentChanges);
-        this.trackedChangesCache = recentChanges;
-        this.cacheTimestamp = Date.now();
+        this.setTrackedChangesCache(recentChanges);
         logger.info('Cleaned up old tracking data', {
           workspaceId: this.workspaceId,
           removed: changes.length - recentChanges.length,
@@ -222,8 +225,7 @@ export class FileTrackingStorage {
 
     // Remove from singleton instances
     FileTrackingStorage.instances.delete(this.workspaceId);
-    this.trackedChangesCache = null;
-    this.cacheTimestamp = 0;
+    this.trackedChangesCache.dispose();
 
     logger.debug('FileTrackingStorage cleaned up', { workspaceId: this.workspaceId });
   }
@@ -253,30 +255,32 @@ export class FileTrackingStorage {
   }
 
   /**
+   * Update the tracked changes cache, using a longer TTL for empty results
+   * (e.g. non-existent files) than for actual data
+   */
+  private setTrackedChangesCache(changes: TrackedChange[]): void {
+    this.trackedChangesCache.set(TRACKED_CHANGES_CACHE_KEY, changes, {
+      ttlMs: changes.length > 0 ? this.CACHE_TTL : this.CACHE_TTL_EMPTY,
+    });
+  }
+
+  /**
    * Load tracked changes from storage
    */
   async loadTrackedChanges(): Promise<TrackedChange[]> {
     // Update last access time to prevent cleanup during active usage
     this.lastAccessTime = Date.now();
 
-    // Check cache first
-    const now = Date.now();
-
-    // Determine cache TTL based on whether we have data or not
-    const effectiveCacheTTL =
-      this.trackedChangesCache && this.trackedChangesCache.length > 0
-        ? this.CACHE_TTL
-        : this.CACHE_TTL_EMPTY;
-
-    if (this.trackedChangesCache !== null && now - this.cacheTimestamp < effectiveCacheTTL) {
+    // Check cache first (TTL is set per entry: shorter for data, longer for empty results)
+    const cached = this.trackedChangesCache.get(TRACKED_CHANGES_CACHE_KEY);
+    if (cached !== undefined) {
       // Use debug level for cache hits to reduce noise
-      if (this.trackedChangesCache.length > 0) {
+      if (cached.length > 0) {
         logger.debug('Using cached tracked changes', {
           workspaceId: this.workspaceId,
-          cacheAge: now - this.cacheTimestamp,
         });
       }
-      return this.trackedChangesCache;
+      return cached;
     }
 
     try {
@@ -287,8 +291,7 @@ export class FileTrackingStorage {
           logger.debug('No existing file tracking data found', { workspaceId: this.workspaceId });
           this.hasLoggedMissingFile = true;
         }
-        this.trackedChangesCache = [];
-        this.cacheTimestamp = now;
+        this.setTrackedChangesCache([]);
         return [];
       }
 
@@ -320,8 +323,7 @@ export class FileTrackingStorage {
           // If rename fails, just overwrite
         }
         await this._doSave([]);
-        this.trackedChangesCache = [];
-        this.cacheTimestamp = now;
+        this.setTrackedChangesCache([]);
         return [];
       }
 
@@ -354,8 +356,7 @@ export class FileTrackingStorage {
       // but content is NOT resolved here. Use resolveContent() to resolve on demand.
 
       // Update cache
-      this.trackedChangesCache = changes;
-      this.cacheTimestamp = now;
+      this.setTrackedChangesCache(changes);
 
       // Reset the flag since we now have a file
       this.hasLoggedMissingFile = false;
@@ -447,8 +448,7 @@ export class FileTrackingStorage {
       await this.saveLock;
       // Invalidate cache AFTER save completes to prevent race conditions
       // This ensures that any concurrent load operations will wait for the save to finish
-      this.trackedChangesCache = null;
-      this.cacheTimestamp = 0;
+      this.trackedChangesCache.delete(TRACKED_CHANGES_CACHE_KEY);
     } finally {
       // Clear the lock when done
       this.saveLock = null;

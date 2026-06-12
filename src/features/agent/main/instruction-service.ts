@@ -41,6 +41,7 @@ import os from 'os';
 import path from 'path';
 import { Logger } from '$shared/logger';
 import { isWorkspaceSlug } from '$shared/services/workspace-slug';
+import { createCache } from '../../../main/utils/cache';
 import { EndUserRulesManager } from '../../rules/user-rules.service';
 import {
   getInstructionWithCommon,
@@ -73,7 +74,6 @@ const WARNING_THRESHOLD = 150000; // Warn when approaching 75% of limit
 
 interface CacheEntry {
   content: string;
-  timestamp: number;
   hits: number;
 }
 
@@ -87,14 +87,20 @@ interface PromptLayer {
 export class InstructionService {
   private static instance: InstructionService;
 
-  // Caching for specialization rules
-  private cache = new Map<string, CacheEntry>();
-  private readonly MAX_CACHE_SIZE = 100;
-  private readonly DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes
+  // Caching for specialization rules (TTL 5 minutes, LRU eviction at 100 entries)
+  private cache = createCache<string, CacheEntry>({
+    name: 'instruction-specialization-rules',
+    ttlMs: 5 * 60 * 1000,
+    maxSize: 100,
+  });
 
   // Caching for full system prompts (performance optimization for bulk task delegation)
-  private systemPromptCache = new Map<string, CacheEntry>();
-  private readonly SYSTEM_PROMPT_CACHE_TTL = 30 * 1000; // 30 seconds (shorter TTL for full prompts)
+  // Shorter TTL for full prompts; small max size since these are large strings
+  private systemPromptCache = createCache<string, CacheEntry>({
+    name: 'instruction-system-prompts',
+    ttlMs: 30 * 1000,
+    maxSize: 20,
+  });
 
   // File watching
   private watchers = new Map<string, FSWatcher>();
@@ -192,9 +198,10 @@ export class InstructionService {
   async getSpecializationRules(agentType: string, workspacePath?: string): Promise<string> {
     const cacheKey = `specialization:${agentType}:${workspacePath || 'default'}`;
 
-    // Check cache
-    const cached = this.getFromCache(cacheKey);
+    // Check cache (get() refreshes LRU recency)
+    const cached = this.cache.get(cacheKey);
     if (cached) {
+      cached.hits++;
       logger.debug('Specialization rules cache hit', { agentType, hits: cached.hits });
       return cached.content;
     }
@@ -203,7 +210,7 @@ export class InstructionService {
     try {
       const userDefined = this.endUserRulesManager.getFormattedRulesByType(agentType);
       if (userDefined && userDefined.trim().length > 0) {
-        this.setCache(cacheKey, userDefined);
+        this.cache.set(cacheKey, { content: userDefined, hits: 0 });
         logger.debug('Specialization rules loaded from EndUserRulesManager', {
           agentType,
           contentLength: userDefined.length,
@@ -222,7 +229,7 @@ export class InstructionService {
       const workspaceFile = path.join(workspacePath, '.augment', 'agent-rules', `${agentType}.md`);
       const content = await this.readFileSafe(workspaceFile);
       if (content && content.trim().length > 0) {
-        this.setCache(cacheKey, content);
+        this.cache.set(cacheKey, { content, hits: 0 });
         this.watchFile(workspaceFile, () => {
           this.cache.delete(cacheKey);
           this.invalidateSystemPromptCache(agentType, workspacePath);
@@ -239,7 +246,7 @@ export class InstructionService {
 
     // 3. Return TS constant (with common prepended)
     const tsConstant = getInstructionWithCommon(agentType);
-    this.setCache(cacheKey, tsConstant);
+    this.cache.set(cacheKey, { content: tsConstant, hits: 0 });
     logger.debug('Specialization rules loaded from bundled TS constants', {
       agentType,
       contentLength: tsConstant.length,
@@ -810,12 +817,6 @@ The instructions in <specialist_role> define your primary function. Prioritize t
     const entry = this.systemPromptCache.get(key);
     if (!entry) return null;
 
-    // Check TTL
-    if (Date.now() - entry.timestamp > this.SYSTEM_PROMPT_CACHE_TTL) {
-      this.systemPromptCache.delete(key);
-      return null;
-    }
-
     entry.hits++;
     return entry.content;
   }
@@ -824,20 +825,7 @@ The instructions in <specialist_role> define your primary function. Prioritize t
    * Set system prompt cache entry
    */
   private setSystemPromptCache(key: string, content: string): void {
-    // Limit cache size
-    if (this.systemPromptCache.size >= 20) {
-      // Small cache since these are large strings
-      const firstKey = this.systemPromptCache.keys().next().value;
-      if (firstKey !== undefined) {
-        this.systemPromptCache.delete(firstKey);
-      }
-    }
-
-    this.systemPromptCache.set(key, {
-      content,
-      timestamp: Date.now(),
-      hits: 0,
-    });
+    this.systemPromptCache.set(key, { content, hits: 0 });
   }
 
   /**
@@ -884,9 +872,13 @@ The instructions in <specialist_role> define your primary function. Prioritize t
    */
   getStats(): { size: number; totalHits: number; watcherCount: number } {
     let totalHits = 0;
-    this.cache.forEach((entry) => {
-      totalHits += entry.hits;
-    });
+    // keys() is LRU-ordered, so iterating with get() preserves relative recency
+    for (const key of this.cache.keys()) {
+      const entry = this.cache.get(key);
+      if (entry) {
+        totalHits += entry.hits;
+      }
+    }
 
     return {
       size: this.cache.size,
@@ -996,48 +988,6 @@ The instructions in <specialist_role> define your primary function. Prioritize t
     } catch {
       return null;
     }
-  }
-
-  /**
-   * Get entry from cache with TTL check
-   */
-  private getFromCache(key: string): CacheEntry | null {
-    const entry = this.cache.get(key);
-    if (!entry) return null;
-
-    // Check TTL
-    const age = Date.now() - entry.timestamp;
-    if (age > this.DEFAULT_TTL) {
-      this.cache.delete(key);
-      return null;
-    }
-
-    // Update hits and move to end (LRU)
-    entry.hits++;
-    this.cache.delete(key);
-    this.cache.set(key, entry);
-
-    return entry;
-  }
-
-  /**
-   * Set cache entry with LRU eviction
-   */
-  private setCache(key: string, content: string): void {
-    // Enforce max size (LRU eviction)
-    if (this.cache.size >= this.MAX_CACHE_SIZE) {
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey !== undefined) {
-        this.cache.delete(firstKey);
-        logger.debug('Cache entry evicted (LRU)', { evictedKey: firstKey });
-      }
-    }
-
-    this.cache.set(key, {
-      content,
-      timestamp: Date.now(),
-      hits: 0,
-    });
   }
 
   /**

@@ -30,6 +30,8 @@ import {
   vi,
 } from 'vitest';
 
+import { createCache } from '../../../../main/utils/cache';
+
 const mockPersistence = {
   listAgents: vi.fn(),
   loadAgent: vi.fn(),
@@ -156,14 +158,13 @@ describe('AgentBackendHandler httpBridgeUnrecoverable integration', () => {
   it('evicts inactive persistence-list cache entries while retaining active entries', () => {
     const handler = Object.create(AgentBackendHandlerClass.prototype) as any;
     const inFlightLoad = Promise.resolve([{ id: 'agent-inflight' }]);
-    handler.persistenceListCache = new Map([
-      ['ws-active', { agents: [{ id: 'agent-active' }], timestamp: Date.now() }],
-      ['ws-inactive', { agents: [{ id: 'agent-inactive' }], timestamp: Date.now() }],
-      [
-        'ws-inflight',
-        { agents: [{ id: 'agent-old' }], timestamp: Date.now(), loadPromise: inFlightLoad },
-      ],
-    ]);
+    handler.persistenceListCache = createCache<string, any>({ ttlMs: 30000 });
+    handler.persistenceListCache.set('ws-active', { agents: [{ id: 'agent-active' }] });
+    handler.persistenceListCache.set('ws-inactive', { agents: [{ id: 'agent-inactive' }] });
+    handler.persistenceListCache.set('ws-inflight', {
+      agents: [{ id: 'agent-old' }],
+      loadPromise: inFlightLoad,
+    });
     handler.inactivePersistenceListCacheWorkspaces = new Set();
 
     AgentBackendHandlerClass.prototype.trimPersistenceListCacheToOpenWorkspaces.call(handler, [
@@ -181,7 +182,7 @@ describe('AgentBackendHandler httpBridgeUnrecoverable integration', () => {
 
   it('loads closed workspace persistence lists as agent summaries', async () => {
     const handler = Object.create(AgentBackendHandlerClass.prototype) as any;
-    handler.persistenceListCache = new Map();
+    handler.persistenceListCache = createCache<string, any>({ ttlMs: 30000 });
     handler.inactivePersistenceListCacheWorkspaces = new Set();
     handler.openWorkspaceIdsForAgentHydration = new Set(['ws-open']);
 
@@ -212,7 +213,7 @@ describe('AgentBackendHandler httpBridgeUnrecoverable integration', () => {
 
   it('loads open workspace persistence lists with full agent messages', async () => {
     const handler = Object.create(AgentBackendHandlerClass.prototype) as any;
-    handler.persistenceListCache = new Map();
+    handler.persistenceListCache = createCache<string, any>({ ttlMs: 30000 });
     handler.inactivePersistenceListCacheWorkspaces = new Set();
     handler.openWorkspaceIdsForAgentHydration = new Set(['ws-open']);
 

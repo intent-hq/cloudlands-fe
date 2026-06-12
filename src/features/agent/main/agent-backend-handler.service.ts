@@ -86,6 +86,7 @@ import {
   type HttpBridgeUnrecoverableHandler,
 } from '../../../main/http-mcp-bridge';
 import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcast-adapter';
+import { createCache } from '../../../main/utils/cache';
 import {
   getWindowIdForWorkspace,
   getWindowIdsForWorkspace,
@@ -4638,15 +4639,18 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     }
   }
 
+  private static PERSISTENCE_LIST_CACHE_TTL_MS = 30000; // 30 second cache - 5s was too short for rapid workspace switching
   // OPTIMIZATION: Cache for persistence list to avoid repeated disk reads
   // This cache persists across page refreshes since it's in the main process
-  private persistenceListCache = new Map<
+  private persistenceListCache = createCache<
     string,
-    { agents: any[]; timestamp: number; loadPromise?: Promise<any[]>; hydratedMessages?: boolean }
-  >();
+    { agents: any[]; loadPromise?: Promise<any[]>; hydratedMessages?: boolean }
+  >({
+    name: 'agent-persistence-list',
+    ttlMs: AgentBackendHandler.PERSISTENCE_LIST_CACHE_TTL_MS,
+  });
   private inactivePersistenceListCacheWorkspaces = new Set<string>();
   private openWorkspaceIdsForAgentHydration: Set<string> | null = null;
-  private static PERSISTENCE_LIST_CACHE_TTL_MS = 30000; // 30 second cache - 5s was too short for rapid workspace switching
 
   private hasActiveAgentWorkInWorkspace(workspaceId: string): boolean {
     if (!this.providers || !this.streamWorkspaceIds || !this.streamStartTimes) {
@@ -4702,8 +4706,12 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       this.inactivePersistenceListCacheWorkspaces.delete(workspaceId);
     }
 
-    for (const [workspaceId, cached] of this.persistenceListCache) {
+    for (const workspaceId of this.persistenceListCache.keys()) {
       if (openWorkspaceIdSet.has(workspaceId)) continue;
+
+      // keys() may include expired-but-unswept entries; get() lazily expires them
+      const cached = this.persistenceListCache.get(workspaceId);
+      if (!cached) continue;
 
       const cachedAgentIds = cached.agents.map((agent) => String(agent.id)).filter(Boolean);
       if (this.shouldHydrateFullPersistenceList(workspaceId, cachedAgentIds)) continue;
@@ -4712,7 +4720,6 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         this.inactivePersistenceListCacheWorkspaces.add(workspaceId);
         this.persistenceListCache.set(workspaceId, {
           agents: [],
-          timestamp: Date.now(),
           loadPromise: cached.loadPromise,
         });
       } else {
@@ -4734,36 +4741,32 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     const startTime = performance.now();
 
     try {
-      // OPTIMIZATION: Check cache first
+      // OPTIMIZATION: Check cache first (TTL expiry is handled by the cache module)
       const cached = this.persistenceListCache.get(workspaceId);
       if (cached) {
-        const cacheAge = Date.now() - cached.timestamp;
-        if (cacheAge < AgentBackendHandler.PERSISTENCE_LIST_CACHE_TTL_MS) {
-          const cachedAgentIds = cached.agents.map((agent) => String(agent.id)).filter(Boolean);
-          const cachedNeedsFullHydration = this.shouldHydrateFullPersistenceList(
+        const cachedAgentIds = cached.agents.map((agent) => String(agent.id)).filter(Boolean);
+        const cachedNeedsFullHydration = this.shouldHydrateFullPersistenceList(
+          workspaceId,
+          cachedAgentIds,
+        );
+        if (cached.hydratedMessages === false && cachedNeedsFullHydration) {
+          logger.debug('Bypassing summary persistence-list cache for full hydration', {
             workspaceId,
-            cachedAgentIds,
-          );
-          if (cached.hydratedMessages === false && cachedNeedsFullHydration) {
-            logger.debug('Bypassing summary persistence-list cache for full hydration', {
-              workspaceId,
-              count: cached.agents.length,
-            });
-          } else {
-            // If there's an in-flight request, wait for it
-            if (cached.loadPromise) {
-              logger.debug('Waiting for in-flight persistence list', { workspaceId });
-              const agents = await cached.loadPromise;
-              return { success: true, data: agents };
-            }
-            // Return cached result
-            logger.debug('Returning cached persistence list', {
-              workspaceId,
-              count: cached.agents.length,
-              cacheAge: `${cacheAge}ms`,
-            });
-            return { success: true, data: cached.agents };
+            count: cached.agents.length,
+          });
+        } else {
+          // If there's an in-flight request, wait for it
+          if (cached.loadPromise) {
+            logger.debug('Waiting for in-flight persistence list', { workspaceId });
+            const agents = await cached.loadPromise;
+            return { success: true, data: agents };
           }
+          // Return cached result
+          logger.debug('Returning cached persistence list', {
+            workspaceId,
+            count: cached.agents.length,
+          });
+          return { success: true, data: cached.agents };
         }
       }
 
@@ -4806,7 +4809,6 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       // Store the promise in cache so concurrent calls can wait for it
       this.persistenceListCache.set(workspaceId, {
         agents: cached?.agents || [],
-        timestamp: Date.now(),
         loadPromise,
         hydratedMessages: cached?.hydratedMessages,
       });
@@ -4821,7 +4823,6 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       // Update cache with loaded agents
       this.persistenceListCache.set(workspaceId, {
         agents,
-        timestamp: Date.now(),
         loadPromise: undefined,
         hydratedMessages: hydratedMessagesForList,
       });

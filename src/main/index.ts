@@ -180,6 +180,7 @@ import { Logger } from '../shared/logger';
 import { compareWorkspaceActivityDisplayTimeDesc } from '../shared/utils/workspace-activity-time';
 import { exportHandlerDebugInfo, setupIPCInterceptor } from './ipc-handler-wrapper';
 import { initializeWarningSuppression } from './utils/suppress-warnings';
+import { clearAllCaches } from './utils/cache';
 import { setupWebviewSecurity } from './webview-security';
 import { createDebugBundle } from '../features/debug-export/main/debug-bundle.service';
 
@@ -1733,6 +1734,19 @@ app.whenReady().then(async () => {
           }
         } catch (error) {
           logger.warn('Failed to evict MCP server cache', { error: (error as Error).message });
+        }
+      }
+
+      // On critical pressure, drop unified main-process caches.
+      // Entries are lazily re-populated from disk on next access.
+      if (forceGC) {
+        try {
+          clearAllCaches();
+          logger.info('Cleared unified main-process caches during critical memory pressure');
+        } catch (error) {
+          logger.warn('Failed to clear unified main-process caches', {
+            error: (error as Error).message,
+          });
         }
       }
 

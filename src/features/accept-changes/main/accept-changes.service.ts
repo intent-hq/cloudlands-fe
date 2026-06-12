@@ -25,6 +25,7 @@ import {
   suppressKeychainAccess,
 } from '../../../shared/git/keychain-suppression';
 import { Logger } from '../../../shared/logger';
+import { createCache, type Cache } from '../../../main/utils/cache';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import { RemoteRPCError } from '../../../shared/main/remote-rpc-client';
 import {
@@ -141,20 +142,16 @@ interface KeychainConsentDecision {
   willTriggerKeychain?: boolean;
 }
 
-// Cache entry for git status
-interface GitStatusCacheEntry {
-  status: WorkspaceGitStatus;
-  timestamp: number;
-}
-
 export class AcceptChangesService {
   private readonly workspaceRepository: FileSystemWorkspaceRepository;
 
 
   // Cache for git status to prevent redundant expensive git operations
-  // Key: workspaceId, Value: cached status with timestamp
-  private gitStatusCache: Map<string, GitStatusCacheEntry> = new Map();
-  private readonly GIT_STATUS_CACHE_TTL_MS = 2000; // 2 seconds - short enough to stay fresh, long enough to dedupe bursts
+  // Key: workspaceId; TTL is short enough to stay fresh, long enough to dedupe bursts
+  private gitStatusCache: Cache<WorkspaceId, WorkspaceGitStatus> = createCache({
+    name: 'accept-changes:git-status',
+    ttlMs: 2000,
+  });
 
   constructor() {
     this.workspaceRepository = new FileSystemWorkspaceRepository();
@@ -498,17 +495,16 @@ export class AcceptChangesService {
   async getWorkspaceGitStatus(workspaceId: WorkspaceId): Promise<WorkspaceGitStatus> {
     // Check cache first
     const cached = this.gitStatusCache.get(workspaceId);
-    const now = Date.now();
-    if (cached && now - cached.timestamp < this.GIT_STATUS_CACHE_TTL_MS) {
-      logger.debug('Using cached git status', { workspaceId, cacheAge: now - cached.timestamp });
-      return cached.status;
+    if (cached) {
+      logger.debug('Using cached git status', { workspaceId });
+      return cached;
     }
 
     // Fetch fresh status
     const status = await this.fetchWorkspaceGitStatus(workspaceId);
 
     // Cache the result
-    this.gitStatusCache.set(workspaceId, { status, timestamp: now });
+    this.gitStatusCache.set(workspaceId, status);
 
     return status;
   }

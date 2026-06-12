@@ -591,16 +591,19 @@ describe('InstructionService', () => {
         isSubAgent: true,
       });
 
-      const systemPromptCache = (service as any).systemPromptCache as Map<
-        string,
-        { content: string; timestamp: number; hits: number }
-      >;
+      const systemPromptCache = (service as any).systemPromptCache as {
+        size: number;
+        keys(): string[];
+        get(key: string): { content: string; hits: number } | undefined;
+      };
 
       expect(cachedParentPrompt).toBe(parentPrompt);
       expect(subAgentPrompt).not.toBe(parentPrompt);
       expect(systemPromptCache.size).toBe(2);
 
-      const hitCounts = Array.from(systemPromptCache.values()).map((entry) => entry.hits);
+      const hitCounts = systemPromptCache
+        .keys()
+        .map((key) => systemPromptCache.get(key)?.hits ?? 0);
       expect(Math.max(...hitCounts)).toBeGreaterThan(0);
     });
 
@@ -624,11 +627,14 @@ describe('InstructionService', () => {
         workspacePath,
       });
 
-      const systemPromptCache = (service as any).systemPromptCache as Map<
-        string,
-        { content: string; timestamp: number; hits: number }
-      >;
-      const hitCounts = Array.from(systemPromptCache.values()).map((entry) => entry.hits);
+      const systemPromptCache = (service as any).systemPromptCache as {
+        size: number;
+        keys(): string[];
+        get(key: string): { content: string; hits: number } | undefined;
+      };
+      const hitCounts = systemPromptCache
+        .keys()
+        .map((key) => systemPromptCache.get(key)?.hits ?? 0);
 
       expect(secondPrompt).toBe(firstPrompt);
       expect(systemPromptCache.size).toBe(1);

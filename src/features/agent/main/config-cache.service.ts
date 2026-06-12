@@ -10,11 +10,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { app } from 'electron';
 import type { ModelId } from '../../../shared/types/agent.types';
-
-interface CachedItem<T> {
-  data: T;
-  timestamp: number;
-}
+import { createCache, type Cache } from '../../../main/utils/cache';
 
 interface ModelConfig {
   id: ModelId;
@@ -29,17 +25,15 @@ interface ModelConfig {
 const CACHE_CONFIG = {
   RULES_TTL: 5 * 60 * 1000, // 5 minutes
   MODEL_TTL: 10 * 60 * 1000, // 10 minutes
-  CLEANUP_INTERVAL: 60 * 1000, // 1 minute
   MAX_ENTRIES: 100,
 };
 
 export class ConfigCacheService {
-  private cache = new Map<string, CachedItem<any>>();
-  private cleanupTimer: NodeJS.Timeout | null = null;
-
-  constructor() {
-    this.startCleanupTimer();
-  }
+  private cache: Cache<string, unknown> = createCache({
+    name: 'config-cache',
+    ttlMs: CACHE_CONFIG.RULES_TTL,
+    maxSize: CACHE_CONFIG.MAX_ENTRIES,
+  });
 
   /**
    * Get model configuration from disk or cache
@@ -48,8 +42,8 @@ export class ConfigCacheService {
     const cacheKey = `model:${modelId}`;
 
     // Check cache first
-    const cached = this.getFromCache<ModelConfig>(cacheKey, CACHE_CONFIG.MODEL_TTL);
-    if (cached !== null) {
+    const cached = this.cache.get(cacheKey) as ModelConfig | undefined;
+    if (cached !== undefined) {
       return cached;
     }
 
@@ -60,7 +54,7 @@ export class ConfigCacheService {
       const config = JSON.parse(configData) as ModelConfig;
 
       // Cache the result
-      this.setInCache(cacheKey, config);
+      this.cache.set(cacheKey, config, { ttlMs: CACHE_CONFIG.MODEL_TTL });
 
       return config;
     } catch {
@@ -76,8 +70,8 @@ export class ConfigCacheService {
     const cacheKey = 'models:all';
 
     // Check cache first
-    const cached = this.getFromCache<ModelConfig[]>(cacheKey, CACHE_CONFIG.MODEL_TTL);
-    if (cached !== null) {
+    const cached = this.cache.get(cacheKey) as ModelConfig[] | undefined;
+    if (cached !== undefined) {
       return cached;
     }
 
@@ -105,7 +99,7 @@ export class ConfigCacheService {
       const validModels = models.filter((m): m is ModelConfig => m !== null);
 
       // Cache the result
-      this.setInCache(cacheKey, validModels);
+      this.cache.set(cacheKey, validModels, { ttlMs: CACHE_CONFIG.MODEL_TTL });
 
       return validModels;
     } catch {
@@ -129,92 +123,10 @@ export class ConfigCacheService {
   }
 
   /**
-   * Get item from cache if not expired
-   */
-  private getFromCache<T>(key: string, ttl: number): T | null {
-    const cached = this.cache.get(key);
-
-    if (!cached) {
-      return null;
-    }
-
-    const age = Date.now() - cached.timestamp;
-    if (age > ttl) {
-      this.cache.delete(key);
-      return null;
-    }
-
-    return cached.data as T;
-  }
-
-  /**
-   * Set item in cache
-   */
-  private setInCache(key: string, data: any): void {
-    // Enforce max entries limit
-    if (this.cache.size >= CACHE_CONFIG.MAX_ENTRIES) {
-      // Remove oldest entry
-      const oldestKey = this.findOldestEntry();
-      if (oldestKey) {
-        this.cache.delete(oldestKey);
-      }
-    }
-
-    this.cache.set(key, {
-      data,
-      timestamp: Date.now(),
-    });
-  }
-
-  /**
-   * Find the oldest cache entry
-   */
-  private findOldestEntry(): string | null {
-    let oldestKey: string | null = null;
-    let oldestTime = Infinity;
-
-    for (const [key, item] of this.cache.entries()) {
-      if (item.timestamp < oldestTime) {
-        oldestTime = item.timestamp;
-        oldestKey = key;
-      }
-    }
-
-    return oldestKey;
-  }
-
-  /**
-   * Start periodic cleanup of expired cache entries
-   */
-  private startCleanupTimer(): void {
-    this.cleanupTimer = setInterval(() => {
-      this.cleanupExpiredEntries();
-    }, CACHE_CONFIG.CLEANUP_INTERVAL);
-  }
-
-  /**
-   * Clean up expired cache entries
-   */
-  private cleanupExpiredEntries(): void {
-    const now = Date.now();
-    const maxAge = Math.max(CACHE_CONFIG.RULES_TTL, CACHE_CONFIG.MODEL_TTL);
-
-    for (const [key, item] of this.cache.entries()) {
-      if (now - item.timestamp > maxAge) {
-        this.cache.delete(key);
-      }
-    }
-  }
-
-  /**
    * Cleanup resources
    */
   dispose(): void {
-    if (this.cleanupTimer) {
-      clearInterval(this.cleanupTimer);
-      this.cleanupTimer = null;
-    }
-    this.cache.clear();
+    this.cache.dispose();
   }
 }
 

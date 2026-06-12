@@ -111,7 +111,7 @@ describe('FileTrackingStorage payload retention', () => {
     expect(loaded.content?.oldContent).toBeUndefined();
     expect(loaded.content?.newContent).toBeUndefined();
     expect(loaded.content?.diff?.length).toBeLessThan(30_000);
-    expect((storage as any).trackedChangesCache[0]).toBe(loaded);
+    expect((storage as any).trackedChangesCache.get('tracked-changes')[0]).toBe(loaded);
   });
 
   it('updates the cache after cleanup removes stale tracked changes', async () => {
@@ -131,9 +131,11 @@ describe('FileTrackingStorage payload retention', () => {
     (storage as any).lastCleanupTime = 0;
     await (storage as any).performCleanup();
 
-    expect((storage as any).trackedChangesCache.map((change: TrackedChange) => change.id)).toEqual([
-      'new-change',
-    ]);
+    expect(
+      (storage as any).trackedChangesCache
+        .get('tracked-changes')
+        .map((change: TrackedChange) => change.id),
+    ).toEqual(['new-change']);
     await expect(storage.loadTrackedChanges()).resolves.toMatchObject([{ id: 'new-change' }]);
   });
 });
