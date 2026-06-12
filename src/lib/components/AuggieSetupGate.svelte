@@ -142,6 +142,7 @@
             claudeCode: { available: false },
             codex: { available: false },
             opencode: { available: false },
+            droid: { available: false },
             cortex: { available: false },
             mock: { available: false },
           },

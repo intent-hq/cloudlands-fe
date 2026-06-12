@@ -75,6 +75,7 @@ function getProviderStatus(
     codex: availability.providers.codex,
     cortex: availability.providers.cortex,
     opencode: availability.providers.opencode,
+    droid: availability.providers.droid,
     mock: availability.providers.mock,
   };
   return map[providerId];
@@ -107,6 +108,7 @@ function getUsableProviderIds(availability: ProviderAvailabilityResult): string[
   if (isProviderUsable(availability, 'claude-code')) ids.push('claude-code');
   if (isProviderUsable(availability, 'codex')) ids.push('codex');
   if (isProviderUsable(availability, 'opencode')) ids.push('opencode');
+  if (isProviderUsable(availability, 'droid')) ids.push('droid');
   if (isProviderUsable(availability, 'cortex')) ids.push('cortex');
   return ids;
 }

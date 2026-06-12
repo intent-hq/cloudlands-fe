@@ -98,9 +98,8 @@ Please help with this note
 Context:
 The workspace specification document (SPEC.md).
 
-**IMPORTANT: Use MCP tools to read the spec:**
-- First check if it exists: check_spec_exists()
-- Then read it: read_spec()
+**IMPORTANT: Use the \`workspace_api\` tool to read the spec:**
+- Read it: \`ws.note.read("spec")\`
 - The spec contains the goals, requirements, and features for this workspace
 
 ---
@@ -108,7 +107,7 @@ The workspace specification document (SPEC.md).
 📥 **STDIN Context**:
 Workspace: /Users/user/code/my-project
 
-Spec: Available via MCP tools (use read_spec)
+Spec: Available via the \`workspace_api\` tool (use \`ws.note.read("spec")\`)
 
 ---
 

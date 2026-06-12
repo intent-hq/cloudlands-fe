@@ -50,6 +50,15 @@ async function resolveProviderCommand(providerConfig: ACPProviderConfig): Promis
     logger.warn('Failed to resolve opencode command, falling back to config');
   }
 
+  if (providerConfig.id === 'droid') {
+    const { resolveDroidCommand } = await import('../../droid/main/droid-resolver');
+    const resolved = await resolveDroidCommand();
+    if (resolved) {
+      return { command: resolved.command, argsPrefix: resolved.argsPrefix };
+    }
+    logger.warn('Failed to resolve droid command, falling back to config');
+  }
+
   if (providerConfig.id === 'cortex') {
     const { resolveCortexCommand } = await import('../../cortex/main/cortex-resolver');
     const resolved = await resolveCortexCommand();
@@ -232,7 +241,7 @@ async function getACPWithProvider(
     // Check if buildProviderEnv returned model-carrying env vars (not just unrelated ones like ELECTRON_RUN_AS_NODE)
     const hasModelEnv = !!providerEnv.OPENCODE_CONFIG_CONTENT;
     const hasCustomArgs = providerConfig.id === 'codex'; // Codex uses -c model="..."
-    const appliesModelPostSession = providerConfig.id === 'claude-code' || providerConfig.id === 'cortex' || providerConfig.id === 'opencode';
+    const appliesModelPostSession = providerConfig.id === 'claude-code' || providerConfig.id === 'cortex' || providerConfig.id === 'opencode' || providerConfig.id === 'droid';
     if (!hasModelFlag && !hasModelEnv && !hasCustomArgs && !appliesModelPostSession) {
       logger.warn(
         `[ProviderRegistry] Model "${rawModelId}" specified for provider "${providerConfig.id}" ` +
@@ -260,15 +269,17 @@ async function getACPWithProvider(
     providerId: providerConfig.id,
     inputModel: config.model,                                // compound ID from caller
     rawModelId,                                               // after stripping provider prefix
-    mechanism: providerConfig.modelFlag
-      ? `CLI flag (${providerConfig.modelFlag})`
-      : providerConfig.id === 'opencode'
-        ? 'OPENCODE_CONFIG_CONTENT env var + ACP session/set_model (post-session)'
-        : providerConfig.id === 'codex'
-          ? 'codex -c model="..."'
-          : providerConfig.id === 'claude-code' || providerConfig.id === 'cortex'
-            ? 'ACP session/set_model (post-session)'
-            : 'NONE — model may be ignored',
+    mechanism: providerConfig.id === 'droid'
+      ? 'ACP session/set_model (post-session; --model is ignored in ACP mode)'
+      : providerConfig.modelFlag
+        ? `CLI flag (${providerConfig.modelFlag})`
+        : providerConfig.id === 'opencode'
+          ? 'OPENCODE_CONFIG_CONTENT env var + ACP session/set_model (post-session)'
+          : providerConfig.id === 'codex'
+            ? 'codex -c model="..."'
+            : providerConfig.id === 'claude-code' || providerConfig.id === 'cortex'
+              ? 'ACP session/set_model (post-session)'
+              : 'NONE — model may be ignored',
     envModel: providerEnv.OPENCODE_CONFIG_CONTENT
       ? (() => { try { return JSON.parse(providerEnv.OPENCODE_CONFIG_CONTENT).model; } catch { return 'parse-error'; } })()
       : undefined,

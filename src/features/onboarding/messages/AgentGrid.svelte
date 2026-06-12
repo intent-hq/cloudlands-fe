@@ -109,6 +109,7 @@
     'claude-code': { color1: '#D97757', color2: '#D97757' },
     codex: { color1: '#CBE6FF', color2: '#DDBEFC', isLight: true },
     opencode: { color1: '#000', color2: '#1E1E1E' },
+    droid: { color1: '#F0822F', color2: '#E55A2B' },
     cortex: { color1: '#FFA2A3', color2: '#FFA2A3' },
   };
 
@@ -151,6 +152,13 @@
       installCommand: 'curl -fsSL https://opencode.ai/install | bash',
       loginCommand: 'opencode auth login',
       docsUrl: 'https://opencode.ai/docs#install',
+    },
+    droid: {
+      installCommand: 'curl -fsSL https://app.factory.ai/cli | sh',
+      // The droid CLI has no dedicated login subcommand — running `droid`
+      // starts an interactive session that prompts for login when needed.
+      loginCommand: 'droid',
+      docsUrl: 'https://docs.factory.ai/cli/getting-started/overview',
     },
     cortex: {
       installCommand: 'curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh',

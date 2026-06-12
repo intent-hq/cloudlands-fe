@@ -35,6 +35,12 @@ import {
   getOpenCodePath,
   isOpenCodeInstalled,
 } from '../../opencode/main/opencode-resolver';
+import {
+  clearDroidCache,
+  getDroidPath,
+  isDroidInstalled,
+} from '../../droid/main/droid-resolver';
+import { probeDroidAcp } from '../../droid/main/droid-acp-probe';
 import type {
   ProviderAvailabilityResult,
   ProviderStatus,
@@ -194,6 +200,19 @@ async function checkCortexAvailability(): Promise<ProviderStatus> {
 async function checkOpenCodeAvailability(): Promise<ProviderStatus> {
   try {
     const installed = await isOpenCodeInstalled();
+    return { available: installed };
+  } catch (error) {
+    return { available: false, error: (error as Error).message };
+  }
+}
+
+/**
+ * Check if droid is available by checking if the droid CLI is installed.
+ * Does not fall back to npx - we want accurate "is installed" status.
+ */
+async function checkDroidAvailability(): Promise<ProviderStatus> {
+  try {
+    const installed = await isDroidInstalled();
     return { available: installed };
   } catch (error) {
     return { available: false, error: (error as Error).message };
@@ -366,6 +385,30 @@ async function checkOpenCodeReady(cliPath: string | null): Promise<boolean | und
 }
 
 /**
+ * Droid has no `models`/`auth status` CLI subcommand, so readiness is gauged
+ * via an ACP probe (initialize + session/new over stdio JSON-RPC):
+ * - session/new succeeding with a non-empty model list → authenticated
+ * - an explicit auth-required error from the agent → not authenticated
+ * - timeout/spawn error → undefined (unknown, no indicator)
+ */
+async function checkDroidReady(cliPath: string | null): Promise<boolean | undefined> {
+  if (!cliPath) return undefined;
+
+  try {
+    const result = await probeDroidAcp(cliPath);
+    if (result.ok && result.models.length > 0) {
+      return true;
+    }
+    if (result.authRequired) {
+      return false;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Check if a provider's CLI is authenticated by running its auth check command.
  * Returns true if authenticated, false if not, undefined if check failed/timed out.
  *
@@ -483,24 +526,33 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
   clearCodexCache();
   clearCortexCache();
   clearOpenCodeCache();
+  clearDroidCache();
 
   // Check all providers in parallel for faster startup
   // For hidden providers, skip the actual check and return unavailable
   const isCortexHidden = hiddenProviders.includes('cortex');
   const isMockHidden = hiddenProviders.includes('mock');
-  const [auggieResult, claudeCodeResult, codexResult, cortexResult, mockResult, opencodeResult] =
-    await Promise.all([
-      checkAuggieAvailability(),
-      checkClaudeCodeAvailability(),
-      checkCodexAvailability(),
-      isCortexHidden
-        ? Promise.resolve({ available: false } as ProviderStatus)
-        : checkCortexAvailability(),
-      isMockHidden
-        ? Promise.resolve({ available: false } as ProviderStatus)
-        : checkMockAvailability(),
-      checkOpenCodeAvailability(),
-    ]);
+  const [
+    auggieResult,
+    claudeCodeResult,
+    codexResult,
+    cortexResult,
+    mockResult,
+    opencodeResult,
+    droidResult,
+  ] = await Promise.all([
+    checkAuggieAvailability(),
+    checkClaudeCodeAvailability(),
+    checkCodexAvailability(),
+    isCortexHidden
+      ? Promise.resolve({ available: false } as ProviderStatus)
+      : checkCortexAvailability(),
+    isMockHidden
+      ? Promise.resolve({ available: false } as ProviderStatus)
+      : checkMockAvailability(),
+    checkOpenCodeAvailability(),
+    checkDroidAvailability(),
+  ]);
 
   // Run auth checks in parallel for available providers.
   // Auggie uses `model list`; model listing is the stable auth gate.
@@ -508,16 +560,18 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     auggieResult.available ||
     claudeCodeResult.available ||
     codexResult.available ||
-    opencodeResult.available
+    opencodeResult.available ||
+    droidResult.available
   ) {
-    const [auggiePath, claudeCodePath, codexPath, opencodePath] = await Promise.all([
+    const [auggiePath, claudeCodePath, codexPath, opencodePath, droidPath] = await Promise.all([
       auggieResult.available ? findAuggiePathAsync() : Promise.resolve(null),
       claudeCodeResult.available ? getClaudeCodePath() : Promise.resolve(null),
       codexResult.available ? getCodexPath() : Promise.resolve(null),
       opencodeResult.available ? getOpenCodePath() : Promise.resolve(null),
+      droidResult.available ? getDroidPath() : Promise.resolve(null),
     ]);
 
-    const [auggieAuth, claudeAuth, codexAuth, opencodeAuth] = await Promise.all([
+    const [auggieAuth, claudeAuth, codexAuth, opencodeAuth, droidAuth] = await Promise.all([
       auggieResult.available ? checkAuggieAuth(auggiePath) : Promise.resolve(undefined),
       claudeCodeResult.available
         ? checkProviderAuth(claudeCodePath, ACP_PROVIDERS['claude-code'].authCheckArgs ?? [])
@@ -530,12 +584,15 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       // readiness gate: it returns at least one `provider/model` line only when
       // some provider is usable. On failure we return undefined (no indicator).
       opencodeResult.available ? checkOpenCodeReady(opencodePath) : Promise.resolve(undefined),
+      // Droid has no auth CLI subcommand — the ACP probe is the readiness gate.
+      droidResult.available ? checkDroidReady(droidPath) : Promise.resolve(undefined),
     ]);
 
     auggieResult.authenticated = auggieAuth;
     claudeCodeResult.authenticated = claudeAuth;
     codexResult.authenticated = codexAuth;
     opencodeResult.authenticated = opencodeAuth;
+    droidResult.authenticated = droidAuth;
   }
 
   const result: ProviderAvailabilityResult = {
@@ -545,7 +602,8 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       codexResult.available ||
       cortexResult.available ||
       mockResult.available ||
-      opencodeResult.available,
+      opencodeResult.available ||
+      droidResult.available,
     providers: {
       auggie: auggieResult,
       claudeCode: claudeCodeResult,
@@ -553,6 +611,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       cortex: cortexResult,
       mock: mockResult,
       opencode: opencodeResult,
+      droid: droidResult,
     },
     hiddenProviders,
   };
@@ -565,10 +624,12 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     cortex: cortexResult.available,
     mock: mockResult.available,
     opencode: opencodeResult.available,
+    droid: droidResult.available,
     auggieAuth: auggieResult.authenticated,
     claudeCodeAuth: claudeCodeResult.authenticated,
     codexAuth: codexResult.authenticated,
     opencodeAuth: opencodeResult.authenticated,
+    droidAuth: droidResult.authenticated,
     hiddenProviders,
   });
 
@@ -584,14 +645,17 @@ export async function getProviderPaths(): Promise<{
   codex: string | null;
   cortex: string | null;
   opencode: string | null;
+  droid: string | null;
 }> {
-  const [auggiePath, claudeCodePath, codexPath, cortexPath, opencodePath] = await Promise.all([
-    findAuggiePathAsync(),
-    getClaudeCodePath(),
-    getCodexPath(),
-    getCortexPath(),
-    getOpenCodePath(),
-  ]);
+  const [auggiePath, claudeCodePath, codexPath, cortexPath, opencodePath, droidPath] =
+    await Promise.all([
+      findAuggiePathAsync(),
+      getClaudeCodePath(),
+      getCodexPath(),
+      getCortexPath(),
+      getOpenCodePath(),
+      getDroidPath(),
+    ]);
 
   return {
     auggie: auggiePath,
@@ -599,6 +663,7 @@ export async function getProviderPaths(): Promise<{
     codex: codexPath,
     cortex: cortexPath,
     opencode: opencodePath,
+    droid: droidPath,
   };
 }
 
@@ -681,6 +746,14 @@ export function setupProviderAvailabilityIPC(): void {
             if (status.available) {
               const opencodePath = await getOpenCodePath();
               authenticated = await checkOpenCodeReady(opencodePath);
+            }
+            break;
+          case 'droid':
+            clearDroidCache();
+            status = await checkDroidAvailability();
+            if (status.available) {
+              const droidPath = await getDroidPath();
+              authenticated = await checkDroidReady(droidPath);
             }
             break;
           case 'mock':

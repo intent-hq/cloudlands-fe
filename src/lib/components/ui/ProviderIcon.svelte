@@ -69,6 +69,21 @@
         ></defs
       ></svg
     >
+  {:else if providerId === 'droid'}
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        fill-rule="evenodd"
+        clip-rule="evenodd"
+        d="M12 2a1.5 1.5 0 0 1 .75 2.8V7h3.75A3.5 3.5 0 0 1 20 10.5v6a3.5 3.5 0 0 1-3.5 3.5h-9A3.5 3.5 0 0 1 4 16.5v-6A3.5 3.5 0 0 1 7.5 7h3.75V4.8A1.5 1.5 0 0 1 12 2ZM8.75 11.5a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5Zm6.5 0a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5Z"
+      />
+    </svg>
   {:else if providerId === 'cortex'}
     <svg
       class={className}

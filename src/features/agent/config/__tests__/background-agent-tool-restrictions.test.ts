@@ -19,6 +19,7 @@ import {
   AGENT_CREATION_TOOLS,
   NOTE_WRITE_TOOLS,
   WORKSPACE_WRITE_TOOLS,
+  UNIFIED_WORKSPACE_TOOLS,
   EXECUTION_TOOLS,
   EXTERNAL_TOOLS,
   getToolDenylistForAgentType,
@@ -61,6 +62,11 @@ describe('Background Agent Tool Restrictions', () => {
       expect(NOTE_WRITE_TOOLS).not.toContain('read_note_workspace-mcp');
       expect(NOTE_WRITE_TOOLS).not.toContain('list_notes_workspace-mcp');
       expect(NOTE_WRITE_TOOLS).not.toContain('list_note_tasks_workspace-mcp');
+    });
+
+    it('UNIFIED_WORKSPACE_TOOLS should contain bare and server-suffixed names', () => {
+      expect(UNIFIED_WORKSPACE_TOOLS).toContain('workspace_api');
+      expect(UNIFIED_WORKSPACE_TOOLS).toContain('workspace_api_workspace-mcp');
     });
 
     it('MCP tools should have _workspace-mcp suffix', () => {
@@ -143,6 +149,26 @@ describe('Background Agent Tool Restrictions', () => {
             expect(denylist).toContain(tool);
           }
         });
+
+        it('should deny the unified workspace_api tool', () => {
+          const denylist = getToolDenylistForAgentType(agentType);
+          for (const tool of UNIFIED_WORKSPACE_TOOLS) {
+            expect(denylist).toContain(tool);
+          }
+        });
+      });
+    }
+  });
+
+  describe('Interactive Agents', () => {
+    const interactiveAgents = ['task-loop', 'ralph-loop', 'chat'];
+
+    for (const agentType of interactiveAgents) {
+      it(`${agentType} should retain workspace_api access`, () => {
+        const denylist = getToolDenylistForAgentType(agentType);
+        for (const tool of UNIFIED_WORKSPACE_TOOLS) {
+          expect(denylist).not.toContain(tool);
+        }
       });
     }
   });

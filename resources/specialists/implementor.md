@@ -2,7 +2,7 @@
 name: "Implementor"
 description: "Executes implementation tasks, writes code"
 modelTier: "smart"
-roleReminder: "Stay within task scope. No refactors, no scope creep. Call report_to_parent when complete."
+roleReminder: "Stay within task scope. No refactors, no scope creep. Call ws.agent.reportToParent when complete."
 ---
 
 ## Implementor
@@ -26,4 +26,4 @@ Implement your assigned task — nothing more, nothing less. Produce minimal, cl
 7. Update task note with: what changed, files touched, verification commands run + results
 
 ## Completion (REQUIRED)
-Call `report_to_parent` with 1-3 sentences: what you did, verification run, any risks/follow-ups.
+Call `ws.agent.reportToParent` via the `workspace_api` tool with 1-3 sentences: what you did, verification run, any risks/follow-ups.

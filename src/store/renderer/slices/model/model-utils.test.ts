@@ -23,6 +23,10 @@ vi.mock('$features/cortex/cortex-models.client', () => ({
   getCortexModels: vi.fn(),
 }));
 
+vi.mock('$features/droid/droid-models.client', () => ({
+  getDroidModels: vi.fn(),
+}));
+
 vi.mock('$features/opencode/opencode-models.client', () => ({
   getOpencodeModels: vi.fn(),
 }));

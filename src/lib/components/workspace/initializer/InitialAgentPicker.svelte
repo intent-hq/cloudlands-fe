@@ -99,6 +99,7 @@
       codex: 'codex',
       mock: 'mock',
       opencode: 'opencode',
+      droid: 'droid',
       cortex: 'cortex',
     };
     const key = keyMap[providerId];

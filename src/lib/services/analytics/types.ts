@@ -434,6 +434,7 @@ export interface AnalyticsEvents {
     claude_code_installed: boolean;
     codex_installed: boolean;
     opencode_installed: boolean;
+    droid_installed: boolean;
   };
   'Completed Setup': {
     provider_id: string;

@@ -62,6 +62,12 @@ export async function getCachedModelsForProvider(
         );
         return await getCachedOpencodeModels();
       }
+      case 'droid': {
+        const { getCachedDroidModels } = await import(
+          '../../features/droid/main/droid.ipc'
+        );
+        return await getCachedDroidModels();
+      }
       default:
         // Unknown / unsupported provider — cortex, mock, or typo. Skip live
         // validation so the caller falls through its existing path.

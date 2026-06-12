@@ -111,6 +111,7 @@
     'claude-code': false,
     codex: false,
     opencode: false,
+    droid: false,
     cortex: false,
   });
   let setupInProgress = $state<Record<string, boolean>>({});
@@ -138,6 +139,7 @@
     'claude-code': { docsUrl: 'https://code.claude.com/docs/en/quickstart#step-1-install-claude-code', requiresAuth: false },
     codex: { docsUrl: 'https://developers.openai.com/codex/cli#cli-setup', requiresAuth: false },
     opencode: { docsUrl: 'https://opencode.ai/docs#install', requiresAuth: false },
+    droid: { docsUrl: 'https://docs.factory.ai/cli/getting-started/overview', requiresAuth: false },
     cortex: {
       docsUrl: 'https://docs.snowflake.com/en/developer-guide/cortex',
       requiresAuth: false,
@@ -151,6 +153,7 @@
     codex: 'codex',
     mock: 'mock',
     opencode: 'opencode',
+    droid: 'droid',
     cortex: 'cortex',
   };
 
@@ -390,11 +393,13 @@
         checkMcpClaudeCodeResult,
         checkMcpCodexResult,
         checkMcpOpenCodeResult,
+        checkMcpDroidResult,
         checkMcpCortexResult,
       ] = await Promise.all([
         invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CLAUDE_CODE),
         invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CODEX),
         invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_OPENCODE),
+        invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_DROID),
         isCortexHidden
           ? Promise.resolve({ success: true, configured: false })
           : invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CORTEX),
@@ -404,6 +409,7 @@
         'claude-code': checkMcpClaudeCodeResult?.configured ?? false,
         codex: checkMcpCodexResult?.configured ?? false,
         opencode: checkMcpOpenCodeResult?.configured ?? false,
+        droid: checkMcpDroidResult?.configured ?? false,
         cortex: checkMcpCortexResult?.configured ?? false,
       };
     } catch (err) {
@@ -421,6 +427,7 @@
         'claude-code': AUGGIE_CHANNELS.SETUP_MCP_CLAUDE_CODE,
         codex: AUGGIE_CHANNELS.SETUP_MCP_CODEX,
         opencode: AUGGIE_CHANNELS.SETUP_MCP_OPENCODE,
+        droid: AUGGIE_CHANNELS.SETUP_MCP_DROID,
         cortex: AUGGIE_CHANNELS.SETUP_MCP_CORTEX,
       };
 
@@ -462,6 +469,7 @@
         'claude-code': AUGGIE_CHANNELS.UNINSTALL_MCP_CLAUDE_CODE,
         codex: AUGGIE_CHANNELS.UNINSTALL_MCP_CODEX,
         opencode: AUGGIE_CHANNELS.UNINSTALL_MCP_OPENCODE,
+        droid: AUGGIE_CHANNELS.UNINSTALL_MCP_DROID,
         cortex: AUGGIE_CHANNELS.UNINSTALL_MCP_CORTEX,
       };
 
@@ -767,6 +775,8 @@
     {@render skeleton('codex')}
 
     {@render skeleton('opencode')}
+
+    {@render skeleton('droid')}
 
     {#if providerAvailability && !providerAvailability.hiddenProviders?.includes('cortex')}
       {@render skeleton('cortex')}
@@ -1264,6 +1274,19 @@
           ></defs
         ></svg
       >
+    {:else if providerId === 'droid'}
+      <svg
+        class="size-5"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          fill-rule="evenodd"
+          clip-rule="evenodd"
+          d="M12 2a1.5 1.5 0 0 1 .75 2.8V7h3.75A3.5 3.5 0 0 1 20 10.5v6a3.5 3.5 0 0 1-3.5 3.5h-9A3.5 3.5 0 0 1 4 16.5v-6A3.5 3.5 0 0 1 7.5 7h3.75V4.8A1.5 1.5 0 0 1 12 2ZM8.75 11.5a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5Zm6.5 0a1.75 1.75 0 1 0 0 3.5 1.75 1.75 0 0 0 0-3.5Z"
+        />
+      </svg>
     {:else if providerId === 'cortex'}
       <svg
         class="size-5"

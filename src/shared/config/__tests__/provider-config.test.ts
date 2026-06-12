@@ -70,9 +70,11 @@ describe('normalizeModelOverride', () => {
     expect(normalizeModelOverride('gpt-5.3-codex/highest', 'codex')).toBeUndefined();
   });
 
-  it('returns undefined for providers without tier models (e.g. opencode)', () => {
+  it('returns undefined for providers without tier models (e.g. opencode, droid)', () => {
     expect(PROVIDER_MODEL_TIERS['opencode']).toBeUndefined();
     expect(normalizeModelOverride('anything', 'opencode')).toBeUndefined();
+    expect(PROVIDER_MODEL_TIERS['droid']).toBeUndefined();
+    expect(normalizeModelOverride('anything', 'droid')).toBeUndefined();
   });
 
   it('returns undefined for empty/whitespace candidates', () => {

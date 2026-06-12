@@ -45,28 +45,23 @@ export function buildAuggieInitialContext(config: AuggieContextConfig): string {
           `You have access to MCP (Model Context Protocol) tools configured at: ${config.mcpConfigPath}`,
         );
         contextParts.push('');
-        contextParts.push('The following tools are available through the workspace MCP server:');
-        contextParts.push('- **read_file**: Read contents of files in the workspace');
-        contextParts.push('- **write_file**: Write or modify files in the workspace');
-        contextParts.push('- **list_files**: List files and directories');
-        contextParts.push('- **view_workspace**: View current workspace information');
         contextParts.push(
-          '- **view_workspace_details**: View workspace metadata including title (check if hasTitle is false to see if workspace needs naming)',
+          'The workspace MCP server provides a single tool: `workspace_api`. Invoke it with JavaScript that calls the `ws.*` API and use `return` to send results back. Common calls:',
         );
-        contextParts.push('- **create_note**: Create notes for documentation or tracking');
-        contextParts.push('- **list_notes**: List all notes in the workspace');
-        contextParts.push('- **read_note**: Read specific notes by ID');
-        contextParts.push('- **add_to_note**: Add content to existing notes');
-        contextParts.push('- **edit_note**: Edit specific text in notes');
-        contextParts.push('- **delete_note**: Delete notes by ID');
+        contextParts.push('- **ws.file.read(path) / ws.file.write(path, content) / ws.file.list(path)**: Read, write, and list workspace files');
         contextParts.push(
-          "- **read_spec**: Read the workspace specification (note with ID 'spec')",
+          '- **ws.workspace.details()**: View workspace metadata including title (check if hasTitle is false to see if workspace needs naming)',
         );
-        contextParts.push('- **write_spec**: Update the workspace specification content');
         contextParts.push(
-          '- **rename_workspace**: Set or update the workspace title (keep it short and descriptive)',
+          '- **ws.note.create(title, content) / ws.note.list() / ws.note.read(id) / ws.note.add(id, { content }) / ws.note.edit(id, { old, new }) / ws.note.delete(id)**: Work with notes',
         );
-        contextParts.push('- **read_timeline**: View recent workspace activities and changes');
+        contextParts.push(
+          "- **ws.note.read(\"spec\") / ws.note.add(\"spec\", { content })**: Read or update the workspace specification (note with ID 'spec')",
+        );
+        contextParts.push(
+          '- **ws.workspace.setTitle(title)**: Set or update the workspace title (keep it short and descriptive)',
+        );
+        contextParts.push('- **ws.workspace.timeline()**: View recent workspace activities and changes');
         contextParts.push('');
         contextParts.push(
           'These tools are automatically available to you. Use them as needed to interact with the workspace.',

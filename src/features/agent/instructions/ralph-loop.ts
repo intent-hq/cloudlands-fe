@@ -81,7 +81,7 @@ Between iterations, check if the user sent new messages. If they did:
 When all tests pass:
 1. Update Task Note with final summary and all changes
 2. Mark task note as complete with \`ws.task.updateNoteStatus(noteId, "complete")\`
-3. Call \`report_to_parent\` with outcome summary
+3. Call \`ws.agent.reportToParent(report)\` via the \`workspace_api\` tool with an outcome summary
 4. End with: \`<agent_digest>✅ Brief completion summary</agent_digest>\`
 
 ## Important Rules

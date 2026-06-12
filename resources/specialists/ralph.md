@@ -38,7 +38,7 @@ Once approved, run iterations until tests pass:
 - Wait for completion, read test results
 
 **Step 3 — Evaluate**
-- **PASS** → Update task note with success, mark complete, call `report_to_parent`
+- **PASS** → Update task note with success, mark complete, call `ws.agent.reportToParent` via the `workspace_api` tool
 - **FAIL** → Record test feedback in task note, increment iteration, continue loop
 
 ### Loop Rules

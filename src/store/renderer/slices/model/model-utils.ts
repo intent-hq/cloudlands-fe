@@ -13,6 +13,8 @@ import type { CodexModel } from '$features/codex/codex-models.client';
 import { getCodexModelsWithMetadata } from '$features/codex/codex-models.client';
 import type { CortexModel } from '$features/cortex/cortex-models.client';
 import { getCortexModels } from '$features/cortex/cortex-models.client';
+import type { DroidModel } from '$features/droid/droid-models.client';
+import { getDroidModels } from '$features/droid/droid-models.client';
 import type { OpenCodeModel } from '$features/opencode/opencode-models.client';
 import { getOpencodeModels } from '$features/opencode/opencode-models.client';
 import {
@@ -26,6 +28,7 @@ export type ProviderModel =
   | ClaudeCodeModel
   | CodexModel
   | CortexModel
+  | DroidModel
   | OpenCodeModel;
 
 type ProviderModelsWithWarning = {
@@ -51,6 +54,8 @@ async function fetchProviderModelsWithWarning(
       return await getCodexModelsWithMetadata();
     case 'cortex':
       return { models: await getCortexModels() };
+    case 'droid':
+      return { models: await getDroidModels() };
     case 'opencode':
       return { models: await getOpencodeModels() };
     case 'mock':

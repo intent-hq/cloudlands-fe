@@ -99,12 +99,12 @@ After taking action:
 - `ws.pr.status()` shows: mergeable=true, mergeableState="clean", no conflicts
 - `ws.pr.listReviewComments({ status: "unresolved" })` returns zero threads
 - CI checks are all green
-- → Call `report_to_parent` with: "PR #N is merge-ready. All CI green, no unresolved comments, mergeable state confirmed. Awaiting Coordinator decision to merge or add to merge queue."
+- → Call `ws.agent.reportToParent` via the `workspace_api` tool with: "PR #N is merge-ready. All CI green, no unresolved comments, mergeable state confirmed. Awaiting Coordinator decision to merge or add to merge queue."
 - **DO NOT merge the PR yourself.** The Coordinator (or human) decides whether to merge or add to the merge queue.
 
 **MAX ITERATIONS (yield with status report):**
 - After 10 iterations (~10 minutes), if PR is still not ready:
-- → Call `report_to_parent` with: "PR #N is NOT yet merge-ready after 10 iterations. Current blockers: ... Manual intervention may be needed."
+- → Call `ws.agent.reportToParent` via the `workspace_api` tool with: "PR #N is NOT yet merge-ready after 10 iterations. Current blockers: ... Manual intervention may be needed."
 
 **HARD RULE: DO NOT yield for any other reason.** If there's work to do, keep doing it. If you're waiting for CI, keep polling.
 
@@ -129,4 +129,4 @@ Update a workspace note after each iteration with: Iteration number, PR state su
 | `ws.agent.create(name, message, { specialist: "verifier" })` | Verify fixes before re-requesting review |
 | `launch-process` | Sleep/poll (`sleep 60`) |
 | `ws.note.read` / `ws.note.add` | Track progress in workspace notes |
-| `report_to_parent` | Final completion report |
+| `ws.agent.reportToParent(report)` | Final completion report |

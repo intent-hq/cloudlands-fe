@@ -297,6 +297,7 @@ import { setupOpencodeIPC } from '../features/opencode/main/opencode.ipc';
 import { setupClaudeCodeIPC } from '../features/claude-code/main/claude-code.ipc';
 import { setupCodexIPC } from '../features/codex/main/codex.ipc';
 import { setupCortexIPC } from '../features/cortex/main/cortex.ipc';
+import { setupDroidIPC } from '../features/droid/main/droid.ipc';
 import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupCommentsIPC } from '../features/comments/main/comments.ipc';
@@ -1454,6 +1455,7 @@ app.whenReady().then(async () => {
   setupClaudeCodeIPC(); // Needed for claude-code:get-models
   setupCodexIPC(); // Needed for codex:get-models
   setupCortexIPC(); // Needed for cortex:get-models
+  setupDroidIPC(); // Needed for droid:get-models
   setupFeatureCodesIPC(); // Feature codes for gating features like Cortex
   setupProviderAvailabilityIPC(); // Needed for providers:get-availability
   setupThirdPartySourcesIPC(); // Needed for sources:list

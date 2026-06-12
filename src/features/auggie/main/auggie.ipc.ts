@@ -2521,4 +2521,164 @@ export function setupAuggieIPC() {
       };
     }
   });
+
+  // Setup MCP for Droid
+  ipcMain.handle(AUGGIE_CHANNELS.SETUP_MCP_DROID, async () => {
+    try {
+      logger.info('Setting up MCP for Droid');
+
+      const auggiePath = await findAuggiePathAsync();
+
+      if (!auggiePath) {
+        return {
+          success: false,
+          error: 'Auggie CLI not found. Please install auggie first.',
+        };
+      }
+
+      // Read or create ~/.factory/mcp.json
+      const configDir = path.join(os.homedir(), '.factory');
+      const configFile = path.join(configDir, 'mcp.json');
+
+      // Ensure directory exists
+      await fs.mkdir(configDir, { recursive: true });
+
+      // Read existing config or create new one
+      let config: any = {
+        mcpServers: {},
+      };
+
+      try {
+        const content = await fs.readFile(configFile, 'utf-8');
+        config = JSON.parse(content);
+        // Ensure mcpServers object exists
+        if (!config.mcpServers) {
+          config.mcpServers = {};
+        }
+      } catch (readError) {
+        const errCode = (readError as NodeJS.ErrnoException).code;
+        if (errCode !== 'ENOENT') {
+          logger.warn('Failed to parse existing Droid MCP config, will overwrite', {
+            error: (readError as Error).message,
+          });
+        }
+      }
+
+      // Add or update the augment-context-engine entry
+      config.mcpServers['augment-context-engine'] = {
+        type: 'stdio',
+        command: auggiePath,
+        args: ['--mcp', '--mcp-auto-workspace'],
+        disabled: false,
+      };
+
+      // Write the config file
+      await fs.writeFile(configFile, JSON.stringify(config, null, 2), 'utf-8');
+
+      logger.info('Droid MCP setup completed', { configFile });
+
+      return {
+        success: true,
+      };
+    } catch (error) {
+      const errorMessage = (error as Error).message || 'Unknown error';
+      logger.error('Failed to setup MCP for Droid', { error: errorMessage });
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+  });
+
+  // Check if MCP is configured for Droid
+  ipcMain.handle(AUGGIE_CHANNELS.CHECK_MCP_DROID, async () => {
+    try {
+      logger.info('Checking MCP configuration for Droid');
+
+      const configFile = path.join(os.homedir(), '.factory', 'mcp.json');
+
+      try {
+        const content = await fs.readFile(configFile, 'utf-8');
+        const config = JSON.parse(content);
+
+        // Check if augment-context-engine is configured and not disabled
+        const isConfigured =
+          config.mcpServers &&
+          config.mcpServers['augment-context-engine'] &&
+          config.mcpServers['augment-context-engine'].disabled !== true;
+
+        logger.info('Droid MCP check completed', { configured: isConfigured });
+        return {
+          success: true,
+          configured: isConfigured,
+        };
+      } catch (readOrParseError) {
+        const errCode = (readOrParseError as NodeJS.ErrnoException).code;
+        if (errCode === 'ENOENT') {
+          logger.info('Droid MCP config file not found');
+        } else {
+          logger.warn('Failed to read/parse Droid MCP config file', {
+            error: (readOrParseError as Error).message,
+          });
+        }
+        return {
+          success: true,
+          configured: false,
+        };
+      }
+    } catch (error) {
+      const errorMessage = (error as Error).message || 'Unknown error';
+      logger.error('Error checking Droid MCP configuration', { error: errorMessage });
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+  });
+
+  // Uninstall MCP from Droid
+  ipcMain.handle(AUGGIE_CHANNELS.UNINSTALL_MCP_DROID, async () => {
+    try {
+      logger.info('Uninstalling MCP from Droid');
+
+      const configFile = path.join(os.homedir(), '.factory', 'mcp.json');
+
+      try {
+        const content = await fs.readFile(configFile, 'utf-8');
+        const config = JSON.parse(content);
+
+        if (config.mcpServers && config.mcpServers['augment-context-engine']) {
+          delete config.mcpServers['augment-context-engine'];
+          await fs.writeFile(configFile, JSON.stringify(config, null, 2), 'utf-8');
+          logger.info('Droid MCP uninstall completed', { configFile });
+        } else {
+          logger.info('augment-context-engine not found in Droid config, nothing to uninstall');
+        }
+
+        return {
+          success: true,
+        };
+      } catch (readOrParseError) {
+        const errCode = (readOrParseError as NodeJS.ErrnoException).code;
+        if (errCode === 'ENOENT') {
+          logger.info('Droid MCP config file not found, nothing to uninstall');
+          return { success: true };
+        }
+        logger.warn('Failed to read/parse Droid MCP config file during uninstall', {
+          error: (readOrParseError as Error).message,
+        });
+        return {
+          success: false,
+          error: `Failed to parse Droid MCP config: ${(readOrParseError as Error).message}`,
+        };
+      }
+    } catch (error) {
+      const errorMessage = (error as Error).message || 'Unknown error';
+      logger.error('Failed to uninstall MCP from Droid', { error: errorMessage });
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+  });
 }

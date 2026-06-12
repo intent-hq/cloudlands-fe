@@ -26,6 +26,7 @@ export interface ProviderAvailabilityResult {
     cortex: ProviderStatus;
     mock: ProviderStatus;
     opencode: ProviderStatus;
+    droid: ProviderStatus;
   };
   /** Provider IDs that are hidden because their required env var or feature code is not set */
   hiddenProviders: string[];

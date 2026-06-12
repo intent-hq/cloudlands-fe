@@ -2659,7 +2659,7 @@ export class AgentBackendHandler {
           if (imageCount > 0) {
             // Add a text note to tell the agent that images are included in this prompt
             // Append to the agent's text block (not display block)
-            const imageInfoText = `\n\n[System: ${imageCount} image(s) from the current note are attached to this message. You can see them directly - no need to call read_asset or read_note to view them.]`;
+            const imageInfoText = `\n\n[System: ${imageCount} image(s) from the current note are attached to this message. You can see them directly - no need to call ws.note.readAsset() or ws.note.read() via the workspace_api tool to view them.]`;
             const textBlock = agentContentBlocks.find((b) => b.type === 'text');
             if (textBlock && 'text' in textBlock) {
               textBlock.text = textBlock.text + imageInfoText;
@@ -2867,23 +2867,23 @@ export class AgentBackendHandler {
         const needsAgentRename = isRandomAgentName(agentName);
 
         // Only add instructions that are actually needed
-        // NOTE: Tool names include the MCP server suffix (e.g., _workspace-mcp) because
-        // that's how agents see them in their tool list
+        // NOTE: Renaming goes through the unified workspace_api tool (ws.* JS API);
+        // per-function tools like set_workspace_title no longer exist
         if (needsWorkspaceRename && needsAgentRename) {
           namingInstructions = `<system>
-This workspace needs a title. Call \`set_workspace_title_workspace-mcp\` and \`set_agent_name_workspace-mcp\` as your first actions. These can be called in parallel with information-gathering.
+This workspace needs a title. As your first action, call the \`workspace_api\` tool with \`ws.workspace.setTitle("...")\` and \`ws.workspace.setAgentName("...")\`. This can be called in parallel with information-gathering.
 </system>
 
 `;
         } else if (needsWorkspaceRename) {
           namingInstructions = `<system>
-This workspace needs a title. Call \`set_workspace_title_workspace-mcp\` as your first action. This can be called in parallel with information-gathering.
+This workspace needs a title. As your first action, call the \`workspace_api\` tool with \`ws.workspace.setTitle("...")\`. This can be called in parallel with information-gathering.
 </system>
 
 `;
         } else if (needsAgentRename) {
           namingInstructions = `<system>
-Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This can be called in parallel with information-gathering.
+Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to name yourself based on your task. This can be called in parallel with information-gathering.
 </system>
 
 `;
@@ -9462,7 +9462,7 @@ Call \`set_agent_name_workspace-mcp\` to name yourself based on your task. This 
           // Get specialist type from agent metadata
           specialist = agent.metadata?.specialist as string | undefined;
 
-          // Get completion report if set via report_to_parent tool
+          // Get completion report if set via ws.agent.reportToParent()
           completionReport = agent.metadata?.completionReport as string | undefined;
 
           // Get parent agent ID if this is a delegated agent

@@ -2347,6 +2347,8 @@ export const AuggieMcpSetupCodexSchema = z.object({}).strict();
 
 export const AuggieMcpSetupOpenCodeSchema = z.object({}).strict();
 
+export const AuggieMcpSetupDroidSchema = z.object({}).strict();
+
 // ============================================================================
 // Auggie MCP Check Schemas
 // ============================================================================
@@ -2356,6 +2358,8 @@ export const AuggieMcpCheckClaudeCodeSchema = z.object({}).strict();
 export const AuggieMcpCheckCodexSchema = z.object({}).strict();
 
 export const AuggieMcpCheckOpenCodeSchema = z.object({}).strict();
+
+export const AuggieMcpCheckDroidSchema = z.object({}).strict();
 
 // ============================================================================
 // Skills Schemas

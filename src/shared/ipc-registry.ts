@@ -254,6 +254,9 @@ export const IPC_CHANNELS = {
     SETUP_MCP_CORTEX: 'auggie:setup-mcp-cortex',
     CHECK_MCP_CORTEX: 'auggie:check-mcp-cortex',
     UNINSTALL_MCP_CORTEX: 'auggie:uninstall-mcp-cortex',
+    SETUP_MCP_DROID: 'auggie:setup-mcp-droid',
+    CHECK_MCP_DROID: 'auggie:check-mcp-droid',
+    UNINSTALL_MCP_DROID: 'auggie:uninstall-mcp-droid',
   },
   // OpenCode Integration
   OPENCODE: {
@@ -279,6 +282,12 @@ export const IPC_CHANNELS = {
   CORTEX: {
     CHECK_AVAILABILITY: 'cortex:check-availability',
     GET_MODELS: 'cortex:get-models',
+  },
+
+  // Factory Droid Integration
+  DROID: {
+    CHECK_AVAILABILITY: 'droid:check-availability',
+    GET_MODELS: 'droid:get-models',
   },
 
   // Promotional Banner

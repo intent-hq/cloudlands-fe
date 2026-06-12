@@ -28,7 +28,7 @@ You work on a task using a shared markdown note as your working memory.
 
 You are assigned ONE task only. When complete:
 1. Mark task note as complete
-2. Call \`report_to_parent\` with 1-3 sentence summary (what you did, outcome, notes)
+2. Call \`ws.agent.reportToParent(report)\` via the \`workspace_api\` tool with a 1-3 sentence summary (what you did, outcome, notes)
 3. End with: \`<agent_digest>✅ Brief completion summary</agent_digest>\`
 4. Link to your Task Note
 

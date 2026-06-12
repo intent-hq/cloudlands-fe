@@ -159,6 +159,27 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     loginDocsUrl: 'https://opencode.ai/docs#configure',
   },
 
+  droid: {
+    id: 'droid',
+    displayName: 'Factory Droid',
+    command: 'droid',
+    baseArgs: ['exec', '--output-format', 'acp'],
+    modelFlag: '--model',
+    // Droid does not implement the ACP `authenticate` JSON-RPC method.
+    // Users log in via the droid CLI / Factory docs.
+    supportsAuthenticate: false,
+    supportsSetMode: false,
+    supportsMcpConfig: false,
+    supportsRulesFile: false,
+    isDefault: false,
+    canBeDisabled: true,
+    ipcChannelPrefix: 'droid',
+    // Droid has no `models`/`auth status` CLI subcommand. Readiness is
+    // verified via an ACP probe (initialize + session/new returning a
+    // non-empty model list) — see droid-acp-probe.ts.
+    loginDocsUrl: 'https://docs.factory.ai/cli/getting-started/overview',
+  },
+
   mock: {
     id: 'mock',
     displayName: 'Mock (E2E)',
@@ -250,6 +271,7 @@ export const PROVIDER_AVAILABILITY_KEY_TO_ID: Record<string, string> = {
   mock: 'mock',
   opencode: 'opencode',
   cortex: 'cortex',
+  droid: 'droid',
 };
 
 /**
@@ -390,9 +412,9 @@ export const PROVIDER_MODEL_TIERS: Record<
   },
   codex: { fast: 'gpt-5.3-codex/medium', balanced: 'gpt-5.3-codex/high', smart: 'gpt-5.3-codex/xhigh' },
   cortex: { fast: 'claude-sonnet-4-5', balanced: 'claude-opus-4-5', smart: 'claude-opus-4-5' },
-  // Note: opencode models are dynamic and fetched from the CLI at runtime.
-  // Do NOT add a hardcoded opencode entry here — model names change frequently.
-  // Tier resolution for opencode falls back to using the parent agent's model.
+  // Note: opencode and droid models are dynamic and fetched from the CLI at runtime.
+  // Do NOT add hardcoded opencode/droid entries here — model names change frequently.
+  // Tier resolution for these providers falls back to using the parent agent's model.
 };
 
 /**

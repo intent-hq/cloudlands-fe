@@ -52,6 +52,7 @@ function createAvailabilityResult(
       mock: { available: availableProviders.mock ?? false },
       opencode: { available: availableProviders.opencode ?? false },
       cortex: { available: availableProviders.cortex ?? false },
+      droid: { available: availableProviders.droid ?? false },
     },
     hiddenProviders,
   };
@@ -100,11 +101,20 @@ describe('provider availability client', () => {
         mock: true,
         opencode: true,
         cortex: true,
+        droid: true,
       }),
     );
 
     await getProviderAvailability(true);
 
-    expectValidatedProviderIds(['auggie', 'claude-code', 'codex', 'mock', 'opencode', 'cortex']);
+    expectValidatedProviderIds([
+      'auggie',
+      'claude-code',
+      'codex',
+      'mock',
+      'opencode',
+      'cortex',
+      'droid',
+    ]);
   });
 });

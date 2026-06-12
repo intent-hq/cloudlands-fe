@@ -74,7 +74,7 @@ export const UTILITY_AGENTS = new Set([
 ]);
 
 // Background agents that are truly non-interactive - they should NOT get common instructions
-// (no set_agent_name, no delegation, no note editing - just output their result)
+// (no agent renaming, no delegation, no note editing - just output their result)
 export const NON_INTERACTIVE_BACKGROUND_AGENTS = new Set([
   'commit-message',
   'pr-description',
@@ -278,7 +278,7 @@ export function getInstructionWithCommon(specificInstructionId: string): string 
   }
 
   // Non-interactive background agents: NO common instructions
-  // These are output-only agents that shouldn't call set_agent_name, delegate tasks, etc.
+  // These are output-only agents that shouldn't rename themselves, delegate tasks, etc.
   if (NON_INTERACTIVE_BACKGROUND_AGENTS.has(specificInstructionId)) {
     return specificInstruction;
   }

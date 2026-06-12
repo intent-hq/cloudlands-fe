@@ -2512,8 +2512,8 @@ export class ACPProvider extends BaseAgentProvider {
 
     // GLOBAL RESTRICTION: Block sub-agent tool for ALL agents
     // Reason: sub-agent tool has no UI representation, making work invisible to users.
-    // All agents should use delegate_task or create_agent instead, which create
-    // visible workspace agents that users can see and interact with.
+    // All agents should use ws.agent.delegate() or ws.agent.create() (via workspace_api)
+    // instead, which create visible workspace agents that users can see and interact with.
     logger.info('[getToolRestrictionsForAgent] Applying global sub-agent restriction', {
       specialist,
       agentType,
@@ -3227,10 +3227,13 @@ export class ACPProvider extends BaseAgentProvider {
         });
       }
 
-      if (caps.id === 'claude-code' || caps.id === 'cortex') {
+      if (caps.id === 'claude-code' || caps.id === 'cortex' || caps.id === 'droid') {
         // Pass MCP servers via the ACP session/new mcpServers field.
         // Both claude-agent-acp and cortex-acp adapters process these from params.mcpServers.
         // cortex-acp writes them to ~/.snowflake/cortex/mcp.json before spawning cortex.
+        // droid (verified live against v0.141.0): `droid exec --output-format acp` spawns the
+        // stdio servers from params.mcpServers, sends MCP initialize/tools-list, and exposes
+        // their tools to the agent as `<server>___<tool>` (loaded on demand via ToolSearch).
         this.acpMcpServersForSession = toAcpMcpServers(normalized);
         logger.info('Prepared ACP MCP servers for session', {
           providerId: caps.id,
@@ -5833,13 +5836,15 @@ export class ACPProvider extends BaseAgentProvider {
       // OPENCODE_CONFIG_CONTENT sets the model at the config level, but the `acp` subcommand
       // may not honor it (observed with OpenRouter models where OpenCode falls back to its
       // default model). Explicitly setting via ACP ensures the model sticks.
-      if (caps.id === 'opencode' && this.config.model) {
+      // Droid: the `droid exec` CLI ignores -m/--model in ACP/JSON-RPC mode (per its
+      // --help), so session/set_model is the only mechanism that takes effect.
+      if ((caps.id === 'opencode' || caps.id === 'droid') && this.config.model) {
         const { modelId: rawModelId } = parseCompoundModelId(this.config.model);
         if (rawModelId && rawModelId !== 'default') {
           try {
             const setModelResult = await this.setModel(rawModelId);
             if (setModelResult.success) {
-              logger.info('OpenCode model set via ACP session/set_model', {
+              logger.info(`${caps.displayName} model set via ACP session/set_model`, {
                 sessionId: this.sessionId,
                 modelId: rawModelId,
               });
@@ -5847,7 +5852,7 @@ export class ACPProvider extends BaseAgentProvider {
               const logFn = setModelResult.unsupported ? logger.debug : logger.warn;
               logFn.call(
                 logger,
-                'Failed to set OpenCode model via ACP; relying on OPENCODE_CONFIG_CONTENT',
+                `Failed to set ${caps.displayName} model via ACP session/set_model`,
                 {
                   sessionId: this.sessionId,
                   modelId: rawModelId,
@@ -5856,7 +5861,7 @@ export class ACPProvider extends BaseAgentProvider {
               );
             }
           } catch (e) {
-            logger.warn('Error setting OpenCode model via ACP session/set_model', {
+            logger.warn(`Error setting ${caps.displayName} model via ACP session/set_model`, {
               sessionId: this.sessionId,
               modelId: rawModelId,
               error: (e as Error).message,
@@ -5880,15 +5885,18 @@ export class ACPProvider extends BaseAgentProvider {
               }
             })()
           : undefined,
-        modelAppliedVia: caps.modelFlag
-          ? `CLI flag (${caps.modelFlag})`
-          : caps.id === 'opencode'
+        modelAppliedVia:
+          caps.id === 'opencode'
             ? 'session/set_model + OPENCODE_CONFIG_CONTENT'
-            : caps.id === 'claude-code'
-              ? 'deferred session/set_model (on sessionUpdate)'
-              : caps.id === 'cortex'
-                ? 'sessionMetadata.model'
-                : 'unknown',
+            : caps.id === 'droid'
+              ? 'session/set_model (CLI --model ignored in ACP mode)'
+              : caps.id === 'claude-code'
+                ? 'deferred session/set_model (on sessionUpdate)'
+                : caps.id === 'cortex'
+                  ? 'sessionMetadata.model'
+                  : caps.modelFlag
+                    ? `CLI flag (${caps.modelFlag})`
+                    : 'unknown',
       });
     } else {
       logger.error('Failed to create ACP session - no sessionId in response', sessionResponse);
@@ -8560,7 +8568,7 @@ export class ACPProvider extends BaseAgentProvider {
         // Add spec instructions if needed (only if no files attached)
         else if (options?.currentContext?.type === 'spec') {
           promptText +=
-            "\n\nYou're working with the spec note (ID: 'spec'). Use read_note(noteId='spec') to read it, add_to_note to add content, or edit_note to modify specific text.";
+            '\n\nYou\'re working with the spec note (ID: \'spec\'). Via the `workspace_api` tool, use `ws.note.read("spec")` to read it, `ws.note.add("spec", { content, heading?, position? })` to add content, or `ws.note.edit("spec", { old, new })` to modify specific text.';
         }
 
         // For providers without rules-file support, inject our runtime rules bundle once so
@@ -10427,19 +10435,18 @@ export class ACPProvider extends BaseAgentProvider {
     // Add information about available MCP tools
     parts.push('\n## Available Tools\n');
     parts.push(
-      'You have access to MCP (Model Context Protocol) tools through the workspace MCP server:',
-    );
-    parts.push('- **File Operations**: read_file, write_file, list_files');
-    parts.push(
-      '- **Workspace Management**: view_workspace, view_workspace_details, rename_workspace',
+      'You have access to the workspace through a single MCP tool from the workspace MCP server: `workspace_api`. Invoke it with JavaScript that calls the `ws.*` API and use `return` to send results back. Common calls:',
     );
     parts.push(
-      '- **Notes**: create_note, list_notes, list_note_tasks, read_note, add_to_note, edit_note, delete_note',
+      '- **Notes**: ws.note.read(id), ws.note.add(id, { content }), ws.note.edit(id, { old, new }), ws.note.create(title, content), ws.note.list(), ws.note.listTasks(id)',
     );
     parts.push(
-      '- **Specification**: read_spec, write_spec (the main workspace specification document)',
+      '- **Specification**: ws.note.read("spec"), ws.note.add("spec", { content }) (the main workspace specification document)',
     );
-    parts.push('- **Activity**: read_timeline (view recent workspace activities)');
+    parts.push(
+      '- **Workspace Management**: ws.workspace.details(), ws.workspace.setTitle(title), ws.workspace.setAgentName(name)',
+    );
+    parts.push('- **Activity**: ws.workspace.timeline() (view recent workspace activities)');
 
     // Add configured user MCP server names so the agent knows what to expect,
     // even before tools finish loading.
@@ -10468,7 +10475,7 @@ export class ACPProvider extends BaseAgentProvider {
       '1. **Focus on the workspace context** - Be aware of what files are open and what the user is looking at',
     );
     parts.push(
-      '2. **Use the specification document** - The spec (accessible via read_spec/write_spec) is the primary artifact for planning and documentation',
+      '2. **Use the specification document** - The spec (accessible via `workspace_api` with ws.note.read("spec") / ws.note.add("spec", ...)) is the primary artifact for planning and documentation',
     );
     parts.push(
       '3. **Reference specific files** - When discussing code, reference the actual files in the workspace',
@@ -10480,7 +10487,7 @@ export class ACPProvider extends BaseAgentProvider {
       '5. **Be context-aware** - Your responses should be relevant to the current file/note/diff the user is viewing',
     );
     parts.push(
-      "6. **Rename yourself** - As the first thing you do, use the MCP tool to name yourself so the developer knows what you're working on.",
+      "6. **Rename yourself** - As the first thing you do, call `workspace_api` with ws.workspace.setAgentName(\"...\") to name yourself so the developer knows what you're working on.",
     );
 
     return parts.join('\n');

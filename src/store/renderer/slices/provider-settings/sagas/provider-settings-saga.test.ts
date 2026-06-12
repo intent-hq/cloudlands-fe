@@ -39,6 +39,7 @@ function mockProviderAvailability(
     opencode?: boolean;
     cortex?: boolean;
     mock?: boolean;
+    droid?: boolean;
   },
   hiddenProviders: string[] = [],
 ): void {
@@ -53,6 +54,7 @@ function mockProviderAvailability(
         opencode: { available: availableProviders.opencode ?? false },
         cortex: { available: availableProviders.cortex ?? false },
         mock: { available: availableProviders.mock ?? false },
+        droid: { available: availableProviders.droid ?? false },
       },
       hiddenProviders,
     },

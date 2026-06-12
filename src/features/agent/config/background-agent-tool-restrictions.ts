@@ -90,6 +90,18 @@ export const WORKSPACE_WRITE_TOOLS = [
 ] as const;
 
 /**
+ * Unified workspace JS API tool.
+ *
+ * The workspace MCP server now exposes a single `workspace_api` tool that runs
+ * JavaScript against the full `ws.*` API, superseding the legacy per-operation
+ * tools above (which remain listed for backward compatibility). Since it can
+ * perform any workspace mutation (files, git, notes, agents), pure-text
+ * background agents must deny it. Listed both bare and with the
+ * `_workspace-mcp` server suffix to match the runtime tool name agents see.
+ */
+export const UNIFIED_WORKSPACE_TOOLS = ['workspace_api', 'workspace_api_workspace-mcp'] as const;
+
+/**
  * Process/command execution tools
  */
 export const EXECUTION_TOOLS = ['launch-process', 'execute_command'] as const;
@@ -149,6 +161,7 @@ export const BACKGROUND_AGENT_TOOL_DENYLISTS: Record<string, readonly string[]> 
     ...AGENT_CREATION_TOOLS,
     ...NOTE_WRITE_TOOLS,
     ...WORKSPACE_WRITE_TOOLS,
+    ...UNIFIED_WORKSPACE_TOOLS,
     ...EXECUTION_TOOLS,
     ...EXTERNAL_TOOLS,
     ...SUBAGENT_TOOLS,
@@ -169,6 +182,7 @@ export const BACKGROUND_AGENT_TOOL_DENYLISTS: Record<string, readonly string[]> 
     ...AGENT_CREATION_TOOLS,
     ...NOTE_WRITE_TOOLS,
     ...WORKSPACE_WRITE_TOOLS,
+    ...UNIFIED_WORKSPACE_TOOLS,
     ...EXECUTION_TOOLS,
     ...EXTERNAL_TOOLS,
     ...SUBAGENT_TOOLS,
@@ -190,6 +204,7 @@ export const BACKGROUND_AGENT_TOOL_DENYLISTS: Record<string, readonly string[]> 
     ...AGENT_CREATION_TOOLS,
     ...NOTE_WRITE_TOOLS,
     ...WORKSPACE_WRITE_TOOLS,
+    ...UNIFIED_WORKSPACE_TOOLS,
     ...EXECUTION_TOOLS,
     ...EXTERNAL_TOOLS,
     ...SUBAGENT_TOOLS,
@@ -211,6 +226,7 @@ export const BACKGROUND_AGENT_TOOL_DENYLISTS: Record<string, readonly string[]> 
     ...AGENT_CREATION_TOOLS,
     ...NOTE_WRITE_TOOLS,
     ...WORKSPACE_WRITE_TOOLS,
+    ...UNIFIED_WORKSPACE_TOOLS,
     ...EXECUTION_TOOLS,
     ...EXTERNAL_TOOLS,
     ...SUBAGENT_TOOLS,
