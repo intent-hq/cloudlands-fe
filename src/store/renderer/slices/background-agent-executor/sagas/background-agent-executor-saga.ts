@@ -55,7 +55,9 @@ import {
 } from '$store/renderer/slices/model/model-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
-import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
+import {
+  selectAgentIsRunning,
+} from '$store/renderer/slices/agent-session/agent-session-selectors';
 import {
   AgentStatus,
   type AgentSession,
@@ -203,20 +205,20 @@ type AgentStateEvent = {
 
 function getAgentStateEvent(
   session: AgentSession,
-  isResponding: boolean,
+  isRunning: boolean,
   resultTag?: string,
 ): AgentStateEvent {
-  const messages = getMessagesWithIdleSummaryFallback(session, !isResponding, resultTag);
+  const messages = getMessagesWithIdleSummaryFallback(session, !isRunning, resultTag);
 
   if (session.status === AgentStatus.Error) {
     return { messages, isComplete: false, isError: true, isStreaming: false };
   }
 
-  if (!isResponding && messages.length > 0) {
+  if (!isRunning && messages.length > 0) {
     return { messages, isComplete: true, isError: false, isStreaming: false };
   }
 
-  return { messages, isComplete: false, isError: false, isStreaming: isResponding };
+  return { messages, isComplete: false, isError: false, isStreaming: isRunning };
 }
 
 export function* createAgentStateChannel(
@@ -437,8 +439,8 @@ function* handleAgentStateEvent(
   resultTag: string,
   session: AgentSession,
 ): SagaGenerator<boolean> {
-  const isResponding = yield* selectAgentIsResponding.effect(agentId);
-  const { messages, isComplete, isError } = getAgentStateEvent(session, isResponding, resultTag);
+  const isRunning = yield* selectAgentIsRunning.effect(agentId);
+  const { messages, isComplete, isError } = getAgentStateEvent(session, isRunning, resultTag);
 
   // Try to extract result from current messages
   const { result } = extractResultFromMessages(messages, resultTag, undefined, false);
@@ -514,7 +516,7 @@ function* handleReconnect(action: ReturnType<typeof reconnectAgent>): SagaGenera
   const agentSession = yield* selectAgentSession.effect(agentId);
   if (!agentSession) return;
 
-  if (yield* selectAgentIsResponding.effect(agentId)) {
+  if (yield* selectAgentIsRunning.effect(agentId)) {
     yield* put(setExecutorState(workspaceId, executorType, {
       status: 'running',
       agentId,

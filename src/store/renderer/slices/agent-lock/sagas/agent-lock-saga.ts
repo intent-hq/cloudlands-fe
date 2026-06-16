@@ -37,7 +37,7 @@ import {
   setAgentLockState,
 } from '../agent-lock-slice';
 
-import { selectAgentIsResponding } from '../../agent-session/agent-session-selectors';
+import { selectAgentIsRunning } from '../../agent-session/agent-session-selectors';
 import type { TrackedChange } from '../../changes/changes-types';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 
@@ -55,11 +55,11 @@ function* isAgentActivelyWorking(
   agentId: string,
 ): SagaGenerator<boolean> {
   try {
-    // Check streaming state from Redux
+    // Check running state from Redux
     const session = yield* selectAgentSession.effect(agentId);
     if (!session) return false;
 
-    if (yield* selectAgentIsResponding.effect(agentId)) {
+    if (yield* selectAgentIsRunning.effect(agentId)) {
       return true;
     }
 

@@ -1,12 +1,15 @@
 /**
  * Regression tests for suggested prompts visibility.
  *
- * These tests verify that suggested prompts are only visible after streaming completes.
- * The visibility logic in ChatPanel.svelte returns an empty array when isStreaming is true.
+ * These tests verify that suggested prompts are only visible once the agent is
+ * idle. The visibility logic in ChatPanel.svelte returns an empty array whenever
+ * the canonical `selectAgentIsRunning` selector reports the agent as running —
+ * which is broader than streaming (it also covers processing, executing tools,
+ * activating, and waiting on other agents).
  *
  * This regression coverage ensures that:
- * 1. Prompts are hidden during active streaming
- * 2. Prompts become visible once streaming ends (isStreaming = false)
+ * 1. Prompts are hidden while the agent is running (streaming OR not streaming)
+ * 2. Prompts become visible once the agent is idle (isRunning = false)
  * 3. The derived computation correctly extracts prompts from the last assistant message
  */
 
@@ -22,13 +25,24 @@ import type { SuggestedPrompt } from '$shared/types';
 /**
  * Simulates the suggestedPrompts derived computation from ChatPanel.svelte
  * This is the exact logic used to determine visibility.
+ *
+ * `isRunning` mirrors the canonical `selectAgentIsRunning` gate — it is true
+ * whenever the agent's turn is active (streaming, processing, executing tools,
+ * activating, or waiting on other agents), not only during text streaming.
  */
 function computeSuggestedPrompts(
-  isStreaming: boolean,
+  isRunning: boolean,
   messages: AgentMessage[],
+  showingPendingUserMessage = false,
 ): SuggestedPrompt[] {
-  // Mirrors ChatPanel.svelte lines 355-367
-  if (isStreaming || messages.length === 0) {
+  // Mirrors ChatPanel.svelte suggestedPrompts derived gate.
+  if (isRunning || messages.length === 0) {
+    return [];
+  }
+  // Hide as soon as the user submits a new prompt: either a trailing user
+  // message exists, or an optimistic/pending user bubble is being shown.
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage?.role === 'user' || showingPendingUserMessage) {
     return [];
   }
   const lastAssistantMessage = [...messages].reverse().find((m) => m.role === 'assistant');
@@ -62,25 +76,31 @@ Check the build status
 -->
 `);
 
-  describe('visibility gating on isStreaming', () => {
+  describe('visibility gating on isRunning', () => {
     /**
-     * REGRESSION: Prompts must NOT be visible while streaming is active.
+     * REGRESSION: Prompts must NOT be visible while the agent is running.
      * This prevents flickering or premature display of incomplete prompt data.
      */
-    it('returns empty array when isStreaming is true, even with valid prompts', () => {
+    it('returns empty array when isRunning is true, even with valid prompts', () => {
       const prompts = computeSuggestedPrompts(true, [messageWithPrompts]);
       expect(prompts).toEqual([]);
     });
 
+    // The running-but-not-streaming edge case (processing, executing tools,
+    // activating, waiting on sub-agents) is covered by the selectAgentIsRunning
+    // suite in agent-session-slice.test.ts — the real selector this gate consumes.
+    // computeSuggestedPrompts collapses every running state into one isRunning
+    // boolean, so it cannot meaningfully exercise that path here.
+
     /**
-     * REGRESSION: Once streaming completes (isStreaming = false), prompts become visible.
+     * REGRESSION: Once the agent's turn has ended (isRunning = false), prompts become visible.
      */
-    it('returns prompts when isStreaming is false and prompts exist', () => {
+    it('returns prompts when isRunning is false and prompts exist', () => {
       const prompts = computeSuggestedPrompts(false, [messageWithPrompts]);
       expect(prompts).toEqual(['Run the tests', 'Check the build status']);
     });
 
-    it('returns empty array for empty message list regardless of streaming state', () => {
+    it('returns empty array for empty message list regardless of running state', () => {
       expect(computeSuggestedPrompts(false, [])).toEqual([]);
       expect(computeSuggestedPrompts(true, [])).toEqual([]);
     });
@@ -107,7 +127,7 @@ New prompt 2
       expect(prompts).toEqual(['New prompt 1', 'New prompt 2']);
     });
 
-    it('ignores user messages when finding last assistant', () => {
+    it('hides prompts when a user message trails the last assistant message', () => {
       const assistantMsg = createAssistantMessage(`Response
 
 <!-- suggested-prompts
@@ -122,7 +142,7 @@ Test prompt
       };
 
       const prompts = computeSuggestedPrompts(false, [assistantMsg, userMsg]);
-      expect(prompts).toEqual(['Test prompt']);
+      expect(prompts).toEqual([]);
     });
 
     it('returns empty array if last assistant has no prompts', () => {
@@ -132,16 +152,44 @@ Test prompt
     });
   });
 
-  describe('streaming state transition', () => {
+  describe('hiding once the user submits a new prompt', () => {
+    const userMsg: AgentMessage = {
+      id: 'msg_user_1',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'A new user prompt' }],
+      timestamp: new Date().toISOString(),
+    };
+
     /**
-     * REGRESSION: Simulates the transition from streaming -> complete.
+     * REGRESSION: When the last message in the thread is a user message, the
+     * prompts from the preceding assistant message must be hidden even before
+     * `agentIsRunning$` flips true.
+     */
+    it('returns empty array when the last message is a user message', () => {
+      const prompts = computeSuggestedPrompts(false, [messageWithPrompts, userMsg]);
+      expect(prompts).toEqual([]);
+    });
+
+    /**
+     * REGRESSION: An optimistic/pending user bubble (shown before the echo
+     * arrives in agentMessages$) must also hide the prompts.
+     */
+    it('returns empty array when an optimistic pending user message is shown', () => {
+      const prompts = computeSuggestedPrompts(false, [messageWithPrompts], true);
+      expect(prompts).toEqual([]);
+    });
+  });
+
+  describe('running state transition', () => {
+    /**
+     * REGRESSION: Simulates the transition from running -> idle.
      * This is the critical path that must work correctly.
      */
-    it('prompts become visible exactly when isStreaming transitions to false', () => {
-      // During streaming - no prompts
+    it('prompts become visible exactly when isRunning transitions to false', () => {
+      // While running - no prompts
       expect(computeSuggestedPrompts(true, [messageWithPrompts])).toEqual([]);
 
-      // After completion - prompts visible
+      // After the turn ends - prompts visible
       expect(computeSuggestedPrompts(false, [messageWithPrompts])).toEqual([
         'Run the tests',
         'Check the build status',

@@ -302,11 +302,7 @@ export const selectAllRetainedAgentSessions = store.createSelector(
     const result: AgentSession[] = [];
     for (const id of Object.keys(byAgentId)) {
       const stored = byAgentId[id];
-      if (
-        stored?.isStreaming === true ||
-        stored?.isProcessing === true ||
-        stored?.isResponding === true
-      ) {
+      if (stored && (isActiveAgentThread(stored) || isAgentWaitingForOtherAgents(stored))) {
         const materialized = materializeSession(stored);
         if (materialized) result.push(materialized);
       }
@@ -348,5 +344,28 @@ export const selectAgentIsWaiting = store.createSelector(
     const stored = state.agentSessions?.byAgentId[agentId];
     if (!stored) return false;
     return isAgentWaiting(stored) || selectAgentIsWaitingForOtherAgents.select(state, agentId);
+  },
+);
+
+/**
+ * THE canonical "is the agent currently running" selector.
+ *
+ * Returns true whenever the agent is actively doing work and is NOT in a
+ * terminal state (Completed/Error/Deleted). It is true for any of: `isStreaming`,
+ * `isProcessing`, `isResponding`, activation `ACTIVATING`, status
+ * `Active`/`Processing`/`Waiting`, unresolved/in-flight tool calls, an in-flight
+ * streaming assistant message, and waiting-for-other-agents relationships. It is
+ * false for terminal statuses and for genuinely idle/cleanly-ended turns.
+ *
+ * This is the single source of truth UI surfaces should consult when gating
+ * idle-only affordances (such as next-steps links). It composes the existing
+ * active-thread and waiting-for-other-agents semantics so it stays consistent
+ * with `selectAgentIsResponding` and `selectAgentIsWaiting`.
+ */
+export const selectAgentIsRunning = store.createSelector(
+  (state, agentId: string): boolean => {
+    const stored = state.agentSessions?.byAgentId[agentId];
+    if (!stored) return false;
+    return isActiveAgentThread(stored) || isAgentWaitingForOtherAgents(stored);
   },
 );

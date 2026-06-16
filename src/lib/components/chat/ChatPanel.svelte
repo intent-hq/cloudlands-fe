@@ -57,6 +57,7 @@
   import {
   selectAgentSession,
   selectAgentIsResponding,
+  selectAgentIsRunning,
   selectAgentSessionIsStreaming,
   selectAgentSessionStreamingContent,
   selectAgentMessages,
@@ -311,6 +312,8 @@
   const chatStatusEvents$ = selectChatStatusEvents(agentIdStore);
   const chatReceivedFirstChunk$ = selectChatReceivedFirstChunk(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
+  // Canonical "agent is running" gate for idle-only affordances (next-steps links).
+  const agentIsRunning$ = selectAgentIsRunning(agentIdStore);
 
   // Track if there's a pending permission request for this agent
   // When a permission is pending, we hide the "Thinking" indicator since the permission UI shows instead
@@ -403,7 +406,17 @@
 
   // Hoist suggested prompts so keyboard handlers can reference them
   const suggestedPrompts = $derived.by((): SuggestedPrompt[] => {
-    if ($agentSessionIsStreaming$ || $agentMessages$.length === 0) {
+    if ($agentIsRunning$ || $agentMessages$.length === 0) {
+      return [];
+    }
+    // Hide the moment the user submits a new prompt — before `agentIsRunning$`
+    // flips true there is a window where the last assistant message (carrying
+    // the prompts block) is still the last *assistant* message even though a
+    // user message now trails it, or an optimistic pending user bubble is shown.
+    const hasUserMessage = $agentMessages$.some((m) => m.role === 'user');
+    const showingPendingUserMessage = !!pendingMessage && !hasUserMessage;
+    const lastMessage = $agentMessages$[$agentMessages$.length - 1];
+    if (lastMessage?.role === 'user' || showingPendingUserMessage) {
       return [];
     }
     const lastAssistantMessage = [...$agentMessages$].reverse().find((m) => m.role === 'assistant');
@@ -1403,6 +1416,7 @@
     shouldShowEndOfListStreamingStatus({
       isStreaming: $agentSessionIsStreaming$,
       isProcessing: $agentIsResponding$,
+      isRunning: $agentIsRunning$,
       error: $chatError$,
       modelUnavailable: $chatModelUnavailable$,
       hasMessages: $agentMessages$.length > 0,
@@ -2985,6 +2999,7 @@
                       <StreamingStatus
                         isStreaming={$agentSessionIsStreaming$}
                         isProcessing={$agentIsResponding$}
+                        isRunning={$agentIsRunning$}
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3009,6 +3024,7 @@
                     <StreamingStatus
                       isStreaming={$agentSessionIsStreaming$}
                       isProcessing={$agentIsResponding$}
+                      isRunning={$agentIsRunning$}
                       lastChunkTime={$chatLastChunkTime$}
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3089,6 +3105,7 @@
                       <StreamingStatus
                         isStreaming={$agentSessionIsStreaming$}
                         isProcessing={$agentIsResponding$}
+                        isRunning={$agentIsRunning$}
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3113,6 +3130,7 @@
                     <StreamingStatus
                       isStreaming={$agentSessionIsStreaming$}
                       isProcessing={$agentIsResponding$}
+                      isRunning={$agentIsRunning$}
                       lastChunkTime={$chatLastChunkTime$}
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3136,12 +3154,13 @@
 
         <!-- Fallback: Show streaming/processing status when no messages and no pending message -->
         <!-- This covers the window where the backend starts processing before the user message echo arrives -->
-        {#if !pendingCondition && !messagesCondition && ($agentIsResponding$ || $agentSessionIsStreaming$ || $chatError$ || $chatModelUnavailable$)}
+        {#if !pendingCondition && !messagesCondition && ($agentIsResponding$ || $agentSessionIsStreaming$ || $agentIsRunning$ || $chatError$ || $chatModelUnavailable$)}
           <div class="w-full">
             <div class="mb-4">
               <StreamingStatus
                 isStreaming={$agentSessionIsStreaming$}
                 isProcessing={$agentIsResponding$}
+                isRunning={$agentIsRunning$}
                 lastChunkTime={$chatLastChunkTime$}
                 receivedFirstChunk={$chatReceivedFirstChunk$}
                 streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3331,11 +3350,12 @@
                       {/if}
 
                       <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
-                      {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: $chatError$, modelUnavailable: $chatModelUnavailable$ }, )}
+                      {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, isRunning: $agentIsRunning$, error: $chatError$, modelUnavailable: $chatModelUnavailable$ }, )}
                         <div class="mb-8">
                           <StreamingStatus
                             isStreaming={$agentSessionIsStreaming$}
                             isProcessing={$agentIsResponding$}
+                            isRunning={$agentIsRunning$}
                             lastChunkTime={$chatLastChunkTime$}
                             receivedFirstChunk={$chatReceivedFirstChunk$}
                             streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3390,6 +3410,7 @@
                             <StreamingStatus
                               isStreaming={$agentSessionIsStreaming$}
                               isProcessing={$agentIsResponding$}
+                              isRunning={$agentIsRunning$}
                               lastChunkTime={$chatLastChunkTime$}
                               receivedFirstChunk={$chatReceivedFirstChunk$}
                               streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3437,6 +3458,7 @@
                 <StreamingStatus
                   isStreaming={$agentSessionIsStreaming$}
                   isProcessing={$agentIsResponding$}
+                  isRunning={$agentIsRunning$}
                   lastChunkTime={$chatLastChunkTime$}
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}

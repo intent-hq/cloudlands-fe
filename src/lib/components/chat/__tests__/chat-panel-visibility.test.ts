@@ -108,6 +108,48 @@ describe('chat panel visibility helpers', () => {
     ).toBe(false);
   });
 
+  it('shows pending assistant status when running but not streaming (waiting on sub-agents)', () => {
+    expect(
+      shouldShowPendingAssistantStatus({
+        isStreaming: false,
+        isProcessing: false,
+        isRunning: true,
+        error: null,
+        modelUnavailable: null,
+      }),
+    ).toBe(true);
+  });
+
+  it('shows end-of-list status when running but not streaming on a completed assistant turn', () => {
+    expect(
+      shouldShowEndOfListStreamingStatus({
+        isStreaming: false,
+        isProcessing: false,
+        isRunning: true,
+        error: null,
+        modelUnavailable: null,
+        hasMessages: true,
+        lastTurnHasAssistantMessages: true,
+        lastAssistantMessageIsStreaming: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps end-of-list status hidden when genuinely idle (not running)', () => {
+    expect(
+      shouldShowEndOfListStreamingStatus({
+        isStreaming: false,
+        isProcessing: false,
+        isRunning: false,
+        error: null,
+        modelUnavailable: null,
+        hasMessages: true,
+        lastTurnHasAssistantMessages: true,
+        lastAssistantMessageIsStreaming: false,
+      }),
+    ).toBe(false);
+  });
+
   it('preserves error and model-unavailable visibility while inactive', () => {
     expect(
       shouldShowPendingAssistantStatus({
