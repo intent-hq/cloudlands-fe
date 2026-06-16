@@ -18,7 +18,6 @@ import type {
 import {
   deduplicateAgentMessages,
   insertAgentMessageWithDedup,
-  mergeAgentSessionMessagesWithPolicy,
   normalizeAgentMessage,
   normalizeDateValue,
   replaceAgentMessageByIdWithDedup,
@@ -202,28 +201,6 @@ function replaceSessionMessageById(
   return setSession(state, agentId, {
     ...session,
     messages: nextMessages,
-  });
-}
-
-function mergeMessagesIntoSession(
-  state: AgentSessionState,
-  agentId: string,
-  messages: AgentMessage[],
-  nextIsStreaming: boolean,
-): AgentSessionState {
-  const session = getSession(state, agentId);
-  if (!session) return state;
-  const currentMessages = session.messages;
-  const mergeResult = mergeAgentSessionMessagesWithPolicy({
-    currentMessages,
-    incomingMessages: messages,
-    currentIsStreaming: session.isStreaming === true,
-    nextIsStreaming,
-  });
-  if (!mergeResult.accepted) return state;
-  return setSession(state, agentId, {
-    ...session,
-    messages: normalizeSortPruneMessages(mergeResult.messages),
   });
 }
 
@@ -538,11 +515,6 @@ export const setAgentStreaming = createAction<[agentId: string, isStreaming: boo
   'agentSessions/setAgentStreaming',
 );
 
-/** Set streaming flag for an agent. Kept as a compatibility alias for older call sites. */
-export const setSessionStreaming = createAction<[agentId: string, isStreaming: boolean]>(
-  'agentSessions/setSessionStreaming',
-);
-
 /** Add a single message (normalize, exact-ID guard, prune) */
 export const addMessage = createAction<[agentId: string, message: AgentMessage]>(
   'agentSessions/addMessage',
@@ -557,13 +529,6 @@ export const updateMessage = createAction<
 export const replaceMessages = createAction<[agentId: string, messages: AgentMessage[]]>(
   'agentSessions/replaceMessages',
 );
-
-/** Merge a raw session message snapshot using Redux-owned stale/dedup policy. */
-export const mergeSessionMessages = createAction<[
-  agentId: string,
-  messages: AgentMessage[],
-  nextIsStreaming: boolean,
-]>('agentSessions/mergeSessionMessages');
 
 /** Atomically remove a single message by ID */
 export const removeMessage = createAction<[agentId: string, messageId: string]>(
@@ -587,16 +552,6 @@ export const replaceMessageById = createAction<
 /** Non-message field updates */
 export const updateSession = createAction<[agentId: string, updates: Partial<AgentSession>]>(
   'agentSessions/updateSession',
-);
-
-/** Reconcile canonical status metadata from IPC/domain events. */
-export const reconcileCanonicalStatus = createAction<[agentId: string, fields: CanonicalAgentStatusFields]>(
-  'agentSessions/reconcileCanonicalStatus',
-);
-
-/** @deprecated Renderer-visible queue hydration lives in agentQueue. Use hydrateAgentQueueRequested instead. */
-export const hydrateQueuedMessagesRequested = createAction<[agentId: string]>(
-  'agentSessions/hydrateQueuedMessagesRequested',
 );
 
 /** Saga-owned core send side effect trigger. */
@@ -656,11 +611,6 @@ export const agentSessionForkSessionRequested = createAsyncAction<[
   options?: AgentSessionForkOptions,
 ], string>('agentSessions/forkSession', 'agentSessions/forkSessionRequested');
 
-/** Update agent digest */
-export const updateDigest = createAction<[agentId: string, digest: string | null]>(
-  'agentSessions/updateDigest',
-);
-
 /** Update an agent's digest field. Kept on the legacy action type for dispatch compatibility. */
 export const updateAgentDigest = createAction<[wsId: string, agentId: string, digest: string | null]>(
   'workspaceAgents/updateAgentDigest',
@@ -714,11 +664,6 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     next = removeFromWorkspaceIndex(next, agentId);
     return next;
   })
-  .with(setSessionStreaming, (state, { payload: [agentId, isStreaming] }) => {
-    const session = getSession(state, agentId);
-    if (!session || session.isStreaming === isStreaming) return state;
-    return updateSessionFields(state, agentId, { isStreaming });
-  })
   .with(addMessage, (state, { payload: [agentId, message] }) =>
     addMessageToSession(state, agentId, message),
   )
@@ -741,9 +686,6 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       messages: normalizeSortPruneMessages(messages),
     });
   })
-  .with(mergeSessionMessages, (state, { payload: [agentId, messages, nextIsStreaming] }) =>
-    mergeMessagesIntoSession(state, agentId, messages, nextIsStreaming),
-  )
   .with(removeMessage, (state, { payload: [agentId, messageId] }) => {
     const session = getSession(state, agentId);
     if (!session) return state;
@@ -764,11 +706,6 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     }
     return setSession(state, agentId, merged);
   })
-  .with(reconcileCanonicalStatus, (state, { payload: [agentId, fields] }) => {
-    const updates = canonicalSessionUpdates(fields);
-    if (Object.keys(updates).length === 0) return state;
-    return updateSessionFields(state, agentId, updates as Partial<Omit<StoredAgentSession, 'messages'>>);
-  })
   .with(eventReceived, (state, { payload: [, event] }) => {
     const userMessage = userMessageFromWorkspaceEvent(event);
     if (userMessage) {
@@ -782,9 +719,6 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     if (Object.keys(updates).length === 0) return state;
     return updateSessionFields(state, agentId, updates as Partial<Omit<StoredAgentSession, 'messages'>>);
   })
-  .with(updateDigest, (state, { payload: [agentId, digest] }) =>
-    updateSessionFields(state, agentId, { digest: digest ?? undefined }),
-  )
   .with(renameSession, (state, { payload: [agentId, name] }) => {
     const session = getSession(state, agentId);
     if (!session || session.name === name) return state;

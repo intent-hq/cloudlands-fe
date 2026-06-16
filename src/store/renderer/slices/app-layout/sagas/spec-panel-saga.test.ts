@@ -42,7 +42,7 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-const { appStoreFactoryMock, storeStateRef, selectSpecMock, selectPanelsMock, selectRestoreStatusMock, selectDeferSpecTabMock: selectDeferSpecTabSelectorMock, selectActiveWorkspaceIdMock } =
+const { appStoreFactoryMock, storeStateRef, selectSpecMock, selectPanelsMock, selectRestoreStatusMock, selectActiveWorkspaceIdMock } =
   vi.hoisted(() => {
     const dispatchMock = vi.fn();
     const storeStateRef = { current: {} as any };
@@ -57,7 +57,6 @@ const { appStoreFactoryMock, storeStateRef, selectSpecMock, selectPanelsMock, se
       selectSpecMock: vi.fn(() => undefined),
       selectPanelsMock: vi.fn(() => ({})),
       selectRestoreStatusMock: vi.fn(() => "empty"),
-      selectDeferSpecTabMock: vi.fn(() => false),
       selectActiveWorkspaceIdMock: vi.fn(() => null),
     };
   });
@@ -99,12 +98,6 @@ vi.mock("$store/renderer/slices/panel-layout/panel-layout-selectors", () => ({
     select: (...args: any[]) => selectRestoreStatusMock(...args),
     effect: function* (...args: any[]) {
       return selectRestoreStatusMock(undefined, ...args);
-    },
-  },
-  selectDeferSpecTab: {
-    select: (...args: any[]) => selectDeferSpecTabSelectorMock(...args),
-    effect: function* (...args: any[]) {
-      return selectDeferSpecTabSelectorMock(undefined, ...args);
     },
   },
 }));
@@ -166,7 +159,6 @@ describe("specPanelSaga", () => {
     // Default: no spec content, no panels, not deferring
     selectSpecMock.mockReturnValue(undefined);
     selectPanelsMock.mockReturnValue({});
-    selectDeferSpecTabSelectorMock.mockReturnValue(false);
 
     // Stub sessionStorage
     vi.stubGlobal("sessionStorage", {

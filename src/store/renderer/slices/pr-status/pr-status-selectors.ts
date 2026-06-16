@@ -15,7 +15,3 @@ export const selectPRStatusLastRefreshTime = store.createSelector(
   (state, wsId: string) => getPRStatusWorkspaceState(state.prStatus, wsId).lastRefreshTime
 );
 
-export const selectPRStatusLastError = store.createSelector(
-  (state, wsId: string) => getPRStatusWorkspaceState(state.prStatus, wsId).lastError
-);
-

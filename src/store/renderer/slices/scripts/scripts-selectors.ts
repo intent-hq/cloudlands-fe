@@ -31,13 +31,6 @@ export const selectRunningScripts = store.createSelector((state): ScriptWithStat
     .filter((s) => (s.runtime ?? createDefaultRuntimeState()).status === 'running');
 });
 
-/** Idle scripts (active workspace). */
-export const selectIdleScripts = store.createSelector((state): ScriptWithState[] => {
-  return selectScriptEntries
-    .select(state)
-    .filter((s) => (s.runtime ?? createDefaultRuntimeState()).status === 'idle');
-});
-
 /** Get a specific script by ID (active workspace). */
 export const selectScriptById = store.createSelector((state, scriptId: string) => {
   const ws = getActiveWs(state);
@@ -56,16 +49,6 @@ export const selectScriptOutput = store.createSelector((state, scriptId: string)
   return ws.outputBuffers[scriptId] ?? [];
 });
 
-/** Whether scripts are initialized for the active workspace. */
-export const selectScriptsInitialized = store.createSelector((state) => {
-  return getActiveWs(state).initialized;
-});
-
-/** Whether scripts are loading for the active workspace. */
-export const selectScriptsLoading = store.createSelector((state) => {
-  return getActiveWs(state).loading;
-});
-
 /** Scripts data for a specific workspace (parameterized). */
 export const selectWorkspaceScriptsInitialized = store.createSelector(
   (state, wsId: string): boolean => getWs(state, wsId).initialized,
@@ -77,20 +60,6 @@ export const selectWorkspaceScriptEntries = store.createSelector(
     return Object.values(ws.scripts);
   },
 );
-
-/** Get output lines for a specific workspace + script (parameterized). */
-export const selectWorkspaceScriptOutput = store.createSelector(
-  (state, wsId: string, scriptId: string) => {
-    const ws = getWs(state, wsId);
-    return ws.outputBuffers[scriptId] ?? [];
-  },
-);
-
-/** Get a script by ID for a specific workspace (parameterized). */
-export const selectWorkspaceScript = store.createSelector((state, wsId: string, scriptId: string) => {
-  const ws = getWs(state, wsId);
-  return ws.scripts[scriptId] ?? null;
-});
 
 /** Get runtime for a script in a specific workspace (parameterized). */
 export const selectWorkspaceScriptRuntime = store.createSelector(

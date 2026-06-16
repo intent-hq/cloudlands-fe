@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  clearPrBranchLookup,
   initialState,
   prBranchLookupFailed,
   prBranchLookupReducer,
@@ -35,11 +34,5 @@ describe('prBranchLookupReducer', () => {
 
     const failed = prBranchLookupReducer(succeeded, prBranchLookupFailed(request, 'rate limited'));
     expect(failed.byKey[request.key]).toEqual({ status: 'failed', error: 'rate limited' });
-  });
-
-  it('clears cached entries', () => {
-    const state = prBranchLookupReducer(initialState, prBranchLookupStarted(request));
-
-    expect(prBranchLookupReducer(state, clearPrBranchLookup())).toEqual(initialState);
   });
 });

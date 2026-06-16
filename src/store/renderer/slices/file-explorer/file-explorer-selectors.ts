@@ -66,36 +66,11 @@ export const selectFileExplorerGitStatus = store.createSelector<
   Record<string, FileGitStatus>
 >((state, wsId) => selectFileExplorerState.select(state, wsId).gitStatus);
 
-export const selectFileExplorerWorkspacePath = store.createSelector<[wsId: string], string>(
-  (state, wsId) => selectFileExplorerState.select(state, wsId).workspacePath,
-);
-
 export const selectEffectiveFileExplorerWorkspacePath = store.createSelector<[wsId: string], string>(
   (state, wsId) => {
     const workspace = selectWorkspaceById.select(state, wsId);
     return workspace?.worktreePath || workspace?.repositoryPath || workspace?.path || "";
   },
-);
-
-export const selectFileExplorerIsBulkOperation = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => selectFileExplorerState.select(state, wsId).isBulkOperation,
-);
-
-export const selectFileExplorerIsStoreActive = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => selectFileExplorerState.select(state, wsId).isStoreActive,
-);
-
-export const selectFileExplorerExpandedPaths = store.createSelector<[wsId: string], string[]>(
-  (state, wsId) => selectFileExplorerState.select(state, wsId).expandedPaths,
-);
-
-export const selectFileExplorerLoadingPaths = store.createSelector<[wsId: string], string[]>(
-  (state, wsId) => selectFileExplorerState.select(state, wsId).loadingPaths,
-);
-
-export const selectFileExplorerIsRemoteWorkspace = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) =>
-    selectWorkspaceEnvironmentConfig.select(state, wsId)?.type === "remote",
 );
 
 export interface FileExplorerInitializationInputs {

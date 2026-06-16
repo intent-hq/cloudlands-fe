@@ -86,16 +86,6 @@ export const setLastUserInputTime = createAction<[workspaceId: string, timestamp
   "workspaceNotes/setLastUserInputTime"
 );
 
-/** Set editor focus state */
-export const setEditorFocus = createAction<[workspaceId: string, hasFocus: boolean]>(
-  "workspaceNotes/setEditorFocus"
-);
-
-/** Track a newly created note for streaming-in animation */
-export const setNewlyCreatedNoteId = createAction<[workspaceId: string, noteId: string | null]>(
-  "workspaceNotes/setNewlyCreatedNoteId"
-);
-
 /** Clear the newly created note ID (called after focusing) */
 export const clearNewlyCreatedNoteId = createAction<[workspaceId: string]>(
   "workspaceNotes/clearNewlyCreatedNoteId"
@@ -337,15 +327,6 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
   .with(setLastUserInputTime, (state, { payload: [workspaceId, timestamp] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, { ...ws, lastUserInputTime: timestamp });
-  })
-  .with(setEditorFocus, (state, { payload: [workspaceId, hasFocus] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    if (ws.editorHasFocus === hasFocus) return state;
-    return setWorkspaceState(state, workspaceId, { ...ws, editorHasFocus: hasFocus });
-  })
-  .with(setNewlyCreatedNoteId, (state, { payload: [workspaceId, noteId] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    return setWorkspaceState(state, workspaceId, { ...ws, newlyCreatedNoteId: noteId });
   })
   .with(clearNewlyCreatedNoteId, (state, { payload: [workspaceId] }) => {
     const ws = getWorkspaceState(state, workspaceId);

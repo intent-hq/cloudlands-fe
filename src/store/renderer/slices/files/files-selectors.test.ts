@@ -20,8 +20,6 @@ import {
   selectFileLastUpdated,
   selectFileLoading,
   selectFileSaving,
-  selectFileTruncated,
-  selectFilesWorkspaceState,
   selectOriginalFileContent,
 } from "./files-selectors";
 
@@ -57,10 +55,8 @@ function stateWithFiles(entries: FileContentEntry[] = [fileEntry()]) {
 }
 
 describe("files selectors", () => {
-  it("returns an empty workspace state for unknown workspaces", () => {
-    const workspaceState = selectFilesWorkspaceState.select({ files: { byWorkspaceId: {} } } as any, WS_ID);
-
-    expect(workspaceState.files.ids).toEqual([]);
+  it("returns an empty entry list for unknown workspaces", () => {
+    expect(selectAllFileContentEntries.select({ files: { byWorkspaceId: {} } } as any, WS_ID)).toEqual([]);
   });
 
   it("selects all file entries and a specific entry", () => {
@@ -83,7 +79,6 @@ describe("files selectors", () => {
     expect(selectFileSaving.select(state, WS_ID, PATH)).toBe(true);
     expect(selectFileError.select(state, WS_ID, PATH)).toBe("boom");
     expect(selectFileIsBinary.select(state, WS_ID, PATH)).toBe(true);
-    expect(selectFileTruncated.select(state, WS_ID, PATH)).toBe(true);
     expect(selectFileIsDirty.select(state, WS_ID, PATH)).toBe(true);
   });
 
@@ -122,7 +117,6 @@ describe("files selectors", () => {
     expect(selectFileSaving.select(state, WS_ID, "missing.ts")).toBe(false);
     expect(selectFileError.select(state, WS_ID, "missing.ts")).toBeNull();
     expect(selectFileIsBinary.select(state, WS_ID, "missing.ts")).toBe(false);
-    expect(selectFileTruncated.select(state, WS_ID, "missing.ts")).toBe(false);
     expect(selectFileIsDirty.select(state, WS_ID, "missing.ts")).toBe(false);
   });
 });

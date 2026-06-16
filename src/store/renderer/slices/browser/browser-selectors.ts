@@ -6,7 +6,7 @@ import type {
   RecentUrl,
 } from "./browser-types";
 
-export const selectBrowserWorkspaceState = store.createSelector<
+const selectBrowserWorkspaceState = store.createSelector<
   [wsId: string],
   BrowserWorkspaceState
 >((state, wsId) => {
@@ -16,18 +16,6 @@ export const selectBrowserWorkspaceState = store.createSelector<
 export const selectBrowserRecentUrls = store.createSelector<[wsId: string], RecentUrl[]>(
   (state, wsId) => {
     return selectBrowserWorkspaceState.select(state, wsId).recentUrls;
-  }
-);
-
-export const selectBrowserCurrentUrl = store.createSelector<[wsId: string], string | null>(
-  (state, wsId) => {
-    return selectBrowserWorkspaceState.select(state, wsId).currentUrl;
-  }
-);
-
-export const selectBrowserIsLoading = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => {
-    return selectBrowserWorkspaceState.select(state, wsId).isLoading;
   }
 );
 

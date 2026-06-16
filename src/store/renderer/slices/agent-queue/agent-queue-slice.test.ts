@@ -21,15 +21,7 @@ import {
   setAgentQueueError,
   setAgentQueueHydrating,
 } from "./agent-queue-slice";
-import {
-  selectAgentQueueCount,
-  selectAgentQueueError,
-  selectAgentQueueHasQueued,
-  selectAgentQueueIsHydrating,
-  selectAgentQueueMessageById,
-  selectAgentQueueMessages,
-  selectAgentQueueState,
-} from "./agent-queue-selectors";
+import { selectAgentQueueMessages } from "./agent-queue-selectors";
 import type { AgentQueueState } from "./agent-queue-types";
 
 const AGENT_ID = "agent-1";
@@ -275,34 +267,19 @@ describe("agent queue selectors", () => {
   it("returns default values for unknown agents", () => {
     const state = storeWith(initialState);
 
-    expect(selectAgentQueueState.select(state, "unknown").isHydrating).toBe(false);
     expect(selectAgentQueueMessages.select(state, "unknown")).toEqual([]);
-    expect(selectAgentQueueMessageById.select(state, "unknown", "missing")).toBeUndefined();
-    expect(selectAgentQueueCount.select(state, "unknown")).toBe(0);
-    expect(selectAgentQueueHasQueued.select(state, "unknown")).toBe(false);
-    expect(selectAgentQueueIsHydrating.select(state, "unknown")).toBe(false);
-    expect(selectAgentQueueError.select(state, "unknown")).toBeNull();
   });
 
-  it("selects ordered messages, item by ID, count, queued flag, hydration, and error", () => {
-    let queueState = agentQueueReducer(initialState, replaceAgentQueue(AGENT_ID, [
+  it("selects ordered messages", () => {
+    const queueState = agentQueueReducer(initialState, replaceAgentQueue(AGENT_ID, [
       message("queued-2", 2),
       message("queued-1", 1),
     ]));
-    queueState = agentQueueReducer(queueState, setAgentQueueHydrating(AGENT_ID, true));
-    queueState = agentQueueReducer(queueState, setAgentQueueError(AGENT_ID, "boom"));
     const state = storeWith(queueState);
 
     expect(selectAgentQueueMessages.select(state, AGENT_ID).map((item) => item.id)).toEqual([
       "queued-2",
       "queued-1",
     ]);
-    expect(selectAgentQueueMessageById.select(state, AGENT_ID, "queued-1")?.content).toBe(
-      "Message queued-1",
-    );
-    expect(selectAgentQueueCount.select(state, AGENT_ID)).toBe(2);
-    expect(selectAgentQueueHasQueued.select(state, AGENT_ID)).toBe(true);
-    expect(selectAgentQueueIsHydrating.select(state, AGENT_ID)).toBe(false);
-    expect(selectAgentQueueError.select(state, AGENT_ID)).toBe("boom");
   });
 });

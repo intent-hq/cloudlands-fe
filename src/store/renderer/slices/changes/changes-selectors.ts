@@ -10,11 +10,9 @@ import { ChangeStage } from "$features/file-tracking/types";
 import type { StoreState } from "$store/renderer/types";
 import type {
   AcceptChangesState,
-  ChangesCoordinationState,
   FileTrackingWorkspaceState,
   TrackedChange,
   MainPanelViewState,
-  FileListViewMode,
   CommitInfo,
   StageTransition,
   FileLineChange,
@@ -26,14 +24,6 @@ import type {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-
-const committedStages = new Set([
-  ChangeStage.Committed,
-  ChangeStage.Pushed,
-  ChangeStage.PullRequest,
-  ChangeStage.Merged,
-  ChangeStage.Trunk,
-]);
 
 function getWs(state: StoreState, wsId: string): FileTrackingWorkspaceState {
   return state.changes.byWorkspaceId[wsId] ?? emptyWorkspaceState;
@@ -47,10 +37,6 @@ export const selectCurrentWorkspaceId = store.createSelector(
   (state): string | null => state.workspace.activeWorkspaceId
 );
 
-export const selectFileListViewMode = store.createSelector(
-  (state): FileListViewMode => state.changes.fileListViewMode
-);
-
 export const selectMainPanelView = store.createSelector(
   (state): MainPanelViewState | null => state.changes.mainPanelView
 );
@@ -61,10 +47,6 @@ export const selectMainPanelView = store.createSelector(
 
 export const selectFileTrackingLoading = store.createSelector(
   (state, wsId: string): boolean => getWs(state, wsId).loading
-);
-
-export const selectFileTrackingError = store.createSelector(
-  (state, wsId: string): string | null => getWs(state, wsId).error
 );
 
 export const selectFileTrackingIsInitialized = store.createSelector(
@@ -101,10 +83,6 @@ export const selectFileTrackingChangesTruncated = store.createSelector(
 
 export const selectFileTrackingTotalChangesCount = store.createSelector(
   (state, wsId: string): number => getWs(state, wsId).totalChangesCount
-);
-
-export const selectChangesCoordinationState = store.createSelector(
-  (state, wsId: string): ChangesCoordinationState => getWs(state, wsId).coordination
 );
 
 export const selectChangesLastSyncTime = store.createSelector(
@@ -165,13 +143,6 @@ export const selectUnstagedWorkingChanges = store.createSelector(
   }
 );
 
-export const selectCommittedChanges = store.createSelector(
-  (state, wsId: string): TrackedChange[] => {
-    const ws = getWs(state, wsId);
-    return ws.changes.filter((c) => committedStages.has(c.stage));
-  }
-);
-
 // ---------------------------------------------------------------------------
 // Convenience selectors — auto-resolve currentWorkspaceId
 // ---------------------------------------------------------------------------
@@ -210,22 +181,6 @@ export const selectCurrentCommits = store.createSelector(
   }
 );
 
-export const selectCurrentOlderCommits = store.createSelector(
-  (state): CommitInfo[] => {
-    const wsId = state.workspace.activeWorkspaceId;
-    if (!wsId) return [];
-    return getWs(state, wsId).olderCommits;
-  }
-);
-
-export const selectCurrentBoundarySha = store.createSelector(
-  (state): string | null => {
-    const wsId = state.workspace.activeWorkspaceId;
-    if (!wsId) return null;
-    return getWs(state, wsId).boundarySha;
-  }
-);
-
 export const selectCurrentLoading = store.createSelector(
   (state): boolean => {
     const wsId = state.workspace.activeWorkspaceId;
@@ -234,55 +189,9 @@ export const selectCurrentLoading = store.createSelector(
   }
 );
 
-export const selectCurrentLoadingOlderCommits = store.createSelector(
-  (state): boolean => {
-    const wsId = state.workspace.activeWorkspaceId;
-    if (!wsId) return false;
-    return getWs(state, wsId).loadingOlderCommits;
-  }
-);
-
-export const selectCurrentIsInitialized = store.createSelector(
-  (state): boolean => {
-    const wsId = state.workspace.activeWorkspaceId;
-    if (!wsId) return false;
-    return getWs(state, wsId).hasLoadedInitialData;
-  }
-);
-
-export const selectCurrentChangesTruncated = store.createSelector(
-  (state): boolean => {
-    const wsId = state.workspace.activeWorkspaceId;
-    if (!wsId) return false;
-    return getWs(state, wsId).changesTruncated;
-  }
-);
-
-export const selectCurrentTotalChangesCount = store.createSelector(
-  (state): number => {
-    const wsId = state.workspace.activeWorkspaceId;
-    if (!wsId) return 0;
-    return getWs(state, wsId).totalChangesCount;
-  }
-);
-
 // ---------------------------------------------------------------------------
 // Derived line-stats selectors (replaces lineChanges workspace-level state)
 // ---------------------------------------------------------------------------
-
-/** Derive workspace-level line stats by summing file-tracking changes[].stats */
-export const selectWorkspaceLineStats = store.createSelector(
-  (state, wsId: string): { additions: number; deletions: number } => {
-    const ws = getWs(state, wsId);
-    let additions = 0;
-    let deletions = 0;
-    for (const change of ws.changes) {
-      additions += change.stats.additions;
-      deletions += change.stats.deletions;
-    }
-    return { additions, deletions };
-  }
-);
 
 /** Derive FileLineChange[] from file-tracking changes[] for a workspace */
 export const selectWorkspaceFileChanges = store.createSelector(
@@ -311,48 +220,6 @@ function mapStatusToAction(status?: string): "create" | "modify" | "delete" {
 
 
 // ---------------------------------------------------------------------------
-// Sidebar-specific selectors (stable references for template props)
-// ---------------------------------------------------------------------------
-
-type SidebarCommitFile = { path: string; additions: number; deletions: number };
-type SidebarCommit = {
-  hash: string;
-  message: string;
-  author: string;
-  date: string;
-  filesChanged: number;
-  isPushed: boolean;
-  files: SidebarCommitFile[];
-};
-
-const EMPTY_SIDEBAR_COMMITS: SidebarCommit[] = [];
-
-/**
- * Returns the commits formatted for the sidebar component.
- * Uses the file-tracking CommitInfo type which has rich CommitFile[] data.
- */
-export const selectSidebarCommits = store.createSelector<[wsId: string], SidebarCommit[]>(
-  (state, wsId) => {
-    const ws = getWs(state, wsId);
-    const commits = ws.commits ?? [];
-    if (!commits.length) return EMPTY_SIDEBAR_COMMITS;
-    return commits.map((c) => ({
-      hash: c.hash,
-      message: c.message,
-      author: c.author || "",
-      date: c.date || "",
-      filesChanged: c.filesChanged ?? c.files?.length ?? 0,
-      isPushed: c.isPushed ?? (c.stage !== "local"),
-      files: c.files?.map((f) => ({
-        path: f.path,
-        additions: f.additions ?? 0,
-        deletions: f.deletions ?? 0,
-      })) ?? [],
-    }));
-  }
-);
-
-// ---------------------------------------------------------------------------
 // Agent stats selectors (absorbed from line-changes)
 // ---------------------------------------------------------------------------
 
@@ -367,17 +234,9 @@ export const selectAllAgentStats = store.createSelector(
   (state): Record<string, LineChangeStats> => state.changes.agentStats,
 );
 
-export const selectAgentLineStatsRequest = store.createSelector(
+const selectAgentLineStatsRequest = store.createSelector(
   (state, agentId: string): AgentLineStatsRequestState =>
     state.changes.agentLineStatsRequests[agentId] ?? emptyAgentLineStatsRequestState,
-);
-
-export const selectIsAgentLineStatsRequestInFlight = store.createSelector(
-  (state, agentId: string): boolean => selectAgentLineStatsRequest.select(state, agentId).isLoading,
-);
-
-export const selectAgentLineStatsRequestError = store.createSelector(
-  (state, agentId: string): string | null => selectAgentLineStatsRequest.select(state, agentId).error,
 );
 
 export const selectShouldRequestAgentLineStats = store.createSelector(

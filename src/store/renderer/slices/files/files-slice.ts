@@ -77,12 +77,6 @@ function bumpLastUpdated(entry: FileContentEntry): number {
   return entry.lastUpdated + 1;
 }
 
-export const clearWorkspaceFiles = createAction<[wsId: string]>("files/clearWorkspaceFiles");
-
-export const resetFileContent = createAction<[wsId: string, path: string, absolutePath?: string | null]>(
-  "files/resetFileContent",
-);
-
 export const removeFileContentEntry = createAction<[wsId: string, path: string]>(
   "files/removeFileContentEntry",
 );
@@ -128,14 +122,8 @@ export const saveFileContentFailed = createAction<[wsId: string, path: string, e
 );
 
 export const filesReducer = createReducer<FilesState>(initialState)
-  .with(clearWorkspaceFiles, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId))
   .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId))
   .with(removeFileContentEntry, (state, { payload: [wsId, path] }) => removeFileEntry(state, wsId, path))
-  .with(resetFileContent, (state, { payload: [wsId, path, absolutePath] }) =>
-    upsertFileEntry(state, wsId, path, (entry) => ({
-      ...createEmptyFileEntry(path, absolutePath ?? entry.absolutePath),
-    })),
-  )
   .with(loadFileContentRequested, (state, { payload: [wsId, path, absolutePath] }) =>
     upsertFileEntry(state, wsId, path, (entry) => ({
       ...entry,

@@ -15,8 +15,6 @@ import {
   requestHomePageInitializer,
 } from "./deep-links-slice";
 import {
-  selectDeepLinkError,
-  selectDeepLinkProcessing,
   selectHomePageInitializerRequest,
   selectPendingDeepLinkAction,
 } from "./deep-links-selectors";
@@ -106,7 +104,5 @@ describe("deepLinksReducer", () => {
     } as StoreState;
 
     expect(selectPendingDeepLinkAction.select(storeState)).toEqual(action);
-    expect(selectDeepLinkProcessing.select(storeState)).toBe(true);
-    expect(selectDeepLinkError.select(storeState)).toBeNull();
   });
 });

@@ -11,7 +11,6 @@ import type {
   AgentSubscriptionRecord,
   DelegationGroupTrackerRecord,
   QueuedEventRecord,
-  DeliveryStats,
 } from "./types";
 import { emptyWorkspaceSubscriptionState } from "./types";
 import {
@@ -27,7 +26,6 @@ import {
   selectIsDelegationGroupComplete,
   selectIsOneShotFired,
   selectIsAgentDeleted,
-  selectDeliveryStats,
 } from "./agent-subscriptions-selectors";
 
 // ---------------------------------------------------------------------------
@@ -271,28 +269,6 @@ describe("agent-subscriptions selectors", () => {
     it("returns true for deleted agent", () => {
       const state = makeState("ws-1", makeWsState({ deletedAgents: { "a-1": Date.now() } }));
       expect(selectIsAgentDeleted.select(state, "ws-1", "a-1")).toBe(true);
-    });
-  });
-
-  describe("selectDeliveryStats", () => {
-    it("returns default stats for empty state", () => {
-      const stats = selectDeliveryStats.select(emptyState(), "ws-1");
-      expect(stats.totalDeliveries).toBe(0);
-      expect(stats.lastDeliveryTime).toBeNull();
-    });
-
-    it("returns stored stats", () => {
-      const customStats: DeliveryStats = {
-        totalDeliveries: 10,
-        successfulDeliveries: 8,
-        failedDeliveries: 1,
-        timeoutDeliveries: 1,
-        droppedEvents: 0,
-        lastDeliveryTime: "2026-01-01T12:00:00Z",
-        lastFailureTime: "2026-01-01T11:00:00Z",
-      };
-      const state = makeState("ws-1", makeWsState({ deliveryStats: customStats }));
-      expect(selectDeliveryStats.select(state, "ws-1")).toBe(customStats);
     });
   });
 

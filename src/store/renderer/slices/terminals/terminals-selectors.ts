@@ -87,11 +87,6 @@ export const selectTerminalsLoaded = store.createSelector((state, wsId: string) 
   return ws.terminalsLoaded;
 });
 
-export const selectIsLoadingTerminals = store.createSelector((state, wsId: string) => {
-  const ws = state.terminals.workspaces[wsId] || emptyWorkspaceState;
-  return ws.isLoadingTerminals;
-});
-
 export const selectRecentlyCreatedTerminals = store.createSelector((state, wsId: string) => {
   const ws = state.terminals.workspaces[wsId] || emptyWorkspaceState;
   return ws.recentlyCreatedTerminals;
@@ -102,10 +97,3 @@ export const selectLoadedWorkspaceTerminals = store.createSelector((state, wsId:
   if (!ws.terminalsLoaded) return [];
   return getItems(ws.terminals);
 });
-
-export const selectIsTerminalRecentlyCreated = store.createSelector(
-  (state, wsId: string, terminalId: string) => {
-    const ws = state.terminals.workspaces[wsId] || emptyWorkspaceState;
-    return ws.recentlyCreatedTerminals.includes(terminalId);
-  }
-);

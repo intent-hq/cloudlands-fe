@@ -13,13 +13,8 @@ import {
 } from "./global-modals-slice";
 import {
   selectGitCredentialsError,
-  selectGitCredentialsModal,
-  selectGitHubAuthModal,
-  selectGitHubAuthModalKey,
   selectGlobalModals,
   selectHasShownGitCredentialsModalForWorkspace,
-  selectIsGitCredentialsModalOpen,
-  selectIsGitHubAuthModalOpen,
 } from "./global-modals-selectors";
 
 const pendingAuth = { reason: "create-pr" } as any;
@@ -93,11 +88,6 @@ describe("global-modals selectors", () => {
 
   it("selects each modal group and derived values", () => {
     expect(selectGlobalModals.select(state)).toEqual(state.globalModals);
-    expect(selectGitHubAuthModal.select(state)).toEqual(state.globalModals.githubAuth);
-    expect(selectGitCredentialsModal.select(state)).toEqual(state.globalModals.gitCredentials);
-    expect(selectIsGitHubAuthModalOpen.select(state)).toBe(true);
-    expect(selectGitHubAuthModalKey.select(state)).toBe(2);
-    expect(selectIsGitCredentialsModalOpen.select(state)).toBe(true);
     expect(selectGitCredentialsError.select(state)).toEqual(credentialsError);
   });
 

@@ -7,7 +7,6 @@ import { getItem } from "ag-redux-toolkit/utils/collections/collection-utils";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import {
   applyExternalFileContent,
-  clearWorkspaceFiles,
   emptyFilesWorkspaceState,
   filesReducer,
   initialState,
@@ -15,7 +14,6 @@ import {
   loadFileContentRequested,
   loadFileContentSucceeded,
   removeFileContentEntry,
-  resetFileContent,
   saveFileContentFailed,
   saveFileContentRequested,
   saveFileContentSucceeded,
@@ -240,26 +238,6 @@ describe("filesReducer", () => {
     expect(filesReducer(loadedState, removeFileContentEntry(OTHER_WS_ID, PATH))).toBe(loadedState);
   });
 
-  it("resets file content while preserving the last known absolute path", () => {
-    const loadedState = filesReducer(
-      initialState,
-      loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, "original", false),
-    );
-    const resetState = filesReducer(loadedState, resetFileContent(WS_ID, PATH));
-
-    expect(resetState.byWorkspaceId[WS_ID].files.map[PATH]).toMatchObject({
-      path: PATH,
-      absolutePath: ABS_PATH,
-      originalContent: null,
-      localContent: null,
-      lastUpdated: 0,
-      loading: false,
-      saving: false,
-      error: null,
-      truncated: false,
-    });
-  });
-
   it("marks save lifecycle and updates original content on success", () => {
     const loadedState = filesReducer(
       initialState,
@@ -348,10 +326,9 @@ describe("filesReducer", () => {
     });
   });
 
-  it("clears workspace state on explicit clear and workspace unmount", () => {
+  it("clears workspace state on workspace unmount", () => {
     const loadedState = filesReducer(initialState, loadFileContentSucceeded(WS_ID, PATH, ABS_PATH, "hello", false));
 
-    expect(filesReducer(loadedState, clearWorkspaceFiles(WS_ID)).byWorkspaceId[WS_ID]).toBeUndefined();
     expect(filesReducer(loadedState, workspaceUnmounted(WS_ID)).byWorkspaceId[WS_ID]).toBeUndefined();
   });
 });

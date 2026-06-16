@@ -16,7 +16,6 @@ import {
   clearSelection,
   toggleSelection,
   uncheckAllSelections,
-  clear,
   addSearchedItem,
   type MultiPanelContextState,
   type PanelContextItem,
@@ -171,24 +170,6 @@ describe("multiPanelContextReducer", () => {
       const stateWithSels = withSelections(makeSelection({ checked: true }));
       const state = multiPanelContextReducer(stateWithSels, uncheckAllSelections());
       expect(getItems(state.selections).every((s) => !s.checked)).toBe(true);
-    });
-  });
-
-  describe("clear", () => {
-    it("should clear all state but preserve workspaceId", () => {
-      const stateWithData: MultiPanelContextState = {
-        panels: createCollection<PanelContextItem, "id">("id", [makePanel()]),
-        selections: createCollection<SelectionContextItem, "id">("id", [makeSelection()]),
-        currentAgentPanelId: "agent",
-        workspaceId: "ws-1",
-      };
-      const state = multiPanelContextReducer(stateWithData, clear());
-      expect(state).toEqual({
-        panels: createCollection<PanelContextItem, "id">("id"),
-        selections: createCollection<SelectionContextItem, "id">("id"),
-        currentAgentPanelId: null,
-        workspaceId: "ws-1",
-      });
     });
   });
 

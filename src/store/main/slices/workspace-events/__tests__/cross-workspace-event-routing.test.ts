@@ -20,13 +20,11 @@ import {
   workspaceEventsReducer,
   initialState,
   workspaceEventAccepted,
-  clearWorkspaceEvents,
   cleanupWorkspace,
 } from "../workspace-events-slice";
 import {
   selectRecentEvents,
   selectEventCount,
-  selectLastEvent,
   selectEventsByType,
 } from "../workspace-events-selectors";
 import { MAX_RECENT_EVENTS } from "../types";
@@ -93,17 +91,6 @@ describe("cross-workspace event routing", () => {
     expect(selectEventCount.select(asMainState(state), WS_C)).toBe(0);
   });
 
-  it("clearing events for one workspace does not affect others", () => {
-    let state = initialState;
-    state = reduce(workspaceEventAccepted(makeEvent({ workspaceId: WS_A })), state);
-    state = reduce(workspaceEventAccepted(makeEvent({ workspaceId: WS_B })), state);
-
-    state = reduce(clearWorkspaceEvents(WS_A), state);
-
-    expect(selectRecentEvents.select(asMainState(state), WS_A)).toHaveLength(0);
-    expect(selectRecentEvents.select(asMainState(state), WS_B)).toHaveLength(1);
-  });
-
   it("cleanup (removal) of one workspace does not affect others", () => {
     let state = initialState;
     state = reduce(workspaceEventAccepted(makeEvent({ workspaceId: WS_A })), state);
@@ -151,19 +138,6 @@ describe("cross-workspace event routing", () => {
     // WS_B unaffected
     expect(selectRecentEvents.select(asMainState(state), WS_B)).toHaveLength(3);
     expect(selectRecentEvents.select(asMainState(state), WS_B)).toEqual(wsB_events);
-  });
-
-  it("lastEvent selector returns correct event per workspace", () => {
-    let state = initialState;
-    const eA = makeEvent({ workspaceId: WS_A });
-    const eB = makeEvent({ workspaceId: WS_B });
-
-    state = reduce(workspaceEventAccepted(eA), state);
-    state = reduce(workspaceEventAccepted(eB), state);
-
-    expect(selectLastEvent.select(asMainState(state), WS_A)).toBe(eA);
-    expect(selectLastEvent.select(asMainState(state), WS_B)).toBe(eB);
-    expect(selectLastEvent.select(asMainState(state), WS_C)).toBeUndefined();
   });
 });
 

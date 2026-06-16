@@ -128,10 +128,6 @@ export const setFileExplorerLoading = createAction<[wsId: string, isLoading: boo
   "fileExplorer/setLoading",
 );
 
-export const setFileExplorerError = createAction<[wsId: string, error: string | null]>(
-  "fileExplorer/setError",
-);
-
 export const setFileExplorerInitialized = createAction<[wsId: string, isInitialized: boolean]>(
   "fileExplorer/setInitialized",
 );
@@ -151,10 +147,6 @@ export const setGitignorePatterns = createAction<[wsId: string, patterns: string
 export const setGitStatusMap = createAction<[wsId: string, gitStatus: Record<string, FileGitStatus>]>(
   "fileExplorer/setGitStatusMap",
 );
-
-export const setAgentFileEditsAction = createAction<
-  [wsId: string, edits: Record<string, string[]>]
->("fileExplorer/setAgentFileEdits");
 
 /**
  * Shallow-merge per-entry git-status updates into ws.gitStatus.
@@ -406,10 +398,6 @@ export const fileExplorerReducer = createReducer<FileExplorerState>(initialState
       ...(isLoading ? { error: null } : {}),
     });
   })
-  .with(setFileExplorerError, (state, { payload: [wsId, error] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, { ...ws, error });
-  })
   .with(setFileExplorerInitialized, (state, { payload: [wsId, isInitialized] }) => {
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, { ...ws, isInitialized });
@@ -444,10 +432,6 @@ export const fileExplorerReducer = createReducer<FileExplorerState>(initialState
   .with(setGitStatusMap, (state, { payload: [wsId, gitStatus] }) => {
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, { ...ws, gitStatus });
-  })
-  .with(setAgentFileEditsAction, (state, { payload: [wsId, edits] }) => {
-    const ws = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, { ...ws, agentFileEdits: edits });
   })
   .with(updateGitStatusEntries, (state, { payload: [wsId, entries] }) => {
     const ws = getWorkspaceState(state, wsId);

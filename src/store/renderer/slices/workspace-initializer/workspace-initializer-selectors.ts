@@ -1,10 +1,6 @@
 import { store } from "../../store";
 import { getItems } from "ag-redux-toolkit/utils/collections/collection-utils";
 
-export const selectWorkspaceInitializerState = store.createSelector(
-  (state) => state.workspaceInitializer,
-);
-
 export const selectWorkspaceInitializerHydrated = store.createSelector(
   (state) => state.workspaceInitializer.hydrated,
 );
@@ -23,10 +19,6 @@ export const selectWorkspaceInitializerLastSelectedRepo = store.createSelector(
 
 export const selectWorkspaceInitializerBranchByRepo = store.createSelector(
   (state) => state.workspaceInitializer.branchByRepo,
-);
-
-export const selectWorkspaceInitializerBranchForRepo = store.createSelector(
-  (state, repoPath: string) => state.workspaceInitializer.branchByRepo[repoPath] || "",
 );
 
 export const selectWorkspaceInitializerDefaultParentPath = store.createSelector(

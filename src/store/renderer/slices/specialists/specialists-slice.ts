@@ -112,7 +112,6 @@ export const initialState: SpecialistsState = {
 // ============================================================================
 
 export const setBundledSpecialists = createAction<[specialists: import('$lib/constants/specialists').Specialist[]]>("specialists/setBundledSpecialists");
-export const setCustomSpecialists = createAction<[specialists: CustomSpecialist[]]>("specialists/setCustomSpecialists");
 export const setFileSpecialists = createAction<[specialists: FileSpecialist[]]>("specialists/setFileSpecialists");
 export const setUserOverrides = createAction<[overrides: SpecialistOverrides]>("specialists/setUserOverrides");
 export const setOverridesLoaded = createAction<[loaded: boolean]>("specialists/setOverridesLoaded");
@@ -131,16 +130,10 @@ export const setProviderModelOverrides = createAction<[overrides: Record<string,
 export const setModelOverride = createAction<[specialistId: string, model: string]>("specialists/setModelOverride");
 /** @deprecated Use deleteFileSpecialist to reset to bundled */
 export const clearModelOverride = createAction<[specialistId: string]>("specialists/clearModelOverride");
-/** @deprecated Use saveFileSpecialist for each specialist instead */
-export const setBulkModelOverrides = createAction<[overrides: Record<string, string>]>("specialists/setBulkModelOverrides");
 /** @deprecated Use saveFileSpecialist instead */
 export const setBehaviorPromptOverride = createAction<[specialistId: string, prompt: string]>("specialists/setBehaviorPromptOverride");
 /** @deprecated Use deleteFileSpecialist to reset to bundled */
 export const clearBehaviorPromptOverride = createAction<[specialistId: string]>("specialists/clearBehaviorPromptOverride");
-/** @deprecated Use saveFileSpecialist instead */
-export const setCodingAgentOverride = createAction<[specialistId: string, codingAgent: string]>("specialists/setCodingAgentOverride");
-/** @deprecated Use deleteFileSpecialist to reset to bundled */
-export const clearCodingAgentOverride = createAction<[specialistId: string]>("specialists/clearCodingAgentOverride");
 /** @deprecated Use deleteFileSpecialist to reset to bundled */
 export const clearAllOverrides = createAction<[specialistId: string]>("specialists/clearAllOverrides");
 /** @deprecated Use deleteFileSpecialist to reset to bundled */
@@ -177,10 +170,6 @@ export const specialistsReducer = createReducer<SpecialistsState>(initialState)
   .with(setBundledSpecialists, (state, { payload: [specialists] }) => ({
     ...state,
     bundledSpecialists: specialists,
-  }))
-  .with(setCustomSpecialists, (state, { payload: [specialists] }) => ({
-    ...state,
-    customSpecialists: createCollection<CustomSpecialist, "id">("id", specialists),
   }))
   .with(setFileSpecialists, (state, { payload: [specialists] }) => ({
     ...state,
@@ -233,13 +222,6 @@ export const specialistsReducer = createReducer<SpecialistsState>(initialState)
       userOverrides: { ...state.userOverrides, modelOverrides: rest },
     };
   })
-  .with(setBulkModelOverrides, (state, { payload: [overrides] }) => ({
-    ...state,
-    userOverrides: {
-      ...state.userOverrides,
-      modelOverrides: { ...state.userOverrides.modelOverrides, ...overrides },
-    },
-  }))
   .with(setBehaviorPromptOverride, (state, { payload: [specialistId, prompt] }) => ({
     ...state,
     userOverrides: {
@@ -253,21 +235,6 @@ export const specialistsReducer = createReducer<SpecialistsState>(initialState)
     return {
       ...state,
       userOverrides: { ...state.userOverrides, behaviorPromptOverrides: rest },
-    };
-  })
-  .with(setCodingAgentOverride, (state, { payload: [specialistId, codingAgent] }) => ({
-    ...state,
-    userOverrides: {
-      ...state.userOverrides,
-      codingAgentOverrides: { ...state.userOverrides.codingAgentOverrides, [specialistId]: codingAgent },
-    },
-  }))
-  .with(clearCodingAgentOverride, (state, { payload: [specialistId] }) => {
-     
-    const { [specialistId]: _, ...rest } = state.userOverrides.codingAgentOverrides;
-    return {
-      ...state,
-      userOverrides: { ...state.userOverrides, codingAgentOverrides: rest },
     };
   })
   .with(clearAllOverrides, (state, { payload: [specialistId] }) => {

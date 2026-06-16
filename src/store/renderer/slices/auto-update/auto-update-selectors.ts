@@ -12,18 +12,12 @@ export const selectAutoUpdateProgress = store.createSelector((state) => state.au
 
 export const selectAutoUpdateError = store.createSelector((state) => state.autoUpdate.error);
 
-export const selectAutoUpdateChannel = store.createSelector((state) => state.autoUpdate.channel);
-
 export const selectAutoUpdateToastVisible = store.createSelector(
   (state) => state.autoUpdate.toastVisible,
 );
 
 export const selectAutoUpdateDismissedAt = store.createSelector(
   (state) => state.autoUpdate.downloadedToastDismissedAt,
-);
-
-export const selectIsUpdateAvailable = store.createSelector(
-  (state) => state.autoUpdate.status === "available",
 );
 
 export const selectIsDownloading = store.createSelector(
@@ -33,10 +27,4 @@ export const selectIsDownloading = store.createSelector(
 export const selectIsReadyToInstall = store.createSelector(
   (state) => state.autoUpdate.status === "downloaded",
 );
-
-export const selectIsChecking = store.createSelector(
-  (state) => state.autoUpdate.status === "checking",
-);
-
-export const selectHasError = store.createSelector((state) => state.autoUpdate.status === "error");
 

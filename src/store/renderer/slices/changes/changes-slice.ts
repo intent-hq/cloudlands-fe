@@ -22,7 +22,6 @@ import type {
   TrackedChange,
   StageTransition,
   CommitInfo,
-  FileListViewMode,
   LineChangeStats,
   AgentLineStatsRequestState,
   ChangesCoordinationState,
@@ -196,10 +195,6 @@ export const setMainPanelView = createAction<[view: MainPanelViewState | null]>(
 export const clearMainPanelView = createAction(
   "changes/clearMainPanelView"
 );
-export const setFileListViewMode = createAction<[mode: FileListViewMode]>(
-  "changes/setFileListViewMode"
-);
-
 // Saga triggers (no reducer handler needed — sagas listen for these)
 export const initWorkspace = createAction<[wsId: string]>(
   "changes/initWorkspace"
@@ -261,9 +256,6 @@ export const loadOlderCommitsRequested = createAction(
 );
 
 // Coordination state actions for changes operation sagas
-export const resetChangesCoordination = createAction<[wsId: string]>(
-  "changes/resetChangesCoordination"
-);
 export const changesSyncStarted = createAction<[wsId: string, lastSyncTime: number]>(
   "changes/changesSyncStarted"
 );
@@ -333,11 +325,6 @@ export const agentLineStatsRequestSucceeded = createAction(
 export const agentLineStatsRequestFailed = createAction(
   "changes/agentLineStatsRequestFailed",
   (agentId: string, error: string, finishedAt: string) => ({ agentId, error, finishedAt }),
-);
-
-/** Update agent stats for many agents in one action (merge with existing) */
-export const updateAgentStatsBatch = createAction<[Record<string, LineChangeStats>]>(
-  "changes/updateAgentStatsBatch",
 );
 
 /** Clear agent stats */
@@ -435,9 +422,6 @@ export const fileTrackingReducer = createReducer<FileTrackingState>(initialState
   .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId))
 
   // Changes operation coordination state
-  .with(resetChangesCoordination, (state, { payload: [wsId] }) =>
-    updateCoordinationState(state, wsId, () => createEmptyChangesCoordinationState())
-  )
   .with(changesSyncStarted, (state, { payload: [wsId, lastSyncTime] }) =>
     updateCoordinationState(state, wsId, (coordination) => ({
       ...coordination,
@@ -606,10 +590,6 @@ export const fileTrackingReducer = createReducer<FileTrackingState>(initialState
     ...state,
     mainPanelView: null,
   }))
-  .with(setFileListViewMode, (state, { payload: [mode] }) => ({
-    ...state,
-    fileListViewMode: mode,
-  }))
 
   // Agent stats (absorbed from line-changes)
   .with(updateAgentStats, (state, { payload }) => ({
@@ -619,13 +599,6 @@ export const fileTrackingReducer = createReducer<FileTrackingState>(initialState
       [payload.agentId]: payload.stats,
     },
   }))
-  .with(updateAgentStatsBatch, (state, { payload: [batch] }) => {
-    if (Object.keys(batch).length === 0) return state;
-    return {
-      ...state,
-      agentStats: { ...state.agentStats, ...batch },
-    };
-  })
   .with(clearAgentStats, (state, { payload: [agentId] }) => {
     if (!state.agentStats[agentId] && !state.agentLineStatsRequests[agentId]) return state;
     const { [agentId]: _as, ...remainingAgentStats } = state.agentStats;

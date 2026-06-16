@@ -54,10 +54,6 @@ export const requestBulkArchiveWorkspaces = createAction<[workspaceIds: string[]
   "workspaceOperations/requestBulkArchiveWorkspaces"
 );
 
-export const undoBulkArchiveWorkspaces = createAction<[workspaceIds: string[]]>(
-  "workspaceOperations/undoBulkArchiveWorkspaces"
-);
-
 export const requestBulkDeleteWorkspaces = createAction<[workspaceIds: string[]]>(
   "workspaceOperations/requestBulkDeleteWorkspaces"
 );

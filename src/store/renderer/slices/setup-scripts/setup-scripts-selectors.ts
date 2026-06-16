@@ -24,36 +24,6 @@ export const selectScriptById = store.createSelector(
   (state, scriptId: string) => getItem(selectScriptsCollection.select(state), scriptId),
 );
 
-/** Get scripts sorted by relevance for a given repo */
-export const selectScriptsForRepo = store.createSelector(
-  (state, repoPath?: string, projectType?: string) => {
-    const items = selectScripts.select(state);
-    const sorted = [...items];
-
-    sorted.sort((a, b) => {
-      // Same repo gets highest priority
-      const aRepoMatch = repoPath && a.repoPath === repoPath;
-      const bRepoMatch = repoPath && b.repoPath === repoPath;
-      if (aRepoMatch && !bRepoMatch) return -1;
-      if (!aRepoMatch && bRepoMatch) return 1;
-
-      // Same project type gets second priority
-      const aTypeMatch = projectType && a.projectType === projectType;
-      const bTypeMatch = projectType && b.projectType === projectType;
-      if (aTypeMatch && !bTypeMatch) return -1;
-      if (!aTypeMatch && bTypeMatch) return 1;
-
-      // Otherwise sort by usage count, then by last used
-      if (b.usageCount !== a.usageCount) {
-        return b.usageCount - a.usageCount;
-      }
-      return new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime();
-    });
-
-    return sorted;
-  }
-);
-
 /** Get the last used script for a specific repo */
 export const selectLastUsedScriptForRepo = store.createSelector(
   (state, repoPath: string) => {
@@ -64,13 +34,6 @@ export const selectLastUsedScriptForRepo = store.createSelector(
         (a, b) =>
           new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime()
       )[0] as SetupScript | undefined;
-  }
-);
-
-/** Check if a script is pending deletion */
-export const selectIsPendingDeletion = store.createSelector(
-  (state, scriptId: string) => {
-    return !!state.setupScripts.pendingDeletions[scriptId];
   }
 );
 

@@ -39,7 +39,7 @@ export const selectMcpStatusMap = store.createSelector(
 );
 
 /** Select tools map */
-export const selectMcpToolsMap = store.createSelector(
+const selectMcpToolsMap = store.createSelector(
   (state) => state.mcpSettings.toolsMap as Record<string, import("./mcp-settings-types").McpTool[]>
 );
 
@@ -49,20 +49,12 @@ export const selectMcpErrorMessages = store.createSelector(
 );
 
 /** Select workspace-specific disabled servers map by workspace id */
-export const selectWorkspaceMcpDisabledServersByWorkspaceId = store.createSelector(
+const selectWorkspaceMcpDisabledServersByWorkspaceId = store.createSelector(
   (state, workspaceId: string | null | undefined): Record<string, true> => {
     if (!workspaceId) return EMPTY_DISABLED_SERVERS;
     return state.mcpSettings.byWorkspaceId[workspaceId]?.disabledServers ?? EMPTY_DISABLED_SERVERS;
   }
 );
-
-/** Select workspace-specific disabled servers map for the active workspace */
-export const selectWorkspaceMcpDisabledServers = store.createSelector((state): Record<string, true> => {
-  return selectWorkspaceMcpDisabledServersByWorkspaceId.select(
-    state,
-    state.workspace.activeWorkspaceId
-  );
-});
 
 /** Select disabled server names for a workspace */
 export const selectWorkspaceDisabledMcpServerNamesByWorkspaceId = store.createSelector(
@@ -70,29 +62,6 @@ export const selectWorkspaceDisabledMcpServerNamesByWorkspaceId = store.createSe
     return Object.keys(selectWorkspaceMcpDisabledServersByWorkspaceId.select(state, workspaceId));
   }
 );
-
-/** Select disabled server names for the active workspace */
-export const selectWorkspaceDisabledMcpServerNames = store.createSelector((state): string[] => {
-  return Object.keys(selectWorkspaceMcpDisabledServers.select(state));
-});
-
-/** Check if a server is enabled in the active workspace */
-export const selectIsWorkspaceMcpServerEnabled = store.createSelector(
-  (state, name: string): boolean => {
-    return !(name in selectWorkspaceMcpDisabledServers.select(state));
-  }
-);
-
-/** Select servers enabled in the active workspace */
-export const selectEnabledMcpServers = store.createSelector((state): McpServerConfig[] => {
-  const disabledServers = selectWorkspaceMcpDisabledServers.select(state);
-  return selectMcpServers.select(state).filter((server) => !(server.name in disabledServers));
-});
-
-/** Select count of servers enabled in the active workspace */
-export const selectEnabledMcpServerCount = store.createSelector((state): number => {
-  return selectEnabledMcpServers.select(state).length;
-});
 
 /** Select servers with status, tools, and disabled info attached */
 export const selectMcpServersWithStatus = store.createSelector((state): McpServerWithStatus[] => {
@@ -121,31 +90,6 @@ export const selectMcpServersWithStatus = store.createSelector((state): McpServe
     };
   });
 });
-
-/** Check if a specific server is disabled */
-export const selectIsServerDisabled = store.createSelector(
-  (state, name: string): boolean => {
-    return name in (state.mcpSettings.disabledServers as Record<string, true>);
-  }
-);
-
-/** Get status for a specific server */
-export const selectServerStatus = store.createSelector(
-  (state, name: string): McpServerStatus => {
-    if (name in (state.mcpSettings.disabledServers as Record<string, true>)) {
-      return "disabled";
-    }
-    return (state.mcpSettings.statusMap as Record<string, McpServerStatus>)[name] || "disconnected";
-  }
-);
-
-/** Get tool count for a specific server */
-export const selectServerToolCount = store.createSelector(
-  (state, name: string): number => {
-    const tools = (state.mcpSettings.toolsMap as Record<string, import("./mcp-settings-types").McpTool[]>)[name];
-    return tools?.length || 0;
-  }
-);
 
 /** Get error message for a specific server */
 export const selectMcpServerErrorMessage = store.createSelector(

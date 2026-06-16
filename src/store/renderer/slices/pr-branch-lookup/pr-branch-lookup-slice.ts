@@ -37,8 +37,6 @@ export const prBranchLookupFailed = createAction<
   { key: string; error: string }
 >('prBranchLookup/failed', (request, error) => ({ key: request.key, error }));
 
-export const clearPrBranchLookup = createAction('prBranchLookup/clear');
-
 export const prBranchLookupReducer = createReducer<PrBranchLookupState>(initialState)
   .with(prBranchLookupStarted, (state, { payload }) => ({
     ...state,
@@ -60,5 +58,4 @@ export const prBranchLookupReducer = createReducer<PrBranchLookupState>(initialS
       ...state.byKey,
       [payload.key]: { status: 'failed', error: payload.error },
     },
-  }))
-  .with(clearPrBranchLookup, () => initialState);
+  }));

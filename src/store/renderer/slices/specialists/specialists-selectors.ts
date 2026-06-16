@@ -15,15 +15,13 @@ import {
   PROVIDER_MODEL_TIERS,
 } from "$shared/config/provider-config";
 import { selectActiveProviderId } from "../provider-settings/provider-settings-selectors";
-import type { CustomSpecialist, FileSpecialist, SpecialistOverrides } from "./specialists-slice";
+import type { FileSpecialist, SpecialistOverrides } from "./specialists-slice";
 import { selectGitHubAuthIsAuthenticated } from "../github-auth/github-auth-selectors";
 // ============================================================================
 // Basic state selectors
 // ============================================================================
 export const selectBundledSpecialists = store.createSelector((state): Specialist[] => state.specialists.bundledSpecialists);
-export const selectCustomSpecialistsCollection = store.createSelector((state): Collection<CustomSpecialist, "id"> => state.specialists.customSpecialists);
-export const selectFileSpecialistsCollection = store.createSelector((state): Collection<FileSpecialist, "id"> => state.specialists.fileSpecialists);
-export const selectCustomSpecialists = store.createSelector((state): CustomSpecialist[] => getItems(selectCustomSpecialistsCollection.select(state)));
+const selectFileSpecialistsCollection = store.createSelector((state): Collection<FileSpecialist, "id"> => state.specialists.fileSpecialists);
 export const selectFileSpecialists = store.createSelector((state): FileSpecialist[] => getItems(selectFileSpecialistsCollection.select(state)));
 export const selectUserOverrides = store.createSelector((state): SpecialistOverrides => state.specialists.userOverrides);
 export const selectOverridesLoaded = store.createSelector((state): boolean => state.specialists.overridesLoaded);
@@ -39,7 +37,7 @@ export const selectProviderModelOverrides = store.createSelector((state): Record
  * Check if a specialist should be visible based on Redux state and GitHub auth.
  * Gates GitHub-dependent specialists (pr-shepherd, pr-reviewer).
  */
-export const selectIsSpecialistVisible = store.createSelector((state, specialistId: string): boolean => {
+const selectIsSpecialistVisible = store.createSelector((state, specialistId: string): boolean => {
     // Gate GitHub-dependent specialists behind GitHub auth
     if (GITHUB_DEPENDENT_SPECIALIST_IDS.has(specialistId)) {
         if (!selectGitHubAuthIsAuthenticated.select(state)) {
@@ -173,22 +171,6 @@ export const selectEffectiveModel = store.createSelector((state, specialistId: s
     }
     return specialist.defaultModel ?? '';
 });
-/** Get the resolved default model (ignoring user overrides) */
-export const selectResolvedDefaultModel = store.createSelector((state, specialistId: string, providerId?: string): string => {
-    const specialists = selectSpecialists.select(state);
-    const specialist = specialists.find((s: Specialist) => s.id === specialistId);
-    if (!specialist)
-        return '';
-    if (specialist.defaultModelTier) {
-        const effectiveProviderId = providerId ?? selectEffectiveCodingAgent.select(state, specialistId);
-        if (effectiveProviderId in PROVIDER_MODEL_TIERS) {
-            const baseModel = getDefaultModelForProvider(effectiveProviderId, specialist.defaultModelTier);
-            const defaultProviderId = getDefaultProviderId();
-            return effectiveProviderId !== defaultProviderId ? `${effectiveProviderId}:${baseModel}` : baseModel;
-        }
-    }
-    return specialist.defaultModel ?? '';
-});
 /** Get the effective behavior prompt for a specialist (file override → bundled default) */
 export const selectEffectiveBehaviorPrompt = store.createSelector((state, specialistId: string): string => {
     const specialists = selectSpecialists.select(state);
@@ -251,7 +233,7 @@ export const selectEffectiveCodingAgent = store.createSelector((state, specialis
     return selectResolvedDefaultCodingAgent.select(state, specialistId);
 });
 /** Get the resolved default coding agent for a specialist (specialist default → active provider) */
-export const selectResolvedDefaultCodingAgent = store.createSelector((state, specialistId: string): string => {
+const selectResolvedDefaultCodingAgent = store.createSelector((state, specialistId: string): string => {
     const specialists = selectSpecialists.select(state);
     const specialist = specialists.find((s: Specialist) => s.id === specialistId);
     return specialist?.codingAgent || selectActiveProviderId.select(state);

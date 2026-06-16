@@ -156,17 +156,6 @@ export const selectAllWorkspaceIds = store.createSelector(
 );
 
 // ---------------------------------------------------------------------------
-// Delivery stats
-// ---------------------------------------------------------------------------
-
-export const selectDeliveryStats = store.createSelector(
-  (state, wsId: string): DeliveryStats => {
-    const ws = selectWorkspaceSubscriptionState.select(state, wsId);
-    return ws.deliveryStats;
-  },
-);
-
-// ---------------------------------------------------------------------------
 // Subscriptions signature (structural snapshot for change detection)
 // ---------------------------------------------------------------------------
 

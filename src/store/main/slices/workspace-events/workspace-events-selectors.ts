@@ -44,25 +44,10 @@ export const selectEventCount = store.createSelector(
   },
 );
 
-/** Get the most recent event for a workspace */
-export const selectLastEvent = store.createSelector(
-  (state, workspaceId: string): WorkspaceEvent | undefined => {
-    const events = getWs(state, workspaceId).recentEvents;
-    return events.length > 0 ? events[events.length - 1] : undefined;
-  },
-);
-
 /** Filter events by type for a workspace */
 export const selectEventsByType = store.createSelector(
   (state, workspaceId: string, type: string): WorkspaceEvent[] => {
     return getWs(state, workspaceId).recentEvents.filter((e) => e.type === type);
-  },
-);
-
-/** Filter events by actor ID for a workspace */
-export const selectEventsByActor = store.createSelector(
-  (state, workspaceId: string, actorId: string): WorkspaceEvent[] => {
-    return getWs(state, workspaceId).recentEvents.filter((e) => e.actor.id === actorId);
   },
 );
 

@@ -3,7 +3,7 @@ import { getItems } from "ag-redux-toolkit/utils/collections/collection-utils";
 import { emptyChatChangesWorkspaceState } from "./chat-changes-slice";
 import type { AgentFileRefreshEntry, ChatChangesWorkspaceState } from "./chat-changes-types";
 
-export const selectChatChangesWorkspaceState = store.createSelector<
+const selectChatChangesWorkspaceState = store.createSelector<
   [wsId?: string | null],
   ChatChangesWorkspaceState
 >((state, wsId) => {

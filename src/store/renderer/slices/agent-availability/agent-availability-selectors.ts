@@ -13,10 +13,6 @@ export const selectProviderLoadingMap = store.createSelector(
   (state) => state.agentAvailability.providerLoadingMap,
 );
 
-export const selectProviderUserInfoLoadingMap = store.createSelector(
-  (state) => state.agentAvailability.providerUserInfoLoadingMap,
-);
-
 export const selectHasCheckedOnce = store.createSelector(
   (state) => state.agentAvailability.hasCheckedOnce,
 );
@@ -27,10 +23,6 @@ export const selectWatchedTerminalIds = store.createSelector(
 
 export const selectIsAnyProviderLoading = store.createSelector((state) =>
   Object.values(state.agentAvailability.providerLoadingMap).some((v) => v),
-);
-
-export const selectHasAnyAvailableProvider = store.createSelector((state) =>
-  Object.values(state.agentAvailability.providerStatusMap).some((s) => s?.available),
 );
 
 export const selectManagedInstallStatusByProvider = store.createSelector(
@@ -45,8 +37,4 @@ export const selectManagedInstallStatusByProvider = store.createSelector(
       usingFallback: status.usingFallback,
     };
   },
-);
-
-export const selectCodexManagedInstallStatus = store.createSelector((state) =>
-  selectManagedInstallStatusByProvider.select(state, 'codex'),
 );

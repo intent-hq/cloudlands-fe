@@ -39,10 +39,6 @@ export const selectWidthBeforeCollapse = store.createSelector((state) => {
   return state.uiLayout.sidebarWidthBeforeCollapse;
 });
 
-export const selectEffectiveWidth = store.createSelector((state) => {
-  return state.uiLayout.sidebarCollapsed ? 0 : state.uiLayout.sidebarWidth;
-});
-
 export const selectPanelVisibilityFlag = store.createSelector<
   [wsId: string, key: keyof PanelVisibilityState],
   boolean
@@ -69,10 +65,6 @@ export const selectSidebarSide = store.createSelector((state) => {
 });
 
 // Bottom dock selectors
-export const selectBottomDockIsExpanded = store.createSelector((state) => {
-  return state.uiLayout.bottomDock.isExpanded;
-});
-
 export const selectBottomDockViewMode = store.createSelector<[], DockViewMode>((state) => {
   return state.uiLayout.bottomDock.viewMode;
 });

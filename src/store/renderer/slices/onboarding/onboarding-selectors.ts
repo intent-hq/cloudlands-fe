@@ -10,15 +10,3 @@ export const selectOnboardingState = store.createSelector((state): OnboardingSta
 export const selectOnboardingStep = store.createSelector(
   (state) => state.onboarding.step,
 );
-
-export const selectOnboardingProjectConfig = store.createSelector(
-  (state) => state.onboarding.projectConfig,
-);
-
-export const selectOnboardingAgentStatus = store.createSelector(
-  (state) => state.onboarding.agentStatus,
-);
-
-export const selectOnboardingWorkspaceId = store.createSelector(
-  (state) => state.onboarding.workspaceId,
-);

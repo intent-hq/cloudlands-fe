@@ -9,10 +9,7 @@ import {
   initialState,
   emitWorkspaceEvent,
   workspaceEventAccepted,
-  clearWorkspaceEvents,
   cleanupWorkspace,
-  eventPersisted,
-  eventBroadcasted,
 } from "./workspace-events-slice";
 import { MAX_RECENT_EVENTS } from "./types";
 
@@ -96,23 +93,6 @@ describe("workspaceEventsReducer", () => {
     });
   });
 
-  // --- clearWorkspaceEvents ---
-  describe("clearWorkspaceEvents", () => {
-    it("clears the event buffer but preserves workspace state", () => {
-      const e = makeEvent();
-      let state = reduce(workspaceEventAccepted(e));
-      state = reduce(clearWorkspaceEvents(WS), state);
-      const ws = state.byWorkspaceId[WS];
-      expect(ws.recentEvents).toHaveLength(0);
-      expect(ws.eventCount).toBe(1); // count preserved
-    });
-
-    it("returns same state if buffer already empty", () => {
-      const state = reduce(clearWorkspaceEvents(WS));
-      expect(state).toBe(initialState);
-    });
-  });
-
   // --- cleanupWorkspace ---
   describe("cleanupWorkspace", () => {
     it("removes workspace state entirely", () => {
@@ -125,19 +105,6 @@ describe("workspaceEventsReducer", () => {
 
     it("returns same state if workspace not present", () => {
       const state = reduce(cleanupWorkspace("nonexistent"));
-      expect(state).toBe(initialState);
-    });
-  });
-
-  // --- saga feedback actions (no state change) ---
-  describe("saga feedback actions", () => {
-    it("eventPersisted does not modify state", () => {
-      const state = reduce(eventPersisted(WS, "evt-1"));
-      expect(state).toBe(initialState);
-    });
-
-    it("eventBroadcasted does not modify state", () => {
-      const state = reduce(eventBroadcasted("evt-1"));
       expect(state).toBe(initialState);
     });
   });

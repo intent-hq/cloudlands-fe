@@ -18,7 +18,6 @@ import {
   selectDelegationGroups,
   selectWaitingState,
   selectWokenUpInfo,
-  selectShowSubscriptionRow,
   selectCompletionStatus,
 } from './agent-subscription-ui-selectors';
 import type { AgentSubscriptionUIState, Subscription, DelegationGroupStatus } from './agent-subscription-ui-types';
@@ -235,26 +234,6 @@ describe('agentSubscriptionUI selectors', () => {
 
   it('selectWokenUpInfo returns null for missing entries', () => {
     expect(selectWokenUpInfo.select(stateWith(initialState), WS, AGENT)).toBeNull();
-  });
-
-  it('selectShowSubscriptionRow returns true when subscriptions exist', () => {
-    const key = makeKey(WS, AGENT);
-    const slice: AgentSubscriptionUIState = {
-      entries: { [key]: { ...emptyEntry, subscriptions: [sub] } },
-    };
-    expect(selectShowSubscriptionRow.select(stateWith(slice), WS, AGENT)).toBe(true);
-  });
-
-  it('selectShowSubscriptionRow returns false when empty', () => {
-    expect(selectShowSubscriptionRow.select(stateWith(initialState), WS, AGENT)).toBe(false);
-  });
-
-  it('selectShowSubscriptionRow returns true when waitingState is completed', () => {
-    const key = makeKey(WS, AGENT);
-    const slice: AgentSubscriptionUIState = {
-      entries: { [key]: { ...emptyEntry, waitingState: 'completed' } },
-    };
-    expect(selectShowSubscriptionRow.select(stateWith(slice), WS, AGENT)).toBe(true);
   });
 
   it('selectWaitingState returns completed when set', () => {

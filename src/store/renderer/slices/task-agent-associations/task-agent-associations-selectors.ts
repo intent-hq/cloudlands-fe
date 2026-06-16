@@ -10,15 +10,6 @@ export const selectAssociationsForNote = store.createSelector(
     Object.values(state.taskAgentAssociations?.byWorkspaceId[workspaceId]?.byNoteId[noteId] ?? {}),
 );
 
-export const selectTaskAgentAssociation = store.createSelector(
-  (state, workspaceId: string, noteId: string, taskKeyOrText: string): TaskAgentAssociation | undefined => {
-    const noteAssociations = state.taskAgentAssociations?.byWorkspaceId[workspaceId]?.byNoteId[noteId];
-    if (!noteAssociations) return undefined;
-    return noteAssociations[taskKeyOrText] ??
-      Object.values(noteAssociations).find((association) => association.taskText === taskKeyOrText);
-  },
-);
-
 export const selectTasksForAgent = store.createSelector(
   (state, workspaceId: string, agentId: string): TaskAgentAssociation[] => {
     const byNoteId = state.taskAgentAssociations?.byWorkspaceId[workspaceId]?.byNoteId ?? {};

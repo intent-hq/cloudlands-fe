@@ -1,15 +1,10 @@
 import { store } from "../../store";
 import {
-  findItem,
   getItems,
   type Collection,
 } from 'ag-redux-toolkit/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
-import {
-  ACP_PROVIDERS,
-  parseCompoundModelId,
-} from '$shared/config/provider-config';
 import { selectActiveProviderId } from '../provider-settings/provider-settings-selectors';
 import type { ModelLoadingState } from './model-types';
 
@@ -23,7 +18,7 @@ export const selectSelectedModel = store.createSelector((state, providerId?: str
   return state.model.providerModels[effectiveProviderId] ?? MODEL_DEFAULTS.UI_INITIAL_MODEL;
 });
 
-export const selectAvailableModelsCollection = store.createSelector(
+const selectAvailableModelsCollection = store.createSelector(
   (state): Collection<AuggieModel, 'value'> => {
     return state.model.availableModels;
   },
@@ -33,7 +28,7 @@ export const selectAvailableModels = store.createSelector((state): AuggieModel[]
   return getItems(selectAvailableModelsCollection.select(state));
 });
 
-export const selectProviderLoadingState = store.createSelector(
+const selectProviderLoadingState = store.createSelector(
   (state, providerId?: string): ModelLoadingState | null => {
     const effectiveProviderId = getEffectiveProviderId(state, providerId);
     return state.model.loadingState[effectiveProviderId] ?? null;
@@ -57,12 +52,6 @@ export const selectLoadError = store.createSelector((state, providerId?: string)
 
   return loadingState.error ?? null;
 });
-
-export const selectProviderWarning = store.createSelector(
-  (state, providerId?: string): string | undefined => {
-    return selectProviderLoadingState.select(state, providerId)?.warning;
-  },
-);
 
 export const selectAllProviderWarnings = store.createSelector((state): Record<string, string> => {
   const warnings: Record<string, string> = {};
@@ -95,38 +84,6 @@ export const selectProviderModels = store.createSelector((state): Record<string,
 });
 
 /**
- * Select the display label for a model value.
- * Handles both simple model IDs and compound IDs.
- */
-export const selectModelLabel = store.createSelector((state, modelValue: string): string => {
-  if (!modelValue) return modelValue;
-
-  const availableModels = selectAvailableModelsCollection.select(state);
-  const { modelId } = parseCompoundModelId(modelValue);
-  const model = findItem(
-    availableModels,
-    (candidate: AuggieModel) => candidate.value === modelValue || candidate.value === modelId,
-  );
-
-  return model?.label || modelValue;
-});
-
-/** Select the label for the currently selected model */
-export const selectCurrentModelLabel = store.createSelector((state): string => {
-  const selectedModel = selectSelectedModel.select(state);
-  if (!selectedModel) return selectedModel;
-
-  const availableModels = selectAvailableModelsCollection.select(state);
-  const { modelId } = parseCompoundModelId(selectedModel);
-  const model = findItem(
-    availableModels,
-    (candidate: AuggieModel) => candidate.value === selectedModel || candidate.value === modelId,
-  );
-
-  return model?.label || selectedModel;
-});
-
-/**
  * Select the default model for a specific workspace.
  * Falls back to the global selected model if no workspace-specific model is set.
  */
@@ -135,52 +92,9 @@ export const selectWorkspaceDefaultModel = store.createSelector((state, workspac
   return workspaceModel || selectSelectedModel.select(state);
 });
 
-/** Select whether a workspace has a specific default model set */
-export const selectHasWorkspaceDefaultModel = store.createSelector(
-  (state, workspaceId: string): boolean => {
-    return workspaceId in state.model.workspaceModels;
-  },
-);
-
-/**
- * Select models grouped by provider.
- * Returns a single group with the active provider's models.
- */
-export const selectGroupedModels = store.createSelector(
-  (
-    state,
-    activeProviderId: string,
-  ): Array<{
-    providerId: string;
-    providerDisplayName: string;
-    models: AuggieModel[];
-  }> => {
-    const providerConfig = ACP_PROVIDERS[activeProviderId];
-    const availableModels = selectAvailableModels.select(state);
-
-    if (!providerConfig || availableModels.length === 0) {
-      return [];
-    }
-
-    return [
-      {
-        providerId: providerConfig.id,
-        providerDisplayName: providerConfig.displayName,
-        models: availableModels,
-      },
-    ];
-  },
-);
-
 export const selectModelPickerCollapsedGroups = store.createSelector((state): string[] => {
   return state.model.modelPickerCollapsedGroups;
 });
-
-export const selectIsModelPickerGroupCollapsed = store.createSelector(
-  (state, groupKey: string): boolean => {
-    return state.model.modelPickerCollapsedGroups.includes(groupKey);
-  },
-);
 
 export const selectModelFallbackInfo = store.createSelector((state, agentId: string) => {
   return state.model.fallbackInfoByAgentId[agentId] ?? null;

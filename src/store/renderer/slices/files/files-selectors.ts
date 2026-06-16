@@ -6,7 +6,7 @@ import {
 import { emptyFilesWorkspaceState } from "./files-slice";
 import type { FileContentEntry, FilesWorkspaceState } from "./files-types";
 
-export const selectFilesWorkspaceState = store.createSelector(
+const selectFilesWorkspaceState = store.createSelector(
   (state, wsId: string): FilesWorkspaceState => state.files.byWorkspaceId[wsId] ?? emptyFilesWorkspaceState,
 );
 
@@ -54,11 +54,6 @@ export const selectFileError = store.createSelector(
 export const selectFileIsBinary = store.createSelector(
   (state, wsId: string, path: string | null | undefined): boolean =>
     selectFileContentEntry.select(state, wsId, path)?.isBinary ?? false,
-);
-
-export const selectFileTruncated = store.createSelector(
-  (state, wsId: string, path: string | null | undefined): boolean =>
-    selectFileContentEntry.select(state, wsId, path)?.truncated ?? false,
 );
 
 export const selectFileIsDirty = store.createSelector(

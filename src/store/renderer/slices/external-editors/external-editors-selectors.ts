@@ -1,5 +1,4 @@
 import { store } from "../../store";
-import type { EditorCategory } from "$shared/editors/editor-registry";
 import {
   getItems,
   type Collection,
@@ -12,7 +11,7 @@ export const selectOpenAction = store.createSelector((state): OpenAction => {
 });
 
 /** Select installed editors collection */
-export const selectInstalledEditorsCollection = store.createSelector(
+const selectInstalledEditorsCollection = store.createSelector(
   (state): Collection<InstalledEditor, "id"> => {
     return state.externalEditors.editors;
   }
@@ -29,36 +28,6 @@ export const selectInstalledEditors = store.createSelector(
 export const selectInstalledEditorsLoading = store.createSelector(
   (state): boolean => {
     return state.externalEditors.loading;
-  }
-);
-
-/** Select error state */
-export const selectInstalledEditorsError = store.createSelector(
-  (state): string | null => {
-    return state.externalEditors.error;
-  }
-);
-
-/** Select editors filtered by category */
-export const selectInstalledEditorsByCategory = store.createSelector(
-  (state, category: EditorCategory): InstalledEditor[] => {
-    return selectInstalledEditors
-      .select(state)
-      .filter((editor) => editor.category === category);
-  }
-);
-
-/** Select IDEs only */
-export const selectInstalledIdes = store.createSelector((state): InstalledEditor[] => {
-  return selectInstalledEditors.select(state).filter((editor) => editor.category === "ide");
-});
-
-/** Select terminals only */
-export const selectInstalledTerminals = store.createSelector(
-  (state): InstalledEditor[] => {
-    return selectInstalledEditors
-      .select(state)
-      .filter((editor) => editor.category === "terminal");
   }
 );
 

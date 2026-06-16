@@ -8,12 +8,8 @@ import type { StoreState } from "../../types";
 import type { InstalledEditor } from "./external-editors-slice";
 import {
   selectInstalledEditors,
-  selectInstalledEditorsByCategory,
-  selectInstalledEditorsCollection,
   selectInstalledEditorsFiltered,
   selectHiddenEditorIds,
-  selectInstalledIdes,
-  selectInstalledTerminals,
   selectLastFetched,
   selectOpenAction,
 } from "./external-editors-selectors";
@@ -70,28 +66,10 @@ describe("external-editors selectors", () => {
     expect(selectOpenAction.select(state)).toBe("cursor");
   });
 
-  it("returns the raw editors collection", () => {
-    const state = mockState();
-
-    expect(selectInstalledEditorsCollection.select(state)).toEqual(
-      state.externalEditors.editors
-    );
-  });
-
   it("returns installed editors as an array", () => {
     const state = mockState();
 
     expect(selectInstalledEditors.select(state)).toEqual(mockEditors);
-  });
-
-  it("filters editors by category while keeping array output", () => {
-    const state = mockState();
-
-    expect(selectInstalledEditorsByCategory.select(state, "ide")).toEqual([
-      mockEditors[0],
-    ]);
-    expect(selectInstalledIdes.select(state)).toEqual([mockEditors[0]]);
-    expect(selectInstalledTerminals.select(state)).toEqual([mockEditors[1]]);
   });
 
   it("filters to installed editors only", () => {

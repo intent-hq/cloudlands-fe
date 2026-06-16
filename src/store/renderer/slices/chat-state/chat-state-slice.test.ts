@@ -13,9 +13,6 @@ import {
   chatSendStarted,
   chatSendFailed,
   chatInterrupted,
-  chatRetryCleared,
-  chatModelRetryCleared,
-  chatSmartRetryPrepared,
   chatStopInitiated,
   chatStopCompleted,
   chatReset,
@@ -24,8 +21,6 @@ import {
   streamTimedOut,
   chatStallDetected,
   chatStuckStateCleared,
-  chatAgentRemoved,
-  chatModelUnavailableSet,
   chatModelUnavailableCleared,
   chatRebindStarted,
   chatRebindEnded,
@@ -259,49 +254,13 @@ describe('chatStateReducer', () => {
     expect(agent.isStalled).toBe(false);
   });
 
-  it('chatAgentRemoved removes agent state', () => {
-    const s1 = chatStateReducer(initialState, chatSendStarted(AGENT));
-    const s2 = chatStateReducer(s1, chatAgentRemoved(AGENT));
-    expect(s2.byAgentId[AGENT]).toBeUndefined();
-  });
-
-  it('chatRetryCleared clears error and lastAttemptedMessage', () => {
-    const s1 = chatStateReducer(initialState, chatInitFailed(AGENT, 'error'));
-    const s2 = chatStateReducer(s1, chatRetryCleared(AGENT));
-    const agent = s2.byAgentId[AGENT];
-    expect(agent.error).toBeNull();
-    expect(agent.lastAttemptedMessage).toBeNull();
-  });
-
-  it('chatModelRetryCleared clears error, modelUnavailable, and lastAttemptedMessage', () => {
-    let s = chatStateReducer(initialState, chatInitFailed(AGENT, 'model error'));
-    s = chatStateReducer(s, chatModelUnavailableSet(AGENT, { failedModel: 'opus', nextAvailableModel: 'sonnet' }));
-    s = chatStateReducer(s, chatModelRetryCleared(AGENT));
-    const agent = s.byAgentId[AGENT];
-    expect(agent.error).toBeNull();
-    expect(agent.modelUnavailable).toBeNull();
-    expect(agent.lastAttemptedMessage).toBeNull();
-  });
-
-  it('chatSmartRetryPrepared clears error, modelUnavailable, lastAttemptedMessage', () => {
-    let s = chatStateReducer(initialState, chatInitFailed(AGENT, 'err'));
-    s = chatStateReducer(s, chatModelUnavailableSet(AGENT, { failedModel: 'a', nextAvailableModel: 'b' }));
-    s = chatStateReducer(s, chatSmartRetryPrepared(AGENT));
-    const agent = s.byAgentId[AGENT];
-    expect(agent.error).toBeNull();
-    expect(agent.modelUnavailable).toBeNull();
-    expect(agent.lastAttemptedMessage).toBeNull();
-  });
-
-  it('chatModelUnavailableSet stores info', () => {
-    const info = { failedModel: 'opus', nextAvailableModel: 'sonnet' };
-    const s = chatStateReducer(initialState, chatModelUnavailableSet(AGENT, info));
-    expect(s.byAgentId[AGENT].modelUnavailable).toEqual(info);
-  });
-
   it('chatModelUnavailableCleared clears info', () => {
     const info = { failedModel: 'opus', nextAvailableModel: 'sonnet' };
-    let s = chatStateReducer(initialState, chatModelUnavailableSet(AGENT, info));
+    let s = chatStateReducer(
+      initialState,
+      streamCompleted(AGENT, { lastAttemptedMessage: null, modelUnavailable: info }),
+    );
+    expect(s.byAgentId[AGENT].modelUnavailable).toEqual(info);
     s = chatStateReducer(s, chatModelUnavailableCleared(AGENT));
     expect(s.byAgentId[AGENT].modelUnavailable).toBeNull();
   });

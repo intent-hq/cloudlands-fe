@@ -1,7 +1,6 @@
 import { store } from "../../store";
 import {
   type ACPProviderConfig,
-  ACP_PROVIDERS,
   getAlwaysEnabledProviders,
   getProviderConfig,
 } from "$shared/config/provider-config";
@@ -21,12 +20,6 @@ export const selectActiveProvider = store.createSelector(
 export const selectIsProviderActive = store.createSelector(
   (state, providerId: string): boolean => {
     return state.providerSettings.activeProviderId === providerId;
-  }
-);
-
-export const selectAvailableProviders = store.createSelector(
-  (): ACPProviderConfig[] => {
-    return Object.values(ACP_PROVIDERS);
   }
 );
 

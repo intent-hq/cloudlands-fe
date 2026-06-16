@@ -60,19 +60,6 @@ export const selectWokenUpInfo = store.createSelector<[workspaceId: string, agen
 );
 
 /**
- * Whether to show the subscription row in the UI.
- * True if there are any subscriptions or delegation groups,
- * or if the entry is in the 'completed' transitional state.
- */
-export const selectShowSubscriptionRow = store.createSelector<[workspaceId: string, agentId: string], boolean>(
-  (state, workspaceId, agentId) => {
-    const entry = selectEntry.select(state, workspaceId, agentId);
-    if (entry.waitingState === 'completed') return true;
-    return entry.subscriptions.length > 0 || entry.delegationGroups.length > 0;
-  },
-);
-
-/**
  * All agent IDs that have entries in the subscription UI for a given workspace.
  * Used by sagas to refresh all tracked agents on system-level events.
  */

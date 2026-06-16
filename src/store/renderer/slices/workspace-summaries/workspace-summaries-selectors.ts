@@ -7,13 +7,6 @@
 
 import { store } from "../../store";
 import type { WorkspaceDiffSummary, WorkspaceGitSummary } from "$shared/types";
-import { emptyWorkspaceSummariesState } from "./workspace-summaries-slice";
-import type { WorkspaceSummariesWorkspaceState } from "./workspace-summaries-types";
-
-export const selectWorkspaceSummariesState = store.createSelector(
-  (state, workspaceId: string): WorkspaceSummariesWorkspaceState =>
-    state.workspaceSummaries.byWorkspaceId[workspaceId] ?? emptyWorkspaceSummariesState,
-);
 
 export const selectWorkspaceDiffSummary = store.createSelector(
   (state, workspaceId: string): WorkspaceDiffSummary | null =>
@@ -23,15 +16,5 @@ export const selectWorkspaceDiffSummary = store.createSelector(
 export const selectWorkspaceGitSummary = store.createSelector(
   (state, workspaceId: string): WorkspaceGitSummary | null =>
     state.workspaceSummaries.byWorkspaceId[workspaceId]?.gitSummary ?? null,
-);
-
-export const selectWorkspaceSummariesLoading = store.createSelector(
-  (state, workspaceId: string): boolean =>
-    state.workspaceSummaries.byWorkspaceId[workspaceId]?.loading ?? false,
-);
-
-export const selectWorkspaceSummariesInitialized = store.createSelector(
-  (state, workspaceId: string): boolean =>
-    state.workspaceSummaries.byWorkspaceId[workspaceId]?.initialized ?? false,
 );
 

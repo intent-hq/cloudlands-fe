@@ -14,15 +14,3 @@ export const selectSkills = store.createSelector<[workspaceId: string], SkillInf
   },
 );
 
-export const selectSkillsLoading = store.createSelector<[workspaceId: string], boolean>(
-  (state, workspaceId) => {
-    return selectSkillsWorkspaceState.select(state, workspaceId).loading;
-  },
-);
-
-export const selectSkillsError = store.createSelector<[workspaceId: string], string | null>(
-  (state, workspaceId) => {
-    return selectSkillsWorkspaceState.select(state, workspaceId).error;
-  },
-);
-

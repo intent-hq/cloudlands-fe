@@ -58,7 +58,6 @@ import {
   loadWorkspaceDataRequested,
 } from '../changes-slice';
 import {
-  selectChangesCoordinationState,
   selectChangesLastUpdatedAt,
   selectCurrentChanges,
   selectCurrentUnstagedWorkingChanges,
@@ -232,7 +231,7 @@ describe('changes operations saga open-file refresh bridge', () => {
       .silentRun(50);
 
     expect(result.returnValue).toEqual(notReadyResult);
-    expect(selectChangesCoordinationState.select(result.storeState as any, WS_ID)).toMatchObject({
+    expect((result.storeState as any).changes.byWorkspaceId[WS_ID].coordination).toMatchObject({
       syncInProgress: false,
       syncDirty: false,
       syncDirtyForce: false,

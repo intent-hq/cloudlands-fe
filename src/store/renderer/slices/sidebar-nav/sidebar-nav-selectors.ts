@@ -86,14 +86,6 @@ export const selectActiveStreamsVersion = store.createSelector(
   (state) => state.sidebarNav.activeStreamsVersion,
 );
 
-export const selectUnreadVersion = store.createSelector(
-  (state) => state.sidebarNav.unreadVersion,
-);
-
-export const selectHoveredItem = store.createSelector(
-  (state) => state.sidebarNav.hoveredItem,
-);
-
 export const selectExpandedItem = store.createSelector(
   (state) => state.sidebarNav.expandedItem,
 );
@@ -161,29 +153,9 @@ export const selectActiveCard = store.createSelector(
   },
 );
 
-/** Whether any hover card is visible */
-export const selectIsCardVisible = store.createSelector(
-  (state) => selectActiveCard.select(state) !== null,
-);
-
-/** Whether a sidebar panel is currently open */
-export const selectIsPanelOpen = store.createSelector(
-  (state) => state.sidebarNav.panelItem !== null,
-);
-
-/** Check if a specific workspace is pinned */
-export const selectIsWorkspacePinned = store.createSelector(
-  (state, id: string) => state.sidebarNav.pinnedWorkspaceIds.includes(id),
-);
-
 /** Whether any context menu is open (prevents hover card auto-close) */
 export const selectContextMenuOpen = store.createSelector(
   (state) => state.sidebarNav.contextMenuOpenCount > 0,
-);
-
-/** The deferred leave type when context menu prevented auto-close */
-export const selectDeferredLeave = store.createSelector(
-  (state) => state.sidebarNav.deferredLeave,
 );
 
 /** Latest Chief thread preview for the sidebar hover card. */

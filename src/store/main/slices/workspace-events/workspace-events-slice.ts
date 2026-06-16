@@ -12,10 +12,7 @@
  * Actions:
  * - emitWorkspaceEvent: Dispatch a workspace event (dedup checked in saga)
  * - workspaceEventAccepted: Internal — event passed dedup, downstream sagas listen here
- * - clearWorkspaceEvents: Clear the event buffer for a workspace
  * - cleanupWorkspace: Remove workspace state entirely
- * - eventPersisted: Saga feedback — event was persisted to storage
- * - eventBroadcasted: Saga feedback — event was broadcast to renderer
  */
 
 import { createAction } from "ag-redux-toolkit/utils/store/create-action";
@@ -49,11 +46,6 @@ export const emitWorkspaceEvent = createAction(
     [event, Date.parse(event.timestamp)] as [WorkspaceEvent, number],
 );
 
-/** Clear the event buffer for a workspace (keeps workspace state entry) */
-export const clearWorkspaceEvents = createAction<[workspaceId: string]>(
-  "workspaceEvents/clearWorkspaceEvents",
-);
-
 /** Remove workspace state entirely */
 export const cleanupWorkspace = createAction<[workspaceId: string]>(
   "workspaceEvents/cleanupWorkspace",
@@ -69,16 +61,6 @@ export const workspaceEventAccepted = createAction(
   "workspaceEvents/workspaceEventAccepted",
   (event: WorkspaceEvent) =>
     [event, Date.parse(event.timestamp)] as [WorkspaceEvent, number],
-);
-
-/** Saga feedback: event was persisted to storage */
-export const eventPersisted = createAction<[workspaceId: string, eventId: string]>(
-  "workspaceEvents/eventPersisted",
-);
-
-/** Saga feedback: event was broadcast to renderer */
-export const eventBroadcasted = createAction<[eventId: string]>(
-  "workspaceEvents/eventBroadcasted",
 );
 
 // ============================================================================
@@ -127,18 +109,7 @@ export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initia
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, appendEvents(ws, [event]));
   })
-  .with(clearWorkspaceEvents, (state, { payload: [workspaceId] }) => {
-    const ws = getWorkspaceState(state, workspaceId);
-    if (ws.recentEvents.length === 0) return state;
-    return setWorkspaceState(state, workspaceId, {
-      ...ws,
-      recentEvents: [],
-    });
-  })
   .with(cleanupWorkspace, (state, { payload: [workspaceId] }) => {
     return clearWorkspaceState(state, workspaceId);
   });
-
-// Note: eventPersisted and eventBroadcasted are saga-only feedback actions.
-// They don't modify state — sagas will listen for them.
 

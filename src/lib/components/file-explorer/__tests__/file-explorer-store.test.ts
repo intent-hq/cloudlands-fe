@@ -12,7 +12,6 @@ import {
   removeExpandedPath,
   setGitStatusMap,
   setFileExplorerLoading,
-  setFileExplorerError,
   clearExpandedPathsExceptRoot,
   setChildrenAtPathAction,
   clearFileExplorerForWorkspace,
@@ -84,10 +83,7 @@ describe('FileExplorerReducer', () => {
   });
 
   it('should set loading and clear error', () => {
-    let state = fileExplorerReducer(initialState, setFileExplorerError(wsId, 'some error'));
-    expect(state.byWorkspaceId[wsId].error).toBe('some error');
-
-    state = fileExplorerReducer(state, setFileExplorerLoading(wsId, true));
+    const state = fileExplorerReducer(initialState, setFileExplorerLoading(wsId, true));
     expect(state.byWorkspaceId[wsId].isLoading).toBe(true);
     expect(state.byWorkspaceId[wsId].error).toBeNull();
   });

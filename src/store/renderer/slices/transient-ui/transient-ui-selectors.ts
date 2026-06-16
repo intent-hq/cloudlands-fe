@@ -1,7 +1,7 @@
 import { store } from "../../store";
 import { emptyWorkspaceTransientUiState } from './transient-ui-slice';
 
-export const selectTransientUiWorkspaceState = store.createSelector((state, workspaceId: string) => {
+const selectTransientUiWorkspaceState = store.createSelector((state, workspaceId: string) => {
   return state.transientUi.byWorkspaceId[workspaceId] ?? emptyWorkspaceTransientUiState;
 });
 

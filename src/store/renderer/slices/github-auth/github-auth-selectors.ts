@@ -20,15 +20,7 @@ export const selectGitHubAuthOauthUrl = store.createSelector(
   (state) => state.githubAuth.oauthUrl,
 );
 
-export const selectGitHubAuthNeedsScopeUpdate = store.createSelector(
-  (state) => state.githubAuth.needsScopeUpdate,
-);
-
 export const selectGitHubAuthError = store.createSelector(
   (state) => state.githubAuth.error,
-);
-
-export const selectGitHubAuthState = store.createSelector(
-  (state) => state.githubAuth,
 );
 

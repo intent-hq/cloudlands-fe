@@ -74,10 +74,6 @@ export const selectCodeFontFamily = store.createSelector((state) => {
   return state.userPreferences.codeFontFamily;
 });
 
-export const selectSystemFonts = store.createSelector((state) => {
-  return state.userPreferences.systemFonts;
-});
-
 export const selectCodeFontFamilyCSS = store.createSelector((state) => {
   const { codeFontFamily } = state.userPreferences;
   if (codeFontFamily === "system-default") {

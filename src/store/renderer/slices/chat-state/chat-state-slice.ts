@@ -199,22 +199,6 @@ export const chatSendFailed =
 /** Agent was interrupted — clear streaming without error */
 export const chatInterrupted = createAction<[agentId: string]>('chatState/interrupted');
 
-/** Clear error and retry-related state before retry */
-export const chatRetryCleared = createAction<[agentId: string]>('chatState/retryCleared');
-
-/** Clear error + modelUnavailable before model retry */
-export const chatModelRetryCleared = createAction<[agentId: string]>('chatState/modelRetryCleared');
-
-/** Clear error/retry for smart retry (messages now managed via agent-session slice) */
-export const chatSmartRetryPrepared = createAction<[agentId: string]>(
-  'chatState/smartRetryPrepared',
-);
-
-/** Set model unavailable info */
-export const chatModelUnavailableSet = createAction<[agentId: string, info: ModelUnavailableInfo]>(
-  'chatState/modelUnavailableSet',
-);
-
 /** Clear model unavailable info */
 export const chatModelUnavailableCleared = createAction<[agentId: string]>(
   'chatState/modelUnavailableCleared',
@@ -274,9 +258,6 @@ export const chatStallDetected = createAction<[agentId: string]>('chatState/stal
 
 /** State reconciliation: clear stuck processing state */
 export const chatStuckStateCleared = createAction<[agentId: string]>('chatState/stuckStateCleared');
-
-/** Remove agent chat state on cleanup */
-export const chatAgentRemoved = createAction<[agentId: string]>('chatState/agentRemoved');
 
 /** Clear error */
 export const chatErrorCleared = createAction<[agentId: string]>('chatState/errorCleared');
@@ -359,26 +340,6 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
       streamingStartTime: null,
     }),
   )
-  .with(chatRetryCleared, (state, { payload: [agentId] }) =>
-    updateAgent(state, agentId, { error: null, lastAttemptedMessage: null }),
-  )
-  .with(chatModelRetryCleared, (state, { payload: [agentId] }) =>
-    updateAgent(state, agentId, {
-      error: null,
-      modelUnavailable: null,
-      lastAttemptedMessage: null,
-    }),
-  )
-  .with(chatSmartRetryPrepared, (state, { payload: [agentId] }) =>
-    updateAgent(state, agentId, {
-      error: null,
-      modelUnavailable: null,
-      lastAttemptedMessage: null,
-    }),
-  )
-  .with(chatModelUnavailableSet, (state, { payload: [agentId, info] }) =>
-    updateAgent(state, agentId, { modelUnavailable: info }),
-  )
   .with(chatModelUnavailableCleared, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, { modelUnavailable: null }),
   )
@@ -458,8 +419,4 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   )
   .with(chatTrackedWorkspaceSet, (state, { payload: [agentId, trackedWsId] }) =>
     updateAgent(state, agentId, { trackedWorkspaceId: trackedWsId }),
-  )
-  .with(chatAgentRemoved, (state, { payload: [agentId] }) => {
-    const { [agentId]: _, ...restAgents } = state.byAgentId;
-    return { ...state, byAgentId: restAgents };
-  });
+  );

@@ -16,7 +16,6 @@ import {
   setChildrenAtPathAction,
   setFileExplorerWorkspacePath,
   setGitStatusMap,
-  setAgentFileEditsAction,
   setRootNode,
   updateAgentFileEditsEntries,
   updateGitStatusEntries,
@@ -319,7 +318,7 @@ describe("fileExplorerReducer — updateAgentFileEditsEntries / removeAgentFileE
     let state = fileExplorerReducer(initialState, setFileExplorerWorkspacePath(WS_ID, WS_PATH));
     state = fileExplorerReducer(
       state,
-      setAgentFileEditsAction(WS_ID, {
+      updateAgentFileEditsEntries(WS_ID, {
         "src/a.ts": ["agent-1"],
         "src/b.ts": ["agent-2"],
       }),

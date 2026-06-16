@@ -5,16 +5,6 @@
 import { store } from "../../store";
 import { selectAgentSessionWorkspaceId } from "../agent-session/agent-session-selectors";
 
-/** Whether a specific agent has unread messages. */
-export const selectAgentHasUnread = store.createSelector(
-  (state, agentId: string) => state.unreadTracking.unreadAgentIds.includes(agentId)
-);
-
-/** Total count of agents with unread messages. */
-export const selectUnreadCount = store.createSelector(
-  (state) => state.unreadTracking.unreadAgentIds.length
-);
-
 /** All agent IDs with unread messages. */
 export const selectUnreadAgentIds = store.createSelector(
   (state) => state.unreadTracking.unreadAgentIds

@@ -18,18 +18,15 @@ import {
   initialState,
   upsertSession as upsertSessionAction,
   removeSession,
-  setSessionStreaming,
   addMessage,
   removeMessage,
   updateMessage,
   replaceMessages,
   updateSession,
   setAgentStreaming,
-  updateDigest,
   updateAgentDigest,
   renameSession,
   renameAgent,
-  reconcileCanonicalStatus,
   bulkUpsertSessions,
   removeWorkspaceSessions,
   clearAllSessions,
@@ -37,7 +34,6 @@ import {
   hasCanonicalId,
   isTimestampClose,
   replaceMessageById,
-  mergeSessionMessages,
 } from './agent-session-slice';
 import {
   chatSendFailed,
@@ -271,23 +267,6 @@ describe('agent-session-slice reducer', () => {
     });
   });
 
-  describe('setSessionStreaming', () => {
-    it('sets isStreaming flag', () => {
-      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
-      state = agentSessionReducer(state, setSessionStreaming('a1', true));
-      expect(state.byAgentId['a1'].isStreaming).toBe(true);
-    });
-
-    it('is no-op if value unchanged', () => {
-      const state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1', { isStreaming: true })),
-      );
-      const next = agentSessionReducer(state, setSessionStreaming('a1', true));
-      expect(next).toBe(state);
-    });
-  });
-
   describe('addMessage', () => {
     it('adds a message to an existing session', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
@@ -413,112 +392,6 @@ describe('agent-session-slice reducer', () => {
     });
   });
 
-  describe('mergeSessionMessages', () => {
-    it('deduplicates duplicate message IDs from raw session snapshots', () => {
-      const user = makeUniqueMessage('msg_user', 'user');
-      const assistant = makeUniqueMessage('msg_assistant', 'assistant', '2024-01-01T00:00:01.000Z');
-      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
-
-      state = agentSessionReducer(
-        state,
-        mergeSessionMessages('a1', [user, assistant, assistant], false),
-      );
-
-      expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_user', 'msg_assistant']);
-    });
-
-    it('preserves completed messages when a stale shorter snapshot arrives', () => {
-      const currentMessages = [
-        makeUniqueMessage('msg_user', 'user'),
-        makeUniqueMessage('msg_assistant', 'assistant', '2024-01-01T00:00:01.000Z'),
-      ];
-      let state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1', { messages: currentMessages, isStreaming: false })),
-      );
-
-      state = agentSessionReducer(state, mergeSessionMessages('a1', [currentMessages[0]], false));
-
-      expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual(['msg_user', 'msg_assistant']);
-    });
-
-    it('preserves completed messages when same-length incoming content is lower', () => {
-      const currentMessages = [
-        makeUniqueMessage('msg_user', 'user'),
-        {
-          ...makeUniqueMessage('msg_assistant', 'assistant', '2024-01-01T00:00:01.000Z'),
-          contentBlocks: [{ type: 'text' as const, text: 'complete assistant response' }],
-        },
-      ];
-      const staleMessages = [
-        currentMessages[0],
-        { ...currentMessages[1], contentBlocks: [{ type: 'text' as const, text: 'short' }] },
-      ];
-      let state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1', { messages: currentMessages, isStreaming: false })),
-      );
-
-      state = agentSessionReducer(state, mergeSessionMessages('a1', staleMessages, false));
-
-      expect(getMsgs(state, 'a1')[1].contentBlocks).toEqual(currentMessages[1].contentBlocks);
-    });
-
-    it('preserves streaming content blocks when incoming snapshot regresses', () => {
-      const streamingMessage: AgentMessage = {
-        ...makeUniqueMessage('msg_assistant', 'assistant'),
-        isStreaming: true,
-        contentBlocks: [
-          { type: 'text' as const, text: 'Before' },
-          { type: 'tool_use' as const, id: 'tool-1', name: 'search' },
-          { type: 'text' as const, text: 'After' },
-        ],
-      };
-      let state = agentSessionReducer(
-        initialState,
-        upsertSession(
-          makeSession('a1', 'ws-1', { messages: [streamingMessage], isStreaming: true }),
-        ),
-      );
-
-      state = agentSessionReducer(
-        state,
-        mergeSessionMessages(
-          'a1',
-          [{ ...streamingMessage, contentBlocks: [{ type: 'text', text: 'Before' }] }],
-          true,
-        ),
-      );
-
-      expect(getMsgs(state, 'a1')[0].contentBlocks).toEqual(streamingMessage.contentBlocks);
-    });
-
-    it('preserves just-sent user message during workspace-switch streaming restore', () => {
-      const liveMessages = [
-        makeUniqueMessage('msg_first_user', 'user'),
-        makeUniqueMessage('msg_first_assistant', 'assistant', '2024-01-01T00:00:01.000Z'),
-        makeUniqueMessage('msg_followup_user', 'user', '2024-01-01T00:00:02.000Z'),
-      ];
-      const staleSameLength = [
-        liveMessages[0],
-        liveMessages[1],
-        makeUniqueMessage('msg_stale_assistant', 'assistant', '2024-01-01T00:00:02.000Z'),
-      ];
-      let state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1', { messages: liveMessages, isStreaming: true })),
-      );
-
-      state = agentSessionReducer(state, mergeSessionMessages('a1', staleSameLength, false));
-
-      expect(getMsgs(state, 'a1').map((m) => m.id)).toEqual([
-        'msg_first_user',
-        'msg_first_assistant',
-        'msg_followup_user',
-      ]);
-    });
-  });
-
   describe('updateSession', () => {
     it('updates non-message fields', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
@@ -550,42 +423,6 @@ describe('agent-session-slice reducer', () => {
   });
 
   describe('canonical status reconciliation', () => {
-    it('merges canonical status fields from the reconcile action', () => {
-      let state = agentSessionReducer(
-        initialState,
-        upsertSession(
-          makeSession('a1', 'ws-1', {
-            status: 'active' as any,
-            isStreaming: true,
-            isProcessing: true,
-            isResponding: true,
-          }),
-        ),
-      );
-
-      state = agentSessionReducer(
-        state,
-        reconcileCanonicalStatus('a1', {
-          status: 'idle',
-          activationState: null,
-          isActive: false,
-          isStreaming: false,
-          isProcessing: false,
-          isResponding: false,
-          stopReason: 'provider_stopped',
-        }),
-      );
-
-      expect(state.byAgentId['a1']).toMatchObject({
-        status: 'idle',
-        isActive: false,
-        isStreaming: false,
-        isProcessing: false,
-        isResponding: false,
-        stopReason: 'provider_stopped',
-      });
-    });
-
     it('merges canonical fields from workspace status events', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
 
@@ -778,22 +615,7 @@ describe('agent-session-slice reducer', () => {
     });
   });
 
-  describe('updateDigest', () => {
-    it('sets digest', () => {
-      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
-      state = agentSessionReducer(state, updateDigest('a1', 'summary'));
-      expect(state.byAgentId['a1'].digest).toBe('summary');
-    });
-
-    it('clears digest with null', () => {
-      let state = agentSessionReducer(
-        initialState,
-        upsertSession(makeSession('a1', 'ws-1', { digest: 'old' })),
-      );
-      state = agentSessionReducer(state, updateDigest('a1', null));
-      expect(state.byAgentId['a1'].digest).toBeUndefined();
-    });
-
+  describe('updateAgentDigest', () => {
     it('handles workspace-scoped updateAgentDigest compatibility action', () => {
       let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
       state = agentSessionReducer(state, updateAgentDigest('ws-1', 'a1', 'summary'));

@@ -35,7 +35,6 @@ export const initialState: OnboardingState = {
 
 export const goToStep = createAction<[step: OnboardingStep]>('onboarding/goToStep');
 export const nextStep = createAction('onboarding/nextStep');
-export const prevStep = createAction('onboarding/prevStep');
 export const setProjectConfig = createAction<[config: Partial<ProjectConfig>]>('onboarding/setProjectConfig');
 export const setAgentStatus = createAction<[status: Partial<AgentStatus>]>('onboarding/setAgentStatus');
 export const setOnboardingWorkspaceId = createAction<[id: string]>('onboarding/setWorkspaceId');
@@ -54,13 +53,6 @@ export const onboardingReducer = createReducer<OnboardingState>(initialState)
     const idx = STEP_ORDER.indexOf(state.step);
     if (idx < STEP_ORDER.length - 1) {
       return { ...state, step: STEP_ORDER[idx + 1] };
-    }
-    return state;
-  })
-  .with(prevStep, (state) => {
-    const idx = STEP_ORDER.indexOf(state.step);
-    if (idx > 0) {
-      return { ...state, step: STEP_ORDER[idx - 1] };
     }
     return state;
   })

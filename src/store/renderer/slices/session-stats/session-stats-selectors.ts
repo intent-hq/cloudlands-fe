@@ -14,18 +14,6 @@ export const selectWorkspaceStats = store.createSelector(
     state?.sessionStats?.workspaceStats[wsId],
 );
 
-/** Select whether workspace stats are loading for a specific workspace */
-export const selectIsLoadingWorkspaceStats = store.createSelector(
-  (state, wsId: string): boolean =>
-    state?.sessionStats?.loadingWorkspaceStats[wsId] ?? false,
-);
-
-/** Select workspace stats error for a specific workspace */
-export const selectWorkspaceStatsError = store.createSelector(
-  (state, wsId: string): string | null =>
-    state?.sessionStats?.workspaceStatsErrors[wsId] ?? null,
-);
-
 /** Select stats for a specific agent by agentId */
 export const selectAgentStats = store.createSelector(
   (state, agentId: string): AgentSessionStats | undefined =>

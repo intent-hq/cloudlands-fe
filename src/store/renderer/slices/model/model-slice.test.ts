@@ -25,10 +25,7 @@ import {
   setSelectedModel,
   setWorkspaceModel,
 } from './model-slice';
-import {
-  selectAllProviderWarnings,
-  selectProviderWarning,
-} from './model-selectors';
+import { selectAllProviderWarnings } from './model-selectors';
 import type { ModelState } from './model-types';
 
 const defaultProviderId = getDefaultProviderId();
@@ -172,10 +169,6 @@ describe('modelReducer', () => {
       },
     };
 
-    expect(selectProviderWarning.select(state, 'codex')).toBe(
-      'Codex not installed; using static model list',
-    );
-    expect(selectProviderWarning.select(state, 'auggie')).toBeUndefined();
     expect(selectAllProviderWarnings.select(state)).toEqual({
       codex: 'Codex not installed; using static model list',
     });

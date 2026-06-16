@@ -21,12 +21,10 @@ import {
   workspaceEventsReducer,
   initialState,
   workspaceEventAccepted,
-  clearWorkspaceEvents,
 } from "../workspace-events-slice";
 import {
   selectRecentEvents,
   selectEventCount,
-  selectLastEvent,
   selectEventsByType,
 } from "../workspace-events-selectors";
 import { MAX_RECENT_EVENTS } from "../types";
@@ -116,30 +114,7 @@ describe("subscription semantics: live-only vs historical", () => {
 
     // After: visible immediately
     expect(selectRecentEvents.select(asMainState(state), WS)).toHaveLength(1);
-    expect(selectLastEvent.select(asMainState(state), WS)).toBe(e1);
     expect(selectEventCount.select(asMainState(state), WS)).toBe(1);
-  });
-
-  it("clearing events resets the buffer but preserves count (no historical replay after clear)", () => {
-    let state = initialState;
-    for (let i = 0; i < 3; i++) {
-      state = reduce(workspaceEventAccepted(makeEvent()), state);
-    }
-    expect(selectRecentEvents.select(asMainState(state), WS)).toHaveLength(3);
-
-    // Clear buffer
-    state = reduce(clearWorkspaceEvents(WS), state);
-
-    // No historical events visible
-    expect(selectRecentEvents.select(asMainState(state), WS)).toHaveLength(0);
-    // But count is preserved (events were emitted)
-    expect(selectEventCount.select(asMainState(state), WS)).toBe(3);
-
-    // New events after clear are visible
-    const newEvent = makeEvent();
-    state = reduce(workspaceEventAccepted(newEvent), state);
-    expect(selectRecentEvents.select(asMainState(state), WS)).toHaveLength(1);
-    expect(selectRecentEvents.select(asMainState(state), WS)[0]).toBe(newEvent);
   });
 
   it("type-filtered subscriptions only see matching event types", () => {
@@ -211,17 +186,6 @@ describe("subscription semantics: buffer rollover at MAX_RECENT_EVENTS", () => {
     for (let i = 0; i < 20; i++) {
       expect(visible).not.toContain(allEvents[i]);
     }
-  });
-
-  it("lastEvent selector tracks the newest event even after rollover", () => {
-    let state = initialState;
-    for (let i = 0; i < MAX_RECENT_EVENTS + 5; i++) {
-      state = reduce(workspaceEventAccepted(makeEvent()), state);
-    }
-    const finalEvent = makeEvent();
-    state = reduce(workspaceEventAccepted(finalEvent), state);
-
-    expect(selectLastEvent.select(asMainState(state), WS)).toBe(finalEvent);
   });
 });
 
