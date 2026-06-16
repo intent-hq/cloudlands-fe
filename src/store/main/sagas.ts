@@ -45,6 +45,7 @@ import { scriptEventsSaga } from "./slices/script-events/sagas/script-events-sag
 import { appEventsSaga } from "./slices/app-events/sagas/app-events-saga";
 import { sourceEventsSaga } from "./slices/source-events/sagas/source-events-saga";
 import { staleCleanupLoop } from "./slices/message-accumulator/sagas/message-accumulator-saga";
+import { tokenUsageSaga } from "./slices/token-usage/sagas/token-usage-saga";
 
 export type MainSaga = () => ReturnType<Saga>;
 
@@ -69,6 +70,8 @@ export const mainSagas = {
   eventTriggeredSagas,
 
   staleCleanupLoop,
+
+  tokenUsageSaga,
 
   workspaceLifecycleEventsSaga,
   noteEventsSaga,

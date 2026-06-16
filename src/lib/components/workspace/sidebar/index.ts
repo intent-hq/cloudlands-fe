@@ -6,6 +6,7 @@ export { default as CodeChangesPanel } from './CodeChangesPanel.svelte';
 export { default as DigestCard } from './DigestCard.svelte';
 export { default as ActivityLogPreview } from './ActivityLogPreview.svelte';
 export { default as WorkspaceProgressCard } from './WorkspaceProgressCard.svelte';
+export { default as WorkspaceTokenUsage } from './WorkspaceTokenUsage.svelte';
 export { default as RadialFlameGraph } from './RadialFlameGraph.svelte';
 export { default as FlameGraph } from './FlameGraph.svelte';
 export { default as SidebarChangesPanel } from './SidebarChangesPanel.svelte';

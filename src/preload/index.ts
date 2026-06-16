@@ -770,6 +770,8 @@ const ALLOWED_CHANNELS = [
   "scripts:detect",
   "scripts:save-to-repo",
   "session-stats:get",
+  "token-usage:get",
+  "token-usage:changed",
   "event:workspace:created",
   "event:workspace:updated",
   "event:workspace:deleted",
@@ -924,7 +926,8 @@ const ALLOWED_CHANNELS = [
   "script:error",
   "script:url-detected",
   "specialists:files-changed",
-  "websocket-api:discovery-auto-disabled"
+  "websocket-api:discovery-auto-disabled",
+  "token-usage:changed"
 ];
 
 // Dynamic channel patterns that are matched with startsWith()
@@ -1102,7 +1105,8 @@ const EVENT_CHANNELS = [
   "script:error",
   "script:url-detected",
   "specialists:files-changed",
-  "websocket-api:discovery-auto-disabled"
+  "websocket-api:discovery-auto-disabled",
+  "token-usage:changed"
 ];
 
 /**

@@ -66,6 +66,7 @@
   isFetchCurrent,
 } from './git-status-refresh-utils';
   import FlameGraph from './FlameGraph.svelte';
+  import WorkspaceTokenUsage from './WorkspaceTokenUsage.svelte';
   import WorkspaceCreditStats from '$lib/components/workspace/WorkspaceCreditStats.svelte';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
   import {
@@ -1444,6 +1445,11 @@
         {/if} -->
           </div>
         {/if}
+      {/if}
+
+      <!-- Token usage row (renders nothing until data is available) -->
+      {#if workspaceId}
+        <WorkspaceTokenUsage {workspaceId} />
       {/if}
 
       <!-- status message -->

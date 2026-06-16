@@ -1154,6 +1154,12 @@ export const IPC_CHANNELS = {
   SESSION_STATS: {
     GET: 'session-stats:get',
   },
+
+  // Workspace Token Usage (aggregated agent token consumption)
+  TOKEN_USAGE: {
+    GET: 'token-usage:get',
+    CHANGED: 'token-usage:changed',
+  },
 } as const;
 
 // Event channels that are sent from main to renderer
@@ -1331,6 +1337,8 @@ export const EVENT_CHANNELS = [
   'specialists:files-changed',
   // WebSocket API events (main → renderer)
   'websocket-api:discovery-auto-disabled',
+  // Workspace token usage changed (main → renderer)
+  'token-usage:changed',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

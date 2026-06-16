@@ -43,6 +43,7 @@ import { scriptEventsSaga } from "./slices/script-events/sagas/script-events-sag
 import { appEventsSaga } from "./slices/app-events/sagas/app-events-saga";
 import { sourceEventsSaga } from "./slices/source-events/sagas/source-events-saga";
 import { staleCleanupLoop } from "./slices/message-accumulator/sagas/message-accumulator-saga";
+import { tokenUsageSaga } from "./slices/token-usage/sagas/token-usage-saga";
 
 const SAGAS_SOURCE = readFileSync(join(process.cwd(), "src/store/main/sagas.ts"), "utf-8");
 
@@ -65,6 +66,7 @@ const expectedSagas = {
   rendererSubscriptionSaga,
   eventTriggeredSagas,
   staleCleanupLoop,
+  tokenUsageSaga,
   workspaceLifecycleEventsSaga,
   noteEventsSaga,
   agentEventsSaga,

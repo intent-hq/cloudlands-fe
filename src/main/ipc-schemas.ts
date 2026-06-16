@@ -2385,3 +2385,11 @@ export const SessionStatsGetSchema = z.object({
     .array(z.string().regex(SESSION_ID_PATTERN, 'Invalid session ID format'))
     .min(1, 'At least one session ID is required'),
 });
+
+// ============================================================================
+// Token Usage Schemas
+// ============================================================================
+
+export const TokenUsageGetSchema = z.object({
+  workspaceId: WorkspaceIdSchema,
+});
