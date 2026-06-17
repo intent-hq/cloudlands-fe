@@ -56,6 +56,10 @@
   import Logo from '../Logo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
   import { handleLink } from '$features/navigation/link-handler';
+  import {
+  checkPiMcpAdapterInstalled,
+  installPiMcpAdapter,
+} from '$features/pi/pi-models.client';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import Button from '../ui/button/button.svelte';
@@ -116,6 +120,9 @@
   });
   let setupInProgress = $state<Record<string, boolean>>({});
   let uninstallInProgress = $state<Record<string, boolean>>({});
+  let piMcpAdapterInstalled: boolean | null = $state(null);
+  let piMcpAdapterLoading = $state(false);
+  let piMcpAdapterChecked = $state(false);
 
   // Derived: is the version outdated (installed but below minimum)
   const needsUpdate = $derived.by(() => {
@@ -144,6 +151,7 @@
       docsUrl: 'https://docs.snowflake.com/en/developer-guide/cortex',
       requiresAuth: false,
     },
+    pi: { docsUrl: 'https://pi.dev/docs/latest/quickstart', requiresAuth: false },
   };
 
   // Map provider IDs to keys used in ProviderAvailabilityResult
@@ -155,6 +163,7 @@
     opencode: 'opencode',
     droid: 'droid',
     cortex: 'cortex',
+    pi: 'pi',
   };
 
   // Helper to get provider availability from result (handles different key formats)
@@ -201,6 +210,21 @@
         loginDocsUrl: provider.loginDocsUrl,
       })),
   );
+
+  const piProviderAvailable = $derived.by(() => {
+    return providerOptions.find((provider) => provider.id === 'pi')?.available ?? false;
+  });
+
+  $effect(() => {
+    if (!piProviderAvailable) {
+      piMcpAdapterInstalled = null;
+      piMcpAdapterChecked = false;
+      return;
+    }
+
+    if (piMcpAdapterChecked || piMcpAdapterLoading) return;
+    void loadPiMcpAdapterStatus();
+  });
 
   function isProviderReadyForUse(providerId: string): boolean {
     if (providerId === 'auggie') {
@@ -395,6 +419,7 @@
         checkMcpOpenCodeResult,
         checkMcpDroidResult,
         checkMcpCortexResult,
+        checkMcpPiResult,
       ] = await Promise.all([
         invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CLAUDE_CODE),
         invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CODEX),
@@ -403,6 +428,7 @@
         isCortexHidden
           ? Promise.resolve({ success: true, configured: false })
           : invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CORTEX),
+        invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_PI),
       ]);
 
       mcpConfigured = {
@@ -411,11 +437,47 @@
         opencode: checkMcpOpenCodeResult?.configured ?? false,
         droid: checkMcpDroidResult?.configured ?? false,
         cortex: checkMcpCortexResult?.configured ?? false,
+        pi: checkMcpPiResult?.configured ?? false,
       };
     } catch (err) {
       logger.warn('Failed to check MCP status', { error: err });
     } finally {
       mcpLoading = false;
+    }
+  }
+
+  async function loadPiMcpAdapterStatus() {
+    piMcpAdapterLoading = true;
+    try {
+      piMcpAdapterInstalled = await checkPiMcpAdapterInstalled();
+    } catch (err) {
+      logger.warn('Failed to check Pi MCP adapter status', { error: err });
+      piMcpAdapterInstalled = null;
+    } finally {
+      piMcpAdapterChecked = true;
+      piMcpAdapterLoading = false;
+    }
+  }
+
+  async function handleInstallPiMcpAdapter() {
+    setupInProgress = { ...setupInProgress, pi: true };
+    try {
+      const result = await installPiMcpAdapter();
+      if (result?.success) {
+        await loadPiMcpAdapterStatus();
+        toast.success('pi-mcp-adapter installed successfully');
+      } else {
+        toast.error('pi-mcp-adapter install failed', {
+          description: result?.error || 'Unknown error',
+        });
+      }
+    } catch (err) {
+      logger.error('Failed to install pi-mcp-adapter', err);
+      toast.error('pi-mcp-adapter install failed', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      });
+    } finally {
+      setupInProgress = { ...setupInProgress, pi: false };
     }
   }
 
@@ -429,6 +491,7 @@
         opencode: AUGGIE_CHANNELS.SETUP_MCP_OPENCODE,
         droid: AUGGIE_CHANNELS.SETUP_MCP_DROID,
         cortex: AUGGIE_CHANNELS.SETUP_MCP_CORTEX,
+        pi: AUGGIE_CHANNELS.SETUP_MCP_PI,
       };
 
       const channel = channelMap[providerId];
@@ -440,7 +503,14 @@
 
       if (result?.success) {
         mcpConfigured = { ...mcpConfigured, [providerId]: true };
-        toast.success(`${ACP_PROVIDERS[providerId].displayName} Context Engine setup complete`);
+        if (providerId === 'pi') {
+          toast.success(`${ACP_PROVIDERS[providerId].displayName} Context Engine setup complete`, {
+            description:
+              'Install pi-mcp-adapter for Pi to load the Context Engine: npm i -g pi-mcp-adapter',
+          });
+        } else {
+          toast.success(`${ACP_PROVIDERS[providerId].displayName} Context Engine setup complete`);
+        }
         track('Enabled Context Engine', {
           provider_id: providerId,
           success: true,
@@ -471,6 +541,7 @@
         opencode: AUGGIE_CHANNELS.UNINSTALL_MCP_OPENCODE,
         droid: AUGGIE_CHANNELS.UNINSTALL_MCP_DROID,
         cortex: AUGGIE_CHANNELS.UNINSTALL_MCP_CORTEX,
+        pi: AUGGIE_CHANNELS.UNINSTALL_MCP_PI,
       };
 
       const channel = channelMap[providerId];
@@ -775,6 +846,8 @@
     {@render skeleton('codex')}
 
     {@render skeleton('opencode')}
+
+    {@render skeleton('pi')}
 
     {@render skeleton('droid')}
 
@@ -1159,6 +1232,26 @@
                 {/if}
               {/if}
             </div>
+            {#if provider.id === 'pi' && provider.available && piMcpAdapterInstalled === false}
+              <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+                <Fa icon={faTriangleExclamation} class="w-3 h-3" />
+                <span>Pi needs the pi-mcp-adapter package to use workspace tools</span>
+                <Button
+                  onclick={handleInstallPiMcpAdapter}
+                  disabled={setupInProgress.pi}
+                  size="xs"
+                  variant="outline"
+                  class="flex items-center gap-1"
+                >
+                  {#if setupInProgress.pi}
+                    <Fa icon={faCircleNotch} class="w-3 h-3 text-ghost animate-spin" />
+                    <span>Installing...</span>
+                  {:else}
+                    <span>Install</span>
+                  {/if}
+                </Button>
+              </div>
+            {/if}
           </div>
 
           <div class="flex items-center gap-4 text-xs flex-wrap justify-end">
@@ -1306,6 +1399,16 @@
         <path
           d="M12 12L14.26 13.09L13.5 15.5L15.91 14.74L17 17L18.09 14.74L20.5 15.5L19.74 13.09L22 12L19.74 10.91L20.5 8.5L18.09 9.26L17 7L15.91 9.26L13.5 8.5L14.26 10.91L12 12Z"
         />
+      </svg>
+    {:else if providerId === 'pi'}
+      <svg class="size-5" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
+        <rect width="800" height="800" rx="120" fill="#09090b" />
+        <path
+          fill="#fff"
+          fill-rule="evenodd"
+          d="M165.29 165.29 H517.36 V400 H400 V517.36 H282.65 V634.72 H165.29 Z M282.65 282.65 V400 H400 V282.65 Z"
+        />
+        <path fill="#fff" d="M517.36 400 H634.72 V634.72 H517.36 Z" />
       </svg>
     {:else}
       <!-- Fallback for unknown providers -->

@@ -165,6 +165,34 @@ export function toClaudeMcpJson(normalized: NormalizedMcpServers): {
 }
 
 /**
+ * Convert to Pi `~/.pi/agent/mcp.json` format.
+ */
+export function toPiMcpJson(normalized: NormalizedMcpServers): {
+  mcpServers: Record<string, unknown>;
+} {
+  const mcpServers: Record<string, unknown> = {};
+
+  for (const [name, server] of Object.entries(normalized)) {
+    if (server.kind === 'stdio') {
+      mcpServers[name] = {
+        command: server.command,
+        args: server.args,
+        ...(Object.keys(server.env).length > 0 ? { env: server.env } : {}),
+      };
+      continue;
+    }
+
+    mcpServers[name] = {
+      type: server.kind,
+      url: server.url,
+      ...(server.headers ? { headers: server.headers } : {}),
+    };
+  }
+
+  return { mcpServers };
+}
+
+/**
  * ACP McpServer types – matches the ACP protocol format for session/new mcpServers.
  *
  * The ACP SDK validates these with Zod and ALL fields are required:

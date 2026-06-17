@@ -124,6 +124,12 @@ export async function getCachedModelsForProvider(
         );
         return await getCachedOpencodeModels();
       }
+      case 'pi': {
+        const { getCachedPiModels } = await import(
+          '../../features/pi/main/pi.ipc'
+        );
+        return await getCachedPiModels();
+      }
       case 'droid': {
         const { getCachedDroidModels } = await import(
           '../../features/droid/main/droid.ipc'

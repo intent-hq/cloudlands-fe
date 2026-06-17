@@ -6,8 +6,60 @@ import {
 import {
   normalizeMcpServers,
   toAcpMcpServers,
+  toPiMcpJson,
   type NormalizedMcpServers,
 } from '../main/universal-mcp-config';
+
+describe('toPiMcpJson', () => {
+  it('should convert stdio and remote servers to Pi mcp.json format', () => {
+    const normalized: NormalizedMcpServers = {
+      'workspace-mcp': {
+        kind: 'stdio',
+        command: '/usr/bin/node',
+        args: ['server.js', '--workspace-id', 'test-workspace'],
+        env: { NODE_ENV: 'production' },
+      },
+      minimal: {
+        kind: 'stdio',
+        command: 'echo',
+        args: [],
+        env: {},
+      },
+      remote: {
+        kind: 'http',
+        url: 'https://api.example.com/mcp',
+        headers: { 'X-Test': 'value' },
+      },
+      stream: {
+        kind: 'sse',
+        url: 'https://stream.example.com/events',
+      },
+    };
+
+    expect(toPiMcpJson(normalized)).toEqual({
+      mcpServers: {
+        'workspace-mcp': {
+          command: '/usr/bin/node',
+          args: ['server.js', '--workspace-id', 'test-workspace'],
+          env: { NODE_ENV: 'production' },
+        },
+        minimal: {
+          command: 'echo',
+          args: [],
+        },
+        remote: {
+          type: 'http',
+          url: 'https://api.example.com/mcp',
+          headers: { 'X-Test': 'value' },
+        },
+        stream: {
+          type: 'sse',
+          url: 'https://stream.example.com/events',
+        },
+      },
+    });
+  });
+});
 
 describe('toAcpMcpServers', () => {
   it('should return an empty array for empty input', () => {

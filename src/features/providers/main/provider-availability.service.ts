@@ -36,6 +36,11 @@ import {
   isOpenCodeInstalled,
 } from '../../opencode/main/opencode-resolver';
 import {
+  clearPiCache,
+  getPiPath,
+  isPiInstalled,
+} from '../../pi/main/pi-resolver';
+import {
   clearDroidCache,
   getDroidPath,
   isDroidInstalled,
@@ -200,6 +205,19 @@ async function checkCortexAvailability(): Promise<ProviderStatus> {
 async function checkOpenCodeAvailability(): Promise<ProviderStatus> {
   try {
     const installed = await isOpenCodeInstalled();
+    return { available: installed };
+  } catch (error) {
+    return { available: false, error: (error as Error).message };
+  }
+}
+
+/**
+ * Check if pi is available by checking if the pi CLI is installed.
+ * Does not fall back to npx - we want accurate "is installed" status.
+ */
+async function checkPiAvailability(): Promise<ProviderStatus> {
+  try {
+    const installed = await isPiInstalled();
     return { available: installed };
   } catch (error) {
     return { available: false, error: (error as Error).message };
@@ -526,6 +544,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
   clearCodexCache();
   clearCortexCache();
   clearOpenCodeCache();
+  clearPiCache();
   clearDroidCache();
 
   // Check all providers in parallel for faster startup
@@ -539,6 +558,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     cortexResult,
     mockResult,
     opencodeResult,
+    piResult,
     droidResult,
   ] = await Promise.all([
     checkAuggieAvailability(),
@@ -551,6 +571,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       ? Promise.resolve({ available: false } as ProviderStatus)
       : checkMockAvailability(),
     checkOpenCodeAvailability(),
+    checkPiAvailability(),
     checkDroidAvailability(),
   ]);
 
@@ -603,6 +624,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       cortexResult.available ||
       mockResult.available ||
       opencodeResult.available ||
+      piResult.available ||
       droidResult.available,
     providers: {
       auggie: auggieResult,
@@ -611,6 +633,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       cortex: cortexResult,
       mock: mockResult,
       opencode: opencodeResult,
+      pi: piResult,
       droid: droidResult,
     },
     hiddenProviders,
@@ -624,6 +647,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     cortex: cortexResult.available,
     mock: mockResult.available,
     opencode: opencodeResult.available,
+    pi: piResult.available,
     droid: droidResult.available,
     auggieAuth: auggieResult.authenticated,
     claudeCodeAuth: claudeCodeResult.authenticated,
@@ -645,15 +669,17 @@ export async function getProviderPaths(): Promise<{
   codex: string | null;
   cortex: string | null;
   opencode: string | null;
+  pi: string | null;
   droid: string | null;
 }> {
-  const [auggiePath, claudeCodePath, codexPath, cortexPath, opencodePath, droidPath] =
+  const [auggiePath, claudeCodePath, codexPath, cortexPath, opencodePath, piPath, droidPath] =
     await Promise.all([
       findAuggiePathAsync(),
       getClaudeCodePath(),
       getCodexPath(),
       getCortexPath(),
       getOpenCodePath(),
+      getPiPath(),
       getDroidPath(),
     ]);
 
@@ -663,6 +689,7 @@ export async function getProviderPaths(): Promise<{
     codex: codexPath,
     cortex: cortexPath,
     opencode: opencodePath,
+    pi: piPath,
     droid: droidPath,
   };
 }
@@ -747,6 +774,12 @@ export function setupProviderAvailabilityIPC(): void {
               const opencodePath = await getOpenCodePath();
               authenticated = await checkOpenCodeReady(opencodePath);
             }
+            break;
+          case 'pi':
+            // pi has no stable "am I logged in" signal — availability is based
+            // solely on whether the binary is installed; authenticated stays undefined.
+            clearPiCache();
+            status = await checkPiAvailability();
             break;
           case 'droid':
             clearDroidCache();

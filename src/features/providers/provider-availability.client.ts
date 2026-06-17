@@ -41,6 +41,7 @@ export interface ProviderAvailabilityResult {
     mock: ProviderStatus;
     opencode: ProviderStatus;
     cortex: ProviderStatus;
+    pi: ProviderStatus;
     droid: ProviderStatus;
   };
   /** Provider IDs that are hidden because their required env var is not set */
@@ -155,6 +156,7 @@ function getDefaultResult(): ProviderAvailabilityResult {
       cortex: { available: false },
       mock: { available: false },
       opencode: { available: false },
+      pi: { available: false },
       droid: { available: false },
     },
     hiddenProviders: [],

@@ -33,6 +33,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { Logger } from '../../../../shared/logger';
 import { WorkspaceConfig } from '../../../../shared/main/config';
+import { writeJsonWithSync } from '../../../../shared/main/file-sync-utils';
 import { killChildProcessTree } from '../../../../shared/main/process-tree-kill';
 import { sshManager } from '../../../../shared/main/ssh-manager';
 import { findAuggiePathAsync } from '../../../auggie/main/auggie.ipc';
@@ -59,6 +60,7 @@ import {
   toAcpMcpServers,
   toCodexMcpOverrides,
   toOpenCodeMcpConfig,
+  toPiMcpJson,
 } from '../../../mcp/main/universal-mcp-config';
 import type { AcpMcpServer } from '../../../mcp/main/universal-mcp-config';
 import type { McpServerConfig } from '../../../mcp/main/user-mcp-settings';
@@ -732,6 +734,26 @@ export function getIntentServerPath(): string {
 }
 
 const logger = new Logger('ACPProvider');
+
+function readPiMcpConfig(configFile: string): Record<string, unknown> {
+  try {
+    const content = fs.readFileSync(configFile, 'utf-8');
+    const parsed = JSON.parse(content);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch (readError) {
+    const errCode = (readError as NodeJS.ErrnoException).code;
+    if (errCode !== 'ENOENT') {
+      logger.warn('Failed to parse existing Pi MCP config, will use workspace servers only', {
+        configFile,
+        error: (readError as Error).message,
+      });
+    }
+  }
+
+  return { mcpServers: {} };
+}
 
 /**
  * Extract pixel dimensions from a base64-encoded image by reading the binary header.
@@ -3242,6 +3264,36 @@ export class ACPProvider extends BaseAgentProvider {
         });
       }
 
+      if (caps.id === 'pi' && !this.isRemoteWorkspace()) {
+        const configDir = path.join(workingDirectory, '.pi');
+        const configFile = path.join(configDir, 'mcp.json');
+        const piMcpServers = toPiMcpJson(normalized).mcpServers;
+
+        fs.mkdirSync(configDir, { recursive: true });
+
+        const config = readPiMcpConfig(configFile);
+
+        const existingMcpServers =
+          config.mcpServers &&
+          typeof config.mcpServers === 'object' &&
+          !Array.isArray(config.mcpServers)
+            ? (config.mcpServers as Record<string, unknown>)
+            : {};
+
+        config.mcpServers = {
+          ...existingMcpServers,
+          ...piMcpServers,
+        };
+
+        await writeJsonWithSync(configFile, config, { spaces: 2 });
+
+        logger.info('Injected MCP servers into workspace Pi config', {
+          configFile,
+          serverCount: Object.keys(piMcpServers).length,
+          serverNames: Object.keys(piMcpServers),
+        });
+      }
+
       if (caps.id === 'codex') {
         // Add Codex `-c` overrides for MCP servers (parsed as TOML).
         const overrides = toCodexMcpOverrides(normalized);
@@ -3294,7 +3346,9 @@ export class ACPProvider extends BaseAgentProvider {
     });
 
     // Log the environment being passed to the agent (for debugging)
-    const configEnv = this.config.env || {};
+    const configEnv = {
+      ...(this.config.env || {}),
+    };
     logger.info('Agent environment variables', {
       providerId: caps.id,
       hasConfigEnv: Object.keys(configEnv).length > 0,
@@ -5832,13 +5886,15 @@ export class ACPProvider extends BaseAgentProvider {
         }
       }
 
-      // OpenCode: apply the selected model via session/set_model after session creation.
-      // OPENCODE_CONFIG_CONTENT sets the model at the config level, but the `acp` subcommand
-      // may not honor it (observed with OpenRouter models where OpenCode falls back to its
-      // default model). Explicitly setting via ACP ensures the model sticks.
+      // OpenCode / Pi / Droid: apply the selected model via session/set_model after session creation.
+      // For OpenCode, OPENCODE_CONFIG_CONTENT sets the model at the config level, but the `acp`
+      // subcommand may not honor it (observed with OpenRouter models where OpenCode falls back to
+      // its default model). Explicitly setting via ACP ensures the model sticks.
+      // Pi (via pi-acp) has no model env var and relies purely on the ACP `/model` command
+      // (mapped to the Zed model selector), so session/set_model is the only mechanism.
       // Droid: the `droid exec` CLI ignores -m/--model in ACP/JSON-RPC mode (per its
       // --help), so session/set_model is the only mechanism that takes effect.
-      if ((caps.id === 'opencode' || caps.id === 'droid') && this.config.model) {
+      if ((caps.id === 'opencode' || caps.id === 'pi' || caps.id === 'droid') && this.config.model) {
         const { modelId: rawModelId } = parseCompoundModelId(this.config.model);
         if (rawModelId && rawModelId !== 'default') {
           try {
@@ -5846,6 +5902,7 @@ export class ACPProvider extends BaseAgentProvider {
             if (setModelResult.success) {
               logger.info(`${caps.displayName} model set via ACP session/set_model`, {
                 sessionId: this.sessionId,
+                providerId: caps.id,
                 modelId: rawModelId,
               });
             } else {
@@ -5855,6 +5912,7 @@ export class ACPProvider extends BaseAgentProvider {
                 `Failed to set ${caps.displayName} model via ACP session/set_model`,
                 {
                   sessionId: this.sessionId,
+                  providerId: caps.id,
                   modelId: rawModelId,
                   error: setModelResult.error,
                 },
@@ -5863,6 +5921,7 @@ export class ACPProvider extends BaseAgentProvider {
           } catch (e) {
             logger.warn(`Error setting ${caps.displayName} model via ACP session/set_model`, {
               sessionId: this.sessionId,
+              providerId: caps.id,
               modelId: rawModelId,
               error: (e as Error).message,
             });

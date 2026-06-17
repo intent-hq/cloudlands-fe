@@ -145,6 +145,7 @@
             droid: { available: false },
             cortex: { available: false },
             mock: { available: false },
+            pi: { available: false },
           },
           hiddenProviders: [],
         };
