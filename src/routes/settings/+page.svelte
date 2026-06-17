@@ -717,34 +717,6 @@
           {/if}
         </span>
       </div>
-      <div class="flex flex-wrap items-center gap-x-1 gap-y-2">
-        <a
-          href="mailto:intentfeedback@augmentcode.com"
-          onclick={async (e) => {
-            e.preventDefault();
-            const anchor = e.currentTarget as HTMLAnchorElement;
-            const isCmdClick = isMacPlatform() ? e.metaKey : e.ctrlKey;
-            if (isCmdClick) {
-              await navigator.clipboard.writeText('intentfeedback@augmentcode.com');
-              flashCopied(anchor);
-            } else {
-              try {
-                if (typeof window !== 'undefined' && window.electronAPI) {
-                  await invoke('shell:openExternal', {
-                    url: 'mailto:intentfeedback@augmentcode.com',
-                  });
-                }
-              } catch {
-                // Fallback: copy to clipboard if mailto fails
-                await navigator.clipboard.writeText('intentfeedback@augmentcode.com');
-                flashCopied(anchor);
-              }
-            }
-          }}
-          class="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          >Feedback?</a
-        >
-      </div>
     </div>
   </div>
 </div>
