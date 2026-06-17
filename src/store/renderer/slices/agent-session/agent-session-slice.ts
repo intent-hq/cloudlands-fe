@@ -437,15 +437,27 @@ function applySessionUpsert(
   const existing = getSession(state, agentId);
 
   if (existing) {
+    // When a turn is actively in flight (both runtime flags set, e.g. right
+    // after chatSendStarted started a queued turn), a session snapshot's
+    // explicit `false` is stale for these ephemeral flags and must not clobber
+    // the live turn — only explicit clear actions (streamCompleted,
+    // setAgentStreaming, chatStopCompleted, …) may end it. Deliberate
+    // upsert-based clears (e.g. the stream safety timeout) flip a flag off
+    // first, so this pair-guard never blocks them.
+    const activeTurnInFlight = existing.isStreaming === true && existing.isProcessing === true;
     if (
       existing.isStreaming &&
-      (options.preserveExplicitRuntimeFlags || finalSession.isStreaming === undefined)
+      (activeTurnInFlight ||
+        options.preserveExplicitRuntimeFlags ||
+        finalSession.isStreaming === undefined)
     ) {
       finalSession.isStreaming = true;
     }
     if (
       existing.isProcessing &&
-      (options.preserveExplicitRuntimeFlags || finalSession.isProcessing === undefined)
+      (activeTurnInFlight ||
+        options.preserveExplicitRuntimeFlags ||
+        finalSession.isProcessing === undefined)
     ) {
       finalSession.isProcessing = true;
     }

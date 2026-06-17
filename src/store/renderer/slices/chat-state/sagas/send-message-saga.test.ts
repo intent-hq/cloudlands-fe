@@ -119,6 +119,23 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-slice', () => {
   };
 });
 
+// Mock workspace-agents-slice — the saga statically imports
+// activateInitialAgentRequested. Mocking it here avoids loading the real slice
+// (which evaluates upsertSession from the partially-mocked agent-session-slice).
+vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => {
+  const activateInitialAgentRequested = Object.assign(
+    (wsId: string, agentId: string, config: unknown) => ({
+      type: 'workspaceAgents/activateInitialAgentRequested',
+      payload: [wsId, agentId, config],
+    }),
+    {
+      type: 'workspaceAgents/activateInitialAgentRequested',
+      toString: () => 'workspaceAgents/activateInitialAgentRequested',
+    },
+  );
+  return { activateInitialAgentRequested };
+});
+
 // Mock consolidated backend service
 const mockQueueMessage = vi.fn().mockResolvedValue({ success: true });
 const mockRemoveQueuedMessage = vi.fn().mockResolvedValue({ success: true });

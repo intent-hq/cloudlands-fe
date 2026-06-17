@@ -703,10 +703,15 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].name).toBe('Loaded Agent');
     });
 
-    it('lets batched upsert storage clear runtime flags with explicit false', () => {
-      let state = agentSessionReducer(initialState, chatSendStarted('a1', 'ws-1'));
+    it('lets batched upsert storage clear a non-active runtime flag with explicit false', () => {
+      // Not an in-flight turn (only one flag set), so a batched explicit-false
+      // upsert is allowed to clear it. Active turns (both flags set) are guarded
+      // separately — see the Wave 10 preservation test above.
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1', { isStreaming: true, isProcessing: false })]),
+      );
       expect(state.byAgentId['a1'].isStreaming).toBe(true);
-      expect(state.byAgentId['a1'].isProcessing).toBe(true);
 
       state = agentSessionReducer(
         state,
@@ -716,6 +721,58 @@ describe('agent-session-slice reducer', () => {
             isProcessing: false,
           }),
         ], { preserveExplicitRuntimeFlags: false }),
+      );
+
+      expect(state.byAgentId['a1'].isStreaming).toBe(false);
+      expect(state.byAgentId['a1'].isProcessing).toBe(false);
+    });
+
+    // Wave 10 — Test C (Cause 2): a stale backend session snapshot arriving
+    // mid-turn must NOT clobber the in-flight streaming flags. After
+    // chatSendStarted marks the turn active (both flags true), a batched
+    // upsert carrying explicit `false` (the batcher passes
+    // preserveExplicitRuntimeFlags:false) is stale for these ephemeral flags.
+    it('Wave 10: preserves in-flight flags when a batched explicit-false upsert is stale', () => {
+      let state = agentSessionReducer(initialState, chatSendStarted('a1', 'ws-1'));
+      expect(state.byAgentId['a1'].isStreaming).toBe(true);
+      expect(state.byAgentId['a1'].isProcessing).toBe(true);
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions(
+          [
+            makeSession('a1', 'ws-1', {
+              isStreaming: false,
+              isProcessing: false,
+              name: 'Snapshot',
+            }),
+          ],
+          { preserveExplicitRuntimeFlags: false },
+        ),
+      );
+
+      // In-flight turn flags survive — only an explicit clear action may end them.
+      expect(state.byAgentId['a1'].isStreaming).toBe(true);
+      expect(state.byAgentId['a1'].isProcessing).toBe(true);
+      expect(state.byAgentId['a1'].name).toBe('Snapshot');
+    });
+
+    it('still clears isProcessing via upsert once isStreaming was cleared first (safety timeout)', () => {
+      // Mirrors agent-stream-saga's safety-timeout path: setAgentStreaming(false)
+      // flips isStreaming off first, then an upsert clears the remaining
+      // isProcessing flag. Because the pair is no longer both-true, the upsert
+      // is allowed to clear.
+      let state = agentSessionReducer(initialState, chatSendStarted('a1', 'ws-1'));
+      state = agentSessionReducer(state, setAgentStreaming('a1', false));
+      expect(state.byAgentId['a1'].isStreaming).toBe(false);
+      expect(state.byAgentId['a1'].isProcessing).toBe(true);
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions(
+          [makeSession('a1', 'ws-1', { isStreaming: false, isProcessing: false })],
+          { preserveExplicitRuntimeFlags: false },
+        ),
       );
 
       expect(state.byAgentId['a1'].isStreaming).toBe(false);
@@ -1666,11 +1723,17 @@ describe('upsertSession — preserves isProcessing/isStreaming from placeholder 
     expect(state.byAgentId['a1'].name).toBe('Real Agent');
   });
 
-  it('respects explicit false flags over placeholder flags', () => {
-    // Safety timeout or explicit clear should win over placeholder flags
+  it('respects explicit clear (safety timeout) when a flag is flipped off first', () => {
+    // Wave 10: an explicit clear still wins, but only through the real
+    // safety-timeout sequence — setAgentStreaming(false) flips isStreaming off
+    // first, breaking the both-true active-turn guard, then the upsert clears
+    // the remaining isProcessing flag. A snapshot alone may not clobber a
+    // genuinely in-flight (both-true) turn — see Test C.
     let state = agentSessionReducer(initialState, chatSendStarted('a1', 'ws-1'));
     expect(state.byAgentId['a1'].isProcessing).toBe(true);
     expect(state.byAgentId['a1'].isStreaming).toBe(true);
+
+    state = agentSessionReducer(state, setAgentStreaming('a1', false));
 
     const realSession = makeSession('a1', 'ws-1', {
       isProcessing: false,
@@ -1685,7 +1748,7 @@ describe('upsertSession — preserves isProcessing/isStreaming from placeholder 
       }),
     );
 
-    // Explicit false should win
+    // Explicit clear wins
     expect(state.byAgentId['a1'].isProcessing).toBe(false);
     expect(state.byAgentId['a1'].isStreaming).toBe(false);
     expect(state.byAgentId['a1'].name).toBe('Real Agent');

@@ -38,11 +38,15 @@ import {
   removeQueuedMessageFromAgentQueue,
   setAgentQueueError,
 } from '$store/renderer/slices/agent-queue/agent-queue-slice';
+import { activateInitialAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 
 import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
 import { clearChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
 import { uncheckAllSelections } from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
 import type { AgentSession } from '$shared/types';
+import type { UnifiedAgentConfig } from '$shared/types/agent.types';
+import { AgentActivationState, getAgentProvider } from '$shared/types/agent-session';
+import { WorkspaceId } from '$shared/types/branded-ids';
 import { waitFor } from 'ag-redux-toolkit/saga';
 import type { StoreSelector as PackageStoreSelector } from 'ag-redux-toolkit/types';
 import {
@@ -443,6 +447,100 @@ function* handleSendPath(
 }
 
 // ============================================================================
+// Pre-active initial-agent guard
+// ============================================================================
+
+/**
+ * Handles a send to an initial workspace agent that is not yet ACTIVE — either
+ * because activation previously failed (ERROR) or is still in flight
+ * (ACTIVATING/PENDING, or an unset activationState). In every one of these
+ * states there is no usable backend session yet, so a normal send would be
+ * silently dropped — the lost first message on a virgin coordinator. Instead:
+ *   1. Always preserve the user's text durably in the backend message queue
+ *      (visible in the queue UI, survives workspace re-entry, drains once the
+ *      agent becomes ACTIVE).
+ *   2. Only when activation has ERRORed — the single user-actionable state —
+ *      re-fire initial-agent activation to retry. For ACTIVATING/PENDING an
+ *      activation is already in flight, so re-firing is redundant (the
+ *      per-`{wsId}:{agentId}` activation lock would short-circuit it anyway).
+ *   3. Toast policy: an ERROR is never silent (always toast). For an
+ *      in-flight activation the queue panel is the acknowledgement; only a hard
+ *      queue failure (text not preserved) surfaces a toast.
+ */
+function* handleInitialAgentSendBeforeActive(
+  wsId: string,
+  agentId: string,
+  payload: SendMessagePayload,
+  agent: AgentSession,
+): SagaGenerator<void> {
+  const activationFailed = agent.activationState === AgentActivationState.ERROR;
+
+  logger.warn(
+    activationFailed
+      ? 'Initial agent activation previously failed; queueing message and retrying activation'
+      : 'Initial agent not yet active; queueing message until activation completes',
+    { agentId, wsId, activationState: agent.activationState },
+  );
+
+  const { serializedContextItems, imageBlocks } = yield* call(serializeContextItemsForQueue, payload);
+  const queueResult = yield* call(
+    unifiedOrchestrator.queueMessage.bind(unifiedOrchestrator),
+    agentId,
+    payload.text.trim(),
+    serializedContextItems,
+    imageBlocks && imageBlocks.length > 0 ? imageBlocks : undefined,
+    wsId,
+  );
+
+  if (!queueResult.success) {
+    // Queueing failed — keep the draft so the text stays recoverable and record
+    // the error. Never clear the draft on a hard failure.
+    logger.error('Failed to queue message for not-yet-active initial agent', queueResult.error, {
+      agentId,
+    });
+    yield* put(setAgentQueueError(agentId, queueResult.error || 'Failed to preserve message'));
+  } else if (activationFailed) {
+    // ERROR path: a toast confirms the queue, so clearing the draft is safe.
+    // ACTIVATING/PENDING success deliberately preserves the draft as the visible
+    // acknowledgement (no toast during normal startup); the queued message
+    // drains automatically once the agent becomes ACTIVE.
+    yield* put(clearChatDraft(wsId, agentId));
+  }
+
+  // Only an ERRORed activation is user-actionable and needs an explicit retry.
+  // ACTIVATING/PENDING already have an activation in flight.
+  if (activationFailed) {
+    const retryConfig: UnifiedAgentConfig = {
+      workspaceId: WorkspaceId(wsId),
+      id: agentId,
+      name: agent.name,
+      model: agent.model,
+      provider: getAgentProvider(agent),
+      source: 'workspace-initializer',
+      metadata: {
+        ...(agent.metadata ?? {}),
+        isInitialAgent: true,
+      },
+    };
+    yield* put(activateInitialAgentRequested(wsId, agentId, retryConfig));
+  }
+
+  if (activationFailed) {
+    const toastMessage = queueResult.success
+      ? 'Agent activation failed earlier. Retrying now — your message is queued and will send once the agent is ready.'
+      : 'Agent activation failed earlier. Retrying now — but your message could not be queued. Your text has been preserved in the input; please resend once the agent is ready.';
+    yield* call(showErrorToast, toastMessage);
+  } else if (!queueResult.success) {
+    // Activation is still in flight; the queue panel acknowledges a successful
+    // queue, so only a hard failure (text not preserved) needs a toast.
+    yield* call(
+      showErrorToast,
+      'Your message could not be queued while the agent is starting up. Your text has been preserved in the input; please resend in a moment.',
+    );
+  }
+}
+
+// ============================================================================
 // Root handler
 // ============================================================================
 
@@ -451,6 +549,30 @@ function* handleSendMessage(
 ): SagaGenerator<void> {
   const { agentId, payload } = action.payload;
   const wsId = payload.wsId;
+
+  // --- Guard: initial-agent send before it is ACTIVE ---
+  // A virgin coordinator that is genuinely pre-active has no usable backend
+  // session, so a normal send would be silently dropped (lost first message).
+  // The guard engages ONLY for the explicit pre-active states — ERROR
+  // (activation failed) and ACTIVATING/PENDING (activation still in flight) —
+  // preserving the text in the queue and retrying activation only on ERROR.
+  // An unset/null/unknown activationState (e.g. a persisted coordinator loaded
+  // from disk that already responded once) is NOT pre-active and must fall
+  // through to the normal send path. Callers that explicitly bypass queueing
+  // (force-send-from-queue, retry paths) set skipQueueCheck and likewise skip
+  // the guard so they never re-queue an already-queued message.
+  if (payload.isInitialWorkspaceAgent && !payload.skipQueueCheck) {
+    const initialAgent = yield* selectAgentSession.effect(agentId);
+    const activationState = initialAgent?.activationState;
+    const isPreActive =
+      activationState === AgentActivationState.PENDING ||
+      activationState === AgentActivationState.ACTIVATING ||
+      activationState === AgentActivationState.ERROR;
+    if (initialAgent && isPreActive) {
+      yield* call(handleInitialAgentSendBeforeActive, wsId, agentId, payload, initialAgent);
+      return;
+    }
+  }
 
   // --- Check streaming state (queue-vs-send decision) ---
   if (!payload.skipQueueCheck) {

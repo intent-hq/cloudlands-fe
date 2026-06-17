@@ -65,6 +65,12 @@ export interface ChatAgentState {
   lastMessageTime: number;
   /** Timestamp of the last chunk received (for reconciliation skip logic) */
   lastChunkReceivedAt: number;
+  /**
+   * True when a queued message has just started a new turn and the next
+   * `agent:idle` event (belonging to the prior, now-finished turn) must NOT
+   * clear the fresh turn's streaming flags. Consumed once by handleAgentIdle.
+   */
+  idleReconcileSuppressed: boolean;
 }
 
 /**

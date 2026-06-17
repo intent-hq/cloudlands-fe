@@ -80,6 +80,16 @@ export const selectChatReceivedFirstChunk = store.createSelector(
     getAgentChatState(state, agentId).receivedFirstChunk,
 );
 
+/**
+ * Select the idle-reconcile suppression marker. True while a queued message
+ * has just started a new turn, signalling handleAgentIdle to skip clearing the
+ * fresh turn's streaming flags for the prior turn's stale `agent:idle` event.
+ */
+export const selectChatIdleReconcileSuppressed = store.createSelector(
+  (state, agentId: string): boolean =>
+    getAgentChatState(state, agentId).idleReconcileSuppressed === true,
+);
+
 /** Select rebinding flag */
 export const selectChatIsRebinding = store.createSelector(
   (state, agentId: string): boolean =>

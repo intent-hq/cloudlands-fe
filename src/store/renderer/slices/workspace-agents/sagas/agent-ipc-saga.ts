@@ -75,9 +75,11 @@ import {
   type BackendActiveStreamPayload,
 } from '../workspace-agents-slice';
 import {
+  chatIdleReconcileSuppressionSet,
   chatSendStarted,
   streamCompleted,
 } from '../../chat-state/chat-state-slice';
+import { selectChatIdleReconcileSuppressed } from '../../chat-state/chat-state-selectors';
 import type { AgentIdlePayload } from '$features/events/types';
 import {
   selectDiskMessageCount,
@@ -458,6 +460,20 @@ export function* handleAgentIdle(data: AgentIdlePayload): SagaGenerator<void> {
   const wsId = session.workspaceId || data.workspaceId;
   if (!wsId) {
     logger.warn('Cannot reconcile streaming state on agent:idle: no workspaceId', { agentId });
+    return;
+  }
+
+  // Queue-drain guard: when a queued message has just started a fresh turn
+  // (handleQueueProcessing armed this marker right after chatSendStarted), this
+  // `agent:idle` belongs to the PRIOR, now-finished turn. Clearing the flags
+  // here would clobber the new turn and desync the UI back to "idle" while the
+  // backend is processing — letting the user resend and hit the in-flight
+  // prompt error. Consume the marker once and skip reconciliation; the fresh
+  // turn's own completion will clear the flags.
+  const idleSuppressed: boolean = yield* selectChatIdleReconcileSuppressed.effect(agentId);
+  if (idleSuppressed) {
+    yield* put(chatIdleReconcileSuppressionSet(agentId, false));
+    logger.debug('Skipping agent:idle reconcile — queued turn just started', { agentId });
     return;
   }
 
@@ -962,6 +978,13 @@ export function* handleQueueProcessing(data: QueueProcessingData): SagaGenerator
   // not start chat-state timers/watchdogs or set isProcessing for completed
   // coordinator turns that were waiting for user input.
   yield* put(chatSendStarted(agentId, wsId));
+
+  // Arm the idle-reconcile suppression marker so the prior turn's stale
+  // `agent:idle` (emitted by the backend just before it drained this queued
+  // message) cannot clear the flags chatSendStarted just set. handleAgentIdle
+  // consumes this marker once. chatSendStarted above already reset it to false,
+  // so this set is the authoritative value for the new turn.
+  yield* put(chatIdleReconcileSuppressionSet(agentId, true));
 
   // Add user message to session
   const userMessage: AgentMessage = {

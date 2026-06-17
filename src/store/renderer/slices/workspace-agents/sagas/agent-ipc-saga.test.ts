@@ -55,7 +55,7 @@ const {
   storeDispatchMock: vi.fn(),
   trackMock: vi.fn(),
   eventCollectorTrackMock: vi.fn(),
-  selectState: { results: [] as any[], index: 0 },
+  selectState: { results: [] as any[], index: 0, useRealStore: false, realGetState: null as null | (() => any) },
   streamingSessionsState: { results: [] as any[] },
   diskCountState: { value: 0 },
   capturedElectronHandlers: {} as Record<string, GeneratorFunction>,
@@ -191,19 +191,21 @@ vi.mock("../workspace-agents-selectors", () => {
   };
 });
 
-vi.mock("../../agent-session/agent-session-selectors", () => ({
+vi.mock("../../agent-session/agent-session-selectors", () => {
+  const readSession = (_state: any, agentId: string) => {
+    if (selectState.useRealStore) {
+      const realState = selectState.realGetState?.() ?? _state;
+      return realState?.agentSessions?.byAgentId?.[agentId] ?? undefined;
+    }
+    const result = selectState.results[selectState.index] ?? undefined;
+    selectState.index++;
+    return result;
+  };
+  return {
   selectAgentSession: {
-    select: (_state: any, _agentId: string) => {
-      const result = selectState.results[selectState.index] ?? undefined;
-      selectState.index++;
-      return result;
-    },
+    select: (state: any, agentId: string) => readSession(state, agentId),
     effect: function* (agentId: string) {
-      return yield sagaEffects.select((_state: any, _agentId: string) => {
-        const result = selectState.results[selectState.index] ?? undefined;
-        selectState.index++;
-        return result;
-      }, agentId);
+      return yield sagaEffects.select((state: any) => readSession(state, agentId));
     },
   },
   selectAllStreamingAgents: {
@@ -212,7 +214,21 @@ vi.mock("../../agent-session/agent-session-selectors", () => ({
       return yield sagaEffects.select(() => streamingSessionsState.results);
     },
   },
-}));
+  };
+});
+
+vi.mock("../../chat-state/chat-state-selectors", () => {
+  const readSuppressed = (state: any, agentId: string) =>
+    state?.chatState?.byAgentId?.[agentId]?.idleReconcileSuppressed === true;
+  return {
+    selectChatIdleReconcileSuppressed: {
+      select: (state: any, agentId: string) => readSuppressed(state, agentId),
+      effect: function* (agentId: string) {
+        return yield sagaEffects.select((state: any) => readSuppressed(state, agentId));
+      },
+    },
+  };
+});
 
 vi.mock("../../workspace/workspace-selectors", () => {
   const selectActiveWorkspaceIdImpl = (state: any) => {
@@ -273,12 +289,16 @@ import {
   watchStreamStartingSaga,
 } from "./agent-ipc-saga";
 import {
+  agentSessionReducer,
+  bulkUpsertSessions,
   setAgentStreaming,
   updateMessage,
   upsertSession,
 } from "../../agent-session/agent-session-slice";
 import {
+  chatIdleReconcileSuppressionSet,
   chatSendStarted,
+  chatStateReducer,
   streamCompleted,
 } from "../../chat-state/chat-state-slice";
 import { clearAgentUnread } from "../../unread-tracking/unread-tracking-slice";
@@ -408,6 +428,28 @@ describe("handleQueueProcessing", () => {
     });
     const streamingAction = dispatched.find((a) => a.type === setAgentStreaming.type);
     expect(streamingAction?.payload).toEqual(["agent-1", true]);
+  });
+
+  // Wave 10 (Cause 1): after starting the queued turn, the saga must arm the
+  // idle-reconcile suppression marker so the prior turn's stale agent:idle does
+  // not clear the freshly-started flags.
+  it("arms idle-reconcile suppression after chatSendStarted", async () => {
+    const session = makeSession();
+    selectState.results = [session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleQueueProcessing,
+      queueData,
+    ).toPromise();
+
+    const sendStartedIndex = dispatched.findIndex((a) => a.type === chatSendStarted.type);
+    const suppressIndex = dispatched.findIndex(
+      (a) => a.type === chatIdleReconcileSuppressionSet.type,
+    );
+    expect(suppressIndex).toBeGreaterThan(sendStartedIndex);
+    expect(dispatched[suppressIndex].payload).toEqual(["agent-1", true]);
   });
 
   it("starts a new queued turn from completed waiting-for-user-action state", async () => {
@@ -1057,6 +1099,122 @@ describe("handleAgentIdle", () => {
 
     const completed = dispatched.filter((a) => a.type === streamCompleted.type);
     expect(completed).toHaveLength(1);
+  });
+});
+
+// ============================================================================
+// Wave 10 — queue-drain UI state desync (integration: both sagas + real store)
+//
+// Reproduces the user-reported race: after a queued message starts processing
+// (chatSendStarted sets isStreaming/isProcessing true), the prior turn's
+// agent:idle must NOT clear those flags. We drive both sagas against a real
+// reducer-backed store so the assertion is on the resulting session state.
+// ============================================================================
+describe("Wave 10: queue-drain idle race", () => {
+  function makeRealStore() {
+    let state = {
+      agentSessions: agentSessionReducer(undefined as any, { type: "@@init" } as any),
+      chatState: chatStateReducer(undefined as any, { type: "@@init" } as any),
+    };
+    return {
+      getState: () => state,
+      dispatch: (action: any) => {
+        state = {
+          agentSessions: agentSessionReducer(state.agentSessions, action),
+          chatState: chatStateReducer(state.chatState, action),
+        };
+        return action;
+      },
+    };
+  }
+
+  beforeEach(() => {
+    sendMock.mockClear();
+    saveSessionMock.mockClear();
+    ensureStreamHandlerMock.mockClear();
+    selectState.index = 0;
+    selectState.results = [];
+    selectState.useRealStore = true;
+  });
+
+  afterEach(() => {
+    selectState.useRealStore = false;
+    selectState.realGetState = null;
+  });
+
+  // Test A — ordering X: queue:processing handled before agent:idle.
+  it("Test A: keeps flags true when agent:idle is processed AFTER queue:processing", async () => {
+    const store = makeRealStore();
+    selectState.realGetState = store.getState;
+    store.dispatch(
+      bulkUpsertSessions([
+        makeSession({ isStreaming: false, isProcessing: false } as any),
+      ]),
+    );
+
+    await runSaga(
+      { dispatch: store.dispatch, getState: store.getState },
+      handleQueueProcessing,
+      queueData,
+    ).toPromise();
+
+    await runSaga(
+      { dispatch: store.dispatch, getState: store.getState },
+      handleAgentIdle,
+      { agentId: "agent-1", workspaceId: "ws-agent-1" },
+    ).toPromise();
+
+    const session = store.getState().agentSessions.byAgentId["agent-1"];
+    expect(session.isStreaming).toBe(true);
+    expect(session.isProcessing).toBe(true);
+  });
+
+  // Test B — ordering Y: agent:idle handled before queue:processing.
+  it("Test B: keeps flags true when agent:idle is processed BEFORE queue:processing", async () => {
+    const store = makeRealStore();
+    selectState.realGetState = store.getState;
+    store.dispatch(
+      bulkUpsertSessions([
+        makeSession({ isStreaming: true, isProcessing: true } as any),
+      ]),
+    );
+
+    await runSaga(
+      { dispatch: store.dispatch, getState: store.getState },
+      handleAgentIdle,
+      { agentId: "agent-1", workspaceId: "ws-agent-1" },
+    ).toPromise();
+
+    await runSaga(
+      { dispatch: store.dispatch, getState: store.getState },
+      handleQueueProcessing,
+      queueData,
+    ).toPromise();
+
+    const session = store.getState().agentSessions.byAgentId["agent-1"];
+    expect(session.isStreaming).toBe(true);
+    expect(session.isProcessing).toBe(true);
+  });
+
+  // Guard: a genuinely stuck stream (no fresh queued turn) is still reconciled.
+  it("still clears genuinely-stuck flags when no queued turn started", async () => {
+    const store = makeRealStore();
+    selectState.realGetState = store.getState;
+    store.dispatch(
+      bulkUpsertSessions([
+        makeSession({ isStreaming: true, isProcessing: true } as any),
+      ]),
+    );
+
+    await runSaga(
+      { dispatch: store.dispatch, getState: store.getState },
+      handleAgentIdle,
+      { agentId: "agent-1", workspaceId: "ws-agent-1" },
+    ).toPromise();
+
+    const session = store.getState().agentSessions.byAgentId["agent-1"];
+    expect(session.isStreaming).toBe(false);
+    expect(session.isProcessing).toBe(false);
   });
 });
 

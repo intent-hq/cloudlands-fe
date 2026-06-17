@@ -36,6 +36,7 @@ export const emptyChatAgentState: ChatAgentState = {
   isRebinding: false,
   lastMessageTime: 0,
   lastChunkReceivedAt: 0,
+  idleReconcileSuppressed: false,
 };
 
 export const initialState: ChatStateSlice = {
@@ -192,6 +193,16 @@ export const chatSendStarted = createAction(
   }),
 );
 
+/**
+ * Set the idle-reconcile suppression marker. Dispatched true by
+ * handleQueueProcessing right after chatSendStarted (a queued turn began, so
+ * the prior turn's incoming `agent:idle` must not clear the fresh flags) and
+ * false by handleAgentIdle once it has consumed the marker.
+ */
+export const chatIdleReconcileSuppressionSet = createAction<
+  [agentId: string, suppressed: boolean]
+>('chatState/idleReconcileSuppressionSet');
+
 /** Send failed (activation or network error) */
 export const chatSendFailed =
   createAction<[agentId: string, error: string]>('chatState/sendFailed');
@@ -327,17 +338,23 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
       receivedFirstChunk: false,
       isStalled: false,
       statusEvents: [],
+      idleReconcileSuppressed: false,
     }),
+  )
+  .with(chatIdleReconcileSuppressionSet, (state, { payload: [agentId, suppressed] }) =>
+    updateAgent(state, agentId, { idleReconcileSuppressed: suppressed }),
   )
   .with(chatSendFailed, (state, { payload: [agentId, error] }) =>
     updateAgent(state, agentId, {
       streamingStartTime: null,
       error,
+      idleReconcileSuppressed: false,
     }),
   )
   .with(chatInterrupted, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, {
       streamingStartTime: null,
+      idleReconcileSuppressed: false,
     }),
   )
   .with(chatModelUnavailableCleared, (state, { payload: [agentId] }) =>
@@ -353,6 +370,7 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     updateAgent(state, agentId, {
       isInterrupting: false,
       streamingStartTime: null,
+      idleReconcileSuppressed: false,
     }),
   )
   .with(chatReset, (state, { payload: [agentId] }) =>
@@ -380,6 +398,7 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
       statusEvents: [],
       lastAttemptedMessage: data.lastAttemptedMessage,
       modelUnavailable: data.modelUnavailable,
+      idleReconcileSuppressed: false,
     }),
   )
   .with(streamStatusReceived, (state, { payload: [agentId, statusEvent, resetFirstChunk] }) => {
@@ -398,6 +417,7 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   .with(streamTimedOut, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, {
       streamingStartTime: null,
+      idleReconcileSuppressed: false,
     }),
   )
   .with(chatStallDetected, (state, { payload: [agentId] }) =>
@@ -409,6 +429,7 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
       streamingStartTime: null,
       lastChunkTime: null,
       receivedFirstChunk: false,
+      idleReconcileSuppressed: false,
     }),
   )
   .with(chatRebindStarted, (state, { payload: [agentId] }) =>
