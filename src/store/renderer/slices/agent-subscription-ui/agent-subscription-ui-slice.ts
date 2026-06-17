@@ -5,8 +5,8 @@
  * delegation groups, and woken-up indicators.
  */
 
-import { createAction } from 'ag-redux-toolkit/utils/store/create-action';
-import { createReducer } from 'ag-redux-toolkit/utils/store/create-reducer';
+import { createAction } from '@augmentcode/ag-redux-toolkit/utils/store/create-action';
+import { createReducer } from '@augmentcode/ag-redux-toolkit/utils/store/create-reducer';
 import type {
   AgentSubscriptionUIState,
   AgentSubscriptionUIEntry,

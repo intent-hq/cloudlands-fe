@@ -27,7 +27,7 @@ import {
   take,
   takeEvery,
 } from "typed-redux-saga";
-import { createChannelFromSelector } from "ag-redux-toolkit/saga";
+import { createChannelFromSelector } from "@augmentcode/ag-redux-toolkit/saga";
 import {
   workspaceMounted,
   workspaceUnmounted,

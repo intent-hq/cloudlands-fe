@@ -4,8 +4,8 @@ description: >-
   Root routing index for framework-independent Redux and redux-saga guidance in
   ag-redux-toolkit. Use for canonical Redux state policy, action/reducer
   primitives, normalized state helpers, typed-redux-saga patterns, saga manager
-  behavior, saga channel/effect helpers, serialization, testing, debugging, and
-  verifier handoff. Use Svelte or Streaming skills for framework-specific Store
+  behavior, saga channel/effect helpers, explicit store pruning, serialization,
+  testing, debugging, and verifier handoff. Use Svelte or Streaming skills for framework-specific Store
   selector/component behavior, choosing only one concrete Store family per app.
 type: core
 triggers:
@@ -18,6 +18,7 @@ triggers:
   - typed-redux-saga
   - saga manager
   - saga channels
+  - store pruning
   - state serialization
   - redux testing
   - verifier
@@ -48,9 +49,12 @@ by the Svelte-specific or Streaming-specific taxonomy waves.
 1. Start with `./core-policy/SKILL.md` for shared-state or architecture decisions.
 2. Add `./state-integrity/SKILL.md` before adding/changing Redux state, actions,
    selectors, watchers, or saga registration.
-3. Add domain leaves that match the behavior being changed.
-4. Add `./testing/SKILL.md` for reducer, saga, or verification changes.
-5. Add `./verifier/SKILL.md` before handoff for reliability-sensitive reviews.
+3. If and only if the user explicitly asks to prune unused Redux store surface
+   area, add `./store-pruning/SKILL.md` before deleting selectors, actions,
+   reducers, sagas, exports, tests, or orphaned helpers.
+4. Add domain leaves that match the behavior being changed.
+5. Add `./testing/SKILL.md` for reducer, saga, or verification changes.
+6. Add `./verifier/SKILL.md` before handoff for reliability-sensitive reviews.
 
 ## Core leaf routes
 
@@ -58,6 +62,7 @@ by the Svelte-specific or Streaming-specific taxonomy waves.
 | --- | --- |
 | `./core-policy/SKILL.md` | Redux ownership, side-effect boundaries, serializability, and utility reuse rules. |
 | `./state-integrity/SKILL.md` | Preventing derived/duplicated Redux state and duplicate action/selector/saga ownership. |
+| `./store-pruning/SKILL.md` | Explicit-only pruning of unused Redux selectors, actions, handlers, sagas, and orphaned store logic when the user asks for pruning. |
 | `./import-boundaries/SKILL.md` | Public package imports, saga import boundaries, and Store-first public subpackages. |
 | `./file-structure/SKILL.md` | Slice file layout, type modules, sagas, and Store registration patterns. |
 | `./state-serialization/SKILL.md` | Structured-clone-safe Redux state values. |

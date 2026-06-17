@@ -22,7 +22,7 @@ triggers:
 ---
 # Reducers — `createReducer`
 
-> Operational guidance for reducer implementation. Full API walkthrough and examples: `docs/REDUCERS.md` → Creating Reducers. Public API: `ag-redux-toolkit/utils/store/create-reducer`; related guidance: `../SKILL.md` §3, §14.
+> Operational guidance for reducer implementation. Full API walkthrough and examples: `docs/REDUCERS.md` → Creating Reducers. Public API: `@augmentcode/ag-redux-toolkit/utils/store/create-reducer`; related guidance: `../SKILL.md` §3, §14.
 
 ## Use when
 
@@ -51,8 +51,8 @@ triggers:
 ### Chain handlers on the reducer function
 
 ```ts
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 type CounterState = { value: number };
 const increment = createAction<[amount: number]>("counter/increment");
@@ -66,9 +66,9 @@ export const counterReducer = createReducer<CounterState>({ value: 0 }).with(
 ### Immutable collection update with parent no-op guard
 
 ```ts
-import { type Collection, createCollection, updateItem } from "ag-redux-toolkit/utils/collections/collection-utils";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { type Collection, createCollection, updateItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 type Todo = { id: string; title: string };
 type TodosState = { todos: Collection<Todo, "id"> };
@@ -84,8 +84,8 @@ export const todosReducer = createReducer(initialState).with(renameTodo, (state,
 ### Explicit same-reference no-op for nested state
 
 ```ts
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 const setSearch = createAction<[query: string]>("todos/setSearch");
 
@@ -99,8 +99,8 @@ export const reducer = createReducer({ filters: { query: "" } }).with(
 ### Async request, success, and failure handlers
 
 ```ts
-import { createAsyncAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAsyncAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 type Todo = { id: string; title: string };
 const loadTodo = createAsyncAction<[id: string], { id: string }, Todo>("todos/loadAsync", "todos/load", (id) => ({ id }));
@@ -114,9 +114,9 @@ export const reducer = createReducer({ loading: false, todo: undefined as Todo |
 ### ❌ Bad: mutation and reducer-created nondeterminism
 
 ```ts
-import { type Collection, createCollection } from "ag-redux-toolkit/utils/collections/collection-utils";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { type Collection, createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 type Todo = { id: string; title: string };
 type TodosState = { todos: Collection<Todo, "id">; updatedAtMs: number };
@@ -134,8 +134,8 @@ export const reducer = createReducer(initialState).with(renameTodo, (state, { pa
 ### ❌ Bad: unconditional nested copies lose no-op identity
 
 ```ts
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 const setSearch = createAction<[query: string]>("todos/setSearch");
 

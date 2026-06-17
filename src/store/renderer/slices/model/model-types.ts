@@ -1,5 +1,5 @@
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
-import type { Collection } from 'ag-redux-toolkit/utils/collections/collection-utils';
+import type { Collection } from '@augmentcode/ag-redux-toolkit/utils/collections/collection-utils';
 
 export type ModelLoadingStatus = 'success' | 'loading' | 'error';
 

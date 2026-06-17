@@ -47,8 +47,8 @@ import type { AgentSession } from '$shared/types';
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
 import { AgentActivationState, getAgentProvider } from '$shared/types/agent-session';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import { waitFor } from 'ag-redux-toolkit/saga';
-import type { StoreSelector as PackageStoreSelector } from 'ag-redux-toolkit/types';
+import { waitFor } from '@augmentcode/ag-redux-toolkit/saga';
+import type { StoreSelector as PackageStoreSelector } from '@augmentcode/ag-redux-toolkit/types';
 import {
   sendMessage,
   chatSendStarted,

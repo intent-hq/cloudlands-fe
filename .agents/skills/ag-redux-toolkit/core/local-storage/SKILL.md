@@ -124,7 +124,7 @@ for (const key of draftKeys) {
 - ✅ Always use a concrete app-local saga helper module (for example `examples/utils/safe-local-storage-saga.ts`).
 - ✅ Keep storage keys as constants at the top of the file.
 - ✅ Use `getLocalStorageKeysWithPrefix(prefix)` for helper-safe key enumeration.
-- ❌ Never import localStorage helpers from `ag-redux-toolkit/saga` or package utility subpaths.
+- ❌ Never import localStorage helpers from `@augmentcode/ag-redux-toolkit/saga` or package utility subpaths.
 - ❌ **Never** call `window.localStorage` directly in sagas.
 - ❌ **Never** put localStorage calls in components — they belong in sagas.
 - ❌ Never assume localStorage always succeeds — it can throw on quota or in private browsing.

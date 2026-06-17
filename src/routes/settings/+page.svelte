@@ -55,7 +55,6 @@
 
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import { track } from '$lib/services/analytics';
-  import { flashCopied } from '$lib/components/ui/tooltip/link-tooltip-state.svelte';
   import {
   getSettingsPreviousPath,
   navigateBackFromSettings,

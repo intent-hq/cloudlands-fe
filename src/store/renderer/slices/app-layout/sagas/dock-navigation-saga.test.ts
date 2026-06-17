@@ -31,7 +31,7 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-vi.mock("ag-redux-toolkit/utils/sagas/selector-channel-effects",
+vi.mock("@augmentcode/ag-redux-toolkit/utils/sagas/selector-channel-effects",
   () => ({
   takeLatestFromSelector: function* () {
     // No-op for these tests — return a fake task object.

@@ -21,7 +21,7 @@ triggers:
 ---
 # Selectors — `store.createSelector` / collection utility reads
 
-> Operational guidance for selector work. Full API reference and examples: `docs/SELECTORS.md`. Public facade: `store.createSelector(...)` from `ag-redux-toolkit/svelte-store`; selector/cache internals are package-private implementation context; related guidance: `../SKILL.md` §3.
+> Operational guidance for selector work. Full API reference and examples: `docs/SELECTORS.md`. Public facade: `store.createSelector(...)` from `@augmentcode/ag-redux-toolkit/svelte-store`; selector/cache internals are package-private implementation context; related guidance: `../SKILL.md` §3.
 
 ## Use when
 
@@ -37,8 +37,8 @@ triggers:
 - Generic/shared selector helpers should accept a configured Store and create selectors through `store.createSelector(...)`; do not import standalone selector creation utilities from the package.
 - Use public collection utilities such as `getItem(collection, id)` and `getItems(collection)` inside `store.createSelector(...)` callbacks for O(1) item lookup and ordered materialization.
 - Do not import standalone selector creation utilities from package subpaths or inject selector behavior through Store constructors; selector creation is Store-bound public API.
-- Do not use `StreamingStore`, Kefir observable arguments, or streaming selector
-  lifecycle/setup patterns inside the same Svelte app.
+- Do not use `ReactStore`, React `.useValue(...)`, Preact signal arguments,
+  `StreamingStore`, Kefir observable arguments, or streaming selector lifecycle/setup patterns inside the same Svelte app.
 
 ## Call mode cues
 
@@ -50,9 +50,10 @@ triggers:
 | Selector composition | `otherSelector.select(state, args)` | Calling `otherSelector(args)` |
 | SSR/non-context readable | `selectFoo.withStore(store)(args)` | Global/context assumptions |
 
-For streaming consumers in a separate Node/server/non-Svelte app/package/code
-path, route to `streaming/selectors`. Do not mix that concrete Store family into
-the Svelte app using this skill.
+For React consumers in a separate React app/package/code path, route to
+`react/selectors`. For streaming consumers in a separate Node/server/non-Svelte
+app/package/code path, route to `streaming/selectors`. Do not mix those concrete
+Store families into the Svelte app using this skill.
 
 ## Do
 
@@ -68,7 +69,7 @@ the Svelte app using this skill.
 - Do not duplicate selector bodies in multiple files.
 - Do not store selector outputs in reducer state.
 - Do not use inline saga selectors for values that should be named, cached, and testable.
-- Do not import or apply StreamingStore/Kefir selector patterns in this Svelte app.
+- Do not import or apply ReactStore/signal or StreamingStore/Kefir selector patterns in this Svelte app.
 
 ## Examples
 
@@ -105,7 +106,7 @@ export const selectVisibleTodos = store.createSelector((state) => {
 ### 4. Back collection reads with public collection utilities
 
 ```ts
-import { getItem, getItems, type Collection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem, getItems, type Collection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 export const selectTodosCollection = store.createSelector(
   (state): Collection<Todo, "id"> => state.todos.collection
@@ -117,7 +118,7 @@ export const selectTodos = store.createSelector((state) => getItems(selectTodosC
 ### 5. Pass a configured Store into shared selector helpers
 
 ```ts
-import type { Store } from "ag-redux-toolkit/svelte-store";
+import type { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 
 export function createProjectSelectors(store: Store) {
   const selectProjects = store.createSelector((state) => state.projects.items);
@@ -129,7 +130,7 @@ export function createProjectSelectors(store: Store) {
 ### 6. Bind readables to an explicit Store with .withStore
 
 ```ts
-import type { Store } from "ag-redux-toolkit/svelte-store";
+import type { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 
 export function createTodoReadable(store: Store, todoId: string) {
   return selectTodoById.withStore(store)(todoId);
@@ -162,6 +163,7 @@ export const selectVisibleTodosOnce = store.createSelector((state) => {
 ## See also
 
 - `docs/SELECTORS.md` — human reference and examples for all call forms.
+- `react/selectors/SKILL.md` — React signal and `.useValue(...args)` selector call model.
 - `streaming/selectors/SKILL.md` — Kefir/observable selector call model.
 - `svelte/selector-lifecycle/SKILL.md` — lifecycle crash prevention.
 - `core/selector-channels/SKILL.md` — reacting to selector changes from sagas.

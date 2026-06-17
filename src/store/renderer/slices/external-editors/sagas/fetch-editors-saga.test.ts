@@ -1,5 +1,5 @@
 import { invoke } from "$lib/electron-bridge";
-import { createCollection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { getLocalStorageJSON } from "$store/renderer/utils/safe-local-storage-saga";
 import {
   expectSaga,

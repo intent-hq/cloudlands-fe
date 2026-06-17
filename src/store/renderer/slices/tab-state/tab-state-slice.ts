@@ -1,5 +1,5 @@
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import { omitKey } from "../../utils/utils";
 
 export type HandleDropZoneType = "row-above" | "row-below" | "column-left" | "column-right";

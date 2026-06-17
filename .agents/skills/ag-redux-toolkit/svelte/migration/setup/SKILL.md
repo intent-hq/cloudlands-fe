@@ -22,23 +22,23 @@ triggers:
 
 ## Step 1 — Install Dependencies
 
-Install the `ag-redux-toolkit` package and its peer dependencies with your package manager: `ag-redux-toolkit`, `redux`, `redux-saga`, `typed-redux-saga`, and `fast-equals`. Add `redux-saga-test-plan` as a dev dependency when saga tests follow this repository's examples.
+Install the `@augmentcode/ag-redux-toolkit` package and its peer dependencies with your package manager: `@augmentcode/ag-redux-toolkit`, `redux`, `redux-saga`, `typed-redux-saga`, and `fast-equals`. Add `redux-saga-test-plan` as a dev dependency when saga tests follow this repository's examples.
 
-`svelte@^5` is also required as a peer dependency and is usually already present in the app being migrated. Package installation does not copy AI skills automatically. In consumer apps, use the installed package CLI for explicit skill refresh, cleanup, validation, and help; the skill install command removes stale package-owned files before copying current packaged skills, preserves unrelated project or third-party skills, and excludes generated artifacts such as `skills/_artifacts`:
+`svelte@^5` is also required as a peer dependency and is usually already present in the app being migrated. Package installation does not copy AI skills automatically. In consumer apps, use the installed package CLI for explicit skill refresh, cleanup, and help; Svelte migrations should use `install-skills:svelte` to copy the root router plus `setup`, `core`, and `svelte` only. That domain-specific install refreshes stale package-owned files in the Svelte bundle scope, preserves unrelated project or third-party skills, preserves non-selected package skill families, and excludes generated artifacts such as `skills/_artifacts`:
 
-Consumer CLI commands are `npx ag-redux-toolkit install-skills`, `npx ag-redux-toolkit validate-architecture`, `npx ag-redux-toolkit cleanup-skills`, and `npx ag-redux-toolkit help`.
+Consumer CLI commands are `npx ag-redux-toolkit install-skills:svelte`, `npx ag-redux-toolkit cleanup-skills`, and `npx ag-redux-toolkit help`. Use `npx ag-redux-toolkit install-skills` or `npx ag-redux-toolkit install-skills:all` only when the app intentionally needs every package skill family refreshed. For architecture checking in the migrated app, import the `svelte` domain root config from `@augmentcode/ag-redux-toolkit/eslint-plugins` and run ESLint.
 
 The equivalent npm exec form is `npm exec -- ag-redux-toolkit <command>`. Use this repository's maintainer `npm run validate:*` scripts only when working inside the package repository. npm 7+ does not run dependency uninstall lifecycle scripts; if the migration is rolled back and copied skills should be removed, run `npx ag-redux-toolkit cleanup-skills` before uninstalling:
 
-On rollback, run `npx ag-redux-toolkit cleanup-skills` before uninstalling `ag-redux-toolkit`; remove peer dependencies only if the app no longer uses them.
+On rollback, run `npx ag-redux-toolkit cleanup-skills` before uninstalling `@augmentcode/ag-redux-toolkit`; remove peer dependencies only if the app no longer uses them.
 
 See `docs/INSTALLATION.md` for the complete consumer install/uninstall flow and the separate maintainer `npm ci` validation flow.
 
 ## Step 2 — Import the Package Runtime
 
-Use the npm package directly. Do not copy `ag-redux-toolkit` source files into your app. Import runtime APIs from the public subpackages: `ag-redux-toolkit/svelte-store`, `ag-redux-toolkit/saga`, and `ag-redux-toolkit/types`. If direct utility access is required, use only the documented leaf subpaths under `ag-redux-toolkit/utils/collections/collection-utils`, `ag-redux-toolkit/utils/store/*`, or the approved saga utility leaves (`debounce-saga`, `retry-with-timeout`, `wrap-async-generator`, and `selector-channel-effects`).
+Use the npm package directly. Do not copy `ag-redux-toolkit` source files into your app. Import runtime APIs from the public subpackages: `@augmentcode/ag-redux-toolkit/svelte-store`, `@augmentcode/ag-redux-toolkit/saga`, and `@augmentcode/ag-redux-toolkit/types`. If direct utility access is required, use only the documented leaf subpaths under `@augmentcode/ag-redux-toolkit/utils/collections/collection-utils`, `@augmentcode/ag-redux-toolkit/utils/store/*`, or the approved saga utility leaves (`debounce-saga`, `retry-with-timeout`, `wrap-async-generator`, and `selector-channel-effects`).
 
-Migration note: replace old flat package-root imports, removed utilities-subpackage imports, and source-shaped deep imports with one of the public subpackages or approved utility leaf subpaths above. The package does not publish a root runtime API or `ag-redux-toolkit/utils` barrel.
+Migration note: replace old flat package-root imports, removed utilities-subpackage imports, and source-shaped deep imports with one of the public subpackages or approved utility leaf subpaths above. The package does not publish a root runtime API or `@augmentcode/ag-redux-toolkit/utils` barrel.
 
 The package publishes compiled ESM files and TypeScript declarations from `dist/`, so application code should keep only app-specific store setup and slice files under `src/lib/store/`.
 
@@ -49,8 +49,8 @@ constructor map, and register sagas as slices are migrated:
 
 ```typescript
 // src/lib/store/store.ts
-import { Store } from "ag-redux-toolkit/svelte-store";
-import type { StoreState } from "ag-redux-toolkit/types";
+import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
+import type { StoreState } from "@augmentcode/ag-redux-toolkit/types";
 
 export const store = new Store({
   // counter: counterReducer,
@@ -105,8 +105,8 @@ Per slice, create `src/lib/store/slices/{name}/{name}-slice.ts`, `src/lib/store/
 ### 1. Start with an explicit empty app-owned reducer map
 
 ```typescript
-import { Store } from "ag-redux-toolkit/svelte-store";
-import type { StoreState } from "ag-redux-toolkit/types";
+import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
+import type { StoreState } from "@augmentcode/ag-redux-toolkit/types";
 
 export const store = new Store({});
 export type AppState = StoreState<typeof store>;
@@ -115,8 +115,8 @@ export type AppState = StoreState<typeof store>;
 ### 2. Add each migrated slice through the reducer map
 
 ```typescript
-import { Store } from "ag-redux-toolkit/svelte-store";
-import type { StoreState } from "ag-redux-toolkit/types";
+import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
+import type { StoreState } from "@augmentcode/ag-redux-toolkit/types";
 import { counterReducer } from "$lib/store/slices/counter/counter-slice";
 import { counterSaga } from "$lib/store/slices/counter/sagas/counter-saga";
 
@@ -154,7 +154,7 @@ disposeStore();
 ### 5. Prove empty bootstrap has app reducers only
 
 ```typescript
-import { Store } from "ag-redux-toolkit/svelte-store";
+import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 
 const store = new Store({});
 const appReducers = store.getReducers();
@@ -168,7 +168,7 @@ export const emptyBootstrapEvidence = {
 
 ```typescript
 // ❌ BAD: runSaga before init throws, and @internal_sagaManager is package-owned.
-import { Store } from "ag-redux-toolkit/svelte-store";
+import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 
 function* counterSaga() {}
 function* fakeInternalSagaManager() {}
@@ -191,3 +191,4 @@ store.runSaga(fakeInternalSagaManager);
 | Non-component lifecycle owner | Start and cancel a saga from non-component code after init |
 | Empty bootstrap evidence | Prove empty bootstrap has app reducers only |
 | Incorrect setup ordering/internal startup | Bad: start sagas before init or start internals manually |
+

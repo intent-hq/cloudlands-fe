@@ -3,8 +3,8 @@ import type { UnifiedAgentConfig } from "$shared/types/agent.types";
 import {
   createAction,
   createAsyncAction,
-} from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+} from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { omitKey } from "../../utils/utils";
 import { upsertSession } from "../agent-session/agent-session-slice";

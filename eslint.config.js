@@ -4,7 +4,7 @@ import typescriptParser from '@typescript-eslint/parser';
 import svelte from 'eslint-plugin-svelte';
 import svelteParser from 'svelte-eslint-parser';
 import unusedImports from 'eslint-plugin-unused-imports';
-import { full as agReduxToolkitFullConfig } from 'ag-redux-toolkit/eslint-plugins';
+import { svelte as agReduxToolkitFullConfig } from '@augmentcode/ag-redux-toolkit/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
 

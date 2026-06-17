@@ -144,7 +144,7 @@ yield* takeLatest(ch, worker);
 yield* takeLatestFromSelector(selectItem, [id], worker);
 ```
 
-Source context: package-internal store-utility saga implementation. Public selector-channel helpers are available from `ag-redux-toolkit/saga`. Priority: **MEDIUM**.
+Source context: package-internal store-utility saga implementation. Public selector-channel helpers are available from `@augmentcode/ag-redux-toolkit/saga`. Priority: **MEDIUM**.
 
 ## See also
 

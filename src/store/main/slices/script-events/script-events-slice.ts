@@ -5,7 +5,7 @@
  * Actions: script:*
  */
 
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
 import type {
   DomainEvent,
   DomainEventPayloads,

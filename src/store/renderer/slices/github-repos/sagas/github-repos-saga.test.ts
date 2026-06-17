@@ -21,7 +21,7 @@ vi.mock("typed-redux-saga", () => ({
   },
 }));
 
-vi.mock("ag-redux-toolkit/utils/sagas/selector-channel-effects", () => ({
+vi.mock("@augmentcode/ag-redux-toolkit/utils/sagas/selector-channel-effects", () => ({
   takeLatestFromSelector: vi.fn(function* (_selector: any, _worker: any) {
     void _selector;
     void _worker;

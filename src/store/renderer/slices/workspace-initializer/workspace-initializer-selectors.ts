@@ -1,5 +1,5 @@
 import { store } from "../../store";
-import { getItems } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 export const selectWorkspaceInitializerHydrated = store.createSelector(
   (state) => state.workspaceInitializer.hydrated,

@@ -3,7 +3,7 @@ import {
   expect,
   it,
 } from "vitest";
-import { createCollection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import type { StoreState } from "../../types";
 import type { InstalledEditor } from "./external-editors-slice";
 import {

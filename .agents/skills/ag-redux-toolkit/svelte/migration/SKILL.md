@@ -118,8 +118,8 @@ const nextSteps: MigrationStep[] = cartAssessment.verdict === "redux"
 
 ```typescript
 import { writable } from "svelte/store";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 export const legacyCount = writable(0);
 
@@ -153,7 +153,7 @@ export const selectDoubled = store.createSelector((state) => {
 
 ```typescript
 import { call, put, takeLatest } from "typed-redux-saga";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
 import { setUsername } from "$lib/store/slices/user/user-slice";
 
 type UserResponse = { name: string };

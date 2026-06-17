@@ -6,14 +6,14 @@ description: >-
   plus a .register(builder) helper that chains both handlers onto a createReducer
   builder. The field parameter is constrained to keys whose value type is
   boolean. Use it instead of hand-writing setX / toggleX pairs. Public API:
-  ag-redux-toolkit/utils/store/boolean-preference; related guidance: ../SKILL.md §11.
+  @augmentcode/ag-redux-toolkit/utils/store/boolean-preference; related guidance: ../SKILL.md §11.
 type: sub-skill
 library: ag-redux-toolkit
 requires:
   - core
   - core/reducers
 sources:
-  - ag-redux-toolkit/utils/store/boolean-preference
+  - "@augmentcode/ag-redux-toolkit/utils/store/boolean-preference"
   - ../SKILL.md
 triggers:
   - boolean preference
@@ -30,7 +30,7 @@ triggers:
 
 ## 1. API
 
-From `ag-redux-toolkit/utils/store/boolean-preference`:
+From `@augmentcode/ag-redux-toolkit/utils/store/boolean-preference`:
 
 ```typescript
 type BooleanFieldKey<S> = {
@@ -92,8 +92,8 @@ export type PrefsState = {
 
 ```typescript
 // prefs-slice.ts
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
-import { createBooleanPreference } from "ag-redux-toolkit/utils/store/boolean-preference";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
+import { createBooleanPreference } from "@augmentcode/ag-redux-toolkit/utils/store/boolean-preference";
 import type { PrefsState } from "./prefs-types";
 
 const initialState: PrefsState = {
@@ -253,7 +253,7 @@ createBooleanPreference<PrefsState>({
 });
 ```
 
-*Public API: `ag-redux-toolkit/utils/store/boolean-preference` (`BooleanFieldKey<S>` constraint).*
+*Public API: `@augmentcode/ag-redux-toolkit/utils/store/boolean-preference` (`BooleanFieldKey<S>` constraint).*
 
 ## 5. See also
 

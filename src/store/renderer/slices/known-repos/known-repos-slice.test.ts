@@ -4,7 +4,7 @@ import {
   expect,
   it,
 } from "vitest";
-import { createCollection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
   initialState,
   knownReposReducer,

@@ -1,5 +1,5 @@
-import { StreamingStore } from "ag-redux-toolkit/streaming-store";
-import type { StoreMiddleware } from "ag-redux-toolkit/types";
+import { StreamingStore } from "@augmentcode/ag-redux-toolkit/streaming-store";
+import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 
 import { middleware } from "./middleware";
 import { reducers } from "./reducer";

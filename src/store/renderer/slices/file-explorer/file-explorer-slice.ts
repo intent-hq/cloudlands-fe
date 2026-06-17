@@ -5,16 +5,16 @@ import {
   getItem,
   getItems,
   type Collection,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import type {
   FileExplorerWorkspaceState,
   FileExplorerState,
   FileExplorerTreeNode,
 } from "./file-explorer-types";
-import type { StoreAction } from "ag-redux-toolkit/types";
+import type { StoreAction } from "@augmentcode/ag-redux-toolkit/types";
 
 export type { FileExplorerWorkspaceState, FileExplorerState };
 

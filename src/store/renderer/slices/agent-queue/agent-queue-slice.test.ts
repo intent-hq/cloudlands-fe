@@ -8,7 +8,7 @@ import type { StoreState } from "../../types";
 import {
   getItem,
   getItems,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
   agentQueueReducer,
   clearAgentQueue,

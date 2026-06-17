@@ -20,7 +20,7 @@ import {
   takeLatest,
   type SagaGenerator,
 } from "typed-redux-saga";
-import { takeLatestFromSelector } from "ag-redux-toolkit/utils/sagas/selector-channel-effects";
+import { takeLatestFromSelector } from "@augmentcode/ag-redux-toolkit/utils/sagas/selector-channel-effects";
 import { selectGitHubAuthIsAuthenticated } from "../../github-auth/github-auth-selectors";
 import {
   clearGithubRepos,

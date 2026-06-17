@@ -20,7 +20,7 @@ import {
   put,
   type SagaGenerator,
 } from "typed-redux-saga";
-import type { StoreAction } from "ag-redux-toolkit/types";
+import type { StoreAction } from "@augmentcode/ag-redux-toolkit/types";
 import type { GithubRepoItem } from "../../github-repos/github-repos-slice";
 import {
   clearGithubRepoSearch,

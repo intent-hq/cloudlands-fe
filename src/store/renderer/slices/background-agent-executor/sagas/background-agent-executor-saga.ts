@@ -26,7 +26,7 @@ import {
 import {
   createChannelFromSelector,
   type SelectorChannelPayload,
-} from 'ag-redux-toolkit/saga';
+} from '@augmentcode/ag-redux-toolkit/saga';
 
 import { agentFactory } from '$features/agent/services/agent-factory';
 import { sendMessage } from '$features/agent/agent-stream-lifecycle';
@@ -68,7 +68,7 @@ import {
   setLocalStorageJSON,
   getLocalStorageJSON,
 } from '$store/renderer/utils/safe-local-storage-saga';
-import { debounceWithKeySaga } from 'ag-redux-toolkit/utils/sagas/debounce-saga';
+import { debounceWithKeySaga } from '@augmentcode/ag-redux-toolkit/utils/sagas/debounce-saga';
 import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { removeWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import { WorkspaceId } from '$shared/types/branded-ids';

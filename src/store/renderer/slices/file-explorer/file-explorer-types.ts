@@ -1,5 +1,5 @@
 import type { FileNode, FileGitStatus } from "$shared/types";
-import type { Collection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import type { Collection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 // ---------------------------------------------------------------------------
 // Flattened node for virtualized rendering

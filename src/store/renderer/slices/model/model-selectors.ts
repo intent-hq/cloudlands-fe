@@ -2,7 +2,7 @@ import { store } from "../../store";
 import {
   getItems,
   type Collection,
-} from 'ag-redux-toolkit/utils/collections/collection-utils';
+} from '@augmentcode/ag-redux-toolkit/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import { MODEL_DEFAULTS } from '$shared/constants/agent-services';
 import { selectActiveProviderId } from '../provider-settings/provider-settings-selectors';

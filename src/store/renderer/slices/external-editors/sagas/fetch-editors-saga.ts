@@ -2,7 +2,7 @@ import { invoke } from "$lib/electron-bridge";
 import {
   getItems,
   isCollection,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
   getLocalStorageJSON,
   setLocalStorageJSON,

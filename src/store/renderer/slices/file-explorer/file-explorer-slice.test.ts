@@ -1,5 +1,5 @@
 import type { FileGitStatus, FileNode } from "$shared/types";
-import { getItem } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
   describe,
   expect,

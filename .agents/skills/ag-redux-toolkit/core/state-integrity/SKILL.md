@@ -22,9 +22,9 @@ triggers:
 
 > This is a hard gate for every Redux slice. Pair this guidance with architecture
 > validation so enforcement does not rely on ad hoc review: use
-> `npm run validate:architecture` in this repository, or
-> `npx ag-redux-toolkit validate-architecture` /
-> `npm exec ag-redux-toolkit -- validate-architecture` in a consuming app.
+> `npm run validate:architecture` in this repository, or run ESLint with the
+> app's composed domain root config imported from
+> `@augmentcode/ag-redux-toolkit/eslint-plugins` in a consuming app.
 
 ## MUST / NEVER rules
 
@@ -146,9 +146,9 @@ ones.
 Run architecture validation before handoff when a change touches Redux state,
 action creators, selectors, saga watchers/registrations, or this package's
 state/action/selector/saga guidance docs. Use `npm run validate:architecture`
-inside this repository; use `npx ag-redux-toolkit validate-architecture` or
-`npm exec ag-redux-toolkit -- validate-architecture` in a consuming app.
-Passing means the command exits 0 and prints
+inside this repository; in a consuming app, run ESLint with the app's composed
+domain root config imported from `@augmentcode/ag-redux-toolkit/eslint-plugins`.
+Inside this repository, passing means the command exits 0 and prints
 `[architecture-validation] no architecture gate violations found` plus the number
 of scanned source files. `npm run validate:release` also runs this gate first in
 the maintainer workflow.

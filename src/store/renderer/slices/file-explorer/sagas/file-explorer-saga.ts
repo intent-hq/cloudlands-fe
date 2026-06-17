@@ -89,7 +89,7 @@ import {
   selectFileExplorerState,
   type FileExplorerEnvironmentConfigTrigger,
 } from "../file-explorer-selectors";
-import { getItem } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
   shouldHide,
   checkGitignored,
@@ -109,9 +109,9 @@ import {
 import {
   debounceSaga,
   debounceWithKeySaga,
-} from "ag-redux-toolkit/utils/sagas/debounce-saga";
-import { takeLatestFromSelector } from "ag-redux-toolkit/utils/sagas/selector-channel-effects";
-import type { StoreAction } from "ag-redux-toolkit/types";
+} from "@augmentcode/ag-redux-toolkit/utils/sagas/debounce-saga";
+import { takeLatestFromSelector } from "@augmentcode/ag-redux-toolkit/utils/sagas/selector-channel-effects";
+import type { StoreAction } from "@augmentcode/ag-redux-toolkit/types";
 
 const logger = new Logger("FileExplorerSaga");
 

@@ -2,15 +2,15 @@
  * Comments V2 Redux slice — actions & reducer.
  */
 
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import {
   createCollection,
   addItem,
   updateItem,
   removeItem,
   getItem,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import type { CommentV2 } from "$features/comments/comment-types-v2";
 import type { CommentsV2State, CommentThread } from "./comments-types";
 

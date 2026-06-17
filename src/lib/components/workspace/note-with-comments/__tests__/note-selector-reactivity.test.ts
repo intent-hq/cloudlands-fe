@@ -19,7 +19,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/svelte";
-import { Store } from "ag-redux-toolkit/svelte-store";
+import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 import {
   get,
 } from "svelte/store";

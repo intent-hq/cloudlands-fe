@@ -29,8 +29,8 @@ triggers:
 - Moving selector reads across component initialization boundaries.
 
 Use this lifecycle only for apps that chose the Svelte Store family. Do not apply
-StreamingStore/Kefir selector invocation, observation, setup, or teardown rules in
-the same app/package/code path.
+ReactStore/signal `.useValue(...)` or StreamingStore/Kefir selector invocation,
+observation, setup, or teardown rules in the same app/package/code path.
 
 ## Call-mode map
 
@@ -56,8 +56,8 @@ the same app/package/code path.
 - Do not call `get(selectFoo())` outside component initialization.
 - Do not import standalone dispatch helpers; use `store.dispatch(action)` on the configured Store instance.
 - Do not pass the selector object itself to saga `select`; use `.effect()` or `.select` intentionally.
-- Do not replace Svelte readable lifecycle rules with streaming selector lifecycle
-  rules in a Svelte app.
+- Do not replace Svelte readable lifecycle rules with React signal or streaming
+  selector lifecycle rules in a Svelte app.
 
 ## Examples
 
@@ -120,7 +120,7 @@ export const selectVisibleItems = store.createSelector((state) => {
 ### 6. Bind explicitly with .withStore when no Svelte context is available
 
 ```ts
-import type { Store } from "ag-redux-toolkit/svelte-store";
+import type { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 
 export function createItemReadable(store: Store, itemId: string) {
   return selectItem.withStore(store)(itemId);

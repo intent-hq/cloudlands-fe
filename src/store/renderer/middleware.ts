@@ -4,7 +4,7 @@
 */
 
 import createSagaMiddleware, { type Saga } from "redux-saga";
-import type { StoreMiddleware } from "ag-redux-toolkit/types";
+import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import {
   REDUX_DEBUG_LS_KEY,
   REDUX_DEBUG_LS_KEY_STATE_REFS_KEY,

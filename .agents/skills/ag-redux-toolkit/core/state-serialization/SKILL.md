@@ -17,7 +17,7 @@ triggers:
 ---
 # State Serialization
 
-> Operational checklist for reducer state shape. Full rationale and examples: `docs/REDUCERS.md` → State Serialization Rules. Reducer API: `ag-redux-toolkit/utils/store/create-reducer`; related guidance: `../SKILL.md` §12.
+> Operational checklist for reducer state shape. Full rationale and examples: `docs/REDUCERS.md` → State Serialization Rules. Reducer API: `@augmentcode/ag-redux-toolkit/utils/store/create-reducer`; related guidance: `../SKILL.md` §12.
 
 ## Use when
 
@@ -55,8 +55,8 @@ type TodosState = {
 ### Store timestamps as numbers or ISO strings
 
 ```ts
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 const markSynced = createAction("todos/markSynced", (syncedAtMs: number, syncedAtIso: string) => ({ syncedAtMs, syncedAtIso }));
 
@@ -83,7 +83,7 @@ const failedState = { error: toSerializableError(new Error("network failed")) };
 ### Use records or collections instead of Map and Set
 
 ```ts
-import { type Collection, createCollection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { type Collection, createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 type Todo = { id: string; title: string };
 type TodosState = {
@@ -114,8 +114,8 @@ describe("todos state serialization", () => {
 ### ❌ Bad: non-serializable state and reducer-created values
 
 ```ts
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 // BAD: Date, Map, Set, Promise, class instances, and Error do not belong in Redux state.
 type Todo = { id: string; title: string };

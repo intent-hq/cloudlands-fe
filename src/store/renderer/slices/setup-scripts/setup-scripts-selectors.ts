@@ -2,7 +2,7 @@ import { store } from "../../store";
 import {
   getItem,
   getItems,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import type { SetupScript } from "./setup-scripts-types";
 
 /** Raw scripts collection (includes pending deletions) */

@@ -1,4 +1,4 @@
-import type { Collection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import type { Collection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import type { Note, NoteVersion } from "$shared/types";
 
 export type NoteVersionsState = {

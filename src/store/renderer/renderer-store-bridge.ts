@@ -3,7 +3,7 @@
  *
  * Provides global access to the renderer app store without a static import of
  * `$store/renderer/store` or `$store/renderer/configured-store`. Those modules pull in
- * `ag-redux-toolkit/svelte-store`, which transitively imports `svelte` — a
+ * `@augmentcode/ag-redux-toolkit/svelte-store`, which transitively imports `svelte` — a
  * devDependency stripped from packaged builds. Any file reachable from the
  * main-process entry that statically imports the store will crash the packaged
  * app with ERR_MODULE_NOT_FOUND.

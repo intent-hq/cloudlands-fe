@@ -1,5 +1,5 @@
 import type { Editor } from '@tiptap/core';
-import type { Store } from 'ag-redux-toolkit/svelte-store';
+import type { Store } from '@augmentcode/ag-redux-toolkit/svelte-store';
 
 import { updateNoteContent } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 

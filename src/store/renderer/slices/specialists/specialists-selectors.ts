@@ -3,7 +3,7 @@ import {
   getItem,
   getItems,
   type Collection,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
   SPECIALISTS,
   GITHUB_DEPENDENT_SPECIALIST_IDS,

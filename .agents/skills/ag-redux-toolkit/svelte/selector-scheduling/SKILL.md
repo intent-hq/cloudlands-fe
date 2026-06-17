@@ -18,16 +18,15 @@ triggers:
 
 > Selector scheduler helpers are implementation details. Do not import them from package subpaths or teach consumers to wrap selector readables manually.
 
-Public facade: `ag-redux-toolkit/svelte-store` (`store.createSelector` and `Store` selector options). Selector implementation and scheduler internals are package-private; see `docs/SELECTORS.md` for behavior.
+Public facade: `@augmentcode/ag-redux-toolkit/svelte-store` (`store.createSelector` and `Store` selector options). Selector implementation and scheduler internals are package-private; see `docs/SELECTORS.md` for behavior.
 
 ## Store-first rule
 
 - Create app selectors with the configured `Store` instance: `store.createSelector(...)`.
 - Tune Svelte-readable selector coalescing only through the final constructor options argument: `new Store(reducers, middleware, { throttledSelectorFrequency })`.
-- Treat this as Svelte Store family scheduling only. Do not use StreamingStore,
-  Kefir stream throttling, or streaming selector lifecycle/setup guidance in the
-  same app.
+- Treat this as Svelte Store family scheduling only. Do not use StreamingStore,Kefir stream throttling, or streaming selector lifecycle/setup guidance in thesame app.
 - Omit `throttledSelectorFrequency` for the default `64` FPS; explicit values must be finite numbers in the inclusive `1..256` range. Fractional values are supported.
+- Selector trace output is disabled by default; pass `{ traceSelectors: true }` in the final Store options object only for temporary diagnostics.
 - In components, call selector readables directly at component init: `const value$ = selectValue()`.
 - Let the package's selector internals schedule/coalesce readable emissions.
 - For one-shot reads, use `selectValue.select(store.state, ...args)`.
@@ -40,8 +39,7 @@ Public facade: `ag-redux-toolkit/svelte-store` (`store.createSelector` and `Stor
 - Do not wrap selector readables in a second debounce, timer, `requestAnimationFrame`, or writable proxy just to reduce UI updates.
 - Do not rely on selector readables as audit/event streams; they represent the latest derived state and may coalesce intermediate writes.
 - Do not call selector readable mode from event handlers, callbacks, async functions, services, or tests; use `.select(store.state, ...)` or `.withStore(store)`.
-- Do not replace this Svelte-readable scheduling model with StreamingStore/Kefir
-  selector setup in the same app.
+- Do not replace this Svelte-readable scheduling model with StreamingStore/Kefirselector setup in the same app.
 
 ## Examples
 
@@ -93,7 +91,7 @@ export function handleCopyPointer() {
 ### 4. Bind to an explicit initialized Store with `.withStore`
 
 ```ts
-import type { Store } from "ag-redux-toolkit/svelte-store";
+import type { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 import { selectPointer } from "./pointer-selectors";
 
 export function createPointerReadable(store: Store) {
@@ -167,12 +165,12 @@ export function* pointerAuditSaga() {
 ### Examples retained/added
 
 | # | Example | Kind |
-| ---: | --- | --- |
+| --- | --- | --- |
 | 1 | Store-bound selector definitions | Good |
 | 2 | Component-init readable subscription and cleanup | Good |
-| 3 | One-shot handler read with `.select(store.state)` | Good |
-| 4 | Explicit Store binding with `.withStore(store)` | Good |
-| 5 | Saga state read with `.effect()` | Good |
+| 3 | One-shot handler read with .select(store.state) | Good |
+| 4 | Explicit Store binding with .withStore(store) | Good |
+| 5 | Saga state read with .effect() | Good |
 | 6 | Manual debounce/timer wrapper around selector readable | Bad |
 | 7 | Selector readable used as an event/audit stream | Bad |
 | 8 | Action-driven saga audit replacement | Good |

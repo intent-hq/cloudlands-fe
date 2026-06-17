@@ -8,8 +8,8 @@ import {
   openTerminalOverlay,
   toggleTerminalOverlay,
 } from "../terminals/terminals-slice";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import {
   addItem,
   createCollection,
@@ -18,7 +18,7 @@ import {
   removeItem,
   updateItem,
   upsertItem,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 export type WorkspaceUpdatedEvent = {
   workspaceId: string;

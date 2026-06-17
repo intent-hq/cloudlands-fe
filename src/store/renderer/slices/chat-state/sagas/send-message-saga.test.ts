@@ -148,14 +148,14 @@ vi.mock('$features/agent/services/consolidated-backend.service', () => ({
 
 // Mock package waitFor utility
 const mockWaitForResult = vi.fn<() => boolean>().mockReturnValue(true);
-vi.mock('ag-redux-toolkit/saga', () => ({
+vi.mock('@augmentcode/ag-redux-toolkit/saga', () => ({
   waitFor: function* () {
     return mockWaitForResult();
   },
 }));
 
 // Mock selector-channel-effects (prevents readableStoreState issues)
-vi.mock('ag-redux-toolkit/utils/sagas/selector-channel-effects', () => ({
+vi.mock('@augmentcode/ag-redux-toolkit/utils/sagas/selector-channel-effects', () => ({
   createChannelFromSelector: vi.fn(),
 }));
 

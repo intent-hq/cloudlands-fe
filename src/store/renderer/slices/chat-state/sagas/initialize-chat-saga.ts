@@ -46,8 +46,8 @@ import type { AgentSessionSendMessageOptions } from '../../agent-session/agent-s
 import { hydrateAgentQueueRequested } from '../../agent-queue/agent-queue-slice';
 import { selectAgentMessages } from '../../agent-session/agent-session-selectors';
 import { selectChatStateOrDefault } from '../chat-state-selectors';
-import { waitFor } from 'ag-redux-toolkit/saga';
-import type { StoreSelector as PackageStoreSelector } from 'ag-redux-toolkit/types';
+import { waitFor } from '@augmentcode/ag-redux-toolkit/saga';
+import type { StoreSelector as PackageStoreSelector } from '@augmentcode/ag-redux-toolkit/types';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import { compareMessageCompleteness } from '$shared/utils/message-comparator';
 import { invoke } from '$shared/generated/ipc-client';

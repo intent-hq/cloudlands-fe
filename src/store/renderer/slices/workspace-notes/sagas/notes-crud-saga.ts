@@ -58,7 +58,7 @@ import {
 } from "../workspace-notes-slice";
 import { markNoteRead } from "../../note-read-tracking/note-read-tracking-slice";
 import { Logger } from "$shared/logger";
-import { getItem } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { selectWorkspaceNotesState } from "../workspace-notes-selectors";
 import {
   isFullNote,

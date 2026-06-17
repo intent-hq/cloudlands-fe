@@ -5,8 +5,8 @@ import type { CanonicalAgentStatusFields, WorkspaceEvent } from '$features/event
 import {
   createAction,
   createAsyncAction,
-} from 'ag-redux-toolkit/utils/store/create-action';
-import { createReducer } from 'ag-redux-toolkit/utils/store/create-reducer';
+} from '@augmentcode/ag-redux-toolkit/utils/store/create-action';
+import { createReducer } from '@augmentcode/ag-redux-toolkit/utils/store/create-reducer';
 import type {
   AgentSessionForkOptions,
   AgentSessionLaunchConfig,

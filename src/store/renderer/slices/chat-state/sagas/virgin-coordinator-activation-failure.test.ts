@@ -89,8 +89,8 @@ vi.mock('$features/agent/services/consolidated-backend.service', () => ({
   unifiedOrchestrator: { queueMessage: mockQueueMessage, removeQueuedMessage: mockRemoveQueuedMessage },
 }));
 
-vi.mock('ag-redux-toolkit/saga', () => ({ waitFor: function* () { return true; } }));
-vi.mock('ag-redux-toolkit/utils/sagas/selector-channel-effects', () => ({
+vi.mock('@augmentcode/ag-redux-toolkit/saga', () => ({ waitFor: function* () { return true; } }));
+vi.mock('@augmentcode/ag-redux-toolkit/utils/sagas/selector-channel-effects', () => ({
   createChannelFromSelector: vi.fn(),
 }));
 

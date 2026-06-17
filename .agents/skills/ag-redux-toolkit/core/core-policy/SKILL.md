@@ -100,7 +100,7 @@ Before adding Redux state, actions, selectors, or sagas, load `core/state-integr
 
 ```typescript
 // my-slice-types.ts — safe to import from any process
-import type { Collection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import type { Collection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 export type Item = {
   id: string;

@@ -6,14 +6,14 @@ description: >-
   returns getDomainState, setDomainState, and clearDomainState — immutable
   helpers that read with an emptyState fallback, write per-domain entries, and
   drop domains (returning the same reference when the id was absent). Public API:
-  ag-redux-toolkit/utils/store/domain-scoped; related guidance: ../SKILL.md §10.
+  @augmentcode/ag-redux-toolkit/utils/store/domain-scoped; related guidance: ../SKILL.md §10.
 type: sub-skill
 library: ag-redux-toolkit
 requires:
   - core
   - core/reducers
 sources:
-  - ag-redux-toolkit/utils/store/domain-scoped
+  - "@augmentcode/ag-redux-toolkit/utils/store/domain-scoped"
   - ../SKILL.md
 triggers:
   - domain-scoped state
@@ -30,7 +30,7 @@ triggers:
 
 ## 1. Shape
 
-From `ag-redux-toolkit/utils/store/domain-scoped`:
+From `@augmentcode/ag-redux-toolkit/utils/store/domain-scoped`:
 
 ```typescript
 type DomainScopedState<T> = {
@@ -78,7 +78,7 @@ Key guarantees:
 
 ```typescript
 // workspace-items-types.ts
-import type { Collection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import type { Collection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 export type WorkspaceItemsState = {
   items: Collection<Item, "id">;
@@ -92,10 +92,10 @@ export type State = {
 
 ```typescript
 // workspace-items-slice.ts
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
-import { createCollection } from "ag-redux-toolkit/utils/collections/collection-utils";
-import { createDomainScopedHelpers } from "ag-redux-toolkit/utils/store/domain-scoped";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
+import { createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { createDomainScopedHelpers } from "@augmentcode/ag-redux-toolkit/utils/store/domain-scoped";
 import type { State, WorkspaceItemsState, Item } from "./workspace-items-types";
 
 const emptyState: WorkspaceItemsState = {
@@ -138,7 +138,7 @@ Notes:
 ```typescript
 // workspace-items-selectors.ts
 import { store } from "$lib/store/store";
-import { getItems } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { selectCurrentWorkspaceId } from "../workspaces/workspaces-selectors";
 
 export const selectWorkspaceItems = store.createSelector((state) => {
@@ -235,7 +235,7 @@ type State = { byWorkspaceId: Record<string, WorkspaceItemsState> };
 type State = { byDomainId: Record<string, WorkspaceItemsState> };
 ```
 
-*Public API: `ag-redux-toolkit/utils/store/domain-scoped` (`DomainScopedState<T>` shape).*
+*Public API: `@augmentcode/ag-redux-toolkit/utils/store/domain-scoped` (`DomainScopedState<T>` shape).*
 
 ## 5. When to use
 
@@ -254,3 +254,4 @@ only when the domain id is part of the key.
 - `core/state-serialization` — why `emptyState` must be
   structured-cloneable.
 - `core/collections` — the usual shape of per-domain data.
+

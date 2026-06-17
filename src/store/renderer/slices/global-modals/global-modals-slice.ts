@@ -1,6 +1,6 @@
 import type { GitHubAuthRequiredEvent } from "$features/github-auth/types";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 export type GitCredentialsModalError = {
   workspaceId?: string;

@@ -2,8 +2,8 @@ import type { ReviewStatus } from "$lib/components/code-review/types";
 import type { WorkspaceEvent } from "$features/events/types";
 import type { TrackedChange } from "$features/file-tracking/types";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 
 const STORAGE_VERSION = 2;

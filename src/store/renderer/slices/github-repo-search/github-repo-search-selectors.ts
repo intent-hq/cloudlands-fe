@@ -2,7 +2,7 @@ import { store } from "../../store";
 import {
   getItems,
   type Collection,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import type { GithubRepoItem } from "../github-repos/github-repos-slice";
 
 const selectGithubRepoSearchCollection = store.createSelector(

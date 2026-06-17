@@ -18,8 +18,8 @@ import {
   take,
 } from "typed-redux-saga";
 import type { Task } from "redux-saga";
-import { createChannelFromSelector } from "ag-redux-toolkit/utils/sagas/selector-channel-effects";
-import type { StoreSelector } from "ag-redux-toolkit/types";
+import { createChannelFromSelector } from "@augmentcode/ag-redux-toolkit/utils/sagas/selector-channel-effects";
+import type { StoreSelector } from "@augmentcode/ag-redux-toolkit/types";
 import { deepEqual } from "fast-equals";
 
 import type { MainStoreState } from "../../../types";

@@ -15,7 +15,7 @@ vi.mock('../model-utils', () => ({
   getModelsForProviderForLoadingState: vi.fn(),
 }));
 
-import { createCollection } from 'ag-redux-toolkit/utils/collections/collection-utils';
+import { createCollection } from '@augmentcode/ag-redux-toolkit/utils/collections/collection-utils';
 import { getModelsForProviderForLoadingState } from '../model-utils';
 import {
   MAX_AUTO_RETRIES,

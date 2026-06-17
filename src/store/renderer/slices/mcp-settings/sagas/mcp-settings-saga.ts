@@ -15,7 +15,7 @@ import type { SagaGenerator } from "typed-redux-saga";
 import { createLogger } from "$lib/utils/client-logger";
 import { invoke } from "$shared/generated/ipc-client";
 import { takeEveryFromElectronChannel } from "$store/renderer/utils/ipc-channel";
-import { takeLatestFromSelector } from "ag-redux-toolkit/utils/sagas/selector-channel-effects";
+import { takeLatestFromSelector } from "@augmentcode/ag-redux-toolkit/utils/sagas/selector-channel-effects";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import type { McpServerConfig, McpServerStatus, McpAuthInfo } from "../mcp-settings-types";
 import {

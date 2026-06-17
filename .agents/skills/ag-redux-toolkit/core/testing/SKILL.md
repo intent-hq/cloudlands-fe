@@ -109,8 +109,8 @@ vi.mock("typed-redux-saga", () => ({
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { createAction, createAsyncAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction, createAsyncAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 type TodosState = { items: string[]; filter: "all" | "open"; loading: boolean; error: string };
 const setFilter = createAction<[filter: TodosState["filter"]]>("todos/setFilter");
@@ -214,7 +214,7 @@ it("claims the todo flow works", () => {
 ## Verification cues
 
 - Run the smallest relevant test scope first, then broader validation if needed.
-- Run architecture validation for state/actions/selectors/sagas changes when in scope: `npm run validate:architecture` in this repository, or `npx ag-redux-toolkit validate-architecture` / `npm exec ag-redux-toolkit -- validate-architecture` in a consuming app.
+- Run architecture validation for state/actions/selectors/sagas changes when in scope: `npm run validate:architecture` in this repository, or run ESLint with the app's composed domain root config imported from `@augmentcode/ag-redux-toolkit/eslint-plugins` in a consuming app.
 - Review docs/skills examples after changing them and run the smallest relevant test scope first.
 - Manual review should confirm detailed background stays in `docs/TESTING.md` while this skill keeps only concise, gate-focused examples.
 

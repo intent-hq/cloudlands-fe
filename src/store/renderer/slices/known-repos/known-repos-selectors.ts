@@ -3,7 +3,7 @@ import type { KnownRepo } from "$shared/types/known-repo";
 import {
   getItems,
   type Collection,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 export const selectKnownReposCollection = store.createSelector(
   (state): Collection<KnownRepo, "path"> => {

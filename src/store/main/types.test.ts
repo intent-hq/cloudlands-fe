@@ -1,6 +1,6 @@
 import {
   type StreamingStore,
-} from "ag-redux-toolkit/streaming-store";
+} from "@augmentcode/ag-redux-toolkit/streaming-store";
 import {
   describe,
   expectTypeOf,

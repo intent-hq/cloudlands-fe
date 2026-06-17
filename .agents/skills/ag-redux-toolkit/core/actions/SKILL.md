@@ -23,7 +23,7 @@ triggers:
 ---
 # Actions — `createAction` / `createAsyncAction`
 
-> Operational guidance for action creator work. API details and longer examples live in `docs/REDUCERS.md` → Actions and Async Actions. Public API: `ag-redux-toolkit/utils/store/create-action`; related family guidance: `../SKILL.md` §3.
+> Operational guidance for action creator work. API details and longer examples live in `docs/REDUCERS.md` → Actions and Async Actions. Public API: `@augmentcode/ag-redux-toolkit/utils/store/create-action`; related family guidance: `../SKILL.md` §3.
 
 ## Use when
 
@@ -51,7 +51,7 @@ triggers:
 ### No-payload action for explicit events
 
 ```ts
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
 
 export const resetTodos = createAction("todos/reset");
 
@@ -62,8 +62,8 @@ resetAction.payload satisfies undefined;
 ### Tuple payload action consumed by reducers
 
 ```ts
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 const renameTodo = createAction<[id: string, title: string]>("todos/rename");
 const reducer = createReducer({ titles: {} as Record<string, string> }).with(
@@ -75,7 +75,7 @@ const reducer = createReducer({ titles: {} as Record<string, string> }).with(
 ### Payload modifier when reducers need a named object
 
 ```ts
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
 
 export const renameTodo = createAction(
   "todos/rename",
@@ -89,7 +89,7 @@ action.payload.id satisfies string;
 ### Async request/success/failure triplet
 
 ```ts
-import { createAsyncAction } from "ag-redux-toolkit/utils/store/create-action";
+import { createAsyncAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
 
 type Todo = { id: string; title: string };
 export const loadTodo = createAsyncAction<[id: string], { id: string }, Todo>(
@@ -107,7 +107,7 @@ success.payload.request.id satisfies string;
 
 ```ts
 import { takeLatest } from "typed-redux-saga";
-import { createAsyncAction } from "ag-redux-toolkit/utils/store/create-action";
+import { createAsyncAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
 
 const loadTodo = createAsyncAction<[id: string], { id: string }>(
   "todos/loadAsync",
@@ -125,7 +125,7 @@ function* watchTodos() {
 ### ❌ Bad: duplicate owner plus tuple/object payload drift
 
 ```ts
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
 
 type RenameTodoPayload = { id: string; title: string };
 

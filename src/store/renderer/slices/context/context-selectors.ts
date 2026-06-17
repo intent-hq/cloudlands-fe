@@ -1,5 +1,5 @@
 import { store } from "../../store";
-import { getItems } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { emptyWorkspaceContextState } from "./context-slice";
 import type { ContextItem } from "$features/context/types";
 import type { ContextWorkspaceState } from "./context-types";

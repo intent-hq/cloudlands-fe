@@ -10,7 +10,7 @@ import {
   takeEvery,
   type SagaGenerator,
 } from 'typed-redux-saga';
-import { debounceWithKeySaga } from 'ag-redux-toolkit/utils/sagas/debounce-saga';
+import { debounceWithKeySaga } from '@augmentcode/ag-redux-toolkit/utils/sagas/debounce-saga';
 import { workspaceMounted } from '../../workspace-lifecycle/workspace-lifecycle-slice';
 import { removeWorkspaceEntity } from '../../workspace/workspace-slice';
 import {

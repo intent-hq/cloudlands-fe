@@ -3,11 +3,11 @@
  * All workspaces panel (Recent view), both when pins are present at
  * mount time (hydrated) and when toggled live.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
-import { togglePinWorkspace } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import { togglePinWorkspace, setPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
 
@@ -57,6 +57,12 @@ function renderedOrder(): string[] {
 }
 
 describe('AllWorkspacesCard pinned-first ordering (Recent view)', () => {
+  // The renderer store is a shared singleton and Store.init() is idempotent, so
+  // pin state set in one test would otherwise leak into the next. Reset it here.
+  afterEach(() => {
+    appStore.dispatch(setPinnedWorkspaceIds([]));
+  });
+
   it('sorts hydrated pinned workspaces to the top on initial render', async () => {
     render(AllWorkspacesCardHarness, {
       props: {

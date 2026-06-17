@@ -1,6 +1,6 @@
-import { createAction } from 'ag-redux-toolkit/utils/store/create-action';
-import { createReducer } from 'ag-redux-toolkit/utils/store/create-reducer';
-import { createCollection } from 'ag-redux-toolkit/utils/collections/collection-utils';
+import { createAction } from '@augmentcode/ag-redux-toolkit/utils/store/create-action';
+import { createReducer } from '@augmentcode/ag-redux-toolkit/utils/store/create-reducer';
+import { createCollection } from '@augmentcode/ag-redux-toolkit/utils/collections/collection-utils';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import {
   normalizeModelForProvider,

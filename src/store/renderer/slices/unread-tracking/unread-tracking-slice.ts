@@ -5,8 +5,8 @@
  * UnreadTrackingService singleton with serializable Redux state.
  */
 
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import type { UnreadTrackingState } from "./unread-tracking-types";
 
 // Maximum number of unread agent IDs to store (prevents unbounded growth)

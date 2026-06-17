@@ -10,7 +10,7 @@ import type { Note } from "$shared/types";
 import {
   getItem,
   getItems,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { emptyWorkspaceNotesState } from "./workspace-notes-slice";
 import type { NoteVersionsState, WorkspaceNotesWorkspaceState } from "./workspace-notes-types";
 

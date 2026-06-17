@@ -1,5 +1,5 @@
-import { Store } from "ag-redux-toolkit/svelte-store";
-import type { StoreMiddleware } from "ag-redux-toolkit/types";
+import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
+import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 
 import { middleware } from "./middleware";
 import { reducers } from "./reducer";

@@ -5,7 +5,7 @@
  * Order: storeGuard → loggerMiddleware (dev only) → StreamingStore saga middleware
  */
 
-import type { StoreMiddleware } from "ag-redux-toolkit/types";
+import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 
 import { createStoreGuardMiddleware } from "../utils/store-guard-middleware";
 import { createMainLoggerMiddleware } from "./middlewares/logger";

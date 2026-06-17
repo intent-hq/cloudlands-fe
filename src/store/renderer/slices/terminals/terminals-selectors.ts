@@ -7,7 +7,7 @@ import {
 import {
   getItem,
   getItems,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 function getActiveWs(state: StoreState) {
   const wsId = state.workspace.activeWorkspaceId;

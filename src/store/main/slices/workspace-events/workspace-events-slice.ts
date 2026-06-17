@@ -15,8 +15,8 @@
  * - cleanupWorkspace: Remove workspace state entirely
  */
 
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../../utils/workspace-scoped";
 import type { WorkspaceEvent } from "../../../../features/events/types";
 import {

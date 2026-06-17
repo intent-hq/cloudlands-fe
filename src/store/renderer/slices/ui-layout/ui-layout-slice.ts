@@ -1,6 +1,6 @@
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
-import { createBooleanPreference } from "ag-redux-toolkit/utils/store/boolean-preference";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
+import { createBooleanPreference } from "@augmentcode/ag-redux-toolkit/utils/store/boolean-preference";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 

@@ -40,7 +40,7 @@ const { selectorChannelRef } = vi.hoisted(() => ({
   selectorChannelRef: { current: null as any },
 }));
 
-vi.mock("ag-redux-toolkit/saga", async () => {
+vi.mock("@augmentcode/ag-redux-toolkit/saga", async () => {
   const sagaEffects = await vi.importActual<typeof import("redux-saga/effects")>(
     "redux-saga/effects",
   );

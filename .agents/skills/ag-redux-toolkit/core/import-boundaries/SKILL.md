@@ -19,24 +19,24 @@ triggers:
 ---
 # Import Boundaries
 
-> Source: `../SKILL.md` §2; `package.json` exports map; public `ag-redux-toolkit/svelte-store`; hidden root-entry implementation context; `docs/ARCHITECTURE.md` maintainer validation.
+> Source: `../SKILL.md` §2; `package.json` exports map; public `@augmentcode/ag-redux-toolkit/svelte-store`; hidden root-entry implementation context; `docs/ARCHITECTURE.md` maintainer validation.
 
 ## Setup — the package export surface
 
 The documented public surface is the approved subpackage interface plus explicit utility leaf subpaths. Do not teach consumers to import from the package root, from removed broad utility barrels, or from source-shaped deep paths.
 
-The utility exports are explicit leaf entries, not wildcard domains. The package still does not export the root `ag-redux-toolkit`, `ag-redux-toolkit/utils`, `ag-redux-toolkit/utils/runtime/*`, selector implementation internals (`utils/svelte-selectors/*`, `utils/streaming-selectors/*`, or `utils/selector-core/*`), old `ag-redux-toolkit/components/*` paths, `ag-redux-toolkit/src/*`, or directory `index` barrels.
+The utility exports are explicit leaf entries, not wildcard domains. The package still does not export the root `ag-redux-toolkit`, `@augmentcode/ag-redux-toolkit/utils`, `@augmentcode/ag-redux-toolkit/utils/runtime/*`, selector implementation internals (`utils/svelte-selectors/*`, `utils/streaming-selectors/*`, or `utils/selector-core/*`), old `ag-redux-toolkit/components/*` paths, `ag-redux-toolkit/src/*`, or directory `index` barrels.
 
 The relevant public subpackages components, services, and sagas actually use:
 
-- `ag-redux-toolkit/svelte-store` — canonical Svelte-readable `Store` class. Per-store operations go through the configured Store instance (`store.init`, `store.dispatch`, `store.state`, `store.createSelector`, `store.runSaga`, `store.dispose`). Utility helpers are not exported here; use the explicit utility leaf subpaths below.
-- `ag-redux-toolkit/streaming-store` — direct `StreamingStore` leaf for Kefir/observable selectors. Do not import streaming selector internals directly.
-- `ag-redux-toolkit/saga` — saga authoring helpers: `waitFor`, selector-channel helpers, and debounce/retry/streaming helpers.
-- `ag-redux-toolkit/types` — public TypeScript-only types such as `StoreState`, `PreloadedStoreState`, action, middleware, selector, reducer, and saga map types.
-- `ag-redux-toolkit/components-svelte/use-init-store`, `/use-run-saga` — optional Svelte lifecycle helper leaves. Do not import from old `components/*` paths or from a `components-svelte` directory barrel.
-- `ag-redux-toolkit/utils/collections/collection-utils` — approved direct collection utility leaf.
-- `ag-redux-toolkit/utils/store/create-action`, `/create-reducer`, `/boolean-preference`, `/domain-scoped` — the only package-level store utility leaf imports.
-- `ag-redux-toolkit/utils/sagas/debounce-saga`, `/retry-with-timeout`, `/wrap-async-generator`, `/selector-channel-effects` — approved direct saga utility leaves. Safe localStorage helpers are example/app-local utilities, not package exports.
+- `@augmentcode/ag-redux-toolkit/svelte-store` — canonical Svelte-readable `Store` class. Per-store operations go through the configured Store instance (`store.init`, `store.dispatch`, `store.state`, `store.createSelector`, `store.runSaga`, `store.dispose`). Utility helpers are not exported here; use the explicit utility leaf subpaths below.
+- `@augmentcode/ag-redux-toolkit/streaming-store` — direct `StreamingStore` leaf for Kefir/observable selectors. Do not import streaming selector internals directly.
+- `@augmentcode/ag-redux-toolkit/saga` — saga authoring helpers: `waitFor`, selector-channel helpers, and debounce/retry/streaming helpers.
+- `@augmentcode/ag-redux-toolkit/types` — public TypeScript-only types such as `StoreState`, `PreloadedStoreState`, action, middleware, selector, reducer, and saga map types.
+- `@augmentcode/ag-redux-toolkit/components-svelte/use-init-store`, `/use-run-saga` — optional Svelte lifecycle helper leaves. Do not import from old `components/*` paths or from a `components-svelte` directory barrel.
+- `@augmentcode/ag-redux-toolkit/utils/collections/collection-utils` — approved direct collection utility leaf.
+- `@augmentcode/ag-redux-toolkit/utils/store/create-action`, `/create-reducer`, `/boolean-preference`, `/domain-scoped` — the only package-level store utility leaf imports.
+- `@augmentcode/ag-redux-toolkit/utils/sagas/debounce-saga`, `/retry-with-timeout`, `/wrap-async-generator`, `/selector-channel-effects` — approved direct saga utility leaves. Safe localStorage helpers are example/app-local utilities, not package exports.
 
 Migration note: replace flat package-root examples, removed utilities-subpackage imports, and source-shaped deep imports with one of the public subpackages or approved utility leaf subpaths above.
 
@@ -70,16 +70,16 @@ Sagas may import anything within the store directory (actions, selectors, other 
 ### 1. Public package subpaths and utility leaf imports
 
 ```ts
-import { Store } from "ag-redux-toolkit/svelte-store";
-import type { StoreState } from "ag-redux-toolkit/types";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { debounceSaga } from "ag-redux-toolkit/saga";
-import type { Collection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
+import type { StoreState } from "@augmentcode/ag-redux-toolkit/types";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { retryWithTimeout } from "@augmentcode/ag-redux-toolkit/saga";
+import type { Collection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 type Todo = { id: string; title: string };
 export type PublicState = StoreState & { todos?: { items: Collection<Todo, "id"> } };
 export const loadTodos = createAction("todos/load");
-export const publicApi = { Store, debounceSaga, loadTodos };
+export const publicApi = { Store, retryWithTimeout, loadTodos };
 ```
 
 ### 2. Component imports actions, selectors, types, and the initialized Store instance
@@ -115,12 +115,11 @@ export function startQueuedJob(jobId: string) {
 ### 4. Saga layer may import saga effects, selectors, actions, and saga utilities
 
 ```ts
-import { call, put, takeLatest } from "typed-redux-saga";
-import { debounceSaga } from "ag-redux-toolkit/saga";
+import { call, delay, put, takeLatest } from "typed-redux-saga";
 import { loadJobs, refreshJobs } from "../jobs-slice";
 import { selectQueuedJob } from "../jobs-selectors";
 
-declare const api: { runJob(id: string): Promise<void> };
+declare const api: { runJob(id: string): Promise<void>; refreshJobs(): Promise<void> };
 
 export function* jobsSaga() {
   yield* takeLatest(loadJobs, function* loadQueuedJob(action: { payload: [string] }) {
@@ -128,7 +127,10 @@ export function* jobsSaga() {
     if (job) yield* call(api.runJob, job.id);
     yield* put(refreshJobs());
   });
-  yield* debounceSaga(refreshJobs, 250);
+  yield* takeLatest(refreshJobs, function* refreshJobsAfterIdle() {
+    yield* delay(250);
+    yield* call(api.refreshJobs);
+  });
 }
 ```
 
@@ -174,7 +176,7 @@ export function queueItemFromAnywhere(id: string) {
 ```
 
 ```ts
-import type { Store } from "ag-redux-toolkit/svelte-store";
+import type { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 import { addItem } from "$lib/store/slices/items/items-slice";
 
 export function queueItem(store: Store, id: string) {
@@ -238,3 +240,4 @@ Source: `../SKILL.md` §2 (Components must never import saga files / redux-saga 
 
 - `core/core-policy/SKILL.md` — the policy these boundaries enforce
 - `svelte/component-integration/SKILL.md` — Store dispatch + selector usage inside components
+

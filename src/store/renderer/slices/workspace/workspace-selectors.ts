@@ -4,7 +4,7 @@ import { CHIEF_WORKSPACE_ID, type WorkspaceId } from "$shared/types/branded-ids"
 import {
   getItem,
   getItems,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { type WorkspaceRecencyState } from "./workspace-slice";
 import { selectIsNewlyCreatedWorkspace } from "../workspace-agents/workspace-agents-selectors";
 import {

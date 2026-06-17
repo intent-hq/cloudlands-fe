@@ -104,7 +104,7 @@ type ReuseDiscovery = {
 export const reuseDiscovery: ReuseDiscovery = {
   searched: ["src/utils", "src/slices", "docs", "skills"],
   terms: ["debounce", "selector channel", "waitFor", "safe storage helper"],
-  existingUtility: "ag-redux-toolkit/utils/sagas/debounce-saga",
+  existingUtility: "@augmentcode/ag-redux-toolkit/utils/sagas/debounce-saga",
   decision: "reuse",
 };
 ```
@@ -138,7 +138,7 @@ export const acceptedStateShape = { reason: "tests pass", stateFields: ["complet
 ### 6. Corrected state-integrity evidence pairs canonical state with selectors
 
 ```ts
-import { getItems, type Collection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItems, type Collection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { store } from "$lib/store";
 
 type Todo = { id: string; completed: boolean };
@@ -187,7 +187,7 @@ export const report: VerifierReport = {
 
 ### Automated gate selection rules
 
-Use this repository's maintainer `npm run ...` scripts when reviewing packagerepo diffs. When verifying a consuming app that has installed the package, usethe package CLI equivalents such as `npx ag-redux-toolkit validate-architecture`or `npm exec -- ag-redux-toolkit validate-architecture`.
+Use this repository's maintainer `npm run ...` scripts when reviewing package repo diffs. When verifying a consuming app that has installed the package, run ESLint with the app's composed domain root config imported from `@augmentcode/ag-redux-toolkit/eslint-plugins`.
 
 - **Always require **`git status --short` before the final decision to identifymodified, staged, deleted, and untracked files that affect review scope.
 - **Always require **`git diff --check` for any local diff before acceptance;whitespace errors block acceptance until fixed or explicitly scoped out by theuser.

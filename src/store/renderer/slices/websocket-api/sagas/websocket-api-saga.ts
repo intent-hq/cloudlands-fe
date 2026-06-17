@@ -10,7 +10,7 @@ import {
   takeEvery,
 } from "typed-redux-saga";
 import type { SagaGenerator } from "typed-redux-saga";
-import { takeLatestFromSelector } from "ag-redux-toolkit/saga";
+import { takeLatestFromSelector } from "@augmentcode/ag-redux-toolkit/saga";
 import {
   loadWebSocketApiStatus,
   regenerateWebSocketApiToken,

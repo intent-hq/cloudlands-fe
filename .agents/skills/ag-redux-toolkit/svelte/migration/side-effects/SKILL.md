@@ -47,7 +47,7 @@ export async function loadUserFromComponent() {
 ```typescript
 // src/lib/store/slices/users/sagas/users-saga.ts
 import { call, put, takeLatest } from "typed-redux-saga";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
 import { setUsername } from "../users-slice";
 
 export const loadUser = createAction<[userId: string]>("users/loadUser");
@@ -67,18 +67,18 @@ export function* usersSaga() {
 
 ```typescript
 // src/lib/store/slices/search/sagas/search-saga.ts
-import type { StoreAction } from "ag-redux-toolkit/types";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { debounceSaga } from "ag-redux-toolkit/saga";
-import { queryChanged } from "../search-slice";
+import { call, delay, put, takeLatest } from "typed-redux-saga";
+import { queryChanged, searchResultsLoaded } from "../search-slice";
 
-export const debounceSearch = createAction<[StoreAction<any>]>("search/debounce");
+declare const api: { search(query: string): Promise<SearchResult[]> };
 
 export function* searchSaga() {
-  yield* debounceSaga(debounceSearch, 300);
+  yield* takeLatest(queryChanged, function* searchAfterSettled(action) {
+    yield* delay(300);
+    const results = yield* call(api.search, action.payload[0]);
+    yield* put(searchResultsLoaded(results));
+  });
 }
-
-export const debouncedQueryChanged = (query: string) => debounceSearch(queryChanged(query));
 ```
 
 ### 4. Store subscriptions migrate to selector-channel helpers
@@ -86,7 +86,7 @@ export const debouncedQueryChanged = (query: string) => debounceSearch(queryChan
 ```typescript
 // src/lib/store/slices/session/sagas/session-saga.ts
 import { call } from "typed-redux-saga";
-import { takeLatestFromSelector } from "ag-redux-toolkit/saga";
+import { takeLatestFromSelector } from "@augmentcode/ag-redux-toolkit/saga";
 import { selectSessionToken } from "../session-selectors";
 
 declare function reconnectWithToken(token: string): Promise<void>;
@@ -122,7 +122,7 @@ export function* settingsSaga() {
 ```typescript
 // src/lib/store/slices/profile/sagas/profile-saga.ts
 import { call, put, takeEvery } from "typed-redux-saga";
-import { createAsyncAction } from "ag-redux-toolkit/utils/store/create-action";
+import { createAsyncAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
 
 type Profile = { id: string; name: string };
 declare const api: { saveProfile(profile: Profile): Promise<Profile> };
@@ -167,6 +167,7 @@ reducerWith(saveSettings, (state, { payload: [settings] }) => {
 | $effect(() => { localStorage.setItem(...) }) | takeEvery(action, function* () { yield* call(appLocalSetLocalStorageItem, key, value) }) |
 | store.subscribe((v) => ...) that reacts to state | takeEveryFromSelector(selectFoo, args, function* (v) { ... }) (see core/selector-channels) |
 | fetch(url).then(r => r.json()).then(setX) | const res = yield* call(fetch, url); const data = yield* call([res, "json"]); yield* put(setX(data)) |
+| component debounce with setTimeout | takeLatest(action, function* () { yield* delay(ms); ... }) |
 | setTimeout(..., ms) | yield* delay(ms) |
 | setInterval(..., ms) | while (true) { yield* delay(ms); ... } (with saga cancellation) |
 | window.addEventListener(...) / IPC | createChannelFrom... + redux-saga takeEvery(channel, worker) (see core/channel-effects) |
@@ -181,7 +182,7 @@ reducerWith(saveSettings, (state, { payload: [settings] }) => {
 
 ## Cross-References
 
-- `../../../core/sagas/SKILL.md` — full saga surface (takeEvery /takeLatest / takeLeading, Store-first saga startup, debounceSaga)
+- `../../../core/sagas/SKILL.md` — full saga surface (takeEvery /takeLatest / takeLeading, Store-first saga startup, debounce with delay)
 - `../../../core/local-storage/SKILL.md` — safe localStoragehelpers and persistence-saga pattern
 - `../../../core/channel-effects/SKILL.md` — generic EventChannelconsumers for DOM / IPC / websocket listeners
 - `../../../core/selector-channels/SKILL.md` — reacting toselector value changes from sagas

@@ -1,6 +1,6 @@
 import type { LinearIssueResult } from "$features/linear-auth/renderer/linear-auth.client";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import type { LinearAuthSliceState, LinearIssueFilter } from "./linear-auth-types";
 
 export const initialState: LinearAuthSliceState = {

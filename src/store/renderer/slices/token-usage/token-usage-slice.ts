@@ -6,8 +6,8 @@
  * the reducer only stores aggregated numbers per workspace.
  */
 
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import type { WorkspaceTokenUsageSnapshot } from "../../../../features/token-usage/token-usage-types";
 import type { TokenUsageState } from "./token-usage-types";

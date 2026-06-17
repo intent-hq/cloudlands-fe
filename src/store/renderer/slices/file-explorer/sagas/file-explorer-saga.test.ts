@@ -8,7 +8,7 @@ import {
 import { expectSaga } from "redux-saga-test-plan";
 import * as sagaEffects from "redux-saga/effects";
 import type { EnvironmentConfig, FileGitStatus, FileNode } from "$shared/types";
-import { debounceWithKeySaga } from "ag-redux-toolkit/utils/sagas/debounce-saga";
+import { debounceWithKeySaga } from "@augmentcode/ag-redux-toolkit/utils/sagas/debounce-saga";
 
 // typed-redux-saga must be mocked BEFORE importing the saga module because
 // the saga module imports from typed-redux-saga at the top level.

@@ -1,11 +1,11 @@
 import type { QueuedMessage } from "$shared/types";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import {
   createCollection,
   getItem,
   getItems,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import type { AgentQueueEntryState, AgentQueueState } from "./agent-queue-types";
 
 const RECENTLY_REMOVED_MESSAGE_ID_LIMIT = 100;

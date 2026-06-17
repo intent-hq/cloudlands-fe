@@ -1,7 +1,7 @@
 import type {
   PreloadedStoreState as ToolkitPreloadedStoreState,
   StoreState as ToolkitStoreState,
-} from "ag-redux-toolkit/types";
+} from "@augmentcode/ag-redux-toolkit/types";
 
 import type { reducers } from "./reducer";
 import type { store as configuredStore } from "./configured-store";

@@ -52,7 +52,7 @@ const appStore = {
 // Inline selector helpers.
 //
 // The canonical selector modules (`workspace-selectors`, `agent-session-selectors`)
-// statically import the configured Store which chains to `ag-redux-toolkit/svelte-store`
+// statically import the configured Store which chains to `@augmentcode/ag-redux-toolkit/svelte-store`
 // → `svelte`. Since stream-manager.ts is transitively loaded by the main process
 // (where svelte is absent in packaged builds), we cannot import those modules.
 // The logic below mirrors the selectors without the Store dependency.

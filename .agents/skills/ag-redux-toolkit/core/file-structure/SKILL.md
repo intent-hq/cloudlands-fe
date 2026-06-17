@@ -43,8 +43,8 @@ The top-level store lives at `src/store.ts` (or wherever you export your `Store`
 
 ```typescript
 // src/store.ts
-import { Store } from 'ag-redux-toolkit/svelte-store';
-import type { StoreState } from 'ag-redux-toolkit/types';
+import { Store } from '@augmentcode/ag-redux-toolkit/svelte-store';
+import type { StoreState } from '@augmentcode/ag-redux-toolkit/types';
 import { mySliceReducer } from './slices/my-slice/my-slice-slice';
 import { mySliceSaga } from './slices/my-slice/sagas/my-slice-saga';
 
@@ -77,7 +77,7 @@ Some slices exist only to define saga trigger actions with no meaningful state. 
 
 ```typescript
 // src/slices/triggers/triggers-slice.ts
-import { createAction } from 'ag-redux-toolkit/utils/store/create-action';
+import { createAction } from '@augmentcode/ag-redux-toolkit/utils/store/create-action';
 
 export const rescanWorkspace = createAction('triggers/rescanWorkspace');
 ```
@@ -168,3 +168,4 @@ Source: `../SKILL.md` §1, §9 · **Priority: MEDIUM**
 - `core/core-policy/SKILL.md` — why types live in `-types.ts`
 - `core/actions/SKILL.md` — action naming and namespacing
 - `svelte/component-integration/SKILL.md` — Store initialization wiring
+

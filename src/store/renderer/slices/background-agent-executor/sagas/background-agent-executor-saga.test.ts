@@ -11,7 +11,7 @@ import {
   runSaga,
   type EventChannel,
 } from 'redux-saga';
-import type { SelectorChannelPayload } from 'ag-redux-toolkit/saga';
+import type { SelectorChannelPayload } from '@augmentcode/ag-redux-toolkit/saga';
 import type { StoreState } from '$store/renderer/types';
 import {
   AgentStatus,

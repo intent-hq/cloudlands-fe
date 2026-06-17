@@ -1,6 +1,6 @@
-import type { StoreAction } from 'ag-redux-toolkit/types';
-import { createAction } from 'ag-redux-toolkit/utils/store/create-action';
-import { createReducer } from 'ag-redux-toolkit/utils/store/create-reducer';
+import type { StoreAction } from '@augmentcode/ag-redux-toolkit/types';
+import { createAction } from '@augmentcode/ag-redux-toolkit/utils/store/create-action';
+import { createReducer } from '@augmentcode/ag-redux-toolkit/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 

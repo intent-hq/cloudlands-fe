@@ -10,7 +10,7 @@ requires:
   - streaming
   - core/state-integrity
 sources:
-  - ag-redux-toolkit/streaming-store
+  - "@augmentcode/ag-redux-toolkit/streaming-store"
   - package-internal streaming selector implementation
   - augmentcode/ag-redux-toolkit:docs/SELECTORS.md
 triggers:
@@ -25,16 +25,16 @@ triggers:
 Use this skill when `store.createSelector(...)` belongs to a `StreamingStore` and
 direct selector calls should produce Kefir `Observable<R, any>` results.
 
-This Streaming selector model is mutually exclusive with Svelte readable selector
-patterns for the same app/package/code path. Do not apply Svelte-readable Store,
-`selectFoo()`-as-readable component capture, `$selector` template syntax, or
-Svelte lifecycle/setup guidance here.
+This Streaming selector model is mutually exclusive with Svelte readable and
+React signal selector patterns for the same app/package/code path. Do not apply
+Svelte-readable Store, `selectFoo()`-as-readable component capture, `$selector`
+template syntax, `ReactStore`, `.useValue(...args)`, or Svelte/React lifecycle/setup guidance here.
 
 ## Authoring rules
 
 - Create selectors through the configured `StreamingStore` instance.
-- Keep this app on the Streaming Store family; use any Svelte Store/readable
-  selector guidance only for a separate frontend Svelte app/code path.
+- Keep this app on the Streaming Store family; use Svelte Store/readable or
+  ReactStore/signal selector guidance only for separate frontend app/code paths.
 - Keep selector callbacks pure and derived-only; reducers must not store selector
   outputs.
 - Compose selectors with `.select(state, ...args)` inside another selector.
@@ -44,7 +44,7 @@ Svelte lifecycle/setup guidance here.
   implementation internals, not package API.
 
 ```ts
-import { StreamingStore } from "ag-redux-toolkit/streaming-store";
+import { StreamingStore } from "@augmentcode/ag-redux-toolkit/streaming-store";
 
 export const streamStore = new StreamingStore({ todos: todosReducer });
 export const selectTodoCount = streamStore.createSelector((state) => {
@@ -69,7 +69,9 @@ Streaming selector outputs are throttled by the owning Store's
 `throttledSelectorFrequency` option, defaulting to `64` FPS. The first selector
 value remains prompt; subsequent rapid Store updates or observable argument
 updates within a throttle interval are omitted/coalesced, and the latest pending
-value emits at the scheduled moment.
+value emits at the scheduled moment. Selector trace output is disabled by
+default; pass `{ traceSelectors: true }` in the final Store options object only
+for temporary diagnostics.
 
 ## Collection reads
 
@@ -78,7 +80,7 @@ is needed, and compose through `.select(state)` when another selector owns the
 collection read.
 
 ```ts
-import { getItem } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 export const selectTodo = streamStore.createSelector((state, id: string) => {
   return getItem(state.todos.collection, id);
@@ -88,9 +90,10 @@ export const selectTodo = streamStore.createSelector((state, id: string) => {
 ## Don't
 
 - Do not teach Svelte readable syntax (`$selector`, `get(selectFoo())`, or
-  component-init readable capture) for `StreamingStore` selectors.
-- Do not introduce `Store` or Svelte component lifecycle setup into
-  the same Streaming app.
+  component-init readable capture) or React `.useValue(...args)` component reads for
+  `StreamingStore` selectors.
+- Do not introduce `Store`, `ReactStore`, Svelte component lifecycle setup, or
+  React component signal setup into the same Streaming app.
 - Do not call another selector's direct streaming form inside a selector callback;
   use `.select(state)` to keep composition pure and synchronous.
 - Do not use standalone streaming selector utilities as public package imports.

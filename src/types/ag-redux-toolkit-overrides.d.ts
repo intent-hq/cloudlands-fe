@@ -1,6 +1,6 @@
-declare module "ag-redux-toolkit/utils/store/create-reducer" {
+declare module "@augmentcode/ag-redux-toolkit/utils/store/create-reducer" {
   import type { UnknownAction } from "redux";
-  import type { StoreAction, StoreActionCreator } from "ag-redux-toolkit/types";
+  import type { StoreAction, StoreActionCreator } from "@augmentcode/ag-redux-toolkit/types";
 
   export type StoreReducer<S, A> = (state: S, action: A) => S;
 
@@ -16,7 +16,7 @@ declare module "ag-redux-toolkit/utils/store/create-reducer" {
   export function createReducer<S>(initialState: S): CreatedReducer<S>;
 }
 
-declare module "ag-redux-toolkit/utils/store/create-action" {
+declare module "@augmentcode/ag-redux-toolkit/utils/store/create-action" {
   export type StoreAction<PL = undefined> = {
     type: string;
     payload: PL;
@@ -93,9 +93,9 @@ declare module "ag-redux-toolkit/utils/store/create-action" {
   ): StoreAsyncActionCreator<ARGS, ARGS, R>;
 }
 
-declare module "ag-redux-toolkit/utils/sagas/selector-channel-effects" {
+declare module "@augmentcode/ag-redux-toolkit/utils/sagas/selector-channel-effects" {
   import type { EventChannel, Task } from "redux-saga";
-  import type { StoreSelector } from "ag-redux-toolkit/types";
+  import type { StoreSelector } from "@augmentcode/ag-redux-toolkit/types";
 
   export type SelectorChannelPayload<R> = {
     payload: R;

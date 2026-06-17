@@ -32,11 +32,15 @@ Before editing code or docs that use this skill:
 - **MUST** cite this skill and any package-specific saga skill used in the handoff.
 - **MUST** verify watcher ownership before adding `takeEvery`, `takeLatest`,`takeLeading`, `throttle`, or `debounce` for an existing trigger.
 - **SHOULD** prefer native redux-saga channel-aware effects before adding wrapperutilities.
+- **MUST NOT** introduce detached `spawn` in this repository; use attached `fork` so parent failure/cancellation also reaches children.
+- **MUST** implement repository debounce with `takeLatest` or `takeLeading` plus `delay`, not action-wrapper debounce utilities.
 - **NEVER** introduce runtime source, dependency, or artifact routing changes whenonly API guidance is requested.
 
 ## Setup — middleware and root saga startup
 
 `createSagaMiddleware(options)` creates Redux middleware. Supported options includeinitial `context`, `sagaMonitor`, `onError`, `effectMiddlewares`, and a custom`channel` used by `take` and `put` effects.
+
+In ag-redux-toolkit app setup, the concrete Store owns saga middleware creation. Use this low-level API reference to understand redux-saga behavior, but configure Store-owned monitoring by passing `{ sagaMonitor: true }` in the third `Store`/`ReactStore`/`StreamingStore` constructor options argument instead of replacing the middleware. Omitted or `false` saga monitoring remains disabled.
 
 ```typescript
 import { applyMiddleware, createStore } from "redux";
@@ -97,10 +101,10 @@ export function* usersSaga() {
 
 ### 2. Blocking and non-blocking effects
 
-`call`, `apply`, and `cps` are blocking; `fork` and `spawn` start work withoutblocking the parent. `fork` is attached to the parent: parent completion waits forchildren, child errors bubble upward, and cancellation propagates downward. `spawn`is detached and does not share parent completion, error, or cancellation flow.
+`call`, `apply`, and `cps` are blocking; `fork` and `spawn` start work without blocking the parent. `fork` is attached to the parent: parent completion waits for children, child errors bubble upward, and cancellation propagates downward. `spawn` is detached and does not share parent completion, error, or cancellation flow. In this repository, agents must use attached `fork`, not detached `spawn`, so child tasks remain cancellable and failures remain visible to the parent lifecycle.
 
 ```typescript
-import { call, cancel, cancelled, fork, join, spawn } from "redux-saga/effects";
+import { call, cancel, cancelled, fork, join } from "redux-saga/effects";
 
 function* worker() {
   try {
@@ -112,8 +116,8 @@ function* worker() {
 
 function* supervisor() {
   const attachedTask: Task = yield fork(worker);
-  const detachedTask: Task = yield spawn(backgroundMetrics);
-  yield cancel(detachedTask); // non-blocking cancellation request
+  const metricsTask: Task = yield fork(backgroundMetrics);
+  yield cancel(metricsTask);  // non-blocking cancellation request
   yield join(attachedTask);   // blocking wait for attachedTask outcome
 }
 ```
@@ -180,7 +184,7 @@ Buffer choices: `buffers.none()`, `fixed(limit)`, `expanding(initialSize)`,`drop
 Use `race` when the first completion wins; losing effects are automaticallycancelled. Use `all` to run effects in parallel and wait for all successes, or throwwhen any effect rejects.
 
 ```typescript
-import { all, call, debounce, delay, put, race, take, throttle } from "redux-saga/effects";
+import { all, call, delay, put, race, take, takeLatest, takeLeading, throttle } from "redux-saga/effects";
 
 function* fetchWithTimeout() {
   const { response, timeout } = yield race({
@@ -191,15 +195,29 @@ function* fetchWithTimeout() {
   else yield put({ type: "REPORT_READY", response });
 }
 
+function* refreshResultsAfterSettled(action: { type: string; query: string }) {
+  yield delay(300);
+  yield call(refreshResults, action.query);
+}
+
+function* refreshOncePerWindow(action: { type: string; id: string }) {
+  try {
+    yield call(refreshPanel, action.id);
+  } finally {
+    yield delay(300);
+  }
+}
+
 function* rootSaga() {
   yield all([call(fetchWithTimeout), call(watchUpload)]);
   yield throttle(1_000, "TYPEAHEAD_CHANGED", fetchSuggestions);
-  yield debounce(300, "FILTER_CHANGED", refreshResults);
+  yield takeLatest("FILTER_CHANGED", refreshResultsAfterSettled);
+  yield takeLeading("REFRESH_CLICKED", refreshOncePerWindow);
   yield take("SHUTDOWN");
 }
 ```
 
-`throttle(ms, patternOrChannel, saga, ...args)` uses a sliding buffer of one recentmessage while suppressing new starts during the window. `debounce(ms, patternOrChannel, saga, ...args)` waits until messages settle before forking theworker.
+`throttle(ms, patternOrChannel, saga, ...args)` uses a sliding buffer of one recentmessage while suppressing new starts during the window. Upstream redux-saga also exposes a native `debounce(ms, patternOrChannel, saga, ...args)` helper that waits until messages settle before forking the worker, but agents must not use it for `ag-redux-toolkit` implementation examples. Repository debounce must be written explicitly with `takeLatest` or `takeLeading` plus `delay` so cancellation semantics are visible in the worker.
 
 ## Interface quick reference
 
@@ -276,9 +294,9 @@ expect(generator.next(mockTask).value).toEqual(cancel(mockTask));
 
 `take(pattern)` and `take(channel)` auto-terminate when they receive `END` from thestdChannel or a closed channel. `takeMaybe` returns the `END` object so the saga canhandle the closed-input case itself. Source: redux-saga API Reference → `take` /`takeMaybe`. Priority: **MEDIUM**.
 
-### ❌ Forking when parent failure/cancellation should not affect the child
+### ❌ Using `spawn` when parent failure/cancellation must affect the child
 
-`fork` creates an attached task; errors bubble to the parent and cancellationpropagates through attached children. Use `spawn` only when detached top-levelbehavior is intentional. Source: redux-saga API Reference → `fork` / `spawn`.Priority: **HIGH**.
+`fork` creates an attached task; errors bubble to the parent and cancellation propagates through attached children. In this repository, do not introduce `spawn`; use `fork` so saga-manager and parent lifecycles can observe failures and cancel children. Source: redux-saga API Reference → `fork` / `spawn`. Priority: **HIGH**.
 
 ### ❌ Forgetting channel unsubscribe / close cleanup
 
@@ -287,6 +305,8 @@ expect(generator.next(mockTask).value).toEqual(cancel(mockTask));
 ### ❌ Recreating native channel helpers as wrappers without added value
 
 `takeEvery`, `takeLatest`, `takeLeading`, `throttle`, and `debounce` already acceptchannels. Add wrappers only for documented cleanup, typing, or domain-specificbehavior. Source: redux-saga API Reference → channel overloads for watcher helpers.Priority: **MEDIUM**.
+
+For this repository's action debouncing, do not add wrapper-action debounce utilities; watch the real action with `takeLatest` or `takeLeading` and use `delay` inside the worker.
 
 ## See also
 

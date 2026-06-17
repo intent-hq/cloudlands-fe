@@ -11,7 +11,7 @@ import {
 import {
   getItem,
   getItems,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
   applyNoteCreated,
   applyNoteDeleted,

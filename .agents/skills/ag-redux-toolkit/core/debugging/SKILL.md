@@ -4,13 +4,13 @@ description: >-
   Inspect runtime state via window.svelteRedux.reduxContext after
   Store.initDevTool() exposes an initialized Store instance. Multiple exposed
   stores produce a reduxContext array and a console.error. Use reducer tests for
-  reference-equality diagnostics. Public Store API: ag-redux-toolkit/svelte-store; devtools registration is package-internal implementation context.
+  reference-equality diagnostics. Public Store API: @augmentcode/ag-redux-toolkit/svelte-store; devtools registration is package-internal implementation context.
 type: sub-skill
 library: ag-redux-toolkit
 requires:
   - core
 sources:
-  - ag-redux-toolkit/svelte-store
+  - "@augmentcode/ag-redux-toolkit/svelte-store"
   - package-internal devtools registration
 triggers:
   - svelteRedux api
@@ -134,7 +134,7 @@ window.svelteRedux.reduxContext.state;
 expect(reducer(initialState, noOpAction)).toBe(initialState);
 ```
 
-*Public facade: `ag-redux-toolkit/svelte-store`; devtools registration is package-internal implementation context.*
+*Public facade: `@augmentcode/ag-redux-toolkit/svelte-store`; devtools registration is package-internal implementation context.*
 
 ### Expecting `reduxContext` to always be an object
 
@@ -171,7 +171,7 @@ const state = store.state;
 window.svelteRedux.reduxContext.dispatch(action);
 ```
 
-*Public API: `ag-redux-toolkit/svelte-store` (`Store.state`, `Store.dispatch`).*
+*Public API: `@augmentcode/ag-redux-toolkit/svelte-store` (`Store.state`, `Store.dispatch`).*
 
 ## 6. See also
 

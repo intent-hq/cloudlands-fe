@@ -3,7 +3,7 @@ name: core/sagas
 description: >-
   Concise agent rules for typed-redux-saga work in this package. Use for saga
   watchers/workers, canonical saga ownership, Store saga registration/startup,
-  Store-first saga startup, debounceSaga helpers, retryWithTimeout,
+  Store-first saga startup, cancellation-friendly debounce, retryWithTimeout,
   wrapStreamingGenerator, and routing to saga-manager crash/restart guidance. For conceptual API
   explanations and examples, link to docs/SAGAS.md instead of duplicating them.
 type: sub-skill
@@ -28,7 +28,7 @@ Use this skill when editing saga code or writing instructions for saga changes. 
 ## Canonical references
 
 - Human guide: `docs/SAGAS.md`
-- Public API: `ag-redux-toolkit/saga`; utility leaf exports include `ag-redux-toolkit/utils/sagas/debounce-saga`, `ag-redux-toolkit/utils/sagas/retry-with-timeout`, and `ag-redux-toolkit/utils/sagas/wrap-async-generator`. Store-utility saga internals are implementation context only.
+- Public API: `@augmentcode/ag-redux-toolkit/saga`; utility leaf exports include `@augmentcode/ag-redux-toolkit/utils/sagas/debounce-saga`, `@augmentcode/ag-redux-toolkit/utils/sagas/retry-with-timeout`, and `@augmentcode/ag-redux-toolkit/utils/sagas/wrap-async-generator`. Store-utility saga internals are implementation context only.
 - Related skills: `core/actions`, `core/state-integrity`, `core/saga-manager`, `core/selector-channels`, `core/wait-for`, `core/testing`
 
 ## When to use sagas
@@ -48,6 +48,7 @@ Use this skill when editing saga code or writing instructions for saga changes. 
 - Handle async action failures with `.failure(error)` and normalize non-`Error` throws.
 - Keep retried work idempotent when using `retryWithTimeout`.
 - Keep stream handlers passed to `wrapStreamingGenerator` package-generic; do not add app-specific logging/reporting dependencies to the utility.
+- Configure optional saga monitoring through the third Store/ReactStore/StreamingStore constructor options object as `{ sagaMonitor: true }`; omitted or `false` monitors stay disabled.
 
 ## Don't
 
@@ -58,15 +59,19 @@ Use this skill when editing saga code or writing instructions for saga changes. 
 - Do not import package-internal saga-manager files/actions such as `addCrash` or `clearCrashes` from app code; route crash-storage/restart questions to `core/saga-manager`.
 - Do not assume `store.init()` auto-starts app sagas; start each app saga explicitly with `store.runSaga(sagaFn)`.
 - Do not leave channels, retries, or long-running loops without cancellation/error paths.
+- Do not introduce detached `spawn`; use attached `fork` so child work is cancelled when the parent fails or is cancelled.
+- Do not monkey-patch redux-saga globally or replace Store-owned saga middleware to observe effects; pass `{ sagaMonitor: true }` in Store options instead.
 
 ## Implementation cues
 
 - Default user-triggered fetch/search flows to `takeLatest`; use `takeEvery` only when every action must be processed and `takeLeading` when in-flight work should block newer triggers.
 - Compose root sagas from focused watcher/worker functions rather than mixing unrelated concerns in one worker.
-- For wrapper-action debouncing, use the public `debounceSaga(debounceAction, ms)` helper.
+- For debounce, watch the real action with `takeLatest` and call `delay(ms)` inside the worker before the effect; use `takeLeading` plus trailing `delay(ms)` only for leading/windowed behavior.
+- Do not add new wrapper-action debounce flows or recommend `debounceSaga`/`debounceWithKeySaga` for new work; those exports remain for compatibility only.
 - For transient failures, use `retryWithTimeout` and branch on all outcomes: `success`, `retries-exhausted`, and `timeout`.
 - For async generators, use `wrapStreamingGenerator` from saga code and handle stream errors locally at the call site if app reporting is needed.
 - For saga lifetimes, call `store.runSaga(sagaFn)` from `onMount` when component/layout lifetime owns the work, or from services/tests when imperative control owns the returned cancel function. Use `store.dispose()` only for whole-Store teardown; it stops running saga tasks owned by the initialized Store context.
+- For saga monitoring, keep the normal constructor shape and pass `new Store(reducers, middleware, { throttledSelectorFrequency, sagaMonitor: true })` or the equivalent `ReactStore`/`StreamingStore` options object.
 - For saga manager crash records, cleanup, serialized storage, auto-restart, or backoff behavior, use the dedicated `core/saga-manager` skill instead of expanding this general saga checklist.
 
 ## Examples
@@ -87,31 +92,33 @@ function* loadTodosWorker() {
 }
 ```
 
-### 2. Debounce wrapper actions before dispatching the wrapped action
+### 2. Debounce trailing user input with takeLatest + delay
 
 ```ts
-import { debounceSaga } from "ag-redux-toolkit/saga";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import type { StoreAction } from "ag-redux-toolkit/types";
+import { call, delay, put, takeLatest } from "typed-redux-saga";
 
-export const debounceUiAction = createAction<[StoreAction<any>]>("ui/debounceAction");
-
-export function* uiDebounceSaga() {
-  yield* debounceSaga(debounceUiAction, 300);
+function* watchSearchInput() {
+  yield* takeLatest(searchInputChanged, function* searchAfterSettled(action) {
+    yield* delay(300);
+    const results = yield* call(api.search, action.payload[0]);
+    yield* put(searchResultsLoaded(results));
+  });
 }
 ```
 
-### 3. Debounce independently by domain key when action type is too broad
+### 3. Debounce leading/windowed behavior with takeLeading + delay
 
 ```ts
-import { debounceWithKeySaga } from "ag-redux-toolkit/utils/sagas/debounce-saga";
+import { call, delay, takeLeading } from "typed-redux-saga";
 
-function* watchSearchDrafts() {
-  yield* debounceWithKeySaga(
-    debounceUiAction,
-    250,
-    (innerAction) => `${innerAction.type}:${innerAction.payload[0]?.conversationId ?? "global"}`
-  );
+function* watchRefreshRequests() {
+  yield* takeLeading(refreshRequested, function* refreshOncePerWindow(action) {
+    try {
+      yield* call(api.refresh, action.payload[0]);
+    } finally {
+      yield* delay(250);
+    }
+  });
 }
 ```
 
@@ -119,7 +126,7 @@ function* watchSearchDrafts() {
 
 ```ts
 import { call, put } from "typed-redux-saga";
-import { retryWithTimeout } from "ag-redux-toolkit/saga";
+import { retryWithTimeout } from "@augmentcode/ag-redux-toolkit/saga";
 
 function* syncRemoteState() {
   const outcome = yield* retryWithTimeout(
@@ -136,7 +143,7 @@ function* syncRemoteState() {
 
 ```ts
 import { put } from "typed-redux-saga";
-import { wrapStreamingGenerator } from "ag-redux-toolkit/saga";
+import { wrapStreamingGenerator } from "@augmentcode/ag-redux-toolkit/saga";
 
 function* streamMessages(stream: AsyncGenerator<MessageChunk, MessageChunk | null, unknown>) {
   yield* wrapStreamingGenerator(
@@ -178,6 +185,7 @@ function* watchTodosOnce() {
 - Adding a second watcher or Store registration for an existing trigger/name.
 - Forgetting `finally` for `channel.close()`.
 - Treating saga-manager internals as app-owned sagas.
+- Using `spawn` or wrapper-action debounce helpers for new saga work.
 
 ## See also
 

@@ -4,9 +4,10 @@ description: >-
   Svelte-readable routing index for frontend-facing ag-redux-toolkit work
   only when the touched code path has concrete Svelte/SvelteKit evidence. Use for
   Store component wiring, Svelte readable selector lifecycle, and
-  migration touchpoints. Route Node/server/no-Svelte paths to ../streaming/SKILL.md
-  by default and shared Redux/redux-saga concepts to ../core/SKILL.md. Never mix this
-  concrete Svelte Store family with StreamingStore/Kefir patterns in one app.
+  migration touchpoints. Route React UI paths to ../react/SKILL.md,
+  Node/server/no-UI paths to ../streaming/SKILL.md by default, and shared
+  Redux/redux-saga concepts to ../core/SKILL.md. Never mix this concrete Svelte
+  Store family with ReactStore/signals or StreamingStore/Kefir patterns in one app.
 triggers:
   - Svelte
   - SvelteKit
@@ -30,19 +31,21 @@ leaf skills below for implementation details; do not copy large API examples int
 this Svelte index.
 
 Core Redux and redux-saga guidance lives under `../core/`. Svelte-readable
-Store selector/component guidance lives under `./`. StreamingStore
-and Kefir/observable selector guidance lives under `../streaming/`.
+Store selector/component guidance lives under `./`. ReactStore and Preact signal
+selector guidance lives under `../react/`. StreamingStore and Kefir/observable
+selector guidance lives under `../streaming/`.
 
 ## Exclusive Svelte Store family rule
 
 - A frontend Svelte/SvelteKit app using this skill has chosen the concrete
   Svelte Store family: `Store`, Svelte readables, component-init
   selector calls, and Svelte lifecycle/setup patterns.
-- Do **not** apply `StreamingStore`, Kefir/observable selector, streaming selector
-  lifecycle, streaming setup, or streaming teardown patterns inside that same
-  app/package/code path.
-- In a mixed repository, a separate Node/server/CLI/worker/test-harness app may
-  use `../streaming/`, but keep that choice isolated from this Svelte app.
+- Do **not** apply `ReactStore`, Preact signal selector, React `.useValue(...)`,
+  `StreamingStore`, Kefir/observable selector, streaming selector lifecycle,
+  streaming setup, or streaming teardown patterns inside that same app/package/code path.
+- In a mixed repository, a separate React app may use `../react/`, and a separate
+  Node/server/CLI/worker/test-harness app may use `../streaming/`, but keep those
+  choices isolated from this Svelte app.
 
 Do not route generic web, Node, server, CLI, worker, test-harness, or no-Svelte
 paths here merely because the repository contains a Svelte dependency. In mixed
@@ -89,7 +92,7 @@ Before editing code or docs under this skill:
 
 - Redux owns shared/domain state; Svelte stores (`*.store.svelte.ts`) are deprecated.
 - A Svelte app uses `Store` and Svelte-readable selectors only; it
-  must not also use `StreamingStore` or streaming selector lifecycle/setup rules.
+  must not also use `ReactStore`, `StreamingStore`, or their selector lifecycle/setup rules.
 - Redux state is canonical only: no derived fields, duplicated entity copies,
   parallel arrays/maps for the same records, or reducer-maintained selector outputs.
 - Components render and dispatch; reducers update state; sagas own side effects.
@@ -98,10 +101,9 @@ Before editing code or docs under this skill:
   the state/action/selector/saga preflight searches before adding another.
 - Run architecture validation before handoff whenever Redux state, actions,
   selectors, sagas, or their governance docs change. Inside this repository use
-  `npm run validate:architecture`; in a consuming app use
-  `npx ag-redux-toolkit validate-architecture` or
-  `npm exec ag-redux-toolkit -- validate-architecture`. Include the exit
-  code/output and canonical-owner evidence in the handoff.
+  `npm run validate:architecture`; in a consuming app run ESLint with the
+  `svelte` domain root config imported from `@augmentcode/ag-redux-toolkit/eslint-plugins`.
+  Include the exit code/output and canonical-owner evidence in the handoff.
 - The architecture gate also checks RTK/shared Svelte-store boundaries,
   collection state shape/internal mutations, runtime state serialization,
   reducer purity, conservative component lifecycle/store access, and
@@ -174,7 +176,7 @@ const componentRouting = {
 ### Store-first dispatch and state reads
 
 ```ts
-import { Store } from "ag-redux-toolkit/svelte-store";
+import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 import { renameTodo } from "./slices/todos/todos-actions";
 import { todosReducer } from "./slices/todos/todos-slice";
 import { selectTodo } from "./slices/todos/todos-selectors";
@@ -192,7 +194,7 @@ dispose();
 selectedTodo?.id satisfies string | undefined;
 ```
 
-`Store` is the canonical Svelte-readable class from `ag-redux-toolkit/svelte-store`. Use `StreamingStore` from `ag-redux-toolkit/streaming-store` when selector calls should return Kefir streams.
+`Store` is the canonical Svelte-readable class from `@augmentcode/ag-redux-toolkit/svelte-store`. Use `ReactStore` from `@augmentcode/ag-redux-toolkit/react-store` in a separate React app when selector calls should return Preact React signals and `.useValue(...args)` values. Use `StreamingStore` from `@augmentcode/ag-redux-toolkit/streaming-store` when selector calls should return Kefir streams.
 
 ### Verification handoff evidence payload
 
@@ -220,8 +222,6 @@ const incompleteRouting = {
 ```
 
 ## Core leaf routes
-
-Paths and names intentionally mirror `../_artifacts/skill_tree.yaml`.
 
 ### State foundations
 
@@ -273,6 +273,7 @@ Paths and names intentionally mirror `../_artifacts/skill_tree.yaml`.
 
 | Route | Use when | Path |
 | --- | --- | --- |
+| `./store/SKILL.md` | Choosing/importing `Store`, initialization/disposal, `getReadableState()`, `useInitStore`/`useRunSaga` helpers, shared Store runtime behavior, or Store-family contrast. | `./store/SKILL.md` |
 | `./component-integration/SKILL.md` | Wiring Store initialization, component reads, Store dispatch, and template reactivity. | `./component-integration/SKILL.md` |
 | `../streaming/store/SKILL.md` | Importing, initializing, and disposing the Kefir/observable StreamingStore variant. | `../streaming/store/SKILL.md` |
 
@@ -286,7 +287,7 @@ Paths and names intentionally mirror `../_artifacts/skill_tree.yaml`.
 
 ## Related lifecycle routes
 
-- First-time app setup: `./setup/SKILL.md`.
+- First-time app setup: `../setup/SKILL.md`.
 - Migration playbook: `./migration/SKILL.md`.
 - Install/uninstall side effects and maintainer validation: `docs/INSTALLATION.md`.
 - Generic plain redux-saga API reference, outside this package's typed-redux-saga conventions: `../core/redux-saga/SKILL.md`.

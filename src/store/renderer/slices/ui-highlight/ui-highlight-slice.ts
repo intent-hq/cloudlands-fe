@@ -1,5 +1,5 @@
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import type { UiHighlightState } from './ui-highlight-types';
 
 export const UI_HIGHLIGHT_DURATION_MS = 2000;

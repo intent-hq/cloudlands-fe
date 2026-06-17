@@ -28,7 +28,7 @@ import {
 import {
   takeEveryFromSelector,
   type SelectorChannelPayload,
-} from "ag-redux-toolkit/utils/sagas/selector-channel-effects";
+} from "@augmentcode/ag-redux-toolkit/utils/sagas/selector-channel-effects";
 import { selectActiveWorkspaceId } from "../../workspace/workspace-selectors";
 import { removeFileContentEntry } from "../../files/files-slice";
 import {

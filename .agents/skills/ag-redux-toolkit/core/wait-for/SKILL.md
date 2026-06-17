@@ -23,8 +23,8 @@ Use this skill for one-shot saga waits on selector state. Keep conceptual/API pr
 ## Canonical references
 
 - Human guide: `docs/WAITFOR.md`
-- Public API: `waitFor` from `ag-redux-toolkit/saga`.
-- Channel helpers: `ag-redux-toolkit/utils/sagas/selector-channel-effects` or aggregate `ag-redux-toolkit/saga`.
+- Public API: `waitFor` from `@augmentcode/ag-redux-toolkit/saga`.
+- Channel helpers: `@augmentcode/ag-redux-toolkit/utils/sagas/selector-channel-effects` or aggregate `@augmentcode/ag-redux-toolkit/saga`.
 - Related skills: `core/sagas`, `svelte/selectors`, `core/selector-channels`, `core/testing`
 
 ## Use when
@@ -52,7 +52,7 @@ Use this skill for one-shot saga waits on selector state. Keep conceptual/API pr
 
 ## Implementation cues
 
-- Import from `ag-redux-toolkit/saga` unless an existing app-local barrel already re-exports it.
+- Import from `@augmentcode/ag-redux-toolkit/saga` unless an existing app-local barrel already re-exports it.
 - For boolean readiness, predicate on the desired final value rather than assuming truthiness.
 - For status transitions, include the terminal states in the predicate and branch after `waitFor` if different terminal outcomes matter.
 - For timeout paths, dispatch or return an explicit timeout outcome before continuing with state-dependent work.
@@ -64,7 +64,7 @@ Use this skill for one-shot saga waits on selector state. Keep conceptual/API pr
 
 ```ts
 import { put } from "typed-redux-saga";
-import { waitFor } from "ag-redux-toolkit/saga";
+import { waitFor } from "@augmentcode/ag-redux-toolkit/saga";
 
 function* loadWhenReady() {
   const ready = yield* waitFor(selectIsReady, [], (value) => value === true, 5_000);
@@ -79,7 +79,7 @@ function* loadWhenReady() {
 ### 2. Pass selector arguments as the required args tuple
 
 ```ts
-import { waitFor } from "ag-redux-toolkit/saga";
+import { waitFor } from "@augmentcode/ag-redux-toolkit/saga";
 
 function* processItem(itemId: string) {
   const ready = yield* waitFor(selectItemStatus, [itemId], (status) => status === "ready", 10_000);
@@ -90,7 +90,7 @@ function* processItem(itemId: string) {
 ### 3. Guard previous-value comparisons on the immediate check
 
 ```ts
-import { waitFor } from "ag-redux-toolkit/saga";
+import { waitFor } from "@augmentcode/ag-redux-toolkit/saga";
 
 function* waitForReconnect() {
   const reconnected = yield* waitFor(
@@ -107,7 +107,7 @@ function* waitForReconnect() {
 
 ```ts
 import { put } from "typed-redux-saga";
-import { waitFor } from "ag-redux-toolkit/saga";
+import { waitFor } from "@augmentcode/ag-redux-toolkit/saga";
 
 function* waitForUpload(uploadId: string) {
   const finished = yield* waitFor(selectUploadPhase, [uploadId], (phase) => phase === "done" || phase === "failed", 60_000);
@@ -121,7 +121,7 @@ function* waitForUpload(uploadId: string) {
 
 ```ts
 import { call, put } from "typed-redux-saga";
-import { waitFor } from "ag-redux-toolkit/saga";
+import { waitFor } from "@augmentcode/ag-redux-toolkit/saga";
 
 function* publishAfterAuthWorker(action: ReturnType<typeof publishDocument>) {
   const authenticated = yield* waitFor(selectAuthReady, [], Boolean, 5_000);

@@ -27,7 +27,7 @@ import {
   createCollection,
   getItems,
   getItem,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 const WS = "ws-1";
 

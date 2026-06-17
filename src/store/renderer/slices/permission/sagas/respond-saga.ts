@@ -5,7 +5,7 @@ import {
 } from "typed-redux-saga";
 import { invoke } from "$lib/electron-bridge";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
-import { getItem } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
   approvePermission,
   denyPermission,

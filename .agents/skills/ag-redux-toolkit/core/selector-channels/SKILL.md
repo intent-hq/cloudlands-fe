@@ -24,7 +24,7 @@ Use this skill when a saga should react to selector value changes instead of act
 ## Canonical references
 
 - Human guide: `docs/SAGAS.md#selector-channel-effects`
-- Public API: `ag-redux-toolkit/utils/sagas/selector-channel-effects` or aggregate `ag-redux-toolkit/saga`.
+- Public API: `@augmentcode/ag-redux-toolkit/utils/sagas/selector-channel-effects` or aggregate `@augmentcode/ag-redux-toolkit/saga`.
 - Related skills: `core/sagas`, `core/wait-for`, `core/channel-effects`, `svelte/selector-lifecycle`
 
 ## Choose the helper
@@ -54,6 +54,7 @@ Use this skill when a saga should react to selector value changes instead of act
 
 ## Implementation cues
 
+- Selector-channel effects use the saga-context Redux store directly: read with`getState()` and subscribe with `subscribe()`. Do not introduce a Sveltereadable state wrapper for selector channels.
 - For no-arg selectors, pass the worker directly to the helper.
 - For selectors with args, pass the args tuple before the worker.
 - The first channel emission can have `prevPayload` as `null`/`undefined`; guard transition logic accordingly.
@@ -66,7 +67,7 @@ Use this skill when a saga should react to selector value changes instead of act
 
 ```ts
 import { put } from "typed-redux-saga";
-import { takeLatestFromSelector } from "ag-redux-toolkit/saga";
+import { takeLatestFromSelector } from "@augmentcode/ag-redux-toolkit/saga";
 
 function* watchCurrentItem() {
   yield* takeLatestFromSelector(selectCurrentItemId, function* ({ payload: itemId }) {
@@ -79,7 +80,7 @@ function* watchCurrentItem() {
 
 ```ts
 import { call } from "typed-redux-saga";
-import { takeEveryFromSelector } from "ag-redux-toolkit/saga";
+import { takeEveryFromSelector } from "@augmentcode/ag-redux-toolkit/saga";
 
 function* watchTodo(todoId: string) {
   yield* takeEveryFromSelector(selectTodoById, [todoId], function* ({ payload: todo }) {
@@ -91,7 +92,7 @@ function* watchTodo(todoId: string) {
 ### 3. Use takeLeadingFromSelector when in-flight work should ignore new values
 
 ```ts
-import { takeLeadingFromSelector } from "ag-redux-toolkit/saga";
+import { takeLeadingFromSelector } from "@augmentcode/ag-redux-toolkit/saga";
 
 function* watchCheckoutReadiness() {
   yield* takeLeadingFromSelector(selectCheckoutReady, function* ({ payload: ready }) {
@@ -104,7 +105,7 @@ function* watchCheckoutReadiness() {
 
 ```ts
 import { put } from "typed-redux-saga";
-import { takeEveryFromSelector } from "ag-redux-toolkit/saga";
+import { takeEveryFromSelector } from "@augmentcode/ag-redux-toolkit/saga";
 
 function* watchConnectionStatus() {
   yield* takeEveryFromSelector(selectConnectionStatus, function* ({ payload, prevPayload }) {
@@ -119,7 +120,7 @@ function* watchConnectionStatus() {
 
 ```ts
 import { call, delay, race, take } from "typed-redux-saga";
-import { createChannelFromSelector } from "ag-redux-toolkit/saga";
+import { createChannelFromSelector } from "@augmentcode/ag-redux-toolkit/saga";
 
 function* waitForFirstReadyItem(itemId: string) {
   const channel = yield* createChannelFromSelector(selectTodoById, itemId);

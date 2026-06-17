@@ -74,7 +74,7 @@ import {
 import { WorkspaceId } from "$shared/types/branded-ids";
 import type { Workspace } from "$shared/types";
 import { WorkspaceStatusEnum } from "$shared/types";
-import { getItem } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
   watchWorkspaceUpdatedSaga,
   watchWorkspaceCreatedSaga,

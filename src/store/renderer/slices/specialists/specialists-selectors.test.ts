@@ -18,7 +18,7 @@ import {
   selectEffectiveCodingAgent,
   selectSpecialistSourceLabel,
 } from "./specialists-selectors";
-import { createCollection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { initialState } from "./specialists-slice";
 import type { StoreState } from "../../types";
 import { SPECIALISTS } from "$lib/constants/specialists";

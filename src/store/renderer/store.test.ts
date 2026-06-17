@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import type { Readable } from "svelte/store";
 import { readable } from "svelte/store";
-import type { Store } from "ag-redux-toolkit/svelte-store";
+import type { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 import {
   describe,
   expect,
@@ -20,7 +20,7 @@ import {
   sagas,
   startAllAppSagas,
 } from "./sagas";
-import type { GenericAction } from "ag-redux-toolkit/types";
+import type { GenericAction } from "@augmentcode/ag-redux-toolkit/types";
 import type { StoreState } from "./types";
 
 function createFakeStoreRuntime(initialState = {} as StoreState) {

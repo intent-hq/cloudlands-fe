@@ -36,8 +36,8 @@ let runeCount = $state(0);
 let runeUsername = $state("");
 
 // AFTER: Redux slice
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 type CounterState = {
   count: number;
@@ -72,8 +72,8 @@ runeCount += 1;
 
 // AFTER: Redux
 // In the slice, define the actions:
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 type CounterState = { count: number };
 const initialState: CounterState = { count: 0 };
@@ -107,8 +107,8 @@ export const preferences = $state({
 
 ```typescript
 // src/lib/store/slices/preferences/preferences-slice.ts
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 type PreferencesState = { theme: "light" | "dark"; sidebarOpen: boolean };
 const initialState: PreferencesState = { theme: "dark", sidebarOpen: true };
@@ -125,9 +125,9 @@ export const preferencesReducer = createReducer<PreferencesState>(initialState)
 
 ```typescript
 // src/lib/store/slices/todos/todos-slice.ts
-import { createCollection, upsertItem, type Collection } from "ag-redux-toolkit/utils/collections/collection-utils";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createCollection, upsertItem, type Collection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 type Todo = { id: string; title: string; completed: boolean };
 type TodosState = { items: Collection<Todo, "id"> };

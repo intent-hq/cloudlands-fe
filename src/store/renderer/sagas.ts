@@ -3,7 +3,7 @@
  * Each saga is listed in startup order and started/stopped via Store.runSaga.
  */
 
-import type { Store } from "ag-redux-toolkit/svelte-store";
+import type { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 
 import { providerSettingsSaga } from "./slices/provider-settings/sagas/provider-settings-saga";
 import { backgroundAgentSettingsSaga } from "./slices/background-agent-settings/sagas/background-agent-settings-saga";

@@ -6,14 +6,14 @@ description: >-
   store.init() + onDestroy in the root layout, dispatch through the configured
   Store instance, and use selectFoo() at component init with $selectorResult$
   in templates. Start app sagas through store.runSaga(sagaFn). Public API:
-  ag-redux-toolkit/svelte-store; related guidance: ../SKILL.md §7.
+  @augmentcode/ag-redux-toolkit/svelte-store; related guidance: ../SKILL.md §7.
 type: sub-skill
 library: ag-redux-toolkit
 requires:
   - svelte
   - svelte/selector-lifecycle
 sources:
-  - ag-redux-toolkit/svelte-store
+  - "@augmentcode/ag-redux-toolkit/svelte-store"
   - ../SKILL.md
 triggers:
   - store init layout
@@ -32,7 +32,7 @@ that separate app to `../../streaming/SKILL.md` independently.
 
 ## 1. `Store` class
 
-From `ag-redux-toolkit/svelte-store`:
+From `@augmentcode/ag-redux-toolkit/svelte-store`:
 
 ```typescript
 export class Store<
@@ -69,7 +69,7 @@ export class Store<
 Key rules:
 
 - Pass app-owned reducers in the constructor map and start app-owned sagas with `store.runSaga(sagaFn)` after `store.init()`.
-- Use `Store` from `ag-redux-toolkit/svelte-store` for this app; do not add
+- Use `Store` from `@augmentcode/ag-redux-toolkit/svelte-store` for this app; do not add
   `StreamingStore` or Kefir selector wiring to the same app.
 - For typed state, infer `StoreState<typeof store>` from the configured Store instance. Constructor reducer maps preserve reducer-state inference without an explicit `: Store` annotation.
 - Use `store.createSelector(...)` for app-local selectors that should infer that configured store's `StoreState<typeof store>`; generic/shared selector helpers should accept a configured Store instead of importing standalone selector creation utilities.
@@ -84,8 +84,8 @@ Create a single `Store` instance with app-owned reducers at module scope:
 
 ```typescript
 // src/lib/store/store.ts
-import { Store } from "ag-redux-toolkit/svelte-store";
-import type { StoreState } from "ag-redux-toolkit/types";
+import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
+import type { StoreState } from "@augmentcode/ag-redux-toolkit/types";
 import { counterReducer } from "./slices/counter/counter-slice";
 
 export const store = new Store({ counter: counterReducer });
@@ -279,10 +279,10 @@ store.dispatch(addItem(i));
 <script>const dispose = singleStore.init();</script>
 ```
 
-*Public API: *`ag-redux-toolkit/svelte-store`* (*`Store.init`* early-return on existing context).*
+*Public API: *`@augmentcode/ag-redux-toolkit/svelte-store`* (*`Store.init`* early-return on existing context).*
 
 ## 6. See also
 
 - `svelte/selector-lifecycle` — the three selector call modes(`selectFoo()` / `.select(state)` / `.effect()`).
 - `core/file-structure` — slice layout and registration order.
-- `svelte/setup` — first-time greenfield setup.
+- `../setup/SKILL.md` — first-time greenfield setup.

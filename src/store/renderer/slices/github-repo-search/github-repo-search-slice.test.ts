@@ -6,7 +6,7 @@ import {
 import {
   createCollection,
   getItems,
-} from "ag-redux-toolkit/utils/collections/collection-utils";
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import type { GithubRepoItem } from "../github-repos/github-repos-slice";
 import {
   clearGithubRepoSearch,

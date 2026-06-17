@@ -7,7 +7,7 @@ description: >-
   counting (increaseRefsCount, decreaseRefsCount, getRefsCount,
   addItemAndCountRef). All operations are immutable and return a new Collection
   (or the same reference on a no-op). Public API:
-  ag-redux-toolkit/utils/collections/collection-utils; docs: docs/COLLECTIONS.md.
+  @augmentcode/ag-redux-toolkit/utils/collections/collection-utils; docs: docs/COLLECTIONS.md.
 type: sub-skill
 library: ag-redux-toolkit
 requires:
@@ -15,7 +15,7 @@ requires:
   - core/reducers
 sources:
   - augmentcode/ag-redux-toolkit:docs/COLLECTIONS.md
-  - ag-redux-toolkit/utils/collections/collection-utils
+  - "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils"
 triggers:
   - create collection
   - addItem collection
@@ -24,7 +24,7 @@ triggers:
 ---
 # Collections — `Collection<T, K>`
 
-> Operational guidance for normalized entity state. Full API reference and examples: `docs/COLLECTIONS.md`. Public API: `ag-redux-toolkit/utils/collections/collection-utils`.
+> Operational guidance for normalized entity state. Full API reference and examples: `docs/COLLECTIONS.md`. Public API: `@augmentcode/ag-redux-toolkit/utils/collections/collection-utils`.
 
 ## Use when
 
@@ -35,7 +35,7 @@ triggers:
 ## Shape and imports
 
 - A collection is `{ idField, ids, map, refsCount }`; `ids` preserves order and `map` stores id → item.
-- Import helpers from `ag-redux-toolkit/utils/collections/collection-utils`.
+- Import helpers from `@augmentcode/ag-redux-toolkit/utils/collections/collection-utils`.
 - Use selectors, not components, to read collection contents.
 
 ## Do
@@ -66,7 +66,7 @@ triggers:
 ### Serializable initial collection state
 
 ```ts
-import { type Collection, createCollection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { type Collection, createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 type Todo = { id: string; title: string; completed: boolean };
 type TodosState = { todos: Collection<Todo, "id"> };
@@ -79,7 +79,7 @@ export const initialState: TodosState = {
 ### Add, update, upsert, and remove in reducers
 
 ```ts
-import { addItem, createCollection, removeItem, updateItem, upsertItem } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { addItem, createCollection, removeItem, updateItem, upsertItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 type Todo = { id: string; title: string; completed: boolean };
 const state = { todos: createCollection<Todo, "id">("id") };
@@ -95,7 +95,7 @@ const nextState = withoutDraft === state.todos ? state : { ...state, todos: with
 ### Reference-count shared entities
 
 ```ts
-import { addItemAndCountRef, createCollection, decreaseRefsCount, getRefsCount } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { addItemAndCountRef, createCollection, decreaseRefsCount, getRefsCount } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 type Todo = { id: string; title: string; completed: boolean };
 const state = { todos: createCollection<Todo, "id">("id") };
@@ -111,9 +111,9 @@ afterRelease.ids satisfies string[];
 ### Collection selectors expose item and ordered-list reads
 
 ```ts
-import { Store } from "ag-redux-toolkit/svelte-store";
-import { type Collection, createCollection, getItem, getItems } from "ag-redux-toolkit/utils/collections/collection-utils";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
+import { type Collection, createCollection, getItem, getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 type Todo = { id: string; title: string; completed: boolean };
 type TodosState = { todos: Collection<Todo, "id"> };
@@ -140,9 +140,9 @@ const breadcrumbs: BreadcrumbState = {
 ### ❌ Bad: mutating internals corrupts normalized identity
 
 ```ts
-import { type Collection, createCollection } from "ag-redux-toolkit/utils/collections/collection-utils";
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { type Collection, createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 
 type Todo = { id: string; title: string; completed: boolean };
 type TodosState = { todos: Collection<Todo, "id"> };

@@ -3,7 +3,7 @@ import {
   takeEveryFromElectronChannel,
   takeEveryFromListenSync,
 } from "$store/renderer/utils/ipc-channel";
-import { takeLatestFromSelector } from "ag-redux-toolkit/utils/sagas/selector-channel-effects";
+import { takeLatestFromSelector } from "@augmentcode/ag-redux-toolkit/utils/sagas/selector-channel-effects";
 import { WorkspaceId } from "$shared/types/branded-ids";
 import type { Workspace } from "$shared/types";
 import { WorkspaceStatusEnum } from "$shared/types";

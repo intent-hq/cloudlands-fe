@@ -5,7 +5,7 @@
  * since there is no DOM or localStorage in the main process.
  */
 
-import type { StoreMiddleware } from "ag-redux-toolkit/types";
+import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 
 import { Logger } from "../../../shared/logger";
 

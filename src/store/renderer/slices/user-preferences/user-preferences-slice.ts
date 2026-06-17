@@ -1,6 +1,6 @@
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
-import { createBooleanPreference } from "ag-redux-toolkit/utils/store/boolean-preference";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
+import { createBooleanPreference } from "@augmentcode/ag-redux-toolkit/utils/store/boolean-preference";
 
 export const SYSTEM_DEFAULT_FONT =
   "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";

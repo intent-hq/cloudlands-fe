@@ -1,5 +1,5 @@
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import { MODEL_DEFAULTS } from "$shared/constants/agent-services";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
 import type { ModelFallbackResult } from "$lib/utils/model-fallback";

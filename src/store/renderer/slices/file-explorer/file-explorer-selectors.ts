@@ -9,7 +9,7 @@ import type {
   FlattenedFileNode,
 } from "./file-explorer-types";
 import { flattenVisibleNodes } from "./file-explorer-utils";
-import { getItem } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
   selectActiveWorkspaceId,
   selectWorkspaceById,

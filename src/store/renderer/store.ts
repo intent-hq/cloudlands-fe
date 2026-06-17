@@ -1,4 +1,4 @@
-import type { Store } from "ag-redux-toolkit/svelte-store";
+import type { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 
 import {
   REDUX_DEBUG_LS_KEY,

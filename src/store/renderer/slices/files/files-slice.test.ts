@@ -3,7 +3,7 @@ import {
   expect,
   it,
 } from "vitest";
-import { getItem } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import {
   applyExternalFileContent,
