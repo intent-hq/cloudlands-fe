@@ -264,6 +264,39 @@ describe('Agent Stream Lifecycle Integration', () => {
     });
   });
 
+  it('REGRESSION: backend-initiated streams register an IPC heartbeat ping handler', () => {
+    // Zombie-session incident: delegated/backend-initiated agents registered
+    // their stream handler via ensureStreamHandler but never a ping handler,
+    // so the main process logged "missed pong" for their entire turn. The
+    // heartbeat handler must be registered alongside EVERY stream handler.
+    ensureStreamHandler('agent-ping', {
+      workspaceId: 'ws-1',
+      assistantAppMessageId: 'app-msg-ping',
+    });
+
+    const pingHandler = mocks.ipcHandlers.find(
+      (entry) => entry.channel === 'agent:stream:ping:agent-ping',
+    )?.handler;
+    expect(pingHandler).toBeDefined();
+
+    // Ping from main must produce a pong back over IPC
+    pingHandler?.({ agentId: 'agent-ping', timestamp: Date.now() });
+    expect(window.electronAPI.send).toHaveBeenCalledWith('agent:stream:pong', {
+      agentId: 'agent-ping',
+    });
+
+    // Re-registration is idempotent: no duplicate ping listener (would leak
+    // the old IPC listener when the registry entry is overwritten)
+    ensureStreamHandler('agent-ping', {
+      workspaceId: 'ws-1',
+      assistantAppMessageId: 'app-msg-ping',
+    });
+    const pingRegistrations = mocks.ipcHandlers.filter(
+      (entry) => entry.channel === 'agent:stream:ping:agent-ping',
+    );
+    expect(pingRegistrations).toHaveLength(1);
+  });
+
   it('HMR cleanup disposes previous registry state through the persisted disposer', () => {
     const previousDispose = vi.fn();
     (window as any).__streamRegistry_hmr = { disposeAllStreamState: previousDispose };

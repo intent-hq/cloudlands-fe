@@ -252,6 +252,45 @@ function getStreamErrorMessage(error: unknown): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
+// registerPingHandler
+// ---------------------------------------------------------------------------
+
+/**
+ * Register the IPC heartbeat ping handler for an agent: responds with a pong
+ * so the main process can verify renderer IPC liveness during active streams.
+ *
+ * Must be registered alongside EVERY stream handler registration. Backend-initiated
+ * streams (delegated agents, queued messages) register their stream handler via
+ * ensureStreamHandler/registerStreamHandlerForSession — previously only the
+ * sendMessage flow registered a ping handler, so delegated agents never ponged
+ * and the main process logged "missed pong" for their entire turn.
+ *
+ * Idempotent: skips registration when a ping handler already exists for the
+ * agent (setPingHandler would otherwise overwrite the entry and leak the old
+ * IPC listener). cleanupStreamHandler removes the stream and ping handlers
+ * together, so they cannot drift apart.
+ */
+function registerPingHandler(agentId: string): void {
+  if (streamRegistry.getPingHandler(agentId)) {
+    return;
+  }
+  const pingChannel = `agent:stream:ping:${agentId}`;
+  const pingHandler = (data: { agentId: string; timestamp: number }) => {
+    logger.debug('IPC heartbeat: received ping, sending pong', {
+      agentId,
+      timestamp: data.timestamp,
+    });
+    window.electronAPI.send('agent:stream:pong', { agentId });
+  };
+  const pingListenerId = window.electronAPI.on(pingChannel, pingHandler);
+  streamRegistry.setPingHandler(agentId, {
+    channel: pingChannel,
+    handler: pingHandler,
+    listenerId: pingListenerId,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // registerStreamHandlerForSession
 // ---------------------------------------------------------------------------
 
@@ -503,6 +542,11 @@ function registerStreamHandlerForSession(
     listenerId: streamListenerId,
     registeredAt: Date.now(),
   });
+
+  // Register the IPC heartbeat ping handler so backend-initiated streams
+  // (delegated agents, queued messages) respond to pings — without this the
+  // main process logs "missed pong" for their entire turn.
+  registerPingHandler(agentId);
 
   streamRegistry.deletePendingRegistration(agentId);
 
@@ -1195,25 +1239,12 @@ export async function sendMessage(
                   streamRegistry.clearSendMessageStreamSetup(agentId);
 
                   // Register IPC heartbeat ping handler - responds with pong to verify IPC liveness
-                  const pingChannel = `agent:stream:ping:${agentId}`;
-                  const pingHandler = (data: { agentId: string; timestamp: number }) => {
-                    logger.debug('IPC heartbeat: received ping, sending pong', {
-                      agentId,
-                      timestamp: data.timestamp,
-                    });
-                    window.electronAPI.send('agent:stream:pong', { agentId });
-                  };
-                  const pingListenerId = window.electronAPI.on(pingChannel, pingHandler);
-                  streamRegistry.setPingHandler(agentId, {
-                    channel: pingChannel,
-                    handler: pingHandler,
-                    listenerId: pingListenerId,
-                  });
+                  registerPingHandler(agentId);
 
                   logger.info('Stream handler registered successfully', {
                     agentId,
                     streamChannel,
-                    pingChannel,
+                    pingChannel: `agent:stream:ping:${agentId}`,
                     workspaceId: workspace.id,
                     activeHandlersCount: streamRegistry.getStreamHandlerCount(),
                     hasStoredHandler: streamRegistry.hasStreamHandler(agentId),

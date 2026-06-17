@@ -288,6 +288,8 @@ export class AgentBackendHandler {
   private lastPongTimes = new Map<string, number>();
   /** @property {Map<string, number>} lastPingSentTimes - Track when last ping was sent to check for missed pongs */
   private lastPingSentTimes = new Map<string, number>();
+  /** @property {Map<string, number>} streamLastActivityTimes - Last provider activity (chunk/content-block) per agent; makes the maxStreamDuration timeout activity-aware */
+  private streamLastActivityTimes = new Map<string, number>();
   /**
    * Secondary guard: tracks recently deleted agent IDs to prevent resurrection
    * in sendBackendInitiatedMessage. Maps agentId → deletedAt timestamp.
@@ -3064,7 +3066,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       );
 
       // Start health check for this stream
-      this.startStreamHealthCheck(request.agentId);
+      this.startStreamHealthCheck(request.agentId, request.streamId);
 
       // NOTE: Message accumulation is handled by messageAccumulator service (single source of truth)
       // The messageAccumulator is used by ACPProvider to accumulate text chunks and content blocks
@@ -3224,6 +3226,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         stdinContext, // Pass context from contextReferences or request.stdinContext
         assistantMessageId: request.assistantMessageId, // Pre-assigned from renderer
         onChunk: (chunk: string) => {
+          // Record provider activity for the activity-aware stream timeout
+          this.touchStreamActivity(request.agentId);
+
           // PERF: Changed from INFO to DEBUG - chunks are very frequent during streaming
           // Only log occasionally at INFO level to avoid log spam
           chunkCount++;
@@ -3279,6 +3284,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
           // Keep provider alive during streaming - tool calls can take a long time
           // and we don't want the idle cleanup to kill an active agent
           this.touchProvider(request.agentId);
+
+          // Record provider activity for the activity-aware stream timeout
+          this.touchStreamActivity(request.agentId);
 
           // NOTE: Content block accumulation is handled by messageAccumulator in ACPProvider
           // We just forward blocks to frontend and persist
@@ -5181,9 +5189,26 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
   }
 
   /**
-   * Start health check for a stream
+   * Record provider activity (chunk or content block) for an agent's stream.
+   * Used by the health check's activity-aware timeout: a stream past
+   * maxStreamDuration is only timed out when it has also been silent for
+   * stalledStreamDetection. Uses ??= because tests construct handler instances
+   * via Object.create(prototype), bypassing field initializers (same pattern as
+   * ensureSessionPromptTracking).
    */
-  private startStreamHealthCheck(agentId: string): void {
+  private touchStreamActivity(agentId: string): void {
+    this.streamLastActivityTimes ??= new Map<string, number>();
+    this.streamLastActivityTimes.set(agentId, Date.now());
+  }
+
+  /**
+   * Start health check for a stream
+   * @param agentId - The agent whose stream to monitor
+   * @param streamId - The active stream's ID (request.streamId). Used on timeout to
+   *   pre-mark the stream as completed so the late onComplete triggered by
+   *   provider.interrupt() is dropped by the existing idempotency guard.
+   */
+  private startStreamHealthCheck(agentId: string, streamId?: string): void {
     // Clear any existing health check for this agent
     const existing = this.streamHealthChecks.get(agentId);
     if (existing) {
@@ -5193,6 +5218,10 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     // Initialize pong tracking for this agent
     this.lastPongTimes.set(agentId, Date.now());
     this.lastPingSentTimes.delete(agentId);
+
+    // Initialize activity tracking so the activity-aware timeout below has a
+    // baseline even if the provider never produces any output.
+    this.touchStreamActivity(agentId);
 
     // Counter to track health check iterations (send ping every 2nd iteration = 10 seconds)
     let healthCheckCount = 0;
@@ -5241,13 +5270,36 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
 
       // Check if stream has been running too long (use maxStreamDuration from config)
       const startTime = this.streamStartTimes.get(agentId);
-      const maxDuration = resolveStreamingConfig(DEFAULT_PROFILE).maxStreamDuration;
+      const streamingConfig = resolveStreamingConfig(DEFAULT_PROFILE);
+      const maxDuration = streamingConfig.maxStreamDuration;
       if (startTime && Date.now() - startTime > maxDuration) {
+        // ACTIVITY-AWARE TIMEOUT: maxStreamDuration is not a hard wall-clock cap.
+        // A healthy long turn keeps producing provider activity (chunks, tool-call
+        // content blocks); killing it would be a false positive that aborts real
+        // in-progress work. Only time out when the stream is past the cap AND the
+        // provider has been silent for stalledStreamDetection — i.e. it is both
+        // old and stalled.
+        const lastActivity = this.streamLastActivityTimes?.get(agentId) ?? startTime;
+        const timeSinceActivity = Date.now() - lastActivity;
+        if (timeSinceActivity <= streamingConfig.stalledStreamDetection) {
+          // Throttle to ~1 log per minute (the health check ticks every 5s)
+          if (healthCheckCount % 12 === 0) {
+            logger.info('Stream past maxStreamDuration but provider is still active; extending', {
+              agentId,
+              duration: Date.now() - startTime,
+              maxDuration,
+              timeSinceActivityMs: timeSinceActivity,
+            });
+          }
+          return;
+        }
+
         const duration = Date.now() - startTime;
         logger.warn('Stream timeout, attempting graceful completion', {
           agentId,
           duration,
           maxDuration,
+          timeSinceActivityMs: timeSinceActivity,
         });
 
         // Try to get accumulated content before cleanup
@@ -5301,6 +5353,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
           this.cleanupStreamResources(agentId);
         }
 
+        // ZOMBIE-SESSION FIX: finalizeStream only tears down Intent-side bookkeeping.
+        // Without cancelling the provider session, the agent process keeps executing
+        // its in-flight prompt invisibly (running tools, editing files) after the
+        // agent has been marked failed. Must run AFTER finalizeStream (cleanup deletes
+        // the completedStreams entry this relies on) and is non-blocking so a slow or
+        // hung cancel cannot delay the agent:failed emission below.
+        this.cancelProviderSessionAfterTimeout(agentId, streamId);
+
         // CRITICAL FIX: Always emit agent:failed event on timeout, regardless of whether
         // partial content was recovered. This ensures delegation subscriptions are triggered
         // so the parent orchestrator can be notified when delegated agents timeout.
@@ -5340,6 +5400,69 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
 
     this.streamHealthChecks.set(agentId, healthCheck);
     logger.debug('Started health check for stream', { agentId });
+  }
+
+  /**
+   * Cancel the underlying provider session after a stream timeout.
+   *
+   * The timeout path tears down Intent-side stream bookkeeping and emits
+   * agent:failed, but the provider process (e.g. auggie) is still executing its
+   * in-flight prompt. Without cancellation it keeps running tools and editing
+   * files as a "zombie" session that the app can neither see nor steer.
+   *
+   * Safety properties:
+   * - `streamId` is pre-marked in `completedStreams` so the late onComplete fired
+   *   by provider.interrupt() (via handleStreamCompletion with stopReason
+   *   'cancelled') is dropped by the existing idempotency guard — no duplicate
+   *   complete events, no late agent:idle, no idle-status persist after
+   *   agent:failed. Must be called AFTER finalizeStream/cleanupStreamResources,
+   *   which deletes the agent's completedStreams entry.
+   * - `interruptedAgents` (with safety timeout) mirrors stopAgent: it suppresses
+   *   agent:idle and automatic queue processing while the cancellation settles,
+   *   and is auto-cleared by the safety timeout or the next handleSendMessage.
+   * - The in-flight session-prompt guard is released directly. provider.interrupt()
+   *   normally unblocks handleSendMessage's finally block (which also clears it),
+   *   but if the provider is missing or the cancel fails, this keeps the agent
+   *   reachable for new messages instead of silently dropping them.
+   * - interrupt() is fire-and-forget so a slow or hung cancel cannot block the
+   *   health-check interval or delay the agent:failed emission.
+   */
+  private cancelProviderSessionAfterTimeout(agentId: string, streamId?: string): void {
+    if (streamId) {
+      const agentCompletedStreams = this.completedStreams.get(agentId) || new Set<string>();
+      agentCompletedStreams.add(streamId);
+      this.completedStreams.set(agentId, agentCompletedStreams);
+    }
+
+    this.interruptedAgents.add(agentId);
+    this.startInterruptedAgentSafetyTimeout(agentId);
+
+    this.ensureSessionPromptTracking();
+    const inFlightPromptKey = this.inFlightSessionPromptKeysByAgent.get(agentId);
+    if (inFlightPromptKey) {
+      this.finishSessionPrompt(agentId, inFlightPromptKey);
+    }
+
+    const provider = this.providers.get(agentId);
+    if (!provider || typeof provider.interrupt !== 'function') {
+      logger.warn(
+        'Stream timeout: no provider found to interrupt — backend session may still be running',
+        { agentId, hasProvider: !!provider },
+      );
+      return;
+    }
+
+    provider
+      .interrupt()
+      .then(() => {
+        logger.info('Stream timeout: provider session interrupted', { agentId });
+      })
+      .catch((error: unknown) => {
+        logger.warn('Stream timeout: failed to interrupt provider session', {
+          agentId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 
   /**
@@ -5565,6 +5688,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     this.lastPongTimes.delete(agentId);
     this.lastPingSentTimes.delete(agentId);
 
+    // Clear stream activity tracking (activity-aware timeout)
+    this.streamLastActivityTimes?.delete(agentId);
+
     // Clear completed streams tracking for this agent
     this.completedStreams.delete(agentId);
 
@@ -5633,6 +5759,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     // IPC heartbeat tracking
     this.lastPongTimes.delete(agentId);
     this.lastPingSentTimes.delete(agentId);
+
+    // Stream activity tracking (activity-aware timeout)
+    this.streamLastActivityTimes?.delete(agentId);
 
     // Message queue tracking
     this.messageQueues.delete(agentId);
@@ -10027,6 +10156,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     // Clear IPC heartbeat tracking
     this.lastPongTimes.clear();
     this.lastPingSentTimes.clear();
+
+    // Clear stream activity tracking
+    this.streamLastActivityTimes?.clear();
 
     // Clear health checks
     for (const healthCheck of this.streamHealthChecks.values()) {
