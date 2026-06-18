@@ -41,6 +41,8 @@ import {
   agentSessionSendMessageRequested,
   upsertSession,
   replaceMessages,
+  setAgentStreaming,
+  updateSession,
 } from '../../agent-session/agent-session-slice';
 import type { AgentSessionSendMessageOptions } from '../../agent-session/agent-session-types';
 import { hydrateAgentQueueRequested } from '../../agent-queue/agent-queue-slice';
@@ -49,6 +51,7 @@ import { selectChatStateOrDefault } from '../chat-state-selectors';
 import { waitFor } from '@augmentcode/ag-redux-toolkit/saga';
 import type { StoreSelector as PackageStoreSelector } from '@augmentcode/ag-redux-toolkit/types';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
+import { AgentStatus } from '$shared/types';
 import { compareMessageCompleteness } from '$shared/utils/message-comparator';
 import { invoke } from '$shared/generated/ipc-client';
 import { restoreSessionFromDiskWithoutBackend } from '../../workspace-agents/sagas/agent-session-restore-utils';
@@ -631,6 +634,19 @@ function* handleInitializeChat(
         session = staleReconciliation.session;
         deduplicatedMessages = staleReconciliation.messages;
         isCurrentlyStreaming = false;
+        // The local session object above is upserted through a debounced batch,
+        // so clear the agent-session-level runtime flags synchronously too.
+        // Otherwise selectAgentIsResponding/selectAgentIsThinking keep reading
+        // stale isResponding/status from any session already in the store and
+        // the agent stays stuck on "Thinking" after reload.
+        yield* put(setAgentStreaming(agentId, false));
+        yield* put(
+          updateSession(agentId, {
+            status: AgentStatus.RuntimeIdle,
+            isProcessing: false,
+            isResponding: false,
+          }),
+        );
       }
     }
 

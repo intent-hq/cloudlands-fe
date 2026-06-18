@@ -86,4 +86,17 @@ describe('Audit 2 C3 — agent-backend-handler queue emissions', () => {
       /sendToRenderer\(\s*'agent:queue:stale-message'/,
     );
   });
+
+  it('flags the retained-message cancellation as requeued', () => {
+    // When a concurrent stream aborts queue processing but the message stays in
+    // the queue, the cancelled payload must carry `requeued: true` so the renderer
+    // keeps the optimistic user message visible.
+    expect(SOURCE).toMatch(/messageId: nextMessage\.id,\s*requeued: true,/);
+  });
+
+  it('derives the failed-send cancellation requeued flag from re-add state', () => {
+    // The catch path re-adds the message only when a queue still exists; the
+    // cancelled payload reflects that via the messageRequeued tracking variable.
+    expect(SOURCE).toMatch(/messageId: nextMessage\.id,\s*requeued: messageRequeued,/);
+  });
 });

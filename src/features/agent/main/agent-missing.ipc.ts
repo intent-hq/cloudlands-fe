@@ -4,7 +4,7 @@
  * Handles agent operations that were missing handlers
  */
 
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { z } from 'zod';
 import { Logger } from '$shared/logger';
@@ -14,9 +14,58 @@ import {
   getInputWithEnhancePrompt,
   extractEnhancedPrompt,
 } from '$lib/utils/prompt-enhancement';
+import {
+  agentCircuitBreaker,
+  type CircuitStatus,
+} from '$shared/services/agent-circuit-breaker';
+import { getWindowIdsForWorkspace } from '../../system/main/system.ipc';
 
 const logger = new Logger('AgentMissing-IPC');
 const augmentCLI = new AugmentCLI();
+
+const AgentCircuitBreakerResetSchema = z.object({
+  workspaceId: z.string(),
+});
+
+/** Ensures the circuit-breaker status broadcaster is wired up exactly once. */
+let circuitBreakerBroadcastUnsubscribe: (() => void) | null = null;
+
+/**
+ * Broadcast a circuit-breaker status change to the renderer windows that are
+ * viewing the affected workspace, so the UI can surface (or clear) a notice.
+ */
+function broadcastCircuitBreakerStatus(workspaceId: string, status: CircuitStatus): void {
+  const targetWindowIds = getWindowIdsForWorkspace(workspaceId);
+  const targetSet = targetWindowIds.length > 0 ? new Set(targetWindowIds) : null;
+
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    if (targetSet && !targetSet.has(win.id)) continue;
+    try {
+      win.webContents.send('agent:circuit-breaker:status', { workspaceId, status });
+    } catch (error) {
+      logger.warn('Failed to send circuit-breaker status to window', {
+        windowId: win.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+/**
+ * Subscribe (once) to circuit-breaker state changes and forward them to the
+ * renderer. Registering more than once (e.g. on HMR) would duplicate events,
+ * so the previous subscription is torn down first.
+ */
+function registerCircuitBreakerBroadcaster(): void {
+  if (circuitBreakerBroadcastUnsubscribe) {
+    circuitBreakerBroadcastUnsubscribe();
+    circuitBreakerBroadcastUnsubscribe = null;
+  }
+  circuitBreakerBroadcastUnsubscribe = agentCircuitBreaker.onAnyStatusChange(
+    broadcastCircuitBreakerStatus,
+  );
+}
 
 const UniversalAgentEnhancePromptSchema = z.object({
   prompt: z.string(),
@@ -50,6 +99,7 @@ export function registerMissingAgentHandlers(): void {
   // Remove only the handlers registered by this module before re-registering.
   const handlers = [
     'agent:get-active-streams',
+    'agent:circuit-breaker:reset',
     'universal-agent:enhancePrompt',
     'agent:enhance-prompt',
     'agent:generate-layout',
@@ -92,6 +142,36 @@ export function registerMissingAgentHandlers(): void {
       };
     }
   });
+
+  // Manually reset a tripped circuit breaker for a workspace so the user can
+  // recover without restarting the app. The resulting status change is
+  // broadcast to the renderer via the onAnyStatusChange subscription below.
+  ipcMain.handle(
+    'agent:circuit-breaker:reset',
+    createSafeValidatedHandler(
+      AgentCircuitBreakerResetSchema,
+      async (_event, { workspaceId }) => {
+        try {
+          logger.info('Manual circuit breaker reset requested', { workspaceId });
+          agentCircuitBreaker.reset(workspaceId);
+          return {
+            success: true,
+            status: agentCircuitBreaker.getStatus(workspaceId),
+          };
+        } catch (error) {
+          logger.error('Failed to reset circuit breaker', error as Error);
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to reset circuit breaker',
+          };
+        }
+      },
+      'agent:circuit-breaker:reset',
+    ),
+  );
+
+  // Forward circuit-breaker state changes to the renderer.
+  registerCircuitBreakerBroadcaster();
 
   // Universal agent enhance prompt
   ipcMain.handle(

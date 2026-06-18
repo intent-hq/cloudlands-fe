@@ -7,12 +7,21 @@ import {
 } from '$shared/types';
 import { AgentId } from '$shared/types/branded-ids';
 import { compareMessageCompleteness } from '$shared/utils/message-comparator';
+import { normalizeStreamingState } from '$shared/utils/agent-streaming-state';
 import {
   call,
   put,
 } from 'typed-redux-saga';
 import { upsertSession } from '../../agent-session/agent-session-slice';
 import { selectAllWorkspaceAgents } from '../workspace-agents-selectors';
+
+/**
+ * Re-export of the shared streaming-state normalizer under its historical name
+ * so existing renderer importers keep working. The implementation now lives in
+ * `$shared/utils/agent-streaming-state` so the main-process persistence funnel
+ * can share the exact same predicate without crossing the renderer boundary.
+ */
+export { normalizeStreamingState as normalizeRestoredStreamingState } from '$shared/utils/agent-streaming-state';
 
 function normalizeTimestamp(value: unknown): string {
   if (typeof value === 'string') return value;
@@ -47,14 +56,8 @@ export function* restoreSessionFromDiskWithoutBackend(
 
   if (session && !session.workspaceId) session.workspaceId = workspace.id;
   if (session) {
-    if (!session.messages?.find((message: any) => message.isStreaming)) session.isStreaming = false;
+    normalizeStreamingState(session);
     if (!session.isInitialAgent && session.metadata?.isInitialAgent) session.isInitialAgent = true;
-    if (
-      (session.status === AgentStatus.Active || session.status === AgentStatus.Processing) &&
-      !session.messages?.find((message: any) => message.isStreaming)
-    ) {
-      session.status = AgentStatus.Idle;
-    }
     yield* put(upsertSession({
       ...session,
       workspaceId: workspace.id as AgentSession['workspaceId'],

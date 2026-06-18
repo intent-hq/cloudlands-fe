@@ -67,6 +67,8 @@ export class AgentCircuitBreaker {
   private static instance: AgentCircuitBreaker;
   private config: CircuitBreakerConfig;
   private workspaces: Map<string, WorkspaceCircuitState> = new Map();
+  /** Global listeners notified of any workspace's status change. */
+  private globalListeners: Set<(workspaceId: string, status: CircuitStatus) => void> = new Set();
 
   private constructor(config: Partial<CircuitBreakerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -229,6 +231,16 @@ export class AgentCircuitBreaker {
     return () => ws.listeners.delete(listener);
   }
 
+  /**
+   * Subscribe to circuit state changes across ALL workspaces.
+   * Useful for a single process-wide observer (e.g. broadcasting to renderer windows)
+   * without having to subscribe per workspace ahead of time.
+   */
+  onAnyStatusChange(listener: (workspaceId: string, status: CircuitStatus) => void): () => void {
+    this.globalListeners.add(listener);
+    return () => this.globalListeners.delete(listener);
+  }
+
   /** Manually reset the circuit breaker for a workspace. */
   reset(workspaceId: string): void {
     const ws = this.getWorkspaceState(workspaceId);
@@ -284,6 +296,13 @@ export class AgentCircuitBreaker {
         listener(status);
       } catch (e) {
         logger.error('Circuit breaker listener error', { error: e });
+      }
+    }
+    for (const listener of this.globalListeners) {
+      try {
+        listener(workspaceId, status);
+      } catch (e) {
+        logger.error('Circuit breaker global listener error', { error: e });
       }
     }
   }

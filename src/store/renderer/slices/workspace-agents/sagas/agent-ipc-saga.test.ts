@@ -30,6 +30,7 @@ import {
 const {
   sendMock,
   saveSessionMock,
+  loadSessionMock,
   deleteAgentMock,
   ensureStreamHandlerMock,
   invokeMock,
@@ -46,6 +47,7 @@ const {
 } = vi.hoisted(() => ({
   sendMock: vi.fn(),
   saveSessionMock: vi.fn(async () => {}),
+  loadSessionMock: vi.fn(async () => null as any),
   deleteAgentMock: vi.fn(async () => {}),
   ensureStreamHandlerMock: vi.fn(async () => ({ created: false })),
   invokeMock: vi.fn(async () => ({ success: true })),
@@ -111,7 +113,7 @@ vi.mock("$features/agent/browser", () => ({
     deleteAgent: deleteAgentMock,
   },
   persistenceService: {
-    loadSession: vi.fn(async () => null),
+    loadSession: loadSessionMock,
     saveSession: saveSessionMock,
   },
 }));
@@ -282,12 +284,14 @@ import {
   watchAgentIdleSaga,
   watchBackendStreamReconnectSaga,
   watchBeforeUnloadSaga,
+  watchCircuitBreakerStatusSaga,
   watchPagehideSaga,
   watchPrepareHandlerSaga,
   watchQueueCancelledSaga,
   watchQueueProcessingSaga,
   watchStreamStartingSaga,
 } from "./agent-ipc-saga";
+import { AgentCircuitBreaker } from "$shared/services/agent-circuit-breaker";
 import {
   agentSessionReducer,
   bulkUpsertSessions,
@@ -382,6 +386,40 @@ describe("handleAgentCreated", () => {
       workspaceId: "ws-blank",
     });
   });
+
+  it("normalizes persisted streaming flags to idle when no message is streaming and no live handler", async () => {
+    const dispatched: any[] = [];
+
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleAgentCreated,
+      {
+        agentId: "agent-phantom",
+        workspaceId: "ws-phantom",
+        agent: {
+          id: "agent-phantom",
+          workspaceId: "ws-phantom",
+          name: "Phantom Agent",
+          status: AgentStatus.Active,
+          isStreaming: true,
+          isProcessing: true,
+          isResponding: true,
+          messages: [
+            { id: "msg-done", role: "assistant", contentBlocks: [], timestamp: "" } as any,
+          ],
+        },
+      },
+    ).toPromise();
+
+    const upsert = dispatched.find((a) => a.type === "agentSessions/upsertSession");
+    expect(upsert?.payload?.[0]).toMatchObject({
+      id: "agent-phantom",
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    });
+  });
 });
 
 function captureWindowListeners() {
@@ -400,6 +438,8 @@ describe("handleQueueProcessing", () => {
     vi.useFakeTimers();
     sendMock.mockClear();
     saveSessionMock.mockClear();
+    loadSessionMock.mockClear();
+    loadSessionMock.mockResolvedValue(null as any);
     ensureStreamHandlerMock.mockClear();
     selectState.index = 0;
     selectState.results = [];
@@ -560,6 +600,55 @@ describe("handleQueueProcessing", () => {
     expect(streamingAction).toBeUndefined();
   });
 
+  // Root cause: background/delegated agents may not be hydrated into Redux yet.
+  // When retries miss, the session must be loaded from persistence before giving up.
+  it("loads session from persistence when missing after retries, then starts the turn", async () => {
+    const session = makeSession();
+    loadSessionMock.mockResolvedValue(session);
+    // Retry loop (3) + helper "appeared while loading" check all miss, then the
+    // post-load re-lookup finds the freshly-upserted session.
+    selectState.results = [undefined, undefined, undefined, undefined, session, session];
+    const data = { ...queueData, workspaceId: "ws-agent-1" };
+
+    const dispatched: any[] = [];
+    const task = runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleQueueProcessing,
+      data,
+    );
+
+    await vi.advanceTimersByTimeAsync(500);
+    await task.toPromise();
+
+    expect(loadSessionMock).toHaveBeenCalledWith("agent-1", "ws-agent-1");
+    const sendStartedAction = dispatched.find((a) => a.type === chatSendStarted.type);
+    expect(sendStartedAction?.payload).toMatchObject({ agentId: "agent-1", wsId: "ws-agent-1" });
+    const userMessageAction = dispatched.find((a) => a.payload?.[1]?.id === data.messageId);
+    expect(userMessageAction?.type).toBe("agentSessions/addMessage");
+    expect(sendMock).toHaveBeenCalledWith("agent:handler-ready", { agentId: "agent-1" });
+  });
+
+  it("falls through to handler-ready when persistence load still has no session", async () => {
+    // loadSession returns null (default) — session never appears.
+    selectState.results = [undefined, undefined, undefined, undefined, undefined];
+    const data = { ...queueData, workspaceId: "ws-agent-1" };
+
+    const dispatched: any[] = [];
+    const task = runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleQueueProcessing,
+      data,
+    );
+
+    await vi.advanceTimersByTimeAsync(500);
+    await task.toPromise();
+
+    expect(loadSessionMock).toHaveBeenCalledWith("agent-1", "ws-agent-1");
+    expect(sendMock).toHaveBeenCalledWith("agent:handler-ready", { agentId: "agent-1" });
+    const sendStartedAction = dispatched.find((a) => a.type === chatSendStarted.type);
+    expect(sendStartedAction).toBeUndefined();
+  });
+
   it("sends handler-ready when session has no workspaceId", async () => {
     const session = makeSession({ workspaceId: "" as any });
     selectState.results = [session];
@@ -593,10 +682,14 @@ describe("handleQueueProcessing", () => {
     expect(addActions.map((a) => a.type)).toEqual(["agentSessions/addMessage"]);
     const streamingAction = dispatched.find((a) => a.type === setAgentStreaming.type);
     expect(streamingAction?.payload).toEqual(["agent-1", true]);
-    expect(saveSessionMock).toHaveBeenCalledWith(session, "different-ws", {
-      immediate: true,
-      allowTruncation: undefined,
-    });
+    expect(saveSessionMock).toHaveBeenCalledWith(
+      { ...session, isProcessing: false, isResponding: false },
+      "different-ws",
+      {
+        immediate: true,
+        allowTruncation: undefined,
+      },
+    );
   });
 });
 
@@ -641,10 +734,14 @@ describe("handleQueueCancelled", () => {
     expect(removeAction?.payload).toEqual(["agent-1", "msg-cancel-1"]);
 
     // saveSession should use session.workspaceId
-    expect(saveSessionMock).toHaveBeenCalledWith(session, "ws-agent-1", {
-      immediate: true,
-      allowTruncation: undefined,
-    });
+    expect(saveSessionMock).toHaveBeenCalledWith(
+      { ...session, isProcessing: false, isResponding: false },
+      "ws-agent-1",
+      {
+        immediate: true,
+        allowTruncation: undefined,
+      },
+    );
   });
 
   it("still removes agent-session message when session has no workspaceId", async () => {
@@ -688,6 +785,48 @@ describe("handleQueueCancelled", () => {
 
     // saveSession should not fall back to the active workspace.
     expect(saveSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the optimistic message when the backend retained it (requeued=true)", async () => {
+    // Backend aborted this attempt but left the message in its queue, so the
+    // optimistic user message must NOT be removed and no cleanup persist runs.
+    const session = makeSession({ workspaceId: "ws-agent-1" as any });
+    selectState.results = [session, session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleQueueCancelled,
+      { ...cancelData, requeued: true },
+    ).toPromise();
+
+    const removeAction = dispatched.find((a) => a.type === "agentSessions/removeMessage");
+    expect(removeAction).toBeUndefined();
+    expect(saveSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("removes the optimistic message when the backend dropped it (requeued=false)", async () => {
+    const session = makeSession({ workspaceId: "ws-agent-1" as any });
+    selectState.results = [session, session];
+
+    const dispatched: any[] = [];
+    await runSaga(
+      { dispatch: (a: any) => dispatched.push(a), getState: () => ({}) },
+      handleQueueCancelled,
+      { ...cancelData, requeued: false },
+    ).toPromise();
+
+    const removeAction = dispatched.find((a) => a.type === "agentSessions/removeMessage");
+    expect(removeAction).toBeDefined();
+    expect(removeAction?.payload).toEqual(["agent-1", "msg-cancel-1"]);
+    expect(saveSessionMock).toHaveBeenCalledWith(
+      { ...session, isProcessing: false, isResponding: false },
+      "ws-agent-1",
+      {
+        immediate: true,
+        allowTruncation: undefined,
+      },
+    );
   });
 });
 
@@ -1252,6 +1391,7 @@ describe("agentIpcSaga lifecycle registrations", () => {
     expect(saga.next().value).toEqual(sagaEffects.fork(watchAgentCreatedIpcSaga));
     expect(saga.next().value).toEqual(sagaEffects.fork(watchQueueProcessingSaga));
     expect(saga.next().value).toEqual(sagaEffects.fork(watchQueueCancelledSaga));
+    expect(saga.next().value).toEqual(sagaEffects.fork(watchCircuitBreakerStatusSaga));
     expect(saga.next().value).toEqual(sagaEffects.fork(watchBeforeUnloadSaga));
     expect(saga.next().value).toEqual(sagaEffects.fork(watchPagehideSaga));
     expect(saga.next().value).toEqual(sagaEffects.fork(watchBackendStreamReconnectSaga));
@@ -1299,14 +1439,82 @@ describe("migrated agent IPC lifecycle handlers", () => {
       action,
     ).toPromise();
 
-    expect(saveSessionMock).toHaveBeenCalledWith(session, "ws-A", {
-      immediate: true,
-      allowTruncation: true,
-    });
+    expect(saveSessionMock).toHaveBeenCalledWith(
+      { ...session, isProcessing: false, isResponding: false },
+      "ws-A",
+      {
+        immediate: true,
+        allowTruncation: true,
+      },
+    );
     expect(dispatched.find((a) => a.type === saveAgentSessionRequested.success.type)?.payload).toEqual({
       request: ["ws-A", "agent-1", true, { allowTruncation: true }],
       response: undefined,
     });
+  });
+
+  it("strips transient streaming flags when no message is actually streaming", async () => {
+    const session = makeSession({
+      workspaceId: "ws-A" as any,
+      status: AgentStatus.Active,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      messages: [
+        { id: "m1", role: "assistant", contentBlocks: [], timestamp: "" } as any,
+      ],
+    });
+    selectState.results = [session];
+    const action = saveAgentSessionRequested("ws-A", "agent-1", true, { allowTruncation: true });
+
+    await runSaga(
+      { dispatch: vi.fn(), getState: () => ({}) },
+      handleSaveAgentSessionRequested,
+      action,
+    ).toPromise();
+
+    expect(saveSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: AgentStatus.Idle,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+      }),
+      "ws-A",
+      { immediate: true, allowTruncation: true },
+    );
+  });
+
+  it("preserves streaming flags when a message is genuinely streaming", async () => {
+    const session = makeSession({
+      workspaceId: "ws-A" as any,
+      status: AgentStatus.Active,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      messages: [
+        { id: "m1", role: "assistant", contentBlocks: [], timestamp: "", isStreaming: true } as any,
+      ],
+    });
+    selectState.results = [session];
+    const action = saveAgentSessionRequested("ws-A", "agent-1", true, { allowTruncation: true });
+
+    await runSaga(
+      { dispatch: vi.fn(), getState: () => ({}) },
+      handleSaveAgentSessionRequested,
+      action,
+    ).toPromise();
+
+    expect(saveSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: AgentStatus.Active,
+        isStreaming: true,
+        isProcessing: true,
+        isResponding: true,
+      }),
+      "ws-A",
+      { immediate: true, allowTruncation: true },
+    );
   });
 
   it("renames an agent session with a trimmed name", async () => {
@@ -1649,5 +1857,41 @@ describe("migrated agent IPC lifecycle handlers", () => {
     expect(dispatched).toEqual([]);
     task.cancel();
     await task.toPromise();
+  });
+});
+
+describe("AgentCircuitBreaker.onAnyStatusChange", () => {
+  afterEach(() => {
+    AgentCircuitBreaker.resetInstance();
+  });
+
+  it("notifies global listeners on trip and on recovery", () => {
+    AgentCircuitBreaker.resetInstance();
+    const breaker = AgentCircuitBreaker.getInstance({ maxConsecutiveFailures: 2 });
+
+    const events: Array<{ workspaceId: string; state: string; tripReason?: string }> = [];
+    const unsubscribe = breaker.onAnyStatusChange((workspaceId, status) => {
+      events.push({ workspaceId, state: status.state, tripReason: status.tripReason });
+    });
+
+    breaker.recordFailure("ws-1");
+    breaker.recordFailure("ws-1");
+
+    const tripEvent = events.at(-1);
+    expect(tripEvent?.workspaceId).toBe("ws-1");
+    expect(tripEvent?.state).toBe("open");
+    expect(tripEvent?.tripReason).toBe("consecutive_failures");
+
+    breaker.reset("ws-1");
+
+    const recoveryEvent = events.at(-1);
+    expect(recoveryEvent?.workspaceId).toBe("ws-1");
+    expect(recoveryEvent?.state).toBe("closed");
+    expect(recoveryEvent?.tripReason).toBeUndefined();
+
+    unsubscribe();
+    const countAfterUnsubscribe = events.length;
+    breaker.recordFailure("ws-1");
+    expect(events.length).toBe(countAfterUnsubscribe);
   });
 });

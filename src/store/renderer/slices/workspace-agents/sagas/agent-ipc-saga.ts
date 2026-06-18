@@ -45,6 +45,10 @@ import {
   AGENT_BACKEND_CHANNELS,
   AGENT_CHANNELS,
 } from '$shared/ipc/channels';
+import type {
+  CircuitStatus,
+  TripReason,
+} from '$shared/services/agent-circuit-breaker';
 import {
   AgentId,
   WorkspaceId,
@@ -99,6 +103,7 @@ import {
 } from '../../agent-session/agent-session-slice';
 import { selectAllStreamingAgents } from '../../agent-session/agent-session-selectors';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
+import { normalizeStreamingState } from '$shared/utils/agent-streaming-state';
 
 const logger = createLogger('AgentIpcSaga');
 const AGENT_CREATED_DEDUP_WINDOW = 500; // ms
@@ -209,7 +214,8 @@ function* persistAgentSessionFromState(
     });
     return;
   }
-  yield* call([persistenceService, persistenceService.saveSession], session, wsId, {
+  const sessionToSave = normalizeStreamingState({ ...session });
+  yield* call([persistenceService, persistenceService.saveSession], sessionToSave, wsId, {
     immediate,
     allowTruncation: options?.allowTruncation,
   });
@@ -779,6 +785,7 @@ export function* handleAgentCreated(data: AgentCreatedEventData): SagaGenerator<
       isBackground: agent.isBackground || agent.metadata?.isBackground || false,
       metadata: agent.metadata,
     };
+    normalizeStreamingState(newSession, hasHandler);
     const wsIdForNew = workspaceId || newSession.workspaceId;
     if (!wsIdForNew) throw new Error(`Cannot create session without workspaceId: ${agentId}`);
     yield* put(
@@ -914,6 +921,7 @@ export type QueueProcessingData = {
   agentId: string;
   messageId: string;
   content: string;
+  workspaceId?: string;
   appMessageId?: string;
   assistantAppMessageId?: string;
   contextItems?: Array<{
@@ -942,6 +950,14 @@ export function* handleQueueProcessing(data: QueueProcessingData): SagaGenerator
       });
       yield* delay(QUEUE_SESSION_RETRY_DELAY_MS);
     }
+  }
+
+  // Before giving up, attempt to load the session from persistence — background
+  // and delegated agents may not be hydrated into Redux yet, which otherwise
+  // strands the queued turn.
+  if (!session && data.workspaceId) {
+    yield* call(loadAndCreateSessionFromPersistence, agentId, data.workspaceId);
+    session = yield* selectAgentSession.effect(agentId);
   }
 
   if (!session) {
@@ -1045,42 +1061,115 @@ export function* watchQueueProcessingSaga() {
 export function* handleQueueCancelled(data: {
   agentId: string;
   messageId: string;
+  requeued?: boolean;
 }): SagaGenerator<void> {
-  const { agentId, messageId } = data;
-  logger.warn('Queue processing cancelled, cleaning up', { agentId, messageId });
+  const { agentId, messageId, requeued } = data;
+  logger.warn('Queue processing cancelled, cleaning up', { agentId, messageId, requeued });
 
   // Look up the session to get its workspaceId — don't rely on the active workspace
   const session: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
 
-  // Always remove from agent-session state (only needs agentId + messageId)
-  yield* put(removeMessage(agentId, messageId));
+  // Only remove the optimistic user message when the backend genuinely dropped it.
+  // When the message is requeued (e.g. a concurrent stream aborted this attempt but
+  // left it in the backend queue), keep it visible so it doesn't vanish before the
+  // backend processes it on the next cycle.
+  if (!requeued) {
+    yield* put(removeMessage(agentId, messageId));
 
-  // Persist cleanup only when the owning workspace is explicit. Do not fall back
-  // to the active workspace; queue cancellation may arrive after the user has
-  // switched workspaces.
-  const wsId = session?.workspaceId;
+    // Persist cleanup only when the owning workspace is explicit. Do not fall back
+    // to the active workspace; queue cancellation may arrive after the user has
+    // switched workspaces.
+    const wsId = session?.workspaceId;
 
-  if (wsId) {
-    try {
-      yield* call(persistAgentSessionFromState, wsId, agentId, true);
-    } catch (error) {
-      logger.error('Failed to persist queue cancellation cleanup', { agentId, error });
+    if (wsId) {
+      try {
+        yield* call(persistAgentSessionFromState, wsId, agentId, true);
+      } catch (error) {
+        logger.error('Failed to persist queue cancellation cleanup', { agentId, error });
+      }
+    } else {
+      logger.warn(
+        'No workspaceId available for queue cancellation — session message removed but workspace state may be stale',
+        { agentId, messageId },
+      );
     }
-  } else {
-    logger.warn(
-      'No workspaceId available for queue cancellation — session message removed but workspace state may be stale',
-      { agentId, messageId },
-    );
   }
 
   yield* call(clearPendingStreamRegistration, agentId);
 }
 
 export function* watchQueueCancelledSaga() {
-  yield* takeEveryFromElectronChannel<{ agentId: string; messageId: string }>(
+  yield* takeEveryFromElectronChannel<{ agentId: string; messageId: string; requeued?: boolean }>(
     'agent:queue:processing-cancelled',
     function* (data) {
       yield* call(handleQueueCancelled, data);
+    },
+  );
+}
+
+// ============================================================================
+// 6b. agent:circuit-breaker:status — surface a tripped circuit breaker
+// ============================================================================
+
+interface CircuitBreakerStatusPayload {
+  workspaceId: string;
+  status: CircuitStatus;
+}
+
+const CIRCUIT_BREAKER_TRIP_REASON_LABELS: Record<TripReason, string> = {
+  consecutive_failures: 'repeated agent failures',
+  rate_limit: 'repeated rate-limit errors',
+  spawn_limit: 'too many agent starts',
+  manual: 'manually stopped',
+};
+
+function circuitBreakerToastId(workspaceId: string): string | number {
+  return `circuit-breaker-${workspaceId}`;
+}
+
+/**
+ * Show (or clear) a notice when a workspace's agent circuit breaker changes
+ * state. When open, the toast explains the trip reason and remaining cooldown
+ * and offers a manual reset so the user can recover without restarting the app.
+ */
+function handleCircuitBreakerStatus({ workspaceId, status }: CircuitBreakerStatusPayload): void {
+  const toastId = circuitBreakerToastId(workspaceId);
+
+  if (status.state !== 'open') {
+    // Recovered (closed/half-open) — clear any open notice.
+    toast.dismiss(toastId);
+    return;
+  }
+
+  const reasonLabel = status.tripReason
+    ? (CIRCUIT_BREAKER_TRIP_REASON_LABELS[status.tripReason] ?? status.tripReason)
+    : 'agent failures';
+  const remainingSec = status.cooldownEndsAt
+    ? Math.max(0, Math.ceil((status.cooldownEndsAt - Date.now()) / 1000))
+    : 0;
+  const cooldownText =
+    remainingSec > 0 ? ` Automatic retry in ${remainingSec}s.` : ' You can retry now.';
+
+  toast.error(`Agent starts are paused (${reasonLabel}).${cooldownText}`, {
+    id: toastId,
+    duration: Number.POSITIVE_INFINITY,
+    action: {
+      label: 'Reset now',
+      onClick: () => {
+        toast.dismiss(toastId);
+        invoke(AGENT_CHANNELS.CIRCUIT_BREAKER_RESET, { workspaceId }).catch((error) => {
+          logger.error('Failed to reset circuit breaker', { workspaceId, error });
+        });
+      },
+    },
+  });
+}
+
+export function* watchCircuitBreakerStatusSaga() {
+  yield* takeEveryFromElectronChannel<CircuitBreakerStatusPayload>(
+    'agent:circuit-breaker:status',
+    function* (data) {
+      yield* call(handleCircuitBreakerStatus, data);
     },
   );
 }
@@ -1255,6 +1344,7 @@ export function* agentIpcSaga() {
   yield* fork(watchAgentCreatedIpcSaga);
   yield* fork(watchQueueProcessingSaga);
   yield* fork(watchQueueCancelledSaga);
+  yield* fork(watchCircuitBreakerStatusSaga);
   yield* fork(watchBeforeUnloadSaga);
   yield* fork(watchPagehideSaga);
   yield* fork(watchBackendStreamReconnectSaga);

@@ -279,11 +279,20 @@ export class AgentBackendHandler {
   private static readonly PENDING_STOP_AGENT_TIMEOUT_MS = 60_000;
   /** @property {Map<string, Set<string>>} completedStreams - Track completed streamIds per agentId to prevent duplicate onComplete calls */
   private completedStreams = new Map<string, Set<string>>();
-  /** @property {Map<string, { resolve: () => void, reject: (err: Error) => void }>} pendingHandlerReady - Promises waiting for frontend handler ready signal */
+  /**
+   * @property pendingHandlerReady - Promises waiting for the frontend handler-ready signal.
+   * Keyed by agentId, each agent maps to an inner Map of per-request generation →
+   * { resolve, reject }. Overlapping flows for the same agent (e.g. prepare-handler retry
+   * plus queue processing, or wake plus queued message) each register their own generation
+   * so they cannot clobber one another, and a stray agent:handler-ready cannot resolve a
+   * waiter that has already timed out and removed itself.
+   */
   private pendingHandlerReady = new Map<
     string,
-    { resolve: () => void; reject: (err: Error) => void }
+    Map<number, { resolve: () => void; reject: (err: Error) => void }>
   >();
+  /** @property {number} handlerReadyGeneration - Monotonic counter issuing a unique id to each pending handler-ready waiter. */
+  private handlerReadyGeneration = 0;
   /** @property {Map<string, number>} lastPongTimes - Track last pong received time per agent for IPC heartbeat */
   private lastPongTimes = new Map<string, number>();
   /** @property {Map<string, number>} lastPingSentTimes - Track when last ping was sent to check for missed pongs */
@@ -979,12 +988,11 @@ export class AgentBackendHandler {
       try {
         // Create promise that will be resolved when frontend sends agent:handler-ready
         const handlerReadyPromise = new Promise<void>((resolve, reject) => {
-          this.pendingHandlerReady.set(agentId, { resolve, reject });
+          const generation = this.registerHandlerReadyWaiter(agentId, { resolve, reject });
 
           // Set up timeout - fail if frontend doesn't respond
           setTimeout(() => {
-            if (this.pendingHandlerReady.has(agentId)) {
-              this.pendingHandlerReady.delete(agentId);
+            if (this.removeHandlerReadyWaiter(agentId, generation)) {
               reject(
                 new Error(
                   `Frontend did not respond to agent:prepare-handler within ${timeoutMs}ms for agent ${agentId}`,
@@ -1047,12 +1055,11 @@ export class AgentBackendHandler {
    */
   private async waitForFrontendHandlerReady(agentId: string, timeoutMs: number): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      this.pendingHandlerReady.set(agentId, { resolve, reject });
+      const generation = this.registerHandlerReadyWaiter(agentId, { resolve, reject });
 
       // Set up timeout - fail if frontend doesn't respond
       setTimeout(() => {
-        if (this.pendingHandlerReady.has(agentId)) {
-          this.pendingHandlerReady.delete(agentId);
+        if (this.removeHandlerReadyWaiter(agentId, generation)) {
           reject(
             new Error(
               `Frontend did not respond with agent:handler-ready within ${timeoutMs}ms for agent ${agentId}`,
@@ -1061,6 +1068,68 @@ export class AgentBackendHandler {
         }
       }, timeoutMs);
     });
+  }
+
+  /**
+   * Register a waiter for the frontend handler-ready signal under a unique generation.
+   * Multiple overlapping flows for the same agent each get their own generation so they
+   * never overwrite each other's promise.
+   *
+   * @param agentId - The agent ID the waiter is for
+   * @param waiter - The resolve/reject callbacks for the waiter's promise
+   * @returns The generation id assigned to this waiter (used to remove it later)
+   */
+  private registerHandlerReadyWaiter(
+    agentId: string,
+    waiter: { resolve: () => void; reject: (err: Error) => void },
+  ): number {
+    const generation = this.handlerReadyGeneration++;
+    let waiters = this.pendingHandlerReady.get(agentId);
+    if (!waiters) {
+      waiters = new Map();
+      this.pendingHandlerReady.set(agentId, waiters);
+    }
+    waiters.set(generation, waiter);
+    return generation;
+  }
+
+  /**
+   * Remove a single pending handler-ready waiter by its generation. Used by the per-waiter
+   * timeout so a timed-out waiter removes only itself (never a newer overlapping waiter).
+   *
+   * @param agentId - The agent ID the waiter belongs to
+   * @param generation - The generation id returned by registerHandlerReadyWaiter
+   * @returns true if the waiter was still pending and has now been removed
+   */
+  private removeHandlerReadyWaiter(agentId: string, generation: number): boolean {
+    const waiters = this.pendingHandlerReady.get(agentId);
+    if (!waiters || !waiters.delete(generation)) {
+      return false;
+    }
+    if (waiters.size === 0) {
+      this.pendingHandlerReady.delete(agentId);
+    }
+    return true;
+  }
+
+  /**
+   * Resolve every pending handler-ready waiter for an agent. The renderer signalling ready
+   * satisfies all overlapping flows currently waiting for that agent, and waiters that have
+   * already timed out are gone, so a stray signal cannot resolve a stale waiter.
+   *
+   * @param agentId - The agent ID whose waiters should be resolved
+   * @returns The number of waiters resolved
+   */
+  private resolveHandlerReadyWaiters(agentId: string): number {
+    const waiters = this.pendingHandlerReady.get(agentId);
+    if (!waiters || waiters.size === 0) {
+      return 0;
+    }
+    this.pendingHandlerReady.delete(agentId);
+    for (const waiter of waiters.values()) {
+      waiter.resolve();
+    }
+    return waiters.size;
   }
 
   /**
@@ -1099,11 +1168,8 @@ export class AgentBackendHandler {
       const { agentId } = data;
       logger.info('Received agent:handler-ready from frontend', { agentId });
 
-      const pending = this.pendingHandlerReady.get(agentId);
-      if (pending) {
-        pending.resolve();
-        this.pendingHandlerReady.delete(agentId);
-      } else {
+      const resolvedCount = this.resolveHandlerReadyWaiters(agentId);
+      if (resolvedCount === 0) {
         logger.warn('Received agent:handler-ready but no pending request', { agentId });
       }
     });
@@ -9161,6 +9227,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       queueTargetWindows = getWindowIdsForWorkspace(workspaceId);
       const processingData = {
         agentId,
+        workspaceId,
         messageId: nextMessage.id,
         appMessageId: nextMessage.appMessageId,
         assistantAppMessageId,
@@ -9218,10 +9285,13 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
             note: 'Message remains in queue and will be processed after the current stream completes',
           },
         );
-        // Notify frontend to clean up the orphaned handler from agent:queue:processing
+        // Notify frontend to clean up the orphaned handler from agent:queue:processing.
+        // The message stays in the queue, so flag it as requeued so the renderer keeps
+        // the optimistic user message visible.
         const cancelledData = {
           agentId,
           messageId: nextMessage.id,
+          requeued: true,
         };
         this.sendToRenderer(
           'agent:queue:processing-cancelled',
@@ -9285,6 +9355,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       // FIX: Re-add the message to the front of the queue so it can be retried.
       // The message was removed above before attempting to send, so we must restore it.
       const currentQueue = this.messageQueues.get(agentId);
+      let messageRequeued = false;
       if (currentQueue) {
         // Re-add to front of queue for retry on next onComplete cycle if it was
         // already removed from the source-of-truth queue. If the failure happened
@@ -9294,6 +9365,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         } else if (!currentQueue.some((message) => message.id === nextMessage?.id)) {
           currentQueue.unshift(nextMessage);
         }
+        messageRequeued = true;
         currentQueue.forEach((m, i) => {
           m.position = i;
         });
@@ -9313,6 +9385,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         const cancelledData = {
           agentId,
           messageId: nextMessage.id,
+          requeued: messageRequeued,
         };
         this.sendToRenderer(
           'agent:queue:processing-cancelled',

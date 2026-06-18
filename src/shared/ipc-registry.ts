@@ -84,6 +84,7 @@ export const IPC_CHANNELS = {
     TRACK_COMPLETED: 'agent:track-completed',
     TRACK_ERROR: 'agent:track-error',
     CREATE: 'agent:create',
+    CIRCUIT_BREAKER_RESET: 'agent:circuit-breaker:reset',
     ACTIVATE: 'agent:activate',
     SEND_MESSAGE: 'agent:send-message',
     STOP: 'agent:stop',
@@ -1236,6 +1237,7 @@ export const EVENT_CHANNELS = [
   'agent:queue:updated',
   'agent:queue:processing',
   'agent:queue:processing-cancelled',
+  'agent:circuit-breaker:status', // Circuit breaker state changed (open/half-open/closed) for a workspace
   'agent:message:error',
   // NOTE: 'agent:message:chunk' removed - legacy channel, all streaming uses session-specific channels
   'agent:message:received',

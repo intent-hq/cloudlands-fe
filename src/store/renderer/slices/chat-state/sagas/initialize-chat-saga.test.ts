@@ -159,6 +159,14 @@ vi.mock('../../agent-session/agent-session-slice', () => ({
     type: 'agentSessions/replaceMessages',
     payload: [agentId, messages],
   }),
+  setAgentStreaming: (agentId: any, isStreaming: any) => ({
+    type: 'agentSessions/setAgentStreaming',
+    payload: [agentId, isStreaming],
+  }),
+  updateSession: (agentId: any, updates: any) => ({
+    type: 'agentSessions/updateSession',
+    payload: [agentId, updates],
+  }),
 }));
 
 const mockSelectChatState = vi.fn();
@@ -963,5 +971,76 @@ describe('initialize-chat-saga: disk message merge regression', () => {
 
     const messageIds = getLatestDispatchedMessageIds(dispatched);
     expect(messageIds).toContain('msg-1');
+  });
+
+  it('clears agent-session streaming flags when reconciling a stale streaming session', async () => {
+    const { initializeChatSaga } = await import('./initialize-chat-saga');
+
+    const userMsg = makeMsg('msg-1', 'user', 'do something');
+    const assistantMsg = {
+      ...makeMsg('msg-2', 'assistant', 'partial'),
+      isStreaming: true,
+      streamingComplete: false,
+    };
+    // updatedAt well beyond the stale threshold so reconciliation triggers.
+    const staleSession = {
+      id: 'agent-1',
+      workspaceId: 'ws-1',
+      name: 'Test Agent',
+      status: 'active',
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+      messages: [userMsg, assistantMsg],
+      model: 'test-model',
+      createdAt: new Date('2020-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2020-01-01T00:00:00.000Z'),
+    };
+
+    mockSelectAgentById.mockReturnValue(staleSession);
+    mockSelectAgentMessages.mockReturnValue([userMsg, assistantMsg]);
+    mockLoadSession.mockResolvedValue(null);
+
+    const dispatched: any[] = [];
+    const channel = stdChannel();
+
+    runSaga(
+      {
+        channel,
+        dispatch: (action: any) => {
+          dispatched.push(action);
+          channel.put(action);
+        },
+        getState: () => ({
+          chatState: { byAgentId: {} },
+          agentSessions: { byAgentId: { 'agent-1': staleSession } },
+          workspaceAgents: { byWorkspaceId: {} },
+        }),
+      },
+      initializeChatSaga as any,
+    );
+
+    channel.put(initializeChatRequested('agent-1', { wsId: 'ws-1' }));
+
+    await vi.dynamicImportSettled();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const setStreaming = dispatched.find(
+      (a) => a.type === 'agentSessions/setAgentStreaming',
+    );
+    expect(setStreaming?.payload).toEqual(['agent-1', false]);
+
+    const sessionUpdate = dispatched.find(
+      (a) => a.type === 'agentSessions/updateSession',
+    );
+    expect(sessionUpdate?.payload[0]).toBe('agent-1');
+    expect(sessionUpdate?.payload[1]).toMatchObject({
+      status: 'idle',
+      isProcessing: false,
+      isResponding: false,
+    });
+
+    const initAction = dispatched.find((a) => a.type === chatInitialized.type);
+    expect(initAction?.payload[1].isStreaming).toBe(false);
   });
 });

@@ -712,6 +712,9 @@ export interface AgentQueueProcessingCancelledEvent extends WorkspaceEventBase {
   data: {
     agentId: string;
     messageId?: string;
+    /** True when the backend retained the message in its queue (it will be
+     *  processed on a later cycle); false/absent when the message was dropped. */
+    requeued?: boolean;
     [key: string]: any;
   };
 }

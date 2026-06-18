@@ -30,6 +30,7 @@ import { LocalMetadataFS } from '../../metadata-fs/main/local-metadata-fs';
 import { truncateLargeFields } from './persistence-truncation';
 import { isGenericAgentName, isRandomAgentName } from '$shared/utils/agent-name-utils';
 import { deduplicateAgentMessages, normalizeAgentMessage } from '$shared/utils/message-dedup';
+import { normalizeStreamingState } from '$shared/utils/agent-streaming-state';
 
 const logger = new Logger('UnifiedPersistence');
 
@@ -1680,6 +1681,13 @@ export class UnifiedPersistence {
     data: any,
     metadataFS?: IMetadataFS,
   ): Promise<SaveResult> {
+    // Single disk-write funnel: strip transient streaming/processing flags so a
+    // crash mid-stream can never persist (or later re-hydrate) a phantom
+    // "responding" state. Clone first — callers may pass frozen Redux/loaded
+    // objects that must not be mutated. Genuinely-streaming sessions (a message
+    // with isStreaming) are preserved untouched.
+    data = normalizeStreamingState({ ...data });
+
     // Use a unique temp file name to avoid race conditions
     const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const tempPath = `${filePath}.tmp.${uniqueSuffix}`;
