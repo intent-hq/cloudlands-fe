@@ -215,10 +215,17 @@ function mergeWorkspaceEnrichment(existing: Workspace | undefined, incoming: Wor
     return normalized;
   }
 
+  const hasIncomingPullRequests =
+    normalized.pullRequests !== undefined && normalized.pullRequests.length > 0;
+
   return {
     ...normalized,
     agentSummary: normalized.agentSummary ?? existing.agentSummary,
     activePullRequest: normalized.activePullRequest ?? existing.activePullRequest,
+    pullRequests: hasIncomingPullRequests ? normalized.pullRequests : existing.pullRequests,
+    prNumber: normalized.prNumber ?? existing.prNumber,
+    prStatus: normalized.prStatus ?? existing.prStatus,
+    prUrl: normalized.prUrl ?? existing.prUrl,
   };
 }
 

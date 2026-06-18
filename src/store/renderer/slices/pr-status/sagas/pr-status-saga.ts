@@ -59,6 +59,57 @@ const MIN_REFRESH_INTERVAL_MS = 5_000;
 
 // ── Discover PRs ──
 
+/** True for PRs the workspace still considers live (open or draft). */
+function isOpenOrDraftStatus(status: PullRequestStatus | undefined): boolean {
+  return status === PullRequestStatus.Open || status === PullRequestStatus.Draft;
+}
+
+/**
+ * Match a list of PRs against the workspace branch by head ref.
+ *
+ * The compact PR listing payload omits head/base refs, so `sourceBranch` is
+ * often empty for listed PRs. Unlike the server-side head-filtered fetch (Step
+ * 2a), the broad-fetch and search fallbacks cannot trust an empty ref, so for
+ * each such PR the real head ref is resolved via a per-PR details lookup
+ * (`git-tracking:get-pull-request`) before matching. This prevents PRs from
+ * being dropped purely due to the missing ref while still excluding unrelated
+ * PRs whose head clearly does not match.
+ */
+function* resolveAndMatchPRsByHeadRef(
+  prs: any[],
+  workspace: Workspace,
+  force: boolean,
+): SagaGenerator<any[]> {
+  const matched: any[] = [];
+  for (const pr of prs) {
+    const src = pr.sourceBranch || "";
+    if (src) {
+      if (src === workspace.branch) matched.push(pr);
+      continue;
+    }
+
+    try {
+      const detail: any = yield* call(invoke, "git-tracking:get-pull-request", {
+        owner: workspace.repositoryOwner,
+        repo: workspace.repositoryName,
+        number: pr.number,
+        force,
+      });
+      const resolvedSrc = (detail?.success && detail.data?.sourceBranch) || "";
+      if (resolvedSrc && resolvedSrc === workspace.branch) {
+        matched.push(detail.data);
+      }
+    } catch (resolveErr) {
+      logger.warn("[PRStatusSaga] Failed to resolve PR head ref", {
+        workspaceId: workspace.id,
+        prNumber: pr.number,
+        error: resolveErr instanceof Error ? resolveErr.message : "Unknown error",
+      });
+    }
+  }
+  return matched;
+}
+
 export function* discoverPRsForBranch(
   workspaceId: string,
   workspace: Workspace,
@@ -69,34 +120,68 @@ export function* discoverPRsForBranch(
   }
 
   try {
-    // Step 1: If workspace has a stored PR number, fetch and validate
+    // Step 1: Re-fetch every currently-known open/draft PR by number.
+    //
+    // Fetching by number is branch-independent and robust, unlike the branch-list
+    // queries below (2a/2b/3), which can legitimately return empty (fork PRs that
+    // miss the head filter, repos with many open PRs, transient list failures).
+    // Re-fetching known PRs here makes discovery authoritative for them, so a PR
+    // that was already visible isn't silently dropped on a forced refresh just
+    // because the list queries came back empty.
+    const knownPRNumbers: number[] = [];
     if (workspace.prNumber) {
+      knownPRNumbers.push(workspace.prNumber);
+    }
+    if (
+      workspace.activePullRequest &&
+      isOpenOrDraftStatus(workspace.activePullRequest.status)
+    ) {
+      knownPRNumbers.push(workspace.activePullRequest.number);
+    }
+    for (const existing of workspace.pullRequests || []) {
+      if (isOpenOrDraftStatus(existing.status)) {
+        knownPRNumbers.push(existing.number);
+      }
+    }
+
+    const knownPRs: PullRequestInfo[] = [];
+    const seenKnownNumbers = new Set<number>();
+    for (const number of knownPRNumbers) {
+      if (seenKnownNumbers.has(number)) continue;
+      seenKnownNumbers.add(number);
+
       const response: any = yield* call(invoke, "git-tracking:get-pull-request", {
         owner: workspace.repositoryOwner,
         repo: workspace.repositoryName,
-        number: workspace.prNumber,
+        number,
         force,
       });
 
-      if (response.success && response.data) {
-        const status = normalizePullRequestStatus(response.data);
-        const pr = normalizePullRequestInfo(response.data, null, status);
-        const prSourceBranch = pr.headRef || "";
+      if (!response.success || !response.data) continue;
 
+      const status = normalizePullRequestStatus(response.data);
+      const pr = normalizePullRequestInfo(response.data, null, status);
+
+      // Preserve the stored-prNumber branch-validation: the explicitly stored
+      // PR number is dropped when its source branch clearly belongs to another
+      // branch. baseRef may be plain ("main") or remote-qualified ("origin/main");
+      // only an allowlist of remote prefixes is stripped so slashed local
+      // branches aren't over-stripped. PRs the workspace already tracked in
+      // pullRequests/activePullRequest are retained with their real status
+      // regardless of head ref — losing the ref must not erase a known PR.
+      if (number === workspace.prNumber) {
+        const prSourceBranch = pr.headRef || "";
         const matchesBranch = !prSourceBranch || !workspace.branch || prSourceBranch === workspace.branch;
-        // Accept the stored PR if its sourceBranch matches the workspace's
-        // baseRef. baseRef may be a plain branch ("main") or remote-qualified
-        // ("origin/main"); only a conservative allowlist of remote prefixes
-        // is stripped so slashed local branches aren't over-stripped.
         const baseRefMatched = matchesBaseRef(prSourceBranch, workspace.baseRef);
         if (!matchesBranch && !baseRefMatched) {
           logger.info("[PRStatusSaga] Stored PR source branch mismatch, skipping", {
             workspaceId, prNumber: workspace.prNumber, prSourceBranch,
           });
-        } else {
-          return { success: true, prs: [pr] };
+          continue;
         }
       }
+
+      knownPRs.push(pr);
     }
 
     // Step 2a: Fetch open PRs filtered by head branch (server-side filtering)
@@ -127,6 +212,11 @@ export function* discoverPRsForBranch(
 
     let matchingPRs = allPRs.filter((pr: any) => {
       const src = pr.sourceBranch || "";
+      // The server-side head filter (head=owner:branch) already guarantees the
+      // returned PRs' head IS the workspace branch, so an empty sourceBranch from
+      // the compact listing payload is treated as a match. A present sourceBranch
+      // that clearly does not match is still excluded.
+      if (!src) return true;
       return branchesToMatch.has(src);
     });
 
@@ -145,10 +235,12 @@ export function* discoverPRsForBranch(
         });
 
         if (broadResponse.success && broadResponse.data) {
-          matchingPRs = (broadResponse.data as any[]).filter((pr: any) => {
-            const src = pr.sourceBranch || "";
-            return src === workspace.branch;
-          });
+          matchingPRs = yield* call(
+            resolveAndMatchPRsByHeadRef,
+            broadResponse.data as any[],
+            workspace,
+            force,
+          );
         }
       } catch (broadErr) {
         logger.warn("[PRStatusSaga] Broad PR fetch fallback failed", {
@@ -169,10 +261,12 @@ export function* discoverPRsForBranch(
         });
 
         if (searchResponse.success && searchResponse.data) {
-          matchingPRs = (searchResponse.data as any[]).filter((pr: any) => {
-            const src = pr.sourceBranch || "";
-            return src === workspace.branch;
-          });
+          matchingPRs = yield* call(
+            resolveAndMatchPRsByHeadRef,
+            searchResponse.data as any[],
+            workspace,
+            force,
+          );
         }
       } catch (searchErr) {
         logger.warn("[PRStatusSaga] Search API fallback failed", {
@@ -182,15 +276,19 @@ export function* discoverPRsForBranch(
       }
     }
 
-    if (matchingPRs.length > 0) {
-      const normalizedPRs: PullRequestInfo[] = matchingPRs.map((pr: any) => {
-        const status = normalizePullRequestStatus(pr);
-        return normalizePullRequestInfo(pr, null, status);
-      });
-      return { success: true, prs: normalizedPRs };
-    }
+    // Newly discovered PRs from the branch-list queries (2a/2b/3).
+    const discoveredNewPRs: PullRequestInfo[] = matchingPRs.map((pr: any) => {
+      const status = normalizePullRequestStatus(pr);
+      return normalizePullRequestInfo(pr, null, status);
+    });
 
-    return { success: true, prs: [] };
+    // Merge re-fetched known PRs with newly discovered ones. mergePullRequestArrays
+    // de-dupes by number, so a PR found both ways isn't double-counted; the known
+    // (by-number, details:true) entry takes precedence over the compact listing.
+    return {
+      success: true,
+      prs: mergePullRequestArrays(discoveredNewPRs, knownPRs),
+    };
   } catch (err) {
     const error = err instanceof Error ? err.message : "Unknown error";
     logger.error("[PRStatusSaga] Failed to discover PRs", err as Error);

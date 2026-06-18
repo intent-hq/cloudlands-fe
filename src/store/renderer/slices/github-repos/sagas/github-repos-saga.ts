@@ -83,19 +83,17 @@ export function* loadGithubReposSaga(): SagaGenerator<void> {
 }
 
 /**
- * React to GitHub auth changes: auto-load on sign-in, clear on sign-out.
- * `takeLatestFromSelector` fires once on subscription with the current value,
- * so the very first authenticated state the saga sees will also trigger a
- * load — no need for an explicit bootstrap dispatch from components.
+ * React to GitHub auth changes: clear the cache on sign-out. We deliberately
+ * do NOT auto-load on sign-in — the repo list is fetched on demand when the
+ * onboarding "Clone from GitHub" tab is shown (see `GitHubRepoTab.svelte`) so
+ * app startup never triggers a GitHub API call.
  */
-function* handleAuthChange({
+export function* handleAuthChange({
   payload,
 }: {
   payload: boolean;
 }): SagaGenerator<void> {
-  if (payload) {
-    yield* put(loadGithubRepos());
-  } else {
+  if (!payload) {
     yield* put(clearGithubRepos());
   }
 }

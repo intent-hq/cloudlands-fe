@@ -386,5 +386,276 @@ describe("PR Status Saga", () => {
       expect(result.returnValue.success).toBe(true);
       expect(result.returnValue.prs).toEqual([]);
     });
+
+    it("discovers a head-filtered PR even when the compact payload omits sourceBranch", async () => {
+      // Step 2a: the server-side head filter already guarantees the match, so an
+      // empty sourceBranch from the compact listing payload must not drop the PR.
+      const workspace = {
+        id: "ws-empty-src",
+        branch: "feature/test",
+        repositoryOwner: "testorg",
+        repositoryName: "testrepo",
+        baseRef: "main",
+      } as any;
+
+      vi.mocked(invoke).mockImplementation(((channel: string) => {
+        if (channel === "git-tracking:get-pull-requests") {
+          return Promise.resolve({
+            success: true,
+            data: [
+              { number: 42, sourceBranch: "", state: "open", title: "PR", url: "u" },
+            ],
+          });
+        }
+        return Promise.resolve({ success: false });
+      }) as any);
+
+      const result = await expectSaga(discoverPRsForBranch, "ws-empty-src", workspace, true)
+        .silentRun(100);
+
+      expect(result.returnValue.success).toBe(true);
+      expect(result.returnValue.prs).toHaveLength(1);
+      expect(result.returnValue.prs[0].number).toBe(42);
+    });
+
+    it("still excludes a head-filtered PR whose present sourceBranch does not match", async () => {
+      const workspace = {
+        id: "ws-mismatch",
+        branch: "feature/test",
+        repositoryOwner: "testorg",
+        repositoryName: "testrepo",
+        baseRef: "main",
+      } as any;
+
+      vi.mocked(invoke).mockImplementation(((channel: string) => {
+        if (channel === "git-tracking:get-pull-requests") {
+          return Promise.resolve({
+            success: true,
+            data: [
+              { number: 99, sourceBranch: "some-other-branch", state: "open", title: "Other", url: "u" },
+            ],
+          });
+        }
+        // No broad/search matches either.
+        return Promise.resolve({ success: true, data: [] });
+      }) as any);
+
+      const result = await expectSaga(discoverPRsForBranch, "ws-mismatch", workspace, true)
+        .silentRun(100);
+
+      expect(result.returnValue.success).toBe(true);
+      expect(result.returnValue.prs).toEqual([]);
+    });
+
+    it("resolves head ref via per-PR details lookup in the broad fallback when sourceBranch is empty", async () => {
+      // Step 2a head-filtered fetch returns nothing; broad fallback returns a
+      // compact PR with empty sourceBranch that must be resolved to match.
+      const workspace = {
+        id: "ws-broad",
+        branch: "feature/test",
+        repositoryOwner: "testorg",
+        repositoryName: "testrepo",
+        baseRef: "main",
+      } as any;
+
+      vi.mocked(invoke).mockImplementation(((channel: string, payload: any) => {
+        if (channel === "git-tracking:get-pull-requests") {
+          // Head-filtered (has `head` option) returns empty; broad fetch returns compact PRs.
+          if (payload?.options?.head) {
+            return Promise.resolve({ success: true, data: [] });
+          }
+          return Promise.resolve({
+            success: true,
+            data: [
+              { number: 7, sourceBranch: "", state: "open", title: "Mine", url: "u7" },
+              { number: 8, sourceBranch: "", state: "open", title: "Unrelated", url: "u8" },
+            ],
+          });
+        }
+        if (channel === "git-tracking:get-pull-request") {
+          if (payload?.number === 7) {
+            return Promise.resolve({
+              success: true,
+              data: { number: 7, sourceBranch: "feature/test", state: "open", title: "Mine", url: "u7" },
+            });
+          }
+          return Promise.resolve({
+            success: true,
+            data: { number: 8, sourceBranch: "different-branch", state: "open", title: "Unrelated", url: "u8" },
+          });
+        }
+        return Promise.resolve({ success: false });
+      }) as any);
+
+      const result = await expectSaga(discoverPRsForBranch, "ws-broad", workspace, true)
+        .silentRun(100);
+
+      expect(result.returnValue.success).toBe(true);
+      expect(result.returnValue.prs).toHaveLength(1);
+      expect(result.returnValue.prs[0].number).toBe(7);
+    });
+  });
+
+  describe("discoverPRsForBranch known-PR retention", () => {
+    it("(a) keeps a known open PR by number when 2a/2b/3 return empty", async () => {
+      const workspace = {
+        id: "ws-known",
+        branch: "feature/test",
+        repositoryOwner: "testorg",
+        repositoryName: "testrepo",
+        baseRef: "main",
+        pullRequests: [makePR({ number: 50, status: PullRequestStatus.Open })],
+      } as any;
+
+      vi.mocked(invoke).mockImplementation(((channel: string, payload: any) => {
+        if (channel === "git-tracking:get-pull-request" && payload?.number === 50) {
+          return Promise.resolve({
+            success: true,
+            data: { number: 50, sourceBranch: "feature/test", state: "open", title: "Known", url: "u50" },
+          });
+        }
+        // All branch-list queries come back empty.
+        return Promise.resolve({ success: true, data: [] });
+      }) as any);
+
+      const result = await expectSaga(discoverPRsForBranch, "ws-known", workspace, true)
+        .silentRun(100);
+
+      expect(result.returnValue.success).toBe(true);
+      expect(result.returnValue.prs).toHaveLength(1);
+      expect(result.returnValue.prs[0].number).toBe(50);
+      expect(result.returnValue.prs[0].status).toBe(PullRequestStatus.Open);
+    });
+
+    it("(b) re-fetches and retains multiple known open PRs", async () => {
+      const workspace = {
+        id: "ws-multi",
+        branch: "feature/test",
+        repositoryOwner: "testorg",
+        repositoryName: "testrepo",
+        baseRef: "main",
+        pullRequests: [
+          makePR({ number: 50, status: PullRequestStatus.Open }),
+          makePR({ number: 51, status: PullRequestStatus.Draft }),
+        ],
+      } as any;
+
+      vi.mocked(invoke).mockImplementation(((channel: string, payload: any) => {
+        if (channel === "git-tracking:get-pull-request") {
+          if (payload?.number === 50) {
+            return Promise.resolve({
+              success: true,
+              data: { number: 50, sourceBranch: "feature/test", state: "open", title: "K50", url: "u50" },
+            });
+          }
+          return Promise.resolve({
+            success: true,
+            data: { number: 51, sourceBranch: "feature/test", state: "open", draft: true, title: "K51", url: "u51" },
+          });
+        }
+        return Promise.resolve({ success: true, data: [] });
+      }) as any);
+
+      const result = await expectSaga(discoverPRsForBranch, "ws-multi", workspace, true)
+        .silentRun(100);
+
+      expect(result.returnValue.success).toBe(true);
+      const numbers = result.returnValue.prs.map((pr: PullRequestInfo) => pr.number).sort();
+      expect(numbers).toEqual([50, 51]);
+    });
+
+    it("(c) still surfaces a newly discovered PR not previously known", async () => {
+      const workspace = {
+        id: "ws-new",
+        branch: "feature/test",
+        repositoryOwner: "testorg",
+        repositoryName: "testrepo",
+        baseRef: "main",
+        pullRequests: [],
+      } as any;
+
+      vi.mocked(invoke).mockImplementation(((channel: string) => {
+        if (channel === "git-tracking:get-pull-requests") {
+          return Promise.resolve({
+            success: true,
+            data: [
+              { number: 77, sourceBranch: "feature/test", state: "open", title: "New", url: "u77" },
+            ],
+          });
+        }
+        return Promise.resolve({ success: false });
+      }) as any);
+
+      const result = await expectSaga(discoverPRsForBranch, "ws-new", workspace, true)
+        .silentRun(100);
+
+      expect(result.returnValue.success).toBe(true);
+      expect(result.returnValue.prs).toHaveLength(1);
+      expect(result.returnValue.prs[0].number).toBe(77);
+    });
+
+    it("(d) does not double-count a PR that is both known and head-filter-matched", async () => {
+      const workspace = {
+        id: "ws-dup",
+        branch: "feature/test",
+        repositoryOwner: "testorg",
+        repositoryName: "testrepo",
+        baseRef: "main",
+        pullRequests: [makePR({ number: 42, status: PullRequestStatus.Open })],
+      } as any;
+
+      vi.mocked(invoke).mockImplementation(((channel: string, payload: any) => {
+        if (channel === "git-tracking:get-pull-request" && payload?.number === 42) {
+          return Promise.resolve({
+            success: true,
+            data: { number: 42, sourceBranch: "feature/test", state: "open", title: "Dup", url: "u42" },
+          });
+        }
+        if (channel === "git-tracking:get-pull-requests") {
+          return Promise.resolve({
+            success: true,
+            data: [
+              { number: 42, sourceBranch: "feature/test", state: "open", title: "Dup", url: "u42" },
+            ],
+          });
+        }
+        return Promise.resolve({ success: false });
+      }) as any);
+
+      const result = await expectSaga(discoverPRsForBranch, "ws-dup", workspace, true)
+        .silentRun(100);
+
+      expect(result.returnValue.success).toBe(true);
+      expect(result.returnValue.prs).toHaveLength(1);
+      expect(result.returnValue.prs[0].number).toBe(42);
+    });
+
+    it("(e) leaves stored-prNumber branch-mismatch behavior unchanged", async () => {
+      const workspace = {
+        id: "ws-stored-mismatch",
+        branch: "feature/test",
+        repositoryOwner: "testorg",
+        repositoryName: "testrepo",
+        baseRef: "main",
+        prNumber: 99,
+      } as any;
+
+      vi.mocked(invoke).mockImplementation(((channel: string, payload: any) => {
+        if (channel === "git-tracking:get-pull-request" && payload?.number === 99) {
+          return Promise.resolve({
+            success: true,
+            data: { number: 99, sourceBranch: "some-other-branch", state: "open", title: "Mismatch", url: "u99" },
+          });
+        }
+        // No branch-list matches either.
+        return Promise.resolve({ success: true, data: [] });
+      }) as any);
+
+      const result = await expectSaga(discoverPRsForBranch, "ws-stored-mismatch", workspace, true)
+        .silentRun(100);
+
+      expect(result.returnValue.success).toBe(true);
+      expect(result.returnValue.prs).toEqual([]);
+    });
   });
 });

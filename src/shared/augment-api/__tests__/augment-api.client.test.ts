@@ -69,6 +69,18 @@ function prYaml(number: number, title = `PR ${number}`): string {
   draft: false`;
 }
 
+function compactPrYaml(number: number): string {
+  // Mirrors the `details: false` compact payload: number + url are present, but
+  // descriptive fields like `state` are omitted by the github-api remote tool.
+  return `- number: ${number}
+  title: Compact PR ${number}
+  html_url: https://github.com/augmentcode/intent/pull/${number}
+  created_at: 2026-06-0${number}T00:00:00Z
+  updated_at: 2026-06-0${number}T01:00:00Z
+  user:
+    login: user-${number}`;
+}
+
 function realShapedPrYaml(number: number): string {
   return `- _links:
     comments:
@@ -215,6 +227,20 @@ describe('AugmentApiClient pull request YAML parsing', () => {
       base_ref: 'main',
       user: { login: 'user-1' },
     });
+  });
+
+  it('keeps PRs from a compact (details: false) payload that omits state', () => {
+    const prs = parser.parseYamlPullRequestList([compactPrYaml(1), compactPrYaml(2)].join('\n'));
+
+    expect(prs.map((pr) => pr.number)).toEqual([1, 2]);
+    expect(prs[0]).toMatchObject({
+      number: 1,
+      title: 'Compact PR 1',
+      state: 'open',
+      html_url: 'https://github.com/augmentcode/intent/pull/1',
+      user: { login: 'user-1' },
+    });
+    expect(loggerMock.error).not.toHaveBeenCalled();
   });
 
   it('recovers complete PRs before a remote-tool truncation marker', () => {

@@ -173,6 +173,21 @@
     }
   }
 
+  /**
+   * On-demand repo load. The list is fetched only when this tab is shown and
+   * the user is authenticated — never on app startup. This effect re-runs when
+   * auth resolves asynchronously after mount, so the list still loads without
+   * re-opening the tab. The guards skip the fetch when a load is already in
+   * flight, the data is already cached, or a previous load errored (the "Try
+   * again" button drives the retry in that case), preventing duplicate or
+   * runaway fetches.
+   */
+  $effect(() => {
+    if ($isAuthenticated$ && !$reposLoaded$ && !$reposLoading$ && !$reposError$) {
+      appStore.dispatch(loadGithubRepos());
+    }
+  });
+
   /** Default base directory for cloned repos, hydrated through Redux persistence. */
   const defaultCloneBase = $derived($defaultParentPath$ || '~/Developer');
 
@@ -264,8 +279,9 @@
     onClonePathChange(defaultCloneBase);
   }
 
-  /** User-initiated refresh. The saga also auto-reloads when auth state
-   *  flips to authenticated, so we only need an explicit dispatch here. */
+  /** User-initiated refresh (also drives the error "Try again" action). The
+   *  on-demand effect skips loads while an error is present, so this explicit
+   *  dispatch is what clears the error and re-fetches. */
   function refreshRepos() {
     appStore.dispatch(loadGithubRepos());
   }
@@ -284,9 +300,9 @@
   }
 
   onMount(() => {
-    // Make sure the store has a fresh snapshot of GitHub auth state. The
-    // github-repos saga watches this selector via takeLatestFromSelector, so
-    // the initial repo load happens automatically once we become authenticated.
+    // Make sure the store has a fresh snapshot of GitHub auth state. Once auth
+    // resolves to authenticated, the on-demand $effect above fetches the repo
+    // list — the load is driven by this tab being shown, not by app startup.
     appStore.dispatch(initializeGitHubAuth());
     githubInputRef?.focus();
   });

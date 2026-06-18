@@ -1,5 +1,5 @@
-import type { Workspace, WorkspaceId } from "$shared/types";
-import { WorkspaceStatusEnum } from "$shared/types";
+import type { PullRequestInfo, Workspace, WorkspaceId } from "$shared/types";
+import { PullRequestStatus, WorkspaceStatusEnum } from "$shared/types";
 import {
   describe,
   expect,
@@ -65,6 +65,20 @@ function makeWorkspace(overrides: Partial<Workspace> & { id: string }): Workspac
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
     id: overrides.id as WorkspaceId,
+  };
+}
+
+/** Minimal pull request fixture for testing. */
+function makePullRequest(overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
+  return {
+    id: "pr-1",
+    number: 42,
+    url: "https://github.com/example/repo/pull/42",
+    title: "Example PR",
+    status: PullRequestStatus.Open,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    ...overrides,
   };
 }
 
@@ -185,6 +199,55 @@ describe("workspaceReducer", () => {
       expect(state.pendingCreations).toEqual({});
     });
 
+    it("preserves runtime PR fields when a lite list payload omits them", () => {
+      const pr = makePullRequest();
+      const existing = makeWorkspace({
+        id: "ws-1",
+        title: "Existing",
+        pullRequests: [pr],
+        activePullRequest: pr,
+        prNumber: pr.number,
+        prStatus: pr.status,
+        prUrl: pr.url,
+      });
+
+      let state = workspaceReducer(initialState, setWorkspaceEntity(existing));
+      state = workspaceReducer(
+        state,
+        replaceWorkspaceList([
+          makeWorkspace({
+            id: "ws-1",
+            title: "Existing",
+            pullRequests: undefined,
+            activePullRequest: undefined,
+            prNumber: undefined,
+            prStatus: undefined,
+            prUrl: undefined,
+          }),
+        ])
+      );
+
+      const merged = getItem(state.workspaces, "ws-1");
+      expect(merged?.pullRequests).toEqual([pr]);
+      expect(merged?.activePullRequest).toEqual(pr);
+      expect(merged?.prNumber).toBe(pr.number);
+      expect(merged?.prStatus).toBe(pr.status);
+      expect(merged?.prUrl).toBe(pr.url);
+    });
+
+    it("preserves existing pullRequests when an incoming empty array would clear them", () => {
+      const pr = makePullRequest();
+      const existing = makeWorkspace({ id: "ws-1", pullRequests: [pr] });
+
+      let state = workspaceReducer(initialState, setWorkspaceEntity(existing));
+      state = workspaceReducer(
+        state,
+        replaceWorkspaceList([makeWorkspace({ id: "ws-1", pullRequests: [] })])
+      );
+
+      expect(getItem(state.workspaces, "ws-1")?.pullRequests).toEqual([pr]);
+    });
+
     it("resets workspace migration state including recency", () => {
       const ws = makeWorkspace({ id: "ws-1" });
       let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
@@ -228,6 +291,40 @@ describe("workspaceReducer", () => {
       state = workspaceReducer(state, setWorkspaceEntity(ws2));
       expect(getItem(state.workspaces, "ws-1")).toEqual(ws1);
       expect(getItem(state.workspaces, "ws-2")).toEqual(ws2);
+    });
+
+    it("preserves runtime PR fields when re-hydrated with a lite payload that omits them", () => {
+      const pr = makePullRequest();
+      const existing = makeWorkspace({
+        id: "ws-1",
+        pullRequests: [pr],
+        activePullRequest: pr,
+        prNumber: pr.number,
+        prStatus: pr.status,
+        prUrl: pr.url,
+      });
+
+      let state = workspaceReducer(initialState, setWorkspaceEntity(existing));
+      state = workspaceReducer(
+        state,
+        setWorkspaceEntity(
+          makeWorkspace({
+            id: "ws-1",
+            pullRequests: undefined,
+            activePullRequest: undefined,
+            prNumber: undefined,
+            prStatus: undefined,
+            prUrl: undefined,
+          })
+        )
+      );
+
+      const merged = getItem(state.workspaces, "ws-1");
+      expect(merged?.pullRequests).toEqual([pr]);
+      expect(merged?.activePullRequest).toEqual(pr);
+      expect(merged?.prNumber).toBe(pr.number);
+      expect(merged?.prStatus).toBe(pr.status);
+      expect(merged?.prUrl).toBe(pr.url);
     });
   });
 

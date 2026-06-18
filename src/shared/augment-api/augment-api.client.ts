@@ -2236,12 +2236,11 @@ export class AugmentApiClient {
       typeof value === 'string' && value.trim().length > 0;
     const url = item.html_url ?? item.url;
 
-    return (
-      this.normalizePullRequestNumber(item.number) !== null &&
-      hasNonEmptyString(item.title) &&
-      hasNonEmptyString(item.state) &&
-      hasNonEmptyString(url)
-    );
+    // Only require the fields guaranteed by the compact (`details: false`) payload
+    // and already hard-required by `convertParsedToPullRequest`: a valid number and a
+    // URL. Descriptive fields like `title`/`state` are omitted from the compact payload
+    // and defaulted by the converter, so requiring them here wrongly discards valid PRs.
+    return this.normalizePullRequestNumber(item.number) !== null && hasNonEmptyString(url);
   }
 
   private isRecoverableIssueSearchItem(item: Record<string, unknown>): boolean {

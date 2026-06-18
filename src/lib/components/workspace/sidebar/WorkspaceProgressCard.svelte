@@ -2,26 +2,23 @@
   /* eslint-disable max-lines */
   import { slide } from 'svelte/transition';
   import type { Note } from '$shared/types';
-  import {
-  WORKSPACE_STATUS_MESSAGE_MAX_LENGTH,
-  WorkspaceStatusEnum,
-} from '$shared/types';
+  import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, WorkspaceStatusEnum } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
   import {
-  computeTaskStats,
-  extractOrderedSpecTaskIds,
-  extractSpecTaskIds,
-} from '$shared/utils/task-stats';
+    computeTaskStats,
+    extractOrderedSpecTaskIds,
+    extractSpecTaskIds,
+  } from '$shared/utils/task-stats';
   import { selectUnreadNoteIds } from '$store/renderer/slices/note-read-tracking/note-read-tracking-selectors';
   import Fa from 'svelte-fa';
   import {
-  faEllipsisV,
-  faArrowRight,
-  faCodeBranch,
-  faCodePullRequest,
-  faCheck,
-  faFileLines,
-} from '@fortawesome/free-solid-svg-icons';
+    faEllipsisV,
+    faArrowRight,
+    faCodeBranch,
+    faCodePullRequest,
+    faCheck,
+    faFileLines,
+  } from '@fortawesome/free-solid-svg-icons';
   import SidebarIcon from '$lib/components/icons/SidebarIcon.svelte';
   import HoverCard from '$lib/components/ui/HoverCard.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
@@ -29,8 +26,7 @@
   import TaskAgentStatus from '$lib/components/tiptap/TaskAgentStatus.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
-  import WorkspaceActionsMenu,
-  {
+  import WorkspaceActionsMenu, {
     type MenuAction,
   } from '$lib/components/ui/WorkspaceActionsMenu.svelte';
   import { selectSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
@@ -38,51 +34,47 @@
   import { handleLink } from '$features/navigation/link-handler';
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
   import { goto } from '$app/navigation';
-  import {
-  onDestroy,
-  tick,
-  onMount,
-} from 'svelte';
+  import { onDestroy, tick, onMount } from 'svelte';
   import { writable } from 'svelte/store';
-  import {
-  logger,
-  createLogger,
-} from '$lib/utils/client-logger';
+  import { logger, createLogger } from '$lib/utils/client-logger';
   import { WorkspaceId } from '$shared/types/branded-ids';
 
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import {
-  fetchReadyTasks,
-  applyReadyTasks,
-} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+    fetchReadyTasks,
+    applyReadyTasks,
+  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { listenSync } from '$lib/electron-bridge';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import type { WorkspaceGitStatus } from '$features/accept-changes/types';
   import {
-  shouldClearGitStatusBeforeLoad,
-  shouldApplyGitStatusResult,
-  shouldClearGitStatusOnError,
-  isFetchCurrent,
-} from './git-status-refresh-utils';
+    shouldClearGitStatusBeforeLoad,
+    shouldApplyGitStatusResult,
+    shouldClearGitStatusOnError,
+    isFetchCurrent,
+  } from './git-status-refresh-utils';
   import FlameGraph from './FlameGraph.svelte';
   import WorkspaceTokenUsage from './WorkspaceTokenUsage.svelte';
   import WorkspaceCreditStats from '$lib/components/workspace/WorkspaceCreditStats.svelte';
   import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
-  import {
-  hasRunningAgents,
-  getRunningAgentNames,
-} from '$lib/utils/delete-warning-utils';
+  import { hasRunningAgents, getRunningAgentNames } from '$lib/utils/delete-warning-utils';
 
   import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
-  loadWorkspacesRequested,
-  setWorkspaceEntity,
-} from '$store/renderer/slices/workspace/workspace-slice';
+    loadWorkspacesRequested,
+    setWorkspaceEntity,
+  } from '$store/renderer/slices/workspace/workspace-slice';
   import {
-  selectWorkspaceById,
-  selectWorkspaceActivePullRequest,
-} from '$store/renderer/slices/workspace/workspace-selectors';
+    selectWorkspaceById,
+    selectWorkspaceProgressHeadline,
+    selectWorkspaceProgressActions,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
+  import type {
+    WorkspaceProgressAction,
+    WorkspaceProgressActionIconKey,
+    WorkspaceProgressInput,
+  } from '$store/renderer/slices/workspace/workspace-types';
   import { store as appStore } from '$store/renderer/store';
 
   const readyLogger = createLogger('ReadyTasks');
@@ -108,7 +100,23 @@
   const sidebarSide$ = selectSidebarSide();
   const notes = selectAllNotes(workspaceIdStore);
   const workspace = selectWorkspaceById(workspaceIdStore);
-  const activePullRequest$ = selectWorkspaceActivePullRequest(workspaceIdStore);
+
+  // Aggregated presentational inputs for the workspace progress selectors. Kept
+  // in sync via an $effect below once the derived state is available. PR identity
+  // is read authoritatively inside the selectors, not passed through here.
+  const progressInput$ = writable<WorkspaceProgressInput>({
+    gitStatus: null,
+    gitStatusLoading: false,
+    taskStats: { total: 0, completed: 0, inProgress: 0 },
+    completionRatio: 0,
+    isAgentWorking: false,
+    specHasContent: false,
+  });
+
+  // ✅ Selector readables captured at component init — the workspace slice owns
+  // the workflow-stage, headline, and action logic.
+  const progressHeadline$ = selectWorkspaceProgressHeadline(workspaceIdStore, progressInput$);
+  const progressActions$ = selectWorkspaceProgressActions(workspaceIdStore, progressInput$);
 
   // Git status state for workflow awareness
   let gitStatus = $state<WorkspaceGitStatus | null>(null);
@@ -784,22 +792,6 @@
     compact ? false : $workspaceAgentSessions$.some((s) => s.isStreaming),
   );
 
-  // Workflow stage type for determining current state
-  type WorkflowStage =
-    | 'loading' // Loading git status
-    | 'spec-empty' // Spec has no content and no agent working
-    | 'spec-creating' // Agent working on spec
-    | 'spec-ready' // Spec exists with content, no tasks
-    | 'tasks-ready' // Tasks exist, none started
-    | 'tasks-in-progress' // Some tasks in progress
-    | 'pr-merged' // PR was merged, might have new changes
-    | 'pr-approved' // PR approved, ready to merge
-    | 'pr-open' // PR exists and open
-    | 'commits-unpushed' // Local commits, ready to push/create PR
-    | 'changes-staged' // Staged changes, ready to commit
-    | 'changes-unstaged' // Unstaged changes to review
-    | 'all-done'; // Nothing left to do
-
   // Check if spec has meaningful content
   const specHasContent = $derived.by(() => {
     if (!specNote?.content) return false;
@@ -807,305 +799,45 @@
     return trimmedContent.length >= 20; // Need some actual content
   });
 
-  // Determine current workflow stage based on git status and task progress
-  const workflowStage = $derived.by<WorkflowStage>(() => {
-    // Still loading git status - only show loading if we have no cached data to display
-    if (gitStatusLoading && !gitStatus) {
-      const cachedPR = $activePullRequest$ ?? undefined;
-      const hasCachedPRData =
-        cachedPR &&
-        (cachedPR.status === 'Open' ||
-          cachedPR.status === 'Draft' ||
-          cachedPR.status === 'Merged' ||
-          cachedPR.status === 'Closed');
-      const hasTasks = taskStats.total > 0;
-
-      if (!hasCachedPRData && !hasTasks) {
-        return 'loading';
-      }
-      // Otherwise fall through - use cached data while git status loads
-    }
-
-    // Check for agent working first - this takes priority
-    // If agent is working and no tasks yet, it's creating the spec
-    if (isAgentWorking && taskStats.total === 0) {
-      return 'spec-creating';
-    }
-
-    const hasUncommittedChanges = (gitStatus?.uncommittedCount ?? 0) > 0;
-    const hasStagedChanges = (gitStatus?.stagedCount ?? 0) > 0;
-    const hasUnpushedCommits =
-      (gitStatus?.localCommits?.filter((c) => !c.isPushed).length ?? 0) > 0;
-    const existingPR = gitStatus?.existingPR;
-
-    // Check PR state - use selector-derived activePullRequest as primary signal (available from cache immediately)
-    // Fall back to gitStatus.existingPR for merged/closed detection
-    const activePR = $activePullRequest$ ?? undefined;
-
-    if (existingPR) {
-      if (existingPR.state === 'merged') {
-        // PR was merged - the workspace is complete
-        // Note: Git might still show "unpushed" commits because the branch was merged via PR,
-        // not directly pushed. These commits are actually already in the repo via the merge.
-        // Only show new work if there are uncommitted changes (actual new work after merge)
-        if (hasUncommittedChanges) {
-          // New uncommitted changes after merge - fall through to check those states
-        } else {
-          // PR is merged, no new uncommitted work - we're done
-          return 'all-done';
-        }
-      } else if (existingPR.state === 'closed') {
-        // PR was closed without merging - still show as done for now
-        return 'all-done';
-      } else if (existingPR.state === 'open') {
-        // Check review status from activePullRequest (enriched with GitHub data)
-        if (activePR?.reviewDecision === 'APPROVED') {
-          return 'pr-approved';
-        }
-        return 'pr-open';
-      }
-    } else if (activePR && (activePR.status === 'Open' || activePR.status === 'Draft')) {
-      // gitStatus not loaded yet, but we have cached activePullRequest - use it
-      // This prevents "Ready to start" flash when switching workspaces with an open PR
-      if (activePR.reviewDecision === 'APPROVED') {
-        return 'pr-approved';
-      }
-      return 'pr-open';
-    }
-
-    // Tasks exist but none started (must have tasks to be "tasks-ready")
-    if (taskStats.total > 0 && completionRatio === 0 && taskStats.inProgress === 0) {
-      return 'tasks-ready';
-    }
-
-    // Tasks in progress
-    if (taskStats.inProgress > 0 || (taskStats.total > 0 && completionRatio < 1)) {
-      return 'tasks-in-progress';
-    }
-
-    // Check for unpushed commits (ready to push or create PR)
-    if (hasUnpushedCommits && !hasUncommittedChanges) {
-      return 'commits-unpushed';
-    }
-
-    // Check for staged changes (ready to commit)
-    if (hasStagedChanges) {
-      return 'changes-staged';
-    }
-
-    // Check for unstaged changes
-    if (hasUncommittedChanges) {
-      return 'changes-unstaged';
-    }
-
-    // No git changes - check task status
-    if (taskStats.total === 0) {
-      // No tasks - check if spec has content
-      if (specHasContent) {
-        return 'spec-ready';
-      }
-      // Empty spec with no agent running
-      return 'spec-empty';
-    }
-
-    // All tasks complete, no changes
-    return 'all-done';
+  // Keep the progress selectors' input in sync with local reactive state. The
+  // workspace slice owns the workflow-stage, headline, and action logic; this
+  // component only feeds presentational inputs and renders the results.
+  $effect(() => {
+    progressInput$.set({
+      gitStatus,
+      gitStatusLoading,
+      taskStats,
+      completionRatio,
+      isAgentWorking,
+      specHasContent,
+    });
   });
 
-  // Generate dynamic summary message based on workflow stage
-  type SummaryMessage = {
-    headline: string;
-    subtext: string;
-    action?: {
-      label: string;
-      icon?: typeof faArrowRight;
-      onClick: () => void;
-      tooltip?: string;
-    };
+  // Resolve semantic icon keys from the action descriptors to concrete fa-icons.
+  const PROGRESS_ACTION_ICONS: Record<WorkspaceProgressActionIconKey, typeof faArrowRight> = {
+    'file-lines': faFileLines,
+    check: faCheck,
+    'code-pull-request': faCodePullRequest,
+    'code-branch': faCodeBranch,
   };
 
-  const summaryMessage = $derived.by<SummaryMessage>(() => {
-    const uncommittedCount = gitStatus?.uncommittedCount ?? 0;
-    const stagedCount = gitStatus?.stagedCount ?? 0;
-    const unpushedCommits = gitStatus?.localCommits?.filter((c) => !c.isPushed) ?? [];
-    const existingPR = gitStatus?.existingPR;
-
-    switch (workflowStage) {
-      case 'loading':
-        return { headline: 'Loading...', subtext: '' };
-
-      case 'spec-empty':
-        return { headline: 'Brainstorm with an agent or write the Spec.', subtext: '' };
-
-      case 'spec-creating':
-        return { headline: 'Agent working on spec.', subtext: '' };
-
-      case 'spec-ready':
-        return { headline: 'Ready to start.', subtext: '' };
-
-      case 'tasks-ready':
-        return { headline: 'Tasks ready to go.', subtext: '' };
-
-      case 'tasks-in-progress': {
-        if (completionRatio >= 0.75) {
-          return {
-            headline: `Almost there! ${taskStats.total - taskStats.completed} task${taskStats.total - taskStats.completed === 1 ? '' : 's'} remaining.`,
-            subtext: '',
-          };
-        }
-        if (completionRatio > 0.1) {
-          return {
-            headline: `Things are progressing nicely. We're ${Math.round(completionRatio * 100)}% through the work.`,
-            subtext: '',
-          };
-        }
-        return {
-          headline: 'Making progress.',
-          subtext:
-            taskStats.completed > 0
-              ? `${taskStats.completed} of ${taskStats.total} tasks done.`
-              : '',
-        };
+  // Resolve the onClick for an action descriptor: URL-bearing actions (PR
+  // open/approved) navigate via handleLink; the rest invoke onAcceptChanges.
+  function runProgressAction(action: WorkspaceProgressAction) {
+    if (action.url) {
+      if (workspaceId) {
+        handleLink(action.url, { workspaceId: WorkspaceId(workspaceId) });
       }
-
-      case 'changes-unstaged':
-        // Only show file changes summary if tasks have been worked on
-        if (taskStats.completed > 0 || taskStats.inProgress > 0) {
-          return {
-            headline: `Review ${uncommittedCount} file change${uncommittedCount === 1 ? '' : 's'}`,
-            subtext: 'Time to review the changes and push.',
-            action: onAcceptChanges
-              ? {
-                  label: 'Review changes',
-                  icon: faFileLines,
-                  onClick: onAcceptChanges,
-                  tooltip: 'Opens the changes panel to review, stage, and commit file changes.',
-                }
-              : undefined,
-          };
-        }
-        // No tasks worked on yet - show appropriate message based on task state
-        if (taskStats.total === 0) {
-          return { headline: 'Ready to start.', subtext: '' };
-        }
-        return { headline: 'Tasks ready to go.', subtext: '' };
-
-      case 'changes-staged':
-        return {
-          headline: `${stagedCount} file${stagedCount === 1 ? '' : 's'} staged. Ready to commit.`,
-          subtext: '',
-          action: onAcceptChanges
-            ? {
-                label: 'Commit',
-                icon: faCheck,
-                onClick: onAcceptChanges,
-                tooltip: 'Opens the changes panel to commit your staged changes.',
-              }
-            : undefined,
-        };
-
-      case 'commits-unpushed':
-        return {
-          headline: `${unpushedCommits.length} commit${unpushedCommits.length === 1 ? '' : 's'} to push`,
-          subtext: existingPR ? 'Push to update PR.' : 'Push to create a PR.',
-          action: onAcceptChanges
-            ? {
-                label: existingPR ? 'Push changes' : 'Create PR',
-                icon: faCodePullRequest,
-                onClick: onAcceptChanges,
-                tooltip: existingPR
-                  ? 'Opens the changes panel to push commits to your existing PR.'
-                  : 'Opens the changes panel to push commits and create a pull request.',
-              }
-            : undefined,
-        };
-
-      case 'pr-open': {
-        const activePR = $activePullRequest$ ?? undefined;
-        const parts: string[] = [];
-        // Review status
-        if (activePR?.reviewDecision === 'CHANGES_REQUESTED') {
-          parts.push('changes requested');
-        } else {
-          parts.push('awaiting review');
-        }
-        // CI status
-        if (activePR?.ciStatus && activePR.ciStatus.total > 0) {
-          if (activePR.ciStatus.failed > 0) {
-            let ciPart = `${activePR.ciStatus.failed}/${activePR.ciStatus.total} checks failing`;
-            if (activePR.ciStatus.pending > 0) ciPart += ` (${activePR.ciStatus.pending} running)`;
-            parts.push(ciPart);
-          } else if (activePR.ciStatus.pending > 0) {
-            parts.push(`${activePR.ciStatus.pending}/${activePR.ciStatus.total} checks running`);
-          } else {
-            parts.push(`${activePR.ciStatus.passed}/${activePR.ciStatus.total} checks passing`);
-          }
-        }
-        const statusDetails = parts.join(', ');
-        const prNumber = activePR?.number ?? existingPR?.number;
-        const prUrl = activePR?.url ?? existingPR?.htmlUrl;
-        return {
-          headline: `PR #${prNumber} open, ${statusDetails}.`,
-          subtext: '',
-          action: prUrl
-            ? {
-                label: 'View PR',
-                icon: faCodeBranch,
-                onClick: () => {
-                  if (workspaceId) {
-                    handleLink(prUrl, { workspaceId: WorkspaceId(workspaceId) });
-                  }
-                },
-                tooltip: 'Opens the pull request on GitHub in your browser.',
-              }
-            : undefined,
-        };
-      }
-
-      case 'pr-approved': {
-        const activePR = $activePullRequest$ ?? undefined;
-        let approvedBy = '';
-        if (activePR?.approvedBy && activePR.approvedBy.length > 0) {
-          approvedBy = ` by ${activePR.approvedBy.join(', ')}`;
-        }
-        let ciInfo = '';
-        if (activePR?.ciStatus && activePR.ciStatus.total > 0) {
-          if (activePR.ciStatus.failed > 0) {
-            ciInfo = `, ${activePR.ciStatus.failed}/${activePR.ciStatus.total} checks failing`;
-          } else if (activePR.ciStatus.pending > 0) {
-            ciInfo = `, ${activePR.ciStatus.pending}/${activePR.ciStatus.total} checks pending`;
-          } else {
-            ciInfo = `, ${activePR.ciStatus.passed}/${activePR.ciStatus.total} checks passing`;
-          }
-        }
-        const prNumber = activePR?.number ?? existingPR?.number;
-        const prUrl = activePR?.url ?? existingPR?.htmlUrl;
-        return {
-          headline: `PR #${prNumber} approved${approvedBy}, ready to merge${ciInfo}.`,
-          subtext: '',
-          action: prUrl
-            ? {
-                label: 'Merge PR',
-                icon: faCodeBranch,
-                onClick: () => {
-                  if (workspaceId) {
-                    handleLink(prUrl, { workspaceId: WorkspaceId(workspaceId) });
-                  }
-                },
-                tooltip: 'Opens the pull request on GitHub to merge.',
-              }
-            : undefined,
-        };
-      }
-
-      case 'pr-merged':
-      case 'all-done':
-        return { headline: 'All done!', subtext: '' };
-
-      default:
-        return { headline: 'Ready to start.', subtext: '' };
+      return;
     }
-  });
+    onAcceptChanges?.();
+  }
+
+  // First actionable descriptor for the full-mode workflow button. Actions that
+  // require onAcceptChanges are hidden when no handler is provided.
+  const displayAction = $derived(
+    $progressActions$.find((action) => action.url || onAcceptChanges),
+  );
 </script>
 
 {#snippet sidebarSideIconSnippet()}
@@ -1204,7 +936,7 @@
 
     <!-- Summary message (compact) -->
     <div class="text-xs text-subtle mt-2 leading-tight">
-      {summaryMessage.headline}
+      {$progressHeadline$.headline}
     </div>
   </button>
 {:else}
@@ -1370,30 +1102,31 @@
           />
         </div>
         <!-- Workflow action button (styled like AI-assisted action prompts) -->
-        {#if summaryMessage.action}
+        {#if displayAction}
+          {@const action = displayAction}
           <div class="flex-1 w-full" transition:slide={{ axis: 'y', duration: 200 }}>
-            <div class="mt-1">
-              <Tooltip
-                content={summaryMessage.action?.tooltip}
-                side="bottom"
-                align="start"
-                disabled={!summaryMessage.action?.tooltip}
-              >
-                <Button
-                  variant="ghost-light"
-                  size="xs"
-                  class="w-full text-left justify-start px-0! -mb-1"
-                  onclick={summaryMessage.action?.onClick}
+            {#if action}
+              <div class="mt-1">
+                <Tooltip
+                  content={action?.tooltip}
+                  side="bottom"
+                  align="start"
+                  disabled={!action?.tooltip}
                 >
-                  {#if summaryMessage.action?.icon}
-                    <Fa icon={summaryMessage.action?.icon} size="xs" class="ml-1" />
-                  {/if}
-                  <span class="underline decoration-dotted underline-offset-2"
-                    >{summaryMessage.action?.label}</span
+                  <Button
+                    variant="ghost-light"
+                    size="xs"
+                    class="w-full text-left justify-start px-0! -mb-1"
+                    onclick={() => runProgressAction(action)}
                   >
-                </Button>
-              </Tooltip>
-            </div>
+                    <Fa icon={PROGRESS_ACTION_ICONS[action.iconKey]} size="xs" class="ml-1" />
+                    <span class="underline decoration-dotted underline-offset-2"
+                      >{action.label}</span
+                    >
+                  </Button>
+                </Tooltip>
+              </div>
+            {/if}
 
             <!-- Contextual Action Prompts (AI-assisted actions) -->
             <!-- {#if onCreateAgentWithPrompt && (hasContentNoTasks || hasIdleTasks)}

@@ -47,6 +47,7 @@ import {
 } from "../github-repos-slice";
 import {
   githubReposSaga,
+  handleAuthChange,
   loadGithubReposSaga,
 } from "./github-repos-saga";
 
@@ -156,6 +157,22 @@ describe("loadGithubReposSaga", () => {
       done: false,
     });
     expect(iterator.next(false)).toEqual({
+      value: sagaEffects.put(clearGithubRepos()),
+      done: false,
+    });
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
+  });
+});
+
+describe("handleAuthChange", () => {
+  it("does not load repos on sign-in (on-demand loading lives in the UI)", () => {
+    const iterator = handleAuthChange({ payload: true });
+    expect(iterator.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("clears the cached repos on sign-out", () => {
+    const iterator = handleAuthChange({ payload: false });
+    expect(iterator.next()).toEqual({
       value: sagaEffects.put(clearGithubRepos()),
       done: false,
     });
