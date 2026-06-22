@@ -1,6 +1,8 @@
 import { goto } from "$app/navigation";
+import { getProposalId } from "$lib/components/chat/proposals/proposal-id";
 import { workspaceClient } from "$store/renderer/slices/workspace/utils/workspace.client";
 import { invoke } from "$lib/electron-bridge";
+import { unifiedIdService } from "$shared/services/unified-id.service";
 import { removeKnownRepo } from "$store/renderer/slices/known-repos/known-repos-slice";
 import {
   clearActiveWorkspace,
@@ -10,8 +12,22 @@ import {
   markWorkspacePendingDeletion,
   openWorkspaceRequested,
   removeWorkspaceEntity,
+  setActiveWorkspaceId,
   setWorkspaceEntity,
 } from "$store/renderer/slices/workspace/workspace-slice";
+import {
+  activateInitialAgentRequested,
+} from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
+import {
+  emptyWorkspaceNavigationState,
+  hydrateWorkspaceNavigation,
+} from "$store/renderer/slices/workspace-navigation/workspace-navigation-slice";
+import {
+  proposalApplyStarted,
+  proposalApplySucceeded,
+  proposalFailed,
+} from "$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice";
+import { selectProposalLifecycleEntry } from "$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors";
 import {
   selectActiveWorkspace,
   selectWorkspaceById,
@@ -32,6 +48,8 @@ import {
   type Workspace,
 } from "$shared/types";
 import type { WorkspaceId } from "$shared/types/branded-ids";
+import { WorkspaceId as createWorkspaceId } from "$shared/types/branded-ids";
+import type { AgentTypeId } from "$shared/types/agent.types";
 import {
   call,
   delay,
@@ -40,6 +58,7 @@ import {
   race,
   spawn,
   take,
+  takeEvery,
   takeLatest,
 } from "typed-redux-saga";
 import { buffers, channel, type Channel } from "redux-saga";
@@ -61,6 +80,7 @@ import {
   confirmBulkDeleteWarning,
   confirmDeleteWorkspace,
   confirmRemoveRepo,
+  applyWorkspaceProposal,
   openBulkDeleteWarningConfirm,
   openDeleteWarning,
   requestArchiveWorkspace,
@@ -70,6 +90,7 @@ import {
   requestOpenWorkspace,
   requestUnarchiveWorkspace,
 } from "../workspace-operations-slice";
+import { buildCreateWorkspaceRequestFromProposal } from "../utils/workspace-create-proposal";
 
 const WORKSPACE_OPERATION_UNDO_DURATION_MS = 15000;
 
@@ -92,6 +113,10 @@ function getActiveWorkspacesForRepo(repoKey: string, workspaces: Workspace[]): W
       workspace.status !== WorkspaceStatusEnum.Deleted &&
       workspaceMatchesRepoKey(workspace, repoKey)
   );
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function getArchivedWorkspacesForRepo(repoKey: string, workspaces: Workspace[]): Workspace[] {
@@ -513,6 +538,87 @@ export function* handleAppWorkspaceOperationRequestSaga(request: AppWorkspaceOpe
   }
 }
 
+export function* handleApplyWorkspaceProposal(action: ReturnType<typeof applyWorkspaceProposal>) {
+  const [{ proposal, editedFields }] = action.payload;
+  if (proposal.kind !== 'workspace-create') {
+    return;
+  }
+
+  const proposalId = getProposalId(proposal);
+  const lifecycleEntry = yield* selectProposalLifecycleEntry.effect(proposalId);
+  if (lifecycleEntry?.status === 'applying' || lifecycleEntry?.status === 'applied') {
+    return;
+  }
+
+  try {
+    const startedAt = Date.now();
+    yield* put(proposalApplyStarted({ proposalId, startedAt }));
+
+    const request = buildCreateWorkspaceRequestFromProposal(
+      proposal,
+      editedFields,
+      () => String(unifiedIdService.generateAgentId()),
+    );
+    const result = yield* call([workspaceClient, workspaceClient.create], request);
+    if (!result.ok) {
+      throw result.error;
+    }
+
+    yield* put(setWorkspaceEntity(result.data));
+    yield* put(setActiveWorkspaceId(result.data.id));
+    const initialAgent = request.initialAgent;
+    if (initialAgent?.agentId) {
+      yield* put(
+        hydrateWorkspaceNavigation(result.data.id, {
+          ...emptyWorkspaceNavigationState,
+          workspace: { id: result.data.id, status: 'loading' },
+          mainPanel: { type: 'notes', selectedNoteId: 'spec' },
+          drawer: { open: true, type: 'agent', itemId: initialAgent.agentId },
+        }),
+      );
+      yield* put(
+        activateInitialAgentRequested(result.data.id, initialAgent.agentId, {
+          id: initialAgent.agentId,
+          name: initialAgent.name || 'Coordinator',
+          workspaceId: createWorkspaceId(result.data.id),
+          model: initialAgent.model,
+          provider: initialAgent.provider ?? initialAgent.metadata?.provider,
+          agentType: initialAgent.agentType as AgentTypeId | undefined,
+          initialMessage: initialAgent.prompt,
+          contextReferences: initialAgent.contextReferences,
+          imageBlocks: initialAgent.imageBlocks,
+          behaviorPrompt: initialAgent.behaviorPrompt,
+          metadata: {
+            ...initialAgent.metadata,
+            isInitialAgent: true,
+            isFirstWorkspaceAgent: true,
+          },
+        }),
+      );
+    }
+
+    yield* put(
+      proposalApplySucceeded({
+        proposalId,
+        completedAt: Date.now(),
+        result: { workspaceId: result.data.id },
+      }),
+    );
+  } catch (error) {
+    const errorMessage = getErrorMessage(error);
+    yield* put(
+      proposalFailed({
+        proposalId,
+        error: errorMessage,
+        completedAt: Date.now(),
+        lastAction: 'apply',
+      }),
+    );
+    const toast = yield* call(getToast);
+    toast.error(errorMessage || 'Failed to create space');
+  }
+}
+
 export function* watchAppWorkspaceOperationRequestsSaga() {
   yield* takeEveryFromListenSync<AppWorkspaceOperationRequest>(
     APP_WORKSPACE_OPERATION_CHANNEL,
@@ -522,6 +628,7 @@ export function* watchAppWorkspaceOperationRequestsSaga() {
 
 export function* workspaceOperationsSaga() {
   yield* fork(watchAppWorkspaceOperationRequestsSaga);
+  yield* takeEvery(applyWorkspaceProposal, handleApplyWorkspaceProposal);
   yield* takeLatest(requestOpenWorkspace, requestOpenWorkspaceSaga);
   yield* takeLatest(requestDeleteWorkspace, requestDeleteWorkspaceSaga);
   yield* takeLatest(confirmDeleteWorkspace, confirmDeleteWorkspaceSaga);

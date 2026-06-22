@@ -33,6 +33,9 @@ vi.mock("typed-redux-saga", () => ({
   spawn: function* (fn: any, ...args: any[]) {
     return yield sagaEffects.spawn(fn, ...args);
   },
+  takeEvery: function* (pattern: any, saga: any) {
+    return yield sagaEffects.takeEvery(pattern, saga);
+  },
   take: function* (patternOrChannel: any) {
     return yield sagaEffects.take(patternOrChannel);
   },
@@ -46,6 +49,7 @@ const {
   mockGetRunningAgentNames,
   mockNavigateAfterWorkspaceRemoval,
   mockToast,
+  mockWorkspaceClientCreate,
   mockWorkspaceClientDelete,
   mockWorkspaceClientArchive,
   mockWorkspaceClientUnarchive,
@@ -60,6 +64,7 @@ const {
     success: vi.fn(),
     dismiss: vi.fn(),
   },
+  mockWorkspaceClientCreate: vi.fn(),
   mockWorkspaceClientDelete: vi.fn(),
   mockWorkspaceClientArchive: vi.fn().mockResolvedValue({ ok: true }),
   mockWorkspaceClientUnarchive: vi.fn().mockResolvedValue({ ok: true }),
@@ -89,6 +94,7 @@ vi.mock("$app/navigation", () => ({
 
 vi.mock("$store/renderer/slices/workspace/utils/workspace.client", () => ({
   workspaceClient: {
+    create: mockWorkspaceClientCreate,
     delete: mockWorkspaceClientDelete,
     archive: mockWorkspaceClientArchive,
     unarchive: mockWorkspaceClientUnarchive,
@@ -98,6 +104,7 @@ vi.mock("$store/renderer/slices/workspace/utils/workspace.client", () => ({
 import type { Workspace } from "$shared/types";
 import { WorkspaceStatusEnum } from "$shared/types";
 import type { WorkspaceId } from "$shared/types/branded-ids";
+import type { BulkOperationProposal, WorkspaceCreateProposal } from "$shared/types/proposal";
 import { navigateAfterWorkspaceRemoval } from "$lib/utils/workspace-navigation";
 import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
@@ -107,6 +114,7 @@ import {
   markWorkspacePendingDeletion,
   removeWorkspaceEntity,
   replaceWorkspaceList,
+  setActiveWorkspaceId,
   setWorkspaceEntity,
   workspaceReducer,
 } from "$store/renderer/slices/workspace/workspace-slice";
@@ -114,9 +122,12 @@ import {
   requestDeleteWorkspaceSaga,
   confirmDeleteWorkspaceSaga,
   requestArchiveWorkspaceSaga,
+  handleApplyWorkspaceProposal,
+  watchAppWorkspaceOperationRequestsSaga,
   workspaceOperationsSaga,
 } from "./workspace-operations-saga";
 import {
+  applyWorkspaceProposal,
   requestDeleteWorkspace,
   requestArchiveWorkspace,
   openBulkArchiveConfirm,
@@ -125,6 +136,16 @@ import {
   closeDeleteWarning,
   workspaceOperationsReducer,
 } from "../workspace-operations-slice";
+import {
+  proposalApplyStarted,
+  proposalApplySucceeded,
+  proposalFailed,
+} from "$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice";
+import {
+  emptyWorkspaceNavigationState,
+  hydrateWorkspaceNavigation,
+} from "$store/renderer/slices/workspace-navigation/workspace-navigation-slice";
+import { activateInitialAgentRequested } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
 import {
   applyMiddleware,
   combineReducers,
@@ -146,6 +167,187 @@ function makeWorkspace(id: string): Workspace {
     updatedAt: "2026-01-01T00:00:00Z",
   } as Workspace;
 }
+
+function makeWorkspaceCreateProposal(): WorkspaceCreateProposal {
+  return {
+    kind: "workspace-create",
+    applyToolCallId: "proposal-create-1",
+    payload: {
+      operation: "workspace.create",
+      params: {
+        repositoryPath: "/repo/original",
+        baseRef: "main",
+        initialAgent: {
+          agentId: "agent-initial",
+          name: "Existing Coordinator",
+          model: "gpt-5.5",
+          provider: "auggie",
+          prompt: "Original prompt",
+          agentType: "workspace",
+          metadata: { provider: "auggie", specialist: "planner" },
+        },
+      },
+    },
+    preview: { title: "Create workspace" },
+  };
+}
+
+describe("workspaceOperationsSaga registration", () => {
+  it("registers the applyWorkspaceProposal watcher", () => {
+    const gen = workspaceOperationsSaga();
+
+    expect(gen.next().value).toEqual(sagaEffects.fork(watchAppWorkspaceOperationRequestsSaga));
+    const applyWatcher = gen.next().value as any;
+    expect(applyWatcher.type).toBe("FORK");
+    expect(applyWatcher.payload.args).toEqual([
+      applyWorkspaceProposal,
+      handleApplyWorkspaceProposal,
+    ]);
+  });
+});
+
+describe("handleApplyWorkspaceProposal", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("no-ops for non workspace-create proposals", () => {
+    const proposal: BulkOperationProposal = {
+      kind: "bulk-op",
+      payload: { operation: "workspace.bulkArchive", ids: ["ws-1"] },
+      preview: { title: "Archive workspaces" },
+    };
+    const gen = handleApplyWorkspaceProposal(
+      applyWorkspaceProposal({ proposal, editedFields: {}, selectedBulkItemIds: [] }),
+    );
+
+    expect(gen.next().done).toBe(true);
+  });
+
+  it("dedupes proposals that are already applying or applied", () => {
+    for (const status of ["applying", "applied"] as const) {
+      const gen = handleApplyWorkspaceProposal(
+        applyWorkspaceProposal({ proposal: makeWorkspaceCreateProposal(), editedFields: {} }),
+      );
+
+      expect((gen.next().value as any).type).toBe("SELECT");
+      expect(gen.next({ status }).done).toBe(true);
+    }
+  });
+
+  it("creates the workspace, activates the initial agent, and marks the proposal applied", () => {
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValueOnce(1_000).mockReturnValueOnce(2_000);
+    const workspace = makeWorkspace("ws-created");
+    const gen = handleApplyWorkspaceProposal(
+      applyWorkspaceProposal({
+        proposal: makeWorkspaceCreateProposal(),
+        editedFields: {
+          repoPath: "/repo/edited",
+          branch: "feature/apply",
+          initialPrompt: "Edited prompt",
+          specialist: "implementor",
+        },
+      }),
+    );
+
+    expect((gen.next().value as any).type).toBe("SELECT");
+    expect(gen.next(null).value).toEqual(
+      sagaEffects.put(proposalApplyStarted({ proposalId: "proposal-create-1", startedAt: 1_000 })),
+    );
+
+    const createEffect = gen.next().value as any;
+    expect(createEffect.type).toBe("CALL");
+    expect(createEffect.payload.args[0]).toMatchObject({
+      repositoryPath: "/repo/edited",
+      baseRef: "feature/apply",
+      initialAgent: {
+        agentId: "agent-initial",
+        prompt: "Edited prompt",
+        specialist: "implementor",
+        metadata: { specialist: "implementor", isInitialAgent: true },
+      },
+    });
+
+    expect(gen.next({ ok: true, data: workspace }).value).toEqual(
+      sagaEffects.put(setWorkspaceEntity(workspace)),
+    );
+    expect(gen.next().value).toEqual(sagaEffects.put(setActiveWorkspaceId(workspace.id)));
+    expect(gen.next().value).toEqual(
+      sagaEffects.put(
+        hydrateWorkspaceNavigation(workspace.id, {
+          ...emptyWorkspaceNavigationState,
+          workspace: { id: workspace.id, status: "loading" },
+          mainPanel: { type: "notes", selectedNoteId: "spec" },
+          drawer: { open: true, type: "agent", itemId: "agent-initial" },
+        }),
+      ),
+    );
+    expect(gen.next().value).toEqual(
+      sagaEffects.put(
+        activateInitialAgentRequested(workspace.id, "agent-initial", {
+          id: "agent-initial",
+          name: "Existing Coordinator",
+          workspaceId: workspace.id,
+          model: "gpt-5.5",
+          provider: "auggie",
+          agentType: "workspace",
+          initialMessage: "Edited prompt",
+          contextReferences: undefined,
+          imageBlocks: undefined,
+          behaviorPrompt: undefined,
+          metadata: {
+            provider: "auggie",
+            specialist: "implementor",
+            isInitialAgent: true,
+            isFirstWorkspaceAgent: true,
+          },
+        }),
+      ),
+    );
+    expect(gen.next().value).toEqual(
+      sagaEffects.put(
+        proposalApplySucceeded({
+          proposalId: "proposal-create-1",
+          completedAt: 2_000,
+          result: { workspaceId: workspace.id },
+        }),
+      ),
+    );
+    expect(gen.next().done).toBe(true);
+    nowSpy.mockRestore();
+  });
+
+  it("marks the proposal failed and shows a toast when create fails", () => {
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValueOnce(1_000).mockReturnValueOnce(2_000);
+    const gen = handleApplyWorkspaceProposal(
+      applyWorkspaceProposal({ proposal: makeWorkspaceCreateProposal(), editedFields: {} }),
+    );
+
+    expect((gen.next().value as any).type).toBe("SELECT");
+    expect(gen.next(null).value).toEqual(
+      sagaEffects.put(proposalApplyStarted({ proposalId: "proposal-create-1", startedAt: 1_000 })),
+    );
+    expect((gen.next().value as any).type).toBe("CALL");
+    expect(gen.throw("create failed").value).toEqual(
+      sagaEffects.put(
+        proposalFailed({
+          proposalId: "proposal-create-1",
+          error: "create failed",
+          completedAt: 2_000,
+          lastAction: "apply",
+        }),
+      ),
+    );
+
+    const toastEffect = gen.next().value as any;
+    expect(toastEffect.type).toBe("CALL");
+    expect(gen.next(mockToast).done).toBe(true);
+    expect(mockToast.error).toHaveBeenCalledWith("create failed");
+    nowSpy.mockRestore();
+  });
+});
 
 describe("workspace-operations-saga navigate-away behavior", () => {
   const workspace = makeWorkspace("ws-123");
