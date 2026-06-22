@@ -70,7 +70,6 @@ export {
   TESTING_CHANNELS,
   SKILLS_CHANNELS,
   SCRIPTS_CHANNELS,
-  SESSION_STATS_CHANNELS,
   ALL_CHANNELS,
   type ChannelName,
   createChannelName,

@@ -776,7 +776,6 @@ const ALLOWED_CHANNELS = [
   "scripts:get-output",
   "scripts:detect",
   "scripts:save-to-repo",
-  "session-stats:get",
   "token-usage:get",
   "token-usage:changed",
   "event:workspace:created",

@@ -66,7 +66,6 @@ import { agentSubscriptionUIReducer } from "./slices/agent-subscription-ui/agent
 import { onboardingReducer } from "./slices/onboarding/onboarding-slice";
 import { agentAvailabilityReducer } from "./slices/agent-availability/agent-availability-slice";
 import { appLayoutReducer } from "./slices/app-layout/app-layout-slice";
-import { sessionStatsReducer } from "./slices/session-stats/session-stats-slice";
 import { tokenUsageReducer } from "./slices/token-usage/token-usage-slice";
 import { workspaceInitializerReducer } from "./slices/workspace-initializer/workspace-initializer-slice";
 import { themeReducer } from "./slices/theme/theme-slice";
@@ -147,7 +146,6 @@ export const reducers = {
   workspaceInitializer: workspaceInitializerReducer,
   agentAvailability: agentAvailabilityReducer,
   appLayout: appLayoutReducer,
-  sessionStats: sessionStatsReducer,
   tokenUsage: tokenUsageReducer,
   theme: themeReducer,
   websocketApi: websocketApiReducer,

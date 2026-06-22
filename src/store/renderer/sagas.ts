@@ -85,7 +85,6 @@ import { agentChatEffectsSaga } from "./slices/agent-session/sagas/agent-chat-ef
 import { agentStreamSaga } from "./slices/agent-session/sagas/agent-stream-saga";
 import { agentSubscriptionUISaga } from "./slices/agent-subscription-ui/sagas/agent-subscription-ui-saga";
 import { agentAvailabilitySaga } from "./slices/agent-availability/sagas/agent-availability-saga";
-import { sessionStatsSaga } from "./slices/session-stats/sagas/session-stats-saga";
 import { tokenUsageSaga } from "./slices/token-usage/sagas/token-usage-saga";
 import { sagaCrashSentrySaga } from "./slices/saga-crash-sentry/sagas/saga-crash-sentry-saga";
 import { websocketApiSaga } from "./slices/websocket-api/sagas/websocket-api-saga";
@@ -179,7 +178,6 @@ export const sagas = [
   agentStreamSaga,
   agentSubscriptionUISaga,
   agentAvailabilitySaga,
-  sessionStatsSaga,
   tokenUsageSaga,
   websocketApiSaga,
   sagaCrashSentrySaga,

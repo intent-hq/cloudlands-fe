@@ -2370,23 +2370,6 @@ export const SkillsListSchema = z.object({
 });
 
 // ============================================================================
-// Session Stats Schemas
-// ============================================================================
-
-// Session IDs reach a Windows shell command via `executeAuggieCommand`; restrict
-// to characters that cannot act as cmd.exe metacharacters so renderer-sourced
-// values are rejected at the IPC boundary. The first character must not be a
-// hyphen so flag-like strings (e.g. "--help", "-x") are rejected. UUIDs,
-// backend IDs, and ACP session IDs all fit this charset.
-const SESSION_ID_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,127}$/;
-
-export const SessionStatsGetSchema = z.object({
-  sessionIds: z
-    .array(z.string().regex(SESSION_ID_PATTERN, 'Invalid session ID format'))
-    .min(1, 'At least one session ID is required'),
-});
-
-// ============================================================================
 // Token Usage Schemas
 // ============================================================================
 

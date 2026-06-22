@@ -1161,11 +1161,6 @@ export const IPC_CHANNELS = {
     SAVE_TO_REPO: 'scripts:save-to-repo',
   },
 
-  // Session Stats (credit usage)
-  SESSION_STATS: {
-    GET: 'session-stats:get',
-  },
-
   // Workspace Token Usage (aggregated agent token consumption)
   TOKEN_USAGE: {
     GET: 'token-usage:get',

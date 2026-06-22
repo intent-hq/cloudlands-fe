@@ -296,20 +296,6 @@ export function getAgentProvider(session: AgentSession): string | undefined {
 }
 
 /**
- * Returns true if the session belongs to the Auggie provider.
- *
- * Used to gate `auggie session stats`-backed features (workspace credit
- * polling, per-agent stats tooltips) since the IPC handler shells out to the
- * `auggie` CLI and only understands Auggie sessions. Sessions whose provider
- * resolves to anything other than `'auggie'` (e.g. claude-code, codex,
- * opencode) must be skipped — including sessions where the provider can't be
- * resolved at all (no provider field and no model to infer from).
- */
-export function isAuggieSession(session: AgentSession): boolean {
-  return getAgentProvider(session) === 'auggie';
-}
-
-/**
  * Returns true once an agent has executed its first prompt/session work.
  *
  * Blank agents may already have backend/runtime setup before the first prompt, so

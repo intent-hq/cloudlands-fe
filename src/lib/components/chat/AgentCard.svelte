@@ -29,16 +29,6 @@
   import AgentPreviewToolLabel from './AgentPreviewToolLabel.svelte';
   import { selectAgentLineStats } from '$store/renderer/slices/changes/changes-selectors';
   import AugieAvatarWithState from '../ui/auggie-avatar/AugieAvatarWithState.svelte';
-  import { TooltipRich } from '$lib/components/ui/tooltip';
-  import AgentStatsTooltip from './AgentStatsTooltip.svelte';
-  import { AGENT_STATS_TOOLTIP_TITLE } from './agent-stats-tooltip-copy';
-  import {
-  selectAgentStats,
-  selectIsLoadingAgentStats,
-  selectAgentStatsError,
-} from '$store/renderer/slices/session-stats/session-stats-selectors';
-  import { fetchAgentStats } from '$store/renderer/slices/session-stats/session-stats-slice';
-  import { isAuggieSession } from '$shared/types/agent-session';
   import { getAvatarState } from '../ui/auggie-avatar/avatar-state';
   import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCount } from '$store/renderer/slices/permission/permission-selectors';
@@ -115,88 +105,6 @@
     if (wsId) {
       appStore.dispatch(ensureAgentSessionLoaded(String(wsId), agentId));
     }
-  });
-
-  // Agent stats selectors (for tooltip)
-  const agentStats$ = selectAgentStats(agentIdStore);
-  const agentStatsLoading$ = selectIsLoadingAgentStats(agentIdStore);
-  const agentStatsError$ = selectAgentStatsError(agentIdStore);
-
-  // Tooltip state
-  let tooltipOpen = $state(false);
-  let agentStatsFetchPending = $state(false);
-  let ignoredAgentStatsError: string | undefined = $state(undefined);
-  const agentStatsLoading = $derived(agentStatsFetchPending || $agentStatsLoading$);
-  const agentStatsError = $derived(agentStatsFetchPending ? undefined : $agentStatsError$);
-
-  $effect(() => {
-    void agentId;
-    agentStatsFetchPending = false;
-    ignoredAgentStatsError = undefined;
-  });
-
-  $effect(() => {
-    if (!agentStatsFetchPending) return;
-
-    const currentError = $agentStatsError$;
-    if (
-      $agentStatsLoading$ ||
-      $agentStats$ ||
-      (currentError && currentError !== ignoredAgentStatsError)
-    ) {
-      agentStatsFetchPending = false;
-      ignoredAgentStatsError = undefined;
-    }
-  });
-
-  // Hover-intent delay (ms) before opening the tooltip and dispatching a
-  // stats fetch. TooltipRich forces `delayDuration` to 0 in `interactive`
-  // mode, so without this gate, sweeping the mouse across the agent list
-  // would spawn one `auggie session stats` CLI process per hovered card.
-  const TOOLTIP_HOVER_INTENT_MS = 400;
-  let openIntentTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function clearOpenIntentTimer() {
-    if (openIntentTimer != null) {
-      clearTimeout(openIntentTimer);
-      openIntentTimer = null;
-    }
-  }
-
-  function handleTooltipOpenChange(isOpen: boolean) {
-    clearOpenIntentTimer();
-    if (!isOpen) {
-      tooltipOpen = false;
-      return;
-    }
-    // Defer both the visible open and the dispatch until the user has
-    // hovered long enough to demonstrate intent. If the tooltip closes
-    // (mouse moved away) before this fires, the timer is cleared above
-    // and no CLI process is spawned.
-    openIntentTimer = setTimeout(() => {
-      openIntentTimer = null;
-      // On-demand fetch: dispatch fetchAgentStats when tooltip opens.
-      // Dispatching on every open attempt lets the reducer clear any prior
-      // error optimistically so the user can retry after a failed fetch.
-      // Only Auggie sessions go through `auggie session stats`; skip other
-      // providers so the tooltip surfaces no data instead of a stale error.
-      const session = selectAgentSession.select(appStore.state, agentId);
-      if (!session || !isAuggieSession(session)) return;
-      const sessionId = session.acpSessionId || session.backendSessionId;
-      if (!sessionId) return;
-      if (!$agentStats$ || $agentStatsError$) {
-        ignoredAgentStatsError = $agentStatsError$;
-        agentStatsFetchPending = true;
-      }
-      appStore.dispatch(fetchAgentStats(agentId, sessionId));
-      tooltipOpen = true;
-    }, TOOLTIP_HOVER_INTENT_MS);
-  }
-
-  // Cancel any pending hover-intent timer if the card unmounts so we never
-  // dispatch a fetch for a card the user can no longer see.
-  $effect(() => {
-    return () => clearOpenIntentTimer();
   });
 
   // Inline editing state
@@ -392,12 +300,6 @@
   const agent$ = selectAgentSession(agentIdStore);
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
   const agentIsWaiting$ = selectAgentIsWaiting(agentIdStore);
-  const showAgentStatsTooltip = $derived(!!$agent$ && isAuggieSession($agent$));
-  const agentStatsEmptyState = $derived.by(() => {
-    if (!$agent$) return undefined;
-    if (!isAuggieSession($agent$)) return 'empty' as const;
-    return $agent$.acpSessionId || $agent$.backendSessionId ? undefined : ('empty' as const);
-  });
   const agentData = $derived(getAgentPeekData($agent$));
 
   // Get parent agent ID from metadata (for delegation info)
@@ -641,30 +543,7 @@
   </div>
 {/snippet}
 
-{#if showAgentStatsTooltip}
-  <TooltipRich
-    title={AGENT_STATS_TOOLTIP_TITLE}
-    side="right"
-    align="start"
-    delayDuration={400}
-    interactive
-    open={agentStatsError ? false : tooltipOpen}
-    onOpenChange={handleTooltipOpenChange}
-    class="w-full block"
-  >
-    {#snippet content()}
-      <AgentStatsTooltip
-        stats={$agentStats$}
-        loading={agentStatsLoading}
-        error={agentStatsError}
-        emptyState={agentStatsEmptyState}
-      />
-    {/snippet}
-    {@render agentCardContent()}
-  </TooltipRich>
-{:else}
-  {@render agentCardContent()}
-{/if}
+{@render agentCardContent()}
 
 {#if contextMenu}
   <SidebarContextMenu

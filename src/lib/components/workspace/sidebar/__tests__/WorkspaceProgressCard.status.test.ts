@@ -73,10 +73,6 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', ()
   selectAllWorkspaceAgents: mocks.selector(() => []),
 }));
 
-vi.mock('$store/renderer/slices/session-stats/session-stats-selectors', () => ({
-  selectWorkspaceStats: mocks.selector(() => undefined),
-}));
-
 vi.mock('$store/renderer/slices/workspace/workspace-slice', () => ({
   loadWorkspacesRequested: vi.fn(() => ({ type: 'workspace/loadWorkspacesRequested' })),
   setWorkspaceEntity: vi.fn((workspace: Workspace) => ({
