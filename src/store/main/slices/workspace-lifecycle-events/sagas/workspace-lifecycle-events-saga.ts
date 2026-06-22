@@ -249,6 +249,15 @@ function* handleWorkspaceDeletedCleanup(
 
   yield* put(cleanupWorkspace(workspaceId));
   yield* put(clearWorkspace(workspaceId));
+
+  // Clear the delivery dedup cache, which is module-level state outside the
+  // Redux store and therefore not cleared by the clearWorkspace reducer.
+  yield* call(async () => {
+    const { clearDeliveryDedupCacheForWorkspace } = await import(
+      "../../agent-subscriptions/sagas/delivery-saga"
+    );
+    clearDeliveryDedupCacheForWorkspace(workspaceId);
+  });
 }
 
 // ---------------------------------------------------------------------------

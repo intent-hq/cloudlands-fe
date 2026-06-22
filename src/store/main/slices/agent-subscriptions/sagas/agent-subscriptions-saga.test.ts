@@ -47,6 +47,7 @@ import {
   recordDeliveryTimeout,
   recordDroppedEvents,
   markDelegationAgentCompleted,
+  markDelegationAgentDeleted,
   markDelegationDelivered,
   markOneShotFired,
   removeDelegationGroup,
@@ -84,11 +85,15 @@ import {
   formatNotification,
   sendBackendMessage,
   clearDeliveryDedupCache,
+  clearDeliveryDedupCacheForWorkspace,
   sweepCatchUpSeen,
   stuckGroupFirstSeen,
-  buildSweepCatchUpEventId,
   filterAlreadyDelivered,
 } from "./delivery-saga";
+import {
+  buildSweepCatchUpEventId,
+  deduplicateCatchUpQueuedEvents,
+} from "../utils/sweep-catchup-events";
 import {
   dispatchWorkspaceEvent,
   handleSubscribeToDelegationGroup,
@@ -111,6 +116,11 @@ import {
   processingOneShots,
   matchingSaga,
 } from "./matching-saga";
+import {
+  buildOneShotProcessingKey,
+  buildSweepCatchUpSeenKey,
+  buildWorkspaceScopedGroupKey,
+} from "../utils/subscription-dedupe-keys";
 import { workspaceEventAccepted } from "../../workspace-events/workspace-events-slice";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
 import type { AgentSubscriptionRecord } from "../types";
@@ -533,6 +543,41 @@ describe("handleDeliverEvents", () => {
       .run();
   });
 
+  it("does not emit duplicate agent:woken-by-subscription for duplicate delivery requests", async () => {
+    const events = [makeEvent("e1", "agent:idle"), makeEvent("e2", "agent:failed")];
+    const dispatchCalls: unknown[][] = [];
+    const provider = {
+      select(effect: any, next: () => unknown) {
+        if (effect.selector === selectIsAgentDeleted.select) return false;
+        return next();
+      },
+      call(effect: any, next: () => unknown) {
+        if (effect.fn === formatNotification) return "Event notification";
+        if (effect.fn === sendBackendMessage) return { success: true };
+        if (effect.fn === dispatchWorkspaceEvent) {
+          dispatchCalls.push(effect.args);
+          return undefined;
+        }
+        return next();
+      },
+    };
+
+    await expectSaga(handleDeliverEvents, requestDeliverEvents(WS, AGENT, events))
+      .provide(provider)
+      .put.actionType(recordDeliverySuccess.type)
+      .run();
+
+    await expectSaga(handleDeliverEvents, requestDeliverEvents(WS, AGENT, events))
+      .provide(provider)
+      .not.put.actionType(recordDeliverySuccess.type)
+      .not.put.actionType(recordDeliveryFailure.type)
+      .not.call.fn(formatNotification)
+      .not.call.fn(sendBackendMessage)
+      .run();
+
+    expect(dispatchCalls.filter(([type]) => type === "agent:woken-by-subscription")).toHaveLength(1);
+  });
+
   it("delivers events that are a mix of already-delivered and new", async () => {
     const oldEvents = [makeEvent("e1")];
     const newEvents = [makeEvent("e3")];
@@ -561,6 +606,47 @@ describe("handleDeliverEvents", () => {
       .put.actionType(recordDeliverySuccess.type)
       .call.fn(sendBackendMessage)
       .run();
+  });
+
+  it("scopes delivered-event dedup by workspace", async () => {
+    const events = [makeEvent("shared-event-id")];
+    await expectSaga(handleDeliverEvents, requestDeliverEvents(WS, AGENT, events))
+      .provide([
+        [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
+        [matchers.call.fn(formatNotification), "Event notification"],
+        [matchers.call.fn(sendBackendMessage), { success: true }],
+        [matchers.call.fn(dispatchWorkspaceEvent), undefined],
+      ])
+      .put.actionType(recordDeliverySuccess.type)
+      .run();
+
+    expect(filterAlreadyDelivered(WS, AGENT, events)).toEqual([]);
+    expect(filterAlreadyDelivered("ws-2", AGENT, events)).toEqual(events);
+  });
+
+  it("clears delivered-event dedup for one workspace without affecting others", async () => {
+    const ws1Events = [makeEvent("ws1-event")];
+    const ws2Events = [makeEvent("ws2-event")];
+    await expectSaga(handleDeliverEvents, requestDeliverEvents(WS, AGENT, ws1Events))
+      .provide([
+        [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
+        [matchers.call.fn(formatNotification), "Event notification"],
+        [matchers.call.fn(sendBackendMessage), { success: true }],
+        [matchers.call.fn(dispatchWorkspaceEvent), undefined],
+      ])
+      .run();
+    await expectSaga(handleDeliverEvents, requestDeliverEvents("ws-2", AGENT, ws2Events))
+      .provide([
+        [matchers.select(selectIsAgentDeleted.select, "ws-2", AGENT), false],
+        [matchers.call.fn(formatNotification), "Event notification"],
+        [matchers.call.fn(sendBackendMessage), { success: true }],
+        [matchers.call.fn(dispatchWorkspaceEvent), undefined],
+      ])
+      .run();
+
+    clearDeliveryDedupCacheForWorkspace(WS);
+    expect(filterAlreadyDelivered(WS, AGENT, ws1Events)).toEqual(ws1Events);
+    expect(filterAlreadyDelivered("ws-2", AGENT, ws2Events)).toEqual([]);
   });
 });
 
@@ -747,7 +833,7 @@ describe("handleDelegationGroupDelivery", () => {
     expect(dispatchCalls.filter(([type]) => type === "agent:woken-by-subscription")).toHaveLength(0);
   });
 
-  it("skips already-delivered groups", () => {
+  it("skips already-delivered after_all groups without duplicate wake notification", () => {
     const action = requestDelegationGroupDelivery(WS, "group-1");
     const deliveredTracker = { ...tracker, delivered: true };
 
@@ -757,6 +843,7 @@ describe("handleDelegationGroupDelivery", () => {
         [matchers.select(selectDelegationGroup.select, WS, "group-1"), deliveredTracker],
       ])
       .not.call.fn(handleDeliverEvents)
+      .not.call.fn(dispatchWorkspaceEvent)
       .run();
   });
 
@@ -1153,6 +1240,31 @@ describe("handleMatchEvent", () => {
       .run();
   });
 
+  it("scopes matching to the event workspace even when agent IDs overlap", () => {
+    const backgroundWs = "ws-background";
+    const overlappingAgentId = "agent-overlap";
+    const event = makeEvent("e-background", "agent:idle");
+    (event as any).workspaceId = backgroundWs;
+    (event as any).actor = { type: "agent", id: overlappingAgentId };
+    const backgroundSub = makeSub({
+      id: "sub-background",
+      workspaceId: backgroundWs,
+      agentId: AGENT,
+      filter: { eventTypes: ["agent:idle"], actorIds: [overlappingAgentId] },
+    });
+
+    return expectSaga(handleMatchEvent, workspaceEventAccepted(event))
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, backgroundWs), [backgroundSub]],
+        [matchers.select(selectIsAgentDeleted.select, backgroundWs, AGENT), false],
+        [matchers.select(selectAgentStatus.select, backgroundWs, AGENT), "idle"],
+      ])
+      .put.actionType(enqueueEvent.type)
+      .put(requestDeliverQueuedEvents(backgroundWs, AGENT))
+      .not.put(requestDeliverQueuedEvents(WS, AGENT))
+      .run();
+  });
+
   // -------------------------------------------------------------------------
   // Bug 4: INTERNAL_OBSERVABILITY_EVENTS feedback loop prevention
   // -------------------------------------------------------------------------
@@ -1214,6 +1326,64 @@ describe("handleMatchEvent", () => {
       .run();
   });
 
+  it("routes agent:failed events to delegation groups as child completion", () => {
+    const event = makeEvent("deleg-child-failed", "agent:failed");
+    (event as any).workspaceId = WS;
+    (event as any).actor = { type: "agent", id: "child-agent" };
+    const sub = makeSub({
+      filter: {
+        eventTypes: ["agent:idle", "agent:completed", "agent:failed", "agent:deleted"],
+        actorIds: ["child-agent"],
+        priority: "high",
+        delegationGroup: {
+          groupId: "deleg-terminal",
+          awaitMode: "all",
+          expectedAgentIds: ["child-agent"],
+        },
+      },
+    });
+
+    return expectSaga(handleMatchEvent, workspaceEventAccepted(event))
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
+      ])
+      .put(appendDelegationGroupEvent(WS, "deleg-terminal", event))
+      .put(markDelegationAgentCompleted(WS, "deleg-terminal", "child-agent"))
+      .not.put(markDelegationAgentDeleted(WS, "deleg-terminal", "child-agent"))
+      .not.put.actionType("agentSubscriptions/enqueueEvent")
+      .run();
+  });
+
+  it("routes agent:deleted events to delegation groups as child deletion", () => {
+    const event = makeEvent("deleg-child-deleted", "agent:deleted");
+    (event as any).workspaceId = WS;
+    (event as any).actor = { type: "agent", id: "child-agent" };
+    const sub = makeSub({
+      filter: {
+        eventTypes: ["agent:idle", "agent:completed", "agent:failed", "agent:deleted"],
+        actorIds: ["child-agent"],
+        priority: "high",
+        delegationGroup: {
+          groupId: "deleg-terminal",
+          awaitMode: "all",
+          expectedAgentIds: ["child-agent"],
+        },
+      },
+    });
+
+    return expectSaga(handleMatchEvent, workspaceEventAccepted(event))
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, WS), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, WS, AGENT), false],
+      ])
+      .put(appendDelegationGroupEvent(WS, "deleg-terminal", event))
+      .put(markDelegationAgentDeleted(WS, "deleg-terminal", "child-agent"))
+      .not.put(markDelegationAgentCompleted(WS, "deleg-terminal", "child-agent"))
+      .not.put.actionType("agentSubscriptions/enqueueEvent")
+      .run();
+  });
+
   // -------------------------------------------------------------------------
   // Bug 4 edge cases: ALL INTERNAL_OBSERVABILITY_EVENTS must be skipped
   // -------------------------------------------------------------------------
@@ -1271,8 +1441,40 @@ describe("handleMatchEvent", () => {
       .then(() => {
         // After the saga completes, processingOneShots should be cleaned up
         // (the sub.id is deleted in the oneShot cleanup section)
-        expect(processingOneShots.has(sub.id)).toBe(false);
+        expect(processingOneShots.has(buildOneShotProcessingKey(WS, sub.id))).toBe(false);
       });
+  });
+
+  it("processingOneShots is scoped by workspace for overlapping oneShot subscription IDs", async () => {
+    const otherWs = "ws-other";
+    const sharedSubId = "sub-overlap";
+    const sub = makeSub({
+      id: sharedSubId,
+      workspaceId: otherWs,
+      filter: { eventTypes: ["file:changed"], oneShot: true },
+    });
+    const event = makeEvent("e-overlap", "file:changed");
+    (event as any).workspaceId = otherWs;
+
+    processingOneShots.clear();
+    processingOneShots.add(buildOneShotProcessingKey(WS, sharedSubId));
+
+    await expectSaga(handleMatchEvent, workspaceEventAccepted(event))
+      .provide([
+        [matchers.select(selectAllSubscriptions.select, otherWs), [sub]],
+        [matchers.select(selectIsAgentDeleted.select, otherWs, AGENT), false],
+        [matchers.select(selectIsOneShotFired.select, otherWs, sharedSubId), false],
+        [matchers.select(selectAgentStatus.select, otherWs, AGENT), "idle"],
+      ])
+      .put.actionType(enqueueEvent.type)
+      .put(requestDeliverQueuedEvents(otherWs, AGENT))
+      .put(markOneShotFired(otherWs, sharedSubId))
+      .put(removeSubscription(otherWs, sharedSubId))
+      .run();
+
+    expect(processingOneShots.has(buildOneShotProcessingKey(WS, sharedSubId))).toBe(true);
+    expect(processingOneShots.has(buildOneShotProcessingKey(otherWs, sharedSubId))).toBe(false);
+    processingOneShots.clear();
   });
 
   it("processingOneShots is cleared on cleanup even when three events match simultaneously", () => {
@@ -1283,18 +1485,18 @@ describe("handleMatchEvent", () => {
 
     // Manually test the guard behavior
     processingOneShots.clear();
-    expect(processingOneShots.has(sub.id)).toBe(false);
+    expect(processingOneShots.has(buildOneShotProcessingKey(WS, sub.id))).toBe(false);
 
     // First claim succeeds
-    processingOneShots.add(sub.id);
-    expect(processingOneShots.has(sub.id)).toBe(true);
+    processingOneShots.add(buildOneShotProcessingKey(WS, sub.id));
+    expect(processingOneShots.has(buildOneShotProcessingKey(WS, sub.id))).toBe(true);
 
     // Second and third would be blocked
-    expect(processingOneShots.has(sub.id)).toBe(true);
+    expect(processingOneShots.has(buildOneShotProcessingKey(WS, sub.id))).toBe(true);
 
     // Cleanup
-    processingOneShots.delete(sub.id);
-    expect(processingOneShots.has(sub.id)).toBe(false);
+    processingOneShots.delete(buildOneShotProcessingKey(WS, sub.id));
+    expect(processingOneShots.has(buildOneShotProcessingKey(WS, sub.id))).toBe(false);
   });
 
   it("processingOneShots is cleaned up when handleMatchEvent throws after claiming a oneShot", () => {
@@ -1309,7 +1511,7 @@ describe("handleMatchEvent", () => {
     processingOneShots.clear();
 
     // Use a dynamic provider to throw when the saga selects agentStatus,
-    // which happens after processingOneShots.add(sub.id).
+    // which happens after processingOneShots.add(buildOneShotProcessingKey(...)).
     return expectSaga(handleMatchEvent, action)
       .provide({
         select(effect, next) {
@@ -1335,7 +1537,7 @@ describe("handleMatchEvent", () => {
       .run()
       .then(() => {
         // The oneShot claim must have been released despite the error
-        expect(processingOneShots.has(sub.id)).toBe(false);
+        expect(processingOneShots.has(buildOneShotProcessingKey(WS, sub.id))).toBe(false);
       });
   });
 
@@ -1882,12 +2084,40 @@ describe("periodicQueueSweep — subscription-aware sweep", () => {
     };
 
     // Pre-populate the dedup guard as if the previous sweep already fired
-    const dedupeKey = `${sub.id}:${WATCHED_AGENT}:agent:idle`;
+    const dedupeKey = buildSweepCatchUpSeenKey(WS, sub.id, WATCHED_AGENT, "agent:idle");
     sweepCatchUpSeen.add(dedupeKey);
 
     return expectSaga(periodicQueueSweep)
       .provide(makeSweepProvider(wsState))
       // Should NOT enqueue because the dedup guard suppresses it
+      .not.put.actionType(enqueueEvent.type)
+      .not.put(requestDeliverQueuedEvents(WS, SUBSCRIBER))
+      .run({ silenceTimeout: true });
+  });
+
+  it("does not synthesize sweep catch-up for queued-turn data-matched subscriptions", () => {
+    const sub = makeSweepSub({
+      filter: {
+        eventTypes: ["agent:idle"],
+        actorIds: [WATCHED_AGENT],
+        dataMatchers: [
+          {
+            field: "data.respondingToMessageId",
+            operator: "equals",
+            value: "msg-queued-wake",
+          },
+        ],
+      },
+    });
+
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      subscriptions: { [sub.id]: sub },
+      agentStatuses: { [WATCHED_AGENT]: "idle", [SUBSCRIBER]: "idle" },
+    };
+
+    return expectSaga(periodicQueueSweep)
+      .provide(makeSweepProvider(wsState))
       .not.put.actionType(enqueueEvent.type)
       .not.put(requestDeliverQueuedEvents(WS, SUBSCRIBER))
       .run({ silenceTimeout: true });
@@ -1957,7 +2187,7 @@ describe("periodicQueueSweep — subscription-aware sweep", () => {
 // ---------------------------------------------------------------------------
 
 describe("periodicQueueSweep — delegation group stuck-detection", () => {
-  function makeSweepProvider(wsState: WorkspaceSubscriptionState) {
+  function makeSweepProvider(wsState: WorkspaceSubscriptionState, wsId = WS) {
     let delayCount = 0;
     return {
       call(effect: any, next: () => any) {
@@ -1976,18 +2206,18 @@ describe("periodicQueueSweep — delegation group stuck-detection", () => {
         return next();
       },
       select(effect: any, next: () => any) {
-        if (effect.args?.length === 0) return [WS];
-        if (effect.args?.[0] === WS && effect.args?.length === 1) return wsState;
+        if (effect.args?.length === 0) return [wsId];
+        if (effect.args?.[0] === wsId && effect.args?.length === 1) return wsState;
         // Handle selectors used by handleDelegationGroupDelivery
-        if (effect.selector === selectDelegationGroup.select && effect.args?.[0] === WS) {
+        if (effect.selector === selectDelegationGroup.select && effect.args?.[0] === wsId) {
           const groupId = effect.args[1];
           return wsState.delegationGroups[groupId];
         }
-        if (effect.selector === selectSubscription.select && effect.args?.[0] === WS) {
+        if (effect.selector === selectSubscription.select && effect.args?.[0] === wsId) {
           const subId = effect.args[1];
           return wsState.subscriptions[subId];
         }
-        if (effect.selector === selectIsDelegationGroupComplete.select && effect.args?.[0] === WS) {
+        if (effect.selector === selectIsDelegationGroupComplete.select && effect.args?.[0] === wsId) {
           const groupId = effect.args[1];
           const group = wsState.delegationGroups[groupId];
           if (!group) return false;
@@ -2026,12 +2256,48 @@ describe("periodicQueueSweep — delegation group stuck-detection", () => {
     };
 
     // Pre-populate stuckGroupFirstSeen so the threshold check passes
-    stuckGroupFirstSeen.set("group-stuck", Date.now() - 60_000);
+    stuckGroupFirstSeen.set(buildWorkspaceScopedGroupKey(WS, "group-stuck"), Date.now() - 60_000);
 
     return expectSaga(periodicQueueSweep)
       .provide(makeSweepProvider(wsState))
       .call.fn(handleDelegationGroupDelivery)
       .run({ silenceTimeout: true });
+  });
+
+  it("does not reuse stuck delegation-group first-seen timestamps across workspaces", () => {
+    const otherWs = "ws-other";
+    const groupId = "group-overlap";
+    const tracker: DelegationGroupTrackerRecord = {
+      groupId,
+      parentAgentId: AGENT,
+      parentAgentName: "Coordinator",
+      awaitMode: "all",
+      expectedAgentIds: ["agent-2"],
+      completedAgentIds: ["agent-2"],
+      deletedAgentIds: [],
+      events: [],
+      subscriptionId: "sub-1",
+      delivered: false,
+    };
+
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      delegationGroups: { [groupId]: tracker },
+    };
+
+    // This legacy/unscoped key represents another workspace having observed the
+    // same group ID long enough ago to pass the stuck threshold. It must not
+    // make this workspace force-deliver on its first observation.
+    stuckGroupFirstSeen.set(groupId, Date.now() - 60_000);
+
+    return expectSaga(periodicQueueSweep)
+      .provide(makeSweepProvider(wsState, otherWs))
+      .not.call.fn(handleDelegationGroupDelivery)
+      .run({ silenceTimeout: true })
+      .then(() => {
+        expect(stuckGroupFirstSeen.has(buildWorkspaceScopedGroupKey(otherWs, groupId))).toBe(true);
+        expect(stuckGroupFirstSeen.has(groupId)).toBe(false);
+      });
   });
 
   it("skips already-delivered groups", () => {
@@ -2104,7 +2370,7 @@ describe("periodicQueueSweep — delegation group stuck-detection", () => {
     };
 
     // Pre-populate stuckGroupFirstSeen so the threshold check passes
-    stuckGroupFirstSeen.set("group-any", Date.now() - 60_000);
+    stuckGroupFirstSeen.set(buildWorkspaceScopedGroupKey(WS, "group-any"), Date.now() - 60_000);
 
     return expectSaga(periodicQueueSweep)
       .provide(makeSweepProvider(wsState))
@@ -2132,7 +2398,7 @@ describe("periodicQueueSweep — delegation group stuck-detection", () => {
     };
 
     // Pre-populate stuckGroupFirstSeen so the threshold check passes
-    stuckGroupFirstSeen.set("group-deleted", Date.now() - 60_000);
+    stuckGroupFirstSeen.set(buildWorkspaceScopedGroupKey(WS, "group-deleted"), Date.now() - 60_000);
 
     return expectSaga(periodicQueueSweep)
       .provide(makeSweepProvider(wsState))
@@ -2156,6 +2422,37 @@ describe("sweep catch-up double-delivery prevention", () => {
     clearDeliveryDedupCache();
   });
 
+  it("deduplicates queued synthetic catch-up when the real event is also queued", () => {
+    const subscriptionId = "sub-overlap";
+    const syntheticEvent = makeEvent(
+      buildSweepCatchUpEventId(subscriptionId, WATCHED_AGENT, "agent:idle"),
+      "agent:idle",
+    );
+    syntheticEvent.actor = { type: "agent", id: WATCHED_AGENT };
+    syntheticEvent.data = { catchUp: true, agentId: WATCHED_AGENT };
+
+    const realEvent = makeEvent("real-idle-overlap", "agent:idle");
+    realEvent.actor = { type: "agent", id: WATCHED_AGENT };
+    realEvent.data = { agentId: WATCHED_AGENT };
+
+    const syntheticRecord: QueuedEventRecord = {
+      event: syntheticEvent,
+      queuedAt: new Date().toISOString(),
+      priority: "high",
+      subscriptionId,
+      oneShot: false,
+    };
+    const realRecord: QueuedEventRecord = {
+      event: realEvent,
+      queuedAt: new Date().toISOString(),
+      priority: "high",
+      subscriptionId,
+      oneShot: false,
+    };
+
+    expect(deduplicateCatchUpQueuedEvents([syntheticRecord, realRecord])).toEqual([realRecord]);
+  });
+
   it("handleMatchEvent skips delivery when sweep catch-up already fired for same sub+actor+eventType", () => {
     // Scenario: the sweep fires FIRST and records the sub+actor entry in
     // sweepCatchUpSeen. Then the real agent:idle event arrives via
@@ -2175,7 +2472,7 @@ describe("sweep catch-up double-delivery prevention", () => {
     };
 
     // Simulate the sweep having already fired for this combo
-    sweepCatchUpSeen.add(`${sub.id}:${WATCHED_AGENT}:agent:idle`);
+    sweepCatchUpSeen.add(buildSweepCatchUpSeenKey(WS, sub.id, WATCHED_AGENT, "agent:idle"));
 
     // Now the real event arrives
     const realEvent = makeEvent("real-idle-123", "agent:idle");
@@ -2231,7 +2528,7 @@ describe("sweep catch-up double-delivery prevention", () => {
         // filterAlreadyDelivered suppresses it.
         const deterministicId = buildSweepCatchUpEventId(sub.id, WATCHED_AGENT, "agent:idle");
         const syntheticEvent = { id: deterministicId } as any;
-        const filtered = filterAlreadyDelivered(COORDINATOR, [syntheticEvent]);
+        const filtered = filterAlreadyDelivered(WS, COORDINATOR, [syntheticEvent]);
         expect(filtered).toHaveLength(0); // should be filtered out
       });
   });
@@ -2249,7 +2546,7 @@ describe("sweep catch-up double-delivery prevention", () => {
       createdAt: new Date().toISOString(),
     };
 
-    const dedupeKey = `${sub.id}:${WATCHED_AGENT}:agent:idle`;
+    const dedupeKey = buildSweepCatchUpSeenKey(WS, sub.id, WATCHED_AGENT, "agent:idle");
     const deterministicId = buildSweepCatchUpEventId(
       sub.id,
       WATCHED_AGENT,
@@ -2304,6 +2601,84 @@ describe("sweep catch-up double-delivery prevention", () => {
     expect(sweepCatchUpSeen.has(dedupeKey)).toBe(false);
   });
 
+  it("subscription catch-up dedupe is scoped by workspace for overlapping subscription IDs", async () => {
+    const otherWs = "ws-other";
+    const sharedSubId = "sub-catchup-shared";
+    const subA: AgentSubscriptionRecord = {
+      id: sharedSubId,
+      agentId: COORDINATOR,
+      agentName: "Coordinator",
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["agent:idle"],
+        actorIds: [WATCHED_AGENT],
+      },
+      createdAt: new Date().toISOString(),
+    };
+    const subB: AgentSubscriptionRecord = { ...subA, workspaceId: otherWs };
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      agentStatuses: { [WATCHED_AGENT]: "idle" },
+    };
+
+    const runCatchUp = (workspaceId: string, sub: AgentSubscriptionRecord) => expectSaga(
+      handleNewSubscriptionCatchUp,
+      addSubscription(workspaceId, sub),
+    )
+      .provide({
+        select(effect: any, next: () => any) {
+          if (effect.selector === selectWorkspaceSubscriptionState.select) return wsState;
+          return next();
+        },
+        call(effect: any, next: () => any) {
+          if (isDelayEffect(effect)) return undefined;
+          return next();
+        },
+      })
+      .put.actionType(enqueueEvent.type)
+      .put(requestDeliverQueuedEvents(workspaceId, COORDINATOR))
+      .run();
+
+    await runCatchUp(WS, subA);
+    expect(sweepCatchUpSeen.has(buildSweepCatchUpSeenKey(WS, sharedSubId, WATCHED_AGENT, "agent:idle"))).toBe(true);
+
+    await runCatchUp(otherWs, subB);
+    expect(sweepCatchUpSeen.has(buildSweepCatchUpSeenKey(otherWs, sharedSubId, WATCHED_AGENT, "agent:idle"))).toBe(true);
+  });
+
+  it("subscription catch-up does not fire queued-turn data-matched subscriptions", () => {
+    const sub: AgentSubscriptionRecord = {
+      id: "sub-catchup-data-matched",
+      agentId: COORDINATOR,
+      agentName: "Coordinator",
+      workspaceId: WS,
+      filter: {
+        eventTypes: ["agent:idle"],
+        actorIds: [WATCHED_AGENT],
+        dataMatchers: [
+          {
+            field: "data.respondingToMessageId",
+            operator: "equals",
+            value: "msg-queued-wake",
+          },
+        ],
+      },
+      createdAt: new Date().toISOString(),
+    };
+    const wsState: WorkspaceSubscriptionState = {
+      ...emptyWorkspaceSubscriptionState,
+      agentStatuses: { [WATCHED_AGENT]: "idle" },
+    };
+
+    return expectSaga(handleNewSubscriptionCatchUp, addSubscription(WS, sub))
+      .provide([
+        [matchers.select(selectWorkspaceSubscriptionState.select, WS), wsState],
+      ])
+      .not.put.actionType(enqueueEvent.type)
+      .not.put(requestDeliverQueuedEvents(WS, COORDINATOR))
+      .run();
+  });
+
   it("catch-up suppression also applies before delegation-group delivery", async () => {
     const groupId = "group-catchup-overlap";
     const sub: AgentSubscriptionRecord = {
@@ -2323,7 +2698,7 @@ describe("sweep catch-up double-delivery prevention", () => {
       createdAt: new Date().toISOString(),
     };
 
-    const dedupeKey = `${sub.id}:${WATCHED_AGENT}:agent:idle`;
+    const dedupeKey = buildSweepCatchUpSeenKey(WS, sub.id, WATCHED_AGENT, "agent:idle");
     sweepCatchUpSeen.add(dedupeKey);
 
     const liveEvent = makeEvent("deleg-live-idle-overlap", "agent:idle");
@@ -2401,7 +2776,7 @@ describe("sweep catch-up double-delivery prevention", () => {
     };
 
     // Simulate sweep having fired for agent:idle
-    sweepCatchUpSeen.add(`${sub.id}:${WATCHED_AGENT}:agent:idle`);
+    sweepCatchUpSeen.add(buildSweepCatchUpSeenKey(WS, sub.id, WATCHED_AGENT, "agent:idle"));
 
     // A real agent:deleted event should NOT be suppressed — different event type
     const deletedEvent = makeEvent("real-deleted-789", "agent:deleted");
@@ -2438,7 +2813,7 @@ describe("sweep catch-up double-delivery prevention", () => {
       createdAt: new Date().toISOString(),
     };
 
-    const dedupeKey = `${sub.id}:${WATCHED_AGENT}:agent:idle`;
+    const dedupeKey = buildSweepCatchUpSeenKey(WS, sub.id, WATCHED_AGENT, "agent:idle");
 
     // 1. Sweep fires and records the catch-up
     sweepCatchUpSeen.add(dedupeKey);

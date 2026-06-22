@@ -118,6 +118,7 @@
   import DateSeparator from './DateSeparator.svelte';
   import EventWakeupBanner, { parseAgentEvents } from './EventWakeupBanner.svelte';
   import AgentCard from './AgentCard.svelte';
+  import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
   import StreamingStatus from './StreamingStatus.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
   import ChiefChatEmptyState from './ChiefChatEmptyState.svelte';
@@ -314,6 +315,9 @@
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
   // Canonical "agent is running" gate for idle-only affordances (next-steps links).
   const agentIsRunning$ = selectAgentIsRunning(agentIdStore);
+  const isDelegatedBackgroundTaskAgent = $derived(
+    isDelegatedBackgroundTaskSession($agentSession$),
+  );
 
   // Track if there's a pending permission request for this agent
   // When a permission is pending, we hide the "Thinking" indicator since the permission UI shows instead
@@ -3284,7 +3288,7 @@
                           />
                         </div>
                         <!-- Agent cards - NOT inside sticky div, so they scroll normally -->
-                        {#if agentEventsForCards.length > 0}
+                        {#if agentEventsForCards.length > 0 && !isDelegatedBackgroundTaskAgent}
                           <div class="mt-1 pb-13 flex flex-col gap-0.5 px-2 relative z-0">
                             {#each agentEventsForCards.slice(0, 5) as event (event.agentId)}
                               <AgentCard
@@ -3402,6 +3406,9 @@
                             onRegenerate={() => handleRegenerateFromMessage(message.id)}
                             onFork={() => handleForkFromMessage(message.id)}
                             backendSessionId={auggieSessionId}
+                            suppressCoordinationStoppedIndicator={turn.userMessage
+                              ? isAutomatedMessage(turn.userMessage)
+                              : false}
                           />
                         </div>
                         <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->

@@ -25,13 +25,30 @@ export interface RendererStoreBridge {
 let storeBridge: RendererStoreBridge | null = null;
 
 /**
- * Set the renderer store reference. Called once during `initAppStore()`.
+ * Set the renderer store reference. Called during `initAppStore()`.
+ *
+ * Re-initializing with the same configured Store is harmless in dev/HMR and
+ * nested layout recovery paths. A different Store still indicates multiple app
+ * roots competing for the bridge and remains an error.
  */
 export function initRendererStoreBridge(store: RendererStoreBridge): void {
   if (storeBridge) {
+    if (storeBridge === store) return;
     throw new Error('Renderer store bridge already initialized.');
   }
   storeBridge = store;
+}
+
+/**
+ * Clear the renderer store reference when the owning app Store is disposed.
+ * Passing the expected store prevents an older disposer from clearing a newer
+ * bridge after a hot reload or root remount race.
+ */
+export function clearRendererStoreBridge(expectedStore?: RendererStoreBridge): boolean {
+  if (!storeBridge) return false;
+  if (expectedStore && storeBridge !== expectedStore) return false;
+  storeBridge = null;
+  return true;
 }
 
 /**
@@ -51,5 +68,5 @@ export function getRendererStore(): RendererStoreBridge {
  * @internal
  */
 export function _resetRendererStoreBridge(): void {
-  storeBridge = null;
+  clearRendererStoreBridge();
 }

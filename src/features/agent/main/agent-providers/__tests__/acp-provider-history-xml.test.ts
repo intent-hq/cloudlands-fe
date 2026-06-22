@@ -24,7 +24,9 @@ import {
   isSessionRecoverableError,
   isModelNotAvailableError,
   isMissingWorkspaceToolError,
+  isStaleWorkspaceApiError,
   detectMissingWorkspaceToolInUpdate,
+  detectStaleWorkspaceApiInUpdate,
 } from '../acp-provider';
 import type { AgentMessage } from '../base-provider';
 import type { ContentBlock } from '../../../../../shared/types/content-block';
@@ -1662,6 +1664,61 @@ describe('classifier fallback via structured errorData', () => {
       ).toBe(false);
       expect(detectMissingWorkspaceToolInUpdate(null)).toBe(false);
       expect(detectMissingWorkspaceToolInUpdate({ status: 'failed' })).toBe(false);
+    });
+  });
+
+  describe('isStaleWorkspaceApiError', () => {
+    it('classifies missing ws method errors as a stale workspace API surface', () => {
+      expect(isStaleWorkspaceApiError('Error executing code: ws.agent.diagnostics is not a function')).toBe(
+        true,
+      );
+      expect(isStaleWorkspaceApiError('TypeError: ws.task.getMyTask is not a function')).toBe(true);
+    });
+
+    it('requires a ws namespace and not-a-function phrase', () => {
+      expect(isStaleWorkspaceApiError('workspace_api returned an error')).toBe(false);
+      expect(isStaleWorkspaceApiError('diagnostics is not a function')).toBe(false);
+      expect(isStaleWorkspaceApiError('ws.agent.diagnostics returned an error')).toBe(false);
+    });
+
+    it('classifies via structured errorData detail', () => {
+      expect(
+        isStaleWorkspaceApiError('Internal error', {
+          errorDetails: { detail: 'Error executing code: ws.agent.diagnostics is not a function' },
+        }),
+      ).toBe(true);
+    });
+  });
+
+  describe('detectStaleWorkspaceApiInUpdate', () => {
+    it('detects a failed workspace_api update with a stale ws method error', () => {
+      expect(
+        detectStaleWorkspaceApiInUpdate({
+          status: 'failed',
+          title: 'workspace_api',
+          rawOutput: { output: 'Error executing code: ws.agent.diagnostics is not a function' },
+        }),
+      ).toBe(true);
+    });
+
+    it('requires structured workspace tool identity', () => {
+      expect(
+        detectStaleWorkspaceApiInUpdate({
+          status: 'failed',
+          title: 'bash',
+          rawOutput: { output: 'Error executing code: ws.agent.diagnostics is not a function' },
+        }),
+      ).toBe(false);
+    });
+
+    it('ignores successful workspace_api updates', () => {
+      expect(
+        detectStaleWorkspaceApiInUpdate({
+          status: 'completed',
+          title: 'workspace_api',
+          rawOutput: { output: 'ws.agent.diagnostics is not a function' },
+        }),
+      ).toBe(false);
     });
   });
 

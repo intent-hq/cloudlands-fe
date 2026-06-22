@@ -12,7 +12,6 @@
 
 import { isRandomAgentName } from '$lib/utils/agent-name-generator';
 import {
-  ACP_PROVIDERS,
   buildProviderEnv,
   createCompoundModelId,
   getDefaultModelForProvider,
@@ -22,6 +21,7 @@ import {
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
 import {
+  isKnownProviderId,
   ProviderRegistry,
   upsertCodexConfigArgs,
 } from './provider-registry';
@@ -167,6 +167,7 @@ interface SendMessageRequest {
   /** Stable app-owned logical IDs used to merge frontend/backend copies without changing provider IDs */
   userAppMessageId?: string;
   assistantAppMessageId?: string;
+  queuedMessageId?: string;
   queuedMessageAppMessageId?: string;
 }
 
@@ -1937,12 +1938,12 @@ export class AgentBackendHandler {
         // DEFAULT_AGENT_MODEL is already correct — don't downgrade it.
         const testOverride = process.env.TESTING === 'true' ? process.env.DEFAULT_PROVIDER_OVERRIDE : undefined;
         if (testOverride) {
-          if (!(testOverride in ACP_PROVIDERS)) {
+          if (!isKnownProviderId(testOverride)) {
             logger.warn(`DEFAULT_PROVIDER_OVERRIDE '${testOverride}' is not a known provider, ignoring`);
           }
         }
         const explicitProvider =
-          (testOverride && ACP_PROVIDERS[testOverride] ? testOverride : undefined) ||
+          (testOverride && isKnownProviderId(testOverride) ? testOverride : undefined) ||
           agentConfig?.provider || agentMetadata?.provider || (request as any).provider;
         if (modelId === DEFAULT_AGENT_MODEL && explicitProvider) {
           const defaultProviderId = getDefaultProviderId();
@@ -3749,6 +3750,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
             agentName,
             assistantMessage,
             finishReason,
+            request.queuedMessageId,
           );
 
           // Background check: see if agent's task note should be marked as complete
@@ -3895,6 +3897,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
               request.workspaceId,
               agentName,
               error.message,
+              request.queuedMessageId,
             );
           }
         },
@@ -3935,6 +3938,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       // which causes this catch to fire AFTER onError already emitted agent:failed.
       const isRecoverableNotFound = errorMessage.includes('not found');
       if (request.workspaceId && !isRecoverableNotFound && !onErrorHandled) {
+        this.sendStreamToRenderer(request.agentId, `agent:stream:${request.agentId}`, {
+          type: 'error',
+          error: errorMessage,
+          streamId: request.streamId,
+          sessionId: request.agentId,
+          workspaceId: request.workspaceId,
+        });
+
         // Clean up stream resources and advance the queue. onError didn't fire,
         // so streamStartTimes may be stale and the queue would never advance.
         this.finalizeStream(request.agentId, request.workspaceId, 'outer-catch-error');
@@ -3954,6 +3965,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
           request.workspaceId,
           failedAgentName,
           errorMessage,
+          request.queuedMessageId,
         );
       } else if (!onErrorHandled && this.streamStartTimes.has(request.agentId)) {
         // Even if we can't emit the failed event (no workspaceId or recoverable error),
@@ -4219,7 +4231,13 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       // frontend handshake failure), the parent coordinator is never notified and hangs.
       if (request.workspaceId) {
         const agentName = request.agentName || 'Agent';
-        this.emitAgentFailedEvent(request.agentId, request.workspaceId, agentName, errorMessage);
+        this.emitAgentFailedEvent(
+          request.agentId,
+          request.workspaceId,
+          agentName,
+          errorMessage,
+          request.queuedMessageId,
+        );
       }
 
       return {
@@ -4366,6 +4384,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
                 error: AgentBackendHandler.INTERRUPT_ORPHAN_MESSAGE,
                 streamId: sessionId || agentId,
                 sessionId: agentId,
+                workspaceId: repairWorkspaceId,
               });
               repaired = true;
             }
@@ -5383,7 +5402,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         }
 
         const timeoutMinutes = Math.round(maxDuration / 60000);
-        const workspaceId = this.streamWorkspaceIds.get(agentId);
+        const workspaceId = this.resolveStreamWorkspaceId(agentId, {});
 
         // If we have content, send a completion with the partial content
         if (finalContentBlocks.length > 0) {
@@ -5401,6 +5420,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
             sessionId: agentId,
             message: partialMessage,
             finishReason: 'timeout',
+            workspaceId,
           });
         } else {
           // No content recovered, send error
@@ -5408,6 +5428,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
             type: 'error',
             error: `Stream timeout after ${timeoutMinutes} minutes`,
             sessionId: agentId,
+            workspaceId,
           });
         }
 
@@ -5542,6 +5563,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     sessionId: string;
     workspaceId: string;
     startTime: number;
+    assistantAppMessageId?: string;
     accumulatedContent?: { content: string; contentBlocks: ContentBlock[] };
   }[] {
     const activeStreams: {
@@ -5549,6 +5571,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       sessionId: string;
       workspaceId: string;
       startTime: number;
+      assistantAppMessageId?: string;
       accumulatedContent?: { content: string; contentBlocks: ContentBlock[] };
     }[] = [];
 
@@ -5566,6 +5589,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     for (const [agentId, startTime] of this.streamStartTimes) {
       const sessionId = this.streamSessionIds.get(agentId) || agentId;
       const workspaceId = this.streamWorkspaceIds.get(agentId) || '';
+      const assistantAppMessageId = this.streamAssistantAppMessageIds.get(agentId);
 
       // Check if this is a stale stream entry:
       // - No provider exists (stream not actually running)
@@ -5612,7 +5636,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         continue; // Don't include in activeStreams
       }
 
-      activeStreams.push({ agentId, sessionId, workspaceId, startTime, accumulatedContent });
+      activeStreams.push({
+        agentId,
+        sessionId,
+        workspaceId,
+        startTime,
+        assistantAppMessageId,
+        accumulatedContent,
+      });
     }
 
     // Clean up stale streams after iteration to avoid modifying the map during iteration
@@ -5871,7 +5902,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
    * Send stream-related event to ALL windows viewing the agent's workspace.
    * This ensures that if multiple windows are open for the same workspace,
    * all of them receive streaming updates (not just the window that initiated the stream).
-   * Drops the event if workspace targeting is unavailable.
+   * Drops the event if workspace targeting is unavailable. Terminal/recovery
+   * callers may include `workspaceId` in the payload when stream tracking was
+   * already cleaned up.
    * @param agentId - The agent ID to look up the target workspace for
    * @param channel - The IPC channel to send on
    * @param data - The data to send
@@ -5928,7 +5961,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
 
   private sendStreamToRenderer(agentId: string, channel: string, data: any): boolean {
     const payload = this.withCanonicalStreamStatus(data);
-    const workspaceId = this.streamWorkspaceIds.get(agentId);
+    const workspaceId = this.resolveStreamWorkspaceId(agentId, data);
     if (!workspaceId) {
       logger.warn('sendStreamToRenderer: no workspace tracked, dropping stream event', {
         agentId,
@@ -5961,6 +5994,31 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         ? { ...payload, workspaceId }
         : payload;
     return this.sendToRenderer(channel, payloadWithWorkspaceId, targetWindowIds, workspaceId);
+  }
+
+  private resolveStreamWorkspaceId(agentId: string, data: any): string | undefined {
+    const trackedWorkspaceId = this.streamWorkspaceIds.get(agentId);
+    if (trackedWorkspaceId) return trackedWorkspaceId;
+
+    if (
+      data &&
+      typeof data === 'object' &&
+      !Array.isArray(data) &&
+      typeof data.workspaceId === 'string' &&
+      data.workspaceId.length > 0
+    ) {
+      return data.workspaceId;
+    }
+
+    const queuedWorkspaceId = this.queueAgentWorkspaceIds?.get(agentId);
+    if (queuedWorkspaceId) return queuedWorkspaceId;
+
+    const providerWorkspaceId = (this.providers?.get(agentId) as any)?.config?.workspaceId;
+    if (typeof providerWorkspaceId === 'string' && providerWorkspaceId.length > 0) {
+      return providerWorkspaceId;
+    }
+
+    return undefined;
   }
 
   private getStreamTargetWindowIds(
@@ -6020,8 +6078,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       // streaming provider — a stream ends with exactly one of them, never both, never
       // neither. Both intentionally map to `agent:stream:end` so subscribers see a single
       // canonical terminal event and can branch on payload metadata if they need to
-      // distinguish success vs failure (today the payload is identical by design).
+      // distinguish success vs failure.
       case 'complete':
+      case 'error':
         eventType = 'agent:stream:end';
         break;
       case 'message':
@@ -6045,6 +6104,8 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         {
           agentId,
           content: data.data ?? data.message ?? null,
+          error: data.error ?? null,
+          finishReason: data.finishReason ?? data.stopReason ?? null,
           streamId: data.streamId,
           ...(data.type === 'message' && data.message && { message: data.message }),
           ...(data.type === 'tool_use' && { toolUse: data.data || data }),
@@ -6892,6 +6953,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
           error: AgentBackendHandler.BRIDGE_UNRECOVERABLE_MESSAGE,
           streamId: sessionId || agentId,
           sessionId: agentId,
+          workspaceId,
         });
         // Stop the live ACP provider so the auggie subprocess cannot keep
         // streaming and re-dirty the session we just repaired. Mirrors the
@@ -7308,6 +7370,49 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     } catch (error) {
       logger.error('Error stopping agent', error as Error);
       throw error;
+    }
+  }
+
+  /**
+   * Interrupt an in-flight agent turn and immediately deliver the replacement
+   * message. This is the backend equivalent of "Send now" for agent-to-agent
+   * interrupt messages: stopAgent intentionally marks the target as interrupted
+   * to block automatic queue draining, then this method clears that guard once
+   * the interrupt message is ready to start its own turn.
+   */
+  public async interruptAgentWithMessage(params: {
+    agentId: string;
+    message: string;
+    workspaceId: string;
+    messageMetadata?: any;
+  }): Promise<{ success: boolean; error?: string }> {
+    const { agentId, message, workspaceId, messageMetadata } = params;
+
+    try {
+      await this.stopAgent(agentId, 'agent_interrupt_message');
+      this.clearInterruptedFlag(agentId);
+
+      // Match force-send behavior: give provider interrupt cleanup a short
+      // settling window before starting the replacement turn.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const result = await this.handleBackendStreamMessage(null as any, {
+        agentId,
+        sessionId: agentId,
+        streamId: `${agentId}:${Date.now()}`,
+        content: message,
+        workspaceId,
+        messageMetadata,
+      });
+
+      if (!result.success) {
+        return { success: false, error: result.error || 'Interrupt message stream did not start' };
+      }
+
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to interrupt agent with message', { agentId, workspaceId, error });
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
 
@@ -9547,6 +9652,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     agentName: string,
     finalMessage?: AgentMessage,
     finishReason?: string,
+    respondingToMessageId?: string,
   ): void {
     // CRITICAL: Do NOT emit agent:idle when the agent was interrupted and is about to
     // resume processing. This prevents premature wake-ups of parent agents.
@@ -9574,6 +9680,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       agentName,
       finalMessage,
       finishReason,
+      respondingToMessageId,
     ).catch((err) => {
       logger.warn('Failed in emitAgentIdleEvent async chain', { agentId, error: err });
     });
@@ -9585,6 +9692,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     agentName: string,
     finalMessage?: AgentMessage,
     finishReason?: string,
+    respondingToMessageId?: string,
   ): Promise<void> {
     // Step 1: Clear delegation group (non-critical, don't block on failure)
     try {
@@ -9776,6 +9884,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
           isResponding: false,
           stopReason: finishReason,
           isWaitingForAgents,
+          respondingToMessageId,
         },
       )));
 
@@ -10080,8 +10189,15 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     workspaceId: string,
     agentName: string,
     error: string,
+    respondingToMessageId?: string,
   ): void {
-    this._emitAgentFailedEventAsync(agentId, workspaceId, agentName, error).catch((err) => {
+    this._emitAgentFailedEventAsync(
+      agentId,
+      workspaceId,
+      agentName,
+      error,
+      respondingToMessageId,
+    ).catch((err) => {
       logger.warn('Failed in emitAgentFailedEvent async chain', { agentId, error: err });
     });
   }
@@ -10091,6 +10207,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     workspaceId: string,
     agentName: string,
     error: string,
+    respondingToMessageId?: string,
   ): Promise<void> {
     // Step 0: Clear delegation group (non-critical, don't block on failure)
     // Without this, if an agent fails without going idle first,
@@ -10151,6 +10268,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
           isProcessing: false,
           isResponding: false,
           stopReason: error,
+          respondingToMessageId,
         },
       )));
       logger.debug('Emitted agent:failed event via Redux', {

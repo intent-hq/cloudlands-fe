@@ -15,6 +15,7 @@ import { createChiefVirtualWorkspace } from '../../workspace-agents/chief-virtua
 import { cleanErrorMessage } from '$shared/errors/messages';
 import { parseCompoundModelId } from '$shared/config/provider-config';
 import { unifiedIdService } from '$shared/services/unified-id.service';
+import { createAppMessageId } from '$shared/utils/app-message-id';
 import {
   activateAgentRequested,
   createAgentFromConfigRequested,
@@ -57,6 +58,7 @@ import {
   agentSessionRetryWithModelRequested,
   agentSessionSendMessageRequested,
   agentSessionStopChatRequested,
+  addMessage as addAgentSessionMessage,
   replaceMessages,
   updateMessage,
 } from '../agent-session-slice';
@@ -119,6 +121,25 @@ function getBlockText(block: MessageContentBlock): string {
 
 function extractUserMessageText(message: AgentMessage): string {
   return (message.contentBlocks ?? []).map(getBlockText).join('');
+}
+
+function createOptimisticUserMessage(
+  text: string,
+  options?: AgentSessionSendMessageOptions,
+  contentBlocks: AgentMessage['contentBlocks'] = [{ type: 'text', text }],
+): { message: AgentMessage; options: AgentSessionSendMessageOptions } {
+  const userAppMessageId = options?.userAppMessageId ?? createAppMessageId();
+  const optimisticMessageId = options?.optimisticMessageId ?? `optimistic_${userAppMessageId}`;
+  return {
+    message: {
+      id: optimisticMessageId,
+      appMessageId: userAppMessageId,
+      role: 'user',
+      contentBlocks,
+      timestamp: new Date().toISOString(),
+    },
+    options: { ...options, userAppMessageId, optimisticMessageId },
+  };
 }
 
 function extractMediaContextItems(message: AgentMessage, prefix: string): AgentSessionSendContextItem[] {
@@ -435,7 +456,12 @@ function* retryFromConversationHistory(
   if (mediaContextItems.length > 0) {
     retryOptions.contextItems = [...(retryOptions.contextItems ?? []), ...mediaContextItems];
   }
-  yield* call(sendMessageAndWaitForResponse, agentId, wsId, userText, retryOptions);
+
+  const { message: optimisticRetryMessage, options: retryOptionsWithIds } =
+    createOptimisticUserMessage(userText, retryOptions, lastUserMessage.contentBlocks);
+  yield* put(addAgentSessionMessage(agentId, optimisticRetryMessage));
+
+  yield* call(sendMessageAndWaitForResponse, agentId, wsId, userText, retryOptionsWithIds);
 }
 
 export function* handleAgentSessionEditAndRegenerateRequested(
@@ -464,10 +490,13 @@ export function* handleAgentSessionEditAndRegenerateRequested(
       agentId,
       'Failed to persist truncated messages after edit',
     );
-    yield* call(sendMessageAndWaitForResponse, agentId, wsId, newText, {
+    const { message: optimisticEditedMessage, options: editOptionsWithIds } =
+      createOptimisticUserMessage(newText, {
       ...options,
       resetHistory: true,
     });
+    yield* put(addAgentSessionMessage(agentId, optimisticEditedMessage));
+    yield* call(sendMessageAndWaitForResponse, agentId, wsId, newText, editOptionsWithIds);
     yield* put(action.success(undefined as void));
   } catch (error) {
     yield* put(action.failure(cleanErrorMessage(getErrorMessage(error, 'Failed to edit message'))));
@@ -526,7 +555,10 @@ export function* handleAgentSessionRegenerateFromMessageRequested(
         ...mediaContextItems,
       ];
     }
-    yield* call(sendMessageAndWaitForResponse, agentId, wsId, userText, regenerateOptions);
+    const { message: optimisticRegenerateMessage, options: regenerateOptionsWithIds } =
+      createOptimisticUserMessage(userText, regenerateOptions, userMessage.contentBlocks);
+    yield* put(addAgentSessionMessage(agentId, optimisticRegenerateMessage));
+    yield* call(sendMessageAndWaitForResponse, agentId, wsId, userText, regenerateOptionsWithIds);
     yield* put(action.success(undefined as void));
   } catch (error) {
     yield* put(action.failure(cleanErrorMessage(getErrorMessage(error, 'Failed to regenerate message'))));
@@ -555,17 +587,21 @@ function* handleAgentSessionRetryRequested(
       const retryOptions = config.buildLastAttemptOptions
         ? config.buildLastAttemptOptions(options as AgentSessionSendMessageOptions | undefined)
         : (options as AgentSessionSendMessageOptions | undefined);
+      const { message: optimisticRetryMessage, options: retryOptionsWithIds } =
+        createOptimisticUserMessage(text, retryOptions);
       yield* put(chatErrorCleared(agentId));
       if (config.clearModelUnavailable) {
         yield* put(chatModelUnavailableCleared(agentId));
       }
+      yield* put(addAgentSessionMessage(agentId, optimisticRetryMessage));
+      yield* put(updateMessage(agentId, optimisticRetryMessage.id, { error: undefined }));
       config.logLastAttempt(agentId, text);
       yield* call(
         sendMessageAndWaitForResponse,
         agentId,
         wsId,
         text,
-        retryOptions,
+        retryOptionsWithIds,
       );
     } else {
       yield* call(retryFromConversationHistory, agentId, wsId, config.historyOptions);

@@ -8,6 +8,9 @@ import { Page, ElectronApplication, _electron as electron } from '@playwright/te
 import { join } from 'path';
 import { promises as fs } from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Launch Electron application for testing

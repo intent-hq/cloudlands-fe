@@ -120,7 +120,7 @@ class StreamingUITester {
       // Check if messages are preserved when updating agent
       const hasMessagePreservation = storeContent.includes('replaceMessages') &&
         storeContent.includes('deduplicateAgentMessages') &&
-        storeContent.includes('mergeSessionMessages');
+        storeContent.includes('normalizeSortPruneMessages');
 
       if (!hasMessagePreservation) {
         logger.error('agent-session slice does not preserve messages properly');
@@ -132,7 +132,8 @@ class StreamingUITester {
       const streamSagaContent = fs.readFileSync(streamSagaPath, 'utf-8');
 
       const hasReactiveUpdate = streamSagaContent.includes('updateMessage(');
-      const hasStoreNotification = streamSagaContent.includes('replaceMessages(');
+      const hasStoreNotification = streamSagaContent.includes('replaceMessages(') &&
+        streamSagaContent.includes('deduplicateRecoverySession');
 
       if (!hasReactiveUpdate || !hasStoreNotification) {
         logger.error('agent stream saga does not trigger Redux updates');

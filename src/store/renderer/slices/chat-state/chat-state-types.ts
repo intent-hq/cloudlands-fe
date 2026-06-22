@@ -74,20 +74,6 @@ export interface ChatAgentState {
 }
 
 /**
- * Renderer chat state composed from transient chat-state flags plus canonical
- * agent-session data so UI utilities depend on store-owned types rather than
- * retired service orchestration.
- */
-export type ChatState = ChatAgentState & {
-  session: AgentSession | null;
-  messages: AgentMessage[];
-  /** Streaming flag — sourced from agent-session slice (single source of truth) */
-  isStreaming: boolean;
-  /** Processing flag — sourced from agent-session slice (single source of truth) */
-  isProcessing: boolean;
-};
-
-/**
  * Payload for the sendMessage saga-trigger action.
  * DOM-derived context may be raw; the saga owns serialization before IPC.
  */
@@ -136,7 +122,6 @@ export interface InitializeChatOptions {
 
 import type { ContextItem as ChatInputContextItem } from '$lib/components/chat/input/context-api';
 import type { ContextReference } from '$features/agent/agent-context';
-import type { AgentMessage, AgentSession } from '$shared/types';
 
 // ============================================================================
 // Top-level slice state (flat, agent-keyed)

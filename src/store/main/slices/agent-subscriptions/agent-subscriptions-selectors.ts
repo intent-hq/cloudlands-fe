@@ -109,15 +109,33 @@ export const selectDelegationGroupsForParent = store.createSelector(
   },
 );
 
+export function getDelegationGroupCompletionSummary(
+  group: DelegationGroupTrackerRecord,
+): { doneCount: number; expectedCount: number; isComplete: boolean } {
+  const expectedIds = new Set(group.expectedAgentIds);
+  const doneIds = new Set<string>();
+  for (const agentId of group.completedAgentIds) {
+    if (expectedIds.has(agentId)) doneIds.add(agentId);
+  }
+  for (const agentId of group.deletedAgentIds) {
+    if (expectedIds.has(agentId)) doneIds.add(agentId);
+  }
+
+  const expectedCount = expectedIds.size;
+  const doneCount = doneIds.size;
+  const isComplete = expectedCount > 0 && (
+    group.awaitMode === "any"
+      ? doneCount >= 1
+      : doneCount >= expectedCount
+  );
+  return { doneCount, expectedCount, isComplete };
+}
+
 export const selectIsDelegationGroupComplete = store.createSelector(
   (state, wsId: string, groupId: string): boolean => {
     const group = selectDelegationGroup.select(state, wsId, groupId);
     if (!group) return false;
-    const doneCount = group.completedAgentIds.length + group.deletedAgentIds.length;
-    if (group.awaitMode === "any") {
-      return doneCount >= 1;
-    }
-    return doneCount >= group.expectedAgentIds.length;
+    return getDelegationGroupCompletionSummary(group).isComplete;
   },
 );
 
@@ -164,7 +182,7 @@ export const selectAllWorkspaceIds = store.createSelector(
  * subscriptions signature so that `appendDelegationGroupEvent` (which only
  * grows `events`) does not trigger the subscriptions-changed emitter.
  */
-export interface TrackerCore {
+interface TrackerCore {
   groupId: string;
   parentAgentId: string;
   parentAgentName: string;

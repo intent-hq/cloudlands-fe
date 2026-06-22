@@ -4,6 +4,7 @@ import type { Readable } from "svelte/store";
 import { readable } from "svelte/store";
 import type { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 import {
+  beforeEach,
   describe,
   expect,
   it,
@@ -14,6 +15,12 @@ import {
   initAppStore,
   store as appStore,
 } from "./store";
+import {
+  _resetRendererStoreBridge,
+  clearRendererStoreBridge,
+  getRendererStore,
+  initRendererStoreBridge,
+} from "./renderer-store-bridge";
 import { store as configuredStore } from "./configured-store";
 import { reducers } from "./reducer";
 import {
@@ -51,6 +58,10 @@ function createFakeStoreRuntime(initialState = {} as StoreState) {
 
   return runtime;
 }
+
+beforeEach(() => {
+  _resetRendererStoreBridge();
+});
 
 describe("configured app Store", () => {
   it("constructs the core Store without importing app sagas", () => {
@@ -111,8 +122,37 @@ describe("app Store initialization", () => {
     expect(runtime.dispatch).toHaveBeenCalledWith(action);
     expect(context.store.state).toBe(runtime.state);
     expect(context.store.getReadableState()).toBe(runtime.getReadableState());
+    expect(getRendererStore()).toBe(runtime);
 
     context.dispose();
     expect(runtime.dispose).toHaveBeenCalledOnce();
+    expect(() => getRendererStore()).toThrow("Renderer store bridge not initialized");
+  });
+
+  it("can initialize again after root teardown clears the renderer store bridge", () => {
+    const firstRuntime = createFakeStoreRuntime();
+    const firstContext = initAppStore(firstRuntime as unknown as Store<any, any>);
+
+    firstContext.dispose();
+
+    const secondRuntime = createFakeStoreRuntime();
+    const secondContext = initAppStore(secondRuntime as unknown as Store<any, any>);
+
+    expect(getRendererStore()).toBe(secondRuntime);
+    secondContext.dispose();
+  });
+
+  it("does not let an older disposer clear a newer renderer store bridge", () => {
+    const oldRuntime = createFakeStoreRuntime();
+    const newRuntime = createFakeStoreRuntime();
+
+    initRendererStoreBridge(oldRuntime as unknown as Store<any, any>);
+    initRendererStoreBridge(oldRuntime as unknown as Store<any, any>);
+    expect(clearRendererStoreBridge(newRuntime as unknown as Store<any, any>)).toBe(false);
+    expect(getRendererStore()).toBe(oldRuntime);
+    expect(clearRendererStoreBridge(oldRuntime as unknown as Store<any, any>)).toBe(true);
+    initRendererStoreBridge(newRuntime as unknown as Store<any, any>);
+
+    expect(getRendererStore()).toBe(newRuntime);
   });
 });

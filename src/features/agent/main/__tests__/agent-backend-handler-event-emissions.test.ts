@@ -61,6 +61,12 @@ describe('Audit 2 C2 — agent-backend-handler lifecycle emissions', () => {
       expect(SOURCE).toMatch(pattern);
     },
   );
+
+  it('threads queued/user message IDs into idle and failed lifecycle events', () => {
+    expect(SOURCE).toMatch(/this\.emitAgentIdleEvent\([\s\S]{0,300}request\.queuedMessageId/);
+    expect(SOURCE).toMatch(/this\.emitAgentFailedEvent\([\s\S]{0,300}request\.queuedMessageId/);
+    expect(SOURCE).toMatch(/respondingToMessageId,/);
+  });
 });
 
 describe('Audit 2 C3 — agent-backend-handler queue emissions', () => {

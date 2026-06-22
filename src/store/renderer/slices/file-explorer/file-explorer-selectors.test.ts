@@ -19,7 +19,7 @@ import {
 } from "./file-explorer-slice";
 import {
   selectFileExplorerRootNode,
-  selectCurrentFileExplorerEnvironmentConfigTrigger,
+  selectFileExplorerEnvironmentConfigTrigger,
   selectEffectiveFileExplorerWorkspacePath,
   selectFileExplorerInitializationInputs,
   selectFlattenedNodes,
@@ -262,14 +262,15 @@ describe("selectFileExplorerInitializationInputs", () => {
   });
 });
 
-describe("selectCurrentFileExplorerEnvironmentConfigTrigger", () => {
-  it("derives the current workspace environment config trigger from workspace state", () => {
+describe("selectFileExplorerEnvironmentConfigTrigger", () => {
+  it("derives an explicit workspace environment config trigger from workspace state", () => {
     expect(
-      selectCurrentFileExplorerEnvironmentConfigTrigger.select(
+      selectFileExplorerEnvironmentConfigTrigger.select(
         mockInitializationState(
           { workspacePath: WORKSPACE_PATH, isInitialized: true },
           { environmentConfig: remoteConfig },
         ),
+        WS_ID,
       ),
     ).toEqual({
       wsId: WS_ID,

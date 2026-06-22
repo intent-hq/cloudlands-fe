@@ -55,6 +55,10 @@ import {
   isTimestampClose,
 } from '$shared/utils/message-dedup';
 import { resolveStreamContentBlocks } from '../utils/stream-content-blocks';
+import {
+  findInFlightAssistantMessage,
+  isStaleFinalizedAssistantStream,
+} from '../utils/stream-target-state';
 import { newAssistantMessage } from '../../unread-tracking/unread-tracking-slice';
 import {
   logger as rendererLogger,
@@ -269,8 +273,12 @@ function buildMessageUpdates(
   if (payload.eventType === 'complete') {
     updates.isStreaming = false;
     updates.streamingComplete = true;
-    if (completeMessage?.metadata) {
-      updates.metadata = { ...target.metadata, ...completeMessage.metadata };
+    if (completeMessage?.metadata || target.metadata?.interrupted === true) {
+      updates.metadata = buildCompletedMessageMetadata(
+        target.metadata,
+        completeMessage?.metadata,
+        payload.finishReason,
+      );
     }
   } else if (
     payload.eventType === 'chunk' ||
@@ -281,6 +289,50 @@ function buildMessageUpdates(
     updates.streamingComplete = false;
   }
 
+  return updates;
+}
+
+function isInterruptedStopReason(stopReason: unknown): boolean {
+  return (
+    stopReason === 'cancelled' ||
+    stopReason === 'interrupted' ||
+    stopReason === 'provider_stopped' ||
+    stopReason === 'workspace_deleted' ||
+    stopReason === 'process_died' ||
+    stopReason === 'process_null'
+  );
+}
+
+function buildCompletedMessageMetadata(
+  targetMetadata: AgentMessage['metadata'] | undefined,
+  completeMetadata: Record<string, unknown> | undefined,
+  finishReason: string | undefined,
+): AgentMessage['metadata'] {
+  const metadata = { ...targetMetadata, ...completeMetadata } as AgentMessage['metadata'];
+  const stopReason = completeMetadata?.stopReason ?? finishReason ?? targetMetadata?.stopReason;
+  if (metadata?.interrupted === true && stopReason && !isInterruptedStopReason(stopReason)) {
+    delete metadata.interrupted;
+    (metadata as Record<string, unknown>).stopReason = stopReason;
+  }
+  return metadata;
+}
+
+function buildTerminalStreamUpdates(
+  payload: AgentStreamUpdatePayload,
+  target: AgentMessage,
+): Partial<AgentMessage> {
+  const updates: Partial<AgentMessage> = {
+    isStreaming: false,
+    streamingComplete: true,
+    metadata: {
+      ...target.metadata,
+      stopReason: payload.eventType,
+    },
+  };
+  const error = payload.error ?? target.error;
+  if (error !== undefined) {
+    updates.error = error;
+  }
   return updates;
 }
 
@@ -358,6 +410,10 @@ function* applyStreamUpdateToCurrentSession(
   if (!wsId) return false;
 
   if (payload.eventType === 'error' || payload.eventType === 'timeout') {
+    const target = findAssistantUpdateTarget(session, payload);
+    if (target) {
+      yield* put(updateMessage(payload.agentId, target.id, buildTerminalStreamUpdates(payload, target)));
+    }
     yield* put(setAgentStreaming(payload.agentId, false));
     if (session) {
       yield* put(
@@ -565,9 +621,15 @@ export function* handleBackendStreamsReconnectResult(
       };
       session = yield* call(refreshSessionForMissingTarget, payload, undefined);
     }
-    const existingMessage = (session?.messages || []).find(
-      (message) => message.role === 'assistant' && message.isStreaming === true,
-    );
+    const existingMessage = findInFlightAssistantMessage(session, stream.assistantAppMessageId);
+    if (isStaleFinalizedAssistantStream(session, stream.assistantAppMessageId)) {
+      logger.info('Skipping stale backend active stream snapshot for finalized session', {
+        agentId: stream.agentId,
+        workspaceId: stream.workspaceId,
+        assistantAppMessageId: stream.assistantAppMessageId,
+      });
+      continue;
+    }
     yield* call(ensureStreamHandler, stream.agentId, {
       existingMessage,
       workspaceId: stream.workspaceId,

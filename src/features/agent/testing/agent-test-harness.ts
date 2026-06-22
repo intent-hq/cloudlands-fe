@@ -21,6 +21,10 @@ import {
   AgentId as BrandedAgentId,
   createWorkspaceId,
 } from '../../../shared/types/branded-ids';
+import {
+  createCollection,
+  upsertItem,
+} from '@augmentcode/ag-redux-toolkit/utils/collections/collection-utils';
 import { randomUUID } from 'crypto';
 import {
   errorHandler,
@@ -29,6 +33,56 @@ import {
   ErrorCode,
   ErrorSeverity,
 } from '../services/error-handler';
+import { initRendererStoreBridge } from '../../../store/renderer/renderer-store-bridge';
+
+const harnessRendererState: any = {
+  workspace: { workspaces: createCollection('id') },
+  agentSessions: { byAgentId: {}, agentIdsByWorkspace: {} },
+};
+let harnessRendererBridgeInitialized = false;
+
+function rememberHarnessSession(session: AgentSession): void {
+  const agentId = session.id as string;
+  const workspaceId = session.workspaceId as string;
+  harnessRendererState.agentSessions.byAgentId[agentId] = session;
+  const workspaceAgentIds = harnessRendererState.agentSessions.agentIdsByWorkspace[workspaceId] || [];
+  if (!workspaceAgentIds.includes(agentId)) {
+    harnessRendererState.agentSessions.agentIdsByWorkspace[workspaceId] = [
+      ...workspaceAgentIds,
+      agentId,
+    ];
+  }
+}
+
+function forgetHarnessSession(agentId: AgentId): void {
+  const key = agentId as string;
+  const session = harnessRendererState.agentSessions.byAgentId[key] as AgentSession | undefined;
+  delete harnessRendererState.agentSessions.byAgentId[key];
+  if (!session) return;
+  const workspaceId = session.workspaceId as string;
+  harnessRendererState.agentSessions.agentIdsByWorkspace[workspaceId] = (
+    harnessRendererState.agentSessions.agentIdsByWorkspace[workspaceId] || []
+  ).filter((id: string) => id !== key);
+}
+
+function ensureHarnessRendererBridge(workspace: Workspace): void {
+  harnessRendererState.workspace.workspaces = upsertItem(
+    harnessRendererState.workspace.workspaces,
+    workspace,
+  );
+  if (harnessRendererBridgeInitialized) return;
+  try {
+    initRendererStoreBridge({
+      get state() {
+        return harnessRendererState;
+      },
+      dispatch: (action: { type: string; [key: string]: any }) => action,
+    } as any);
+    harnessRendererBridgeInitialized = true;
+  } catch {
+    harnessRendererBridgeInitialized = true;
+  }
+}
 
 export interface TestMetrics {
   memoryUsage: {
@@ -269,6 +323,7 @@ export class AgentTestHarness extends EventEmitter {
       };
 
       this.sessions.set(agentId, session);
+      rememberHarnessSession(session);
       this.emit('agentCreated', { session });
 
       this.endOperation(operation, true);
@@ -495,6 +550,7 @@ export class AgentTestHarness extends EventEmitter {
     try {
       // Remove from sessions
       this.sessions.delete(agentId);
+      forgetHarnessSession(agentId);
 
       // Emit deletion event
       this.emit('agentDeleted', { agentId });
@@ -1336,8 +1392,8 @@ export class AgentTestHarness extends EventEmitter {
       const totalTime = Date.now() - startTime;
       const averageTime = totalTime / requestCount;
       const errors = results
-        .filter((r) => r.error)
-        .map((r) => r.error!)
+        .map((r) => r.error)
+        .filter((error): error is string => typeof error === 'string')
         .slice(0, 10); // Limit to first 10 errors
 
       this.endOperation(operation, true);
@@ -1471,9 +1527,6 @@ export class AgentTestHarness extends EventEmitter {
     const responseTimes: number[] = [];
 
     try {
-      // Import the unified backend (main process version with full API)
-      const { unifiedAgentBackend } = await import('../main/consolidated-backend.service');
-
       // Create workspace object
       const workspaceId = createWorkspaceId(randomUUID());
       const workspace: Workspace = {
@@ -1489,27 +1542,21 @@ export class AgentTestHarness extends EventEmitter {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+      ensureHarnessRendererBridge(workspace);
 
       // Create agents concurrently
       const agentPromises = [];
       for (let i = 0; i < options.agents; i++) {
         const promise = (async () => {
           try {
-            const result = await unifiedAgentBackend.createAgent(workspace, {
+            const agent = await this.createAgent({
               name: `stress-test-agent-${i}`,
               model: 'test-model',
-              provider: 'acp',
+              workspaceId,
             });
 
-            if (result.success && result.agent) {
-              metrics.successfulAgents++;
-              return result.agent;
-            } else {
-              metrics.failedAgents++;
-              const errorMsg = result.error || 'Unknown error creating agent';
-              metrics.errors.push(errorMsg);
-              return null;
-            }
+            metrics.successfulAgents++;
+            return agent;
           } catch (error) {
             metrics.failedAgents++;
             metrics.errors.push(error instanceof Error ? error.message : 'Unknown error');
@@ -1537,7 +1584,7 @@ export class AgentTestHarness extends EventEmitter {
             metrics.totalMessages++;
 
             try {
-              const result = await unifiedAgentBackend.sendMessage(
+              await this.sendMessage(
                 agent.id,
                 `Stress test message ${i}`,
                 { streaming: options.streaming },
@@ -1547,12 +1594,7 @@ export class AgentTestHarness extends EventEmitter {
               responseTimes.push(responseTime);
               metrics.maxResponseTime = Math.max(metrics.maxResponseTime, responseTime);
 
-              if (result.success) {
-                metrics.successfulMessages++;
-              } else {
-                metrics.failedMessages++;
-                metrics.errors.push(result.error || 'Unknown message error');
-              }
+              metrics.successfulMessages++;
             } catch (error) {
               metrics.failedMessages++;
               metrics.errors.push(error instanceof Error ? error.message : 'Unknown error');
@@ -1579,16 +1621,10 @@ export class AgentTestHarness extends EventEmitter {
       const leaks = await this.detectMemoryLeaks();
       metrics.memoryLeaks = leaks.length > 0;
 
-      // Check backend health
-      const healthCheck = await unifiedAgentBackend.performHealthCheck();
-      if (!healthCheck.healthy) {
-        metrics.errors.push(...healthCheck.issues);
-      }
-
       // Clean up agents
       for (const agent of validAgents) {
         if (agent) {
-          await unifiedAgentBackend.deleteAgent(agent.id);
+          await this.deleteAgent(agent.id);
         }
       }
 

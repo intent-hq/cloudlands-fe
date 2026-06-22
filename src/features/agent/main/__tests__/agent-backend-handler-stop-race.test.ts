@@ -194,6 +194,47 @@ describe('AgentBackendHandler stop-click race during provider creation', () => {
     expect(handler.providers.has(agentId)).toBe(false);
     expect(handler.pendingStopAgents.has(agentId)).toBe(false);
   });
+
+  it('interruptAgentWithMessage stops, clears the queue guard, and starts the interrupt turn directly', async () => {
+    vi.useFakeTimers();
+    try {
+      const handler = makeHandler();
+      const agentId = 'agent-cross-interrupt';
+
+      const stopSpy = vi.spyOn(handler, 'stopAgent').mockImplementation(async (stoppedAgentId: string) => {
+        handler.interruptedAgents.add(stoppedAgentId);
+      });
+      const clearSpy = vi.spyOn(handler, 'clearInterruptedFlag');
+      const streamSpy = vi
+        .spyOn(handler, 'handleBackendStreamMessage')
+        .mockResolvedValue({ success: true });
+
+      const resultPromise = handler.interruptAgentWithMessage({
+        agentId,
+        message: 'Urgent update from parent',
+        workspaceId: 'ws-1',
+        messageMetadata: { type: 'agent_message', priority: 'interrupt' },
+      });
+
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(200);
+      const result = await resultPromise;
+
+      expect(result).toEqual({ success: true });
+      expect(stopSpy).toHaveBeenCalledWith(agentId, 'agent_interrupt_message');
+      expect(clearSpy).toHaveBeenCalledWith(agentId);
+      expect(handler.interruptedAgents.has(agentId)).toBe(false);
+      expect(streamSpy).toHaveBeenCalledWith(null, expect.objectContaining({
+        agentId,
+        sessionId: agentId,
+        content: 'Urgent update from parent',
+        workspaceId: 'ws-1',
+        messageMetadata: expect.objectContaining({ priority: 'interrupt' }),
+      }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 // Zombie-session fix: a stream timeout must cancel the underlying provider

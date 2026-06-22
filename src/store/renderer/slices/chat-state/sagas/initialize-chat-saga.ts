@@ -38,6 +38,7 @@ import {
   chatSendFailed,
 } from '../chat-state-slice';
 import {
+  addMessage as addAgentSessionMessage,
   agentSessionSendMessageRequested,
   upsertSession,
   replaceMessages,
@@ -53,6 +54,7 @@ import type { StoreSelector as PackageStoreSelector } from '@augmentcode/ag-redu
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { compareMessageCompleteness } from '$shared/utils/message-comparator';
+import { createAppMessageId } from '$shared/utils/app-message-id';
 import { invoke } from '$shared/generated/ipc-client';
 import { restoreSessionFromDiskWithoutBackend } from '../../workspace-agents/sagas/agent-session-restore-utils';
 import type {
@@ -435,6 +437,17 @@ function* handleSendInitialMessage(
     })) ?? [];
 
   yield* put(chatSendStarted(agentId, wsId));
+  const userAppMessageId = createAppMessageId();
+  const optimisticMessageId = `optimistic_${userAppMessageId}`;
+  yield* put(
+    addAgentSessionMessage(agentId, {
+      id: optimisticMessageId,
+      appMessageId: userAppMessageId,
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: messageWithContext }],
+      timestamp: new Date().toISOString(),
+    }),
+  );
   const sendAction = agentSessionSendMessageRequested(agentId, wsId, messageWithContext, {
     contextItems:
       imageContextItems.length > 0
@@ -444,6 +457,8 @@ function* handleSendInitialMessage(
       ? (initialPayload.contextReferences as AgentSessionSendMessageOptions['contextReferences'])
       : undefined,
     agentId,
+    userAppMessageId,
+    optimisticMessageId,
   });
   yield* put(sendAction);
   yield* call(cleanupInitialAgentArtifacts, wsId);

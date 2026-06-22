@@ -16,10 +16,6 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('$lib/store/utils/svelte-context', () => ({
-  getDispatch: () => mocks.dispatch,
-}));
-
 vi.mock('$store/renderer/store', () => ({
   store: {
     dispatch: mocks.dispatch,

@@ -5,6 +5,7 @@ import type {
   WorkspaceEvent,
 } from "$features/events/types";
 import type { AgentSession } from "$shared/types";
+import { normalizeStreamingState } from "$shared/utils/agent-streaming-state";
 import { initWorkspace } from "$store/renderer/slices/changes/changes-slice";
 import { loadGitStatus } from "$store/renderer/slices/git/git-slice";
 import { clearWorkspaceUnread } from "../../unread-tracking/unread-tracking-slice";
@@ -53,11 +54,11 @@ import {
   setWaitingForFirstMessage,
 } from "../workspace-agents-slice";
 import {
+  bulkUpsertSessions,
   removeSession as removeAgentSession,
   renameAgent,
   renameSession as renameAgentSession,
   setAgentStreaming,
-  upsertSession,
 } from "../../agent-session/agent-session-slice";
 import { selectWorkspaceNavigationDrawer } from "../../workspace-navigation/workspace-navigation-selectors";
 import { closeWorkspaceDrawer } from "../../workspace-navigation/workspace-navigation-slice";
@@ -221,14 +222,19 @@ export function* watchAgentRestoredSaga() {
         }
       }
 
-      // Dual-dispatch mirrors watchAgentDeletedSaga: re-populate the full
-      // session first, then re-index it in the workspace agent list.
-      yield* put(upsertSession({
+      const restoredSession = normalizeStreamingState({
         ...session,
         workspaceId: data.workspaceId as AgentSession['workspaceId'],
+      });
+
+      // Dual-dispatch mirrors watchAgentDeletedSaga: re-populate the full
+      // session first, then re-index it in the workspace agent list.
+      yield* put(bulkUpsertSessions([restoredSession], {
+        preserveExplicitRuntimeFlags: false,
+        allowActiveTurnRuntimeFlagClear: true,
       }));
       if (shouldUpdateWorkspaceState) {
-        yield* put(addAgent(data.workspaceId, session));
+        yield* put(addAgent(data.workspaceId, restoredSession));
       }
     },
   );

@@ -23,6 +23,7 @@
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
@@ -130,6 +131,8 @@
     onScrollToPrevious?: () => void;
     /** Backend session ID (auggie ID) for debugging */
     backendSessionId?: string | null;
+    /** Hide noisy stopped badges for interrupted automated coordination turns. */
+    suppressCoordinationStoppedIndicator?: boolean;
   }
 
   let {
@@ -155,6 +158,7 @@
     enableSticky = false,
     onScrollToPrevious,
     backendSessionId,
+    suppressCoordinationStoppedIndicator = false,
   }: Props = $props();
 
   // Per-message Redux subscription. Must be called at component-init time
@@ -184,6 +188,14 @@
         : (String(message.role).toLowerCase() as 'user' | 'assistant' | 'system')
       : 'assistant',
   );
+
+  let shouldShowStoppedIndicator = $derived.by(() => {
+    return resolveShouldShowStoppedIndicator({
+      message,
+      isStreaming,
+      suppressCoordinationStoppedIndicator,
+    });
+  });
 
   // Local state
   let messageElement: HTMLDivElement;
@@ -1086,7 +1098,7 @@
         />
 
         <!-- Stopped indicator for interrupted messages -->
-        {#if message?.metadata?.interrupted && !isStreaming}
+        {#if shouldShowStoppedIndicator}
           <div class="flex items-center gap-2 text-subtle font-medium text-sm mt-5">
             <Fa icon={faSquare} class="size-2.5 opacity-50 mt-px" />
             <span>Stopped</span>

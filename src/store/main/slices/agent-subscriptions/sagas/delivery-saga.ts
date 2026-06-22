@@ -42,6 +42,7 @@ import {
   selectAgentQueue,
   selectAgentStatus,
   selectAllWorkspaceIds,
+  getDelegationGroupCompletionSummary,
   selectIsAgentDeleted,
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
@@ -50,6 +51,19 @@ import {
   requestDeliverQueuedEvents,
   requestDelegationGroupDelivery,
 } from "../agent-subscriptions-slice";
+import {
+  buildSweepCatchUpSeenKey,
+  buildWorkspaceScopedGroupKey,
+  buildWorkspaceScopedSubscriptionKey,
+  isKeyForWorkspaceSubscription,
+  parseSweepCatchUpSeenKey,
+  parseWorkspaceScopedGroupKey,
+} from "../utils/subscription-dedupe-keys";
+import {
+  buildSweepCatchUpEventId,
+  deduplicateCatchUpQueuedEvents,
+} from "../utils/sweep-catchup-events";
+import { matchesDataMatchers } from "../utils/subscription-event-matchers";
 
 const logger = new Logger("DeliverySaga");
 
@@ -132,8 +146,8 @@ const eventTypesFor = (events: WorkspaceEvent[]): string[] => [
 // success can still populate the dedup cache without dropping retries when the
 // timed-out send eventually fails.
 //
-// We track recently delivered event IDs per agent in a lightweight module-
-// level cache.  Before delivering, we filter out IDs already in the cache.
+// We track recently delivered event IDs per workspace + agent in a lightweight
+// module-level cache.  Before delivering, we filter out IDs already in the cache.
 // Entries expire after DEDUP_TTL_MS to avoid unbounded growth.
 // ---------------------------------------------------------------------------
 
@@ -143,15 +157,26 @@ interface DeliveredEntry {
   deliveredAt: number;
 }
 
-/** agentId → (eventId → DeliveredEntry) */
-const recentlyDelivered = new Map<string, Map<string, DeliveredEntry>>();
+/** workspaceId → agentId → eventId → DeliveredEntry */
+const recentlyDelivered = new Map<string, Map<string, Map<string, DeliveredEntry>>>();
 
-function recordDeliveredEventIds(agentId: string, eventIds: string[]): void {
-  let agentCache = recentlyDelivered.get(agentId);
+function getAgentDeliveryCache(wsId: string, agentId: string): Map<string, DeliveredEntry> {
+  let workspaceCache = recentlyDelivered.get(wsId);
+  if (!workspaceCache) {
+    workspaceCache = new Map();
+    recentlyDelivered.set(wsId, workspaceCache);
+  }
+
+  let agentCache = workspaceCache.get(agentId);
   if (!agentCache) {
     agentCache = new Map();
-    recentlyDelivered.set(agentId, agentCache);
+    workspaceCache.set(agentId, agentCache);
   }
+  return agentCache;
+}
+
+function recordDeliveredEventIds(wsId: string, agentId: string, eventIds: string[]): void {
+  const agentCache = getAgentDeliveryCache(wsId, agentId);
   const now = Date.now();
   for (const id of eventIds) {
     agentCache.set(id, { deliveredAt: now });
@@ -164,8 +189,8 @@ function recordDeliveredEventIds(agentId: string, eventIds: string[]): void {
 }
 
 /** @internal — exported for tests */
-export function filterAlreadyDelivered(agentId: string, events: WorkspaceEvent[]): WorkspaceEvent[] {
-  const agentCache = recentlyDelivered.get(agentId);
+export function filterAlreadyDelivered(wsId: string, agentId: string, events: WorkspaceEvent[]): WorkspaceEvent[] {
+  const agentCache = recentlyDelivered.get(wsId)?.get(agentId);
   if (!agentCache || agentCache.size === 0) return events;
 
   const now = Date.now();
@@ -188,14 +213,9 @@ export function clearDeliveryDedupCache(): void {
   recentlyDelivered.clear();
 }
 
-/**
- * Build a deterministic event ID for sweep catch-up events.
- * Using a deterministic ID (rather than a random one) allows the dedup cache
- * to suppress duplicate deliveries when both the sweep and the real event
- * fire for the same subscription+actor+eventType combo.
- */
-export function buildSweepCatchUpEventId(subscriptionId: string, actorId: string, eventType: string): string {
-  return `sweep-catchup:${subscriptionId}:${actorId}:${eventType}`;
+/** @internal — exposed for tests and workspace lifecycle cleanup. */
+export function clearDeliveryDedupCacheForWorkspace(wsId: string): void {
+  recentlyDelivered.delete(wsId);
 }
 
 /**
@@ -215,7 +235,7 @@ function* sendBackendMessageWithLateSuccessDedup(
     const result = yield* call(sendBackendMessage, agentId, wsId, notification, events);
     if (result.success) {
       const deliveredEventIds = events.map((e) => e.id).filter(Boolean) as string[];
-      recordDeliveredEventIds(agentId, deliveredEventIds);
+      recordDeliveredEventIds(wsId, agentId, deliveredEventIds);
     }
     return result;
   } catch (error) {
@@ -242,7 +262,7 @@ export function* handleDeliverEvents(
 
   // Idempotency guard: filter out events already delivered by a prior attempt
   // (e.g. the original sendBackendMessage succeeded after the saga timed out)
-  const events = filterAlreadyDelivered(agentId, rawEvents);
+  const events = filterAlreadyDelivered(wsId, agentId, rawEvents);
   if (events.length === 0) {
     logger.debug(`[subscriptions] skip agentId=${agentId} workspaceId=${wsId} step=dedup allEventsAlreadyDelivered=true originalCount=${rawEvents.length}`);
     return;
@@ -442,7 +462,8 @@ export function* handleDeliverQueuedEvents(
     return new Date(a.queuedAt).getTime() - new Date(b.queuedAt).getTime();
   });
 
-  const events = sorted.map((q) => q.event as unknown as WorkspaceEvent);
+  const semanticallyDeduped = deduplicateCatchUpQueuedEvents(sorted);
+  const events = semanticallyDeduped.map((q) => q.event as unknown as WorkspaceEvent);
 
   // Deliver
   yield* put(requestDeliverEvents(wsId, agentId, events));
@@ -481,8 +502,8 @@ const STUCK_DELEGATION_GROUP_THRESHOLD_MS = 30_000;
 export const stuckGroupFirstSeen = new Map<string, number>();
 
 /**
- * Tracks which subscription+actor+eventType combos have already had catch-up
- * events enqueued by subscription catch-up or the subscription-aware sweep.
+ * Tracks which workspace+subscription+actor+eventType combos have already had
+ * catch-up events enqueued by subscription catch-up or the subscription-aware sweep.
  *
  * **Consume-once semantics**: when the matching saga's dedup guard in
  * `handleMatchEvent` suppresses a real event because a catch-up was
@@ -492,7 +513,9 @@ export const stuckGroupFirstSeen = new Map<string, number>();
  * Later catch-up passes re-add the key if the condition still holds, so the
  * catch-up duplicate check remains unaffected.
  *
- * Key format: `${subscriptionId}:${actorId}:${eventType}`
+ * Key format is intentionally workspace-scoped.  Different workspaces can have
+ * overlapping subscription IDs, actor IDs, and event types, so the guard must
+ * never suppress catch-up across workspace boundaries.
  *
  * Including the event type in the key prevents collisions when a subscription
  * watches multiple event types for the same actor (e.g. both agent:idle and
@@ -502,11 +525,10 @@ export const stuckGroupFirstSeen = new Map<string, number>();
  */
 export const sweepCatchUpSeen = new Set<string>();
 
-/** Remove all entries from sweepCatchUpSeen whose key starts with the given subscription ID. */
-function purgeSweepCatchUpForSubscription(subscriptionId: string): void {
-  const prefix = `${subscriptionId}:`;
+/** Remove all entries from sweepCatchUpSeen for one workspace subscription. */
+function purgeSweepCatchUpForSubscription(wsId: string, subscriptionId: string): void {
   for (const key of sweepCatchUpSeen.keys()) {
-    if (key.startsWith(prefix)) {
+    if (isKeyForWorkspaceSubscription(key, wsId, subscriptionId)) {
       sweepCatchUpSeen.delete(key);
     }
   }
@@ -647,7 +669,7 @@ export function* periodicQueueSweep() {
           // --- Duplicate-suppression guard ---
           // Skip if a catch-up for this exact sub+actor+eventType combo
           // was already enqueued by a previous sweep.
-          const dedupeKey = `${sub.id}:${actorId}:${matchingEventType}`;
+          const dedupeKey = buildSweepCatchUpSeenKey(wsId, sub.id, actorId, matchingEventType);
           if (sweepCatchUpSeen.has(dedupeKey)) {
             logger.debug(
               `[subscriptions] sweep-catchup SUPPRESSED (duplicate) subscriptionId=${sub.id} agentId=${sub.agentId} workspaceId=${wsId} watchedActorId=${actorId} matchedEventType=${matchingEventType}`,
@@ -677,6 +699,13 @@ export function* periodicQueueSweep() {
             },
           } as unknown as WorkspaceEvent;
 
+          if (!matchesDataMatchers(catchUpEvent, sub.filter.dataMatchers)) {
+            logger.debug(
+              `[subscriptions] sweep-catchup SKIPPED (data-matcher) subscriptionId=${sub.id} agentId=${sub.agentId} workspaceId=${wsId} watchedActorId=${actorId} matchedEventType=${matchingEventType}`,
+            );
+            continue;
+          }
+
           // Record this combo so subsequent sweeps skip it.
           sweepCatchUpSeen.add(dedupeKey);
 
@@ -695,6 +724,7 @@ export function* periodicQueueSweep() {
               event: catchUpEvent,
               queuedAt: new Date().toISOString(),
               priority: "high",
+              subscriptionId: sub.id,
               oneShot: false,
             }));
             yield* put(requestDeliverQueuedEvents(wsId, sub.agentId));
@@ -706,7 +736,7 @@ export function* periodicQueueSweep() {
               );
               yield* put(markOneShotFired(wsId, sub.id));
               yield* put(removeSubscription(wsId, sub.id));
-              purgeSweepCatchUpForSubscription(sub.id);
+              purgeSweepCatchUpForSubscription(wsId, sub.id);
               break; // subscription removed, stop iterating actorIds
             }
           }
@@ -720,35 +750,32 @@ export function* periodicQueueSweep() {
       // -----------------------------------------------------------------
       const now = Date.now();
       for (const [groupId, tracker] of Object.entries(wsState.delegationGroups)) {
+        const groupKey = buildWorkspaceScopedGroupKey(wsId, groupId);
         if (tracker.delivered) {
-          stuckGroupFirstSeen.delete(groupId);
+          stuckGroupFirstSeen.delete(groupKey);
           continue;
         }
 
-        const doneCount = tracker.completedAgentIds.length + tracker.deletedAgentIds.length;
-        const isComplete =
-          tracker.awaitMode === "any"
-            ? doneCount >= 1
-            : doneCount >= tracker.expectedAgentIds.length;
+        const { doneCount, expectedCount, isComplete } = getDelegationGroupCompletionSummary(tracker);
         if (!isComplete) {
           // Not complete yet — clear any stale first-seen entry
-          stuckGroupFirstSeen.delete(groupId);
+          stuckGroupFirstSeen.delete(groupKey);
           continue;
         }
 
         // Record first time we observed this group as complete
-        if (!stuckGroupFirstSeen.has(groupId)) {
-          stuckGroupFirstSeen.set(groupId, now);
+        if (!stuckGroupFirstSeen.has(groupKey)) {
+          stuckGroupFirstSeen.set(groupKey, now);
           continue; // Wait for the threshold before considering it stuck
         }
 
-        const firstSeenAt = stuckGroupFirstSeen.get(groupId)!;
+        const firstSeenAt = stuckGroupFirstSeen.get(groupKey)!;
         if (now - firstSeenAt < STUCK_DELEGATION_GROUP_THRESHOLD_MS) {
           continue; // Not stuck long enough yet
         }
 
         logger.warn(
-          `[subscriptions] sweep groupId=${groupId} workspaceId=${wsId} parentAgentId=${tracker.parentAgentId} doneCount=${doneCount} expectedCount=${tracker.expectedAgentIds.length} stuckForMs=${now - firstSeenAt} step=sweep reason=stuck-delegation-group`,
+          `[subscriptions] sweep groupId=${groupId} workspaceId=${wsId} parentAgentId=${tracker.parentAgentId} doneCount=${doneCount} expectedCount=${expectedCount} stuckForMs=${now - firstSeenAt} step=sweep reason=stuck-delegation-group`,
         );
         // Call delivery directly instead of re-dispatching through
         // requestDelegationGroupDelivery, which would go through the same
@@ -758,38 +785,39 @@ export function* periodicQueueSweep() {
           requestDelegationGroupDelivery(wsId, groupId),
         );
         // Clear after attempting delivery
-        stuckGroupFirstSeen.delete(groupId);
+        stuckGroupFirstSeen.delete(groupKey);
       }
     }
 
     // Prune sweepCatchUpSeen entries whose subscriptionId no longer exists
     // in any workspace's subscriptions.  This prevents indefinite accumulation
     // for subscriptions that have been removed.
-    const allActiveSubIds = new Set<string>();
+    const allActiveSubKeys = new Set<string>();
     for (const wsId of workspaceIds) {
       const wsState2 = yield* selectWorkspaceSubscriptionState.effect(wsId);
       for (const subId of Object.keys(wsState2.subscriptions)) {
-        allActiveSubIds.add(subId);
+        allActiveSubKeys.add(buildWorkspaceScopedSubscriptionKey(wsId, subId));
       }
     }
     for (const key of sweepCatchUpSeen.keys()) {
-      const subId = key.split(":")[0];
-      if (!allActiveSubIds.has(subId)) {
+      const parsed = parseSweepCatchUpSeenKey(key);
+      if (!parsed || !allActiveSubKeys.has(buildWorkspaceScopedSubscriptionKey(parsed.workspaceId, parsed.subscriptionId))) {
         sweepCatchUpSeen.delete(key);
       }
     }
 
     // Prune stuckGroupFirstSeen entries for groups that no longer exist
-    const allActiveGroupIds = new Set<string>();
+    const allActiveGroupKeys = new Set<string>();
     for (const wsId of workspaceIds) {
       const wsState3 = yield* selectWorkspaceSubscriptionState.effect(wsId);
       for (const groupId of Object.keys(wsState3.delegationGroups)) {
-        allActiveGroupIds.add(groupId);
+        allActiveGroupKeys.add(buildWorkspaceScopedGroupKey(wsId, groupId));
       }
     }
-    for (const groupId of stuckGroupFirstSeen.keys()) {
-      if (!allActiveGroupIds.has(groupId)) {
-        stuckGroupFirstSeen.delete(groupId);
+    for (const groupKey of stuckGroupFirstSeen.keys()) {
+      const parsed = parseWorkspaceScopedGroupKey(groupKey);
+      if (!parsed || !allActiveGroupKeys.has(buildWorkspaceScopedGroupKey(parsed.workspaceId, parsed.groupId))) {
+        stuckGroupFirstSeen.delete(groupKey);
       }
     }
   }

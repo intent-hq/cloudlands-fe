@@ -99,15 +99,6 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$store/renderer/slices/pr-branch-lookup/pr-branch-lookup-selectors', () => ({
   selectPrBranchLookupEntries: prBranchLookupState.selectPrBranchLookupEntries,
 }));
-vi.mock('$lib/store/utils/svelte-context', async () => {
-  const actual = await vi.importActual<typeof import('$lib/store/utils/svelte-context')>(
-    '$lib/store/utils/svelte-context',
-  );
-  return {
-    ...actual,
-    getDispatch: () => prBranchLookupState.dispatch,
-  };
-});
 vi.mock('$store/renderer/store', () => ({
   store: {
     dispatch: prBranchLookupState.dispatch,

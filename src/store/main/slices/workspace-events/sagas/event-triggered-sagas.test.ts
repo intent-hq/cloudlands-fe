@@ -20,6 +20,10 @@ const {
   restoreWorkspaceIdMock,
   LoggerMock,
   loggerErrorMock,
+  loggerInfoMock,
+  loggerWarnMock,
+  mockAgentBackendHandler,
+  mockMainDispatch,
 } = vi.hoisted(() => {
   const handleAgentIdleMock = vi.fn();
   const getNotificationServiceMock = vi.fn(() => ({
@@ -30,8 +34,22 @@ const {
     id ? id : undefined,
   );
   const loggerErrorMock = vi.fn();
+  const loggerInfoMock = vi.fn();
+  const loggerWarnMock = vi.fn();
+  const mockAgentBackendHandler = {
+    getAgent: vi.fn(),
+    getAgentResumability: vi.fn(),
+    isAgentDeleted: vi.fn(),
+    getActiveStreams: vi.fn(),
+    sendBackendInitiatedMessage: vi.fn(),
+    handleQueueMessage: vi.fn(),
+    stopAgent: vi.fn(),
+    clearInterruptedFlag: vi.fn(),
+    interruptAgentWithMessage: vi.fn(),
+  };
+  const mockMainDispatch = vi.fn();
   const LoggerMock = vi.fn(function LoggerMock() {
-    return { error: loggerErrorMock };
+    return { error: loggerErrorMock, info: loggerInfoMock, warn: loggerWarnMock };
   });
 
   return {
@@ -41,6 +59,10 @@ const {
     restoreWorkspaceIdMock,
     LoggerMock,
     loggerErrorMock,
+    loggerInfoMock,
+    loggerWarnMock,
+    mockAgentBackendHandler,
+    mockMainDispatch,
   };
 });
 
@@ -71,7 +93,21 @@ vi.mock("../../../../../shared/logger", () => ({
   Logger: LoggerMock,
 }));
 
+vi.mock(
+  "../../../../../features/agent/main/agent-backend-handler.service",
+  () => ({
+    AgentBackendHandler: {
+      getInstance: () => mockAgentBackendHandler,
+    },
+  }),
+);
+
+vi.mock("../../../../../store/main/redux-store-bridge", () => ({
+  mainDispatch: (...args: unknown[]) => mockMainDispatch(...args),
+}));
+
 import {
+  handleMessageSentEvent,
   handleAgentIdleNotification,
   handleAgentLifecycleForSummary,
 } from "./event-triggered-sagas";
@@ -103,6 +139,291 @@ const makeOtherEvent = (type: string, workspaceId = "ws-1"): WorkspaceEvent =>
     actor: { type: "user", id: "user-1", name: "Test User" },
     data: { path: "/x.ts", relativePath: "x.ts", action: "modify" },
   }) as unknown as WorkspaceEvent;
+
+const makeAgentMessageSentEvent = (workspaceId = "ws-1"): WorkspaceEvent =>
+  ({
+    id: "e-message",
+    type: "agent:message:sent",
+    workspaceId,
+    timestamp: new Date().toISOString(),
+    actor: { type: "agent", id: "sender-agent", name: "Sender Agent" },
+    data: {
+      fromAgentId: "sender-agent",
+      fromAgentName: "Sender Agent",
+      toAgentId: "target-agent",
+      message: "Please continue.",
+      priority: "high",
+    },
+  }) as unknown as WorkspaceEvent;
+
+// ---------------------------------------------------------------------------
+// handleMessageSentEvent
+// ---------------------------------------------------------------------------
+
+describe("handleMessageSentEvent", () => {
+  beforeEach(() => {
+    mockAgentBackendHandler.getAgent.mockReset();
+    mockAgentBackendHandler.getAgentResumability.mockReset();
+    mockAgentBackendHandler.isAgentDeleted.mockReset();
+    mockAgentBackendHandler.getActiveStreams.mockReset();
+    mockAgentBackendHandler.sendBackendInitiatedMessage.mockReset();
+    mockAgentBackendHandler.handleQueueMessage.mockReset();
+    mockAgentBackendHandler.stopAgent.mockReset();
+    mockAgentBackendHandler.clearInterruptedFlag.mockReset();
+    mockAgentBackendHandler.interruptAgentWithMessage.mockReset();
+    mockMainDispatch.mockReset();
+    loggerInfoMock.mockClear();
+    loggerWarnMock.mockClear();
+    loggerErrorMock.mockClear();
+
+    mockAgentBackendHandler.isAgentDeleted.mockReturnValue(false);
+    mockAgentBackendHandler.getActiveStreams.mockReturnValue([]);
+    mockAgentBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({ success: true });
+    mockAgentBackendHandler.interruptAgentWithMessage.mockResolvedValue({ success: true });
+  });
+
+  it("wakes persisted-only target agents instead of silently dropping the message", async () => {
+    mockAgentBackendHandler.getAgent.mockResolvedValue(null);
+    mockAgentBackendHandler.getAgentResumability.mockResolvedValue({
+      canWake: true,
+      status: "resumable",
+      agentData: { id: "target-agent", name: "Target", status: "idle" },
+    });
+
+    await expectSaga(handleMessageSentEvent, workspaceEventAccepted(makeAgentMessageSentEvent())).run();
+
+    expect(mockAgentBackendHandler.getAgentResumability).toHaveBeenCalledWith("target-agent", "ws-1");
+    expect(mockAgentBackendHandler.sendBackendInitiatedMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "target-agent",
+        workspaceId: "ws-1",
+        message: expect.stringContaining("Please continue."),
+      }),
+    );
+    expect(mockMainDispatch).not.toHaveBeenCalled();
+  });
+
+  it("emits delivery failure when the target is neither active nor resumable", async () => {
+    mockAgentBackendHandler.getAgent.mockResolvedValue(null);
+    mockAgentBackendHandler.getAgentResumability.mockResolvedValue({
+      canWake: false,
+      status: "not_found",
+    });
+
+    await expectSaga(handleMessageSentEvent, workspaceEventAccepted(makeAgentMessageSentEvent())).run();
+
+    expect(mockAgentBackendHandler.sendBackendInitiatedMessage).not.toHaveBeenCalled();
+    expect(mockMainDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.arrayContaining([
+          expect.objectContaining({
+            type: "agent:message:delivery-failed",
+            data: expect.objectContaining({ toAgentId: "target-agent" }),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("emits delivery failure and skips wake checks for deleted target agents", async () => {
+    mockAgentBackendHandler.isAgentDeleted.mockReturnValue(true);
+    mockAgentBackendHandler.getAgent.mockResolvedValue({ id: "target-agent", name: "Target", status: "idle" });
+
+    await expectSaga(handleMessageSentEvent, workspaceEventAccepted(makeAgentMessageSentEvent())).run();
+
+    expect(mockAgentBackendHandler.getAgent).not.toHaveBeenCalled();
+    expect(mockAgentBackendHandler.getAgentResumability).not.toHaveBeenCalled();
+    expect(mockAgentBackendHandler.sendBackendInitiatedMessage).not.toHaveBeenCalled();
+    expect(mockMainDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.arrayContaining([
+          expect.objectContaining({
+            type: "agent:message:delivery-failed",
+            data: expect.objectContaining({
+              toAgentId: "target-agent",
+              error: expect.stringContaining("deleted"),
+            }),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("sends directly to active idle target agents", async () => {
+    mockAgentBackendHandler.getAgent.mockResolvedValue({ id: "target-agent", name: "Target", status: "idle" });
+
+    await expectSaga(handleMessageSentEvent, workspaceEventAccepted(makeAgentMessageSentEvent())).run();
+
+    expect(mockAgentBackendHandler.getAgentResumability).not.toHaveBeenCalled();
+    expect(mockAgentBackendHandler.sendBackendInitiatedMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "target-agent",
+        workspaceId: "ws-1",
+        message: expect.stringContaining("Please continue."),
+        messageMetadata: expect.objectContaining({ priority: "high" }),
+      }),
+    );
+    expect(mockMainDispatch).not.toHaveBeenCalled();
+  });
+
+  it("queues messages for active streaming targets", async () => {
+    mockAgentBackendHandler.getAgent.mockResolvedValue({ id: "target-agent", name: "Target", status: "responding" });
+    mockAgentBackendHandler.getActiveStreams.mockReturnValue([{ agentId: "target-agent", workspaceId: "ws-1" }]);
+    mockAgentBackendHandler.handleQueueMessage.mockResolvedValue({ success: true });
+
+    await expectSaga(handleMessageSentEvent, workspaceEventAccepted(makeAgentMessageSentEvent())).run();
+
+    expect(mockAgentBackendHandler.sendBackendInitiatedMessage).not.toHaveBeenCalled();
+    expect(mockAgentBackendHandler.handleQueueMessage).toHaveBeenCalledWith(null, {
+      agentId: "target-agent",
+      content: expect.stringContaining("Please continue."),
+      workspaceId: "ws-1",
+    });
+    expect(mockMainDispatch).not.toHaveBeenCalled();
+  });
+
+  it("does not treat an active stream in another workspace as blocking delivery", async () => {
+    mockAgentBackendHandler.getAgent.mockResolvedValue({ id: "target-agent", name: "Target", status: "idle" });
+    mockAgentBackendHandler.getActiveStreams.mockReturnValue([{ agentId: "target-agent", workspaceId: "ws-other" }]);
+
+    await expectSaga(handleMessageSentEvent, workspaceEventAccepted(makeAgentMessageSentEvent("ws-1"))).run();
+
+    expect(mockAgentBackendHandler.handleQueueMessage).not.toHaveBeenCalled();
+    expect(mockAgentBackendHandler.sendBackendInitiatedMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "target-agent",
+        workspaceId: "ws-1",
+        message: expect.stringContaining("Please continue."),
+      }),
+    );
+  });
+
+  it("emits delivery failure when active streaming queue fallback fails", async () => {
+    mockAgentBackendHandler.getAgent.mockResolvedValue({ id: "target-agent", name: "Target", status: "responding" });
+    mockAgentBackendHandler.getActiveStreams.mockReturnValue([{ agentId: "target-agent", workspaceId: "ws-1" }]);
+    mockAgentBackendHandler.handleQueueMessage.mockResolvedValue({ success: false, error: "queue exploded" });
+
+    await expectSaga(handleMessageSentEvent, workspaceEventAccepted(makeAgentMessageSentEvent())).run();
+
+    expect(mockMainDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.arrayContaining([
+          expect.objectContaining({
+            type: "agent:message:delivery-failed",
+            data: expect.objectContaining({ toAgentId: "target-agent", error: "queue exploded" }),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("queues when direct send reports an already-busy target", async () => {
+    mockAgentBackendHandler.getAgent.mockResolvedValue({ id: "target-agent", name: "Target", status: "idle" });
+    mockAgentBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({
+      success: false,
+      errorCode: "ALREADY_STREAMING",
+      error: "busy",
+    });
+    mockAgentBackendHandler.handleQueueMessage.mockResolvedValue({ success: true });
+
+    await expectSaga(handleMessageSentEvent, workspaceEventAccepted(makeAgentMessageSentEvent())).run();
+
+    expect(mockAgentBackendHandler.handleQueueMessage).toHaveBeenCalledWith(null, {
+      agentId: "target-agent",
+      content: expect.stringContaining("Please continue."),
+      workspaceId: "ws-1",
+    });
+    expect(mockMainDispatch).not.toHaveBeenCalled();
+  });
+
+  it("emits delivery failure when direct send fails with a terminal error", async () => {
+    mockAgentBackendHandler.getAgent.mockResolvedValue({ id: "target-agent", name: "Target", status: "idle" });
+    mockAgentBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({
+      success: false,
+      errorCode: "NOT_FOUND",
+      error: "lost session",
+    });
+
+    await expectSaga(handleMessageSentEvent, workspaceEventAccepted(makeAgentMessageSentEvent())).run();
+
+    expect(mockAgentBackendHandler.handleQueueMessage).not.toHaveBeenCalled();
+    expect(mockMainDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.arrayContaining([
+          expect.objectContaining({
+            type: "agent:message:delivery-failed",
+            data: expect.objectContaining({ toAgentId: "target-agent", error: "lost session" }),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("directly interrupts and delivers interrupt messages to active streaming targets", async () => {
+    const event = makeAgentMessageSentEvent() as any;
+    event.data = { ...event.data, priority: "interrupt" };
+    mockAgentBackendHandler.getAgent.mockResolvedValue({ id: "target-agent", name: "Target", status: "responding" });
+    mockAgentBackendHandler.getActiveStreams.mockReturnValue([{ agentId: "target-agent", workspaceId: "ws-1" }]);
+
+    await expectSaga(handleMessageSentEvent, workspaceEventAccepted(event)).run();
+
+    expect(mockAgentBackendHandler.interruptAgentWithMessage).toHaveBeenCalledWith({
+      agentId: "target-agent",
+      message: expect.stringContaining("(INTERRUPT)"),
+      workspaceId: "ws-1",
+      messageMetadata: expect.objectContaining({
+        type: "agent_message",
+        fromAgentId: "sender-agent",
+        priority: "interrupt",
+      }),
+    });
+    expect(mockAgentBackendHandler.stopAgent).not.toHaveBeenCalled();
+    expect(mockAgentBackendHandler.sendBackendInitiatedMessage).not.toHaveBeenCalled();
+    expect(mockAgentBackendHandler.handleQueueMessage).not.toHaveBeenCalled();
+    expect(mockMainDispatch).not.toHaveBeenCalled();
+  });
+
+  it("queues interrupt messages with workspace targeting when direct interrupt delivery fails", async () => {
+    const event = makeAgentMessageSentEvent() as any;
+    event.data = { ...event.data, priority: "interrupt" };
+    mockAgentBackendHandler.getAgent.mockResolvedValue({ id: "target-agent", name: "Target", status: "responding" });
+    mockAgentBackendHandler.getActiveStreams.mockReturnValue([{ agentId: "target-agent", workspaceId: "ws-1" }]);
+    mockAgentBackendHandler.interruptAgentWithMessage.mockResolvedValue({
+      success: false,
+      error: "interrupt stream failed",
+    });
+    mockAgentBackendHandler.handleQueueMessage.mockResolvedValue({ success: true });
+
+    await expectSaga(handleMessageSentEvent, workspaceEventAccepted(event)).run();
+
+    expect(mockAgentBackendHandler.handleQueueMessage).toHaveBeenCalledWith(null, {
+      agentId: "target-agent",
+      content: expect.stringContaining("(INTERRUPT)"),
+      workspaceId: "ws-1",
+    });
+    expect(mockAgentBackendHandler.clearInterruptedFlag).toHaveBeenCalledWith("target-agent");
+    expect(mockMainDispatch).not.toHaveBeenCalled();
+  });
+
+  it("queues interrupt messages and clears interrupted flag when direct interrupt delivery throws", async () => {
+    const event = makeAgentMessageSentEvent() as any;
+    event.data = { ...event.data, priority: "interrupt" };
+    mockAgentBackendHandler.getAgent.mockResolvedValue({ id: "target-agent", name: "Target", status: "responding" });
+    mockAgentBackendHandler.getActiveStreams.mockReturnValue([{ agentId: "target-agent", workspaceId: "ws-1" }]);
+    mockAgentBackendHandler.interruptAgentWithMessage.mockRejectedValue(new Error("interrupt exploded"));
+    mockAgentBackendHandler.handleQueueMessage.mockResolvedValue({ success: true });
+
+    await expectSaga(handleMessageSentEvent, workspaceEventAccepted(event)).run();
+
+    expect(mockAgentBackendHandler.handleQueueMessage).toHaveBeenCalledWith(null, {
+      agentId: "target-agent",
+      content: expect.stringContaining("(INTERRUPT)"),
+      workspaceId: "ws-1",
+    });
+    expect(mockAgentBackendHandler.clearInterruptedFlag).toHaveBeenCalledWith("target-agent");
+    expect(mockMainDispatch).not.toHaveBeenCalled();
+  });
+});
 
 // ---------------------------------------------------------------------------
 // handleAgentIdleNotification

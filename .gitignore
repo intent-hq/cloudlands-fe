@@ -50,6 +50,7 @@ Thumbs.db
 *.log
 log.txt
 log-*.txt
+logs*.txt
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -63,6 +64,7 @@ coverage
 test-results
 test-reports
 playwright-report
+test-harness-report.json
 
 # Temporary files
 *.tmp

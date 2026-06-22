@@ -293,6 +293,19 @@ describe("agentSubscriptionsReducer", () => {
       const next = reduce(markDelegationAgentCompleted(WS, "group-1", "agent-2"), state);
       expect(next).toBe(state);
     });
+
+    it("returns same state for non-expected agents", () => {
+      const state = reduce(setDelegationGroup(WS, makeTracker()));
+      const next = reduce(markDelegationAgentCompleted(WS, "group-1", "agent-x"), state);
+      expect(next).toBe(state);
+    });
+
+    it("does not add an agent already tracked as deleted", () => {
+      let state = reduce(setDelegationGroup(WS, makeTracker()));
+      state = reduce(markDelegationAgentDeleted(WS, "group-1", "agent-2"), state);
+      const next = reduce(markDelegationAgentCompleted(WS, "group-1", "agent-2"), state);
+      expect(next).toBe(state);
+    });
   });
 
   describe("markDelegationAgentDeleted", () => {
@@ -300,6 +313,26 @@ describe("agentSubscriptionsReducer", () => {
       let state = reduce(setDelegationGroup(WS, makeTracker()));
       state = reduce(markDelegationAgentDeleted(WS, "group-1", "agent-2"), state);
       expect(state.byWorkspaceId[WS]?.delegationGroups["group-1"]?.deletedAgentIds).toContain("agent-2");
+    });
+
+    it("is idempotent", () => {
+      let state = reduce(setDelegationGroup(WS, makeTracker()));
+      state = reduce(markDelegationAgentDeleted(WS, "group-1", "agent-2"), state);
+      const next = reduce(markDelegationAgentDeleted(WS, "group-1", "agent-2"), state);
+      expect(next).toBe(state);
+    });
+
+    it("returns same state for non-expected agents", () => {
+      const state = reduce(setDelegationGroup(WS, makeTracker()));
+      const next = reduce(markDelegationAgentDeleted(WS, "group-1", "agent-x"), state);
+      expect(next).toBe(state);
+    });
+
+    it("does not add an agent already tracked as completed", () => {
+      let state = reduce(setDelegationGroup(WS, makeTracker()));
+      state = reduce(markDelegationAgentCompleted(WS, "group-1", "agent-2"), state);
+      const next = reduce(markDelegationAgentDeleted(WS, "group-1", "agent-2"), state);
+      expect(next).toBe(state);
     });
   });
 

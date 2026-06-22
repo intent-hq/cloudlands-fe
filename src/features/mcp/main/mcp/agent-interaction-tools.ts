@@ -42,12 +42,14 @@ import {
 } from './tool';
 import type { ToolCall, ToolResult } from './protocol';
 import { Logger } from '$shared/logger';
+import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
 import {
   agentSubscribe,
   agentSubscribeToGroup,
   agentUnsubscribe,
   type AgentEventFilter,
 } from '$features/events/main/agent-subscription-ops';
+import { buildAgentDiagnosticsSnapshot } from '$features/events/main/agent-subscription-diagnostics';
 import { stripMarkdownFormatting } from '$shared/utils-client';
 import { resolveSpecialistForAgent } from '$features/agent/main/specialists.service';
 import {
@@ -76,7 +78,10 @@ import { isAutoCommitEnabled } from '$features/workspace/main/workspace-settings
 import { createWorkspaceEvent } from '$features/events/types';
 import { getMainState, mainDispatch } from '../../../../store/main/redux-store-bridge';
 import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../../store/main/slices/workspace-events/workspace-events-slice';
-import { selectAgentStatus } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
+import {
+  selectAgentStatus,
+  selectWorkspaceSubscriptionState,
+} from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
 import {
   AgentId,
   NoteId,
@@ -187,6 +192,52 @@ async function subscribeCallerToAgentCompletion(
   });
 
   return subscriptionId;
+}
+
+async function shouldSkipPassiveCompletionSubscription(
+  workspaceId: string,
+  callerId: string,
+): Promise<boolean> {
+  if (!callerId || callerId === 'unknown-agent') return true;
+
+  try {
+    const loadResult = await agentPersistence.loadAgent(
+      createAgentId(callerId),
+      createWorkspaceId(workspaceId),
+    );
+    return loadResult?.success === true && isDelegatedBackgroundTaskSession(loadResult.data);
+  } catch (error) {
+    logger.debug('Could not inspect caller before passive completion subscription', {
+      workspaceId,
+      callerId,
+      error,
+    });
+    return false;
+  }
+}
+
+async function maybeSubscribeCallerToAgentCompletionForCoordinationMessage(
+  workspaceId: string,
+  callerId: string,
+  callerName: string,
+  targetAgentId: string,
+): Promise<string | undefined> {
+  if (await shouldSkipPassiveCompletionSubscription(workspaceId, callerId)) {
+    logger.info('Skipped passive completion subscription for coordination message', {
+      workspaceId,
+      callerId,
+      targetAgentId,
+    });
+    return undefined;
+  }
+
+  return subscribeCallerToAgentCompletion(workspaceId, callerId, callerName, targetAgentId);
+}
+
+function normalizeAssignedAgentIds(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((agentId: unknown): agentId is string => typeof agentId === 'string')
+    : [];
 }
 
 /**
@@ -1848,20 +1899,29 @@ Use this for coordination, sharing information, or requesting help from other ag
       );
       mainDispatch(reduxEmitWorkspaceEvent(event));
 
-      // Subscribe the sender to receive a notification when the target agent responds
-      const subscriptionId = await subscribeCallerToAgentCompletion(
+      // Subscribe foreground/coordinator senders to receive a completion notification.
+      // Background task agents often send sibling coordination messages; passively
+      // subscribing them creates noisy wakeup cards unrelated to their own task.
+      const subscriptionId = await maybeSubscribeCallerToAgentCompletionForCoordinationMessage(
         this.workspaceId,
         ctx.agentId,
         ctx.agentName,
         agentId,
       );
 
+      const notificationMessage = subscriptionId
+        ? '\nYou will be notified when the agent responds.'
+        : '';
       const deliveryMessage =
         priority === 'interrupt'
-          ? `Message sent to agent ${agentId}. If the agent is currently streaming, this will attempt to interrupt and deliver immediately. Otherwise, the message will be delivered normally when the agent is idle. If interruption fails, the message will be queued.\nYou will be notified when the agent responds.`
-          : `Message sent to agent ${agentId}. The message will be delivered when the agent becomes idle.\nYou will be notified when the agent responds.`;
+          ? `Message sent to agent ${agentId}. If the agent is currently streaming, this will attempt to interrupt and deliver immediately. Otherwise, the message will be delivered normally when the agent is idle. If interruption fails, the message will be queued.${notificationMessage}`
+          : `Message sent to agent ${agentId}. The message will be delivered when the agent becomes idle.${notificationMessage}`;
 
-      return this.success(deliveryMessage, { sent: true, toAgentId: agentId, subscriptionId });
+      return this.success(deliveryMessage, {
+        sent: true,
+        toAgentId: agentId,
+        ...(subscriptionId && { subscriptionId }),
+      });
     } catch (error) {
       logger.error('Error sending message to agent', error as Error);
       return this.error(`Failed to send message: ${(error as Error).message}`);
@@ -1933,7 +1993,8 @@ not the agent ID. The tool automatically finds which agent is assigned to the ta
         return this.error(`Note "${taskNoteId}" is not a task note`);
       }
 
-      const assignedAgentIds = note.metadata.task.assignedAgentIds || [];
+      const rawAssignedAgentIds: unknown = note.metadata.task.assignedAgentIds;
+      const assignedAgentIds = normalizeAssignedAgentIds(rawAssignedAgentIds);
       if (assignedAgentIds.length === 0) {
         return this.error(
           `Task "${note.title || taskNoteId}" has no agents assigned. ` +
@@ -1967,20 +2028,25 @@ not the agent ID. The tool automatically finds which agent is assigned to the ta
       );
       mainDispatch(reduxEmitWorkspaceEvent(event));
 
-      // Subscribe the sender to receive a notification when the target agent responds
-      const subscriptionId = await subscribeCallerToAgentCompletion(
+      // Subscribe foreground/coordinator senders to receive a completion notification.
+      // Background task agents often send sibling coordination messages; passively
+      // subscribing them creates noisy wakeup cards unrelated to their own task.
+      const subscriptionId = await maybeSubscribeCallerToAgentCompletionForCoordinationMessage(
         this.workspaceId,
         ctx.agentId,
         ctx.agentName,
         targetAgentId,
       );
 
+      const notificationMessage = subscriptionId
+        ? '\nYou will be notified when the agent responds.'
+        : '';
       const taskDeliveryMessage =
         priority === 'interrupt'
           ? `Message sent to agent ${targetAgentId} (working on "${note.title || taskNoteId}"). ` +
-            'If the agent is currently streaming, this will attempt to interrupt and deliver immediately. Otherwise, the message will be delivered normally when the agent is idle. If interruption fails, the message will be queued.\nYou will be notified when the agent responds.'
+            `If the agent is currently streaming, this will attempt to interrupt and deliver immediately. Otherwise, the message will be delivered normally when the agent is idle. If interruption fails, the message will be queued.${notificationMessage}`
           : `Message sent to agent ${targetAgentId} (working on "${note.title || taskNoteId}"). ` +
-            'The message will be delivered when the agent becomes idle.\nYou will be notified when the agent responds.';
+            `The message will be delivered when the agent becomes idle.${notificationMessage}`;
 
       return this.success(taskDeliveryMessage, {
         sent: true,
@@ -1988,7 +2054,7 @@ not the agent ID. The tool automatically finds which agent is assigned to the ta
         taskNoteId,
         taskTitle: note.title,
         totalAssignedAgents: assignedAgentIds.length,
-        subscriptionId,
+        ...(subscriptionId && { subscriptionId }),
       });
     } catch (error) {
       logger.error('Error sending message to task agent', error as Error);
@@ -2233,13 +2299,20 @@ export class ListAgentsTool extends BaseMCPTool {
         lines.push('');
       }
 
-      const agentInfos = filteredAgents.map((a: any) => ({
-        id: a.id,
-        name: a.name,
-        status: a.status,
-        messageCount: a.messages?.length || 0,
-        taskNoteId: a.metadata?.taskNoteId,
-      }));
+      const agentInfos = filteredAgents.map((a: any) => {
+        const messageCount = Array.isArray(a.messages)
+          ? a.messages.length
+          : a.messageCount ?? a.metadata?.messageCount ?? 0;
+        return {
+          id: a.id,
+          name: a.name,
+          status: a.status,
+          messageCount,
+          taskNoteId: a.metadata?.taskNoteId,
+          presentInBackend: a.presentInBackend,
+          sessionStatus: a.sessionStatus,
+        };
+      });
 
       return this.success(lines.join('\n'), { agents: agentInfos });
     } catch (error) {
@@ -2278,7 +2351,19 @@ export class GetAgentStatusTool extends BaseMCPTool {
         await import('../../../agent/main/agent-backend-handler.service');
       const handler = AgentBackendHandler.getInstance();
 
-      const agent = await handler.getAgent(agentId);
+      let agent = await handler.getAgent(agentId);
+      let presentInBackend = true;
+
+      if (!agent) {
+        const loadResult = await agentPersistence.loadAgent(AgentId(agentId), WorkspaceId(this.workspaceId));
+        if (loadResult.success && loadResult.data) {
+          agent = loadResult.data;
+        } else {
+          const agents = await handler.listAllAgents(this.workspaceId);
+          agent = agents.find((candidate: any) => candidate.id === agentId) ?? null;
+        }
+        presentInBackend = false;
+      }
 
       if (!agent) {
         return this.error(`Agent ${agentId} not found`);
@@ -2287,12 +2372,16 @@ export class GetAgentStatusTool extends BaseMCPTool {
       // Get real-time status from Redux store
       const realtimeStatus = selectAgentStatus.select(getMainState(), this.workspaceId, agentId);
       const effectiveStatus = realtimeStatus || agent.status;
+      const messageCount = Array.isArray(agent.messages)
+        ? agent.messages.length
+        : (agent as any).messageCount ?? (agent as any).metadata?.messageCount ?? 0;
 
       const lines = [
         `Agent: ${agent.name}`,
         `ID: ${agent.id}`,
         `Status: ${effectiveStatus}`,
-        `Messages: ${agent.messages?.length || 0}`,
+        `Backend session: ${presentInBackend ? 'active' : 'persisted only'}`,
+        `Messages: ${messageCount}`,
       ];
 
       if (agent.metadata?.taskNoteId) {
@@ -2310,7 +2399,9 @@ export class GetAgentStatusTool extends BaseMCPTool {
           id: agent.id,
           name: agent.name,
           status: effectiveStatus,
-          messageCount: agent.messages?.length || 0,
+          sessionStatus: agent.status,
+          presentInBackend,
+          messageCount,
           taskNoteId: agent.metadata?.taskNoteId,
           createdAt: agent.createdAt,
           lastActivity: agent.lastActivity,
@@ -2319,6 +2410,99 @@ export class GetAgentStatusTool extends BaseMCPTool {
     } catch (error) {
       logger.error('Error getting agent status', error as Error);
       return this.error(`Failed to get agent status: ${(error as Error).message}`);
+    }
+  }
+}
+
+// ============================================================================
+// Get Agent Diagnostics Tool
+// ============================================================================
+
+/**
+ * Tool for getting sanitized agent operability diagnostics.
+ */
+export class GetAgentDiagnosticsTool extends BaseMCPTool {
+  constructor(private workspaceId: string) {
+    super(
+      'get_agent_diagnostics',
+      `Get a concise, sanitized diagnostics snapshot for agent operations.
+
+The snapshot includes agent statuses, subscriptions, queues, delegation groups, delivery stats, recent queued/group events, and stuck-risk signals. It reports IDs, counts, timestamps, and statuses only; it does not include raw provider config, environment variables, command arguments, or message content.`,
+      createInputSchema(
+        {
+          agentId: stringProperty('Optional agent ID to focus the diagnostics snapshot on'),
+          taskNoteId: stringProperty('Optional task note ID to focus on agents assigned to a task'),
+          staleRespondingAfterMs: numberProperty(
+            'Age threshold for marking a responding agent as stale (default: 600000)',
+            { default: 600000 },
+          ),
+        },
+        [],
+      ),
+    );
+  }
+
+  async execute(call: ToolCall): Promise<ToolResult> {
+    try {
+      const { agentId, taskNoteId, staleRespondingAfterMs } = call.arguments;
+      const { AgentBackendHandler } =
+        await import('../../../agent/main/agent-backend-handler.service');
+      const handler = AgentBackendHandler.getInstance();
+      const [agents, activeAgentsResult] = await Promise.all([
+        handler.listAllAgents(this.workspaceId),
+        typeof handler.listAgents === 'function'
+          ? Promise.resolve(handler.listAgents(this.workspaceId)).catch(() => [])
+          : Promise.resolve([]),
+      ]);
+      const activeAgentIds = new Set(
+        (Array.isArray(activeAgentsResult) ? activeAgentsResult : []).map((agent: any) => agent.id),
+      );
+      const diagnosticAgents = await Promise.all(
+        agents.map(async (agent: any) => {
+          let diagnosticAgent = agent;
+          if (agentId && agent.id === agentId && !activeAgentIds.has(agent.id)) {
+            const loadResult = await agentPersistence.loadAgent(
+              AgentId(agent.id),
+              WorkspaceId(this.workspaceId),
+            );
+            if (loadResult?.success && loadResult.data) {
+              diagnosticAgent = loadResult.data;
+            }
+          }
+          return {
+            ...diagnosticAgent,
+            presentInBackend: activeAgentIds.has(agent.id),
+          };
+        }),
+      );
+      const workspaceState = selectWorkspaceSubscriptionState.select(getMainState(), this.workspaceId);
+      const diagnostics = buildAgentDiagnosticsSnapshot(this.workspaceId, workspaceState, diagnosticAgents, {
+        agentId,
+        taskNoteId,
+        staleRespondingAfterMs,
+      });
+
+      const lines = [
+        `Agent diagnostics for workspace ${this.workspaceId}`,
+        `Agents: ${diagnostics.summary.agents}`,
+        `Subscriptions: ${diagnostics.summary.subscriptions}`,
+        `Queued events: ${diagnostics.summary.queuedEvents}`,
+        `Delegation groups: ${diagnostics.summary.delegationGroups}`,
+        `Stuck risks: ${diagnostics.summary.stuckRisks}`,
+      ];
+      if (diagnostics.stuckRisks.length > 0) {
+        lines.push('');
+        lines.push('Stuck-risk signals:');
+        for (const risk of diagnostics.stuckRisks.slice(0, 10)) {
+          const target = risk.agentId ?? risk.groupId ?? risk.subscriptionId ?? 'workspace';
+          lines.push(`- [${risk.severity}] ${risk.type}: ${target}`);
+        }
+      }
+
+      return this.success(lines.join('\n'), { diagnostics });
+    } catch (error) {
+      logger.error('Error getting agent diagnostics', error as Error);
+      return this.error(`Failed to get agent diagnostics: ${(error as Error).message}`);
     }
   }
 }
@@ -2417,7 +2601,8 @@ an agent is working on the task.`,
         return this.error(`Note "${taskNoteId}" is not a task`);
       }
 
-      const assignedAgentIds = note.metadata.task.assignedAgentIds || [];
+      const rawAssignedAgentIds: unknown = note.metadata.task.assignedAgentIds;
+      const assignedAgentIds = normalizeAssignedAgentIds(rawAssignedAgentIds);
 
       // Try to find a resumable agent (check most recent first)
       const { AgentBackendHandler } =
@@ -2426,6 +2611,27 @@ an agent is working on the task.`,
 
       let agentToWake: { id: string; status: string } | null = null;
       let previousSpecialist: string | undefined;
+      const staleAssignedAgentIds = new Set<string>();
+      const cleanedStaleAssignedAgentIds = new Set<string>();
+
+      const cleanupStaleAssignments = async () => {
+        for (const staleAgentId of staleAssignedAgentIds) {
+          if (cleanedStaleAssignedAgentIds.has(staleAgentId)) continue;
+          cleanedStaleAssignedAgentIds.add(staleAgentId);
+          try {
+            await notesService.removeAgentFromAllTasks(
+              createWorkspaceId(this.workspaceId),
+              createAgentId(staleAgentId),
+            );
+          } catch (cleanupError) {
+            logger.warn('Failed to remove stale task agent assignment before replacement', {
+              staleAgentId,
+              taskNoteId,
+              error: cleanupError,
+            });
+          }
+        }
+      };
 
       for (let i = assignedAgentIds.length - 1; i >= 0; i--) {
         const agentId = assignedAgentIds[i];
@@ -2442,6 +2648,10 @@ an agent is working on the task.`,
           previousSpecialist = resumability.agentData.metadata.specialist as string;
         }
 
+        if (resumability.status === 'not_found') {
+          staleAssignedAgentIds.add(agentId);
+        }
+
         if (resumability.canWake) {
           agentToWake = { id: agentId, status: resumability.status };
           break;
@@ -2449,6 +2659,8 @@ an agent is working on the task.`,
       }
 
       if (agentToWake) {
+        await cleanupStaleAssignments();
+
         // Wake the existing agent
         logger.info('Waking existing agent for task', {
           agentId: agentToWake.id,
@@ -2488,6 +2700,7 @@ an agent is working on the task.`,
             const queueResult = await handler.handleQueueMessage(null, {
               agentId: agentToWake.id,
               content: contextMessage,
+              workspaceId: this.workspaceId,
             });
 
             if (!queueResult.success) {
@@ -2504,12 +2717,28 @@ an agent is working on the task.`,
             // For queued messages, DON'T use oneShot since agent:idle will fire
             // for the current turn before our queued message is processed.
             // The subscription needs to survive the current turn's completion.
-            const subscriptionId = agentSubscribe(this.workspaceId, ctx.agentId, ctx.agentName, {
+            const queuedMessageId = queueResult.queuedMessage?.id;
+            const queuedCompletionFilter: AgentEventFilter = {
               eventTypes: [...AGENT_COMPLETION_EVENT_TYPES],
               actorIds: [agentToWake.id],
               priority: 'high',
               oneShot: false, // NOT oneShot — needs to survive current turn's agent:idle
-            });
+              ...(queuedMessageId && {
+                dataMatchers: [
+                  {
+                    field: 'data.respondingToMessageId',
+                    operator: 'equals',
+                    value: queuedMessageId,
+                  },
+                ],
+              }),
+            };
+            const subscriptionId = agentSubscribe(
+              this.workspaceId,
+              ctx.agentId,
+              ctx.agentName,
+              queuedCompletionFilter,
+            );
 
             // Auto-cleanup: unsubscribe after 5 minutes to prevent notification leak.
             // The queued message should be processed well within this window.
@@ -2548,8 +2777,20 @@ an agent is working on the task.`,
               taskNoteId,
               taskTitle: note.title,
               subscriptionId,
+              queuedMessageId,
               ...(modelOverrideWarning && { modelOverrideWarning }),
             });
+          }
+
+          if (wakeResult.errorCode === 'AGENT_DELETED') {
+            staleAssignedAgentIds.add(agentToWake.id);
+          } else if (
+            wakeResult.errorCode !== 'AGENT_NOT_FOUND' &&
+            !wakeResult.error?.toLowerCase().includes('not found')
+          ) {
+            return this.error(
+              `Failed to wake assigned agent "${agentToWake.id}": ${wakeResult.error || 'Unknown error'}`,
+            );
           }
 
           logger.warn('Failed to wake agent, falling back to create', {
@@ -2586,6 +2827,8 @@ an agent is working on the task.`,
       }
 
       // No resumable agent found (or wake failed), create a new one
+      await cleanupStaleAssignments();
+
       logger.info('Creating new agent for task', {
         taskNoteId,
         noteTitle: note.title,
@@ -3168,4 +3411,6 @@ export interface AgentInfo {
   taskNoteId?: string;
   createdAt?: string;
   lastActivity?: string;
+  presentInBackend?: boolean;
+  sessionStatus?: string;
 }

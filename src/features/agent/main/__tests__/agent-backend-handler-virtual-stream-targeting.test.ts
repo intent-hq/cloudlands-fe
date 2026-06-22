@@ -112,6 +112,31 @@ describe('AgentBackendHandler virtual workspace stream targeting', () => {
     expect(otherWindow.webContents.send).not.toHaveBeenCalled();
   });
 
+  it('targets regular workspace streams only to windows for that workspace', () => {
+    const handler = makeHandler();
+    const agentId = 'agent-workspace-targeted';
+    const workspaceWindow = makeWindow(10);
+    const otherWorkspaceWindow = makeWindow(20);
+    mockWindows.push(workspaceWindow, otherWorkspaceWindow);
+    mockGetWindowIdsForWorkspace.mockReturnValue([workspaceWindow.id]);
+    handler.streamWorkspaceIds.set(agentId, 'ws-background');
+
+    const sent = (AgentBackendHandlerClass.prototype as any).sendStreamToRenderer.call(
+      handler,
+      agentId,
+      `agent:stream:${agentId}`,
+      { type: 'complete', finishReason: 'end_turn' },
+    );
+
+    expect(sent).toBe(true);
+    expect(mockGetWindowIdsForWorkspace).toHaveBeenCalledWith('ws-background');
+    expect(workspaceWindow.webContents.send).toHaveBeenCalledWith(
+      `agent:stream:${agentId}`,
+      expect.objectContaining({ type: 'complete', workspaceId: 'ws-background' }),
+    );
+    expect(otherWorkspaceWindow.webContents.send).not.toHaveBeenCalled();
+  });
+
   it('broadcasts virtual workspace streams to all alive windows when no originator is registered', () => {
     const handler = makeHandler();
     const agentId = 'agent-chief-broadcast';

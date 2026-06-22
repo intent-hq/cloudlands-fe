@@ -297,6 +297,7 @@ export class HttpMcpBridge {
   // In-flight health probe promise — concurrent callers share it so a burst
   // of messages does not spam the health endpoint.
   private healthCheckPromise: Promise<boolean> | null = null;
+  private selfTestTimeoutId: NodeJS.Timeout | null = null;
   // Set true by stop() so an in-flight start() retry loop aborts cleanly
   // instead of binding a new listener after the server has been torn down.
   // Cleared at the top of the next start() call.
@@ -598,7 +599,13 @@ export class HttpMcpBridge {
         res.json({
           status: 'ok',
           service: 'http-mcp-bridge',
+          bridgeApiVersion: 2,
           timestamp: new Date().toISOString(),
+          port: this.port,
+          pid: process.pid,
+          appPath: app.getAppPath(),
+          processCwd: process.cwd(),
+          isPackaged: app.isPackaged,
           tools: mcpServer.getTools().map((t: any) => t.name),
         });
       } catch (error) {
@@ -1390,25 +1397,33 @@ export class HttpMcpBridge {
       this.logger.warn('Failed to persist HTTP MCP port to settings store', { error });
     }
 
-    // Get tool count for the startup message (async, don't block startup)
+    // Get tool count for the startup message (async, don't block startup).
+    // Guard the async callbacks so tests/restarts that stop the bridge before
+    // the promise settles do not emit late console logs during teardown.
+    const startupServer = this.server;
     this.getMcpServer('http-bridge-workspace', DUMMY_WORKSPACE_PATH)
       .then((defaultServer) => {
+        if (this.server !== startupServer) return;
         const toolCount = defaultServer.getTools().length;
         console.log(`\n🔌 HTTP MCP Bridge: http://${host}:${this.port} (${toolCount} tools)\n`);
       })
       .catch(() => {
+        if (this.server !== startupServer) return;
         console.log(`\n🔌 HTTP MCP Bridge: http://${host}:${this.port}\n`);
       });
 
     // Silent self-test - only log on failure
-    setTimeout(() => {
+    this.selfTestTimeoutId = setTimeout(() => {
+      this.selfTestTimeoutId = null;
       fetch(`http://127.0.0.1:${this.port}/health`)
         .then((res) => {
+          if (this.server !== startupServer) return;
           if (!res.ok) {
             this.logger.error(`Health check failed with status ${res.status}`);
           }
         })
         .catch((err) => {
+          if (this.server !== startupServer) return;
           this.logger.error(`Self-test failed: ${err.message}`);
         });
     }, 100);
@@ -1607,6 +1622,10 @@ export class HttpMcpBridge {
       clearInterval(this.cleanupIntervalId);
       this.cleanupIntervalId = null;
       this.logger.debug('Stopped MCP server cache cleanup interval');
+    }
+    if (this.selfTestTimeoutId) {
+      clearTimeout(this.selfTestTimeoutId);
+      this.selfTestTimeoutId = null;
     }
 
     // Clear all cached MCP servers

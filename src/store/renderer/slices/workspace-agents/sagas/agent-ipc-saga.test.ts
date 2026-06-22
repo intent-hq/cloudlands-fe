@@ -547,6 +547,7 @@ describe("handleQueueProcessing", () => {
     expect(userMessageAction?.type).toBe("agentSessions/addMessage");
     expect(ensureStreamHandlerMock).toHaveBeenCalledWith("agent-1", {
       forceReregister: true,
+      workspaceId: "ws-agent-1",
       assistantAppMessageId: data.assistantAppMessageId,
     });
   });

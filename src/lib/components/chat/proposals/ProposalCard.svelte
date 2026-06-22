@@ -79,8 +79,6 @@
   let prBranchUserEdited = $state(false);
   const BEFORE_AFTER_STACK_THRESHOLD = 40;
 
-  // Lazy dispatch access to avoid Store.init() errors in tests
-  const getDispatch = () => appStore.dispatch.bind(appStore);
   const prBranchLookupEntries = selectPrBranchLookupEntries();
 
   const fields = $derived(proposal.preview.fields ?? []);
@@ -205,7 +203,7 @@
     if (!prBranchLookupRequest || !prBranchLookupKey || prBranchLookup) return;
     if (!canUseElectronPrLookup()) return;
 
-    getDispatch()(requestPrBranchLookup(prBranchLookupRequest));
+    appStore.dispatch(requestPrBranchLookup(prBranchLookupRequest));
   });
 
   $effect(() => {

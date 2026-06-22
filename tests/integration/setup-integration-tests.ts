@@ -5,10 +5,75 @@
  * environment configuration, and cleanup handlers.
  */
 
-import { beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import {
+  _resetMainStoreBridge,
+  initMainStoreBridge,
+} from '../../src/store/main/redux-store-bridge';
+
+vi.mock('electron', () => ({
+  app: {
+    getPath: () => process.cwd(),
+    isPackaged: false,
+    on: vi.fn(),
+    once: vi.fn(),
+    whenReady: vi.fn(async () => undefined),
+    quit: vi.fn(),
+  },
+  BrowserWindow: {
+    getAllWindows: vi.fn(() => []),
+    getFocusedWindow: vi.fn(() => null),
+  },
+  ipcMain: {
+    handle: vi.fn(),
+    on: vi.fn(),
+    removeHandler: vi.fn(),
+    removeAllListeners: vi.fn(),
+  },
+  shell: {
+    openExternal: vi.fn(),
+    openPath: vi.fn(),
+    showItemInFolder: vi.fn(),
+  },
+  dialog: {
+    showOpenDialog: vi.fn(),
+    showMessageBox: vi.fn(),
+  },
+}));
+
+vi.mock('electron-store', () => ({
+  default: class MockElectronStore {
+    private data: Record<string, unknown> = {};
+
+    get(key: string, defaultValue?: unknown) {
+      return key in this.data ? this.data[key] : defaultValue;
+    }
+
+    set(key: string, value: unknown) {
+      this.data[key] = value;
+    }
+
+    delete(key: string) {
+      delete this.data[key];
+    }
+
+    clear() {
+      this.data = {};
+    }
+  },
+}));
+
+try {
+  initMainStoreBridge({
+    state: {},
+    dispatch: (action: any) => action,
+  } as any);
+} catch {
+  // Some test files install their own bridge; keep the first initialized bridge.
+}
 
 // Test environment configuration
 const TEST_ENV = {
@@ -147,6 +212,7 @@ beforeAll(async () => {
 afterAll(async () => {
   console.log('🧹 Cleaning up integration test environment');
   await cleanupTestDirectories();
+  _resetMainStoreBridge();
 });
 
 // Test-level setup

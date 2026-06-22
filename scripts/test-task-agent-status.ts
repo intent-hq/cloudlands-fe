@@ -5,6 +5,15 @@
  * Run with: npx tsx scripts/test-task-agent-status.ts
  */
 
+import {
+  addTaskAgentAssociation,
+  initialState,
+  removeTaskAgentAssociation,
+  taskAgentAssociationsReducer,
+} from '../src/store/renderer/slices/task-agent-associations/task-agent-associations-slice';
+import { selectAssociationsForNote } from '../src/store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
+import type { TaskAgentAssociation } from '../src/store/renderer/slices/task-agent-associations/task-agent-associations-types';
+
 // Simple console logger
 const logger = {
   info: (...args: any[]) => console.log('[INFO]', ...args),
@@ -21,23 +30,31 @@ async function testTaskAgentAssociation() {
   const workspaceId = WorkspaceId('test-workspace-123');
 
   // Test data
-  const testAssociation = {
-    taskId: 'note-123:100',
+  const testAssociation: TaskAgentAssociation = {
+    taskKey: 'note-123:100',
     agentId: 'agent-456',
     noteId: 'note-123',
-    taskPosition: 100,
     taskText: 'Test task for agent delegation',
     createdAt: Date.now(),
   };
+  let state = { taskAgentAssociations: initialState } as any;
 
   try {
     // Test 1: Associate task with agent
     logger.info('Test 1: Associating task with agent...');
-    unifiedStateStore.associateTaskWithAgent(workspaceId, testAssociation);
+    state = {
+      ...state,
+      taskAgentAssociations: taskAgentAssociationsReducer(
+        state.taskAgentAssociations,
+        addTaskAgentAssociation(workspaceId, testAssociation.noteId, testAssociation),
+      ),
+    };
 
     // Test 2: Retrieve association
     logger.info('Test 2: Retrieving task-agent association...');
-    const retrieved = unifiedStateStore.getTaskAgentAssociation(workspaceId, testAssociation.taskId);
+    const retrieved = selectAssociationsForNote
+      .select(state, workspaceId, testAssociation.noteId)
+      .find((association) => association.taskKey === testAssociation.taskKey);
 
     if (!retrieved) {
       throw new Error('Failed to retrieve task-agent association');
@@ -51,9 +68,17 @@ async function testTaskAgentAssociation() {
 
     // Test 3: Remove association
     logger.info('Test 3: Removing task-agent association...');
-    unifiedStateStore.removeTaskAgentAssociation(workspaceId, testAssociation.taskId);
+    state = {
+      ...state,
+      taskAgentAssociations: taskAgentAssociationsReducer(
+        state.taskAgentAssociations,
+        removeTaskAgentAssociation(workspaceId, testAssociation.noteId, testAssociation.taskKey!),
+      ),
+    };
 
-    const afterRemoval = unifiedStateStore.getTaskAgentAssociation(workspaceId, testAssociation.taskId);
+    const afterRemoval = selectAssociationsForNote
+      .select(state, workspaceId, testAssociation.noteId)
+      .find((association) => association.taskKey === testAssociation.taskKey);
     if (afterRemoval) {
       throw new Error('Failed to remove task-agent association');
     }
@@ -63,20 +88,28 @@ async function testTaskAgentAssociation() {
     // Test 4: Multiple associations
     logger.info('Test 4: Testing multiple associations...');
     const associations = [
-      { ...testAssociation, taskId: 'note-123:200', taskPosition: 200 },
-      { ...testAssociation, taskId: 'note-123:300', taskPosition: 300, agentId: 'agent-789' },
-      { ...testAssociation, taskId: 'note-456:100', noteId: 'note-456', agentId: 'agent-999' },
+      { ...testAssociation, taskKey: 'note-123:200' },
+      { ...testAssociation, taskKey: 'note-123:300', agentId: 'agent-789' },
+      { ...testAssociation, taskKey: 'note-456:100', noteId: 'note-456', agentId: 'agent-999' },
     ];
 
     associations.forEach(assoc => {
-      unifiedStateStore.associateTaskWithAgent(workspaceId, assoc);
+      state = {
+        ...state,
+        taskAgentAssociations: taskAgentAssociationsReducer(
+          state.taskAgentAssociations,
+          addTaskAgentAssociation(workspaceId, assoc.noteId, assoc),
+        ),
+      };
     });
 
     // Verify all associations exist
     associations.forEach(assoc => {
-      const retrieved = unifiedStateStore.getTaskAgentAssociation(workspaceId, assoc.taskId);
+      const retrieved = selectAssociationsForNote
+        .select(state, workspaceId, assoc.noteId)
+        .find((association) => association.taskKey === assoc.taskKey);
       if (!retrieved || retrieved.agentId !== assoc.agentId) {
-        throw new Error(`Failed to retrieve association for task ${assoc.taskId}`);
+        throw new Error(`Failed to retrieve association for task ${assoc.taskKey}`);
       }
     });
 
@@ -85,7 +118,7 @@ async function testTaskAgentAssociation() {
     logger.info('\n✅ All tests passed successfully!');
     logger.info('\nImplementation summary:');
     logger.info('- Tasks can be associated with agents using unique task IDs');
-    logger.info('- Associations are stored in the unified state store');
+    logger.info('- Associations are stored in the taskAgentAssociations Redux slice');
     logger.info('- Task nodes in the editor will display agent status inline');
     logger.info('- No comments are created when delegating tasks');
 

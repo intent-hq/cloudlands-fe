@@ -346,6 +346,7 @@ export interface AgentFailedEvent extends WorkspaceEventBase {
     error: string;
     turnNumber?: number;
     model?: string;
+    respondingToMessageId?: string;
   };
 }
 
@@ -458,6 +459,8 @@ export interface AgentIdleEvent extends WorkspaceEventBase {
     completionReport?: string;
     /** ID of the parent agent that created this agent (for delegation) */
     parentAgentId?: string;
+    /** User/queued message ID that produced the completed response, when known */
+    respondingToMessageId?: string;
   } & CanonicalAgentStatusFields;
 }
 
@@ -1280,6 +1283,7 @@ export interface AgentIdlePayload extends CanonicalAgentStatusFields {
   isBackground?: boolean;
   completionReport?: string;
   parentAgentId?: string;
+  respondingToMessageId?: string;
 }
 
 /**

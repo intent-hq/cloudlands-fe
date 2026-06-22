@@ -39,98 +39,26 @@ import {
   selectWorkspaceSubscriptionState,
 } from "../agent-subscriptions-selectors";
 import {
-  buildSweepCatchUpEventId,
   recordDeliveredEventIds,
   sweepCatchUpSeen,
 } from "./delivery-saga";
+import { buildSweepCatchUpEventId } from "../utils/sweep-catchup-events";
+import {
+  buildOneShotProcessingKey,
+  buildSweepCatchUpSeenKey,
+} from "../utils/subscription-dedupe-keys";
 import { Logger } from "../../../../../shared/logger";
 const logger = new Logger("MatchingSaga");
 import type {
   AgentSubscriptionRecord,
   AgentEventFilter,
   AgentStatus,
-  SerializableDataMatcher,
 } from "../types";
+import { matchesDataMatchers } from "../utils/subscription-event-matchers";
 
 // ---------------------------------------------------------------------------
 // Filter matching
 // ---------------------------------------------------------------------------
-
-/**
- * Resolve a dot-notation field path on an object.
- * e.g. getNestedValue(event, "data.path") → event.data.path
- */
-function getNestedValue(obj: Record<string, any>, field: string): unknown {
-  const parts = field.split(".");
-  let value: any = obj;
-  for (const part of parts) {
-    if (value == null || typeof value !== "object") return undefined;
-    value = value[part];
-  }
-  return value;
-}
-
-/**
- * Check whether a single SerializableDataMatcher matches an event.
- */
-function matchesDataMatcher(
-  event: WorkspaceEvent,
-  matcher: SerializableDataMatcher,
-): boolean {
-  const actual = getNestedValue(event as unknown as Record<string, any>, matcher.field);
-
-  switch (matcher.operator) {
-    case "equals":
-      return actual === matcher.value;
-
-    case "contains":
-      if (typeof actual === "string" && typeof matcher.value === "string") {
-        return actual.includes(matcher.value);
-      }
-      return false;
-
-    case "starts_with":
-      if (typeof actual === "string" && typeof matcher.value === "string") {
-        return actual.startsWith(matcher.value);
-      }
-      return false;
-
-    case "ends_with":
-      if (typeof actual === "string" && typeof matcher.value === "string") {
-        return actual.endsWith(matcher.value);
-      }
-      return false;
-
-    case "matches": {
-      if (typeof actual !== "string") return false;
-      const regexValue = matcher.value as { pattern: string; flags: string };
-      if (
-        typeof regexValue === "object" &&
-        regexValue !== null &&
-        "pattern" in regexValue
-      ) {
-        try {
-          const regex = new RegExp(regexValue.pattern, regexValue.flags);
-          return regex.test(actual);
-        } catch {
-          return false;
-        }
-      }
-      // Fall back to string value as pattern
-      if (typeof matcher.value === "string") {
-        try {
-          return new RegExp(matcher.value).test(actual);
-        } catch {
-          return false;
-        }
-      }
-      return false;
-    }
-
-    default:
-      return false;
-  }
-}
 
 /**
  * Check whether a workspace event matches a subscription's filter criteria.
@@ -183,10 +111,7 @@ function matchesFilter(
 
   // dataMatchers: if specified, ALL matchers must match (AND logic)
   if (filter.dataMatchers?.length) {
-    const allMatch = filter.dataMatchers.every((matcher) =>
-      matchesDataMatcher(event, matcher),
-    );
-    if (!allMatch) return false;
+    if (!matchesDataMatchers(event, filter.dataMatchers)) return false;
   }
 
   return true;
@@ -283,7 +208,7 @@ export function* handleMatchEvent(
 
   // Track oneShot IDs claimed during this invocation so we can release them
   // if the code throws before reaching the normal cleanup path.
-  const claimedOneShotIds = new Set<string>();
+  const claimedOneShotKeys = new Set<string>();
 
   try {
 
@@ -317,7 +242,8 @@ export function* handleMatchEvent(
     // Placed AFTER matchesFilter (which is sync) so we only claim the oneShot
     // when the event actually matches, avoiding permanent lockout on non-matches.
     if (sub.filter.oneShot) {
-      if (processingOneShots.has(sub.id)) {
+      const processingKey = buildOneShotProcessingKey(wsId, sub.id);
+      if (processingOneShots.has(processingKey)) {
         if (isAgentLifecycle) {
           logger.warn(`[subscriptions] skip-oneshot-processing subscriptionId=${sub.id} agentId=${sub.agentId} eventType=${event.type} wsId=${wsId}`);
         }
@@ -327,15 +253,15 @@ export function* handleMatchEvent(
       // Without this, two concurrent forks (from takeEvery) could both pass
       // the has() check, both observe isFired=false from the selector, and
       // both proceed to deliver the same oneShot event.
-      processingOneShots.add(sub.id);
-      claimedOneShotIds.add(sub.id);
+      processingOneShots.add(processingKey);
+      claimedOneShotKeys.add(processingKey);
       const isFired: boolean = yield* selectIsOneShotFired.effect(wsId, sub.id);
       if (isFired) {
         if (isAgentLifecycle) {
           logger.warn(`[subscriptions] skip-oneshot-fired subscriptionId=${sub.id} agentId=${sub.agentId} eventType=${event.type} wsId=${wsId}`);
         }
-        processingOneShots.delete(sub.id);
-        claimedOneShotIds.delete(sub.id);
+        processingOneShots.delete(processingKey);
+        claimedOneShotKeys.delete(processingKey);
         continue;
       }
     }
@@ -355,7 +281,7 @@ export function* handleMatchEvent(
     // consumed here so only the immediate real event is suppressed — future
     // transitions for the same agent (e.g. idle → busy → idle) deliver normally.
     if (filter.actorIds?.length && event.actor?.id) {
-      const sweepDedupeKey = `${sub.id}:${event.actor.id}:${event.type}`;
+      const sweepDedupeKey = buildSweepCatchUpSeenKey(wsId, sub.id, event.actor.id, event.type);
       if (sweepCatchUpSeen.has(sweepDedupeKey)) {
         sweepCatchUpSeen.delete(sweepDedupeKey); // consume-once: allow future transitions
         const logSweepSkip = isAgentLifecycle ? logger.warn.bind(logger) : logger.info.bind(logger);
@@ -389,7 +315,7 @@ export function* handleMatchEvent(
       // through the delegation group path.
       if (filter.actorIds?.length && event.actor?.id) {
         const sweepCatchUpId = buildSweepCatchUpEventId(sub.id, event.actor.id, event.type);
-        recordDeliveredEventIds(sub.agentId, [sweepCatchUpId]);
+        recordDeliveredEventIds(wsId, sub.agentId, [sweepCatchUpId]);
       }
 
       // Delegation group delivery is handled by delegation-group-saga
@@ -416,7 +342,7 @@ export function* handleMatchEvent(
     // actor combo, the catch-up event will be filtered out as a duplicate.
     if (filter.actorIds?.length && event.actor?.id) {
       const sweepCatchUpId = buildSweepCatchUpEventId(sub.id, event.actor.id, event.type);
-      recordDeliveredEventIds(sub.agentId, [sweepCatchUpId]);
+      recordDeliveredEventIds(wsId, sub.agentId, [sweepCatchUpId]);
     }
 
     // If the agent is already idle, trigger delivery — respecting
@@ -478,8 +404,9 @@ export function* handleMatchEvent(
       logger.debug(`[subscriptions] cleanup subscriptionId=${sub.id} eventId=${eventId} agentId=${sub.agentId} workspaceId=${wsId} step=cleanup reason=oneShot`);
       yield* put(markOneShotFired(wsId, sub.id));
       yield* put(removeSubscription(wsId, sub.id));
-      processingOneShots.delete(sub.id);
-      claimedOneShotIds.delete(sub.id);
+      const processingKey = buildOneShotProcessingKey(wsId, sub.id);
+      processingOneShots.delete(processingKey);
+      claimedOneShotKeys.delete(processingKey);
     }
   }
   } catch (error) {
@@ -487,8 +414,8 @@ export function* handleMatchEvent(
   } finally {
     // Release any oneShot claims that weren't cleaned up before the throw
     // or on saga cancellation.
-    for (const id of claimedOneShotIds) {
-      processingOneShots.delete(id);
+    for (const key of claimedOneShotKeys) {
+      processingOneShots.delete(key);
     }
   }
 }
@@ -587,13 +514,14 @@ export function* handleNewSubscriptionCatchUp(
     });
     if (!typeMatches) continue;
 
-    const dedupeKey = `${record.id}:${actorId}:${matchingEventType}`;
-    if (sweepCatchUpSeen.has(dedupeKey)) continue;
-
     // Agent already matches — synthesize a catch-up event with a deterministic
     // ID that links subscription catch-up, sweep catch-up, and live-event fallback
     // delivery for this subscription+actor+eventType combo.
     const catchUpEvent = synthesizeCatchUpEvent(wsId, record.id, actorId, matchingEventType);
+    if (!matchesFilter(catchUpEvent, filter)) continue;
+
+    const dedupeKey = buildSweepCatchUpSeenKey(wsId, record.id, actorId, matchingEventType);
+    if (sweepCatchUpSeen.has(dedupeKey)) continue;
 
     // Route through delegation group or direct queue
     if (filter.delegationGroup) {

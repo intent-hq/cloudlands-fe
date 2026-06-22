@@ -39,7 +39,7 @@ class RefreshScenarioTester {
       const storeContent = fs.readFileSync(storeFile, 'utf-8');
 
       // Check if messages are preserved when session updates
-      if (!storeContent.includes('mergeSessionMessages') || !storeContent.includes('deduplicateAgentMessages')) {
+      if (!storeContent.includes('normalizeSortPruneMessages') || !storeContent.includes('deduplicateAgentMessages')) {
         issues.push('Messages not preserved when updating session during streaming');
       }
 
@@ -53,7 +53,7 @@ class RefreshScenarioTester {
       }
 
       // Check if messages are merged properly on getSession
-      if (!sessionContent.includes('replaceMessages(') || !sessionContent.includes('deduplicateAgentMessages')) {
+      if (!sessionContent.includes('replaceMessages(') || !sessionContent.includes('deduplicateRecoverySession')) {
         issues.push('getSession not merging messages properly');
       }
 
@@ -219,7 +219,7 @@ class RefreshScenarioTester {
       }
 
       // Check for proper state merging
-      if (!content.includes('mergeSessionMessages') || !content.includes('updateSessionFields')) {
+      if (!content.includes('normalizeSortPruneMessages') || !content.includes('updateSessionFields')) {
         issues.push('State not properly merged - may lose data on multiple refreshes');
       }
 
@@ -325,7 +325,7 @@ class RefreshScenarioTester {
       const content = fs.readFileSync(sessionStoreFile, 'utf-8');
 
       // Check if browser compatibility subscribers are driven by Redux updates
-      if (!content.includes('getReduxStore().subscribe') || !content.includes('selectAgentById.select')) {
+      if (!content.includes('appStore.getReadableState().subscribe') || !content.includes('selectAgentSession.select')) {
         issues.push('Browser subscriber bridge not using Redux updates for reactivity');
       }
 

@@ -52,8 +52,6 @@
 
   const CHIEF_SPECIALIST_ID = 'chief-of-staff';
 
-  // Lazy dispatch access to avoid Store.init() errors in tests
-  const getDispatch = () => appStore.dispatch.bind(appStore);
   const chiefPreview$ = selectChiefThreadPreview();
   const chiefThreads$ = selectChiefThreads();
   const isCardPinned$ = selectIsCardPinned();
@@ -118,8 +116,8 @@
 
   function ensureChiefWorkspaceRegistered() {
     if (isWorkspaceRegistered) return;
-    getDispatch()(setWorkspaceEntity(chiefWorkspace));
-    getDispatch()(workspaceMounted(CHIEF_WORKSPACE_ID));
+    appStore.dispatch(setWorkspaceEntity(chiefWorkspace));
+    appStore.dispatch(workspaceMounted(CHIEF_WORKSPACE_ID));
     isWorkspaceRegistered = true;
   }
 
@@ -152,25 +150,25 @@
   });
 
   onDestroy(() => {
-    getDispatch()(workspaceUnmounted(CHIEF_WORKSPACE_ID));
+    appStore.dispatch(workspaceUnmounted(CHIEF_WORKSPACE_ID));
   });
 
   function openChiefPanel() {
-    getDispatch()(openPanel('chief'));
+    appStore.dispatch(openPanel('chief'));
   }
 
   function handleThreadChange(value: string | string[]) {
     if (typeof value === 'string') {
       selectedAgentId = value;
-      getDispatch()(setChiefActiveAgentId(value));
-      getDispatch()(setActiveAgentId(CHIEF_WORKSPACE_ID, value));
+      appStore.dispatch(setChiefActiveAgentId(value));
+      appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, value));
     }
   }
 
   function handleDeleteThread(event: MouseEvent, agentId: string, threadTitle: string) {
     event.preventDefault();
     event.stopPropagation();
-    getDispatch()(deleteAgentWithUndoRequested(CHIEF_WORKSPACE_ID, agentId, threadTitle));
+    appStore.dispatch(deleteAgentWithUndoRequested(CHIEF_WORKSPACE_ID, agentId, threadTitle));
   }
 
   async function createNewThread() {
@@ -181,8 +179,8 @@
     const emptyThread = $chiefThreads$.find((thread) => thread.messageCount === 0);
     if (emptyThread) {
       selectedAgentId = emptyThread.agentId;
-      getDispatch()(setChiefActiveAgentId(emptyThread.agentId));
-      getDispatch()(setActiveAgentId(CHIEF_WORKSPACE_ID, emptyThread.agentId));
+      appStore.dispatch(setChiefActiveAgentId(emptyThread.agentId));
+      appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, emptyThread.agentId));
       return;
     }
 
@@ -214,12 +212,12 @@
       { openAgent: false },
     );
 
-    getDispatch()(action);
+    appStore.dispatch(action);
     try {
       const session = await action.promise;
       selectedAgentId = session.id;
-      getDispatch()(setChiefActiveAgentId(session.id));
-      getDispatch()(setActiveAgentId(CHIEF_WORKSPACE_ID, session.id));
+      appStore.dispatch(setChiefActiveAgentId(session.id));
+      appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, session.id));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       toast.error(`Could not start Chief thread: ${message}`);
@@ -324,7 +322,7 @@
               {$isCardPinned$
               ? 'rotate-0 text-foreground'
               : 'rotate-45 text-muted-foreground hover:bg-muted/50 hover:text-foreground'}"
-            onclick={() => getDispatch()(toggleCardPinned())}
+            onclick={() => appStore.dispatch(toggleCardPinned())}
             aria-label={$isCardPinned$ ? 'Unpin panel' : 'Pin panel open'}
           >
             <Fa icon={faThumbtack} size="xs" />
@@ -332,7 +330,7 @@
         </Tooltip>
         <button
           class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-          onclick={() => getDispatch()(closePanel())}
+          onclick={() => appStore.dispatch(closePanel())}
           aria-label="Close panel"
         >
           <Fa icon={faXmark} size="xs" />

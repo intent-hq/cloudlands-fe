@@ -17,6 +17,7 @@ import {
   WorkspaceId,
 } from '$shared/types/branded-ids';
 import type { AgentSession } from '$shared/types';
+import { normalizeStreamingState } from '$shared/utils/agent-streaming-state';
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
 import type { StoredAgent } from '$lib/utils/agent-loader';
 import type { PanelLayoutRestoreStatus } from '$store/renderer/slices/panel-layout/panel-layout-types';
@@ -249,11 +250,19 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
     yield* restoreRemainingAgents(wsId, diskAgents, existingAgentIds, effectiveInitialAgentId);
     // 5. Collect final agent list from Redux
     const restoredAgents: AgentSession[] = yield* selectForegroundWorkspaceAgents.effect(wsId);
-    const filteredAgents = restoredAgents.filter((a) => a && !String(a.id).startsWith('terminal-'));
+    const filteredAgents = restoredAgents
+      .filter((a) => a && !String(a.id).startsWith('terminal-'))
+      .map((agent) => normalizeStreamingState({
+        ...agent,
+        workspaceId: wsId as AgentSession['workspaceId'],
+      }));
     // Publish agents and loaded flag atomically so the sidebar never
     // sees an intermediate state (agents set but loaded still false,
     // or loaded true with stale/empty agents).
-    yield* put(bulkUpsertSessions(filteredAgents));
+    yield* put(bulkUpsertSessions(filteredAgents, {
+      preserveExplicitRuntimeFlags: false,
+      allowActiveTurnRuntimeFlagClear: true,
+    }));
     yield* put(setAgents(wsId, filteredAgents));
     yield* put(setAgentsLoaded(wsId, true));
     if (shouldClearUnreadForLoadedWorkspace(wsId)) {
@@ -261,7 +270,7 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
     }
     yield* call(waitForPanelLayoutRestore, wsId);
     // 6. Reconcile stale agent tabs in panel layout
-    yield* reconcileStaleAgentTabs(wsId, restoredAgents);
+    yield* reconcileStaleAgentTabs(wsId, filteredAgents);
     // 7. Reconnect IPC stream handlers
     yield* put(reconnectStreamHandlersForWorkspaceRequested(wsId));
     // 8. Request backend stream reconnect. The reconnect saga handles backend
@@ -271,7 +280,7 @@ export function* loadAgentsFromDiskSaga(wsId: string) {
     // 9. Restore persisted drawer / layout state
     yield* restoreLayoutState(
       wsId,
-      restoredAgents,
+      filteredAgents,
       diskAgents,
       hasOpenedStreamingAgent,
       effectiveInitialAgentId,

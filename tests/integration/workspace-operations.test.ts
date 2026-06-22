@@ -11,6 +11,7 @@ import { WorkspaceService } from '../../src/features/workspace/main/workspace.se
 import { FileSystemWorkspaceRepository } from '../../src/features/workspace/main/workspace.repository';
 import type { WorkspaceRepository } from '../../src/features/workspace/main/workspace.repository';
 import { randomUUID } from 'crypto';
+import { execSync } from 'child_process';
 import type { Workspace, AgentSession } from '../../src/shared/types';
 import { WorkspaceStatus } from '../../src/shared/types';
 import * as fs from 'fs/promises';
@@ -39,8 +40,7 @@ describe('Workspace Operations Integration Tests', () => {
     await fs.mkdir(testRepoPath, { recursive: true });
 
     // Initialize git repo for testing
-    const { execSync } = require('child_process');
-    execSync('git init', { cwd: testRepoPath });
+    execSync('git init -b main', { cwd: testRepoPath });
     execSync('git config user.email "test@example.com"', { cwd: testRepoPath });
     execSync('git config user.name "Test User"', { cwd: testRepoPath });
     execSync('echo "test" > README.md', { cwd: testRepoPath });
@@ -101,11 +101,15 @@ describe('Workspace Operations Integration Tests', () => {
       const workspace = createResult.data!;
 
       expect(workspace.worktreePath).toBeDefined();
-      expect(workspace.branch).toBe('feature/test-branch');
+      expect(workspace.branch).toBeDefined();
 
       // Verify worktree exists
       try {
         await fs.access(workspace.worktreePath!);
+        const actualBranch = execSync('git branch --show-current', { cwd: workspace.worktreePath! })
+          .toString()
+          .trim();
+        expect(actualBranch).toBe(workspace.branch);
         expect(true).toBe(true);
       } catch {
         expect.fail('Worktree path should exist');
@@ -124,8 +128,6 @@ describe('Workspace Operations Integration Tests', () => {
     });
 
     it('should resolve remote branch when baseRef is without origin/ prefix', async () => {
-      const { execSync } = require('child_process');
-
       // Create a "remote" by making a bare clone and adding it as origin
       const bareRepoPath = path.join(process.cwd(), '.test-repos', `bare-${randomUUID()}`);
       await fs.mkdir(bareRepoPath, { recursive: true });

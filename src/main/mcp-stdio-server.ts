@@ -118,12 +118,65 @@ function readPortFromStore(): number | undefined {
   return undefined;
 }
 
-function getCandidatePorts(): number[] {
+function getPreferredPorts(): number[] {
   const storePort = readPortFromStore();
   const candidates = [cliPort, envPort, storePort, 5179].filter((v) =>
     Number.isFinite(v),
   ) as number[];
   return Array.from(new Set(candidates));
+}
+
+function getCandidatePorts(): number[] {
+  const candidates = getPreferredPorts();
+  for (let port = 5179; port <= 5188; port++) {
+    candidates.push(port);
+  }
+  return Array.from(new Set(candidates));
+}
+
+interface BridgeHealthInfo {
+  status?: string;
+  service?: string;
+  bridgeApiVersion?: number;
+  port?: number;
+  pid?: number;
+  appPath?: string;
+  processCwd?: string;
+  isPackaged?: boolean;
+}
+
+function normalizePathForCompare(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    return path.resolve(value);
+  } catch {
+    return value;
+  }
+}
+
+function pathMatchesWorkspace(candidate: string | undefined, workspacePath: string): boolean {
+  const normalizedCandidate = normalizePathForCompare(candidate);
+  const normalizedWorkspace = normalizePathForCompare(workspacePath);
+  if (!normalizedCandidate || !normalizedWorkspace) return false;
+  return (
+    normalizedCandidate === normalizedWorkspace ||
+    normalizedCandidate.startsWith(`${normalizedWorkspace}${path.sep}`) ||
+    normalizedWorkspace.startsWith(`${normalizedCandidate}${path.sep}`)
+  );
+}
+
+function scoreBridgeHealth(
+  port: number,
+  health: BridgeHealthInfo,
+  workspacePath: string,
+  preferredPorts: number[],
+): number {
+  const workspaceMatch =
+    pathMatchesWorkspace(health.processCwd, workspacePath) || pathMatchesWorkspace(health.appPath, workspacePath);
+  const preferredIndex = preferredPorts.indexOf(port);
+  const preferredScore = preferredIndex >= 0 ? 100 - preferredIndex : 0;
+  const versionScore = typeof health.bridgeApiVersion === 'number' ? health.bridgeApiVersion : 0;
+  return (workspaceMatch ? 10_000 : 0) + preferredScore + versionScore;
 }
 
 let HTTP_MCP_PORT: number = cliPort ?? envPort ?? readPortFromStore() ?? 5179;
@@ -417,12 +470,15 @@ async function makeHttpRequest(
  */
 async function waitForHttpServer(
   ports: number[],
+  workspacePath: string,
   maxRetries: number = 5,
   initialDelay: number = 1000,
 ): Promise<number | null> {
   const MAX_DELAY = 4000; // Cap backoff at 4 seconds
+  const preferredPorts = getPreferredPorts();
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const healthyCandidates: Array<{ port: number; health: BridgeHealthInfo; score: number }> = [];
     for (const port of ports) {
       try {
         const controller = new AbortController();
@@ -432,8 +488,12 @@ async function waitForHttpServer(
             signal: controller.signal,
           });
           if (response.ok) {
-            logToStderr('INFO', 'HTTP MCP server is available', { port, attempt });
-            return port;
+            const health = (await response.json().catch(() => ({}))) as BridgeHealthInfo;
+            healthyCandidates.push({
+              port,
+              health,
+              score: scoreBridgeHealth(port, health, workspacePath, preferredPorts),
+            });
           }
         } finally {
           clearTimeout(timeoutId);
@@ -441,6 +501,25 @@ async function waitForHttpServer(
       } catch {
         // Server not ready yet, continue waiting
       }
+    }
+
+    if (healthyCandidates.length > 0) {
+      healthyCandidates.sort((a, b) => b.score - a.score);
+      const selected = healthyCandidates[0]!;
+      logToStderr('INFO', 'HTTP MCP server is available', {
+        port: selected.port,
+        attempt,
+        score: selected.score,
+        health: selected.health,
+        candidates: healthyCandidates.map((candidate) => ({
+          port: candidate.port,
+          score: candidate.score,
+          bridgeApiVersion: candidate.health.bridgeApiVersion,
+          processCwd: candidate.health.processCwd,
+          appPath: candidate.health.appPath,
+        })),
+      });
+      return selected.port;
     }
 
     if (attempt < maxRetries) {
@@ -466,10 +545,13 @@ async function waitForHttpServer(
  */
 async function tryReconnect(): Promise<number | null> {
   const ports = getCandidatePorts();
+  const preferredPorts = getPreferredPorts();
   // Also include the currently configured port in case it's not in candidates
   if (!ports.includes(HTTP_MCP_PORT)) {
     ports.unshift(HTTP_MCP_PORT);
   }
+  const workspacePath = process.argv[3] || process.env.WORKSPACE_PATH || '';
+  const healthyCandidates: Array<{ port: number; health: BridgeHealthInfo; score: number }> = [];
   for (const port of ports) {
     try {
       const controller = new AbortController();
@@ -479,12 +561,25 @@ async function tryReconnect(): Promise<number | null> {
       });
       clearTimeout(timeoutId);
       if (response.ok) {
-        logToStderr('INFO', 'HTTP MCP server reconnected', { port });
-        return port;
+        const health = (await response.json().catch(() => ({}))) as BridgeHealthInfo;
+        healthyCandidates.push({
+          port,
+          health,
+          score: scoreBridgeHealth(port, health, workspacePath, preferredPorts),
+        });
       }
     } catch {
       // Not available on this port
     }
+  }
+  if (healthyCandidates.length > 0) {
+    healthyCandidates.sort((a, b) => b.score - a.score);
+    const selected = healthyCandidates[0]!;
+    logToStderr('INFO', 'HTTP MCP server reconnected', {
+      port: selected.port,
+      score: selected.score,
+    });
+    return selected.port;
   }
   return null;
 }
@@ -531,7 +626,7 @@ async function main() {
     const candidatePorts = getCandidatePorts();
     logToStderr('DEBUG', 'Checking candidate ports', { candidatePorts });
 
-    const resolvedPort = await waitForHttpServer(candidatePorts);
+    const resolvedPort = await waitForHttpServer(candidatePorts, workspacePath);
     if (!resolvedPort) {
       logToStderr(
         'ERROR',

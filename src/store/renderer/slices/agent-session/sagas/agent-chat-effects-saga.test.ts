@@ -646,21 +646,29 @@ describe('agent-chat-effects saga migrated flows', () => {
     const action = agentSessionEditAndRegenerateRequested(AGENT, WS, 'u2', 'Edited', { model: 'm' });
     const dispatched = await runHandler(handleAgentSessionEditAndRegenerateRequested, action, makeState(messages));
     const types = dispatched.map((item) => item.type);
+    const addMessageAction = first(dispatched, 'agentSessions/addMessage');
+    const sendPayload = first(dispatched, agentSessionSendMessageRequested.type).payload;
 
     expect(types.indexOf(chatSendStarted.type)).toBeLessThan(types.indexOf(replaceMessages.type));
     expect(first(dispatched, replaceMessages.type).payload).toEqual([AGENT, messages.slice(0, 2)]);
+    expect(types.indexOf(replaceMessages.type)).toBeLessThan(types.indexOf('agentSessions/addMessage'));
     expect(first(dispatched, saveAgentSessionRequested.type).payload).toEqual([
       WS,
       AGENT,
       false,
       { allowTruncation: true },
     ]);
-    expect(first(dispatched, agentSessionSendMessageRequested.type).payload).toEqual([
-      AGENT,
-      WS,
-      'Edited',
-      { model: 'm', resetHistory: true },
-    ]);
+    expect(addMessageAction.payload[0]).toBe(AGENT);
+    expect(addMessageAction.payload[1]).toMatchObject({
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'Edited' }],
+    });
+    expect(sendPayload[0]).toBe(AGENT);
+    expect(sendPayload[1]).toBe(WS);
+    expect(sendPayload[2]).toBe('Edited');
+    expect(sendPayload[3]).toMatchObject({ model: 'm', resetHistory: true });
+    expect(sendPayload[3].userAppMessageId).toBe(addMessageAction.payload[1].appMessageId);
+    expect(sendPayload[3].optimisticMessageId).toBe(addMessageAction.payload[1].id);
   });
 
   it('preserves media blocks when regenerating from an assistant message', async () => {
@@ -673,8 +681,14 @@ describe('agent-chat-effects saga migrated flows', () => {
     const action = agentSessionRegenerateFromMessageRequested(AGENT, WS, 'a2');
     const dispatched = await runHandler(handleAgentSessionRegenerateFromMessageRequested, action, makeState(messages));
     const sendPayload = first(dispatched, agentSessionSendMessageRequested.type).payload;
+    const addMessageAction = first(dispatched, 'agentSessions/addMessage');
 
     expect(first(dispatched, replaceMessages.type).payload).toEqual([AGENT, messages.slice(0, 2)]);
+    expect(addMessageAction.payload[0]).toBe(AGENT);
+    expect(addMessageAction.payload[1]).toMatchObject({
+      role: 'user',
+      contentBlocks: originalUser.contentBlocks,
+    });
     expect(sendPayload[2]).toBe('Regenerate this');
     expect(sendPayload[3]).toMatchObject({
       resetHistory: true,
@@ -683,6 +697,8 @@ describe('agent-chat-effects saga migrated flows', () => {
         { fileData: 'file-data', fileMimeType: 'text/plain', label: 'note.txt' },
       ],
     });
+    expect(sendPayload[3].userAppMessageId).toBe(addMessageAction.payload[1].appMessageId);
+    expect(sendPayload[3].optimisticMessageId).toBe(addMessageAction.payload[1].id);
   });
 
   it('retries from conversation history with truncation, cleanup, and media preservation', async () => {
@@ -694,8 +710,15 @@ describe('agent-chat-effects saga migrated flows', () => {
     const action = agentSessionRetryLastMessageRequested(AGENT, WS);
     const dispatched = await runHandler(handleAgentSessionRetryLastMessageRequested, action, makeState(messages));
     const sendPayload = first(dispatched, agentSessionSendMessageRequested.type).payload;
+    const addMessageAction = first(dispatched, 'agentSessions/addMessage');
 
     expect(first(dispatched, replaceMessages.type).payload).toEqual([AGENT, messages.slice(0, 2)]);
+    expect(addMessageAction).toBeDefined();
+    expect(addMessageAction.payload[0]).toBe(AGENT);
+    expect(addMessageAction.payload[1].role).toBe('user');
+    expect(addMessageAction.payload[1].contentBlocks).toEqual(retryUser.contentBlocks);
+    expect(addMessageAction.payload[1].id).toMatch(/^optimistic_app_msg_/);
+    expect(addMessageAction.payload[1].appMessageId).toMatch(/^app_msg_/);
     expect(dispatched.map((item) => item.type)).toEqual(expect.arrayContaining([
       chatErrorCleared.type,
       chatModelUnavailableCleared.type,
@@ -703,6 +726,8 @@ describe('agent-chat-effects saga migrated flows', () => {
     ]));
     expect(sendPayload[2]).toBe('Retry this');
     expect(sendPayload[3]).toMatchObject({ resetHistory: true, contextItems: [{ imageData: 'img-data' }] });
+    expect(sendPayload[3].userAppMessageId).toBe(addMessageAction.payload[1].appMessageId);
+    expect(sendPayload[3].optimisticMessageId).toBe(addMessageAction.payload[1].id);
   });
 
   it('resolves retry success once the send enters responding state', async () => {
@@ -711,16 +736,43 @@ describe('agent-chat-effects saga migrated flows', () => {
       handleAgentSessionRetryLastMessageRequested,
       action,
       makeState([textMessage('u1', 'user', 'First')], {
-        lastAttemptedMessage: { text: 'Retry now', options: { model: 'retry-model' } },
+        lastAttemptedMessage: {
+          text: 'Retry now',
+          options: {
+            model: 'retry-model',
+            userAppMessageId: 'app_msg_retry-now',
+            optimisticMessageId: 'optimistic_retry-now',
+          },
+        },
       }),
     );
     const types = dispatched.map((item) => item.type);
+    const addMessageAction = first(dispatched, 'agentSessions/addMessage');
+    const clearMessageErrorAction = first(dispatched, updateMessage.type);
 
+    expect(addMessageAction.payload).toEqual([
+      AGENT,
+      expect.objectContaining({
+        id: 'optimistic_retry-now',
+        appMessageId: 'app_msg_retry-now',
+        role: 'user',
+        contentBlocks: [{ type: 'text', text: 'Retry now' }],
+      }),
+    ]);
+    expect(clearMessageErrorAction.payload).toEqual([
+      AGENT,
+      'optimistic_retry-now',
+      { error: undefined },
+    ]);
     expect(first(dispatched, agentSessionSendMessageRequested.type).payload).toEqual([
       AGENT,
       WS,
       'Retry now',
-      { model: 'retry-model' },
+      {
+        model: 'retry-model',
+        userAppMessageId: 'app_msg_retry-now',
+        optimisticMessageId: 'optimistic_retry-now',
+      },
     ]);
     expect(types.indexOf(chatSendStarted.type)).toBeLessThan(
       types.indexOf(action.success.type),
@@ -740,13 +792,20 @@ describe('agent-chat-effects saga migrated flows', () => {
         modelUnavailable: { failedModel: 'old-model', nextAvailableModel: 'new-model' },
       }),
     );
+    const addMessageAction = first(dispatched, 'agentSessions/addMessage');
+    const sendPayload = first(dispatched, agentSessionSendMessageRequested.type).payload;
 
-    expect(first(dispatched, agentSessionSendMessageRequested.type).payload).toEqual([
-      AGENT,
-      WS,
-      'Retry now',
-      { model: 'new-model' },
-    ]);
+    expect(addMessageAction).toBeDefined();
+    expect(addMessageAction.payload[1]).toMatchObject({
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'Retry now' }],
+    });
+    expect(sendPayload[0]).toBe(AGENT);
+    expect(sendPayload[1]).toBe(WS);
+    expect(sendPayload[2]).toBe('Retry now');
+    expect(sendPayload[3]).toMatchObject({ model: 'new-model' });
+    expect(sendPayload[3].userAppMessageId).toBe(addMessageAction.payload[1].appMessageId);
+    expect(sendPayload[3].optimisticMessageId).toBe(addMessageAction.payload[1].id);
     expect(dispatched.map((item) => item.type)).toEqual(expect.arrayContaining([
       chatErrorCleared.type,
       chatModelUnavailableCleared.type,
@@ -762,12 +821,19 @@ describe('agent-chat-effects saga migrated flows', () => {
     const sendPayload = first(dispatched, agentSessionSendMessageRequested.type).payload;
 
     expect(first(dispatched, replaceMessages.type).payload).toEqual([AGENT, messages.slice(0, 2)]);
-    expect(sendPayload).toEqual([
-      AGENT,
-      WS,
-      'Retry this',
-      { model: 'fallback-model', resetHistory: true },
-    ]);
+    const addMessageAction = first(dispatched, 'agentSessions/addMessage');
+
+    expect(addMessageAction).toBeDefined();
+    expect(addMessageAction.payload[1]).toMatchObject({
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'Retry this' }],
+    });
+    expect(sendPayload[0]).toBe(AGENT);
+    expect(sendPayload[1]).toBe(WS);
+    expect(sendPayload[2]).toBe('Retry this');
+    expect(sendPayload[3]).toMatchObject({ model: 'fallback-model', resetHistory: true });
+    expect(sendPayload[3].userAppMessageId).toBe(addMessageAction.payload[1].appMessageId);
+    expect(sendPayload[3].optimisticMessageId).toBe(addMessageAction.payload[1].id);
   });
 
   it('dispatches fork requests with cloned history and resolves the forked id', async () => {

@@ -2,6 +2,7 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from "vitest";
 import {
   panelLayoutReducer,
@@ -10,6 +11,7 @@ import {
   setRestoreStatus,
   openTab,
   closeTab,
+  closeActiveTab,
   setActiveTab,
   selectNextTab,
   selectPreviousTab,
@@ -129,6 +131,30 @@ describe("panelLayoutReducer", () => {
       expect(panel.tabs[0].browserUrl).toBe("about:blank");
       expect(panel.activeTabId).toBe("tab1");
     });
+
+    it("uses the action timestamp for layout and focus history", () => {
+      const state = stateWithPanel("p1");
+      const action = openTab(
+        WS,
+        { type: "note", title: "Test Note", noteId: "n1", closable: true },
+        undefined,
+        "tab1",
+        false,
+        1234,
+      );
+      const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        throw new Error("Date.now must not run inside panelLayoutReducer");
+      });
+
+      try {
+        const result = panelLayoutReducer(state, action);
+        const ws = result.byWorkspaceId[WS];
+        expect(ws.layoutHistory[0].timestamp).toBe(1234);
+        expect(ws.focusHistory[0].timestamp).toBe(1234);
+      } finally {
+        nowSpy.mockRestore();
+      }
+    });
   });
 
   describe("closeTab", () => {
@@ -152,6 +178,26 @@ describe("panelLayoutReducer", () => {
       const result = panelLayoutReducer(state, closeTab(WS, "t1", "p1", 1000));
       expect(result.byWorkspaceId[WS].panels.p1.activeTabId).toBe("t2");
     });
+
+    it("threads closeActiveTab action timestamp through internal dispatch", () => {
+      const state = stateWithPanel("p1", [
+        { id: "t1", type: "note", title: "A" },
+        { id: "t2", type: "file", title: "B" },
+      ]);
+      const action = closeActiveTab(WS, "p1", 2222);
+      const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        throw new Error("Date.now must not run inside panelLayoutReducer");
+      });
+
+      try {
+        const result = panelLayoutReducer(state, action);
+        const ws = result.byWorkspaceId[WS];
+        expect(ws.layoutHistory[0].timestamp).toBe(2222);
+        expect(ws.recentlyClosed[0].closedAt).toBe(2222);
+      } finally {
+        nowSpy.mockRestore();
+      }
+    });
   });
 
   describe("setActiveTab", () => {
@@ -173,6 +219,26 @@ describe("panelLayoutReducer", () => {
       ]);
       const result = panelLayoutReducer(state, selectNextTab(WS, "p1"));
       expect(result.byWorkspaceId[WS].panels.p1.activeTabId).toBe("t2");
+    });
+
+    it("threads selectNextTab action timestamp through focus history dispatch", () => {
+      const state = stateWithPanel("p1", [
+        { id: "t1", type: "note", title: "A" },
+        { id: "t2", type: "file", title: "B" },
+      ]);
+      const action = selectNextTab(WS, "p1", 3333);
+      const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        throw new Error("Date.now must not run inside panelLayoutReducer");
+      });
+
+      try {
+        const result = panelLayoutReducer(state, action);
+        const ws = result.byWorkspaceId[WS];
+        expect(ws.layoutHistory[0].timestamp).toBe(3333);
+        expect(ws.focusHistory[0].timestamp).toBe(3333);
+      } finally {
+        nowSpy.mockRestore();
+      }
     });
 
     it("wraps around to first tab when at end", () => {

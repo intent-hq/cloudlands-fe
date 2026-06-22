@@ -11,7 +11,15 @@ async function testRealWorld() {
   const port = parseInt(process.env.CDP_PORT || '9223', 10);
   console.log(`🔌 Connecting to CDP on port ${port}...`);
 
-  const client = await CDP({ port });
+  let client;
+  try {
+    client = await CDP({ port });
+  } catch (error: any) {
+    console.error('❌ Failed to connect to CDP:', error.message);
+    console.error(`   Make sure Electron is running with --remote-debugging-port=${port}`);
+    console.log('\nℹ️  No CDP endpoint is available; skipping real-world CDP tests.');
+    return;
+  }
   await client.Runtime.enable();
   console.log('✅ Connected\n');
 

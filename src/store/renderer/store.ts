@@ -10,7 +10,10 @@ import type {
   ReduxStoreContext,
 } from "./types";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
-import { initRendererStoreBridge } from "./renderer-store-bridge";
+import {
+  clearRendererStoreBridge,
+  initRendererStoreBridge,
+} from "./renderer-store-bridge";
 
 export { store } from "./configured-store";
 
@@ -135,7 +138,11 @@ export const initAppStore = (
     store,
     dispose: () => {
       cleanUpWindow(storeContext);
-      disposeConfiguredStore();
+      try {
+        disposeConfiguredStore();
+      } finally {
+        clearRendererStoreBridge(store);
+      }
     },
   };
 

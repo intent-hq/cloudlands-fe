@@ -27,6 +27,7 @@ import {
 import { invoke } from "$lib/electron-bridge";
 import { Logger } from "$shared/logger";
 import { gitClient } from "$features/git/git.client";
+import { store } from "$store/renderer/store";
 import {
   getAgentFileEdits,
   propagateAgentEditsToParents,
@@ -84,8 +85,8 @@ import {
   clearFileExplorerForWorkspace,
 } from "../file-explorer-slice";
 import {
-  selectCurrentFileExplorerEnvironmentConfigTrigger,
   selectEffectiveFileExplorerWorkspacePath,
+  selectFileExplorerEnvironmentConfigTrigger,
   selectFileExplorerState,
   type FileExplorerEnvironmentConfigTrigger,
 } from "../file-explorer-selectors";
@@ -114,6 +115,14 @@ import { takeLatestFromSelector } from "@augmentcode/ag-redux-toolkit/utils/saga
 import type { StoreAction } from "@augmentcode/ag-redux-toolkit/types";
 
 const logger = new Logger("FileExplorerSaga");
+
+const selectActiveFileExplorerEnvironmentConfigTrigger = store.createSelector<
+  [],
+  FileExplorerEnvironmentConfigTrigger
+>((state) => {
+  const wsId = selectActiveWorkspaceId.select(state);
+  return selectFileExplorerEnvironmentConfigTrigger.select(state, wsId);
+});
 
 type AgentFileEditsRefreshState = {
   inProgress: boolean;
@@ -907,7 +916,7 @@ function* watchWorkspaceEnvironmentConfigForFileExplorer(): SagaGenerator<void> 
   // Canonical trigger: the file-explorer saga watches the current workspace's
   // environmentConfig selector and owns remote-runtime reset + reinitialization.
   yield* takeLatestFromSelector(
-    selectCurrentFileExplorerEnvironmentConfigTrigger,
+    selectActiveFileExplorerEnvironmentConfigTrigger,
     handleWorkspaceEnvironmentConfigChange,
   );
 }

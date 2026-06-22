@@ -100,6 +100,16 @@ const {
     unsubscribe: vi.fn().mockResolvedValue({ ok: true, subscriptionId: 'sub-1' }),
     wakeOrCreate: vi.fn().mockResolvedValue({ ok: true, taskNoteId: 'task-1', agentId: 'agent-w1' }),
     summary: vi.fn().mockResolvedValue({ agentId: 'agent-1', agentName: 'Test', messageCount: 5 }),
+    diagnostics: vi.fn().mockResolvedValue({
+      ok: true,
+      diagnostics: {
+        subscriptions: [],
+        queues: [],
+        delegationGroups: [],
+        deliveryStats: { totalDeliveries: 0 },
+        stuckRisks: [],
+      },
+    }),
     reportToParent: vi.fn().mockResolvedValue({ ok: true, text: 'Report saved' }),
   };
   const mockBuildAgentApi = vi.fn().mockReturnValue(mockAgentPeer);
@@ -480,6 +490,7 @@ describe('WebSocket Protocol Handler', () => {
       expect(methods).toContain('note.update');
       expect(methods).toContain('agent.list');
       expect(methods).toContain('agent.get');
+      expect(methods).toContain('agent.diagnostics');
     });
   });
 
@@ -2023,7 +2034,7 @@ describe('WebSocket Protocol Handler', () => {
   // =========================================================================
   // Track R, wave 2c — agent.* (new) + git.* + pr.* adapter shims
   //
-  // 21 new JSON-RPC methods that 1:1 forward to ws.agent.*, ws.git.*,
+  // 22 new JSON-RPC methods that 1:1 forward to ws.agent.*, ws.git.*,
   // and ws.pr.* peers (buildAgentApi/buildWsGitApi/buildWsPrApi).
   // Tests are shape-only: assert positional forwarding to the peer
   // and that the peer's return value is serialised through unchanged.
@@ -2177,6 +2188,45 @@ describe('WebSocket Protocol Handler', () => {
     it('returns INVALID_PARAMS when agentId is missing', async () => {
       const result = await handleWebSocketMessage(
         makeRequest('agent.summary', { workspaceId: 'ws-1' }, 2313),
+      );
+      const parsed = JSON.parse(result!);
+      expect(parsed.error.code).toBe(-32602);
+    });
+  });
+
+  describe('agent.diagnostics (wave 2c)', () => {
+    it('forwards params to ws.agent.diagnostics and returns peer result', async () => {
+      const result = await handleWebSocketMessage(
+        makeRequest('agent.diagnostics', {
+          workspaceId: 'ws-1',
+          includeCompleted: true,
+          staleRespondingAfterMs: 1000,
+        }, 2317),
+      );
+      const parsed = JSON.parse(result!);
+      expect(parsed).toEqual({
+        jsonrpc: '2.0',
+        id: 2317,
+        result: {
+          ok: true,
+          diagnostics: {
+            subscriptions: [],
+            queues: [],
+            delegationGroups: [],
+            deliveryStats: { totalDeliveries: 0 },
+            stuckRisks: [],
+          },
+        },
+      });
+      expect(mockAgentPeer.diagnostics).toHaveBeenCalledWith({
+        includeCompleted: true,
+        staleRespondingAfterMs: 1000,
+      });
+    });
+
+    it('returns INVALID_PARAMS when workspaceId is missing', async () => {
+      const result = await handleWebSocketMessage(
+        makeRequest('agent.diagnostics', { includeCompleted: true }, 2318),
       );
       const parsed = JSON.parse(result!);
       expect(parsed.error.code).toBe(-32602);

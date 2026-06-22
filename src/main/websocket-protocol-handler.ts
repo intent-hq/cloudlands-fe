@@ -549,7 +549,7 @@ function buildWsApi(workspaceId: string) {
     },
     // Track R, wave 2c — agent.* shims forward to ws.agent.* peers. The
     // 8 existing legacy agent.* handlers (list/get/sendMessage/...) stay
-    // handler-owned (UI/IPC behaviour with no `ws.*` analogue). These 7
+    // handler-owned (UI/IPC behaviour with no `ws.*` analogue). These
     // expose the new MCP-only methods. `subscribe`/`unsubscribe` are
     // deprecated aliases for the bridge `events.subscribe`/
     // `events.unsubscribe` surface (per Audit 1 §2 row 14); the bridge
@@ -574,6 +574,9 @@ function buildWsApi(workspaceId: string) {
       },
       async summary(agentId: string) {
         return await getAgentPeer().summary(agentId);
+      },
+      async diagnostics(options: Record<string, any> = {}) {
+        return await getAgentPeer().diagnostics(options);
       },
       async reportToParent(report: string) {
         return await getAgentPeer().reportToParent(report);
@@ -1235,7 +1238,7 @@ function buildMethodMap(): Record<string, MethodHandler> {
     // ========================================================================
     // Track R, wave 2c — agent.* (new) + git.* + pr.* adapter shims
     //
-    // 21 new JSON-RPC methods that 1:1 forward to ws.agent.*, ws.git.*, and
+    // 22 new JSON-RPC methods that 1:1 forward to ws.agent.*, ws.git.*, and
     // ws.pr.* peers. Wire shape (method names, params, response bodies,
     // error codes) is preserved byte-for-byte against the corresponding
     // MCP builder output. Behaviour is covered by the ws-agent-api /
@@ -1302,6 +1305,14 @@ function buildMethodMap(): Record<string, MethodHandler> {
       requireParam(params, 'agentId');
       const ws = buildWsApi(workspaceId);
       return await ws.agent.summary(params.agentId);
+    },
+
+    'agent.diagnostics': async (params, context) => {
+      const workspaceId = params.workspaceId || context.workspaceId;
+      if (!workspaceId) throw new ProtocolError(INVALID_PARAMS, 'workspaceId is required');
+      const ws = buildWsApi(workspaceId);
+      const { workspaceId: _ws, ...options } = params;
+      return await ws.agent.diagnostics(options);
     },
 
     'agent.reportToParent': async (params, context) => {

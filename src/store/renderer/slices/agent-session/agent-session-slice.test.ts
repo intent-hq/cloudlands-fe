@@ -703,6 +703,79 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].name).toBe('Loaded Agent');
     });
 
+    it('preserves a missing optimistic user message when an active upsert snapshot is stale', () => {
+      const persistedUser = makeUniqueMessage('msg-user-1', 'user', '2024-01-01T00:00:00.000Z');
+      const optimisticUser: AgentMessage = {
+        id: 'optimistic_app_msg_retry',
+        appMessageId: 'app_msg_retry',
+        role: 'user',
+        timestamp: '2024-01-01T00:00:02.000Z',
+        contentBlocks: [{ type: 'text', text: 'Retry while refresh is stale' }],
+      };
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', {
+            messages: [persistedUser, optimisticUser],
+            isStreaming: true,
+            isProcessing: true,
+          }),
+        ], { preserveExplicitRuntimeFlags: false }),
+      );
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', {
+            name: 'Stale Refresh Snapshot',
+            messages: [persistedUser],
+            isStreaming: false,
+            isProcessing: false,
+          }),
+        ], { preserveExplicitRuntimeFlags: false }),
+      );
+
+      expect(state.byAgentId['a1'].name).toBe('Stale Refresh Snapshot');
+      expect(state.byAgentId['a1'].isStreaming).toBe(true);
+      expect(state.byAgentId['a1'].isProcessing).toBe(true);
+      expect(getMsgs(state, 'a1').map((message) => message.id)).toEqual([
+        'msg-user-1',
+        'optimistic_app_msg_retry',
+      ]);
+    });
+
+    it('does not preserve non-optimistic messages from active state when an upsert snapshot truncates them', () => {
+      const persistedUser = makeUniqueMessage('msg-user-1', 'user', '2024-01-01T00:00:00.000Z');
+      const removedAssistant = makeUniqueMessage(
+        'msg-assistant-removed',
+        'assistant',
+        '2024-01-01T00:00:01.000Z',
+      );
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', {
+            messages: [persistedUser, removedAssistant],
+            isStreaming: true,
+            isProcessing: true,
+          }),
+        ], { preserveExplicitRuntimeFlags: false }),
+      );
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions([
+          makeSession('a1', 'ws-1', {
+            messages: [persistedUser],
+            isStreaming: false,
+            isProcessing: false,
+          }),
+        ], { preserveExplicitRuntimeFlags: false }),
+      );
+
+      expect(getMsgs(state, 'a1').map((message) => message.id)).toEqual(['msg-user-1']);
+    });
+
     it('lets batched upsert storage clear a non-active runtime flag with explicit false', () => {
       // Not an in-flight turn (only one flag set), so a batched explicit-false
       // upsert is allowed to clear it. Active turns (both flags set) are guarded
@@ -755,6 +828,37 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].isStreaming).toBe(true);
       expect(state.byAgentId['a1'].isProcessing).toBe(true);
       expect(state.byAgentId['a1'].name).toBe('Snapshot');
+    });
+
+    it('lets normalized restore snapshots clear stale both-true runtime flags', () => {
+      let state = agentSessionReducer(initialState, chatSendStarted('a1', 'ws-1'));
+      expect(state.byAgentId['a1'].isStreaming).toBe(true);
+      expect(state.byAgentId['a1'].isProcessing).toBe(true);
+
+      state = agentSessionReducer(
+        state,
+        bulkUpsertSessions(
+          [makeSession('a1', 'ws-1', {
+            status: 'Idle' as any,
+            isStreaming: false,
+            isProcessing: false,
+            isResponding: false,
+            name: 'Restored Idle Snapshot',
+          })],
+          {
+            preserveExplicitRuntimeFlags: false,
+            allowActiveTurnRuntimeFlagClear: true,
+          },
+        ),
+      );
+
+      expect(state.byAgentId['a1']).toMatchObject({
+        status: 'Idle',
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        name: 'Restored Idle Snapshot',
+      });
     });
 
     it('still clears isProcessing via upsert once isStreaming was cleared first (safety timeout)', () => {

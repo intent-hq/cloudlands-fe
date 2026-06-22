@@ -137,16 +137,28 @@ export const markOneShotFired = createAction<[wsId: string, subscriptionId: stri
 );
 
 // --- Delivery stats ---
-export const recordDeliverySuccess = createAction<[wsId: string]>(
-  "agentSubscriptions/recordDeliverySuccess"
+export const recordDeliverySuccess = createAction<
+  [wsId: string, observedAt?: string],
+  [wsId: string, observedAt: string]
+>(
+  "agentSubscriptions/recordDeliverySuccess",
+  (wsId, observedAt) => [wsId, observedAt ?? new Date().toISOString()]
 );
 
-export const recordDeliveryFailure = createAction<[wsId: string]>(
-  "agentSubscriptions/recordDeliveryFailure"
+export const recordDeliveryFailure = createAction<
+  [wsId: string, observedAt?: string],
+  [wsId: string, observedAt: string]
+>(
+  "agentSubscriptions/recordDeliveryFailure",
+  (wsId, observedAt) => [wsId, observedAt ?? new Date().toISOString()]
 );
 
-export const recordDeliveryTimeout = createAction<[wsId: string]>(
-  "agentSubscriptions/recordDeliveryTimeout"
+export const recordDeliveryTimeout = createAction<
+  [wsId: string, observedAt?: string],
+  [wsId: string, observedAt: string]
+>(
+  "agentSubscriptions/recordDeliveryTimeout",
+  (wsId, observedAt) => [wsId, observedAt ?? new Date().toISOString()]
 );
 
 export const recordDroppedEvents = createAction<[wsId: string, count: number]>(
@@ -380,7 +392,9 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
     const ws = getWorkspaceState(state, wsId);
     const tracker = ws.delegationGroups[groupId];
     if (!tracker) return state;
+    if (!tracker.expectedAgentIds.includes(agentId)) return state;
     if (tracker.completedAgentIds.includes(agentId)) return state;
+    if (tracker.deletedAgentIds.includes(agentId)) return state;
     return setWorkspaceState(state, wsId, {
       ...ws,
       delegationGroups: {
@@ -396,7 +410,9 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
     const ws = getWorkspaceState(state, wsId);
     const tracker = ws.delegationGroups[groupId];
     if (!tracker) return state;
+    if (!tracker.expectedAgentIds.includes(agentId)) return state;
     if (tracker.deletedAgentIds.includes(agentId)) return state;
+    if (tracker.completedAgentIds.includes(agentId)) return state;
     return setWorkspaceState(state, wsId, {
       ...ws,
       delegationGroups: {
@@ -450,7 +466,7 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
     });
   })
   // --- Delivery stats ---
-  .with(recordDeliverySuccess, (state, { payload: [wsId] }) => {
+  .with(recordDeliverySuccess, (state, { payload: [wsId, observedAt] }) => {
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, {
       ...ws,
@@ -458,10 +474,11 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
         ...ws.deliveryStats,
         totalDeliveries: ws.deliveryStats.totalDeliveries + 1,
         successfulDeliveries: ws.deliveryStats.successfulDeliveries + 1,
+        lastDeliveryTime: observedAt,
       },
     });
   })
-  .with(recordDeliveryFailure, (state, { payload: [wsId] }) => {
+  .with(recordDeliveryFailure, (state, { payload: [wsId, observedAt] }) => {
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, {
       ...ws,
@@ -469,10 +486,11 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
         ...ws.deliveryStats,
         totalDeliveries: ws.deliveryStats.totalDeliveries + 1,
         failedDeliveries: ws.deliveryStats.failedDeliveries + 1,
+        lastFailureTime: observedAt,
       },
     });
   })
-  .with(recordDeliveryTimeout, (state, { payload: [wsId] }) => {
+  .with(recordDeliveryTimeout, (state, { payload: [wsId, observedAt] }) => {
     const ws = getWorkspaceState(state, wsId);
     return setWorkspaceState(state, wsId, {
       ...ws,
@@ -480,6 +498,7 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
         ...ws.deliveryStats,
         totalDeliveries: ws.deliveryStats.totalDeliveries + 1,
         timeoutDeliveries: ws.deliveryStats.timeoutDeliveries + 1,
+        lastFailureTime: observedAt,
       },
     });
   })

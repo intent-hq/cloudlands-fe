@@ -90,6 +90,14 @@ function getModelUnavailableInfo(value: unknown): ModelUnavailableInfo | null {
   };
 }
 
+function getStreamFailureMessage(payload: AgentStreamUpdatePayload): string | null {
+  if (payload.error) return payload.error;
+  if (payload.eventType === 'timeout' || payload.finishReason === 'timeout') {
+    return 'The agent response timed out before it finished. Try again or check the provider status.';
+  }
+  return null;
+}
+
 function reduceChunkReceived(
   state: ChatStateSlice,
   agentId: string,
@@ -132,8 +140,11 @@ function reduceAgentStreamUpdate(
   if (payload.eventType === 'started') {
     return updateAgent(state, payload.agentId, {
       error: null,
+      modelUnavailable: null,
       lastChunkTime: timestamp,
+      receivedFirstChunk: false,
       isStalled: false,
+      statusEvents: [],
     });
   }
   if (payload.eventType === 'chunk') {
@@ -143,6 +154,7 @@ function reduceAgentStreamUpdate(
     return reduceChunkReceived(state, payload.agentId, false, timestamp);
   }
   if (payload.eventType === 'complete' || payload.eventType === 'timeout') {
+    const failureMessage = getStreamFailureMessage(payload);
     return updateAgent(state, payload.agentId, {
       streamingStartTime: null,
       lastChunkTime: null,
@@ -151,13 +163,15 @@ function reduceAgentStreamUpdate(
       statusEvents: [],
       lastAttemptedMessage: null,
       modelUnavailable: getModelUnavailableInfo(payload.completeMessage),
+      error: failureMessage,
     });
   }
   if (payload.eventType === 'error') {
     return updateAgent(state, payload.agentId, {
       streamingStartTime: null,
       statusEvents: [],
-      error: payload.error || 'The response was interrupted. Please try again.',
+      modelUnavailable: null,
+      error: getStreamFailureMessage(payload) || 'The response was interrupted. Please try again.',
     });
   }
   return state;
@@ -327,11 +341,12 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     }),
   )
   .with(chatInitFailed, (state, { payload: [agentId, error] }) =>
-    updateAgent(state, agentId, { error }),
+    updateAgent(state, agentId, { error, modelUnavailable: null }),
   )
   .with(chatSendStarted, (state, { payload: { agentId, timestamp } }) =>
     updateAgent(state, agentId, {
       error: null,
+      modelUnavailable: null,
       streamingStartTime: timestamp,
       lastMessageTime: timestamp,
       lastChunkTime: null,
@@ -348,6 +363,7 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     updateAgent(state, agentId, {
       streamingStartTime: null,
       error,
+      modelUnavailable: null,
       idleReconcileSuppressed: false,
     }),
   )
@@ -417,6 +433,7 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   .with(streamTimedOut, (state, { payload: [agentId] }) =>
     updateAgent(state, agentId, {
       streamingStartTime: null,
+      error: 'The agent response timed out before it finished. Try again or check the provider status.',
       idleReconcileSuppressed: false,
     }),
   )

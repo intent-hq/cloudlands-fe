@@ -1,8 +1,77 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const { mockSendToWorkspaceWindows } = vi.hoisted(() => ({
-  mockSendToWorkspaceWindows: vi.fn(),
-}));
+const { mockSendToWorkspaceWindows, mockAgentHandler, mockWorkspaceSubscriptionState } = vi.hoisted(
+  () => {
+    const queuedEvent = {
+      id: 'event-live',
+      type: 'agent:idle',
+      workspaceId: 'workspace-1',
+      timestamp: '2026-06-19T04:05:00.000Z',
+      actor: { type: 'agent', id: 'child-agent' },
+      data: { secret: 'SHOULD_NOT_LEAK' },
+    };
+
+    return {
+      mockSendToWorkspaceWindows: vi.fn(),
+      mockAgentHandler: {
+        listAllAgents: vi.fn().mockResolvedValue([
+          {
+            id: 'agent-live',
+            name: 'Live Agent',
+            status: 'responding',
+            metadata: { taskNoteId: 'task-live', secret: 'AGENT_SECRET' },
+            messages: [{ content: 'MESSAGE_SECRET' }],
+            lastActivity: '2026-06-19T04:00:00.000Z',
+          },
+          { id: 'child-agent', name: 'Child Agent', status: 'completed' },
+        ]),
+      },
+      mockWorkspaceSubscriptionState: {
+        subscriptions: {
+          'sub-live': {
+            id: 'sub-live',
+            agentId: 'agent-live',
+            agentName: 'Live Agent',
+            workspaceId: 'workspace-1',
+            createdAt: '2026-06-19T04:00:00.000Z',
+            filter: { eventTypes: ['agent:idle'], actorIds: ['child-agent'], priority: 'high' },
+          },
+        },
+        agentQueues: {
+          'agent-live': [
+            { event: queuedEvent, queuedAt: '2026-06-19T04:05:00.000Z', priority: 'high', subscriptionId: 'sub-live' },
+          ],
+        },
+        agentStatuses: { 'agent-live': 'responding' },
+        delegationGroups: {
+          'group-live': {
+            groupId: 'group-live',
+            parentAgentId: 'agent-live',
+            parentAgentName: 'Live Agent',
+            awaitMode: 'all',
+            expectedAgentIds: ['child-agent'],
+            completedAgentIds: [],
+            deletedAgentIds: [],
+            events: [queuedEvent],
+            subscriptionId: 'sub-live',
+            delivered: false,
+          },
+        },
+        firedOneShotSubscriptions: [],
+        deliveryStats: {
+          totalDeliveries: 2,
+          successfulDeliveries: 1,
+          failedDeliveries: 1,
+          timeoutDeliveries: 0,
+          droppedEvents: 0,
+          lastDeliveryTime: '2026-06-19T04:06:00.000Z',
+          lastFailureTime: '2026-06-19T04:07:00.000Z',
+        },
+        deletedAgents: {},
+      },
+    };
+  },
+);
 
 vi.mock('$features/system/main/system.ipc', () => ({
   sendToWorkspaceWindows: mockSendToWorkspaceWindows,
@@ -36,6 +105,46 @@ vi.mock('$features/agent/main/specialists.service', () => ({
         }
       : null,
   ),
+}));
+
+vi.mock('$features/agent/main/agent-backend-handler.service', () => ({
+  AgentBackendHandler: {
+    getInstance: () => mockAgentHandler,
+  },
+}));
+
+vi.mock('../../../../agent/main/agent-backend-handler.service', () => ({
+  AgentBackendHandler: {
+    getInstance: () => mockAgentHandler,
+  },
+}));
+
+vi.mock('../../../../../store/main/redux-store-bridge', () => ({
+  getMainState: () => ({}),
+  mainDispatch: vi.fn(),
+}));
+
+vi.mock('../../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors', () => ({
+  getDelegationGroupCompletionSummary: (group: any) => {
+    const expectedIds = new Set(group.expectedAgentIds);
+    const doneIds = new Set(
+      [...group.completedAgentIds, ...group.deletedAgentIds].filter((id) => expectedIds.has(id)),
+    );
+    const expectedCount = expectedIds.size;
+    const doneCount = doneIds.size;
+    return {
+      doneCount,
+      expectedCount,
+      isComplete: expectedCount > 0 && (group.awaitMode === 'any' ? doneCount >= 1 : doneCount >= expectedCount),
+    };
+  },
+  selectWorkspaceSubscriptionState: {
+    select: () => mockWorkspaceSubscriptionState,
+  },
+  selectAgentStatus: {
+    select: (_state: any, _workspaceId: string, agentId: string) =>
+      mockWorkspaceSubscriptionState.agentStatuses[agentId],
+  },
 }));
 
 import { createWorkspaceMCPServer } from '../index';
@@ -129,6 +238,7 @@ describe('WorkspaceJsApiTool integration', () => {
     expect(definition.description).toContain('Use `taskNoteId` for delegation');
     expect(definition.description).toContain('tasks.filter(t => t.taskNoteId).map(t => t.taskNoteId)');
     expect(definition.description).toContain('ws.agent.delegate({');
+    expect(definition.description).toContain('ws.agent.diagnostics({');
     expect(definition.description).toContain('ws.pr.status()');
     expect(definition.description).toContain('ws.app.ui.navigate(route');
     expect(definition.description).toContain('ws.app.ui.targets()');
@@ -139,6 +249,35 @@ describe('WorkspaceJsApiTool integration', () => {
     expect(definition.description).toContain('ws.app.specialists.list()');
     expect(definition.description).toContain('ws.app.specialists.propose({');
     expect(definition.description).toContain('ws.app.settings.list({');
+  });
+
+  it('exposes and executes ws.agent.diagnostics through the live JavaScript API surface', async () => {
+    const tool = new WorkspaceJsApiTool('/tmp/test-workspace', 'workspace-1');
+
+    const result = await tool.execute({
+      name: 'workspace_api',
+      arguments: {
+        code: 'return { keys: Object.keys(ws.agent).sort(), snapshot: await ws.agent.diagnostics({ includeCompleted: true, staleRespondingAfterMs: 1 }) }',
+      },
+      context: { agentId: 'requester', agentName: 'Requester' },
+    } as any);
+
+    expect(result.isError).toBe(false);
+    const payload = JSON.parse((result.content[0] as any).text);
+    expect(payload.keys).toContain('diagnostics');
+    expect(payload.snapshot.ok).toBe(true);
+    expect(payload.snapshot.diagnostics).toEqual(
+      expect.objectContaining({
+        subscriptions: expect.arrayContaining([expect.objectContaining({ id: 'sub-live' })]),
+        queues: expect.arrayContaining([expect.objectContaining({ agentId: 'agent-live' })]),
+        delegationGroups: expect.arrayContaining([expect.objectContaining({ groupId: 'group-live' })]),
+        deliveryStats: expect.objectContaining({ failedDeliveries: 1 }),
+        stuckRisks: expect.arrayContaining([expect.objectContaining({ type: 'queued-events' })]),
+      }),
+    );
+    expect(JSON.stringify(payload.snapshot.diagnostics)).not.toContain('SHOULD_NOT_LEAK');
+    expect(JSON.stringify(payload.snapshot.diagnostics)).not.toContain('AGENT_SECRET');
+    expect(JSON.stringify(payload.snapshot.diagnostics)).not.toContain('MESSAGE_SECRET');
   });
 
   it('exposes app UI targets through ws.app.ui.targets()', async () => {

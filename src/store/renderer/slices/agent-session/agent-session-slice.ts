@@ -143,6 +143,28 @@ function normalizeSortPruneMessages(messages: AgentMessage[]): AgentMessage[] {
   return pruneMessages(orderMessagesForConversation(deduplicateAgentMessages(messages.map(normalizeAgentMessage))));
 }
 
+function isOptimisticUserMessage(message: AgentMessage): boolean {
+  return message.role === 'user' && typeof message.id === 'string' && message.id.startsWith('optimistic_');
+}
+
+function mergeMissingOptimisticUserMessages(
+  incomingMessages: AgentMessage[],
+  existingMessages: AgentMessage[],
+): AgentMessage[] {
+  const incomingIds = new Set(incomingMessages.map((message) => message.id));
+  const incomingAppMessageIds = new Set(
+    incomingMessages.map((message) => message.appMessageId).filter(Boolean),
+  );
+  const missingOptimisticMessages = existingMessages.filter(
+    (message) =>
+      isOptimisticUserMessage(message) &&
+      !incomingIds.has(message.id) &&
+      (!message.appMessageId || !incomingAppMessageIds.has(message.appMessageId)),
+  );
+  if (missingOptimisticMessages.length === 0) return incomingMessages;
+  return normalizeSortPruneMessages([...incomingMessages, ...missingOptimisticMessages]);
+}
+
 // ============================================================================
 // State helpers
 // ============================================================================
@@ -424,6 +446,7 @@ function isSessionEquivalent(a: StoredAgentSession, b: StoredAgentSession): bool
 
 type SessionUpsertStorageOptions = {
   preserveExplicitRuntimeFlags: boolean;
+  allowActiveTurnRuntimeFlagClear: boolean;
 };
 
 function applySessionUpsert(
@@ -445,9 +468,15 @@ function applySessionUpsert(
     // upsert-based clears (e.g. the stream safety timeout) flip a flag off
     // first, so this pair-guard never blocks them.
     const activeTurnInFlight = existing.isStreaming === true && existing.isProcessing === true;
+    if (activeTurnInFlight) {
+      finalSession.messages = mergeMissingOptimisticUserMessages(
+        finalSession.messages,
+        existing.messages,
+      );
+    }
     if (
       existing.isStreaming &&
-      (activeTurnInFlight ||
+      ((activeTurnInFlight && !options.allowActiveTurnRuntimeFlagClear) ||
         options.preserveExplicitRuntimeFlags ||
         finalSession.isStreaming === undefined)
     ) {
@@ -455,7 +484,7 @@ function applySessionUpsert(
     }
     if (
       existing.isProcessing &&
-      (activeTurnInFlight ||
+      ((activeTurnInFlight && !options.allowActiveTurnRuntimeFlagClear) ||
         options.preserveExplicitRuntimeFlags ||
         finalSession.isProcessing === undefined)
     ) {
@@ -645,6 +674,13 @@ export type BulkUpsertSessionsOptions = {
    * semantics where explicit false clears runtime flags.
    */
   preserveExplicitRuntimeFlags?: boolean;
+  /**
+   * Restore/load paths may first normalize a snapshot to prove there is no live
+   * streaming message/handler. In that narrow case, explicit false flags are
+   * authoritative even when the existing session has the historical both-true
+   * in-flight pair.
+   */
+  allowActiveTurnRuntimeFlagClear?: boolean;
 };
 
 /** Bulk upsert sessions (initial load / snapshot reconciliation / batched upsert storage) */
@@ -740,6 +776,7 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     let next = state;
     const storageOptions: SessionUpsertStorageOptions = {
       preserveExplicitRuntimeFlags: options?.preserveExplicitRuntimeFlags ?? true,
+      allowActiveTurnRuntimeFlagClear: options?.allowActiveTurnRuntimeFlagClear ?? false,
     };
     for (const session of sessions) {
       next = applySessionUpsert(next, session, storageOptions);

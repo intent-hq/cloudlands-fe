@@ -104,6 +104,7 @@ import {
 import { selectAllStreamingAgents } from '../../agent-session/agent-session-selectors';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { normalizeStreamingState } from '$shared/utils/agent-streaming-state';
+import { isStaleFinalizedAssistantStream } from '../../agent-session/utils/stream-target-state';
 
 const logger = createLogger('AgentIpcSaga');
 const AGENT_CREATED_DEDUP_WINDOW = 500; // ms
@@ -567,6 +568,16 @@ function* handleStreamStarting(data: {
     return;
   }
 
+  const existing: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
+  if (isStaleFinalizedAssistantStream(existing, assistantAppMessageId)) {
+    logger.info('Ignoring stale stream-starting notification for finalized assistant message', {
+      agentId,
+      workspaceId,
+      assistantAppMessageId,
+    });
+    return;
+  }
+
   const result = yield* call(ensureStreamHandler, agentId, { workspaceId, assistantAppMessageId });
   if (result.created) {
     logger.info('Stream handler registered for starting stream', {
@@ -581,7 +592,6 @@ function* handleStreamStarting(data: {
     logger.warn('Cannot look up session: no workspaceId available', { agentId });
     return;
   }
-  const existing: AgentSession | undefined = yield* selectAgentSession.effect(agentId);
   if (!existing && workspaceId) {
     yield* call(loadAndCreateSessionFromPersistence, agentId, workspaceId);
   }
@@ -937,6 +947,14 @@ export function* handleQueueProcessing(data: QueueProcessingData): SagaGenerator
   const { agentId, messageId, content, contextItems } = data;
   logger.debug('Queue processing event received', { agentId, messageId });
 
+  if (!agentId) {
+    logger.warn('Ignoring queue processing event without agentId', {
+      messageId,
+      workspaceId: data?.workspaceId,
+    });
+    return;
+  }
+
   // Retry session lookup — the session may still be loading
   let session: AgentSession | undefined;
   for (let attempt = 1; attempt <= QUEUE_SESSION_RETRY_ATTEMPTS; attempt++) {
@@ -1028,6 +1046,7 @@ export function* handleQueueProcessing(data: QueueProcessingData): SagaGenerator
   // even if handler registration fails — otherwise the backend waits forever.
   try {
     yield* call(ensureStreamHandler, agentId, {
+      workspaceId: wsId,
       forceReregister: true,
       assistantAppMessageId: data.assistantAppMessageId,
     });

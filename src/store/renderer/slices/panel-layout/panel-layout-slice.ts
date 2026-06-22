@@ -33,11 +33,11 @@ import {
 
 let panelIdCounter = 0;
 
-export function generatePanelId(): string {
+function generatePanelId(): string {
   return `panel-${Date.now()}-${++panelIdCounter}`;
 }
 
-export function generateTabId(): string {
+function generateTabId(): string {
   return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
@@ -112,12 +112,20 @@ export const setRestoreStatus = createAction<[
 // --- Tab Operations ---
 export const openTab = createAction(
   "panelLayout/openTab",
-  (wsId: string, tab: Omit<PanelTab, "id">, panelId?: string, newTabId?: string, force?: boolean) => ({
+  (
+    wsId: string,
+    tab: Omit<PanelTab, "id">,
+    panelId?: string,
+    newTabId?: string,
+    force?: boolean,
+    timestamp?: number,
+  ) => ({
     wsId,
     tab,
     panelId,
     newTabId: newTabId ?? generateTabId(),
     force: force ?? false,
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
@@ -128,6 +136,7 @@ export const openTabInAdjacentOrSplit = createAction(
     tab: Omit<PanelTab, "id">,
     sourcePanelId?: string,
     options?: { animated?: boolean; force?: boolean },
+    timestamp?: number,
   ) => ({
     wsId,
     tab,
@@ -136,6 +145,7 @@ export const openTabInAdjacentOrSplit = createAction(
     force: options?.force ?? false,
     newTabId: generateTabId(),
     newPanelId: generatePanelId(),
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
@@ -149,38 +159,75 @@ export const closeTab = createAction(
   }),
 );
 
-export const closeActiveTab = createAction<[wsId: string, panelId?: string]>(
+export const closeActiveTab = createAction(
   "panelLayout/closeActiveTab",
+  (wsId: string, panelId?: string, timestamp?: number) => ({
+    wsId,
+    panelId,
+    timestamp: timestamp ?? Date.now(),
+  }),
 );
 
 
 export const reopenClosedTab = createAction(
   "panelLayout/reopenClosedTab",
-  (wsId: string) => ({
+  (wsId: string, timestamp?: number) => ({
     wsId,
     newTabId: generateTabId(),
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
-export const setActiveTab = createAction<[wsId: string, tabId: string, panelId?: string]>(
+export const setActiveTab = createAction(
   "panelLayout/setActiveTab",
+  (wsId: string, tabId: string, panelId?: string, timestamp?: number) => ({
+    wsId,
+    tabId,
+    panelId,
+    timestamp: timestamp ?? Date.now(),
+  }),
 );
 
-export const selectNextTab = createAction<[wsId: string, panelId?: string]>(
+export const selectNextTab = createAction(
   "panelLayout/selectNextTab",
+  (wsId: string, panelId?: string, timestamp?: number) => ({
+    wsId,
+    panelId,
+    timestamp: timestamp ?? Date.now(),
+  }),
 );
 
-export const selectPreviousTab = createAction<[wsId: string, panelId?: string]>(
+export const selectPreviousTab = createAction(
   "panelLayout/selectPreviousTab",
+  (wsId: string, panelId?: string, timestamp?: number) => ({
+    wsId,
+    panelId,
+    timestamp: timestamp ?? Date.now(),
+  }),
 );
 
 export const reorderTabs = createAction<
   [wsId: string, panelId: string, fromIndex: number, toIndex: number]
 >("panelLayout/reorderTabs");
 
-export const moveTabToPanel = createAction<
-  [wsId: string, tabId: string, fromPanelId: string, toPanelId: string, insertIndex?: number]
->("panelLayout/moveTabToPanel");
+export const moveTabToPanel = createAction(
+  "panelLayout/moveTabToPanel",
+  (
+    wsId: string,
+    tabId: string,
+    fromPanelId: string,
+    toPanelId: string,
+    insertIndex?: number,
+    timestamp?: number,
+  ) => ({
+    wsId,
+    tabId,
+    fromPanelId,
+    toPanelId,
+    insertIndex,
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
 
 export const moveTabToSplit = createAction(
   "panelLayout/moveTabToSplit",
@@ -190,6 +237,7 @@ export const moveTabToSplit = createAction(
     fromPanelId: string,
     targetPanelId: string,
     zone: "top" | "bottom" | "left" | "right",
+    timestamp?: number,
   ) => ({
     wsId,
     tabId,
@@ -197,6 +245,7 @@ export const moveTabToSplit = createAction(
     targetPanelId,
     zone,
     newPanelId: generatePanelId(),
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
@@ -209,6 +258,7 @@ export const moveTabToSplitLevel = createAction(
     splitPath: number[],
     position: "before" | "after",
     direction: "horizontal" | "vertical",
+    timestamp?: number,
   ) => ({
     wsId,
     tabId,
@@ -217,46 +267,47 @@ export const moveTabToSplitLevel = createAction(
     position,
     direction,
     newPanelId: generatePanelId(),
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
 // --- Close operations ---
 export const closeOtherTabs = createAction(
   "panelLayout/closeOtherTabs",
-  (wsId: string, tabId: string, panelId?: string) => ({
+  (wsId: string, tabId: string, panelId?: string, timestamp?: number) => ({
     wsId,
     tabId,
     panelId,
-    timestamp: Date.now(),
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
 export const closeTabsToRight = createAction(
   "panelLayout/closeTabsToRight",
-  (wsId: string, tabId: string, panelId?: string) => ({
+  (wsId: string, tabId: string, panelId?: string, timestamp?: number) => ({
     wsId,
     tabId,
     panelId,
-    timestamp: Date.now(),
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
 export const closeAllTabs = createAction(
   "panelLayout/closeAllTabs",
-  (wsId: string, panelId?: string) => ({
+  (wsId: string, panelId?: string, timestamp?: number) => ({
     wsId,
     panelId,
-    timestamp: Date.now(),
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
 export const closeAllOthersEverywhere = createAction(
   "panelLayout/closeAllOthersEverywhere",
-  (wsId: string, tabId: string, panelId?: string) => ({
+  (wsId: string, tabId: string, panelId?: string, timestamp?: number) => ({
     wsId,
     tabId,
     panelId,
-    timestamp: Date.now(),
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
@@ -272,17 +323,24 @@ export const splitPanel = createAction(
     panelId: string,
     direction: "horizontal" | "vertical",
     options?: { animated?: boolean },
+    timestamp?: number,
   ) => ({
     wsId,
     panelId,
     direction,
     animated: options?.animated ?? false,
     newPanelId: generatePanelId(),
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
-export const closePanel = createAction<[wsId: string, panelId: string]>(
+export const closePanel = createAction(
   "panelLayout/closePanel",
+  (wsId: string, panelId: string, timestamp?: number) => ({
+    wsId,
+    panelId,
+    timestamp: timestamp ?? Date.now(),
+  }),
 );
 
 export const updateSizes = createAction<[wsId: string, nodePath: number[], sizes: number[]]>(
@@ -304,26 +362,32 @@ export const resetLayout = createAction(
 
 export const applyPreset = createAction(
   "panelLayout/applyPreset",
-  (wsId: string, preset: "single" | "split-horizontal" | "split-vertical" | "three-column") => ({
+  (
+    wsId: string,
+    preset: "single" | "split-horizontal" | "split-vertical" | "three-column",
+    timestamp?: number,
+  ) => ({
     wsId,
     preset,
     panelIds: Array.from({ length: 3 }, () => generatePanelId()),
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
 export const createGridLayout = createAction(
   "panelLayout/createGridLayout",
-  (wsId: string, panelCount: number) => ({
+  (wsId: string, panelCount: number, timestamp?: number) => ({
     wsId,
     panelCount: Math.max(1, Math.min(6, panelCount)),
     panelIds: Array.from({ length: 6 }, () => generatePanelId()),
+    timestamp: timestamp ?? Date.now(),
   }),
 );
 
 // --- History ---
 export const goBack = createAction(
   "panelLayout/goBack",
-  (wsId: string) => ({ wsId, timestamp: Date.now() }),
+  (wsId: string, timestamp?: number) => ({ wsId, timestamp: timestamp ?? Date.now() }),
 );
 export const goForward = createAction<[wsId: string]>("panelLayout/goForward");
 export const goBackInFocusHistory = createAction<[wsId: string]>(
@@ -351,9 +415,22 @@ export const reconcileStaleAgentTabs = createAction<
 // --- Clear workspace ---
 export const clearPanelLayout = createAction<[wsId: string]>("panelLayout/clearPanelLayout");
 
-export const closeTabsByType = createAction<
-  [wsId: string, tabType: PanelTabType, matchField?: string, matchValue?: string]
->("panelLayout/closeTabsByType");
+export const closeTabsByType = createAction(
+  "panelLayout/closeTabsByType",
+  (
+    wsId: string,
+    tabType: PanelTabType,
+    matchField?: string,
+    matchValue?: string,
+    timestamp?: number,
+  ) => ({
+    wsId,
+    tabType,
+    matchField,
+    matchValue,
+    timestamp: timestamp ?? Date.now(),
+  }),
+);
 
 // ============================================================================
 // Internal Helpers (pure functions used by reducer)
@@ -503,15 +580,12 @@ function closePanelHelper(ws: WorkspacePanelLayoutState, panelId: string): Works
   };
 }
 
-/** Add an entry to focus history.
- * Note: timestamp is generated here (not in reducer) because these are
- * internal history-tracking timestamps, not domain state. The action
- * creators for close/open already pass Date.now() via payload modifiers. */
+/** Add an entry to focus history using the timestamp generated before dispatch. */
 function addToFocusHistory(
   ws: WorkspacePanelLayoutState,
   panelId: string,
   tabId: string,
-  timestamp?: number,
+  timestamp: number,
 ): WorkspacePanelLayoutState {
   const lastEntry = ws.focusHistory[ws.focusHistory.length - 1];
   if (lastEntry && lastEntry.panelId === panelId && lastEntry.tabId === tabId) {
@@ -526,7 +600,7 @@ function addToFocusHistory(
     focusHistory = focusHistory.slice(0, focusHistoryIndex + 1);
   }
 
-  focusHistory.push({ panelId, tabId, timestamp: timestamp ?? Date.now() });
+  focusHistory.push({ panelId, tabId, timestamp });
 
   if (focusHistory.length > MAX_FOCUS_HISTORY) {
     focusHistory = focusHistory.slice(focusHistory.length - MAX_FOCUS_HISTORY);
@@ -539,11 +613,8 @@ function addToFocusHistory(
   };
 }
 
-/** Save current layout state to history before mutation.
- * Note: timestamp is generated here (not in reducer) because these are
- * internal history-tracking timestamps, not domain state. The action
- * creators for close/open already pass Date.now() via payload modifiers. */
-function saveToHistory(ws: WorkspacePanelLayoutState, timestamp?: number): WorkspacePanelLayoutState {
+/** Save current layout state to history before mutation using the timestamp generated before dispatch. */
+function saveToHistory(ws: WorkspacePanelLayoutState, timestamp: number): WorkspacePanelLayoutState {
   let layoutHistory = [...ws.layoutHistory];
   let historyIndex = ws.historyIndex;
 
@@ -557,7 +628,7 @@ function saveToHistory(ws: WorkspacePanelLayoutState, timestamp?: number): Works
     root: JSON.parse(JSON.stringify(ws.root)),
     panels: JSON.parse(JSON.stringify(ws.panels)),
     focusedPanelId: ws.focusedPanelId,
-    timestamp: timestamp ?? Date.now(),
+    timestamp,
   };
   layoutHistory.push(snapshot);
   historyIndex = layoutHistory.length;
@@ -590,8 +661,13 @@ function stripSpecTabs(panels: Record<string, PanelState>): Record<string, Panel
   return result;
 }
 
-export const closeTabsByAgentId = createAction<[wsId: string, agentId: string]>(
+export const closeTabsByAgentId = createAction(
   "panelLayout/closeTabsByAgentId",
+  (wsId: string, agentId: string, timestamp?: number) => ({
+    wsId,
+    agentId,
+    timestamp: timestamp ?? Date.now(),
+  }),
 );
 
 export const updateTabTitle = createAction<[wsId: string, tabId: string, newTitle: string]>(
@@ -657,7 +733,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
   })
   // --- Open Tab ---
   .with(openTab, (state, { payload }) => {
-    const { wsId, tab, panelId, newTabId } = payload;
+    const { wsId, tab, panelId, newTabId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
 
     // Spec-note guard — bypass when force is true (user-initiated opens)
@@ -668,7 +744,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     if (existing) {
       const [existPanelId, existTab] = existing;
       const panel = ws.panels[existPanelId];
-      ws = saveToHistory(ws);
+      ws = saveToHistory(ws, timestamp);
       ws = {
         ...ws,
         panels: {
@@ -677,7 +753,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
         },
         focusedPanelId: existPanelId,
       };
-      ws = addToFocusHistory(ws, existPanelId, existTab.id);
+      ws = addToFocusHistory(ws, existPanelId, existTab.id, timestamp);
       return setWorkspaceState(state, wsId, ws);
     }
 
@@ -689,7 +765,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     // Check for duplicate in target panel
     const dupTab = findDuplicateTabInPanel(panel, tab);
     if (dupTab) {
-      ws = saveToHistory(ws);
+      ws = saveToHistory(ws, timestamp);
       const updatedData = tab.data ? { ...dupTab.data, ...tab.data } : dupTab.data;
       ws = {
         ...ws,
@@ -704,12 +780,12 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
           },
         },
       };
-      ws = addToFocusHistory(ws, targetPanelId, dupTab.id);
+      ws = addToFocusHistory(ws, targetPanelId, dupTab.id, timestamp);
       return setWorkspaceState(state, wsId, ws);
     }
 
     // Create new tab
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     const newTab: PanelTab = { ...tab, id: newTabId };
     ws = {
       ...ws,
@@ -722,7 +798,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
         },
       },
     };
-    ws = addToFocusHistory(ws, targetPanelId, newTabId);
+    ws = addToFocusHistory(ws, targetPanelId, newTabId, timestamp);
     return setWorkspaceState(state, wsId, ws);
   })
   // --- Close Tab ---
@@ -746,7 +822,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     const tabIndex = panel.tabs.findIndex((t) => t.id === tabId);
     if (tabIndex === -1) return state;
 
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     const closedTab = panel.tabs[tabIndex];
     const newTabs = panel.tabs.filter((_, i) => i !== tabIndex);
 
@@ -780,7 +856,8 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     return setWorkspaceState(state, wsId, ws);
   })
   // --- Close Active Tab ---
-  .with(closeActiveTab, (state, { payload: [wsId, panelId] }) => {
+  .with(closeActiveTab, (state, { payload }) => {
+    const { wsId, panelId, timestamp } = payload;
     const ws = getWorkspaceState(state, wsId);
     const targetPanelId = panelId ?? ws.focusedPanelId;
     if (!targetPanelId || !ws.panels[targetPanelId]) return state;
@@ -792,10 +869,11 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     if (activeTab && activeTab.closable === false) return state;
 
     // Delegate to closeTab reducer by dispatching inline
-    return selfDispatch(state, closeTab(wsId, panel.activeTabId, targetPanelId));
+    return selfDispatch(state, closeTab(wsId, panel.activeTabId, targetPanelId, timestamp));
   })
   // --- Close Tabs By Type ---
-  .with(closeTabsByType, (state, { payload: [wsId, tabType, matchField, matchValue] }) => {
+  .with(closeTabsByType, (state, { payload }) => {
+    const { wsId, tabType, matchField, matchValue, timestamp } = payload;
     const ws = getWorkspaceState(state, wsId);
     const tabsToClose: { tabId: string; panelId: string }[] = [];
 
@@ -815,12 +893,13 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
 
     let result = state;
     for (const { tabId, panelId } of tabsToClose) {
-      result = selfDispatch(result, closeTab(wsId, tabId, panelId));
+      result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp));
     }
     return result;
   })
   // --- Close Tabs By Agent ID ---
-  .with(closeTabsByAgentId, (state, { payload: [wsId, agentId] }) => {
+  .with(closeTabsByAgentId, (state, { payload }) => {
+    const { wsId, agentId, timestamp } = payload;
     const ws = getWorkspaceState(state, wsId);
     const tabsToClose: { tabId: string; panelId: string }[] = [];
     for (const [pId, panel] of Object.entries(ws.panels)) {
@@ -833,20 +912,20 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     if (tabsToClose.length === 0) return state;
     let result = state;
     for (const { tabId, panelId } of tabsToClose) {
-      result = selfDispatch(result, closeTab(wsId, tabId, panelId));
+      result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp));
     }
     return result;
   })
   // --- Reopen Closed Tab ---
   .with(reopenClosedTab, (state, { payload }) => {
-    const { wsId, newTabId } = payload;
+    const { wsId, newTabId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     if (ws.recentlyClosed.length === 0) return state;
 
     const next = ws.recentlyClosed[0];
     if (ws.deferSpecTab && next.tab.type === "note" && next.tab.noteId === "spec") return state;
 
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     const [closed, ...rest] = ws.recentlyClosed;
     const targetPanelId = ws.panels[closed.panelId] ? closed.panelId : ws.focusedPanelId;
     if (!targetPanelId || !ws.panels[targetPanelId]) return state;
@@ -869,7 +948,8 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     return setWorkspaceState(state, wsId, ws);
   })
   // --- Set Active Tab ---
-  .with(setActiveTab, (state, { payload: [wsId, tabId, panelId] }) => {
+  .with(setActiveTab, (state, { payload }) => {
+    const { wsId, tabId, panelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     const targetPanelId = panelId ?? ws.focusedPanelId;
     if (!targetPanelId || !ws.panels[targetPanelId]) return state;
@@ -878,16 +958,17 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     if (!panel.tabs.some((t) => t.id === tabId)) return state;
     if (panel.activeTabId === tabId) return state;
 
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     ws = {
       ...ws,
       panels: { ...ws.panels, [targetPanelId]: { ...panel, activeTabId: tabId } },
     };
-    ws = addToFocusHistory(ws, targetPanelId, tabId);
+    ws = addToFocusHistory(ws, targetPanelId, tabId, timestamp);
     return setWorkspaceState(state, wsId, ws);
   })
   // --- Select Next/Previous Tab ---
-  .with(selectNextTab, (state, { payload: [wsId, panelId] }) => {
+  .with(selectNextTab, (state, { payload }) => {
+    const { wsId, panelId, timestamp } = payload;
     const ws = getWorkspaceState(state, wsId);
     const targetPanelId = panelId ?? ws.focusedPanelId;
     if (!targetPanelId || !ws.panels[targetPanelId]) return state;
@@ -897,9 +978,10 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     const nextIndex = (currentIndex + 1) % panel.tabs.length;
     const nextTab = panel.tabs[nextIndex];
     if (!nextTab || nextTab.id === panel.activeTabId) return state;
-    return selfDispatch(state, setActiveTab(wsId, nextTab.id, targetPanelId));
+    return selfDispatch(state, setActiveTab(wsId, nextTab.id, targetPanelId, timestamp));
   })
-  .with(selectPreviousTab, (state, { payload: [wsId, panelId] }) => {
+  .with(selectPreviousTab, (state, { payload }) => {
+    const { wsId, panelId, timestamp } = payload;
     const ws = getWorkspaceState(state, wsId);
     const targetPanelId = panelId ?? ws.focusedPanelId;
     if (!targetPanelId || !ws.panels[targetPanelId]) return state;
@@ -909,7 +991,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     const prevIndex = currentIndex <= 0 ? panel.tabs.length - 1 : currentIndex - 1;
     const prevTab = panel.tabs[prevIndex];
     if (!prevTab || prevTab.id === panel.activeTabId) return state;
-    return selfDispatch(state, setActiveTab(wsId, prevTab.id, targetPanelId));
+    return selfDispatch(state, setActiveTab(wsId, prevTab.id, targetPanelId, timestamp));
   })
   // --- Reorder Tabs ---
   .with(reorderTabs, (state, { payload: [wsId, panelId, fromIndex, toIndex] }) => {
@@ -928,7 +1010,8 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     });
   })
   // --- Move Tab To Panel ---
-  .with(moveTabToPanel, (state, { payload: [wsId, tabId, fromPanelId, toPanelId, insertIndex] }) => {
+  .with(moveTabToPanel, (state, { payload }) => {
+    const { wsId, tabId, fromPanelId, toPanelId, insertIndex, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     const fromPanel = ws.panels[fromPanelId];
     const toPanel = ws.panels[toPanelId];
@@ -936,7 +1019,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     const tabIndex = fromPanel.tabs.findIndex((t) => t.id === tabId);
     if (tabIndex === -1) return state;
 
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     const tab = fromPanel.tabs[tabIndex];
     const newFromTabs = fromPanel.tabs.filter((_, i) => i !== tabIndex);
     let newFromActiveTabId = fromPanel.activeTabId;
@@ -1036,7 +1119,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     const panel = ws.panels[targetPanelId];
     if (!panel.tabs.find((t) => t.id === tabId)) return state;
 
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     const closed: RecentlyClosedTab[] = panel.tabs
       .filter((t) => t.id !== tabId && t.closable !== false)
       .map((t) => ({ tab: { ...t }, panelId: targetPanelId, closedAt: timestamp }));
@@ -1060,7 +1143,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     const tabIndex = panel.tabs.findIndex((t) => t.id === tabId);
     if (tabIndex === -1) return state;
 
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     const closed: RecentlyClosedTab[] = panel.tabs
       .slice(tabIndex + 1)
       .filter((t) => t.closable !== false)
@@ -1086,7 +1169,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     if (!targetPanelId || !ws.panels[targetPanelId]) return state;
     const panel = ws.panels[targetPanelId];
 
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     const closed: RecentlyClosedTab[] = panel.tabs
       .filter((t) => t.closable !== false)
       .map((t) => ({ tab: { ...t }, panelId: targetPanelId, closedAt: timestamp }));
@@ -1113,7 +1196,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     if (!targetPanelId || !ws.panels[targetPanelId]) return state;
     if (!ws.panels[targetPanelId].tabs.find((t) => t.id === tabId)) return state;
 
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     let allClosed: RecentlyClosedTab[] = [];
 
     // Close tabs in other panels
@@ -1154,10 +1237,10 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
   })
   // --- Split Panel ---
   .with(splitPanel, (state, { payload }) => {
-    const { wsId, panelId, direction, animated, newPanelId } = payload;
+    const { wsId, panelId, direction, animated, newPanelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
 
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     ws = { ...ws, expandedPanelId: null, savedSizesBeforeExpand: [] };
 
     // Create new empty panel
@@ -1207,9 +1290,10 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     return setWorkspaceState(state, wsId, ws);
   })
   // --- Close Panel ---
-  .with(closePanel, (state, { payload: [wsId, panelId] }) => {
+  .with(closePanel, (state, { payload }) => {
+    const { wsId, panelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     ws = closePanelHelper(ws, panelId);
     return setWorkspaceState(state, wsId, ws);
   })
@@ -1484,7 +1568,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
   // --- Open Tab In Adjacent Or Split ---
   .with(openTabInAdjacentOrSplit, (state, { payload }) => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { wsId, tab, sourcePanelId, animated, force, newTabId, newPanelId } = payload;
+    const { wsId, tab, sourcePanelId, animated, force, newTabId, newPanelId, timestamp } = payload;
     const ws = getWorkspaceState(state, wsId);
 
     // Spec-note guard — bypass when force is true (user-initiated opens)
@@ -1499,7 +1583,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
 
     if (otherPanelId) {
       // Open in existing other panel
-      let result = selfDispatch(state, openTab(wsId, tab, otherPanelId, newTabId, force));
+      let result = selfDispatch(state, openTab(wsId, tab, otherPanelId, newTabId, force, timestamp));
       result = selfDispatch(result, focusPanel(wsId, otherPanelId));
       // Set pending focus
       const updatedWs = getWorkspaceState(result, wsId);
@@ -1508,7 +1592,7 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
 
     // Need to split
     if (!effectiveSourcePanelId) {
-      const result = selfDispatch(state, openTab(wsId, tab, undefined, newTabId, force));
+      const result = selfDispatch(state, openTab(wsId, tab, undefined, newTabId, force, timestamp));
       const updatedWs = getWorkspaceState(result, wsId);
       return setWorkspaceState(result, wsId, { ...updatedWs, pendingFocusTabId: newTabId });
     }
@@ -1516,23 +1600,23 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     // Split then open in new panel
     let result = selfDispatch(
       state,
-      splitPanel(wsId, effectiveSourcePanelId, "horizontal", { animated }),
+      splitPanel(wsId, effectiveSourcePanelId, "horizontal", { animated }, timestamp),
     );
     // The new panel is now focused; open tab there
-    result = selfDispatch(result, openTab(wsId, tab, undefined, newTabId, force));
+    result = selfDispatch(result, openTab(wsId, tab, undefined, newTabId, force, timestamp));
     const updatedWs = getWorkspaceState(result, wsId);
     return setWorkspaceState(result, wsId, { ...updatedWs, pendingFocusTabId: newTabId });
   })
   // --- Move Tab To Split ---
   .with(moveTabToSplit, (state, { payload }) => {
-    const { wsId, tabId, fromPanelId, targetPanelId, zone, newPanelId } = payload;
+    const { wsId, tabId, fromPanelId, targetPanelId, zone, newPanelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     const fromPanel = ws.panels[fromPanelId];
     if (!fromPanel) return state;
     const tabIndex = fromPanel.tabs.findIndex((t) => t.id === tabId);
     if (tabIndex === -1) return state;
 
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     const direction = zone === "left" || zone === "right" ? "horizontal" : "vertical";
     const insertBefore = zone === "left" || zone === "top";
     const tab = fromPanel.tabs[tabIndex];
@@ -1585,14 +1669,14 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
   })
   // --- Move Tab To Split Level ---
   .with(moveTabToSplitLevel, (state, { payload }) => {
-    const { wsId, tabId, fromPanelId, splitPath, position, direction, newPanelId } = payload;
+    const { wsId, tabId, fromPanelId, splitPath, position, direction, newPanelId, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
     const fromPanel = ws.panels[fromPanelId];
     if (!fromPanel) return state;
     const tabIndex = fromPanel.tabs.findIndex((t) => t.id === tabId);
     if (tabIndex === -1) return state;
 
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     const tab = fromPanel.tabs[tabIndex];
     const newFromTabs = fromPanel.tabs.filter((_, i) => i !== tabIndex);
     let newFromActiveTabId = fromPanel.activeTabId;
@@ -1639,9 +1723,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     return setWorkspaceState(state, wsId, ws);
   })
   .with(createGridLayout, (state, { payload }) => {
-    const { wsId, panelCount, panelIds } = payload;
+    const { wsId, panelCount, panelIds, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
     const count = panelCount; // already clamped in action creator
 
     const newPanels: Record<string, PanelState> = {};
@@ -1682,9 +1766,9 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
     return setWorkspaceState(state, wsId, ws);
   })
   .with(applyPreset, (state, { payload }) => {
-    const { wsId, preset, panelIds } = payload;
+    const { wsId, preset, panelIds, timestamp } = payload;
     let ws = getWorkspaceState(state, wsId);
-    ws = saveToHistory(ws);
+    ws = saveToHistory(ws, timestamp);
 
     const newPanels: Record<string, PanelState> = {};
     let root: PanelLayoutNode;

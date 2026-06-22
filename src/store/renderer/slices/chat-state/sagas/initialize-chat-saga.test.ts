@@ -147,6 +147,10 @@ vi.mock('../../agent-session/agent-session-selectors', () => ({
 }));
 
 vi.mock('../../agent-session/agent-session-slice', () => ({
+  addMessage: (agentId: any, message: any) => ({
+    type: 'agentSessions/addMessage',
+    payload: [agentId, message],
+  }),
   agentSessionSendMessageRequested: mockAgentSessionSendMessageRequested,
   upsertSession: Object.assign(
     (session: any) => ({
@@ -311,6 +315,17 @@ describe('initialize-chat-saga: disk message merge regression', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     expect(dispatched.some((a) => a.type === chatSendStarted.type)).toBe(true);
+    const addMessageAction = dispatched.find((a) => a.type === 'agentSessions/addMessage');
+    expect(addMessageAction).toBeDefined();
+    expect(addMessageAction.payload[0]).toBe('agent-1');
+    expect(addMessageAction.payload[1]).toMatchObject({
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'Initial prompt' }],
+    });
+    expect(addMessageAction.payload[1].appMessageId).toMatch(/^app_msg_/);
+    expect(addMessageAction.payload[1].id).toBe(
+      `optimistic_${addMessageAction.payload[1].appMessageId}`,
+    );
     expect(mockAgentSessionSendMessageRequested).toHaveBeenCalledTimes(1);
     expect(mockAgentSessionSendMessageRequested.mock.calls[0][0]).toBe('agent-1');
     expect(mockAgentSessionSendMessageRequested.mock.calls[0][1]).toBe('ws-1');
@@ -318,6 +333,8 @@ describe('initialize-chat-saga: disk message merge regression', () => {
     expect(mockAgentSessionSendMessageRequested.mock.calls[0][3]).toMatchObject({
       agentId: 'agent-1',
       contextReferences: [{ type: 'file', path: 'src/file.ts' }],
+      userAppMessageId: addMessageAction.payload[1].appMessageId,
+      optimisticMessageId: addMessageAction.payload[1].id,
     });
     expect(mockAgentSessionSendMessageRequested.mock.calls[0][3].contextItems[0]).toMatchObject({
       imageData: 'img',

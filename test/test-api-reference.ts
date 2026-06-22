@@ -8,6 +8,7 @@
 
 import { spawn } from 'child_process';
 import * as readline from 'readline';
+import CDP from 'chrome-remote-interface';
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -32,7 +33,7 @@ class MCPTestClient {
   async start() {
     console.log('Starting MCP server...');
 
-    this.process = spawn('node', ['cdp-mcp-server/dist/server.js'], {
+    this.process = spawn('node', ['cdp-mcp-server/dist/server.cjs'], {
       stdio: ['pipe', 'pipe', 'inherit'],
       env: { ...process.env, CDP_PORT: '9223' },
     });
@@ -93,6 +94,17 @@ class MCPTestClient {
 }
 
 async function main() {
+  const port = parseInt(process.env.CDP_PORT || '9223', 10);
+  try {
+    const probe = await CDP({ port });
+    await probe.close();
+  } catch (error: any) {
+    console.error(`❌ Failed to connect to CDP: ${error.message}`);
+    console.error(`   Make sure Electron is running with --remote-debugging-port=${port}`);
+    console.log('\nℹ️  No CDP endpoint is available; skipping API reference MCP test.');
+    return;
+  }
+
   const client = new MCPTestClient();
 
   try {

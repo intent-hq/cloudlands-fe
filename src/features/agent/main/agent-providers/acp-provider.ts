@@ -913,6 +913,11 @@ function mentionsMissingTool(text: string): boolean {
   );
 }
 
+/** Whether (already lower-cased) text looks like an old workspace JS API surface. */
+function mentionsStaleWorkspaceApiSurface(text: string): boolean {
+  return text.includes('ws.') && text.includes('is not a function');
+}
+
 export function isMissingWorkspaceToolError(
   rawError: string,
   errorData?: {
@@ -927,6 +932,19 @@ export function isMissingWorkspaceToolError(
     mentionsWorkspaceTool(text) && mentionsMissingTool(text);
 
   return matches(errorLower) || matches(structuredLower);
+}
+
+export function isStaleWorkspaceApiError(
+  rawError: string,
+  errorData?: {
+    apiStatus?: string;
+    errorDetails?: { code?: number; message?: string; detail?: string };
+  },
+): boolean {
+  const errorLower = (rawError || '').toLowerCase();
+  const structuredLower = classifierTextFromErrorData(errorData);
+
+  return mentionsStaleWorkspaceApiSurface(errorLower) || mentionsStaleWorkspaceApiSurface(structuredLower);
 }
 
 /**
@@ -1027,6 +1045,24 @@ export function detectMissingWorkspaceToolInUpdate(update: any): boolean {
   // structured identity and the (best-effort) tool output.
   const outputText = toolUpdateTextForClassification(update);
   return isMissingWorkspaceToolError(`${identityText} ${outputText}`);
+}
+
+/**
+ * Returns true when a failed workspace_api call indicates the MCP tool exists but
+ * its JS API surface is stale, e.g. `ws.agent.diagnostics is not a function`.
+ * This has the same recovery as a missing tool: create a fresh ACP session so
+ * MCP tools reconnect to the current HTTP bridge and regenerate tool metadata.
+ */
+export function detectStaleWorkspaceApiInUpdate(update: any): boolean {
+  if (!update) return false;
+  const isError = update.status === 'failed' || update.isError === true;
+  if (!isError) return false;
+
+  const identityText = structuredToolIdentityText(update);
+  if (!mentionsWorkspaceTool(identityText.toLowerCase())) return false;
+
+  const outputText = toolUpdateTextForClassification(update);
+  return isStaleWorkspaceApiError(outputText);
 }
 
 /**
@@ -5355,10 +5391,10 @@ export class ACPProvider extends BaseAgentProvider {
   }
 
   /**
-   * Inspect a session/update notification for the missing-workspace-tool symptom
-   * (a failed tool_call/tool_call_update referencing the workspace MCP tool) and
-   * kick off bounded recovery. Best-effort and non-blocking — failures here must
-   * never disrupt streaming.
+   * Inspect a session/update notification for recoverable workspace MCP tool
+   * symptoms (missing tool registration, or a stale `ws.*` API surface) and kick
+   * off bounded recovery. Best-effort and non-blocking — failures here must never
+   * disrupt streaming.
    */
   private maybeRecoverMissingWorkspaceTool(params: any): void {
     try {
@@ -5367,7 +5403,7 @@ export class ACPProvider extends BaseAgentProvider {
       if (updateType !== 'tool_call_update' && updateType !== 'tool_call') {
         return;
       }
-      if (detectMissingWorkspaceToolInUpdate(update)) {
+      if (detectMissingWorkspaceToolInUpdate(update) || detectStaleWorkspaceApiInUpdate(update)) {
         void this.triggerWorkspaceToolRecovery('tool_call_update');
       }
     } catch {

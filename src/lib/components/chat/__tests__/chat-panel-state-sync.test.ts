@@ -4,15 +4,15 @@ import {
   it,
 } from 'vitest';
 
-import type { ChatState } from '$store/renderer/slices/chat-state/chat-state-types';
-
 import {
+  type ChatPanelServiceState,
   hasChatServiceStateChanged,
   syncChatStateFromService,
 } from '../chat-panel-state-sync';
 
-function createChatState(overrides: Partial<ChatState> = {}): ChatState {
+function createChatState(overrides: Partial<ChatPanelServiceState> = {}): ChatPanelServiceState {
   return {
+    agentId: 'agent-1',
     session: null,
     messages: [],
     isStreaming: false,
@@ -25,6 +25,12 @@ function createChatState(overrides: Partial<ChatState> = {}): ChatState {
     isStalled: false,
     modelUnavailable: null,
     statusEvents: [],
+    receivedFirstChunk: false,
+    trackedWorkspaceId: null,
+    isRebinding: false,
+    lastMessageTime: 0,
+    lastChunkReceivedAt: 0,
+    idleReconcileSuppressed: false,
     ...overrides,
   };
 }

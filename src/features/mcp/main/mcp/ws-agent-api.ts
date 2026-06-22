@@ -11,6 +11,7 @@ import {
   UnsubscribeFromEventsTool,
   WakeOrCreateTaskAgentTool,
   ReportToParentTool,
+  GetAgentDiagnosticsTool,
 } from './agent-interaction-tools';
 import { agentPersistence } from '$features/agent/main/agent-persistence';
 import {
@@ -58,6 +59,13 @@ interface ReadConversationOptions {
   startTurn?: number;
   endTurn?: number;
   includeToolCalls?: boolean;
+}
+
+interface AgentDiagnosticsOptions {
+  agentId?: string;
+  taskNoteId?: string;
+  includeCompleted?: boolean;
+  staleRespondingAfterMs?: number;
 }
 
 interface ExecutableTool {
@@ -114,6 +122,23 @@ function toOptionalString(value: unknown): string | undefined {
   }
 
   return value instanceof Date ? value.toISOString() : String(value);
+}
+
+function toAgentInfo(agent: any, workspaceId: string, presentInBackend?: boolean): AgentInfo {
+  const messageCount = Array.isArray(agent.messages)
+    ? agent.messages.length
+    : agent.messageCount ?? agent.metadata?.messageCount ?? 0;
+  return {
+    id: agent.id,
+    name: agent.name,
+    status: selectAgentStatus.select(getMainState(), workspaceId, agent.id) || agent.status,
+    sessionStatus: agent.status,
+    presentInBackend,
+    messageCount,
+    taskNoteId: agent.metadata?.taskNoteId,
+    createdAt: toOptionalString(agent.createdAt),
+    lastActivity: toOptionalString(agent.lastActivity),
+  };
 }
 
 export function buildAgentApi(workspaceId: string, workspacePath: string, call: ToolCall) {
@@ -220,18 +245,18 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
 
       const { AgentBackendHandler } = await import('../../../agent/main/agent-backend-handler.service');
       const handler = AgentBackendHandler.getInstance();
-      const agents = await handler.listAllAgents(workspaceId);
+      const [agents, activeAgentsResult] = await Promise.all([
+        handler.listAllAgents(workspaceId),
+        typeof handler.listAgents === 'function'
+          ? Promise.resolve(handler.listAgents(workspaceId)).catch(() => [])
+          : Promise.resolve([]),
+      ]);
+      const activeAgentIds = new Set(
+        (Array.isArray(activeAgentsResult) ? activeAgentsResult : []).map((agent: any) => agent.id),
+      );
 
       return agents
-        .map((agent: any) => ({
-          id: agent.id,
-          name: agent.name,
-          status: selectAgentStatus.select(getMainState(), workspaceId, agent.id) || agent.status,
-          messageCount: agent.messages?.length || 0,
-          taskNoteId: agent.metadata?.taskNoteId,
-          createdAt: toOptionalString(agent.createdAt),
-          lastActivity: toOptionalString(agent.lastActivity),
-        }))
+        .map((agent: any) => toAgentInfo(agent, workspaceId, activeAgentIds.has(agent.id)))
         .filter((agent: AgentInfo) => includeCompleted || !['completed', 'failed'].includes(agent.status));
     },
 
@@ -240,21 +265,42 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
 
       const { AgentBackendHandler } = await import('../../../agent/main/agent-backend-handler.service');
       const handler = AgentBackendHandler.getInstance();
-      const agent = await handler.getAgent(agentId);
+      let agent = await handler.getAgent(agentId);
+      let presentInBackend = true;
+
+      if (!agent) {
+        const loadResult = await agentPersistence.loadAgent(AgentId(agentId), WorkspaceId(workspaceId));
+        if (loadResult.success && loadResult.data) {
+          agent = loadResult.data;
+        } else {
+          const agents = await handler.listAllAgents(workspaceId);
+          agent = agents.find((candidate: any) => candidate.id === agentId) ?? null;
+        }
+        presentInBackend = false;
+      }
 
       if (!agent) {
         throw new Error(`Agent ${agentId} not found`);
       }
 
-      return {
-        id: agent.id,
-        name: agent.name,
-        status: selectAgentStatus.select(getMainState(), workspaceId, agentId) || agent.status,
-        messageCount: agent.messages?.length || 0,
-        taskNoteId: agent.metadata?.taskNoteId,
-        createdAt: toOptionalString(agent.createdAt),
-        lastActivity: toOptionalString(agent.lastActivity),
-      };
+      return toAgentInfo(agent, workspaceId, presentInBackend);
+    },
+
+    async diagnostics(opts: AgentDiagnosticsOptions = {}) {
+      logger.info('ws.agent.diagnostics', {
+        workspaceId,
+        agentId: opts.agentId,
+        taskNoteId: opts.taskNoteId,
+      });
+
+      const result = await executeTool(
+        new GetAgentDiagnosticsTool(workspaceId),
+        'get_agent_diagnostics',
+        { ...opts },
+        call,
+      );
+
+      return buildToolResponse(result, { ok: true });
     },
 
     async wakeOrCreate(taskNoteId: string, contextMessage: string, model?: string) {

@@ -1,4 +1,17 @@
-import type { ChatState } from '$store/renderer/slices/chat-state/chat-state-types';
+import type { AgentMessage, AgentSession } from '$shared/types';
+import type { ChatAgentState } from '$store/renderer/slices/chat-state/chat-state-types';
+
+/**
+ * Renderer-only DTO composed from transient chat-state flags plus canonical
+ * agent-session data. Keep this out of chat-state slice types so Redux state
+ * gates do not treat canonical agent-session messages as duplicated slice state.
+ */
+export type ChatPanelServiceState = ChatAgentState & {
+  session: AgentSession | null;
+  messages: AgentMessage[];
+  isStreaming: boolean;
+  isProcessing: boolean;
+};
 
 interface ChatStateSyncOptions {
   isStreaming?: boolean;
@@ -19,8 +32,8 @@ function preserveNullableField<T>(
 }
 
 export function hasChatServiceStateChanged(
-  currentState: ChatState,
-  incomingState: ChatState,
+  currentState: ChatPanelServiceState,
+  incomingState: ChatPanelServiceState,
 ): boolean {
   const currentMessages = currentState.messages;
   const incomingMessages = incomingState.messages;
@@ -59,14 +72,14 @@ export function hasChatServiceStateChanged(
 }
 
 export function syncChatStateFromService(
-  currentState: ChatState,
-  incomingState: ChatState,
+  currentState: ChatPanelServiceState,
+  incomingState: ChatPanelServiceState,
   {
     isStreaming,
     isProcessing,
     preserveTransientState = false,
   }: ChatStateSyncOptions = {},
-): ChatState {
+): ChatPanelServiceState {
   return {
     ...currentState,
     ...incomingState,

@@ -37,8 +37,9 @@ try {
 // Test 4: Try loading non-existent instruction
 console.log('4. Loading non-existent instruction:');
 try {
-  getInstructionById('non-existent');
+  getInstructionById('non-existent', false);
   console.error('   ✗ Should have thrown an error!');
+  process.exitCode = 1;
 } catch (error) {
   console.log('   ✓ Correctly threw error:', (error as Error).message, '\n');
 }

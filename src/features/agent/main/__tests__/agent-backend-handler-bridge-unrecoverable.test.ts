@@ -155,6 +155,55 @@ describe('AgentBackendHandler httpBridgeUnrecoverable integration', () => {
     );
   });
 
+  it('uses payload workspace id fallback when stream tracking was already cleaned up', () => {
+    const handler = Object.create(AgentBackendHandlerClass.prototype) as any;
+    handler.streamWorkspaceIds = new Map();
+
+    const sent = (AgentBackendHandlerClass.prototype as any).sendStreamToRenderer.call(
+      handler,
+      'agent-1',
+      'agent:stream:agent-1',
+      { type: 'error', error: 'Stream timeout after 10 minutes', workspaceId: 'ws-1' },
+    );
+
+    expect(sent).toBe(true);
+    expect(mockBroadcastToBrowserIpcClients).toHaveBeenCalledWith(
+      'agent:stream:agent-1',
+      expect.objectContaining({
+        type: 'error',
+        error: 'Stream timeout after 10 minutes',
+        workspaceId: 'ws-1',
+        status: 'failed',
+      }),
+      'ws-1',
+    );
+  });
+
+  it('uses provider workspace id fallback when stream tracking was never initialized', () => {
+    const handler = Object.create(AgentBackendHandlerClass.prototype) as any;
+    handler.streamWorkspaceIds = new Map();
+    handler.queueAgentWorkspaceIds = new Map();
+    handler.providers = new Map([['agent-1', { config: { workspaceId: 'ws-provider' } }]]);
+
+    const sent = (AgentBackendHandlerClass.prototype as any).sendStreamToRenderer.call(
+      handler,
+      'agent-1',
+      'agent:stream:agent-1',
+      { type: 'error', error: 'Provider failed before stream tracking was initialized' },
+    );
+
+    expect(sent).toBe(true);
+    expect(mockBroadcastToBrowserIpcClients).toHaveBeenCalledWith(
+      'agent:stream:agent-1',
+      expect.objectContaining({
+        type: 'error',
+        workspaceId: 'ws-provider',
+        status: 'failed',
+      }),
+      'ws-provider',
+    );
+  });
+
   it('evicts inactive persistence-list cache entries while retaining active entries', () => {
     const handler = Object.create(AgentBackendHandlerClass.prototype) as any;
     const inFlightLoad = Promise.resolve([{ id: 'agent-inflight' }]);

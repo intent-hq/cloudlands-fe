@@ -40,6 +40,8 @@ import {
   clearWorkspace,
   enqueueEvent,
   markDelegationAgentCompleted,
+  recordDeliveryFailure,
+  recordDroppedEvents,
   recordDeliverySuccess,
   recordDeliveryTimeout,
   removeSubscription,
@@ -209,7 +211,7 @@ describe("subscriptionsChangedEmitterSaga — per-action emissions", () => {
     ctx.store.dispatch(addSubscription(WS, makeSub("s1")));
     await flushAsync();
     mockedDispatchEvent.mockClear();
-    ctx.store.dispatch(recordDeliverySuccess(WS));
+    ctx.store.dispatch(recordDeliverySuccess(WS, "2026-06-19T15:20:00.000Z"));
     await flushAsync();
     expect(emissionsFor(WS)).toHaveLength(1);
   });
@@ -218,9 +220,44 @@ describe("subscriptionsChangedEmitterSaga — per-action emissions", () => {
     ctx.store.dispatch(addSubscription(WS, makeSub("s1")));
     await flushAsync();
     mockedDispatchEvent.mockClear();
-    ctx.store.dispatch(recordDeliveryTimeout(WS));
+    ctx.store.dispatch(recordDeliveryTimeout(WS, "2026-06-19T15:21:00.000Z"));
     await flushAsync();
     expect(emissionsFor(WS)).toHaveLength(1);
+  });
+
+  it("recordDeliveryFailure → exactly one emission", async () => {
+    ctx.store.dispatch(addSubscription(WS, makeSub("s1")));
+    await flushAsync();
+    mockedDispatchEvent.mockClear();
+    ctx.store.dispatch(recordDeliveryFailure(WS, "2026-06-19T15:22:00.000Z"));
+    await flushAsync();
+    expect(emissionsFor(WS)).toHaveLength(1);
+  });
+
+  it("recordDroppedEvents → exactly one emission", async () => {
+    ctx.store.dispatch(addSubscription(WS, makeSub("s1")));
+    await flushAsync();
+    mockedDispatchEvent.mockClear();
+    ctx.store.dispatch(recordDroppedEvents(WS, 2));
+    await flushAsync();
+    expect(emissionsFor(WS)).toHaveLength(1);
+  });
+
+  it("coalesces a synchronous deliveryStats burst into one emission", async () => {
+    ctx.store.dispatch(addSubscription(WS, makeSub("s1")));
+    await flushAsync();
+    mockedDispatchEvent.mockClear();
+
+    ctx.store.dispatch(recordDeliverySuccess(WS, "2026-06-19T15:23:00.000Z"));
+    ctx.store.dispatch(recordDeliveryFailure(WS, "2026-06-19T15:23:01.000Z"));
+    ctx.store.dispatch(recordDeliveryTimeout(WS, "2026-06-19T15:23:02.000Z"));
+    ctx.store.dispatch(recordDroppedEvents(WS, 3));
+    await flushAsync();
+    expect(emissionsFor(WS)).toHaveLength(1);
+
+    ctx.store.dispatch(recordDeliverySuccess(WS, "2026-06-19T15:23:03.000Z"));
+    await flushAsync();
+    expect(emissionsFor(WS)).toHaveLength(2);
   });
 
   it("markDelegationAgentCompleted → exactly one emission (completedAgentIds only)", async () => {
@@ -244,7 +281,7 @@ describe("subscriptionsChangedEmitterSaga — per-action emissions", () => {
   it("every emitted payload has reason='subscriptions-updated'", async () => {
     ctx.store.dispatch(addSubscription(WS, makeSub("s1")));
     await flushAsync();
-    ctx.store.dispatch(recordDeliverySuccess(WS));
+    ctx.store.dispatch(recordDeliverySuccess(WS, "2026-06-19T15:22:00.000Z"));
     await flushAsync();
     ctx.store.dispatch(setAgentStatus(WS, AGENT, "responding"));
     await flushAsync();
@@ -317,6 +354,20 @@ describe("subscriptionsChangedEmitterSaga — per-workspace counter independence
     const ws2 = emissionsFor(WS2).map((e) => e.subscriptionVersion);
     expect(ws1).toEqual([1, 2]);
     expect(ws2).toEqual([1, 2]);
+  });
+
+  it("resets a workspace counter after workspace cleanup", async () => {
+    ctx.store.dispatch(addSubscription(WS, makeSub("s1")));
+    await flushAsync();
+    expect(emissionsFor(WS).map((e) => e.subscriptionVersion)).toEqual([1]);
+
+    ctx.store.dispatch(clearWorkspace(WS));
+    await flushAsync();
+    mockedDispatchEvent.mockClear();
+
+    ctx.store.dispatch(addSubscription(WS, makeSub("s2")));
+    await flushAsync();
+    expect(emissionsFor(WS).map((e) => e.subscriptionVersion)).toEqual([1]);
   });
 });
 

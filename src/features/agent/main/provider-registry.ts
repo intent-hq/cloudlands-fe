@@ -10,6 +10,10 @@ import { parseCodexReasoningEffort } from '$shared/config/open-ai-codex-models';
 import { Logger } from '../../../shared/logger';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 import type { AgentConfig, BaseAgentProvider } from './agent-providers/base-provider';
+import {
+  isProgrammaticTestProviderEnabled,
+  PROGRAMMATIC_TEST_PROVIDER_ID,
+} from '../testing/programmatic-test-agent-provider';
 
 const logger = new Logger('ProviderRegistry');
 
@@ -347,6 +351,16 @@ export type ProviderFactory = (
   autoInitialize?: boolean,
 ) => BaseAgentProvider | Promise<BaseAgentProvider>;
 
+export { PROGRAMMATIC_TEST_PROVIDER_ID, isProgrammaticTestProviderEnabled };
+
+export function isKnownProviderId(providerId: string | undefined): boolean {
+  if (!providerId) return false;
+  return (
+    providerId in ACP_PROVIDERS ||
+    (providerId === PROGRAMMATIC_TEST_PROVIDER_ID && isProgrammaticTestProviderEnabled())
+  );
+}
+
 /**
  * Provider Registry - Multi-ACP Provider Architecture
  *
@@ -358,6 +372,23 @@ export class ProviderRegistry {
 
   static createDefault(): ProviderRegistry {
     const reg = new ProviderRegistry();
+
+    if (isProgrammaticTestProviderEnabled()) {
+      const factory = async (cfg: AgentConfig, autoInit?: boolean) => {
+        const { ProgrammaticTestAgentProvider } = await import(
+          '../testing/programmatic-test-agent-provider'
+        );
+        const provider = new ProgrammaticTestAgentProvider({
+          ...cfg,
+          provider: PROGRAMMATIC_TEST_PROVIDER_ID,
+        });
+        if (autoInit !== false) {
+          await provider.initialize();
+        }
+        return provider;
+      };
+      reg.register(PROGRAMMATIC_TEST_PROVIDER_ID, factory);
+    }
 
     // Register all known ACP providers from provider-config
     for (const [providerId, providerConfig] of Object.entries(ACP_PROVIDERS)) {

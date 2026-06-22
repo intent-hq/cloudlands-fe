@@ -146,9 +146,11 @@ vi.mock('electron', () => {
       if (name === 'home') return '/tmp/test/home';
       return '/tmp/test';
     }),
+    getAppPath: vi.fn(() => '/tmp/test-app'),
     getName: vi.fn(() => 'test-app'),
     getVersion: vi.fn(() => '1.0.0'),
     isReady: vi.fn(() => true),
+    isPackaged: false,
     on: vi.fn(),
     once: vi.fn(),
     whenReady: vi.fn(() => Promise.resolve()),

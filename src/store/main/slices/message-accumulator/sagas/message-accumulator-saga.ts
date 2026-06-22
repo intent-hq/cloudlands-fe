@@ -8,7 +8,6 @@
 import {
   delay,
   put,
-  select,
 } from "typed-redux-saga";
 import { Logger } from "../../../../../shared/logger";
 import { cleanupStaleAccumulators } from "../message-accumulator-slice";
@@ -34,14 +33,14 @@ export function* staleCleanupLoop() {
   while (true) {
     yield* delay(STALE_CLEANUP_INTERVAL_MS);
 
-    const sessionIds = yield* select(selectActiveSessionIds.select);
+    const sessionIds = yield* selectActiveSessionIds.effect();
     if (sessionIds.length === 0) continue;
 
     const now = Date.now();
     const staleIds: string[] = [];
 
     for (const sid of sessionIds) {
-      const acc = yield* select(selectAccumulator.select, sid);
+      const acc = yield* selectAccumulator.effect(sid);
       if (acc && now - acc.lastUpdateTime > STALE_ACCUMULATOR_TIMEOUT_MS) {
         staleIds.push(sid);
       }

@@ -135,7 +135,10 @@ vi.mock("$store/renderer/store", async () => {
   return { appStore, store: appStore };
 });
 
-import type { AgentSession, AgentStatus } from "$shared/types";
+import {
+  AgentStatus,
+  type AgentSession,
+} from "$shared/types";
 import {
   workspaceMounted,
   workspaceUnmounted,
@@ -157,10 +160,10 @@ import {
   workspaceAgentsReducer,
 } from "../workspace-agents-slice";
 import {
+  bulkUpsertSessions,
   removeSession as removeAgentSession,
   renameAgent,
   renameSession as renameAgentSession,
-  upsertSession,
 } from "../../agent-session/agent-session-slice";
 import {
   ensureFallbackLayout,
@@ -539,7 +542,21 @@ describe("workspaceAgentsSaga", () => {
       expect.any(Function),
     );
 
-    const restoredSession = mockAgent("agent-1", "ws-1", "Restored Agent");
+    const restoredSession = {
+      ...mockAgent("agent-1", "ws-1", "Restored Agent"),
+      status: AgentStatus.Active,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+    };
+    const normalizedSession = {
+      ...restoredSession,
+      workspaceId: "ws-1" as AgentSession['workspaceId'],
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    };
     const handler = getElectronHandler("agent:restored")({
       agentId: "agent-1",
       workspaceId: "ws-1",
@@ -552,14 +569,14 @@ describe("workspaceAgentsSaga", () => {
     // the full session, then re-register the agent in the workspace list.
     expect((handler.next().value as any).type).toBe("SELECT");
     expect(handler.next("ws-1")).toEqual({
-      value: sagaEffects.put(upsertSession({
-        ...restoredSession,
-        workspaceId: "ws-1" as AgentSession['workspaceId'],
+      value: sagaEffects.put(bulkUpsertSessions([normalizedSession], {
+        preserveExplicitRuntimeFlags: false,
+        allowActiveTurnRuntimeFlagClear: true,
       })),
       done: false,
     });
     expect(handler.next()).toEqual({
-      value: sagaEffects.put(addAgent("ws-1", restoredSession)),
+      value: sagaEffects.put(addAgent("ws-1", normalizedSession)),
       done: false,
     });
     expect(handler.next()).toEqual({ value: undefined, done: true });
@@ -1101,6 +1118,44 @@ describe("loadAgentsFromDiskSaga — mount-race hardening", () => {
 
     expect(gen.next()).toEqual({
       value: sagaEffects.put(reconnectStreamHandlersForWorkspaceRequested("ws-restore-sync")),
+      done: false,
+    });
+  });
+
+  it("normalizes stale runtime flags before bulk-publishing loaded agents", () => {
+    const gen = loadAgentsFromDiskSaga("ws-normalize");
+    const staleAgent: AgentSession = {
+      ...mockAgent("agent-stale", "ws-normalize", "Stale Agent"),
+      status: AgentStatus.Active,
+      isStreaming: true,
+      isProcessing: true,
+      isResponding: true,
+    };
+    const normalizedAgent: AgentSession = {
+      ...staleAgent,
+      status: AgentStatus.Idle,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    };
+
+    expect((gen.next().value as any).type).toBe("SELECT");
+    expect((gen.next(false).value as any).type).toBe("SELECT");
+    expect(gen.next(false)).toEqual({
+      value: sagaEffects.put(setIsLoadingAgents("ws-normalize", true)),
+      done: false,
+    });
+    expect((gen.next().value as any).type).toBe("SELECT");
+    expect((gen.next([]).value as any).type).toBe("CALL");
+    expect((gen.next({ getStoredAgentsFromDisk: getStoredAgentsFromDiskMock }).value as any).type).toBe("SELECT");
+    expect((gen.next(null).value as any).type).toBe("CALL");
+    expect((gen.next([]).value as any).type).toBe("SELECT");
+
+    expect(gen.next([staleAgent])).toEqual({
+      value: sagaEffects.put(bulkUpsertSessions([normalizedAgent], {
+        preserveExplicitRuntimeFlags: false,
+        allowActiveTurnRuntimeFlagClear: true,
+      })),
       done: false,
     });
   });

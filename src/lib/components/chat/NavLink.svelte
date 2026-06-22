@@ -10,9 +10,6 @@
   }
 
   let { target, label }: Props = $props();
-  // Lazy dispatch access to avoid Store.init() errors in tests
-  const getDispatch = () => appStore.dispatch.bind(appStore);
-
   // Drop the clickable affordance when the target does not point at a real
   // app surface. The assistant occasionally hallucinates routes (e.g.
   // /specialists, /workspaces/foo); rendering those as plain text keeps the
@@ -38,7 +35,7 @@
     await goto(target);
     const highlightId = getHighlightIdFromTarget(target);
     if (highlightId) {
-      requestAnimationFrame(() => getDispatch()(requestUiHighlight(highlightId)));
+      requestAnimationFrame(() => appStore.dispatch(requestUiHighlight(highlightId)));
     }
   }
 </script>

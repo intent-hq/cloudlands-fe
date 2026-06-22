@@ -621,6 +621,83 @@ const error = new AgentError(message, {
 errorHandler.track(error);
 ```
 
+## Agent Operability Verification Gates
+
+Future changes to delegation, subscriptions, diagnostics, wake/resume, or
+programmatic agent testing must run the focused agent-operability gate before
+handoff:
+
+```bash
+pnpm run verify:agent-operability
+```
+
+The grouped gate expands to the required focused suites, architecture/state
+checks, broad Svelte/TypeScript checks, and diff whitespace validation:
+
+```bash
+pnpm run test:agent-operability
+pnpm run lint:agent-architecture
+pnpm run check
+pnpm tsc -p tsconfig.json --noEmit
+pnpm tsc -p tsconfig.main.json --noEmit
+pnpm tsc -p tsconfig.preload.json --noEmit
+git diff --check
+```
+
+Run `pnpm run test:agent-operability:stress` when iterating only on the bounded
+stress/chaos runner. Longer stress runs remain opt-in through the stress test's
+documented environment variables; do not make unbounded stress mandatory in the
+default gate.
+
+### Focused Coverage Map
+
+`pnpm run test:agent-operability` covers these agent-state risk areas:
+
+- Provider: provider registry and `programmatic-test-agent-provider.test.ts`.
+- Subscription state: selectors, reducers, and `agent-subscriptions-saga.test.ts`.
+- Diagnostics and MCP tools: `agent-interaction-tools.test.ts`.
+- Orchestration: `agent-interaction-tools.test.ts` plus
+  `agent-interaction-integration.test.ts`.
+- Wake/resume: wake/create paths in `agent-interaction-tools.test.ts` and backend
+  lifecycle event emission tests.
+- Stress/chaos: `reliability-stress-runner.test.ts`.
+- UI duplicate-message risk: shared `message-dedup.test.ts`.
+
+`pnpm run lint:agent-architecture` is the architecture/state-integrity gate used
+in place of a historical `validate:architecture` script. It runs workspace event
+dispatcher checks for agent/MCP/subscription paths, saga selector hygiene, Redux
+saga adapter bypass, and type-contract validation checks for the main-process
+agent-subscription state path. Main subscription state integrity is also covered
+by the focused subscription selector, reducer, and saga tests in
+`pnpm run test:agent-operability`. Broader renderer rollout gates, such as
+`pnpm run lint:selector-active-workspace` and `pnpm run lint:redux-collections`,
+remain separate from this focused agent-operability gate.
+
+### Final Handoff / PR Packaging Gate
+
+Before final handoff or PR creation, run `git status --short` and ensure all Wave
+agent-operability files are tracked/included. In particular,
+`src/features/agent/testing/programmatic-test-agent-provider.test.ts` is required
+coverage and must not be left untracked or omitted from packaging.
+
+### In-App Dogfood Gate
+
+Automated checks are necessary but not sufficient. The final verifier should also
+dogfood the app-facing workspace agent APIs and record the exact calls, observed
+diagnostics, and pass/fail results:
+
+1. Create/delegate deterministic programmatic-provider agents for `immediate` and
+   `after_all` flows.
+2. Exercise `ws.agent.send`, `ws.agent.sendToTask`, and `ws.agent.wakeOrCreate`
+   for existing, resumable, busy/queued, and fallback-create agents.
+3. Capture sanitized `ws.agent.diagnostics(...)` snapshots before, during, and
+   after delivery to confirm subscriptions, queues, delegation groups, delivery
+   stats, and stuck-risk signals self-heal.
+4. Verify no duplicate app-facing messages or duplicate delegator wake
+   notifications appear during retries, sweep/catch-up, group completion, or
+   queued-message lifecycle events.
+5. Re-run `pnpm run verify:agent-operability` after any dogfood-driven fix.
+
 ## Testing
 
 Tests are located in:

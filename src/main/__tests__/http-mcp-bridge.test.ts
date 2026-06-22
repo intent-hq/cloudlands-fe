@@ -77,7 +77,11 @@ const {
 
   const eventHandlers: Record<string, Function[]> = {};
 
-  const mockElectronApp = { getPath: vi.fn().mockReturnValue('/tmp'), isPackaged: false };
+  const mockElectronApp = {
+    getPath: vi.fn().mockReturnValue('/tmp'),
+    getAppPath: vi.fn().mockReturnValue('/tmp/intent/dist/main'),
+    isPackaged: false,
+  };
 
   const mockElectronStoreInstance = {
     set: vi.fn(),
@@ -729,7 +733,13 @@ describe('HttpMcpBridge', () => {
         expect.objectContaining({
           status: 'ok',
           service: 'http-mcp-bridge',
+          bridgeApiVersion: 2,
           timestamp: expect.any(String),
+          port: 5179,
+          pid: expect.any(Number),
+          appPath: '/tmp/intent/dist/main',
+          processCwd: process.cwd(),
+          isPackaged: false,
           tools: expect.any(Array),
         }),
       );

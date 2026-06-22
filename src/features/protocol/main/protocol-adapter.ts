@@ -991,6 +991,24 @@ export class ProtocolAdapter {
 }
 
 /**
- * Export singleton instance for convenience
+ * Export singleton instance for convenience.
+ *
+ * Keep construction lazy: several main-process modules import protocolAdapter
+ * while WorkspaceService is still initializing. Eager construction here can
+ * observe a circular-import placeholder instead of the real WorkspaceService
+ * class under Vitest/ESM and crash before tests even collect.
  */
-export const protocolAdapter = new ProtocolAdapter();
+let protocolAdapterInstance: ProtocolAdapter | undefined;
+
+export function getProtocolAdapter(): ProtocolAdapter {
+  protocolAdapterInstance ??= new ProtocolAdapter();
+  return protocolAdapterInstance;
+}
+
+export const protocolAdapter: ProtocolAdapter = new Proxy({} as ProtocolAdapter, {
+  get(_target, property, receiver) {
+    const instance = getProtocolAdapter();
+    const value = Reflect.get(instance, property, receiver);
+    return typeof value === 'function' ? value.bind(instance) : value;
+  },
+});

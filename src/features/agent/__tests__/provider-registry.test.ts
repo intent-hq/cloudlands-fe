@@ -1,11 +1,9 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  vi,
-} from 'vitest';
-import { ProviderRegistry } from '../main/provider-registry';
+  isProgrammaticTestProviderEnabled,
+  PROGRAMMATIC_TEST_PROVIDER_ID,
+  ProviderRegistry,
+} from '../main/provider-registry';
 import type { BaseAgentProvider, AgentConfig } from '../main/agent-providers/base-provider';
 import { ACP_PROVIDERS } from '$shared/config/provider-config';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
@@ -135,6 +133,8 @@ describe('ProviderRegistry', () => {
   });
 
   describe('createDefault', () => {
+    const providerCountOffset = () => (isProgrammaticTestProviderEnabled() ? 1 : 0);
+
     // Activate the cortex feature code so createDefault registers everything
     beforeAll(() => {
       featureCodesService.activateCode('cortex-enable');
@@ -160,7 +160,29 @@ describe('ProviderRegistry', () => {
       expect(defaultRegistry.has('default')).toBe(true);
 
       // Should include all active providers plus aliases
-      expect(defaultRegistry.list()).toHaveLength(activeProviders.length + 3);
+      expect(defaultRegistry.list()).toHaveLength(
+        activeProviders.length + 3 + providerCountOffset(),
+      );
+    });
+
+    it('registers the programmatic provider only behind the test/development gate', async () => {
+      const originalTesting = process.env.TESTING;
+      process.env.TESTING = 'true';
+      try {
+        const defaultRegistry = ProviderRegistry.createDefault();
+        expect(defaultRegistry.has(PROGRAMMATIC_TEST_PROVIDER_ID)).toBe(true);
+        const provider = await defaultRegistry.create(PROGRAMMATIC_TEST_PROVIDER_ID, {
+          provider: PROGRAMMATIC_TEST_PROVIDER_ID,
+          programmaticScript: { chunks: ['ok'] },
+        } as AgentConfig);
+        expect(provider.getInfo().name).toBe('Programmatic Test Agent Provider');
+      } finally {
+        if (originalTesting === undefined) {
+          delete process.env.TESTING;
+        } else {
+          process.env.TESTING = originalTesting;
+        }
+      }
     });
 
     it('should use ACP for any unknown provider', async () => {
@@ -232,6 +254,9 @@ describe('ProviderRegistry', () => {
       expect(providers).toContain('acp');
       expect(providers).toContain('augment');
       expect(providers).toContain('default');
+      if (isProgrammaticTestProviderEnabled()) {
+        expect(providers).toContain(PROGRAMMATIC_TEST_PROVIDER_ID);
+      }
     });
   });
 });

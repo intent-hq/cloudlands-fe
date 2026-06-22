@@ -957,13 +957,22 @@ describe('handleAgentStreamUpdate — saga-owned missing target reconciliation',
   });
 
   it.each(['error', 'timeout'] as const)(
-    'clears session flags for %s events',
+    'finalizes the active assistant message and clears session flags for %s events',
     async (eventType) => {
+      const streamingMessage: AgentMessage = {
+        id: `msg-${eventType}`,
+        appMessageId: `app-${eventType}`,
+        role: 'assistant',
+        timestamp: '2026-05-08T00:00:00.000Z',
+        contentBlocks: [{ type: 'text', text: 'partial answer' }],
+        isStreaming: true,
+        streamingComplete: false,
+      } as AgentMessage;
       const session: AgentSession = {
         id: `agent-${eventType}`,
         name: 'Agent',
         workspaceId: 'ws-A' as any,
-        messages: [],
+        messages: [streamingMessage],
         isStreaming: true,
         isProcessing: true,
       } as AgentSession;
@@ -978,9 +987,22 @@ describe('handleAgentStreamUpdate — saga-owned missing target reconciliation',
           handlerSessionId: `agent-${eventType}`,
           source: 'restored',
           eventType,
+          assistantMessageId: `msg-${eventType}`,
+          assistantAppMessageId: `app-${eventType}`,
+          error: eventType === 'error' ? 'Provider crashed' : undefined,
         }),
       ).toPromise();
 
+      expect(dispatched.find((a) => a.type === updateMessage.type)?.payload).toEqual([
+        `agent-${eventType}`,
+        `msg-${eventType}`,
+        expect.objectContaining({
+          isStreaming: false,
+          streamingComplete: true,
+          metadata: { stopReason: eventType },
+          ...(eventType === 'error' ? { error: 'Provider crashed' } : {}),
+        }),
+      ]);
       expect(dispatched.find((a) => a.type === setAgentStreaming.type)?.payload).toEqual([
         `agent-${eventType}`,
         false,

@@ -4,7 +4,7 @@
   Streaming status indicator:
   - Normal: Spinner with "Thinking"
   - Stalled: Warning with status page link and Stop button (driven by chat sagas)
-  - Error/Timeout: "Connection issue" with Try Again button
+  - Error/Timeout: clear failed state with Try Again button
 
   Stall detection is handled entirely by chat sagas (which have context about
   running tools, stream start time, etc.) and surfaced via the `isStalled` prop.
@@ -232,7 +232,7 @@
   // Should we show at all?
   // Don't show thinking indicator when waiting for permission - the permission UI takes over
   let visible = $derived(
-    (isStreaming || isProcessing || isRunning || error || modelUnavailable) && !hasPendingPermission,
+    error || modelUnavailable || ((isStreaming || isProcessing || isRunning) && !hasPendingPermission),
   );
 
   // Whether we've received any streaming data — used to distinguish
@@ -262,9 +262,11 @@
 
 {#if visible}
   <div
+    role={status === 'error' ? 'alert' : undefined}
+    aria-live={status === 'error' ? 'assertive' : undefined}
     class={cn(
-      'flex flex-col gap-0 py-2 pl-2 pr-3 text-sm',
-      status === 'error' && '',
+      'flex flex-col gap-0 py-2 pl-2 pr-3 text-sm rounded-lg',
+      status === 'error' && 'bg-destructive/10 border border-destructive/30',
       status === 'model-unavailable' && 'bg-amber-500/5 rounded-lg border border-amber-500/20',
       className,
     )}
@@ -284,7 +286,10 @@
           </span>
         {:else if status === 'error' && error}
           <Fa icon={faExclamationTriangle} class="text-destructive/70 shrink-0" />
-          <span class="text-destructive-foreground text-sm" data-testid="error-message">{statusMessage}</span>
+          <div class="flex flex-col gap-0.5">
+            <span class="text-destructive text-sm font-medium" data-testid="error-title">Response failed</span>
+            <span class="text-destructive-foreground text-sm" data-testid="error-message">{statusMessage}</span>
+          </div>
         {:else}
           <!-- Normal - show spinner -->
           <Spinner size={4} {seed} />

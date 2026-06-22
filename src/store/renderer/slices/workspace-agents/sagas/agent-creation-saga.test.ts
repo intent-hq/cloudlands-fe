@@ -450,7 +450,12 @@ describe('handleCreateAgentRequestedSaga — opens agent tab via Redux (no setTi
     expect((step.value as any).type).toBe('PUT');
     const setActiveAction = (step.value as any).payload.action;
     expect(setActiveAction.type).toBe('panelLayout/setActiveTab');
-    expect(setActiveAction.payload).toEqual(['ws-focus', 'tab-1', 'panel-1']);
+    expect(setActiveAction.payload).toEqual({
+      wsId: 'ws-focus',
+      tabId: 'tab-1',
+      panelId: 'panel-1',
+      timestamp: expect.any(Number),
+    });
 
     // Saga completes
     expect(gen.next().done).toBe(true);

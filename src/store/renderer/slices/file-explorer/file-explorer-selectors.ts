@@ -11,7 +11,6 @@ import type {
 import { flattenVisibleNodes } from "./file-explorer-utils";
 import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
-  selectActiveWorkspaceId,
   selectWorkspaceById,
   selectWorkspaceEnvironmentConfig,
 } from "../workspace/workspace-selectors";
@@ -99,11 +98,10 @@ export interface FileExplorerEnvironmentConfigTrigger {
   workspaceEnvironmentConfig: EnvironmentConfig | undefined;
 }
 
-export const selectCurrentFileExplorerEnvironmentConfigTrigger = store.createSelector<
-  [],
+export const selectFileExplorerEnvironmentConfigTrigger = store.createSelector<
+  [wsId: string | null],
   FileExplorerEnvironmentConfigTrigger
->((state) => {
-  const wsId = selectActiveWorkspaceId.select(state);
+>((state, wsId) => {
   if (!wsId) {
     return {
       wsId: null,

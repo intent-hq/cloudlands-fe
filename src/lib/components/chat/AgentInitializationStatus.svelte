@@ -32,9 +32,6 @@
     retryConfig = null,
   }: Props = $props();
 
-  // Lazy access to dispatch - only called when needed, avoiding Store.init() errors in tests
-  const getDispatch = () => appStore.dispatch.bind(appStore);
-
   // TODO: This Chief feature uses a pattern that was removed in main - needs proper refactoring
   const workspaceIdStore = writable('');
   const agentIdStore = writable('');
@@ -56,7 +53,7 @@
 
   function handleRetry() {
     if (!workspaceId || !agentId || !retryConfig) return;
-    getDispatch()(activateInitialAgentRequested(workspaceId, agentId, retryConfig));
+    appStore.dispatch(activateInitialAgentRequested(workspaceId, agentId, retryConfig));
   }
 
   onMount(() => {

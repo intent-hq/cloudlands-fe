@@ -27,9 +27,6 @@
   }
 
   let { workspaceIds }: Props = $props();
-  // Lazy dispatch access to avoid Store.init() errors in tests
-  const getDispatch = () => appStore.dispatch.bind(appStore);
-
   let workspacesById = $state<Record<string, Workspace | undefined>>({});
   let overflowMenu: { workspaceId: string; x: number; y: number } | null = $state(null);
   let hadOverflowMenu = false;
@@ -72,7 +69,7 @@
   });
 
   function handleWorkspaceOpenInNewWindow(workspaceId: string) {
-    getDispatch()(requestOpenWorkspace({ workspaceId, openInNewWindow: true }));
+    appStore.dispatch(requestOpenWorkspace({ workspaceId, openInNewWindow: true }));
   }
 
   async function handleWorkspaceClick(workspaceId: string, event?: MouseEvent | KeyboardEvent) {
@@ -108,16 +105,16 @@
     const isOpen = overflowMenu !== null;
 
     if (isOpen && !hadOverflowMenu) {
-      getDispatch()(incrementContextMenuOpen());
+      appStore.dispatch(incrementContextMenuOpen());
     } else if (!isOpen && hadOverflowMenu) {
-      getDispatch()(decrementContextMenuOpen());
+      appStore.dispatch(decrementContextMenuOpen());
     }
 
     hadOverflowMenu = isOpen;
   });
 
   onDestroy(() => {
-    if (hadOverflowMenu) getDispatch()(decrementContextMenuOpen());
+    if (hadOverflowMenu) appStore.dispatch(decrementContextMenuOpen());
   });
 
   function getOverflowMenuItems(workspaceId: string): SidebarMenuEntry[] {
@@ -145,7 +142,7 @@
         label: 'Archive',
         icon: faBoxArchive,
         onClick: () => {
-          getDispatch()(requestArchiveWorkspace(workspaceId));
+          appStore.dispatch(requestArchiveWorkspace(workspaceId));
           closeOverflowMenu();
         },
       },
@@ -155,7 +152,7 @@
         icon: faTrash,
         destructive: true,
         onClick: () => {
-          getDispatch()(requestDeleteWorkspace(workspaceId));
+          appStore.dispatch(requestDeleteWorkspace(workspaceId));
           closeOverflowMenu();
         },
       },

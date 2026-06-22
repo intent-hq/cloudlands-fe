@@ -248,6 +248,27 @@ describe("agent-subscriptions selectors", () => {
       const state = makeState("ws-1", makeWsState({ delegationGroups: { [group.groupId]: group } }));
       expect(selectIsDelegationGroupComplete.select(state, "ws-1", group.groupId)).toBe(true);
     });
+
+    it("ignores non-expected terminal IDs and duplicate terminal records", () => {
+      const group = makeGroup({
+        awaitMode: "all",
+        expectedAgentIds: ["a", "b"],
+        completedAgentIds: ["a", "agent-x"],
+        deletedAgentIds: ["a", "agent-y"],
+      });
+      const state = makeState("ws-1", makeWsState({ delegationGroups: { [group.groupId]: group } }));
+      expect(selectIsDelegationGroupComplete.select(state, "ws-1", group.groupId)).toBe(false);
+    });
+
+    it("returns false for empty expectedAgentIds", () => {
+      const group = makeGroup({
+        expectedAgentIds: [],
+        completedAgentIds: [],
+        deletedAgentIds: [],
+      });
+      const state = makeState("ws-1", makeWsState({ delegationGroups: { [group.groupId]: group } }));
+      expect(selectIsDelegationGroupComplete.select(state, "ws-1", group.groupId)).toBe(false);
+    });
   });
 
   describe("selectIsOneShotFired", () => {

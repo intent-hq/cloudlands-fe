@@ -31,7 +31,7 @@ import type {
 // Moved here from event-triggered-agents.ts during Redux migration cleanup.
 // ---------------------------------------------------------------------------
 
-function* handleMessageSentEvent(
+export function* handleMessageSentEvent(
   action: ReturnType<typeof workspaceEventAccepted>,
 ) {
   const [event] = action.payload;
@@ -65,40 +65,86 @@ async function deliverAgentMessage(event: AgentMessageSentEvent): Promise<void> 
 
   try {
     const handler = AgentBackendHandler.getInstance();
-    const targetAgent = await handler.getAgent(toAgentId);
-    if (!targetAgent) {
-      logger.warn('[MESSAGE-DELIVERY] Target agent not found', { toAgentId, fromAgentId });
-      return;
-    }
     if (handler.isAgentDeleted(toAgentId)) {
       logger.warn('[MESSAGE-DELIVERY] Target agent has been deleted', { toAgentId, fromAgentId });
+      await emitMessageDeliveryFailure(
+        workspaceId,
+        fromAgentId,
+        fromAgentName,
+        toAgentId,
+        `Target agent ${toAgentId} has been deleted`,
+      );
       return;
     }
 
+    let targetAgent = await handler.getAgent(toAgentId);
+    if (!targetAgent) {
+      const resumability = typeof handler.getAgentResumability === 'function'
+        ? await handler.getAgentResumability(toAgentId, workspaceId)
+        : undefined;
+
+      if (!resumability?.canWake) {
+        logger.warn('[MESSAGE-DELIVERY] Target agent not found or not resumable', {
+          toAgentId,
+          fromAgentId,
+          resumabilityStatus: resumability?.status,
+        });
+        await emitMessageDeliveryFailure(
+          workspaceId,
+          fromAgentId,
+          fromAgentName,
+          toAgentId,
+          `Target agent ${toAgentId} not found or not resumable`,
+        );
+        return;
+      }
+
+      targetAgent = resumability.agentData;
+      logger.info('[MESSAGE-DELIVERY] Target agent is persisted-only; waking from disk', {
+        toAgentId,
+        fromAgentId,
+        resumabilityStatus: resumability.status,
+      });
+    }
     const priorityLabel = priority === 'interrupt' ? ' (INTERRUPT)' : priority === 'high' ? ' (HIGH PRIORITY)' : '';
     const formattedMessage = `**Message from agent "${fromAgentName}"${priorityLabel}:**\n\n${message}`;
 
     const activeStreams = handler.getActiveStreams();
-    const isStreaming = activeStreams.some((s) => s.agentId === toAgentId);
+    const isStreaming = activeStreams.some((s) => {
+      if (s.agentId !== toAgentId) return false;
+      if (!s.workspaceId) return true;
+      return s.workspaceId === workspaceId;
+    });
 
     if (priority === 'interrupt' && isStreaming) {
       try {
-        await handler.stopAgent(toAgentId, 'agent_interrupt_message');
-        const sendResult = await handler.sendBackendInitiatedMessage({
-          sessionId: toAgentId, message: formattedMessage, workspaceId,
-          messageMetadata: { type: 'agent_message', fromAgentId, fromAgentName, priority },
-        });
-        if (!sendResult.success) {
-          const queueResult = await handler.handleQueueMessage(null, { agentId: toAgentId, content: formattedMessage });
+        const messageMetadata = { type: 'agent_message', fromAgentId, fromAgentName, priority };
+        const interruptResult = typeof handler.interruptAgentWithMessage === 'function'
+          ? await handler.interruptAgentWithMessage({
+            agentId: toAgentId,
+            message: formattedMessage,
+            workspaceId,
+            messageMetadata,
+          })
+          : await (async () => {
+            await handler.stopAgent(toAgentId, 'agent_interrupt_message');
+            handler.clearInterruptedFlag(toAgentId);
+            return handler.sendBackendInitiatedMessage({
+              sessionId: toAgentId, message: formattedMessage, workspaceId, messageMetadata,
+            });
+          })();
+
+        if (!interruptResult.success) {
+          const queueResult = await handler.handleQueueMessage(null, { agentId: toAgentId, content: formattedMessage, workspaceId });
           if (!queueResult.success) {
             handler.clearInterruptedFlag(toAgentId);
-            await emitMessageDeliveryFailure(workspaceId, fromAgentId, fromAgentName, toAgentId, sendResult.error || 'Failed to send interrupt message and queue fallback failed');
+            await emitMessageDeliveryFailure(workspaceId, fromAgentId, fromAgentName, toAgentId, interruptResult.error || 'Failed to send interrupt message and queue fallback failed');
           } else {
             handler.clearInterruptedFlag(toAgentId);
           }
         }
       } catch  {
-        const queueResult = await handler.handleQueueMessage(null, { agentId: toAgentId, content: formattedMessage });
+        const queueResult = await handler.handleQueueMessage(null, { agentId: toAgentId, content: formattedMessage, workspaceId });
         if (!queueResult.success) {
           handler.clearInterruptedFlag(toAgentId);
           await emitMessageDeliveryFailure(workspaceId, fromAgentId, fromAgentName, toAgentId, `Failed to stop agent and queue fallback failed: ${queueResult.error}`);
@@ -107,7 +153,7 @@ async function deliverAgentMessage(event: AgentMessageSentEvent): Promise<void> 
         }
       }
     } else if (isStreaming) {
-      const queueResult = await handler.handleQueueMessage(null, { agentId: toAgentId, content: formattedMessage });
+      const queueResult = await handler.handleQueueMessage(null, { agentId: toAgentId, content: formattedMessage, workspaceId });
       if (!queueResult.success) {
         await emitMessageDeliveryFailure(workspaceId, fromAgentId, fromAgentName, toAgentId, queueResult.error || 'Failed to queue message');
       }
@@ -118,7 +164,7 @@ async function deliverAgentMessage(event: AgentMessageSentEvent): Promise<void> 
       });
       if (!sendResult.success) {
         if (sendResult.errorCode === 'QUEUE_PENDING' || sendResult.errorCode === 'ALREADY_STREAMING') {
-          const queueResult = await handler.handleQueueMessage(null, { agentId: toAgentId, content: formattedMessage });
+          const queueResult = await handler.handleQueueMessage(null, { agentId: toAgentId, content: formattedMessage, workspaceId });
           if (!queueResult.success) {
             await emitMessageDeliveryFailure(workspaceId, fromAgentId, fromAgentName, toAgentId, queueResult.error || 'Failed to queue message');
           }

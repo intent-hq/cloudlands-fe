@@ -128,9 +128,6 @@
     actions,
   }: Props = $props();
 
-  // Lazy dispatch access to avoid Store.init() errors in tests
-  const getDispatch = () => appStore.dispatch.bind(appStore);
-
   const workspaceIdStore = writable('');
   $effect(() => {
     workspaceIdStore.set(workspace?.id ?? '');
@@ -141,7 +138,7 @@
   $effect(() => {
     const workspaceId = workspace?.id;
     if (!workspaceId) return;
-    getDispatch()(ensureWorkspaceTasksLoaded(String(workspaceId)));
+    appStore.dispatch(ensureWorkspaceTasksLoaded(String(workspaceId)));
   });
 
   const workspacePhaseInfo = $derived(
@@ -260,15 +257,15 @@
     const isOpen = contextMenu !== null;
 
     if (isOpen && !hadContextMenu) {
-      getDispatch()(incrementContextMenuOpen());
+      appStore.dispatch(incrementContextMenuOpen());
     } else if (!isOpen && hadContextMenu) {
-      getDispatch()(decrementContextMenuOpen());
+      appStore.dispatch(decrementContextMenuOpen());
     }
     hadContextMenu = isOpen;
   });
 
   onDestroy(() => {
-    if (hadContextMenu) getDispatch()(decrementContextMenuOpen());
+    if (hadContextMenu) appStore.dispatch(decrementContextMenuOpen());
   });
 
   function getContextMenuItems(): SidebarMenuEntry[] {
@@ -292,7 +289,7 @@
       label: 'Archive',
       icon: faBoxArchive,
       onClick: () => {
-        getDispatch()(requestArchiveWorkspace(workspace.id));
+        appStore.dispatch(requestArchiveWorkspace(workspace.id));
         closeContextMenu();
       },
     });
@@ -303,7 +300,7 @@
       icon: faTrash,
       destructive: true,
       onClick: () => {
-        getDispatch()(requestDeleteWorkspace(workspace.id));
+        appStore.dispatch(requestDeleteWorkspace(workspace.id));
         closeContextMenu();
       },
     });

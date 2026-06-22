@@ -1,15 +1,132 @@
+/**
+ * @vitest-environment jsdom
+ */
+
 import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from '@testing-library/svelte';
+import {
+  afterEach,
   describe,
   expect,
   it,
+  vi,
 } from 'vitest';
 
+vi.mock('$lib/components/ui/button', async () => ({
+  Button: (await import('./mocks/Button.svelte')).default,
+}));
+
+vi.mock('svelte-fa', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+
+vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+  faExclamationTriangle: { iconName: 'exclamation-triangle' },
+  faRotateRight: { iconName: 'rotate-right' },
+}));
+
+import StreamingStatus from '../StreamingStatus.svelte';
 import {
   formatDuration,
   computeCompletedEvents,
   shouldAppendStreamingEvent,
   type StatusEvent,
 } from '../streaming-status-utils';
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+describe('StreamingStatus rendered UI', () => {
+  it('renders explicit failed response copy, alert semantics, and retry action for inactive errors', async () => {
+    const onRetry = vi.fn();
+    const { container } = render(StreamingStatus, {
+      props: {
+        error: 'Stream timeout after 10 minutes',
+        onRetry,
+      },
+    });
+
+    expect(screen.getByRole('alert').getAttribute('aria-live')).toBe('assertive');
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+    expect(screen.getByTestId('error-message').textContent).toBe('Stream timeout after 10 minutes');
+    expect(container.firstElementChild?.className).toContain('bg-destructive/10');
+
+    await fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it('keeps terminal failure visible even if a stale permission request flag remains set', () => {
+    render(StreamingStatus, {
+      props: {
+        error: 'The agent response timed out before it finished.',
+        hasPendingPermission: true,
+      },
+    });
+
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+  });
+
+  it('shows failure copy without retry while active flags are still clearing', () => {
+    const onRetry = vi.fn();
+    render(StreamingStatus, {
+      props: {
+        isStreaming: true,
+        error: 'Provider crashed while finalizing the stream',
+        onRetry,
+      },
+    });
+
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+    expect(screen.queryByRole('button', { name: /try again/i })).toBeNull();
+  });
+
+  it('prioritizes model-unavailable recovery over generic failure copy', async () => {
+    const onRetryWithModel = vi.fn();
+    const { container } = render(StreamingStatus, {
+      props: {
+        error: 'Model failed to start',
+        modelUnavailable: {
+          failedModel: 'gpt5.5',
+          nextAvailableModel: 'gpt5.5-fast',
+        },
+        onRetryWithModel,
+      },
+    });
+
+    expect(screen.queryByTestId('error-title')).toBeNull();
+    expect(container.textContent).toContain('gpt5.5');
+    expect(container.textContent).toContain('is not available');
+
+    await fireEvent.click(screen.getByRole('button', { name: /retry with gpt5\.5-fast/i }));
+    expect(onRetryWithModel).toHaveBeenCalledWith('gpt5.5-fast');
+  });
+
+  it('clears failed presentation when a new stream starts', async () => {
+    const { rerender } = render(StreamingStatus, {
+      props: {
+        error: 'Previous response failed',
+      },
+    });
+
+    expect(screen.getByTestId('error-title').textContent).toBe('Response failed');
+
+    await rerender({
+      error: null,
+      isProcessing: true,
+      seed: 'agent-1',
+    });
+
+    expect(screen.queryByTestId('error-title')).toBeNull();
+    expect(screen.getByTestId('streaming-status-thinking').textContent).toBe('Thinking');
+  });
+});
 
 describe('StreamingStatus utilities', () => {
   describe('formatDuration', () => {

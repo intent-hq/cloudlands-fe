@@ -1,10 +1,13 @@
-import { AgentStatus } from '$shared/types';
-import type { ChatState } from '$store/renderer/slices/chat-state/chat-state-types';
+import { AgentStatus, type AgentSession } from '$shared/types';
 
-type PendingAssistantStatusState = Pick<
-  ChatState,
-  'isStreaming' | 'isProcessing' | 'error' | 'modelUnavailable'
-> & {
+type ChatResponseFlags = {
+  isStreaming: boolean;
+  isProcessing: boolean;
+  error: string | null;
+  modelUnavailable: unknown | null;
+};
+
+type PendingAssistantStatusState = ChatResponseFlags & {
   /**
    * Broader canonical running signal (`selectAgentIsRunning`). Covers states the
    * narrow streaming/processing flags miss — notably a coordinator paused while
@@ -19,7 +22,7 @@ type EndOfListStreamingStatusState = PendingAssistantStatusState & {
   lastAssistantMessageIsStreaming: boolean;
 };
 
-type StopChatBeforeSendState = Pick<ChatState, 'isStreaming' | 'isProcessing'>;
+type StopChatBeforeSendState = Pick<ChatResponseFlags, 'isStreaming' | 'isProcessing'>;
 
 /**
  * Agent sessions can be actively responding before text chunks produce an
@@ -27,7 +30,7 @@ type StopChatBeforeSendState = Pick<ChatState, 'isStreaming' | 'isProcessing'>;
  * chat panel's Thinking affordance, without using plain Active as a signal
  * because idle persisted sessions also use Active.
  */
-export function isSessionActivelyResponding(session: ChatState['session']): boolean {
+export function isSessionActivelyResponding(session: AgentSession | null): boolean {
   const status = session?.status as string | undefined;
 
   if (session?.isProcessing || status === AgentStatus.Processing || status === 'processing') {

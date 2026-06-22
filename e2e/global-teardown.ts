@@ -113,6 +113,10 @@ ${generatePerformanceMetrics(results)}
     await fs.writeFile(summaryPath, summary, 'utf-8');
     console.log(`  ✓ Test summary generated at ${summaryPath}`);
   } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+      console.log('  ℹ No Playwright JSON results found; skipping test summary generation');
+      return;
+    }
     console.warn('  ⚠ Could not generate test summary:', e);
   }
 }
