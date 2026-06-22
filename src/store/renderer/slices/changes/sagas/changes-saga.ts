@@ -103,9 +103,7 @@ export function* handleChangesUpdatedEvent(
   data: FileTrackingEvent,
 ): SagaGenerator<void> {
   if (data.workspaceId !== wsId) return;
-  logger.debug('Ignoring changes-updated as an automatic changes refresh trigger', {
-    wsId,
-  });
+  yield* put(refreshRequested(wsId));
 }
 
 function* watchChangesUpdated(wsId: string): SagaGenerator<void> {
@@ -153,9 +151,7 @@ export function* handleAgentFileChangedEvent(
   data: FileTrackingEvent,
 ): SagaGenerator<void> {
   if (data.workspaceId !== wsId) return;
-  logger.debug('Ignoring agent-file-changed as an automatic changes refresh trigger', {
-    wsId,
-  });
+  yield* put(refreshRequested(wsId));
 }
 
 function* watchAgentFileChanged(wsId: string): SagaGenerator<void> {
@@ -172,9 +168,7 @@ export function* handleWorkspaceChangesEvent(
   data: { workspaceId?: string },
 ): SagaGenerator<void> {
   if (data.workspaceId !== wsId) return;
-  logger.debug('Ignoring workspace-changes as an automatic changes refresh trigger', {
-    wsId,
-  });
+  yield* put(refreshRequested(wsId));
 }
 
 function* watchWorkspaceChanges(wsId: string) {

@@ -231,8 +231,10 @@ describe('requested agent line stats', () => {
 });
 
 describe('handleWorkspaceChangesEvent', () => {
-  it('does not sync or load changes data automatically for the active workspace', () => {
+  it('requests a refresh for the active workspace', () => {
     testSaga(handleWorkspaceChangesEvent, 'ws-1', { workspaceId: 'ws-1' })
+      .next()
+      .put(refreshRequested('ws-1'))
       .next()
       .isDone();
   });
@@ -365,15 +367,34 @@ describe('changes refresh triggers', () => {
       .isDone();
   });
 
-  it('does not refresh when file-tracking changes-updated fires', () => {
+  it('refreshes when file-tracking changes-updated fires for the active workspace', () => {
     testSaga(handleChangesUpdatedEvent, 'ws-1', { workspaceId: 'ws-1', changeCount: 2 })
+      .next()
+      .put(refreshRequested('ws-1'))
       .next()
       .isDone();
   });
 
-  it('does not sync or load when agent-file-changed fires', () => {
+  it('ignores file-tracking changes-updated events for other workspaces', () => {
+    testSaga(handleChangesUpdatedEvent, 'ws-1', { workspaceId: 'ws-2', changeCount: 2 })
+      .next()
+      .isDone();
+  });
+
+  it('refreshes when agent-file-changed fires for the active workspace', () => {
     testSaga(handleAgentFileChangedEvent, 'ws-1', {
       workspaceId: 'ws-1',
+      filePath: 'src/app.ts',
+    })
+      .next()
+      .put(refreshRequested('ws-1'))
+      .next()
+      .isDone();
+  });
+
+  it('ignores agent-file-changed events for other workspaces', () => {
+    testSaga(handleAgentFileChangedEvent, 'ws-1', {
+      workspaceId: 'ws-2',
       filePath: 'src/app.ts',
     })
       .next()
@@ -388,18 +409,21 @@ describe('changes refresh triggers', () => {
     expect(source).not.toMatch(/takeLatest\(setGitStatus/);
   });
 
-  it('keeps disallowed event paths away from refresh-equivalent work', () => {
+  it('routes real change event paths through refreshRequested without direct sync/load work', () => {
     const source = readFileSync('src/store/renderer/slices/changes/sagas/changes-saga.ts', 'utf8');
 
     expect(source).not.toMatch(
-      /file-tracking:changes-updated[\s\S]{0,240}(doSyncWithGit|doLoadWorkspaceData|refreshRequested)/,
+      /handleChangesUpdatedEvent[\s\S]{0,240}(doSyncWithGit|doLoadWorkspaceData)/,
     );
     expect(source).not.toMatch(
-      /file-tracking:agent-file-changed[\s\S]{0,240}(doSyncWithGit|doLoadWorkspaceData|refreshRequested)/,
+      /handleAgentFileChangedEvent[\s\S]{0,240}(doSyncWithGit|doLoadWorkspaceData)/,
     );
     expect(source).not.toMatch(
-      /workspace-changes[\s\S]{0,240}(doSyncWithGit|doLoadWorkspaceData|refreshRequested)/,
+      /handleWorkspaceChangesEvent[\s\S]{0,240}(doSyncWithGit|doLoadWorkspaceData)/,
     );
+    expect(source).toMatch(/handleChangesUpdatedEvent[\s\S]{0,240}put\(refreshRequested\(wsId\)\)/);
+    expect(source).toMatch(/handleAgentFileChangedEvent[\s\S]{0,240}put\(refreshRequested\(wsId\)\)/);
+    expect(source).toMatch(/handleWorkspaceChangesEvent[\s\S]{0,240}put\(refreshRequested\(wsId\)\)/);
   });
 
   it('keeps approved automatic triggers routed through the 60-second freshness helper', () => {
