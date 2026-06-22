@@ -66,6 +66,7 @@ import { selectAgentSession } from '../../agent-session/agent-session-selectors'
 
 const logger = createLogger('InitializeChatSaga');
 type WaitForSelector<R, ARGS extends any[]> = PackageStoreSelector<R, ARGS, unknown>;
+const INITIAL_AGENT_ACTIVATION_MARKER_GRACE_MS = 30_000;
 
 type ActiveStreamsResult = {
   success?: boolean;
@@ -296,6 +297,25 @@ function readInitialAgentConfig(wsId: string, agentId: string): InitialMessagePa
   }
 }
 
+function hasFreshInitialAgentActivationMarker(wsId: string, agentId: string): boolean {
+  if (typeof sessionStorage === 'undefined') return false;
+
+  const pendingAgentData = sessionStorage.getItem(`workspace:${wsId}:initial-agent-pending`);
+  if (!pendingAgentData) return false;
+
+  try {
+    const parsed = JSON.parse(pendingAgentData);
+    const pendingAgentId = parsed.agentId ?? parsed.config?.agentId;
+    if (pendingAgentId !== agentId) return false;
+
+    const timestamp = typeof parsed.timestamp === 'number' ? parsed.timestamp : null;
+    return timestamp === null || Date.now() - timestamp < INITIAL_AGENT_ACTIVATION_MARKER_GRACE_MS;
+  } catch (err) {
+    logger.warn('Failed to parse initial agent pending marker', { wsId, agentId, error: err });
+    return false;
+  }
+}
+
 function hasInitialMessageContent(payload: InitialMessagePayload): boolean {
   return !!(
     payload.message?.trim() ||
@@ -372,6 +392,14 @@ function* handleSendInitialMessage(
     });
     yield* put(chatSendStarted(agentId, wsId));
     yield* call(clearInitialAgentConfigFields, wsId);
+    return;
+  }
+
+  if (yield* call(hasFreshInitialAgentActivationMarker, wsId, agentId)) {
+    logger.info('Initial agent activation owns the first prompt, skipping fallback send', {
+      agentId,
+      wsId,
+    });
     return;
   }
 

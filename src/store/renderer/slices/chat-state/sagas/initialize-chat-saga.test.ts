@@ -538,6 +538,64 @@ describe('initialize-chat-saga: disk message merge regression', () => {
     expect(stored.messageSent).toBeNull();
   });
 
+  it('skips fallback send while initial-agent activation owns the prompt', async () => {
+    const { initializeChatSaga } = await import('./initialize-chat-saga');
+    const session = {
+      id: 'agent-1',
+      backendSessionId: 'backend-session-1',
+      workspaceId: 'ws-1',
+      name: 'Test Agent',
+      status: 'idle',
+      isStreaming: false,
+      messages: [],
+    };
+    mockSelectAgentById.mockReturnValue(session);
+    mockSelectWorkspaceAgentReadySession.mockReturnValue(session);
+
+    const dispatched: any[] = [];
+    const channel = stdChannel();
+
+    runSaga(
+      {
+        channel,
+        dispatch: (action: any) => {
+          dispatched.push(action);
+          channel.put(action);
+        },
+        getState: () => ({}),
+      },
+      initializeChatSaga as any,
+    );
+
+    const storage = new Map<string, string>();
+    storage.set(
+      'workspace:ws-1:agent-config',
+      JSON.stringify({ agentId: 'agent-1', prompt: 'Initial prompt' }),
+    );
+    storage.set(
+      'workspace:ws-1:initial-agent-pending',
+      JSON.stringify({
+        agentId: 'agent-1',
+        config: { agentId: 'agent-1', prompt: 'Initial prompt' },
+        timestamp: Date.now(),
+      }),
+    );
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    });
+
+    channel.put(sendInitialMessageRequested('agent-1', { wsId: 'ws-1' }));
+
+    await vi.dynamicImportSettled();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockAgentSessionSendMessageRequested).not.toHaveBeenCalled();
+    expect(dispatched.some((a) => a.type === chatSendStarted.type)).toBe(false);
+    expect(storage.has('workspace:ws-1:agent-config')).toBe(true);
+  });
+
   it('skips duplicate send when the session is already streaming at send time', async () => {
     const { initializeChatSaga } = await import('./initialize-chat-saga');
     const session = {

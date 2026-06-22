@@ -195,6 +195,7 @@
 
   // Constants
   const SCROLL_BOTTOM_THRESHOLD = 30; // pixels from bottom to consider "at bottom"
+  const INITIAL_AGENT_ACTIVATION_MARKER_GRACE_MS = 30_000;
   /** PERF: Number of recent turns to always render (for streaming and smooth UX) */
   const FORCE_VISIBLE_TURN_COUNT = 3;
   /** PERF: Minimum turns before enabling lazy loading (overhead not worth it for small conversations) */
@@ -1190,6 +1191,55 @@
   // Pending initial prompt data - shown immediately as optimistic UI before the message is actually sent
   // Uses prop first (passed from parent), then falls back to sessionStorage
   // Returns both prompt text and contextReferences for proper display
+  function hasInitialMessageContent(config: any): boolean {
+    return !!(
+      config?.prompt?.trim?.() ||
+      config?.contextReferences?.length ||
+      config?.imageBlocks?.length
+    );
+  }
+
+  function hasFreshInitialAgentActivationMarker(wsId: string, currentAgentId: string): boolean {
+    const pendingAgentData = sessionStorage.getItem(`workspace:${wsId}:initial-agent-pending`);
+    if (!pendingAgentData) return false;
+
+    try {
+      const parsed = JSON.parse(pendingAgentData);
+      const pendingAgentId = parsed.agentId ?? parsed.config?.agentId;
+      if (pendingAgentId !== currentAgentId) return false;
+
+      const timestamp = typeof parsed.timestamp === 'number' ? parsed.timestamp : null;
+      return timestamp === null || Date.now() - timestamp < INITIAL_AGENT_ACTIVATION_MARKER_GRACE_MS;
+    } catch (err) {
+      logger.warn('Failed to parse initial agent pending marker for fallback send', {
+        agentId: currentAgentId,
+        wsId,
+        error: err,
+      });
+      return false;
+    }
+  }
+
+  function shouldRequestInitialMessageFallback(wsId: string, currentAgentId: string): boolean {
+    const agentConfigKey = `workspace:${wsId}:agent-config`;
+    const agentConfigData = sessionStorage.getItem(agentConfigKey);
+    if (!agentConfigData) return false;
+
+    try {
+      const config = JSON.parse(agentConfigData);
+      if (config.agentId !== currentAgentId || !hasInitialMessageContent(config)) return false;
+      if (config.messageSent) return false;
+      return !hasFreshInitialAgentActivationMarker(wsId, currentAgentId);
+    } catch (err) {
+      logger.warn('Failed to parse agent config for fallback send', {
+        agentId: currentAgentId,
+        wsId,
+        error: err,
+      });
+      return false;
+    }
+  }
+
   function getInitialPendingData(): { prompt: string | null; contextReferences: any[] | null } {
     // First check prop - this is the fastest path
     if (initialPromptProp) {
@@ -1617,9 +1667,15 @@
     // Chat values are reactive via Redux selectors.
     // No manual Redux store subscription needed — selectors provide always-current values.
 
-    // Request initial message send if workspace creation left pending config.
-    // The saga owns readiness waiting, sending, and storage cleanup.
-    if (workspace && agentId && $agentMessages$.length === 0) {
+    // Request initial message send only for orphaned pending config.
+    // Fresh workspace creation is owned by the activation saga, which sends the
+    // first prompt and marks messageSent via onInitialSendCommit before sending.
+    if (
+      workspace &&
+      agentId &&
+      $agentMessages$.length === 0 &&
+      shouldRequestInitialMessageFallback(workspace.id, agentId)
+    ) {
       appStore.dispatch(sendInitialMessageRequested(agentId, { wsId: workspace.id }));
     }
 
