@@ -33,6 +33,7 @@ import {
 } from './specialists.service';
 import { parseCodexReasoningEffort } from '$shared/config/open-ai-codex-models';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
+import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
 import { isBinaryExtension } from '$shared/binary-file-extensions';
 import { Logger } from '$shared/logger';
 import { memEvents } from '$shared/main/memory-event-logger';
@@ -1505,7 +1506,7 @@ export class AgentBackendHandler {
       if (!inFlightPromptKey) {
         return {
           success: false,
-          error: 'Agent already has an in-flight prompt. Message was not delivered.',
+          error: IN_FLIGHT_PROMPT_DROPPED_ERROR,
         };
       }
 

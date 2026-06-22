@@ -714,9 +714,37 @@ function* handleInitializeChat(
  * same agentId, allowing concurrent inits for different agents.
  */
 export function* initializeChatSaga(): SagaGenerator<void> {
+  const initialMessageTasks = new Map<string, Task>();
   const runningTasks = new Map<string, Task>();
 
-  yield* takeEvery(sendInitialMessageRequested, handleSendInitialMessage);
+  yield* takeEvery(
+    sendInitialMessageRequested,
+    function* (action: ReturnType<typeof sendInitialMessageRequested>) {
+      const agentId = action.payload.agentId;
+
+      // Cancel any previous in-flight initial send for this specific agent
+      const existing = initialMessageTasks.get(agentId);
+      if (existing) {
+        yield* cancel(existing);
+        initialMessageTasks.delete(agentId);
+      }
+
+      const task = yield* fork(handleSendInitialMessage, action);
+      initialMessageTasks.set(agentId, task);
+
+      // Fork a cleanup that removes the entry once the task finishes
+      yield* fork(function* () {
+        try {
+          yield* join(task);
+        } finally {
+          // Only delete if this is still the tracked task (not replaced by a newer one)
+          if (initialMessageTasks.get(agentId) === task) {
+            initialMessageTasks.delete(agentId);
+          }
+        }
+      });
+    },
+  );
 
   yield* takeEvery(
     initializeChatRequested,

@@ -228,4 +228,33 @@ describe('AgentBackendAdapter createAgent forwarding', () => {
     expect(forwardedRequest).not.toHaveProperty('specialistName');
     expect(forwardedRequest).not.toHaveProperty('roleReminder');
   });
+
+  it('returns benign duplicate in-flight prompt results from streamMessage', async () => {
+    const duplicateResult = {
+      success: false,
+      error: 'Agent already has an in-flight prompt. Message was not delivered.',
+    };
+    const mockHandler = {
+      handleBackendStreamMessage: vi.fn().mockResolvedValue(duplicateResult),
+    };
+    const adapter = await getAdapterWithHandler(mockHandler);
+
+    await expect(adapter.streamMessage({ agentId: 'agent-duplicate' })).resolves.toBe(
+      duplicateResult,
+    );
+  });
+
+  it('still throws genuine streamMessage failures', async () => {
+    const mockHandler = {
+      handleBackendStreamMessage: vi.fn().mockResolvedValue({
+        success: false,
+        error: 'Provider stream failed',
+      }),
+    };
+    const adapter = await getAdapterWithHandler(mockHandler);
+
+    await expect(adapter.streamMessage({ agentId: 'agent-failed' })).rejects.toThrow(
+      'Provider stream failed',
+    );
+  });
 });

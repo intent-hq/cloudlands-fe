@@ -145,5 +145,13 @@ export function isFatalError(errorMessage: string): boolean {
   return false;
 }
 
+/**
+ * Error message returned when a prompt is dropped because the agent already has
+ * one in flight. Shared so backend producers and renderer/adapter consumers stay
+ * in sync instead of matching against duplicated string literals.
+ */
+export const IN_FLIGHT_PROMPT_DROPPED_ERROR =
+  'Agent already has an in-flight prompt. Message was not delivered.';
+
 export type AgentStreamingConfig = typeof AGENT_STREAMING_CONFIG;
 export type AgentRetryConfig = typeof AGENT_RETRY_CONFIG;

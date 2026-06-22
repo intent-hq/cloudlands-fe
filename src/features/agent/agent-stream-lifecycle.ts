@@ -42,7 +42,10 @@ import {
   errorRecovery,
   DEFAULT_STRATEGIES,
 } from './browser/services/error-recovery.service';
-import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
+import {
+  AGENT_STREAMING_CONFIG,
+  IN_FLIGHT_PROMPT_DROPPED_ERROR,
+} from '$shared/constants/agent-streaming';
 import { assertStreamingInvariant } from './utils/streaming-invariants';
 
 import * as streamRegistry from './utils/stream-handler-registry';
@@ -78,6 +81,20 @@ function dispatchRedux(action: ReduxAction): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isInFlightPromptDedupResponse(response: unknown): boolean {
+  const candidate =
+    isRecord(response) && response.success === true && 'data' in response ? response.data : response;
+
+  if (!isRecord(candidate) || candidate.success !== false) {
+    return false;
+  }
+
+  return (
+    typeof candidate.error === 'string' &&
+    candidate.error.includes(IN_FLIGHT_PROMPT_DROPPED_ERROR)
+  );
 }
 
 function getStreamStatusData(value: unknown): StreamStatusData | undefined {
@@ -1376,6 +1393,14 @@ export async function sendMessage(
                       userAppMessageId,
                       assistantAppMessageId,
                     });
+
+                    if (isInFlightPromptDedupResponse(response)) {
+                      logger.info('Backend dropped duplicate in-flight prompt', {
+                        agentId,
+                        sessionId: session.id,
+                      });
+                      return;
+                    }
 
                     // Check if the response is in IpcResponse format
                     if (response && typeof response === 'object' && 'success' in response) {

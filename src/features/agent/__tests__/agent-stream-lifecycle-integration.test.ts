@@ -98,7 +98,10 @@ vi.mock('../browser/services/error-recovery.service', () => ({
   errorRecovery: { executeWithRecovery: vi.fn() },
   DEFAULT_STRATEGIES: {},
 }));
-vi.mock('$shared/constants/agent-streaming', () => ({ AGENT_STREAMING_CONFIG: {} }));
+vi.mock('$shared/constants/agent-streaming', () => ({
+  AGENT_STREAMING_CONFIG: {},
+  IN_FLIGHT_PROMPT_DROPPED_ERROR: 'Agent already has an in-flight prompt. Message was not delivered.',
+}));
 vi.mock('$store/renderer/store', async () => {
   const { createAppStoreMockModule } = await import('$store/renderer/utils/test-helpers/store-mock');
 
@@ -126,7 +129,14 @@ vi.mock('../utils/streaming-invariants', () => ({
   assertStreamingInvariant: vi.fn(),
 }));
 
-import { ensureStreamHandler } from '../agent-stream-lifecycle';
+import { invoke } from '$lib/electron-bridge';
+import { errorBoundary } from '../browser';
+import { errorRecovery } from '../browser/services/error-recovery.service';
+import {
+  restoreAgentSessionRequested,
+  saveAgentSessionRequested,
+} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { ensureStreamHandler, sendMessage } from '../agent-stream-lifecycle';
 import {
   cleanupPreviousHmrState,
   disposeAllStreamState,
@@ -158,6 +168,18 @@ describe('Agent Stream Lifecycle Integration', () => {
     vi.useFakeTimers();
     mocks.reduxDispatch.mockClear();
     setupWindow();
+    vi.mocked(errorBoundary.wrap).mockImplementation((fn: any) => fn());
+    vi.mocked(errorRecovery.executeWithRecovery).mockImplementation(async (operation: any) => ({
+      success: true,
+      data: await operation(),
+      attempts: 1,
+      totalTime: 0,
+    }));
+    vi.mocked(saveAgentSessionRequested).mockImplementation((...payload: any[]) => ({
+      type: 'workspaceAgents/saveAgentSessionRequested',
+      payload,
+      promise: Promise.resolve(),
+    }));
   });
 
   afterEach(() => {
@@ -307,5 +329,42 @@ describe('Agent Stream Lifecycle Integration', () => {
 
     persistForHmr();
     expect((window as any).__streamRegistry_hmr.disposeAllStreamState).toBe(disposeAllStreamState);
+  });
+
+  it('sendMessage treats duplicate in-flight prompt responses as a benign no-op', async () => {
+    const session = {
+      id: 'agent-dedup',
+      name: 'Agent Dedup',
+      status: 'active',
+      activationState: 'active',
+      model: 'default',
+      messages: [],
+      metadata: {},
+    };
+    vi.mocked(restoreAgentSessionRequested).mockImplementation((...payload: any[]) => ({
+      type: 'workspaceAgents/restoreAgentSessionRequested',
+      payload,
+      promise: Promise.resolve(session),
+    }));
+    vi.mocked(invoke).mockResolvedValue({
+      success: true,
+      data: {
+        success: false,
+        error: 'Agent already has an in-flight prompt. Message was not delivered.',
+      },
+    });
+
+    await expect(
+      sendMessage('agent-dedup', 'Hello', { id: 'ws-1', path: '/tmp/ws' } as any),
+    ).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(errorRecovery.executeWithRecovery).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.reduxDispatch.mock.calls.some(
+        ([action]) =>
+          action.type === 'workspaceAgents/agentStreamUpdateReceived' &&
+          action.payload?.[0]?.eventType === 'error',
+      ),
+    ).toBe(false);
   });
 });

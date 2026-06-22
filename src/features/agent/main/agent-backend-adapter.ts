@@ -14,8 +14,17 @@ import { AgentBackendHandler } from './agent-backend-handler.service';
 import { Logger } from '$shared/logger';
 import * as BrandedIds from '$shared/types/branded-ids';
 import { WorkspaceConfig } from '$shared/main/config.js';
+import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
 
 const logger = new Logger('AgentBackendAdapter');
+
+function isInFlightPromptDedupResult(result: any): boolean {
+  return (
+    result?.success === false &&
+    typeof result.error === 'string' &&
+    result.error.includes(IN_FLIGHT_PROMPT_DROPPED_ERROR)
+  );
+}
 
 /**
  * Adapter that implements IAgentBackendService using existing AgentBackendHandler
@@ -517,6 +526,9 @@ class AgentBackendAdapter implements IAgentBackendService {
     const result = await (this.handler as any).handleBackendStreamMessage(null, request);
 
     if (!result.success) {
+      if (isInFlightPromptDedupResult(result)) {
+        return result;
+      }
       throw new Error(result.error || 'Failed to stream message');
     }
 

@@ -326,6 +326,143 @@ describe('initialize-chat-saga: disk message merge regression', () => {
     expect(storage.has('workspace:ws-1:agent-config')).toBe(false);
   });
 
+  it('keeps only the latest concurrent initial message request for the same agent', async () => {
+    const { initializeChatSaga } = await import('./initialize-chat-saga');
+    const readySession = {
+      id: 'agent-1',
+      backendSessionId: 'backend-session-1',
+      workspaceId: 'ws-1',
+      name: 'Test Agent',
+      status: 'idle',
+      isStreaming: false,
+      messages: [],
+    };
+    let isReady = false;
+    mockSelectAgentById.mockImplementation((agentId: string) =>
+      isReady && agentId === 'agent-1' ? readySession : undefined,
+    );
+    mockSelectWorkspaceAgentReadySession.mockImplementation((stateOrWsId: any) => {
+      if (typeof stateOrWsId === 'object') return stateOrWsId.readySession ?? null;
+      return isReady ? readySession : null;
+    });
+
+    const dispatched: any[] = [];
+    const channel = stdChannel();
+    const storeHarness = createReduxStoreHarness({
+      '@internal_storeUtility': { updatesLocked: false },
+      readySession: null,
+    });
+
+    runSaga(
+      {
+        channel,
+        dispatch: (action: any) => {
+          dispatched.push(action);
+          channel.put(action);
+        },
+        context: {
+          reduxStore: storeHarness.reduxStore,
+        },
+        getState: storeHarness.reduxStore.getState,
+      },
+      initializeChatSaga as any,
+    );
+
+    channel.put(sendInitialMessageRequested('agent-1', { wsId: 'ws-1', message: 'First' }));
+    channel.put(sendInitialMessageRequested('agent-1', { wsId: 'ws-1', message: 'Second' }));
+
+    for (let i = 0; i < 10 && storeHarness.subscriberCount === 0; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    expect(storeHarness.subscriberCount).toBeGreaterThan(0);
+
+    isReady = true;
+    storeHarness.emitState({ '@internal_storeUtility': { updatesLocked: false }, readySession });
+
+    await vi.dynamicImportSettled();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(dispatched.filter((a) => a.type === chatSendStarted.type)).toHaveLength(1);
+    expect(mockAgentSessionSendMessageRequested).toHaveBeenCalledTimes(1);
+    expect(mockAgentSessionSendMessageRequested.mock.calls[0][0]).toBe('agent-1');
+    expect(mockAgentSessionSendMessageRequested.mock.calls[0][2]).toBe('Second');
+  });
+
+  it('runs concurrent initial message requests independently for different agents', async () => {
+    const { initializeChatSaga } = await import('./initialize-chat-saga');
+    const readySessions: Record<string, any> = {
+      'agent-1': {
+        id: 'agent-1',
+        backendSessionId: 'backend-session-1',
+        workspaceId: 'ws-1',
+        name: 'Test Agent 1',
+        status: 'idle',
+        isStreaming: false,
+        messages: [],
+      },
+      'agent-2': {
+        id: 'agent-2',
+        backendSessionId: 'backend-session-2',
+        workspaceId: 'ws-1',
+        name: 'Test Agent 2',
+        status: 'idle',
+        isStreaming: false,
+        messages: [],
+      },
+    };
+    let isReady = false;
+    mockSelectAgentById.mockImplementation((agentId: string) =>
+      isReady ? readySessions[agentId] : undefined,
+    );
+    mockSelectWorkspaceAgentReadySession.mockImplementation(
+      (stateOrWsId: any, _wsId?: string, agentId?: string) => {
+        if (typeof stateOrWsId === 'object') return stateOrWsId.readySessions?.[agentId ?? ''] ?? null;
+        return isReady ? readySessions[_wsId ?? ''] : null;
+      },
+    );
+
+    const channel = stdChannel();
+    const storeHarness = createReduxStoreHarness({
+      '@internal_storeUtility': { updatesLocked: false },
+      readySessions: {},
+    });
+
+    runSaga(
+      {
+        channel,
+        dispatch: (action: any) => channel.put(action),
+        context: {
+          reduxStore: storeHarness.reduxStore,
+        },
+        getState: storeHarness.reduxStore.getState,
+      },
+      initializeChatSaga as any,
+    );
+
+    channel.put(sendInitialMessageRequested('agent-1', { wsId: 'ws-1', message: 'First' }));
+    channel.put(sendInitialMessageRequested('agent-2', { wsId: 'ws-1', message: 'Second' }));
+
+    for (let i = 0; i < 10 && storeHarness.subscriberCount < 2; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    expect(storeHarness.subscriberCount).toBeGreaterThanOrEqual(2);
+
+    isReady = true;
+    storeHarness.emitState({
+      '@internal_storeUtility': { updatesLocked: false },
+      readySessions,
+    });
+
+    await vi.dynamicImportSettled();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockAgentSessionSendMessageRequested).toHaveBeenCalledTimes(2);
+    expect(mockAgentSessionSendMessageRequested.mock.calls.map((call) => call[0])).toEqual([
+      'agent-1',
+      'agent-2',
+    ]);
+  });
+
   it('skips duplicate send when activation marked messageSent before send time', async () => {
     const { initializeChatSaga } = await import('./initialize-chat-saga');
     const session = {
