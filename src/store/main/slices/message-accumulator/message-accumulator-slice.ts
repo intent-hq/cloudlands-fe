@@ -380,6 +380,11 @@ function getChunkInsertOffset(
 }
 
 function insertStringAt(value: string, offset: number, inserted: string): string {
+  // Hot path: in-order append builds a cheap V8 cons-string (rope) that is
+  // flattened lazily on first read, instead of forcing an O(n) flatten per chunk.
+  if (offset >= value.length) return value + inserted;
+  if (offset <= 0) return inserted + value;
+  // Out-of-order mid-insertion (rare): materialize the spliced result once.
   return flatstr(value.slice(0, offset) + inserted + value.slice(offset));
 }
 

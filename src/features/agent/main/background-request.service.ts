@@ -103,7 +103,7 @@ export async function makeBackgroundRequest(
     // Make request with timeout
     const result = await Promise.race([
       new Promise<BackgroundRequestResult>((resolve) => {
-        let content = '';
+        const contentParts: string[] = [];
         let hasError = false;
         let resolved = false;
 
@@ -118,7 +118,7 @@ export async function makeBackgroundRequest(
           .streamMessage(messages, {
             onChunk: (chunk: string) => {
               if (!hasError) {
-                content += chunk;
+                contentParts.push(chunk);
               }
             },
             onComplete: (message?: { content?: string }) => {
@@ -129,7 +129,7 @@ export async function makeBackgroundRequest(
                 // handleStreamCompletion). This handles non-streaming agents that
                 // return content only in the prompt response.
                 const finalContent =
-                  content.trim() ||
+                  contentParts.join('').trim() ||
                   (message?.content ? String(message.content).trim() : '');
                 safeResolve({ success: true, content: finalContent });
               }

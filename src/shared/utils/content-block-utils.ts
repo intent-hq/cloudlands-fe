@@ -33,22 +33,24 @@ export function buildOrderedContentBlocks(
   buffer: string,
 ): ContentBlock[] {
   const blocks: ContentBlock[] = [];
-  let accumulatedText = '';
+  let textParts: string[] = [];
 
   for (const item of items) {
     if (item.type === 'text') {
-      accumulatedText += item.content;
+      textParts.push(item.content as string);
     } else if (item.type === 'block') {
+      const accumulatedText = textParts.join('');
       if (accumulatedText) {
         blocks.push({ type: 'text' as const, text: flatstr(accumulatedText) });
-        accumulatedText = '';
       }
+      textParts = [];
       blocks.push(item.content as ContentBlock);
     }
   }
 
-  if (accumulatedText) {
-    blocks.push({ type: 'text' as const, text: flatstr(accumulatedText) });
+  const trailingText = textParts.join('');
+  if (trailingText) {
+    blocks.push({ type: 'text' as const, text: flatstr(trailingText) });
   }
 
   if (buffer) {

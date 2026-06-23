@@ -114,13 +114,27 @@ export interface StreamChunk {
   sequence?: number;
 }
 
+// Overlap kept between chunks to detect a digest closing tag split across a
+// chunk boundary. '</agent_digest>' is 15 chars, so 14 chars of overlap
+// guarantees the full tag is visible in (digestTail + chunk.data).
+const DIGEST_TAIL_LEN = 14;
+
 export interface StreamSession {
   streamId: string;
   config: StreamConfig;
   startTime: number;
   lastActivity: number;
   chunks: StreamChunk[];
+  // Materialized accumulated text. Kept for serialization/restore compatibility
+  // and as a lazily-joined cache of `textParts`.
   accumulatedText: string;
+  // Live accumulator: per-token chunks are pushed here and joined lazily,
+  // instead of building an O(n) cons-string rope on every token.
+  textParts: string[];
+  // Running character length of accumulated text (avoids joining to read length).
+  accumulatedTextLength: number;
+  // Last DIGEST_TAIL_LEN chars of accumulated text, for cheap split-tag detection.
+  digestTail: string;
   contentBlocks: ContentBlock[];
   isComplete: boolean;
   error?: Error;
@@ -268,6 +282,9 @@ export class StreamManager extends EventEmitter implements IDisposable {
       lastActivity: Date.now(),
       chunks: [],
       accumulatedText: '',
+      textParts: [],
+      accumulatedTextLength: 0,
+      digestTail: '',
       contentBlocks: [],
       isComplete: false,
 
@@ -421,41 +438,69 @@ export class StreamManager extends EventEmitter implements IDisposable {
     }
 
     if (chunk.type === 'text') {
-      session.accumulatedText += chunk.data;
+      // PERF: accumulate per-token chunks into an array; join lazily instead of
+      // building an O(n) cons-string rope (and re-flattening it) on every token.
+      const data: string = chunk.data;
+      session.textParts.push(data);
+      session.accumulatedTextLength += data.length;
 
       // PERF: Warn about large responses that may cause memory pressure
       // Check every 100 chunks to avoid checking on every chunk
       const LARGE_RESPONSE_THRESHOLD = 2 * 1024 * 1024; // 2MB
       if (
         session.chunks.length % 100 === 0 &&
-        session.accumulatedText.length > LARGE_RESPONSE_THRESHOLD
+        session.accumulatedTextLength > LARGE_RESPONSE_THRESHOLD
       ) {
         logger.warn('Large streaming response detected', {
           agentId: session.config.agentId,
-          accumulatedTextMB: (session.accumulatedText.length / (1024 * 1024)).toFixed(2),
+          accumulatedTextMB: (session.accumulatedTextLength / (1024 * 1024)).toFixed(2),
           chunkCount: session.chunks.length,
         });
       }
 
-      // Update agent state - check for digest tags in accumulated text
-      {
-        // Always check for agent digest tags - the tag may be split across chunks
-        const { digest, cleanedText } = AuggieTextParser.extractDigest(session.accumulatedText);
+      // Update agent state - check for digest tags in accumulated text.
+      // The digest regex only matches once the closing tag is present, so only
+      // materialize + scan the full text when the closing tag completes (it may
+      // be split across chunks, hence the small digestTail overlap probe).
+      const probe = session.digestTail + data;
+      if (probe.includes('</agent_digest>')) {
+        const text = this.getAccumulatedText(session);
+        const { digest, cleanedText } = AuggieTextParser.extractDigest(text);
         if (digest) {
+          session.textParts = [cleanedText];
           session.accumulatedText = cleanedText;
+          session.accumulatedTextLength = cleanedText.length;
+          session.digestTail = cleanedText.slice(-DIGEST_TAIL_LEN);
           const wsId = session.config.workspaceId as string;
           appStore.dispatch(updateAgentDigest(wsId, session.config.agentId, digest));
           logger.debug('Extracted agent digest from stream', {
             agentId: session.config.agentId,
             digest,
           });
+        } else {
+          session.digestTail = probe.slice(-DIGEST_TAIL_LEN);
         }
+      } else {
+        session.digestTail = probe.slice(-DIGEST_TAIL_LEN);
       }
     }
 
     // Emit events
     this.emit('stream:chunk', { streamId: session.streamId, chunk });
     this.emit(`stream:${session.streamId}:chunk`, chunk);
+  }
+
+  /**
+   * Materialize the session's accumulated text by joining buffered chunks once.
+   * Collapses `textParts` to a single flattened entry so repeated reads are O(1)
+   * until more chunks arrive, and keeps `accumulatedText` in sync as a cache.
+   */
+  private getAccumulatedText(session: StreamSession): string {
+    if (session.textParts.length === 0) return session.accumulatedText || '';
+    const joined = session.textParts.length === 1 ? session.textParts[0] : session.textParts.join('');
+    session.textParts = [joined];
+    session.accumulatedText = joined;
+    return joined;
   }
 
   // processBatchedChunks removed - direct streaming only
@@ -717,6 +762,9 @@ export class StreamManager extends EventEmitter implements IDisposable {
     session.isActive = false;
     const duration = Date.now() - session.startTime;
 
+    // Materialize buffered text chunks once for all downstream reads.
+    const accumulatedText = this.getAccumulatedText(session);
+
     // Create assistant message
     const message: AgentMessage & { content?: string } = {
       id: session.config.messageId || createMessageId(uuidv4()),
@@ -725,8 +773,8 @@ export class StreamManager extends EventEmitter implements IDisposable {
       contentBlocks:
         session.contentBlocks.length > 0
           ? session.contentBlocks
-          : session.accumulatedText
-            ? [{ type: 'text' as const, text: session.accumulatedText }]
+          : accumulatedText
+            ? [{ type: 'text' as const, text: accumulatedText }]
             : [],
       timestamp: new Date(),
       metadata: {
@@ -748,7 +796,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
         .join('');
       (message as any).content = textContent;
     } else {
-      (message as any).content = session.accumulatedText || '';
+      (message as any).content = accumulatedText || '';
     }
 
     // Update agent state
@@ -804,12 +852,12 @@ export class StreamManager extends EventEmitter implements IDisposable {
     this.metrics.averageResponseTime = (currentAvg * (totalCount - 1) + responseTime) / totalCount;
 
     // Capture values before clearing for return and logging
-    const textLength = session.accumulatedText.length;
+    const textLength = accumulatedText.length;
     const blockCount = session.contentBlocks.length;
     const chunkCount = session.chunks.length;
     const bytesReceived = session.bytesReceived;
     const healthStatus = session.healthStatus;
-    const text = session.accumulatedText;
+    const text = accumulatedText;
     const contentBlocks = [...session.contentBlocks]; // Copy for return
 
     logger.info('Completed stream', {
@@ -825,6 +873,9 @@ export class StreamManager extends EventEmitter implements IDisposable {
     // PERF: Clear large data immediately after message is created
     // This frees memory sooner rather than waiting for session cleanup
     session.accumulatedText = '';
+    session.textParts = [];
+    session.accumulatedTextLength = 0;
+    session.digestTail = '';
     session.chunks = [];
     // Note: contentBlocks is already copied above for return value
 
@@ -1064,7 +1115,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
     let estimatedBytes = 0;
     for (const session of this.sessions.values()) {
       // Estimate based on accumulated text and chunks
-      estimatedBytes += session.accumulatedText.length * 2; // UTF-16 characters
+      estimatedBytes += session.accumulatedTextLength * 2; // UTF-16 characters
       estimatedBytes += session.chunks.length * 100; // Rough estimate per chunk object
       estimatedBytes += session.bytesReceived;
     }
@@ -1384,7 +1435,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
           config: session.config,
           startTime: session.startTime,
           lastActivity: session.lastActivity,
-          accumulatedText: session.accumulatedText,
+          accumulatedText: this.getAccumulatedText(session),
           contentBlocks: session.contentBlocks,
           chunksReceived: session.chunksReceived,
           bytesReceived: session.bytesReceived,
@@ -1443,6 +1494,11 @@ export class StreamManager extends EventEmitter implements IDisposable {
           lastActivity: Date.now(), // Update to now
           chunks: [], // Don't restore chunks (too large)
           accumulatedText: state.accumulatedText,
+          textParts: state.accumulatedText ? [state.accumulatedText] : [],
+          accumulatedTextLength: state.accumulatedText ? state.accumulatedText.length : 0,
+          digestTail: state.accumulatedText
+            ? state.accumulatedText.slice(-DIGEST_TAIL_LEN)
+            : '',
           contentBlocks: state.contentBlocks,
           isComplete: false,
           isActive: true,

@@ -162,6 +162,15 @@ async function flushPromises(): Promise<void> {
   }
 }
 
+// Wait for the detector's background poll (kicked off by start(), including its
+// dynamic import('fs')) to fully settle so a subsequent poll is not swallowed by
+// the concurrency guard. Uses real macrotask ticks (no fake timers).
+async function waitForIdle(): Promise<void> {
+  for (let i = 0; i < 10; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
 async function waitForProcessedChanges(processor: any, changes: any[]): Promise<void> {
   await vi.waitFor(() => {
     expect(processor.processFileChanges).toHaveBeenCalledWith(changes);
@@ -300,5 +309,85 @@ describe('ChangeDetectorRefactored content refresh emissions', () => {
       await detector.stop();
       vi.useRealTimers();
     }
+  });
+
+  it('re-detects an identical git status after detectGitChanges throws once', async () => {
+    const emptyStatus = {
+      staged: [],
+      stagedAdded: [],
+      stagedDeleted: [],
+      unstaged: [],
+      untracked: [],
+      deleted: [],
+      renamed: new Map(),
+    };
+    const readmeStatus = { ...emptyStatus, unstaged: ['README.md'] };
+    const diff = { path: 'README.md', additions: 1, deletions: 0, diff: '+ a' };
+
+    await detector.stop();
+    detector = new ChangeDetectorRefactored({ workspaceId: 'ws-1', workspacePath: '/workspace' });
+    mocks.fileWatchers[mocks.fileWatchers.length - 1].getStats.mockReturnValue({
+      isWatching: false,
+      watchedPaths: 0,
+    });
+    const gitOps = mocks.gitOpsInstances[mocks.gitOpsInstances.length - 1];
+    gitOps.getStatus.mockResolvedValue(emptyStatus);
+
+    await detector.start();
+    await waitForIdle();
+
+    // Switch to a status that requires a diff; the first detection throws, so the
+    // processed-status marker must NOT advance and the next identical poll must retry.
+    gitOps.getStatus.mockResolvedValue(readmeStatus);
+    gitOps.getBatchDiffs.mockClear();
+    gitOps.getBatchDiffs
+      .mockRejectedValueOnce(new Error('diff failed'))
+      .mockResolvedValue(new Map([['README.md', diff]]));
+
+    await detector.forceGitCheck();
+    await detector.forceGitCheck();
+
+    expect(gitOps.getBatchDiffs).toHaveBeenCalledTimes(2);
+  });
+
+  it('detects a forced/triggered check on an unchanged status after the follow-up window lapses', async () => {
+    const emptyStatus = {
+      staged: [],
+      stagedAdded: [],
+      stagedDeleted: [],
+      unstaged: [],
+      untracked: [],
+      deleted: [],
+      renamed: new Map(),
+    };
+    const readmeStatus = { ...emptyStatus, unstaged: ['README.md'] };
+    const diff = { path: 'README.md', additions: 1, deletions: 0, diff: '+ a' };
+
+    await detector.stop();
+    detector = new ChangeDetectorRefactored({ workspaceId: 'ws-1', workspacePath: '/workspace' });
+    mocks.fileWatchers[mocks.fileWatchers.length - 1].getStats.mockReturnValue({
+      isWatching: false,
+      watchedPaths: 0,
+    });
+    const gitOps = mocks.gitOpsInstances[mocks.gitOpsInstances.length - 1];
+    const processor = mocks.changeProcessors[mocks.changeProcessors.length - 1];
+    gitOps.getStatus.mockResolvedValue(readmeStatus);
+    gitOps.getBatchDiffs.mockResolvedValue(new Map([['README.md', diff]]));
+    // Return no processed changes so the follow-up window is never armed: this is the
+    // "window lapsed" state (followUpPollUntil stays in the past).
+    processor.processFileChanges.mockResolvedValue([]);
+
+    await detector.start();
+    await waitForIdle();
+
+    gitOps.getBatchDiffs.mockClear();
+
+    // A non-forced poll on the unchanged status short-circuits (no re-diff).
+    await detector.forceGitCheck();
+    expect(gitOps.getBatchDiffs).not.toHaveBeenCalled();
+
+    // A forced/triggered check bypasses the short-circuit and re-runs detection.
+    await detector.triggerImmediateCheck('file-save');
+    expect(gitOps.getBatchDiffs).toHaveBeenCalledTimes(1);
   });
 });

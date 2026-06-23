@@ -106,6 +106,13 @@ export class ChangeDetectorRefactored extends EventEmitter {
   private readonly FOLLOW_UP_POLL_WINDOW_MS = 15000;
   private lastGitPoll: string | null = null;
   private lastGitStatus: GitStatus | null = null;
+  /**
+   * Serialized form of the last processed git status. Used to short-circuit a
+   * poll when the status is byte-identical to the previous one, avoiding the
+   * expensive detectGitChanges() (batch diffs + file reads) and downstream
+   * event dispatch when nothing actually changed.
+   */
+  private lastGitStatusSerialized: string | null = null;
   private gitPollErrorCount: number = 0;
   private lastActivityTime: number = Date.now();
   private isPollingGitStatus: boolean = false;
@@ -511,8 +518,13 @@ export class ChangeDetectorRefactored extends EventEmitter {
 
   /**
    * Poll git status for changes
+   *
+   * @param options.force When true, bypass the byte-identical short-circuit so a
+   *   re-diff always runs. Used for explicit signals (file-save / watcher) where a
+   *   same-path content edit can leave the git status string unchanged.
    */
-  private async pollGitStatus(): Promise<void> {
+  private async pollGitStatus(options: { force?: boolean } = {}): Promise<void> {
+    const force = options.force ?? false;
     // Guard against concurrent executions
     if (this.isPollingGitStatus) {
       // Mark that a poll was requested so we re-poll after current one finishes
@@ -561,8 +573,34 @@ export class ChangeDetectorRefactored extends EventEmitter {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const pollDuration = this.performanceMonitor.endTimer(timerKey);
 
+        // Short-circuit when the git status is byte-identical to the previously
+        // processed status: skip the expensive detectGitChanges() (batch diffs
+        // + file reads) and all downstream change processing/dispatch.
+        //
+        // Exceptions where we deliberately re-diff even when the status string is
+        // unchanged, because a same-path edit (e.g. a file that stays "modified"
+        // while its content changes) does not alter the status but must still be
+        // detected:
+        //   - during the bounded follow-up polling window, and
+        //   - when an explicit signal forces the poll (file-save / watcher).
+        const serializedStatus = this.serializeGitStatus(status);
+        const inFollowUpWindow = Date.now() < this.followUpPollUntil;
+        if (
+          !force &&
+          !inFollowUpWindow &&
+          this.lastGitStatusSerialized !== null &&
+          serializedStatus === this.lastGitStatusSerialized
+        ) {
+          return;
+        }
+
         // Compare with last status
         const changes = await this.detectGitChanges(status);
+
+        // Only record the processed status after detectGitChanges() succeeds. If it
+        // throws (caught below), leaving the previous value intact lets the next
+        // byte-identical poll retry detection instead of short-circuiting.
+        this.lastGitStatusSerialized = serializedStatus;
 
         if (changes.length > 0) {
           this.stats.totalChangesDetected += changes.length;
@@ -648,8 +686,26 @@ export class ChangeDetectorRefactored extends EventEmitter {
       reason,
     });
 
-    // Perform an immediate git poll
-    await this.pollGitStatus();
+    // Perform an immediate git poll, forcing a re-diff so a same-path content edit
+    // that leaves the git status string unchanged is still detected.
+    await this.pollGitStatus({ force: true });
+  }
+
+  /**
+   * Serialize a GitStatus into a stable string for byte-identical comparison
+   * across polls. The `renamed` Map is converted to entries because Map is not
+   * JSON-serializable; array order is deterministic for an unchanged git state.
+   */
+  private serializeGitStatus(status: GitStatus): string {
+    return JSON.stringify({
+      staged: status.staged,
+      stagedAdded: status.stagedAdded,
+      stagedDeleted: status.stagedDeleted,
+      unstaged: status.unstaged,
+      untracked: status.untracked,
+      deleted: status.deleted,
+      renamed: Array.from(status.renamed.entries()),
+    });
   }
 
   /**

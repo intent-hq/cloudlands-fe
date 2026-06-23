@@ -288,14 +288,14 @@ export abstract class BaseAgentProvider extends EventEmitter {
    */
   protected handleStream(stream: any, options: StreamOptions): Promise<AgentMessage> {
     return new Promise((resolve, reject) => {
-      let fullContent = '';
+      const contentParts: string[] = [];
       const toolCalls: ToolCall[] = [];
 
       stream.on('data', (chunk: any) => {
         try {
           const token = this.extractToken(chunk);
           if (token) {
-            fullContent += token;
+            contentParts.push(token);
             if (options.onToken) {
               options.onToken(token);
             }
@@ -317,6 +317,7 @@ export abstract class BaseAgentProvider extends EventEmitter {
       stream.on('end', () => {
         // Note: AgentMessage here is aliased to ProviderMessage which doesn't have id/timestamp
         // The caller is responsible for adding those fields when needed
+        const fullContent = contentParts.join('');
         const message: AgentMessage = {
           role: 'assistant',
           contentBlocks: fullContent ? [{ type: 'text' as const, text: fullContent }] : [],

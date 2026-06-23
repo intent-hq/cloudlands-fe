@@ -780,3 +780,65 @@ Bundled prompt`,
     });
   });
 });
+
+describe('Stale specialist fallback on transient refresh failure', () => {
+  afterEach(() => {
+    vi.doUnmock('../specialist-file-loader');
+    vi.resetModules();
+    vi.useRealTimers();
+  });
+
+  it('serves the last-known-good list when a refresh fails after a successful load', async () => {
+    vi.resetModules();
+
+    let shouldThrow = false;
+    const staleSpecialist = {
+      id: 'test-stale-specialist',
+      filePath: '/tmp/test-stale-specialist.md',
+      frontmatter: {
+        name: 'Test Stale Specialist',
+        description: 'For stale fallback test',
+      },
+      behaviorPrompt: 'You are a stale fallback test specialist.',
+      rawContent: '',
+      source: 'user' as const,
+    };
+
+    vi.doMock('../specialist-file-loader', () => ({
+      loadBundledSpecialistFiles: vi.fn(async () => {
+        if (shouldThrow) throw new Error('transient bundled load failure');
+        return { specialists: [], errors: [] };
+      }),
+      loadSpecialistFiles: vi.fn(async () => {
+        if (shouldThrow) throw new Error('transient user load failure');
+        return { specialists: [staleSpecialist], errors: [] };
+      }),
+      loadProjectSpecialistFiles: vi.fn(async () => ({ specialists: [], errors: [] })),
+      migrateCustomSpecialistsFromStore: vi.fn(async () => ({
+        migrated: 0,
+        skipped: 0,
+        errors: [],
+      })),
+      migrateOverridesFromStore: vi.fn(async () => ({ migrated: 0, errors: [] })),
+    }));
+
+    const service = await vi.importActual<
+      typeof import('../../../agent/main/specialists.service')
+    >('../../../agent/main/specialists.service');
+
+    vi.useFakeTimers();
+
+    // First load succeeds, populating both the TTL cache and last-known-good.
+    const firstPrompt = await service.formatSpecialistsForPrompt();
+    expect(firstPrompt).toContain('test-stale-specialist');
+
+    // Expire the 5s TTL cache (FILE_CACHE_TTL_MS) so the next access triggers a refresh.
+    shouldThrow = true;
+    await vi.advanceTimersByTimeAsync(6000);
+
+    // The refresh now throws (swallowed). The fallback must still serve the prior
+    // list rather than an empty one.
+    const secondPrompt = await service.formatSpecialistsForPrompt();
+    expect(secondPrompt).toContain('test-stale-specialist');
+  });
+});

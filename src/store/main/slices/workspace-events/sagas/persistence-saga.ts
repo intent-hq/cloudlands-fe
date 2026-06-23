@@ -61,6 +61,20 @@ export function clearEventStoreCache(): void {
 }
 
 /**
+ * Dispose every cached EventStore (flushing pending writes) and clear the cache.
+ * Used on saga cancellation (app shutdown) so buffered events are not lost.
+ */
+export async function disposeAllEventStores(): Promise<void> {
+  const stores = Array.from(eventStoreCache.values());
+  eventStoreCache.clear();
+  await Promise.allSettled(
+    stores.map((store) =>
+      typeof store?.dispose === "function" ? store.dispose() : Promise.resolve(),
+    ),
+  );
+}
+
+/**
  * Remove and dispose a single workspace's EventStore from the cache.
  * Calls EventStore.dispose() first to flush pending writes and clear timers,
  * then deletes the entry so the GC can reclaim the events + indexes.
@@ -97,7 +111,9 @@ export function* workspaceEventsPersistenceSaga() {
     yield* takeEvery(workspaceEventAccepted, handlePersistEvent);
   } finally {
     if (yield* cancelled()) {
-      clearEventStoreCache();
+      // Dispose (flush pending writes) rather than just clearing the cache,
+      // so buffered events are persisted on app shutdown.
+      yield* call(disposeAllEventStores);
     }
   }
 }

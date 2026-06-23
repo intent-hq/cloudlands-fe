@@ -12,6 +12,7 @@ import { RemoteRPCError } from '$shared/main/remote-rpc-client';
 import type { RemoteRPCClient } from '$shared/main/remote-rpc-client';
 import * as path from 'path';
 import { Logger } from '$shared/logger';
+import { createCache, type Cache } from '../../../main/utils/cache';
 
 const logger = new Logger('RemoteFileSystemService');
 
@@ -34,8 +35,11 @@ export interface RemoteFileSystemConfig {
 export class RemoteFileSystemService extends EventEmitter {
   private config: RemoteFileSystemConfig;
   private isConnected: boolean = false;
-  private fileCache: Map<string, { content: string; timestamp: number }> = new Map();
-  private cacheTimeout: number = 5000; // 5 seconds cache
+  private fileCache: Cache<string, string> = createCache<string, string>({
+    name: 'remote-fs:files',
+    ttlMs: 5000,
+    maxSize: 200,
+  });
 
   constructor(config: RemoteFileSystemConfig) {
     super();
@@ -106,8 +110,8 @@ export class RemoteFileSystemService extends EventEmitter {
 
     // Check cache first
     const cached = this.fileCache.get(fullPath);
-    if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
-      return cached.content;
+    if (cached !== undefined) {
+      return cached;
     }
 
     try {
@@ -115,10 +119,7 @@ export class RemoteFileSystemService extends EventEmitter {
       const result = await rpcClient.readFile({ path: fullPath });
 
       // Cache the content
-      this.fileCache.set(fullPath, {
-        content: result.content,
-        timestamp: Date.now(),
-      });
+      this.fileCache.set(fullPath, result.content);
 
       return result.content;
     } catch (error) {

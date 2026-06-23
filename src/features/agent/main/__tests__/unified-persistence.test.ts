@@ -320,6 +320,44 @@ describe('UnifiedPersistence', () => {
       ).toBe(loadPromise);
     });
 
+    it('does not re-cache a resolved in-flight load whose cache entry was swept by TTL', async () => {
+      const cacheKey = 'workspace-closed-ttl/agent-inflight-ttl';
+      const resolvedData = { success: true, data: { id: 'agent-inflight-ttl' } };
+      let resolveLoad: (value: any) => void = () => {};
+      const pending = new Promise((resolve) => {
+        resolveLoad = resolve;
+      });
+      const diskSpy = vi
+        .spyOn(persistence as any, 'loadAgentFromDisk')
+        .mockReturnValue(pending as any);
+
+      // Start the load but do not await it; this registers the in-flight key.
+      const loadCall = persistence.loadAgent(
+        'agent-inflight-ttl' as any,
+        'workspace-closed-ttl' as any,
+        testDir,
+      );
+
+      // Simulate the load cache entry being swept by its 2s TTL while the load
+      // is still in flight, so loadCache.get(cacheKey) would return undefined.
+      (persistence as any).loadCache.delete(cacheKey);
+
+      // Trim with no open workspaces: the in-flight load must still mark the
+      // closed workspace inactive even though the cache entry is gone.
+      persistence.trimLoadCachesToOpenWorkspaces([]);
+      expect((persistence as any).inactiveLoadCacheWorkspaces.has('workspace-closed-ttl')).toBe(
+        true,
+      );
+
+      // Resolve the load: the guard must delete instead of re-cache.
+      resolveLoad(resolvedData);
+      const result = await loadCall;
+      expect(result).toBe(resolvedData);
+      expect((persistence as any).loadCache.has(cacheKey)).toBe(false);
+
+      diskSpy.mockRestore();
+    });
+
     it('clears retained load and pending state for a cleared workspace only', async () => {
       const targetAgent: AgentSession = {
         id: 'agent-clear-workspace-target' as any,

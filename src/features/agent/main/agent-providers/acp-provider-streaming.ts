@@ -2114,14 +2114,16 @@ export class ACPProviderStreaming {
                   : taskText.replace(/<!--agent:[^>]+-->/g, '').trim();
                 tasks.push({ lineNumber: i + 1, text: cleanText, status, taskNoteId });
               }
-              let text = `Tasks in "${note.title || input.noteId}" (${tasks.length} task${tasks.length !== 1 ? 's' : ''}):\n`;
+              const textParts: string[] = [
+                `Tasks in "${note.title || input.noteId}" (${tasks.length} task${tasks.length !== 1 ? 's' : ''}):\n`,
+              ];
               for (const task of tasks) {
                 const cb =
                   task.status === 'done' ? '[x]' : task.status === 'in-progress' ? '[/]' : '[ ]';
                 const linkInfo = task.taskNoteId ? ` → task note: ${task.taskNoteId}` : '';
-                text += `\n  Line ${task.lineNumber}: ${cb} ${task.text}${linkInfo}`;
+                textParts.push(`\n  Line ${task.lineNumber}: ${cb} ${task.text}${linkInfo}`);
               }
-              resultContent = text;
+              resultContent = textParts.join('');
             }
           } else if (codexResolvedToolName === 'get_my_task' && input.taskNoteId) {
             const taskResult = await notesService.getNote(

@@ -8,6 +8,7 @@
  */
 
 import { Logger } from '../../../shared/logger';
+import { createCache } from '../../../main/utils/cache';
 import type { UserActivityRepository } from './user-activity.repository';
 import type { NoteReadRecord, UserActivityData } from '../../../shared/types/user-activity.types';
 import {
@@ -19,8 +20,12 @@ import type { NoteId, WorkspaceId } from '../../../shared/types/branded-ids';
 const logger = new Logger('UserActivityService');
 
 export class UserActivityService {
-  // In-memory cache per workspace to avoid repeated file reads
-  private cache = new Map<WorkspaceId, UserActivityData>();
+  // In-memory cache per workspace to avoid repeated file reads.
+  // LRU-bounded so activity data is retained only for recently-used workspaces.
+  private cache = createCache<WorkspaceId, UserActivityData>({
+    name: 'user-activity',
+    maxSize: 50,
+  });
 
   constructor(private readonly repository: UserActivityRepository) {}
 

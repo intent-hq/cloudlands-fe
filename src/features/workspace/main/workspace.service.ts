@@ -174,6 +174,12 @@ export class WorkspaceService {
   private readonly dirtyBackgroundEnrichment = new Set<WorkspaceId>();
   private backgroundEnrichmentTimer: NodeJS.Timeout | null = null;
   private activeBackgroundEnrichmentCount = 0;
+  // Coalesce rapid summary invalidations (git/note/agent events) into a single
+  // enrichment pass per burst. Stores workspaceId -> latest reason; flushed on a
+  // fixed-window timer so a continuous event stream cannot starve enrichment.
+  private readonly pendingSummaryInvalidations = new Map<WorkspaceId, string>();
+  private summaryInvalidationTimer: NodeJS.Timeout | null = null;
+  private readonly SUMMARY_INVALIDATION_DEBOUNCE_MS = 100;
   private periodicPRRefreshTimer: NodeJS.Timeout | null = null;
   private periodicPRRefreshInitialTimeout: NodeJS.Timeout | null = null;
   private periodicPRStaggeredTimeouts: NodeJS.Timeout[] = [];
@@ -2383,7 +2389,39 @@ task:
       return;
     }
 
-    this.queueBackgroundEnrichment(workspaceId, reason);
+    // Coalesce rapid invalidations into one enrichment pass per burst. Keep the
+    // latest reason for the workspace and arm a fixed-window timer (not reset on
+    // subsequent calls) so a steady event stream still flushes regularly.
+    this.pendingSummaryInvalidations.set(workspaceId, reason);
+    if (!this.summaryInvalidationTimer) {
+      this.summaryInvalidationTimer = setTimeout(
+        () => this.flushPendingSummaryInvalidations(),
+        this.SUMMARY_INVALIDATION_DEBOUNCE_MS,
+      );
+    }
+  }
+
+  private flushPendingSummaryInvalidations(): void {
+    this.summaryInvalidationTimer = null;
+    if (this.disposed) {
+      this.pendingSummaryInvalidations.clear();
+      return;
+    }
+
+    if (this.pendingSummaryInvalidations.size === 0) {
+      return;
+    }
+
+    const pending = Array.from(this.pendingSummaryInvalidations.entries());
+    this.pendingSummaryInvalidations.clear();
+
+    for (const [workspaceId, reason] of pending) {
+      if (this.recentlyDeletedWorkspaces.has(workspaceId)) {
+        continue;
+      }
+      this.queueBackgroundEnrichment(workspaceId, reason);
+    }
+
     this.processBackgroundEnrichmentQueue();
   }
 
@@ -4209,6 +4247,7 @@ task:
 
     // Cancel any pending background enrichment for this workspace
     this.pendingBackgroundEnrichment.delete(workspaceId);
+    this.pendingSummaryInvalidations.delete(workspaceId);
 
     logger.debug('Cleared workspace cache', { workspaceId });
   }
@@ -4304,6 +4343,13 @@ task:
       clearTimeout(this.backgroundEnrichmentTimer);
       this.backgroundEnrichmentTimer = null;
     }
+
+    // Clear pending summary invalidation debounce
+    if (this.summaryInvalidationTimer) {
+      clearTimeout(this.summaryInvalidationTimer);
+      this.summaryInvalidationTimer = null;
+    }
+    this.pendingSummaryInvalidations.clear();
 
     // Clear periodic PR refresh initial timeout
     if (this.periodicPRRefreshInitialTimeout) {

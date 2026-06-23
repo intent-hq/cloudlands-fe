@@ -152,6 +152,10 @@ const eventTypesFor = (events: WorkspaceEvent[]): string[] => [
 // ---------------------------------------------------------------------------
 
 const DEDUP_TTL_MS = 5 * 60_000; // 5 minutes
+/** Hard cap on event IDs retained per agent (oldest evicted beyond this). */
+const MAX_EVENT_IDS_PER_AGENT = 500;
+/** Hard cap on tracked agents (least-recently-used agent evicted beyond this). */
+const MAX_TRACKED_AGENTS = 200;
 
 interface DeliveredEntry {
   deliveredAt: number;
@@ -168,10 +172,13 @@ function getAgentDeliveryCache(wsId: string, agentId: string): Map<string, Deliv
   }
 
   let agentCache = workspaceCache.get(agentId);
-  if (!agentCache) {
+  if (agentCache) {
+    // Refresh LRU recency: re-insert so this agent is most-recently-used.
+    workspaceCache.delete(agentId);
+  } else {
     agentCache = new Map();
-    workspaceCache.set(agentId, agentCache);
   }
+  workspaceCache.set(agentId, agentCache);
   return agentCache;
 }
 
@@ -186,16 +193,40 @@ function recordDeliveredEventIds(wsId: string, agentId: string, eventIds: string
   for (const [id, entry] of agentCache) {
     if (entry.deliveredAt < cutoff) agentCache.delete(id);
   }
+  // Cap per-agent entries (Map preserves insertion order → evict oldest first).
+  while (agentCache.size > MAX_EVENT_IDS_PER_AGENT) {
+    const oldest = agentCache.keys().next();
+    if (oldest.done) break;
+    agentCache.delete(oldest.value);
+  }
+
+  const workspaceCache = recentlyDelivered.get(wsId);
+  if (!workspaceCache) return;
+  // Drop empty agent caches so the workspace map does not retain dead agents.
+  if (agentCache.size === 0) {
+    workspaceCache.delete(agentId);
+  }
+  // Cap tracked agents per workspace (evict least-recently-used, never the current agent).
+  while (workspaceCache.size > MAX_TRACKED_AGENTS) {
+    const oldestAgent = workspaceCache.keys().next();
+    if (oldestAgent.done || oldestAgent.value === agentId) break;
+    workspaceCache.delete(oldestAgent.value);
+  }
+  // Drop empty workspace caches so the outer map does not retain dead workspaces.
+  if (workspaceCache.size === 0) {
+    recentlyDelivered.delete(wsId);
+  }
 }
 
 /** @internal — exported for tests */
 export function filterAlreadyDelivered(wsId: string, agentId: string, events: WorkspaceEvent[]): WorkspaceEvent[] {
-  const agentCache = recentlyDelivered.get(wsId)?.get(agentId);
-  if (!agentCache || agentCache.size === 0) return events;
+  const workspaceCache = recentlyDelivered.get(wsId);
+  const agentCache = workspaceCache?.get(agentId);
+  if (!workspaceCache || !agentCache || agentCache.size === 0) return events;
 
   const now = Date.now();
   const cutoff = now - DEDUP_TTL_MS;
-  return events.filter((e) => {
+  const result = events.filter((e) => {
     const id = (e as any).id as string | undefined;
     if (!id) return true; // keep events without IDs
     const entry = agentCache.get(id);
@@ -206,6 +237,12 @@ export function filterAlreadyDelivered(wsId: string, agentId: string, events: Wo
     }
     return false; // already delivered — skip
   });
+  // Drop the agent cache if lazy expiry emptied it.
+  if (agentCache.size === 0) {
+    workspaceCache.delete(agentId);
+    if (workspaceCache.size === 0) recentlyDelivered.delete(wsId);
+  }
+  return result;
 }
 
 /** @internal — exposed for tests */

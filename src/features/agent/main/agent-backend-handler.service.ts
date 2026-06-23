@@ -4746,6 +4746,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
   }
 
   private static PERSISTENCE_LIST_CACHE_TTL_MS = 30000; // 30 second cache - 5s was too short for rapid workspace switching
+  // Bound the per-workspace list cache so rapid workspace switching cannot grow
+  // it unbounded; LRU eviction drops the least-recently-used workspace entries.
+  private static PERSISTENCE_LIST_CACHE_MAX_SIZE = 50;
   // OPTIMIZATION: Cache for persistence list to avoid repeated disk reads
   // This cache persists across page refreshes since it's in the main process
   private persistenceListCache = createCache<
@@ -4754,6 +4757,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
   >({
     name: 'agent-persistence-list',
     ttlMs: AgentBackendHandler.PERSISTENCE_LIST_CACHE_TTL_MS,
+    maxSize: AgentBackendHandler.PERSISTENCE_LIST_CACHE_MAX_SIZE,
   });
   private inactivePersistenceListCacheWorkspaces = new Set<string>();
   private openWorkspaceIdsForAgentHydration: Set<string> | null = null;
@@ -6119,6 +6123,15 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         return;
     }
 
+    this.dispatchStreamWorkspaceEvent(eventType, agentId, workspaceId, data);
+  }
+
+  private dispatchStreamWorkspaceEvent(
+    eventType: 'agent:stream:start' | 'agent:stream:chunk' | 'agent:stream:content-blocks' | 'agent:stream:end' | 'agent:stream:message' | 'agent:stream:tool_use' | 'agent:stream:tool_result',
+    agentId: string,
+    workspaceId: string,
+    data: any,
+  ): void {
     try {
       mainDispatch(
         reduxEmitWorkspaceEvent(

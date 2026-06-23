@@ -38,6 +38,7 @@ import {
   type SpecialistFile,
 } from '../../../shared/specialist-file-types';
 import { githubAuthService } from '../../github-auth/main/github-auth.service';
+import { createCache } from '../../../main/utils/cache';
 
 const logger = new Logger('SpecialistsService');
 
@@ -94,9 +95,22 @@ let initPromise: Promise<void> | null = null;
 // Cache for file-based specialists (refreshed on demand)
 // Each workspace can have its own effective set because project specialists are repo-local.
 const DEFAULT_FILE_CACHE_KEY = '__default__';
-const fileSpecialistsCache = new Map<string, SpecialistFile[]>();
-const fileSpecialistsCacheTimes = new Map<string, number>();
 const FILE_CACHE_TTL_MS = 5000; // 5 second cache for file-based specialists
+const fileSpecialistsCache = createCache<string, SpecialistFile[]>({
+  name: 'file-specialists',
+  ttlMs: FILE_CACHE_TTL_MS,
+  maxSize: 50,
+});
+
+// TTL-free "last known good" specialists per cache key. Updated only on a
+// successful merge in refreshFileSpecialistsCache(). The TTL cache above remains
+// the freshness/refresh trigger; this cache lets getCachedFileSpecialists() serve
+// the most recent successfully-loaded list when a transient refresh fails instead
+// of resolving to an empty list.
+const lastKnownGoodFileSpecialists = createCache<string, SpecialistFile[]>({
+  name: 'file-specialists-last-known-good',
+  maxSize: 50,
+});
 
 // In-flight promise to prevent concurrent cache refreshes (race condition fix)
 const refreshInFlight = new Map<string, Promise<void>>();
@@ -108,7 +122,11 @@ function getFileCacheKey(workspacePath?: string): string {
 function getCachedFileSpecialists(workspacePath?: string): SpecialistFile[] {
   const cacheKey = getFileCacheKey(workspacePath);
   return (
-    fileSpecialistsCache.get(cacheKey) ?? fileSpecialistsCache.get(DEFAULT_FILE_CACHE_KEY) ?? []
+    fileSpecialistsCache.get(cacheKey) ??
+    lastKnownGoodFileSpecialists.get(cacheKey) ??
+    fileSpecialistsCache.get(DEFAULT_FILE_CACHE_KEY) ??
+    lastKnownGoodFileSpecialists.get(DEFAULT_FILE_CACHE_KEY) ??
+    []
   );
 }
 
@@ -190,7 +208,8 @@ async function refreshFileSpecialistsCache(workspacePath?: string): Promise<void
 
     const cacheKey = getFileCacheKey(workspacePath);
     fileSpecialistsCache.set(cacheKey, mergedSpecialists);
-    fileSpecialistsCacheTimes.set(cacheKey, Date.now());
+    // Retain the successful result so a later transient failure can still serve it.
+    lastKnownGoodFileSpecialists.set(cacheKey, mergedSpecialists);
 
     const allErrors = [...bundledResult.errors, ...userResult.errors, ...projectResult.errors];
     if (allErrors.length > 0) {
@@ -212,9 +231,7 @@ async function refreshFileSpecialistsCache(workspacePath?: string): Promise<void
  */
 async function getFileSpecialists(workspacePath?: string): Promise<SpecialistFile[]> {
   const cacheKey = getFileCacheKey(workspacePath);
-  const cacheTime = fileSpecialistsCacheTimes.get(cacheKey) ?? 0;
-  const now = Date.now();
-  if (now - cacheTime > FILE_CACHE_TTL_MS) {
+  if (!fileSpecialistsCache.has(cacheKey)) {
     if (!refreshInFlight.has(cacheKey)) {
       refreshInFlight.set(
         cacheKey,
@@ -245,7 +262,6 @@ function findFileSpecialistSync(
 export async function refreshSpecialistsFromFiles(workspacePath?: string): Promise<void> {
   if (!workspacePath) {
     fileSpecialistsCache.clear();
-    fileSpecialistsCacheTimes.clear();
     refreshInFlight.clear();
     await refreshFileSpecialistsCache();
     return;
@@ -253,7 +269,6 @@ export async function refreshSpecialistsFromFiles(workspacePath?: string): Promi
 
   const cacheKey = getFileCacheKey(workspacePath);
   fileSpecialistsCache.delete(cacheKey);
-  fileSpecialistsCacheTimes.delete(cacheKey);
   refreshInFlight.delete(cacheKey);
   await refreshFileSpecialistsCache(workspacePath);
 }

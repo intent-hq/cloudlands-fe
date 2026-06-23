@@ -31,6 +31,7 @@ import { truncateLargeFields } from './persistence-truncation';
 import { isGenericAgentName, isRandomAgentName } from '$shared/utils/agent-name-utils';
 import { deduplicateAgentMessages, normalizeAgentMessage } from '$shared/utils/message-dedup';
 import { normalizeStreamingState } from '$shared/utils/agent-streaming-state';
+import { createCache, type Cache } from '../../../main/utils/cache';
 
 const logger = new Logger('UnifiedPersistence');
 
@@ -118,18 +119,33 @@ export class UnifiedPersistence {
   // during bulk task delegation when multiple agents are created in parallel
   private pendingAgents = new Map<string, AgentSession>();
 
+  // Declared before loadCache so the cache initializer can reference them.
+  private readonly LOAD_CACHE_TTL_MS = 2000; // 2 second TTL - enough to dedupe rapid calls
+  private readonly LOAD_CACHE_MAX_SIZE = 200; // Bound worst-case retention of full sessions
+
   // OPTIMIZATION: Cache for loaded agents to prevent redundant disk reads
-  // This dramatically reduces I/O when frontend components make multiple loadSession calls
-  private loadCache = new Map<
+  // This dramatically reduces I/O when frontend components make multiple loadSession calls.
+  // Backed by the shared cache util: expired full-session entries are actively swept
+  // (freed without needing a re-read) and total retention is bounded by maxSize.
+  private loadCache: Cache<
     string,
     {
       data: LoadResult<AgentSession>;
       timestamp: number;
       loadPromise?: Promise<LoadResult<AgentSession>>;
     }
-  >();
+  > = createCache({
+    name: 'agent-load-cache',
+    ttlMs: this.LOAD_CACHE_TTL_MS,
+    maxSize: this.LOAD_CACHE_MAX_SIZE,
+  });
   private inactiveLoadCacheWorkspaces = new Set<string>();
-  private readonly LOAD_CACHE_TTL_MS = 2000; // 2 second TTL - enough to dedupe rapid calls
+
+  // TTL-free tracking of load cache keys with an in-flight load promise.
+  // The loadCache entry can be swept by its TTL before the load resolves, so
+  // trimLoadCachesToOpenWorkspaces relies on this set to detect in-flight loads
+  // for closed workspaces regardless of cache-entry expiry.
+  private inflightLoadCacheKeys = new Set<string>();
 
   /**
    * Resolver that returns the correct IMetadataFS for a workspace.
@@ -1281,12 +1297,20 @@ export class UnifiedPersistence {
       this.inactiveLoadCacheWorkspaces.delete(workspaceId);
     }
 
-    for (const [cacheKey, cached] of this.loadCache) {
+    // Iterate the union of cache keys and in-flight keys so a key whose cache
+    // entry was already swept by TTL while still loading is not missed.
+    const candidateKeys = new Set<string>(this.loadCache.keys());
+    for (const inflightKey of this.inflightLoadCacheKeys) {
+      candidateKeys.add(inflightKey);
+    }
+
+    for (const cacheKey of candidateKeys) {
       const separatorIndex = cacheKey.indexOf('/');
       const workspaceId = separatorIndex >= 0 ? cacheKey.slice(0, separatorIndex) : cacheKey;
       if (openWorkspaceIdSet.has(workspaceId)) continue;
 
-      if (cached.loadPromise) {
+      const cached = this.loadCache.get(cacheKey);
+      if (cached?.loadPromise || this.inflightLoadCacheKeys.has(cacheKey)) {
         this.inactiveLoadCacheWorkspaces.add(workspaceId);
       } else {
         this.loadCache.delete(cacheKey);
@@ -1400,8 +1424,17 @@ export class UnifiedPersistence {
       loadPromise,
     });
 
+    // Track the in-flight load in a TTL-free set so trimLoadCachesToOpenWorkspaces
+    // can detect it even if the cache entry is swept before the load resolves.
+    this.inflightLoadCacheKeys.add(cacheKey);
+
     // Execute the load and cache the result
-    const result = await loadPromise;
+    let result: LoadResult<AgentSession>;
+    try {
+      result = await loadPromise;
+    } finally {
+      this.inflightLoadCacheKeys.delete(cacheKey);
+    }
 
     if (this.inactiveLoadCacheWorkspaces.has(workspaceId)) {
       this.loadCache.delete(cacheKey);

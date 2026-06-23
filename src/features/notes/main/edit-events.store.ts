@@ -33,35 +33,20 @@ export class EditEventsStore {
   }
 
   /**
-   * Append an edit event to the log
+   * Append an edit event to a note's log file.
    */
   async append(event: NoteEditEvent): Promise<void> {
-    try {
-      const filePath = this.getEditEventsPath(event.workspaceId, event.noteId);
+    const filePath = this.getEditEventsPath(event.workspaceId, event.noteId);
 
-      // Ensure directory exists
-      await fs.mkdir(path.dirname(filePath), { recursive: true });
+    // Ensure directory exists
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
 
-      // Append event as JSON line
-      const line = `${JSON.stringify(event)}\n`;
-      await fs.appendFile(filePath, line, 'utf-8');
+    // Append the event as a single JSONL line
+    const line = `${JSON.stringify(event)}\n`;
+    await fs.appendFile(filePath, line, 'utf-8');
 
-      // Update metadata
-      await this.updateMetadata(event.workspaceId, event.noteId, event.documentVersion);
-
-      logger.debug('Appended edit event', {
-        noteId: event.noteId,
-        eventId: event.id,
-        version: event.documentVersion,
-        hunks: event.hunks.length,
-      });
-    } catch (error) {
-      logger.error('Failed to append edit event', error as Error, {
-        noteId: event.noteId,
-        eventId: event.id,
-      });
-      throw error;
-    }
+    // Update metadata
+    await this.updateMetadata(event.workspaceId, event.noteId, event.documentVersion, 1);
   }
 
   /**
@@ -162,6 +147,7 @@ export class EditEventsStore {
     workspaceId: WorkspaceId,
     noteId: NoteId,
     documentVersion: number,
+    eventCount = 1,
   ): Promise<void> {
     try {
       const metaPath = this.getMetadataPath(workspaceId, noteId);
@@ -172,14 +158,14 @@ export class EditEventsStore {
         const content = await fs.readFile(metaPath, 'utf-8');
         metadata = JSON.parse(content);
         metadata.currentVersion = Math.max(metadata.currentVersion, documentVersion);
-        metadata.totalEvents += 1;
+        metadata.totalEvents += eventCount;
         metadata.lastUpdated = new Date().toISOString();
       } catch {
         // Create new metadata
         metadata = {
           currentVersion: documentVersion,
           lastUpdated: new Date().toISOString(),
-          totalEvents: 1,
+          totalEvents: eventCount,
         };
       }
 
