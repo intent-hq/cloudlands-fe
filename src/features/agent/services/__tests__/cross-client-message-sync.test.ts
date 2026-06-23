@@ -11,9 +11,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { randomUUID } from 'crypto';
-import {
-  createAgentId,
-} from '../../../../shared/types/branded-ids';
+import { createAgentId } from '../../../../shared/types/branded-ids';
 import { AgentStatus } from '../../../../shared/types';
 import type { AgentSession, AgentMessage } from '../../../../shared/types';
 import {
@@ -52,9 +50,9 @@ describe('Cross-Client User Message Sync (iOS → Electron)', () => {
   ) {
     const startState = session
       ? agentSessionReducer(
-        agentSessionInitialState,
-        bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false }),
-      )
+          agentSessionInitialState,
+          bulkUpsertSessions([session], { preserveExplicitRuntimeFlags: false }),
+        )
       : agentSessionInitialState;
     const workspaceId = (data?.workspaceId as string | undefined) ?? 'ws-test';
     return agentSessionReducer(
@@ -76,12 +74,14 @@ describe('Cross-Client User Message Sync (iOS → Electron)', () => {
     const state = reduceCanonicalUserMessageEvent({
       agentId: agentId as string,
       messageId: 'msg-from-ios-001',
+      appMessageId: 'app-msg-from-ios-001',
       content: 'Hello from iOS!',
     });
 
     expect(state.byAgentId[agentId].messages).toMatchObject([
       {
         id: 'msg-from-ios-001',
+        appMessageId: 'app-msg-from-ios-001',
         role: 'user',
         contentBlocks: [{ type: 'text', text: 'Hello from iOS!' }],
       },
@@ -164,15 +164,20 @@ describe('Adapter: agent:user-message:sent workspace event emission', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockMainDispatch = vi.fn();
-    mockEmitWorkspaceEvent = vi.fn((event: any) => ({ type: 'EMIT_WORKSPACE_EVENT', payload: event }));
-    mockCreateWorkspaceEvent = vi.fn((type: string, workspaceId: string, actor: any, data: any) => ({
-      id: 'evt_test',
-      type,
-      workspaceId,
-      actor,
-      data,
-      timestamp: new Date().toISOString(),
+    mockEmitWorkspaceEvent = vi.fn((event: any) => ({
+      type: 'EMIT_WORKSPACE_EVENT',
+      payload: event,
     }));
+    mockCreateWorkspaceEvent = vi.fn(
+      (type: string, workspaceId: string, actor: any, data: any) => ({
+        id: 'evt_test',
+        type,
+        workspaceId,
+        actor,
+        data,
+        timestamp: new Date().toISOString(),
+      }),
+    );
   });
 
   /**
@@ -202,16 +207,20 @@ describe('Adapter: agent:user-message:sent workspace event emission', () => {
     }
 
     if (workspaceId) {
-      deps.mainDispatch(deps.emitWorkspaceEvent(deps.createWorkspaceEvent(
-        'agent:user-message:sent' as any,
-        workspaceId,
-        { type: 'user' as const, id: 'user' },
-        {
-          agentId: request.agentId,
-          messageId,
-          content: request.content,
-        },
-      )));
+      deps.mainDispatch(
+        deps.emitWorkspaceEvent(
+          deps.createWorkspaceEvent(
+            'agent:user-message:sent' as any,
+            workspaceId,
+            { type: 'user' as const, id: 'user' },
+            {
+              agentId: request.agentId,
+              messageId,
+              content: request.content,
+            },
+          ),
+        ),
+      );
       return { emitted: true };
     }
 
@@ -224,7 +233,11 @@ describe('Adapter: agent:user-message:sent workspace event emission', () => {
       'ws-test-1',
       { agentId: 'agent-1', content: 'Hello from WebSocket!' },
       'msg-001',
-      { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent },
+      {
+        mainDispatch: mockMainDispatch,
+        emitWorkspaceEvent: mockEmitWorkspaceEvent,
+        createWorkspaceEvent: mockCreateWorkspaceEvent,
+      },
     );
 
     expect(result.emitted).toBe(true);
@@ -243,7 +256,11 @@ describe('Adapter: agent:user-message:sent workspace event emission', () => {
       'ws-data-check',
       { agentId: 'agent-data', content: 'Check my data fields' },
       'msg-data-001',
-      { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent },
+      {
+        mainDispatch: mockMainDispatch,
+        emitWorkspaceEvent: mockEmitWorkspaceEvent,
+        createWorkspaceEvent: mockCreateWorkspaceEvent,
+      },
     );
 
     const eventData = mockCreateWorkspaceEvent.mock.calls[0][3];
@@ -260,7 +277,11 @@ describe('Adapter: agent:user-message:sent workspace event emission', () => {
       'ws-actor-check',
       { agentId: 'agent-actor', content: 'Actor test' },
       'msg-actor-001',
-      { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent },
+      {
+        mainDispatch: mockMainDispatch,
+        emitWorkspaceEvent: mockEmitWorkspaceEvent,
+        createWorkspaceEvent: mockCreateWorkspaceEvent,
+      },
     );
 
     const actor = mockCreateWorkspaceEvent.mock.calls[0][2];
@@ -273,7 +294,11 @@ describe('Adapter: agent:user-message:sent workspace event emission', () => {
       '', // empty string = not available (falsy)
       { agentId: 'agent-no-ws', content: 'No workspace' },
       'msg-no-ws',
-      { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent },
+      {
+        mainDispatch: mockMainDispatch,
+        emitWorkspaceEvent: mockEmitWorkspaceEvent,
+        createWorkspaceEvent: mockCreateWorkspaceEvent,
+      },
     );
 
     expect(result.emitted).toBe(false);
@@ -287,7 +312,11 @@ describe('Adapter: agent:user-message:sent workspace event emission', () => {
       'ws-fail-test',
       { agentId: 'agent-fail', content: 'This should fail' },
       'msg-fail',
-      { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent },
+      {
+        mainDispatch: mockMainDispatch,
+        emitWorkspaceEvent: mockEmitWorkspaceEvent,
+        createWorkspaceEvent: mockCreateWorkspaceEvent,
+      },
     );
 
     expect(result.emitted).toBe(false);
@@ -301,7 +330,11 @@ describe('Adapter: agent:user-message:sent workspace event emission', () => {
       'ws-type-check',
       { agentId: 'agent-type', content: 'Type check' },
       'msg-type',
-      { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent },
+      {
+        mainDispatch: mockMainDispatch,
+        emitWorkspaceEvent: mockEmitWorkspaceEvent,
+        createWorkspaceEvent: mockCreateWorkspaceEvent,
+      },
     );
 
     expect(mockCreateWorkspaceEvent.mock.calls[0][0]).toBe('agent:user-message:sent');
@@ -313,7 +346,11 @@ describe('Adapter: agent:user-message:sent workspace event emission', () => {
       'specific-workspace-id-123',
       { agentId: 'agent-ws', content: 'WS check' },
       'msg-ws',
-      { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent },
+      {
+        mainDispatch: mockMainDispatch,
+        emitWorkspaceEvent: mockEmitWorkspaceEvent,
+        createWorkspaceEvent: mockCreateWorkspaceEvent,
+      },
     );
 
     expect(mockCreateWorkspaceEvent.mock.calls[0][1]).toBe('specific-workspace-id-123');
@@ -336,15 +373,20 @@ describe('Electron → WebSocket: handleSendMessage emits agent:user-message:sen
   beforeEach(() => {
     vi.clearAllMocks();
     mockMainDispatch = vi.fn();
-    mockEmitWorkspaceEvent = vi.fn((event: any) => ({ type: 'EMIT_WORKSPACE_EVENT', payload: event }));
-    mockCreateWorkspaceEvent = vi.fn((type: string, workspaceId: string, actor: any, data: any) => ({
-      id: 'evt_test',
-      type,
-      workspaceId,
-      actor,
-      data,
-      timestamp: new Date().toISOString(),
+    mockEmitWorkspaceEvent = vi.fn((event: any) => ({
+      type: 'EMIT_WORKSPACE_EVENT',
+      payload: event,
     }));
+    mockCreateWorkspaceEvent = vi.fn(
+      (type: string, workspaceId: string, actor: any, data: any) => ({
+        id: 'evt_test',
+        type,
+        workspaceId,
+        actor,
+        data,
+        timestamp: new Date().toISOString(),
+      }),
+    );
   });
 
   /**
@@ -353,7 +395,7 @@ describe('Electron → WebSocket: handleSendMessage emits agent:user-message:sen
    * parameters for testability.
    */
   function simulateHandlerEventEmission(
-    userMessage: { id: string; role: string; contentBlocks: any[] } | null,
+    userMessage: { id: string; appMessageId?: string; role: string; contentBlocks: any[] } | null,
     workspaceId: string | undefined,
     request: { agentId: string; content: string },
     deps: {
@@ -363,28 +405,42 @@ describe('Electron → WebSocket: handleSendMessage emits agent:user-message:sen
     },
   ): { emitted: boolean } {
     if (userMessage && workspaceId) {
-      deps.mainDispatch(deps.emitWorkspaceEvent(deps.createWorkspaceEvent(
-        'agent:user-message:sent' as any,
-        workspaceId,
-        { type: 'user' as const, id: 'user' },
-        {
-          agentId: request.agentId,
-          messageId: userMessage.id,
-          content: request.content,
-        },
-      )));
+      deps.mainDispatch(
+        deps.emitWorkspaceEvent(
+          deps.createWorkspaceEvent(
+            'agent:user-message:sent' as any,
+            workspaceId,
+            { type: 'user' as const, id: 'user' },
+            {
+              agentId: request.agentId,
+              messageId: userMessage.id,
+              appMessageId: userMessage.appMessageId,
+              content: request.content,
+            },
+          ),
+        ),
+      );
       return { emitted: true };
     }
     return { emitted: false };
   }
 
   it('should emit event when userMessage is created and workspaceId is present', () => {
-    const userMessage = { id: 'msg-electron-001', role: 'user', contentBlocks: [{ type: 'text', text: 'Hello from Electron!' }] };
+    const userMessage = {
+      id: 'msg-electron-001',
+      appMessageId: 'app-msg-electron-001',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'Hello from Electron!' }],
+    };
     const result = simulateHandlerEventEmission(
       userMessage,
       'ws-electron-test',
       { agentId: 'agent-electron-1', content: 'Hello from Electron!' },
-      { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent },
+      {
+        mainDispatch: mockMainDispatch,
+        emitWorkspaceEvent: mockEmitWorkspaceEvent,
+        createWorkspaceEvent: mockCreateWorkspaceEvent,
+      },
     );
 
     expect(result.emitted).toBe(true);
@@ -392,7 +448,12 @@ describe('Electron → WebSocket: handleSendMessage emits agent:user-message:sen
       'agent:user-message:sent',
       'ws-electron-test',
       { type: 'user', id: 'user' },
-      { agentId: 'agent-electron-1', messageId: 'msg-electron-001', content: 'Hello from Electron!' },
+      {
+        agentId: 'agent-electron-1',
+        messageId: 'msg-electron-001',
+        appMessageId: 'app-msg-electron-001',
+        content: 'Hello from Electron!',
+      },
     );
     expect(mockMainDispatch).toHaveBeenCalledTimes(1);
   });
@@ -402,7 +463,11 @@ describe('Electron → WebSocket: handleSendMessage emits agent:user-message:sen
       null, // skipUserMessage === true → userMessage is null
       'ws-skip-test',
       { agentId: 'agent-skip', content: 'This was skipped' },
-      { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent },
+      {
+        mainDispatch: mockMainDispatch,
+        emitWorkspaceEvent: mockEmitWorkspaceEvent,
+        createWorkspaceEvent: mockCreateWorkspaceEvent,
+      },
     );
 
     expect(result.emitted).toBe(false);
@@ -411,12 +476,20 @@ describe('Electron → WebSocket: handleSendMessage emits agent:user-message:sen
   });
 
   it('should NOT emit event when workspaceId is missing', () => {
-    const userMessage = { id: 'msg-no-ws', role: 'user', contentBlocks: [{ type: 'text', text: 'No workspace' }] };
+    const userMessage = {
+      id: 'msg-no-ws',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'No workspace' }],
+    };
     const result = simulateHandlerEventEmission(
       userMessage,
       undefined, // workspaceId is falsy
       { agentId: 'agent-no-ws', content: 'No workspace' },
-      { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent },
+      {
+        mainDispatch: mockMainDispatch,
+        emitWorkspaceEvent: mockEmitWorkspaceEvent,
+        createWorkspaceEvent: mockCreateWorkspaceEvent,
+      },
     );
 
     expect(result.emitted).toBe(false);
@@ -425,12 +498,20 @@ describe('Electron → WebSocket: handleSendMessage emits agent:user-message:sen
   });
 
   it('should include agentId, messageId, and content in event data', () => {
-    const userMessage = { id: 'msg-data-check', role: 'user', contentBlocks: [{ type: 'text', text: 'Data check' }] };
+    const userMessage = {
+      id: 'msg-data-check',
+      role: 'user',
+      contentBlocks: [{ type: 'text', text: 'Data check' }],
+    };
     simulateHandlerEventEmission(
       userMessage,
       'ws-data-verify',
       { agentId: 'agent-data-verify', content: 'Data check' },
-      { mainDispatch: mockMainDispatch, emitWorkspaceEvent: mockEmitWorkspaceEvent, createWorkspaceEvent: mockCreateWorkspaceEvent },
+      {
+        mainDispatch: mockMainDispatch,
+        emitWorkspaceEvent: mockEmitWorkspaceEvent,
+        createWorkspaceEvent: mockCreateWorkspaceEvent,
+      },
     );
 
     const eventData = mockCreateWorkspaceEvent.mock.calls[0][3];

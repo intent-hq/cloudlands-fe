@@ -782,6 +782,8 @@ export interface AgentUserMessageSentEvent extends WorkspaceEventBase {
   data: {
     agentId: string;
     messageId: string;
+    /** Stable app-owned logical ID used to merge optimistic and canonical messages. */
+    appMessageId?: string;
     content: string;
     imageBlocks?: any[];
   };
@@ -1471,7 +1473,6 @@ export type NoteEventPayload = NoteCreatedPayload | NoteUpdatedPayload | NoteDel
  * Union type representing all possible IPC event payloads for task events.
  */
 export type TaskEventPayload = TaskStatusChangedPayload | TaskReadyTasksChangedPayload;
-
 
 // ============================================================================
 // Domain Event Types (moved from unified-event-bus.ts during Redux migration)

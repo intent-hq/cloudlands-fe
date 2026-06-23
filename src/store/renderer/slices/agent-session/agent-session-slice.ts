@@ -36,7 +36,11 @@ import {
   streamTimedOut,
 } from '../chat-state/chat-state-slice';
 
-export { computeMessageContentHash, hasCanonicalId, isTimestampClose } from '$shared/utils/message-dedup';
+export {
+  computeMessageContentHash,
+  hasCanonicalId,
+  isTimestampClose,
+} from '$shared/utils/message-dedup';
 
 // ============================================================================
 // Constants
@@ -140,11 +144,17 @@ function orderMessagesForConversation(messages: AgentMessage[]): AgentMessage[] 
 }
 
 function normalizeSortPruneMessages(messages: AgentMessage[]): AgentMessage[] {
-  return pruneMessages(orderMessagesForConversation(deduplicateAgentMessages(messages.map(normalizeAgentMessage))));
+  return pruneMessages(
+    orderMessagesForConversation(deduplicateAgentMessages(messages.map(normalizeAgentMessage))),
+  );
 }
 
 function isOptimisticUserMessage(message: AgentMessage): boolean {
-  return message.role === 'user' && typeof message.id === 'string' && message.id.startsWith('optimistic_');
+  return (
+    message.role === 'user' &&
+    typeof message.id === 'string' &&
+    message.id.startsWith('optimistic_')
+  );
 }
 
 function mergeMissingOptimisticUserMessages(
@@ -253,7 +263,9 @@ type CanonicalAgentStatusWithSummary = CanonicalAgentStatusFields & {
   lastResponseSummary?: unknown;
 };
 
-function canonicalSessionUpdates(fields: CanonicalAgentStatusWithSummary): CanonicalAgentSessionUpdates {
+function canonicalSessionUpdates(
+  fields: CanonicalAgentStatusWithSummary,
+): CanonicalAgentSessionUpdates {
   const updates: CanonicalAgentSessionUpdates = {};
   if (fields.status !== null) updates.status = fields.status as AgentSession['status'];
   if (fields.activationState !== null) {
@@ -273,8 +285,10 @@ function canonicalSessionUpdates(fields: CanonicalAgentStatusWithSummary): Canon
   // Compare against both AgentStatus enum values (PascalCase) and lowercase
   // variants from IPC events — no runtime .toLowerCase() transformation.
   const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
-    'idle', 'Idle',
-    'completed', 'Completed',
+    'idle',
+    'Idle',
+    'completed',
+    'Completed',
     'failed',
     'error',
     'deleted',
@@ -291,49 +305,59 @@ function canonicalSessionUpdates(fields: CanonicalAgentStatusWithSummary): Canon
   return updates;
 }
 
-function canonicalFieldsFromWorkspaceEvent(
-  event: { type?: string; data?: any },
-): [string, CanonicalAgentStatusFields] | null {
+function canonicalFieldsFromWorkspaceEvent(event: {
+  type?: string;
+  data?: any;
+}): [string, CanonicalAgentStatusFields] | null {
   const data = event.data;
   if (!data || typeof data !== 'object') return null;
   const agentId = data.agentId ?? data.sessionId;
   if (!agentId) return null;
 
   if (event.type === 'agent:idle') {
-    return [agentId, {
-      ...data,
-      status: data.status ?? 'idle',
-      activationState: data.activationState ?? null,
-      isActive: data.isActive ?? false,
-      isStreaming: data.isStreaming ?? false,
-      isProcessing: data.isProcessing ?? false,
-      isResponding: data.isResponding ?? false,
-      stopReason: data.stopReason ?? data.finishReason ?? null,
-    }];
+    return [
+      agentId,
+      {
+        ...data,
+        status: data.status ?? 'idle',
+        activationState: data.activationState ?? null,
+        isActive: data.isActive ?? false,
+        isStreaming: data.isStreaming ?? false,
+        isProcessing: data.isProcessing ?? false,
+        isResponding: data.isResponding ?? false,
+        stopReason: data.stopReason ?? data.finishReason ?? null,
+      },
+    ];
   }
   if (event.type === 'agent:failed') {
-    return [agentId, {
-      ...data,
-      status: data.status ?? 'failed',
-      activationState: data.activationState ?? 'error',
-      isActive: data.isActive ?? false,
-      isStreaming: data.isStreaming ?? false,
-      isProcessing: data.isProcessing ?? false,
-      isResponding: data.isResponding ?? false,
-      stopReason: data.stopReason ?? data.error ?? null,
-    }];
+    return [
+      agentId,
+      {
+        ...data,
+        status: data.status ?? 'failed',
+        activationState: data.activationState ?? 'error',
+        isActive: data.isActive ?? false,
+        isStreaming: data.isStreaming ?? false,
+        isProcessing: data.isProcessing ?? false,
+        isResponding: data.isResponding ?? false,
+        stopReason: data.stopReason ?? data.error ?? null,
+      },
+    ];
   }
   if (event.type === 'agent:session-completed') {
-    return [agentId, {
-      ...data,
-      status: data.status ?? 'completed',
-      activationState: data.activationState ?? null,
-      isActive: data.isActive ?? false,
-      isStreaming: data.isStreaming ?? false,
-      isProcessing: data.isProcessing ?? false,
-      isResponding: data.isResponding ?? false,
-      stopReason: data.stopReason ?? data.finishReason ?? null,
-    }];
+    return [
+      agentId,
+      {
+        ...data,
+        status: data.status ?? 'completed',
+        activationState: data.activationState ?? null,
+        isActive: data.isActive ?? false,
+        isStreaming: data.isStreaming ?? false,
+        isProcessing: data.isProcessing ?? false,
+        isResponding: data.isResponding ?? false,
+        stopReason: data.stopReason ?? data.finishReason ?? null,
+      },
+    ];
   }
   if (event.type === 'agent:status-changed' || event.type === 'agent:session-updated') {
     return [agentId, data];
@@ -345,7 +369,7 @@ function userMessageFromWorkspaceEvent(event: WorkspaceEvent): [string, AgentMes
   if (event.type !== 'agent:user-message:sent') return null;
   const data = event.data;
   if (!data || typeof data !== 'object') return null;
-  const { agentId, messageId, content } = data;
+  const { agentId, messageId, appMessageId, content } = data;
   if (
     typeof agentId !== 'string' ||
     typeof messageId !== 'string' ||
@@ -355,17 +379,23 @@ function userMessageFromWorkspaceEvent(event: WorkspaceEvent): [string, AgentMes
     return null;
   }
 
-  const contentBlocks: NonNullable<AgentMessage['contentBlocks']> = [{ type: 'text', text: content }];
+  const contentBlocks: NonNullable<AgentMessage['contentBlocks']> = [
+    { type: 'text', text: content },
+  ];
   if (Array.isArray(data.imageBlocks)) {
     contentBlocks.push(...data.imageBlocks);
   }
 
-  return [agentId, {
-    id: messageId,
-    role: 'user',
-    contentBlocks,
-    timestamp: event.timestamp,
-  }];
+  return [
+    agentId,
+    {
+      id: messageId,
+      ...(typeof appMessageId === 'string' && appMessageId.length > 0 ? { appMessageId } : {}),
+      role: 'user',
+      contentBlocks,
+      timestamp: event.timestamp,
+    },
+  ];
 }
 
 function registerInWorkspaceIndex(
@@ -596,66 +626,68 @@ export const updateSession = createAction<[agentId: string, updates: Partial<Age
 );
 
 /** Saga-owned core send side effect trigger. */
-export const agentSessionSendMessageRequested = createAsyncAction<[
-  agentId: string,
-  wsId: string,
-  text: string,
-  options?: AgentSessionSendMessageOptions,
-], void>('agentSessions/sendMessage', 'agentSessions/sendMessageRequested');
+export const agentSessionSendMessageRequested = createAsyncAction<
+  [agentId: string, wsId: string, text: string, options?: AgentSessionSendMessageOptions],
+  void
+>('agentSessions/sendMessage', 'agentSessions/sendMessageRequested');
 
 /** Saga-owned core stop side effect trigger. */
-export const agentSessionStopChatRequested = createAsyncAction<[
-  agentId: string,
-], void>('agentSessions/stopChat', 'agentSessions/stopChatRequested');
+export const agentSessionStopChatRequested = createAsyncAction<[agentId: string], void>(
+  'agentSessions/stopChat',
+  'agentSessions/stopChatRequested',
+);
 
 /** Saga-owned agent launch side effect trigger. Resolves with the created session. */
-export const agentSessionLaunchAgentRequested = createAsyncAction<[
-  wsId: string,
-  config: AgentSessionLaunchConfig,
-  options?: AgentSessionLaunchOptions,
-], AgentSession>('agentSessions/launchAgent', 'agentSessions/launchAgentRequested');
+export const agentSessionLaunchAgentRequested = createAsyncAction<
+  [wsId: string, config: AgentSessionLaunchConfig, options?: AgentSessionLaunchOptions],
+  AgentSession
+>('agentSessions/launchAgent', 'agentSessions/launchAgentRequested');
 
 /** Saga-owned edit/regenerate side effect trigger. */
-export const agentSessionEditAndRegenerateRequested = createAsyncAction<[
-  agentId: string,
-  wsId: string,
-  messageId: string,
-  newText: string,
-  options?: AgentSessionSendMessageOptions,
-], void>('agentSessions/editAndRegenerate', 'agentSessions/editAndRegenerateRequested');
+export const agentSessionEditAndRegenerateRequested = createAsyncAction<
+  [
+    agentId: string,
+    wsId: string,
+    messageId: string,
+    newText: string,
+    options?: AgentSessionSendMessageOptions,
+  ],
+  void
+>('agentSessions/editAndRegenerate', 'agentSessions/editAndRegenerateRequested');
 
 /** Saga-owned regenerate-from-message side effect trigger. */
-export const agentSessionRegenerateFromMessageRequested = createAsyncAction<[
-  agentId: string,
-  wsId: string,
-  assistantMessageId: string,
-  options?: AgentSessionSendMessageOptions,
-], void>('agentSessions/regenerateFromMessage', 'agentSessions/regenerateFromMessageRequested');
+export const agentSessionRegenerateFromMessageRequested = createAsyncAction<
+  [
+    agentId: string,
+    wsId: string,
+    assistantMessageId: string,
+    options?: AgentSessionSendMessageOptions,
+  ],
+  void
+>('agentSessions/regenerateFromMessage', 'agentSessions/regenerateFromMessageRequested');
 
 /** Saga-owned retry-last-message side effect trigger. */
-export const agentSessionRetryLastMessageRequested = createAsyncAction<[
-  agentId: string,
-  wsId: string,
-], void>('agentSessions/retryLastMessage', 'agentSessions/retryLastMessageRequested');
+export const agentSessionRetryLastMessageRequested = createAsyncAction<
+  [agentId: string, wsId: string],
+  void
+>('agentSessions/retryLastMessage', 'agentSessions/retryLastMessageRequested');
 
 /** Saga-owned retry-with-model side effect trigger. */
-export const agentSessionRetryWithModelRequested = createAsyncAction<[
-  agentId: string,
-  wsId: string,
-  model: string,
-], void>('agentSessions/retryWithModel', 'agentSessions/retryWithModelRequested');
+export const agentSessionRetryWithModelRequested = createAsyncAction<
+  [agentId: string, wsId: string, model: string],
+  void
+>('agentSessions/retryWithModel', 'agentSessions/retryWithModelRequested');
 
 /** Saga-owned fork-session side effect trigger. Resolves with the forked agent id. */
-export const agentSessionForkSessionRequested = createAsyncAction<[
-  agentId: string,
-  wsId: string,
-  options?: AgentSessionForkOptions,
-], string>('agentSessions/forkSession', 'agentSessions/forkSessionRequested');
+export const agentSessionForkSessionRequested = createAsyncAction<
+  [agentId: string, wsId: string, options?: AgentSessionForkOptions],
+  string
+>('agentSessions/forkSession', 'agentSessions/forkSessionRequested');
 
 /** Update an agent's digest field. Kept on the legacy action type for dispatch compatibility. */
-export const updateAgentDigest = createAction<[wsId: string, agentId: string, digest: string | null]>(
-  'workspaceAgents/updateAgentDigest',
-);
+export const updateAgentDigest = createAction<
+  [wsId: string, agentId: string, digest: string | null]
+>('workspaceAgents/updateAgentDigest');
 
 /** Rename agent session */
 export const renameSession = createAction<[agentId: string, name: string]>(
@@ -684,12 +716,9 @@ export type BulkUpsertSessionsOptions = {
 };
 
 /** Bulk upsert sessions (initial load / snapshot reconciliation / batched upsert storage) */
-export const bulkUpsertSessions = createAction<[
-  sessions: AgentSession[],
-  options?: BulkUpsertSessionsOptions,
-]>(
-  'agentSessions/bulkUpsertSessions',
-);
+export const bulkUpsertSessions = createAction<
+  [sessions: AgentSession[], options?: BulkUpsertSessionsOptions]
+>('agentSessions/bulkUpsertSessions');
 
 /** Remove all sessions for a workspace */
 export const removeWorkspaceSessions = createAction<[wsId: string]>(
@@ -765,7 +794,11 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     const [agentId, fields] = canonical;
     const updates = canonicalSessionUpdates(fields);
     if (Object.keys(updates).length === 0) return state;
-    return updateSessionFields(state, agentId, updates as Partial<Omit<StoredAgentSession, 'messages'>>);
+    return updateSessionFields(
+      state,
+      agentId,
+      updates as Partial<Omit<StoredAgentSession, 'messages'>>,
+    );
   })
   .with(renameSession, (state, { payload: [agentId, name] }) => {
     const session = getSession(state, agentId);
@@ -843,16 +876,32 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     return next;
   })
   .with(chatSendFailed, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+    updateSessionFields(state, agentId, {
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    }),
   )
   .with(chatInterrupted, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+    updateSessionFields(state, agentId, {
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    }),
   )
   .with(chatStopCompleted, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+    updateSessionFields(state, agentId, {
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    }),
   )
   .with(chatReset, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+    updateSessionFields(state, agentId, {
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    }),
   )
   .with(chatStreamingReconciled, (state, { payload: { agentId } }) =>
     updateSessionFields(state, agentId, { isStreaming: true, isProcessing: true }),
@@ -873,11 +922,23 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
     return state;
   })
   .with(streamCompleted, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+    updateSessionFields(state, agentId, {
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    }),
   )
   .with(streamTimedOut, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+    updateSessionFields(state, agentId, {
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    }),
   )
   .with(chatStuckStateCleared, (state, { payload: [agentId] }) =>
-    updateSessionFields(state, agentId, { isStreaming: false, isProcessing: false, isResponding: false }),
+    updateSessionFields(state, agentId, {
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+    }),
   );

@@ -1074,7 +1074,6 @@
       <OnboardingPage
         {isOnboarding}
         fadingOut={onboardingFadingOut}
-        dispatch={appStore.dispatch}
         onHoldActiveChange={(active) => (onboardingHoldActive = active)}
         onFadingOutChange={(fading) => (onboardingFadingOut = fading)}
       />

@@ -20,17 +20,10 @@ import {
   parseCompoundModelId,
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
-import {
-  isKnownProviderId,
-  ProviderRegistry,
-  upsertCodexConfigArgs,
-} from './provider-registry';
+import { isKnownProviderId, ProviderRegistry, upsertCodexConfigArgs } from './provider-registry';
 import { unifiedAgentBackend } from './consolidated-backend.service';
 import { InstructionService } from './instruction-service';
-import {
-  refreshSpecialistsFromFiles,
-  resolveSpecialistForAgent,
-} from './specialists.service';
+import { refreshSpecialistsFromFiles, resolveSpecialistForAgent } from './specialists.service';
 import { parseCodexReasoningEffort } from '$shared/config/open-ai-codex-models';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
@@ -47,15 +40,9 @@ import {
   AgentId as createAgentId,
   WorkspaceId as createWorkspaceId,
 } from '$shared/types/branded-ids';
-import {
-  createWorkspaceEvent,
-  type CanonicalAgentStatusFields,
-} from '../../events/types';
+import { createWorkspaceEvent, type CanonicalAgentStatusFields } from '../../events/types';
 import type { IpcMainInvokeEvent } from 'electron';
-import {
-  BrowserWindow,
-  ipcMain,
-} from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -65,46 +52,28 @@ import { workspaceService } from '../../workspace/main/workspace.service';
 import { isAutoCommitEnabled } from '../../workspace/main/workspace-settings.service';
 import { agentValidator } from '../services/agent-validator';
 import * as messageAccumulator from '../../../store/main/slices/message-accumulator/message-accumulator-api';
-import {
-  resolveStreamingConfig,
-  DEFAULT_PROFILE,
-} from '../../../shared/streaming-config';
-import {
-  agentPersistence,
-  UnifiedPersistence,
-} from './agent-persistence';
+import { resolveStreamingConfig, DEFAULT_PROFILE } from '../../../shared/streaming-config';
+import { agentPersistence, UnifiedPersistence } from './agent-persistence';
 import { checkAndUpdateNoteStatus } from './note-status-checker';
 import { getAgentContextRegistry } from '../agent-context-registry';
 import { notesService } from '../../notes/main/notes.service';
 import { assetsService } from '../../notes/main/assets.service';
 import { DelegateTaskTool } from '../../mcp/main/mcp/agent-interaction-tools';
-import {
-  markAgentAsDeleted,
-  updateAgentStatus,
-} from '../../events/main/agent-subscription-ops';
+import { markAgentAsDeleted, updateAgentStatus } from '../../events/main/agent-subscription-ops';
 import {
   onHttpBridgeUnrecoverable,
   type HttpBridgeUnrecoverableHandler,
 } from '../../../main/http-mcp-bridge';
 import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcast-adapter';
 import { createCache } from '../../../main/utils/cache';
-import {
-  getWindowIdForWorkspace,
-  getWindowIdsForWorkspace,
-} from '../../system/main/system.ipc';
+import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/main/system.ipc';
 import { trackMain } from '$lib/services/analytics/main';
-import {
-  getMainState,
-  mainDispatch,
-} from '../../../store/main/redux-store-bridge';
+import { getMainState, mainDispatch } from '../../../store/main/redux-store-bridge';
 import { selectAgentSubscriptions } from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
 import { emitWorkspaceEvent as reduxEmitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 import { workspaceUpdated } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { evictDeletedAgent } from '../../../store/main/slices/agent-subscriptions/agent-subscriptions-slice';
-import {
-  deduplicateAgentMessages,
-  normalizeAgentMessage,
-} from '$shared/utils/message-dedup';
+import { deduplicateAgentMessages, normalizeAgentMessage } from '$shared/utils/message-dedup';
 
 const logger = new Logger('AgentBackendHandler');
 
@@ -580,7 +549,9 @@ export class AgentBackendHandler {
           // Coordinators waiting for sub-agent events appear idle but are logically active.
           // Cleaning them up would orphan the sub-agents and lose delegation results.
           if (mainStateGetter && agentSubsSelector) {
-            const workspaceId = this.streamWorkspaceIds.get(agentId) || (this.providers.get(agentId) as any)?.config?.workspaceId;
+            const workspaceId =
+              this.streamWorkspaceIds.get(agentId) ||
+              (this.providers.get(agentId) as any)?.config?.workspaceId;
             if (workspaceId) {
               try {
                 const state = mainStateGetter();
@@ -1729,8 +1700,8 @@ export class AgentBackendHandler {
           const effectiveAgentType = agentType || 'chat';
           const currentSystemPrompt = loadResult.data.systemPrompt || '';
 
-          const needsRebuild = agentBehaviorPrompt &&
-            !currentSystemPrompt.includes('<specialist_role>');
+          const needsRebuild =
+            agentBehaviorPrompt && !currentSystemPrompt.includes('<specialist_role>');
 
           logger.info(
             `Checking if system prompt rebuild is needed: hasRequestBehaviorPrompt=${!!extendedRequest.behaviorPrompt}, requestBehaviorPromptLength=${extendedRequest.behaviorPrompt?.length || 0}, agentType=${agentType}, effectiveAgentType=${effectiveAgentType}, messageCount=${loadResult.data.messages?.length || 0}, needsRebuild=${needsRebuild}, hasSystemPrompt=${!!systemPrompt}, systemPromptLength=${systemPrompt?.length || 0}`,
@@ -1751,7 +1722,9 @@ export class AgentBackendHandler {
               roleReminder: agentRoleReminder, // Pass role reminder from specialist config
               isInitialAgent,
               workspaceTitle: workspace?.title, // Pass workspace title for rename check
-              isSubAgent: !!(loadResult.data.metadata?.createdByAgentId || loadResult.data.isBackground),
+              isSubAgent: !!(
+                loadResult.data.metadata?.createdByAgentId || loadResult.data.isBackground
+              ),
               autoCommitEnabled: isAutoCommitEnabled(request.workspaceId),
             });
 
@@ -1936,15 +1909,20 @@ export class AgentBackendHandler {
         // If model is still the default but we have an explicit NON-default provider,
         // re-resolve the model for that provider. When the provider IS the default (auggie),
         // DEFAULT_AGENT_MODEL is already correct — don't downgrade it.
-        const testOverride = process.env.TESTING === 'true' ? process.env.DEFAULT_PROVIDER_OVERRIDE : undefined;
+        const testOverride =
+          process.env.TESTING === 'true' ? process.env.DEFAULT_PROVIDER_OVERRIDE : undefined;
         if (testOverride) {
           if (!isKnownProviderId(testOverride)) {
-            logger.warn(`DEFAULT_PROVIDER_OVERRIDE '${testOverride}' is not a known provider, ignoring`);
+            logger.warn(
+              `DEFAULT_PROVIDER_OVERRIDE '${testOverride}' is not a known provider, ignoring`,
+            );
           }
         }
         const explicitProvider =
           (testOverride && isKnownProviderId(testOverride) ? testOverride : undefined) ||
-          agentConfig?.provider || agentMetadata?.provider || (request as any).provider;
+          agentConfig?.provider ||
+          agentMetadata?.provider ||
+          (request as any).provider;
         if (modelId === DEFAULT_AGENT_MODEL && explicitProvider) {
           const defaultProviderId = getDefaultProviderId();
           // Only resolve for providers with known tier mappings — providers with
@@ -2126,10 +2104,13 @@ export class AgentBackendHandler {
               });
             } else if (!loadResult.data?.acpSessionId) {
               // Brand new agent — never had a real ACP session, no history to resend
-              logger.info('Skipping markSessionRecreated — brand new agent with no prior ACP session', {
-                agentId: request.agentId,
-                existingMessageCount: loadResult.data.messages.length,
-              });
+              logger.info(
+                'Skipping markSessionRecreated — brand new agent with no prior ACP session',
+                {
+                  agentId: request.agentId,
+                  existingMessageCount: loadResult.data.messages.length,
+                },
+              );
             } else {
               provider.markSessionRecreated();
               logger.info('Marked new provider as needing full history (existing agent)', {
@@ -2385,7 +2366,6 @@ export class AgentBackendHandler {
             }
           }
         }
-
       }
 
       // Build messages array - include existing conversation history
@@ -2442,7 +2422,9 @@ export class AgentBackendHandler {
               if (backendForCount) {
                 const backendSessionForCount = backendForCount.getSession(request.agentId);
                 if (backendSessionForCount?.messages) {
-                  const fullUserCount = backendSessionForCount.messages.filter((m: any) => m.role === 'user').length;
+                  const fullUserCount = backendSessionForCount.messages.filter(
+                    (m: any) => m.role === 'user',
+                  ).length;
                   const truncatedUserCount = messages.filter((m: any) => m.role === 'user').length;
                   const diff = fullUserCount - truncatedUserCount;
                   if (diff > 0) {
@@ -2817,7 +2799,10 @@ export class AgentBackendHandler {
         (originalContent || hasAttachments) && !skipUserMessage
           ? {
               id: (request as any).queuedMessageId || `msg_${uuidv4()}`,
-              appMessageId: request.userAppMessageId || (request as any).queuedMessageAppMessageId || createAppMessageId(),
+              appMessageId:
+                request.userAppMessageId ||
+                (request as any).queuedMessageAppMessageId ||
+                createAppMessageId(),
               role: 'user',
               contentBlocks: displayContentBlocks,
               timestamp: new Date().toISOString(),
@@ -2897,17 +2882,22 @@ export class AgentBackendHandler {
       // intentionally do NOT emit this event themselves. See Audit 4 / Track F Bundle 3.
       if (userMessage && request.workspaceId) {
         try {
-          mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
-            'agent:user-message:sent' as any,
-            request.workspaceId,
-            { type: 'user' as const, id: 'user' },
-            {
-              agentId: request.agentId,
-              messageId: userMessage.id,
-              content: request.content,
-              ...(request.imageBlocks && { imageBlocks: request.imageBlocks }),
-            },
-          )));
+          mainDispatch(
+            reduxEmitWorkspaceEvent(
+              createWorkspaceEvent(
+                'agent:user-message:sent' as any,
+                request.workspaceId,
+                { type: 'user' as const, id: 'user' },
+                {
+                  agentId: request.agentId,
+                  messageId: userMessage.id,
+                  appMessageId: userMessage.appMessageId,
+                  content: request.content,
+                  ...(request.imageBlocks && { imageBlocks: request.imageBlocks }),
+                },
+              ),
+            ),
+          );
         } catch {
           // Fire-and-forget — never let event emission break the send path.
         }
@@ -3086,7 +3076,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       );
 
       // Emit stream start event to workspace events for WebSocket API clients.
-      this.emitStreamEventToWorkspaceEvents(request.agentId, request.workspaceId, { type: 'start' });
+      this.emitStreamEventToWorkspaceEvents(request.agentId, request.workspaceId, {
+        type: 'start',
+      });
 
       // Update provider last used time (prevents idle cleanup during active use)
       this.touchProvider(request.agentId);
@@ -3278,14 +3270,21 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       // Set up status callback on the provider BEFORE streamMessage so we capture
       // early lifecycle events (launchAgent, initializeProtocol) that fire before streaming starts.
       if (typeof (provider as any).setStatusCallback === 'function') {
-        (provider as any).setStatusCallback((statusData: { phase: string; message: string; level: 'info' | 'warn' | 'error'; timestamp: number }) => {
-          this.sendStreamToRenderer(request.agentId, `agent:stream:${request.agentId}`, {
-            type: 'status',
-            data: statusData,
-            streamId: request.streamId,
-            sessionId: request.agentId,
-          });
-        });
+        (provider as any).setStatusCallback(
+          (statusData: {
+            phase: string;
+            message: string;
+            level: 'info' | 'warn' | 'error';
+            timestamp: number;
+          }) => {
+            this.sendStreamToRenderer(request.agentId, `agent:stream:${request.agentId}`, {
+              type: 'status',
+              data: statusData,
+              streamId: request.streamId,
+              sessionId: request.agentId,
+            });
+          },
+        );
       }
 
       // Use messagesForAgent which includes the mode prompt, not the original messages
@@ -3580,7 +3579,10 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
             // Prefer the renderer's pre-assigned ID so both sides share the same identity.
             // Fall back to the provider's ID (if available) or a fresh UUID.
             id: request.assistantMessageId || providerMessage?.id || `msg_${uuidv4()}`,
-            appMessageId: request.assistantAppMessageId || providerMessage?.appMessageId || createAppMessageId(),
+            appMessageId:
+              request.assistantAppMessageId ||
+              providerMessage?.appMessageId ||
+              createAppMessageId(),
             role: 'assistant' as const,
             contentBlocks: finalContentBlocks,
             timestamp: new Date().toISOString(),
@@ -3615,7 +3617,8 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
                 // Prefer the active request's provider/message ID, but keep an
                 // existing placeholder ID when the request did not carry one.
                 assistantMessage.id =
-                  request.assistantMessageId || backendSession.messages[existingAssistantMsgIndex].id;
+                  request.assistantMessageId ||
+                  backendSession.messages[existingAssistantMsgIndex].id;
                 // Replace the streaming message with final version
                 backendSession.messages[existingAssistantMsgIndex] = assistantMessage;
               } else {
@@ -3732,7 +3735,13 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
           trackMain('Agent Outcome', {
             agent_id: request.agentId,
             workspace_id: request.workspaceId,
-            outcome: wasInterrupted || ['provider_stopped', 'workspace_deleted', 'process_died', 'process_null'].includes(finishReason) ? 'stopped' : 'completed',
+            outcome:
+              wasInterrupted ||
+              ['provider_stopped', 'workspace_deleted', 'process_died', 'process_null'].includes(
+                finishReason,
+              )
+                ? 'stopped'
+                : 'completed',
             finish_reason: finishReason,
             agent_name: agentName,
             agent_model: provider?.getConfig?.()?.model || request.model,
@@ -4173,9 +4182,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
               agentId: request.agentId,
               workspaceId: request.workspaceId,
               error:
-                handshakeError instanceof Error
-                  ? handshakeError.message
-                  : String(handshakeError),
+                handshakeError instanceof Error ? handshakeError.message : String(handshakeError),
             },
           );
         }
@@ -4351,28 +4358,27 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
               (loadResult.data.isStreaming === true ||
                 (loadResult.data as any).isProcessing === true)
             ) {
-              logger.warn(
-                'Interrupt on orphaned stream, clearing persisted streaming state',
-                {
-                  agentId,
-                  workspaceId: repairWorkspaceId,
-                  hasProvider: !!provider,
-                  hasInterrupt: provider ? typeof provider.interrupt === 'function' : false,
-                  persistedIsStreaming: loadResult.data.isStreaming === true,
-                  persistedIsProcessing: (loadResult.data as any).isProcessing === true,
-                },
-              );
+              logger.warn('Interrupt on orphaned stream, clearing persisted streaming state', {
+                agentId,
+                workspaceId: repairWorkspaceId,
+                hasProvider: !!provider,
+                hasInterrupt: provider ? typeof provider.interrupt === 'function' : false,
+                persistedIsStreaming: loadResult.data.isStreaming === true,
+                persistedIsProcessing: (loadResult.data as any).isProcessing === true,
+              });
               // Snapshot the orphan signature from the freshly-loaded disk
               // state BEFORE repair mutates it in place. This signature
               // identifies THIS orphan event so a later new orphan for the
               // same agent (different updatedAt / new last message) is not
               // suppressed.
               const repairSignature = this.computeOrphanRepairSignature(loadResult.data);
-              const { persisted: repairPersisted } =
-                await this.repairOrphanedStreamingState(loadResult.data, {
+              const { persisted: repairPersisted } = await this.repairOrphanedStreamingState(
+                loadResult.data,
+                {
                   appendMessage: AgentBackendHandler.INTERRUPT_ORPHAN_MESSAGE,
                   reason: 'interrupt_orphaned_stream',
-                });
+                },
+              );
               // Only mark repaired when the save actually hit disk, otherwise
               // next load still shows isStreaming=true and we need to retry.
               if (repairPersisted) {
@@ -4392,8 +4398,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
             logger.warn('Failed to repair orphaned streaming state on interrupt', {
               agentId,
               workspaceId: repairWorkspaceId,
-              error:
-                repairError instanceof Error ? repairError.message : String(repairError),
+              error: repairError instanceof Error ? repairError.message : String(repairError),
             });
           }
         }
@@ -4546,7 +4551,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       // `emitAgentDeletedEvent` is fire-and-forget; the actual cleanup below
       // continues independently.
       if (workspaceId) {
-        this.emitAgentDeletedEvent(agentId, workspaceId, agentName, taskNoteId, isBackground, parentAgentId);
+        this.emitAgentDeletedEvent(
+          agentId,
+          workspaceId,
+          agentName,
+          taskNoteId,
+          isBackground,
+          parentAgentId,
+        );
       }
 
       // Clean up the ACP provider and its session
@@ -4646,12 +4658,12 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
 
         return result;
       } catch (durableErr) {
-        const errMessage =
-          durableErr instanceof Error ? durableErr.message : String(durableErr);
-        logger.error(
-          '[AgentBackendHandler] Durable delete failed after agent:deleted broadcast',
-          { agentId, workspaceId, error: durableErr },
-        );
+        const errMessage = durableErr instanceof Error ? durableErr.message : String(durableErr);
+        logger.error('[AgentBackendHandler] Durable delete failed after agent:deleted broadcast', {
+          agentId,
+          workspaceId,
+          error: durableErr,
+        });
         this.rollbackAgentDeletion(
           agentId,
           workspaceId,
@@ -4877,17 +4889,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         const loadAgentSummary = agentPersistence.loadAgentSummary?.bind(agentPersistence);
         const loadAgentForList = hydrateFullAgents
           ? agentPersistence.loadAgent.bind(agentPersistence)
-          : loadAgentSummary ?? agentPersistence.loadAgent.bind(agentPersistence);
+          : (loadAgentSummary ?? agentPersistence.loadAgent.bind(agentPersistence));
 
         // Load agent data for each ID in parallel. Closed/inactive workspaces use
         // summaries so list/status surfaces don't retain full message history.
         const loadResults = await Promise.all(
           agentIds.map(async (agentId) => {
             try {
-              const result = await loadAgentForList(
-                agentId as AgentId,
-                workspaceId as WorkspaceId,
-              );
+              const result = await loadAgentForList(agentId as AgentId, workspaceId as WorkspaceId);
               return result.success && result.data ? result.data : null;
             } catch (error) {
               logger.warn(`Failed to load agent ${agentId}`, { error: (error as Error).message });
@@ -5003,7 +5012,11 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
   /**
    * Handle persistence metrics
    */
-  private async handlePersistenceMetrics(): Promise<{ success: boolean; data?: any; error?: string }> {
+  private async handlePersistenceMetrics(): Promise<{
+    success: boolean;
+    data?: any;
+    error?: string;
+  }> {
     try {
       // Get metrics from persistence layer
       // Note: These methods don't exist in UnifiedPersistence yet, returning placeholder data
@@ -5144,9 +5157,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
    * Resume an agent session by restoring it to memory
    * This is used when an agent exists on disk but not in memory
    */
-  private async resumeAgentSession(
-    loadedAgent: AgentSession,
-  ): Promise<AgentSession | null> {
+  private async resumeAgentSession(loadedAgent: AgentSession): Promise<AgentSession | null> {
     try {
       const backend = await this.getBackend();
 
@@ -5677,7 +5688,12 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
    * @param reason   - Human-readable label for logging (e.g. 'complete', 'error', 'timeout')
    * @param generation - Optional stream generation token (passed through to cleanupStreamResources)
    */
-  private finalizeStream(agentId: string, workspaceId: string, reason: string, generation?: number): void {
+  private finalizeStream(
+    agentId: string,
+    workspaceId: string,
+    reason: string,
+    generation?: number,
+  ): void {
     // Persist workspace ID for queue watchdog before stream resources are cleaned up
     if (workspaceId && this.messageQueues.has(agentId)) {
       this.queueAgentWorkspaceIds.set(agentId, workspaceId);
@@ -6063,7 +6079,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
    * Emit a stream event through Redux workspace events for WebSocket API consumers.
    */
   private emitStreamEventToWorkspaceEvents(agentId: string, workspaceId: string, data: any): void {
-    let eventType: 'agent:stream:start' | 'agent:stream:chunk' | 'agent:stream:content-blocks' | 'agent:stream:end' | 'agent:stream:message' | 'agent:stream:tool_use' | 'agent:stream:tool_result';
+    let eventType:
+      | 'agent:stream:start'
+      | 'agent:stream:chunk'
+      | 'agent:stream:content-blocks'
+      | 'agent:stream:end'
+      | 'agent:stream:message'
+      | 'agent:stream:tool_use'
+      | 'agent:stream:tool_result';
     switch (data.type) {
       case 'start':
         eventType = 'agent:stream:start';
@@ -6097,21 +6120,25 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     }
 
     try {
-      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
-        eventType,
-        workspaceId,
-        { type: 'agent' as const, id: agentId },
-        {
-          agentId,
-          content: data.data ?? data.message ?? null,
-          error: data.error ?? null,
-          finishReason: data.finishReason ?? data.stopReason ?? null,
-          streamId: data.streamId,
-          ...(data.type === 'message' && data.message && { message: data.message }),
-          ...(data.type === 'tool_use' && { toolUse: data.data || data }),
-          ...(data.type === 'tool_result' && { toolResult: data.data || data }),
-        },
-      )));
+      mainDispatch(
+        reduxEmitWorkspaceEvent(
+          createWorkspaceEvent(
+            eventType,
+            workspaceId,
+            { type: 'agent' as const, id: agentId },
+            {
+              agentId,
+              content: data.data ?? data.message ?? null,
+              error: data.error ?? null,
+              finishReason: data.finishReason ?? data.stopReason ?? null,
+              streamId: data.streamId,
+              ...(data.type === 'message' && data.message && { message: data.message }),
+              ...(data.type === 'tool_use' && { toolUse: data.data || data }),
+              ...(data.type === 'tool_result' && { toolResult: data.data || data }),
+            },
+          ),
+        ),
+      );
     } catch (err) {
       logger.error('Failed to emit stream event to workspace events', { agentId, error: err });
     }
@@ -6131,15 +6158,19 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     data: any,
   ): void {
     try {
-      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
-        eventType,
-        workspaceId,
-        { type: 'agent' as const, id: agentId },
-        {
-          ...data,
-          agentId,
-        },
-      )));
+      mainDispatch(
+        reduxEmitWorkspaceEvent(
+          createWorkspaceEvent(
+            eventType,
+            workspaceId,
+            { type: 'agent' as const, id: agentId },
+            {
+              ...data,
+              agentId,
+            },
+          ),
+        ),
+      );
     } catch (err) {
       logger.error('Failed to emit queue event to workspace events', {
         eventType,
@@ -6599,8 +6630,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
 
     if (assistantAppMessageId) {
       const appIdMatch = messages.findIndex(
-        (message) =>
-          message.role === 'assistant' && message.appMessageId === assistantAppMessageId,
+        (message) => message.role === 'assistant' && message.appMessageId === assistantAppMessageId,
       );
       if (appIdMatch >= 0) return appIdMatch;
     }
@@ -6644,15 +6674,17 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       }
 
       if (this.terminatingAgents.has(agentId)) {
-        logger.debug('persistInterruptedStreamingSessionState: skipped at save, agent terminating', {
-          agentId,
-          reason,
-        });
+        logger.debug(
+          'persistInterruptedStreamingSessionState: skipped at save, agent terminating',
+          {
+            agentId,
+            reason,
+          },
+        );
         return;
       }
 
-      const { contentBlocks: currentContentBlocks } =
-        messageAccumulator.getPartialContent(agentId);
+      const { contentBlocks: currentContentBlocks } = messageAccumulator.getPartialContent(agentId);
       if (!Array.isArray(backendSession.messages)) {
         backendSession.messages = [];
       }
@@ -6672,9 +6704,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
           appMessageId:
             assistantAppMessageId || existingMessage.appMessageId || createAppMessageId(),
           contentBlocks:
-            currentContentBlocks.length > 0
-              ? currentContentBlocks
-              : existingMessage.contentBlocks,
+            currentContentBlocks.length > 0 ? currentContentBlocks : existingMessage.contentBlocks,
           isStreaming: false,
           streamingComplete: true,
           metadata: {
@@ -6752,7 +6782,8 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         const timeoutMessage: AgentMessage = {
           ...existingMessage,
           id: assistantMessageId || existingMessage?.id || `msg_timeout_${Date.now()}`,
-          appMessageId: assistantAppMessageId || existingMessage?.appMessageId || createAppMessageId(),
+          appMessageId:
+            assistantAppMessageId || existingMessage?.appMessageId || createAppMessageId(),
           role: 'assistant',
           contentBlocks,
           timestamp: new Date().toISOString(),
@@ -6838,9 +6869,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       // Avoid duplicate recovery banners if one is already the last message.
       const last = messages[messages.length - 1];
       const lastText =
-        last?.contentBlocks?.[0]?.type === 'text'
-          ? (last.contentBlocks[0] as any).text
-          : undefined;
+        last?.contentBlocks?.[0]?.type === 'text' ? (last.contentBlocks[0] as any).text : undefined;
       if (lastText !== options.appendMessage) {
         messages.push({
           id: uuidv4(),
@@ -7091,10 +7120,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         if (!loadResult.success || !loadResult.data) {
           return 'skipped';
         }
-        const { persisted: ok } = await this.repairOrphanedStreamingState(
-          loadResult.data,
-          { reason: 'graceful_shutdown' },
-        );
+        const { persisted: ok } = await this.repairOrphanedStreamingState(loadResult.data, {
+          reason: 'graceful_shutdown',
+        });
         return ok ? 'persisted' : 'failed';
       } catch (err) {
         logger.warn('persistShutdownState: failed to persist agent', {
@@ -7257,9 +7285,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         status === 'resumable' &&
         !hasProvider &&
         agentData &&
-        (agentData.isStreaming === true ||
-          agentData.isProcessing === true ||
-          hasStreamingMessage)
+        (agentData.isStreaming === true || agentData.isProcessing === true || hasStreamingMessage)
       ) {
         const candidateSignature = this.computeOrphanRepairSignature(agentData);
         const previousSignature = this.repairedOrphanedAgents.get(agentId);
@@ -7452,7 +7478,8 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         // Resume queue processing now that the flag is cleared.
         // Fall back to queueAgentWorkspaceIds since streamWorkspaceIds may have
         // been cleaned up by cleanupStreamResources() before this timeout fires.
-        const workspaceId = this.streamWorkspaceIds.get(agentId) ?? this.queueAgentWorkspaceIds.get(agentId);
+        const workspaceId =
+          this.streamWorkspaceIds.get(agentId) ?? this.queueAgentWorkspaceIds.get(agentId);
         if (workspaceId) {
           this.processNextQueuedMessage(agentId, workspaceId).catch((err) => {
             logger.error('Error processing queue after interruptedAgents safety timeout', {
@@ -7530,10 +7557,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
   ): Promise<boolean> {
     if (!this.pendingStopAgents.has(agentId)) return false;
 
-    logger.warn(
-      'Pending stop detected immediately after provider creation - aborting send',
-      { agentId },
-    );
+    logger.warn('Pending stop detected immediately after provider creation - aborting send', {
+      agentId,
+    });
     this.pendingStopAgents.delete(agentId);
     this.cancelPendingStopSafetyTimeout(agentId);
 
@@ -7743,9 +7769,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
   ): boolean {
     if (!messages?.length) return false;
 
-    const wakeMessageIndex = messages.findIndex(
-      (message) => message.id === existingWakeMessage.id,
-    );
+    const wakeMessageIndex = messages.findIndex((message) => message.id === existingWakeMessage.id);
     if (wakeMessageIndex < 0) return false;
 
     for (const message of messages.slice(wakeMessageIndex + 1)) {
@@ -7785,14 +7809,17 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
 
     const droppedMessages = messages.slice(wakeMessageIndex + 1);
     if (droppedMessages.length > 0) {
-      logger.info('Backend-initiated message: truncated stale messages after reused event notification wake message', {
-        agentId: context.agentId,
-        wakeMessageId: existingWakeMessage.id,
-        eventNotificationKey: context.eventNotificationKey,
-        path: context.path,
-        droppedCount: droppedMessages.length,
-        droppedRoles: droppedMessages.map((message) => message.role),
-      });
+      logger.info(
+        'Backend-initiated message: truncated stale messages after reused event notification wake message',
+        {
+          agentId: context.agentId,
+          wakeMessageId: existingWakeMessage.id,
+          eventNotificationKey: context.eventNotificationKey,
+          path: context.path,
+          droppedCount: droppedMessages.length,
+          droppedRoles: droppedMessages.map((message) => message.role),
+        },
+      );
     }
 
     return {
@@ -7830,7 +7857,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       workspaceId,
       isDeleted: this.isAgentDeleted(sessionId),
       hasActiveStream: this.streamStartTimes.has(sessionId),
-      streamAgeMs: this.streamStartTimes.has(sessionId) ? Date.now() - (this.streamStartTimes.get(sessionId) || 0) : null,
+      streamAgeMs: this.streamStartTimes.has(sessionId)
+        ? Date.now() - (this.streamStartTimes.get(sessionId) || 0)
+        : null,
       hasPendingQueueProcessing: this.pendingQueueProcessing.has(sessionId),
       hasPendingBackendDelivery: this.pendingBackendDeliveries.has(sessionId),
       queueLength: this.messageQueues.get(sessionId)?.length || 0,
@@ -7971,11 +8000,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     // the agent becomes permanently unreachable for backend-initiated messages.
     const deliveryTimeout = setTimeout(() => {
       if (this.pendingBackendDeliveries.has(sessionId)) {
-        logger.warn('Backend-initiated delivery safety timeout expired, force-clearing pending flag', {
-          agentId: sessionId,
-          workspaceId,
-          timeoutMs: AgentBackendHandler.PENDING_DELIVERY_TIMEOUT_MS,
-        });
+        logger.warn(
+          'Backend-initiated delivery safety timeout expired, force-clearing pending flag',
+          {
+            agentId: sessionId,
+            workspaceId,
+            timeoutMs: AgentBackendHandler.PENDING_DELIVERY_TIMEOUT_MS,
+          },
+        );
         this.pendingBackendDeliveries.delete(sessionId);
         this.pendingBackendDeliveryTimeouts.delete(sessionId);
       }
@@ -7983,285 +8015,117 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     this.pendingBackendDeliveryTimeouts.set(sessionId, deliveryTimeout);
 
     try {
-    if (!existingProvider) {
-      // No provider exists - we need to do the frontend handshake before streaming
-      // Load agent from persistence to get agent info for the handshake
-      // DON'T pass workspacePath - let loadAgent use the correct metadata path internally
-      const loadResult = await agentPersistence.loadAgent(
-        sessionId as AgentId,
-        workspaceId as WorkspaceId,
-      );
-
-      if (loadResult.success && loadResult.data) {
-        logger.info('Backend-initiated message: performing frontend handshake', {
-          agentId: sessionId,
-          workspaceId,
-          agentName: loadResult.data.name,
-        });
-
-        // Step 1 & 2: Request frontend to prepare handler and wait for ready signal
-        // Non-fatal: If the frontend isn't ready (e.g., coordinator's chat panel not visible),
-        // continue anyway. The agent:stream-starting safety net on the frontend will register
-        // handlers when streaming begins, and agent:created will add the agent to the dock.
-        const assistantAppMessageId = createAppMessageId();
-
-        try {
-          await this.requestFrontendHandler(sessionId, workspaceId, {
-            name: loadResult.data.name,
-            model: loadResult.data.model,
-          }, 10000, undefined, assistantAppMessageId);
-          logger.info('Backend-initiated message: frontend handshake completed (no provider path)', {
-            agentId: sessionId,
-            workspaceId,
-            note: 'requestFrontendHandler returns early with no error when no windows exist for the workspace',
-          });
-        } catch (handshakeError) {
-          logger.warn(
-            'Backend-initiated message: frontend handshake failed (non-fatal), continuing without UI',
-            {
-              agentId: sessionId,
-              workspaceId,
-              error:
-                handshakeError instanceof Error ? handshakeError.message : String(handshakeError),
-            },
-          );
-        }
-
-        // Step 3: Emit agent:created to add to dock/session store
-        // IMPORTANT: Include the wake message in the session so frontend has it from the start
-        // This fixes the issue where backend-initiated messages weren't showing in the UI
-        // because agent:created fired before the message was added to backend session
-        const backend = await this.getBackend();
-
-        const loadedMessages = loadResult.data.messages || [];
-        const existingWakeMessage = eventNotificationKey
-          ? this.findExistingEventNotificationWakeMessage(loadedMessages, eventNotificationKey)
-          : undefined;
-
-        if (
-          existingWakeMessage &&
-          this.hasCompletedAssistantResponseAfterWakeMessage(loadedMessages, existingWakeMessage)
-        ) {
-          // Exact duplicate event notifications can be retried after the agent
-          // already answered the wake. Skip only in that completed state so
-          // interrupted/in-flight retries and distinct later lifecycle events
-          // still deliver normally.
-          logger.info(
-            'Backend-initiated message: duplicate event notification already completed, skipping delivery (no-provider path)',
-            {
-              agentId: sessionId,
-              wakeMessageId: existingWakeMessage.id,
-              eventNotificationKey,
-            },
-          );
-          return { success: true };
-        }
-
-        // Construct the wake message to include in agent:created
-        // This ensures the frontend sessionStore has the message from the beginning
-        const wakeMessageId = existingWakeMessage?.id || `msg_${uuidv4()}`;
-        const wakeMessage =
-          existingWakeMessage ||
-          ({
-            id: wakeMessageId,
-            appMessageId: createAppMessageId(),
-            role: 'user' as const,
-            contentBlocks: [{ type: 'text' as const, text: message }],
-            timestamp: new Date().toISOString(),
-            ...(wakeMessageMetadata && { metadata: wakeMessageMetadata }),
-          } satisfies AgentMessage);
-
-        // Include the wake message in the messages array unless this is a retry
-        // for an event notification that was already persisted by a prior attempt.
-        const { messages: messagesWithWake } = existingWakeMessage
-          ? this.truncateMessagesAfterExistingWakeMessage(loadedMessages, existingWakeMessage, {
-              agentId: sessionId,
-              eventNotificationKey,
-              path: 'no-provider',
-            })
-          : { messages: [...loadedMessages, wakeMessage] };
-
-        // Resolve model with provider-aware fallback (only for non-default providers)
-        // Note: loadResult.data may have config from persistence even though AgentSession type doesn't include it
-        const loadedData = loadResult.data as any;
-        let sessionModel = loadedData.model || loadedData.config?.model || DEFAULT_AGENT_MODEL;
-        const sessionProvider = loadedData.config?.provider || loadedData.metadata?.provider;
-        if (sessionModel === DEFAULT_AGENT_MODEL && sessionProvider) {
-          const defaultProviderId = getDefaultProviderId();
-          // Only resolve for providers with known tier mappings
-          if (sessionProvider !== defaultProviderId && sessionProvider in PROVIDER_MODEL_TIERS) {
-            const baseModel = getDefaultModelForProvider(sessionProvider, 'balanced');
-            sessionModel = `${sessionProvider}:${baseModel}`;
-          } else if (sessionProvider !== defaultProviderId) {
-            // Provider has dynamic models not in PROVIDER_MODEL_TIERS (e.g., opencode).
-            // Use 'default' to let the provider pick its own default model.
-            sessionModel = 'default';
-            logger.info('Using provider default model for provider without tier mappings', {
-              agentId: sessionId,
-              provider: sessionProvider,
-            });
-          }
-        }
-
-        const agentSession: AgentSession = {
-          id: sessionId as AgentId,
-          workspaceId: workspaceId as WorkspaceId,
-          name: loadedData.name || 'Agent',
-          status: AgentStatus.Idle,
-          model: sessionModel,
-          systemPrompt: loadedData.systemPrompt,
-          messages: messagesWithWake,
-          createdAt: loadedData.createdAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          metadata: loadedData.metadata || {},
-          backendSessionId: loadedData.backendSessionId,
-          provider:
-            loadedData.provider ?? loadedData.config?.provider ?? loadedData.metadata?.provider,
-        };
-
-        logger.info('Backend-initiated message: emitting agent:created event', {
-          agentId: sessionId,
-          workspaceId,
-          agentName: agentSession.name,
-          messageCount: messagesWithWake.length,
-          wakeMessageId,
-        });
-
-        // CRITICAL: Resume the session in backend memory BEFORE streaming
-        // This ensures backend.getSession() returns the session during onComplete
-        // so the wake message and assistant response get persisted to disk
-        const resumeResult = await backend.resumeSession(agentSession);
-        if (!resumeResult.success) {
-          logger.warn('Backend-initiated message: failed to resume session in memory', {
-            agentId: sessionId,
-            error: resumeResult.error,
-          });
-        } else {
-          logger.info('Backend-initiated message: session resumed in memory', {
-            agentId: sessionId,
-            messageCount: messagesWithWake.length,
-          });
-
-          if (existingWakeMessage) {
-            logger.info('Backend-initiated message: reused existing event notification wake message (no-provider path)', {
-              agentId: sessionId,
-              wakeMessageId,
-              eventNotificationKey,
-            });
-          } else {
-            // CRITICAL FIX: Persist the wake message to disk IMMEDIATELY so it survives
-            // page refresh. Without this, the wake message only exists in memory until
-            // onComplete runs, and can be lost if the frontend saves a stale session.
-            agentPersistence.saveAgent(agentSession).then((saveResult) => {
-              if (saveResult.success) {
-                logger.info('Backend-initiated message: persisted wake message to disk (no-provider path)', {
-                  agentId: sessionId,
-                  wakeMessageId,
-                  messageCount: messagesWithWake.length,
-                });
-              } else {
-                logger.warn('Backend-initiated message: failed to persist wake message (no-provider path)', {
-                  agentId: sessionId,
-                  wakeMessageId,
-                  error: saveResult.error,
-                });
-              }
-            }).catch((error) => {
-              logger.error('Backend-initiated message: unhandled error persisting wake message (no-provider path)', {
-                agentId: sessionId,
-                wakeMessageId,
-                error: error instanceof Error ? error.message : String(error),
-              });
-            });
-          }
-        }
-
-        backend.emit('agent:created', {
-          agentId: sessionId,
-          workspaceId,
-          agent: agentSession,
-        });
-
-        logger.info(
-          'Backend-initiated message: agent:created emitted, frontend handler registered',
-          {
-            agentId: sessionId,
-            includesWakeMessage: true,
-          },
-        );
-
-        // Tell handleBackendStreamMessage to skip adding the user message since we already included it
-        // Pass the same message ID so the backend uses it for persistence
-        // CRITICAL: Pass agentName so handleSendMessage doesn't fall back to 'Agent'
-        return await this.handleBackendStreamMessage(null as any, {
-          agentId: sessionId,
-          sessionId,
-          streamId: sessionId,
-          content: message,
-          workspaceId,
-          skipUserMessage: true,
-          queuedMessageId: wakeMessageId, // Use same ID for consistency
-          assistantAppMessageId,
-          agentName: agentSession.name,
-          messages: messagesWithWake, // Pass in-memory messages so handleSendMessage uses them instead of reloading from disk
-          ...otherParams,
-        });
-      } else {
-        logger.warn('Backend-initiated message: could not load agent from persistence', {
-          agentId: sessionId,
-          error: loadResult.error,
-        });
-        // Continue anyway - handleSendMessage will try to load it too
-      }
-    } else {
-      // Provider exists, but we still need to ensure the frontend has stream handlers set up
-      // The frontend may have cleaned up handlers after the previous stream completed,
-      // or the ChatPanel may not be mounted (agent is in dock but not selected)
-      logger.info('Backend-initiated message: provider exists, requesting frontend handler', {
-        agentId: sessionId,
-      });
-
-      // Get agent info from the existing provider or persistence
-      // Default to workspace title if agent name is not available
-      let agentName = 'Agent';
-      let agentModel: string | undefined = undefined; // Will be resolved with provider-aware fallback
-
-      // Try to get workspace title for fallback name
-      try {
-        const workspaceResult = await workspaceService.getWorkspace(workspaceId as any);
-        if (workspaceResult.ok && workspaceResult.data?.title) {
-          agentName = workspaceResult.data.title;
-        }
-      } catch {
-        // Ignore - use default name
-      }
-
-      // Try to get info from the backend session
-      const backend = await this.getBackend();
-      let existingSession = backend.getSession(sessionId);
-
-      // If no session in memory but provider exists, load from persistence and resume
-      // This handles the case where the session was evicted from memory but the provider is still alive
-      if (!existingSession) {
-        logger.info(
-          'Backend-initiated message: provider exists but no session in memory, loading from persistence',
-          {
-            agentId: sessionId,
-            workspaceId,
-          },
-        );
-
+      if (!existingProvider) {
+        // No provider exists - we need to do the frontend handshake before streaming
+        // Load agent from persistence to get agent info for the handshake
+        // DON'T pass workspacePath - let loadAgent use the correct metadata path internally
         const loadResult = await agentPersistence.loadAgent(
           sessionId as AgentId,
           workspaceId as WorkspaceId,
         );
 
         if (loadResult.success && loadResult.data) {
-          // Note: loadResult.data may have config from persistence even though AgentSession type doesn't include it
-          const loadedData = loadResult.data as any;
-          agentName = loadedData.name || agentName;
+          logger.info('Backend-initiated message: performing frontend handshake', {
+            agentId: sessionId,
+            workspaceId,
+            agentName: loadResult.data.name,
+          });
+
+          // Step 1 & 2: Request frontend to prepare handler and wait for ready signal
+          // Non-fatal: If the frontend isn't ready (e.g., coordinator's chat panel not visible),
+          // continue anyway. The agent:stream-starting safety net on the frontend will register
+          // handlers when streaming begins, and agent:created will add the agent to the dock.
+          const assistantAppMessageId = createAppMessageId();
+
+          try {
+            await this.requestFrontendHandler(
+              sessionId,
+              workspaceId,
+              {
+                name: loadResult.data.name,
+                model: loadResult.data.model,
+              },
+              10000,
+              undefined,
+              assistantAppMessageId,
+            );
+            logger.info(
+              'Backend-initiated message: frontend handshake completed (no provider path)',
+              {
+                agentId: sessionId,
+                workspaceId,
+                note: 'requestFrontendHandler returns early with no error when no windows exist for the workspace',
+              },
+            );
+          } catch (handshakeError) {
+            logger.warn(
+              'Backend-initiated message: frontend handshake failed (non-fatal), continuing without UI',
+              {
+                agentId: sessionId,
+                workspaceId,
+                error:
+                  handshakeError instanceof Error ? handshakeError.message : String(handshakeError),
+              },
+            );
+          }
+
+          // Step 3: Emit agent:created to add to dock/session store
+          // IMPORTANT: Include the wake message in the session so frontend has it from the start
+          // This fixes the issue where backend-initiated messages weren't showing in the UI
+          // because agent:created fired before the message was added to backend session
+          const backend = await this.getBackend();
+
+          const loadedMessages = loadResult.data.messages || [];
+          const existingWakeMessage = eventNotificationKey
+            ? this.findExistingEventNotificationWakeMessage(loadedMessages, eventNotificationKey)
+            : undefined;
+
+          if (
+            existingWakeMessage &&
+            this.hasCompletedAssistantResponseAfterWakeMessage(loadedMessages, existingWakeMessage)
+          ) {
+            // Exact duplicate event notifications can be retried after the agent
+            // already answered the wake. Skip only in that completed state so
+            // interrupted/in-flight retries and distinct later lifecycle events
+            // still deliver normally.
+            logger.info(
+              'Backend-initiated message: duplicate event notification already completed, skipping delivery (no-provider path)',
+              {
+                agentId: sessionId,
+                wakeMessageId: existingWakeMessage.id,
+                eventNotificationKey,
+              },
+            );
+            return { success: true };
+          }
+
+          // Construct the wake message to include in agent:created
+          // This ensures the frontend sessionStore has the message from the beginning
+          const wakeMessageId = existingWakeMessage?.id || `msg_${uuidv4()}`;
+          const wakeMessage =
+            existingWakeMessage ||
+            ({
+              id: wakeMessageId,
+              appMessageId: createAppMessageId(),
+              role: 'user' as const,
+              contentBlocks: [{ type: 'text' as const, text: message }],
+              timestamp: new Date().toISOString(),
+              ...(wakeMessageMetadata && { metadata: wakeMessageMetadata }),
+            } satisfies AgentMessage);
+
+          // Include the wake message in the messages array unless this is a retry
+          // for an event notification that was already persisted by a prior attempt.
+          const { messages: messagesWithWake } = existingWakeMessage
+            ? this.truncateMessagesAfterExistingWakeMessage(loadedMessages, existingWakeMessage, {
+                agentId: sessionId,
+                eventNotificationKey,
+                path: 'no-provider',
+              })
+            : { messages: [...loadedMessages, wakeMessage] };
 
           // Resolve model with provider-aware fallback (only for non-default providers)
+          // Note: loadResult.data may have config from persistence even though AgentSession type doesn't include it
+          const loadedData = loadResult.data as any;
           let sessionModel = loadedData.model || loadedData.config?.model || DEFAULT_AGENT_MODEL;
           const sessionProvider = loadedData.config?.provider || loadedData.metadata?.provider;
           if (sessionModel === DEFAULT_AGENT_MODEL && sessionProvider) {
@@ -8280,17 +8144,15 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
               });
             }
           }
-          agentModel = sessionModel;
 
-          // Resume the session in memory so the wake message can be persisted
-          const resumeSession: AgentSession = {
+          const agentSession: AgentSession = {
             id: sessionId as AgentId,
             workspaceId: workspaceId as WorkspaceId,
-            name: loadedData.name || agentName,
+            name: loadedData.name || 'Agent',
             status: AgentStatus.Idle,
             model: sessionModel,
             systemPrompt: loadedData.systemPrompt,
-            messages: loadedData.messages || [],
+            messages: messagesWithWake,
             createdAt: loadedData.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             metadata: loadedData.metadata || {},
@@ -8299,251 +8161,476 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
               loadedData.provider ?? loadedData.config?.provider ?? loadedData.metadata?.provider,
           };
 
-          const resumeResult = await backend.resumeSession(resumeSession);
-          if (resumeResult.success) {
-            existingSession = backend.getSession(sessionId);
-            logger.info('Backend-initiated message: resumed session from persistence', {
-              agentId: sessionId,
-              messageCount: existingSession?.messages?.length || 0,
-            });
-          } else {
-            logger.warn('Backend-initiated message: failed to resume session from persistence', {
+          logger.info('Backend-initiated message: emitting agent:created event', {
+            agentId: sessionId,
+            workspaceId,
+            agentName: agentSession.name,
+            messageCount: messagesWithWake.length,
+            wakeMessageId,
+          });
+
+          // CRITICAL: Resume the session in backend memory BEFORE streaming
+          // This ensures backend.getSession() returns the session during onComplete
+          // so the wake message and assistant response get persisted to disk
+          const resumeResult = await backend.resumeSession(agentSession);
+          if (!resumeResult.success) {
+            logger.warn('Backend-initiated message: failed to resume session in memory', {
               agentId: sessionId,
               error: resumeResult.error,
             });
+          } else {
+            logger.info('Backend-initiated message: session resumed in memory', {
+              agentId: sessionId,
+              messageCount: messagesWithWake.length,
+            });
+
+            if (existingWakeMessage) {
+              logger.info(
+                'Backend-initiated message: reused existing event notification wake message (no-provider path)',
+                {
+                  agentId: sessionId,
+                  wakeMessageId,
+                  eventNotificationKey,
+                },
+              );
+            } else {
+              // CRITICAL FIX: Persist the wake message to disk IMMEDIATELY so it survives
+              // page refresh. Without this, the wake message only exists in memory until
+              // onComplete runs, and can be lost if the frontend saves a stale session.
+              agentPersistence
+                .saveAgent(agentSession)
+                .then((saveResult) => {
+                  if (saveResult.success) {
+                    logger.info(
+                      'Backend-initiated message: persisted wake message to disk (no-provider path)',
+                      {
+                        agentId: sessionId,
+                        wakeMessageId,
+                        messageCount: messagesWithWake.length,
+                      },
+                    );
+                  } else {
+                    logger.warn(
+                      'Backend-initiated message: failed to persist wake message (no-provider path)',
+                      {
+                        agentId: sessionId,
+                        wakeMessageId,
+                        error: saveResult.error,
+                      },
+                    );
+                  }
+                })
+                .catch((error) => {
+                  logger.error(
+                    'Backend-initiated message: unhandled error persisting wake message (no-provider path)',
+                    {
+                      agentId: sessionId,
+                      wakeMessageId,
+                      error: error instanceof Error ? error.message : String(error),
+                    },
+                  );
+                });
+            }
           }
-        }
-      } else {
-        agentName = existingSession.name || agentName;
-        agentModel = existingSession.model || agentModel;
-      }
 
-      const existingWakeMessage = eventNotificationKey
-        ? this.findExistingEventNotificationWakeMessage(
-            existingSession?.messages,
-            eventNotificationKey,
-          )
-        : undefined;
-
-      if (
-        existingWakeMessage &&
-        this.hasCompletedAssistantResponseAfterWakeMessage(
-          existingSession?.messages,
-          existingWakeMessage,
-        )
-      ) {
-        // Exact duplicate event notifications can be retried after the agent
-        // already answered the wake. Skip only in that completed state so
-        // interrupted/in-flight retries and distinct later lifecycle events
-        // still deliver normally.
-        logger.info(
-          'Backend-initiated message: duplicate event notification already completed, skipping delivery',
-          {
+          backend.emit('agent:created', {
             agentId: sessionId,
-            wakeMessageId: existingWakeMessage.id,
-            eventNotificationKey,
-          },
-        );
-        return { success: true };
-      }
+            workspaceId,
+            agent: agentSession,
+          });
 
-      // Create the wake message with metadata so frontend can display it
-      // This is critical for showing the EventWakeupBanner in the chat history
-      const wakeMessageId = existingWakeMessage?.id || `msg_${uuidv4()}`;
-      const wakeMessage =
-        existingWakeMessage ||
-        ({
-          id: wakeMessageId,
-          appMessageId: createAppMessageId(),
-          role: 'user' as const,
-          contentBlocks: [{ type: 'text' as const, text: message }],
-          timestamp: new Date().toISOString(),
-          ...(wakeMessageMetadata && { metadata: wakeMessageMetadata }),
-        } satisfies AgentMessage);
-
-      logger.info('Backend-initiated message: created wake message for existing provider', {
-        agentId: sessionId,
-        wakeMessageId,
-        hasMetadata: !!messageMetadata,
-        metadataType: messageMetadata?.type,
-        eventTypes: messageMetadata?.eventTypes,
-        eventCount: messageMetadata?.eventCount,
-        wakeMessageMetadata: wakeMessage.metadata,
-      });
-
-      // Add the wake message to the backend session for persistence
-      // This ensures the message is saved when the agent completes
-      if (existingSession) {
-        if (!existingSession.messages) {
-          existingSession.messages = [];
-        }
-        if (existingWakeMessage) {
-          const truncationResult = this.truncateMessagesAfterExistingWakeMessage(
-            existingSession.messages,
-            existingWakeMessage,
+          logger.info(
+            'Backend-initiated message: agent:created emitted, frontend handler registered',
             {
               agentId: sessionId,
-              eventNotificationKey,
-              path: 'existing-provider',
+              includesWakeMessage: true,
             },
           );
 
-          if (truncationResult.droppedCount > 0) {
-            existingSession.messages.splice(
-              0,
-              existingSession.messages.length,
-              ...truncationResult.messages,
-            );
-          }
-
-          logger.info('Backend-initiated message: reused existing event notification wake message', {
+          // Tell handleBackendStreamMessage to skip adding the user message since we already included it
+          // Pass the same message ID so the backend uses it for persistence
+          // CRITICAL: Pass agentName so handleSendMessage doesn't fall back to 'Agent'
+          return await this.handleBackendStreamMessage(null as any, {
             agentId: sessionId,
-            wakeMessageId,
-            eventNotificationKey,
+            sessionId,
+            streamId: sessionId,
+            content: message,
+            workspaceId,
+            skipUserMessage: true,
+            queuedMessageId: wakeMessageId, // Use same ID for consistency
+            assistantAppMessageId,
+            agentName: agentSession.name,
+            messages: messagesWithWake, // Pass in-memory messages so handleSendMessage uses them instead of reloading from disk
+            ...otherParams,
           });
-
-          if (truncationResult.droppedCount > 0) {
-            agentPersistence.saveAgent(existingSession).then((saveResult) => {
-              if (saveResult.success) {
-                logger.info('Backend-initiated message: persisted truncated reused wake message to disk', {
-                  agentId: sessionId,
-                  wakeMessageId,
-                  messageCount: existingSession.messages.length,
-                });
-              } else {
-                logger.warn('Backend-initiated message: failed to persist truncated reused wake message', {
-                  agentId: sessionId,
-                  wakeMessageId,
-                  error: saveResult.error,
-                });
-              }
-            }).catch((error) => {
-              logger.error('Backend-initiated message: unhandled error persisting truncated reused wake message', {
-                agentId: sessionId,
-                wakeMessageId,
-                error: error instanceof Error ? error.message : String(error),
-              });
-            });
-          }
         } else {
-          existingSession.messages.push(wakeMessage);
-          logger.info('Backend-initiated message: added wake message to backend session', {
+          logger.warn('Backend-initiated message: could not load agent from persistence', {
             agentId: sessionId,
-            wakeMessageId,
-            messageCount: existingSession.messages.length,
+            error: loadResult.error,
           });
-
-          // CRITICAL FIX: Persist the wake message to disk IMMEDIATELY so it survives
-          // page refresh and is not overwritten by stale frontend saves.
-          // Without this, the wake message only exists in memory until onComplete runs,
-          // and frontend saves during streaming can overwrite it via the merge logic
-          // in persistence.ipc.ts (which sees the frontend's stale message set as authoritative).
-          agentPersistence.saveAgent(existingSession).then((saveResult) => {
-            if (saveResult.success) {
-              logger.info('Backend-initiated message: persisted wake message to disk immediately', {
-                agentId: sessionId,
-                wakeMessageId,
-                messageCount: existingSession.messages.length,
-              });
-            } else {
-              logger.warn('Backend-initiated message: failed to persist wake message to disk', {
-                agentId: sessionId,
-                wakeMessageId,
-                error: saveResult.error,
-              });
-            }
-          }).catch((error) => {
-            logger.error('Backend-initiated message: unhandled error persisting wake message to disk', {
-              agentId: sessionId,
-              wakeMessageId,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          });
+          // Continue anyway - handleSendMessage will try to load it too
         }
       } else {
-        logger.warn('Backend-initiated message: no session available to add wake message', {
+        // Provider exists, but we still need to ensure the frontend has stream handlers set up
+        // The frontend may have cleaned up handlers after the previous stream completed,
+        // or the ChatPanel may not be mounted (agent is in dock but not selected)
+        logger.info('Backend-initiated message: provider exists, requesting frontend handler', {
           agentId: sessionId,
-          workspaceId,
         });
-      }
 
-      const assistantAppMessageId = createAppMessageId();
+        // Get agent info from the existing provider or persistence
+        // Default to workspace title if agent name is not available
+        let agentName = 'Agent';
+        let agentModel: string | undefined = undefined; // Will be resolved with provider-aware fallback
 
-      // Request frontend to prepare handler and wait for ready signal
-      // This ensures the frontend has stream handlers set up before we start streaming
-      // Include the wake message so frontend can add it to the session
-      try {
-        await this.requestFrontendHandler(
-          sessionId,
-          workspaceId,
-          {
-            name: agentName,
-            model: agentModel,
-          },
-          10000,
-          wakeMessage,
-          assistantAppMessageId,
-        );
-        logger.info('Backend-initiated message: frontend handler ready (provider existed)', {
+        // Try to get workspace title for fallback name
+        try {
+          const workspaceResult = await workspaceService.getWorkspace(workspaceId as any);
+          if (workspaceResult.ok && workspaceResult.data?.title) {
+            agentName = workspaceResult.data.title;
+          }
+        } catch {
+          // Ignore - use default name
+        }
+
+        // Try to get info from the backend session
+        const backend = await this.getBackend();
+        let existingSession = backend.getSession(sessionId);
+
+        // If no session in memory but provider exists, load from persistence and resume
+        // This handles the case where the session was evicted from memory but the provider is still alive
+        if (!existingSession) {
+          logger.info(
+            'Backend-initiated message: provider exists but no session in memory, loading from persistence',
+            {
+              agentId: sessionId,
+              workspaceId,
+            },
+          );
+
+          const loadResult = await agentPersistence.loadAgent(
+            sessionId as AgentId,
+            workspaceId as WorkspaceId,
+          );
+
+          if (loadResult.success && loadResult.data) {
+            // Note: loadResult.data may have config from persistence even though AgentSession type doesn't include it
+            const loadedData = loadResult.data as any;
+            agentName = loadedData.name || agentName;
+
+            // Resolve model with provider-aware fallback (only for non-default providers)
+            let sessionModel = loadedData.model || loadedData.config?.model || DEFAULT_AGENT_MODEL;
+            const sessionProvider = loadedData.config?.provider || loadedData.metadata?.provider;
+            if (sessionModel === DEFAULT_AGENT_MODEL && sessionProvider) {
+              const defaultProviderId = getDefaultProviderId();
+              // Only resolve for providers with known tier mappings
+              if (
+                sessionProvider !== defaultProviderId &&
+                sessionProvider in PROVIDER_MODEL_TIERS
+              ) {
+                const baseModel = getDefaultModelForProvider(sessionProvider, 'balanced');
+                sessionModel = `${sessionProvider}:${baseModel}`;
+              } else if (sessionProvider !== defaultProviderId) {
+                // Provider has dynamic models not in PROVIDER_MODEL_TIERS (e.g., opencode).
+                // Use 'default' to let the provider pick its own default model.
+                sessionModel = 'default';
+                logger.info('Using provider default model for provider without tier mappings', {
+                  agentId: sessionId,
+                  provider: sessionProvider,
+                });
+              }
+            }
+            agentModel = sessionModel;
+
+            // Resume the session in memory so the wake message can be persisted
+            const resumeSession: AgentSession = {
+              id: sessionId as AgentId,
+              workspaceId: workspaceId as WorkspaceId,
+              name: loadedData.name || agentName,
+              status: AgentStatus.Idle,
+              model: sessionModel,
+              systemPrompt: loadedData.systemPrompt,
+              messages: loadedData.messages || [],
+              createdAt: loadedData.createdAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              metadata: loadedData.metadata || {},
+              backendSessionId: loadedData.backendSessionId,
+              provider:
+                loadedData.provider ?? loadedData.config?.provider ?? loadedData.metadata?.provider,
+            };
+
+            const resumeResult = await backend.resumeSession(resumeSession);
+            if (resumeResult.success) {
+              existingSession = backend.getSession(sessionId);
+              logger.info('Backend-initiated message: resumed session from persistence', {
+                agentId: sessionId,
+                messageCount: existingSession?.messages?.length || 0,
+              });
+            } else {
+              logger.warn('Backend-initiated message: failed to resume session from persistence', {
+                agentId: sessionId,
+                error: resumeResult.error,
+              });
+            }
+          }
+        } else {
+          agentName = existingSession.name || agentName;
+          agentModel = existingSession.model || agentModel;
+        }
+
+        const existingWakeMessage = eventNotificationKey
+          ? this.findExistingEventNotificationWakeMessage(
+              existingSession?.messages,
+              eventNotificationKey,
+            )
+          : undefined;
+
+        if (
+          existingWakeMessage &&
+          this.hasCompletedAssistantResponseAfterWakeMessage(
+            existingSession?.messages,
+            existingWakeMessage,
+          )
+        ) {
+          // Exact duplicate event notifications can be retried after the agent
+          // already answered the wake. Skip only in that completed state so
+          // interrupted/in-flight retries and distinct later lifecycle events
+          // still deliver normally.
+          logger.info(
+            'Backend-initiated message: duplicate event notification already completed, skipping delivery',
+            {
+              agentId: sessionId,
+              wakeMessageId: existingWakeMessage.id,
+              eventNotificationKey,
+            },
+          );
+          return { success: true };
+        }
+
+        // Create the wake message with metadata so frontend can display it
+        // This is critical for showing the EventWakeupBanner in the chat history
+        const wakeMessageId = existingWakeMessage?.id || `msg_${uuidv4()}`;
+        const wakeMessage =
+          existingWakeMessage ||
+          ({
+            id: wakeMessageId,
+            appMessageId: createAppMessageId(),
+            role: 'user' as const,
+            contentBlocks: [{ type: 'text' as const, text: message }],
+            timestamp: new Date().toISOString(),
+            ...(wakeMessageMetadata && { metadata: wakeMessageMetadata }),
+          } satisfies AgentMessage);
+
+        logger.info('Backend-initiated message: created wake message for existing provider', {
           agentId: sessionId,
-          wakeMessageIncluded: true,
+          wakeMessageId,
+          hasMetadata: !!messageMetadata,
+          metadataType: messageMetadata?.type,
+          eventTypes: messageMetadata?.eventTypes,
+          eventCount: messageMetadata?.eventCount,
+          wakeMessageMetadata: wakeMessage.metadata,
         });
-      } catch (error) {
-        // Non-fatal: Continue delivery even if the frontend isn't ready.
-        // The agent:stream-starting safety net will register stream handlers when streaming
-        // begins, so the frontend will catch up if it's running but wasn't ready in time.
-        //
-        // Previously this returned { success: false } which prevented subscription wake-up
-        // delivery when the coordinator's chat panel wasn't visible (no UI to respond to
-        // the agent:prepare-handler handshake). The actual streaming and persistence work
-        // happens entirely in the main process and doesn't require frontend cooperation.
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.warn(
-          'Backend-initiated message: frontend handshake failed (non-fatal), continuing without UI',
-          {
+
+        // Add the wake message to the backend session for persistence
+        // This ensures the message is saved when the agent completes
+        if (existingSession) {
+          if (!existingSession.messages) {
+            existingSession.messages = [];
+          }
+          if (existingWakeMessage) {
+            const truncationResult = this.truncateMessagesAfterExistingWakeMessage(
+              existingSession.messages,
+              existingWakeMessage,
+              {
+                agentId: sessionId,
+                eventNotificationKey,
+                path: 'existing-provider',
+              },
+            );
+
+            if (truncationResult.droppedCount > 0) {
+              existingSession.messages.splice(
+                0,
+                existingSession.messages.length,
+                ...truncationResult.messages,
+              );
+            }
+
+            logger.info(
+              'Backend-initiated message: reused existing event notification wake message',
+              {
+                agentId: sessionId,
+                wakeMessageId,
+                eventNotificationKey,
+              },
+            );
+
+            if (truncationResult.droppedCount > 0) {
+              agentPersistence
+                .saveAgent(existingSession)
+                .then((saveResult) => {
+                  if (saveResult.success) {
+                    logger.info(
+                      'Backend-initiated message: persisted truncated reused wake message to disk',
+                      {
+                        agentId: sessionId,
+                        wakeMessageId,
+                        messageCount: existingSession.messages.length,
+                      },
+                    );
+                  } else {
+                    logger.warn(
+                      'Backend-initiated message: failed to persist truncated reused wake message',
+                      {
+                        agentId: sessionId,
+                        wakeMessageId,
+                        error: saveResult.error,
+                      },
+                    );
+                  }
+                })
+                .catch((error) => {
+                  logger.error(
+                    'Backend-initiated message: unhandled error persisting truncated reused wake message',
+                    {
+                      agentId: sessionId,
+                      wakeMessageId,
+                      error: error instanceof Error ? error.message : String(error),
+                    },
+                  );
+                });
+            }
+          } else {
+            existingSession.messages.push(wakeMessage);
+            logger.info('Backend-initiated message: added wake message to backend session', {
+              agentId: sessionId,
+              wakeMessageId,
+              messageCount: existingSession.messages.length,
+            });
+
+            // CRITICAL FIX: Persist the wake message to disk IMMEDIATELY so it survives
+            // page refresh and is not overwritten by stale frontend saves.
+            // Without this, the wake message only exists in memory until onComplete runs,
+            // and frontend saves during streaming can overwrite it via the merge logic
+            // in persistence.ipc.ts (which sees the frontend's stale message set as authoritative).
+            agentPersistence
+              .saveAgent(existingSession)
+              .then((saveResult) => {
+                if (saveResult.success) {
+                  logger.info(
+                    'Backend-initiated message: persisted wake message to disk immediately',
+                    {
+                      agentId: sessionId,
+                      wakeMessageId,
+                      messageCount: existingSession.messages.length,
+                    },
+                  );
+                } else {
+                  logger.warn('Backend-initiated message: failed to persist wake message to disk', {
+                    agentId: sessionId,
+                    wakeMessageId,
+                    error: saveResult.error,
+                  });
+                }
+              })
+              .catch((error) => {
+                logger.error(
+                  'Backend-initiated message: unhandled error persisting wake message to disk',
+                  {
+                    agentId: sessionId,
+                    wakeMessageId,
+                    error: error instanceof Error ? error.message : String(error),
+                  },
+                );
+              });
+          }
+        } else {
+          logger.warn('Backend-initiated message: no session available to add wake message', {
             agentId: sessionId,
             workspaceId,
-            error: errorMessage,
-          },
-        );
+          });
+        }
+
+        const assistantAppMessageId = createAppMessageId();
+
+        // Request frontend to prepare handler and wait for ready signal
+        // This ensures the frontend has stream handlers set up before we start streaming
+        // Include the wake message so frontend can add it to the session
+        try {
+          await this.requestFrontendHandler(
+            sessionId,
+            workspaceId,
+            {
+              name: agentName,
+              model: agentModel,
+            },
+            10000,
+            wakeMessage,
+            assistantAppMessageId,
+          );
+          logger.info('Backend-initiated message: frontend handler ready (provider existed)', {
+            agentId: sessionId,
+            wakeMessageIncluded: true,
+          });
+        } catch (error) {
+          // Non-fatal: Continue delivery even if the frontend isn't ready.
+          // The agent:stream-starting safety net will register stream handlers when streaming
+          // begins, so the frontend will catch up if it's running but wasn't ready in time.
+          //
+          // Previously this returned { success: false } which prevented subscription wake-up
+          // delivery when the coordinator's chat panel wasn't visible (no UI to respond to
+          // the agent:prepare-handler handshake). The actual streaming and persistence work
+          // happens entirely in the main process and doesn't require frontend cooperation.
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.warn(
+            'Backend-initiated message: frontend handshake failed (non-fatal), continuing without UI',
+            {
+              agentId: sessionId,
+              workspaceId,
+              error: errorMessage,
+            },
+          );
+        }
+
+        // Send the message, skipping user message creation since we already sent it to frontend
+        // Use the same message ID for consistency between frontend and backend
+        // CRITICAL: Pass agentName so handleSendMessage doesn't fall back to 'Agent'
+        return await this.handleBackendStreamMessage(null as any, {
+          agentId: sessionId,
+          sessionId,
+          streamId: sessionId,
+          content: message,
+          workspaceId,
+          skipUserMessage: true,
+          queuedMessageId: wakeMessageId,
+          assistantAppMessageId,
+          agentName,
+          messages: existingSession?.messages ? [...existingSession.messages] : [], // Pass in-memory messages (includes wake message) so handleSendMessage uses them instead of reloading from disk
+          ...otherParams,
+        });
       }
 
-      // Send the message, skipping user message creation since we already sent it to frontend
-      // Use the same message ID for consistency between frontend and backend
-      // CRITICAL: Pass agentName so handleSendMessage doesn't fall back to 'Agent'
+      // Fallback: send the message using the regular path (shouldn't normally reach here)
       return await this.handleBackendStreamMessage(null as any, {
         agentId: sessionId,
         sessionId,
         streamId: sessionId,
         content: message,
         workspaceId,
-        skipUserMessage: true,
-        queuedMessageId: wakeMessageId,
-        assistantAppMessageId,
-        agentName,
-        messages: existingSession?.messages ? [...existingSession.messages] : [], // Pass in-memory messages (includes wake message) so handleSendMessage uses them instead of reloading from disk
         ...otherParams,
       });
-    }
-
-    // Fallback: send the message using the regular path (shouldn't normally reach here)
-    return await this.handleBackendStreamMessage(null as any, {
-      agentId: sessionId,
-      sessionId,
-      streamId: sessionId,
-      content: message,
-      workspaceId,
-      ...otherParams,
-    });
     } finally {
       // Safety net: finalizeStream should have already cleared pendingBackendDeliveries
       // before emitAgentIdleEvent fires. If it's still set here, it means finalizeStream
       // didn't run (e.g., early return, exception before streaming started). Clean up to
       // prevent the agent from becoming permanently unreachable.
       if (this.pendingBackendDeliveries.has(sessionId)) {
-        logger.info('Backend-initiated message finally: clearing pendingBackendDeliveries (safety net)', {
-          agentId: sessionId,
-        });
+        logger.info(
+          'Backend-initiated message finally: clearing pendingBackendDeliveries (safety net)',
+          {
+            agentId: sessionId,
+          },
+        );
         this.pendingBackendDeliveries.delete(sessionId);
       }
       const timeout = this.pendingBackendDeliveryTimeouts.get(sessionId);
@@ -8590,7 +8677,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       const agentProvider =
         persistedAgent?.provider ??
         persistedAgent?.metadata?.provider ??
-        (persistedAgent?.model ? parseCompoundModelId(persistedAgent.model).providerId : undefined) ??
+        (persistedAgent?.model
+          ? parseCompoundModelId(persistedAgent.model).providerId
+          : undefined) ??
         (currentModel ? parseCompoundModelId(currentModel).providerId : undefined) ??
         ((runtimeProvider as any)?.config?._providerConfig?.id as string | undefined);
 
@@ -8858,7 +8947,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       messageId?: string;
     },
   ): Promise<{ success: boolean; queuedMessage?: QueuedMessage; error?: string }> {
-    const { agentId, content, workspaceId: queuedWorkspaceId, contextItems, imageBlocks, messageId } = params;
+    const {
+      agentId,
+      content,
+      workspaceId: queuedWorkspaceId,
+      contextItems,
+      imageBlocks,
+      messageId,
+    } = params;
 
     // Ensure we have a workspace ID for event bus emission
     // Try to populate from the agent's backend session if not already set
@@ -9015,12 +9111,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       const queueTargetWindowIds = wsId
         ? getWindowIdsForWorkspace(wsId)
         : this.getWorkspaceWindowsForAgent(agentId);
-      this.sendToRenderer(
-        'agent:queue:updated',
-        { agentId, queue },
-        queueTargetWindowIds,
-        wsId,
-      );
+      this.sendToRenderer('agent:queue:updated', { agentId, queue }, queueTargetWindowIds, wsId);
       // Emit to workspace events for WebSocket clients
       if (wsId) {
         this.emitQueueWorkspaceEvent('agent:queue:updated', agentId, wsId, { queue });
@@ -9078,12 +9169,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       const queueTargetWindowIds = wsId
         ? getWindowIdsForWorkspace(wsId)
         : this.getWorkspaceWindowsForAgent(agentId);
-      this.sendToRenderer(
-        'agent:queue:updated',
-        { agentId, queue },
-        queueTargetWindowIds,
-        wsId,
-      );
+      this.sendToRenderer('agent:queue:updated', { agentId, queue }, queueTargetWindowIds, wsId);
       // Emit to workspace events for WebSocket clients
       if (wsId) {
         this.emitQueueWorkspaceEvent('agent:queue:updated', agentId, wsId, { queue });
@@ -9120,9 +9206,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     const removeResult = await this.handleRemoveQueuedMessage(_event, { agentId, messageId });
     if (!removeResult.success) {
       logger.warn('handleForceMessage: failed to remove queued message, aborting force-send', {
-        agentId, messageId, error: removeResult.error
+        agentId,
+        messageId,
+        error: removeResult.error,
       });
-      return { success: false, error: 'Failed to remove queued message: ' + (removeResult.error || 'unknown error') };
+      return {
+        success: false,
+        error: 'Failed to remove queued message: ' + (removeResult.error || 'unknown error'),
+      };
     }
 
     try {
@@ -9152,7 +9243,10 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       // If send returned failure without throwing, re-queue the message
       // so it is not permanently lost (catch block only handles thrown errors)
       if (!result.success) {
-        logger.warn('Force message send returned failure, re-queuing message', { agentId, messageId });
+        logger.warn('Force message send returned failure, re-queuing message', {
+          agentId,
+          messageId,
+        });
         await this.handleQueueMessage(null, { agentId, content, imageBlocks, messageId });
         return { success: false, error: 'Failed to send message, re-queued' };
       }
@@ -9295,11 +9389,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
           ageMinutes,
           queuedAt: nextMessage.queuedAt,
         };
-        this.sendToRenderer(
-          'agent:queue:stale-message',
-          staleMessagePayload,
-          wsWindows,
-        );
+        this.sendToRenderer('agent:queue:stale-message', staleMessagePayload, wsWindows);
         // Also emit as a workspace event so WebSocket API subscribers
         // (which never see the raw IPC `sendToRenderer` channel) receive
         // stale-message notifications alongside the three sibling queue
@@ -9341,11 +9431,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         contextItems: nextMessage.contextItems,
         imageBlocks: nextMessage.imageBlocks,
       };
-      this.sendToRenderer(
-        'agent:queue:processing',
-        processingData,
-        queueTargetWindows,
-      );
+      this.sendToRenderer('agent:queue:processing', processingData, queueTargetWindows);
       // Emit to workspace events for WebSocket clients
       this.emitQueueWorkspaceEvent('agent:queue:processing', agentId, workspaceId, processingData);
       queueProcessingNotified = true;
@@ -9399,13 +9485,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
           messageId: nextMessage.id,
           requeued: true,
         };
-        this.sendToRenderer(
-          'agent:queue:processing-cancelled',
-          cancelledData,
-          queueTargetWindows,
-        );
+        this.sendToRenderer('agent:queue:processing-cancelled', cancelledData, queueTargetWindows);
         // Emit to workspace events for WebSocket clients
-        this.emitQueueWorkspaceEvent('agent:queue:processing-cancelled', agentId, workspaceId, cancelledData);
+        this.emitQueueWorkspaceEvent(
+          'agent:queue:processing-cancelled',
+          agentId,
+          workspaceId,
+          cancelledData,
+        );
         return;
       }
 
@@ -9479,7 +9566,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         const wsWindows = getWindowIdsForWorkspace(workspaceId);
         this.sendToRenderer('agent:queue:updated', { agentId, queue: currentQueue }, wsWindows);
         // Emit to workspace events for WebSocket clients
-        this.emitQueueWorkspaceEvent('agent:queue:updated', agentId, workspaceId, { queue: currentQueue });
+        this.emitQueueWorkspaceEvent('agent:queue:updated', agentId, workspaceId, {
+          queue: currentQueue,
+        });
         logger.info('Re-added message to queue after send failure', {
           agentId,
           messageId: nextMessage.id,
@@ -9493,13 +9582,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
           messageId: nextMessage.id,
           requeued: messageRequeued,
         };
-        this.sendToRenderer(
-          'agent:queue:processing-cancelled',
-          cancelledData,
-          queueTargetWindows,
-        );
+        this.sendToRenderer('agent:queue:processing-cancelled', cancelledData, queueTargetWindows);
         // Emit to workspace events for WebSocket clients
-        this.emitQueueWorkspaceEvent('agent:queue:processing-cancelled', agentId, workspaceId, cancelledData);
+        this.emitQueueWorkspaceEvent(
+          'agent:queue:processing-cancelled',
+          agentId,
+          workspaceId,
+          cancelledData,
+        );
       }
 
       // SAFETY: Clean up streamStartTimes if it was set during the failed
@@ -9855,38 +9945,45 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         const subscriptions = selectAgentSubscriptions.select(getMainState(), workspaceId, agentId);
         isWaitingForAgents = subscriptions.length > 0;
       } catch (err) {
-        logger.debug('Could not check delegation subscriptions for idle event', { agentId, error: err });
+        logger.debug('Could not check delegation subscriptions for idle event', {
+          agentId,
+          error: err,
+        });
       }
 
       // Emit the agent:idle event with summary data via Redux
-      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
-        'agent:idle',
-        workspaceId,
-        { type: 'agent', id: agentId, name: agentName },
-        {
-          agentId,
-          agentName,
-          reason: 'stream_complete',
-          finishReason,
-          messageCount,
-          lastResponseSummary,
-          taskNoteId,
-          taskTitle,
-          specialist,
-          isBackground,
-          completionReport,
-          parentAgentId,
-          status: 'idle',
-          activationState: null,
-          isActive: false,
-          isStreaming: false,
-          isProcessing: false,
-          isResponding: false,
-          stopReason: finishReason,
-          isWaitingForAgents,
-          respondingToMessageId,
-        },
-      )));
+      mainDispatch(
+        reduxEmitWorkspaceEvent(
+          createWorkspaceEvent(
+            'agent:idle',
+            workspaceId,
+            { type: 'agent', id: agentId, name: agentName },
+            {
+              agentId,
+              agentName,
+              reason: 'stream_complete',
+              finishReason,
+              messageCount,
+              lastResponseSummary,
+              taskNoteId,
+              taskTitle,
+              specialist,
+              isBackground,
+              completionReport,
+              parentAgentId,
+              status: 'idle',
+              activationState: null,
+              isActive: false,
+              isStreaming: false,
+              isProcessing: false,
+              isResponding: false,
+              stopReason: finishReason,
+              isWaitingForAgents,
+              respondingToMessageId,
+            },
+          ),
+        ),
+      );
 
       logger.info('Emitted agent:idle event via Redux', {
         agentId,
@@ -9904,10 +10001,12 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       // This updates the renderer's local store; the value is not persisted to disk
       // but updatedAt serves as a reasonable fallback after restart.
       try {
-        mainDispatch(workspaceUpdated({
-          workspaceId: workspaceId as WorkspaceId,
-          changes: { lastActivity: new Date().toISOString() },
-        }));
+        mainDispatch(
+          workspaceUpdated({
+            workspaceId: workspaceId as WorkspaceId,
+            changes: { lastActivity: new Date().toISOString() },
+          }),
+        );
       } catch (updateErr) {
         logger.debug('Failed to emit workspace lastActivity update', {
           workspaceId,
@@ -9931,16 +10030,20 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
   ): void {
     try {
       // Emit through Redux (which handles persistence and broadcast via sagas)
-      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
-        'agent:created',
-        workspaceId,
-        { type: 'user', name: 'User' },
-        {
-          agentId,
-          agentName,
-          model,
-        },
-      )));
+      mainDispatch(
+        reduxEmitWorkspaceEvent(
+          createWorkspaceEvent(
+            'agent:created',
+            workspaceId,
+            { type: 'user', name: 'User' },
+            {
+              agentId,
+              agentName,
+              model,
+            },
+          ),
+        ),
+      );
       logger.debug('Emitted agent:created event via Redux', {
         agentId,
         workspaceId,
@@ -9949,10 +10052,12 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
 
       // Update workspace lastActivity so the workspace list shows fresh timestamps.
       // Emit directly to avoid the heavy getWorkspace() in updateWorkspace().
-      mainDispatch(workspaceUpdated({
-        workspaceId: workspaceId as WorkspaceId,
-        changes: { lastActivity: new Date().toISOString() },
-      }));
+      mainDispatch(
+        workspaceUpdated({
+          workspaceId: workspaceId as WorkspaceId,
+          changes: { lastActivity: new Date().toISOString() },
+        }),
+      );
     } catch (error) {
       logger.warn('Error emitting agent:created event', { agentId, error });
     }
@@ -9971,7 +10076,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     isBackground?: boolean,
     parentAgentId?: string,
   ): void {
-    this._emitAgentDeletedEventAsync(agentId, workspaceId, agentName, taskNoteId, isBackground, parentAgentId).catch((err) => {
+    this._emitAgentDeletedEventAsync(
+      agentId,
+      workspaceId,
+      agentName,
+      taskNoteId,
+      isBackground,
+      parentAgentId,
+    ).catch((err) => {
       logger.warn('Failed in emitAgentDeletedEvent async chain', { agentId, error: err });
     });
   }
@@ -9999,19 +10111,23 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     try {
       // CRITICAL: Use the deleted agent as the actor so that subscription
       // filters with actorIds: [agentId] will match.
-      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
-        'agent:deleted',
-        workspaceId,
-        { type: 'agent', id: agentId, name: agentName },
-        {
-          agentId,
-          agentName,
-          taskNoteId,
-          reason: 'user_action',
-          isBackground,
-          parentAgentId,
-        },
-      )));
+      mainDispatch(
+        reduxEmitWorkspaceEvent(
+          createWorkspaceEvent(
+            'agent:deleted',
+            workspaceId,
+            { type: 'agent', id: agentId, name: agentName },
+            {
+              agentId,
+              agentName,
+              taskNoteId,
+              reason: 'user_action',
+              isBackground,
+              parentAgentId,
+            },
+          ),
+        ),
+      );
       logger.info('Emitted agent:deleted event via Redux', {
         agentId,
         workspaceId,
@@ -10045,10 +10161,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     this.deletedAgentIds.delete(agentId);
 
     if (!workspaceId) {
-      logger.warn(
-        '[AgentBackendHandler] Cannot roll back agent deletion without workspaceId',
-        { agentId },
-      );
+      logger.warn('[AgentBackendHandler] Cannot roll back agent deletion without workspaceId', {
+        agentId,
+      });
       return;
     }
 
@@ -10058,10 +10173,11 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       try {
         mainDispatch(evictDeletedAgent(workspaceId, agentId));
       } catch (err) {
-        logger.warn(
-          'Failed to evict deleted agent from subscription state during rollback',
-          { agentId, workspaceId, error: err },
-        );
+        logger.warn('Failed to evict deleted agent from subscription state during rollback', {
+          agentId,
+          workspaceId,
+          error: err,
+        });
       }
     })().catch(() => {});
 
@@ -10117,22 +10233,26 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     error?: string,
   ): Promise<void> {
     try {
-      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
-        'agent:restored',
-        workspaceId,
-        { type: 'agent', id: agentId, name: agentName },
-        {
-          agentId,
-          agentName,
-          workspaceId,
-          session: snapshot,
-          taskNoteId,
-          isBackground,
-          parentAgentId,
-          reason: 'delete_failed',
-          error,
-        },
-      )));
+      mainDispatch(
+        reduxEmitWorkspaceEvent(
+          createWorkspaceEvent(
+            'agent:restored',
+            workspaceId,
+            { type: 'agent', id: agentId, name: agentName },
+            {
+              agentId,
+              agentName,
+              workspaceId,
+              session: snapshot,
+              taskNoteId,
+              isBackground,
+              parentAgentId,
+              reason: 'delete_failed',
+              error,
+            },
+          ),
+        ),
+      );
       logger.info('Emitted agent:restored event via Redux', {
         agentId,
         workspaceId,
@@ -10157,17 +10277,21 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
   ): void {
     try {
       // Emit through Redux (which handles persistence and broadcast via sagas)
-      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
-        'agent:started',
-        workspaceId,
-        { type: 'agent', id: agentId, name: agentName },
-        {
-          agentId,
-          agentName,
-          model,
-          reason: 'message_received',
-        },
-      )));
+      mainDispatch(
+        reduxEmitWorkspaceEvent(
+          createWorkspaceEvent(
+            'agent:started',
+            workspaceId,
+            { type: 'agent', id: agentId, name: agentName },
+            {
+              agentId,
+              agentName,
+              model,
+              reason: 'message_received',
+            },
+          ),
+        ),
+      );
       logger.debug('Emitted agent:started event via Redux', {
         agentId,
         workspaceId,
@@ -10251,26 +10375,30 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
 
     // Step 3: Emit the agent:failed event
     try {
-      mainDispatch(reduxEmitWorkspaceEvent(createWorkspaceEvent(
-        'agent:failed',
-        workspaceId,
-        { type: 'agent', id: agentId, name: agentName },
-        {
-          agentId,
-          agentName,
-          error,
-          isBackground,
-          parentAgentId,
-          status: 'failed',
-          activationState: 'error',
-          isActive: false,
-          isStreaming: false,
-          isProcessing: false,
-          isResponding: false,
-          stopReason: error,
-          respondingToMessageId,
-        },
-      )));
+      mainDispatch(
+        reduxEmitWorkspaceEvent(
+          createWorkspaceEvent(
+            'agent:failed',
+            workspaceId,
+            { type: 'agent', id: agentId, name: agentName },
+            {
+              agentId,
+              agentName,
+              error,
+              isBackground,
+              parentAgentId,
+              status: 'failed',
+              activationState: 'error',
+              isActive: false,
+              isStreaming: false,
+              isProcessing: false,
+              isResponding: false,
+              stopReason: error,
+              respondingToMessageId,
+            },
+          ),
+        ),
+      );
       logger.debug('Emitted agent:failed event via Redux', {
         agentId,
         workspaceId,

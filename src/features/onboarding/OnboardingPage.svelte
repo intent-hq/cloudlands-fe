@@ -103,15 +103,13 @@
     isOnboarding: boolean;
     /** Whether the onboarding is fading out (crossfade transition) */
     fadingOut: boolean;
-    /** Redux dispatch function */
-    dispatch: (action: any) => void;
     /** Callback when hold-active state changes (for crossfade in parent) */
     onHoldActiveChange: (active: boolean) => void;
     /** Callback when fading-out state changes (for crossfade in parent) */
     onFadingOutChange: (fadingOut: boolean) => void;
   }
 
-  let { isOnboarding, fadingOut, dispatch, onHoldActiveChange, onFadingOutChange }: Props =
+  let { isOnboarding, fadingOut, onHoldActiveChange, onFadingOutChange }: Props =
     $props();
 
   // ============================================================================
@@ -310,7 +308,7 @@
 
     if (!isOnboarding || !$workspaceInitializerHydrated$) return;
     if (!(selection || skipWt || script || step !== 'welcome')) return;
-    dispatch(
+    appStore.dispatch(
       debounceWorkspaceInitializerOnboardingFormState({
         projectSelection: selection
           ? {
@@ -349,7 +347,7 @@
   let onboardingContentChangeTimer: ReturnType<typeof setTimeout> | null = null;
 
   onDestroy(() => {
-    dispatch(cancelWorkspaceInitializerOnboardingFormStateDebounce());
+    appStore.dispatch(cancelWorkspaceInitializerOnboardingFormStateDebounce());
     if (onboardingPromptSaveTimer) clearTimeout(onboardingPromptSaveTimer);
     if (onboardingContentChangeTimer) clearTimeout(onboardingContentChangeTimer);
   });
@@ -379,7 +377,7 @@
     // Always start onboarding from step 1. Related persisted initializer state
     // and session handoffs are cleared by the workspace-initializer saga.
     if (isOnboarding) {
-      dispatch(resetOnboarding());
+      appStore.dispatch(resetOnboarding());
     }
   });
 
@@ -432,7 +430,7 @@
     if (projectIdentityChanged) {
       onboardingCreationError = null;
     }
-    dispatch(
+    appStore.dispatch(
       setProjectConfig({
         localPath: selection.repoPath || null,
         branch: selection.branch || null,
@@ -613,10 +611,10 @@
 
     if (isWelcomeStep && hasConnectedProvider) {
       e.preventDefault();
-      dispatch(goToStep('project'));
+      appStore.dispatch(goToStep('project'));
     } else if (isProjectStep && projectSelection?.isValid) {
       e.preventDefault();
-      dispatch(goToStep('configuring'));
+      appStore.dispatch(goToStep('configuring'));
     }
   }
 
@@ -762,8 +760,10 @@
       }
 
       if (effectiveModel)
-        dispatch(setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }));
-      dispatch(setWorkspaceEntity(workspace));
+        appStore.dispatch(
+          setWorkspaceModel({ workspaceId: workspace.id, model: effectiveModel }),
+        );
+      appStore.dispatch(setWorkspaceEntity(workspace));
 
       if (setupScript.trim() && projectSelection.repoPath) {
         const now = new Date().toISOString();
@@ -777,7 +777,7 @@
           usageCount: 1,
           createdAt: now,
         };
-        dispatch(saveScript(scriptToSave));
+        appStore.dispatch(saveScript(scriptToSave));
         logger.info('Saved setup script to store', {
           name: setupScriptName,
           repoPath: projectSelection.repoPath,
@@ -812,22 +812,24 @@
         `workspace:${workspace.id}:initial-agent-pending`,
         JSON.stringify(agentConfigData),
       );
-      dispatch(setInitialAgentConfig(workspace.id, agentConfigData));
-      dispatch(setInitialAgentId(workspace.id, String(agentId)));
+      appStore.dispatch(setInitialAgentConfig(workspace.id, agentConfigData));
+      appStore.dispatch(setInitialAgentId(workspace.id, String(agentId)));
       sessionStorage.setItem(
         `workspace:${workspace.id}:agent-config`,
         JSON.stringify(agentConfigData.config),
       );
       sessionStorage.setItem(`workspace:${workspace.id}:initial-agent-id`, String(agentId));
 
-      dispatch(hydrateWorkspaceNavigation(workspace.id, {
-        version: 2,
-        workspace: { id: workspace.id, status: 'loading' },
-        mainPanel: { type: 'notes', selectedNoteId: 'spec' },
-        drawer: { open: true, type: 'agent' as const, itemId: String(agentId) },
-        navigation: { history: [], currentIndex: -1 },
-        ui: { hasInitialized: false },
-      }));
+      appStore.dispatch(
+        hydrateWorkspaceNavigation(workspace.id, {
+          version: 2,
+          workspace: { id: workspace.id, status: 'loading' },
+          mainPanel: { type: 'notes', selectedNoteId: 'spec' },
+          drawer: { open: true, type: 'agent' as const, itemId: String(agentId) },
+          navigation: { history: [], currentIndex: -1 },
+          ui: { hasInitialized: false },
+        }),
+      );
 
       setupRepoStatus = 'done';
       setupBranchStatus = 'done';
@@ -850,13 +852,13 @@
 
       // Use the onboarding reset action as the cleanup signal; initializer
       // persistence/session cleanup is handled by the workspace-initializer saga.
-      dispatch(resetOnboarding());
+      appStore.dispatch(resetOnboarding());
 
       // Mark provider setup as complete so the home page won't redirect back here
-      dispatch(setHasCompletedProviderSetup(true));
+      appStore.dispatch(setHasCompletedProviderSetup(true));
 
-      dispatch(setOnboardingWorkspaceId(workspace.id));
-      dispatch(goToStep('ready'));
+      appStore.dispatch(setOnboardingWorkspaceId(workspace.id));
+      appStore.dispatch(goToStep('ready'));
 
       logger.info('Workspace created, transitioning in-place', { workspaceId: workspace.id });
 
@@ -934,7 +936,7 @@
                             type="button"
                             class="flex items-center gap-1.5 text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
                             onclick={() =>
-                              dispatch(
+                              appStore.dispatch(
                                 goToStep(onboardingVisibleStep === 3 ? 'project' : 'welcome'),
                               )}
                             aria-label="Go back to previous step"
@@ -1004,7 +1006,7 @@
                             size="xl"
                             variant={!hasConnectedProvider ? 'outline' : 'default'}
                             disabled={!hasConnectedProvider}
-                            onclick={() => dispatch(goToStep('project'))}
+                            onclick={() => appStore.dispatch(goToStep('project'))}
                           >
                             Let's go
                             {#if hasConnectedProvider}
@@ -1023,7 +1025,7 @@
                             onProjectChange={handleOnboardingProjectChange}
                             onSelectAndAdvance={() => {
                               if (projectSelection?.isValid) {
-                                dispatch(goToStep('configuring'));
+                                appStore.dispatch(goToStep('configuring'));
                               }
                             }}
                             hideHeading={true}
@@ -1034,7 +1036,7 @@
                               size="xl"
                               variant={!projectSelection?.isValid ? 'outline' : 'default'}
                               disabled={!projectSelection?.isValid}
-                              onclick={() => dispatch(goToStep('configuring'))}
+                              onclick={() => appStore.dispatch(goToStep('configuring'))}
                             >
                               {#if projectName}
                                 Let's work on {projectName}

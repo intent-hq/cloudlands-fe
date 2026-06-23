@@ -1,11 +1,5 @@
-import {
-  describe,
-  expect,
-  it,
-} from 'vitest';
-import type { AgentSession,
-  AgentMessage,
-  QueuedMessage } from '$shared/types';
+import { describe, expect, it } from 'vitest';
+import type { AgentSession, AgentMessage, QueuedMessage } from '$shared/types';
 import type { AgentSessionState } from './agent-session-types';
 import type { StoreState } from '../../types';
 import {
@@ -180,7 +174,10 @@ describe('agent-session-slice reducer', () => {
 
   describe('upsertSession fan-out action', () => {
     it('does not mutate reducer storage directly', () => {
-      const state = agentSessionReducer(initialState, upsertSessionAction(makeSession('a1', 'ws-1')));
+      const state = agentSessionReducer(
+        initialState,
+        upsertSessionAction(makeSession('a1', 'ws-1')),
+      );
       expect(state).toBe(initialState);
     });
   });
@@ -253,7 +250,6 @@ describe('agent-session-slice reducer', () => {
 
       expect(next).toBe(state);
     });
-
   });
 
   describe('removeSession', () => {
@@ -535,6 +531,41 @@ describe('agent-session-slice reducer', () => {
       expect(getMsgs(state, 'a1')[0].id).toBe('msg-existing');
     });
 
+    it('merges a local optimistic user message with the canonical workspace event by appMessageId', () => {
+      const appMessageId = 'app_msg_user_send';
+      const optimisticMessage: AgentMessage = {
+        id: 'optimistic_app_msg_user_send',
+        appMessageId,
+        role: 'user',
+        timestamp: '2024-01-01T00:00:02.000Z',
+        contentBlocks: [{ type: 'text', text: 'Approve both tasks.' }],
+      };
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { messages: [optimisticMessage] })),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-canonical-user-message',
+          type: 'agent:user-message:sent',
+          timestamp: '2024-01-01T00:00:03.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            messageId: 'msg-canonical-user',
+            appMessageId,
+            content: 'Approve both tasks.',
+          },
+        } as any),
+      );
+
+      expect(getMsgs(state, 'a1')).toMatchObject([
+        { id: 'msg-canonical-user', appMessageId, role: 'user' },
+      ]);
+    });
+
     it('ignores malformed cross-client user message workspace events', () => {
       const state = agentSessionReducer(
         agentSessionReducer(initialState, upsertSession(makeSession('a1'))),
@@ -714,25 +745,31 @@ describe('agent-session-slice reducer', () => {
       };
       let state = agentSessionReducer(
         initialState,
-        bulkUpsertSessions([
-          makeSession('a1', 'ws-1', {
-            messages: [persistedUser, optimisticUser],
-            isStreaming: true,
-            isProcessing: true,
-          }),
-        ], { preserveExplicitRuntimeFlags: false }),
+        bulkUpsertSessions(
+          [
+            makeSession('a1', 'ws-1', {
+              messages: [persistedUser, optimisticUser],
+              isStreaming: true,
+              isProcessing: true,
+            }),
+          ],
+          { preserveExplicitRuntimeFlags: false },
+        ),
       );
 
       state = agentSessionReducer(
         state,
-        bulkUpsertSessions([
-          makeSession('a1', 'ws-1', {
-            name: 'Stale Refresh Snapshot',
-            messages: [persistedUser],
-            isStreaming: false,
-            isProcessing: false,
-          }),
-        ], { preserveExplicitRuntimeFlags: false }),
+        bulkUpsertSessions(
+          [
+            makeSession('a1', 'ws-1', {
+              name: 'Stale Refresh Snapshot',
+              messages: [persistedUser],
+              isStreaming: false,
+              isProcessing: false,
+            }),
+          ],
+          { preserveExplicitRuntimeFlags: false },
+        ),
       );
 
       expect(state.byAgentId['a1'].name).toBe('Stale Refresh Snapshot');
@@ -753,24 +790,30 @@ describe('agent-session-slice reducer', () => {
       );
       let state = agentSessionReducer(
         initialState,
-        bulkUpsertSessions([
-          makeSession('a1', 'ws-1', {
-            messages: [persistedUser, removedAssistant],
-            isStreaming: true,
-            isProcessing: true,
-          }),
-        ], { preserveExplicitRuntimeFlags: false }),
+        bulkUpsertSessions(
+          [
+            makeSession('a1', 'ws-1', {
+              messages: [persistedUser, removedAssistant],
+              isStreaming: true,
+              isProcessing: true,
+            }),
+          ],
+          { preserveExplicitRuntimeFlags: false },
+        ),
       );
 
       state = agentSessionReducer(
         state,
-        bulkUpsertSessions([
-          makeSession('a1', 'ws-1', {
-            messages: [persistedUser],
-            isStreaming: false,
-            isProcessing: false,
-          }),
-        ], { preserveExplicitRuntimeFlags: false }),
+        bulkUpsertSessions(
+          [
+            makeSession('a1', 'ws-1', {
+              messages: [persistedUser],
+              isStreaming: false,
+              isProcessing: false,
+            }),
+          ],
+          { preserveExplicitRuntimeFlags: false },
+        ),
       );
 
       expect(getMsgs(state, 'a1').map((message) => message.id)).toEqual(['msg-user-1']);
@@ -788,12 +831,15 @@ describe('agent-session-slice reducer', () => {
 
       state = agentSessionReducer(
         state,
-        bulkUpsertSessions([
-          makeSession('a1', 'ws-1', {
-            isStreaming: false,
-            isProcessing: false,
-          }),
-        ], { preserveExplicitRuntimeFlags: false }),
+        bulkUpsertSessions(
+          [
+            makeSession('a1', 'ws-1', {
+              isStreaming: false,
+              isProcessing: false,
+            }),
+          ],
+          { preserveExplicitRuntimeFlags: false },
+        ),
       );
 
       expect(state.byAgentId['a1'].isStreaming).toBe(false);
@@ -838,13 +884,15 @@ describe('agent-session-slice reducer', () => {
       state = agentSessionReducer(
         state,
         bulkUpsertSessions(
-          [makeSession('a1', 'ws-1', {
-            status: 'Idle' as any,
-            isStreaming: false,
-            isProcessing: false,
-            isResponding: false,
-            name: 'Restored Idle Snapshot',
-          })],
+          [
+            makeSession('a1', 'ws-1', {
+              status: 'Idle' as any,
+              isStreaming: false,
+              isProcessing: false,
+              isResponding: false,
+              name: 'Restored Idle Snapshot',
+            }),
+          ],
           {
             preserveExplicitRuntimeFlags: false,
             allowActiveTurnRuntimeFlagClear: true,
@@ -886,10 +934,13 @@ describe('agent-session-slice reducer', () => {
     it('applies same-agent batched upserts in original order', () => {
       const state = agentSessionReducer(
         initialState,
-        bulkUpsertSessions([
-          makeSession('a1', 'ws-1', { name: 'First' }),
-          makeSession('a1', 'ws-1', { name: 'Second' }),
-        ], { preserveExplicitRuntimeFlags: false }),
+        bulkUpsertSessions(
+          [
+            makeSession('a1', 'ws-1', { name: 'First' }),
+            makeSession('a1', 'ws-1', { name: 'Second' }),
+          ],
+          { preserveExplicitRuntimeFlags: false },
+        ),
       );
 
       expect(state.byAgentId['a1'].name).toBe('Second');
@@ -923,7 +974,6 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a2']).toBeUndefined();
       expect(state.byAgentId['a3']).toBeDefined();
     });
-
   });
 
   describe('clearAllSessions', () => {
@@ -1568,7 +1618,9 @@ describe('agent-session selectors', () => {
       });
       const state = storeWith({ byAgentId: { coordinator: session }, agentIdsByWorkspace: {} });
 
-      expect(selectAllRetainedAgentSessions.select(state).map((s) => s.id)).toEqual(['coordinator']);
+      expect(selectAllRetainedAgentSessions.select(state).map((s) => s.id)).toEqual([
+        'coordinator',
+      ]);
     });
 
     it('retains agents in Waiting status', () => {
@@ -1897,29 +1949,35 @@ describe('chatInitialized — does not override agent:idle cleanup', () => {
     expect(state.byAgentId['a1'].isStreaming).toBe(true);
 
     // Step 2: agent:idle event clears streaming
-    state = agentSessionReducer(state, eventReceived('ws-1', {
-      id: 'evt-1',
-      type: 'agent:idle',
-      timestamp: '2024-01-01T00:00:00.000Z',
-      workspaceId: 'ws-1',
-      data: {
-        agentId: 'a1',
-        status: 'idle',
-        isStreaming: false,
-        isProcessing: false,
-        isResponding: false,
-        stopReason: 'end_turn',
-      },
-    } as any));
+    state = agentSessionReducer(
+      state,
+      eventReceived('ws-1', {
+        id: 'evt-1',
+        type: 'agent:idle',
+        timestamp: '2024-01-01T00:00:00.000Z',
+        workspaceId: 'ws-1',
+        data: {
+          agentId: 'a1',
+          status: 'idle',
+          isStreaming: false,
+          isProcessing: false,
+          isResponding: false,
+          stopReason: 'end_turn',
+        },
+      } as any),
+    );
     expect(state.byAgentId['a1'].isStreaming).toBe(false);
     expect(state.byAgentId['a1'].status).toBe('idle');
     expect(state.byAgentId['a1'].stopReason).toBe('end_turn');
 
     // Step 3: chatInitialized arrives with stale isStreaming=true — no-op
-    state = agentSessionReducer(state, chatInitialized('a1', {
-      isStreaming: true,
-      lastAttemptedMessage: null,
-    }));
+    state = agentSessionReducer(
+      state,
+      chatInitialized('a1', {
+        isStreaming: true,
+        lastAttemptedMessage: null,
+      }),
+    );
 
     // isStreaming must remain false — chatInitialized never sets isStreaming=true
     expect(state.byAgentId['a1'].isStreaming).toBe(false);
@@ -1936,10 +1994,13 @@ describe('chatInitialized — does not override agent:idle cleanup', () => {
     });
     let state = agentSessionReducer(initialState, upsertSession(session));
 
-    state = agentSessionReducer(state, chatInitialized('a1', {
-      isStreaming: true,
-      lastAttemptedMessage: null,
-    }));
+    state = agentSessionReducer(
+      state,
+      chatInitialized('a1', {
+        isStreaming: true,
+        lastAttemptedMessage: null,
+      }),
+    );
 
     // isStreaming stays true — it was already true from chatSendStarted/upsertSession
     expect(state.byAgentId['a1'].isStreaming).toBe(true);
@@ -1956,10 +2017,13 @@ describe('chatInitialized — does not override agent:idle cleanup', () => {
     });
     let state = agentSessionReducer(initialState, upsertSession(session));
 
-    state = agentSessionReducer(state, chatInitialized('a1', {
-      isStreaming: false,
-      lastAttemptedMessage: null,
-    }));
+    state = agentSessionReducer(
+      state,
+      chatInitialized('a1', {
+        isStreaming: false,
+        lastAttemptedMessage: null,
+      }),
+    );
 
     expect(state.byAgentId['a1'].isStreaming).toBe(false);
     expect(state.byAgentId['a1'].isProcessing).toBe(false);
@@ -1972,20 +2036,23 @@ describe('chatInitialized — does not override agent:idle cleanup', () => {
     expect(state.byAgentId['a1'].isStreaming).toBe(true);
 
     // Step 2: agent:idle clears streaming
-    state = agentSessionReducer(state, eventReceived('ws-1', {
-      id: 'evt-1',
-      type: 'agent:idle',
-      timestamp: '2024-01-01T00:00:00.000Z',
-      workspaceId: 'ws-1',
-      data: {
-        agentId: 'a1',
-        status: 'idle',
-        isStreaming: false,
-        isProcessing: false,
-        isResponding: false,
-        stopReason: 'end_turn',
-      },
-    } as any));
+    state = agentSessionReducer(
+      state,
+      eventReceived('ws-1', {
+        id: 'evt-1',
+        type: 'agent:idle',
+        timestamp: '2024-01-01T00:00:00.000Z',
+        workspaceId: 'ws-1',
+        data: {
+          agentId: 'a1',
+          status: 'idle',
+          isStreaming: false,
+          isProcessing: false,
+          isResponding: false,
+          stopReason: 'end_turn',
+        },
+      } as any),
+    );
     expect(state.byAgentId['a1'].isStreaming).toBe(false);
 
     // Step 3: Saga dispatches upsertSession with stale isStreaming=true
@@ -3316,11 +3383,7 @@ describe('sortMessagesByTimestamp — messages are ordered after upsert', () => 
   it('keeps a user reply before a near-simultaneous assistant reply on replaceMessages', () => {
     let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
     const user = makeUniqueMessage('msg_user', 'user', '2024-01-01T00:00:01.010Z');
-    const assistant = makeUniqueMessage(
-      'msg_assistant',
-      'assistant',
-      '2024-01-01T00:00:01.000Z',
-    );
+    const assistant = makeUniqueMessage('msg_assistant', 'assistant', '2024-01-01T00:00:01.000Z');
 
     state = agentSessionReducer(state, replaceMessages('a1', [user, assistant]));
 
