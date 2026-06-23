@@ -1,9 +1,15 @@
 <script lang="ts">
   import { stringToHash, SeededRandom } from '$lib/utils/hash';
+  import { writable } from 'svelte/store';
   import { getRandomColorsWithSeed } from './avatar-constants';
   import { getSpecialistIcon } from './specialist-icons';
+  import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
   import { selectIsDarkTheme } from '$store/renderer/slices/theme/theme-selectors';
-  import { selectAgentIsThinking } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { isKnownNonAuggieProvider } from './non-auggie-agents';
+  import {
+    selectAgentIsThinking,
+    selectAgentProvider,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
 
   interface Props {
     agentId?: string;
@@ -24,14 +30,23 @@
   // Get specialist icon and glow color
   let specialistIconSvg = $derived(getSpecialistIcon(specialist));
   const isDarkTheme = selectIsDarkTheme();
-  // svelte-ignore state_referenced_locally -- avatars are mounted per agent; selector subscription is initialized once.
-  const agentIsThinking$ = selectAgentIsThinking(agentId);
+  // svelte-ignore state_referenced_locally -- selector args are mirrored into a readable for mounted avatar reuse.
+  const agentIdStore = writable(agentId);
+  $effect(() => {
+    agentIdStore.set(agentId);
+  });
+  const agentIsThinking$ = selectAgentIsThinking(agentIdStore);
+  const agentProvider$ = selectAgentProvider(agentIdStore);
 
   // Ensure seeds are always strings to prevent flickering from undefined -> string transitions
   // Agent avatars use agentId for deterministic colors/faces; seed remains for non-agent previews.
   const hasIdentity = $derived(Boolean(agentId) || Boolean(seed));
   let stableColorSource = $derived(agentId || seed || 'default-color');
   let stableFaceSource = $derived(agentId || seed || 'default-face');
+  let providerIconSize = $derived(size * (12.3 / 20));
+  let shouldRenderProviderIcon = $derived(
+    Boolean(agentId) && isKnownNonAuggieProvider($agentProvider$),
+  );
 
   // Create seeded random generator for face features
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -74,16 +89,24 @@
   class="inline-flex items-center justify-center relative shrink-0 {className}"
   style="min-width: {size}px; min-height: {size * (12.3 / 20)}px;"
 >
-  <svg
-    width={size}
-    height={size * (12.3 / 20)}
-    viewBox="0 1 20 12.3"
-    style="min-width: {size}px; min-height: {size * (12.3 / 20)}px;"
-    fill="currentColor"
-    stroke-width="0"
-    stroke="currentColor"
-    class="overflow-visible text-gray-900"
-  >
+  {#key agentId}
+  {#if shouldRenderProviderIcon && $agentProvider$}
+    <ProviderIcon
+      providerId={$agentProvider$}
+      size={providerIconSize}
+      class={$isDarkTheme ? 'text-gray-100' : 'text-gray-900'}
+    />
+  {:else}
+    <svg
+      width={size}
+      height={size * (12.3 / 20)}
+      viewBox="0 1 20 12.3"
+      style="min-width: {size}px; min-height: {size * (12.3 / 20)}px;"
+      fill="currentColor"
+      stroke-width="0"
+      stroke="currentColor"
+      class="overflow-visible text-gray-900"
+    >
     <defs>
       <linearGradient
         id={gradientId}
@@ -188,7 +211,8 @@
         {@html selectedExtra}
       </g>
     {/if} -->
-  </svg>
+    </svg>
+  {/if}
 
   <!-- Specialist tool icon overlay (bottom right with glow) -->
   {#if specialistIconSvg}
@@ -198,6 +222,7 @@
       </div>
     </div>
   {/if}
+  {/key}
 </div>
 
 <style>

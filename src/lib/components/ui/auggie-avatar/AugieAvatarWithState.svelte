@@ -7,14 +7,17 @@
 <script lang="ts">
   import AuggieAvatar from './AuggieAvatar.svelte';
   import { cn } from '$lib/utils.js';
+  import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import {
-  faCheck,
-  faX,
-  faHourglass,
-  faExclamationTriangle,
-} from '@fortawesome/free-solid-svg-icons';
+    faCheck,
+    faX,
+    faHourglass,
+    faExclamationTriangle,
+  } from '@fortawesome/free-solid-svg-icons';
+  import { selectAgentProvider } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import type { AvatarState } from './avatar-state';
+  import { isKnownNonAuggieProvider } from './non-auggie-agents';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
 
   interface Props {
@@ -40,6 +43,16 @@
   // Whether to show as dimmed (completed agents)
   let isDimmed = $derived(state === 'completed');
 
+  // svelte-ignore state_referenced_locally -- selector args are mirrored into a readable for mounted avatar reuse.
+  const agentIdStore = writable(agentId);
+  $effect(() => {
+    agentIdStore.set(agentId);
+  });
+  const agentProvider$ = selectAgentProvider(agentIdStore);
+  let hasProviderIcon = $derived(
+    Boolean(agentId) && isKnownNonAuggieProvider($agentProvider$),
+  );
+
 </script>
 
 <div class={cn('relative inline-flex', isDimmed ? 'opacity-30' : '', className)}>
@@ -57,7 +70,7 @@
       class="absolute -top-0.5 -right-0.75 rounded-full bg-blue-500 border border-background"
       style="width: {indicatorSize}px; height: {indicatorSize}px;"
     ></div>
-  {:else if state === 'completed'}
+  {:else if state === 'completed' && !hasProviderIcon}
     <!-- Completed indicator - green checkmark -->
     <span
       class="absolute -top-0.5 -right-0.75 p-0.5 bg-sidebar rounded-full flex items-center justify-center text-emerald-500"

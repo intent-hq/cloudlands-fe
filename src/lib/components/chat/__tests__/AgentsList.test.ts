@@ -37,6 +37,15 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     }),
     { select: () => false },
   ),
+  selectAgentProvider: Object.assign(
+    () => ({
+      subscribe: (run: (value: string | undefined) => void) => {
+        run(undefined);
+        return () => {};
+      },
+    }),
+    { select: () => undefined },
+  ),
 }));
 
 describe('AgentsList', () => {

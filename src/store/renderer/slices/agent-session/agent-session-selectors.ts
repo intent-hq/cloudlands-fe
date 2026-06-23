@@ -5,7 +5,7 @@ import {
   type AgentMessage,
   type QueuedMessage,
 } from "$shared/types";
-import { AgentActivationState } from "$shared/types/agent-session";
+import { AgentActivationState, getAgentProvider } from "$shared/types/agent-session";
 import { getContentBlockText } from "$shared/utils/content-block-helpers";
 import type { StoredAgentSession } from "./agent-session-types";
 import { selectAgentQueueMessages } from "../agent-queue/agent-queue-selectors";
@@ -166,6 +166,15 @@ export const selectAgentSession = store.createSelector(
   (state, agentId?: string): AgentSession | undefined => {
     if (!agentId) return undefined;
     return materializeSession(state.agentSessions?.byAgentId[agentId]);
+  },
+);
+
+/** Select the resolved provider for a given agent without materializing messages. */
+export const selectAgentProvider = store.createSelector(
+  (state, agentId?: string): string | undefined => {
+    if (!agentId) return undefined;
+    const stored = state.agentSessions?.byAgentId[agentId];
+    return stored ? getAgentProvider(stored) : undefined;
   },
 );
 
