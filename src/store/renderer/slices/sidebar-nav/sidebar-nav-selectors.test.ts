@@ -166,7 +166,25 @@ describe('sidebar nav Chief selectors', () => {
     expect(result).toEqual([
       expect.objectContaining({
         agentId: chief.id,
-        title: 'Chief of Staff',
+        title: 'New chat with Intent',
+        preview: 'No messages yet.',
+        messageCount: 0,
+      }),
+    ]);
+  });
+
+  it('uses the neutral title for empty generated Chief thread names', () => {
+    const chief = {
+      ...session('agent-chief-generated', CHIEF_WORKSPACE_ID, [], '2026-01-01T15:00:00.000Z'),
+      name: 'New thread May 1st',
+    };
+
+    const result = selectChiefThreads.select(stateWithSessions([chief]));
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        agentId: chief.id,
+        title: 'New chat with Intent',
         preview: 'No messages yet.',
         messageCount: 0,
       }),

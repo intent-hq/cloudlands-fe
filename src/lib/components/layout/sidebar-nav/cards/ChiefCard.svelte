@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import {
-    faClockRotateLeft,
+    faChevronDown,
     faPlus,
     faSpinner,
     faThumbtack,
@@ -108,10 +108,10 @@
     })),
   );
   const currentPreview = $derived(activeThread ?? $chiefPreview$);
-  const title = $derived(currentPreview?.title ?? 'Start a Chief thread');
+  const title = $derived(currentPreview?.title ?? 'Start a thread');
   const preview = $derived(
     currentPreview?.preview ??
-      'Ask Chief to help manage workspaces, settings, specialists, and app navigation.',
+      'Ask for help with workspaces, settings, specialists, and app navigation.',
   );
 
   function ensureChiefWorkspaceRegistered() {
@@ -242,10 +242,7 @@
 {:else}
   <div class="flex h-full min-h-[460px] flex-col">
     <div class="flex shrink-0 items-center justify-between gap-1 px-2 pb-1.5 pt-2">
-      <div class="min-w-0 flex-1">
-        <h2 class="truncate text-sm font-semibold text-foreground">Chief of Staff</h2>
-      </div>
-      <div class="flex shrink-0 items-center gap-0.5">
+      <div class="flex min-w-0 flex-1 items-center gap-1.5">
         <Dropdown
           value={selectedAgentId ?? undefined}
           options={threadOptions}
@@ -254,18 +251,19 @@
           portal={true}
           variant="inline"
           size="xs"
-          triggerClass="h-6! w-6 justify-center p-0! text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-          contentClass="w-64 max-w-[calc(100vw-32px)]"
+          class="min-w-0 max-w-full"
+          triggerClass="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
+          contentClass="min-w-48 max-w-[calc(100vw-32px)] sm:max-w-80"
         >
-          {#snippet trigger({
-            open: _open,
-            value: _value,
-          }: {
-            open: boolean;
-            value: string | string[] | undefined;
-          })}
-            <Fa icon={faClockRotateLeft} size="xs" />
-            <span class="sr-only">Chief thread history</span>
+          {#snippet trigger({ open }: { open: boolean; value: string | string[] | undefined })}
+            <span class="min-w-0 flex-1 truncate text-left text-sm font-semibold">
+              {activeThread?.title ?? 'Start a thread'}
+            </span>
+            <Fa
+              icon={faChevronDown}
+              size="xs"
+              class="shrink-0 text-muted-foreground transition-transform {open ? 'rotate-180' : ''}"
+            />
           {/snippet}
 
           {#snippet item({ option, selected, highlighted }: DropdownItemProps)}
@@ -299,6 +297,8 @@
             <div class="px-3 py-4 text-center text-sm text-subtle">No Chief threads yet.</div>
           {/snippet}
         </Dropdown>
+      </div>
+      <div class="flex shrink-0 items-center gap-0.5">
         <button
           class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
           onclick={createNewThread}
@@ -338,7 +338,7 @@
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 p-2 pb-4 pt-0">
+    <div class="min-h-0 flex-1 px-2 pb-4 pt-0">
       <section class="flex h-full min-h-0 flex-col overflow-hidden">
         {#if activeThread}
           {#key activeThread.agentId}
@@ -360,9 +360,9 @@
               <Fa icon={faWandMagicSparkles} size="sm" />
             </div>
             <div>
-              <p class="text-sm font-semibold text-foreground">Start a Chief thread</p>
+              <p class="text-sm font-semibold text-foreground">Start a thread</p>
               <p class="mt-1 text-xs text-subtle">
-                Ask Chief to help with workspaces, settings, specialists, and navigation.
+                Create a thread for help with workspaces, settings, specialists, and navigation.
               </p>
             </div>
             <button

@@ -45,7 +45,7 @@
   // Use darker colors in dark mode for better contrast
   let [selectedColor, selectedColor2] = $derived.by(() => {
     if (!hasIdentity) {
-      return $isDarkTheme ? ['#4B5563', '#374151'] : ['#D1D5DB', '#9CA3AF'];
+      return ['transparent', 'transparent'];
     }
 
     const colorSource =

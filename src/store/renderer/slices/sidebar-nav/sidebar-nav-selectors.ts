@@ -7,6 +7,7 @@ import type { StoreState } from "../../types";
 import { extractAllContent, type AgentMessage, type AgentSession } from "$shared/types";
 import {
   CHIEF_WORKSPACE_ID,
+  DEFAULT_CHIEF_THREAD_TITLE,
   type ChiefThreadPreview,
   type SidebarNavItem,
 } from "./sidebar-nav-types";
@@ -36,7 +37,11 @@ function getThreadTitle(session: AgentSession): string {
   const firstUserMessage = session.messages.find((message) => message.role === "user");
   const firstMessage = firstUserMessage ?? session.messages[0];
   const text = firstMessage ? extractAllContent(firstMessage).trim() : "";
-  return text || session.name || "Chief of Staff";
+  const fallbackName = session.name?.trim();
+  if (!fallbackName || fallbackName === "Chief of Staff" || fallbackName.startsWith("New thread ")) {
+    return text || DEFAULT_CHIEF_THREAD_TITLE;
+  }
+  return text || fallbackName;
 }
 
 function getChiefSessions(state: StoreState): AgentSession[] {

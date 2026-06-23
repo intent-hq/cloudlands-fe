@@ -6,6 +6,7 @@
  */
 
 export const CHIEF_WORKSPACE_ID = '__chief__';
+export const DEFAULT_CHIEF_THREAD_TITLE = 'New chat with Intent';
 
 export type SidebarNavItem =
   | 'home'

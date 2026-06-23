@@ -2875,7 +2875,7 @@
           }
         },
       }}
-      class="flex-1 overflow-y-auto px-[5%]"
+      class="flex-1 overflow-y-auto {isChiefWorkspace ? 'px-0' : 'px-[5%]'}"
       class:agent-font-monospace={$isAgentMonospace}
     >
       <!-- Task Assignment Pill -->
@@ -3641,7 +3641,7 @@
 
   <!-- Message Input with Aurora Background -->
   <div
-    class="relative w-full px-2 z-0"
+    class="relative w-full {isChiefWorkspace ? 'px-0' : 'px-2'} z-0"
     class:input-flash={showInputFlash}
     data-streaming={$agentSessionIsStreaming$}
   >
@@ -3672,6 +3672,7 @@
       {agentId}
       selectedModel={hydratedInputModel ?? agentModel}
       compactMode={isCompactMode}
+      editorClassName={isChiefWorkspace ? 'px-1.5!' : 'px-2!'}
       isProviderChangeLocked={!canChangeProvider}
       providerId={inputProviderId}
     />

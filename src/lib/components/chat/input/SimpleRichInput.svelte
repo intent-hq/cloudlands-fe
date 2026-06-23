@@ -83,6 +83,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     panelFocused?: boolean;
     /** Whether to use compact mode (shorter height for short panels) */
     compactMode?: boolean;
+    /** Padding/spacing class applied to the rich text editor content. */
+    editorClassName?: string;
     onsubmit?: (value: string) => void;
     onforcesubmit?: (value: string) => void; // Interrupt streaming and send immediately
     onenhance?: () => void | Promise<void>;
@@ -126,6 +128,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     panelFocused: _panelFocused = true, // Reserved for future use
 
     compactMode: _compactMode = false, // Reserved for future use
+    editorClassName = 'px-2!',
     onsubmit,
     onforcesubmit,
     onenhance,
@@ -944,7 +947,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     <TipTapEditor
         bind:this={tiptap}
         class={isAutoExpand ? '' : 'h-full overflow-y-auto'}
-        editorClassName="px-2!"
+        {editorClassName}
         minHeight={20}
         maxHeight={isAutoExpand ? 9999 : 9999}
         {autoFocus}

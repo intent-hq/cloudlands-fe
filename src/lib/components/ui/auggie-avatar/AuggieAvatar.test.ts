@@ -53,13 +53,13 @@ describe('AuggieAvatar Thinking selector ownership', () => {
     expect(getRandomColorsWithSeedMock).toHaveBeenCalledWith('agent-1', false);
   });
 
-  it('uses a muted gray light-mode gradient when no seed or agentId is provided', () => {
+  it('uses a transparent fallback when no seed or agentId is provided', () => {
     const { container } = render(AuggieAvatar, { props: { size: 20 } });
     const stops = Array.from(container.querySelectorAll('stop')).map((stop) =>
       stop.getAttribute('stop-color'),
     );
 
-    expect(stops).toEqual(['#D1D5DB', '#9CA3AF']);
+    expect(stops).toEqual(['transparent', 'transparent']);
     expect(getRandomColorsWithSeedMock).not.toHaveBeenCalled();
   });
 

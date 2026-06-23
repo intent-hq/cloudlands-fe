@@ -36,9 +36,9 @@
     },
     {
       id: 'morning-brief',
-      label: 'Prepare my Chief of Staff brief for today.',
+      label: 'Prepare my daily brief for today.',
       prompt:
-        'Give me a concise Chief of Staff brief for today: active workspaces, PRs/issues that need attention, blocked or waiting agents, and the highest-leverage next actions.',
+        'Give me a concise daily brief for today: active workspaces, PRs/issues that need attention, blocked or waiting agents, and the highest-leverage next actions.',
     },
     {
       id: 'random-theme',
@@ -59,8 +59,8 @@
 <section class="mx-auto flex min-h-[46vh] w-full max-w-3xl flex-col justify-end pb-12 pt-16">
   <div class="mb-4 flex items-baseline gap-3 px-1.5 text-foreground">
     <p class="flex-1">
-      As your Chief of Staff, I can help you use the app, create and interact with workspaces,
-      update your settings, and improve your specialists. Just ask!
+      Ask Intent to help you use the app: manage workspaces, tune settings, coordinate specialists,
+      and find your next best action.
     </p>
   </div>
 
@@ -73,11 +73,13 @@
         onclick={() => onSelect(suggestion.prompt)}
         onkeydown={(event) => handleKeyDown(event, suggestion.prompt)}
       >
-        <Fa
-          icon={faPaperPlane}
-          class="mt-1.5 self-start opacity-50 transition-all duration-150 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:opacity-100"
-          size="xs"
-        />
+        <span
+          aria-hidden="true"
+          class="mt-1.5 flex w-3 shrink-0 justify-center self-start opacity-70 transition-all duration-150 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:opacity-100"
+          data-testid="chief-suggestion-icon"
+        >
+          <Fa icon={faPaperPlane} size="xs" />
+        </span>
         <span class="flex-1">{suggestion.label}</span>
       </div>
     {/each}
