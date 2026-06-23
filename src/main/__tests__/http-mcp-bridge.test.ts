@@ -276,7 +276,10 @@ vi.mock('../websocket-discovery', () => ({
 
 // ── Import after mocks ──────────────────────────────────────────────
 import { __resolveWsModuleForTests } from '../utils/ws-runtime';
-import { HttpMcpBridge } from '../http-mcp-bridge';
+import {
+  HttpMcpBridge,
+  WORKSPACE_MCP_SERVER_CACHE_VERSION,
+} from '../http-mcp-bridge';
 
 const originalNodeEnv = process.env.NODE_ENV;
 const originalClearDiscoveryAutoOffTimer = (globalThis as any)
@@ -685,6 +688,25 @@ describe('HttpMcpBridge', () => {
       expect(count).toBe(0);
     });
 
+    it('includes the workspace API cache version in cached server keys', async () => {
+      await (bridge as any).getMcpServer('ws-123', '/tmp/workspace');
+
+      const stats = bridge.getMcpServerCacheStats();
+      expect(stats.total).toBe(1);
+      expect(stats.servers[0].key).toBe(
+        `ws-123:/tmp/workspace:local:${WORKSPACE_MCP_SERVER_CACHE_VERSION}`,
+      );
+    });
+
+    it('clears versioned cached server keys by workspace id', async () => {
+      await (bridge as any).getMcpServer('ws-123', '/tmp/workspace');
+
+      const cleared = bridge.clearMcpServersForWorkspace('ws-123');
+
+      expect(cleared).toBe(1);
+      expect(bridge.getMcpServerCacheStats().total).toBe(0);
+    });
+
     it('clearMcpServersForWorkspace can be called directly (used by sagas)', () => {
       // workspace:deleting and workspace:deleted are now handled by sagas which
       // call bridge.clearMcpServersForWorkspace() directly
@@ -810,6 +832,68 @@ describe('HttpMcpBridge', () => {
       expect(res.json).toHaveBeenCalled();
       const responseData = res.json.mock.calls[0][0];
       expect(responseData.jsonrpc).toBe('2.0');
+    });
+
+    it('normalizes stale ws.note.create short links from cached workspace_api servers', async () => {
+      const staleNoteResponse = {
+        jsonrpc: '2.0',
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                id: 'note-123',
+                title: 'Temp Note',
+                tags: [],
+                link: 'intent://local/note/note-123',
+                markdownLink: '[Temp Note](intent://local/note/note-123)',
+              }),
+            },
+          ],
+        },
+      };
+      mockCreateWorkspaceMCPServer.mockResolvedValue({
+        getTools: vi.fn().mockReturnValue([{ name: 'workspace_api' }]),
+        handleMessage: vi.fn().mockResolvedValue(staleNoteResponse),
+        setToolCallContext: vi.fn(),
+        clearToolCallContext: vi.fn(),
+        notifyToolsListChanged: vi.fn(),
+      });
+      await startBridge(bridge);
+
+      const mcpCall = mockExpressApp.post.mock.calls.find(
+        (call: any[]) => call[0] === '/mcp',
+      );
+      expect(mcpCall).toBeDefined();
+      const mcpHandler = mcpCall![1];
+
+      const req = {
+        body: {
+          jsonrpc: '2.0',
+          method: 'tools/call',
+          params: {
+            name: 'workspace_api',
+            arguments: { code: 'return await ws.note.create("Temp Note", "body")' },
+          },
+          id: 3,
+        },
+        headers: { 'x-workspace-id': 'data-build', 'x-workspace-path': '/tmp/workspace' },
+        header: vi.fn().mockReturnValue('data-build'),
+      };
+      const res: any = { json: vi.fn(), status: vi.fn().mockReturnThis() };
+      await mcpHandler(req, res);
+      mockCreateWorkspaceMCPServer.mockResolvedValue({
+        getTools: vi.fn().mockReturnValue([{ name: 'test_tool' }]),
+        handleMessage: vi.fn().mockResolvedValue({ jsonrpc: '2.0', result: {} }),
+        setToolCallContext: vi.fn(),
+        clearToolCallContext: vi.fn(),
+        notifyToolsListChanged: vi.fn(),
+      });
+
+      const responseData = res.json.mock.calls[0][0];
+      const payload = JSON.parse(responseData.result.content[0].text);
+      expect(payload.link).toBe('intent://local/data-build/note/note-123');
+      expect(payload.markdownLink).toBe('[Temp Note](intent://local/data-build/note/note-123)');
     });
   });
 

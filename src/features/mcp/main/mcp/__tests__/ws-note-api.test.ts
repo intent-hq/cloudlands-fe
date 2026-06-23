@@ -478,6 +478,62 @@ describe('toFrontendNote — contentType and visibility defaults', () => {
   });
 });
 
+describe('ws.note.create — returned note links', () => {
+  let mockWM: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockWM = {
+      createNote: vi.fn(),
+      getWorkspace: vi.fn().mockResolvedValue(null),
+    };
+  });
+
+  it('returns workspace-qualified intent links for created notes', async () => {
+    const tool = new WorkspaceJsApiTool('/tmp/test', 'ws-1', mockWM);
+    mockWM.createNote.mockResolvedValue({
+      id: 'note-123',
+      title: 'Created Note',
+      content: 'body',
+      tags: [],
+    });
+
+    const result = await tool.execute(
+      makeCall('return await ws.note.create("Created Note", "body")'),
+    );
+
+    expect(result.isError).toBe(false);
+    const parsed = JSON.parse(getText(result));
+    expect(parsed.link).toBe('intent://local/ws-1/note/note-123');
+    expect(parsed.markdownLink).toBe('[Created Note](intent://local/ws-1/note/note-123)');
+    expect(parsed.link).not.toContain('@note/');
+    expect(parsed.markdownLink).not.toContain('@note/');
+  });
+
+  it('returns Chief workspace note links that can be parsed from chat', async () => {
+    const tool = new WorkspaceJsApiTool('/tmp/test', '__chief__', mockWM);
+    mockWM.createNote.mockResolvedValue({
+      id: 'chief-note-123',
+      title: 'Chief Created Note',
+      content: 'body',
+      tags: ['chief'],
+    });
+
+    const result = await tool.execute(
+      makeCall('return await ws.note.create("Chief Created Note", "body", ["chief"])'),
+    );
+
+    expect(result.isError).toBe(false);
+    const parsed = JSON.parse(getText(result));
+    expect(parsed.link).toBe('intent://local/__chief__/note/chief-note-123');
+    expect(parsed.markdownLink).toBe(
+      '[Chief Created Note](intent://local/__chief__/note/chief-note-123)',
+    );
+    expect(parsed.link).not.toContain('@note/');
+    expect(parsed.markdownLink).not.toContain('@note/');
+  });
+});
+
 describe('ws.note error cases', () => {
   let tool: WorkspaceJsApiTool;
 

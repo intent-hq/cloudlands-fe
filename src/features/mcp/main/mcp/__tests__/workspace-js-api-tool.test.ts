@@ -25,6 +25,7 @@ const { mockSendToWorkspaceWindows, mockAgentHandler, mockWorkspaceSubscriptionS
           },
           { id: 'child-agent', name: 'Child Agent', status: 'completed' },
         ]),
+        getAgent: vi.fn().mockResolvedValue(null),
       },
       mockWorkspaceSubscriptionState: {
         subscriptions: {
@@ -242,6 +243,15 @@ describe('WorkspaceJsApiTool integration', () => {
     expect(definition.description).toContain('ws.pr.status()');
     expect(definition.description).toContain('ws.app.ui.navigate(route');
     expect(definition.description).toContain('ws.app.ui.targets()');
+    expect(definition.description).toContain('ws.app.agents.list({');
+    expect(definition.description).toContain('ws.app.agents.readConversation(workspaceId, agentId');
+    expect(definition.description).toContain('metadata only, no transcript content');
+    expect(definition.description).toContain('last 20 messages, max 100');
+    expect(definition.description).toContain('keep `includeToolCalls` false');
+    expect(definition.description).toContain(
+      'ws.note.create(title, content, tags?) → { id, title, tags, link, markdownLink }',
+    );
+    expect(definition.description).toContain('intent://local/{workspaceId}/note/{noteId}');
     expect(definition.description).toContain('ws.app.workspaces.list');
     expect(definition.description).toContain('ws.app.workspaces.archive(id) → ProposalCard');
     expect(definition.description).toContain('ws.app.workspaces.delete(id) → ProposalCard');
@@ -341,6 +351,47 @@ describe('WorkspaceJsApiTool integration', () => {
     expect(text).toContain('Alpha Workspace');
     expect(text.indexOf('Alpha Workspace')).toBeLessThan(text.indexOf('Beta Workspace'));
     expect(manager.listAllWorkspaces).toHaveBeenCalledWith({ lite: true });
+    expect(normalResult.isError).toBe(true);
+  });
+
+  it('mounts ws.app.agents only for the Chief workspace', async () => {
+    const manager = {
+      listAllWorkspaces: vi.fn().mockResolvedValue({ ok: true, data: workspaces }),
+      getWorkspace: vi.fn((id: string) =>
+        Promise.resolve(workspaces.find((w) => w.id === id) ?? null),
+      ),
+    };
+    const chiefTool = new WorkspaceJsApiTool('/tmp/test-workspace', '__chief__', manager);
+    const normalTool = new WorkspaceJsApiTool('/tmp/test-workspace', 'workspace-1', manager);
+
+    const chiefResult = await chiefTool.execute({
+      name: 'workspace_api',
+      arguments: {
+        code: 'return await ws.app.agents.list({ workspaceId: "workspace-1", limit: 5 })',
+      },
+      context: {},
+    } as any);
+    const normalResult = await normalTool.execute({
+      name: 'workspace_api',
+      arguments: { code: 'return await ws.app.agents.list()' },
+      context: {},
+    } as any);
+
+    expect(chiefResult.isError).toBe(false);
+    const payload = JSON.parse((chiefResult.content[0] as any).text);
+    expect(payload.threads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workspaceId: 'workspace-1',
+          workspaceTitle: 'Alpha Workspace',
+          agentId: 'agent-live',
+          agentName: 'Live Agent',
+          messageCount: 1,
+          taskNoteId: 'task-live',
+        }),
+      ]),
+    );
+    expect(JSON.stringify(payload)).not.toContain('MESSAGE_SECRET');
     expect(normalResult.isError).toBe(true);
   });
 

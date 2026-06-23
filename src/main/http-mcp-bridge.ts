@@ -62,6 +62,7 @@ import {
   registerBrowserIpcBroadcast,
 } from './browser-ipc-broadcast-adapter';
 import { getWebSocketClass, getWebSocketServerClass } from './utils/ws-runtime';
+import { noteLink, noteUrl } from '$shared/constants/intent-links';
 
 const WebSocket = getWebSocketClass();
 const WebSocketServer = getWebSocketServerClass();
@@ -154,6 +155,10 @@ let fromWebContentsPatched = false;
 // Default TTL for cached MCP servers (30 minutes)
 const DEFAULT_MCP_SERVER_TTL_MS = 30 * 60 * 1000;
 
+// Bump this when WorkspaceJsApiTool behavior changes in a way that must not
+// reuse already-cached tool instances (for example, note creation return URLs).
+export const WORKSPACE_MCP_SERVER_CACHE_VERSION = 'workspace-note-links-v2';
+
 // Health probe configuration (exported so tests can import).
 // Raised from 2s → 5s per spec: the health endpoint is merely slow under
 // memory pressure; aborting at 2s synthesises a failure that then races
@@ -201,6 +206,54 @@ function getRequestOrigin(req: Request): string | undefined {
 
 function isAllowedWebSocketOrigin(origin: string | undefined): boolean {
   return origin === undefined || isTrustedRendererOrigin(origin);
+}
+
+function normalizeWorkspaceApiCreatedNoteLinks(response: any, workspaceId: string, request: any): any {
+  const toolName = request?.params?.name;
+  const code = request?.params?.arguments?.code;
+  if (toolName !== 'workspace_api' || typeof code !== 'string' || !code.includes('ws.note.create')) {
+    return response;
+  }
+
+  const contentItem = response?.result?.content?.[0];
+  if (!contentItem || contentItem.type !== 'text' || typeof contentItem.text !== 'string') {
+    return response;
+  }
+
+  try {
+    const payload = JSON.parse(contentItem.text);
+    if (
+      !payload ||
+      typeof payload !== 'object' ||
+      typeof payload.id !== 'string' ||
+      typeof payload.title !== 'string' ||
+      payload.link !== noteUrl(payload.id)
+    ) {
+      return response;
+    }
+
+    const normalized = {
+      ...payload,
+      link: noteUrl(payload.id, workspaceId),
+      markdownLink: noteLink(payload.title, payload.id, workspaceId),
+    };
+
+    return {
+      ...response,
+      result: {
+        ...response.result,
+        content: [
+          {
+            ...contentItem,
+            text: JSON.stringify(normalized, null, 2),
+          },
+          ...response.result.content.slice(1),
+        ],
+      },
+    };
+  } catch {
+    return response;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -371,7 +424,7 @@ export class HttpMcpBridge {
   ): Promise<any> {
     // Include environment type in key to ensure separate servers for local vs remote
     const envType = environmentConfig?.type || 'local';
-    const key = `${workspaceId}:${workspacePath}:${envType}`;
+    const key = `${workspaceId}:${workspacePath}:${envType}:${WORKSPACE_MCP_SERVER_CACHE_VERSION}`;
     const now = Date.now();
 
     const cached = this.mcpServers.get(key);
@@ -540,6 +593,8 @@ export class HttpMcpBridge {
         } finally {
           (mcpServer as any).clearToolCallContext();
         }
+
+        response = normalizeWorkspaceApiCreatedNoteLinks(response, workspaceId, jsonRpcRequest);
 
         // Log tool call result for better debugging
         if (isToolCall) {

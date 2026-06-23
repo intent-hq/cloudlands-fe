@@ -85,6 +85,15 @@ describe('parseIntentLink', () => {
       expect(result.workspaceId).toBe('workspace');
       expect(result.resourceId).toBe('spec');
     });
+
+    it('should parse Chief workspace note links', () => {
+      const result = parseIntentLink('intent://local/__chief__/note/chief-note-123');
+
+      expect(result.valid).toBe(true);
+      expect(result.type).toBe('note');
+      expect(result.workspaceId).toBe('__chief__');
+      expect(result.resourceId).toBe('chief-note-123');
+    });
   });
 
   describe('invalid links', () => {
@@ -147,5 +156,15 @@ describe('generateNoteLink', () => {
     expect(parsed.valid).toBe(true);
     expect(parsed.resourceId).toBe(noteId);
     expect(parsed.type).toBe('note');
+  });
+
+  it('should generate cross-workspace note links', () => {
+    const link = generateNoteLink('chief-note-123', '__chief__');
+    const parsed = parseIntentLink(link);
+
+    expect(link).toBe('intent://local/__chief__/note/chief-note-123');
+    expect(parsed.valid).toBe(true);
+    expect(parsed.workspaceId).toBe('__chief__');
+    expect(parsed.resourceId).toBe('chief-note-123');
   });
 });

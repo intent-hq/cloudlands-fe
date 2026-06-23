@@ -49,4 +49,22 @@ describe('SPECIALISTS', () => {
     expect(chief?.roleReminder).toMatch(/canonical route/i);
     expect(chief?.roleReminder).toMatch(/hash fragment/i);
   });
+
+  it('teaches Chief to audit agent threads safely and link created notes', () => {
+    const chief = getSpecialistById('chief-of-staff');
+    expect(chief?.defaultBehaviorPrompt).toMatch(/## Agent Thread Audits/);
+    expect(chief?.defaultBehaviorPrompt).toContain(
+      'ws.app.agents.list({ workspaceId?, includeCompleted?, limit?, cursor? })',
+    );
+    expect(chief?.defaultBehaviorPrompt).toContain(
+      'ws.app.agents.readConversation(workspaceId, agentId, { lastN?, startTurn?, endTurn?, includeToolCalls? })',
+    );
+    expect(chief?.defaultBehaviorPrompt).toMatch(/metadata only; no transcript content/i);
+    expect(chief?.defaultBehaviorPrompt).toMatch(
+      /defaults to the last 20 messages and caps reads at 100/i,
+    );
+    expect(chief?.defaultBehaviorPrompt).toMatch(/includeToolCalls: true/);
+    expect(chief?.defaultBehaviorPrompt).toMatch(/returned `markdownLink`/);
+    expect(chief?.defaultBehaviorPrompt).toContain('intent://local/{workspaceId}/note/{noteId}');
+  });
 });

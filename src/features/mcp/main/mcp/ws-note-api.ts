@@ -514,8 +514,8 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
             id: note.id,
             title: note.title,
             tags: note.tags || [],
-            link: noteUrl(note.id),
-            markdownLink: noteLink(note.title, note.id),
+            link: noteUrl(note.id, workspaceId),
+            markdownLink: noteLink(note.title, note.id, workspaceId),
           };
         });
       },

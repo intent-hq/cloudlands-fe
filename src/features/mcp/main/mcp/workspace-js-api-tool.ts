@@ -21,6 +21,7 @@ import { buildNoteApi } from './ws-note-api';
 import { buildWsPrApi } from './ws-pr-api';
 import { buildScriptApi } from './ws-script-api';
 import { buildWorkspaceApi } from './ws-workspace-api';
+import { buildWsAppAgentsApi } from './ws-app-agents-api';
 import { buildWsAppSpecialistsApi } from './ws-app-specialists-api';
 import { buildWsAppSettingsApi } from './ws-app-settings-api';
 import { buildWsAppProposalApi, buildWsAppWorkspacesApi } from './ws-app-workspaces-api';
@@ -54,6 +55,9 @@ const TOOL_DESCRIPTION = [
   `  ws.workspace.referenceDocs(topic) → string  // On-demand reference docs for long topics such as ${AVAILABLE_TOPICS.join(', ')}. Use this instead of guessing special block syntax.`,
   '  ws.workspace.emitNotification(topic, message, metadata?) → { ok, eventId }  // Emit a workspace-scoped notification event; useful for service/external-style notifications to subscribed agents.',
   '',
+  '  ws.app.agents.list({ workspaceId?, includeCompleted?, limit?, cursor? }?) → { threads, total, returned, nextCursor? }  // Chief workspace only. Lists readable agent threads across app workspaces; metadata only, no transcript content. Defaults to 50 threads, max 200.',
+  '  ws.app.agents.readConversation(workspaceId, agentId, { lastN?, startTurn?, endTurn?, includeToolCalls? }?) → { workspaceId, workspaceTitle, agentId, agentName, totalMessages, returnedMessages, startTurn, endTurn, includeToolCalls, taskNoteId?, messages }  // Chief workspace only. Reads a bounded cross-workspace agent conversation. Defaults to last 20 messages, max 100, and excludes tool-call blocks unless `includeToolCalls=true`.',
+  '    Safe usage: list first, then read only the relevant thread slices with `lastN` or `startTurn`/`endTurn`; keep `includeToolCalls` false unless the user explicitly needs raw tool-call details.',
   '  ws.app.proposal.show(proposal) → ProposalCard  // Chief workspace only. Render an app-level proposal card in chat.',
   '  ws.app.settings.list({ includeValues?, category? }?) → settings[]  // List schema-backed persisted user settings, optionally with current values.',
   '  ws.app.settings.get(path) → setting  // Read a persisted user setting by schema path; sensitive values are redacted.',
@@ -74,7 +78,7 @@ const TOOL_DESCRIPTION = [
   '  ws.app.workspaces.open(id, { openInNewWindow? }?) → { ok, queued }  // Chief workspace only. Opens a workspace through workspace-operations-saga. Pass `{ openInNewWindow: true }` to open in a new window.',
   '',
   '  ws.note.read(id) → { id, title, content, tags, ... }  // Read a note. Use id=`spec` for the workspace spec. Content has line numbers like `   1 | text`.',
-  '  ws.note.create(title, content, tags?) → { id, title, content, tags }  // Create a new note. DO NOT use this for the spec: the spec already exists as note ID `spec`; edit or add to it instead.',
+  '  ws.note.create(title, content, tags?) → { id, title, tags, link, markdownLink }  // Create a new note and return canonical `intent://local/{workspaceId}/note/{noteId}` links. Share `markdownLink` with users so they can open the note. DO NOT use this for the spec: the spec already exists as note ID `spec`; edit or add to it instead.',
   '  ws.note.list(tag?) → [{ id, title, tags, ... }]  // List notes. Optional tag filter narrows results.',
   '  ws.note.listTasks(id) → [{ text, status, taskNoteId, linkedTaskNoteId, lineNumber, ... }]  // Faster than `read()` when you only need checkbox/task IDs. Use `taskNoteId` for delegation; `linkedTaskNoteId` is a backward-compatible alias.',
   '  ws.note.readAsset(asset) → { assetId, mimeType, data, sizeKb }  // `asset` can be an asset ID or `workspace-asset://...` URL. Image assets (PNG, JPEG, GIF, WebP) are returned as native image content blocks (the model sees the image directly); non-image assets return the JSON object.',
@@ -322,6 +326,7 @@ export class WorkspaceJsApiTool extends BaseMCPTool {
     const app =
       this.workspaceId === CHIEF_WORKSPACE_ID
         ? {
+            agents: buildWsAppAgentsApi(this.workspaceManager),
             proposal: buildWsAppProposalApi({ workspaceId: this.workspaceId, call }),
             settings: buildWsAppSettingsApi(this.workspaceId, call),
             specialists: buildWsAppSpecialistsApi(this.workspacePath, this.workspaceId, call),
