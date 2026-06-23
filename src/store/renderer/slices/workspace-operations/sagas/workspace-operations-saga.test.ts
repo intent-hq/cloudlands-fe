@@ -129,6 +129,7 @@ import {
 import {
   applyWorkspaceProposal,
   requestDeleteWorkspace,
+  confirmDeleteWorkspace,
   requestArchiveWorkspace,
   openBulkArchiveConfirm,
   confirmBulkArchive,
@@ -713,6 +714,8 @@ describe("deleteWorkspaceWithUndo — saga-level invariants", () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     mockHasRunningAgents.mockReturnValue(false);
+    mockGetRunningAgentNames.mockReturnValue([]);
+    mockNavigateAfterWorkspaceRemoval.mockReset();
     mockWorkspaceClientArchive.mockResolvedValue({ ok: true });
     mockWorkspaceClientUnarchive.mockResolvedValue({ ok: true });
     capturedUndoCallback = undefined;
@@ -827,6 +830,61 @@ describe("deleteWorkspaceWithUndo — saga-level invariants", () => {
     // since the undo channel won the timing race.
     await vi.advanceTimersByTimeAsync(15000);
     expect(mockWorkspaceClientDelete).not.toHaveBeenCalled();
+  });
+
+  it("running agents: request opens one warning before navigation; confirm clears it before navigating once", async () => {
+    mockHasRunningAgents.mockReturnValue(true);
+    mockGetRunningAgentNames.mockReturnValue(["Agent 1"]);
+    mockWorkspaceClientDelete.mockResolvedValue({ ok: true });
+    Object.defineProperty(window, "location", {
+      value: { pathname: `/workspace/${workspace.id}` },
+      writable: true,
+      configurable: true,
+    });
+    mockNavigateAfterWorkspaceRemoval.mockImplementation(() => {
+      expect((store.getState() as any).workspaceOperations.showDeleteWarning).toBe(false);
+    });
+
+    store.dispatch(requestDeleteWorkspace(workspace.id));
+    await Promise.resolve();
+
+    expect((store.getState() as any).workspaceOperations.showDeleteWarning).toBe(true);
+    expect((store.getState() as any).workspaceOperations.pendingDeleteWorkspaceId).toBe(workspace.id);
+    expect((store.getState() as any).workspaceOperations.runningAgentNamesForDelete).toEqual(["Agent 1"]);
+    expect(mockNavigateAfterWorkspaceRemoval).not.toHaveBeenCalled();
+    expect(mockWorkspaceClientDelete).not.toHaveBeenCalled();
+    expect(mockToast.warning).not.toHaveBeenCalled();
+
+    store.dispatch(confirmDeleteWorkspace());
+    await waitForWarningToast();
+
+    expect((store.getState() as any).workspaceOperations.showDeleteWarning).toBe(false);
+    expect((store.getState() as any).workspaceOperations.pendingDeleteWorkspaceId).toBeNull();
+    expect((store.getState() as any).workspaceOperations.runningAgentNamesForDelete).toEqual([]);
+    expect(mockNavigateAfterWorkspaceRemoval).toHaveBeenCalledTimes(1);
+    expect(mockNavigateAfterWorkspaceRemoval).toHaveBeenCalledWith(workspace.id);
+    expect(mockToast.warning).toHaveBeenCalledTimes(1);
+    expect(mockWorkspaceClientDelete).not.toHaveBeenCalled();
+  });
+
+  it("running agents: cancel clears warning state without navigating or deleting", async () => {
+    mockHasRunningAgents.mockReturnValue(true);
+    mockGetRunningAgentNames.mockReturnValue(["Agent 1"]);
+
+    store.dispatch(requestDeleteWorkspace(workspace.id));
+    await Promise.resolve();
+
+    expect((store.getState() as any).workspaceOperations.showDeleteWarning).toBe(true);
+
+    store.dispatch(closeDeleteWarning());
+    await Promise.resolve();
+
+    expect((store.getState() as any).workspaceOperations.showDeleteWarning).toBe(false);
+    expect((store.getState() as any).workspaceOperations.pendingDeleteWorkspaceId).toBeNull();
+    expect((store.getState() as any).workspaceOperations.runningAgentNamesForDelete).toEqual([]);
+    expect(mockNavigateAfterWorkspaceRemoval).not.toHaveBeenCalled();
+    expect(mockWorkspaceClientDelete).not.toHaveBeenCalled();
+    expect(mockToast.warning).not.toHaveBeenCalled();
   });
 
   it("archive undo: clicking the toast undo unarchives through the saga channel and reloads workspaces", async () => {

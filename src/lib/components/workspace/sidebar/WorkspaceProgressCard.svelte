@@ -56,8 +56,6 @@
   } from './git-status-refresh-utils';
   import FlameGraph from './FlameGraph.svelte';
   import WorkspaceTokenUsage from './WorkspaceTokenUsage.svelte';
-  import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
-  import { hasRunningAgents, getRunningAgentNames } from '$lib/utils/delete-warning-utils';
 
   import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
@@ -263,11 +261,6 @@
   let skipNextStatusBlurSave = $state(false);
   let dropdownOpen = $state(false);
 
-  // Delete warning dialog state
-  let showDeleteWarning = $state(false);
-  let pendingDeleteWorkspaceId = $state<string | null>(null);
-  let runningAgentNamesForDelete = $state<string[]>([]);
-
   // Derive the workspace path display
   const workspacePath = $derived($workspace?.worktreePath || $workspace?.repositoryPath || '');
   const currentStatusMessage = $derived($workspace?.statusMessage?.trim() ?? '');
@@ -314,27 +307,8 @@
   async function handleDelete() {
     if (isDeleting || !$workspace) return;
 
-    // Check if workspace has running agents
-    if (hasRunningAgents($workspace.id)) {
-      // Show warning dialog instead of deleting immediately
-      pendingDeleteWorkspaceId = $workspace.id;
-      runningAgentNamesForDelete = getRunningAgentNames($workspace.id);
-      showDeleteWarning = true;
-      return;
-    }
-
-    // No running agents, proceed with deletion
-    await performDelete();
-  }
-
-  async function performDelete() {
-    if (isDeleting || !$workspace) return;
-
     try {
       isDeleting = true;
-      // Navigate immediately to avoid UI stalling
-      goto('/');
-
       appStore.dispatch(requestDeleteWorkspace($workspace.id));
     } catch (error) {
       logger.error('Failed to delete workspace:', error);
@@ -1309,18 +1283,3 @@
     {/if}
   </div>
 {/if}
-
-<!-- Delete Warning Dialog -->
-<DeleteWarningDialog
-  bind:open={showDeleteWarning}
-  agentNames={runningAgentNamesForDelete}
-  onDeleteAnyway={async () => {
-    if (pendingDeleteWorkspaceId) {
-      await performDelete();
-      pendingDeleteWorkspaceId = null;
-    }
-  }}
-  onCancel={() => {
-    pendingDeleteWorkspaceId = null;
-  }}
-/>

@@ -34,12 +34,10 @@
   closeBulkArchiveConfirm,
   closeBulkDeleteArchivedConfirm,
   closeBulkDeleteWarningConfirm,
-  closeDeleteWarning,
   closeRemoveRepoConfirm,
   confirmBulkArchive,
   confirmBulkDeleteArchived,
   confirmBulkDeleteWarning,
-  confirmDeleteWorkspace,
   confirmRemoveRepo,
   openBulkArchiveConfirm,
   openBulkDeleteArchivedConfirm,
@@ -53,11 +51,9 @@
   selectBulkDeleteWorkspaceCount,
   selectPendingBulkRepoKey,
   selectPendingRemoveRepoPath,
-  selectRunningAgentNamesForDelete,
   selectShowBulkArchiveConfirm,
   selectShowBulkDeleteArchivedConfirm,
   selectShowBulkDeleteWarningConfirm,
-  selectShowDeleteWarning,
   selectShowRemoveRepoConfirm,
 } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
 
@@ -76,7 +72,6 @@
 } from 'svelte';
   import Fa from 'svelte-fa';
   import { fly } from 'svelte/transition';
-  import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import { store as appStore } from '$store/renderer/store';
 
@@ -88,8 +83,6 @@
   let initialRepoForCreate = $state<RepoInfo | undefined>(undefined);
   let workspaceInitializer: CompactWorkspaceInitializer | null = $state(null);
 
-  const showDeleteWarning = selectShowDeleteWarning();
-  const runningAgentNamesForDelete = selectRunningAgentNamesForDelete();
   const showBulkArchiveConfirm = selectShowBulkArchiveConfirm();
   const showBulkDeleteArchivedConfirm = selectShowBulkDeleteArchivedConfirm();
   const pendingBulkRepoKey = selectPendingBulkRepoKey();
@@ -408,14 +401,6 @@
     {/if}
   </div>
 </div>
-
-<!-- Delete Warning Dialog (single workspace only) -->
-<DeleteWarningDialog
-  open={$showDeleteWarning}
-  agentNames={$runningAgentNamesForDelete}
-  onDeleteAnyway={() => appStore.dispatch(confirmDeleteWorkspace())}
-  onCancel={() => appStore.dispatch(closeDeleteWarning())}
-/>
 
 <!-- Bulk Archive Confirmation Dialog -->
 <BulkActionConfirmDialog

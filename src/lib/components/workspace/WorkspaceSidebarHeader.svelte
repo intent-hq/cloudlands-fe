@@ -20,14 +20,8 @@
 } from '$shared/types';
   import GitBranchIcon from '$lib/components/icons/GitBranchIcon.svelte';
   import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
-  import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
-  import {
-  hasRunningAgents,
-  getRunningAgentNames,
-} from '$lib/utils/delete-warning-utils';
   import { selectSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { toggleSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-slice';
-  import { navigateAfterWorkspaceRemoval } from '$lib/utils/workspace-navigation';
 
   import { requestDeleteWorkspace } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -54,11 +48,6 @@
   let skipNextStatusBlurSave = $state(false);
   let dropdownOpen = $state(false);
 
-  // Delete warning dialog state
-  let showDeleteWarning = $state(false);
-  let pendingDeleteWorkspaceId = $state<string | null>(null);
-  let runningAgentNamesForDelete = $state<string[]>([]);
-
   // Branch rename state
   let isEditingBranch = $state(false);
   let editedBranch = $state('');
@@ -70,31 +59,8 @@
   async function handleDelete() {
     if (isDeleting || !workspace) return;
 
-    // Check if workspace has running agents
-    if (hasRunningAgents(workspace.id)) {
-      // Show warning dialog instead of deleting immediately
-      pendingDeleteWorkspaceId = workspace.id;
-      runningAgentNamesForDelete = getRunningAgentNames(workspace.id);
-      showDeleteWarning = true;
-      return;
-    }
-
-    // No running agents, proceed with deletion
-    await performDelete();
-  }
-
-  async function performDelete() {
-    if (isDeleting || !workspace) return;
-
-    const workspaceIdToDelete = workspace.id;
-
     try {
       isDeleting = true;
-      // Fire-and-forget navigation (matches original goto('/') behavior)
-      navigateAfterWorkspaceRemoval(workspaceIdToDelete).catch((err) => {
-        logger.error('[WorkspaceSidebarHeader] Failed to navigate after workspace removal:', err);
-      });
-
       appStore.dispatch(requestDeleteWorkspace(workspace.id));
     } catch (error) {
       logger.error('Failed to delete workspace:', error);
@@ -542,18 +508,3 @@
     {/snippet}
   </DropdownMenu>
 </div>
-
-<!-- Delete Warning Dialog -->
-<DeleteWarningDialog
-  bind:open={showDeleteWarning}
-  agentNames={runningAgentNamesForDelete}
-  onDeleteAnyway={async () => {
-    if (pendingDeleteWorkspaceId) {
-      await performDelete();
-      pendingDeleteWorkspaceId = null;
-    }
-  }}
-  onCancel={() => {
-    pendingDeleteWorkspaceId = null;
-  }}
-/>

@@ -36,6 +36,7 @@
   import GitHubAuthModal from '$lib/components/GitHubAuthModal.svelte';
   import KeyboardShortcutsCheatSheet from '$lib/components/layout/KeyboardShortcutsCheatSheet.svelte';
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
+  import DeleteWarningDialog from '$lib/components/modals/DeleteWarningDialog.svelte';
   import ReleaseNotesModal from '$lib/components/ReleaseNotesModal.svelte';
   import Toast from '$lib/components/ui/toast/Toast.svelte';
   import { TooltipProvider } from '$lib/components/ui/tooltip';
@@ -85,6 +86,14 @@
     setActiveWorkspaceId,
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { createAgentWithSpecialistRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import {
+    closeDeleteWarning,
+    confirmDeleteWorkspace,
+  } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import {
+    selectRunningAgentNamesForDelete,
+    selectShowDeleteWarning,
+  } from '$store/renderer/slices/workspace-operations/workspace-operations-selectors';
 
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
@@ -131,6 +140,8 @@
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
+  const showDeleteWarning$ = selectShowDeleteWarning();
+  const runningAgentNamesForDelete$ = selectRunningAgentNamesForDelete();
 
   // Register all tab types early
   // This must happen before any panels are rendered
@@ -1075,6 +1086,14 @@
   <NewSpaceModal
     open={$showCreateModal$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
+  />
+
+  <!-- Redux-owned delete warning host (global for all workspace delete entrypoints) -->
+  <DeleteWarningDialog
+    open={$showDeleteWarning$}
+    agentNames={$runningAgentNamesForDelete$}
+    onDeleteAnyway={() => appStore.dispatch(confirmDeleteWorkspace())}
+    onCancel={() => appStore.dispatch(closeDeleteWarning())}
   />
 
   <!-- Release Notes Modal (shown after update) -->
