@@ -87,7 +87,7 @@ export function isChangesAutomaticRefreshStale(lastUpdatedAt: number, now: numbe
 function* requestAutomaticChangesRefreshIfStale(wsId: string): SagaGenerator<void> {
   const lastUpdatedAt = yield* selectChangesLastUpdatedAt.effect(wsId);
   if (!isChangesAutomaticRefreshStale(lastUpdatedAt, Date.now())) return;
-  yield* put(refreshRequested(wsId));
+  yield* put(refreshRequested(wsId, false));
 }
 
 function getCurrentIsoTimestamp(): string {
@@ -103,7 +103,7 @@ export function* handleChangesUpdatedEvent(
   data: FileTrackingEvent,
 ): SagaGenerator<void> {
   if (data.workspaceId !== wsId) return;
-  yield* put(refreshRequested(wsId));
+  yield* put(refreshRequested(wsId, false));
 }
 
 function* watchChangesUpdated(wsId: string): SagaGenerator<void> {
@@ -151,7 +151,7 @@ export function* handleAgentFileChangedEvent(
   data: FileTrackingEvent,
 ): SagaGenerator<void> {
   if (data.workspaceId !== wsId) return;
-  yield* put(refreshRequested(wsId));
+  yield* put(refreshRequested(wsId, false));
 }
 
 function* watchAgentFileChanged(wsId: string): SagaGenerator<void> {
@@ -168,7 +168,7 @@ export function* handleWorkspaceChangesEvent(
   data: { workspaceId?: string },
 ): SagaGenerator<void> {
   if (data.workspaceId !== wsId) return;
-  yield* put(refreshRequested(wsId));
+  yield* put(refreshRequested(wsId, false));
 }
 
 function* watchWorkspaceChanges(wsId: string) {

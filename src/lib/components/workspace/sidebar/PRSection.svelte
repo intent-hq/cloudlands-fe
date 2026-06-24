@@ -432,7 +432,7 @@
         try {
           await Promise.all([
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId)),
+            appStore.dispatch(refreshRequested(workspaceId, true)),
           ]);
         } catch { /* Refresh failed but push succeeded */ }
       } else {
@@ -456,7 +456,7 @@
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
           Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-          appStore.dispatch(refreshRequested(workspaceId)),
+          appStore.dispatch(refreshRequested(workspaceId, true)),
         ]);
       } else {
         toast.error(result.error || 'Force push failed');
@@ -491,7 +491,7 @@
         gitCache.invalidate(`git-status-${capturedWsId}`);
         await Promise.all([
           Promise.resolve(appStore.dispatch(loadGitStatus(capturedWsId, true))),
-          appStore.dispatch(refreshRequested(capturedWsId)),
+          appStore.dispatch(refreshRequested(capturedWsId, true)),
         ]);
         appStore.dispatch(refreshAcceptChangesStatus(capturedWsId));
         toast.success(`Rebased onto ${trunkBranch}`);

@@ -11,32 +11,43 @@ import {
   render,
   screen,
 } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
-type ReadableArg<T> = T | { subscribe: (run: (value: T) => void) => () => void };
-
-const { selectAgentIsThinkingMock, selectAgentProviderMock } = vi.hoisted(() => ({
-  selectAgentIsThinkingMock: vi.fn((agentId: string) => ({
-    subscribe: (run: (value: boolean) => void) => {
-      run(agentId === 'thinking-agent');
+const {
+  selectAgentIsThinkingMock,
+  selectAgentProviderMock,
+} = vi.hoisted(() => {
+  type ReadableLike<T> = { subscribe(run: (value: T) => void): () => void };
+  const providerForAgent = (id: string | undefined) =>
+    id?.includes('codex') ? 'codex' : id?.includes('auggie') ? 'auggie' : undefined;
+  const selectAgentProviderMock = vi.fn((agentId?: string | ReadableLike<string | undefined>) => ({
+    subscribe: (run: (value: string | undefined) => void) => {
+      if (agentId && typeof agentId !== 'string') {
+        return agentId.subscribe((id) => run(providerForAgent(id)));
+      }
+      run(providerForAgent(agentId));
       return () => {};
     },
-  })),
-  selectAgentProviderMock: vi.fn((agentId: ReadableArg<string>) => ({
-    subscribe: (run: (value: string | undefined) => void) => {
-      const providerForAgent = (id: string) =>
-        id.includes('codex') ? 'codex' : id.includes('auggie') ? 'auggie' : undefined;
-      if (typeof agentId === 'string') {
-        run(providerForAgent(agentId));
+  }));
+
+  return {
+    selectAgentIsThinkingMock: vi.fn((agentId: string) => ({
+      subscribe: (run: (value: boolean) => void) => {
+        run(agentId === 'thinking-agent');
         return () => {};
-      }
-      return agentId.subscribe((id) => run(providerForAgent(id)));
-    },
-  })),
-}));
+      },
+    })),
+    selectAgentProviderMock,
+  };
+});
 
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentIsThinking: selectAgentIsThinkingMock,
   selectAgentProvider: selectAgentProviderMock,
+}));
+
+vi.mock('$store/renderer/store', () => ({
+  store: { state: {} },
 }));
 
 vi.mock('./AuggieAvatar.svelte', async () => ({
@@ -48,6 +59,17 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import AugieAvatarWithState from './AugieAvatarWithState.svelte';
+
+function expectReadableAgentArg(mock: ReturnType<typeof vi.fn>, expectedAgentId: string) {
+  const agentIdArg = mock.mock.calls[0]?.[0];
+  expect(agentIdArg).toHaveProperty('subscribe');
+  let observedAgentId: string | undefined;
+  const unsubscribe = agentIdArg.subscribe((id: string | undefined) => {
+    observedAgentId = id;
+  });
+  unsubscribe();
+  expect(observedAgentId).toBe(expectedAgentId);
+}
 
 describe('AugieAvatarWithState avatar wiring', () => {
   beforeEach(() => {
@@ -77,9 +99,36 @@ describe('AugieAvatarWithState avatar wiring', () => {
     render(AugieAvatarWithState, { props: { agentId: 'codex-agent', state: 'completed' } });
 
     const avatar = screen.getByTestId('mock-auggie-avatar');
-    expect(selectAgentProviderMock).toHaveBeenCalledOnce();
+    expectReadableAgentArg(selectAgentProviderMock, 'codex-agent');
     expect(avatar.parentElement?.classList.contains('opacity-30')).toBe(true);
     expect(document.querySelector('[data-icon="check"]')).toBeNull();
+  });
+
+  it('does not re-run provider lookup for same-agent state changes', async () => {
+    const { rerender } = render(AugieAvatarWithState, {
+      props: { agentId: 'codex-agent', state: 'completed' },
+    });
+
+    expect(selectAgentProviderMock).toHaveBeenCalledTimes(1);
+
+    await rerender({ agentId: 'codex-agent', state: 'running' });
+    await tick();
+
+    expect(selectAgentProviderMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates provider-derived completed checkmark when agentId changes on a mounted avatar', async () => {
+    const { rerender } = render(AugieAvatarWithState, {
+      props: { agentId: 'codex-agent', state: 'completed' },
+    });
+
+    expect(document.querySelector('[data-icon="check"]')).toBeNull();
+
+    await rerender({ agentId: 'auggie-agent', state: 'completed' });
+    await tick();
+
+    expect(document.querySelector('[data-icon="check"]')).not.toBeNull();
+    expect(selectAgentProviderMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the completed checkmark for auggie avatars', () => {

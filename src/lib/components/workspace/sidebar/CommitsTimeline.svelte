@@ -298,7 +298,7 @@
           gitCache.invalidate(`git-status-${workspaceId}`);
           await Promise.all([
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId)),
+            appStore.dispatch(refreshRequested(workspaceId, true)),
           ]);
           toast.success(wasPushed ? 'Commit message updated and pushed' : 'Commit message updated');
         } catch (error) {
@@ -458,7 +458,7 @@
               gitCache.invalidate(`git-status-${workspaceId}`);
               await Promise.all([
                 Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-                appStore.dispatch(refreshRequested(workspaceId)),
+                appStore.dispatch(refreshRequested(workspaceId, true)),
               ]);
               toast.success('Git status refreshed');
             },
@@ -494,7 +494,7 @@
         try {
           await Promise.all([
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId)),
+            appStore.dispatch(refreshRequested(workspaceId, true)),
           ]);
         } catch { /* Refresh failed but push succeeded */ }
       } else {
@@ -547,7 +547,7 @@
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
           Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-          appStore.dispatch(refreshRequested(workspaceId)),
+          appStore.dispatch(refreshRequested(workspaceId, true)),
         ]);
       } else {
         toast.error(result.error || 'Failed to undo push');
@@ -606,7 +606,7 @@
         gitCache.invalidate(`git-status-${workspaceId}`);
         Promise.all([
           Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-          appStore.dispatch(refreshRequested(workspaceId)),
+          appStore.dispatch(refreshRequested(workspaceId, true)),
         ]);
       } else {
         toast.error(result.error || 'Failed to undo commit');

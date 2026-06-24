@@ -320,7 +320,7 @@ export function* doLoadWorkspaceData(wsId: string): SagaGenerator<void> {
 // ---------------------------------------------------------------------------
 
 export function* handleRefresh(action: ReturnType<typeof refreshRequested>): SagaGenerator<void> {
-  const wsId = action.payload[0];
+  const [wsId, forceSync] = action.payload;
   if (!wsId) return;
   const refreshInProgress = yield* selectChangesRefreshInProgress.effect(wsId);
   if (refreshInProgress) {
@@ -330,19 +330,19 @@ export function* handleRefresh(action: ReturnType<typeof refreshRequested>): Sag
 
   yield* put(changesRefreshStarted(wsId));
   try {
-    yield* call(syncAndLoadWorkspaceData, wsId);
+    yield* call(syncAndLoadWorkspaceData, wsId, forceSync ?? false);
   } finally {
     yield* put(changesRefreshFinished(wsId));
     const refreshDirty = yield* selectChangesRefreshDirty.effect(wsId);
     if (refreshDirty) {
       yield* put(changesRefreshDirtyConsumed(wsId));
-      yield* put(refreshRequested(wsId));
+      yield* put(refreshRequested(wsId, false));
     }
   }
 }
 
-function* syncAndLoadWorkspaceData(wsId: string): SagaGenerator<void> {
-  yield* call(doSyncWithGit, wsId, true);
+function* syncAndLoadWorkspaceData(wsId: string, forceSync: boolean): SagaGenerator<void> {
+  yield* call(doSyncWithGit, wsId, forceSync);
   const currentWsId = yield* selectCurrentWorkspaceId.effect();
   if (currentWsId !== wsId) return;
   yield* call(doLoadWorkspaceData, wsId);
@@ -587,7 +587,7 @@ function* handleRevertChange(
     yield* call(invoke, 'git:discard', { workspaceId: wsId, paths: [filePath] });
     clearPendingState([changeId], [filePath]);
     // Fire-and-forget sync/load after successful revert.
-    yield* fork(syncAndLoadWorkspaceData, wsId);
+    yield* fork(syncAndLoadWorkspaceData, wsId, true);
   } catch (error) {
     logger.error('Failed to revert change', error as Error, { filePath });
     clearPendingState([changeId], [filePath]);
@@ -621,7 +621,7 @@ function* handleRevertChanges(
   try {
     yield* call(invoke, 'git:discard', { workspaceId: wsId, paths: filePaths });
     clearPendingState(changeIds, filePaths);
-    yield* fork(syncAndLoadWorkspaceData, wsId);
+    yield* fork(syncAndLoadWorkspaceData, wsId, true);
   } catch (error) {
     logger.error('Failed to revert changes', error as Error, { filePaths });
     clearPendingState(changeIds, filePaths);
@@ -649,7 +649,7 @@ function* handleRevertByPath(
       validPaths.forEach((path) => pendingStageOperationsByPath.add(path));
       yield* call(invoke, 'git:discard', { workspaceId: wsId, paths: validPaths });
       validPaths.forEach((path) => pendingStageOperationsByPath.delete(path));
-      yield* fork(syncAndLoadWorkspaceData, wsId);
+      yield* fork(syncAndLoadWorkspaceData, wsId, true);
     } catch (error) {
       logger.error('Failed to revert by path', error as Error, { filePaths: validPaths });
       validPaths.forEach((path) => pendingStageOperationsByPath.delete(path));

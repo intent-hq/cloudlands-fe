@@ -474,7 +474,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         try {
           await Promise.all([
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId)),
+            appStore.dispatch(refreshRequested(workspaceId, true)),
           ]);
         } catch (e) {
           console.warn('Failed to refresh stores after group commit:', e);
@@ -558,7 +558,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       }
       await Promise.all([
         Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-        appStore.dispatch(refreshRequested(workspaceId)),
+        appStore.dispatch(refreshRequested(workspaceId, true)),
       ]).catch(() => {});
     }
   }

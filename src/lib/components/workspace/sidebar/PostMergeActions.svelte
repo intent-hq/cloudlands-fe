@@ -122,7 +122,7 @@
           // Refresh all stores in parallel
           await Promise.all([
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId)),
+            appStore.dispatch(refreshRequested(workspaceId, true)),
           ]);
 
           // Also refresh aheadOfTrunk and isContentMergedToTrunk to ensure button hides itself

@@ -190,7 +190,7 @@ describe('changes operations saga open-file refresh bridge', () => {
       .silentRun(50);
   });
 
-  it('populates Redux-backed current and local changes from forced refresh with an initially empty workspace state', async () => {
+  it('populates Redux-backed current and local changes from automatic refresh without forcing sync', async () => {
     const modified = makeChange(PATH, { stats: { additions: 3, deletions: 1 } });
     const untracked = makeChange('src/new-file.ts', {
       id: 'change-src/new-file.ts',
@@ -210,6 +210,20 @@ describe('changes operations saga open-file refresh bridge', () => {
     expect(selectUnstagedWorkingChanges.select(storeState, WS_ID).map((c) => c.relativePath)).toEqual(expectedPaths);
     expect(selectCurrentUnstagedWorkingChanges.select(storeState).map((c) => c.relativePath)).toEqual(expectedPaths);
     expect(selectFileTrackingTotalChangesCount.select(storeState, WS_ID)).toBe(2);
+    expect(invokeWithTimeout).toHaveBeenCalledWith(
+      'file-tracking:sync',
+      { workspaceId: WS_ID, force: false },
+      30000,
+    );
+  });
+
+  it('preserves forced sync for explicit refresh requests', async () => {
+    mockSyncAndLoadResponse([]);
+
+    await expectSaga(handleRefresh, refreshRequested(WS_ID, true))
+      .withReducer(reduceStoreState, stateWithChanges())
+      .silentRun(100);
+
     expect(invokeWithTimeout).toHaveBeenCalledWith(
       'file-tracking:sync',
       { workspaceId: WS_ID, force: true },
@@ -259,7 +273,7 @@ describe('changes operations saga open-file refresh bridge', () => {
     await expectSaga(handleRefresh, refreshRequested(WS_ID))
       .withState(dirtyRefreshState)
       .put(changesRefreshDirtyConsumed(WS_ID))
-      .put(refreshRequested(WS_ID))
+      .put(refreshRequested(WS_ID, false))
       .silentRun(100);
   });
 
@@ -290,7 +304,7 @@ describe('changes operations saga open-file refresh bridge', () => {
 
     expect(source).toMatch(/changesSyncDirtyConsumed\(wsId\)[\s\S]{0,160}put\(syncWithGitRequested\(wsId, dirtyForce\)\)/);
     expect(source).toMatch(/changesLoadDirtyConsumed\(wsId\)[\s\S]{0,160}put\(loadWorkspaceDataRequested\(wsId\)\)/);
-    expect(source).toMatch(/changesRefreshDirtyConsumed\(wsId\)[\s\S]{0,160}put\(refreshRequested\(wsId\)\)/);
+    expect(source).toMatch(/changesRefreshDirtyConsumed\(wsId\)[\s\S]{0,160}put\(refreshRequested\(wsId, false\)\)/);
     expect(source).not.toMatch(/changesSyncDirtyConsumed\(wsId\)[\s\S]{0,160}call\(doSyncWithGit/);
     expect(source).not.toMatch(/changesLoadDirtyConsumed\(wsId\)[\s\S]{0,160}call\(doLoadWorkspaceData/);
     expect(source).not.toMatch(/changesRefreshDirtyConsumed\(wsId\)[\s\S]{0,160}call\(handleRefresh/);

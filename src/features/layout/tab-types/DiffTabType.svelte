@@ -291,7 +291,7 @@
       gitCache.invalidateWorkspace(workspaceId);
       appStore.dispatch(loadGitStatus(workspaceId, true));
       // Refresh file tracking to update the changes panel and diff viewer
-      appStore.dispatch(refreshRequested(workspaceId));
+      appStore.dispatch(refreshRequested(workspaceId, true));
     } else {
       toast.error(result.error || 'Failed to stage hunk');
     }
@@ -313,7 +313,7 @@
       gitCache.invalidateWorkspace(workspaceId);
       appStore.dispatch(loadGitStatus(workspaceId, true));
       // Refresh file tracking to update the changes panel and diff viewer
-      appStore.dispatch(refreshRequested(workspaceId));
+      appStore.dispatch(refreshRequested(workspaceId, true));
     } else {
       toast.error(result.error || 'Failed to unstage hunk');
     }

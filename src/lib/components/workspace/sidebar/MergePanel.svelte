@@ -218,7 +218,7 @@
         try {
           await Promise.all([
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId)),
+            appStore.dispatch(refreshRequested(workspaceId, true)),
           ]);
         } catch { /* Refresh failed but merge succeeded */ }
         if (result.result?.autoRebased && result.result?.newBaseSha) {
@@ -278,7 +278,7 @@
         try {
           await Promise.all([
             Promise.resolve(appStore.dispatch(loadGitStatus(workspaceId, true))),
-            appStore.dispatch(refreshRequested(workspaceId)),
+            appStore.dispatch(refreshRequested(workspaceId, true)),
             Promise.resolve(appStore.dispatch(refreshPRStatusRequested(workspaceId, true, false))),
           ]);
         } catch { /* Refresh failed but merge succeeded */ }

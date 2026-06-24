@@ -234,7 +234,7 @@ describe('handleWorkspaceChangesEvent', () => {
   it('requests a refresh for the active workspace', () => {
     testSaga(handleWorkspaceChangesEvent, 'ws-1', { workspaceId: 'ws-1' })
       .next()
-      .put(refreshRequested('ws-1'))
+      .put(refreshRequested('ws-1', false))
       .next()
       .isDone();
   });
@@ -260,7 +260,7 @@ describe('changes refresh triggers', () => {
       .next('ws-1')
       .select(selectChangesLastUpdatedAt.select, 'ws-1')
       .next(39_999)
-      .put(refreshRequested('ws-1'))
+      .put(refreshRequested('ws-1', false))
       .next()
       .isDone();
 
@@ -303,7 +303,7 @@ describe('changes refresh triggers', () => {
       .next('ws-1')
       .select(selectChangesLastUpdatedAt.select, 'ws-1')
       .next(39_999)
-      .put(refreshRequested('ws-1'))
+      .put(refreshRequested('ws-1', false))
       .next()
       .isDone();
 
@@ -370,7 +370,7 @@ describe('changes refresh triggers', () => {
   it('refreshes when file-tracking changes-updated fires for the active workspace', () => {
     testSaga(handleChangesUpdatedEvent, 'ws-1', { workspaceId: 'ws-1', changeCount: 2 })
       .next()
-      .put(refreshRequested('ws-1'))
+      .put(refreshRequested('ws-1', false))
       .next()
       .isDone();
   });
@@ -387,7 +387,7 @@ describe('changes refresh triggers', () => {
       filePath: 'src/app.ts',
     })
       .next()
-      .put(refreshRequested('ws-1'))
+      .put(refreshRequested('ws-1', false))
       .next()
       .isDone();
   });
@@ -421,9 +421,9 @@ describe('changes refresh triggers', () => {
     expect(source).not.toMatch(
       /handleWorkspaceChangesEvent[\s\S]{0,240}(doSyncWithGit|doLoadWorkspaceData)/,
     );
-    expect(source).toMatch(/handleChangesUpdatedEvent[\s\S]{0,240}put\(refreshRequested\(wsId\)\)/);
-    expect(source).toMatch(/handleAgentFileChangedEvent[\s\S]{0,240}put\(refreshRequested\(wsId\)\)/);
-    expect(source).toMatch(/handleWorkspaceChangesEvent[\s\S]{0,240}put\(refreshRequested\(wsId\)\)/);
+    expect(source).toMatch(/handleChangesUpdatedEvent[\s\S]{0,240}put\(refreshRequested\(wsId, false\)\)/);
+    expect(source).toMatch(/handleAgentFileChangedEvent[\s\S]{0,240}put\(refreshRequested\(wsId, false\)\)/);
+    expect(source).toMatch(/handleWorkspaceChangesEvent[\s\S]{0,240}put\(refreshRequested\(wsId, false\)\)/);
   });
 
   it('keeps approved automatic triggers routed through the 60-second freshness helper', () => {

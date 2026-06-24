@@ -7,7 +7,6 @@
 <script lang="ts">
   import AuggieAvatar from './AuggieAvatar.svelte';
   import { cn } from '$lib/utils.js';
-  import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import {
     faCheck,
@@ -19,6 +18,7 @@
   import type { AvatarState } from './avatar-state';
   import { isKnownNonAuggieProvider } from './non-auggie-agents';
   import type { BuiltinSpecialistId } from '$lib/constants/specialists';
+  import { writable } from 'svelte/store';
 
   interface Props {
     agentId: string;
@@ -49,9 +49,7 @@
     agentIdStore.set(agentId);
   });
   const agentProvider$ = selectAgentProvider(agentIdStore);
-  let hasProviderIcon = $derived(
-    Boolean(agentId) && isKnownNonAuggieProvider($agentProvider$),
-  );
+  let hasProviderIcon = $derived(isKnownNonAuggieProvider($agentProvider$));
 
 </script>
 

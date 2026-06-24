@@ -231,7 +231,7 @@ export const revertChangesRequested = createAction<[wsId: string, changes: Track
 export const revertByPathRequested = createAction<[wsId: string, filePaths: string[]]>(
   "changes/revertByPathRequested"
 );
-export const refreshRequested = createAction<[wsId: string]>(
+export const refreshRequested = createAction<[wsId: string, forceSync?: boolean]>(
   "changes/refreshRequested"
 );
 export const syncWithGitRequested = createAction<[wsId: string, force?: boolean]>(

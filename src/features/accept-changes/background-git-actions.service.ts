@@ -64,7 +64,7 @@ class BackgroundGitActionsService {
         // Refresh stores to update UI
         try {
           appStore.dispatch(loadGitStatus(workspaceId, true));
-          appStore.dispatch(refreshRequested(workspaceId));
+          appStore.dispatch(refreshRequested(workspaceId, true));
         } catch (refreshError) {
           // Refresh failed but commit succeeded - UI will update on next refresh
           logger.warn('Store refresh failed after commit', { refreshError });
@@ -135,7 +135,7 @@ class BackgroundGitActionsService {
 
         // Fire-and-forget refresh: let UI update reactively
         appStore.dispatch(loadGitStatus(workspaceId, true));
-        appStore.dispatch(refreshRequested(workspaceId));
+        appStore.dispatch(refreshRequested(workspaceId, true));
 
         return {
           success: true,

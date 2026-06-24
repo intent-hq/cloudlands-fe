@@ -36,7 +36,6 @@
     agentIdStore.set(agentId);
   });
   const agentIsThinking$ = selectAgentIsThinking(agentIdStore);
-  const agentProvider$ = selectAgentProvider(agentIdStore);
 
   // Ensure seeds are always strings to prevent flickering from undefined -> string transitions
   // Agent avatars use agentId for deterministic colors/faces; seed remains for non-agent previews.
@@ -44,8 +43,9 @@
   let stableColorSource = $derived(agentId || seed || 'default-color');
   let stableFaceSource = $derived(agentId || seed || 'default-face');
   let providerIconSize = $derived(size * (12.3 / 20));
-  let shouldRenderProviderIcon = $derived(
-    Boolean(agentId) && isKnownNonAuggieProvider($agentProvider$),
+  const agentProvider$ = selectAgentProvider(agentIdStore);
+  let providerIconId = $derived(
+    isKnownNonAuggieProvider($agentProvider$) ? $agentProvider$ : undefined,
   );
 
   // Create seeded random generator for face features
@@ -89,10 +89,9 @@
   class="inline-flex items-center justify-center relative shrink-0 {className}"
   style="min-width: {size}px; min-height: {size * (12.3 / 20)}px;"
 >
-  {#key agentId}
-  {#if shouldRenderProviderIcon && $agentProvider$}
+  {#if providerIconId}
     <ProviderIcon
-      providerId={$agentProvider$}
+      providerId={providerIconId}
       size={providerIconSize}
       class={$isDarkTheme ? 'text-gray-100' : 'text-gray-900'}
     />
@@ -222,7 +221,6 @@
       </div>
     </div>
   {/if}
-  {/key}
 </div>
 
 <style>
