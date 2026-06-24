@@ -1314,6 +1314,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   let viewedFiles = $state<Set<string>>(new Set());
   let viewedCount = $derived(viewedFiles.size);
   let totalFileCount = $derived(new Set(mergedChanges.map((c) => c.filePath)).size);
+  let totalAdditions = $derived(mergedChanges.reduce((sum, c) => sum + (c.additions ?? 0), 0));
+  let totalDeletions = $derived(mergedChanges.reduce((sum, c) => sum + (c.deletions ?? 0), 0));
 
   // Whether any committed changes exist (for showing the group-by-commit toggle)
   let hasCommittedChanges = $derived(
@@ -2508,16 +2510,17 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       <!-- Sticky summary bar: "N files changed" -->
       <div class="sticky top-0 z-20 -mx-5 px-5">
         <div class="flex items-center justify-between py-2 bg-background/95 backdrop-blur-sm border-b border-border">
-          <span class="text-xs font-medium text-subtle whitespace-nowrap">
-            {totalFileCount} file{totalFileCount === 1 ? '' : 's'} changed
+          <div class="flex items-center gap-1.5 text-xs font-medium text-subtle whitespace-nowrap">
+            <span>{totalFileCount} file{totalFileCount === 1 ? '' : 's'} changed</span>
+            <LineChangesBadge additions={totalAdditions} deletions={totalDeletions} size="xs" class="opacity-80" />
             {#if groupByCommit && commitCount > 0}
-              , {commitCount} commit{commitCount === 1 ? '' : 's'}
+              <span>, {commitCount} commit{commitCount === 1 ? '' : 's'}</span>
             {/if}
             {#if viewedCount > 0}
               <span class="text-subtle">·</span>
               <span>{viewedCount} viewed</span>
             {/if}
-          </span>
+          </div>
           <div class="flex items-center gap-2">
             {#if hasCommittedChanges && !commitInfo}
               <div class="flex items-center gap-0.5 rounded-md border border-border bg-muted/50 p-0.5 -my-1">
