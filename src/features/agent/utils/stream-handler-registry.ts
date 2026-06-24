@@ -24,6 +24,7 @@ export interface StreamHandlerInfo {
   workspaceId?: string;
   listenerId?: string;
   registeredAt?: number;
+  cleanup?: () => void;
 }
 
 export interface PingHandlerInfo {
@@ -215,6 +216,11 @@ export function cleanupStreamHandler(agentId: string): void {
   const storedHandler = activeStreamHandlers.get(agentId);
   if (storedHandler) {
     logger.info('Cleaning up stream handler', { agentId, channel: storedHandler.channel });
+    try {
+      storedHandler.cleanup?.();
+    } catch (e) {
+      logger.debug('Error running stream handler cleanup', { agentId, error: e });
+    }
     if (typeof window !== 'undefined' && window.electronAPI) {
       if (storedHandler.listenerId) {
         window.electronAPI.offById(storedHandler.channel, storedHandler.listenerId);
@@ -254,6 +260,14 @@ export function cleanupStreamHandler(agentId: string): void {
  * Clean up ALL stream state. Used by dispose() and forceClearCaches().
  */
 export function disposeAllStreamState(): void {
+  for (const [agentId, handler] of activeStreamHandlers.entries()) {
+    try {
+      handler.cleanup?.();
+    } catch (e) {
+      logger.debug('Error running stream handler cleanup', { agentId, error: e });
+    }
+  }
+
   // Clean up IPC stream handlers
   if (typeof window !== 'undefined' && window.electronAPI) {
     for (const [agentId, handler] of activeStreamHandlers.entries()) {

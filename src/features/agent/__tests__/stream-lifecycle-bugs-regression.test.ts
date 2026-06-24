@@ -186,13 +186,14 @@ describe('Stream lifecycle is a thin stream adapter', () => {
     const completeBranch = source.slice(completeIdx, statusIdx);
     const statusBranch = source.slice(statusIdx, errorIdx);
 
-    for (const branch of [chunkBranch, contentBlocksBranch, completeBranch]) {
+    for (const branch of [contentBlocksBranch, completeBranch]) {
       expect(branch).toContain('agentStreamUpdateReceived({');
       expect(branch).not.toContain('dispatchAgentStream(');
       expect(branch).not.toContain('upsertSession(');
       expect(branch).not.toContain('updateMessage(');
     }
-    expect(chunkBranch).toContain("eventType: 'chunk'");
+    expect(chunkBranch).toContain('chunkUpdateCoalescer.schedule(data)');
+    expect(source).toContain("eventType: 'chunk'");
     expect(contentBlocksBranch).toContain("eventType: 'content-blocks'");
     expect(completeBranch).toContain("eventType: 'complete'");
     expect(statusBranch).toContain('dispatchStreamStatusEvent({');
@@ -223,6 +224,7 @@ describe('Stream lifecycle is a thin stream adapter', () => {
       expect(branch).not.toContain('dispatchStreamStatusEvent({');
     }
     expect(restoredBody).not.toContain('dispatchAgentStream(');
+    expect(restoredBody).toContain('chunkUpdateCoalescer.schedule(data)');
     expect(restoredBody).toContain("emitStreamUpdate('chunk', data)");
     expect(restoredBody).toContain("emitStreamUpdate('content-blocks', data)");
     expect(restoredBody).toContain("emitStreamUpdate('complete', data)");

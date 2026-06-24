@@ -18,6 +18,8 @@ import {
 const mocks = vi.hoisted(() => ({
   reduxDispatch: vi.fn(),
   ipcHandlers: [] as Array<{ channel: string; handler: (data: any) => void }>,
+  rafCallbacks: new Map<number, (timestamp: number) => void>(),
+  nextRafId: 1,
 }));
 
 vi.mock(
@@ -130,6 +132,7 @@ vi.mock('../utils/streaming-invariants', () => ({
 }));
 
 import { invoke } from '$lib/electron-bridge';
+import { buildOrderedContentBlocks } from '$shared/utils/content-block-utils';
 import { errorBoundary } from '../browser';
 import { errorRecovery } from '../browser/services/error-recovery.service';
 import {
@@ -138,6 +141,7 @@ import {
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { ensureStreamHandler, sendMessage } from '../agent-stream-lifecycle';
 import {
+  cleanupStreamHandler,
   cleanupPreviousHmrState,
   disposeAllStreamState,
   persistForHmr,
@@ -145,6 +149,8 @@ import {
 
 function setupWindow() {
   mocks.ipcHandlers = [];
+  mocks.rafCallbacks.clear();
+  mocks.nextRafId = 1;
   (global as any).window = {
     electronAPI: {
       on: vi.fn((channel: string, handler: (data: any) => void) => {
@@ -160,14 +166,32 @@ function setupWindow() {
     dispatchEvent: vi.fn(),
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
+    requestAnimationFrame: vi.fn((callback: (timestamp: number) => void) => {
+      const id = mocks.nextRafId++;
+      mocks.rafCallbacks.set(id, callback);
+      return id;
+    }),
+    cancelAnimationFrame: vi.fn((id: number) => {
+      mocks.rafCallbacks.delete(id);
+    }),
   };
+  (global as any).requestAnimationFrame = (global as any).window.requestAnimationFrame;
+  (global as any).cancelAnimationFrame = (global as any).window.cancelAnimationFrame;
+}
+
+function flushAnimationFrames() {
+  const callbacks = Array.from(mocks.rafCallbacks.values());
+  mocks.rafCallbacks.clear();
+  for (const callback of callbacks) callback(Date.now());
 }
 
 describe('Agent Stream Lifecycle Integration', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.clearAllMocks();
     mocks.reduxDispatch.mockClear();
     setupWindow();
+    vi.mocked(buildOrderedContentBlocks).mockClear();
     vi.mocked(errorBoundary.wrap).mockImplementation((fn: any) => fn());
     vi.mocked(errorRecovery.executeWithRecovery).mockImplementation(async (operation: any) => ({
       success: true,
@@ -185,10 +209,12 @@ describe('Agent Stream Lifecycle Integration', () => {
   afterEach(() => {
     disposeAllStreamState();
     vi.useRealTimers();
+    delete (global as any).requestAnimationFrame;
+    delete (global as any).cancelAnimationFrame;
     delete (global as any).window;
   });
 
-  it('restored chunk handling dispatches only the canonical agent stream update', () => {
+  it('restored chunk handling coalesces canonical agent stream updates until animation frame', () => {
     ensureStreamHandler('agent-1', {
       workspaceId: 'ws-1',
       assistantAppMessageId: 'app-msg-1',
@@ -198,6 +224,10 @@ describe('Agent Stream Lifecycle Integration', () => {
     )?.handler;
 
     streamHandler?.({ type: 'chunk', data: 'Hello', streamId: 'stream-1' });
+    streamHandler?.({ type: 'chunk', data: ' world', streamId: 'stream-1' });
+
+    expect(mocks.reduxDispatch).not.toHaveBeenCalled();
+    flushAnimationFrames();
 
     expect(window.dispatchEvent).not.toHaveBeenCalled();
     expect(mocks.reduxDispatch.mock.calls.map(([action]) => action.type)).toEqual([
@@ -208,9 +238,110 @@ describe('Agent Stream Lifecycle Integration', () => {
       workspaceId: 'ws-1',
       agentId: 'agent-1',
       handlerSessionId: 'agent-1',
-      chunk: 'Hello',
+      chunk: 'Hello world',
       source: 'restored',
       streamId: 'stream-1',
+    });
+    expect(buildOrderedContentBlocks).toHaveBeenCalledWith([], 'Hello world');
+  });
+
+  it('restored completion flushes a pending chunk before the complete update', () => {
+    ensureStreamHandler('agent-flush', {
+      workspaceId: 'ws-1',
+      assistantAppMessageId: 'app-msg-flush',
+    });
+    const streamHandler = mocks.ipcHandlers.find(
+      (entry) => entry.channel === 'agent:stream:agent-flush',
+    )?.handler;
+
+    streamHandler?.({ type: 'chunk', data: 'Hello', streamId: 'stream-flush' });
+    streamHandler?.({
+      type: 'complete',
+      streamId: 'stream-flush',
+      finishReason: 'end_turn',
+      message: { id: 'msg-flush', appMessageId: 'app-msg-flush' },
+    });
+
+    const payloads = mocks.reduxDispatch.mock.calls.map(([action]) => action.payload[0]);
+    expect(payloads.map((payload) => payload.eventType)).toEqual(['chunk', 'complete']);
+    expect(payloads[0]).toMatchObject({ chunk: 'Hello', streamId: 'stream-flush' });
+    expect(window.cancelAnimationFrame).toHaveBeenCalled();
+    flushAnimationFrames();
+    expect(mocks.reduxDispatch).toHaveBeenCalledTimes(2);
+  });
+
+  it('restored cleanup cancels a pending coalesced chunk without dispatching it', () => {
+    ensureStreamHandler('agent-cleanup', {
+      workspaceId: 'ws-1',
+      assistantAppMessageId: 'app-msg-cleanup',
+    });
+    const streamHandler = mocks.ipcHandlers.find(
+      (entry) => entry.channel === 'agent:stream:agent-cleanup',
+    )?.handler;
+
+    streamHandler?.({ type: 'chunk', data: 'stale', streamId: 'stream-cleanup' });
+    cleanupStreamHandler('agent-cleanup');
+    flushAnimationFrames();
+
+    expect(window.cancelAnimationFrame).toHaveBeenCalled();
+    expect(mocks.reduxDispatch).not.toHaveBeenCalled();
+  });
+
+  it('restored content-block events flush pending text before preserving ordered blocks', () => {
+    ensureStreamHandler('agent-tool', {
+      workspaceId: 'ws-1',
+      assistantAppMessageId: 'app-msg-tool',
+    });
+    const streamHandler = mocks.ipcHandlers.find(
+      (entry) => entry.channel === 'agent:stream:agent-tool',
+    )?.handler;
+    const toolBlock = { type: 'tool_use', id: 'tool-1', name: 'read', input: {} };
+
+    streamHandler?.({ type: 'chunk', data: 'Before tool', streamId: 'stream-tool' });
+    streamHandler?.({ type: 'content-blocks', data: [toolBlock], streamId: 'stream-tool' });
+
+    const payloads = mocks.reduxDispatch.mock.calls.map(([action]) => action.payload[0]);
+    expect(payloads.map((payload) => payload.eventType)).toEqual(['chunk', 'content-blocks']);
+    expect(vi.mocked(buildOrderedContentBlocks).mock.calls[1][0]).toEqual([
+      { type: 'text', content: 'Before tool', sequence: 0 },
+      { type: 'block', content: toolBlock, sequence: 1 },
+    ]);
+  });
+
+  it('sendMessage chunk handling coalesces fast chunks until animation frame', async () => {
+    const session = {
+      id: 'agent-send',
+      name: 'Agent Send',
+      status: 'active',
+      activationState: 'active',
+      model: 'default',
+      messages: [],
+      metadata: {},
+    };
+    vi.mocked(restoreAgentSessionRequested).mockImplementation((...payload: any[]) => ({
+      type: 'workspaceAgents/restoreAgentSessionRequested',
+      payload,
+      promise: Promise.resolve(session),
+    }));
+    vi.mocked(invoke).mockResolvedValue({ success: true });
+
+    await sendMessage('agent-send', 'Hello', { id: 'ws-1', path: '/tmp/ws' } as any);
+    const streamHandler = mocks.ipcHandlers.find(
+      (entry) => entry.channel === 'agent:stream:agent-send',
+    )?.handler;
+    mocks.reduxDispatch.mockClear();
+
+    streamHandler?.({ type: 'chunk', data: 'A', streamId: 'stream-send' });
+    streamHandler?.({ type: 'chunk', data: 'B', streamId: 'stream-send' });
+
+    expect(mocks.reduxDispatch).not.toHaveBeenCalled();
+    flushAnimationFrames();
+    expect(mocks.reduxDispatch).toHaveBeenCalledTimes(1);
+    expect(mocks.reduxDispatch.mock.calls[0][0].payload[0]).toMatchObject({
+      source: 'sendMessage',
+      eventType: 'chunk',
+      chunk: 'AB',
+      streamId: 'stream-send',
     });
   });
 

@@ -35,6 +35,63 @@ export interface ChatFileChangeSummary {
   totalDeletions: number;
 }
 
+let nextMemoObjectId = 1;
+const memoObjectIds = new WeakMap<object, number>();
+
+function getMemoObjectId(value: object): number {
+  let id = memoObjectIds.get(value);
+  if (!id) {
+    id = nextMemoObjectId++;
+    memoObjectIds.set(value, id);
+  }
+  return id;
+}
+
+function getMemoValueKey(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string')
+    return `s:${value.length}:${value.slice(0, 16)}:${value.slice(-16)}`;
+  if (typeof value !== 'object') return `${typeof value}:${String(value)}`;
+
+  if (Array.isArray(value)) return `a:${getMemoObjectId(value)}:${value.length}`;
+
+  const keys = Object.keys(value).sort();
+  return `o:${getMemoObjectId(value)}:${keys.map((key) => `${key}=${getMemoValueKey((value as Record<string, unknown>)[key])}`).join(',')}`;
+}
+
+/**
+ * Cheap stable key for memoizing per-message file change extraction during streaming.
+ * Text-only chunks are ignored; only tool calls/results and failure indicators can change it.
+ */
+export function getFileChangesFromMessageMemoKey(message: AgentMessage): string {
+  const parts = [`message:${message.id || ''}:${message.appMessageId || ''}:${message.role}`];
+
+  for (const call of message.toolCalls || []) {
+    parts.push(`call:${call.id}:${call.status || ''}:${call.error || ''}`);
+  }
+
+  for (const result of message.toolResults || []) {
+    parts.push(
+      `result:${result.toolCallId}:${result.isError ? '1' : '0'}:${getMemoValueKey(result.content)}`,
+    );
+  }
+
+  for (const [index, block] of (message.contentBlocks || []).entries()) {
+    if (block.type === 'tool_use') {
+      const metadata = block.metadata as Record<string, unknown> | undefined;
+      parts.push(
+        `use:${index}:${block.id || ''}:${block.tool_use_id || ''}:${block.toolCallId || ''}:${metadata?.toolId || ''}:${block.name || ''}:${block.toolName || ''}:${getMemoValueKey(block.input)}:${getMemoValueKey(metadata?.toolInput)}`,
+      );
+    } else if (block.type === 'tool_result') {
+      parts.push(
+        `result-block:${index}:${block.id || ''}:${block.tool_use_id || ''}:${block.toolCallId || ''}:${block.is_error ? '1' : '0'}:${block.isError ? '1' : '0'}:${getMemoValueKey(block.content || block.text)}`,
+      );
+    }
+  }
+
+  return parts.join('|');
+}
+
 /**
  * Check if tool result content indicates a tool execution failure
  * This catches cases where is_error flag wasn't explicitly set but the content

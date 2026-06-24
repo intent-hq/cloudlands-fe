@@ -11,19 +11,20 @@
   import { faFile } from '@fortawesome/free-regular-svg-icons';
   import type { AgentMessage } from '$shared/types';
   import {
-  getFileChangesFromMessages,
-  getFileChangesFromMessage,
-  type ChatFileChangeSummary,
-} from '$lib/utils/get-file-changes-from-messages';
+    getFileChangesFromMessages,
+    getFileChangesFromMessage,
+    getFileChangesFromMessageMemoKey,
+    type ChatFileChangeSummary,
+  } from '$lib/utils/get-file-changes-from-messages';
 
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
-  openWorkspaceChatChanges,
-  type JsonValue,
-} from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
+    openWorkspaceChatChanges,
+    type JsonValue,
+  } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { store as appStore } from '$store/renderer/store';
 
-interface Props {
+  interface Props {
     /** Single message to show changes for (per-turn mode) */
     message?: AgentMessage;
     /** All messages to show aggregate changes (aggregate mode) */
@@ -45,16 +46,38 @@ interface Props {
     messages,
     suffix,
     isAggregate = false,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isStreaming = false,
     agentId,
     turnNumber,
   }: Props = $props();
 
+  function createMessageSummaryMemo() {
+    let lastKey: string | undefined;
+    let lastWasStreaming = false;
+    let lastSummary: ChatFileChangeSummary = {
+      changes: [],
+      totalFiles: 0,
+      totalAdditions: 0,
+      totalDeletions: 0,
+    };
+
+    return (nextMessage: AgentMessage, nextIsStreaming: boolean) => {
+      const nextKey = getFileChangesFromMessageMemoKey(nextMessage);
+      if (nextKey !== lastKey || (lastWasStreaming && !nextIsStreaming)) {
+        lastKey = nextKey;
+        lastSummary = getFileChangesFromMessage(nextMessage);
+      }
+      lastWasStreaming = nextIsStreaming;
+      return lastSummary;
+    };
+  }
+
+  const getMemoizedMessageSummary = createMessageSummaryMemo();
+
   // Compute file changes
   let summary: ChatFileChangeSummary = $derived.by(() => {
     if (message) {
-      return getFileChangesFromMessage(message);
+      return getMemoizedMessageSummary(message, isStreaming);
     } else if (messages) {
       return getFileChangesFromMessages(messages);
     }

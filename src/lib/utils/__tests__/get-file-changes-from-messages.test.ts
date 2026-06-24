@@ -1,9 +1,8 @@
+import { describe, it, expect } from 'vitest';
 import {
-  describe,
-  it,
-  expect,
-} from 'vitest';
-import { getFileChangesFromMessage } from '../get-file-changes-from-messages';
+  getFileChangesFromMessage,
+  getFileChangesFromMessageMemoKey,
+} from '../get-file-changes-from-messages';
 import type { AgentMessage } from '$shared/types';
 
 function makeAssistantMessage(blocks: any[]): AgentMessage {
@@ -14,6 +13,42 @@ function makeAssistantMessage(blocks: any[]): AgentMessage {
 }
 
 describe('getFileChangesFromMessage', () => {
+  describe('getFileChangesFromMessageMemoKey', () => {
+    it('ignores text-only streaming changes', () => {
+      const before = makeAssistantMessage([
+        { type: 'text', text: 'hello' },
+        { type: 'tool_use', id: 'tool-1', name: 'str_replace_editor', input: { path: 'a.ts' } },
+      ]);
+      const after = makeAssistantMessage([
+        { type: 'text', text: 'hello world' },
+        {
+          type: 'tool_use',
+          id: 'tool-1',
+          name: 'str_replace_editor',
+          input: before.contentBlocks?.[1].input,
+        },
+      ]);
+
+      expect(getFileChangesFromMessageMemoKey(after)).toBe(
+        getFileChangesFromMessageMemoKey(before),
+      );
+    });
+
+    it('changes when tool blocks or results change', () => {
+      const before = makeAssistantMessage([
+        { type: 'tool_use', id: 'tool-1', name: 'str_replace_editor', input: { path: 'a.ts' } },
+      ]);
+      const after = makeAssistantMessage([
+        { type: 'tool_use', id: 'tool-1', name: 'str_replace_editor', input: { path: 'a.ts' } },
+        { type: 'tool_result', tool_use_id: 'tool-1', is_error: true, content: 'failed' },
+      ]);
+
+      expect(getFileChangesFromMessageMemoKey(after)).not.toBe(
+        getFileChangesFromMessageMemoKey(before),
+      );
+    });
+  });
+
   describe('str_replace_editor with command: create', () => {
     it('extracts file creation from str_replace_editor create command', () => {
       const fileContent = 'const x = 1;\nconst y = 2;\nexport { x, y };\n';
@@ -198,4 +233,3 @@ describe('getFileChangesFromMessage', () => {
     });
   });
 });
-

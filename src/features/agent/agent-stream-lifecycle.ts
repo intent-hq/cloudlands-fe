@@ -68,6 +68,10 @@ const logger = createLogger('AgentStreamLifecycle');
 
 type ReduxAction = { type: string; payload?: unknown };
 
+type ScheduledFrame =
+  | { type: 'raf'; id: number }
+  | { type: 'timeout'; id: ReturnType<typeof setTimeout> };
+
 type StreamStatusData = {
   phase: string;
   message: string;
@@ -77,6 +81,81 @@ type StreamStatusData = {
 
 function dispatchRedux(action: ReduxAction): void {
   appStore.dispatch(action as any);
+}
+
+function scheduleNextFrame(callback: () => void): ScheduledFrame {
+  const requestFrame =
+    typeof globalThis.requestAnimationFrame === 'function'
+      ? globalThis.requestAnimationFrame.bind(globalThis)
+      : typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+        ? window.requestAnimationFrame.bind(window)
+        : undefined;
+
+  if (requestFrame) {
+    return { type: 'raf', id: requestFrame(() => callback()) };
+  }
+
+  return { type: 'timeout', id: setTimeout(callback, 0) };
+}
+
+function cancelScheduledFrame(frame: ScheduledFrame): void {
+  if (frame.type === 'raf') {
+    const cancelFrame =
+      typeof globalThis.cancelAnimationFrame === 'function'
+        ? globalThis.cancelAnimationFrame.bind(globalThis)
+        : typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function'
+          ? window.cancelAnimationFrame.bind(window)
+          : undefined;
+
+    cancelFrame?.(frame.id);
+    return;
+  }
+
+  clearTimeout(frame.id);
+}
+
+function createChunkUpdateCoalescer(emitChunkUpdate: (data: StreamHandlerData) => void): {
+  schedule: (data: StreamHandlerData) => void;
+  flush: () => void;
+  cancel: () => void;
+} {
+  let pendingFrame: ScheduledFrame | undefined;
+  let pendingChunkText = '';
+  let latestChunkData: StreamHandlerData | undefined;
+
+  const flush = () => {
+    if (pendingFrame) {
+      cancelScheduledFrame(pendingFrame);
+      pendingFrame = undefined;
+    }
+    if (!latestChunkData) return;
+
+    const data = { ...latestChunkData, data: pendingChunkText };
+    pendingChunkText = '';
+    latestChunkData = undefined;
+    emitChunkUpdate(data);
+  };
+
+  const cancel = () => {
+    if (pendingFrame) {
+      cancelScheduledFrame(pendingFrame);
+      pendingFrame = undefined;
+    }
+    pendingChunkText = '';
+    latestChunkData = undefined;
+  };
+
+  return {
+    schedule(data) {
+      pendingChunkText += data.data || '';
+      latestChunkData = data;
+      if (!pendingFrame) {
+        pendingFrame = scheduleNextFrame(flush);
+      }
+    },
+    flush,
+    cancel,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -428,6 +507,9 @@ function registerStreamHandlerForSession(
       }),
     );
   };
+  const chunkUpdateCoalescer = createChunkUpdateCoalescer((data) =>
+    emitStreamUpdate('chunk', data),
+  );
 
   const streamHandler = (data: StreamHandlerData) => {
     chunkCount++;
@@ -446,6 +528,7 @@ function registerStreamHandlerForSession(
     // Detect new stream ID and reset state
     if (data.streamId && data.streamId !== currentStreamId) {
       if (currentStreamId !== undefined) {
+        chunkUpdateCoalescer.flush();
         logger.info('Stream ID changed - resetting accumulated state', {
           agentId,
           oldStreamId: currentStreamId,
@@ -471,8 +554,9 @@ function registerStreamHandlerForSession(
     try {
       if (data.type === 'chunk') {
         textBuffer += data.data || '';
-        emitStreamUpdate('chunk', data);
+        chunkUpdateCoalescer.schedule(data);
       } else if (data.type === 'content-blocks' && Array.isArray(data.data)) {
+        chunkUpdateCoalescer.flush();
         if (textBuffer) {
           orderedItems.push({ type: 'text', content: textBuffer, sequence: orderedItems.length });
           textBuffer = '';
@@ -518,6 +602,7 @@ function registerStreamHandlerForSession(
 
         emitStreamUpdate('content-blocks', data);
       } else if (data.type === 'complete') {
+        chunkUpdateCoalescer.flush();
         if (textBuffer) {
           orderedItems.push({ type: 'text', content: textBuffer, sequence: orderedItems.length });
           textBuffer = '';
@@ -540,6 +625,7 @@ function registerStreamHandlerForSession(
         });
       } else if (data.type === 'error') {
         logger.error('Stream error from restored handler', { agentId, error: data.data });
+        chunkUpdateCoalescer.flush();
         emitStreamUpdate('error', data);
         streamRegistry.cleanupStreamHandler(agentId);
       }
@@ -558,6 +644,7 @@ function registerStreamHandlerForSession(
     workspaceId: resolvedWorkspaceId ? String(resolvedWorkspaceId) : undefined,
     listenerId: streamListenerId,
     registeredAt: Date.now(),
+    cleanup: chunkUpdateCoalescer.cancel,
   });
 
   // Register the IPC heartbeat ping handler so backend-initiated streams
@@ -829,8 +916,7 @@ export async function sendMessage(
                       sessionId: session.id,
                     });
 
-                    // CRITICAL: Flush any pending batched updates first
-                    // No batching needed - updates are immediate
+                    flushPendingChunkUpdate();
 
                     dispatchRedux(
                       agentStreamUpdateReceived({
@@ -863,6 +949,26 @@ export async function sendMessage(
                   const orderedItems: StreamOrderedItem[] = [];
                   let hasReceivedFirstChunk = false; // Track if we've received the first text chunk
                   let chunkCount = 0; // Track total number of handler calls
+                  const emitChunkUpdate = (data: StreamHandlerData) => {
+                    dispatchRedux(
+                      agentStreamUpdateReceived({
+                        workspaceId: workspace.id,
+                        agentId,
+                        handlerSessionId,
+                        source: 'sendMessage',
+                        eventType: 'chunk',
+                        assistantMessageId,
+                        assistantAppMessageId,
+                        contentBlocks: buildOrderedContentBlocks(orderedItems, flatstr(textBuffer)),
+                        chunk: data.data,
+                        streamId: data.streamId,
+                      }),
+                    );
+                  };
+                  const chunkUpdateCoalescer = createChunkUpdateCoalescer(emitChunkUpdate);
+                  function flushPendingChunkUpdate(): void {
+                    chunkUpdateCoalescer.flush();
+                  }
                   const streamHandler = (data: StreamHandlerData) => {
                     chunkCount++;
 
@@ -891,22 +997,9 @@ export async function sendMessage(
 
                         // Accumulate text in buffer
                         textBuffer += data.data || '';
-
-                        dispatchRedux(
-                          agentStreamUpdateReceived({
-                            workspaceId: workspace.id,
-                            agentId,
-                            handlerSessionId,
-                            source: 'sendMessage',
-                            eventType: 'chunk',
-                            assistantMessageId,
-                            assistantAppMessageId,
-                            contentBlocks: buildOrderedContentBlocks(orderedItems, flatstr(textBuffer)),
-                            chunk: data.data,
-                            streamId: data.streamId,
-                          }),
-                        );
+                        chunkUpdateCoalescer.schedule(data);
                       } else if (data.type === 'content-blocks' && Array.isArray(data.data)) {
+                        flushPendingChunkUpdate();
                         // When blocks arrive, we need to flush any accumulated text first
                         // to preserve the correct ordering of content
 
@@ -1023,7 +1116,7 @@ export async function sendMessage(
                             streamChannel,
                           });
 
-                          // No batching in refactored service - updates are direct
+                          flushPendingChunkUpdate();
 
                           // Flush any remaining text buffer
                           if (textBuffer) {
@@ -1138,6 +1231,7 @@ export async function sendMessage(
                         );
                         errorHandler.track(error);
                         logger.error('Stream error', { agentId, error: data.data });
+                        flushPendingChunkUpdate();
 
                         // Track that renderer received the agent error outcome
                         track('Agent Outcome Received', {
@@ -1249,6 +1343,7 @@ export async function sendMessage(
                     workspaceId: workspace.id,
                     listenerId: streamListenerId,
                     registeredAt: Date.now(),
+                    cleanup: chunkUpdateCoalescer.cancel,
                   });
 
                   // FIX: sendMessage's handler is now registered — allow the global
@@ -1437,6 +1532,7 @@ export async function sendMessage(
                       agentId,
                       hasStoredHandler: streamRegistry.hasStreamHandler(agentId),
                     });
+                    flushPendingChunkUpdate();
                     streamRegistry.cleanupStreamHandler(agentId);
                     throw error;
                   }
