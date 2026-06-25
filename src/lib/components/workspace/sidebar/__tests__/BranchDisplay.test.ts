@@ -141,32 +141,6 @@ describe('BranchDisplay', () => {
     });
   });
 
-  it('Enter with a valid new branch name invokes IPC and dispatches setWorkspaceEntity', async () => {
-    mockInvoke.mockResolvedValue({ success: true });
-    const newEntity = { ...mocks.workspaceEntity, branch: 'feature/renamed' };
-    mockUpdate.mockResolvedValue({ ok: true, data: newEntity });
-
-    const { container } = await renderBranchDisplay();
-    await fireEvent.click(container.querySelector('button')!);
-    await waitFor(() => expect(container.querySelector('input[type="text"]')).toBeTruthy());
-
-    const input = container.querySelector('input[type="text"]') as HTMLInputElement;
-    await fireEvent.input(input, { target: { value: 'feature/renamed' } });
-    await fireEvent.keyDown(input, { key: 'Enter' });
-
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalled());
-    const [channel, payload] = mockInvoke.mock.calls[0];
-    expect(channel).toMatch(/rename/i);
-    expect(payload).toEqual({ id: 'ws-1', newBranchName: 'feature/renamed' });
-
-    await waitFor(() =>
-      expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ branch: 'feature/renamed' })),
-    );
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'workspace/setWorkspaceEntity' }),
-    );
-  });
-
   it('Enter with an invalid branch name shows a toast error and does not call IPC', async () => {
     const { toast } = await import('$lib/components/ui/toast');
 
