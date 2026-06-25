@@ -8,3 +8,4 @@
 import "./workspaces-seeder";
 import "./agents-seeder";
 import "./notes-seeder";
+import "./files-git-seeder";

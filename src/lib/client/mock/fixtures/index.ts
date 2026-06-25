@@ -9,6 +9,8 @@
 import {
   AgentStatus,
   ContentType,
+  GitFileStatus,
+  LineType,
   NoteVisibility,
   WorkspaceStatus,
   createAgentId,
@@ -19,11 +21,18 @@ import type {
   AgentMessage,
   AgentSession,
   ContentBlock,
+  DiffChunk,
+  FileGitStatus,
+  FileNode,
+  FileStatus,
   GitStatus,
   Note,
   Workspace,
   WorkspaceTask,
 } from "$shared/types";
+import { ChangeStage } from "$features/file-tracking/types";
+import type { CommitInfo, TrackedChange } from "$features/file-tracking/types";
+import type { PrStatusSummary } from "../../app-client";
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
 import type { CommentV2 } from "$features/comments/comment-types-v2";
 import type { TerminalTab } from "$store/renderer/slices/terminals/terminals-slice";
@@ -106,14 +115,22 @@ export const mockWorkspaceRecentViews: Record<string, number> = {
   [MOCK_WORKSPACE_ID_3]: Date.parse("2025-12-28T16:20:00.000Z"),
 };
 
+/** Working-tree file statuses for the dark-mode workspace (ws-mock-1). */
+const mockGitFiles: FileStatus[] = [
+  { path: "src/lib/theme.ts", status: GitFileStatus.Added, staged: true },
+  { path: "src/lib/ThemeToggle.svelte", status: GitFileStatus.Added, staged: true },
+  { path: "src/routes/settings/+page.svelte", status: GitFileStatus.Modified, staged: false },
+  { path: "src/lib/theme.test.ts", status: GitFileStatus.Untracked, staged: false },
+];
+
 export const mockGitStatus: GitStatus = {
-  branch: "mock/main",
-  ahead: 0,
+  branch: "feat/dark-mode-toggle",
+  ahead: 2,
   behind: 0,
   diverged: false,
-  files: [],
-  hasUncommittedChanges: false,
-  hasUntrackedFiles: false,
+  files: mockGitFiles,
+  hasUncommittedChanges: true,
+  hasUntrackedFiles: true,
 };
 
 // ============================================================================
@@ -459,4 +476,143 @@ export const mockChatHistory: Record<string, ContentBlock[]> = {
 export const mockTokenUsage: Record<string, { input: number; output: number }> = {
   [MOCK_AGENT_ID]: { input: 1280, output: 640 },
   [MOCK_AGENT_ID_2]: { input: 420, output: 210 },
+};
+
+// ============================================================================
+// Files, git, changes & PR
+// ============================================================================
+
+/** Absolute root path of the dark-mode workspace (matches mockWorkspaces[0].path). */
+export const MOCK_WORKSPACE_PATH = "/mock/web-app/ws-mock-1";
+
+function dir(name: string, path: string, children: FileNode[]): FileNode {
+  return { name, path, type: "directory", children };
+}
+
+function file(name: string, path: string, size: number): FileNode {
+  return { name, path, type: "file", size, modified: ISO };
+}
+
+/** Deterministic file tree for the dark-mode workspace. */
+export const mockFileTree: FileNode = dir("ws-mock-1", MOCK_WORKSPACE_PATH, [
+  dir("src", `${MOCK_WORKSPACE_PATH}/src`, [
+    dir("lib", `${MOCK_WORKSPACE_PATH}/src/lib`, [
+      file("theme.ts", `${MOCK_WORKSPACE_PATH}/src/lib/theme.ts`, 1180),
+      file("theme.test.ts", `${MOCK_WORKSPACE_PATH}/src/lib/theme.test.ts`, 860),
+      file("ThemeToggle.svelte", `${MOCK_WORKSPACE_PATH}/src/lib/ThemeToggle.svelte`, 1520),
+    ]),
+    dir("routes", `${MOCK_WORKSPACE_PATH}/src/routes`, [
+      dir("settings", `${MOCK_WORKSPACE_PATH}/src/routes/settings`, [
+        file("+page.svelte", `${MOCK_WORKSPACE_PATH}/src/routes/settings/+page.svelte`, 2040),
+      ]),
+    ]),
+  ]),
+  file("package.json", `${MOCK_WORKSPACE_PATH}/package.json`, 640),
+  file("README.md", `${MOCK_WORKSPACE_PATH}/README.md`, 410),
+]);
+
+/** Git status keyed by workspace-relative path, for the file-explorer overlay. */
+export const mockFileGitStatusMap: Record<string, FileGitStatus> = {
+  "src/lib/theme.ts": { status: "A ", additions: 48, deletions: 0 },
+  "src/lib/ThemeToggle.svelte": { status: "A ", additions: 62, deletions: 0 },
+  "src/lib/theme.test.ts": { status: "??", additions: 34, deletions: 0 },
+  "src/routes/settings/+page.svelte": { status: " M", additions: 12, deletions: 3 },
+};
+
+/** Unified diffs surfaced by the git diff panel. */
+export const mockGitDiffs: DiffChunk[] = [
+  {
+    file: "src/routes/settings/+page.svelte",
+    chunks: [
+      {
+        oldStart: 18,
+        oldLines: 4,
+        newStart: 18,
+        newLines: 7,
+        lines: [
+          { type: LineType.Context, content: "  <section class=\"appearance\">", oldNumber: 18, newNumber: 18 },
+          { type: LineType.Deletion, content: "    <h2>Appearance</h2>", oldNumber: 19 },
+          { type: LineType.Addition, content: "    <h2>Appearance</h2>", newNumber: 19 },
+          { type: LineType.Addition, content: "    <ThemeToggle bind:value={theme} />", newNumber: 20 },
+          { type: LineType.Addition, content: "    <p class=\"hint\">Choose light or dark mode.</p>", newNumber: 21 },
+          { type: LineType.Context, content: "  </section>", oldNumber: 20, newNumber: 22 },
+        ],
+      },
+    ],
+  },
+];
+
+/** Tracked changes surfaced by the changes panel. */
+export const mockTrackedChanges: TrackedChange[] = [
+  {
+    id: "change-mock-1",
+    file: `${MOCK_WORKSPACE_PATH}/src/lib/theme.ts`,
+    relativePath: "src/lib/theme.ts",
+    stage: ChangeStage.Staged,
+    stats: { additions: 48, deletions: 0 },
+    status: "added",
+    attribution: { manual: false, timestamp: Date.parse("2026-01-01T09:02:00.000Z") },
+  },
+  {
+    id: "change-mock-2",
+    file: `${MOCK_WORKSPACE_PATH}/src/lib/ThemeToggle.svelte`,
+    relativePath: "src/lib/ThemeToggle.svelte",
+    stage: ChangeStage.Staged,
+    stats: { additions: 62, deletions: 0 },
+    status: "added",
+    attribution: { manual: false, timestamp: Date.parse("2026-01-01T09:03:00.000Z") },
+  },
+  {
+    id: "change-mock-3",
+    file: `${MOCK_WORKSPACE_PATH}/src/routes/settings/+page.svelte`,
+    relativePath: "src/routes/settings/+page.svelte",
+    stage: ChangeStage.Unstaged,
+    stats: { additions: 12, deletions: 3 },
+    status: "modified",
+    attribution: { manual: true, timestamp: Date.parse("2026-01-02T13:40:00.000Z") },
+  },
+];
+
+/** Commit boundary SHA for the changes timeline. */
+export const mockCommitBoundarySha = "a1b2c3d4";
+
+/** Commit history surfaced by the changes panel. */
+export const mockCommits: CommitInfo[] = [
+  {
+    hash: "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432",
+    message: "Add theme toggle component and theme store",
+    author: "Dark mode toggle",
+    authorEmail: "agent@example.com",
+    timestamp: Date.parse("2026-01-01T09:05:00.000Z"),
+    date: "2026-01-01T09:05:00.000Z",
+    files: [
+      { path: "src/lib/theme.ts", additions: 48, deletions: 0, status: "added" },
+      { path: "src/lib/ThemeToggle.svelte", additions: 62, deletions: 0, status: "added" },
+    ],
+    filesChanged: 2,
+    stage: "pushed",
+    isPushed: true,
+    agentId: String(MOCK_AGENT_ID),
+    linkedNoteId: String(MOCK_TASK_NOTE_ID_1),
+  },
+  {
+    hash: "1a2b3c4d5e6f70819203a4b5c6d7e8f901234567",
+    message: "Wire toggle into the settings page",
+    author: "Alex",
+    authorEmail: "alex@example.com",
+    timestamp: Date.parse("2026-01-02T13:50:00.000Z"),
+    date: "2026-01-02T13:50:00.000Z",
+    files: [
+      { path: "src/routes/settings/+page.svelte", additions: 12, deletions: 3, status: "modified" },
+    ],
+    filesChanged: 1,
+    stage: "local",
+  },
+];
+
+/** Pull-request summary surfaced by the git domain. */
+export const mockPrStatusSummary: PrStatusSummary = {
+  prNumber: 42,
+  url: "https://github.com/acme/web-app/pull/42",
+  state: "open",
 };

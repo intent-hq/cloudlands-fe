@@ -72,14 +72,24 @@ export class MockAppClient implements AppClient {
   readonly files: AppClient["files"] = {
     list: async () => [],
     read: async () => null,
-    explorerTree: async () => [],
+    explorerTree: async (workspaceId) =>
+      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockFileTree : null,
+    gitStatusMap: async (workspaceId) =>
+      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockFileGitStatusMap : {},
     subscribe: (handler) => emitOnce(handler, []),
   };
 
   readonly git: AppClient["git"] = {
     status: async () => fx.mockGitStatus,
     changes: async () => fx.mockGitStatus,
-    prStatus: async () => null,
+    diffs: async (workspaceId) =>
+      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockGitDiffs : [],
+    trackedChanges: async (workspaceId) =>
+      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockTrackedChanges : [],
+    commits: async (workspaceId) =>
+      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockCommits : [],
+    prStatus: async (workspaceId) =>
+      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockPrStatusSummary : null,
     subscribe: (handler) => emitOnce(handler, fx.mockGitStatus),
   };
 

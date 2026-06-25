@@ -14,11 +14,15 @@ import type {
   AgentSession,
   ContentBlock,
   CreateWorkspaceRequest,
+  DiffChunk,
+  FileGitStatus,
+  FileNode,
   GitStatus,
   Note,
   Workspace,
   WorkspaceTask,
 } from "$shared/types";
+import type { CommitInfo, TrackedChange } from "$features/file-tracking/types";
 import type { WorkspaceEvent } from "$features/events/types";
 import type { TerminalTab } from "$store/renderer/slices/terminals/terminals-slice";
 import type { ScriptWithState } from "$store/renderer/slices/scripts/scripts-types";
@@ -129,13 +133,19 @@ export interface SettingsClient {
 export interface FilesClient {
   list(workspaceId: string): Promise<FileContentEntry[]>;
   read(workspaceId: string, path: string): Promise<FileContentEntry | null>;
-  explorerTree(workspaceId: string): Promise<string[]>;
+  /** Root node of the workspace file tree, or `null` when no tree is available. */
+  explorerTree(workspaceId: string): Promise<FileNode | null>;
+  /** Per-file git status keyed by workspace-relative path, for the explorer overlay. */
+  gitStatusMap(workspaceId: string): Promise<Record<string, FileGitStatus>>;
   subscribe(handler: SubscriptionHandler<FileContentEntry[]>): Unsubscribe;
 }
 
 export interface GitClient {
   status(workspaceId: string): Promise<GitStatus | null>;
   changes(workspaceId: string): Promise<GitStatus | null>;
+  diffs(workspaceId: string): Promise<DiffChunk[]>;
+  trackedChanges(workspaceId: string): Promise<TrackedChange[]>;
+  commits(workspaceId: string): Promise<CommitInfo[]>;
   prStatus(workspaceId: string): Promise<PrStatusSummary | null>;
   subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe;
 }
