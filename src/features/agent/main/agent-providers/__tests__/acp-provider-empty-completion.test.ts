@@ -20,9 +20,9 @@ import {
 } from 'vitest';
 import {
   combineReducers,
-  legacy_createStore as createStore,
-  type Store,
-} from 'redux';
+  createStoreCore as createStore,
+  type StoreCore as Store,
+} from '$lib/store-shim/internal/store-core';
 import { messageAccumulatorReducer } from '../../../../../store/main/slices/message-accumulator/message-accumulator-slice';
 
 let testStore: Store;

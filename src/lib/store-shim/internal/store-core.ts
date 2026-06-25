@@ -39,8 +39,8 @@ const compose = (...fns: Array<(arg: any) => any>): ((arg: any) => any) => {
  */
 export const createStoreCore = (
   rootReducer: (state: any, action: any) => any,
-  preloadedState: any,
-  middlewares: StoreMiddleware[],
+  preloadedState?: any,
+  middlewares: StoreMiddleware[] = [],
 ): StoreCore => {
   let state = rootReducer(preloadedState, INIT_ACTION);
   const listeners = new Set<() => void>();

@@ -1,13 +1,13 @@
-import type { Middleware, UnknownAction } from "redux";
+import type { GenericAction, StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 
 import type { StoreTarget } from "./types";
 
-type StoreTaggedAction = UnknownAction & {
+type StoreTaggedAction = GenericAction & {
   type: string;
   __store?: StoreTarget;
 };
 
-export const createStoreGuardMiddleware = (expectedTarget: StoreTarget): Middleware => {
+export const createStoreGuardMiddleware = (expectedTarget: StoreTarget): StoreMiddleware => {
    
   return (_store) => (next) => (action) => {
     const taggedAction = action as StoreTaggedAction;

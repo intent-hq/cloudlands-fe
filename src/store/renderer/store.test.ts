@@ -80,8 +80,8 @@ describe("configured app Store", () => {
 
     expect(reducers).not.toHaveProperty("storeUtility");
     expect(registeredReducers).not.toHaveProperty("storeUtility");
-    expect(registeredReducers).toHaveProperty("@internal_storeUtility");
-    expect(registeredReducers).toHaveProperty("@internal_sagaManager");
+    expect(registeredReducers).not.toHaveProperty("@internal_storeUtility");
+    expect(registeredReducers).not.toHaveProperty("@internal_sagaManager");
 
     for (const [name, reducer] of Object.entries(reducers)) {
       expect(registeredReducers[name]).toBe(reducer);

@@ -1,5 +1,26 @@
 # State Management Guide
 
+> **Architecture update — Redux and the saga runtime have been removed.**
+> The `redux`, `redux-saga`, `typed-redux-saga`, and `@augmentcode/ag-redux-toolkit`
+> packages are no longer dependencies. The in-use toolkit subpaths
+> (`.../svelte-store`, `.../types`, `.../utils/store/create-action`,
+> `.../utils/store/create-reducer`, `.../utils/store/boolean-preference`,
+> `.../utils/collections/collection-utils`) now resolve to a local, redux/saga-free
+> shim at `src/lib/store-shim/`. The shim is wired through aliases in
+> `tsconfig.json`, `tsconfig.main.json`, `tsconfig.preload.json`, `vite.config.mjs`,
+> and `vitest.config.ts`; the main/preload bundles additionally rewrite the
+> specifiers to the emitted shim in `scripts/fix-esm-imports.ts`. Slice/selector
+> source keeps importing the `@augmentcode/ag-redux-toolkit/...` specifiers
+> unchanged — only resolution changed.
+>
+> The app is now mock-driven via the `AppClient` (`src/lib/client/`). The saga
+> runtime no longer exists: `startAllAppSagas`, `startAllMainSagas`, and
+> `store.runSaga(sagaFn)` no longer start anything (the Store's `runSaga` is a
+> no-op), and `selector.effect(...)` throws. Use `selector.select(state, ...args)`
+> for one-shot reads and the configured Store's `dispatch` for writes. References
+> below to saga registries, `store.runSaga`, and the real npm package describe the
+> historical architecture and are retained only for context.
+
 This is the project entrypoint for state-management orientation. Active Redux
 architecture rules live in the agent skills, not in this companion doc:
 

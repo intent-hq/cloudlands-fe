@@ -80,6 +80,32 @@ export default defineConfig(async () => {
         $store: path.resolve(__dirname, './src/store'),
         $features: path.resolve(__dirname, './src/features'),
         $shared: path.resolve(__dirname, './src/shared'),
+        // App-local redux/saga-free shim for the in-use ag-redux-toolkit subpaths.
+        // Keeps tests resolving to the shim instead of the removed npm package.
+        '@augmentcode/ag-redux-toolkit/types': path.resolve(
+          __dirname,
+          './src/lib/store-shim/types.ts',
+        ),
+        '@augmentcode/ag-redux-toolkit/svelte-store': path.resolve(
+          __dirname,
+          './src/lib/store-shim/svelte-store.ts',
+        ),
+        '@augmentcode/ag-redux-toolkit/utils/store/create-action': path.resolve(
+          __dirname,
+          './src/lib/store-shim/utils/store/create-action.ts',
+        ),
+        '@augmentcode/ag-redux-toolkit/utils/store/create-reducer': path.resolve(
+          __dirname,
+          './src/lib/store-shim/utils/store/create-reducer.ts',
+        ),
+        '@augmentcode/ag-redux-toolkit/utils/store/boolean-preference': path.resolve(
+          __dirname,
+          './src/lib/store-shim/utils/store/boolean-preference.ts',
+        ),
+        '@augmentcode/ag-redux-toolkit/utils/collections/collection-utils': path.resolve(
+          __dirname,
+          './src/lib/store-shim/utils/collections/collection-utils.ts',
+        ),
         $app: path.resolve(__dirname, './src/__mocks__/$app'),
         // Test-only stub: avoid resolving the real monaco-editor (heavy and ESM-export sensitive)
         'monaco-editor': path.resolve(__dirname, './src/__mocks__/monaco-editor'),

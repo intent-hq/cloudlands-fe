@@ -235,12 +235,6 @@ jobs:
           node-version: '24'
       - name: workspace:* dispatcher gate
         run: node scripts/check-workspace-event-dispatchers.mjs
-      - name: saga selector hygiene gate
-        env:
-          SAGA_SELECTOR_HYGIENE_BASE: origin/${{ github.base_ref }}
-        run: node scripts/check-saga-selector-hygiene.mjs
-      - name: saga panel-layout-adapter bypass gate
-        run: node scripts/check-saga-adapter-bypass.mjs
 
   gate:
     name: Type Check & Test

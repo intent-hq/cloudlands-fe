@@ -32,6 +32,17 @@ triggers:
 ---
 # ag-redux-toolkit skill router
 
+> **Runtime status — the `@augmentcode/ag-redux-toolkit`, `redux`, `redux-saga`,
+> and `typed-redux-saga` packages have been removed from this app.** The in-use
+> toolkit subpaths now resolve to a local redux/saga-free shim at
+> `src/lib/store-shim/` (via `tsconfig*.json` / `vite.config.mjs` /
+> `vitest.config.ts` aliases and `scripts/fix-esm-imports.ts` for main/preload).
+> The saga runtime is gone: `store.runSaga(sagaFn)` is a no-op, `startAllAppSagas`
+> / `startAllMainSagas` no longer start anything, and `selector.effect(...)`
+> throws — use `selector.select(state, ...args)` and `store.dispatch(action)`.
+> The action/reducer/selector/collection APIs below still apply; saga-runtime and
+> StreamingStore-engine guidance is historical context for this app.
+
 Use this repository root skill first when choosing package guidance. Its job isrouting only: load `./setup/SKILL.md` for first-time app setup, load the family that matches the environment and touched code path,then load the leaf skills named by that family. Do not treat this file as areplacement index for `./setup/`, `./core/`, `./svelte/`, or `./streaming/`.
 
 > This package uses a CUSTOM Redux setup — not Redux Toolkit (RTK). Do not usecreateSlice, configureStore, createAsyncThunk, or any RTK API.

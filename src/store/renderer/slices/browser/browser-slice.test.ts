@@ -5,8 +5,8 @@ import {
 } from "vitest";
 import {
   combineReducers,
-  createStore,
-} from "redux";
+  createStoreCore as createStore,
+} from "$lib/store-shim/internal/store-core";
 import {
   browserReducer,
   browserTabZoomRequested,

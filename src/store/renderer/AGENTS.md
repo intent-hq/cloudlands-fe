@@ -1,6 +1,20 @@
 # Redux Store — Agent Directives
 
-Use these rules when creating or editing code in `src/store/renderer/` so Redux state stays serializable, normalized, and saga-driven.
+> **Architecture update — Redux and the saga runtime have been removed.**
+> The `redux`, `redux-saga`, `typed-redux-saga`, `redux-saga-test-plan`, and
+> `@augmentcode/ag-redux-toolkit` packages are no longer installed. The in-use
+> toolkit subpaths now resolve to a local, redux/saga-free shim at
+> `src/lib/store-shim/` (aliased in `tsconfig*.json`, `vite.config.mjs`, and
+> `vitest.config.ts`; rewritten for main/preload by `scripts/fix-esm-imports.ts`).
+> Keep importing the `@augmentcode/ag-redux-toolkit/...` specifiers as before —
+> only resolution changed. The app is mock-driven via `AppClient`. There is no
+> saga runtime: `store.runSaga(sagaFn)` is a no-op, `startAllAppSagas` no longer
+> starts anything, and `selector.effect(...)` throws. Use
+> `selector.select(state, ...args)` for reads and `store.dispatch(action)` for
+> writes. Saga-specific guidance below (sections referencing `selector.effect`,
+> saga files, and `redux-saga-test-plan`) is historical context only.
+
+Use these rules when creating or editing code in `src/store/renderer/` so Redux state stays serializable and normalized.
 
 ## Source of Truth
 

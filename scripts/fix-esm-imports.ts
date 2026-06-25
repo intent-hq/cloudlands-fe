@@ -73,6 +73,26 @@ export async function fixImports(options: FixImportsOptions = {}) {
       },
     );
 
+    // Rewrite the removed `@augmentcode/ag-redux-toolkit/<subpath>` package
+    // specifiers to the local store-shim emitted under dist/lib/store-shim. tsc
+    // resolves these to the shim via tsconfig paths but leaves the specifier
+    // untouched in the emitted JS, so they must be rewritten to relative paths.
+    content = content.replace(
+      /from\s+(['"])@augmentcode\/ag-redux-toolkit\/([^'"]+)\1/g,
+      (match, quote, subpath) => {
+        modified = true;
+        return `from ${quote}${getAliasImportPath(file, distDir, 'lib', `store-shim/${subpath}`)}${quote}`;
+      },
+    );
+
+    content = content.replace(
+      /import\(\s*(['"])@augmentcode\/ag-redux-toolkit\/([^'"]+)\1\s*\)/g,
+      (match, quote, subpath) => {
+        modified = true;
+        return `import(${quote}${getAliasImportPath(file, distDir, 'lib', `store-shim/${subpath}`)}${quote})`;
+      },
+    );
+
     // Only add .js extensions for JavaScript files, not TypeScript declaration files
     const isDeclarationFile = file.endsWith('.d.ts');
 

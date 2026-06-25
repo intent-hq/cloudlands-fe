@@ -1,4 +1,4 @@
-import type { Middleware } from "redux";
+import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 
 function isPrimitive(value: unknown): value is string | number | bigint | boolean | symbol | null | undefined {
   return value === null || (typeof value !== "object" && typeof value !== "function");
@@ -137,7 +137,7 @@ function getLogLabelStyle(label: "prev state" | "action" | "next state" | "state
  * Logger middleware - logs dispatched actions and state changes.
  * Only active when debug flag is enabled in localStorage.
  */
-export function createLoggerMiddleware(_webviewName?: string): Middleware {
+export function createLoggerMiddleware(_webviewName?: string): StoreMiddleware {
   if (!hasLoggedWelcomeMessage) {
     hasLoggedWelcomeMessage = true;
 

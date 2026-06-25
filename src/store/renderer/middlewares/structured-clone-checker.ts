@@ -1,4 +1,4 @@
-import type { Middleware } from "redux";
+import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 
 const MAX_DEPTH = 15;
 
@@ -78,7 +78,7 @@ const CHECK_INTERVAL_MS = 500;
  *
  * Each offending path is reported at most once per session.
  */
-export function createStructuredCloneCheckerMiddleware(): Middleware {
+export function createStructuredCloneCheckerMiddleware(): StoreMiddleware {
   const pendingActionTypes: string[] = [];
   const pendingChangedKeys = new Set<string>();
   const reportedPaths = new Set<string>();

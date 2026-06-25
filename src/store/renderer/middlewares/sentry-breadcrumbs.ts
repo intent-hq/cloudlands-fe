@@ -1,4 +1,4 @@
-import type { Middleware } from "redux";
+import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 
 type EventWithBreadcrumbs = { breadcrumbs?: Array<unknown> };
 
@@ -146,7 +146,7 @@ export function __resetReduxActionBreadcrumbsBufferForTests(): void {
  * called (typically from Sentry's `beforeSend` hook). No formatting happens on
  * the dispatch path.
  */
-export function createSentryBreadcrumbsMiddleware(): Middleware {
+export function createSentryBreadcrumbsMiddleware(): StoreMiddleware {
    
   return (_store) => (next) => (action) => {
     try {

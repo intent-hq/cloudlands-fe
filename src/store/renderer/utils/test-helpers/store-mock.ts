@@ -1,5 +1,3 @@
-import { select } from "typed-redux-saga";
-
 type AppStoreMockOptions = {
   state?: unknown | (() => unknown);
   dispatch?: (...args: any[]) => unknown;
@@ -40,7 +38,11 @@ export const createAppStoreMock = ({
         (...args: any[]) => readable(() => selectorFunc(appStore.state, ...args)),
         {
           select: selectorFunc,
-          effect: (...args: any[]) => select(selectorFunc, ...args),
+          effect: function* (..._args: any[]): Generator<any, any, any> {
+            throw new Error(
+              "selector.effect is unavailable: the saga runtime has been removed.",
+            );
+          },
           withStore: (storeSource: StoreReadableStateSource) =>
             (...args: any[]) => readable(() => selectorFunc(storeSource.state ?? appStore.state, ...args)),
         },

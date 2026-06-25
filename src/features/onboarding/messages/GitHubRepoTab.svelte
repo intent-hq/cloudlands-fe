@@ -9,9 +9,9 @@
    * The owner/repo input drives two things at once:
    *   1. A client-side filter over the cached list of the user's own repos
    *      (zero network per keystroke).
-   *   2. A debounced global search dispatch. The `githubRepoSearchSaga` uses
-   *      typed-redux-saga's `debounce(300ms, ...)` effect so rapid keystrokes
-   *      coalesce into a single network round-trip and the latest query wins.
+   *   2. A debounced global search dispatch. The search side effect debounces
+   *      at ~300ms so rapid keystrokes coalesce into a single network
+   *      round-trip and the latest query wins.
    *
    * Components never call IPC directly, per `src/store/renderer/AGENTS.md`.
    */
@@ -213,10 +213,10 @@
       onGithubUrlChange('');
     }
 
-    // Global GitHub search — the saga debounces at 300ms via typed-redux-saga's
-    // `debounce` effect, so we can dispatch freely on every keystroke. Short
-    // queries are short-circuited inside the saga, which means an empty input
-    // also tidies up the search slice without any extra logic here.
+    // Global GitHub search — the search side effect debounces at 300ms, so we
+    // can dispatch freely on every keystroke. Short queries are short-circuited
+    // downstream, which means an empty input also tidies up the search slice
+    // without any extra logic here.
     appStore.dispatch(searchGithubRepos(cleaned));
   }
 

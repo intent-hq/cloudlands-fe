@@ -1,5 +1,4 @@
 import { derived, readable, type Readable } from 'svelte/store';
-import { select } from 'typed-redux-saga';
 import { areStoreUpdatesLocked, createCachedSelector } from './cached-selector.js';
 import type { StoreSelector, StoreSelectorCallback } from '../types';
 
@@ -71,7 +70,11 @@ export const createSelectorFromReadableState = <R, ARGS extends any[] = [], TSta
     (...args: any[]) =>
       boundSelector(resolveReadableState(store), ...args);
   readableSelector.select = selectorFunc;
-  readableSelector.effect = (...args: any[]) => select(selectorFunc as any, ...args);
+  readableSelector.effect = function* (..._args: any[]): Generator<any, any, any> {
+    throw new Error(
+      'selector.effect is unavailable: the saga runtime has been removed. Use selector.select(state, ...args) instead.',
+    );
+  };
 
   return readableSelector as StoreSelector<R, ARGS, TState>;
 };

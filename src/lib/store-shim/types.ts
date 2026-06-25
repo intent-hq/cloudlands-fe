@@ -1,5 +1,11 @@
 import { Readable } from 'svelte/store';
-import { SagaGenerator } from 'typed-redux-saga';
+
+/**
+ * Redux-free stand-in for the saga generator return type the toolkit used to
+ * expose. The saga runtime has been removed, so this only preserves the
+ * selector `.effect` type surface without depending on the saga engine.
+ */
+export type SagaGenerator<R = any> = Generator<any, R, any>;
 
 export type StoreAction<PL = undefined> = {
   type: string;
