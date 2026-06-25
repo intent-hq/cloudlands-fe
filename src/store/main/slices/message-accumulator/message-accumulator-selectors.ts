@@ -2,7 +2,7 @@
  * Message Accumulator Selectors (Main Process)
  */
 
-import { store } from '../../configured-store';
+import { createMainSelector } from '../../create-main-selector';
 import type { ContentBlock } from '../../../../shared/types';
 import { buildOrderedContentBlocks } from '../../../../shared/utils/content-block-utils';
 import type { AccumulatorStats, SerializedAccumulatedMessage } from './message-accumulator-types';
@@ -12,12 +12,12 @@ import { EMPTY_STATS } from './message-accumulator-types';
 // Individual accumulator
 // ---------------------------------------------------------------------------
 
-export const selectAccumulator = store.createSelector<
+export const selectAccumulator = createMainSelector<
   [sessionId: string],
   SerializedAccumulatedMessage | undefined
 >((state, sessionId) => state.messageAccumulator.accumulators[sessionId]);
 
-export const selectPartialContent = store.createSelector<
+export const selectPartialContent = createMainSelector<
   [sessionId: string],
   { content: string; contentBlocks: ContentBlock[] }
 >((state, sessionId) => {
@@ -41,15 +41,15 @@ export const selectPartialContent = store.createSelector<
 // Collection queries
 // ---------------------------------------------------------------------------
 
-export const selectActiveSessionIds = store.createSelector<[], string[]>((state) =>
+export const selectActiveSessionIds = createMainSelector<[], string[]>((state) =>
   Object.keys(state.messageAccumulator.accumulators),
 );
 
-export const selectAccumulatorStats = store.createSelector<[], AccumulatorStats>(
+export const selectAccumulatorStats = createMainSelector<[], AccumulatorStats>(
   (state) => state.messageAccumulator.stats ?? EMPTY_STATS,
 );
 
-export const selectHasAccumulator = store.createSelector<[sessionId: string], boolean>(
+export const selectHasAccumulator = createMainSelector<[sessionId: string], boolean>(
   (state, sessionId) => sessionId in state.messageAccumulator.accumulators,
 );
 

@@ -93,10 +93,8 @@ describe("agent-subscriptions selectors", () => {
   });
 
   describe("selectWorkspaceSubscriptionState", () => {
-    it("exposes the StreamingStore direct-call lifecycle helpers", () => {
-      expect(typeof selectWorkspaceSubscriptionState).toBe("function");
-      expect(typeof selectWorkspaceSubscriptionState.withStore).toBe("function");
-      expect(() => selectWorkspaceSubscriptionState("ws-1")).toThrow();
+    it("exposes a plain select() helper", () => {
+      expect(typeof selectWorkspaceSubscriptionState.select).toBe("function");
     });
 
     it("returns emptyWorkspaceSubscriptionState for missing workspace", () => {

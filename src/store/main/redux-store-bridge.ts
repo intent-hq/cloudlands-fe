@@ -1,55 +1,37 @@
 /**
- * Main-process Redux store bridge.
+ * Main-process store bridge (neutralized).
  *
- * Main-process-only bridge for global access to the
- * configured main-process StreamingStore after initialization.
+ * The main-process Redux StreamingStore has been removed. These functions are
+ * retained as no-ops so main-process services that historically dispatched
+ * actions or read state continue to type-check; in the mock-driven app the
+ * renderer never relies on real main-process state.
  */
 
-import type { MainStore, MainStoreState } from "./types";
+import type { MainStoreState } from "./types";
 
 type MainAction = { type: string };
 
-let storeBridge: MainStore | null = null;
+/** No-op: there is no main-process store to wire up anymore. */
+export function initMainStoreBridge(_store?: unknown): void {}
 
 /**
- * Initialize the main store bridge. Called once by `initMainStore()`.
+ * The main-process Redux store has been removed. Retained for API
+ * compatibility; callers should not depend on a real store instance.
  */
-export function initMainStoreBridge(store: MainStore): void {
-  if (storeBridge) {
-    throw new Error("Main Redux store bridge already initialized.");
-  }
-  storeBridge = store;
+export function getMainStore(): never {
+  throw new Error("Main-process Redux store has been removed.");
 }
 
-/**
- * Get the configured main-process StreamingStore. Throws if not yet initialized.
- */
-export function getMainStore(): MainStore {
-  if (!storeBridge) {
-    throw new Error("Main Redux store bridge not initialized. Call initMainStore() first.");
-  }
-
-  return storeBridge;
-}
-
-/**
- * Shortcut for `getMainStore().state`.
- */
+/** Returns an empty state snapshot; no main-process store exists. */
 export function getMainState(): MainStoreState {
-  return getMainStore().state as MainStoreState;
+  return {} as MainStoreState;
 }
 
-/**
- * Shortcut for `getMainStore().dispatch(action)`.
- */
-export const mainDispatch = <A extends MainAction>(action: A): A => {
-  return getMainStore().dispatch(action as never) as A;
-};
+/** No-op dispatch: returns the action unchanged. */
+export const mainDispatch = <A extends MainAction>(action: A): A => action;
 
 /**
- * Reset the bridge (for testing only).
+ * No-op test-only reset retained for API compatibility.
  * @internal
  */
-export function _resetMainStoreBridge(): void {
-  storeBridge = null;
-}
+export function _resetMainStoreBridge(): void {}

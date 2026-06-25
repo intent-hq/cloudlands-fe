@@ -1,16 +1,16 @@
 /**
  * Selectors for the workspace-events slice.
  *
- * Selectors are created from the configured main-process StreamingStore.
- * Passing RendererStoreState is a compile error.
+ * Plain selectors invoked with an explicit main-process state snapshot.
  */
 
-import { store } from "../../configured-store";
+import { createMainSelector } from "../../create-main-selector";
+import type { MainStoreState } from "../../types";
 import type { WorkspaceEventState } from "./types";
 import { emptyWorkspaceEventState } from "./types";
 import type { WorkspaceEvent } from "../../../../features/events/types";
 
-type MainSelectorState = typeof store.state;
+type MainSelectorState = MainStoreState;
 
 // ---------------------------------------------------------------------------
 // Workspace-level
@@ -31,21 +31,21 @@ const getWs = (state: MainSelectorState, wsId: string): WorkspaceEventState => {
 // ---------------------------------------------------------------------------
 
 /** Get the recent events buffer for a workspace */
-export const selectRecentEvents = store.createSelector(
+export const selectRecentEvents = createMainSelector(
   (state, workspaceId: string): WorkspaceEvent[] => {
     return getWs(state, workspaceId).recentEvents;
   },
 );
 
 /** Get total event count for a workspace */
-export const selectEventCount = store.createSelector(
+export const selectEventCount = createMainSelector(
   (state, workspaceId: string): number => {
     return getWs(state, workspaceId).eventCount;
   },
 );
 
 /** Filter events by type for a workspace */
-export const selectEventsByType = store.createSelector(
+export const selectEventsByType = createMainSelector(
   (state, workspaceId: string, type: string): WorkspaceEvent[] => {
     return getWs(state, workspaceId).recentEvents.filter((e) => e.type === type);
   },

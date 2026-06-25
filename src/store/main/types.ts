@@ -1,16 +1,15 @@
-import type {
-  PreloadedStoreState as ToolkitPreloadedStoreState,
-  StoreState as ToolkitStoreState,
-} from "@augmentcode/ag-redux-toolkit/types";
-
 import type { reducers } from "./reducer";
-import type { store as configuredStore } from "./configured-store";
 import type { __storeTarget } from "../utils/types";
 
 export type MainReducersMap = typeof reducers;
 
-export type MainStore = typeof configuredStore;
-
-export type MainStoreState = ToolkitStoreState<MainStore> & { readonly [__storeTarget]: "main" };
-
-export type PreloadedMainStoreState = ToolkitPreloadedStoreState<MainStoreState>;
+/**
+ * Plain shape of the (now removed) main-process Redux state.
+ *
+ * The StreamingStore that previously owned this state has been removed; the type
+ * is retained so the slice selectors and the main-process services that read it
+ * continue to type-check against the slice reducer return shapes.
+ */
+export type MainStoreState = {
+  readonly [K in keyof MainReducersMap]: ReturnType<MainReducersMap[K]>;
+} & { readonly [__storeTarget]: "main" };

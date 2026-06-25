@@ -1,20 +1,12 @@
 /**
- * Persistence saga for workspace events.
+ * Workspace-event persistence helpers.
  *
- * On `workspaceEventAccepted`, persists the event to JSONL via EventStore.
- * Sanitization is handled internally by EventStore.add().
- *
- * Uses EventStore as a pure I/O utility — one instance per workspace,
- * cached at module level to avoid duplicate file handles.
+ * Provides the EventStore cache used to persist workspace events to JSONL.
+ * The saga that wired this into the main-process Redux store has been removed;
+ * these remain as plain helpers consumed directly by event/workspace services.
  */
 
-import {
-  call,
-  cancelled,
-  takeEvery,
-} from "typed-redux-saga";
 import type { WorkspaceEvent } from "../../../../../features/events/types";
-import { workspaceEventAccepted } from "../workspace-events-slice";
 
 // ---------------------------------------------------------------------------
 // EventStore access — dynamic import to keep test bundles clean
@@ -91,30 +83,5 @@ export async function deleteEventStoreForWorkspace(workspaceId: string): Promise
   }
 
   eventStoreCache.delete(workspaceId);
-}
-
-// ---------------------------------------------------------------------------
-// Saga handlers
-// ---------------------------------------------------------------------------
-
-export function* handlePersistEvent(action: ReturnType<typeof workspaceEventAccepted>) {
-  const [event] = action.payload;
-  yield* call(persistEvent, event);
-}
-
-// ---------------------------------------------------------------------------
-// Root persistence saga
-// ---------------------------------------------------------------------------
-
-export function* workspaceEventsPersistenceSaga() {
-  try {
-    yield* takeEvery(workspaceEventAccepted, handlePersistEvent);
-  } finally {
-    if (yield* cancelled()) {
-      // Dispose (flush pending writes) rather than just clearing the cache,
-      // so buffered events are persisted on app shutdown.
-      yield* call(disposeAllEventStores);
-    }
-  }
 }
 

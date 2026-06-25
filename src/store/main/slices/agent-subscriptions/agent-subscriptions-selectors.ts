@@ -1,11 +1,10 @@
 /**
  * Selectors for the agent-subscriptions slice.
  *
- * Selectors are created from the configured main-process StreamingStore.
- * Passing RendererStoreState is a compile error.
+ * Plain selectors invoked with an explicit main-process state snapshot.
  */
 
-import { store } from "../../configured-store";
+import { createMainSelector } from "../../create-main-selector";
 import type {
   WorkspaceSubscriptionState,
   AgentSubscriptionRecord,
@@ -20,7 +19,7 @@ import { emptyWorkspaceSubscriptionState } from "./types";
 // Workspace-level
 // ---------------------------------------------------------------------------
 
-export const selectWorkspaceSubscriptionState = store.createSelector(
+export const selectWorkspaceSubscriptionState = createMainSelector(
   (state, wsId: string): WorkspaceSubscriptionState => {
     const slice = state?.agentSubscriptions;
     return slice.byWorkspaceId[wsId] ?? emptyWorkspaceSubscriptionState;
@@ -31,21 +30,21 @@ export const selectWorkspaceSubscriptionState = store.createSelector(
 // Subscriptions
 // ---------------------------------------------------------------------------
 
-export const selectSubscription = store.createSelector(
+export const selectSubscription = createMainSelector(
   (state, wsId: string, subId: string): AgentSubscriptionRecord | undefined => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return ws.subscriptions[subId];
   },
 );
 
-export const selectAgentSubscriptions = store.createSelector(
+export const selectAgentSubscriptions = createMainSelector(
   (state, wsId: string, agentId: string): AgentSubscriptionRecord[] => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return Object.values(ws.subscriptions).filter((sub) => sub.agentId === agentId);
   },
 );
 
-export const selectAllSubscriptions = store.createSelector(
+export const selectAllSubscriptions = createMainSelector(
   (state, wsId: string): AgentSubscriptionRecord[] => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return Object.values(ws.subscriptions);
@@ -56,7 +55,7 @@ export const selectAllSubscriptions = store.createSelector(
 // Agent status
 // ---------------------------------------------------------------------------
 
-export const selectAgentStatus = store.createSelector(
+export const selectAgentStatus = createMainSelector(
   (state, wsId: string, agentId: string): AgentStatus => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return ws.agentStatuses[agentId] ?? "idle";
@@ -67,14 +66,14 @@ export const selectAgentStatus = store.createSelector(
 // Queues
 // ---------------------------------------------------------------------------
 
-export const selectAgentQueue = store.createSelector(
+export const selectAgentQueue = createMainSelector(
   (state, wsId: string, agentId: string): QueuedEventRecord[] => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return ws.agentQueues[agentId] ?? [];
   },
 );
 
-export const selectAgentQueueLength = store.createSelector(
+export const selectAgentQueueLength = createMainSelector(
   (state, wsId: string, agentId: string): number => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return (ws.agentQueues[agentId] ?? []).length;
@@ -85,7 +84,7 @@ export const selectAgentQueueLength = store.createSelector(
 // Delegation groups
 // ---------------------------------------------------------------------------
 
-export const selectDelegationGroup = store.createSelector(
+export const selectDelegationGroup = createMainSelector(
   (
     state,
     wsId: string,
@@ -96,7 +95,7 @@ export const selectDelegationGroup = store.createSelector(
   },
 );
 
-export const selectDelegationGroupsForParent = store.createSelector(
+export const selectDelegationGroupsForParent = createMainSelector(
   (
     state,
     wsId: string,
@@ -131,7 +130,7 @@ export function getDelegationGroupCompletionSummary(
   return { doneCount, expectedCount, isComplete };
 }
 
-export const selectIsDelegationGroupComplete = store.createSelector(
+export const selectIsDelegationGroupComplete = createMainSelector(
   (state, wsId: string, groupId: string): boolean => {
     const group = selectDelegationGroup.select(state, wsId, groupId);
     if (!group) return false;
@@ -143,7 +142,7 @@ export const selectIsDelegationGroupComplete = store.createSelector(
 // One-shot guards
 // ---------------------------------------------------------------------------
 
-export const selectIsOneShotFired = store.createSelector(
+export const selectIsOneShotFired = createMainSelector(
   (state, wsId: string, subscriptionId: string): boolean => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return ws.firedOneShotSubscriptions.includes(subscriptionId);
@@ -154,7 +153,7 @@ export const selectIsOneShotFired = store.createSelector(
 // Deleted agents
 // ---------------------------------------------------------------------------
 
-export const selectIsAgentDeleted = store.createSelector(
+export const selectIsAgentDeleted = createMainSelector(
   (state, wsId: string, agentId: string): boolean => {
     const ws = selectWorkspaceSubscriptionState.select(state, wsId);
     return agentId in ws.deletedAgents;
@@ -165,7 +164,7 @@ export const selectIsAgentDeleted = store.createSelector(
 // All workspace IDs (for periodic sweeps)
 // ---------------------------------------------------------------------------
 
-export const selectAllWorkspaceIds = store.createSelector(
+export const selectAllWorkspaceIds = createMainSelector(
   (state): string[] => {
     const slice = state?.agentSubscriptions;
     if (!slice) return [];
@@ -208,7 +207,7 @@ export interface SubscriptionsSignature {
   firedOneShotSubscriptions: string[];
 }
 
-export const selectSubscriptionsSignature = store.createSelector(
+export const selectSubscriptionsSignature = createMainSelector(
   (state, wsId: string): SubscriptionsSignature | null => {
     const slice = state.agentSubscriptions;
     const ws = slice.byWorkspaceId[wsId];

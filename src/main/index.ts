@@ -318,7 +318,6 @@ import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout
 import { registerLineChangesIPC } from '../features/line-changes/line-changes.ipc';
 import { setupLinearAuthIPC } from '../features/linear-auth/main/linear-auth.ipc';
 import { setupLogIPC } from '../features/log/main/log.ipc';
-import type { MainStoreContext } from '../store/main/init';
 import {
   setupMCPIPC,
   cleanupMCP,
@@ -420,7 +419,6 @@ const logger = new Logger('Main');
 
 let cdpMcpServer: CdpMcpBridge | null = null;
 let isShuttingDown = false;
-let mainStoreContext: MainStoreContext | null = null;
 
 // Deep link handler for intent:// protocol URLs
 const deepLinkHandler = new DeepLinkHandler();
@@ -456,17 +454,6 @@ process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down gracefully...');
   await gracefulShutdown();
 });
-
-function disposeMainStoreIfInitialized(): boolean {
-  if (!mainStoreContext) {
-    return false;
-  }
-
-  const { dispose } = mainStoreContext;
-  mainStoreContext = null;
-  dispose();
-  return true;
-}
 
 async function gracefulShutdown() {
   // Prevent multiple shutdown attempts
@@ -579,20 +566,6 @@ async function gracefulShutdown() {
       cleanupAutoUpdater();
     } catch {
       // Auto-updater may not be initialized
-    }
-
-    // Dispose the main-process Redux store after shutdown work that may still
-    // need sagas/store access has completed, and consume the context to avoid
-    // duplicate saga/store disposal if another shutdown signal races in.
-    try {
-      if (disposeMainStoreIfInitialized()) {
-        logger.info('Main-process Redux store disposed');
-      }
-    } catch (error) {
-      logger.error(
-        'Error disposing main-process Redux store:',
-        error instanceof Error ? error : new Error(String(error)),
-      );
     }
 
     const mainWindow = getMainWindow();
@@ -1395,10 +1368,6 @@ app.whenReady().then(async () => {
   // Setup ONLY critical IPC handlers needed for initial render
   // This significantly improves startup time
   startupMetrics.start('criticalIPC');
-
-  // Initialize main-process Redux store before any services that might dispatch actions
-  const { initMainStore } = await import('../store/main/init');
-  mainStoreContext = initMainStore();
 
   // Initialize specialists service BEFORE workspace IPC - this is critical!
   // The workspace creation flow calls resolveSpecialistForAgent() which needs the store initialized.
