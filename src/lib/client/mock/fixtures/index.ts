@@ -24,6 +24,8 @@ import type {
   Workspace,
   WorkspaceTask,
 } from "$shared/types";
+import { SPEC_NOTE_ID } from "$shared/constants/notes";
+import type { CommentV2 } from "$features/comments/comment-types-v2";
 import type { TerminalTab } from "$store/renderer/slices/terminals/terminals-slice";
 import type { SetupScript } from "$store/renderer/slices/setup-scripts/setup-scripts-types";
 import type { SkillInfo } from "$store/renderer/slices/skills/skills-types";
@@ -114,24 +116,173 @@ export const mockGitStatus: GitStatus = {
   hasUntrackedFiles: false,
 };
 
+// ============================================================================
+// Notes, tasks & comments
+// ============================================================================
+
+/** Task note IDs, shared between the note entities and the WorkspaceTask facts. */
+export const MOCK_TASK_NOTE_ID_1 = createNoteId("00000000-0000-4000-8000-000000000010");
+export const MOCK_TASK_NOTE_ID_2 = createNoteId("00000000-0000-4000-8000-000000000011");
+export const MOCK_TASK_NOTE_ID_3 = createNoteId("00000000-0000-4000-8000-000000000012");
+export const MOCK_DESIGN_NOTE_ID = createNoteId("00000000-0000-4000-8000-000000000020");
+
+const SPEC_CONTENT = [
+  "# Dark mode toggle",
+  "",
+  "## Goal",
+  "Add a dark mode toggle to the settings page and persist the choice across reloads,",
+  "defaulting to the operating system preference when nothing is saved.",
+  "",
+  "## Tasks",
+  `- [x] [Add the theme toggle component](intent://local/task/${MOCK_TASK_NOTE_ID_1})`,
+  `- [ ] [Persist the selected theme](intent://local/task/${MOCK_TASK_NOTE_ID_2})`,
+  `- [ ] [Default to the system preference](intent://local/task/${MOCK_TASK_NOTE_ID_3})`,
+  "",
+  "## Notes",
+  "The toggle lives in the settings panel and writes to a `theme` preference.",
+].join("\n");
+
 export const mockNotes: Note[] = [
   {
-    id: createNoteId("00000000-0000-4000-8000-000000000001"),
+    id: SPEC_NOTE_ID,
     workspaceId: MOCK_WORKSPACE_ID,
-    title: "Mock Spec",
-    content: "# Mock Spec\n",
+    title: "Spec",
+    content: SPEC_CONTENT,
+    contentType: ContentType.Markdown,
+    tags: ["spec"],
+    isPinned: true,
+    isArchived: false,
+    isDefault: true,
+    visibility: NoteVisibility.Workspace,
+    createdAt: "2026-01-01T09:00:00.000Z",
+    updatedAt: "2026-01-02T14:30:00.000Z",
+  },
+  {
+    id: MOCK_DESIGN_NOTE_ID,
+    workspaceId: MOCK_WORKSPACE_ID,
+    title: "Theme tokens",
+    content:
+      "# Theme tokens\n\nDark and light palettes share the same semantic token names so " +
+      "components never reference raw colors directly.",
+    contentType: ContentType.Markdown,
+    tags: ["design"],
+    isPinned: false,
+    isArchived: false,
+    visibility: NoteVisibility.Workspace,
+    createdAt: "2026-01-01T11:00:00.000Z",
+    updatedAt: "2026-01-01T11:30:00.000Z",
+  },
+  {
+    id: MOCK_TASK_NOTE_ID_1,
+    workspaceId: MOCK_WORKSPACE_ID,
+    title: "Add the theme toggle component",
+    content: "# Add the theme toggle component\n\nRender a toggle in the settings panel header.",
     contentType: ContentType.Markdown,
     tags: [],
     isPinned: false,
     isArchived: false,
     visibility: NoteVisibility.Workspace,
-    createdAt: ISO,
-    updatedAt: ISO,
+    metadata: { task: { status: "complete", completedAt: "2026-01-01T12:00:00.000Z" } },
+    createdAt: "2026-01-01T09:10:00.000Z",
+    updatedAt: "2026-01-01T12:00:00.000Z",
+  },
+  {
+    id: MOCK_TASK_NOTE_ID_2,
+    workspaceId: MOCK_WORKSPACE_ID,
+    title: "Persist the selected theme",
+    content: "# Persist the selected theme\n\nStore the choice under the `theme` preference key.",
+    contentType: ContentType.Markdown,
+    tags: [],
+    isPinned: false,
+    isArchived: false,
+    visibility: NoteVisibility.Workspace,
+    metadata: { task: { status: "in_progress", startedAt: "2026-01-02T13:00:00.000Z" } },
+    createdAt: "2026-01-01T09:11:00.000Z",
+    updatedAt: "2026-01-02T13:00:00.000Z",
+  },
+  {
+    id: MOCK_TASK_NOTE_ID_3,
+    workspaceId: MOCK_WORKSPACE_ID,
+    title: "Default to the system preference",
+    content:
+      "# Default to the system preference\n\nFall back to `prefers-color-scheme` when no " +
+      "preference is saved.",
+    contentType: ContentType.Markdown,
+    tags: [],
+    isPinned: false,
+    isArchived: false,
+    visibility: NoteVisibility.Workspace,
+    metadata: { task: { status: "not_started" } },
+    createdAt: "2026-01-01T09:12:00.000Z",
+    updatedAt: "2026-01-01T09:12:00.000Z",
   },
 ];
 
 export const mockTasks: WorkspaceTask[] = [
-  { id: "task-mock-1", title: "Mock Task", status: "not_started", updatedAt: ISO },
+  {
+    id: MOCK_TASK_NOTE_ID_1,
+    title: "Add the theme toggle component",
+    status: "complete",
+    updatedAt: "2026-01-01T12:00:00.000Z",
+  },
+  {
+    id: MOCK_TASK_NOTE_ID_2,
+    title: "Persist the selected theme",
+    status: "in_progress",
+    updatedAt: "2026-01-02T13:00:00.000Z",
+  },
+  {
+    id: MOCK_TASK_NOTE_ID_3,
+    title: "Default to the system preference",
+    status: "not_started",
+    updatedAt: "2026-01-01T09:12:00.000Z",
+  },
+];
+
+/** Sample comment threads anchored to the spec note. */
+export const mockComments: CommentV2[] = [
+  {
+    id: "comment-mock-1",
+    threadId: "thread-mock-1",
+    noteId: SPEC_NOTE_ID,
+    type: "question",
+    content: "Should the toggle also expose a 'system' option, or just light/dark?",
+    author: "Alex",
+    authorType: "user",
+    status: "open",
+    anchor: { type: "range", startId: "spec-goal", endId: "spec-goal" },
+    anchorText: "defaulting to the operating system preference",
+    createdAt: "2026-01-02T10:00:00.000Z",
+    updatedAt: "2026-01-02T10:00:00.000Z",
+  },
+  {
+    id: "comment-mock-2",
+    threadId: "thread-mock-1",
+    noteId: SPEC_NOTE_ID,
+    parentId: "comment-mock-1",
+    type: "comment",
+    content: "Light/dark for now; system default is covered by the third task.",
+    author: "Dark mode toggle",
+    authorType: "agent",
+    status: "open",
+    anchor: { type: "range", startId: "spec-goal", endId: "spec-goal" },
+    createdAt: "2026-01-02T10:05:00.000Z",
+    updatedAt: "2026-01-02T10:05:00.000Z",
+  },
+  {
+    id: "comment-mock-3",
+    threadId: "thread-mock-2",
+    noteId: SPEC_NOTE_ID,
+    type: "comment",
+    content: "Resolved: token names are finalized in the Theme tokens note.",
+    author: "Alex",
+    authorType: "user",
+    status: "resolved",
+    anchor: { type: "point", pointId: "spec-notes" },
+    anchorText: "writes to a `theme` preference",
+    createdAt: "2026-01-02T11:00:00.000Z",
+    updatedAt: "2026-01-02T11:30:00.000Z",
+  },
 ];
 
 export const mockTerminals: TerminalTab[] = [{ id: "term-mock-1", name: "Mock Terminal" }];

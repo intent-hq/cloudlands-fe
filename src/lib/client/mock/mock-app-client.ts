@@ -84,20 +84,26 @@ export class MockAppClient implements AppClient {
   };
 
   readonly notes: AppClient["notes"] = {
-    list: async () => fx.mockNotes,
-    get: async (noteId) => fx.mockNotes.find((n) => n.id === noteId) ?? null,
+    list: async (workspaceId) =>
+      fx.mockNotes.filter((note) => String(note.workspaceId) === workspaceId),
+    get: async (noteId) => fx.mockNotes.find((n) => String(n.id) === noteId) ?? null,
     subscribe: (handler) => emitOnce(handler, fx.mockNotes),
   };
 
   readonly tasks: AppClient["tasks"] = {
-    list: async () => fx.mockTasks,
+    list: async (workspaceId) =>
+      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockTasks : [],
     get: async (taskId) => fx.mockTasks.find((t) => t.id === taskId) ?? null,
     subscribe: (handler) => emitOnce(handler, fx.mockTasks),
   };
 
   readonly comments: AppClient["comments"] = {
-    list: async () => [],
-    subscribe: (_noteId, handler) => emitOnce(handler, []),
+    list: async (noteId) => fx.mockComments.filter((c) => String(c.noteId) === noteId),
+    subscribe: (noteId, handler) =>
+      emitOnce(
+        handler,
+        fx.mockComments.filter((c) => String(c.noteId) === noteId),
+      ),
   };
 
   readonly scripts: AppClient["scripts"] = {
