@@ -332,6 +332,34 @@ export default defineConfig({
 
   resolve: {
     alias: [
+      // App-local redux/saga-free shim for the in-use ag-redux-toolkit subpaths.
+      // Anchored ($) so non-aliased subpaths (saga, streaming-store, etc.) still
+      // resolve to the real installed package.
+      {
+        find: /^(@augmentcode\/)?ag-redux-toolkit\/types$/,
+        replacement: join(__dirname, './src/lib/store-shim/types.ts'),
+      },
+      {
+        find: /^(@augmentcode\/)?ag-redux-toolkit\/svelte-store$/,
+        replacement: join(__dirname, './src/lib/store-shim/svelte-store.ts'),
+      },
+      {
+        find: /^(@augmentcode\/)?ag-redux-toolkit\/utils\/store\/create-action$/,
+        replacement: join(__dirname, './src/lib/store-shim/utils/store/create-action.ts'),
+      },
+      {
+        find: /^(@augmentcode\/)?ag-redux-toolkit\/utils\/store\/create-reducer$/,
+        replacement: join(__dirname, './src/lib/store-shim/utils/store/create-reducer.ts'),
+      },
+      {
+        find: /^(@augmentcode\/)?ag-redux-toolkit\/utils\/store\/boolean-preference$/,
+        replacement: join(__dirname, './src/lib/store-shim/utils/store/boolean-preference.ts'),
+      },
+      {
+        find: /^(@augmentcode\/)?ag-redux-toolkit\/utils\/collections\/collection-utils$/,
+        replacement: join(__dirname, './src/lib/store-shim/utils/collections/collection-utils.ts'),
+      },
+
       // Path aliases for cleaner imports
       { find: '$lib', replacement: join(__dirname, './src/lib') },
       { find: '$store', replacement: join(__dirname, './src/store') },

@@ -25,7 +25,35 @@
       "$features": ["./src/features"],
       "$features/*": ["./src/features/*"],
       "$shared": ["./src/shared"],
-      "$shared/*": ["./src/shared/*"]
+      "$shared/*": ["./src/shared/*"],
+      "@augmentcode/ag-redux-toolkit/types": ["./src/lib/store-shim/types"],
+      "@augmentcode/ag-redux-toolkit/svelte-store": ["./src/lib/store-shim/svelte-store"],
+      "@augmentcode/ag-redux-toolkit/utils/store/create-action": [
+        "./src/lib/store-shim/utils/store/create-action"
+      ],
+      "@augmentcode/ag-redux-toolkit/utils/store/create-reducer": [
+        "./src/lib/store-shim/utils/store/create-reducer"
+      ],
+      "@augmentcode/ag-redux-toolkit/utils/store/boolean-preference": [
+        "./src/lib/store-shim/utils/store/boolean-preference"
+      ],
+      "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils": [
+        "./src/lib/store-shim/utils/collections/collection-utils"
+      ],
+      "ag-redux-toolkit/types": ["./src/lib/store-shim/types"],
+      "ag-redux-toolkit/svelte-store": ["./src/lib/store-shim/svelte-store"],
+      "ag-redux-toolkit/utils/store/create-action": [
+        "./src/lib/store-shim/utils/store/create-action"
+      ],
+      "ag-redux-toolkit/utils/store/create-reducer": [
+        "./src/lib/store-shim/utils/store/create-reducer"
+      ],
+      "ag-redux-toolkit/utils/store/boolean-preference": [
+        "./src/lib/store-shim/utils/store/boolean-preference"
+      ],
+      "ag-redux-toolkit/utils/collections/collection-utils": [
+        "./src/lib/store-shim/utils/collections/collection-utils"
+      ]
     }
   },
   "include": [
