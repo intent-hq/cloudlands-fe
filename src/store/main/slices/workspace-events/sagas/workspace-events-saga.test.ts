@@ -77,16 +77,12 @@ describe("handleBroadcastEvent", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleDeliverToRendererSubscriptions", () => {
-  it("delivers accepted events to renderer and WebSocket subscription adapters", async () => {
+  it("delivers accepted events to renderer subscription adapters", async () => {
     vi.resetModules();
     const deliverEventToSubscriptions = vi.fn();
-    const deliverEventToWebSocketSubscriptions = vi.fn();
 
     vi.doMock("../../../../../features/events/main/renderer-subscription-registry", () => ({
       deliverEventToSubscriptions,
-    }));
-    vi.doMock("../../../../../main/websocket-event-bridge", () => ({
-      deliverEventToWebSocketSubscriptions,
     }));
 
     const { handleDeliverToRendererSubscriptions } = await import(
@@ -98,10 +94,8 @@ describe("handleDeliverToRendererSubscriptions", () => {
       .run();
 
     expect(deliverEventToSubscriptions).toHaveBeenCalledWith(event);
-    expect(deliverEventToWebSocketSubscriptions).toHaveBeenCalledWith(event);
 
     vi.doUnmock("../../../../../features/events/main/renderer-subscription-registry");
-    vi.doUnmock("../../../../../main/websocket-event-bridge");
   });
 });
 

@@ -60,10 +60,6 @@ import { notesService } from '../../notes/main/notes.service';
 import { assetsService } from '../../notes/main/assets.service';
 import { DelegateTaskTool } from '../../mcp/main/mcp/agent-interaction-tools';
 import { markAgentAsDeleted, updateAgentStatus } from '../../events/main/agent-subscription-ops';
-import {
-  onHttpBridgeUnrecoverable,
-  type HttpBridgeUnrecoverableHandler,
-} from '../../../main/http-mcp-bridge';
 import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcast-adapter';
 import { createCache } from '../../../main/utils/cache';
 import { getWindowIdForWorkspace, getWindowIdsForWorkspace } from '../../system/main/system.ipc';
@@ -474,25 +470,12 @@ export class AgentBackendHandler {
   }
 
   /**
-   * Register a subscriber on the HTTP MCP bridge's unrecoverable-failure hook.
-   * The bridge (src/main/http-mcp-bridge.ts) invokes every subscriber when it
-   * permanently fails so we can clear any in-flight agent streams that can no
-   * longer make progress. The returned disposer is retained so shutdown can
-   * unregister this subscriber.
+   * Previously registered a subscriber on the HTTP MCP bridge's
+   * unrecoverable-failure hook. The bridge has been removed, so there is no
+   * producer to subscribe to and this is now a no-op.
    */
   private subscribeToHttpBridgeUnrecoverable(): void {
-    // The producer's HttpBridgeUnrecoverableHandler passes an info payload;
-    // an arg-less function is assignable to that signature in TS (arity
-    // widening) and JS silently discards the extra argument, so no data
-    // is lost from the consumer's perspective.
-    const handler: HttpBridgeUnrecoverableHandler = () => {
-      void this.handleHttpBridgeUnrecoverable().catch((err) => {
-        logger.error('handleHttpBridgeUnrecoverable threw', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-    };
-    this.httpBridgeUnrecoverableDisposer = onHttpBridgeUnrecoverable(handler);
+    this.httpBridgeUnrecoverableDisposer = null;
   }
 
   /**

@@ -378,7 +378,6 @@ import { setupWorkspaceSummaryIPC } from '../features/workspace/main/workspace-s
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
 import { claimDownloadAttribution } from './download-attribution';
-import { HttpMcpBridge, setHttpMcpBridge, notifyCriticalMemoryPressure } from './http-mcp-bridge';
 import { prefetchProviderModelCaches } from './utils/model-pool';
 
 import { agentBackendHandler } from '../features/agent/main/agent-backend-handler.service';
@@ -419,10 +418,8 @@ import {
 
 const logger = new Logger('Main');
 
-let httpMcpServer: HttpMcpBridge | null = null;
 let cdpMcpServer: CdpMcpBridge | null = null;
 let isShuttingDown = false;
-let httpMcpHealthCheckInterval: NodeJS.Timeout | null = null;
 let mainStoreContext: MainStoreContext | null = null;
 
 // Deep link handler for intent:// protocol URLs
@@ -554,23 +551,6 @@ async function gracefulShutdown() {
         'Error during unified backend shutdown:',
         error instanceof Error ? error : new Error(String(error)),
       );
-    }
-
-    // Stop HTTP MCP Server
-    if (httpMcpHealthCheckInterval) {
-      clearInterval(httpMcpHealthCheckInterval);
-      httpMcpHealthCheckInterval = null;
-    }
-    if (httpMcpServer) {
-      try {
-        await httpMcpServer.stop();
-        logger.info('HTTP MCP Server stopped');
-      } catch (error) {
-        logger.error(
-          'Error stopping HTTP MCP Server:',
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
     }
 
     // Stop CDP MCP Server
@@ -1728,19 +1708,6 @@ app.whenReady().then(async () => {
           });
         });
 
-      // On critical pressure, evict cached MCP servers to free memory.
-      // These will be lazily re-created on next tool call.
-      if (forceGC && httpMcpServer) {
-        try {
-          const cleared = httpMcpServer.clearAllMcpServers();
-          if (cleared > 0) {
-            logger.info('Evicted MCP server cache during critical memory pressure', { cleared });
-          }
-        } catch (error) {
-          logger.warn('Failed to evict MCP server cache', { error: (error as Error).message });
-        }
-      }
-
       // On critical pressure, drop unified main-process caches.
       // Entries are lazily re-populated from disk on next access.
       if (forceGC) {
@@ -1782,13 +1749,6 @@ app.whenReady().then(async () => {
           forceGC: level === 'critical',
           skipStreamCleanup: true,
         });
-      }
-
-      // Inform the HTTP MCP Bridge so its health probe tolerates load.
-      // A critical signal suppresses the probe's restart decision for
-      // HTTP_MCP_MEMORY_CRITICAL_WINDOW_MS — see http-mcp-bridge.ts.
-      if (level === 'critical') {
-        notifyCriticalMemoryPressure();
       }
 
       // Evict idle auggie processes — the biggest single source of memory (~200-300 MB each).
@@ -1880,78 +1840,8 @@ app.whenReady().then(async () => {
     logger.error('Failed to log startup metrics:', error);
   }
 
-  // Start HTTP MCP Server immediately - critical for MCP functionality
+  // Post-window setup (HTTP MCP server removed; renderer is mock-driven)
   (async () => {
-    try {
-      startupMetrics.start('httpMcpServer');
-    } catch (error) {
-      logger.warn('Failed to start httpMcpServer metric:', error);
-    }
-
-    try {
-      if (typeof HttpMcpBridge === 'undefined') {
-        throw new Error('HttpMcpBridge class is undefined - import failed');
-      }
-
-      httpMcpServer = new HttpMcpBridge();
-      setHttpMcpBridge(httpMcpServer);
-      // start() returns 'aborted' when a concurrent stop() raced the bind
-      // (e.g. fast shutdown during startup). In that case no server is bound
-      // and process.env.HTTP_MCP_PORT is never set, so downstream code that
-      // assumes the bridge is live would mis-report. Gate the health monitor
-      // setup on a non-aborted result; if aborted, the rest of the IIFE still
-      // runs so post-window IPC setup and startupMetrics.end() are not skipped.
-      const startResult = await httpMcpServer.start();
-      if (startResult === 'aborted') {
-        logger.warn(
-          'HTTP MCP Bridge start() aborted (stop() raced startup); skipping health monitor',
-        );
-      } else {
-        // Start proactive health monitoring for HTTP MCP Bridge
-        // Checks every 60 seconds and auto-restarts if unhealthy
-        const HTTP_BRIDGE_HEALTH_CHECK_INTERVAL_MS = 60 * 1000;
-        httpMcpHealthCheckInterval = setInterval(async () => {
-          if (isShuttingDown || !httpMcpServer) {
-            return;
-          }
-
-          try {
-            // Single restart entry point (DoD #5). ensureHealthy() handles
-            // isHealthy+restart internally with a serialised restart promise,
-            // so we never race the ACP provider's per-message ensureHealthy().
-            const healthy = await httpMcpServer.ensureHealthy();
-            if (!healthy) {
-              logger.warn(
-                'HTTP MCP Bridge health monitor: bridge unrecoverable (see httpBridgeUnrecoverable hook)',
-              );
-            }
-          } catch (error) {
-            logger.error('HTTP MCP Bridge health monitor error', {
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }, HTTP_BRIDGE_HEALTH_CHECK_INTERVAL_MS);
-
-        logger.info('HTTP MCP Bridge health monitor started', {
-          intervalMs: HTTP_BRIDGE_HEALTH_CHECK_INTERVAL_MS,
-        });
-      }
-    } catch (error) {
-      logger.error(
-        'Failed to start HTTP MCP Server:',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-      if (error instanceof Error) {
-        logger.error('HTTP MCP Server error stack:', error.stack);
-      }
-    }
-
-    try {
-      startupMetrics.end('httpMcpServer');
-    } catch (error) {
-      logger.warn('Failed to end httpMcpServer metric:', error);
-    }
-
     // Setup handlers that require the window to exist
     // PERFORMANCE OPTIMIZATION: Run in parallel since they're independent
     try {
@@ -2184,25 +2074,6 @@ app.on('window-all-closed', async () => {
     logger.info('Unified backend shutdown complete');
   } catch (error) {
     logger.error('Failed to shutdown unified backend', error as Error);
-  }
-
-  // Stop HTTP MCP Server health check interval
-  if (httpMcpHealthCheckInterval) {
-    clearInterval(httpMcpHealthCheckInterval);
-    httpMcpHealthCheckInterval = null;
-  }
-
-  // Stop HTTP MCP Server
-  if (httpMcpServer) {
-    try {
-      await httpMcpServer.stop();
-      logger.info('HTTP MCP Server stopped');
-    } catch (error) {
-      logger.error(
-        'Error stopping HTTP MCP Server:',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
   }
 
   // Stop CDP MCP Server

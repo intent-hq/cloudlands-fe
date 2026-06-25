@@ -35,13 +35,6 @@ export function* handleDeliverToRendererSubscriptions(
     );
     deliverEventToSubscriptions(event);
   });
-  // Also deliver to external WebSocket API clients (replaces old UnifiedEventBus callback).
-  yield* call(async () => {
-    const { deliverEventToWebSocketSubscriptions } = await import(
-      "../../../../../main/websocket-event-bridge"
-    );
-    deliverEventToWebSocketSubscriptions(event);
-  });
 }
 
 // ---------------------------------------------------------------------------

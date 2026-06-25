@@ -189,36 +189,6 @@ function* handleWorkspaceArchivedForAgents(
 }
 
 // ---------------------------------------------------------------------------
-// Listener: workspace deleting/deleted/updated → MCP server cache cleanup
-// ---------------------------------------------------------------------------
-
-function* handleWorkspaceDeletingForMcp(
-  action: ReturnType<typeof workspaceDeleting>,
-) {
-  const [data] = action.payload;
-  yield* call(async () => {
-    const { getHttpMcpBridge } = await import("../../../../../main/http-mcp-bridge");
-    const bridge = getHttpMcpBridge();
-    if (bridge) {
-      bridge.clearMcpServersForWorkspace(data.workspaceId);
-    }
-  });
-}
-
-function* handleWorkspaceDeletedForMcp(
-  action: ReturnType<typeof workspaceDeleted>,
-) {
-  const [data] = action.payload;
-  yield* call(async () => {
-    const { getHttpMcpBridge } = await import("../../../../../main/http-mcp-bridge");
-    const bridge = getHttpMcpBridge();
-    if (bridge) {
-      bridge.clearMcpServersForWorkspace(data.workspaceId);
-    }
-  });
-}
-
-// ---------------------------------------------------------------------------
 // Listener: workspace deleted → workspace service
 // ---------------------------------------------------------------------------
 
@@ -272,9 +242,6 @@ export function* workspaceLifecycleEventsSaga() {
   yield* takeEvery(workspaceDeleting, handleWorkspaceDeletingForAgents);
   yield* takeEvery(workspaceArchived, handleWorkspaceArchivedForAgents);
 
-  // MCP server cache cleanup
-  yield* takeEvery(workspaceDeleting, handleWorkspaceDeletingForMcp);
-  yield* takeEvery(workspaceDeleted, handleWorkspaceDeletedForMcp);
   // Workspace service reactions
   yield* takeEvery(workspaceDeleted, handleWorkspaceDeletedForService);
 
