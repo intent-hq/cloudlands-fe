@@ -5,13 +5,60 @@
  * seam and dispatches existing slice actions so the agent list, agent overview,
  * and chat panel render with mock agents and a static conversation — replacing
  * the work the agent-loading sagas used to do against the real backend.
+ *
+ * Agent-provider readiness is also probed directly over IPC at boot: the
+ * AuggieSetupGate checks `providers:get-availability` and `auggie:status`. Those
+ * channels are registered against the mock IPC router synchronously at import
+ * time (before any component mounts) so the gate sees an available, logged-in
+ * provider instead of making real CLI/network calls.
  */
+import { registerMockIpcHandler } from "$shared/ipc-mock-router";
+import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from "$shared/ipc/channels";
+import { MINIMUM_AUGGIE_VERSION } from "$shared/constants/auggie";
+import type { ProviderAvailabilityResult } from "$shared/types/provider-availability";
 import { registerMockSeeder } from "../mock-bootstrap";
 import { bulkUpsertSessions, upsertSession } from "../slices/agent-session/agent-session-slice";
 import {
   setActiveAgentId,
   setAgentsLoaded,
 } from "../slices/workspace-agents/workspace-agents-slice";
+
+/** Deterministic identity surfaced for the logged-in mock provider. */
+const MOCK_PROVIDER_AUTH_DETAILS = "mock@example.com";
+
+/** Auggie reports available + authenticated so the setup gate stays dismissed. */
+const mockProviderAvailability: ProviderAvailabilityResult = {
+  hasAnyProvider: true,
+  providers: {
+    auggie: { available: true, authenticated: true, authDetails: MOCK_PROVIDER_AUTH_DETAILS },
+    claudeCode: { available: false },
+    codex: { available: false },
+    cortex: { available: false },
+    mock: { available: true, authenticated: true },
+    opencode: { available: false },
+    pi: { available: false },
+    droid: { available: false },
+  },
+  hiddenProviders: [],
+};
+
+// Registered at import time (not inside the async seeder) so the AuggieSetupGate's
+// onMount probes resolve to mocks before the real CLI/network checks could run.
+registerMockIpcHandler(PROVIDERS_CHANNELS.GET_AVAILABILITY, async () => ({
+  success: true,
+  data: mockProviderAvailability,
+}));
+registerMockIpcHandler(AUGGIE_CHANNELS.STATUS, async () => ({
+  success: true,
+  data: {
+    installed: true,
+    authenticated: true,
+    version: MINIMUM_AUGGIE_VERSION,
+    versionOk: true,
+    minimumVersion: MINIMUM_AUGGIE_VERSION,
+    authDetails: MOCK_PROVIDER_AUTH_DETAILS,
+  },
+}));
 
 registerMockSeeder("agents", async ({ store, client }) => {
   const workspaces = await client.workspaces.list();

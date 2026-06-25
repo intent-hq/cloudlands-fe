@@ -10,9 +10,21 @@
  * The MCP advanced editor also reads the raw settings file directly over IPC
  * (`user-mcp:get-settings-*`) and the settings footer reads `app:version`; those
  * channels are registered against the mock IPC router so those panes render.
+ *
+ * The issue picker preloads Linear/Sentry issues directly over IPC at boot
+ * (auth-state + fetch). Those channels are registered synchronously at import
+ * time so the preload sees a connected integration with mock issues instead of
+ * making real Linear/Sentry API calls.
  */
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import { mockUserMcpSettingsContent, mockUserMcpSettingsPath } from "$lib/client/mock/fixtures";
+import {
+  mockLinearIssues,
+  mockSentryIssues,
+  mockUserMcpSettingsContent,
+  mockUserMcpSettingsPath,
+} from "$lib/client/mock/fixtures";
+import { LINEAR_AUTH_CHANNELS } from "$features/linear-auth/constants";
+import { SENTRY_AUTH_CHANNELS } from "$features/sentry-auth/constants";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
   setAgentFontStyle,
@@ -57,6 +69,31 @@ import {
 
 /** Deterministic Sentry organization for the connected mock state. */
 const MOCK_SENTRY_ORG = "acme";
+
+// ── Boot-time integration IPC stubs ──
+// Registered at import time (not inside the async seeder) so the issue picker's
+// preload, which calls these channels on mount, resolves to mocks before any
+// real Linear/Sentry API call could be attempted.
+registerMockIpcHandler(LINEAR_AUTH_CHANNELS.IS_AUTHENTICATED, async () => mockLinearIssues.length > 0);
+registerMockIpcHandler(LINEAR_AUTH_CHANNELS.GET_AUTH_STATE, async () => ({
+  isAuthenticated: mockLinearIssues.length > 0,
+  requiresAugmentAuth: false,
+}));
+registerMockIpcHandler(LINEAR_AUTH_CHANNELS.GET_STATUS, async () => ({
+  isConfigured: mockLinearIssues.length > 0,
+  oauthUrl: "",
+}));
+registerMockIpcHandler(LINEAR_AUTH_CHANNELS.FETCH_MY_ISSUES, async () => mockLinearIssues);
+registerMockIpcHandler(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, async () => mockLinearIssues);
+
+registerMockIpcHandler(SENTRY_AUTH_CHANNELS.IS_AUTHENTICATED, async () => mockSentryIssues.length > 0);
+registerMockIpcHandler(SENTRY_AUTH_CHANNELS.GET_AUTH_STATE, async () => ({
+  isAuthenticated: mockSentryIssues.length > 0,
+  organization: MOCK_SENTRY_ORG,
+}));
+registerMockIpcHandler(SENTRY_AUTH_CHANNELS.FETCH_PROJECTS, async () => []);
+registerMockIpcHandler(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, async () => mockSentryIssues);
+registerMockIpcHandler(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, async () => mockSentryIssues);
 
 registerMockSeeder("settings-integrations", async ({ store, client }) => {
   // ── User preferences ──
