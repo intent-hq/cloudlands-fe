@@ -6,3 +6,4 @@
  * wave appends its own seeder import below; never remove existing entries.
  */
 import "./workspaces-seeder";
+import "./agents-seeder";

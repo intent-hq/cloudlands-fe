@@ -29,21 +29,22 @@ export class MockAppClient implements AppClient {
   };
 
   readonly agents: AppClient["agents"] = {
-    list: async () => [],
-    get: async () => null,
+    list: async (workspaceId) =>
+      fx.mockAgents.filter((agent) => String(agent.workspaceId) === workspaceId),
+    get: async (agentId) => fx.mockAgents.find((agent) => String(agent.id) === agentId) ?? null,
     create: async () => OK,
     send: async () => OK,
     queue: async () => OK,
     setAvailability: async () => OK,
     follow: async () => OK,
     lock: async () => OK,
-    subscribe: (handler) => emitOnce(handler, []),
+    subscribe: (handler) => emitOnce(handler, fx.mockAgents),
   };
 
   readonly chat: AppClient["chat"] = {
-    history: async () => [],
-    tokenUsage: async () => ({ input: 0, output: 0 }),
-    subscribe: (_agentId, handler) => emitOnce(handler, []),
+    history: async (agentId) => fx.mockChatHistory[agentId] ?? [],
+    tokenUsage: async (agentId) => fx.mockTokenUsage[agentId] ?? { input: 0, output: 0 },
+    subscribe: (agentId, handler) => emitOnce(handler, fx.mockChatHistory[agentId] ?? []),
   };
 
   readonly terminals: AppClient["terminals"] = {
