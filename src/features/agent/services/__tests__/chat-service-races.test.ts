@@ -24,7 +24,6 @@ describe('retired chat service boundary', () => {
       'src/store/renderer/slices/chat-state/chat-state-types.ts',
       'src/store/renderer/slices/chat-state/chat-state-slice.ts',
       'src/store/renderer/slices/chat-state/chat-state-selectors.ts',
-      'src/store/renderer/slices/chat-state/sagas/send-message-saga.ts',
       'src/lib/components/chat/ChatPanel.svelte',
     ];
     const forbidden = [

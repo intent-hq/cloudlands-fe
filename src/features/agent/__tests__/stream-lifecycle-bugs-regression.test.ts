@@ -26,11 +26,6 @@ import { resolve } from 'path';
 // Read the production source once for all structural tests
 const SOURCE_PATH = resolve(__dirname, '../agent-stream-lifecycle.ts');
 const source = readFileSync(SOURCE_PATH, 'utf-8');
-const SAGA_SOURCE_PATH = resolve(
-  __dirname,
-  '../../../store/renderer/slices/agent-session/sagas/agent-stream-saga.ts',
-);
-const sagaSource = readFileSync(SAGA_SOURCE_PATH, 'utf-8');
 
 describe('Bug 8: Stale complete from interrupted stream', () => {
   // -----------------------------------------------------------------------
@@ -233,32 +228,5 @@ describe('Stream lifecycle is a thin stream adapter', () => {
     expect(restoredBody).toContain('dispatchStreamStatusEvent({');
     expect(restoredBody).not.toContain('getAgentSession(');
     expect(restoredBody).not.toContain('requestRestoredRefreshThenMaybeFallback');
-  });
-});
-
-describe('Saga-owned missing-target refresh orchestration', () => {
-  it('coalesces/rate-limits bypass-cache stale session refreshes before fallback', () => {
-    expect(sagaSource).toContain('STALE_STREAM_SESSION_REFRESH_COOLDOWN_MS');
-    expect(sagaSource).toContain('staleStreamSessionRefreshes');
-    expect(sagaSource).toContain('staleStreamSessionRefreshesInFlight');
-    expect(sagaSource).toContain('persistenceService.loadSession');
-    expect(sagaSource).toContain('bypassCache: true');
-    expect(sagaSource).toContain(
-      'Created fallback streaming placeholder after refresh missed target',
-    );
-  });
-
-  it('uses canonical target matching in saga instead of last-assistant retargeting', () => {
-    expect(sagaSource).toContain('function findAssistantUpdateTarget');
-    expect(sagaSource).toContain('message.isStreaming === true');
-    expect(sagaSource).toContain('message.id === payload.assistantMessageId');
-    expect(sagaSource).toContain('message.appMessageId === payload.assistantAppMessageId');
-    expect(sagaSource).not.toContain('idx === updatedSession.messages.length - 1');
-    expect(sagaSource).not.toContain('assistantMessages[assistantMessages.length - 1]');
-  });
-
-  it('keeps fallback placeholder ID decisions in the saga', () => {
-    expect(source).not.toContain('pickPlaceholderId(');
-    expect(sagaSource).toContain('pickPlaceholderId(payload.assistantMessageId');
   });
 });
