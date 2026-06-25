@@ -3,6 +3,7 @@
 
 import type { DynamicElectronEventName, ElectronEventName } from '$shared/ipc-registry';
 import { invoke as ipcInvoke } from '$shared/generated/ipc-client';
+import { addMockIpcListener, emitMockIpcEvent } from '$shared/ipc-mock-router';
 import { Logger } from '$shared/logger';
 
 const logger = new Logger('ElectronBridge');
@@ -101,14 +102,13 @@ export function isElectron(): boolean {
 }
 
 /**
- * Invoke an IPC method
- * @throws Error if not in Electron environment
+ * Invoke an IPC method.
+ *
+ * Routed through the mock IPC router (via the generated client) rather than the
+ * real Electron bridge, so callers receive mock responses by channel.
  */
 export async function invoke<T>(channel: string, data?: any): Promise<T> {
-  if (isElectron()) {
-    return await ipcInvoke<T>(channel, data);
-  }
-  throw new Error('Electron IPC not available - are you running in the Electron app?');
+  return await ipcInvoke<T>(channel, data);
 }
 
 /**
@@ -134,7 +134,6 @@ export class IpcTimeoutError extends Error {
  * @param data - Optional data to send with the request
  * @param timeoutMs - Timeout in milliseconds (default: 30000ms = 30 seconds)
  * @throws IpcTimeoutError if the call times out
- * @throws Error if not in Electron environment
  *
  * @example
  * try {
@@ -150,10 +149,6 @@ export async function invokeWithTimeout<T>(
   data?: any,
   timeoutMs: number = 30000,
 ): Promise<T> {
-  if (!isElectron()) {
-    throw new Error('Electron IPC not available - are you running in the Electron app?');
-  }
-
   return new Promise<T>((resolve, reject) => {
     let settled = false;
     const timeoutId = setTimeout(() => {
@@ -221,27 +216,11 @@ export function listenSync<T>(
   event: ElectronListenerEventName,
   handler: (payload: { payload: T }) => void,
 ): () => void {
-  if (typeof window !== 'undefined' && (window as any).electronAPI) {
-    // Register the listener
-    // Note: window.electronAPI.on passes data directly, not as second parameter
-    const listener = (data: T) => {
-      handler({ payload: data });
-    };
-
-    // on() returns a unique listener ID for reliable removal with context isolation
-    const listenerId = (window as any).electronAPI.on(event, listener);
-
-    // Return unsubscribe function immediately using the listener ID
-    return () => {
-      if (listenerId) {
-        (window as any).electronAPI.offById(event, listenerId);
-      }
-    };
-  }
-
-  // Return no-op unsubscribe if not in Electron
-  logger.warn('Electron not available for event', { event });
-  return () => {};
+  // Routed through the mock IPC router: register the listener and return its
+  // disposer. Mock events are delivered via emitMockIpcEvent() by channel.
+  return addMockIpcListener(event, (data) => {
+    handler({ payload: data as T });
+  });
 }
 
 /**
@@ -260,46 +239,36 @@ export async function listen<T>(
 }
 
 export async function emit(event: string, payload?: any): Promise<void> {
-  if (typeof window !== 'undefined' && window.electronAPI) {
-    (window.electronAPI as any).emit?.(event, payload);
-  }
+  // Deliver to mock listeners registered on the channel.
+  emitMockIpcEvent(event, payload);
 }
+
+let onListenerSequence = 0;
 
 /**
  * Add event listener (direct access to electronAPI.on)
  *
  * @deprecated Use `listenSync()` instead for reliable cleanup with context isolation.
- * The on/off pattern fails because Electron's context isolation creates new function
- * proxies each time a function crosses the context bridge, breaking === comparison.
  *
- * If you need to use on() directly (e.g., for singleton listeners that never get
- * cleaned up), be aware that off() will not work reliably. Use window.electronAPI.on()
- * directly and capture the returned listener ID for cleanup with offById().
+ * Routed through the mock IPC router. Returns a unique listener ID; cleanup is
+ * not supported via off() — prefer listenSync(), which returns its own disposer.
  */
 export function on(event: string, handler: (...args: any[]) => void): string {
-  if (typeof window !== 'undefined' && window.electronAPI) {
-    return window.electronAPI.on(event, handler);
-  }
-  return '';
+  addMockIpcListener(event, (payload) => handler(payload));
+  return `mock-listener-${++onListenerSequence}`;
 }
 
 /**
  * Remove event listener (direct access to electronAPI.off)
  *
- * @deprecated This function does NOT work reliably with Electron's context isolation!
- * Use `listenSync()` instead, which handles cleanup correctly using ID-based removal.
- *
- * The issue: When functions cross the context bridge, they get wrapped in proxies.
- * Each crossing creates a NEW proxy, so off() can't find the original handler.
+ * @deprecated Handler-based removal is not supported by the mock IPC router.
+ * Prefer `listenSync()`, which returns its own disposer.
  */
-export function off(event: string, handler: (...args: any[]) => void): void {
-  if (typeof window !== 'undefined' && window.electronAPI) {
-    logger.warn(
-      'off() is deprecated and may not work with context isolation. Use listenSync() or offById() instead.',
-      { event },
-    );
-    window.electronAPI.off(event, handler);
-  }
+export function off(event: string, _handler: (...args: any[]) => void): void {
+  logger.warn(
+    'off() is deprecated and is a no-op with the mock IPC router. Use listenSync() instead.',
+    { event },
+  );
 }
 
 // File dialog replacements

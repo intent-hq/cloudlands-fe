@@ -14,6 +14,7 @@ import {
   validateIpcResponse,
 } from '../type-system/validation';
 import { TypeValidationError } from '../type-system/errors';
+import { mockInvoke } from '../ipc-mock-router';
 import { z } from 'zod';
 
 // Use the existing global electronAPI declaration from src/types/electron.d.ts
@@ -26,18 +27,15 @@ export type IpcInvokeChannel = string;
  *
  * Use this for legacy/non-contract channels that need the existing response
  * payload returned unchanged (for example CommandResponse-shaped results).
+ *
+ * Routed through the in-memory mock IPC router instead of the real Electron
+ * bridge; unknown channels resolve to the router's safe-default value.
  */
 export async function invoke<TResponse = unknown>(
   channel: IpcInvokeChannel,
   ...args: unknown[]
 ): Promise<TResponse> {
-  if (!window.electronAPI) {
-    throw new Error('Electron IPC not available');
-  }
-
-  console.log(`[IPC Client] Invoking channel: ${channel}`, { args });
-
-  return window.electronAPI.invoke(channel, ...args) as Promise<TResponse>;
+  return mockInvoke<TResponse>(channel, ...args);
 }
 
 export class TypedIpcClient {
