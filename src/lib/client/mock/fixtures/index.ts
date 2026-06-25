@@ -32,6 +32,8 @@ import type {
 } from "$shared/types";
 import { ChangeStage } from "$features/file-tracking/types";
 import type { CommitInfo, TrackedChange } from "$features/file-tracking/types";
+import { WorkspaceEventType } from "$features/events/types";
+import type { WorkspaceEvent } from "$features/events/types";
 import type { PrStatusSummary } from "../../app-client";
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
 import type { CommentV2 } from "$features/comments/comment-types-v2";
@@ -374,7 +376,24 @@ export const mockScripts: ScriptWithState[] = [
 ];
 
 export const mockSkills: SkillInfo[] = [
-  { name: "mock-skill", description: "A mock skill", location: "/mock/skill" },
+  {
+    name: "ag-redux-toolkit",
+    description: "Redux + redux-saga conventions for this codebase.",
+    location: ".agents/skills/ag-redux-toolkit/SKILL.md",
+    scope: "project",
+  },
+  {
+    name: "electron",
+    description: "Automate Electron desktop apps over the Chrome DevTools Protocol.",
+    location: ".agents/skills/electron/SKILL.md",
+    scope: "project",
+  },
+  {
+    name: "redux-saga",
+    description: "Generic redux-saga API reference for agents.",
+    location: ".agents/skills/redux-saga/SKILL.md",
+    scope: "user",
+  },
 ];
 
 export const mockSetupScripts: SetupScript[] = [
@@ -389,7 +408,44 @@ export const mockSetupScripts: SetupScript[] = [
   },
 ];
 
-export const mockModels: AuggieModel[] = [{ value: "mock-model", label: "Mock Model" }];
+export const mockModels: AuggieModel[] = [
+  {
+    value: "opus4.7",
+    label: "Claude Opus 4.7",
+    description: "Most capable model for complex coding and reasoning.",
+    modelGroupPriority: 1,
+    costTier: 3,
+    isDefault: true,
+  },
+  {
+    value: "opus4.6",
+    label: "Claude Opus 4.6",
+    description: "Previous-generation Opus, strong general-purpose model.",
+    modelGroupPriority: 1,
+    costTier: 3,
+  },
+  {
+    value: "sonnet4.5",
+    label: "Claude Sonnet 4.5",
+    description: "Balanced speed and capability for everyday tasks.",
+    modelGroupPriority: 2,
+    costTier: 2,
+  },
+  {
+    value: "gpt5.4",
+    label: "GPT-5.4",
+    description: "OpenAI flagship model.",
+    modelGroupPriority: 2,
+    costTier: 3,
+  },
+  {
+    value: "haiku4.5",
+    label: "Claude Haiku 4.5",
+    description: "Fast, low-cost model for background work.",
+    modelGroupPriority: 3,
+    costTier: 1,
+  },
+];
 
 export const mockSpecialists: CustomSpecialist[] = [
   {
@@ -402,13 +458,34 @@ export const mockSpecialists: CustomSpecialist[] = [
 ];
 
 export const mockRecentUrls: RecentUrl[] = [
-  { url: "https://example.com", title: "Example", lastVisited: ISO },
+  {
+    url: "http://localhost:5173/settings",
+    title: "Settings · Dark mode toggle",
+    favicon: "http://localhost:5173/favicon.ico",
+    lastVisited: "2026-01-02T14:25:00.000Z",
+  },
+  {
+    url: "https://github.com/acme/web-app/pull/42",
+    title: "Add dark mode toggle by octocat · Pull Request #42",
+    favicon: "https://github.com/favicon.ico",
+    lastVisited: "2026-01-02T13:55:00.000Z",
+  },
+  {
+    url: "https://svelte.dev/docs/svelte/what-are-runes",
+    title: "Runes • Svelte docs",
+    favicon: "https://svelte.dev/favicon.png",
+    lastVisited: "2026-01-01T16:10:00.000Z",
+  },
 ];
 
 export const mockReleaseNotes: ReleaseNotes = {
-  version: "0.0.0-mock",
+  version: "1.8.0",
   date: "2026-01-01",
-  highlights: ["Mock release"],
+  highlights: [
+    "Dark mode is here — toggle it from the settings panel.",
+    "Faster workspace switching with cached file trees.",
+    "Improved agent activity stream with richer event details.",
+  ],
 };
 
 export const mockSystemStatus: SystemStatusState = {
@@ -838,3 +915,74 @@ export const mockPrStatusSummary: PrStatusSummary = {
   url: "https://github.com/acme/web-app/pull/42",
   state: "open",
 };
+
+// ============================================================================
+// Workspace event stream
+// ============================================================================
+
+/** Recent workspace activity events for the dark-mode workspace (ws-mock-1). */
+export const mockWorkspaceEvents: WorkspaceEvent[] = [
+  {
+    id: "evt-mock-1",
+    workspaceId: String(MOCK_WORKSPACE_ID),
+    timestamp: "2026-01-01T09:02:00.000Z",
+    type: WorkspaceEventType.FileChanged,
+    actor: { type: "agent", id: String(MOCK_AGENT_ID), name: "Dark mode toggle" },
+    data: {
+      path: `${MOCK_WORKSPACE_PATH}/src/lib/theme.ts`,
+      relativePath: "src/lib/theme.ts",
+      action: "create",
+      additions: 48,
+      deletions: 0,
+      language: "typescript",
+    },
+  },
+  {
+    id: "evt-mock-2",
+    workspaceId: String(MOCK_WORKSPACE_ID),
+    timestamp: "2026-01-01T12:00:00.000Z",
+    type: WorkspaceEventType.TaskStatusChanged,
+    actor: { type: "agent", id: String(MOCK_AGENT_ID), name: "Dark mode toggle" },
+    data: {
+      noteId: String(MOCK_TASK_NOTE_ID_1),
+      noteTitle: "Add the theme toggle component",
+      previousStatus: "in_progress",
+      newStatus: "complete",
+      changedAt: "2026-01-01T12:00:00.000Z",
+      agentId: String(MOCK_AGENT_ID),
+    },
+  },
+  {
+    id: "evt-mock-3",
+    workspaceId: String(MOCK_WORKSPACE_ID),
+    timestamp: "2026-01-02T13:50:00.000Z",
+    type: WorkspaceEventType.NoteUpdated,
+    actor: { type: "user", id: "user-alex", name: "Alex", email: "alex@example.com" },
+    data: {
+      noteId: SPEC_NOTE_ID,
+      title: "Spec",
+      path: "spec",
+      action: "update",
+    },
+  },
+  {
+    id: "evt-mock-4",
+    workspaceId: String(MOCK_WORKSPACE_ID),
+    timestamp: "2026-01-01T09:06:00.000Z",
+    type: WorkspaceEventType.AgentIdle,
+    actor: { type: "agent", id: String(MOCK_AGENT_ID), name: "Dark mode toggle" },
+    data: {
+      agentId: String(MOCK_AGENT_ID),
+      agentName: "Dark mode toggle",
+      reason: "stream_complete",
+      finishReason: "end_turn",
+      status: "idle",
+      activationState: null,
+      isActive: false,
+      isStreaming: false,
+      isProcessing: false,
+      isResponding: false,
+      stopReason: "end_turn",
+    },
+  },
+];

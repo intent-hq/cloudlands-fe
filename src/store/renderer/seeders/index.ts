@@ -11,3 +11,4 @@ import "./notes-seeder";
 import "./files-git-seeder";
 import "./terminals-scripts-seeder";
 import "./settings-integrations-seeder";
+import "./misc-ui-events-seeder";

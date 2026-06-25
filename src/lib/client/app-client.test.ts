@@ -8,6 +8,7 @@ import {
   mockSkills,
   mockSystemStatus,
   mockTokenUsage,
+  mockWorkspaceEvents,
   mockWorkspaces,
 } from "./mock/fixtures";
 
@@ -45,7 +46,7 @@ describe("appClient (MockAppClient seam)", () => {
     const seen: unknown[] = [];
     const unsubscribe = appClient.events.subscribe("ws-mock-1", (snapshot) => seen.push(snapshot));
 
-    expect(seen).toEqual([[]]);
+    expect(seen).toEqual([mockWorkspaceEvents]);
     expect(typeof unsubscribe).toBe("function");
     unsubscribe();
   });

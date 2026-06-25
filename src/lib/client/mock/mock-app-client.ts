@@ -129,7 +129,8 @@ export class MockAppClient implements AppClient {
   };
 
   readonly skills: AppClient["skills"] = {
-    list: async () => fx.mockSkills,
+    list: async (workspaceId) =>
+      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockSkills : [],
     subscribe: (handler) => emitOnce(handler, fx.mockSkills),
   };
 
@@ -145,7 +146,8 @@ export class MockAppClient implements AppClient {
   };
 
   readonly browser: AppClient["browser"] = {
-    recentUrls: async () => fx.mockRecentUrls,
+    recentUrls: async (workspaceId) =>
+      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockRecentUrls : [],
     subscribe: (handler) => emitOnce(handler, fx.mockRecentUrls),
   };
 
@@ -164,7 +166,9 @@ export class MockAppClient implements AppClient {
   };
 
   readonly events: AppClient["events"] = {
-    list: async () => [],
-    subscribe: (_workspaceId, handler) => emitOnce(handler, []),
+    list: async (workspaceId) =>
+      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockWorkspaceEvents : [],
+    subscribe: (workspaceId, handler) =>
+      emitOnce(handler, workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockWorkspaceEvents : []),
   };
 }
