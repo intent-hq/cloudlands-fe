@@ -48,10 +48,11 @@ export class MockAppClient implements AppClient {
   };
 
   readonly terminals: AppClient["terminals"] = {
-    list: async () => fx.mockTerminals,
+    list: async (workspaceId) =>
+      fx.mockTerminals.filter((terminal) => terminal.workspaceId === workspaceId),
     create: async () => OK,
     write: async () => OK,
-    output: async () => "",
+    output: async (terminalId) => fx.mockTerminalBuffers[terminalId] ?? "",
     subscribe: (handler) => emitOnce(handler, fx.mockTerminals),
   };
 
@@ -117,8 +118,9 @@ export class MockAppClient implements AppClient {
   };
 
   readonly scripts: AppClient["scripts"] = {
-    list: async () => [],
-    subscribe: (handler) => emitOnce(handler, []),
+    list: async (workspaceId) =>
+      fx.mockScripts.filter((script) => script.workspaceId === workspaceId),
+    subscribe: (handler) => emitOnce(handler, fx.mockScripts),
   };
 
   readonly setupScripts: AppClient["setupScripts"] = {

@@ -36,6 +36,7 @@ import type { PrStatusSummary } from "../../app-client";
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
 import type { CommentV2 } from "$features/comments/comment-types-v2";
 import type { TerminalTab } from "$store/renderer/slices/terminals/terminals-slice";
+import type { ScriptWithState } from "$store/renderer/slices/scripts/scripts-types";
 import type { SetupScript } from "$store/renderer/slices/setup-scripts/setup-scripts-types";
 import type { SkillInfo } from "$store/renderer/slices/skills/skills-types";
 import type { CustomSpecialist } from "$store/renderer/slices/specialists/specialists-slice";
@@ -302,7 +303,69 @@ export const mockComments: CommentV2[] = [
   },
 ];
 
-export const mockTerminals: TerminalTab[] = [{ id: "term-mock-1", name: "Mock Terminal" }];
+// ============================================================================
+// Terminals & scripts
+// ============================================================================
+
+const MOCK_DEFAULT_TERMINAL_ID = `terminal-${MOCK_WORKSPACE_ID}-default`;
+const MOCK_SECOND_TERMINAL_ID = `terminal-${MOCK_WORKSPACE_ID}-2`;
+
+/** Terminal tabs for the dark-mode workspace (ws-mock-1). */
+export const mockTerminals: TerminalTab[] = [
+  {
+    id: MOCK_DEFAULT_TERMINAL_ID,
+    name: "Terminal",
+    type: "terminal",
+    workspaceId: String(MOCK_WORKSPACE_ID),
+    createdAt: ISO,
+  },
+  {
+    id: MOCK_SECOND_TERMINAL_ID,
+    name: "Terminal 2",
+    type: "terminal",
+    workspaceId: String(MOCK_WORKSPACE_ID),
+    createdAt: ISO,
+  },
+];
+
+/** Restored scrollback buffers keyed by terminal ID (raw xterm bytes). */
+export const mockTerminalBuffers: Record<string, string> = {
+  [MOCK_DEFAULT_TERMINAL_ID]:
+    "$ pnpm run dev\r\n\x1b[32m➜\x1b[0m  Local:   http://localhost:5173/\r\n$ ",
+  [MOCK_SECOND_TERMINAL_ID]: "$ git status\r\nOn branch feat/dark-mode-toggle\r\n$ ",
+};
+
+/** Workspace scripts for the dark-mode workspace (ws-mock-1). */
+export const mockScripts: ScriptWithState[] = [
+  {
+    id: "script-mock-dev",
+    workspaceId: String(MOCK_WORKSPACE_ID),
+    name: "Dev server",
+    command: "pnpm run dev",
+    mode: "service",
+    category: "dev",
+    source: "auto-detected",
+    autoStart: true,
+    createdAt: ISO,
+    runtime: {
+      status: "running",
+      pid: 4242,
+      restartCount: 0,
+      detectedUrl: "http://localhost:5173",
+    },
+  },
+  {
+    id: "script-mock-test",
+    workspaceId: String(MOCK_WORKSPACE_ID),
+    name: "Unit tests",
+    command: "pnpm run test:unit",
+    mode: "command",
+    category: "test",
+    source: "auto-detected",
+    createdAt: ISO,
+    runtime: { status: "idle", restartCount: 0 },
+  },
+];
 
 export const mockSkills: SkillInfo[] = [
   { name: "mock-skill", description: "A mock skill", location: "/mock/skill" },
@@ -311,10 +374,11 @@ export const mockSkills: SkillInfo[] = [
 export const mockSetupScripts: SetupScript[] = [
   {
     id: "setup-mock-1",
-    name: "Mock Setup",
-    content: "echo mock",
+    name: "Install dependencies",
+    content: "pnpm install",
+    projectType: "node",
     lastUsedAt: ISO,
-    usageCount: 0,
+    usageCount: 3,
     createdAt: ISO,
   },
 ];
