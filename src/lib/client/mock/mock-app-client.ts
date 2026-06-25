@@ -24,7 +24,7 @@ export class MockAppClient implements AppClient {
     create: async () => OK,
     delete: async () => OK,
     setActive: async () => OK,
-    recentViews: async () => ({}),
+    recentViews: async () => fx.mockWorkspaceRecentViews,
     subscribe: (handler) => emitOnce(handler, fx.mockWorkspaces),
   };
 

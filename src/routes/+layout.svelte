@@ -113,6 +113,8 @@
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { initAppStore, store as appStore } from '$store/renderer/store';
   import { seedMockStore } from '$store/renderer/mock-bootstrap';
+  // Side-effect import: runs every per-domain seeder's registration at startup.
+  import '$store/renderer/seeders';
   const logger = createLogger('+layout');
 
   function initStore(): () => void {
