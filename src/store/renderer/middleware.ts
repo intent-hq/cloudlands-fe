@@ -3,7 +3,6 @@
   defines order of execution
 */
 
-import createSagaMiddleware, { type Saga } from "redux-saga";
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import {
   REDUX_DEBUG_LS_KEY,
@@ -18,13 +17,7 @@ import { createStructuredCloneCheckerMiddleware } from "./middlewares/structured
 import { createStoreGuardMiddleware } from "../../store/utils/store-guard-middleware";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
-export const sagaMiddleware = createSagaMiddleware();
-
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
-
-export const runSaga = <S extends Saga>(saga: S, ...args: Parameters<S>) => {
-  return sagaMiddleware.run(saga, ...args);
-};
 
 /**
  * Get Redux logger configuration from localStorage for manual debugging.
@@ -62,7 +55,6 @@ function buildMiddleware(): StoreMiddleware[] {
     createStoreGuardMiddleware("renderer"),
     // No action types to batch yet — add action types here as slices are added
     createBatchingMiddleware([]),
-    sagaMiddleware,
     // Add Sentry breadcrumbs middleware to track Redux actions
     createSentryBreadcrumbsMiddleware(),
   ];

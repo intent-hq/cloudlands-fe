@@ -112,17 +112,14 @@
   import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { initAppStore, store as appStore } from '$store/renderer/store';
-  import { startAllAppSagas } from '$store/renderer/sagas';
+  import { seedMockStore } from '$store/renderer/mock-bootstrap';
   const logger = createLogger('+layout');
 
   function initStore(): () => void {
     const storeContext = initAppStore(appStore);
-    const stopHandlers = startAllAppSagas(appStore);
+    void seedMockStore(appStore);
 
     return () => {
-      for (const stop of stopHandlers) {
-        stop();
-      }
       storeContext.dispose();
     };
   }

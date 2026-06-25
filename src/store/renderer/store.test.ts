@@ -23,10 +23,6 @@ import {
 } from "./renderer-store-bridge";
 import { store as configuredStore } from "./configured-store";
 import { reducers } from "./reducer";
-import {
-  sagas,
-  startAllAppSagas,
-} from "./sagas";
 import type { GenericAction } from "@augmentcode/ag-redux-toolkit/types";
 import type { StoreState } from "./types";
 
@@ -52,7 +48,6 @@ function createFakeStoreRuntime(initialState = {} as StoreState) {
     get state() {
       return state;
     },
-    runSaga: vi.fn(() => vi.fn()),
     dispose,
   };
 
@@ -80,7 +75,7 @@ describe("configured app Store", () => {
     expect(selectStoreState.select(state)).toBe(state);
   });
 
-  it("keeps app reducers on the configured package Store and exposes app sagas as functions", () => {
+  it("keeps app reducers on the configured package Store", () => {
     const registeredReducers = appStore.getReducers();
 
     expect(reducers).not.toHaveProperty("storeUtility");
@@ -91,19 +86,6 @@ describe("configured app Store", () => {
     for (const [name, reducer] of Object.entries(reducers)) {
       expect(registeredReducers[name]).toBe(reducer);
     }
-    expect(sagas.every((saga) => typeof saga === "function")).toBe(true);
-  });
-
-  it("starts every registered app saga through Store.runSaga in registry order", () => {
-    const runtime = createFakeStoreRuntime();
-
-    const stopHandlers = startAllAppSagas(runtime as unknown as Store<any, any>);
-
-    expect(runtime.runSaga).toHaveBeenCalledTimes(sagas.length);
-    sagas.forEach((saga, index) => {
-      expect(runtime.runSaga).toHaveBeenNthCalledWith(index + 1, saga);
-    });
-    expect(stopHandlers).toHaveLength(sagas.length);
   });
 });
 

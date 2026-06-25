@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => {
     return vi.fn(() => (next: (action: unknown) => unknown) => (action: unknown) => next(action));
   };
 
-  const sagaMiddleware = Object.assign(createPassthroughMiddleware(), { run: vi.fn() });
   const batchingMiddleware = createPassthroughMiddleware();
   const sentryMiddleware = createPassthroughMiddleware();
   const loggerMiddleware = createPassthroughMiddleware();
@@ -22,14 +21,12 @@ const mocks = vi.hoisted(() => {
   const storeGuardMiddleware = createPassthroughMiddleware();
 
   return {
-    createSagaMiddleware: vi.fn(() => sagaMiddleware),
     createBatchingMiddleware: vi.fn(() => batchingMiddleware),
     createSentryBreadcrumbsMiddleware: vi.fn(() => sentryMiddleware),
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
     createStructuredCloneCheckerMiddleware: vi.fn(() => structuredCloneMiddleware),
     createStoreGuardMiddleware: vi.fn(() => storeGuardMiddleware),
-    sagaMiddleware,
     batchingMiddleware,
     sentryMiddleware,
     loggerMiddleware,
@@ -38,7 +35,6 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("redux-saga", () => ({ default: mocks.createSagaMiddleware }));
 vi.mock("./middlewares/batch", () => ({ createBatchingMiddleware: mocks.createBatchingMiddleware }));
 vi.mock("./middlewares/logger", () => ({ createLoggerMiddleware: mocks.createLoggerMiddleware }));
 vi.mock("./middlewares/sentry-breadcrumbs", () => ({
@@ -95,7 +91,6 @@ describe("store middleware Redux logging gating", () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
-      mocks.sagaMiddleware,
       mocks.sentryMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -111,7 +106,6 @@ describe("store middleware Redux logging gating", () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
-      mocks.sagaMiddleware,
       mocks.sentryMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -127,7 +121,6 @@ describe("store middleware Redux logging gating", () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
-      mocks.sagaMiddleware,
       mocks.sentryMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -144,7 +137,6 @@ describe("store middleware Redux logging gating", () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
-      mocks.sagaMiddleware,
       mocks.sentryMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
@@ -178,7 +170,6 @@ describe("store middleware Redux logging gating", () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
-      mocks.sagaMiddleware,
       mocks.sentryMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
@@ -193,7 +184,6 @@ describe("window.intent Redux logging interface", () => {
     vi.clearAllMocks();
     setLocalStorageEntries({});
     delete (window as Window & { intent?: unknown }).intent;
-    mocks.sagaMiddleware.run.mockReturnValue({ cancel: vi.fn() });
   });
 
   it("registers enableReduxLogging and disableReduxLogging on window.intent", async () => {
