@@ -10,3 +10,4 @@ import "./agents-seeder";
 import "./notes-seeder";
 import "./files-git-seeder";
 import "./terminals-scripts-seeder";
+import "./settings-integrations-seeder";

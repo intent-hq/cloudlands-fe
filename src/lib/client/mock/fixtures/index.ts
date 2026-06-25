@@ -46,6 +46,12 @@ import type { ReleaseNotes } from "$store/renderer/slices/release-notes/release-
 import type { SystemStatusState } from "$store/renderer/slices/system-status/system-status-slice";
 import type { ProviderSettingsState } from "$store/renderer/slices/provider-settings/provider-settings-slice";
 import type { SingleWorkspaceSettings } from "$store/renderer/slices/workspace-settings/workspace-settings-slice";
+import type { UserPreferencesState } from "$store/renderer/slices/user-preferences/user-preferences-slice";
+import type { BackgroundAgentSettingsState } from "$store/renderer/slices/background-agent-settings/background-agent-settings-slice";
+import type { McpServerConfig } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
+import type { GitHubUser } from "$features/github-auth/types";
+import type { LinearIssueResult } from "$features/linear-auth/renderer/linear-auth.client";
+import type { SentryIssueResult } from "$features/sentry-auth/types";
 
 const ISO = "2026-01-01T00:00:00.000Z";
 
@@ -413,13 +419,165 @@ export const mockSystemStatus: SystemStatusState = {
 };
 
 export const mockProviderSettings: ProviderSettingsState = {
-  activeProviderId: "mock-provider",
-  enabledProviders: {},
+  activeProviderId: "auggie",
+  enabledProviders: { auggie: true, "claude-code": false, codex: false },
 };
 
 export const mockWorkspaceSettings: SingleWorkspaceSettings = {
   autoCommitEnabled: true,
 };
+
+// ============================================================================
+// Settings — user preferences, MCP servers & background agents
+// ============================================================================
+
+/** User-facing preferences surfaced by the settings panel. */
+export const mockUserPreferences: UserPreferencesState = {
+  betaUpdatesEnabled: false,
+  spellcheckEnabled: true,
+  zoomFactor: 1.0,
+  showArchived: false,
+  groupByRepo: true,
+  hasCompletedProviderSetup: true,
+  agentFontStyle: "sans",
+  noteFontStyle: "sans",
+  codeFontFamily: "JetBrains Mono",
+  systemFonts: ["JetBrains Mono", "Fira Code", "SF Mono", "Menlo", "Monaco"],
+  enabled: true,
+  soundEnabled: true,
+  soundOnlyWhenUnfocused: true,
+  volume: 0.5,
+  activityLogPresets: [],
+  promoBannerInteractions: {},
+};
+
+/** Configured MCP servers for the MCP settings panel. */
+export const mockMcpServers: McpServerConfig[] = [
+  {
+    name: "github",
+    type: "http",
+    url: "https://mcp.github.com/mcp",
+    authType: "oauth",
+  },
+  {
+    name: "filesystem",
+    type: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/mock/web-app"],
+  },
+];
+
+/** Raw contents of ~/.augment/settings.json for the MCP advanced editor. */
+export const mockUserMcpSettingsContent = JSON.stringify(
+  {
+    mcpServers: {
+      github: { type: "http", url: "https://mcp.github.com/mcp", authType: "oauth" },
+      filesystem: {
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem", "/mock/web-app"],
+      },
+    },
+  },
+  null,
+  2,
+);
+
+/** Filesystem path shown for the MCP advanced editor. */
+export const mockUserMcpSettingsPath = "/mock/home/.augment/settings.json";
+
+/** Background-agent model assignments for the background-agent settings panel. */
+export const mockBackgroundAgentSettings: BackgroundAgentSettingsState = {
+  defaultModel: "mock-model",
+  typeOverrides: { commit: "mock-model", pr: "mock-model", review: "", fast: "" },
+  providerSettings: {},
+};
+
+// ============================================================================
+// Integrations — GitHub, Linear & Sentry (connected mock state)
+// ============================================================================
+
+/** Fake connected GitHub user surfaced by the integrations panel. */
+export const mockGitHubUser: GitHubUser = {
+  login: "octocat",
+  name: "Mona Octocat",
+  email: "mona@example.com",
+  avatar_url: "https://avatars.githubusercontent.com/u/583231?v=4",
+};
+
+/** Assigned Linear issues for the connected Linear mock state. */
+export const mockLinearIssues: LinearIssueResult[] = [
+  {
+    id: "linear-mock-1",
+    identifier: "WEB-128",
+    title: "Dark mode toggle flickers on first paint",
+    description: "Theme is applied after hydration, causing a brief flash of light mode.",
+    url: "https://linear.app/acme/issue/WEB-128",
+    teamName: "Web",
+    teamKey: "WEB",
+    state: "In Progress",
+    priority: 2,
+    assignee: "Mona Octocat",
+    labels: ["bug", "frontend"],
+    project: "Dark mode",
+    creator: "Alex",
+    createdAt: "2026-01-02T09:00:00.000Z",
+    updatedAt: "2026-01-02T14:00:00.000Z",
+  },
+  {
+    id: "linear-mock-2",
+    identifier: "WEB-131",
+    title: "Persist theme preference across reloads",
+    url: "https://linear.app/acme/issue/WEB-131",
+    teamName: "Web",
+    teamKey: "WEB",
+    state: "Todo",
+    priority: 3,
+    assignee: "Mona Octocat",
+    labels: ["feature"],
+    project: "Dark mode",
+    creator: "Alex",
+    createdAt: "2026-01-02T10:00:00.000Z",
+    updatedAt: "2026-01-02T10:00:00.000Z",
+  },
+];
+
+/** Recent Sentry issues for the connected Sentry mock state. */
+export const mockSentryIssues: SentryIssueResult[] = [
+  {
+    id: "sentry-mock-1",
+    shortId: "WEB-APP-1",
+    title: "TypeError: Cannot read properties of undefined (reading 'theme')",
+    culprit: "applyTheme(src/lib/theme.ts)",
+    status: "unresolved",
+    level: "error",
+    count: "42",
+    userCount: 7,
+    firstSeen: "2026-01-02T08:00:00.000Z",
+    lastSeen: "2026-01-02T15:00:00.000Z",
+    projectName: "web-app",
+    projectSlug: "web-app",
+    url: "https://acme.sentry.io/issues/sentry-mock-1",
+    type: "TypeError",
+    value: "Cannot read properties of undefined (reading 'theme')",
+    filename: "src/lib/theme.ts",
+    function: "applyTheme",
+  },
+  {
+    id: "sentry-mock-2",
+    shortId: "API-SERVER-9",
+    title: "RateLimitExceeded: too many requests",
+    status: "unresolved",
+    level: "warning",
+    count: "13",
+    userCount: 3,
+    firstSeen: "2026-01-04T09:00:00.000Z",
+    lastSeen: "2026-01-04T12:00:00.000Z",
+    projectName: "api-server",
+    projectSlug: "api-server",
+    url: "https://acme.sentry.io/issues/sentry-mock-2",
+    type: "RateLimitExceeded",
+  },
+];
 
 // ============================================================================
 // Agents & chat

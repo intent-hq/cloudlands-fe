@@ -57,17 +57,17 @@ export class MockAppClient implements AppClient {
   };
 
   readonly settings: AppClient["settings"] = {
-    getUserPreferences: async () => null,
+    getUserPreferences: async () => fx.mockUserPreferences,
     setUserPreferences: async () => OK,
     getProviderSettings: async () => fx.mockProviderSettings,
     setProviderSettings: async () => OK,
-    getMcpServers: async () => [],
+    getMcpServers: async () => fx.mockMcpServers,
     setMcpServers: async () => OK,
     getWorkspaceSettings: async () => fx.mockWorkspaceSettings,
     setWorkspaceSettings: async () => OK,
-    getBackgroundAgentSettings: async () => null,
+    getBackgroundAgentSettings: async () => fx.mockBackgroundAgentSettings,
     setBackgroundAgentSettings: async () => OK,
-    subscribe: (handler) => emitOnce(handler, null),
+    subscribe: (handler) => emitOnce(handler, fx.mockUserPreferences),
   };
 
   readonly files: AppClient["files"] = {
@@ -150,10 +150,10 @@ export class MockAppClient implements AppClient {
   };
 
   readonly integrations: AppClient["integrations"] = {
-    githubUser: async () => null,
-    linearIssues: async () => [],
-    sentryIssues: async () => [],
-    subscribe: (handler) => emitOnce(handler, { githubUser: null }),
+    githubUser: async () => fx.mockGitHubUser,
+    linearIssues: async () => fx.mockLinearIssues,
+    sentryIssues: async () => fx.mockSentryIssues,
+    subscribe: (handler) => emitOnce(handler, { githubUser: fx.mockGitHubUser }),
   };
 
   readonly system: AppClient["system"] = {
