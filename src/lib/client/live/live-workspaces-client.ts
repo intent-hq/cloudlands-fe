@@ -21,8 +21,7 @@ import {
   backendUnsubscribe,
   onBackendNotification,
 } from "./backend-transport";
-
-const OK: MutationResult = { success: true };
+import { newIdempotencyKey, runMutation } from "./live-support";
 
 /** Daemon status strings → renderer WorkspaceStatus enum. */
 function toWorkspaceStatus(value: unknown): WorkspaceStatus {
@@ -84,18 +83,20 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     return normalizeWorkspace(raw as Record<string, unknown>);
   }
 
-  // Mutations are deferred to a later wave; accept as no-op successes so existing
-  // renderer flows are not regressed by the workspaces migration.
-  async create(_request: CreateWorkspaceRequest): Promise<MutationResult> {
-    return OK;
+  // Mutations forward to the daemon (§7.1) and fold the outcome into a
+  // MutationResult; daemon `workspace:*` events drive the reactive refresh.
+  async create(request: CreateWorkspaceRequest): Promise<MutationResult> {
+    // create requires an idempotencyKey (§5.6); the daemon ignores unknown
+    // params, so the full request is forwarded for forward-compatibility.
+    return runMutation("workspace.create", { ...request, idempotencyKey: newIdempotencyKey() });
   }
 
-  async delete(_id: string): Promise<MutationResult> {
-    return OK;
+  async delete(id: string): Promise<MutationResult> {
+    return runMutation("workspace.delete", { workspaceId: id });
   }
 
-  async setActive(_id: string): Promise<MutationResult> {
-    return OK;
+  async setActive(id: string): Promise<MutationResult> {
+    return runMutation("workspace.setActive", { workspaceId: id });
   }
 
   // Recency is renderer/daemon state not yet exposed by the daemon; empty for now.

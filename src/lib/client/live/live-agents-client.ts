@@ -23,9 +23,7 @@ import {
   backendUnsubscribe,
   onBackendNotification,
 } from "./backend-transport";
-import { isEventOneOf, listWorkspaceIds } from "./live-support";
-
-const OK: MutationResult = { success: true };
+import { isEventOneOf, listWorkspaceIds, newIdempotencyKey, runMutation } from "./live-support";
 
 /** Lifecycle events that warrant an agent-list refresh (NOT stream/message). */
 const AGENT_LIFECYCLE_EVENTS = [
@@ -76,25 +74,35 @@ export class LiveAgentsClient implements AgentsClient {
     return normalizeAgent(raw as Record<string, unknown>);
   }
 
-  // Mutations are out of scope for this wave; accept as no-op successes so the
-  // existing renderer flows are not regressed by the agents migration.
-  async create(_request: AgentCreateRequest): Promise<MutationResult> {
-    return OK;
+  // Mutations forward to the daemon (§7.2) and fold the outcome into a
+  // MutationResult; daemon agent-lifecycle events drive the reactive refresh.
+  async create(request: AgentCreateRequest): Promise<MutationResult> {
+    // create requires an idempotencyKey (§5.6). The seam's AgentCreateRequest
+    // only carries workspaceId/model/specialist/prompt; prompt maps to the
+    // wire `behaviorPrompt`. (name/provider/agentType/taskNoteId are not on the
+    // request — see the gap noted in the task report.)
+    return runMutation("agent.create", {
+      workspaceId: request.workspaceId,
+      model: request.model,
+      specialist: request.specialist,
+      behaviorPrompt: request.prompt,
+      idempotencyKey: newIdempotencyKey(),
+    });
   }
-  async send(_agentId: string, _message: string): Promise<MutationResult> {
-    return OK;
+  async send(agentId: string, message: string): Promise<MutationResult> {
+    return runMutation("agent.send", { agentId, content: message });
   }
-  async queue(_agentId: string, _message: string): Promise<MutationResult> {
-    return OK;
+  async queue(agentId: string, message: string): Promise<MutationResult> {
+    return runMutation("agent.queue", { agentId, content: message });
   }
-  async setAvailability(_agentId: string, _available: boolean): Promise<MutationResult> {
-    return OK;
+  async setAvailability(agentId: string, available: boolean): Promise<MutationResult> {
+    return runMutation("agent.setAvailability", { agentId, available });
   }
-  async follow(_agentId: string, _follow: boolean): Promise<MutationResult> {
-    return OK;
+  async follow(agentId: string, follow: boolean): Promise<MutationResult> {
+    return runMutation("agent.follow", { agentId, follow });
   }
-  async lock(_agentId: string, _locked: boolean): Promise<MutationResult> {
-    return OK;
+  async lock(agentId: string, locked: boolean): Promise<MutationResult> {
+    return runMutation("agent.lock", { agentId, locked });
   }
 
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe {

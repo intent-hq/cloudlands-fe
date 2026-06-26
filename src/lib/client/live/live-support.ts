@@ -11,7 +11,39 @@
  *    workspace without an extra parameter; when the cache misses they fall back
  *    to scanning the workspace list.
  */
+import type { MutationResult } from "../app-client";
 import { backendRequest } from "./backend-transport";
+
+/**
+ * Generate an idempotency key for create/commit/merge mutations (§5.6): a UUID
+ * when the platform exposes `crypto.randomUUID`, otherwise a best-effort unique
+ * string. The server dedupes retried requests by this key.
+ */
+export function newIdempotencyKey(): string {
+  const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (typeof cryptoObj?.randomUUID === "function") return cryptoObj.randomUUID();
+  return `idk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Human-readable message for a failed mutation. */
+function mutationErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Issue a mutating JSON-RPC request and fold the outcome into a `MutationResult`:
+ * success on resolve, `{ success: false, error }` on any transport/daemon error.
+ * The seam never throws from a mutation. State convergence is left to the
+ * existing subscribe→refetch loops driven by daemon events.
+ */
+export async function runMutation(method: string, params?: unknown): Promise<MutationResult> {
+  try {
+    await backendRequest(method, params);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: mutationErrorMessage(error) };
+  }
+}
 
 /** Enumerate the daemon's workspace ids (best-effort; empty on transport error). */
 export async function listWorkspaceIds(): Promise<string[]> {
