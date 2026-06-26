@@ -9,12 +9,14 @@ import {
   mockSystemStatus,
   mockTokenUsage,
   mockWorkspaceEvents,
-  mockWorkspaces,
 } from "./mock/fixtures";
 
-describe("appClient (MockAppClient seam)", () => {
+// `appClient` is a LiveAppClient: the `workspaces` domain is backed by the live
+// daemon (covered by the JSON-RPC client tests), while every other domain still
+// delegates to the in-memory MockAppClient. These tests exercise the delegated
+// (mock-backed) domains through the singleton seam.
+describe("appClient seam (mock-delegated domains)", () => {
   it("resolves representative query stubs to deterministic fixtures", async () => {
-    expect(await appClient.workspaces.list()).toEqual(mockWorkspaces);
     expect(await appClient.skills.list("ws-mock-1")).toEqual(mockSkills);
     expect(await appClient.git.status("ws-mock-1")).toEqual(mockGitStatus);
     expect(await appClient.system.status()).toEqual(mockSystemStatus);
@@ -30,16 +32,6 @@ describe("appClient (MockAppClient seam)", () => {
   it("resolves not-yet-seeded domains to empty collections", async () => {
     expect(await appClient.files.list("ws-mock-1")).toEqual([]);
     expect(await appClient.comments.list("note-mock-1")).toEqual([]);
-  });
-
-  it("emits the initial snapshot synchronously on subscribe and returns a disposer", () => {
-    const seen: unknown[] = [];
-    const unsubscribe = appClient.workspaces.subscribe((snapshot) => seen.push(snapshot));
-
-    expect(seen).toHaveLength(1);
-    expect(seen[0]).toEqual(mockWorkspaces);
-    expect(typeof unsubscribe).toBe("function");
-    unsubscribe();
   });
 
   it("subscribes to keyed domains and emits an initial snapshot", () => {

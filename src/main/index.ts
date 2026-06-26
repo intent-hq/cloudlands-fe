@@ -346,6 +346,10 @@ import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ip
 import { setupPermissionIPC } from '../features/acp-official/main/permission.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
+import {
+  registerBackendHandlers,
+  disposeBackendClient,
+} from '../features/backend/main/backend.ipc';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 import { setupSandboxIPC } from '../features/sandbox/main/sandbox.ipc';
 import { setupSentryAuthIPC } from '../features/sentry-auth/main/sentry-auth.ipc';
@@ -505,6 +509,17 @@ async function gracefulShutdown() {
     } catch (error) {
       logger.error(
         'Error stopping MCP Hub servers:',
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+
+    // Dispose the live backend JSON-RPC client (closes the UDS/TCP socket).
+    try {
+      disposeBackendClient();
+      logger.info('Backend JSON-RPC client disposed');
+    } catch (error) {
+      logger.error(
+        'Error disposing backend client:',
         error instanceof Error ? error : new Error(String(error)),
       );
     }
@@ -1430,6 +1445,7 @@ app.whenReady().then(async () => {
   setupSpecialistsIPC(); // Needed for specialist selection on startup
   setupPermissionIPC(); // Needed for ACP agent tool approvals
   setupAutoUpdateIPC(); // Needed for auto-update IPC on startup
+  registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   startupMetrics.end('criticalIPC');
 
   logger.info('Critical IPC handlers registered, creating window');

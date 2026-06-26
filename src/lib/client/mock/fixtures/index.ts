@@ -12,7 +12,6 @@ import {
   GitFileStatus,
   LineType,
   NoteVisibility,
-  WorkspaceStatus,
   createAgentId,
   createNoteId,
   createWorkspaceId,
@@ -27,7 +26,6 @@ import type {
   FileStatus,
   GitStatus,
   Note,
-  Workspace,
   WorkspaceTask,
 } from "$shared/types";
 import { ChangeStage } from "$features/file-tracking/types";
@@ -57,72 +55,11 @@ import type { SentryIssueResult } from "$features/sentry-auth/types";
 
 const ISO = "2026-01-01T00:00:00.000Z";
 
+// The mock workspace ID anchors the not-yet-migrated mock domains (agents,
+// notes, etc.). The workspaces domain itself is now served by the live daemon
+// (see ../../live/live-workspaces-client), so the workspace list/recency
+// fixtures were removed with that migration.
 export const MOCK_WORKSPACE_ID = createWorkspaceId("ws-mock-1");
-export const MOCK_WORKSPACE_ID_2 = createWorkspaceId("ws-mock-2");
-export const MOCK_WORKSPACE_ID_3 = createWorkspaceId("ws-mock-3");
-
-export const mockWorkspaces: Workspace[] = [
-  {
-    id: MOCK_WORKSPACE_ID,
-    title: "Dark mode toggle",
-    branch: "feat/dark-mode-toggle",
-    baseRef: "main",
-    statusMessage: "Implementing the theme toggle button and persisting the preference.",
-    changesets: [],
-    timeline: [],
-    conversationInfo: [],
-    status: WorkspaceStatus.Active,
-    repositoryOwner: "acme",
-    repositoryName: "web-app",
-    path: "/mock/web-app/ws-mock-1",
-    tags: ["frontend", "ui"],
-    createdAt: "2026-01-01T09:00:00.000Z",
-    updatedAt: "2026-01-02T14:30:00.000Z",
-    lastActivity: "2026-01-02T14:30:00.000Z",
-  },
-  {
-    id: MOCK_WORKSPACE_ID_2,
-    title: "API rate limiting",
-    branch: "feat/rate-limiting",
-    baseRef: "main",
-    statusMessage: "Ready for review — added token-bucket middleware and tests.",
-    changesets: [],
-    timeline: [],
-    conversationInfo: [],
-    status: WorkspaceStatus.Active,
-    repositoryOwner: "acme",
-    repositoryName: "api-server",
-    path: "/mock/api-server/ws-mock-2",
-    tags: ["backend"],
-    createdAt: "2026-01-03T10:15:00.000Z",
-    updatedAt: "2026-01-04T11:45:00.000Z",
-    lastActivity: "2026-01-04T11:45:00.000Z",
-  },
-  {
-    id: MOCK_WORKSPACE_ID_3,
-    title: "Docs cleanup",
-    branch: "chore/docs-cleanup",
-    baseRef: "main",
-    changesets: [],
-    timeline: [],
-    conversationInfo: [],
-    status: WorkspaceStatus.Inactive,
-    repositoryOwner: "acme",
-    repositoryName: "web-app",
-    path: "/mock/web-app/ws-mock-3",
-    tags: ["docs"],
-    createdAt: "2025-12-20T08:00:00.000Z",
-    updatedAt: "2025-12-28T16:20:00.000Z",
-    lastActivity: "2025-12-28T16:20:00.000Z",
-  },
-];
-
-/** Last-viewed timestamps (epoch ms) keyed by workspace ID for recency ordering. */
-export const mockWorkspaceRecentViews: Record<string, number> = {
-  [MOCK_WORKSPACE_ID]: Date.parse("2026-01-02T14:30:00.000Z"),
-  [MOCK_WORKSPACE_ID_2]: Date.parse("2026-01-04T11:45:00.000Z"),
-  [MOCK_WORKSPACE_ID_3]: Date.parse("2025-12-28T16:20:00.000Z"),
-};
 
 /** Working-tree file statuses for the dark-mode workspace (ws-mock-1). */
 const mockGitFiles: FileStatus[] = [
@@ -781,7 +718,7 @@ export const mockTokenUsage: Record<string, { input: number; output: number }> =
 // Files, git, changes & PR
 // ============================================================================
 
-/** Absolute root path of the dark-mode workspace (matches mockWorkspaces[0].path). */
+/** Absolute root path used by the mock file/git fixtures for MOCK_WORKSPACE_ID. */
 export const MOCK_WORKSPACE_PATH = "/mock/web-app/ws-mock-1";
 
 function dir(name: string, path: string, children: FileNode[]): FileNode {

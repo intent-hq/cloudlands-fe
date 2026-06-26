@@ -1166,6 +1166,19 @@ export const IPC_CHANNELS = {
     GET: 'token-usage:get',
     CHANGED: 'token-usage:changed',
   },
+
+  // Live backend transport (JSON-RPC 2.0 bridge to the intentd daemon).
+  // The JSON-RPC client lives in the main process; the renderer reaches it
+  // through these request/subscription channels and receives daemon
+  // notifications on the BACKEND.NOTIFICATION event channel.
+  BACKEND: {
+    REQUEST: 'backend:request',
+    SUBSCRIBE: 'backend:subscribe',
+    UNSUBSCRIBE: 'backend:unsubscribe',
+    GET_STATUS: 'backend:get-status',
+    NOTIFICATION: 'backend:notification',
+    STATUS: 'backend:status',
+  },
 } as const;
 
 // Event channels that are sent from main to renderer
@@ -1346,6 +1359,10 @@ export const EVENT_CHANNELS = [
   'websocket-api:discovery-auto-disabled',
   // Workspace token usage changed (main → renderer)
   'token-usage:changed',
+  // Live backend transport (main → renderer): daemon JSON-RPC notifications
+  // and connection-status changes pushed from the main-process client.
+  'backend:notification',
+  'backend:status',
 ] as const;
 
 // Dynamic channel patterns that use runtime IDs

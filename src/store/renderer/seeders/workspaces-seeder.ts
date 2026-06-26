@@ -1,10 +1,11 @@
 /**
- * Workspaces & layout mock seeder.
+ * Workspaces & layout seeder.
  *
  * Pulls the workspace list and recency data from the `AppClient` seam and
  * dispatches existing slice actions to populate the store so the home view,
- * sidebar, and workspace tabs render with sample spaces — replacing the work
- * the workspace-loading sagas used to do against the real backend.
+ * sidebar, and workspace tabs render. The workspaces domain is now backed by the
+ * live intentd daemon (the mock workspace fixtures were removed), so this seeder
+ * hydrates the store from live data rather than from a mock.
  */
 import { registerMockSeeder } from "../mock-bootstrap";
 import {

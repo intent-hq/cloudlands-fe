@@ -1,10 +1,15 @@
 /**
- * In-memory AppClient implementation.
+ * In-memory AppClient implementation for the not-yet-migrated domains.
  *
  * Every query resolves to a deterministic fixture and every `subscribe()`
  * emits the initial snapshot synchronously, then stays idle (returns a no-op
  * disposer). Domains whose rich fixtures land in later waves resolve to empty
  * collections / `null` for now. Mutations are accepted no-ops.
+ *
+ * The `workspaces` domain has been migrated to the live daemon (see
+ * `../live/live-workspaces-client`), so it is intentionally absent here; this
+ * class implements `Omit<AppClient, "workspaces">` and is delegated to by
+ * `LiveAppClient` for the remaining domains.
  */
 import type { AppClient, MutationResult, SubscriptionHandler, Unsubscribe } from "../app-client";
 import * as fx from "./fixtures";
@@ -17,17 +22,7 @@ function emitOnce<T>(handler: SubscriptionHandler<T>, snapshot: T): Unsubscribe 
   return () => {};
 }
 
-export class MockAppClient implements AppClient {
-  readonly workspaces: AppClient["workspaces"] = {
-    list: async () => fx.mockWorkspaces,
-    get: async (id) => fx.mockWorkspaces.find((w) => w.id === id) ?? null,
-    create: async () => OK,
-    delete: async () => OK,
-    setActive: async () => OK,
-    recentViews: async () => fx.mockWorkspaceRecentViews,
-    subscribe: (handler) => emitOnce(handler, fx.mockWorkspaces),
-  };
-
+export class MockAppClient implements Omit<AppClient, "workspaces"> {
   readonly agents: AppClient["agents"] = {
     list: async (workspaceId) =>
       fx.mockAgents.filter((agent) => String(agent.workspaceId) === workspaceId),
