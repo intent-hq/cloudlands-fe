@@ -7,6 +7,7 @@
  */
 
 import { AcceptChangesClient } from './accept-changes.client';
+import { commit as commitViaSeam } from '$features/git/git-write-service';
 import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
 import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -56,12 +57,17 @@ class BackgroundGitActionsService {
     }
 
     try {
-      const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
-        commitMessage: commitMessage.trim(),
+      // Commit of already-staged changes routes through the AppClient seam
+      // (git.commit). userRequested:true — the user clicked Commit; the live
+      // client attaches the idempotencyKey.
+      const result = await commitViaSeam(workspaceId, {
+        message: commitMessage.trim(),
+        userRequested: true,
       });
 
       if (result.success) {
-        // Refresh stores to update UI
+        // Refresh file-tracking stores to update UI (the seam already reconciled
+        // git status). TODO: drop these once file-tracking moves off legacy IPC.
         try {
           appStore.dispatch(loadGitStatus(workspaceId, true));
           appStore.dispatch(refreshRequested(workspaceId, true));

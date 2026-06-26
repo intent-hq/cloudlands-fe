@@ -8,13 +8,16 @@
  * / tracked-change read methods, so those resolve to empty for now (no mock
  * fallback) — mirroring how `LiveWorkspacesClient.recentViews` handles
  * not-yet-exposed surfaces. `subscribe` refetches on `git:*` / `changes:git-status`
- * events.
+ * events. `stage` and `commit` are the two supported write mutations (`git.stage`
+ * / `git.commit`); both fold the daemon outcome into a `MutationResult`.
  */
 import { GitFileStatus } from "$shared/types";
 import type { DiffChunk, FileStatus, GitStatus } from "$shared/types";
 import type { CommitInfo, TrackedChange } from "$features/file-tracking/types";
 import type {
   GitClient,
+  GitCommitParams,
+  MutationResult,
   PrStatusSummary,
   SubscriptionHandler,
   Unsubscribe,
@@ -25,7 +28,7 @@ import {
   backendUnsubscribe,
   onBackendNotification,
 } from "./backend-transport";
-import { isEventInFamily, listWorkspaceIds } from "./live-support";
+import { isEventInFamily, listWorkspaceIds, newIdempotencyKey, runMutation } from "./live-support";
 
 /** Coerce a raw daemon git-status object into the renderer `GitStatus` shape. */
 function normalizeGitStatus(raw: Record<string, unknown>): GitStatus {
@@ -98,6 +101,45 @@ export class LiveGitClient implements GitClient {
     } catch {
       return null;
     }
+  }
+
+  // ---- Mutations ----------------------------------------------------------
+  // Each forwards to the daemon (§7) and folds the outcome into a
+  // MutationResult; the subscribe→refetch loop (git status channel) reconciles
+  // store state from the resulting `git:*` events. Never throws, never fakes
+  // success.
+
+  // `git.stage` requires explicit paths: all-files globs ('.'/'*'/'--all') are
+  // rejected upstream (mirroring the daemon contract) so the request is never
+  // even sent. `git.unstage` is a backend gap and is intentionally NOT wired.
+  async stage(workspaceId: string, paths: string[]): Promise<MutationResult> {
+    const cleaned = paths.map((path) => path.trim()).filter(Boolean);
+    if (cleaned.length === 0) {
+      return { success: false, error: "No file paths provided; staging requires explicit paths." };
+    }
+    if (cleaned.some((path) => path === "." || path === "*" || path.includes("--all"))) {
+      return {
+        success: false,
+        error: "Staging all files is not allowed; specify explicit file paths.",
+      };
+    }
+    return runMutation("git.stage", { workspaceId, paths: cleaned });
+  }
+
+  // `git.commit` is DESTRUCTIVE: it requires `userRequested: true` and carries
+  // an idempotencyKey (§5.6/§7.7) so retried requests are deduped server-side.
+  async commit(workspaceId: string, params: GitCommitParams): Promise<MutationResult> {
+    if (!params.userRequested) {
+      return { success: false, error: "git.commit requires userRequested: true." };
+    }
+    return runMutation("git.commit", {
+      workspaceId,
+      message: params.message,
+      ...(params.files !== undefined ? { files: params.files } : {}),
+      ...(params.amend !== undefined ? { amend: params.amend } : {}),
+      userRequested: params.userRequested,
+      idempotencyKey: newIdempotencyKey(),
+    });
   }
 
   subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe {

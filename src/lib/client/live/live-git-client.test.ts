@@ -10,10 +10,18 @@ vi.mock("./backend-transport", () => ({
   onBackendNotification: vi.fn(() => () => {}),
 }));
 
-vi.mock("./live-support", () => ({
-  isEventInFamily: vi.fn(() => false),
-  listWorkspaceIds: vi.fn(() => Promise.resolve([])),
-}));
+// Keep the REAL `runMutation` (so mutation tests assert the JSON-RPC method +
+// params it forwards to the mocked transport) but pin `newIdempotencyKey` to a
+// deterministic value and stub the subscribe-only helpers.
+vi.mock("./live-support", async (importActual) => {
+  const actual = await importActual<typeof import("./live-support")>();
+  return {
+    ...actual,
+    isEventInFamily: vi.fn(() => false),
+    listWorkspaceIds: vi.fn(() => Promise.resolve([])),
+    newIdempotencyKey: vi.fn(() => "idk-test"),
+  };
+});
 
 import { backendRequest } from "./backend-transport";
 import { LiveGitClient } from "./live-git-client";
@@ -89,5 +97,110 @@ describe("LiveGitClient reads (fake transport)", () => {
     expect(await client.commits("ws-1")).toEqual([]);
     expect(await client.trackedChanges("ws-1")).toEqual([]);
     expect(mockedRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("LiveGitClient.stage (fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("forwards git.stage with trimmed explicit paths and folds success", async () => {
+    mockedRequest.mockResolvedValueOnce({ branch: "main", files: [] });
+    const client = new LiveGitClient();
+
+    const result = await client.stage("ws-1", [" a.ts ", "b.ts", ""]);
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.stage", {
+      workspaceId: "ws-1",
+      paths: ["a.ts", "b.ts"],
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("rejects all-files globs upstream WITHOUT touching the daemon", async () => {
+    const client = new LiveGitClient();
+
+    for (const glob of [".", "*", "git add --all"]) {
+      const result = await client.stage("ws-1", [glob]);
+      expect(result.success).toBe(false);
+    }
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty path list WITHOUT touching the daemon", async () => {
+    const client = new LiveGitClient();
+
+    const result = await client.stage("ws-1", ["   ", ""]);
+
+    expect(result.success).toBe(false);
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it("maps a daemon stage error into a failed MutationResult", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("stage boom"));
+    const client = new LiveGitClient();
+
+    expect(await client.stage("ws-1", ["a.ts"])).toEqual({
+      success: false,
+      error: "stage boom",
+    });
+  });
+});
+
+describe("LiveGitClient.commit (fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("forwards git.commit with userRequested + idempotencyKey and optional files/amend", async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true, hash: "abc" });
+    const client = new LiveGitClient();
+
+    const result = await client.commit("ws-1", {
+      message: "msg",
+      files: ["a.ts"],
+      amend: true,
+      userRequested: true,
+    });
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.commit", {
+      workspaceId: "ws-1",
+      message: "msg",
+      files: ["a.ts"],
+      amend: true,
+      userRequested: true,
+      idempotencyKey: "idk-test",
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("omits files/amend when not provided", async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true });
+    const client = new LiveGitClient();
+
+    await client.commit("ws-1", { message: "msg", userRequested: true });
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.commit", {
+      workspaceId: "ws-1",
+      message: "msg",
+      userRequested: true,
+      idempotencyKey: "idk-test",
+    });
+  });
+
+  it("refuses to commit (and never calls the daemon) when userRequested is false", async () => {
+    const client = new LiveGitClient();
+
+    const result = await client.commit("ws-1", { message: "msg", userRequested: false });
+
+    expect(result.success).toBe(false);
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it("maps a daemon commit error into a failed MutationResult", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("commit boom"));
+    const client = new LiveGitClient();
+
+    expect(await client.commit("ws-1", { message: "msg", userRequested: true })).toEqual({
+      success: false,
+      error: "commit boom",
+    });
   });
 });

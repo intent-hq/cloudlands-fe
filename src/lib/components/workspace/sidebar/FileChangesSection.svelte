@@ -22,6 +22,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   refreshRequested,
 } from '$store/renderer/slices/changes/changes-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
+  import { stageFiles as stageFilesViaSeam } from '$features/git/git-write-service';
   import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
   import { selectAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-selectors';
   import { setAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
@@ -344,13 +345,19 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       });
       const paths = unlockedChanges.map((c) => c.relativePath);
       if (paths.length > 0) {
-        appStore.dispatch(stageByPathRequested(workspaceId, paths));
+        // Staging routes through the AppClient seam (git.stage). TODO: the
+        // file-tracking-rendered list converges only once file-tracking moves
+        // off legacy IPC (out of scope for this wave).
+        void stageFilesViaSeam(workspaceId, paths);
       }
     } finally {
       isStaging = false;
     }
   }
 
+  // TODO: unstage still dispatches the legacy changes-slice action — `git.unstage`
+  // is a backend gap (not in the frozen wire catalog), so it cannot route through
+  // the git-write-service seam yet.
   async function handleUnstageAll() {
     isStaging = true;
     try {
@@ -376,7 +383,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       logger.warn('Cannot stage file from locked agent', { path });
       return;
     }
-    appStore.dispatch(stageByPathRequested(workspaceId, filesToStage));
+    // Stage through the AppClient seam (git.stage).
+    void stageFilesViaSeam(workspaceId, filesToStage);
     clearSelection();
     await tick();
     if (filesToStage.length === 1) {
@@ -444,7 +452,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       return;
     }
     const paths = group.files.map((f) => f.path);
-    appStore.dispatch(stageByPathRequested(workspaceId, paths));
+    // Stage through the AppClient seam (git.stage).
+    void stageFilesViaSeam(workspaceId, paths);
   }
 
   async function handleUnstageGroup(group: AgentChangeGroup) {

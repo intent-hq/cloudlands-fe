@@ -125,6 +125,15 @@ vi.mock('$store/renderer/slices/changes/changes-slice', async (importOriginal) =
   setSidebarMergeWhenReady: vi.fn((wsId: string, value: boolean) => ({ type: 'changes/setSidebarMergeWhenReady', payload: [wsId, value] })),
 }));
 
+// Staging now routes through the git-write-service seam (FileChangesSection).
+const { mockStageFiles } = vi.hoisted(() => ({
+  mockStageFiles: vi.fn(() => Promise.resolve({ success: true })),
+}));
+vi.mock('$features/git/git-write-service', () => ({
+  stageFiles: mockStageFiles,
+  commit: vi.fn(() => Promise.resolve({ success: true })),
+}));
+
 const mockGitState = {
   ahead: 0,
   behind: 0,
@@ -610,6 +619,7 @@ async function renderPanel(props: Record<string, any> = {}) {
 describe('SidebarChangesPanel', () => {
   beforeEach(async () => {
     await resetMocks();
+    mockStageFiles.mockClear();
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -908,7 +918,7 @@ describe('SidebarChangesPanel', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('Interactions', () => {
-    it('calls stageByPath when stage action is invoked on unstaged file', async () => {
+    it('stages via the git-write-service seam when stage action is invoked on unstaged file', async () => {
       const unstaged = [makeChange({ relativePath: 'src/foo.ts' })];
       mockFileTrackingStore.unstagedChanges = unstaged;
       mockFileTrackingStore.stagedChanges = [];
@@ -924,9 +934,7 @@ describe('SidebarChangesPanel', () => {
       const stageBtns = container.querySelectorAll('[data-testid="stage-btn"]');
       expect(stageBtns.length).toBeGreaterThan(0);
       await fireEvent.click(stageBtns[0]);
-      expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'changes/stageByPathRequested', payload: ['ws-1', ['src/foo.ts']] })
-      );
+      expect(mockStageFiles).toHaveBeenCalledWith('ws-1', ['src/foo.ts']);
     });
 
     it('calls unstageByPath when unstage action is invoked on staged file', async () => {
@@ -1196,9 +1204,7 @@ describe('SidebarChangesPanel', () => {
       );
       expect(stageAllBtn).toBeDefined();
       await fireEvent.click(stageAllBtn!);
-      expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'changes/stageByPathRequested', payload: ['ws-1', ['src/a.ts', 'src/b.ts']] })
-      );
+      expect(mockStageFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts', 'src/b.ts']);
     });
 
     it('unstage all button unstages all staged files', async () => {

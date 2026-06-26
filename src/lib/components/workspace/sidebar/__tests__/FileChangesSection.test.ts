@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => {
   let lockedAgentIds: Record<string, true> = {};
   let workspaceAgents: Array<{ id: string; name: string }> = [];
   const openTab = vi.fn();
+  const stageFiles = vi.fn();
   const selector = <T>(getter: () => T) => {
     const fn = () => ({
       subscribe(run: (v: T) => void) {
@@ -39,6 +40,7 @@ const mocks = vi.hoisted(() => {
     unstaged,
     staged,
     openTab,
+    stageFiles,
     selector,
     getAutoCommit: () => autoCommit,
     setAutoCommit: (v: boolean) => { autoCommit = v; },
@@ -145,6 +147,12 @@ vi.mock('$lib/services/analytics', () => ({
 
 vi.mock('$lib/utils/client-logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
+
+vi.mock('$features/git/git-write-service', () => ({
+  stageFiles: mocks.stageFiles,
+  commit: vi.fn(),
 }));
 
 vi.mock('$lib/components/ui/toast', () => ({
@@ -223,6 +231,7 @@ describe('FileChangesSection', () => {
     mocks.dispatch.mockClear();
     mocks.reduxDispatch.mockClear();
     mocks.openTab.mockClear();
+    mocks.stageFiles.mockReset().mockResolvedValue({ success: true });
     mockExecute.mockReset().mockResolvedValue({ success: true });
     mocks.unstaged.splice(0, mocks.unstaged.length);
     mocks.staged.splice(0, mocks.staged.length);
@@ -241,16 +250,11 @@ describe('FileChangesSection', () => {
     expect(paths).toEqual(expect.arrayContaining(['src/a.ts', 'src/b.ts', 'src/c.ts']));
   });
 
-  it('handleStageAll dispatches stageByPathRequested with all unstaged paths', async () => {
+  it('handleStageAll stages all unstaged paths through the git-write-service seam', async () => {
     mocks.unstaged.push(makeChange('src/a.ts'), makeChange('src/b.ts'));
     const { getByText } = await renderSection();
     await fireEvent.click(getByText('Stage all'));
-    expect(mocks.reduxDispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'changes/stageByPathRequested',
-        payload: ['ws-1', ['src/a.ts', 'src/b.ts']],
-      }),
-    );
+    expect(mocks.stageFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts', 'src/b.ts']);
   });
 
   it('handleUnstageAll dispatches unstageByPathRequested with all staged paths', async () => {
@@ -265,22 +269,17 @@ describe('FileChangesSection', () => {
     );
   });
 
-  it('handleStageFile dispatches stage + openWorkspaceDiff for the single file', async () => {
+  it('handleStageFile stages via the seam + openWorkspaceDiff for the single file', async () => {
     const unstagedChange = makeChange('src/a.ts');
     const stagedChange = makeChange('src/a.ts', { id: 'staged-a', stage: ChangeStage.Staged });
     mocks.unstaged.push(unstagedChange);
     const { getAllByTestId } = await renderSection();
-    // Simulate that after dispatch the file moves to staged (selector re-read).
+    // Simulate that after staging the file moves to staged (selector re-read).
     mocks.staged.push(stagedChange);
 
     await fireEvent.click(getAllByTestId('stage-btn')[0]);
 
-    expect(mocks.reduxDispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'changes/stageByPathRequested',
-        payload: ['ws-1', ['src/a.ts']],
-      }),
-    );
+    expect(mocks.stageFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts']);
     await waitFor(() =>
       expect(mocks.reduxDispatch).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -354,12 +353,7 @@ describe('FileChangesSection', () => {
     );
     const { getByText } = await renderSection();
     await fireEvent.click(getByText('Stage all'));
-    expect(mocks.reduxDispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'changes/stageByPathRequested',
-        payload: ['ws-1', ['src/free.ts']],
-      }),
-    );
+    expect(mocks.stageFiles).toHaveBeenCalledWith('ws-1', ['src/free.ts']);
   });
 
   it('auto-commit toggle dispatches setAutoCommitEnabled', async () => {
