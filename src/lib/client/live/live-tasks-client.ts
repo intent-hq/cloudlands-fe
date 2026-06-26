@@ -9,7 +9,12 @@
  */
 import type { TaskStatus, WorkspaceTask } from "$shared/types";
 import type {
+  CreatePrerequisiteOptions,
+  MarkAsTaskOptions,
+  MutationResult,
   SubscriptionHandler,
+  TaskCheckboxStatus,
+  TaskUpdatePatch,
   TasksClient,
   Unsubscribe,
 } from "../app-client";
@@ -22,8 +27,10 @@ import {
 import {
   isEventInFamily,
   listWorkspaceIds,
+  newIdempotencyKey,
   rememberNoteWorkspace,
   resolveNoteWorkspaceId,
+  runMutation,
 } from "./live-support";
 
 /** Map a raw daemon note to a `WorkspaceTask` when it carries task metadata. */
@@ -76,6 +83,89 @@ export class LiveTasksClient implements TasksClient {
     } catch {
       return null;
     }
+  }
+
+  // ---- Mutations ----------------------------------------------------------
+  // Tasks are note-scoped (a task is a note carrying `metadata.task`), so each
+  // mutation resolves the owning workspace via `resolveNoteWorkspaceId` and
+  // forwards the frozen §7.9 params to the daemon, folding the outcome into a
+  // MutationResult (never throws, never fakes success). State convergence is
+  // left to the live `task:*`/`note:*` subscribe→refetch loop. `workspaceId` is
+  // sent alongside `noteId` per the §7.8 KEEP decision (daemon ignores unknowns).
+
+  async updateStatus(
+    noteId: string,
+    taskText: string,
+    status: TaskCheckboxStatus,
+  ): Promise<MutationResult> {
+    return this.runTaskMutation(noteId, "task.updateStatus", { taskText, status });
+  }
+
+  async update(noteId: string, line: number, patch: TaskUpdatePatch): Promise<MutationResult> {
+    return this.runTaskMutation(noteId, "task.update", {
+      line,
+      ...(patch.text !== undefined ? { text: patch.text } : {}),
+      ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(patch.expected !== undefined ? { expected: patch.expected } : {}),
+    });
+  }
+
+  async updateNoteStatus(noteId: string, status: TaskStatus): Promise<MutationResult> {
+    return this.runTaskMutation(noteId, "task.updateNoteStatus", { status });
+  }
+
+  async markAsTask(
+    noteId: string,
+    status: TaskStatus,
+    options?: MarkAsTaskOptions,
+  ): Promise<MutationResult> {
+    return this.runTaskMutation(noteId, "task.markAsTask", {
+      status,
+      ...(options?.acceptanceCriteria !== undefined
+        ? { acceptanceCriteria: options.acceptanceCriteria }
+        : {}),
+      ...(options?.effort !== undefined ? { effort: options.effort } : {}),
+    });
+  }
+
+  async assignAgent(noteId: string, agentId: string): Promise<MutationResult> {
+    return this.runTaskMutation(noteId, "task.assignAgent", { agentId });
+  }
+
+  async createPrerequisite(
+    dependentNoteId: string,
+    title: string,
+    options?: CreatePrerequisiteOptions,
+  ): Promise<MutationResult> {
+    const workspaceId = await resolveNoteWorkspaceId(dependentNoteId);
+    if (!workspaceId) {
+      return { success: false, error: `Cannot resolve workspace for note ${dependentNoteId}` };
+    }
+    return runMutation("task.createPrerequisite", {
+      workspaceId,
+      dependentNoteId,
+      title,
+      ...(options?.content !== undefined ? { content: options.content } : {}),
+      ...(options?.status !== undefined ? { status: options.status } : {}),
+      idempotencyKey: newIdempotencyKey(),
+    });
+  }
+
+  /**
+   * Resolve a task note's workspace, then issue a note-scoped task mutation with
+   * `{ workspaceId, noteId, ...params }`. Returns a failed MutationResult (never
+   * throws, never fakes success) when the workspace cannot be resolved.
+   */
+  private async runTaskMutation(
+    noteId: string,
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<MutationResult> {
+    const workspaceId = await resolveNoteWorkspaceId(noteId);
+    if (!workspaceId) {
+      return { success: false, error: `Cannot resolve workspace for note ${noteId}` };
+    }
+    return runMutation(method, { workspaceId, noteId, ...params });
   }
 
   subscribe(handler: SubscriptionHandler<WorkspaceTask[]>): Unsubscribe {

@@ -20,6 +20,7 @@ import type {
   FileNode,
   GitStatus,
   Note,
+  TaskStatus,
   Workspace,
   WorkspaceTask,
 } from "$shared/types";
@@ -47,6 +48,7 @@ import type { ReleaseNotes } from "$store/renderer/slices/release-notes/release-
 import type { SystemStatusState } from "$store/renderer/slices/system-status/system-status-slice";
 import type { AutoUpdateState } from "$store/renderer/slices/auto-update/auto-update-types";
 import type { CommentV2 } from "$store/renderer/slices/comments/comments-types";
+import type { CommentType } from "$features/comments/comment-types-v2";
 import type { FileContentEntry } from "$store/renderer/slices/files/files-types";
 
 /** Disposer returned by every `subscribe()` call. */
@@ -184,15 +186,86 @@ export interface NotesClient {
   updateMetadata(noteId: string, metadata: NoteMetadataPatch): Promise<MutationResult>;
 }
 
+/** Inline checkbox status vocabulary (`task.updateStatus` / `task.update`). */
+export type TaskCheckboxStatus = "todo" | "in-progress" | "done";
+
+/** Fields a `task.update` mutation may change on a single checkbox line. */
+export interface TaskUpdatePatch {
+  text?: string;
+  status?: TaskCheckboxStatus;
+  expected?: string;
+}
+
+/** Options for converting a note into a task note (`task.markAsTask`). */
+export interface MarkAsTaskOptions {
+  acceptanceCriteria?: string[] | string;
+  effort?: string;
+}
+
+/** Options for creating a prerequisite task dependency (`task.createPrerequisite`). */
+export interface CreatePrerequisiteOptions {
+  content?: string;
+  status?: string;
+}
+
 export interface TasksClient {
   list(workspaceId: string): Promise<WorkspaceTask[]>;
   get(taskId: string): Promise<WorkspaceTask | null>;
   subscribe(handler: SubscriptionHandler<WorkspaceTask[]>): Unsubscribe;
+  /** Toggle a single checkbox by its task text (`task.updateStatus`). */
+  updateStatus(
+    noteId: string,
+    taskText: string,
+    status: TaskCheckboxStatus,
+  ): Promise<MutationResult>;
+  /** Edit a single checkbox line by 1-based line number (`task.update`). */
+  update(noteId: string, line: number, patch: TaskUpdatePatch): Promise<MutationResult>;
+  /** Update a task note's metadata status (`task.updateNoteStatus`). */
+  updateNoteStatus(noteId: string, status: TaskStatus): Promise<MutationResult>;
+  /** Convert a note into a task note (`task.markAsTask`). */
+  markAsTask(
+    noteId: string,
+    status: TaskStatus,
+    options?: MarkAsTaskOptions,
+  ): Promise<MutationResult>;
+  /** Assign an existing agent to a task note (`task.assignAgent`). */
+  assignAgent(noteId: string, agentId: string): Promise<MutationResult>;
+  /** Create a prerequisite task dependency (`task.createPrerequisite`); carries an idempotencyKey. */
+  createPrerequisite(
+    dependentNoteId: string,
+    title: string,
+    options?: CreatePrerequisiteOptions,
+  ): Promise<MutationResult>;
+}
+
+/** Parameters for creating a note-anchored comment (`comment.add`). */
+export interface CommentAddParams {
+  searchContext: string;
+  commentTarget: string;
+  comment: string;
+  type?: CommentType;
+  author?: string;
+}
+
+/** Parameters for replying to a thread or comment (`comment.respond`). */
+export interface CommentRespondParams {
+  threadId?: string;
+  commentId?: string;
+  comment: string;
+  type?: CommentType;
+  suggestionOriginal?: string;
+  suggestionProposed?: string;
 }
 
 export interface CommentsClient {
   list(noteId: string): Promise<CommentV2[]>;
   subscribe(noteId: string, handler: SubscriptionHandler<CommentV2[]>): Unsubscribe;
+  /** Create a note-anchored comment (`comment.add`); the live client attaches an idempotencyKey (§5.6). */
+  add(noteId: string, params: CommentAddParams): Promise<MutationResult>;
+  /** Reply to a thread or comment (`comment.respond`). */
+  respond(noteId: string, params: CommentRespondParams): Promise<MutationResult>;
+  /** Delete a comment (`comment.delete`). */
+  delete(noteId: string, commentId: string): Promise<MutationResult>;
 }
 
 export interface ScriptsClient {

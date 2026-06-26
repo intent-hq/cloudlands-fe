@@ -5,8 +5,7 @@
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import TaskStatusIcon from '../tiptap/TaskStatusIcon.svelte';
 
-  import { updateTaskStatus } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-  import { store as appStore } from '$store/renderer/store';
+  import { updateTaskNoteStatus } from '$features/tasks/tasks-write-service';
 
 
   let {
@@ -75,7 +74,7 @@
     if (newStatus === status) return;
     if (!workspaceId || !noteId) return;
 
-    appStore.dispatch(updateTaskStatus(workspaceId, noteId, newStatus));
+    void updateTaskNoteStatus(workspaceId, noteId, newStatus);
   }
 
   async function handleMenuOpen() {

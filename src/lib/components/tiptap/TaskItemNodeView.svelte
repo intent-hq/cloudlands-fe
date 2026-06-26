@@ -26,10 +26,8 @@
     selectNotesVersion,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
 
-  import {
-    reloadNotes,
-    updateTaskStatus,
-  } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { reloadNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { updateTaskNoteStatus } from '$features/tasks/tasks-write-service';
   import { delegateExistingTaskRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { writable } from 'svelte/store';
   import { notesIpc } from '$lib/utils/notes-ipc';
@@ -149,7 +147,7 @@
     try {
       const workspaceId = linkedTaskNote?.workspaceId;
       if (!workspaceId) return;
-      appStore.dispatch(updateTaskStatus(workspaceId, linkedTaskNoteId, newStatus));
+      void updateTaskNoteStatus(workspaceId, linkedTaskNoteId, newStatus);
     } catch (error) {
       logger.error('Failed to update linked task status', error);
     }
