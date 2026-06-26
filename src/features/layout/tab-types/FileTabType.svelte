@@ -18,11 +18,11 @@
   selectFileLoading,
   selectFileSaving,
 } from '$store/renderer/slices/files/files-selectors';
+  import { loadFileContentRequested } from '$store/renderer/slices/files/files-slice';
   import {
-  loadFileContentRequested,
-  saveFileContentRequested,
-  updateFileContent,
-} from '$store/renderer/slices/files/files-slice';
+  writeFileContent,
+  flushFileContent,
+} from '$features/files/files-write-service';
   import { selectFileTrackingChanges } from '$store/renderer/slices/changes/changes-selectors';
   import type { TrackedChange } from '$features/file-tracking/types';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -160,21 +160,14 @@
   });
   const fileHasChanges = $derived(!!fileChange);
 
-  // Auto-save with debounce
-  let autoSaveTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  const AUTO_SAVE_DELAY_MS = 1500;
-
+  // Auto-save is debounced inside the files-write-service (keyed by ws::path).
+  // Flush any pending save when the file/workspace changes or the tab unmounts
+  // so an in-flight edit is never lost.
   $effect(() => {
-    const currentFileContent = fileContent;
-    if (isFileDirty && tab.filePath && currentFileContent !== null) {
-      if (autoSaveTimeoutId) clearTimeout(autoSaveTimeoutId);
-      autoSaveTimeoutId = setTimeout(() => saveFileContent(), AUTO_SAVE_DELAY_MS);
-    }
+    const wsId = workspaceId;
+    const filePath = tab.filePath;
     return () => {
-      if (autoSaveTimeoutId) {
-        clearTimeout(autoSaveTimeoutId);
-        autoSaveTimeoutId = null;
-      }
+      if (wsId && filePath) flushFileContent(wsId, filePath);
     };
   });
 
@@ -194,13 +187,14 @@
   }
 
   function setFileContentFromEditor(content: string) {
-    if (!tab.filePath || !workspaceId) return;
-    appStore.dispatch(updateFileContent(workspaceId, tab.filePath, content));
+    if (!tab.filePath || !workspaceId || !fileAbsolutePath) return;
+    // Optimistic local update + debounced file.write through the seam.
+    writeFileContent(workspaceId, tab.filePath, fileAbsolutePath, content);
   }
 
   function saveFileContent() {
     if (!tab.filePath || !fileAbsolutePath || fileContent === null || fileSaving) return;
-    appStore.dispatch(saveFileContentRequested(workspaceId, tab.filePath, fileAbsolutePath, fileContent));
+    writeFileContent(workspaceId, tab.filePath, fileAbsolutePath, fileContent, { immediate: true });
   }
 
   // Fetch line changes for diff indicators
@@ -307,12 +301,8 @@
         });
       },
       async () => {
-        // Undo action — re-create the file with saved content
-        appStore.dispatch(
-          saveFileContentRequested(workspaceId, filePath, absolutePath, savedContent, {
-            intent: 'restore',
-          }),
-        );
+        // Undo action — re-create the file with saved content (immediate write).
+        writeFileContent(workspaceId, filePath, absolutePath, savedContent, { immediate: true });
       },
     );
   }

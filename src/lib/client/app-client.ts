@@ -141,6 +141,23 @@ export interface FilesClient {
   /** Per-file git status keyed by workspace-relative path, for the explorer overlay. */
   gitStatusMap(workspaceId: string): Promise<Record<string, FileGitStatus>>;
   subscribe(handler: SubscriptionHandler<FileContentEntry[]>): Unsubscribe;
+  /** Write file content (`file.write`); create-ish, so the live client attaches an idempotencyKey (§5.6). */
+  write(workspaceId: string, path: string, content: string): Promise<MutationResult>;
+  /** Delete a file (`file.delete`). */
+  delete(workspaceId: string, path: string): Promise<MutationResult>;
+  /** Create a directory (`file.mkdir`); create, so the live client attaches an idempotencyKey (§5.6). */
+  mkdir(workspaceId: string, path: string): Promise<MutationResult>;
+  /** Rename/move a file (`file.rename`); carries a best-effort idempotencyKey. */
+  rename(workspaceId: string, oldPath: string, newPath: string): Promise<MutationResult>;
+}
+
+/** Parameters for a `git.commit` mutation. `userRequested` MUST be true (§7.7). */
+export interface GitCommitParams {
+  message: string;
+  files?: string[];
+  amend?: boolean;
+  /** Required `true`: the daemon rejects commits that are not explicitly user-requested. */
+  userRequested: boolean;
 }
 
 export interface GitClient {
@@ -151,6 +168,16 @@ export interface GitClient {
   commits(workspaceId: string): Promise<CommitInfo[]>;
   prStatus(workspaceId: string): Promise<PrStatusSummary | null>;
   subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe;
+  /**
+   * Stage explicit paths (`git.stage`). Rejects all-files globs ('.'/'*'/'--all')
+   * — staging requires explicit paths per contract.
+   */
+  stage(workspaceId: string, paths: string[]): Promise<MutationResult>;
+  /**
+   * Create a commit (`git.commit`). REQUIRES `userRequested: true`; the live
+   * client attaches an idempotencyKey (§5.6/§7.7). DESTRUCTIVE.
+   */
+  commit(workspaceId: string, params: GitCommitParams): Promise<MutationResult>;
 }
 
 /** Optional placement for a surgical `note.add`. */

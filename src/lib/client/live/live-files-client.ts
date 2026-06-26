@@ -12,6 +12,7 @@ import type { FileGitStatus } from "$shared/types";
 import type { FileContentEntry } from "$store/renderer/slices/files/files-types";
 import type {
   FilesClient,
+  MutationResult,
   SubscriptionHandler,
   Unsubscribe,
 } from "../app-client";
@@ -21,7 +22,7 @@ import {
   backendUnsubscribe,
   onBackendNotification,
 } from "./backend-transport";
-import { isEventInFamily } from "./live-support";
+import { isEventInFamily, newIdempotencyKey, runMutation } from "./live-support";
 
 /** Map raw daemon file content into a `FileContentEntry`. */
 function toFileContentEntry(path: string, content: string): FileContentEntry {
@@ -93,6 +94,41 @@ export class LiveFilesClient implements FilesClient {
     } catch {
       return {};
     }
+  }
+
+  // ---- Mutations ----------------------------------------------------------
+  // Each forwards to the daemon (§7.6) and folds the outcome into a
+  // MutationResult; the subscribe→refetch loop reconciles store state from the
+  // resulting `file:*` events. All file mutations are workspace-scoped and use
+  // workspace-relative paths. `write`/`mkdir`/`rename` are create-ish, so they
+  // carry an idempotencyKey (§5.6: required on create, best-effort elsewhere).
+  // DATA SAFETY: these are destructive against the user's real files; they are
+  // only ever exercised against the FAKE socket in tests.
+
+  async write(workspaceId: string, path: string, content: string): Promise<MutationResult> {
+    return runMutation("file.write", {
+      workspaceId,
+      path,
+      content,
+      idempotencyKey: newIdempotencyKey(),
+    });
+  }
+
+  async delete(workspaceId: string, path: string): Promise<MutationResult> {
+    return runMutation("file.delete", { workspaceId, path });
+  }
+
+  async mkdir(workspaceId: string, path: string): Promise<MutationResult> {
+    return runMutation("file.mkdir", { workspaceId, path, idempotencyKey: newIdempotencyKey() });
+  }
+
+  async rename(workspaceId: string, oldPath: string, newPath: string): Promise<MutationResult> {
+    return runMutation("file.rename", {
+      workspaceId,
+      oldPath,
+      newPath,
+      idempotencyKey: newIdempotencyKey(),
+    });
   }
 
   subscribe(handler: SubscriptionHandler<FileContentEntry[]>): Unsubscribe {

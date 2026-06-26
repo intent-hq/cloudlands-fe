@@ -19,6 +19,7 @@ import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-
 
 const {
   actionMocks,
+  writeFileServiceMocks,
   createMockSelector,
   dispatchMock,
   applyExternalFileContentToMockState,
@@ -140,8 +141,23 @@ const {
 
   const actionMocks = {
     loadFileContentRequested: makeAction('files/loadFileContentRequested'),
-    saveFileContentRequested: makeAction('files/saveFileContentRequested'),
-    updateFileContent: makeAction('files/updateFileContent'),
+  };
+
+  // The component now delegates content saves to the files-write-service (which
+  // owns the debounce + AppClient seam call). The service is mocked here; its
+  // optimistic local update is simulated so the editor binding + dirty UI still
+  // reflect edits without touching the real store/seam.
+  const writeFileServiceMocks = {
+    writeFileContent: vi.fn(
+      (_wsId: string, path: string, _absolutePath: string, content: string) => {
+        const entry = mockReduxState.files[path];
+        if (entry) {
+          mockReduxState.files[path] = { ...entry, localContent: content };
+          flushMockSelectors();
+        }
+      },
+    ),
+    flushFileContent: vi.fn(),
   };
 
   const dispatchMock = vi.fn((action: { type: string; payload?: unknown[] }) => {
@@ -168,6 +184,7 @@ const {
 
   return {
     actionMocks,
+    writeFileServiceMocks,
     applyExternalFileContentToMockState,
     createMockSelector,
     dispatchMock,
@@ -211,6 +228,8 @@ vi.mock('$store/renderer/slices/files/files-selectors', () => ({
 }));
 
 vi.mock('$store/renderer/slices/files/files-slice', () => actionMocks);
+
+vi.mock('$features/files/files-write-service', () => writeFileServiceMocks);
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceById: createMockSelector((wsId: string) =>
@@ -470,36 +489,32 @@ describe('FileTabType Redux integration', () => {
     });
 
     dispatchMock.mockClear();
-    actionMocks.updateFileContent.mockClear();
-    actionMocks.saveFileContentRequested.mockClear();
+    writeFileServiceMocks.writeFileContent.mockClear();
 
     await fireEvent.input(editor, { target: { value: 'console.log("edited");' } });
 
-    expect(actionMocks.updateFileContent).toHaveBeenCalledWith(
-      'ws-1',
-      'src/main.ts',
-      'console.log("edited");',
-    );
-    expect(dispatchMock).toHaveBeenCalledWith({
-      type: 'files/updateFileContent',
-      payload: ['ws-1', 'src/main.ts', 'console.log("edited");'],
-    });
-
-    const saveIndicator = await screen.findByTestId('save-indicator');
-    await waitFor(() => expect(saveIndicator.getAttribute('data-dirty')).toBe('true'));
-
-    await fireEvent.click(saveIndicator);
-
-    expect(actionMocks.saveFileContentRequested).toHaveBeenCalledWith(
+    // Editing routes through the files-write-service (debounced content write).
+    expect(writeFileServiceMocks.writeFileContent).toHaveBeenCalledWith(
       'ws-1',
       'src/main.ts',
       '/repo/src/main.ts',
       'console.log("edited");',
     );
-    expect(dispatchMock).toHaveBeenCalledWith({
-      type: 'files/saveFileContentRequested',
-      payload: ['ws-1', 'src/main.ts', '/repo/src/main.ts', 'console.log("edited");'],
-    });
+
+    const saveIndicator = await screen.findByTestId('save-indicator');
+    await waitFor(() => expect(saveIndicator.getAttribute('data-dirty')).toBe('true'));
+
+    writeFileServiceMocks.writeFileContent.mockClear();
+    await fireEvent.click(saveIndicator);
+
+    // Manual save flushes immediately through the same service entry point.
+    expect(writeFileServiceMocks.writeFileContent).toHaveBeenCalledWith(
+      'ws-1',
+      'src/main.ts',
+      '/repo/src/main.ts',
+      'console.log("edited");',
+      { immediate: true },
+    );
   });
 
   it('updates the visible open editor when external content is applied while clean', async () => {
@@ -551,22 +566,25 @@ describe('FileTabType Redux integration', () => {
   });
 });
 
-describe('FileTabType auto-save debounce', () => {
+describe('FileTabType content-save wiring', () => {
   const source = readFileSync(
     join(process.cwd(), 'src/features/layout/tab-types/FileTabType.svelte'),
     'utf-8',
   );
 
-  it('tracks file content in the auto-save effect so each edit resets the debounce', () => {
-    const autoSaveStart = source.indexOf('// Auto-save with debounce');
-    const loadFileStart = source.indexOf('// Load file when path changes');
-    const autoSaveBlock = source.slice(autoSaveStart, loadFileStart);
-
-    expect(autoSaveBlock).toContain('const currentFileContent = fileContent;');
-    expect(autoSaveBlock.indexOf('const currentFileContent = fileContent;')).toBeLessThan(
-      autoSaveBlock.indexOf('if (isFileDirty'),
+  it('delegates the debounce to the files-write-service and flushes on teardown', () => {
+    // The component no longer hand-rolls a setTimeout auto-save; the debounce is
+    // owned by the files-write-service (keyed by ws::path). The component routes
+    // edits + manual saves through writeFileContent and flushes any pending save
+    // when the file/workspace changes or the tab unmounts.
+    expect(source).not.toContain('AUTO_SAVE_DELAY_MS');
+    expect(source).not.toContain('autoSaveTimeoutId');
+    expect(source).toContain(
+      'writeFileContent(workspaceId, tab.filePath, fileAbsolutePath, content)',
     );
-    expect(autoSaveBlock).toContain('clearTimeout(autoSaveTimeoutId)');
-    expect(autoSaveBlock).toContain('setTimeout(() => saveFileContent(), AUTO_SAVE_DELAY_MS)');
+    expect(source).toContain(
+      'writeFileContent(workspaceId, tab.filePath, fileAbsolutePath, fileContent, { immediate: true })',
+    );
+    expect(source).toContain('flushFileContent(wsId, filePath)');
   });
 });
