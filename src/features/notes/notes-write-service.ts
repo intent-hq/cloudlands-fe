@@ -99,10 +99,17 @@ export async function createNote(
     return;
   }
 
-  const notes = await appClient.notes.list(workspaceId);
-  appStore.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
-  const created = notes.find((n) => !before.has(String(n.id)));
-  if (created) appStore.dispatch(addOptimisticNote(workspaceId, created));
+  try {
+    const notes = await appClient.notes.list(workspaceId);
+    appStore.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
+    const created = notes.find((n) => !before.has(String(n.id)));
+    if (created) appStore.dispatch(addOptimisticNote(workspaceId, created));
+  } catch (error) {
+    // The create succeeded but the reconcile refetch threw. Keep the optimistic
+    // note rather than dropping it — the live note:* subscribe→refetch loop will
+    // converge it to the canonical id — so the user's note is neither orphaned nor duplicated.
+    logger.error("Failed to refetch notes after creating a note", error);
+  }
 }
 
 /** Update note content optimistically; the network save is debounced per note. */

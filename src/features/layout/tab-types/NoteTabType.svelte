@@ -194,7 +194,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       appStore.dispatch(closeTab(workspaceId, tab.id));
       void deleteNote(workspaceId, noteIdToDelete);
 
-      // Track deletion (optimistic — saga handles IPC + errors)
+      // Track deletion (optimistic — deleteNote handles IPC + errors/rollback)
       track('Deleted Note', { note_type: noteType, note_age_days: noteAgeDays });
 
       // Show undo toast

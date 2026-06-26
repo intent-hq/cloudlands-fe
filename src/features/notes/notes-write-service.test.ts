@@ -21,7 +21,10 @@ vi.mock("$lib/client", () => ({
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { loadWorkspaceNotesSucceeded } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
-import { selectNoteById } from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
+import {
+  selectAllNotes,
+  selectNoteById,
+} from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
 import {
   NOTE_CONTENT_SAVE_DEBOUNCE_MS,
   createNote,
@@ -136,5 +139,18 @@ describe("notesWriteService (fake seam, real store)", () => {
       expect.objectContaining({ workspaceId: WS, title: "Fresh", content: "" }),
     );
     expect(notesApi.list).toHaveBeenCalledWith(WS);
+  });
+
+  it("retains the optimistic note (no orphan/duplicate) when the post-create refetch fails", async () => {
+    seed();
+    notesApi.create.mockResolvedValueOnce({ success: true } as never);
+    notesApi.list.mockRejectedValueOnce(new Error("refetch boom") as never);
+
+    await expect(createNote(WS, { title: "Fresh", content: "" })).resolves.toBeUndefined();
+    expect(notesApi.list).toHaveBeenCalledWith(WS);
+
+    const notes = selectAllNotes.select(appStore.state, WS);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.title).toBe("Fresh");
   });
 });
