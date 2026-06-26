@@ -534,6 +534,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     groupCommit.active = null;
   }
 
+  // TODO(redux-remove): per-group commit stays on the legacy IPC/AcceptChangesClient
+  // path (with stage/unstage-by-path saga-triggers) because it must temporarily
+  // unstage unrelated files to commit only this group, then re-stage them. The git
+  // AppClient seam has no `git.unstage` yet, so this selective commit cannot move to
+  // the seam until that backend gap is filled. Out of scope for the current wave.
   async function commitSingleGroup(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
     const paths = group.files.map((f) => f.path);
     const pathSet = new Set(paths);

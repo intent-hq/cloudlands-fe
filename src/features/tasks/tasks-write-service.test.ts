@@ -10,6 +10,7 @@ vi.mock("$lib/client", () => ({
   appClient: {
     tasks: {
       updateNoteStatus: vi.fn(() => Promise.resolve({ success: true })),
+      createPrerequisite: vi.fn(() => Promise.resolve({ success: true })),
     },
   },
 }));
@@ -20,7 +21,7 @@ import { loadWorkspaceNotesSucceeded } from "$store/renderer/slices/workspace-no
 import { loadWorkspaceTasksSucceeded } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
 import { selectNoteById } from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
 import { selectWorkspaceTasks } from "$store/renderer/slices/workspace-tasks/workspace-tasks-selectors";
-import { updateTaskNoteStatus } from "./tasks-write-service";
+import { createPrerequisiteTask, updateTaskNoteStatus } from "./tasks-write-service";
 
 const tasksApi = appClient.tasks as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const WS = "ws-task-svc-1";
@@ -66,6 +67,7 @@ describe("tasksWriteService (fake seam, real store)", () => {
   });
   beforeEach(() => {
     tasksApi.updateNoteStatus.mockResolvedValue({ success: true } as never);
+    tasksApi.createPrerequisite.mockResolvedValue({ success: true } as never);
   });
   afterEach(() => {
     vi.clearAllMocks();
@@ -90,5 +92,26 @@ describe("tasksWriteService (fake seam, real store)", () => {
     expect(tasksApi.updateNoteStatus).toHaveBeenCalledWith("t1", "complete");
     expect(noteStatus()).toBe("not_started");
     expect(taskStatus()).toBe("not_started");
+  });
+
+  it("createPrerequisiteTask forwards to the seam and returns the surfaced id", async () => {
+    tasksApi.createPrerequisite.mockResolvedValueOnce({ success: true, id: "task-9" } as never);
+
+    const id = await createPrerequisiteTask("dep-1", "Prereq title", {
+      content: "body",
+      status: "not_started",
+    });
+
+    expect(id).toBe("task-9");
+    expect(tasksApi.createPrerequisite).toHaveBeenCalledWith("dep-1", "Prereq title", {
+      content: "body",
+      status: "not_started",
+    });
+  });
+
+  it("createPrerequisiteTask returns undefined when the seam mutation fails", async () => {
+    tasksApi.createPrerequisite.mockResolvedValueOnce({ success: false, error: "no" } as never);
+
+    expect(await createPrerequisiteTask("dep-1", "Prereq title")).toBeUndefined();
   });
 });

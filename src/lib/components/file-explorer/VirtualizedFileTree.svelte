@@ -714,6 +714,10 @@
     contextMenu = null;
   }
 
+  // TODO(redux-remove): explorer file-tree CRUD (delete/read/write-for-undo here, plus
+  // create/rename) stays on the legacy absolute-path `file:*` IPC. The files AppClient
+  // seam is workspace-scoped + relative-path, so migrating these absolute-path,
+  // undo-aware operations is deferred to a dedicated explorer migration; out of scope.
   async function handleDeleteFile(filePath: string) {
     const fileName = filePath.split('/').pop() || 'file';
     // Read file content before deleting so we can undo

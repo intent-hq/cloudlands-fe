@@ -30,7 +30,7 @@ import {
   newIdempotencyKey,
   rememberNoteWorkspace,
   resolveNoteWorkspaceId,
-  runMutation,
+  runMutationWithId,
 } from "./live-support";
 
 /** Map a raw daemon note to a `WorkspaceTask` when it carries task metadata. */
@@ -89,9 +89,12 @@ export class LiveTasksClient implements TasksClient {
   // Tasks are note-scoped (a task is a note carrying `metadata.task`), so each
   // mutation resolves the owning workspace via `resolveNoteWorkspaceId` and
   // forwards the frozen §7.9 params to the daemon, folding the outcome into a
-  // MutationResult (never throws, never fakes success). State convergence is
-  // left to the live `task:*`/`note:*` subscribe→refetch loop. `workspaceId` is
-  // sent alongside `noteId` per the §7.8 KEEP decision (daemon ignores unknowns).
+  // MutationResult (never throws, never fakes success). The §7.9 mutations all
+  // return a WorkspaceTask, so the canonical id is surfaced on the result (via
+  // `runMutationWithId`) for call sites that need it — e.g. createPrerequisite,
+  // whose new note id is used to build the inline task link. State convergence
+  // is left to the live `task:*`/`note:*` subscribe→refetch loop. `workspaceId`
+  // is sent alongside `noteId` per the §7.8 KEEP decision (daemon ignores unknowns).
 
   async updateStatus(
     noteId: string,
@@ -141,7 +144,7 @@ export class LiveTasksClient implements TasksClient {
     if (!workspaceId) {
       return { success: false, error: `Cannot resolve workspace for note ${dependentNoteId}` };
     }
-    return runMutation("task.createPrerequisite", {
+    return runMutationWithId("task.createPrerequisite", {
       workspaceId,
       dependentNoteId,
       title,
@@ -165,7 +168,7 @@ export class LiveTasksClient implements TasksClient {
     if (!workspaceId) {
       return { success: false, error: `Cannot resolve workspace for note ${noteId}` };
     }
-    return runMutation(method, { workspaceId, noteId, ...params });
+    return runMutationWithId(method, { workspaceId, noteId, ...params });
   }
 
   subscribe(handler: SubscriptionHandler<WorkspaceTask[]>): Unsubscribe {

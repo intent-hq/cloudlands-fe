@@ -18,6 +18,7 @@
  * configured store, slice actions, and selectors (per src/store AGENTS.md).
  */
 import { appClient } from "$lib/client";
+import type { CreatePrerequisiteOptions } from "$lib/client";
 import type { TaskStatus } from "$shared/types";
 import { store as appStore } from "$store/renderer/store";
 import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
@@ -58,4 +59,26 @@ export async function updateTaskNoteStatus(
     if (previous !== undefined) applyStatus(workspaceId, noteId, previous);
     logger.error("Failed to update task status", result.error);
   }
+}
+
+/**
+ * Create a prerequisite task note for `dependentNoteId` via the seam
+ * (`task.createPrerequisite`) and return the new task note's canonical id, which
+ * the §7.9 WorkspaceTask result surfaces on the MutationResult. Returns undefined
+ * when the mutation fails or the daemon returns no id. No optimistic store
+ * mutation is applied — the caller builds the inline link from the returned id,
+ * and the live `task:*`/`note:*` subscribe→refetch loop converges the new note
+ * into the store.
+ */
+export async function createPrerequisiteTask(
+  dependentNoteId: string,
+  title: string,
+  options?: CreatePrerequisiteOptions,
+): Promise<string | undefined> {
+  const result = await appClient.tasks.createPrerequisite(dependentNoteId, title, options);
+  if (!result.success) {
+    logger.error("Failed to create prerequisite task", result.error);
+    return undefined;
+  }
+  return result.id;
 }

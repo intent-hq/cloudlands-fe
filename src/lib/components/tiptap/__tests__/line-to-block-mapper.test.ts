@@ -44,7 +44,6 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$store/renderer/slices/workspace-notes/workspace-notes-slice')>()),
-  updateTaskStatus: vi.fn(),
   handleExternalNoteUpdate: vi.fn(),
   reloadNotes: vi.fn(),
 }));

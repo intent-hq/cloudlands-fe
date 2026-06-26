@@ -45,6 +45,43 @@ export async function runMutation(method: string, params?: unknown): Promise<Mut
   }
 }
 
+/**
+ * Extract the canonical entity id from a daemon mutation response. Handles a
+ * bare entity (`{ id }`) and the common single-entity wrappers the daemon uses
+ * (`{ task }`, `{ note }`, `{ entity }`). Returns undefined when no id is found.
+ */
+function extractEntityId(result: unknown): string | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const record = result as Record<string, unknown>;
+  const direct = record.id;
+  if (typeof direct === "string" && direct.length > 0) return direct;
+  for (const key of ["task", "note", "entity"]) {
+    const nested = record[key];
+    if (nested && typeof nested === "object") {
+      const nestedId = (nested as Record<string, unknown>).id;
+      if (typeof nestedId === "string" && nestedId.length > 0) return nestedId;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Like `runMutation`, but also surfaces the created/affected entity's canonical
+ * id on success when the daemon returns one (e.g. the Rev 2 §7.9 task mutations
+ * return a WorkspaceTask). Call sites that need the new id — such as creating a
+ * prerequisite task and then linking to it — use this variant; the id is omitted
+ * when the response carries none.
+ */
+export async function runMutationWithId(method: string, params?: unknown): Promise<MutationResult> {
+  try {
+    const result = await backendRequest(method, params);
+    const id = extractEntityId(result);
+    return id !== undefined ? { success: true, id } : { success: true };
+  } catch (error) {
+    return { success: false, error: mutationErrorMessage(error) };
+  }
+}
+
 /** Enumerate the daemon's workspace ids (best-effort; empty on transport error). */
 export async function listWorkspaceIds(): Promise<string[]> {
   try {

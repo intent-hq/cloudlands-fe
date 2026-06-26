@@ -26,14 +26,10 @@
     selectNotesVersion,
   } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
 
-  import { reloadNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
-  import { updateTaskNoteStatus } from '$features/tasks/tasks-write-service';
+  import { updateTaskNoteStatus, createPrerequisiteTask } from '$features/tasks/tasks-write-service';
   import { delegateExistingTaskRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { writable } from 'svelte/store';
-  import { notesIpc } from '$lib/utils/notes-ipc';
-  import { NOTES_CHANNELS } from '$shared/ipc/channels';
-  import type { NoteId, TaskStatus, Note, AgentSession } from '$shared/types';
-  import { NoteId as NoteIdBrand, WorkspaceId } from '$shared/types/branded-ids';
+  import type { NoteId, TaskStatus } from '$shared/types';
   import TaskStatusIcon from './TaskStatusIcon.svelte';
   import { toPromptToken } from '$lib/services/mentions/format';
   import Checkbox from '../ui/checkbox/checkbox.svelte';
@@ -270,6 +266,10 @@
     // if the task lives in a different workspace), fall back to the active workspace.
     const wsId = (linkedTaskNote?.workspaceId as string | undefined) ?? $activeWorkspaceId;
     if (!wsId) return;
+    // TODO(redux-remove): delegation creates an agent and assigns it atomically, which
+    // the tasks seam (`task.assignAgent` assigns an EXISTING agent only) cannot express.
+    // Stays on the agents-domain saga-trigger pending an AppClient agent-create+assign
+    // capability; out of scope for the tasks Part C write-path migration.
     appStore.dispatch(
       delegateExistingTaskRequested(wsId, linkedTaskNoteId, linkedTaskTitle, false),
     );
@@ -320,21 +320,16 @@
     if (!currentNote) return;
 
     try {
-      const result = await notesIpc<{ note: Note; agent?: AgentSession }>(
-        NOTES_CHANNELS.CREATE_PREREQUISITE_NOTE,
-        {
-          workspaceId: WorkspaceId(currentNote.workspaceId),
-          dependentNoteId: NoteIdBrand(currentNoteId),
-          options: {
-            title: taskText.slice(0, 100),
-            content: taskText.length > 100 ? taskText : '',
-            taskStatus: 'not_started',
-          },
-        },
-      );
-      if (!result.ok) return;
+      // Route through the tasks write-service (AppClient→intentd
+      // `task.createPrerequisite`), which surfaces the new task note's id so we
+      // can build the inline link. Store convergence is handled by the live
+      // task/note subscribe→refetch loop (no `reloadNotes` saga-trigger needed).
+      const newNoteId = await createPrerequisiteTask(currentNoteId, taskText.slice(0, 100), {
+        content: taskText.length > 100 ? taskText : '',
+        status: 'not_started',
+      });
+      if (!newNoteId) return;
 
-      const newNoteId = result.data.note.id;
       const schema = editor.schema;
       const linkMark = schema.marks.link.create({ href: taskNoteUrl(newNoteId) });
       const textNode = schema.text(taskText.slice(0, 100), [linkMark]);
@@ -347,7 +342,6 @@
       const tr = editor.state.tr;
       tr.replaceWith(pos, pos + node.nodeSize, newTaskItem);
       editor.view.dispatch(tr);
-      appStore.dispatch(reloadNotes(currentNote.workspaceId));
     } catch (error) {
       logger.error('Failed to convert checkbox to Task Note', error);
     }

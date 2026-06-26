@@ -150,11 +150,6 @@ export const updateNote = createAction<[workspaceId: string, noteId: string, upd
   "workspaceNotes/updateNote"
 );
 
-/** Saga trigger: update task status via API */
-export const updateTaskStatus = createAction<[workspaceId: string, noteId: string, status: TaskStatus]>(
-  "workspaceNotes/updateTaskStatus"
-);
-
 /** Saga trigger: flush pending saves */
 export const flushPendingSaves = createAction<[workspaceId: string]>(
   "workspaceNotes/flushPendingSaves"

@@ -148,6 +148,26 @@ describe("LiveTasksClient mutations (fake transport)", () => {
     expect(first).not.toEqual(second);
   });
 
+  it("createPrerequisite surfaces the WorkspaceTask id from the daemon response", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "task-77", title: "Prereq", status: "not_started" });
+    const client = new LiveTasksClient();
+
+    expect(await client.createPrerequisite("dep-1", "Prereq")).toEqual({
+      success: true,
+      id: "task-77",
+    });
+  });
+
+  it("note-scoped mutations surface the returned WorkspaceTask id", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1", title: "T", status: "not_started" });
+    const client = new LiveTasksClient();
+
+    expect(await client.markAsTask("note-1", "not_started")).toEqual({
+      success: true,
+      id: "note-1",
+    });
+  });
+
   it("fails a task mutation when the workspace cannot be resolved", async () => {
     mockedResolve.mockResolvedValueOnce(null);
     const client = new LiveTasksClient();

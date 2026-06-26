@@ -61,6 +61,13 @@ export type SubscriptionHandler<T> = (snapshot: T) => void;
 export interface MutationResult {
   success: boolean;
   error?: string;
+  /**
+   * Canonical id of the entity the mutation created/affected, surfaced when the
+   * daemon returns one (e.g. `task.createPrerequisite` returns a WorkspaceTask
+   * per Rev 2 §7.9). Additive and optional: call sites that ignore it are
+   * unaffected, so it stays backward-compatible across all domains.
+   */
+  id?: string;
 }
 
 /** Minimal request shape for creating an agent through the seam. */
