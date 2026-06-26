@@ -15,15 +15,13 @@ import {
 import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
 import {
   loadComments as loadCommentsFromBackend,
-  addComment as addCommentToBackend,
   resolveComment as resolveCommentInBackend,
 } from './comment-loader';
 import { convertBackendCommentToV2 } from './comment-types-v2';
 import { generateCommentId } from '$shared/utils/comment-id-generator';
+import * as commentsWrite from './comments-write-service';
 import {
-  addCommentAction,
   updateCommentAction,
-  removeCommentAction,
   loadCommentsAction,
 } from '$store/renderer/slices/comments/comments-slice';
 import {
@@ -699,63 +697,6 @@ export class CommentManagerV2 {
   }
 
   /**
-   * Save comments to backend
-   */
-  private async saveComment(comment: CommentV2): Promise<boolean> {
-    try {
-      const markId =
-        comment.anchor.type === 'range'
-          ? `${comment.anchor.startId}|${comment.anchor.endId}`
-          : comment.anchor.pointId;
-
-      logger.info('Saving comment with markId', {
-        commentId: comment.id,
-        markId,
-        anchorType: comment.anchor.type,
-      });
-
-      // Map frontend status to backend status
-      const backendStatus =
-        comment.status === 'accepted' || comment.status === 'rejected'
-          ? 'resolved'
-          : (comment.status as 'open' | 'resolved' | 'pending');
-
-      const backendComment = await addCommentToBackend(this.workspaceId, this.noteId, {
-        id: comment.id, // Pass the frontend-generated ID
-        content: comment.content,
-        type: comment.type,
-        author: comment.author,
-        authorType: comment.authorType,
-        status: backendStatus,
-        section: comment.anchorText,
-        threadId: comment.threadId,
-        parentId: comment.parentId,
-        // Store anchor info in markId for backward compatibility
-        markId,
-        agentId: comment.type === 'session' ? (comment as any).agentId : undefined,
-      });
-
-      if (backendComment) {
-        logger.info('Backend comment returned', {
-          backendId: backendComment.id,
-          backendMarkId: backendComment.markId,
-          originalId: comment.id,
-        });
-
-        // Update local comment with backend ID if different
-        if (backendComment.id !== comment.id) {
-          appStore.dispatch(updateCommentAction(comment.id, { id: backendComment.id }));
-        }
-        return true;
-      }
-      return false;
-    } catch (error) {
-      logger.error('Failed to save comment', error);
-      return false;
-    }
-  }
-
-  /**
    * Set up editor listeners
    */
   private setupEditorListeners() {
@@ -902,97 +843,68 @@ export class CommentManagerV2 {
       Math.min(this.editor.state.doc.content.size, to + 50),
     );
 
-    // Create base comment fields
+    // Build the full comment with generated id, timestamps, and deterministic
+    // anchor ids (`${id}:point` / `${id}:start|end`) so it is store-ready before
+    // the write service applies the optimistic dispatch.
+    const id = generateCommentId();
+    const now = new Date().toISOString();
     const baseComment = {
       threadId: `thread-${Date.now()}`,
       content,
-      type,
       author: 'User',
       authorType: 'user' as const,
       status: 'open' as const,
       anchor:
         from === to
-          ? { type: 'point' as const, pointId: '' } // Will be set after anchor insertion
-          : { type: 'range' as const, startId: '', endId: '' },
+          ? { type: 'point' as const, pointId: `${id}:point` }
+          : { type: 'range' as const, startId: `${id}:start`, endId: `${id}:end` },
       anchorText: selectedText,
       anchorContext: {
         before: beforeText,
         after: afterText,
       },
+      id,
+      createdAt: now,
+      updatedAt: now,
     };
 
-    // Create type-specific comment
-    let comment: Omit<CommentV2, 'id' | 'createdAt' | 'updatedAt'>;
+    let addedComment: CommentV2;
     if (type === 'session') {
       if (!agentId) {
         throw new Error('agentId is required for session comments');
       }
-      // Create session comment with proper type
-      comment = { ...baseComment, type: 'session', agentId } as Omit<
-        CommentV2,
-        'id' | 'createdAt' | 'updatedAt'
-      >;
+      addedComment = { ...baseComment, type: 'session', agentId } as CommentV2;
     } else {
-      comment = { ...baseComment, type } as Omit<CommentV2, 'id' | 'createdAt' | 'updatedAt'>;
+      addedComment = { ...baseComment, type } as CommentV2;
     }
 
-    // Build the full comment with generated id and timestamps
-    const id = generateCommentId();
-    const now = new Date().toISOString();
-    const addedComment: CommentV2 = {
-      ...comment,
-      id,
-      createdAt: now,
-      updatedAt: now,
-    } as CommentV2;
-
-    // Add comment to store
-    appStore.dispatch(addCommentAction(addedComment));
-
-    // Insert anchors in the document
+    // Insert anchors in the document (editor-local; no store dependency).
     try {
       if (from === to) {
-        // Point comment - set selection first, then insert anchor
         this.editor.chain().focus().setTextSelection(from).insertPointAnchor(addedComment.id).run();
-
-        // Update anchor ID
-        appStore.dispatch(updateCommentAction(addedComment.id, {
-          anchor: { type: 'point', pointId: `${addedComment.id}:point` },
-        }));
       } else {
-        // Range comment - set selection first, then insert anchors
         this.editor
           .chain()
           .focus()
           .setTextSelection({ from, to })
           .insertCommentAnchors(addedComment.id)
           .run();
-
-        // Update anchor IDs
-        appStore.dispatch(updateCommentAction(addedComment.id, {
-          anchor: {
-            type: 'range',
-            startId: `${addedComment.id}:start`,
-            endId: `${addedComment.id}:end`,
-          },
-        }));
       }
     } catch (error) {
       logger.error('Failed to insert comment anchors', error);
-      // Remove the comment if anchor insertion failed
-      appStore.dispatch(removeCommentAction(addedComment.id));
       return null;
     }
 
-    // Get the updated comment with anchor IDs from the store
-    const updatedComment = selectCommentById.select(appStore.state, addedComment.id);
-    if (!updatedComment) {
-      logger.error('Comment not found in store after anchor insertion');
-      return null;
-    }
-
-    // Save to backend with updated anchor IDs
-    await this.saveComment(updatedComment);
+    // Persist through the write service: optimistic store dispatch +
+    // `comment.add` + rollback are owned there. `searchContext` wraps the target
+    // text with its surrounding context so the daemon can re-anchor it.
+    await commentsWrite.addComment(this.noteId, addedComment, {
+      searchContext: `${beforeText}${selectedText}${afterText}`,
+      commentTarget: selectedText,
+      comment: content,
+      type,
+      author: 'User',
+    });
 
     // Update decorations
     this.updateDecorations();
@@ -1013,10 +925,9 @@ export class CommentManagerV2 {
     // Remove anchors from document
     this.editor.chain().focus().removeCommentAnchors(commentId).run();
 
-    // Remove from store
-    const existed = !!selectCommentById.select(appStore.state, commentId);
-    appStore.dispatch(removeCommentAction(commentId));
-    const removed = existed;
+    // Delete through the write service: optimistic removal + `comment.delete` +
+    // rollback are owned there. Returns whether the comment existed.
+    const removed = await commentsWrite.deleteComment(this.noteId, commentId);
 
     if (removed) {
       // Update decorations
@@ -1078,11 +989,13 @@ export class CommentManagerV2 {
       updatedAt: now,
     };
 
-    // Create reply in store
-    appStore.dispatch(addCommentAction(reply));
-
-    // Save to backend
-    await this.saveComment(reply);
+    // Persist through the write service: optimistic store dispatch +
+    // `comment.respond` + rollback are owned there.
+    await commentsWrite.respondToComment(this.noteId, reply, {
+      commentId: parentId,
+      comment: content,
+      type: 'comment',
+    });
 
     logger.info('Added reply', { replyId: reply.id, parentId });
     return reply;
