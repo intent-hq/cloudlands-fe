@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
+  import { openWorkspaceInNewWindow } from '$lib/components/layout/sidebar-nav/utils/openWorkspaceInNewWindow';
   import Button from '$lib/components/ui/button/button.svelte';
 
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -44,7 +46,6 @@
   openRemoveRepoConfirm,
   requestArchiveWorkspace,
   requestDeleteWorkspace,
-  requestOpenWorkspace,
   requestUnarchiveWorkspace,
 } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
   import {
@@ -380,13 +381,13 @@
               groupByRepo={$groupByRepo}
               {searchQuery}
               knownRepos={$knownRepos}
-              onOpen={(workspace, event) =>
-                appStore.dispatch(
-                  requestOpenWorkspace({
-                    workspaceId: workspace.id,
-                    openInNewWindow: !!(event?.metaKey || event?.ctrlKey),
-                  }),
-                )}
+              onOpen={async (workspace, event) => {
+                if (event?.metaKey || event?.ctrlKey) {
+                  await openWorkspaceInNewWindow(workspace.id);
+                  return;
+                }
+                await goto(`/workspace/${workspace.id}`);
+              }}
               onDelete={(workspace) => appStore.dispatch(requestDeleteWorkspace(workspace.id))}
               onArchive={(workspace) => appStore.dispatch(requestArchiveWorkspace(workspace.id))}
               onUnarchive={(workspace) => appStore.dispatch(requestUnarchiveWorkspace(workspace.id))}

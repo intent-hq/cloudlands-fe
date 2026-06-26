@@ -15,10 +15,10 @@
     incrementContextMenuOpen,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
-    requestOpenWorkspace,
     requestArchiveWorkspace,
     requestDeleteWorkspace,
   } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+  import { openWorkspaceInNewWindow } from '$lib/components/layout/sidebar-nav/utils/openWorkspaceInNewWindow';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import type { Workspace } from '$shared/types';
 
@@ -69,7 +69,7 @@
   });
 
   function handleWorkspaceOpenInNewWindow(workspaceId: string) {
-    appStore.dispatch(requestOpenWorkspace({ workspaceId, openInNewWindow: true }));
+    openWorkspaceInNewWindow(workspaceId);
   }
 
   async function handleWorkspaceClick(workspaceId: string, event?: MouseEvent | KeyboardEvent) {

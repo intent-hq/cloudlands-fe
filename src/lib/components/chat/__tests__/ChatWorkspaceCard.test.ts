@@ -184,10 +184,7 @@ describe('ChatWorkspaceCard overflow menu', () => {
     await openMenu();
     await fireEvent.click(screen.getByRole('menuitem', { name: 'Open in New Window' }));
     await waitFor(() =>
-      expect(mocks.dispatch).toHaveBeenCalledWith({
-        type: 'workspaceOperations/requestOpenWorkspace',
-        payload: [{ workspaceId: 'ws-1', openInNewWindow: true }],
-      }),
+      expect(mocks.openWorkspaceInNewWindow).toHaveBeenCalledWith('ws-1'),
     );
   });
 
