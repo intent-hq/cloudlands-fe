@@ -3,10 +3,12 @@
  *
  * `status` (and `changes`, which mirrors it) resolve via `git.status`, returning
  * the daemon's working-tree summary directly in the renderer `GitStatus` shape.
- * The daemon does NOT yet expose diff / commit-history / tracked-change / PR
- * read methods, so those resolve to empty/null for now (no mock fallback) —
- * mirroring how `LiveWorkspacesClient.recentViews` handles not-yet-exposed
- * surfaces. `subscribe` refetches on `git:*` / `changes:git-status` events.
+ * `prStatus` resolves via `pr.status` (the daemon errors when no PR is active, so
+ * that is folded to `null`). The daemon does NOT yet expose diff / commit-history
+ * / tracked-change read methods, so those resolve to empty for now (no mock
+ * fallback) — mirroring how `LiveWorkspacesClient.recentViews` handles
+ * not-yet-exposed surfaces. `subscribe` refetches on `git:*` / `changes:git-status`
+ * events.
  */
 import { GitFileStatus } from "$shared/types";
 import type { DiffChunk, FileStatus, GitStatus } from "$shared/types";
@@ -70,8 +72,8 @@ export class LiveGitClient implements GitClient {
     return fetchStatus(workspaceId);
   }
 
-  // Diff / tracked-change / commit-history / PR reads are not exposed by the
-  // daemon yet; resolve empty/null until those wire methods land.
+  // Diff / tracked-change / commit-history reads are not exposed by the daemon
+  // yet; resolve empty until those wire methods land.
   async diffs(_workspaceId: string): Promise<DiffChunk[]> {
     return [];
   }
@@ -81,8 +83,21 @@ export class LiveGitClient implements GitClient {
   async commits(_workspaceId: string): Promise<CommitInfo[]> {
     return [];
   }
-  async prStatus(_workspaceId: string): Promise<PrStatusSummary | null> {
-    return null;
+
+  // `pr.status` returns the active PR summary; it errors when the workspace has
+  // no active PR, which is folded to `null` (the seam's "no PR" signal).
+  async prStatus(workspaceId: string): Promise<PrStatusSummary | null> {
+    try {
+      const result = await backendRequest<Record<string, unknown>>("pr.status", { workspaceId });
+      if (!result || typeof result !== "object") return null;
+      return {
+        prNumber: typeof result.prNumber === "number" ? result.prNumber : undefined,
+        url: typeof result.url === "string" ? result.url : undefined,
+        state: typeof result.state === "string" ? result.state : undefined,
+      };
+    } catch {
+      return null;
+    }
   }
 
   subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe {
