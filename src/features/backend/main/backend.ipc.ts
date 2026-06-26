@@ -28,10 +28,26 @@ const BACKEND = IPC_CHANNELS.BACKEND;
 let client: JsonRpcClient | null = null;
 let handlersRegistered = false;
 
+/** Liveness heartbeat interval; reconnect-on-close cannot detect half-open sockets. */
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
 /** Lazily create, wire, and start the shared main-process JSON-RPC client. */
 export function getBackendClient(): JsonRpcClient {
   if (client) return client;
-  const instance = new JsonRpcClient();
+  const instance = new JsonRpcClient({
+    // Enable a liveness heartbeat: reconnect-on-close alone misses a silently
+    // half-open socket. A daemon-level JSON-RPC error still proves the socket
+    // round-trips, so only a transport timeout/failure trips a reconnect.
+    heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
+    healthCheck: async () => {
+      try {
+        await instance.request('system.health');
+      } catch (error) {
+        if (error instanceof JsonRpcError) return;
+        throw error;
+      }
+    },
+  });
   instance.on('notification', (notification: JsonRpcNotification) =>
     broadcast(BACKEND.NOTIFICATION, notification),
   );

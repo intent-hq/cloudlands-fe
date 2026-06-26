@@ -11,6 +11,7 @@
  */
 import { EventEmitter } from 'node:events';
 import type { Duplex } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
 import { Logger } from '$shared/logger';
 import { JsonRpcError, type JsonRpcErrorShape } from './json-rpc-errors';
 import {
@@ -66,7 +67,11 @@ export class JsonRpcClient extends EventEmitter {
   private readonly healthCheck?: () => Promise<void>;
 
   private socket: Duplex | null = null;
+  // Decoded text awaiting a newline. Raw bytes are run through `decoder` first so
+  // a multi-byte UTF-8 character split across two `data` events reassembles
+  // correctly before we split on '\n'.
   private buffer = '';
+  private decoder = new StringDecoder('utf8');
   private requestId = 0;
   private status: ConnectionStatus = 'disconnected';
   private disposed = false;
@@ -170,7 +175,7 @@ export class JsonRpcClient extends EventEmitter {
     const onConnect = () => this.onConnected();
     socket.once('connect', onConnect);
     socket.once('secureConnect', onConnect);
-    socket.on('data', (chunk: Buffer | string) => this.onData(String(chunk)));
+    socket.on('data', (chunk: Buffer | string) => this.onData(chunk));
     socket.once('error', (error: Error) => this.onConnectionFailure(error));
     socket.once('close', () => this.onConnectionFailure(new Error('Connection closed')));
     logger.info('Connecting to backend', { target: describeBackendConfig(this.config) });
@@ -197,8 +202,10 @@ export class JsonRpcClient extends EventEmitter {
     this.scheduleReconnect();
   }
 
-  private onData(chunk: string): void {
-    this.buffer += chunk;
+  private onData(chunk: Buffer | string): void {
+    // Decode bytes through the StringDecoder so a multi-byte UTF-8 character
+    // straddling two chunks is held back until its bytes are complete.
+    this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
     const lines = this.buffer.split('\n');
     this.buffer = lines.pop() ?? '';
     for (const line of lines) {
@@ -278,6 +285,8 @@ export class JsonRpcClient extends EventEmitter {
     const socket = this.socket;
     this.socket = null;
     this.buffer = '';
+    // Drop any partially-decoded multi-byte sequence so a reconnect starts clean.
+    this.decoder = new StringDecoder('utf8');
     socket.removeAllListeners();
     try {
       socket.destroy();

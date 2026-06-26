@@ -26,6 +26,11 @@ class FakeSocket extends EventEmitter {
     this.emit("data", Buffer.from(chunk));
   }
 
+  /** Simulate a raw inbound byte chunk (used for chunk-boundary tests). */
+  receiveBytes(buf: Buffer): void {
+    this.emit("data", buf);
+  }
+
   /** Simulate a successful connection. */
   open(): void {
     this.emit("connect");
@@ -95,6 +100,24 @@ describe("JsonRpcClient", () => {
     socket.receive(`{"jsonrpc":"2.0","id":1,`);
     socket.receive(`"result":42}\n`);
     await expect(promise).resolves.toBe(42);
+    client.dispose();
+  });
+
+  it("reassembles a multi-byte UTF-8 char split across two data chunks", async () => {
+    const { client, socket } = makeClient();
+    client.start();
+    socket.open();
+
+    const promise = client.request("note.get");
+    // "café-🚀": é is 2 UTF-8 bytes, 🚀 (U+1F680) is 4 bytes (F0 9F 9A 80).
+    const value = "caf\u00e9-\u{1F680}";
+    const full = Buffer.from(`{"jsonrpc":"2.0","id":1,"result":"${value}"}\n`, "utf8");
+    // Split inside the rocket emoji's 4-byte sequence (mid multi-byte boundary).
+    const splitAt = full.indexOf(0xf0) + 2;
+    socket.receiveBytes(full.subarray(0, splitAt));
+    socket.receiveBytes(full.subarray(splitAt));
+
+    await expect(promise).resolves.toBe(value);
     client.dispose();
   });
 
@@ -174,6 +197,115 @@ describe("JsonRpcClient", () => {
     const expectation = expect(promise).rejects.toThrow();
     socket.emit("close");
     await expectation;
+    client.dispose();
+  });
+});
+
+describe("JsonRpcClient reconnect + heartbeat", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function makeReconnectingClient(overrides: Record<string, unknown> = {}): {
+    client: JsonRpcClient;
+    sockets: FakeSocket[];
+  } {
+    const sockets: FakeSocket[] = [];
+    const client = new JsonRpcClient({
+      socketFactory: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket as unknown as Duplex;
+      },
+      heartbeatIntervalMs: 0,
+      reconnectDelayMs: 100,
+      maxReconnectDelayMs: 1000,
+      ...overrides,
+    });
+    client.on("error", () => {});
+    return { client, sockets };
+  }
+
+  it("reconnects after the socket closes, applying exponential backoff", async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    client.start();
+    expect(sockets).toHaveLength(1);
+
+    // First drop: backoff = 100ms.
+    sockets[0].emit("close");
+    await vi.advanceTimersByTimeAsync(99);
+    expect(sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sockets).toHaveLength(2);
+
+    // Second drop without a successful connect: backoff doubles to 200ms.
+    sockets[1].emit("close");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets).toHaveLength(3);
+
+    client.dispose();
+  });
+
+  it("resets the backoff after a successful reconnect", async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    client.start();
+
+    sockets[0].emit("close");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets).toHaveLength(2);
+
+    // A successful connect resets the backoff to the base delay.
+    sockets[1].open();
+    sockets[1].emit("close");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets).toHaveLength(3);
+
+    client.dispose();
+  });
+
+  it("invokes the health check on each heartbeat tick while connected", async () => {
+    vi.useFakeTimers();
+    const healthCheck = vi.fn().mockResolvedValue(undefined);
+    const { client, sockets } = makeReconnectingClient({
+      heartbeatIntervalMs: 1000,
+      healthCheck,
+    });
+    client.start();
+    sockets[0].open();
+    expect(healthCheck).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(healthCheck).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(healthCheck).toHaveBeenCalledTimes(2);
+
+    client.dispose();
+  });
+
+  it("tears down and reconnects when the health check fails", async () => {
+    vi.useFakeTimers();
+    const healthCheck = vi.fn().mockRejectedValue(new Error("half-open socket"));
+    const { client, sockets } = makeReconnectingClient({
+      heartbeatIntervalMs: 1000,
+      healthCheck,
+    });
+    client.start();
+    sockets[0].open();
+    expect(client.getStatus()).toBe("connected");
+
+    // Heartbeat tick → health check rejects → connection torn down.
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(healthCheck).toHaveBeenCalledTimes(1);
+    expect(client.getStatus()).toBe("disconnected");
+
+    // Backoff reconnect schedules a fresh socket.
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets.length).toBeGreaterThanOrEqual(2);
+
     client.dispose();
   });
 });
