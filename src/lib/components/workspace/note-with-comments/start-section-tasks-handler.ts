@@ -1,7 +1,6 @@
 import type { Editor } from '@tiptap/core';
-import type { Store } from '@augmentcode/ag-redux-toolkit/svelte-store';
 
-import { updateNoteContent } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import { updateNoteContent } from '$features/notes/notes-write-service';
 
 import type { LoggerLike } from './logger.types';
 
@@ -13,7 +12,6 @@ export async function runStartSectionTasks({
   tasks,
   assignAgent,
   processHTMLToMarkdown,
-  dispatch,
   setLastKnownContent,
   logger,
 }: {
@@ -27,7 +25,6 @@ export async function runStartSectionTasks({
     html: string,
     options?: { preserveAnchors?: boolean },
   ) => string | Promise<string>;
-  dispatch: Store<any, any>['dispatch'];
   setLastKnownContent: (value: string) => void;
   logger: LoggerLike;
 }): Promise<void> {
@@ -87,8 +84,8 @@ export async function runStartSectionTasks({
       // Update last known content
       setLastKnownContent(markdownContent);
 
-      // Update Redux store to persist
-      dispatch(updateNoteContent(workspaceId, noteId, markdownContent));
+      // Persist through the notes write mechanism (immediate: bulk one-shot save)
+      updateNoteContent(workspaceId, noteId, markdownContent, { immediate: true });
       logger.info('Note saved after bulk task delegation');
     } catch (error) {
       logger.error('Failed to save note after bulk task delegation', error);

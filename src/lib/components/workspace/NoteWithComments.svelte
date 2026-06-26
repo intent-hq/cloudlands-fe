@@ -75,9 +75,9 @@
 
   import {
   restoreNoteVersion,
-  updateNoteContent,
   clearNewlyCreatedNoteId,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { updateNoteContent } from '$features/notes/notes-write-service';
   import {
   selectNoteById,
   selectNewlyCreatedNoteId,
@@ -767,7 +767,7 @@
    * Save the current editor content to the store and backend.
    * Called both by debounce timer and on cleanup to prevent data loss.
    */
-  async function saveEditorContent() {
+  async function saveEditorContent(immediate = false) {
     if (!editor || !workspace?.id || !noteId) return;
 
     // Check if this is a recovery save at the start
@@ -800,7 +800,7 @@
       {
         const note = selectNoteById.select(appStore.state, workspace.id, noteId);
         if (note) {
-          appStore.dispatch(updateNoteContent(workspace.id, noteId, markdownContent));
+          updateNoteContent(workspace.id, noteId, markdownContent, { immediate });
 
           // Track note edit (throttled to at most once every 30s during continuous editing)
           try {
@@ -1303,7 +1303,7 @@
       saveDebounceTimer = null;
       // Save immediately if there might be pending changes
       if (editor && !editor.isDestroyed) {
-        saveEditorContent();
+        void saveEditorContent(true);
       }
     }
     if (userTypingTimeout) {

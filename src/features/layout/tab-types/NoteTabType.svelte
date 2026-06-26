@@ -23,7 +23,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import {
   createNote,
   deleteNote,
-} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+} from '$features/notes/notes-write-service';
   import { selectIsRawNoteViewEnabled } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { toggleRawNoteView } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import { isSpecNote } from '$shared/constants/notes';
@@ -192,7 +192,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     isNoteDeleting = true;
     try {
       appStore.dispatch(closeTab(workspaceId, tab.id));
-      appStore.dispatch(deleteNote(workspaceId, noteIdToDelete));
+      void deleteNote(workspaceId, noteIdToDelete);
 
       // Track deletion (optimistic — saga handles IPC + errors)
       track('Deleted Note', { note_type: noteType, note_age_days: noteAgeDays });
@@ -206,16 +206,14 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
               label: 'Undo',
               onClick: () => {
                 try {
-                  appStore.dispatch(
-                    createNote(savedNote.workspaceId, {
-                      title: savedNote.title,
-                      content: savedNote.content,
-                      contentType: savedNote.contentType,
-                      tags: savedNote.tags,
-                      parentId: savedNote.parentId,
-                      visibility: savedNote.visibility,
-                    }),
-                  );
+                  void createNote(savedNote.workspaceId, {
+                    title: savedNote.title,
+                    content: savedNote.content,
+                    contentType: savedNote.contentType,
+                    tags: savedNote.tags,
+                    parentId: savedNote.parentId,
+                    visibility: savedNote.visibility,
+                  });
                   toast.dismiss(toastId);
                 } catch (err) {
                   logger.error('Failed to restore note', err);

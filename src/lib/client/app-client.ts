@@ -13,6 +13,7 @@
 import type {
   AgentSession,
   ContentBlock,
+  CreateNoteRequest,
   CreateWorkspaceRequest,
   DiffChunk,
   FileGitStatus,
@@ -150,10 +151,37 @@ export interface GitClient {
   subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe;
 }
 
+/** Optional placement for a surgical `note.add`. */
+export interface NoteAddOptions {
+  heading?: string;
+  /** `"start"`, `"end"`, or `"after:Heading"`. */
+  position?: string;
+}
+
+/** Metadata fields a `note.updateMetadata` mutation may change. */
+export interface NoteMetadataPatch {
+  title?: string;
+  tags?: string[];
+}
+
 export interface NotesClient {
   list(workspaceId: string): Promise<Note[]>;
   get(noteId: string): Promise<Note | null>;
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe;
+  /** Create a note (`note.create`); the live client attaches an idempotencyKey (§5.6). */
+  create(request: CreateNoteRequest): Promise<MutationResult>;
+  /** Full-replacement of a note's content (`note.setContent`). */
+  setContent(noteId: string, content: string): Promise<MutationResult>;
+  /** Surgical, append-safe insert (`note.add`). */
+  add(noteId: string, content: string, options?: NoteAddOptions): Promise<MutationResult>;
+  /** Surgical search/replace of the first match (`note.edit`). */
+  edit(noteId: string, oldText: string, newText: string): Promise<MutationResult>;
+  /** Inclusive line-range replace (`note.editLines`). */
+  editLines(noteId: string, start: number, end: number, content: string): Promise<MutationResult>;
+  /** Delete a note (`note.delete`). */
+  delete(noteId: string): Promise<MutationResult>;
+  /** Update a note's title/tags metadata (`note.updateMetadata`). */
+  updateMetadata(noteId: string, metadata: NoteMetadataPatch): Promise<MutationResult>;
 }
 
 export interface TasksClient {

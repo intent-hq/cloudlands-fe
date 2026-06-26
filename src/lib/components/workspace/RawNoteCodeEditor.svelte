@@ -3,7 +3,7 @@
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
 
   import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-  import { updateNoteContent } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { updateNoteContent } from '$features/notes/notes-write-service';
   import { selectLineWrapping } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -94,7 +94,7 @@
     };
   }
 
-  function saveRawContent(target = createPendingRawSave()): void {
+  function saveRawContent(target = createPendingRawSave(), immediate = false): void {
     if (pendingRawSave === target) pendingRawSave = null;
     if (!target.workspaceId || !target.noteId || target.content === target.lastSavedContent) return;
 
@@ -108,7 +108,7 @@
     if (target.workspaceId === workspaceId && target.noteId === noteId) {
       lastSavedContent = target.content;
     }
-    appStore.dispatch(updateNoteContent(target.workspaceId, target.noteId, target.content));
+    updateNoteContent(target.workspaceId, target.noteId, target.content, { immediate });
   }
 
   export function flushPendingSave(): void {
@@ -117,11 +117,11 @@
       saveDebounceTimer = null;
     }
     if (pendingRawSave) {
-      saveRawContent(pendingRawSave);
+      saveRawContent(pendingRawSave, true);
       return;
     }
     if (editorContentWorkspaceId === workspaceId && editorContentNoteId === noteId) {
-      saveRawContent(createPendingRawSave());
+      saveRawContent(createPendingRawSave(), true);
     }
   }
 

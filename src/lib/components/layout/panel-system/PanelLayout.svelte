@@ -46,7 +46,7 @@
   openTabFromConfig,
 } from './panel-ai-layout-helpers';
   import { NoteId } from '$shared/types/branded-ids';
-  import { updateNoteTitle } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { updateNoteTitle } from '$features/notes/notes-write-service';
   import { renameWithUndo } from '$lib/utils/reversible-actions';
   import { updateSession as updateAgentSessionFields } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -362,12 +362,12 @@
         oldName,
         newName,
         () => {
-          appStore.dispatch(updateNoteTitle(workspaceId, noteId, newName));
+          void updateNoteTitle(workspaceId, noteId, newName);
           // Update the tab title in the layout manager
           layoutManager.updateTabTitle(tab.id, newName);
         },
         () => {
-          appStore.dispatch(updateNoteTitle(workspaceId, noteId, oldName));
+          void updateNoteTitle(workspaceId, noteId, oldName);
           layoutManager.updateTabTitle(tab.id, oldName);
         },
       );

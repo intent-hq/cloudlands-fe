@@ -36,6 +36,7 @@ const mockState = vi.hoisted(() => {
     dispatch: vi.fn(),
     lineWrapping: store(true),
     noteSelect: vi.fn(() => ({ id: 'note-1' })),
+    updateNoteContent: vi.fn(),
   };
 });
 
@@ -54,11 +55,8 @@ vi.mock('$store/renderer/store', async () => {
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
   selectNoteById: { select: mockState.noteSelect },
 }));
-vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', () => ({
-  updateNoteContent: (workspaceId: string, noteId: string, content: string) => ({
-    type: 'workspaceNotes/updateNoteContent',
-    payload: [workspaceId, noteId, content],
-  }),
+vi.mock('$features/notes/notes-write-service', () => ({
+  updateNoteContent: mockState.updateNoteContent,
 }));
 vi.mock('$store/renderer/slices/ui-layout/ui-layout-selectors', () => ({
   selectLineWrapping: () => mockState.lineWrapping,
@@ -70,6 +68,7 @@ describe('RawNoteCodeEditor', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mockState.dispatch.mockClear();
+    mockState.updateNoteContent.mockClear();
     mockState.noteSelect.mockClear();
     mockState.noteSelect.mockReturnValue({ id: 'note-1' });
     mockState.lineWrapping.set(true);
@@ -110,13 +109,12 @@ describe('RawNoteCodeEditor', () => {
       target: { value: '# Updated' },
     });
 
-    expect(mockState.dispatch).not.toHaveBeenCalled();
+    expect(mockState.updateNoteContent).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(mockState.noteSelect).toHaveBeenCalledWith({}, 'ws-1', 'note-1');
-    expect(mockState.dispatch).toHaveBeenCalledWith({
-      type: 'workspaceNotes/updateNoteContent',
-      payload: ['ws-1', 'note-1', '# Updated'],
+    expect(mockState.updateNoteContent).toHaveBeenCalledWith('ws-1', 'note-1', '# Updated', {
+      immediate: false,
     });
   });
 
@@ -155,10 +153,12 @@ describe('RawNoteCodeEditor', () => {
     });
     unmount();
 
-    expect(mockState.dispatch).toHaveBeenCalledWith({
-      type: 'workspaceNotes/updateNoteContent',
-      payload: ['ws-1', 'note-1', '# Updated Before Toggle'],
-    });
+    expect(mockState.updateNoteContent).toHaveBeenCalledWith(
+      'ws-1',
+      'note-1',
+      '# Updated Before Toggle',
+      { immediate: true },
+    );
   });
 
   it('keeps the original note target for pending debounced saves after props change', async () => {
@@ -173,21 +173,24 @@ describe('RawNoteCodeEditor', () => {
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(mockState.noteSelect).toHaveBeenCalledWith({}, 'ws-1', 'note-1');
-    expect(mockState.dispatch).toHaveBeenCalledWith({
-      type: 'workspaceNotes/updateNoteContent',
-      payload: ['ws-1', 'note-1', '# Note 1 Draft'],
+    expect(mockState.updateNoteContent).toHaveBeenCalledWith('ws-1', 'note-1', '# Note 1 Draft', {
+      immediate: false,
     });
-    expect(mockState.dispatch).not.toHaveBeenCalledWith({
-      type: 'workspaceNotes/updateNoteContent',
-      payload: ['ws-1', 'note-2', '# Note 1 Draft'],
-    });
+    expect(mockState.updateNoteContent).not.toHaveBeenCalledWith(
+      'ws-1',
+      'note-2',
+      '# Note 1 Draft',
+      expect.anything(),
+    );
 
-    mockState.dispatch.mockClear();
+    mockState.updateNoteContent.mockClear();
     unmount();
 
-    expect(mockState.dispatch).not.toHaveBeenCalledWith({
-      type: 'workspaceNotes/updateNoteContent',
-      payload: ['ws-1', 'note-2', '# Note 1 Draft'],
-    });
+    expect(mockState.updateNoteContent).not.toHaveBeenCalledWith(
+      'ws-1',
+      'note-2',
+      '# Note 1 Draft',
+      expect.anything(),
+    );
   });
 });

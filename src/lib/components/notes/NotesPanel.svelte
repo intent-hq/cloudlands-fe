@@ -20,9 +20,9 @@
 } from '../ui/list';
 
   import {
-  createNote as createNoteAction,
   initializeNotes,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+  import { createNote as createNoteWrite } from '$features/notes/notes-write-service';
   import {
   selectNotesLoading,
   selectNotesError,
@@ -150,11 +150,11 @@
   function createNote() {
     if (!workspaceId) return;
 
-    appStore.dispatch(createNoteAction(workspaceId, {
+    void createNoteWrite(workspaceId, {
       title: 'New Note',
       content: '',
       tags: [],
-    }));
+    });
   }
 
   // Drag and drop handlers for third-party sources

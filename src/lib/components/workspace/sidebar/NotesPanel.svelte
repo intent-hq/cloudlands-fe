@@ -60,7 +60,7 @@
   deleteNote,
   createNote,
   updateNoteTitle,
-} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+} from '$features/notes/notes-write-service';
   import { toast } from 'svelte-sonner';
   import { store as appStore } from '$store/renderer/store';
 
@@ -119,7 +119,7 @@
       const trimmed = editingValue.trim();
       const note = notes.find((n) => n.id === editingNoteId);
       if (note && trimmed !== getNoteTitle(note)) {
-        appStore.dispatch(updateNoteTitle(workspaceId, editingNoteId, trimmed));
+        void updateNoteTitle(workspaceId, editingNoteId, trimmed);
       }
     }
     cancelEdit();
@@ -203,7 +203,7 @@
             layoutManager.closeTabsByType('note', 'noteId', note.id);
           }
 
-          appStore.dispatch(deleteNote(workspaceId, note.id));
+          void deleteNote(workspaceId, note.id);
           closeContextMenu();
 
           toast.warning(
@@ -213,14 +213,14 @@
               action: {
                 label: 'Undo',
                 onClick: () => {
-                  appStore.dispatch(createNote(workspaceId, {
+                  void createNote(workspaceId, {
                     title: savedNote.title,
                     content: savedNote.content,
                     contentType: savedNote.contentType,
                     tags: savedNote.tags,
                     parentId: savedNote.parentId,
                     visibility: savedNote.visibility,
-                  }));
+                  });
                 },
               },
             },

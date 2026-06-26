@@ -318,14 +318,14 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
   },
 }));
 
+vi.mock('$features/notes/notes-write-service', () => ({
+  updateNoteContent: vi.fn(),
+}));
+
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', () => ({
   restoreNoteVersion: vi.fn((workspaceId: string, noteId: string, versionId: string) => ({
     type: 'workspaceNotes/restoreNoteVersion',
     payload: { workspaceId, noteId, versionId },
-  })),
-  updateNoteContent: vi.fn((workspaceId: string, noteId: string, content: string) => ({
-    type: 'workspaceNotes/updateNoteContent',
-    payload: { workspaceId, noteId, content },
   })),
   clearNewlyCreatedNoteId: vi.fn((workspaceId: string) => ({
     type: 'workspaceNotes/clearNewlyCreatedNoteId',
