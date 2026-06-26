@@ -7,10 +7,17 @@
  * one more domain from the mock delegate to a live implementation, and once the
  * last domain migrates the `MockAppClient` delegate is removed entirely.
  *
- * Migrated in this wave: `workspaces`.
+ * Migrated to the live daemon: `workspaces` (Wave 6.0); `agents`, `notes`,
+ * `tasks`, `comments`, `git`, `files` (Wave 6.1).
  */
 import type { AppClient } from "../app-client";
 import { MockAppClient } from "../mock/mock-app-client";
+import { LiveAgentsClient } from "./live-agents-client";
+import { LiveCommentsClient } from "./live-comments-client";
+import { LiveFilesClient } from "./live-files-client";
+import { LiveGitClient } from "./live-git-client";
+import { LiveNotesClient } from "./live-notes-client";
+import { LiveTasksClient } from "./live-tasks-client";
 import { LiveWorkspacesClient } from "./live-workspaces-client";
 
 export class LiveAppClient implements AppClient {
@@ -19,17 +26,17 @@ export class LiveAppClient implements AppClient {
 
   // Migrated to the live daemon.
   readonly workspaces = new LiveWorkspacesClient();
+  readonly agents = new LiveAgentsClient();
+  readonly notes = new LiveNotesClient();
+  readonly tasks = new LiveTasksClient();
+  readonly comments = new LiveCommentsClient();
+  readonly git = new LiveGitClient();
+  readonly files = new LiveFilesClient();
 
   // Delegated to the mock until their own migration wave.
-  readonly agents = this.mock.agents;
   readonly chat = this.mock.chat;
   readonly terminals = this.mock.terminals;
   readonly settings = this.mock.settings;
-  readonly files = this.mock.files;
-  readonly git = this.mock.git;
-  readonly notes = this.mock.notes;
-  readonly tasks = this.mock.tasks;
-  readonly comments = this.mock.comments;
   readonly scripts = this.mock.scripts;
   readonly setupScripts = this.mock.setupScripts;
   readonly skills = this.mock.skills;

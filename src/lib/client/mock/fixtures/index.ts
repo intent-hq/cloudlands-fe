@@ -6,35 +6,11 @@
  * waves seed richer per-domain fixtures; this module only needs to be enough
  * for the AppClient seam to be exercised.
  */
-import {
-  AgentStatus,
-  ContentType,
-  GitFileStatus,
-  LineType,
-  NoteVisibility,
-  createAgentId,
-  createNoteId,
-  createWorkspaceId,
-} from "$shared/types";
-import type {
-  AgentMessage,
-  AgentSession,
-  ContentBlock,
-  DiffChunk,
-  FileGitStatus,
-  FileNode,
-  FileStatus,
-  GitStatus,
-  Note,
-  WorkspaceTask,
-} from "$shared/types";
-import { ChangeStage } from "$features/file-tracking/types";
-import type { CommitInfo, TrackedChange } from "$features/file-tracking/types";
+import { createAgentId, createNoteId, createWorkspaceId } from "$shared/types";
+import type { AgentMessage, ContentBlock } from "$shared/types";
 import { WorkspaceEventType } from "$features/events/types";
 import type { WorkspaceEvent } from "$features/events/types";
-import type { PrStatusSummary } from "../../app-client";
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
-import type { CommentV2 } from "$features/comments/comment-types-v2";
 import type { TerminalTab } from "$store/renderer/slices/terminals/terminals-slice";
 import type { ScriptWithState } from "$store/renderer/slices/scripts/scripts-types";
 import type { SetupScript } from "$store/renderer/slices/setup-scripts/setup-scripts-types";
@@ -55,198 +31,18 @@ import type { SentryIssueResult } from "$features/sentry-auth/types";
 
 const ISO = "2026-01-01T00:00:00.000Z";
 
-// The mock workspace ID anchors the not-yet-migrated mock domains (agents,
-// notes, etc.). The workspaces domain itself is now served by the live daemon
-// (see ../../live/live-workspaces-client), so the workspace list/recency
-// fixtures were removed with that migration.
+// The mock workspace ID anchors the not-yet-migrated mock domains (chat,
+// events, terminals, etc.). The workspaces, agents, notes, tasks, comments,
+// git, and files domains are now served by the live daemon (see ../../live/*),
+// so their fixtures were removed with those migrations.
 export const MOCK_WORKSPACE_ID = createWorkspaceId("ws-mock-1");
 
-/** Working-tree file statuses for the dark-mode workspace (ws-mock-1). */
-const mockGitFiles: FileStatus[] = [
-  { path: "src/lib/theme.ts", status: GitFileStatus.Added, staged: true },
-  { path: "src/lib/ThemeToggle.svelte", status: GitFileStatus.Added, staged: true },
-  { path: "src/routes/settings/+page.svelte", status: GitFileStatus.Modified, staged: false },
-  { path: "src/lib/theme.test.ts", status: GitFileStatus.Untracked, staged: false },
-];
-
-export const mockGitStatus: GitStatus = {
-  branch: "feat/dark-mode-toggle",
-  ahead: 2,
-  behind: 0,
-  diverged: false,
-  files: mockGitFiles,
-  hasUncommittedChanges: true,
-  hasUntrackedFiles: true,
-};
-
 // ============================================================================
-// Notes, tasks & comments
+// Shared note/agent IDs still referenced by the mock chat & event fixtures
 // ============================================================================
 
-/** Task note IDs, shared between the note entities and the WorkspaceTask facts. */
+/** Task note ID still referenced by the workspace-event fixtures below. */
 export const MOCK_TASK_NOTE_ID_1 = createNoteId("00000000-0000-4000-8000-000000000010");
-export const MOCK_TASK_NOTE_ID_2 = createNoteId("00000000-0000-4000-8000-000000000011");
-export const MOCK_TASK_NOTE_ID_3 = createNoteId("00000000-0000-4000-8000-000000000012");
-export const MOCK_DESIGN_NOTE_ID = createNoteId("00000000-0000-4000-8000-000000000020");
-
-const SPEC_CONTENT = [
-  "# Dark mode toggle",
-  "",
-  "## Goal",
-  "Add a dark mode toggle to the settings page and persist the choice across reloads,",
-  "defaulting to the operating system preference when nothing is saved.",
-  "",
-  "## Tasks",
-  `- [x] [Add the theme toggle component](intent://local/task/${MOCK_TASK_NOTE_ID_1})`,
-  `- [ ] [Persist the selected theme](intent://local/task/${MOCK_TASK_NOTE_ID_2})`,
-  `- [ ] [Default to the system preference](intent://local/task/${MOCK_TASK_NOTE_ID_3})`,
-  "",
-  "## Notes",
-  "The toggle lives in the settings panel and writes to a `theme` preference.",
-].join("\n");
-
-export const mockNotes: Note[] = [
-  {
-    id: SPEC_NOTE_ID,
-    workspaceId: MOCK_WORKSPACE_ID,
-    title: "Spec",
-    content: SPEC_CONTENT,
-    contentType: ContentType.Markdown,
-    tags: ["spec"],
-    isPinned: true,
-    isArchived: false,
-    isDefault: true,
-    visibility: NoteVisibility.Workspace,
-    createdAt: "2026-01-01T09:00:00.000Z",
-    updatedAt: "2026-01-02T14:30:00.000Z",
-  },
-  {
-    id: MOCK_DESIGN_NOTE_ID,
-    workspaceId: MOCK_WORKSPACE_ID,
-    title: "Theme tokens",
-    content:
-      "# Theme tokens\n\nDark and light palettes share the same semantic token names so " +
-      "components never reference raw colors directly.",
-    contentType: ContentType.Markdown,
-    tags: ["design"],
-    isPinned: false,
-    isArchived: false,
-    visibility: NoteVisibility.Workspace,
-    createdAt: "2026-01-01T11:00:00.000Z",
-    updatedAt: "2026-01-01T11:30:00.000Z",
-  },
-  {
-    id: MOCK_TASK_NOTE_ID_1,
-    workspaceId: MOCK_WORKSPACE_ID,
-    title: "Add the theme toggle component",
-    content: "# Add the theme toggle component\n\nRender a toggle in the settings panel header.",
-    contentType: ContentType.Markdown,
-    tags: [],
-    isPinned: false,
-    isArchived: false,
-    visibility: NoteVisibility.Workspace,
-    metadata: { task: { status: "complete", completedAt: "2026-01-01T12:00:00.000Z" } },
-    createdAt: "2026-01-01T09:10:00.000Z",
-    updatedAt: "2026-01-01T12:00:00.000Z",
-  },
-  {
-    id: MOCK_TASK_NOTE_ID_2,
-    workspaceId: MOCK_WORKSPACE_ID,
-    title: "Persist the selected theme",
-    content: "# Persist the selected theme\n\nStore the choice under the `theme` preference key.",
-    contentType: ContentType.Markdown,
-    tags: [],
-    isPinned: false,
-    isArchived: false,
-    visibility: NoteVisibility.Workspace,
-    metadata: { task: { status: "in_progress", startedAt: "2026-01-02T13:00:00.000Z" } },
-    createdAt: "2026-01-01T09:11:00.000Z",
-    updatedAt: "2026-01-02T13:00:00.000Z",
-  },
-  {
-    id: MOCK_TASK_NOTE_ID_3,
-    workspaceId: MOCK_WORKSPACE_ID,
-    title: "Default to the system preference",
-    content:
-      "# Default to the system preference\n\nFall back to `prefers-color-scheme` when no " +
-      "preference is saved.",
-    contentType: ContentType.Markdown,
-    tags: [],
-    isPinned: false,
-    isArchived: false,
-    visibility: NoteVisibility.Workspace,
-    metadata: { task: { status: "not_started" } },
-    createdAt: "2026-01-01T09:12:00.000Z",
-    updatedAt: "2026-01-01T09:12:00.000Z",
-  },
-];
-
-export const mockTasks: WorkspaceTask[] = [
-  {
-    id: MOCK_TASK_NOTE_ID_1,
-    title: "Add the theme toggle component",
-    status: "complete",
-    updatedAt: "2026-01-01T12:00:00.000Z",
-  },
-  {
-    id: MOCK_TASK_NOTE_ID_2,
-    title: "Persist the selected theme",
-    status: "in_progress",
-    updatedAt: "2026-01-02T13:00:00.000Z",
-  },
-  {
-    id: MOCK_TASK_NOTE_ID_3,
-    title: "Default to the system preference",
-    status: "not_started",
-    updatedAt: "2026-01-01T09:12:00.000Z",
-  },
-];
-
-/** Sample comment threads anchored to the spec note. */
-export const mockComments: CommentV2[] = [
-  {
-    id: "comment-mock-1",
-    threadId: "thread-mock-1",
-    noteId: SPEC_NOTE_ID,
-    type: "question",
-    content: "Should the toggle also expose a 'system' option, or just light/dark?",
-    author: "Alex",
-    authorType: "user",
-    status: "open",
-    anchor: { type: "range", startId: "spec-goal", endId: "spec-goal" },
-    anchorText: "defaulting to the operating system preference",
-    createdAt: "2026-01-02T10:00:00.000Z",
-    updatedAt: "2026-01-02T10:00:00.000Z",
-  },
-  {
-    id: "comment-mock-2",
-    threadId: "thread-mock-1",
-    noteId: SPEC_NOTE_ID,
-    parentId: "comment-mock-1",
-    type: "comment",
-    content: "Light/dark for now; system default is covered by the third task.",
-    author: "Dark mode toggle",
-    authorType: "agent",
-    status: "open",
-    anchor: { type: "range", startId: "spec-goal", endId: "spec-goal" },
-    createdAt: "2026-01-02T10:05:00.000Z",
-    updatedAt: "2026-01-02T10:05:00.000Z",
-  },
-  {
-    id: "comment-mock-3",
-    threadId: "thread-mock-2",
-    noteId: SPEC_NOTE_ID,
-    type: "comment",
-    content: "Resolved: token names are finalized in the Theme tokens note.",
-    author: "Alex",
-    authorType: "user",
-    status: "resolved",
-    anchor: { type: "point", pointId: "spec-notes" },
-    anchorText: "writes to a `theme` preference",
-    createdAt: "2026-01-02T11:00:00.000Z",
-    updatedAt: "2026-01-02T11:30:00.000Z",
-  },
-];
 
 // ============================================================================
 // Terminals & scripts
@@ -664,44 +460,6 @@ const backgroundMessages: AgentMessage[] = [
   },
 ];
 
-export const mockAgents: AgentSession[] = [
-  {
-    id: MOCK_AGENT_ID,
-    backendSessionId: MOCK_AGENT_ID,
-    workspaceId: MOCK_WORKSPACE_ID,
-    name: "Dark mode toggle",
-    model: "mock-model",
-    provider: "mock-provider",
-    status: AgentStatus.RuntimeIdle,
-    isBackground: false,
-    isInitialAgent: true,
-    digest: "Added dark mode toggle with persistence and system-preference fallback.",
-    messages: coordinatorMessages,
-    createdAt: "2026-01-01T09:00:00.000Z",
-    updatedAt: "2026-01-01T09:06:00.000Z",
-    lastActivity: "2026-01-01T09:06:00.000Z",
-    currentTurnNumber: 2,
-    metadata: { specialist: "coordinator" },
-  },
-  {
-    id: MOCK_AGENT_ID_2,
-    backendSessionId: MOCK_AGENT_ID_2,
-    workspaceId: MOCK_WORKSPACE_ID,
-    name: "Theme persistence",
-    model: "mock-model",
-    provider: "mock-provider",
-    status: AgentStatus.RuntimeIdle,
-    isBackground: true,
-    digest: "Persisted theme selection in localStorage.",
-    messages: backgroundMessages,
-    createdAt: "2026-01-01T10:00:00.000Z",
-    updatedAt: "2026-01-01T10:01:00.000Z",
-    lastActivity: "2026-01-01T10:01:00.000Z",
-    currentTurnNumber: 1,
-    metadata: { isBackground: true, specialist: "implementor" },
-  },
-];
-
 /** Chat transcript blocks keyed by agent ID for the chat seam. */
 export const mockChatHistory: Record<string, ContentBlock[]> = {
   [MOCK_AGENT_ID]: coordinatorMessages.flatMap((message) => message.contentBlocks ?? []),
@@ -715,147 +473,11 @@ export const mockTokenUsage: Record<string, { input: number; output: number }> =
 };
 
 // ============================================================================
-// Files, git, changes & PR
-// ============================================================================
-
-/** Absolute root path used by the mock file/git fixtures for MOCK_WORKSPACE_ID. */
-export const MOCK_WORKSPACE_PATH = "/mock/web-app/ws-mock-1";
-
-function dir(name: string, path: string, children: FileNode[]): FileNode {
-  return { name, path, type: "directory", children };
-}
-
-function file(name: string, path: string, size: number): FileNode {
-  return { name, path, type: "file", size, modified: ISO };
-}
-
-/** Deterministic file tree for the dark-mode workspace. */
-export const mockFileTree: FileNode = dir("ws-mock-1", MOCK_WORKSPACE_PATH, [
-  dir("src", `${MOCK_WORKSPACE_PATH}/src`, [
-    dir("lib", `${MOCK_WORKSPACE_PATH}/src/lib`, [
-      file("theme.ts", `${MOCK_WORKSPACE_PATH}/src/lib/theme.ts`, 1180),
-      file("theme.test.ts", `${MOCK_WORKSPACE_PATH}/src/lib/theme.test.ts`, 860),
-      file("ThemeToggle.svelte", `${MOCK_WORKSPACE_PATH}/src/lib/ThemeToggle.svelte`, 1520),
-    ]),
-    dir("routes", `${MOCK_WORKSPACE_PATH}/src/routes`, [
-      dir("settings", `${MOCK_WORKSPACE_PATH}/src/routes/settings`, [
-        file("+page.svelte", `${MOCK_WORKSPACE_PATH}/src/routes/settings/+page.svelte`, 2040),
-      ]),
-    ]),
-  ]),
-  file("package.json", `${MOCK_WORKSPACE_PATH}/package.json`, 640),
-  file("README.md", `${MOCK_WORKSPACE_PATH}/README.md`, 410),
-]);
-
-/** Git status keyed by workspace-relative path, for the file-explorer overlay. */
-export const mockFileGitStatusMap: Record<string, FileGitStatus> = {
-  "src/lib/theme.ts": { status: "A ", additions: 48, deletions: 0 },
-  "src/lib/ThemeToggle.svelte": { status: "A ", additions: 62, deletions: 0 },
-  "src/lib/theme.test.ts": { status: "??", additions: 34, deletions: 0 },
-  "src/routes/settings/+page.svelte": { status: " M", additions: 12, deletions: 3 },
-};
-
-/** Unified diffs surfaced by the git diff panel. */
-export const mockGitDiffs: DiffChunk[] = [
-  {
-    file: "src/routes/settings/+page.svelte",
-    chunks: [
-      {
-        oldStart: 18,
-        oldLines: 4,
-        newStart: 18,
-        newLines: 7,
-        lines: [
-          { type: LineType.Context, content: "  <section class=\"appearance\">", oldNumber: 18, newNumber: 18 },
-          { type: LineType.Deletion, content: "    <h2>Appearance</h2>", oldNumber: 19 },
-          { type: LineType.Addition, content: "    <h2>Appearance</h2>", newNumber: 19 },
-          { type: LineType.Addition, content: "    <ThemeToggle bind:value={theme} />", newNumber: 20 },
-          { type: LineType.Addition, content: "    <p class=\"hint\">Choose light or dark mode.</p>", newNumber: 21 },
-          { type: LineType.Context, content: "  </section>", oldNumber: 20, newNumber: 22 },
-        ],
-      },
-    ],
-  },
-];
-
-/** Tracked changes surfaced by the changes panel. */
-export const mockTrackedChanges: TrackedChange[] = [
-  {
-    id: "change-mock-1",
-    file: `${MOCK_WORKSPACE_PATH}/src/lib/theme.ts`,
-    relativePath: "src/lib/theme.ts",
-    stage: ChangeStage.Staged,
-    stats: { additions: 48, deletions: 0 },
-    status: "added",
-    attribution: { manual: false, timestamp: Date.parse("2026-01-01T09:02:00.000Z") },
-  },
-  {
-    id: "change-mock-2",
-    file: `${MOCK_WORKSPACE_PATH}/src/lib/ThemeToggle.svelte`,
-    relativePath: "src/lib/ThemeToggle.svelte",
-    stage: ChangeStage.Staged,
-    stats: { additions: 62, deletions: 0 },
-    status: "added",
-    attribution: { manual: false, timestamp: Date.parse("2026-01-01T09:03:00.000Z") },
-  },
-  {
-    id: "change-mock-3",
-    file: `${MOCK_WORKSPACE_PATH}/src/routes/settings/+page.svelte`,
-    relativePath: "src/routes/settings/+page.svelte",
-    stage: ChangeStage.Unstaged,
-    stats: { additions: 12, deletions: 3 },
-    status: "modified",
-    attribution: { manual: true, timestamp: Date.parse("2026-01-02T13:40:00.000Z") },
-  },
-];
-
-/** Commit boundary SHA for the changes timeline. */
-export const mockCommitBoundarySha = "a1b2c3d4";
-
-/** Commit history surfaced by the changes panel. */
-export const mockCommits: CommitInfo[] = [
-  {
-    hash: "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432",
-    message: "Add theme toggle component and theme store",
-    author: "Dark mode toggle",
-    authorEmail: "agent@example.com",
-    timestamp: Date.parse("2026-01-01T09:05:00.000Z"),
-    date: "2026-01-01T09:05:00.000Z",
-    files: [
-      { path: "src/lib/theme.ts", additions: 48, deletions: 0, status: "added" },
-      { path: "src/lib/ThemeToggle.svelte", additions: 62, deletions: 0, status: "added" },
-    ],
-    filesChanged: 2,
-    stage: "pushed",
-    isPushed: true,
-    agentId: String(MOCK_AGENT_ID),
-    linkedNoteId: String(MOCK_TASK_NOTE_ID_1),
-  },
-  {
-    hash: "1a2b3c4d5e6f70819203a4b5c6d7e8f901234567",
-    message: "Wire toggle into the settings page",
-    author: "Alex",
-    authorEmail: "alex@example.com",
-    timestamp: Date.parse("2026-01-02T13:50:00.000Z"),
-    date: "2026-01-02T13:50:00.000Z",
-    files: [
-      { path: "src/routes/settings/+page.svelte", additions: 12, deletions: 3, status: "modified" },
-    ],
-    filesChanged: 1,
-    stage: "local",
-  },
-];
-
-/** Pull-request summary surfaced by the git domain. */
-export const mockPrStatusSummary: PrStatusSummary = {
-  prNumber: 42,
-  url: "https://github.com/acme/web-app/pull/42",
-  state: "open",
-};
-
-// ============================================================================
 // Workspace event stream
 // ============================================================================
+
+/** Absolute root path still referenced by the workspace-event fixtures below. */
+export const MOCK_WORKSPACE_PATH = "/mock/web-app/ws-mock-1";
 
 /** Recent workspace activity events for the dark-mode workspace (ws-mock-1). */
 export const mockWorkspaceEvents: WorkspaceEvent[] = [

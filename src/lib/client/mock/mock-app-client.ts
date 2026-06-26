@@ -6,15 +6,26 @@
  * disposer). Domains whose rich fixtures land in later waves resolve to empty
  * collections / `null` for now. Mutations are accepted no-ops.
  *
- * The `workspaces` domain has been migrated to the live daemon (see
- * `../live/live-workspaces-client`), so it is intentionally absent here; this
- * class implements `Omit<AppClient, "workspaces">` and is delegated to by
- * `LiveAppClient` for the remaining domains.
+ * The `workspaces` domain (Wave 6.0) and the `agents`, `notes`, `tasks`,
+ * `comments`, `git`, and `files` domains (Wave 6.1) have been migrated to the
+ * live daemon, so they are intentionally absent here; this class implements
+ * `Omit<AppClient, ...migrated>` and is delegated to by `LiveAppClient` for the
+ * remaining domains.
  */
 import type { AppClient, MutationResult, SubscriptionHandler, Unsubscribe } from "../app-client";
 import * as fx from "./fixtures";
 
 const OK: MutationResult = { success: true };
+
+/** Domains migrated to the live daemon and therefore not implemented here. */
+type MigratedDomain =
+  | "workspaces"
+  | "agents"
+  | "notes"
+  | "tasks"
+  | "comments"
+  | "git"
+  | "files";
 
 /** Emit the snapshot once, then return an idle disposer. */
 function emitOnce<T>(handler: SubscriptionHandler<T>, snapshot: T): Unsubscribe {
@@ -22,20 +33,7 @@ function emitOnce<T>(handler: SubscriptionHandler<T>, snapshot: T): Unsubscribe 
   return () => {};
 }
 
-export class MockAppClient implements Omit<AppClient, "workspaces"> {
-  readonly agents: AppClient["agents"] = {
-    list: async (workspaceId) =>
-      fx.mockAgents.filter((agent) => String(agent.workspaceId) === workspaceId),
-    get: async (agentId) => fx.mockAgents.find((agent) => String(agent.id) === agentId) ?? null,
-    create: async () => OK,
-    send: async () => OK,
-    queue: async () => OK,
-    setAvailability: async () => OK,
-    follow: async () => OK,
-    lock: async () => OK,
-    subscribe: (handler) => emitOnce(handler, fx.mockAgents),
-  };
-
+export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly chat: AppClient["chat"] = {
     history: async (agentId) => fx.mockChatHistory[agentId] ?? [],
     tokenUsage: async (agentId) => fx.mockTokenUsage[agentId] ?? { input: 0, output: 0 },
@@ -63,53 +61,6 @@ export class MockAppClient implements Omit<AppClient, "workspaces"> {
     getBackgroundAgentSettings: async () => fx.mockBackgroundAgentSettings,
     setBackgroundAgentSettings: async () => OK,
     subscribe: (handler) => emitOnce(handler, fx.mockUserPreferences),
-  };
-
-  readonly files: AppClient["files"] = {
-    list: async () => [],
-    read: async () => null,
-    explorerTree: async (workspaceId) =>
-      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockFileTree : null,
-    gitStatusMap: async (workspaceId) =>
-      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockFileGitStatusMap : {},
-    subscribe: (handler) => emitOnce(handler, []),
-  };
-
-  readonly git: AppClient["git"] = {
-    status: async () => fx.mockGitStatus,
-    changes: async () => fx.mockGitStatus,
-    diffs: async (workspaceId) =>
-      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockGitDiffs : [],
-    trackedChanges: async (workspaceId) =>
-      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockTrackedChanges : [],
-    commits: async (workspaceId) =>
-      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockCommits : [],
-    prStatus: async (workspaceId) =>
-      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockPrStatusSummary : null,
-    subscribe: (handler) => emitOnce(handler, fx.mockGitStatus),
-  };
-
-  readonly notes: AppClient["notes"] = {
-    list: async (workspaceId) =>
-      fx.mockNotes.filter((note) => String(note.workspaceId) === workspaceId),
-    get: async (noteId) => fx.mockNotes.find((n) => String(n.id) === noteId) ?? null,
-    subscribe: (handler) => emitOnce(handler, fx.mockNotes),
-  };
-
-  readonly tasks: AppClient["tasks"] = {
-    list: async (workspaceId) =>
-      workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockTasks : [],
-    get: async (taskId) => fx.mockTasks.find((t) => t.id === taskId) ?? null,
-    subscribe: (handler) => emitOnce(handler, fx.mockTasks),
-  };
-
-  readonly comments: AppClient["comments"] = {
-    list: async (noteId) => fx.mockComments.filter((c) => String(c.noteId) === noteId),
-    subscribe: (noteId, handler) =>
-      emitOnce(
-        handler,
-        fx.mockComments.filter((c) => String(c.noteId) === noteId),
-      ),
   };
 
   readonly scripts: AppClient["scripts"] = {
