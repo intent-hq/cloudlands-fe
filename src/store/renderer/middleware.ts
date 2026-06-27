@@ -23,6 +23,7 @@ import { createSentryAuthMiddleware } from "$features/sentry-auth/sentry-auth-st
 import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-store-service";
 import { createMcpManagementMiddleware } from "$features/mcp/mcp-management-service";
 import { createWorkspaceOperationsMiddleware } from "$features/workspace/workspace-operations-service";
+import { createLifecycleReadMiddleware } from "./middlewares/lifecycle-read-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
@@ -87,6 +88,11 @@ function buildMiddleware(): StoreMiddleware[] {
     // delete + bulk archive/delete) real handlers so the card/page buttons run
     // their operations via the `workspaceClient` seam again.
     createWorkspaceOperationsMiddleware(),
+    // Give the (post-saga) Cluster C lifecycle refresh triggers (workspaces /
+    // tasks / events / skills / scripts / PR status) real read handlers so the
+    // list rows, hover cards, panels, and refresh buttons refetch via the
+    // `appClient` seam again instead of staying stale until restart.
+    createLifecycleReadMiddleware(),
   ];
 
   // Debug middlewares need to be added AFTER batching middleware
