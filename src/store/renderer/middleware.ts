@@ -17,6 +17,7 @@ import { createStructuredCloneCheckerMiddleware } from "./middlewares/structured
 import { createStoreGuardMiddleware } from "../../store/utils/store-guard-middleware";
 import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
+import { createAppLayoutNavigationMiddleware } from "$features/layout/app-layout-navigation-service";
 import { createFileExplorerReadMiddleware } from "$features/file-explorer/file-explorer-read-service";
 import { createGitHubAuthMiddleware } from "$features/github-auth/github-auth-store-service";
 import { createSentryAuthMiddleware } from "$features/sentry-auth/sentry-auth-store-service";
@@ -74,6 +75,9 @@ function buildMiddleware(): StoreMiddleware[] {
     // Give the (post-saga) `ensureAgentSessionLoaded` action a real read handler
     // so a selected agent's session/conversation hydrates on demand again.
     createAgentReadMiddleware(),
+    // Give the (post-saga) `openAgentTabRequested` action a real handler so
+    // clicking an agent opens (or focuses) its conversation tab again.
+    createAppLayoutNavigationMiddleware(),
     // Give the (post-saga) file-explorer toggle/expand/refresh triggers a real
     // read handler so directories list their children via `files.list` again.
     createFileExplorerReadMiddleware(),
