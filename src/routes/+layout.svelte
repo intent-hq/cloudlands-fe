@@ -115,13 +115,17 @@
   import { seedMockStore } from '$store/renderer/mock-bootstrap';
   // Side-effect import: runs every per-domain seeder's registration at startup.
   import '$store/renderer/seeders';
+  import { startGitStatusSubscription } from '$features/git/git-status-subscription';
   const logger = createLogger('+layout');
 
   function initStore(): () => void {
     const storeContext = initAppStore(appStore);
     void seedMockStore(appStore);
+    // Auto-refresh git status when the daemon reports external git changes.
+    const stopGitStatusSubscription = startGitStatusSubscription();
 
     return () => {
+      stopGitStatusSubscription();
       storeContext.dispose();
     };
   }

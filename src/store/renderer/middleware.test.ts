@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => {
 
   const batchingMiddleware = createPassthroughMiddleware();
   const sentryMiddleware = createPassthroughMiddleware();
+  const gitReadMiddleware = createPassthroughMiddleware();
   const loggerMiddleware = createPassthroughMiddleware();
   const refCheckMiddleware = createPassthroughMiddleware();
   const structuredCloneMiddleware = createPassthroughMiddleware();
@@ -23,18 +24,21 @@ const mocks = vi.hoisted(() => {
   return {
     createBatchingMiddleware: vi.fn(() => batchingMiddleware),
     createSentryBreadcrumbsMiddleware: vi.fn(() => sentryMiddleware),
+    createGitReadMiddleware: vi.fn(() => gitReadMiddleware),
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
     createStructuredCloneCheckerMiddleware: vi.fn(() => structuredCloneMiddleware),
     createStoreGuardMiddleware: vi.fn(() => storeGuardMiddleware),
     batchingMiddleware,
     sentryMiddleware,
+    gitReadMiddleware,
     loggerMiddleware,
     structuredCloneMiddleware,
     storeGuardMiddleware,
   };
 });
 
+vi.mock("$features/git/git-read-service", () => ({ createGitReadMiddleware: mocks.createGitReadMiddleware }));
 vi.mock("./middlewares/batch", () => ({ createBatchingMiddleware: mocks.createBatchingMiddleware }));
 vi.mock("./middlewares/logger", () => ({ createLoggerMiddleware: mocks.createLoggerMiddleware }));
 vi.mock("./middlewares/sentry-breadcrumbs", () => ({
@@ -92,6 +96,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sentryMiddleware,
+      mocks.gitReadMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
     ]);
@@ -107,6 +112,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sentryMiddleware,
+      mocks.gitReadMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
     ]);
@@ -122,6 +128,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sentryMiddleware,
+      mocks.gitReadMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
     ]);
@@ -138,6 +145,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sentryMiddleware,
+      mocks.gitReadMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
   });
@@ -171,6 +179,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
       mocks.sentryMiddleware,
+      mocks.gitReadMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
   });

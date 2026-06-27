@@ -15,6 +15,7 @@ import { createSentryBreadcrumbsMiddleware } from "./middlewares/sentry-breadcru
 import { createReferenceChangeDetectorMiddleware } from "./middlewares/state-reference-checks";
 import { createStructuredCloneCheckerMiddleware } from "./middlewares/structured-clone-checker";
 import { createStoreGuardMiddleware } from "../../store/utils/store-guard-middleware";
+import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
@@ -57,6 +58,9 @@ function buildMiddleware(): StoreMiddleware[] {
     createBatchingMiddleware([]),
     // Add Sentry breadcrumbs middleware to track Redux actions
     createSentryBreadcrumbsMiddleware(),
+    // Give the (post-saga) `loadGitStatus` action a real read handler so the
+    // ~13 dispatch sites refresh git status on demand again.
+    createGitReadMiddleware(),
   ];
 
   // Debug middlewares need to be added AFTER batching middleware
