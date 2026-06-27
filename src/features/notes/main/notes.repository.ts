@@ -66,7 +66,7 @@ export class FileSystemNotesRepository implements NotesRepository {
     }
 
     // Create a new lock for this operation
-    let resolve: () => void;
+    let resolve: () => void = () => {};
     const lockPromise = new Promise<void>((r) => {
       resolve = r;
     });
@@ -75,7 +75,7 @@ export class FileSystemNotesRepository implements NotesRepository {
     try {
       return await operation();
     } finally {
-      resolve!();
+      resolve();
       // Clean up the lock if it's still ours
       if (this.locks.get(lockKey) === lockPromise) {
         this.locks.delete(lockKey);

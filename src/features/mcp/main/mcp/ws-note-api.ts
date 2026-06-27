@@ -700,7 +700,10 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
           const insertPoint = lineEnd === -1 ? oldContent.length : lineEnd;
           const afterHeadingContent = oldContent.substring(insertPoint);
           const nextHeadingMatch = afterHeadingContent.match(/\n(#{1,6}\s)/);
-          const insertAt = nextHeadingMatch ? insertPoint + nextHeadingMatch.index! : oldContent.length;
+          const insertAt =
+            nextHeadingMatch?.index !== undefined
+              ? insertPoint + nextHeadingMatch.index
+              : oldContent.length;
           newContent = oldContent.substring(0, insertAt) + '\n\n' + addSection + oldContent.substring(insertAt);
           positionInfo = `after "${afterHeading}"`;
         } else {
@@ -941,8 +944,12 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
         const threadMap = new Map<string, any[]>();
         for (const comment of result.data || []) {
           const threadId = comment.threadId || comment.id;
-          if (!threadMap.has(threadId)) threadMap.set(threadId, []);
-          threadMap.get(threadId)!.push(comment);
+          let threadComments = threadMap.get(threadId);
+          if (!threadComments) {
+            threadComments = [];
+            threadMap.set(threadId, threadComments);
+          }
+          threadComments.push(comment);
         }
 
         let threads = Array.from(threadMap.entries()).map(([threadId, threadComments]) => {
@@ -977,7 +984,10 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
           };
         });
 
-        if (sinceDate) threads = threads.filter((thread) => new Date(thread.lastActivity) > sinceDate!);
+        if (sinceDate) {
+          const since = sinceDate;
+          threads = threads.filter((thread) => new Date(thread.lastActivity) > since);
+        }
         if (options.authorType) threads = threads.filter((thread) => thread.latestCommentAuthorType === options.authorType);
         if (options.status) threads = threads.filter((thread) => thread.status === options.status);
 

@@ -303,8 +303,8 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
       });
 
       // Check if already in memory
-      if (this.sessions.has(agentId)) {
-        const existingRecord = this.sessions.get(agentId)!;
+      const existingRecord = this.sessions.get(agentId);
+      if (existingRecord) {
         const existingMessages = existingRecord.messagesEvicted
           ? []
           : existingRecord.session.messages || [];

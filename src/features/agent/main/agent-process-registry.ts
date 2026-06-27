@@ -116,12 +116,14 @@ export function markProcessIdle(pid: number): void {
     // spawn so it can acquire the slot immediately instead of waiting for
     // the idle-timeout to kill the process.
     if (waitQueue.length > 0) {
-      const next = waitQueue.shift()!;
-      logger.info('Waking queued spawn request (process became idle)', {
-        pid,
-        queueLength: waitQueue.length,
-      });
-      next();
+      const next = waitQueue.shift();
+      if (next) {
+        logger.info('Waking queued spawn request (process became idle)', {
+          pid,
+          queueLength: waitQueue.length,
+        });
+        next();
+      }
     }
   }
 }
@@ -188,12 +190,14 @@ export async function acquireProcessSlot(): Promise<void> {
 export function notifyPendingWorkCleared(pid: number): void {
   const entry = registry.get(pid);
   if (entry && !entry.isActive && !entry.hasPendingWork?.() && waitQueue.length > 0) {
-    const next = waitQueue.shift()!;
-    logger.info('Waking queued spawn request (pending work cleared)', {
-      pid,
-      queueLength: waitQueue.length,
-    });
-    next();
+    const next = waitQueue.shift();
+    if (next) {
+      logger.info('Waking queued spawn request (pending work cleared)', {
+        pid,
+        queueLength: waitQueue.length,
+      });
+      next();
+    }
   }
 }
 

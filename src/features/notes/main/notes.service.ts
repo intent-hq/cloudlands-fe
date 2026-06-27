@@ -1987,7 +1987,7 @@ export class NotesService {
                 metadata: {
                   ...taskNote.metadata,
                   task: {
-                    ...taskNote.metadata!.task!,
+                    ...taskNote.metadata?.task,
                     assignedAgentIds: updatedAgents,
                   },
                 },
@@ -2276,7 +2276,10 @@ export class NotesService {
         // Check if this task itself is ready (all children done)
         const allChildrenTerminal = allNotes
           .filter((n) => n.parentId === note.id && n.metadata?.task)
-          .every((n) => isTerminalStatus(n.metadata!.task!.status));
+          .every((n) => {
+            const task = n.metadata?.task;
+            return task ? isTerminalStatus(task.status) : true;
+          });
 
         if (allChildrenTerminal) {
           logger.debug('Found ready parent task (all children complete)', {
@@ -2517,7 +2520,7 @@ export class NotesService {
             metadata: {
               ...note.metadata,
               task: {
-                ...note.metadata!.task!,
+                ...note.metadata?.task,
                 assignedAgentIds: updatedAgents,
               },
             },

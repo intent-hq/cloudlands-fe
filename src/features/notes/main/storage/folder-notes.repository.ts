@@ -153,7 +153,7 @@ export class FolderBasedNotesRepository implements NotesRepository {
     const currentTail = this.lockQueues.get(lockKey) ?? Promise.resolve();
 
     // Create a new promise that will be resolved when this operation completes
-    let releaseLock: () => void;
+    let releaseLock: () => void = () => {};
     const myLock = new Promise<void>((resolve) => {
       releaseLock = resolve;
     });
@@ -168,7 +168,7 @@ export class FolderBasedNotesRepository implements NotesRepository {
     try {
       return await fn();
     } finally {
-      releaseLock!();
+      releaseLock();
       // Only delete from map if we're still the tail
       // (prevents removing a newer operation's promise)
       if (this.lockQueues.get(lockKey) === myLock) {

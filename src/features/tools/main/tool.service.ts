@@ -317,19 +317,41 @@ export class ToolService implements IToolService {
     }
   }
 
+  /**
+   * Look up a registered tool definition, throwing if it is missing.
+   */
+  private getToolOrThrow(name: string): ToolDefinition {
+    const tool = this.tools.get(name);
+    if (!tool) {
+      throw new Error(`${name} tool not found`);
+    }
+    return tool;
+  }
+
+  /**
+   * Get the executor from a tool context, throwing if it is not provided.
+   */
+  private getExecutorOrThrow(context: ToolContext): NonNullable<ToolContext['executor']> {
+    if (!context.executor) {
+      throw new Error('No executor provided in context');
+    }
+    return context.executor;
+  }
+
   // ============================================================================
   // File Operations
   // ============================================================================
 
   async readFile(context: ToolContext, filePath: string): Promise<string> {
-    this.checkPermissions(context, this.tools.get('readFile')!, { path: filePath });
+    this.checkPermissions(context, this.getToolOrThrow('readFile'), { path: filePath });
 
     logger.debug('Reading file', {
       workspaceId: context.workspaceId as WorkspaceId,
       path: filePath,
     });
 
-    return await executionManager.executeWithRetry(() => context.executor!.readFile(filePath));
+    const executor = this.getExecutorOrThrow(context);
+    return await executionManager.executeWithRetry(() => executor.readFile(filePath));
   }
 
   async writeFile(context: ToolContext, filePath: string, content: string): Promise<void> {
@@ -347,9 +369,7 @@ export class ToolService implements IToolService {
     }
 
     // Check if executor exists
-    if (!context.executor) {
-      throw new Error('No executor provided in context');
-    }
+    const executor = this.getExecutorOrThrow(context);
 
     logger.debug('Writing file', {
       workspaceId: context.workspaceId as WorkspaceId,
@@ -357,30 +377,32 @@ export class ToolService implements IToolService {
       size: content.length,
     });
 
-    await executionManager.executeWithRetry(() => context.executor!.writeFile(filePath, content));
+    await executionManager.executeWithRetry(() => executor.writeFile(filePath, content));
   }
 
   async deleteFile(context: ToolContext, filePath: string): Promise<void> {
-    this.checkPermissions(context, this.tools.get('deleteFile')!, { path: filePath });
+    this.checkPermissions(context, this.getToolOrThrow('deleteFile'), { path: filePath });
 
     logger.debug('Deleting file', {
       workspaceId: context.workspaceId as WorkspaceId,
       path: filePath,
     });
 
-    await executionManager.executeWithRetry(() => context.executor!.deleteFile(filePath));
+    const executor = this.getExecutorOrThrow(context);
+    await executionManager.executeWithRetry(() => executor.deleteFile(filePath));
   }
 
   async listFiles(context: ToolContext, directory: string): Promise<FileInfo[]> {
-    this.checkPermissions(context, this.tools.get('listFiles')!, { path: directory });
+    this.checkPermissions(context, this.getToolOrThrow('listFiles'), { path: directory });
 
     logger.debug('Listing files', {
       workspaceId: context.workspaceId as WorkspaceId,
       directory,
     });
 
+    const executor = this.getExecutorOrThrow(context);
     const files = await executionManager.executeWithRetry(() =>
-      context.executor!.listFiles(directory),
+      executor.listFiles(directory),
     );
     return files.map((file: string) => ({
       name: file,
@@ -394,7 +416,7 @@ export class ToolService implements IToolService {
   // ============================================================================
 
   async createNote(context: ToolContext, noteData: NoteData): Promise<Note> {
-    this.checkPermissions(context, this.tools.get('createNote')!);
+    this.checkPermissions(context, this.getToolOrThrow('createNote'));
 
     logger.debug('Creating note', {
       workspaceId: context.workspaceId,
@@ -422,7 +444,7 @@ export class ToolService implements IToolService {
     noteId: string,
     updates: Partial<NoteData>,
   ): Promise<Note> {
-    this.checkPermissions(context, this.tools.get('updateNote')!);
+    this.checkPermissions(context, this.getToolOrThrow('updateNote'));
 
     logger.debug('Updating note', {
       workspaceId: context.workspaceId,
@@ -452,7 +474,7 @@ export class ToolService implements IToolService {
   }
 
   async deleteNote(context: ToolContext, noteId: string): Promise<void> {
-    this.checkPermissions(context, this.tools.get('deleteNote')!);
+    this.checkPermissions(context, this.getToolOrThrow('deleteNote'));
 
     logger.debug('Deleting note', {
       workspaceId: context.workspaceId as WorkspaceId,
@@ -470,7 +492,7 @@ export class ToolService implements IToolService {
   }
 
   async listNotes(context: ToolContext): Promise<Note[]> {
-    this.checkPermissions(context, this.tools.get('listNotes')!);
+    this.checkPermissions(context, this.getToolOrThrow('listNotes'));
 
     logger.debug('Listing notes', {
       workspaceId: context.workspaceId,
@@ -491,7 +513,7 @@ export class ToolService implements IToolService {
   }
 
   async readNote(context: ToolContext, noteId: string): Promise<Note> {
-    this.checkPermissions(context, this.tools.get('readNote')!);
+    this.checkPermissions(context, this.getToolOrThrow('readNote'));
 
     logger.debug('Reading note', {
       workspaceId: context.workspaceId,
@@ -592,7 +614,7 @@ export class ToolService implements IToolService {
   // ============================================================================
 
   async getWorkspaceInfo(context: ToolContext): Promise<WorkspaceInfo> {
-    this.checkPermissions(context, this.tools.get('getWorkspaceInfo')!);
+    this.checkPermissions(context, this.getToolOrThrow('getWorkspaceInfo'));
 
     logger.debug('Getting workspace info', {
       workspaceId: context.workspaceId as WorkspaceId,
@@ -646,15 +668,16 @@ export class ToolService implements IToolService {
     command: string,
     options?: ExecuteOptions,
   ): Promise<CommandResult> {
-    this.checkPermissions(context, this.tools.get('executeCommand')!);
+    this.checkPermissions(context, this.getToolOrThrow('executeCommand'));
 
     logger.debug('Executing command', {
       workspaceId: context.workspaceId as WorkspaceId,
       command: command.substring(0, 100),
     });
 
+    const executor = this.getExecutorOrThrow(context);
     return await executionManager.executeWithRetry(() =>
-      context.executor!.execute(command, options),
+      executor.execute(command, options),
     );
   }
 

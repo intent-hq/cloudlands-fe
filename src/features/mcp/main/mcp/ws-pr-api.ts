@@ -541,8 +541,9 @@ export function buildWsPrApi(prContext?: PRContext) {
           if (comment.in_reply_to_id) {
             const rootId = replyMap.get(comment.in_reply_to_id) ?? comment.in_reply_to_id;
             replyMap.set(comment.id, rootId);
-            if (threadMap.has(rootId)) {
-              threadMap.get(rootId)!.comments.push({
+            const rootThread = threadMap.get(rootId);
+            if (rootThread) {
+              rootThread.comments.push({
                 id: String(comment.id),
                 body: comment.body,
                 author: { login: comment.user.login },

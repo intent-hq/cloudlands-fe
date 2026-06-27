@@ -112,10 +112,12 @@ class SimpleEventEmitter {
   private listeners = new Map<string, Set<EventListenerFn>>();
 
   on(event: string, listener: EventListenerFn): void {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
+    let listeners = this.listeners.get(event);
+    if (!listeners) {
+      listeners = new Set();
+      this.listeners.set(event, listeners);
     }
-    this.listeners.get(event)!.add(listener);
+    listeners.add(listener);
   }
 
   off(event: string, listener: EventListenerFn): void {
@@ -270,7 +272,7 @@ export class ErrorRecoveryService extends SimpleEventEmitter {
 
     // All attempts failed
     this.updateStats(operationId, false);
-    strategy.onFailure?.(lastError!, actualAttempts);
+    strategy.onFailure?.(lastError as Error, actualAttempts);
     this.emit('recovery:failure', {
       operationId,
       attempts: actualAttempts,

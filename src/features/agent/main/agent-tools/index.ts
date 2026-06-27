@@ -31,10 +31,12 @@ export function trackFileOperation(
   filePath: string,
   operation: 'write' | 'delete' | 'mkdir',
 ) {
-  if (!pendingFileOperations.has(agentId)) {
-    pendingFileOperations.set(agentId, []);
+  let operations = pendingFileOperations.get(agentId);
+  if (!operations) {
+    operations = [];
+    pendingFileOperations.set(agentId, operations);
   }
-  pendingFileOperations.get(agentId)!.push({
+  operations.push({
     path: filePath,
     operation,
     timestamp: new Date().toISOString(),

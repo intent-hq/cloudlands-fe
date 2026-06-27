@@ -49,21 +49,23 @@ export async function initVersionState(
   noteId: NoteId,
   versionsFile: string,
   currentContent: string,
-): Promise<void> {
+): Promise<VersionState> {
   const key = getNoteKey(workspaceId, noteId);
 
   // Read existing versions to get last author
   const versions = await readVersions(versionsFile);
   const lastVersion = versions.length > 0 ? versions[versions.length - 1] : null;
 
-  noteStates.set(key, {
+  const state: VersionState = {
     lastVersionContent: currentContent,
     lastVersionAuthor: lastVersion?.author || null,
     lastVersionTime: lastVersion ? new Date(lastVersion.date) : new Date(),
     pendingContent: currentContent,
     pendingAuthor: null,
     idleTimer: null,
-  });
+  };
+  noteStates.set(key, state);
+  return state;
 }
 
 /**
@@ -82,8 +84,7 @@ export async function trackChange(
 
   // Initialize state if not exists
   if (!state) {
-    await initVersionState(workspaceId, noteId, versionsFile, newContent);
-    state = noteStates.get(key)!;
+    state = await initVersionState(workspaceId, noteId, versionsFile, newContent);
   }
 
   // Clear existing idle timer

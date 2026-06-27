@@ -23,10 +23,12 @@ class SimpleEventEmitter {
   private listeners: Map<string, Set<EventListenerFn>> = new Map();
 
   on(event: string, listener: EventListenerFn): void {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
+    let listeners = this.listeners.get(event);
+    if (!listeners) {
+      listeners = new Set();
+      this.listeners.set(event, listeners);
     }
-    this.listeners.get(event)!.add(listener);
+    listeners.add(listener);
   }
 
    
@@ -651,8 +653,9 @@ export class ErrorHandler extends SimpleEventEmitter {
    * Get or create circuit breaker for a service
    */
   private getOrCreateCircuitBreaker(service: string): CircuitBreaker {
-    if (!this.circuitBreakers.has(service)) {
-      const breaker = new CircuitBreaker(service);
+    let breaker = this.circuitBreakers.get(service);
+    if (!breaker) {
+      breaker = new CircuitBreaker(service);
 
       // Forward circuit breaker events
       breaker.on('open', (data: { name: string }) => this.emit('circuitBreaker:open', data));
@@ -663,7 +666,7 @@ export class ErrorHandler extends SimpleEventEmitter {
 
       this.circuitBreakers.set(service, breaker);
     }
-    return this.circuitBreakers.get(service)!;
+    return breaker;
   }
 
   /**

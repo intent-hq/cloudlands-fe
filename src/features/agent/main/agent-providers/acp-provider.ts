@@ -1984,7 +1984,8 @@ export class ACPProvider extends BaseAgentProvider {
       // FIXED: session/load succeeded — auggie may or may not echo sessionId back.
       // Use the sessionId from the response if provided, otherwise keep using previousSessionId.
       if (loadResponse?.result) {
-        this.sessionId = loadResponse.result.sessionId || this.previousSessionId!;
+        const fallbackSessionId = this.previousSessionId;
+        this.sessionId = loadResponse.result.sessionId || fallbackSessionId;
         this.previousSessionId = this.sessionId;
         logger.info('session/load succeeded — session resumed without history resend', {
           sessionId: this.sessionId,
@@ -2117,11 +2118,12 @@ export class ACPProvider extends BaseAgentProvider {
    */
   private writeToAgent(message: string): boolean {
     if (this.remoteProcess && this.remoteProcess.isAlive()) {
+      const remoteProcess = this.remoteProcess;
       this.stdinWriteQueue = this.stdinWriteQueue.then(
         () =>
           new Promise<void>((resolve) => {
             try {
-              this.remoteProcess!.write(message);
+              remoteProcess.write(message);
             } catch {
               // Remote process may have died between the isAlive() check and write()
             }
@@ -3958,10 +3960,11 @@ export class ACPProvider extends BaseAgentProvider {
 
     // Create unique connection ID for this agent
     this.sshConnectionId = `agent-${this.config.agentId || 'default'}-${Date.now()}`;
+    const sshConnectionId = this.sshConnectionId;
 
     try {
       // Step 1: Connect to remote server
-      await sshManager.connect(this.sshConnectionId, {
+      await sshManager.connect(sshConnectionId, {
         host: sshConfig.host,
         port: sshConfig.port || 22,
         username: sshConfig.user,
@@ -3980,7 +3983,7 @@ export class ACPProvider extends BaseAgentProvider {
       // Resolve ~ in remotePath to absolute path (escapeShellArg prevents tilde expansion)
       let resolvedRemotePath = remotePath;
       if (remotePath.startsWith('~')) {
-        const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', {
+        const homeResult = await sshManager.executeCommand(sshConnectionId, 'echo $HOME', {
           timeout: 5000,
           rawCommand: true,
         });
@@ -4070,14 +4073,14 @@ export class ACPProvider extends BaseAgentProvider {
 
         // Create tmp directory and write config on remote
         await sshManager.executeCommand(
-          this.sshConnectionId!,
+          sshConnectionId,
           `mkdir -p ${escapeShellArg(remoteTmpDir)}`,
           {
             timeout: 10000,
           },
         );
         await sshManager.executeCommand(
-          this.sshConnectionId!,
+          sshConnectionId,
           `cat > ${escapeShellArg(remoteMcpConfigPath)} << 'EOF'\n${JSON.stringify(mcpConfig, null, 2)}\nEOF`,
           { timeout: 10000 },
         );
@@ -4097,7 +4100,7 @@ export class ACPProvider extends BaseAgentProvider {
 
       try {
         const statusResult = await sshManager.executeCommand(
-          this.sshConnectionId!,
+          sshConnectionId,
           `node ~/.intent-server/server.js status --workspace ${escapeShellArg(workspaceId)}`,
           { timeout: 10000 },
         );
@@ -4148,7 +4151,7 @@ export class ACPProvider extends BaseAgentProvider {
           startCommand,
         });
 
-        const startResult = await sshManager.executeCommand(this.sshConnectionId!, startCommand, {
+        const startResult = await sshManager.executeCommand(sshConnectionId, startCommand, {
           timeout: 30000,
         });
 
@@ -4183,7 +4186,7 @@ export class ACPProvider extends BaseAgentProvider {
       // Resolve $HOME for the socket path (connectToRemoteSocket needs an absolute path)
       let remoteHomeDir: string | undefined;
       try {
-        const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', {
+        const homeResult = await sshManager.executeCommand(sshConnectionId, 'echo $HOME', {
           timeout: 5000,
           rawCommand: true,
         });
@@ -4541,9 +4544,10 @@ export class ACPProvider extends BaseAgentProvider {
       try {
         // Create a new connection ID for the reconnection
         this.sshConnectionId = `agent-${this.config.agentId || 'default'}-${Date.now()}`;
+        const sshConnectionId = this.sshConnectionId;
 
         // Step 1: Re-establish SSH connection
-        await sshManager.connect(this.sshConnectionId, {
+        await sshManager.connect(sshConnectionId, {
           host: sshConfig.host,
           port: sshConfig.port || 22,
           username: sshConfig.user,
@@ -4562,14 +4566,14 @@ export class ACPProvider extends BaseAgentProvider {
         // Resolve ~ in remotePath to absolute path (escapeShellArg prevents tilde expansion)
         let resolvedRemotePath: string;
         if (remotePath && remotePath.startsWith('~')) {
-          const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', {
+          const homeResult = await sshManager.executeCommand(sshConnectionId, 'echo $HOME', {
             timeout: 5000,
             rawCommand: true,
           });
           const homeDir = homeResult.stdout.trim();
           resolvedRemotePath = homeDir ? remotePath.replace(/^~/, homeDir) : remotePath;
         } else if (!remotePath) {
-          const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', {
+          const homeResult = await sshManager.executeCommand(sshConnectionId, 'echo $HOME', {
             timeout: 5000,
             rawCommand: true,
           });
@@ -4686,7 +4690,7 @@ export class ACPProvider extends BaseAgentProvider {
         // Resolve $HOME for the socket path
         let reconnectHomeDir: string | undefined;
         try {
-          const homeResult = await sshManager.executeCommand(this.sshConnectionId!, 'echo $HOME', {
+          const homeResult = await sshManager.executeCommand(sshConnectionId, 'echo $HOME', {
             timeout: 5000,
             rawCommand: true,
           });
@@ -4931,14 +4935,16 @@ export class ACPProvider extends BaseAgentProvider {
           messageId: message.id,
           stopReason: message.result?.stopReason,
         });
-        const pending = this.pendingRequests.get(message.id)!;
-        clearTimeout(pending.timeout);
-        this.pendingRequests.delete(message.id);
-        if (this.agentProcess?.pid) {
-          notifyPendingWorkCleared(this.agentProcess.pid);
+        const pending = this.pendingRequests.get(message.id);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          this.pendingRequests.delete(message.id);
+          if (this.agentProcess?.pid) {
+            notifyPendingWorkCleared(this.agentProcess.pid);
+          }
+          this.resetIdleTimer();
+          pending.resolve(message);
         }
-        this.resetIdleTimer();
-        pending.resolve(message);
         return;
       } else if (message.id !== undefined && (message.result || message.error)) {
         // This is a JSON-RPC response (has id + result or id + error) without a matching
@@ -6330,8 +6336,8 @@ export class ACPProvider extends BaseAgentProvider {
           .then((response: string | null) => {
             if (response) {
               const parsed = JSON.parse(response);
-              if (this.pendingRequests.has(request.id)) {
-                const pending = this.pendingRequests.get(request.id)!;
+              const pending = this.pendingRequests.get(request.id);
+              if (pending) {
                 clearInterval(pending.timeout);
                 this.pendingRequests.delete(request.id);
                 pending.resolve(parsed);
@@ -6339,8 +6345,8 @@ export class ACPProvider extends BaseAgentProvider {
             }
           })
           .catch((error: Error) => {
-            if (this.pendingRequests.has(request.id)) {
-              const pending = this.pendingRequests.get(request.id)!;
+            const pending = this.pendingRequests.get(request.id);
+            if (pending) {
               clearInterval(pending.timeout);
               this.pendingRequests.delete(request.id);
               pending.reject(error);
@@ -8390,7 +8396,10 @@ export class ACPProvider extends BaseAgentProvider {
     // Note: frontendSessionId is already set at the start of this method
 
     // Use frontend session ID for callbacks if provided, otherwise use internal session ID
-    const callbackSessionId = this.frontendSessionId || this.sessionId!;
+    const callbackSessionId = this.frontendSessionId || this.sessionId;
+    if (!callbackSessionId) {
+      throw new Error('Cannot start streaming without a session ID');
+    }
 
     // Clean up any existing callbacks for this session to prevent memory leaks
     // and ensure we start fresh
@@ -10081,9 +10090,10 @@ export class ACPProvider extends BaseAgentProvider {
     // Record successful operation in circuit breaker — resets failure counts
     // and allows circuit to close after half-open state
     if (this.config.workspaceId) {
+      const workspaceId = this.config.workspaceId;
       void Promise.resolve()
         .then(() => {
-          agentCircuitBreaker.recordSuccess(this.config.workspaceId!);
+          agentCircuitBreaker.recordSuccess(workspaceId);
         })
         .catch(() => {
           // Circuit breaker not available — non-critical
@@ -10906,9 +10916,10 @@ export class ACPProvider extends BaseAgentProvider {
 
       // Record failure in circuit breaker to prevent further spawn attempts
       if (this.config.workspaceId) {
+        const workspaceId = this.config.workspaceId;
         void Promise.resolve()
           .then(() => {
-            agentCircuitBreaker.recordFailure(this.config.workspaceId!, 'restart_limit_exceeded');
+            agentCircuitBreaker.recordFailure(workspaceId, 'restart_limit_exceeded');
           })
           .catch(() => {});
       }
@@ -11015,9 +11026,10 @@ export class ACPProvider extends BaseAgentProvider {
 
       // Record failure in circuit breaker
       if (this.config.workspaceId) {
+        const workspaceId = this.config.workspaceId;
         void Promise.resolve()
           .then(() => {
-            agentCircuitBreaker.recordFailure(this.config.workspaceId!, 'restart_failed');
+            agentCircuitBreaker.recordFailure(workspaceId, 'restart_failed');
           })
           .catch(() => {});
       }

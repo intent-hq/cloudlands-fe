@@ -304,8 +304,8 @@ export class ServerManager extends EventEmitter {
 
     // Handle messages from server
     process.on('message', (message: any) => {
-      if (message.id && server.requestQueue.has(message.id)) {
-        const request = server.requestQueue.get(message.id)!;
+      const request = message.id ? server.requestQueue.get(message.id) : undefined;
+      if (request) {
         server.requestQueue.delete(message.id);
         clearTimeout(request.timeout);
 

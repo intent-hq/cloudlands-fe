@@ -367,10 +367,8 @@ export class InstructionService {
     // Non-interactive background agents get a minimal prompt
     // They don't need base identity, specialist config, user rules, etc.
     // Just their specific instruction - they output a result and that's it
-    const isNonInteractive =
-      config.agentType && NON_INTERACTIVE_BACKGROUND_AGENTS.has(config.agentType);
-    if (isNonInteractive) {
-      const rules = await this.getSpecializationRules(config.agentType!, config.workspacePath);
+    if (config.agentType && NON_INTERACTIVE_BACKGROUND_AGENTS.has(config.agentType)) {
+      const rules = await this.getSpecializationRules(config.agentType, config.workspacePath);
       logger.info('Non-interactive background agent - using minimal prompt', {
         agentType: config.agentType,
         rulesLength: rules.length,

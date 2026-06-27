@@ -114,9 +114,9 @@ export function truncateLargeFields(messages: AgentMessage[]): AgentMessage[] {
 
     return {
       ...msg,
-      ...(hasToolCalls && { toolCalls: msg.toolCalls!.map(truncateToolCall) }),
-      ...(hasToolResults && { toolResults: msg.toolResults!.map(truncateToolResult) }),
-      ...(hasToolResultBlocks && { contentBlocks: msg.contentBlocks!.map(truncateContentBlock) }),
+      ...(hasToolCalls && { toolCalls: msg.toolCalls?.map(truncateToolCall) }),
+      ...(hasToolResults && { toolResults: msg.toolResults?.map(truncateToolResult) }),
+      ...(hasToolResultBlocks && { contentBlocks: msg.contentBlocks?.map(truncateContentBlock) }),
     };
   });
 }

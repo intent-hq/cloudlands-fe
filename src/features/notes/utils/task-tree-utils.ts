@@ -60,10 +60,12 @@ export function flattenTaskTree(notes: Note[]): Note[] {
   const childrenMap = new Map<string | undefined, Note[]>();
   for (const note of taskNotes) {
     const parentId = note.parentId as string | undefined;
-    if (!childrenMap.has(parentId)) {
-      childrenMap.set(parentId, []);
+    let children = childrenMap.get(parentId);
+    if (!children) {
+      children = [];
+      childrenMap.set(parentId, children);
     }
-    childrenMap.get(parentId)!.push(note);
+    children.push(note);
   }
 
   // Sort children at each level
@@ -123,10 +125,12 @@ export function findReadyTasks(flattenedTasks: Note[], allNotes: Note[]): Note[]
   for (const note of allNotes) {
     if (note.metadata?.task && note.parentId) {
       const parentId = note.parentId as string;
-      if (!childrenMap.has(parentId)) {
-        childrenMap.set(parentId, []);
+      let children = childrenMap.get(parentId);
+      if (!children) {
+        children = [];
+        childrenMap.set(parentId, children);
       }
-      childrenMap.get(parentId)!.push(note);
+      children.push(note);
     }
   }
 

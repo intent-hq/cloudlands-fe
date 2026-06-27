@@ -25,10 +25,12 @@ export function trackFileOperation(
   filePath: string,
   operation: 'write' | 'delete',
 ) {
-  if (!pendingFileOperations.has(workspaceId)) {
-    pendingFileOperations.set(workspaceId, []);
+  let operations = pendingFileOperations.get(workspaceId);
+  if (!operations) {
+    operations = [];
+    pendingFileOperations.set(workspaceId, operations);
   }
-  pendingFileOperations.get(workspaceId)!.push({
+  operations.push({
     path: filePath,
     operation,
     timestamp: new Date().toISOString(),

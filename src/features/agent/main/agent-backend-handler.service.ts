@@ -400,10 +400,12 @@ export class AgentBackendHandler {
    * @returns {void}
    */
   private registerEventListener(event: string, handler: EventHandlerFunction): void {
-    if (!this.eventListeners.has(event)) {
-      this.eventListeners.set(event, new Set());
+    let handlers = this.eventListeners.get(event);
+    if (!handlers) {
+      handlers = new Set();
+      this.eventListeners.set(event, handlers);
     }
-    this.eventListeners.get(event)!.add(handler);
+    handlers.add(handler);
   }
 
   /**
@@ -1930,7 +1932,9 @@ export class AgentBackendHandler {
             });
           }
         }
-        let { providerId, modelId: rawModelId } = parseCompoundModelId(modelId);
+        const { providerId: initialProviderId, modelId: rawModelId } =
+          parseCompoundModelId(modelId);
+        let providerId = initialProviderId;
 
         // If the model doesn't include a provider prefix, use the explicitly stored provider
         // from metadata/config (set during workspace creation when user selects a provider)
@@ -6950,8 +6954,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       });
     }
 
-    for (const agentId of streamingAgentIds) {
-      const snapshot = snapshots.get(agentId)!;
+    for (const [agentId, snapshot] of snapshots) {
       const { workspaceId, sessionId, capturedProvider, capturedGeneration } = snapshot;
       // Mark this agent as terminating BEFORE the repair save so any streaming
       // callback that fires between the save and provider.stop short-circuits
@@ -9345,8 +9348,6 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
 
     this.processingQueue.add(agentId);
 
-    // Declare nextMessage outside the try block so it's accessible in the catch block
-    let nextMessage: QueuedMessage | undefined;
     let queueProcessingNotified = false;
     let removedFromQueue = false;
     let queueTargetWindows: number[] = [];
@@ -9355,7 +9356,8 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     // We only remove it after handleBackendStreamMessage succeeds.
     // Previously, queue.shift() was called here, which meant the message was
     // permanently lost if the send failed or was preempted by a concurrent message.
-    nextMessage = queue[0];
+    // Declared outside the try block so it's accessible in the catch block.
+    const nextMessage: QueuedMessage | undefined = queue[0];
     if (!nextMessage) {
       this.processingQueue.delete(agentId);
       return;

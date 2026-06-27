@@ -60,9 +60,9 @@ export class MCPBridge {
       const remote =
         environmentConfig?.type === 'remote'
           ? {
-              host: environmentConfig.host!,
+              host: environmentConfig.host,
               port: environmentConfig.port || 22,
-              username: environmentConfig.username!,
+              username: environmentConfig.username,
               privateKey: environmentConfig.privateKey,
               password: environmentConfig.password,
               workspacePath,

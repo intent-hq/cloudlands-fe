@@ -80,6 +80,7 @@ export async function startWorkspaceServers(
   if (!mcpHub) {
     throw new Error('MCP Hub not initialized');
   }
+  const hub = mcpHub;
 
   const metadataPath = WorkspaceConfig.paths.workspace(workspaceId);
 
@@ -122,7 +123,7 @@ export async function startWorkspaceServers(
           step: 'starting',
           message: `Starting ${config.name}...`,
         });
-        await mcpHub!.startServer(config);
+        await hub.startServer(config);
         onProgress?.({
           step: 'started',
           message: `${config.name} ready`,
