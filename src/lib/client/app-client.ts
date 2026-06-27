@@ -155,6 +155,12 @@ export interface FilesClient {
   read(workspaceId: string, path: string): Promise<FileContentEntry | null>;
   /** Root node of the workspace file tree, or `null` when no tree is available. */
   explorerTree(workspaceId: string): Promise<FileNode | null>;
+  /**
+   * Immediate children of one directory (`file.list`), as tree nodes for the
+   * explorer's lazy expand/refresh. Workspace-relative `path`; `""` lists the
+   * workspace root. Resolves `[]` when the directory is empty or unavailable.
+   */
+  listDirectory(workspaceId: string, path: string): Promise<FileNode[]>;
   /** Per-file git status keyed by workspace-relative path, for the explorer overlay. */
   gitStatusMap(workspaceId: string): Promise<Record<string, FileGitStatus>>;
   subscribe(handler: SubscriptionHandler<FileContentEntry[]>): Unsubscribe;
