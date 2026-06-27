@@ -19,6 +19,22 @@ function toCodexError(message: string): Error {
   return new Error(message.startsWith('Codex:') ? message : `Codex: ${message}`);
 }
 
+/**
+ * Invoke a provider model IPC channel, preferring the real Electron bridge
+ * (`window.electronAPI`) so the request reaches the live main-process handler
+ * (`codex:get-models`). The default `$lib/electron-bridge` invoke is wired to
+ * the in-memory mock IPC router, which has no handler for this channel, so on a
+ * live build it resolves to `undefined` and the model list comes back empty.
+ * Falls back to the mock-routed invoke when no real bridge is present (unit
+ * tests / non-Electron environments).
+ */
+async function invokeModelChannel<T>(channel: string): Promise<T> {
+  if (typeof window !== 'undefined' && window.electronAPI?.invoke) {
+    return (await window.electronAPI.invoke(channel)) as T;
+  }
+  return await invoke<T>(channel);
+}
+
 export interface CodexModel {
   value: string;
   label: string;
@@ -74,7 +90,7 @@ export async function getCodexModelsWithMetadata(): Promise<CodexModelsResult> {
   try {
     logger.debug('Getting models from Codex');
 
-    const result = await invoke<GetModelsResponse>('codex:get-models');
+    const result = await invokeModelChannel<GetModelsResponse>('codex:get-models');
     if (result?.success && result.data && result.data.length > 0) {
       if (result.warning) {
         logger.warn('Codex models returned with warning:', { warning: result.warning });

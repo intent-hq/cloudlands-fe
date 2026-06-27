@@ -20,6 +20,22 @@ function toPiError(message: string): Error {
   return new Error(message.startsWith('Pi:') ? message : `Pi: ${message}`);
 }
 
+/**
+ * Invoke a provider model IPC channel, preferring the real Electron bridge
+ * (`window.electronAPI`) so the request reaches the live main-process handler
+ * (`pi:get-models`). The default `$lib/electron-bridge` invoke is wired to the
+ * in-memory mock IPC router, which has no handler for this channel, so on a
+ * live build it resolves to `undefined` and the model list comes back empty.
+ * Falls back to the mock-routed invoke when no real bridge is present (unit
+ * tests / non-Electron environments).
+ */
+async function invokeModelChannel<T>(channel: string): Promise<T> {
+  if (typeof window !== 'undefined' && window.electronAPI?.invoke) {
+    return (await window.electronAPI.invoke(channel)) as T;
+  }
+  return await invoke<T>(channel);
+}
+
 export interface PiModel {
   value: string;
   label: string;
@@ -69,7 +85,7 @@ export async function getPiModels(): Promise<PiModel[]> {
   try {
     logger.debug('Getting models from Pi');
 
-    const result = await invoke<GetModelsResponse>('pi:get-models');
+    const result = await invokeModelChannel<GetModelsResponse>('pi:get-models');
     if (result?.success && result.data && result.data.length > 0) {
       if (result.warning) {
         logger.warn('Pi models returned with warning:', { warning: result.warning });

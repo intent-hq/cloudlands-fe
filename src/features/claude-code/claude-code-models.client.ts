@@ -19,6 +19,22 @@ function toClaudeCodeError(message: string): Error {
   return new Error(message.startsWith('Claude Code:') ? message : `Claude Code: ${message}`);
 }
 
+/**
+ * Invoke a provider model IPC channel, preferring the real Electron bridge
+ * (`window.electronAPI`) so the request reaches the live main-process handler
+ * (`claude-code:get-models`). The default `$lib/electron-bridge` invoke is wired
+ * to the in-memory mock IPC router, which has no handler for this channel, so on
+ * a live build it resolves to `undefined` and the model list comes back empty.
+ * Falls back to the mock-routed invoke when no real bridge is present (unit
+ * tests / non-Electron environments).
+ */
+async function invokeModelChannel<T>(channel: string): Promise<T> {
+  if (typeof window !== 'undefined' && window.electronAPI?.invoke) {
+    return (await window.electronAPI.invoke(channel)) as T;
+  }
+  return await invoke<T>(channel);
+}
+
 export interface ClaudeCodeModel {
   value: string;
   label: string;
@@ -69,7 +85,7 @@ export async function getClaudeCodeModels(): Promise<ClaudeCodeModel[]> {
   try {
     logger.debug('Getting models from Claude Code');
 
-    const result = await invoke<GetModelsResponse>('claude-code:get-models');
+    const result = await invokeModelChannel<GetModelsResponse>('claude-code:get-models');
     if (result?.success && result.data && result.data.length > 0) {
       if (result.warning) {
         logger.warn('Claude Code models returned with warning:', { warning: result.warning });
