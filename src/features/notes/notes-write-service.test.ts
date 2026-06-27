@@ -218,4 +218,22 @@ describe("notesWriteService (fake seam, real store)", () => {
     expect(note?.rev).toBe(5);
     expect(toast.warning).toHaveBeenCalledTimes(1);
   });
+
+  it("reloads to the server note and prompts on a delete conflict (no stale-snapshot restore)", async () => {
+    seed(makeNote("n1", { rev: 9, title: "Old", content: "mine" }));
+    notesApi.delete.mockResolvedValueOnce({
+      success: false,
+      conflict: { current: makeNote("n1", { rev: 12, title: "Server", content: "server" }) },
+    } as never);
+
+    await deleteNote(WS, "n1");
+
+    const note = selectNoteById.select(appStore.state, WS, "n1");
+    // The note is reloaded from the authoritative server version (rev advances),
+    // NOT restored from the pre-delete snapshot (which was rev 9).
+    expect(note?.rev).toBe(12);
+    expect(note?.title).toBe("Server");
+    expect(note?.content).toBe("server");
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+  });
 });

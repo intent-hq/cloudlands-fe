@@ -258,6 +258,42 @@ describe("LiveNotesClient mutations (fake transport)", () => {
     });
   });
 
+  it("maps a -32005 conflict on updateMetadata to a structured outcome with the normalized current note", async () => {
+    rejectWith({
+      rpcCode: -32005,
+      data: { code: "conflict", current: { id: "note-1", title: "Server", rev: 6 } },
+    });
+    const client = new LiveNotesClient();
+
+    const result = await client.updateMetadata("note-1", { title: "Mine" }, 2);
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("conflict");
+    expect(result.conflict?.current).toMatchObject({
+      id: "note-1",
+      title: "Server",
+      rev: 6,
+      workspaceId: "ws-1",
+    });
+  });
+
+  it("maps a -32005 conflict on delete to a structured outcome with the normalized current note", async () => {
+    rejectWith({
+      rpcCode: -32005,
+      data: { code: "conflict", current: { id: "note-1", title: "Server", rev: 11 } },
+    });
+    const client = new LiveNotesClient();
+
+    const result = await client.delete("note-1", 5);
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("conflict");
+    expect(result.conflict?.current).toMatchObject({
+      id: "note-1",
+      title: "Server",
+      rev: 11,
+      workspaceId: "ws-1",
+    });
+  });
+
   it("does NOT set conflict for a generic (non -32005) daemon error", async () => {
     mockedRequest.mockRejectedValueOnce(new Error("boom"));
     const client = new LiveNotesClient();
