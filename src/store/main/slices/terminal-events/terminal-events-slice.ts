@@ -87,7 +87,7 @@ export const TERMINAL_EVENT_ACTION_MAP: Partial<{
 // All action types (for takeEvery matching)
 // ---------------------------------------------------------------------------
 
-export const TERMINAL_EVENT_TYPES = Object.values(TERMINAL_EVENT_ACTION_MAP).map(
-  (entry) => entry!.actionCreator.type,
+export const TERMINAL_EVENT_TYPES = Object.values(TERMINAL_EVENT_ACTION_MAP).flatMap((entry) =>
+  entry ? [entry.actionCreator.type] : [],
 );
 

@@ -702,7 +702,10 @@ export const initialState: PanelLayoutSliceState = {
 let _reducerRef: ((state: PanelLayoutSliceState, action: { type: string; payload: any }) => PanelLayoutSliceState) | null = null;
 
 function selfDispatch(state: PanelLayoutSliceState, action: { type: string; payload: any }): PanelLayoutSliceState {
-  return _reducerRef!(state, action);
+  if (!_reducerRef) {
+    return state;
+  }
+  return _reducerRef(state, action);
 }
 
 export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialState)

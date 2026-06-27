@@ -102,10 +102,12 @@ export function logHandlerStatus(): void {
 
   handlers.forEach((handler) => {
     const prefix = handler.split(':')[0];
-    if (!grouped.has(prefix)) {
-      grouped.set(prefix, []);
+    const existing = grouped.get(prefix);
+    if (existing) {
+      existing.push(handler);
+    } else {
+      grouped.set(prefix, [handler]);
     }
-    grouped.get(prefix)!.push(handler);
   });
 
   // Log grouped

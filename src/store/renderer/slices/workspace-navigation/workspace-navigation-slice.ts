@@ -316,7 +316,11 @@ function updateCurrentHistoryEntry(
   }
 
   const history = [...workspaceState.navigation.history];
-  history[currentIndex] = updater(history[currentIndex]!);
+  const currentEntry = history[currentIndex];
+  if (!currentEntry) {
+    return workspaceState;
+  }
+  history[currentIndex] = updater(currentEntry);
   return mergeWorkspaceNavigationState(workspaceState, {
     navigation: {
       ...workspaceState.navigation,

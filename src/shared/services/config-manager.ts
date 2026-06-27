@@ -295,7 +295,10 @@ export class ConfigManager extends EventEmitter {
     if (keyOrPath.includes('.')) {
       // Handle nested path
       const keys = keyOrPath.split('.');
-      const lastKey = keys.pop()!;
+      const lastKey = keys.pop();
+      if (lastKey === undefined) {
+        return;
+      }
       let target: any = this.config;
 
       for (const key of keys) {

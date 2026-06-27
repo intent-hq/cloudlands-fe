@@ -103,11 +103,13 @@ export class CdpMcpBridge {
    */
   async start(): Promise<void> {
     // Create and initialize CDP MCP server first
+    let mcpServer: MCPServer;
     try {
       // Get CDP port from environment or use default
       this.cdpPort = parseInt(process.env.CDP_PORT || '9223', 10);
-      this.mcpServer = await createCdpMCPServer(this.cdpPort);
-      const tools = this.mcpServer.getTools().map((t: any) => t.name);
+      mcpServer = await createCdpMCPServer(this.cdpPort);
+      this.mcpServer = mcpServer;
+      const tools = mcpServer.getTools().map((t: any) => t.name);
       this.logger.debug(`CDP MCP Server initialized with tools: ${tools.join(', ')}`);
     } catch (error) {
       this.logger.error('Failed to initialize CDP MCP Server:', error);
@@ -123,7 +125,7 @@ export class CdpMcpBridge {
       try {
         await this.tryStartServer(currentPort);
         this.port = currentPort; // Update to actual port used
-        const tools = this.mcpServer!.getTools();
+        const tools = mcpServer.getTools();
         console.log(`\n🔧 CDP MCP Bridge: http://localhost:${this.port} (${tools.length} tools)\n`);
         return;
       } catch (error) {
@@ -166,9 +168,10 @@ export class CdpMcpBridge {
    * Stop the server
    */
   async stop(): Promise<void> {
-    if (this.server) {
+    const server = this.server;
+    if (server) {
       return new Promise((resolve) => {
-        this.server!.close(() => {
+        server.close(() => {
           this.logger.info('CDP MCP Bridge stopped');
           resolve();
         });

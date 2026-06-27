@@ -377,7 +377,8 @@ export class AgentErrorTracker {
         filtered = filtered.filter((e) => e.level === filter.level);
       }
       if (filter.since) {
-        filtered = filtered.filter((e) => new Date(e.timestamp) >= filter.since!);
+        const since = filter.since;
+        filtered = filtered.filter((e) => new Date(e.timestamp) >= since);
       }
       if (filter.component) {
         filtered = filtered.filter((e) => e.component === filter.component);

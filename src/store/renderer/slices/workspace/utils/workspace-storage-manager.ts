@@ -119,10 +119,12 @@ export class WorkspaceStorageManager {
     workspaceId: string,
     callback: (state: WorkspaceStorageState) => void,
   ): () => void {
-    if (!this.crossWindowListeners.has(workspaceId)) {
-      this.crossWindowListeners.set(workspaceId, new Set());
+    let listeners = this.crossWindowListeners.get(workspaceId);
+    if (!listeners) {
+      listeners = new Set();
+      this.crossWindowListeners.set(workspaceId, listeners);
     }
-    this.crossWindowListeners.get(workspaceId)!.add(callback);
+    listeners.add(callback);
 
     return () => {
       const listeners = this.crossWindowListeners.get(workspaceId);
@@ -226,8 +228,9 @@ export class WorkspaceStorageManager {
     const key = this.getStorageKey(workspaceId);
 
     // Check memory cache first
-    if (this.memoryCache.has(key)) {
-      return this.memoryCache.get(key)!;
+    const cached = this.memoryCache.get(key);
+    if (cached !== undefined) {
+      return cached;
     }
 
     try {

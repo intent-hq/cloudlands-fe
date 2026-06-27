@@ -78,7 +78,10 @@ class Semaphore {
     this.current--;
     if (this.queue.length > 0) {
       this.current++;
-      this.queue.shift()!();
+      const next = this.queue.shift();
+      if (next) {
+        next();
+      }
     }
   }
 }
@@ -178,8 +181,8 @@ export class SSHManager extends EventEmitter {
    */
   async connect(id: string, config: SSHConnectionConfig): Promise<SSHConnection> {
     // Check if connection already exists
-    if (this.connections.has(id)) {
-      const existing = this.connections.get(id)!;
+    const existing = this.connections.get(id);
+    if (existing) {
       if (existing.connected) {
         return existing;
       }

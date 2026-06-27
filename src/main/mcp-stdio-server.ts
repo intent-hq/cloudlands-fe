@@ -505,21 +505,23 @@ async function waitForHttpServer(
 
     if (healthyCandidates.length > 0) {
       healthyCandidates.sort((a, b) => b.score - a.score);
-      const selected = healthyCandidates[0]!;
-      logToStderr('INFO', 'HTTP MCP server is available', {
-        port: selected.port,
-        attempt,
-        score: selected.score,
-        health: selected.health,
-        candidates: healthyCandidates.map((candidate) => ({
-          port: candidate.port,
-          score: candidate.score,
-          bridgeApiVersion: candidate.health.bridgeApiVersion,
-          processCwd: candidate.health.processCwd,
-          appPath: candidate.health.appPath,
-        })),
-      });
-      return selected.port;
+      const selected = healthyCandidates[0];
+      if (selected) {
+        logToStderr('INFO', 'HTTP MCP server is available', {
+          port: selected.port,
+          attempt,
+          score: selected.score,
+          health: selected.health,
+          candidates: healthyCandidates.map((candidate) => ({
+            port: candidate.port,
+            score: candidate.score,
+            bridgeApiVersion: candidate.health.bridgeApiVersion,
+            processCwd: candidate.health.processCwd,
+            appPath: candidate.health.appPath,
+          })),
+        });
+        return selected.port;
+      }
     }
 
     if (attempt < maxRetries) {
@@ -574,12 +576,14 @@ async function tryReconnect(): Promise<number | null> {
   }
   if (healthyCandidates.length > 0) {
     healthyCandidates.sort((a, b) => b.score - a.score);
-    const selected = healthyCandidates[0]!;
-    logToStderr('INFO', 'HTTP MCP server reconnected', {
-      port: selected.port,
-      score: selected.score,
-    });
-    return selected.port;
+    const selected = healthyCandidates[0];
+    if (selected) {
+      logToStderr('INFO', 'HTTP MCP server reconnected', {
+        port: selected.port,
+        score: selected.score,
+      });
+      return selected.port;
+    }
   }
   return null;
 }

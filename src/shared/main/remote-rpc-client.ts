@@ -523,7 +523,8 @@ export class RemoteRPCClient {
    * Send a JSON-RPC 2.0 request and wait for the matching response.
    */
   private call<T>(method: string, params?: unknown, timeoutMs?: number): Promise<T> {
-    if (!this.socket || !this.socket.isAlive()) {
+    const socket = this.socket;
+    if (!socket || !socket.isAlive()) {
       return Promise.reject(new Error('RemoteRPCClient is not connected'));
     }
 
@@ -552,7 +553,7 @@ export class RemoteRPCClient {
 
       const payload = JSON.stringify(request) + '\n';
       try {
-        this.socket!.write(payload);
+        socket.write(payload);
       } catch (err) {
         // Write failed — clean up immediately.
         clearTimeout(timer);

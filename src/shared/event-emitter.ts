@@ -29,11 +29,11 @@ export class EventEmitter {
    * Adds a listener for the specified event
    */
   addListener(event: string | symbol, listener: EventListener): this {
-    if (!this.events.has(event)) {
-      this.events.set(event, []);
+    let listeners = this.events.get(event);
+    if (!listeners) {
+      listeners = [];
+      this.events.set(event, listeners);
     }
-
-    const listeners = this.events.get(event)!;
     listeners.push(listener);
 
     // Warn if we exceed max listeners (memory leak detection)
@@ -170,11 +170,11 @@ export class EventEmitter {
    * Prepends a listener to the beginning of the listeners array
    */
   prependListener(event: string | symbol, listener: EventListener): this {
-    if (!this.events.has(event)) {
-      this.events.set(event, []);
+    let listeners = this.events.get(event);
+    if (!listeners) {
+      listeners = [];
+      this.events.set(event, listeners);
     }
-
-    const listeners = this.events.get(event)!;
     listeners.unshift(listener);
 
     return this;

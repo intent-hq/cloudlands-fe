@@ -62,7 +62,7 @@ export const AGENT_EVENT_ACTION_MAP: Partial<{
 // All action types (for takeEvery matching)
 // ---------------------------------------------------------------------------
 
-export const AGENT_EVENT_TYPES = Object.values(AGENT_EVENT_ACTION_MAP).map(
-  (entry) => entry!.actionCreator.type,
+export const AGENT_EVENT_TYPES = Object.values(AGENT_EVENT_ACTION_MAP).flatMap((entry) =>
+  entry ? [entry.actionCreator.type] : [],
 );
 

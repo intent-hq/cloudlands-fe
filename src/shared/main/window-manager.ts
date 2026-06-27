@@ -147,8 +147,8 @@ export class WindowManager {
     id: string,
     options: Electron.BrowserWindowConstructorOptions,
   ): Promise<BrowserWindow> {
-    if (this.windows.has(id)) {
-      const existingWindow = this.windows.get(id)!;
+    const existingWindow = this.windows.get(id);
+    if (existingWindow) {
       if (!existingWindow.isDestroyed()) {
         existingWindow.focus();
         return existingWindow;

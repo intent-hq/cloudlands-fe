@@ -70,7 +70,7 @@ export const WORKSPACE_LIFECYCLE_GLOBAL_BROADCAST_EVENTS: ReadonlySet<string> = 
 // All action types (for takeEvery matching)
 // ---------------------------------------------------------------------------
 
-export const WORKSPACE_LIFECYCLE_EVENT_TYPES = Object.values(WORKSPACE_LIFECYCLE_EVENT_ACTION_MAP).map(
-  (entry) => entry!.actionCreator.type,
-);
+export const WORKSPACE_LIFECYCLE_EVENT_TYPES = Object.values(
+  WORKSPACE_LIFECYCLE_EVENT_ACTION_MAP,
+).flatMap((entry) => (entry ? [entry.actionCreator.type] : []));
 

@@ -49,8 +49,11 @@ export function storeMcpToolParams(
   toolName: string,
   args: Record<string, any>,
 ): void {
-  if (!cache.has(agentId)) cache.set(agentId, []);
-  const queue = cache.get(agentId)!;
+  let queue = cache.get(agentId);
+  if (!queue) {
+    queue = [];
+    cache.set(agentId, queue);
+  }
   queue.push({
     toolName,
     arguments: args,

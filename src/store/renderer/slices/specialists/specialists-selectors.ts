@@ -118,7 +118,7 @@ export const selectSpecialists = store.createSelector((state): Specialist[] => {
         const aIsBuiltIn = bundledOrder.has(a.id);
         const bIsBuiltIn = bundledOrder.has(b.id);
         // Built-in specialists come first, in their original order
-        if (aIsBuiltIn && bIsBuiltIn) return bundledOrder.get(a.id)! - bundledOrder.get(b.id)!;
+        if (aIsBuiltIn && bIsBuiltIn) return (bundledOrder.get(a.id) ?? 0) - (bundledOrder.get(b.id) ?? 0);
         if (aIsBuiltIn && !bIsBuiltIn) return -1;
         if (!aIsBuiltIn && bIsBuiltIn) return 1;
         // Custom specialists sorted alphabetically by name

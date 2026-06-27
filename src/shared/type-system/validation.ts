@@ -174,6 +174,6 @@ export function createValidationMiddleware<K extends IpcContractKey>(channel: K)
         };
       }
 
-      return handler(validation.data!);
+      return handler(validation.data as z.infer<(typeof IpcContracts)[K]['request']>);
     };
 }

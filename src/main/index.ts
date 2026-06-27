@@ -1835,7 +1835,11 @@ app.whenReady().then(async () => {
       logger.warn('Failed to start postWindowIPC metric:', error);
     }
 
-    const mainWindow = getMainWindow()!;
+    const mainWindow = getMainWindow();
+    if (!mainWindow) {
+      logger.error('Main window unavailable during post-window setup; skipping');
+      return;
+    }
     await Promise.all([initializeUnifiedBackend(mainWindow), setupMCPIPC(mainWindow)]);
 
     try {

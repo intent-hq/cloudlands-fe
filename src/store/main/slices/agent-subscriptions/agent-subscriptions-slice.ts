@@ -227,9 +227,11 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
     });
   })
   .with(subscribeToDelegationGroup, (state, { payload: [wsId, seed] }) => {
-    const groupId = seed.filter.delegationGroup?.groupId;
+    const seedDelegationGroup = seed.filter.delegationGroup;
+    if (!seedDelegationGroup) return state;
+    const groupId = seedDelegationGroup.groupId;
     if (!groupId) return state;
-    const delegatedAgentId = seed.filter.delegationGroup?.expectedAgentIds[0];
+    const delegatedAgentId = seedDelegationGroup.expectedAgentIds[0];
     if (!delegatedAgentId) return state;
     const ws = getWorkspaceState(state, wsId);
 
@@ -243,27 +245,31 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
     if (existing) {
       canonicalSubId = existing.id;
       const currentActorIds = existing.filter.actorIds ?? [];
-      const dg = existing.filter.delegationGroup!;
-      const actorAlready = currentActorIds.includes(delegatedAgentId);
-      const dgAlready = dg.expectedAgentIds.includes(delegatedAgentId);
-      if (!actorAlready || !dgAlready) {
-        const nextActorIds = actorAlready
-          ? currentActorIds
-          : [...currentActorIds, delegatedAgentId];
-        const nextExpected = dgAlready
-          ? dg.expectedAgentIds
-          : [...dg.expectedAgentIds, delegatedAgentId];
-        nextSubscriptions = {
-          ...ws.subscriptions,
-          [existing.id]: {
-            ...existing,
-            filter: {
-              ...existing.filter,
-              actorIds: nextActorIds,
-              delegationGroup: { ...dg, expectedAgentIds: nextExpected },
+      // `existing` matched on `delegationGroup?.groupId === groupId` (truthy), so
+      // its delegationGroup is guaranteed defined here.
+      const dg = existing.filter.delegationGroup;
+      if (dg) {
+        const actorAlready = currentActorIds.includes(delegatedAgentId);
+        const dgAlready = dg.expectedAgentIds.includes(delegatedAgentId);
+        if (!actorAlready || !dgAlready) {
+          const nextActorIds = actorAlready
+            ? currentActorIds
+            : [...currentActorIds, delegatedAgentId];
+          const nextExpected = dgAlready
+            ? dg.expectedAgentIds
+            : [...dg.expectedAgentIds, delegatedAgentId];
+          nextSubscriptions = {
+            ...ws.subscriptions,
+            [existing.id]: {
+              ...existing,
+              filter: {
+                ...existing.filter,
+                actorIds: nextActorIds,
+                delegationGroup: { ...dg, expectedAgentIds: nextExpected },
+              },
             },
-          },
-        };
+          };
+        }
       }
     } else {
       canonicalSubId = seed.id;
@@ -283,7 +289,7 @@ export const agentSubscriptionsReducer = createReducer<AgentSubscriptionsState>(
         };
       }
     } else {
-      const dgSeed = seed.filter.delegationGroup!;
+      const dgSeed = seedDelegationGroup;
       nextDelegationGroups = {
         ...ws.delegationGroups,
         [groupId]: {
