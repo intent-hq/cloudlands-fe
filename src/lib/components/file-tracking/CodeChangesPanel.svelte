@@ -24,11 +24,11 @@
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
   setMainPanelView as ftSetMainPanelView,
-  stageChangesRequested,
   unstageChangesRequested,
   revertChangeRequested,
   loadWorkspaceDataRequested,
 } from '$store/renderer/slices/changes/changes-slice';
+  import { stageFiles as stageFilesViaSeam } from '$features/git/git-write-service';
 
 
   import {
@@ -239,20 +239,17 @@
   }
 
   async function handleStageChange(change: TrackedChange) {
-    // Use the file tracking store as the single source of truth
-    // The store handles optimistic updates and background syncing
-    // Pass the UI change so the store can create it if it's a synthetic ID
-    try {
-      if (workspaceId) appStore.dispatch(stageChangesRequested(workspaceId, [change.id], [change]));
-    } catch (error) {
-      logger.error('[handleStageChange] Failed to stage file', error as Error);
-    }
+    // Stage through the AppClient seam (git.stage) via the git-write-service,
+    // which applies an optimistic staged-state flip and reconciles from the
+    // daemon — the proven post-saga path (see FileChangesSection).
+    if (!workspaceId) return;
+    void stageFilesViaSeam(workspaceId, [change.relativePath || change.file]);
   }
 
+  // TODO: unstage still dispatches the legacy changes-slice action — `git.unstage`
+  // is a backend gap (not in the frozen wire catalog), so it cannot route through
+  // the git-write-service seam yet.
   async function handleUnstageChange(change: TrackedChange) {
-    // Use the file tracking store as the single source of truth
-    // The store handles optimistic updates and background syncing
-    // Pass the UI change so the store can create it if it's a synthetic ID
     try {
       if (workspaceId) appStore.dispatch(unstageChangesRequested(workspaceId, [change.id], [change]));
     } catch (error) {
@@ -263,16 +260,14 @@
   async function handleStageAll() {
     if (!workspaceId || unstagedChanges.length === 0) return;
 
-    try {
-      // Stage all changes using the store (handles optimistic updates)
-      // Pass the UI changes so the store can create them if they're synthetic IDs
-      const changeIds = unstagedChanges.map((c) => c.id);
-      if (workspaceId) appStore.dispatch(stageChangesRequested(workspaceId, changeIds, unstagedChanges));
-    } catch (error) {
-      logger.error('[handleStageAll] Failed to stage all files', error as Error);
-    }
+    // Stage all unstaged paths through the AppClient seam (git.stage).
+    const paths = unstagedChanges.map((c) => c.relativePath || c.file).filter(Boolean);
+    if (paths.length > 0) void stageFilesViaSeam(workspaceId, paths);
   }
 
+  // TODO: unstage still dispatches the legacy changes-slice action — `git.unstage`
+  // is a backend gap (not in the frozen wire catalog), so it cannot route through
+  // the git-write-service seam yet.
   async function handleUnstageAll() {
     if (!workspaceId || stagedChanges.length === 0) return;
 
@@ -299,7 +294,10 @@
     toast.warning('Changes reverted');
 
     if (!workspaceId) return;
-    // Dispatch revert action - saga handles optimistic update + rollback on failure
+    // TODO: revert still dispatches the legacy changes-slice action — the daemon
+    // exposes no `git.discard`/`git.revert` (the frozen wire catalog only has
+    // git.status/stage/commit), so it cannot route through the git-write-service
+    // seam yet (BE-gated, same as unstage).
     appStore.dispatch(revertChangeRequested(workspaceId, change));
   }
 
