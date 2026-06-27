@@ -381,8 +381,7 @@ export async function initiateMcpOAuth(
     }
 
     // 2. Create callback server
-    let callbackServer: { server: Server; port: number };
-    let tokens: OAuthTokens;
+    let callbackServer!: { server: Server; port: number };
 
     const tokenPromise = new Promise<OAuthTokens>((resolve, reject) => {
       createCallbackServer(mcpName, async (params) => {
@@ -435,10 +434,10 @@ export async function initiateMcpOAuth(
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     // 3. Register client (or use existing)
-    const redirectUri = `http://localhost:${callbackServer!.port}/callback`;
+    const redirectUri = `http://localhost:${callbackServer.port}/callback`;
     const client = await registerClient(metadata, redirectUri);
     if (!client) {
-      callbackServer!.server.close();
+      callbackServer.server.close();
       return {
         success: false,
         error: 'Failed to register OAuth client. Please configure authentication headers manually.',
@@ -474,7 +473,7 @@ export async function initiateMcpOAuth(
     await shell.openExternal(authUrl.toString());
 
     // 6. Wait for callback
-    tokens = await tokenPromise;
+    const tokens = await tokenPromise;
 
     // 7. Store tokens (in memory and persistent storage)
     tokenStore.set(mcpName, tokens);

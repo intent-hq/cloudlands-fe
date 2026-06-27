@@ -65,12 +65,9 @@ describe('Preload IPC Allowlist Parity', () => {
   const preloadIndexPath = path.resolve(__dirname, '../../src/preload/index.ts');
   const preloadTemplatePath = path.resolve(__dirname, '../../src/preload/index.template.ts');
 
-  let indexContent: string;
-  let templateContent: string;
-
   // Read files once
-  indexContent = fs.readFileSync(preloadIndexPath, 'utf-8');
-  templateContent = fs.readFileSync(preloadTemplatePath, 'utf-8');
+  const indexContent = fs.readFileSync(preloadIndexPath, 'utf-8');
+  const templateContent = fs.readFileSync(preloadTemplatePath, 'utf-8');
 
   const indexAllowed = extractArrayEntries(indexContent, 'ALLOWED_CHANNELS');
   const templateAllowed = extractArrayEntries(templateContent, 'ALLOWED_CHANNELS');

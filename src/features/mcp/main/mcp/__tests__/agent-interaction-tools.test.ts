@@ -224,7 +224,6 @@ vi.mock('$shared/types/branded-ids', () => ({
 // the per-provider live model list by calling
 // `mockGetCachedModelsForProvider.mockImplementation(...)`; by default each
 // provider reports `null` (unavailable), which exercises the cold-cache path.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const mockGetCachedModelsForProvider = vi.fn(async (_providerId: string) => null as string[] | null);
 vi.mock('../../../../../main/utils/model-pool', () => ({
   getCachedModelsForProvider: (providerId: string) => mockGetCachedModelsForProvider(providerId),

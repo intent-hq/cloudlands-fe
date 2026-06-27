@@ -1464,7 +1464,7 @@ export class UnifiedPersistence {
       // Try to load main file
       const metadataFS = useLocalFS ? new LocalMetadataFS() : this.getFS(workspaceId);
       const data = await metadataFS.readFile(agentPath, 'utf-8');
-      let parsed = this.unwrapVersionedAgentData(JSON.parse(data), agentId);
+      const parsed = this.unwrapVersionedAgentData(JSON.parse(data), agentId);
 
       // Log what we loaded from disk - use debug level for routine operations
       logger.debug('Loaded data from disk', {

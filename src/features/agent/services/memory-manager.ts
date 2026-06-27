@@ -201,7 +201,6 @@ export class MemoryManager {
   ): () => void {
     target.addEventListener(event, handler);
 
-    let resource: Resource;
     let cleaned = false;
     const cleanup = () => {
       if (cleaned) return;
@@ -214,7 +213,7 @@ export class MemoryManager {
       }
     };
 
-    resource = {
+    const resource: Resource = {
       type: 'listener',
       cleanup,
       created: Date.now(),
@@ -239,8 +238,6 @@ export class MemoryManager {
     type: 'timeout' | 'interval',
     owner?: object,
   ): () => void {
-    let resource: Resource;
-    let timerId: NodeJS.Timeout;
     let cleaned = false;
 
     const untrack = () => {
@@ -260,9 +257,10 @@ export class MemoryManager {
       callback();
     };
 
-    timerId = type === 'timeout'
-      ? setTimeout(timerCallback, delay)
-      : setInterval(timerCallback, delay);
+    const timerId: NodeJS.Timeout =
+      type === 'timeout'
+        ? setTimeout(timerCallback, delay)
+        : setInterval(timerCallback, delay);
 
     const cleanup = () => {
       if (cleaned) return;
@@ -275,7 +273,7 @@ export class MemoryManager {
       untrack();
     };
 
-    resource = {
+    const resource: Resource = {
       type: 'timer',
       cleanup,
       created: Date.now(),
@@ -295,7 +293,6 @@ export class MemoryManager {
    * Register a subscription with automatic cleanup
    */
   registerSubscription(unsubscribe: () => void, owner?: object): void {
-    let resource: Resource;
     let cleaned = false;
     const cleanup = () => {
       if (cleaned) return;
@@ -308,7 +305,7 @@ export class MemoryManager {
       }
     };
 
-    resource = {
+    const resource: Resource = {
       type: 'subscription',
       cleanup,
       created: Date.now(),
