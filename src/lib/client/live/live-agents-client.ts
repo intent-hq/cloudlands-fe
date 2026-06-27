@@ -17,12 +17,8 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
 } from "../app-client";
-import {
-  backendRequest,
-  backendSubscribe,
-  backendUnsubscribe,
-  onBackendNotification,
-} from "./backend-transport";
+import { backendRequest } from "./backend-transport";
+import { createDeltaSubscription } from "./delta-subscription";
 import { isEventOneOf, listWorkspaceIds, newIdempotencyKey, runMutation } from "./live-support";
 
 /** Lifecycle events that warrant an agent-list refresh (NOT stream/message). */
@@ -106,39 +102,17 @@ export class LiveAgentsClient implements AgentsClient {
   }
 
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe {
-    let disposed = false;
-    let subscriptionId: string | undefined;
-
-    const emit = () => {
-      listWorkspaceIds()
-        .then((ids) => Promise.all(ids.map((id) => this.list(id))))
-        .then((perWorkspace) => {
-          if (!disposed) handler(perWorkspace.flat());
-        })
-        .catch(() => {
-          // Snapshot refresh failures are non-fatal for the subscription.
-        });
-    };
-
-    emit();
-
-    const off = onBackendNotification((n) => {
-      if (isEventOneOf(n.method, n.params, AGENT_LIFECYCLE_EVENTS)) emit();
+    return createDeltaSubscription<AgentSession>({
+      eventTypes: [...AGENT_LIFECYCLE_EVENTS],
+      matchLegacyEvent: (method, params) => isEventOneOf(method, params, AGENT_LIFECYCLE_EVENTS),
+      fetchAll: async () => {
+        const ids = await listWorkspaceIds();
+        const perWorkspace = await Promise.all(ids.map((id) => this.list(id)));
+        return perWorkspace.flat();
+      },
+      getId: (raw) => String(raw.id ?? ""),
+      normalize: (raw) => normalizeAgent(raw),
+      handler,
     });
-
-    backendSubscribe<{ subscriptionId?: string }>({ eventTypes: [...AGENT_LIFECYCLE_EVENTS] })
-      .then((result) => {
-        subscriptionId = result?.subscriptionId;
-        if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
-      })
-      .catch(() => {
-        // Without a daemon subscription we still serve the initial snapshot.
-      });
-
-    return () => {
-      disposed = true;
-      off();
-      if (subscriptionId) void backendUnsubscribe(subscriptionId);
-    };
   }
 }

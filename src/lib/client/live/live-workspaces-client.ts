@@ -15,12 +15,8 @@ import type {
   Unsubscribe,
   WorkspacesClient,
 } from "../app-client";
-import {
-  backendRequest,
-  backendSubscribe,
-  backendUnsubscribe,
-  onBackendNotification,
-} from "./backend-transport";
+import { backendRequest } from "./backend-transport";
+import { createDeltaSubscription } from "./delta-subscription";
 import { newIdempotencyKey, runMutation } from "./live-support";
 
 /** Daemon status strings → renderer WorkspaceStatus enum. */
@@ -105,42 +101,13 @@ export class LiveWorkspacesClient implements WorkspacesClient {
   }
 
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe {
-    let disposed = false;
-    let subscriptionId: string | undefined;
-
-    const emit = () => {
-      this.list()
-        .then((workspaces) => {
-          if (!disposed) handler(workspaces);
-        })
-        .catch(() => {
-          // Snapshot refresh failures are non-fatal for the subscription.
-        });
-    };
-
-    // Initial snapshot.
-    emit();
-
-    // Refresh on workspace events.
-    const off = onBackendNotification((notification) => {
-      if (isWorkspaceEvent(notification.method, notification.params)) emit();
-    });
-
-    backendSubscribe<{ subscriptionId?: string }>({
+    return createDeltaSubscription<Workspace>({
       eventTypes: ["workspace:created", "workspace:updated", "workspace:deleted"],
-    })
-      .then((result) => {
-        subscriptionId = result?.subscriptionId;
-        if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
-      })
-      .catch(() => {
-        // Without a daemon subscription we still serve the initial snapshot.
-      });
-
-    return () => {
-      disposed = true;
-      off();
-      if (subscriptionId) void backendUnsubscribe(subscriptionId);
-    };
+      matchLegacyEvent: (method, params) => isWorkspaceEvent(method, params),
+      fetchAll: () => this.list(),
+      getId: (raw) => String(raw.id ?? raw.workspaceId ?? ""),
+      normalize: (raw) => normalizeWorkspace(raw),
+      handler,
+    });
   }
 }

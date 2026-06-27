@@ -21,12 +21,8 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
 } from "../app-client";
-import {
-  backendRequest,
-  backendSubscribe,
-  backendUnsubscribe,
-  onBackendNotification,
-} from "./backend-transport";
+import { backendRequest } from "./backend-transport";
+import { createDeltaSubscription } from "./delta-subscription";
 import {
   isEventInFamily,
   newIdempotencyKey,
@@ -192,38 +188,13 @@ export class LiveCommentsClient implements CommentsClient {
   }
 
   subscribe(noteId: string, handler: SubscriptionHandler<CommentV2[]>): Unsubscribe {
-    let disposed = false;
-    let subscriptionId: string | undefined;
-
-    const emit = () => {
-      fetchComments(noteId)
-        .then((comments) => {
-          if (!disposed) handler(comments);
-        })
-        .catch(() => {
-          // Snapshot refresh failures are non-fatal for the subscription.
-        });
-    };
-
-    emit();
-
-    const off = onBackendNotification((n) => {
-      if (isEventInFamily(n.method, n.params, "comment")) emit();
+    return createDeltaSubscription<CommentV2>({
+      eventTypes: ["comment:added"],
+      matchLegacyEvent: (method, params) => isEventInFamily(method, params, "comment"),
+      fetchAll: () => fetchComments(noteId),
+      getId: (raw) => String(raw.id ?? ""),
+      normalize: (raw) => normalizeComment(raw, noteId),
+      handler,
     });
-
-    backendSubscribe<{ subscriptionId?: string }>({ eventTypes: ["comment:added"] })
-      .then((result) => {
-        subscriptionId = result?.subscriptionId;
-        if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
-      })
-      .catch(() => {
-        // Without a daemon subscription we still serve the initial snapshot.
-      });
-
-    return () => {
-      disposed = true;
-      off();
-      if (subscriptionId) void backendUnsubscribe(subscriptionId);
-    };
   }
 }
