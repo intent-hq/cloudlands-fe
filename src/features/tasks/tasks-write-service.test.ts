@@ -94,6 +94,32 @@ describe("tasksWriteService (fake seam, real store)", () => {
     expect(taskStatus()).toBe("not_started");
   });
 
+  it("passes the stored rev as expectedVersion when known (§11.4-D)", async () => {
+    appStore.dispatch(
+      loadWorkspaceNotesSucceeded([WS], {
+        [WS]: [{ ...makeTaskNote("t1", "not_started"), rev: 5 }],
+      }),
+    );
+    appStore.dispatch(loadWorkspaceTasksSucceeded(WS, [makeTask("t1", "not_started")]));
+
+    await updateTaskNoteStatus(WS, "t1", "in_progress");
+
+    expect(tasksApi.updateNoteStatus).toHaveBeenCalledWith("t1", "in_progress", 5);
+  });
+
+  it("falls back to the tasks-slice rev when the note carries none (§11.4-D)", async () => {
+    appStore.dispatch(
+      loadWorkspaceNotesSucceeded([WS], { [WS]: [makeTaskNote("t1", "not_started")] }),
+    );
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(WS, [{ ...makeTask("t1", "not_started"), rev: 8 }]),
+    );
+
+    await updateTaskNoteStatus(WS, "t1", "in_progress");
+
+    expect(tasksApi.updateNoteStatus).toHaveBeenCalledWith("t1", "in_progress", 8);
+  });
+
   it("createPrerequisiteTask forwards to the seam and returns the surfaced id", async () => {
     tasksApi.createPrerequisite.mockResolvedValueOnce({ success: true, id: "task-9" } as never);
 

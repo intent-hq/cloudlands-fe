@@ -48,6 +48,9 @@ function noteToTask(raw: Record<string, unknown>): WorkspaceTask | null {
         : typeof raw.updated_at === "string"
           ? raw.updated_at
           : undefined,
+    // Optimistic-concurrency revision (§11.4-D): carried through when the daemon
+    // returns it, left undefined otherwise (no behavior change → last-writer-wins).
+    ...(typeof raw.rev === "number" ? { rev: raw.rev } : {}),
   };
 }
 
@@ -100,39 +103,64 @@ export class LiveTasksClient implements TasksClient {
     noteId: string,
     taskText: string,
     status: TaskCheckboxStatus,
+    expectedVersion?: number,
   ): Promise<MutationResult> {
-    return this.runTaskMutation(noteId, "task.updateStatus", { taskText, status });
+    return this.runTaskMutation(noteId, "task.updateStatus", { taskText, status }, expectedVersion);
   }
 
-  async update(noteId: string, line: number, patch: TaskUpdatePatch): Promise<MutationResult> {
-    return this.runTaskMutation(noteId, "task.update", {
-      line,
-      ...(patch.text !== undefined ? { text: patch.text } : {}),
-      ...(patch.status !== undefined ? { status: patch.status } : {}),
-      ...(patch.expected !== undefined ? { expected: patch.expected } : {}),
-    });
+  async update(
+    noteId: string,
+    line: number,
+    patch: TaskUpdatePatch,
+    expectedVersion?: number,
+  ): Promise<MutationResult> {
+    return this.runTaskMutation(
+      noteId,
+      "task.update",
+      {
+        line,
+        ...(patch.text !== undefined ? { text: patch.text } : {}),
+        ...(patch.status !== undefined ? { status: patch.status } : {}),
+        ...(patch.expected !== undefined ? { expected: patch.expected } : {}),
+      },
+      expectedVersion,
+    );
   }
 
-  async updateNoteStatus(noteId: string, status: TaskStatus): Promise<MutationResult> {
-    return this.runTaskMutation(noteId, "task.updateNoteStatus", { status });
+  async updateNoteStatus(
+    noteId: string,
+    status: TaskStatus,
+    expectedVersion?: number,
+  ): Promise<MutationResult> {
+    return this.runTaskMutation(noteId, "task.updateNoteStatus", { status }, expectedVersion);
   }
 
   async markAsTask(
     noteId: string,
     status: TaskStatus,
     options?: MarkAsTaskOptions,
+    expectedVersion?: number,
   ): Promise<MutationResult> {
-    return this.runTaskMutation(noteId, "task.markAsTask", {
-      status,
-      ...(options?.acceptanceCriteria !== undefined
-        ? { acceptanceCriteria: options.acceptanceCriteria }
-        : {}),
-      ...(options?.effort !== undefined ? { effort: options.effort } : {}),
-    });
+    return this.runTaskMutation(
+      noteId,
+      "task.markAsTask",
+      {
+        status,
+        ...(options?.acceptanceCriteria !== undefined
+          ? { acceptanceCriteria: options.acceptanceCriteria }
+          : {}),
+        ...(options?.effort !== undefined ? { effort: options.effort } : {}),
+      },
+      expectedVersion,
+    );
   }
 
-  async assignAgent(noteId: string, agentId: string): Promise<MutationResult> {
-    return this.runTaskMutation(noteId, "task.assignAgent", { agentId });
+  async assignAgent(
+    noteId: string,
+    agentId: string,
+    expectedVersion?: number,
+  ): Promise<MutationResult> {
+    return this.runTaskMutation(noteId, "task.assignAgent", { agentId }, expectedVersion);
   }
 
   async createPrerequisite(
@@ -156,19 +184,27 @@ export class LiveTasksClient implements TasksClient {
 
   /**
    * Resolve a task note's workspace, then issue a note-scoped task mutation with
-   * `{ workspaceId, noteId, ...params }`. Returns a failed MutationResult (never
-   * throws, never fakes success) when the workspace cannot be resolved.
+   * `{ workspaceId, noteId, ...params }`. `expectedVersion` (§11.4-D) is added to
+   * the params ONLY when defined — when absent the daemon ignores it and
+   * last-writer-wins applies, exactly as today. Returns a failed MutationResult
+   * (never throws, never fakes success) when the workspace cannot be resolved.
    */
   private async runTaskMutation(
     noteId: string,
     method: string,
     params: Record<string, unknown>,
+    expectedVersion?: number,
   ): Promise<MutationResult> {
     const workspaceId = await resolveNoteWorkspaceId(noteId);
     if (!workspaceId) {
       return { success: false, error: `Cannot resolve workspace for note ${noteId}` };
     }
-    return runMutationWithId(method, { workspaceId, noteId, ...params });
+    return runMutationWithId(method, {
+      workspaceId,
+      noteId,
+      ...params,
+      ...(expectedVersion !== undefined ? { expectedVersion } : {}),
+    });
   }
 
   subscribe(handler: SubscriptionHandler<WorkspaceTask[]>): Unsubscribe {

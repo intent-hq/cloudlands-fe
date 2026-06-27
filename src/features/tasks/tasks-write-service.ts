@@ -43,6 +43,17 @@ function readCurrentStatus(workspaceId: string, noteId: string): TaskStatus | un
 }
 
 /**
+ * Read the current optimistic-concurrency revision (§11.4-D) for a task note from
+ * the notes slice, falling back to the tasks slice. `undefined` when unknown —
+ * callers then omit `expectedVersion` and last-writer-wins applies, as today.
+ */
+function readCurrentRev(workspaceId: string, noteId: string): number | undefined {
+  const fromNote = selectNoteById.select(appStore.state, workspaceId, noteId)?.rev;
+  if (fromNote !== undefined) return fromNote;
+  return selectWorkspaceTasks.select(appStore.state, workspaceId).find((t) => t.id === noteId)?.rev;
+}
+
+/**
  * Update a task note's metadata status optimistically; rolls back both slices to
  * the prior status on failure. Mirrors the removed `updateTaskStatus` saga.
  */
@@ -52,9 +63,15 @@ export async function updateTaskNoteStatus(
   status: TaskStatus,
 ): Promise<void> {
   const previous = readCurrentStatus(workspaceId, noteId);
+  // Forward the current known `rev` as `expectedVersion` (§11.4-D) when it is
+  // known; omit it entirely otherwise so behavior is unchanged (last-writer-wins).
+  const rev = readCurrentRev(workspaceId, noteId);
   applyStatus(workspaceId, noteId, status);
 
-  const result = await appClient.tasks.updateNoteStatus(noteId, status);
+  const result =
+    rev !== undefined
+      ? await appClient.tasks.updateNoteStatus(noteId, status, rev)
+      : await appClient.tasks.updateNoteStatus(noteId, status);
   if (!result.success) {
     if (previous !== undefined) applyStatus(workspaceId, noteId, previous);
     logger.error("Failed to update task status", result.error);

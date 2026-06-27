@@ -153,4 +153,28 @@ describe("notesWriteService (fake seam, real store)", () => {
     expect(notes).toHaveLength(1);
     expect(notes[0]?.title).toBe("Fresh");
   });
+
+  // ---- §11.4-D: expectedVersion is passed from the stored rev when known ----
+
+  it("passes the stored rev as expectedVersion on a content save", async () => {
+    seed(makeNote("n1", { rev: 4 }));
+
+    updateNoteContent(WS, "n1", "edited", { immediate: true });
+    await Promise.resolve();
+    expect(notesApi.setContent).toHaveBeenCalledWith("n1", "edited", 4);
+  });
+
+  it("passes the stored rev as expectedVersion on a title update", async () => {
+    seed(makeNote("n1", { rev: 2 }));
+
+    await updateNoteTitle(WS, "n1", "New");
+    expect(notesApi.updateMetadata).toHaveBeenCalledWith("n1", { title: "New" }, 2);
+  });
+
+  it("passes the stored rev as expectedVersion on delete", async () => {
+    seed(makeNote("n1", { rev: 9 }));
+
+    await deleteNote(WS, "n1");
+    expect(notesApi.delete).toHaveBeenCalledWith("n1", 9);
+  });
 });

@@ -20,7 +20,7 @@ vi.mock("./live-support", async (importActual) => {
 
 import { backendRequest } from "./backend-transport";
 import { resolveNoteWorkspaceId } from "./live-support";
-import { LiveNotesClient } from "./live-notes-client";
+import { LiveNotesClient, normalizeNote } from "./live-notes-client";
 
 const mockedRequest = vi.mocked(backendRequest);
 const mockedResolve = vi.mocked(resolveNoteWorkspaceId);
@@ -162,5 +162,71 @@ describe("LiveNotesClient mutations (fake transport)", () => {
     const client = new LiveNotesClient();
 
     expect(await client.delete("note-1")).toEqual({ success: false, error: "boom" });
+  });
+
+  // ---- §11.4-D: rev normalization (inert; read-only carry-through) ----------
+
+  it("normalizeNote carries a numeric rev when the daemon returns one", () => {
+    const note = normalizeNote({ id: "note-1", title: "T", rev: 7 }, "ws-1");
+    expect(note.rev).toBe(7);
+  });
+
+  it("normalizeNote leaves rev undefined when the daemon omits it", () => {
+    const note = normalizeNote({ id: "note-1", title: "T" }, "ws-1");
+    expect(note.rev).toBeUndefined();
+  });
+
+  it("normalizeNote ignores a non-numeric rev (preserves last-writer-wins)", () => {
+    const note = normalizeNote({ id: "note-1", title: "T", rev: "9" }, "ws-1");
+    expect(note.rev).toBeUndefined();
+  });
+
+  // ---- §11.4-D: expectedVersion forwarding (only when defined) --------------
+
+  it("setContent forwards expectedVersion when provided", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    await client.setContent("note-1", "hello", 4);
+    expect(mockedRequest).toHaveBeenCalledWith("note.setContent", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      content: "hello",
+      expectedVersion: 4,
+    });
+  });
+
+  it("setContent omits expectedVersion when undefined (unchanged behavior)", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    await client.setContent("note-1", "hello");
+    const params = mockedRequest.mock.calls[0][1] as Record<string, unknown>;
+    expect("expectedVersion" in params).toBe(false);
+  });
+
+  it("updateMetadata forwards expectedVersion when provided", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    await client.updateMetadata("note-1", { title: "New" }, 2);
+    expect(mockedRequest).toHaveBeenCalledWith("note.updateMetadata", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      title: "New",
+      expectedVersion: 2,
+    });
+  });
+
+  it("delete forwards expectedVersion when provided", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    await client.delete("note-1", 5);
+    expect(mockedRequest).toHaveBeenCalledWith("note.delete", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      expectedVersion: 5,
+    });
   });
 });

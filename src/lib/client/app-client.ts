@@ -206,18 +206,42 @@ export interface NotesClient {
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe;
   /** Create a note (`note.create`); the live client attaches an idempotencyKey (§5.6). */
   create(request: CreateNoteRequest): Promise<MutationResult>;
-  /** Full-replacement of a note's content (`note.setContent`). */
-  setContent(noteId: string, content: string): Promise<MutationResult>;
-  /** Surgical, append-safe insert (`note.add`). */
-  add(noteId: string, content: string, options?: NoteAddOptions): Promise<MutationResult>;
-  /** Surgical search/replace of the first match (`note.edit`). */
-  edit(noteId: string, oldText: string, newText: string): Promise<MutationResult>;
-  /** Inclusive line-range replace (`note.editLines`). */
-  editLines(noteId: string, start: number, end: number, content: string): Promise<MutationResult>;
-  /** Delete a note (`note.delete`). */
-  delete(noteId: string): Promise<MutationResult>;
-  /** Update a note's title/tags metadata (`note.updateMetadata`). */
-  updateMetadata(noteId: string, metadata: NoteMetadataPatch): Promise<MutationResult>;
+  /**
+   * Full-replacement of a note's content (`note.setContent`). Optional
+   * `expectedVersion` (§11.4-D) is forwarded ONLY when the caller knows the
+   * current `rev`; omitted otherwise → last-writer-wins, exactly as today.
+   */
+  setContent(noteId: string, content: string, expectedVersion?: number): Promise<MutationResult>;
+  /** Surgical, append-safe insert (`note.add`). `expectedVersion` is optional (§11.4-D). */
+  add(
+    noteId: string,
+    content: string,
+    options?: NoteAddOptions,
+    expectedVersion?: number,
+  ): Promise<MutationResult>;
+  /** Surgical search/replace of the first match (`note.edit`). `expectedVersion` is optional (§11.4-D). */
+  edit(
+    noteId: string,
+    oldText: string,
+    newText: string,
+    expectedVersion?: number,
+  ): Promise<MutationResult>;
+  /** Inclusive line-range replace (`note.editLines`). `expectedVersion` is optional (§11.4-D). */
+  editLines(
+    noteId: string,
+    start: number,
+    end: number,
+    content: string,
+    expectedVersion?: number,
+  ): Promise<MutationResult>;
+  /** Delete a note (`note.delete`). `expectedVersion` is optional (§11.4-D). */
+  delete(noteId: string, expectedVersion?: number): Promise<MutationResult>;
+  /** Update a note's title/tags metadata (`note.updateMetadata`). `expectedVersion` is optional (§11.4-D). */
+  updateMetadata(
+    noteId: string,
+    metadata: NoteMetadataPatch,
+    expectedVersion?: number,
+  ): Promise<MutationResult>;
 }
 
 /** Inline checkbox status vocabulary (`task.updateStatus` / `task.update`). */
@@ -246,24 +270,35 @@ export interface TasksClient {
   list(workspaceId: string): Promise<WorkspaceTask[]>;
   get(taskId: string): Promise<WorkspaceTask | null>;
   subscribe(handler: SubscriptionHandler<WorkspaceTask[]>): Unsubscribe;
-  /** Toggle a single checkbox by its task text (`task.updateStatus`). */
+  /** Toggle a single checkbox by its task text (`task.updateStatus`). `expectedVersion` is optional (§11.4-D). */
   updateStatus(
     noteId: string,
     taskText: string,
     status: TaskCheckboxStatus,
+    expectedVersion?: number,
   ): Promise<MutationResult>;
-  /** Edit a single checkbox line by 1-based line number (`task.update`). */
-  update(noteId: string, line: number, patch: TaskUpdatePatch): Promise<MutationResult>;
-  /** Update a task note's metadata status (`task.updateNoteStatus`). */
-  updateNoteStatus(noteId: string, status: TaskStatus): Promise<MutationResult>;
-  /** Convert a note into a task note (`task.markAsTask`). */
+  /** Edit a single checkbox line by 1-based line number (`task.update`). `expectedVersion` is optional (§11.4-D). */
+  update(
+    noteId: string,
+    line: number,
+    patch: TaskUpdatePatch,
+    expectedVersion?: number,
+  ): Promise<MutationResult>;
+  /** Update a task note's metadata status (`task.updateNoteStatus`). `expectedVersion` is optional (§11.4-D). */
+  updateNoteStatus(
+    noteId: string,
+    status: TaskStatus,
+    expectedVersion?: number,
+  ): Promise<MutationResult>;
+  /** Convert a note into a task note (`task.markAsTask`). `expectedVersion` is optional (§11.4-D). */
   markAsTask(
     noteId: string,
     status: TaskStatus,
     options?: MarkAsTaskOptions,
+    expectedVersion?: number,
   ): Promise<MutationResult>;
-  /** Assign an existing agent to a task note (`task.assignAgent`). */
-  assignAgent(noteId: string, agentId: string): Promise<MutationResult>;
+  /** Assign an existing agent to a task note (`task.assignAgent`). `expectedVersion` is optional (§11.4-D). */
+  assignAgent(noteId: string, agentId: string, expectedVersion?: number): Promise<MutationResult>;
   /** Create a prerequisite task dependency (`task.createPrerequisite`); carries an idempotencyKey. */
   createPrerequisite(
     dependentNoteId: string,

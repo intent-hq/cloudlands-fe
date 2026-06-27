@@ -560,6 +560,12 @@ export interface WorkspaceTask {
   title: string;
   status: TaskStatus;
   updatedAt?: string;
+  /**
+   * Optimistic-concurrency revision (§11.4-D). Populated by the live read
+   * normalization when the daemon returns it; `undefined` when absent — callers
+   * then omit `expectedVersion` and last-writer-wins applies.
+   */
+  rev?: number;
 }
 
 /**
@@ -694,6 +700,12 @@ export interface Note {
   metadata?: NoteMetadata;
   references?: Reference[];
   versions?: NoteVersion[];
+  /**
+   * Optimistic-concurrency revision (§11.4-D). Populated by the live read
+   * normalization when the daemon returns it; `undefined` when absent (older
+   * daemons) — callers then omit `expectedVersion` and last-writer-wins applies.
+   */
+  rev?: number;
   createdAt: string;
   updatedAt: string;
   is_pinned?: boolean; // Legacy compatibility

@@ -186,4 +186,64 @@ describe("LiveTasksClient mutations (fake transport)", () => {
       error: "boom",
     });
   });
+
+  // ---- §11.4-D: rev normalization (inert; read-only carry-through) ----------
+
+  it("list carries a numeric rev from the daemon note onto the WorkspaceTask", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      notes: [{ id: "note-1", title: "T", metadata: { task: { status: "not_started" } }, rev: 3 }],
+    });
+    const client = new LiveTasksClient();
+
+    const [task] = await client.list("ws-1");
+    expect(task.rev).toBe(3);
+  });
+
+  it("list leaves rev undefined when the daemon omits it", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      notes: [{ id: "note-1", title: "T", metadata: { task: { status: "not_started" } } }],
+    });
+    const client = new LiveTasksClient();
+
+    const [task] = await client.list("ws-1");
+    expect(task.rev).toBeUndefined();
+  });
+
+  // ---- §11.4-D: expectedVersion forwarding (only when defined) --------------
+
+  it("updateStatus forwards expectedVersion when provided", async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true });
+    const client = new LiveTasksClient();
+
+    await client.updateStatus("note-1", "Do the thing", "done", 6);
+    expect(mockedRequest).toHaveBeenCalledWith("task.updateStatus", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      taskText: "Do the thing",
+      status: "done",
+      expectedVersion: 6,
+    });
+  });
+
+  it("updateNoteStatus forwards expectedVersion when provided", async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true });
+    const client = new LiveTasksClient();
+
+    await client.updateNoteStatus("note-1", "in_progress", 2);
+    expect(mockedRequest).toHaveBeenCalledWith("task.updateNoteStatus", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      status: "in_progress",
+      expectedVersion: 2,
+    });
+  });
+
+  it("updateNoteStatus omits expectedVersion when undefined (unchanged behavior)", async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true });
+    const client = new LiveTasksClient();
+
+    await client.updateNoteStatus("note-1", "in_progress");
+    const params = mockedRequest.mock.calls[0][1] as Record<string, unknown>;
+    expect("expectedVersion" in params).toBe(false);
+  });
 });

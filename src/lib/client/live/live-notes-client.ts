@@ -52,6 +52,10 @@ export function normalizeNote(raw: Record<string, unknown>, workspaceId: string)
     visibility: (typeof raw.visibility === "string"
       ? raw.visibility
       : NoteVisibility.Workspace) as NoteVisibility,
+    // Optimistic-concurrency revision (§11.4-D): carried through when the daemon
+    // returns a number, forced to undefined otherwise (overriding the raw spread)
+    // so a malformed value can never leak — no behavior change → last-writer-wins.
+    rev: typeof raw.rev === "number" ? raw.rev : undefined,
     createdAt: String(raw.createdAt ?? raw.created_at ?? now),
     updatedAt: String(raw.updatedAt ?? raw.updated_at ?? now),
   } as Note;
@@ -98,20 +102,39 @@ export class LiveNotesClient implements NotesClient {
     return runMutation("note.create", { ...request, idempotencyKey: newIdempotencyKey() });
   }
 
-  async setContent(noteId: string, content: string): Promise<MutationResult> {
-    return this.runNoteMutation(noteId, "note.setContent", { content });
+  async setContent(
+    noteId: string,
+    content: string,
+    expectedVersion?: number,
+  ): Promise<MutationResult> {
+    return this.runNoteMutation(noteId, "note.setContent", { content }, expectedVersion);
   }
 
-  async add(noteId: string, content: string, options?: NoteAddOptions): Promise<MutationResult> {
-    return this.runNoteMutation(noteId, "note.add", {
-      content,
-      ...(options?.heading !== undefined ? { heading: options.heading } : {}),
-      ...(options?.position !== undefined ? { position: options.position } : {}),
-    });
+  async add(
+    noteId: string,
+    content: string,
+    options?: NoteAddOptions,
+    expectedVersion?: number,
+  ): Promise<MutationResult> {
+    return this.runNoteMutation(
+      noteId,
+      "note.add",
+      {
+        content,
+        ...(options?.heading !== undefined ? { heading: options.heading } : {}),
+        ...(options?.position !== undefined ? { position: options.position } : {}),
+      },
+      expectedVersion,
+    );
   }
 
-  async edit(noteId: string, oldText: string, newText: string): Promise<MutationResult> {
-    return this.runNoteMutation(noteId, "note.edit", { old: oldText, new: newText });
+  async edit(
+    noteId: string,
+    oldText: string,
+    newText: string,
+    expectedVersion?: number,
+  ): Promise<MutationResult> {
+    return this.runNoteMutation(noteId, "note.edit", { old: oldText, new: newText }, expectedVersion);
   }
 
   async editLines(
@@ -119,36 +142,54 @@ export class LiveNotesClient implements NotesClient {
     start: number,
     end: number,
     content: string,
+    expectedVersion?: number,
   ): Promise<MutationResult> {
-    return this.runNoteMutation(noteId, "note.editLines", { start, end, content });
+    return this.runNoteMutation(noteId, "note.editLines", { start, end, content }, expectedVersion);
   }
 
-  async delete(noteId: string): Promise<MutationResult> {
-    return this.runNoteMutation(noteId, "note.delete", {});
+  async delete(noteId: string, expectedVersion?: number): Promise<MutationResult> {
+    return this.runNoteMutation(noteId, "note.delete", {}, expectedVersion);
   }
 
-  async updateMetadata(noteId: string, metadata: NoteMetadataPatch): Promise<MutationResult> {
-    return this.runNoteMutation(noteId, "note.updateMetadata", {
-      ...(metadata.title !== undefined ? { title: metadata.title } : {}),
-      ...(metadata.tags !== undefined ? { tags: metadata.tags } : {}),
-    });
+  async updateMetadata(
+    noteId: string,
+    metadata: NoteMetadataPatch,
+    expectedVersion?: number,
+  ): Promise<MutationResult> {
+    return this.runNoteMutation(
+      noteId,
+      "note.updateMetadata",
+      {
+        ...(metadata.title !== undefined ? { title: metadata.title } : {}),
+        ...(metadata.tags !== undefined ? { tags: metadata.tags } : {}),
+      },
+      expectedVersion,
+    );
   }
 
   /**
    * Resolve a note's workspace, then issue a note-scoped mutation with
-   * `{ workspaceId, noteId, ...params }`. Returns a failed MutationResult
+   * `{ workspaceId, noteId, ...params }`. `expectedVersion` (§11.4-D) is added to
+   * the params ONLY when defined — when absent the daemon ignores it and
+   * last-writer-wins applies, exactly as today. Returns a failed MutationResult
    * (never throws, never faked success) when the workspace cannot be resolved.
    */
   private async runNoteMutation(
     noteId: string,
     method: string,
     params: Record<string, unknown>,
+    expectedVersion?: number,
   ): Promise<MutationResult> {
     const workspaceId = await resolveNoteWorkspaceId(noteId);
     if (!workspaceId) {
       return { success: false, error: `Cannot resolve workspace for note ${noteId}` };
     }
-    return runMutation(method, { workspaceId, noteId, ...params });
+    return runMutation(method, {
+      workspaceId,
+      noteId,
+      ...params,
+      ...(expectedVersion !== undefined ? { expectedVersion } : {}),
+    });
   }
 
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe {

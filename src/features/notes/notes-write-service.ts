@@ -148,7 +148,13 @@ async function flushContent(noteId: string): Promise<void> {
     clearTimeout(timer);
     contentTimers.delete(noteId);
   }
-  const result = await appClient.notes.setContent(noteId, pending.content);
+  // Forward the current known `rev` as `expectedVersion` (§11.4-D) when it is
+  // known; omit it entirely otherwise so behavior is unchanged (last-writer-wins).
+  const rev = selectNoteById.select(appStore.state, pending.workspaceId, noteId)?.rev;
+  const result =
+    rev !== undefined
+      ? await appClient.notes.setContent(noteId, pending.content, rev)
+      : await appClient.notes.setContent(noteId, pending.content);
   if (!result.success) {
     logger.error("Failed to save note content", result.error);
     await refetchWorkspaceNotes(pending.workspaceId);
@@ -166,10 +172,15 @@ export async function updateNoteTitle(
   noteId: string,
   title: string,
 ): Promise<void> {
-  const previous = selectNoteById.select(appStore.state, workspaceId, noteId)?.title;
+  const existing = selectNoteById.select(appStore.state, workspaceId, noteId);
+  const previous = existing?.title;
+  const rev = existing?.rev;
   appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { title }));
 
-  const result = await appClient.notes.updateMetadata(noteId, { title });
+  const result =
+    rev !== undefined
+      ? await appClient.notes.updateMetadata(noteId, { title }, rev)
+      : await appClient.notes.updateMetadata(noteId, { title });
   if (!result.success) {
     if (previous !== undefined) {
       appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { title: previous }));
@@ -188,9 +199,13 @@ export async function updateNoteMetadata(
   const rollback: NoteMetadataPatch = {};
   if (metadata.title !== undefined) rollback.title = existing?.title ?? "";
   if (metadata.tags !== undefined) rollback.tags = existing?.tags ?? [];
+  const rev = existing?.rev;
   appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, metadata));
 
-  const result = await appClient.notes.updateMetadata(noteId, metadata);
+  const result =
+    rev !== undefined
+      ? await appClient.notes.updateMetadata(noteId, metadata, rev)
+      : await appClient.notes.updateMetadata(noteId, metadata);
   if (!result.success) {
     appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, rollback));
     logger.error("Failed to update note metadata", result.error);
@@ -200,9 +215,13 @@ export async function updateNoteMetadata(
 /** Delete a note optimistically; restores it from a snapshot on failure. */
 export async function deleteNote(workspaceId: string, noteId: string): Promise<void> {
   const snapshot = selectNoteById.select(appStore.state, workspaceId, noteId);
+  const rev = snapshot?.rev;
   appStore.dispatch(applyNoteDeleted(workspaceId, noteId));
 
-  const result = await appClient.notes.delete(noteId);
+  const result =
+    rev !== undefined
+      ? await appClient.notes.delete(noteId, rev)
+      : await appClient.notes.delete(noteId);
   if (!result.success) {
     if (snapshot) appStore.dispatch(applyNoteCreated(workspaceId, snapshot));
     logger.error("Failed to delete note", result.error);
