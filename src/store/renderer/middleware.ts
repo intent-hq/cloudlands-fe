@@ -17,6 +17,7 @@ import { createStructuredCloneCheckerMiddleware } from "./middlewares/structured
 import { createStoreGuardMiddleware } from "../../store/utils/store-guard-middleware";
 import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
+import { createFileExplorerReadMiddleware } from "$features/file-explorer/file-explorer-read-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
@@ -65,6 +66,9 @@ function buildMiddleware(): StoreMiddleware[] {
     // Give the (post-saga) `ensureAgentSessionLoaded` action a real read handler
     // so a selected agent's session/conversation hydrates on demand again.
     createAgentReadMiddleware(),
+    // Give the (post-saga) file-explorer toggle/expand/refresh triggers a real
+    // read handler so directories list their children via `files.list` again.
+    createFileExplorerReadMiddleware(),
   ];
 
   // Debug middlewares need to be added AFTER batching middleware

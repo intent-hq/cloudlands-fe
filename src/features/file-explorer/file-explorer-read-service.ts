@@ -133,3 +133,102 @@ export async function expandToPath(wsId: string, targetPath: string): Promise<vo
     appStore.dispatch(incrementTreeVersion(wsId));
   }
 }
+
+/** Recursively expand a directory and its sub-directories up to `depthLimit`. */
+async function expandNode(wsId: string, dirPath: string, depth: number, depthLimit: number): Promise<void> {
+  if (depth >= depthLimit) return;
+  const ws = getWs(wsId);
+  const node = getItem(ws.nodes, dirPath);
+  if (!node || node.type !== "directory") return;
+  if (!ws.expandedPaths.includes(dirPath)) {
+    appStore.dispatch(addExpandedPath(wsId, dirPath));
+  }
+  let childDirPaths: string[];
+  if (node.children.length === 0) {
+    const loaded = await loadDirectoryChildren(wsId, dirPath);
+    childDirPaths = loaded.filter((c) => c.type === "directory").map((c) => c.path);
+  } else {
+    childDirPaths = node.children.filter((p) => getItem(ws.nodes, p)?.type === "directory");
+  }
+  for (const childPath of childDirPaths) {
+    await expandNode(wsId, childPath, depth + 1, depthLimit);
+  }
+}
+
+/** Expand the whole tree (depth-limited) starting from the root. */
+export async function expandAll(wsId: string, maxDepth?: number): Promise<void> {
+  const ws = getWs(wsId);
+  if (!ws.rootPath) return;
+  const root = getItem(ws.nodes, ws.rootPath);
+  if (!root) return;
+  appStore.dispatch(setBulkOperation(wsId, true));
+  try {
+    await expandNode(wsId, root.path, 0, maxDepth ?? 3);
+  } finally {
+    appStore.dispatch(setBulkOperation(wsId, false));
+    appStore.dispatch(incrementTreeVersion(wsId));
+  }
+}
+
+/**
+ * Re-list the root and every currently-expanded directory through the seam. When
+ * no root tree exists (the daemon `file.tree` BE gap) there is nothing to refresh,
+ * so this is a no-op rather than a silent failure.
+ */
+export async function refreshFileExplorerTree(wsId: string): Promise<void> {
+  const ws = getWs(wsId);
+  if (!ws.rootPath) return;
+  appStore.dispatch(setFileExplorerLoading(wsId, true));
+  try {
+    const targets = [ws.rootPath, ...ws.expandedPaths.filter((p) => p !== ws.rootPath)];
+    const seen = new Set<string>();
+    for (const dirPath of targets) {
+      if (seen.has(dirPath)) continue;
+      seen.add(dirPath);
+      const node = getItem(getWs(wsId).nodes, dirPath);
+      if (!node || node.type !== "directory") continue;
+      await loadDirectoryChildren(wsId, dirPath);
+    }
+  } finally {
+    appStore.dispatch(setFileExplorerLoading(wsId, false));
+  }
+}
+
+/**
+ * Middleware that gives the file-explorer directory-listing triggers a real
+ * handler: after each action passes through the (no-op) reducer, it kicks off the
+ * matching seam-backed load. Fire-and-forget — dispatch stays synchronous and
+ * never throws.
+ */
+export function createFileExplorerReadMiddleware(): StoreMiddleware {
+  return () => (next) => (action) => {
+    const result = next(action);
+    if (action && Array.isArray(action.payload)) {
+      const [wsId] = action.payload as [unknown];
+      if (typeof wsId === "string" && wsId.length > 0) {
+        switch (action.type) {
+          case toggleDirectoryRequested.type: {
+            const nodePath = action.payload[1];
+            if (typeof nodePath === "string" && nodePath.length > 0) void toggleDirectory(wsId, nodePath);
+            break;
+          }
+          case expandToPathRequested.type: {
+            const targetPath = action.payload[1];
+            if (typeof targetPath === "string" && targetPath.length > 0) void expandToPath(wsId, targetPath);
+            break;
+          }
+          case expandAllRequested.type: {
+            const maxDepth = action.payload[1];
+            void expandAll(wsId, typeof maxDepth === "number" ? maxDepth : undefined);
+            break;
+          }
+          case refreshFileExplorer.type: {
+            void refreshFileExplorerTree(wsId);
+            break;
+          }
+        }
+      }
+    }
+    return result;
+  };
+}
