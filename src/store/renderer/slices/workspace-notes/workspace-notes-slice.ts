@@ -41,12 +41,6 @@ const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
 export const clearWorkspaceNotesForWorkspaces = createAction<[workspaceIds: string[]]>(
   "workspaceNotes/clearWorkspaceNotesForWorkspaces"
 );
-export const loadWorkspaceNotesRequested = createAction<[workspaceIds: string[]]>(
-  "workspaceNotes/loadWorkspaceNotesRequested"
-);
-export const refreshWorkspaceNotesRequested = createAction<[workspaceIds: string[]]>(
-  "workspaceNotes/refreshWorkspaceNotesRequested"
-);
 export const setWorkspaceNotesLoading = createAction<[workspaceIds: string[], isLoading: boolean]>(
   "workspaceNotes/setWorkspaceNotesLoading"
 );
@@ -120,11 +114,6 @@ export const initializeNotes = createAction<[workspaceId: string, initialSelecte
   "workspaceNotes/initializeNotes"
 );
 
-/** Saga trigger: reload all notes from server */
-export const reloadNotes = createAction<[workspaceId: string]>(
-  "workspaceNotes/reloadNotes"
-);
-
 /** Saga trigger: update note content (from user input, will debounce) */
 export const updateNoteContent = createAction<[workspaceId: string, noteId: string, content: string, immediate?: boolean]>(
   "workspaceNotes/updateNoteContent"
@@ -148,26 +137,6 @@ export const deleteNote = createAction<[workspaceId: string, noteId: string]>(
 /** Saga trigger: update note (metadata like pin, archive, etc.) */
 export const updateNote = createAction<[workspaceId: string, noteId: string, updates: Omit<import("$shared/types").UpdateNoteRequest, "id">]>(
   "workspaceNotes/updateNote"
-);
-
-/** Saga trigger: flush pending saves */
-export const flushPendingSaves = createAction<[workspaceId: string]>(
-  "workspaceNotes/flushPendingSaves"
-);
-
-/** Saga trigger: handle external update to a note */
-export const handleExternalNoteUpdate = createAction<[workspaceId: string, noteId: string, updates: Partial<Note>, origin?: string]>(
-  "workspaceNotes/handleExternalNoteUpdate"
-);
-
-/** Saga trigger: cleanup workspace notes state */
-export const cleanupWorkspaceNotes = createAction<[workspaceId: string]>(
-  "workspaceNotes/cleanupWorkspaceNotes"
-);
-
-/** Saga trigger: assign an agent to a task note */
-export const assignAgentToTask = createAction<[workspaceId: string, noteId: string, agentId: string]>(
-  "workspaceNotes/assignAgentToTask"
 );
 
 export const restoreNoteVersion = createAction<[workspaceId: string, noteId: string, versionId: string]>(

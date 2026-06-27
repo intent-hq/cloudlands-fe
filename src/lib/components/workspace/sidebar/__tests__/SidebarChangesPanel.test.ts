@@ -181,8 +181,6 @@ vi.mock('$store/renderer/slices/git/git-selectors', () => ({
 vi.mock('$store/renderer/slices/git/git-slice', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   loadGitStatus: vi.fn((...args: any[]) => ({ type: 'git/loadStatus', payload: args })),
-  gitPush: vi.fn((...args: any[]) => ({ type: 'git/push', payload: args })),
-  gitPull: vi.fn((...args: any[]) => ({ type: 'git/pull', payload: args })),
   setPostMergeState: vi.fn((...args: any[]) => ({ type: 'git/setPostMergeState', payload: args })),
   setGitOperationFlag: vi.fn((...args: any[]) => ({ type: 'git/setGitOperationFlag', payload: args })),
 }));

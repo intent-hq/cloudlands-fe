@@ -331,10 +331,6 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', () => ({
     type: 'workspaceNotes/clearNewlyCreatedNoteId',
     payload: { workspaceId },
   })),
-  reloadNotes: vi.fn((workspaceId: string) => ({
-    type: 'workspaceNotes/reloadNotes',
-    payload: { workspaceId },
-  })),
 }));
 
 vi.mock('$store/renderer/slices/transient-ui/transient-ui-selectors', () => ({

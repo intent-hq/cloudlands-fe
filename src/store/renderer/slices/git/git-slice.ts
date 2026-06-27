@@ -84,45 +84,10 @@ export const clearGitError = createAction<[wsId: string]>(
   "git/clearError"
 );
 
-/** Trigger saga to load diffs */
-export const loadGitDiffs = createAction<[wsId: string]>(
-  "git/loadDiffs"
-);
-
 /** Set diffs result */
 export const setGitDiffs = createAction(
   "git/setDiffs",
   (wsId: string, diffs: DiffChunk[]) => ({ wsId, diffs })
-);
-
-/** Trigger saga: commit */
-export const gitCommit = createAction<[wsId: string, message: string]>(
-  "git/commit"
-);
-
-/** Trigger saga: push */
-export const gitPush = createAction<[wsId: string, force?: boolean]>(
-  "git/push"
-);
-
-/** Trigger saga: pull */
-export const gitPull = createAction<[wsId: string]>(
-  "git/pull"
-);
-
-/** Trigger saga: stage hunk */
-export const gitStageHunk = createAction<[wsId: string, filePath: string, hunkPatch: string]>(
-  "git/stageHunk"
-);
-
-/** Trigger saga: unstage hunk */
-export const gitUnstageHunk = createAction<[wsId: string, filePath: string, hunkPatch: string]>(
-  "git/unstageHunk"
-);
-
-/** Trigger saga: remove lock file */
-export const gitRemoveLockFile = createAction<[wsId: string]>(
-  "git/removeLockFile"
 );
 
 // ── Git Operation Event Actions ──
