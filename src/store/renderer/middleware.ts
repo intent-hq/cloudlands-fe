@@ -18,6 +18,10 @@ import { createStoreGuardMiddleware } from "../../store/utils/store-guard-middle
 import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
 import { createFileExplorerReadMiddleware } from "$features/file-explorer/file-explorer-read-service";
+import { createGitHubAuthMiddleware } from "$features/github-auth/github-auth-store-service";
+import { createSentryAuthMiddleware } from "$features/sentry-auth/sentry-auth-store-service";
+import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-store-service";
+import { createMcpManagementMiddleware } from "$features/mcp/mcp-management-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
@@ -69,6 +73,15 @@ function buildMiddleware(): StoreMiddleware[] {
     // Give the (post-saga) file-explorer toggle/expand/refresh triggers a real
     // read handler so directories list their children via `files.list` again.
     createFileExplorerReadMiddleware(),
+    // Give the (post-saga) GitHub / Sentry / Linear OAuth connect/status/logout
+    // triggers real handlers so the settings buttons run their auth flows again.
+    createGitHubAuthMiddleware(),
+    createSentryAuthMiddleware(),
+    createLinearAuthMiddleware(),
+    // Give the (post-saga) MCP settings triggers (loadServers + add/remove/
+    // update/toggle/import/restart) real handlers so the MCP panel loads and
+    // persists servers via the `appClient.settings` seam again.
+    createMcpManagementMiddleware(),
   ];
 
   // Debug middlewares need to be added AFTER batching middleware
