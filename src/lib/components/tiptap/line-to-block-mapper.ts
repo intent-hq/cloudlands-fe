@@ -276,12 +276,16 @@ export function mapLineAttributionsToBlocks(
   for (const [lineNum, blockPos] of lineToBlockPos.entries()) {
     const attribution = lineAttributions.get(lineNum);
     if (attribution) {
-      if (!blockToAttributions.has(blockPos)) {
-        blockToAttributions.set(blockPos, []);
-        blockToLineNumbers.set(blockPos, []);
+      let attributions = blockToAttributions.get(blockPos);
+      let lineNumbers = blockToLineNumbers.get(blockPos);
+      if (!attributions || !lineNumbers) {
+        attributions = [];
+        lineNumbers = [];
+        blockToAttributions.set(blockPos, attributions);
+        blockToLineNumbers.set(blockPos, lineNumbers);
       }
-      blockToAttributions.get(blockPos)!.push(attribution);
-      blockToLineNumbers.get(blockPos)!.push(lineNum);
+      attributions.push(attribution);
+      lineNumbers.push(lineNum);
     }
   }
 
@@ -333,15 +337,17 @@ export function mapLineAttributionsToBlocks(
       // Map each content line to its attribution
       // IMPORTANT: Calculate the actual line index within the code block
       // by subtracting the opening fence line number
-      const codeBlockLines: CodeBlockLineAttribution[] = contentLineNumbers.map((lineNum) => {
-        const attribution = lineAttributions.get(lineNum)!;
+      const codeBlockLines: CodeBlockLineAttribution[] = [];
+      for (const lineNum of contentLineNumbers) {
+        const attribution = lineAttributions.get(lineNum);
+        if (!attribution) continue;
         // lineIndex is 0-based, relative to the first content line (after opening fence)
         const lineIndex = lineNum - openingFenceLineNum - 1;
-        return {
+        codeBlockLines.push({
           lineIndex,
           attribution,
-        };
-      });
+        });
+      }
 
       blockAttributions.set(blockPos + 1, {
         type: 'codeBlock',

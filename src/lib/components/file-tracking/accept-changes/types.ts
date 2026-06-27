@@ -60,17 +60,20 @@ export function groupFilesByAgent(files: UIFileChange[]): AgentChangeGroup[] {
 
   for (const file of files) {
     const agentId = file.attribution?.agentId ?? 'manual';
-    if (!groups.has(agentId)) {
-      groups.set(agentId, []);
-      seenPaths.set(agentId, new Set());
+    let groupFiles = groups.get(agentId);
+    let agentSeenPaths = seenPaths.get(agentId);
+    if (!groupFiles || !agentSeenPaths) {
+      groupFiles = [];
+      agentSeenPaths = new Set();
+      groups.set(agentId, groupFiles);
+      seenPaths.set(agentId, agentSeenPaths);
     }
 
     // Skip duplicates within the same agent group
-    const agentSeenPaths = seenPaths.get(agentId)!;
     if (agentSeenPaths.has(file.path)) continue;
     agentSeenPaths.add(file.path);
 
-    groups.get(agentId)!.push(file);
+    groupFiles.push(file);
   }
 
   // Convert to array and calculate stats

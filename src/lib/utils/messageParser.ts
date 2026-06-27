@@ -1440,8 +1440,9 @@ export function groupContentBlocks(
   // the real last content_group from getting isLast=true in the renderer.
   while (result.length > 0) {
     const last = result[result.length - 1];
-    if (last.type !== 'text' || !(last as ContentBlock).text) break;
-    const { cleanedContent } = parseSuggestedPrompts((last as ContentBlock).text!);
+    const lastText = (last as ContentBlock).text;
+    if (last.type !== 'text' || !lastText) break;
+    const { cleanedContent } = parseSuggestedPrompts(lastText);
     if (cleanedContent.trim().length > 0) break;
     result.pop();
   }

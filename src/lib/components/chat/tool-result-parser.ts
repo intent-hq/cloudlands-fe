@@ -875,9 +875,10 @@ function parseSearchResult(
   input: Record<string, any>,
   result: string | null | undefined,
 ): ParsedToolResult {
+  const snippets: NonNullable<ParsedToolResult['snippets']> = [];
   const parsed: ParsedToolResult = {
     type: 'code-search',
-    snippets: [],
+    snippets,
   };
 
   if (!result) {
@@ -904,13 +905,13 @@ function parseSearchResult(
       const path = pathMatch[1].trim();
       const content = section.substring(pathMatch[0].length).trim();
       if (content) {
-        parsed.snippets!.push({ path, content });
+        snippets.push({ path, content });
       }
     }
   }
 
   // If no structured paths found, treat as plain content
-  if (parsed.snippets!.length === 0) {
+  if (snippets.length === 0) {
     parsed.content = result;
   }
 
@@ -2342,9 +2343,10 @@ function parseGitHubResult(
  * Parse GitHub issues/PRs list from YAML result.
  */
 function parseGitHubIssues(result: string): ParsedToolResult {
+  const githubIssues: NonNullable<ParsedToolResult['githubIssues']> = [];
   const parsed: ParsedToolResult = {
     type: 'github-issues',
-    githubIssues: [],
+    githubIssues,
     content: result,
   };
 
@@ -2385,7 +2387,7 @@ function parseGitHubIssues(result: string): ParsedToolResult {
 
       const htmlUrl = extractGitHubYamlField(item, 'html_url') || extractGitHubYamlField(item, 'url');
 
-      parsed.githubIssues!.push({
+      githubIssues.push({
         number: parseInt(number, 10),
         title: title.replace(/^['"]|['"]$/g, ''),
         state: state || 'open',
@@ -2396,7 +2398,7 @@ function parseGitHubIssues(result: string): ParsedToolResult {
     }
   }
 
-  if (parsed.githubIssues!.length === 0) {
+  if (githubIssues.length === 0) {
     return { type: 'confirmation' as const, content: result };
   }
 
@@ -2407,9 +2409,10 @@ function parseGitHubIssues(result: string): ParsedToolResult {
  * Parse GitHub PR files list from YAML result.
  */
 function parseGitHubPRFiles(result: string): ParsedToolResult {
+  const githubFiles: NonNullable<ParsedToolResult['githubFiles']> = [];
   const parsed: ParsedToolResult = {
     type: 'github-pr-files',
-    githubFiles: [],
+    githubFiles,
     content: result,
   };
 
@@ -2422,7 +2425,7 @@ function parseGitHubPRFiles(result: string): ParsedToolResult {
     const deletions = extractGitHubYamlField(item, 'deletions') || '0';
 
     if (filename) {
-      parsed.githubFiles!.push({
+      githubFiles.push({
         filename: filename.replace(/^['"]|['"]$/g, ''),
         status,
         additions: parseInt(additions, 10),
@@ -2431,7 +2434,7 @@ function parseGitHubPRFiles(result: string): ParsedToolResult {
     }
   }
 
-  if (parsed.githubFiles!.length === 0) {
+  if (githubFiles.length === 0) {
     return { type: 'confirmation' as const, content: result };
   }
 
@@ -2442,9 +2445,10 @@ function parseGitHubPRFiles(result: string): ParsedToolResult {
  * Parse GitHub check runs / commit status from YAML result.
  */
 function parseGitHubChecks(result: string): ParsedToolResult {
+  const githubChecks: NonNullable<ParsedToolResult['githubChecks']> = [];
   const parsed: ParsedToolResult = {
     type: 'github-checks',
-    githubChecks: [],
+    githubChecks,
     content: result,
   };
 
@@ -2456,7 +2460,7 @@ function parseGitHubChecks(result: string): ParsedToolResult {
     const conclusion = extractGitHubYamlField(item, 'conclusion');
 
     if (name) {
-      parsed.githubChecks!.push({
+      githubChecks.push({
         name: name.replace(/^['"]|['"]$/g, ''),
         status,
         conclusion: conclusion || undefined,
@@ -2470,7 +2474,7 @@ function parseGitHubChecks(result: string): ParsedToolResult {
     parsed.githubOverallStatus = overallState;
   }
 
-  if (parsed.githubChecks!.length === 0) {
+  if (githubChecks.length === 0) {
     return { type: 'confirmation' as const, content: result };
   }
 

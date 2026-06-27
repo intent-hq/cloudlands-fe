@@ -373,10 +373,12 @@ export class FileProvider implements Provider {
 
     for (const result of results) {
       const name = result.label;
-      if (!filesByName.has(name)) {
-        filesByName.set(name, []);
+      let group = filesByName.get(name);
+      if (!group) {
+        group = [];
+        filesByName.set(name, group);
       }
-      filesByName.get(name)!.push(result);
+      group.push(result);
     }
 
     // Process each group

@@ -210,18 +210,18 @@ export class EventListenerManager {
     options?: AddEventListenerOptions,
   ): void {
     // Get or create listener map for target
-    if (!this.nativeListeners.has(target)) {
-      this.nativeListeners.set(target, new Map());
+    let targetListeners = this.nativeListeners.get(target);
+    if (!targetListeners) {
+      targetListeners = new Map();
+      this.nativeListeners.set(target, targetListeners);
     }
-
-    const targetListeners = this.nativeListeners.get(target)!;
 
     // Get or create event set
-    if (!targetListeners.has(event)) {
-      targetListeners.set(event, new Set());
+    let eventListeners = targetListeners.get(event);
+    if (!eventListeners) {
+      eventListeners = new Set();
+      targetListeners.set(event, eventListeners);
     }
-
-    const eventListeners = targetListeners.get(event)!;
 
     // Only add if not already registered
     if (!eventListeners.has(handler)) {
@@ -286,11 +286,13 @@ export class EventListenerManager {
    * Custom event listener management (non-DOM)
    */
   on(event: string, handler: AnyFunction): void {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
+    let handlers = this.listeners.get(event);
+    if (!handlers) {
+      handlers = new Set();
+      this.listeners.set(event, handlers);
     }
 
-    this.listeners.get(event)!.add(handler);
+    handlers.add(handler);
   }
 
   /**
@@ -359,10 +361,12 @@ class PerformanceMonitor2 {
     const duration = end - start;
 
     // Store measure
-    if (!this.measures.has(name)) {
-      this.measures.set(name, []);
+    let measures = this.measures.get(name);
+    if (!measures) {
+      measures = [];
+      this.measures.set(name, measures);
     }
-    this.measures.get(name)!.push(duration);
+    measures.push(duration);
 
     return duration;
   }

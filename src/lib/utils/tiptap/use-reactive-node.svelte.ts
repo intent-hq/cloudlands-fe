@@ -77,9 +77,10 @@ export function useReactiveNode(
         if (!updatedNode || !currentNode || updatedNode.type !== currentNode.type) return;
 
         // Check if any watched attributes changed
+        const node = currentNode;
         const hasChanges = attributeKeys
-          ? attributeKeys.some((key) => updatedNode.attrs[key] !== currentNode!.attrs[key])
-          : JSON.stringify(updatedNode.attrs) !== JSON.stringify(currentNode!.attrs);
+          ? attributeKeys.some((key) => updatedNode.attrs[key] !== node.attrs[key])
+          : JSON.stringify(updatedNode.attrs) !== JSON.stringify(node.attrs);
 
         if (hasChanges) {
           currentNode = updatedNode;

@@ -100,7 +100,7 @@ export function parseDiffLines(change: TrackedChange): VisualizationLine[] {
     }));
 
     return computeFullFileVisualization(
-      change.content!.newContent!,
+      change.content?.newContent ?? '',
       change.content?.oldContent || '',
       chunks,
     );
@@ -679,7 +679,7 @@ export function parseChatFileChangeLines(
     if (!hasOldContent) {
       return createSyntheticLines(change.deletions || 1, 'remove');
     }
-    const oldLines = change.oldContent!.split('\n');
+    const oldLines = (change.oldContent ?? '').split('\n');
     return oldLines.map((content, i) => ({
       lineNumber: i,
       type: 'remove' as LineType,
@@ -693,7 +693,7 @@ export function parseChatFileChangeLines(
     if (!hasNewContent) {
       return createSyntheticLines(change.additions || 1, 'add');
     }
-    const newLines = change.newContent!.split('\n');
+    const newLines = (change.newContent ?? '').split('\n');
     return newLines.map((content, i) => ({
       lineNumber: i,
       type: 'add' as LineType,
@@ -705,7 +705,7 @@ export function parseChatFileChangeLines(
   // For modified files with full content and chunks, show the entire file with changes highlighted
   if (hasNewContent && hasChunks) {
     return computeFullFileVisualization(
-      change.newContent!,
+      change.newContent ?? '',
       change.oldContent || '',
       changeWithChunks.chunks,
     );
@@ -717,7 +717,7 @@ export function parseChatFileChangeLines(
 
   if (hasFullFile && (hasOldContent || hasNewContent) && !hasChunks) {
     return computeAgentChangeVisualization(
-      changeWithChunks.fullFileContent!,
+      changeWithChunks.fullFileContent ?? '',
       change.oldContent || '',
       change.newContent || '',
     );
@@ -728,13 +728,15 @@ export function parseChatFileChangeLines(
   if (hasOldContent && hasNewContent && !hasChunks) {
     // Check if this looks like full file content (no snippet separators)
     const separatorPattern = /\n*\s*\/\/\s*─{10,}\s*\n*/g;
-    const hasOldSeparators = separatorPattern.test(change.oldContent!);
-    const hasNewSeparators = separatorPattern.test(change.newContent!);
+    const oldContent = change.oldContent ?? '';
+    const newContent = change.newContent ?? '';
+    const hasOldSeparators = separatorPattern.test(oldContent);
+    const hasNewSeparators = separatorPattern.test(newContent);
 
     // If neither has separators, treat as full file content and compute proper diff
     if (!hasOldSeparators && !hasNewSeparators) {
-      const oldLines = change.oldContent!.split('\n');
-      const newLines = change.newContent!.split('\n');
+      const oldLines = oldContent.split('\n');
+      const newLines = newContent.split('\n');
       return computeDiffLines(oldLines, newLines);
     }
 
@@ -751,7 +753,7 @@ export function parseChatFileChangeLines(
 
     // Show deleted content (what was replaced)
     if (hasOldContent) {
-      const oldSnippets = change.oldContent!.split(separatorPattern).filter((s) => s.trim());
+      const oldSnippets = (change.oldContent ?? '').split(separatorPattern).filter((s) => s.trim());
       for (const snippet of oldSnippets) {
         const oldLines = snippet.split('\n');
         for (let i = 0; i < oldLines.length; i++) {
@@ -767,7 +769,7 @@ export function parseChatFileChangeLines(
 
     // Show added content (what it was replaced with)
     if (hasNewContent) {
-      const newSnippets = change.newContent!.split(separatorPattern).filter((s) => s.trim());
+      const newSnippets = (change.newContent ?? '').split(separatorPattern).filter((s) => s.trim());
       for (const snippet of newSnippets) {
         const newLines = snippet.split('\n');
         for (let i = 0; i < newLines.length; i++) {
@@ -819,8 +821,8 @@ export function parseChatFileChangeLines(
   }
 
   // Handle snippet-based content (from str-replace-editor with multiple replacements)
-  const oldParts = hasOldContent ? splitBySnippetSeparator(change.oldContent!) : [''];
-  const newParts = hasNewContent ? splitBySnippetSeparator(change.newContent!) : [''];
+  const oldParts = hasOldContent ? splitBySnippetSeparator(change.oldContent ?? '') : [''];
+  const newParts = hasNewContent ? splitBySnippetSeparator(change.newContent ?? '') : [''];
 
   const result: VisualizationLine[] = [];
   const numParts = Math.max(oldParts.length, newParts.length);

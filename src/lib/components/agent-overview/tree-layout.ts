@@ -299,7 +299,8 @@ function getLeftContour(node: LayoutNode, modSum = 0, contour = new Map<number, 
   const level = node.y;
   const x = node.x + modSum;
 
-  if (!contour.has(level) || x < contour.get(level)!) {
+  const existing = contour.get(level);
+  if (existing === undefined || x < existing) {
     contour.set(level, x);
   }
 
@@ -317,7 +318,8 @@ function getRightContour(node: LayoutNode, modSum = 0, contour = new Map<number,
   const level = node.y;
   const x = node.x + modSum;
 
-  if (!contour.has(level) || x > contour.get(level)!) {
+  const existing = contour.get(level);
+  if (existing === undefined || x > existing) {
     contour.set(level, x);
   }
 

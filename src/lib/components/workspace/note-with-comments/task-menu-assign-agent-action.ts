@@ -306,6 +306,7 @@ export async function runAssignAgentTaskMenuAction({
         });
       } else {
         // Found the task - convert it to a linked task
+        const matchedTask = taskMatch;
         const convertResult = editor
           .chain()
           .command(({ tr }) => {
@@ -313,7 +314,7 @@ export async function runAssignAgentTaskMenuAction({
             return true;
           })
           .command(({ tr, state }) => {
-            const { pos: foundPos, node: foundNode } = taskMatch!;
+            const { pos: foundPos, node: foundNode } = matchedTask;
 
             // Create the link URL using shared constants
             const href = taskNoteUrl(taskNote.id);

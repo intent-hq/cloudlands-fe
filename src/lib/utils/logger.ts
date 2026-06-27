@@ -214,11 +214,13 @@ class LoggerService {
     }
 
     if (options?.since) {
-      filtered = filtered.filter((log) => new Date(log.timestamp) >= options.since!);
+      const since = options.since;
+      filtered = filtered.filter((log) => new Date(log.timestamp) >= since);
     }
 
     if (options?.tags && options.tags.length > 0) {
-      filtered = filtered.filter((log) => options.tags!.some((tag) => log.tags?.includes(tag)));
+      const tags = options.tags;
+      filtered = filtered.filter((log) => tags.some((tag) => log.tags?.includes(tag)));
     }
 
     if (options?.limit) {

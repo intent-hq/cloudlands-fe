@@ -99,10 +99,12 @@ export function sortNotes(notes: Note[], customOrder: string[]): Note[] {
   for (const note of notes) {
     const parentId = getEffectiveParentIdWithMap(note, parentMap);
     if (parentId) {
-      if (!childrenByParent.has(parentId)) {
-        childrenByParent.set(parentId, []);
+      let children = childrenByParent.get(parentId);
+      if (!children) {
+        children = [];
+        childrenByParent.set(parentId, children);
       }
-      childrenByParent.get(parentId)!.push(note);
+      children.push(note);
     }
   }
 

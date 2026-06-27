@@ -230,23 +230,24 @@ export class SSHClient {
     const listenerIds: { channel: string; id: string }[] = [];
 
     if (typeof window !== 'undefined' && window.electronAPI) {
-      if (handlers.onConnected) {
+      const { onConnected, onDisconnected, onError } = handlers;
+      if (onConnected) {
         const id = window.electronAPI.on('ssh:connected', (data) => {
-          handlers.onConnected!(data.id);
+          onConnected(data.id);
         });
         if (id) listenerIds.push({ channel: 'ssh:connected', id });
       }
 
-      if (handlers.onDisconnected) {
+      if (onDisconnected) {
         const id = window.electronAPI.on('ssh:disconnected', (data) => {
-          handlers.onDisconnected!(data.id);
+          onDisconnected(data.id);
         });
         if (id) listenerIds.push({ channel: 'ssh:disconnected', id });
       }
 
-      if (handlers.onError) {
+      if (onError) {
         const id = window.electronAPI.on('ssh:error', (data) => {
-          handlers.onError!(data);
+          onError(data);
         });
         if (id) listenerIds.push({ channel: 'ssh:error', id });
       }

@@ -135,10 +135,11 @@ export class DebouncedSearchService {
       const results = await provider.search(query, enhancedContext);
 
       // Score results if provider supports it
-      if (provider.scoreRelevance) {
+      const scoreRelevance = provider.scoreRelevance?.bind(provider);
+      if (scoreRelevance) {
         return results.map((r) => ({
           ...r,
-          score: provider.scoreRelevance!(r, context),
+          score: scoreRelevance(r, context),
         }));
       }
 

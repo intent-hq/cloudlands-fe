@@ -420,9 +420,9 @@ export function findNodeAtPosition(
     cachedSortedBlobs = [...blobs].sort((a, b) => b.depth - a.depth);
   }
 
-  const files = cachedLeafNodes!;
-  const sortedBlobs = cachedSortedBlobs!;
-  const nodesByPath = cachedNodesByPath!;
+  const files = cachedLeafNodes ?? [];
+  const sortedBlobs = cachedSortedBlobs ?? [];
+  const nodesByPath = cachedNodesByPath ?? new Map<string, ProcessedNode>();
 
   // Check files first (they're on top visually)
   // Use squared distance to avoid sqrt (faster)

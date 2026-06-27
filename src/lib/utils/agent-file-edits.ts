@@ -64,11 +64,11 @@ export async function getAgentFileEdits(
 
       if (!agentId || !filePath) continue;
 
-      if (!agentFiles.has(agentId)) {
-        agentFiles.set(agentId, []);
+      let files = agentFiles.get(agentId);
+      if (!files) {
+        files = [];
+        agentFiles.set(agentId, files);
       }
-
-      const files = agentFiles.get(agentId)!;
       // Only add if not already in the list and we haven't reached the limit
       if (!files.includes(filePath) && files.length < filesPerAgent) {
         files.push(filePath);
@@ -80,10 +80,11 @@ export async function getAgentFileEdits(
 
     for (const [agentId, files] of agentFiles.entries()) {
       for (const filePath of files) {
-        if (!fileToAgents.has(filePath)) {
-          fileToAgents.set(filePath, []);
+        let agents = fileToAgents.get(filePath);
+        if (!agents) {
+          agents = [];
+          fileToAgents.set(filePath, agents);
         }
-        const agents = fileToAgents.get(filePath)!;
         if (!agents.includes(agentId)) {
           agents.push(agentId);
         }
@@ -142,10 +143,11 @@ export function propagateAgentEditsToParents(
       : eventPath;
 
     // Add the file itself
-    if (!result.has(fullRelativePath)) {
-      result.set(fullRelativePath, []);
+    let fileAgents = result.get(fullRelativePath);
+    if (!fileAgents) {
+      fileAgents = [];
+      result.set(fullRelativePath, fileAgents);
     }
-    const fileAgents = result.get(fullRelativePath)!;
     for (const agentId of agentIds) {
       if (!fileAgents.includes(agentId)) {
         fileAgents.push(agentId);
@@ -159,12 +161,13 @@ export function propagateAgentEditsToParents(
     for (let i = parts.length - 2; i >= 0; i--) {
       const parentPath = parts.slice(0, i + 1).join('/');
 
-      if (!result.has(parentPath)) {
-        result.set(parentPath, []);
+      let parentAgents = result.get(parentPath);
+      if (!parentAgents) {
+        parentAgents = [];
+        result.set(parentPath, parentAgents);
       }
 
       // Add agent IDs to parent (avoiding duplicates)
-      const parentAgents = result.get(parentPath)!;
       for (const agentId of agentIds) {
         if (!parentAgents.includes(agentId)) {
           parentAgents.push(agentId);

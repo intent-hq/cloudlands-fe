@@ -186,10 +186,11 @@ export function preloadDiffHighlighter(): void {
     return;
   }
 
-  const doInit = async () => {
+  const doInit = async (): Promise<WorkerPoolManager> => {
     const pool = getDiffWorkerPool();
     await pool.initialize();
     logger.info('Diff highlighter worker pool initialized');
+    return pool;
   };
 
   // Use requestIdleCallback to initialize during idle time
@@ -198,10 +199,10 @@ export function preloadDiffHighlighter(): void {
       requestIdleCallback(
         () => {
           doInit()
-            .then(() => resolve(workerPool!))
+            .then((pool) => resolve(pool))
             .catch((error) => {
               logger.warn('Failed to initialize worker pool:', error);
-              resolve(workerPool!);
+              resolve(getDiffWorkerPool());
             });
         },
         { timeout: 5000 },
@@ -211,10 +212,10 @@ export function preloadDiffHighlighter(): void {
     initPromise = new Promise<WorkerPoolManager>((resolve) => {
       setTimeout(() => {
         doInit()
-          .then(() => resolve(workerPool!))
+          .then((pool) => resolve(pool))
           .catch((error) => {
             logger.warn('Failed to initialize worker pool:', error);
-            resolve(workerPool!);
+            resolve(getDiffWorkerPool());
           });
       }, 100);
     });

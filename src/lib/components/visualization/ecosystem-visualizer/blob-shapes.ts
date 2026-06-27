@@ -486,10 +486,12 @@ export function computeBlobShapes(
   const foldersByParent = new Map<string, ProcessedNode[]>();
   for (const folder of sortedFolders) {
     const parentPath = folder.parent?.path || '';
-    if (!foldersByParent.has(parentPath)) {
-      foldersByParent.set(parentPath, []);
+    let siblings = foldersByParent.get(parentPath);
+    if (!siblings) {
+      siblings = [];
+      foldersByParent.set(parentPath, siblings);
     }
-    foldersByParent.get(parentPath)!.push(folder);
+    siblings.push(folder);
   }
 
   // Compute Voronoi cells for each sibling group

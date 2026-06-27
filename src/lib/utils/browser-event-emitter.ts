@@ -16,10 +16,12 @@ export class EventEmitter {
   private events: Map<string | symbol, Set<EventListener>> = new Map();
 
   on(event: string | symbol, listener: EventListener): this {
-    if (!this.events.has(event)) {
-      this.events.set(event, new Set());
+    let listeners = this.events.get(event);
+    if (!listeners) {
+      listeners = new Set();
+      this.events.set(event, listeners);
     }
-    this.events.get(event)!.add(listener);
+    listeners.add(listener);
     return this;
   }
 

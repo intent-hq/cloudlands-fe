@@ -148,11 +148,12 @@ export function makeKeyboardNavigable(
   }
 
   // Add keyboard activation
-  if (options.onActivate) {
+  const onActivate = options.onActivate;
+  if (onActivate) {
     element.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        options.onActivate!();
+        onActivate();
       }
     });
   }

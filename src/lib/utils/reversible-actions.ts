@@ -37,7 +37,8 @@ class ReversibleActionManager {
 
         let undoExecuted = false;
 
-        if (config.onUndo) {
+        const onUndo = config.onUndo;
+        if (onUndo) {
           const toastId = toast.warning(config.message, {
             duration: duration * 1000,
             action: {
@@ -45,7 +46,7 @@ class ReversibleActionManager {
               onClick: async () => {
                 try {
                   undoExecuted = true;
-                  await config.onUndo!();
+                  await onUndo();
                   this.completedActions.delete(actionId);
                   // Just dismiss the toast, don't show a new one
                   toast.dismiss(toastId);

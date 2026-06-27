@@ -601,8 +601,12 @@ function computeHierarchicalGroupLayout(
 
   nodes.forEach((node) => {
     const gid = nodeToGroup.get(node.id) || UNGROUPED;
-    if (!groupNodes.has(gid)) groupNodes.set(gid, []);
-    groupNodes.get(gid)!.push(node.id);
+    let nodeIds = groupNodes.get(gid);
+    if (!nodeIds) {
+      nodeIds = [];
+      groupNodes.set(gid, nodeIds);
+    }
+    nodeIds.push(node.id);
   });
 
   // Step 2: Build group dependency graph
@@ -628,7 +632,8 @@ function computeHierarchicalGroupLayout(
   const visited = new Set<string>();
 
   function assignGroupLayer(gid: string): number {
-    if (groupLayer.has(gid)) return groupLayer.get(gid)!;
+    const existingLayer = groupLayer.get(gid);
+    if (existingLayer !== undefined) return existingLayer;
     if (visited.has(gid)) return 0; // Cycle detected
     visited.add(gid);
 
@@ -695,7 +700,8 @@ function computeHierarchicalGroupLayout(
     const layerVisited = new Set<string>();
 
     function assignIntraLayer(nodeId: string): number {
-      if (nodeLayer.has(nodeId)) return nodeLayer.get(nodeId)!;
+      const existingLayer = nodeLayer.get(nodeId);
+      if (existingLayer !== undefined) return existingLayer;
       if (layerVisited.has(nodeId)) return 0;
       layerVisited.add(nodeId);
 
@@ -767,7 +773,8 @@ function computeHierarchicalGroupLayout(
       let layerSecondary = 0;
 
       layer.forEach((nodeId) => {
-        const size = nodeSizes.get(nodeId)!;
+        const size = nodeSizes.get(nodeId);
+        if (!size) return;
         if (isHorizontal) {
           layerSecondary += size.height + NODE_SPACING;
           layerPrimary = Math.max(layerPrimary, size.width);
@@ -835,7 +842,8 @@ function computeHierarchicalGroupLayout(
     let maxPrimarySize = 0;
 
     layerGroups.forEach((gid) => {
-      const dim = groupDimensions.get(gid)!;
+      const dim = groupDimensions.get(gid);
+      if (!dim) return;
 
       if (isHorizontal) {
         groupPositions.set(gid, { x: primaryOffset, y: secondaryOffset });
@@ -868,21 +876,24 @@ function computeHierarchicalGroupLayout(
       // Calculate total secondary size for centering within the group
       let totalSecondary = 0;
       layer.forEach((nodeId) => {
-        const size = nodeSizes.get(nodeId)!;
+        const size = nodeSizes.get(nodeId);
+        if (!size) return;
         totalSecondary += (isHorizontal ? size.height : size.width) + NODE_SPACING;
       });
       totalSecondary -= NODE_SPACING;
 
       // Center nodes in the secondary direction within the group
-      const groupDim = groupDimensions.get(gid)!;
+      const groupDim = groupDimensions.get(gid);
+      if (!groupDim) return;
       const groupSecondarySize = isHorizontal ? groupDim.height : groupDim.width;
       let nodeSecondaryOffset = GROUP_PADDING + (groupSecondarySize - GROUP_PADDING * 2 - totalSecondary) / 2;
 
       let maxLayerPrimary = 0;
 
       layer.forEach((nodeId) => {
-        const node = nodes.find((n) => n.id === nodeId)!;
-        const size = nodeSizes.get(nodeId)!;
+        const node = nodes.find((n) => n.id === nodeId);
+        const size = nodeSizes.get(nodeId);
+        if (!node || !size) return;
 
         let x, y;
         if (isHorizontal) {
@@ -924,7 +935,8 @@ function computeStandardHierarchicalLayout(
   const visited = new Set<string>();
 
   function assignLayer(nodeId: string): number {
-    if (nodeLayer.has(nodeId)) return nodeLayer.get(nodeId)!;
+    const existingLayer = nodeLayer.get(nodeId);
+    if (existingLayer !== undefined) return existingLayer;
     if (visited.has(nodeId)) return 0;
     visited.add(nodeId);
 
@@ -1009,15 +1021,17 @@ function computeStandardHierarchicalLayout(
 
     // Center the layer
     const totalSecondary = layer.reduce((sum, nodeId) => {
-      const size = nodeSizes.get(nodeId)!;
+      const size = nodeSizes.get(nodeId);
+      if (!size) return sum;
       return sum + (isHorizontal ? size.height : size.width) + NODE_SPACING;
     }, -NODE_SPACING);
 
     secondaryOffset = -totalSecondary / 2;
 
     layer.forEach((nodeId) => {
-      const node = nodes.find((n) => n.id === nodeId)!;
-      const size = nodeSizes.get(nodeId)!;
+      const node = nodes.find((n) => n.id === nodeId);
+      const size = nodeSizes.get(nodeId);
+      if (!node || !size) return;
 
       let x, y;
       if (isHorizontal) {
@@ -1109,7 +1123,9 @@ function computeForceLayout(
   let maxDepth = 0;
 
   while (queue.length > 0) {
-    const { id, depth } = queue.shift()!;
+    const item = queue.shift();
+    if (!item) break;
+    const { id, depth } = item;
     if (visited.has(id)) continue;
     visited.add(id);
 
@@ -1194,8 +1210,8 @@ function computeForceLayout(
 
     // If node belongs to a group, position it near the group center
     const groupId = nodeToGroup.get(node.id);
-    if (groupId && groupCenters.has(groupId)) {
-      const groupCenter = groupCenters.get(groupId)!;
+    const groupCenter = groupId ? groupCenters.get(groupId) : undefined;
+    if (groupCenter) {
       // For horizontal layouts: keep depth-based X, use group center for Y
       // For vertical layouts: keep depth-based Y, use group center for X
       if (isHorizontal) {
@@ -1444,8 +1460,8 @@ function computeForceLayout(
 
       positions.forEach((pos) => {
         const groupId = nodeToGroup.get(pos.node.id);
-        if (groupId && groupCenters.has(groupId)) {
-          const groupCenter = groupCenters.get(groupId)!;
+        const groupCenter = groupId ? groupCenters.get(groupId) : undefined;
+        if (groupCenter) {
           const dx = groupCenter.x - pos.x;
           const dy = groupCenter.y - pos.y;
 
@@ -1559,7 +1575,8 @@ function computeForceLayout(
     const compId = componentCount++;
     const stack = [p.node.id];
     while (stack.length > 0) {
-      const nid = stack.pop()!;
+      const nid = stack.pop();
+      if (nid === undefined) break;
       if (componentOf.has(nid)) continue;
       componentOf.set(nid, compId);
       adjacency.get(nid)?.forEach((neighbor) => {
@@ -1572,7 +1589,8 @@ function computeForceLayout(
     // Compute bounding box for each component
     const compBounds = new Map<number, { minX: number; minY: number; maxX: number; maxY: number }>();
     positions.forEach((p) => {
-      const cid = componentOf.get(p.node.id)!;
+      const cid = componentOf.get(p.node.id);
+      if (cid === undefined) return;
       const existing = compBounds.get(cid);
       if (!existing) {
         compBounds.set(cid, { minX: p.x, minY: p.y, maxX: p.x + p.width, maxY: p.y + p.height });
@@ -1586,8 +1604,9 @@ function computeForceLayout(
 
     // Sort components by size (largest first) for better packing
     const compIds = Array.from(compBounds.keys()).sort((a, b) => {
-      const ba = compBounds.get(a)!;
-      const bb = compBounds.get(b)!;
+      const ba = compBounds.get(a);
+      const bb = compBounds.get(b);
+      if (!ba || !bb) return 0;
       return (bb.maxX - bb.minX) * (bb.maxY - bb.minY) - (ba.maxX - ba.minX) * (ba.maxY - ba.minY);
     });
 
@@ -1599,7 +1618,8 @@ function computeForceLayout(
     let colIndex = 0;
 
     for (const cid of compIds) {
-      const bounds = compBounds.get(cid)!;
+      const bounds = compBounds.get(cid);
+      if (!bounds) continue;
       const compW = bounds.maxX - bounds.minX;
       const compH = bounds.maxY - bounds.minY;
 
@@ -1676,8 +1696,12 @@ function computeTreeLayout(
   const parents = new Map<string, string>();
 
   edges.forEach((edge) => {
-    if (!children.has(edge.from)) children.set(edge.from, []);
-    children.get(edge.from)!.push(edge.to);
+    let childList = children.get(edge.from);
+    if (!childList) {
+      childList = [];
+      children.set(edge.from, childList);
+    }
+    childList.push(edge.to);
     parents.set(edge.to, edge.from);
   });
 
@@ -1803,8 +1827,12 @@ function buildBidirectionalOffsetMap(edges: DiagramEdge[]): Map<string, number> 
   for (const edge of edges) {
     if (edge.from === edge.to) continue;
     const key = `${edge.from}::${edge.to}`;
-    if (!directedMap.has(key)) directedMap.set(key, []);
-    directedMap.get(key)!.push(edge.id);
+    let ids = directedMap.get(key);
+    if (!ids) {
+      ids = [];
+      directedMap.set(key, ids);
+    }
+    ids.push(edge.id);
   }
 
   // Only offset edges that are truly bidirectional (A→B AND B→A both exist)
@@ -1821,8 +1849,9 @@ function buildBidirectionalOffsetMap(edges: DiagramEdge[]): Map<string, number> 
     processed.add(sortedPairKey);
     const [nodeA] = sortedPairKey.split('::');
 
-    const forwardEdges = directedMap.get(key)!;
-    const reverseEdges = directedMap.get(reverseKey)!;
+    const forwardEdges = directedMap.get(key);
+    const reverseEdges = directedMap.get(reverseKey);
+    if (!forwardEdges || !reverseEdges) continue;
 
     for (const edgeId of forwardEdges) {
       offsets.set(edgeId, from === nodeA ? BIDIRECTIONAL_OFFSET : -BIDIRECTIONAL_OFFSET);
@@ -2189,15 +2218,17 @@ function computeOrthogonalEdgePaths(
 
   // Sort by natural channel position
   edgesNeedingHorizontal.sort((a, b) => {
-    const aY = edgeChannelInfo.get(a.edge.id)!.horizontalY;
-    const bY = edgeChannelInfo.get(b.edge.id)!.horizontalY;
-    return aY - bY;
+    const aInfo = edgeChannelInfo.get(a.edge.id);
+    const bInfo = edgeChannelInfo.get(b.edge.id);
+    if (!aInfo || !bInfo) return 0;
+    return aInfo.horizontalY - bInfo.horizontalY;
   });
 
   edgesNeedingVertical.sort((a, b) => {
-    const aX = edgeChannelInfo.get(a.edge.id)!.verticalX;
-    const bX = edgeChannelInfo.get(b.edge.id)!.verticalX;
-    return aX - bX;
+    const aInfo = edgeChannelInfo.get(a.edge.id);
+    const bInfo = edgeChannelInfo.get(b.edge.id);
+    if (!aInfo || !bInfo) return 0;
+    return aInfo.verticalX - bInfo.verticalX;
   });
 
   // Assign non-overlapping channel positions
@@ -2212,7 +2243,9 @@ function computeOrthogonalEdgePaths(
 
     edgesNeedingHorizontal.forEach((info) => {
       const { fromNode, toNode } = info;
-      const baseY = edgeChannelInfo.get(info.edge.id)!.horizontalY;
+      const channelInfo = edgeChannelInfo.get(info.edge.id);
+      if (!channelInfo) return;
+      const baseY = channelInfo.horizontalY;
       // Use full node extent for overlap detection
       const edgeMinX = Math.min(fromNode.x, toNode.x);
       const edgeMaxX = Math.max(fromNode.x + fromNode.width, toNode.x + toNode.width);
@@ -2263,7 +2296,9 @@ function computeOrthogonalEdgePaths(
 
     edgesNeedingVertical.forEach((info) => {
       const { fromNode, toNode } = info;
-      const baseX = edgeChannelInfo.get(info.edge.id)!.verticalX;
+      const channelInfo = edgeChannelInfo.get(info.edge.id);
+      if (!channelInfo) return;
+      const baseX = channelInfo.verticalX;
       const edgeMinY = Math.min(fromNode.y, toNode.y);
       const edgeMaxY = Math.max(fromNode.y + fromNode.height, toNode.y + toNode.height);
 
@@ -2313,12 +2348,20 @@ function computeOrthogonalEdgePaths(
 
   for (const info of edgeInfos) {
     const sourceKey = `${info.edge.from}:${info.fromSide}`;
-    if (!sourceGroups.has(sourceKey)) sourceGroups.set(sourceKey, []);
-    sourceGroups.get(sourceKey)!.push(info);
+    let sourceGroup = sourceGroups.get(sourceKey);
+    if (!sourceGroup) {
+      sourceGroup = [];
+      sourceGroups.set(sourceKey, sourceGroup);
+    }
+    sourceGroup.push(info);
 
     const targetKey = `${info.edge.to}:${info.toSide}`;
-    if (!targetGroups.has(targetKey)) targetGroups.set(targetKey, []);
-    targetGroups.get(targetKey)!.push(info);
+    let targetGroup = targetGroups.get(targetKey);
+    if (!targetGroup) {
+      targetGroup = [];
+      targetGroups.set(targetKey, targetGroup);
+    }
+    targetGroup.push(info);
   }
 
   // Assign port indices

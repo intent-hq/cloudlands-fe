@@ -107,7 +107,7 @@ function buildCommonProperties(): CommonEventProperties {
   const uiContext = contextProvider?.() ?? null;
 
   return {
-    ...staticCommonProperties!,
+    ...(staticCommonProperties ?? ({} as NonNullable<typeof staticCommonProperties>)),
     route_name: uiContext?.routeName ?? null,
     main_panel_type: uiContext?.mainPanelType ?? null,
     sidebar_active_tab: uiContext?.sidebarActiveTab ?? null,

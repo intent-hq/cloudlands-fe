@@ -76,7 +76,7 @@ function getMarkdownWorker(): Worker {
         if (error) {
           callback.reject(new Error(error));
         } else {
-          callback.resolve(html!);
+          callback.resolve(html ?? '');
         }
       }
     };

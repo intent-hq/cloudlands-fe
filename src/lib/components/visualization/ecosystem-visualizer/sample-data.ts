@@ -153,7 +153,7 @@ export function generateLargeSampleData(numFiles: number = 500, maxDepth: number
             size: 0,
             children: [],
           };
-          parent.node.children!.push(subFolder);
+          parent.node.children?.push(subFolder);
           allFolders.push({ node: subFolder, depth: parent.depth + 1, path: subPath });
         }
       }
@@ -169,7 +169,7 @@ export function generateLargeSampleData(numFiles: number = 500, maxDepth: number
 
     const file = generateUniqueFileName(folder.path);
     if (file) {
-      folder.node.children!.push({
+      folder.node.children?.push({
         name: file.name,
         path: file.path,
         size: randomSize(),
@@ -183,7 +183,7 @@ export function generateLargeSampleData(numFiles: number = 500, maxDepth: number
     const folder = randomChoice(allFolders);
     const file = generateUniqueFileName(folder.path);
     if (file) {
-      folder.node.children!.push({
+      folder.node.children?.push({
         name: file.name,
         path: file.path,
         size: randomSize(),

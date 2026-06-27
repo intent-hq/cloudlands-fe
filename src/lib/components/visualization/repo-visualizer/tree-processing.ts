@@ -705,7 +705,8 @@ export function packData(
     // Apply movement to top-level items and translate all their descendants
     for (const simItem of simItems) {
       const item = simItem.item;
-      const orig = originalPositions.get(item.data.path)!;
+      const orig = originalPositions.get(item.data.path);
+      if (!orig) continue;
 
       // Calculate how much to translate descendants:
       // Children's original positions are relative to the pack's coordinate system.

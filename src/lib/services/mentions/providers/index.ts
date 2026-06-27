@@ -107,7 +107,8 @@ export class FolderProvider implements Provider {
 
       // Try workspace path first
       if (context.workspaceId) {
-        const workspaceRoot = await getWorkspaceRoot(context.workspaceId);
+        const workspaceId = context.workspaceId;
+        const workspaceRoot = await getWorkspaceRoot(workspaceId);
         if (workspaceRoot) {
           logger.debug('[FolderProvider] Searching workspace at:', workspaceRoot);
           const result: any = await invoke('file:list', {
@@ -124,7 +125,7 @@ export class FolderProvider implements Provider {
               })
               .slice(0, 10)
               .map(async (folder: any) => {
-                const displayPath = await makePathRelative(folder.path, context.workspaceId!);
+                const displayPath = await makePathRelative(folder.path, workspaceId);
                 return {
                   id: `folder-${folder.path}`,
                   type: 'folder' as MentionType,

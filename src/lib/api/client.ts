@@ -38,11 +38,11 @@ class ApiClient {
       environmentConfig,
     });
 
-    if (!response.success) {
+    if (!response.success || !response.data) {
       throw new Error(response.error || 'Failed to create workspace');
     }
 
-    return response.data!;
+    return response.data;
   }
 
   async listWorkspaces(): Promise<Workspace[]> {
@@ -282,11 +282,11 @@ class ApiClient {
       reasoning,
     });
 
-    if (!response.success) {
+    if (!response.success || !response.data) {
       throw new Error(response.error || 'Failed to track agent changes');
     }
 
-    return response.data!;
+    return response.data;
   }
 
   async markAgentActive(

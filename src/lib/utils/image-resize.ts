@@ -64,7 +64,10 @@ export async function resizeImageForAgent(
 
   // Draw onto a canvas at target size
   const canvas = new OffscreenCanvas(targetWidth, targetHeight);
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Failed to get 2D canvas context for image resize');
+  }
   ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
   // Decide output format
