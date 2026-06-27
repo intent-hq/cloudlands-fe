@@ -434,4 +434,17 @@ export default [
       'intent/no-component-async-data-fetch': 'error',
     },
   },
+  // Test files: allow non-null assertions. `!` on known fixtures/mocks is an
+  // accepted test idiom; production code still warns via the base TS rules.
+  {
+    files: [
+      '**/*.test.{ts,tsx}',
+      '**/*.spec.{ts,tsx}',
+      '**/__tests__/**',
+      'tests/**',
+    ],
+    rules: {
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
+  },
 ];
