@@ -22,6 +22,7 @@ import { createGitHubAuthMiddleware } from "$features/github-auth/github-auth-st
 import { createSentryAuthMiddleware } from "$features/sentry-auth/sentry-auth-store-service";
 import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-store-service";
 import { createMcpManagementMiddleware } from "$features/mcp/mcp-management-service";
+import { createWorkspaceOperationsMiddleware } from "$features/workspace/workspace-operations-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
@@ -82,6 +83,10 @@ function buildMiddleware(): StoreMiddleware[] {
     // update/toggle/import/restart) real handlers so the MCP panel loads and
     // persists servers via the `appClient.settings` seam again.
     createMcpManagementMiddleware(),
+    // Give the (post-saga) workspace-operation triggers (archive / unarchive /
+    // delete + bulk archive/delete) real handlers so the card/page buttons run
+    // their operations via the `workspaceClient` seam again.
+    createWorkspaceOperationsMiddleware(),
   ];
 
   // Debug middlewares need to be added AFTER batching middleware
