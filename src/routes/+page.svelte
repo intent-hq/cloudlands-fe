@@ -383,6 +383,7 @@
               knownRepos={$knownRepos}
               onOpen={async (workspace, event) => {
                 if (event?.metaKey || event?.ctrlKey) {
+                  // eslint-disable-next-line intent/no-component-async-data-fetch -- fire-and-forget window-open IPC command, not domain data; no dispatchable saga exists (requestOpenWorkspace is unhandled).
                   await openWorkspaceInNewWindow(workspace.id);
                   return;
                 }

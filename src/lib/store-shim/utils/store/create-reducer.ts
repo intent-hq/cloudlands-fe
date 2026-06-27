@@ -5,7 +5,7 @@ type UnknownAction = { type: string } & Record<string, unknown>;
 
 export type StoreReducer<S, A> = (state: S, action: A) => S;
 
-export const createReducer = <S, A extends StoreAction<any> = StoreAction<any>>(
+export const createReducer = <S, _A extends StoreAction<any> = StoreAction<any>>(
   initialState: S,
 ) => {
   const handlers: Record<string, StoreReducer<S, any>> = {};

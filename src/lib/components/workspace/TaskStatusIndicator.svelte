@@ -74,6 +74,7 @@
     if (newStatus === status) return;
     if (!workspaceId || !noteId) return;
 
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga tasks-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
     void updateTaskNoteStatus(workspaceId, noteId, newStatus);
   }
 

@@ -119,6 +119,7 @@
       const trimmed = editingValue.trim();
       const note = notes.find((n) => n.id === editingNoteId);
       if (note && trimmed !== getNoteTitle(note)) {
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
         void updateNoteTitle(workspaceId, editingNoteId, trimmed);
       }
     }
@@ -203,6 +204,7 @@
             layoutManager.closeTabsByType('note', 'noteId', note.id);
           }
 
+          // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
           void deleteNote(workspaceId, note.id);
           closeContextMenu();
 
@@ -213,6 +215,7 @@
               action: {
                 label: 'Undo',
                 onClick: () => {
+                  // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
                   void createNote(workspaceId, {
                     title: savedNote.title,
                     content: savedNote.content,

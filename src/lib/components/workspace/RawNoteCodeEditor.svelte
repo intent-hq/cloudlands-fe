@@ -108,6 +108,7 @@
     if (target.workspaceId === workspaceId && target.noteId === noteId) {
       lastSavedContent = target.content;
     }
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- sanctioned post-saga notes-write-service seam (dispatches optimistic store updates + AppClient mutation); not a component data fetch.
     updateNoteContent(target.workspaceId, target.noteId, target.content, { immediate });
   }
 

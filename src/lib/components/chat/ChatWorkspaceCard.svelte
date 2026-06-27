@@ -69,6 +69,7 @@
   });
 
   function handleWorkspaceOpenInNewWindow(workspaceId: string) {
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- fire-and-forget window-open IPC command, not domain data; no dispatchable saga exists (requestOpenWorkspace is unhandled).
     openWorkspaceInNewWindow(workspaceId);
   }
 

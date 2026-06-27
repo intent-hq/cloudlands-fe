@@ -66,7 +66,7 @@ const toArray = (middleware?: StoreMiddlewareInput): StoreMiddleware[] => {
  * redux/saga-free reimplementation of the toolkit Store surface the app uses.
  */
 export class Store<
-  TStateMap extends StoreStateMap = {},
+  TStateMap extends StoreStateMap = Record<string, never>,
   TReducers extends StoreReducersInput<TStateMap> = StoreReducersInput<TStateMap>,
 > {
   private reducers: ReducersMap;

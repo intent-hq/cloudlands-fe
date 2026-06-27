@@ -17,7 +17,6 @@ import {
   collectOpenWorkspaceIds,
   collectWindowIdsForWorkspace,
 } from './window-workspace-tracking';
-import * as os from 'os';
 import ElectronStore from 'electron-store';
 import { createRequire } from 'module';
 import { dirname } from 'path';
