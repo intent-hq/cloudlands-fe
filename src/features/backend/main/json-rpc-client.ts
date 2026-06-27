@@ -227,16 +227,19 @@ export class JsonRpcClient extends EventEmitter {
     params?: unknown;
   }): void {
     // Response: has an id matching a pending request.
-    if (message.id != null && this.pending.has(Number(message.id))) {
-      const entry = this.pending.get(Number(message.id))!;
-      this.pending.delete(Number(message.id));
-      clearTimeout(entry.timeout);
-      if (message.error) {
-        entry.reject(new JsonRpcError(message.error));
-      } else {
-        entry.resolve(message.result);
+    if (message.id != null) {
+      const numericId = Number(message.id);
+      const entry = this.pending.get(numericId);
+      if (entry) {
+        this.pending.delete(numericId);
+        clearTimeout(entry.timeout);
+        if (message.error) {
+          entry.reject(new JsonRpcError(message.error));
+        } else {
+          entry.resolve(message.result);
+        }
+        return;
       }
-      return;
     }
     // Notification: has a method and no id.
     if (typeof message.method === 'string' && message.id == null) {

@@ -85,9 +85,10 @@ export function findPRNeedingBranchFetch(
 
   if (!prWithoutBranch || prWithoutBranch.identifier === lastFetchedIdentifier) return null;
 
-  const match = prWithoutBranch.identifier?.match(/^([^/]+)\/([^#]+)#(\d+)$/);
-  if (!match) {
-    logger.debug('Could not parse PR identifier', { identifier: prWithoutBranch.identifier });
+  const identifier = prWithoutBranch.identifier;
+  const match = identifier?.match(/^([^/]+)\/([^#]+)#(\d+)$/);
+  if (!match || identifier === undefined) {
+    logger.debug('Could not parse PR identifier', { identifier });
     return null;
   }
 
@@ -96,6 +97,6 @@ export function findPRNeedingBranchFetch(
     owner,
     repo,
     number: parseInt(numberStr, 10),
-    identifier: prWithoutBranch.identifier!,
+    identifier,
   };
 }

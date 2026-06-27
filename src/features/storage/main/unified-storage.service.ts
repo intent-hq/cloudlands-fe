@@ -151,11 +151,13 @@ export class FileSystemAdapter extends StorageAdapter {
 
       // Apply query filters
       if (query?.prefix) {
-        keys = keys.filter((k) => k.startsWith(query.prefix!));
+        const prefix = query.prefix;
+        keys = keys.filter((k) => k.startsWith(prefix));
       }
 
       if (query?.pattern) {
-        keys = keys.filter((k) => query.pattern!.test(k));
+        const pattern = query.pattern;
+        keys = keys.filter((k) => pattern.test(k));
       }
 
       // Apply pagination
@@ -251,11 +253,13 @@ export class MemoryAdapter extends StorageAdapter {
     let keys = Array.from(this.storage.keys());
 
     if (query?.prefix) {
-      keys = keys.filter((k) => k.startsWith(query.prefix!));
+      const prefix = query.prefix;
+      keys = keys.filter((k) => k.startsWith(prefix));
     }
 
     if (query?.pattern) {
-      keys = keys.filter((k) => query.pattern!.test(k));
+      const pattern = query.pattern;
+      keys = keys.filter((k) => pattern.test(k));
     }
 
     if (query?.offset) {

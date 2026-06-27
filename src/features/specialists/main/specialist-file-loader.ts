@@ -483,10 +483,18 @@ export async function writeSpecialistFile(specialist: {
 }): Promise<{ success: boolean; filePath?: string; error?: string }> {
   try {
     const scope = specialist.scope ?? 'user';
-    const dir =
-      scope === 'project'
-        ? await ensureProjectSpecialistsDirectory(specialist.workspacePath!)
-        : await ensureSpecialistsDirectory();
+    let dir: string;
+    if (scope === 'project') {
+      if (!specialist.workspacePath) {
+        return {
+          success: false,
+          error: 'workspacePath is required for project-scoped specialists',
+        };
+      }
+      dir = await ensureProjectSpecialistsDirectory(specialist.workspacePath);
+    } else {
+      dir = await ensureSpecialistsDirectory();
+    }
 
     const filename = specialistIdToFilename(specialist.id);
     const filePath = path.join(dir, filename);

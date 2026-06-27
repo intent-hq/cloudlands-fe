@@ -65,10 +65,12 @@ class PerformanceMonitor {
     metric.duration = metric.endTime - metric.startTime;
 
     // Store metric
-    if (!this.metrics.has(metric.name)) {
-      this.metrics.set(metric.name, []);
+    let metricList = this.metrics.get(metric.name);
+    if (!metricList) {
+      metricList = [];
+      this.metrics.set(metric.name, metricList);
     }
-    this.metrics.get(metric.name)!.push(metric);
+    metricList.push(metric);
 
     // Clean up
     this.activeTimers.delete(key);
@@ -121,7 +123,9 @@ class PerformanceMonitor {
       allMetrics.push(...metrics);
 
       // Calculate average
-      const durations = metrics.filter((m) => m.duration !== undefined).map((m) => m.duration!);
+      const durations = metrics
+        .map((m) => m.duration)
+        .filter((d): d is number => d !== undefined);
 
       if (durations.length > 0) {
         const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
@@ -132,10 +136,10 @@ class PerformanceMonitor {
     // Sort by duration
     const sortedMetrics = allMetrics
       .filter((m) => m.duration !== undefined)
-      .sort((a, b) => b.duration! - a.duration!);
+      .sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0));
 
     // Calculate percentiles
-    const durations = sortedMetrics.map((m) => m.duration!);
+    const durations = sortedMetrics.map((m) => m.duration ?? 0);
     const p95Index = Math.floor(durations.length * 0.95);
     const p99Index = Math.floor(durations.length * 0.99);
 

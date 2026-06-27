@@ -213,7 +213,11 @@ export function eventToTrackedChange(event: WorkspaceEvent): TrackedChange[] {
           return true;
         })
         .map((change: FileChangeData, index: number) => {
-          const path = extractFilePath(change)!;
+          const path = extractFilePath(change);
+          if (!path) {
+            // Unreachable: entries without a path were removed by the filter above
+            throw new Error('file change without path');
+          }
           return {
             id: generateChangeId('event', event.id, index),
             file: path,

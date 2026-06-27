@@ -246,27 +246,33 @@ export class EventStore {
   private addToIndexes(event: WorkspaceEvent): void {
     // Type index
     if (this.indexByType) {
-      if (!this.typeIndex.has(event.type)) {
-        this.typeIndex.set(event.type, new Set());
+      let typeSet = this.typeIndex.get(event.type);
+      if (!typeSet) {
+        typeSet = new Set();
+        this.typeIndex.set(event.type, typeSet);
       }
-      this.typeIndex.get(event.type)!.add(event.id);
+      typeSet.add(event.id);
     }
 
     // Actor index
     if (this.indexByActor) {
       const actorKey = `${event.actor.type}:${event.actor.name}`;
-      if (!this.actorIndex.has(actorKey)) {
-        this.actorIndex.set(actorKey, new Set());
+      let actorSet = this.actorIndex.get(actorKey);
+      if (!actorSet) {
+        actorSet = new Set();
+        this.actorIndex.set(actorKey, actorSet);
       }
-      this.actorIndex.get(actorKey)!.add(event.id);
+      actorSet.add(event.id);
     }
 
     // Date index
     const dateKey = event.timestamp.substring(0, 10); // YYYY-MM-DD
-    if (!this.dateIndex.has(dateKey)) {
-      this.dateIndex.set(dateKey, new Set());
+    let dateSet = this.dateIndex.get(dateKey);
+    if (!dateSet) {
+      dateSet = new Set();
+      this.dateIndex.set(dateKey, dateSet);
     }
-    this.dateIndex.get(dateKey)!.add(event.id);
+    dateSet.add(event.id);
   }
 
   /**
@@ -319,8 +325,8 @@ export class EventStore {
    * Get events by type (optimized with index)
    */
   getByType(type: WorkspaceEventType): WorkspaceEvent[] {
-    if (this.indexByType && this.typeIndex.has(type)) {
-      const eventIds = this.typeIndex.get(type)!;
+    const eventIds = this.typeIndex.get(type);
+    if (this.indexByType && eventIds) {
       const events: WorkspaceEvent[] = [];
       for (const id of eventIds) {
         const event = this.eventIndex.get(id);
@@ -337,8 +343,8 @@ export class EventStore {
    */
   getByActor(actorType: string, actorName: string): WorkspaceEvent[] {
     const actorKey = `${actorType}:${actorName}`;
-    if (this.indexByActor && this.actorIndex.has(actorKey)) {
-      const eventIds = this.actorIndex.get(actorKey)!;
+    const eventIds = this.actorIndex.get(actorKey);
+    if (this.indexByActor && eventIds) {
       const events: WorkspaceEvent[] = [];
       for (const id of eventIds) {
         const event = this.eventIndex.get(id);
@@ -355,8 +361,8 @@ export class EventStore {
    */
   getByDate(date: string): WorkspaceEvent[] {
     const dateKey = date.substring(0, 10); // Ensure YYYY-MM-DD format
-    if (this.dateIndex.has(dateKey)) {
-      const eventIds = this.dateIndex.get(dateKey)!;
+    const eventIds = this.dateIndex.get(dateKey);
+    if (eventIds) {
       const events: WorkspaceEvent[] = [];
       for (const id of eventIds) {
         const event = this.eventIndex.get(id);

@@ -1202,10 +1202,11 @@ export function setupGitIPC() {
             const match = line.match(/^(\S+)\s+(\S+)\s+\((fetch|push)\)$/);
             if (match) {
               const [, name, url, type] = match;
-              if (!remotes.has(name)) {
-                remotes.set(name, { name, fetchUrl: '', pushUrl: '' });
+              let remote = remotes.get(name);
+              if (!remote) {
+                remote = { name, fetchUrl: '', pushUrl: '' };
+                remotes.set(name, remote);
               }
-              const remote = remotes.get(name)!;
               if (type === 'fetch') {
                 remote.fetchUrl = url;
               } else {

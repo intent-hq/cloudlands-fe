@@ -91,8 +91,9 @@ export class MetadataWatcherManager extends EventEmitter {
 
   async getMetadata(workspaceId: string): Promise<WorkspaceMetadata | null> {
     // Return cached metadata if available
-    if (this.metadataCache.has(workspaceId)) {
-      return this.metadataCache.get(workspaceId)!;
+    const cached = this.metadataCache.get(workspaceId);
+    if (cached !== undefined) {
+      return cached;
     }
 
     // Try to load from file

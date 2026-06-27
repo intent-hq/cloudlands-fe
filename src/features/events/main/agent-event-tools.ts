@@ -121,18 +121,19 @@ export class AgentEventTools {
       // Skip events without actor ID
       if (!agentId) continue;
 
-      if (!agentMap.has(agentId)) {
-        agentMap.set(agentId, {
+      let activity = agentMap.get(agentId);
+      if (!activity) {
+        activity = {
           agentId,
           agentName,
           eventCount: 0,
           toolCalls: 0,
           filesModified: [],
           lastActive: event.timestamp,
-        });
+        };
+        agentMap.set(agentId, activity);
       }
 
-      const activity = agentMap.get(agentId)!;
       activity.eventCount++;
       activity.lastActive = event.timestamp;
 

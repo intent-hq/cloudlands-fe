@@ -216,17 +216,19 @@ export function setupObservabilityIPC(): void {
               events = events.filter((e) => e.agentId === filter.agentId);
             }
             if (filter.types && filter.types.length > 0) {
-              events = events.filter((e) => filter.types!.includes(e.type));
+              const types = filter.types;
+              events = events.filter((e) => types.includes(e.type));
             }
             if (filter.workspaceId) {
               events = events.filter((e) => e.workspaceId === filter.workspaceId);
             }
             if (filter.timeRange) {
-              if (filter.timeRange.start) {
-                events = events.filter((e) => new Date(e.timestamp) >= filter.timeRange!.start!);
+              const { start, end } = filter.timeRange;
+              if (start) {
+                events = events.filter((e) => new Date(e.timestamp) >= start);
               }
-              if (filter.timeRange.end) {
-                events = events.filter((e) => new Date(e.timestamp) <= filter.timeRange!.end!);
+              if (end) {
+                events = events.filter((e) => new Date(e.timestamp) <= end);
               }
             }
           }
@@ -319,7 +321,8 @@ export function setupObservabilityIPC(): void {
             if (filter.sessionId) events = events.filter((e) => e.sessionId === filter.sessionId);
             if (filter.agentId) events = events.filter((e) => e.agentId === filter.agentId);
             if (filter.types && filter.types.length > 0) {
-              events = events.filter((e) => filter.types!.includes(e.type));
+              const types = filter.types;
+              events = events.filter((e) => types.includes(e.type));
             }
           }
           return { success: true, data: calculateMetrics(events) };

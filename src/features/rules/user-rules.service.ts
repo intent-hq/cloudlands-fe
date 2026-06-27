@@ -190,15 +190,16 @@ export class EndUserRulesManager {
     this.ensureInitialized();
     const allRules = this.getAllRules();
 
-    if (!allRules[type]) {
+    const existing = allRules[type];
+    if (!existing) {
       allRules[type] = {
         enabled,
         content: '',
         updatedAt: new Date().toISOString(),
       };
     } else {
-      allRules[type]!.enabled = enabled;
-      allRules[type]!.updatedAt = new Date().toISOString();
+      existing.enabled = enabled;
+      existing.updatedAt = new Date().toISOString();
     }
 
     if (this.configManager) {

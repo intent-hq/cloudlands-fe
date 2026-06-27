@@ -40,7 +40,10 @@ export class ChangeDetectorManager extends EventEmitter {
     if (this._initPromise) {
       logger.debug('Waiting for existing initialization');
       await this._initPromise;
-      return this._realManager!;
+      if (!this._realManager) {
+        throw new Error('ChangeDetectorManager initialization failed');
+      }
+      return this._realManager;
     }
 
     this._initPromise = (async () => {
@@ -66,7 +69,10 @@ export class ChangeDetectorManager extends EventEmitter {
     })();
 
     await this._initPromise;
-    return this._realManager!;
+    if (!this._realManager) {
+      throw new Error('ChangeDetectorManager initialization failed');
+    }
+    return this._realManager;
   }
 
   /**

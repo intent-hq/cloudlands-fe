@@ -150,11 +150,13 @@ export class TerminalStateMachine {
    * Subscribe to state changes
    */
   onStateChange(state: TerminalState, callback: () => void): () => void {
-    if (!this.stateListeners.has(state)) {
-      this.stateListeners.set(state, new Set());
+    let listeners = this.stateListeners.get(state);
+    if (!listeners) {
+      listeners = new Set();
+      this.stateListeners.set(state, listeners);
     }
 
-    this.stateListeners.get(state)!.add(callback);
+    listeners.add(callback);
 
     // Return unsubscribe function
     return () => {

@@ -1315,7 +1315,9 @@ export class WorkspaceService {
           scope,
         });
 
-        const parentGitRoot = await findParentGitDir(effectiveRepositoryPath!);
+        const parentGitRoot = effectiveRepositoryPath
+          ? await findParentGitDir(effectiveRepositoryPath)
+          : null;
         if (parentGitRoot) {
           logger.info('Found parent git root for scoped workspace', {
             parentGitRoot,
@@ -2029,9 +2031,9 @@ task:
         while (true) {
           const currentIndex = nextIndex++;
           if (currentIndex >= workspaces.length) return;
-          results[currentIndex] = await this.repairWorkspaceActivityTimestamp(
-            workspaces[currentIndex]!,
-          );
+          const workspace = workspaces[currentIndex];
+          if (!workspace) continue;
+          results[currentIndex] = await this.repairWorkspaceActivityTimestamp(workspace);
         }
       }),
     );
@@ -2216,8 +2218,10 @@ task:
               while (true) {
                 const idx = agentIdsNextIndex++;
                 if (idx >= paginatedWorkspaces.length) return;
+                const paginatedWorkspace = paginatedWorkspaces[idx];
+                if (!paginatedWorkspace) continue;
                 agentIdsResults[idx] = await this.getWorkspaceAgentIds(
-                  paginatedWorkspaces[idx]!.id,
+                  paginatedWorkspace.id,
                 );
               }
             },
@@ -2298,7 +2302,9 @@ task:
             return;
           }
 
-          results[currentIndex] = await this.buildListWorkspace(workspaces[currentIndex]!);
+          const workspace = workspaces[currentIndex];
+          if (!workspace) continue;
+          results[currentIndex] = await this.buildListWorkspace(workspace);
         }
       }),
     );
@@ -3463,8 +3469,8 @@ task:
               );
 
               // Remove the git worktree via direct SSH command (avoids RPC dependency)
-              const worktreePath = escapeShellArg(workspace.worktreePath!);
-              const repoPath = escapeShellArg(workspace.repositoryPath!);
+              const worktreePath = escapeShellArg(worktreeWorkspaceResult.data.worktreePath);
+              const repoPath = escapeShellArg(worktreeWorkspaceResult.data.repositoryPath);
               await sshManager.executeCommand(
                 deleteConnectionId,
                 `cd ${repoPath} && git worktree remove --force ${worktreePath} 2>/dev/null; cd ${repoPath} && git worktree prune 2>/dev/null; true`,
@@ -3472,7 +3478,7 @@ task:
               );
 
               // Remove the workspace folder (parent of worktreePath) - only if empty
-              const workspaceFolder = path.posix.dirname(workspace.worktreePath!);
+              const workspaceFolder = path.posix.dirname(worktreeWorkspaceResult.data.worktreePath);
               await sshManager.executeCommand(
                 deleteConnectionId,
                 `rmdir ${escapeShellArg(workspaceFolder)} 2>/dev/null || true`,
@@ -4869,7 +4875,7 @@ A new project created with Intent by Augment.
     const existingLock = this.gitWorktreeLocks.get(repoPath);
 
     // Create our lock promise that will resolve when our operation completes
-    let resolve: () => void;
+    let resolve!: () => void;
     const newLock = new Promise<void>((r) => {
       resolve = r;
     });
@@ -4898,7 +4904,7 @@ A new project created with Intent by Augment.
     } finally {
       const operationTime = Date.now() - operationStartTime;
       logger.info('Git worktree operation completed', { repoPath, operationTimeMs: operationTime });
-      resolve!();
+      resolve();
       // Clean up the lock only if no one else has chained after us
       if (this.gitWorktreeLocks.get(repoPath) === newLock) {
         this.gitWorktreeLocks.delete(repoPath);

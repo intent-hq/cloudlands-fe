@@ -185,10 +185,12 @@ export class ComponentDisposalManager {
    * Get or create a disposal store for a component
    */
   getStore(componentId: string): DisposableStore {
-    if (!this.componentStores.has(componentId)) {
-      this.componentStores.set(componentId, new DisposableStore());
+    let store = this.componentStores.get(componentId);
+    if (!store) {
+      store = new DisposableStore();
+      this.componentStores.set(componentId, store);
     }
-    return this.componentStores.get(componentId)!;
+    return store;
   }
 
   /**

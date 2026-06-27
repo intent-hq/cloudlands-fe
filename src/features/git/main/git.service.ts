@@ -112,7 +112,7 @@ export class GitService {
    * @returns A release function to call when the operation is complete
    */
   private async acquireGitOperationMutex(workspaceId: WorkspaceId): Promise<() => void> {
-    let release: () => void;
+    let release!: () => void;
     const newMutex = new Promise<void>((resolve) => {
       release = resolve;
     });
@@ -122,7 +122,7 @@ export class GitService {
     this.gitOperationMutex.set(workspaceId, newMutex);
 
     await previousMutex;
-    return release!;
+    return release;
   }
 
   /**

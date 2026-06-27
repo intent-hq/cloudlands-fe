@@ -416,7 +416,8 @@ class CortexAcpAdapter {
   // ---- initialize ----
 
   private handleInitialize(req: JsonRpcRequest): void {
-    sendResponse(req.id!, {
+    if (req.id === undefined) return;
+    sendResponse(req.id, {
       protocolVersion: 1,
       agentInfo: {
         name: 'Snowflake Cortex',
@@ -432,12 +433,14 @@ class CortexAcpAdapter {
   // ---- authenticate (no-op) ----
 
   private handleAuthenticate(req: JsonRpcRequest): void {
-    sendResponse(req.id!, {});
+    if (req.id === undefined) return;
+    sendResponse(req.id, {});
   }
 
   // ---- session/new ----
 
   private handleSessionNew(req: JsonRpcRequest): void {
+    if (req.id === undefined) return;
     const params = (req.params || {}) as Record<string, unknown>;
     const metadata = (params.metadata || {}) as Record<string, unknown>;
 
@@ -470,14 +473,15 @@ class CortexAcpAdapter {
       mcpServers: mcpServers?.length ?? 0,
     });
 
-    sendResponse(req.id!, { sessionId: this.acpSessionId });
+    sendResponse(req.id, { sessionId: this.acpSessionId });
   }
 
   // ---- session/prompt ----
 
   private async handleSessionPrompt(req: JsonRpcRequest): Promise<void> {
+    if (req.id === undefined) return;
     if (!this.cortexConfig || !this.acpSessionId) {
-      sendError(req.id!, -32001, 'No active session');
+      sendError(req.id, -32001, 'No active session');
       return;
     }
 
@@ -495,34 +499,35 @@ class CortexAcpAdapter {
     }
 
     if (!promptText) {
-      sendError(req.id!, -32602, 'Empty prompt');
+      sendError(req.id, -32602, 'Empty prompt');
       return;
     }
 
-    this.currentPromptRequestId = req.id!;
+    this.currentPromptRequestId = req.id;
 
     // Get resume session ID from previous invocation (if any)
     const resumeId = this.cortexSessionId ?? undefined;
 
     // Spawn a NEW cortex process for this prompt (--print mode: one process per prompt)
-    this.cortex = new CortexProcess({
+    const cortex = new CortexProcess({
       workingDir: this.cortexConfig.workingDir,
       model: this.cortexConfig.model,
       onEvent: (event) => this.handleCortexEvent(event),
       onExit: (code, signal) => this.handleCortexExit(code, signal),
     });
+    this.cortex = cortex;
 
     try {
       await new Promise<void>((resolve, reject) => {
         this.promptResolve = resolve;
         this.promptReject = reject;
-        this.cortex!.spawn(promptText, resumeId);
+        cortex.spawn(promptText, resumeId);
       });
 
-      sendResponse(req.id!, { stopReason: 'end_turn' });
+      sendResponse(req.id, { stopReason: 'end_turn' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      sendError(req.id!, -32603, `Prompt failed: ${msg}`);
+      sendError(req.id, -32603, `Prompt failed: ${msg}`);
     } finally {
       this.currentPromptRequestId = null;
       this.promptResolve = null;

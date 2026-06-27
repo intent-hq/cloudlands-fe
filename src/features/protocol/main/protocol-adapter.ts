@@ -312,8 +312,11 @@ export class ProtocolAdapter {
 
     if (typeof workspaceIdOrParams === 'string') {
       // Called with (workspaceId, noteId) - MCP tools style
+      if (noteId === undefined) {
+        throw new Error('noteId is required when calling getNote with a workspaceId string');
+      }
       actualWorkspaceId = workspaceIdOrParams;
-      actualNoteId = noteId!;
+      actualNoteId = noteId;
     } else {
       // Called with ({ workspaceId, noteId }) - IPC style
       actualWorkspaceId = workspaceIdOrParams.workspaceId;
@@ -368,9 +371,12 @@ export class ProtocolAdapter {
         noteId,
       });
 
+      if (noteId === undefined) {
+        throw new Error('noteId is required when calling updateNote with a workspaceId string');
+      }
       const result = await this.notesService.updateNote({
         workspaceId,
-        id: noteId!,
+        id: noteId,
         ...updates,
       });
 
@@ -399,8 +405,11 @@ export class ProtocolAdapter {
         noteId,
       });
 
+      if (noteId === undefined) {
+        throw new Error('noteId is required when calling deleteNote with a workspaceId string');
+      }
       const result = await this.notesService.deleteNote(
-        createNoteId(noteId!),
+        createNoteId(noteId),
         createWorkspaceId(workspaceId),
       );
 

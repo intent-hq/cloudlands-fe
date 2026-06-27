@@ -330,4 +330,4 @@ if (typeof window !== 'undefined' && !window.__terminalManager) {
   // Terminals are only disposed when explicitly closed by the user.
 }
 
-export const terminalManager = window.__terminalManager!;
+export const terminalManager = window.__terminalManager as RendererTerminalManager;

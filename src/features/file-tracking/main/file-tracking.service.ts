@@ -198,14 +198,14 @@ export class FileTrackingService {
    * @returns A release function to call when done with the operation
    */
   private async acquireStorageMutex(): Promise<() => void> {
-    let release: () => void;
+    let release!: () => void;
     const newMutex = new Promise<void>((resolve) => {
       release = resolve;
     });
     const previousMutex = this.storageMutex;
     this.storageMutex = newMutex;
     await previousMutex;
-    return release!;
+    return release;
   }
 
   /**
@@ -277,7 +277,7 @@ export class FileTrackingService {
         }
         // Files that had any entries removed (partial trim or full eviction)
         const affectedFiles = [...beforeCounts.keys()].filter(
-          (f) => (afterCounts.get(f) ?? 0) < beforeCounts.get(f)!,
+          (f) => (afterCounts.get(f) ?? 0) < (beforeCounts.get(f) ?? 0),
         );
         await this.storage.saveTrackedChanges(cleanedChanges);
         logger.info('Cleaned up old tracked changes', {

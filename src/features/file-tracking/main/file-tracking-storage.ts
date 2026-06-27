@@ -119,13 +119,15 @@ export class FileTrackingStorage {
    * ```
    */
   static getInstance(workspaceId: string): FileTrackingStorage {
-    if (!FileTrackingStorage.instances.has(workspaceId)) {
+    let instance = FileTrackingStorage.instances.get(workspaceId);
+    if (!instance) {
       logger.debug('Creating new FileTrackingStorage instance', { workspaceId });
-      FileTrackingStorage.instances.set(workspaceId, new FileTrackingStorage(workspaceId));
+      instance = new FileTrackingStorage(workspaceId);
+      FileTrackingStorage.instances.set(workspaceId, instance);
     } else {
       logger.debug('Reusing existing FileTrackingStorage instance', { workspaceId });
     }
-    return FileTrackingStorage.instances.get(workspaceId)!;
+    return instance;
   }
 
   /**

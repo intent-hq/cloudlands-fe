@@ -137,14 +137,15 @@ export function getRemoteGitManager(
   workspaceId: string,
   repositoryPath: string,
 ): RemoteGitManager {
-  if (!remoteGitManagers.has(workspaceId)) {
-    const manager = new RemoteGitManager({
+  let manager = remoteGitManagers.get(workspaceId);
+  if (!manager) {
+    manager = new RemoteGitManager({
       repositoryPath,
       workspaceId,
     });
     remoteGitManagers.set(workspaceId, manager);
   }
-  return remoteGitManagers.get(workspaceId)!;
+  return manager;
 }
 
 /**

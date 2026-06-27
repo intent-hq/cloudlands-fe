@@ -2392,7 +2392,8 @@ export function setupWorkspaceIPC(): void {
                   const queue: string[] = [workspacePath];
 
                   while (queue.length && files.length < maxResults) {
-                    const dir = queue.shift()!;
+                    const dir = queue.shift();
+                    if (dir === undefined) break;
                     let ents: any[] = [];
                     try {
                       ents = await fs.readdir(dir, { withFileTypes: true });
@@ -2619,7 +2620,8 @@ export function setupWorkspaceIPC(): void {
               const queue: string[] = [listingPath];
               const results: any[] = [];
               while (queue.length && results.length < maxResults) {
-                const dir = queue.shift()!;
+                const dir = queue.shift();
+                if (dir === undefined) break;
                 let ents: any[] = [];
                 try {
                   ents = await fs.readdir(dir, { withFileTypes: true });

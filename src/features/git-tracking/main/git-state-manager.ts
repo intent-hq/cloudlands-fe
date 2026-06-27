@@ -926,7 +926,9 @@ export class GitStateManager extends EventEmitter {
 
     try {
       await this.executeGitCommand('git fetch --all');
-      this.state!.lastFetch = new Date().toISOString();
+      if (this.state) {
+        this.state.lastFetch = new Date().toISOString();
+      }
       logger.debug('Fetched from remote', { workspaceId: this.workspaceId });
     } catch (error) {
       logger.debug('Failed to fetch from remote', { error });

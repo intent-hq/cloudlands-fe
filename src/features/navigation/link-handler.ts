@@ -328,8 +328,8 @@ export function createLinkTooltipHandler(container: HTMLElement): () => void {
 
       ensureImported().then(() => {
         // Double-check we're still on the same anchor after async import
-        if (currentAnchor === anchor) {
-          showFn!(anchor, anchor.href);
+        if (currentAnchor === anchor && showFn) {
+          showFn(anchor, anchor.href);
         }
       });
     } else if (currentAnchor) {

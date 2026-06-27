@@ -117,10 +117,12 @@ export class EventQueryEngine {
       const key = this.getFieldValue(event, options.groupBy);
       const groupKey = String(key || 'undefined');
 
-      if (!groups.has(groupKey)) {
-        groups.set(groupKey, []);
+      let group = groups.get(groupKey);
+      if (!group) {
+        group = [];
+        groups.set(groupKey, group);
       }
-      groups.get(groupKey)!.push(event);
+      group.push(event);
     }
 
     // Calculate metrics for each group

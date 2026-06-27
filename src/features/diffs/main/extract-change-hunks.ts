@@ -137,15 +137,19 @@ export function extractChangesFromContents(
 
   // Modified file - simple implementation
   // In a real implementation, you'd use a diff algorithm
-  return [
-    {
-      file: filePath,
-      startLine: 1,
-      endLine: newContent!.split('\n').length,
-      content: newContent!,
-      type: 'modified',
-    },
-  ];
+  if (newContent) {
+    return [
+      {
+        file: filePath,
+        startLine: 1,
+        endLine: newContent.split('\n').length,
+        content: newContent,
+        type: 'modified',
+      },
+    ];
+  }
+
+  return [];
 }
 
 export function parseGitStatus(statusOutput: string): Array<{ file: string; status: string }> {

@@ -617,8 +617,8 @@ export function registerTerminalHandlers() {
             logger.info(`[Terminal] Creating remote terminal for workspace: ${workspaceId}`);
 
             // Check if we already have a remote session for this terminal
-            if (providedId && remoteShellSessions.has(providedId)) {
-              const existingSession = remoteShellSessions.get(providedId)!;
+            const existingSession = providedId ? remoteShellSessions.get(providedId) : undefined;
+            if (providedId && existingSession) {
               // Verify the session belongs to the requested workspace
               if (existingSession.workspaceId !== workspaceId) {
                 logger.warn(

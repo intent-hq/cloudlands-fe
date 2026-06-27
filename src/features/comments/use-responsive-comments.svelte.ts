@@ -15,7 +15,7 @@ export interface ResponsiveConfig {
   enableOverlapDetection?: boolean;
 }
 
-const DEFAULT_CONFIG: ResponsiveConfig = {
+const DEFAULT_CONFIG: Required<ResponsiveConfig> = {
   iconModeThreshold: 200,
   compactModeThreshold: 320,
   enableAnimations: true,
@@ -23,7 +23,7 @@ const DEFAULT_CONFIG: ResponsiveConfig = {
 };
 
 export class ResponsiveCommentsController {
-  private config: ResponsiveConfig;
+  private config: Required<ResponsiveConfig>;
   private containerWidth: number = $state(400);
   private displayMode: 'full' | 'compact' | 'icon' = $state('full');
   private isTransitioning: boolean = $state(false);
@@ -40,9 +40,9 @@ export class ResponsiveCommentsController {
     this.containerWidth = width;
 
     // Calculate new display mode
-    if (width < this.config.iconModeThreshold!) {
+    if (width < this.config.iconModeThreshold) {
       this.displayMode = 'icon';
-    } else if (width < this.config.compactModeThreshold!) {
+    } else if (width < this.config.compactModeThreshold) {
       this.displayMode = 'compact';
     } else {
       this.displayMode = 'full';

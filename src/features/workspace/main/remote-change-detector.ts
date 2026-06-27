@@ -770,6 +770,9 @@ export class RemoteChangeDetector extends EventEmitter {
    * Skips deleted files and limits to 10 files per batch to avoid flooding.
    */
   private async emitFileContentChangedEvents(files: FileChange[]): Promise<void> {
+    const rpcClient = this.rpcClient;
+    if (!rpcClient) return;
+
     const nonDeletedFiles = files.filter((f) => f.action !== 'Delete');
     const filesToEmit = nonDeletedFiles.slice(0, 10);
 
@@ -786,7 +789,7 @@ export class RemoteChangeDetector extends EventEmitter {
     for (const file of filesToEmit) {
       try {
         const absolutePath = path.posix.join(this.config.basePath, file.path);
-        const result = await this.rpcClient!.readFile({ path: absolutePath });
+        const result = await rpcClient.readFile({ path: absolutePath });
 
         sendToWorkspaceWindows(this.config.workspaceId, 'file:content-changed', {
           path: absolutePath,

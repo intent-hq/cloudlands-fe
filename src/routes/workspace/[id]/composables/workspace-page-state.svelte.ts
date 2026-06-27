@@ -119,15 +119,18 @@ export function createWorkspacePageState(workspaceId: string) {
         return;
       }
 
+      const scrollPosition = entry.scrollPosition;
+      const entryId = entry.id || '';
+
       if (state.mainPanel.type === 'notes' && entry.type === 'note') {
         [100, 250, 500].forEach((delay) => {
-          setTimeout(() => restoreNoteScrollPosition(entry.id || '', entry.scrollPosition!), delay);
+          setTimeout(() => restoreNoteScrollPosition(entryId, scrollPosition), delay);
         });
       }
 
       if (state.mainPanel.type === 'file' && entry.type === 'file') {
         [100, 250, 500].forEach((delay) => {
-          setTimeout(() => restoreFileScrollPosition(entry.id || '', entry.scrollPosition!), delay);
+          setTimeout(() => restoreFileScrollPosition(entryId, scrollPosition), delay);
         });
       }
     },
