@@ -24,6 +24,8 @@ import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-st
 import { createMcpManagementMiddleware } from "$features/mcp/mcp-management-service";
 import { createWorkspaceOperationsMiddleware } from "$features/workspace/workspace-operations-service";
 import { createLifecycleReadMiddleware } from "./middlewares/lifecycle-read-service";
+import { createUiLayoutPersistenceMiddleware } from "./middlewares/ui-layout-persistence-service";
+import { createUnreadTrackingPersistenceMiddleware } from "./middlewares/unread-tracking-persistence-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
@@ -93,6 +95,14 @@ function buildMiddleware(): StoreMiddleware[] {
     // list rows, hover cards, panels, and refresh buttons refetch via the
     // `appClient` seam again instead of staying stale until restart.
     createLifecycleReadMiddleware(),
+    // Give the (post-saga) ui-layout persistence triggers real handlers so panel
+    // sizes / group layouts / collapsed state read on mount and persist on change
+    // across sessions via localStorage again.
+    createUiLayoutPersistenceMiddleware(),
+    // Give the (post-saga) unread-tracking triggers real handlers so unread state
+    // hydrates/persists across sessions and `clearWorkspaceUnread` clears the
+    // workspace's agents via `clearAgentsUnread` again.
+    createUnreadTrackingPersistenceMiddleware(),
   ];
 
   // Debug middlewares need to be added AFTER batching middleware

@@ -55,18 +55,6 @@ export const webSocketApiDiscoveryAutoDisabled = createAction(
   "websocketApi/discoveryAutoDisabled"
 );
 
-export const loadWebSocketApiStatus = createAction("websocketApi/loadStatus");
-
-export const setWebSocketApiEnabled = createAction<[enabled: boolean]>(
-  "websocketApi/setEnabled"
-);
-
-export const regenerateWebSocketApiToken = createAction("websocketApi/regenerateToken");
-
-export const setWebSocketApiDiscoveryEnabled = createAction<[enabled: boolean]>(
-  "websocketApi/setDiscoveryEnabled"
-);
-
 export const websocketApiReducer = createReducer<WebSocketApiState>(initialState)
   .with(setWebSocketApiLoading, (state, { payload: [loading] }) => ({
     ...state,
