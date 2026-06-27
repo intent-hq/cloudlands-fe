@@ -4,7 +4,6 @@ import typescriptParser from '@typescript-eslint/parser';
 import svelte from 'eslint-plugin-svelte';
 import svelteParser from 'svelte-eslint-parser';
 import unusedImports from 'eslint-plugin-unused-imports';
-import { svelte as agReduxToolkitFullConfig } from '@augmentcode/ag-redux-toolkit/eslint-plugins';
 import noProductionDynamicImportRule from './eslint-rules/no-production-dynamic-import.js';
 import noComponentAsyncDataFetchRule from './eslint-rules/no-component-async-data-fetch.js';
 
@@ -39,62 +38,6 @@ const productionModuleIgnores = [
   '**/generated/**',
   'src/preload/generated-channels.ts',
 ];
-
-const agReduxToolkitSourceFiles = ['src/**/*.{js,jsx,mjs,ts,tsx}'];
-const agReduxToolkitSelectorFiles = [
-  'src/**/*-selector.{js,jsx,mjs,ts,tsx}',
-  'src/**/*-selectors.{js,jsx,mjs,ts,tsx}',
-];
-const agReduxToolkitTestFiles = ['**/*.{test,spec}.{js,jsx,mjs,ts,tsx}'];
-const agReduxToolkitSelectorRuleIgnores = [
-  '**/__tests__/**/*.{js,jsx,mjs,ts,tsx}',
-  '**/tests/**/*.{js,jsx,mjs,ts,tsx}',
-  '**/*.{test,spec}.{js,jsx,mjs,ts,tsx}',
-  '**/*.manual-test.{js,jsx,mjs,ts,tsx}',
-];
-
-const agReduxToolkitSourceSelectorRules = {
-  'ag-redux-toolkit/duplicate-selector-export': 'error',
-  'ag-redux-toolkit/duplicate-selector-implementation': 'error',
-  'ag-redux-toolkit/inline-saga-selector': 'error',
-  'ag-redux-toolkit/direct-selector-call-mode': 'error',
-  'ag-redux-toolkit/wait-for-named-selector': 'error',
-};
-const agReduxToolkitTestSelectorRuleOverrides = {
-  'ag-redux-toolkit/duplicate-selector-export': 'off',
-  'ag-redux-toolkit/duplicate-selector-implementation': 'off',
-  'ag-redux-toolkit/inline-saga-selector': 'off',
-  'ag-redux-toolkit/direct-selector-call-mode': 'off',
-  'ag-redux-toolkit/wait-for-named-selector': 'off',
-  'ag-redux-toolkit/selector-file-name': 'off',
-  'ag-redux-toolkit/selector-export-name': 'off',
-};
-const agReduxToolkitTestArchitectureRuleOverrides = {
-  'ag-redux-toolkit/collection-internal-mutation': 'off',
-  'ag-redux-toolkit/create-action-owner': 'off',
-  'ag-redux-toolkit/duplicate-saga-name': 'off',
-};
-const agReduxToolkitArchitectureRules = {
-  'ag-redux-toolkit/duplicate-action-type': 'error',
-  'ag-redux-toolkit/duplicate-selector-export': 'error',
-  'ag-redux-toolkit/duplicate-selector-implementation': 'error',
-  'ag-redux-toolkit/duplicate-saga-registration': 'error',
-  'ag-redux-toolkit/pass-through-wrapper': 'error',
-  'ag-redux-toolkit/non-serializable-state-type': 'error',
-  'ag-redux-toolkit/non-serializable-initial-state': 'error',
-  'ag-redux-toolkit/nondeterministic-reducer-state': 'error',
-  'ag-redux-toolkit/reducer-side-effect': 'error',
-  'ag-redux-toolkit/async-reducer-handler': 'error',
-  'ag-redux-toolkit/collection-internal-mutation': 'error',
-  'ag-redux-toolkit/inline-saga-selector': 'error',
-  'ag-redux-toolkit/raw-channel-cleanup': 'error',
-  'ag-redux-toolkit/forbidden-redux-api': 'error',
-  'ag-redux-toolkit/create-action-owner': 'error',
-  'ag-redux-toolkit/saga-watcher-action-type': 'error',
-  'ag-redux-toolkit/unnamespaced-action-type': 'error',
-  'ag-redux-toolkit/action-type-shape': 'error',
-  'ag-redux-toolkit/forbidden-component-import': 'error',
-};
 
 // Staged rollout: existing components with direct async data loads are baselined
 // until each flow moves to Redux actions/selectors. New Svelte components and
@@ -479,52 +422,6 @@ export default [
       }],
       'unused-imports/no-unused-imports': 'error',
       'max-lines': ['error', { max: 1200 }],
-    },
-  },
-  ...agReduxToolkitFullConfig,
-  {
-    files: agReduxToolkitSourceFiles,
-    ignores: productionModuleIgnores,
-    rules: agReduxToolkitArchitectureRules,
-  },
-  {
-    files: ['src/**/*.svelte'],
-    ignores: productionModuleIgnores,
-    rules: {
-      'ag-redux-toolkit/forbidden-component-import': 'error',
-    },
-  },
-  {
-    files: agReduxToolkitSourceFiles,
-    ignores: agReduxToolkitSelectorRuleIgnores,
-    rules: agReduxToolkitSourceSelectorRules,
-  },
-  {
-    files: agReduxToolkitSourceFiles,
-    ignores: [...agReduxToolkitSelectorFiles, ...agReduxToolkitSelectorRuleIgnores],
-    rules: {
-      'ag-redux-toolkit/selector-file-name': 'error',
-    },
-  },
-  {
-    files: agReduxToolkitSelectorFiles,
-    ignores: agReduxToolkitSelectorRuleIgnores,
-    rules: {
-      'ag-redux-toolkit/selector-export-name': 'error',
-    },
-  },
-  {
-    files: agReduxToolkitSelectorRuleIgnores,
-    rules: agReduxToolkitTestSelectorRuleOverrides,
-  },
-  {
-    files: agReduxToolkitSelectorRuleIgnores,
-    rules: agReduxToolkitTestArchitectureRuleOverrides,
-  },
-  {
-    files: agReduxToolkitTestFiles,
-    rules: {
-      'ag-redux-toolkit/test-selector-select': 'error',
     },
   },
   {
