@@ -16,6 +16,16 @@ const mocks = vi.hoisted(() => {
   const batchingMiddleware = createPassthroughMiddleware();
   const sentryMiddleware = createPassthroughMiddleware();
   const gitReadMiddleware = createPassthroughMiddleware();
+  const agentReadMiddleware = createPassthroughMiddleware();
+  const fileExplorerReadMiddleware = createPassthroughMiddleware();
+  const githubAuthMiddleware = createPassthroughMiddleware();
+  const sentryAuthMiddleware = createPassthroughMiddleware();
+  const linearAuthMiddleware = createPassthroughMiddleware();
+  const mcpManagementMiddleware = createPassthroughMiddleware();
+  const workspaceOperationsMiddleware = createPassthroughMiddleware();
+  const lifecycleReadMiddleware = createPassthroughMiddleware();
+  const uiLayoutPersistenceMiddleware = createPassthroughMiddleware();
+  const unreadTrackingPersistenceMiddleware = createPassthroughMiddleware();
   const loggerMiddleware = createPassthroughMiddleware();
   const refCheckMiddleware = createPassthroughMiddleware();
   const structuredCloneMiddleware = createPassthroughMiddleware();
@@ -25,6 +35,16 @@ const mocks = vi.hoisted(() => {
     createBatchingMiddleware: vi.fn(() => batchingMiddleware),
     createSentryBreadcrumbsMiddleware: vi.fn(() => sentryMiddleware),
     createGitReadMiddleware: vi.fn(() => gitReadMiddleware),
+    createAgentReadMiddleware: vi.fn(() => agentReadMiddleware),
+    createFileExplorerReadMiddleware: vi.fn(() => fileExplorerReadMiddleware),
+    createGitHubAuthMiddleware: vi.fn(() => githubAuthMiddleware),
+    createSentryAuthMiddleware: vi.fn(() => sentryAuthMiddleware),
+    createLinearAuthMiddleware: vi.fn(() => linearAuthMiddleware),
+    createMcpManagementMiddleware: vi.fn(() => mcpManagementMiddleware),
+    createWorkspaceOperationsMiddleware: vi.fn(() => workspaceOperationsMiddleware),
+    createLifecycleReadMiddleware: vi.fn(() => lifecycleReadMiddleware),
+    createUiLayoutPersistenceMiddleware: vi.fn(() => uiLayoutPersistenceMiddleware),
+    createUnreadTrackingPersistenceMiddleware: vi.fn(() => unreadTrackingPersistenceMiddleware),
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
     createStructuredCloneCheckerMiddleware: vi.fn(() => structuredCloneMiddleware),
@@ -32,6 +52,16 @@ const mocks = vi.hoisted(() => {
     batchingMiddleware,
     sentryMiddleware,
     gitReadMiddleware,
+    agentReadMiddleware,
+    fileExplorerReadMiddleware,
+    githubAuthMiddleware,
+    sentryAuthMiddleware,
+    linearAuthMiddleware,
+    mcpManagementMiddleware,
+    workspaceOperationsMiddleware,
+    lifecycleReadMiddleware,
+    uiLayoutPersistenceMiddleware,
+    unreadTrackingPersistenceMiddleware,
     loggerMiddleware,
     structuredCloneMiddleware,
     storeGuardMiddleware,
@@ -39,6 +69,34 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("$features/git/git-read-service", () => ({ createGitReadMiddleware: mocks.createGitReadMiddleware }));
+vi.mock("$features/agent/agent-read-service", () => ({ createAgentReadMiddleware: mocks.createAgentReadMiddleware }));
+vi.mock("$features/file-explorer/file-explorer-read-service", () => ({
+  createFileExplorerReadMiddleware: mocks.createFileExplorerReadMiddleware,
+}));
+vi.mock("$features/github-auth/github-auth-store-service", () => ({
+  createGitHubAuthMiddleware: mocks.createGitHubAuthMiddleware,
+}));
+vi.mock("$features/sentry-auth/sentry-auth-store-service", () => ({
+  createSentryAuthMiddleware: mocks.createSentryAuthMiddleware,
+}));
+vi.mock("$features/linear-auth/linear-auth-store-service", () => ({
+  createLinearAuthMiddleware: mocks.createLinearAuthMiddleware,
+}));
+vi.mock("$features/mcp/mcp-management-service", () => ({
+  createMcpManagementMiddleware: mocks.createMcpManagementMiddleware,
+}));
+vi.mock("$features/workspace/workspace-operations-service", () => ({
+  createWorkspaceOperationsMiddleware: mocks.createWorkspaceOperationsMiddleware,
+}));
+vi.mock("./middlewares/lifecycle-read-service", () => ({
+  createLifecycleReadMiddleware: mocks.createLifecycleReadMiddleware,
+}));
+vi.mock("./middlewares/ui-layout-persistence-service", () => ({
+  createUiLayoutPersistenceMiddleware: mocks.createUiLayoutPersistenceMiddleware,
+}));
+vi.mock("./middlewares/unread-tracking-persistence-service", () => ({
+  createUnreadTrackingPersistenceMiddleware: mocks.createUnreadTrackingPersistenceMiddleware,
+}));
 vi.mock("./middlewares/batch", () => ({ createBatchingMiddleware: mocks.createBatchingMiddleware }));
 vi.mock("./middlewares/logger", () => ({ createLoggerMiddleware: mocks.createLoggerMiddleware }));
 vi.mock("./middlewares/sentry-breadcrumbs", () => ({
@@ -97,6 +155,16 @@ describe("store middleware Redux logging gating", () => {
       mocks.batchingMiddleware,
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
+      mocks.agentReadMiddleware,
+      mocks.fileExplorerReadMiddleware,
+      mocks.githubAuthMiddleware,
+      mocks.sentryAuthMiddleware,
+      mocks.linearAuthMiddleware,
+      mocks.mcpManagementMiddleware,
+      mocks.workspaceOperationsMiddleware,
+      mocks.lifecycleReadMiddleware,
+      mocks.uiLayoutPersistenceMiddleware,
+      mocks.unreadTrackingPersistenceMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
     ]);
@@ -113,6 +181,16 @@ describe("store middleware Redux logging gating", () => {
       mocks.batchingMiddleware,
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
+      mocks.agentReadMiddleware,
+      mocks.fileExplorerReadMiddleware,
+      mocks.githubAuthMiddleware,
+      mocks.sentryAuthMiddleware,
+      mocks.linearAuthMiddleware,
+      mocks.mcpManagementMiddleware,
+      mocks.workspaceOperationsMiddleware,
+      mocks.lifecycleReadMiddleware,
+      mocks.uiLayoutPersistenceMiddleware,
+      mocks.unreadTrackingPersistenceMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
     ]);
@@ -129,6 +207,16 @@ describe("store middleware Redux logging gating", () => {
       mocks.batchingMiddleware,
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
+      mocks.agentReadMiddleware,
+      mocks.fileExplorerReadMiddleware,
+      mocks.githubAuthMiddleware,
+      mocks.sentryAuthMiddleware,
+      mocks.linearAuthMiddleware,
+      mocks.mcpManagementMiddleware,
+      mocks.workspaceOperationsMiddleware,
+      mocks.lifecycleReadMiddleware,
+      mocks.uiLayoutPersistenceMiddleware,
+      mocks.unreadTrackingPersistenceMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
     ]);
@@ -146,6 +234,16 @@ describe("store middleware Redux logging gating", () => {
       mocks.batchingMiddleware,
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
+      mocks.agentReadMiddleware,
+      mocks.fileExplorerReadMiddleware,
+      mocks.githubAuthMiddleware,
+      mocks.sentryAuthMiddleware,
+      mocks.linearAuthMiddleware,
+      mocks.mcpManagementMiddleware,
+      mocks.workspaceOperationsMiddleware,
+      mocks.lifecycleReadMiddleware,
+      mocks.uiLayoutPersistenceMiddleware,
+      mocks.unreadTrackingPersistenceMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
   });
@@ -180,6 +278,16 @@ describe("store middleware Redux logging gating", () => {
       mocks.batchingMiddleware,
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
+      mocks.agentReadMiddleware,
+      mocks.fileExplorerReadMiddleware,
+      mocks.githubAuthMiddleware,
+      mocks.sentryAuthMiddleware,
+      mocks.linearAuthMiddleware,
+      mocks.mcpManagementMiddleware,
+      mocks.workspaceOperationsMiddleware,
+      mocks.lifecycleReadMiddleware,
+      mocks.uiLayoutPersistenceMiddleware,
+      mocks.unreadTrackingPersistenceMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
   });
