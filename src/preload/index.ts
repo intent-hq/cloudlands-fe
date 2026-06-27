@@ -1254,12 +1254,16 @@ const electronAPI = {
       const listenerId = generateListenerId();
 
       // Register the callback mapping for later removal
-      if (!listenerRegistry.has(channel)) {
-        listenerRegistry.set(channel, new Map());
+      let channelListeners = listenerRegistry.get(channel);
+      if (!channelListeners) {
+        channelListeners = new Map();
+        listenerRegistry.set(channel, channelListeners);
       }
-      listenerRegistry
-        .get(channel)!
-        .set(listenerId, { id: listenerId, original: callback, wrapped: wrappedCallback });
+      channelListeners.set(listenerId, {
+        id: listenerId,
+        original: callback,
+        wrapped: wrappedCallback,
+      });
 
       // Attach wrapper reference to original callback for external access
       // This allows callers to retrieve the wrapped function via (callback as any).__ipcWrapper
@@ -1311,10 +1315,10 @@ const electronAPI = {
 
     const channelListeners = listenerRegistry.get(channel);
     const entry = channelListeners?.get(listenerId);
-    if (entry) {
+    if (channelListeners && entry) {
       ipcRenderer.removeListener(channel, entry.wrapped);
-      channelListeners!.delete(listenerId);
-      if (channelListeners!.size === 0) {
+      channelListeners.delete(listenerId);
+      if (channelListeners.size === 0) {
         listenerRegistry.delete(channel);
       }
       return;
