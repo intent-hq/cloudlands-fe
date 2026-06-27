@@ -1,0 +1,575 @@
+/**
+ * Agent creation service — the post-saga handler for the orphaned
+ * agent-creation triggers (`createAgentRequested`,
+ * `createAgentWithSpecialistRequested`, `runAgentForNoteRequested`, and
+ * `activateInitialAgentRequested`).
+ *
+ * These triggers lost their handlers when the saga runtime was removed (they
+ * lived in `slices/workspace-agents/sagas/agent-creation-saga.ts`), so Cmd/Ctrl+T,
+ * the New-agent / specialist UI, the NoteMetadataBar run button, and fresh-
+ * workspace initial-agent activation all dispatched no-op actions. This restores
+ * the behavior WITHOUT re-adding a saga and WITHOUT changing any dispatch site:
+ * `createAgentCreationMiddleware()` observes dispatched actions and routes each
+ * trigger through the renderer's agent-creation seam.
+ *
+ * Seam: agent creation goes through `agentFactory.createAgent()` (per AGENTS.md),
+ * which is the live path — it invokes the real backend via `AGENT_CHANNELS.CREATE`
+ * IPC and upserts the resulting session into the store. `appClient.agents.create`
+ * is intentionally NOT used: its `AgentCreateRequest` is too thin (only
+ * workspaceId/prompt/model/specialist) and it returns a bare `MutationResult`
+ * with no agent object, so it cannot drive the create-and-open flow. That gap is
+ * recorded in the BE hand-off note for future seam consolidation.
+ *
+ * On success the new agent's tab is opened/focused by reusing the 3.A1 open path
+ * (`openAgentTabRequested`), so tab dedup/focus semantics stay in one place.
+ *
+ * Dependency-light per src/store AGENTS.md: top-level imports are limited to the
+ * configured store, slice actions, store-free helpers/constants, shared types,
+ * and the logger. The agent factory and every selector module (which evaluate
+ * `store.createSelector` at import) are dynamically imported inside handlers so
+ * they are never evaluated while the store is still initializing through the
+ * middleware chain.
+ */
+import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { AgentSession, Workspace } from "$shared/types";
+import { AgentStatus } from "$shared/types";
+import type { UnifiedAgentConfig } from "$shared/types/agent.types";
+import { createAgentTypeId, parseAgentTypeId } from "$shared/types/agent.types";
+import { WorkspaceId, CHIEF_WORKSPACE_ID } from "$shared/types/branded-ids";
+import {
+  AgentActivationState,
+  getAgentProvider,
+} from "$shared/types/agent-session";
+import {
+  getDefaultModelForProvider,
+  parseCompoundModelId,
+  PROVIDER_MODEL_TIERS,
+} from "$shared/config/provider-config";
+import { SPECIALISTS } from "$lib/constants/specialists";
+import { generateSpecialistAgentName } from "$lib/utils/agent-name-generator";
+import { createChiefVirtualWorkspace } from "$store/renderer/slices/workspace-agents/chief-virtual-workspace";
+import { buildTaskAgentInitialMessage } from "$features/notes/utils/task-agent-message-builder";
+import { store as appStore } from "$store/renderer/store";
+import {
+  bulkUpsertSessions,
+  upsertSession,
+} from "$store/renderer/slices/agent-session/agent-session-slice";
+import { openAgentTabRequested } from "$store/renderer/slices/app-layout/app-layout-slice";
+import {
+  activateInitialAgentRequested,
+  clearInitialAgentConfig,
+  createAgentRequested,
+  createAgentWithSpecialistRequested,
+  markAgentRecentlyCreated,
+  runAgentForNoteRequested,
+  setActiveAgentId,
+} from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
+import { createLogger } from "$lib/utils/client-logger";
+
+const logger = createLogger("AgentCreationService");
+
+const INITIAL_AGENT_ACTIVATION_TIMEOUT_MS = 60_000;
+const TIMEOUT = Symbol("agent-activation-timeout");
+
+/** In-flight initial-agent activations, keyed by `${wsId}:${agentId}`. */
+const initialAgentActivationLocks = new Set<string>();
+
+/**
+ * Dynamically load the agent factory + selectors used by the handlers. Imported
+ * lazily so the `store.createSelector` calls in these modules never run during
+ * middleware-chain construction.
+ */
+async function loadCreationDeps() {
+  const [factoryMod, wsSel, waSel, modelSel, provSel, specSel, asSel, notesSel] =
+    await Promise.all([
+      import("$features/agent/services/agent-factory"),
+      import("$store/renderer/slices/workspace/workspace-selectors"),
+      import("$store/renderer/slices/workspace-agents/workspace-agents-selectors"),
+      import("$store/renderer/slices/model/model-selectors"),
+      import("$store/renderer/slices/provider-settings/provider-settings-selectors"),
+      import("$store/renderer/slices/specialists/specialists-selectors"),
+      import("$store/renderer/slices/agent-session/agent-session-selectors"),
+      import("$store/renderer/slices/workspace-notes/workspace-notes-selectors"),
+    ]);
+  return {
+    agentFactory: factoryMod.agentFactory,
+    selectWorkspaceById: wsSel.selectWorkspaceById,
+    selectAllWorkspaceAgents: waSel.selectAllWorkspaceAgents,
+    selectWorkspaceDefaultModel: modelSel.selectWorkspaceDefaultModel,
+    selectActiveProviderId: provSel.selectActiveProviderId,
+    selectSpecialists: specSel.selectSpecialists,
+    selectEffectiveCodingAgent: specSel.selectEffectiveCodingAgent,
+    selectEffectiveModel: specSel.selectEffectiveModel,
+    selectEffectiveBehaviorPrompt: specSel.selectEffectiveBehaviorPrompt,
+    selectAgentSession: asSel.selectAgentSession,
+    selectNoteById: notesSel.selectNoteById,
+  };
+}
+type CreationDeps = Awaited<ReturnType<typeof loadCreationDeps>>;
+
+function hasUsableAgentSession(session: AgentSession | undefined | null): session is AgentSession {
+  return !!session?.backendSessionId && session.status !== AgentStatus.Pending;
+}
+
+function resolveWorkspacePath(workspace: Workspace): string | null {
+  return workspace.worktreePath || workspace.repositoryPath || workspace.path || null;
+}
+
+/** Resolve a hostable workspace for agent creation, or null when unusable. */
+function validateWorkspace(wsId: string, deps: CreationDeps): Workspace | null {
+  if (wsId === CHIEF_WORKSPACE_ID) return createChiefVirtualWorkspace();
+  const workspace = deps.selectWorkspaceById.select(appStore.state, wsId);
+  if (!workspace) return null;
+  if (!resolveWorkspacePath(workspace)) return null;
+  return workspace;
+}
+
+/** Read-and-clear any stale per-workspace agent config from sessionStorage. */
+function clearStaleAgentConfig(wsId: string): void {
+  try {
+    const key = `workspace:${wsId}:agent-config`;
+    if (sessionStorage.getItem(key)) sessionStorage.removeItem(key);
+  } catch {
+    /* sessionStorage unavailable — nothing to clear */
+  }
+}
+
+/** Open (or focus) the new agent's tab via the shared 3.A1 navigation path. */
+function openCreatedAgentTab(wsId: string, agentId: string): void {
+  appStore.dispatch(openAgentTabRequested(wsId, { agentId }));
+}
+
+/**
+ * Persist a session into BOTH stores: `bulkUpsertSessions` populates the
+ * agent-session slice (`byAgentId` = session + conversation) — the agent-session
+ * reducer only consumes the bulk action — and `upsertSession` registers the
+ * agent id in the workspace-agents index. Mirrors the agent-read service.
+ */
+function persistSession(session: AgentSession): void {
+  appStore.dispatch(bulkUpsertSessions([session]));
+  appStore.dispatch(upsertSession(session));
+}
+
+/**
+ * Persist a freshly created session into Redux (defensive against double-create
+ * races) and flag it as recently created for the UI highlight.
+ */
+function registerCreatedAgent(
+  wsId: string,
+  session: AgentSession,
+  existingAgents: AgentSession[],
+  forceUpsert = false,
+): void {
+  const existing = existingAgents.find((a) => a.id === session.id);
+  const shouldUpsert =
+    forceUpsert ||
+    !existing ||
+    (!hasUsableAgentSession(existing) && hasUsableAgentSession(session));
+  if (shouldUpsert) {
+    persistSession({ ...session, workspaceId: wsId as AgentSession["workspaceId"] });
+  }
+  appStore.dispatch(markAgentRecentlyCreated(wsId, session.id));
+}
+
+/**
+ * Resolve the provider used by the workspace's initial agent, if any. Returns
+ * undefined for legacy workspaces lacking an initial agent so downstream logic
+ * falls back to its own default.
+ */
+function getWorkspaceInitialAgentProvider(wsId: string, deps: CreationDeps): string | undefined {
+  const sessions = deps.selectAllWorkspaceAgents.select(appStore.state, wsId);
+  const initialAgent = sessions.find((s) => String(s.workspaceId) === wsId && s.isInitialAgent);
+  return initialAgent ? getAgentProvider(initialAgent) : undefined;
+}
+
+/** Build the session snapshot upserted while the initial agent activates. */
+function buildInitialActivationSession(
+  wsId: string,
+  agentId: string,
+  config: UnifiedAgentConfig,
+  activationState: AgentActivationState,
+  activationAttempts: number,
+  existing?: AgentSession | null,
+  errorMessage?: string,
+): AgentSession {
+  const now = new Date().toISOString();
+  return {
+    ...existing,
+    id: agentId as AgentSession["id"],
+    backendSessionId: existing?.backendSessionId ?? null,
+    workspaceId: wsId as AgentSession["workspaceId"],
+    name: existing?.name || config.name || "Agent",
+    model: existing?.model || config.model,
+    provider: (existing as AgentSession | undefined)?.provider || config.provider,
+    status: existing?.status ?? AgentStatus.Pending,
+    messages: existing?.messages ?? [],
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    metadata: {
+      ...(existing?.metadata || {}),
+      ...(config.metadata || {}),
+      isInitialAgent: true,
+      isFirstWorkspaceAgent: config.metadata?.isFirstWorkspaceAgent,
+    },
+    activationState,
+    activationAttempts,
+    lastActivationError: errorMessage,
+  } as AgentSession;
+}
+
+/** Race a promise against a timeout, always clearing the timer afterwards. */
+async function raceWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T | typeof TIMEOUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<typeof TIMEOUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMEOUT), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function getCreationError(error: unknown, fallback = "Failed to create agent"): string {
+  if (!error) return fallback;
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Cmd/Ctrl+T and the New-agent button: create a chat agent and open its tab. */
+async function handleCreateAgentRequested(wsId: string, agentType?: string): Promise<void> {
+  const deps = await loadCreationDeps();
+  const workspace = validateWorkspace(wsId, deps);
+  if (!workspace) return;
+
+  appStore.dispatch(clearInitialAgentConfig(wsId));
+  clearStaleAgentConfig(wsId);
+
+  const agents = deps.selectAllWorkspaceAgents.select(appStore.state, wsId);
+  const model = deps.selectWorkspaceDefaultModel.select(appStore.state, wsId);
+  const globalProvider = deps.selectActiveProviderId.select(appStore.state);
+
+  const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
+  const agentName = generateSpecialistAgentName("Agent", existingNames);
+  const provider = model.includes(":") ? parseCompoundModelId(model).providerId : globalProvider;
+
+  try {
+    const result = await deps.agentFactory.createAgent(workspace, {
+      name: agentName,
+      workspaceId: WorkspaceId(wsId),
+      model,
+      provider,
+      agentType: (agentType && parseAgentTypeId(agentType)) || createAgentTypeId("chat"),
+      source: "keyboard-shortcut",
+    });
+    if (!result.success || !result.agent) {
+      logger.error("Failed to create agent", { workspaceId: wsId, error: result.error });
+      return;
+    }
+    registerCreatedAgent(wsId, result.agent, agents);
+    openCreatedAgentTab(wsId, result.agent.id);
+  } catch (error) {
+    logger.error("Failed to create agent", { workspaceId: wsId, error: getCreationError(error) });
+  }
+}
+
+/** Specialist picker: create a chat agent for a specialist and open its tab. */
+async function handleCreateAgentWithSpecialist(
+  wsId: string,
+  specialistId: string | null,
+): Promise<void> {
+  const deps = await loadCreationDeps();
+  const workspace = validateWorkspace(wsId, deps);
+  if (!workspace) return;
+
+  appStore.dispatch(clearInitialAgentConfig(wsId));
+  clearStaleAgentConfig(wsId);
+
+  const agents = deps.selectAllWorkspaceAgents.select(appStore.state, wsId);
+  let model = deps.selectWorkspaceDefaultModel.select(appStore.state, wsId);
+  const globalProvider = deps.selectActiveProviderId.select(appStore.state);
+
+  const existingNames = agents.map((a) => a.name).filter(Boolean) as string[];
+  let provider = model.includes(":") ? parseCompoundModelId(model).providerId : globalProvider;
+  let behaviorPrompt: string | undefined;
+  let specialistBaseName = "Agent";
+  if (specialistId) {
+    const specialist = deps.selectSpecialists
+      .select(appStore.state)
+      .find((s) => s.id === specialistId);
+    if (specialist) {
+      specialistBaseName = specialist.name;
+      provider = deps.selectEffectiveCodingAgent.select(appStore.state, specialistId);
+      model = deps.selectEffectiveModel.select(appStore.state, specialistId);
+      behaviorPrompt = deps.selectEffectiveBehaviorPrompt.select(appStore.state, specialistId);
+    }
+  }
+  const agentName = generateSpecialistAgentName(specialistBaseName, existingNames);
+
+  try {
+    const result = await deps.agentFactory.createAgent(workspace, {
+      name: agentName,
+      workspaceId: WorkspaceId(wsId),
+      model,
+      provider,
+      agentType: createAgentTypeId("chat"),
+      behaviorPrompt,
+      source: "specialist-picker",
+      metadata: specialistId ? { specialist: specialistId } : undefined,
+    });
+    if (!result.success || !result.agent) {
+      logger.error("Failed to create specialist agent", { workspaceId: wsId, error: result.error });
+      return;
+    }
+    registerCreatedAgent(wsId, result.agent, agents);
+    openCreatedAgentTab(wsId, result.agent.id);
+  } catch (error) {
+    logger.error("Failed to create specialist agent", {
+      workspaceId: wsId,
+      error: getCreationError(error),
+    });
+  }
+}
+
+/**
+ * NoteMetadataBar run button: create an implementor task-loop agent for a Task
+ * Note, seed its initial task message, and open its tab. Task/note state stays
+ * in sync via the live-state subscription, so no explicit reload is dispatched.
+ */
+async function handleRunAgentForNote(
+  wsId: string,
+  noteId: string,
+  noteTitle?: string,
+): Promise<void> {
+  const deps = await loadCreationDeps();
+  const workspace = validateWorkspace(wsId, deps);
+  if (!workspace) return;
+
+  const note = deps.selectNoteById.select(appStore.state, wsId, noteId);
+  if (!note) {
+    logger.error("Cannot run agent: note not found", { workspaceId: wsId, noteId });
+    return;
+  }
+
+  const initialMessage = buildTaskAgentInitialMessage(note);
+
+  let implementorModel = deps.selectEffectiveModel.select(appStore.state, "implementor");
+  let implementorBehaviorPrompt = deps.selectEffectiveBehaviorPrompt.select(
+    appStore.state,
+    "implementor",
+  );
+  if (!implementorBehaviorPrompt) {
+    const implementorSpec = SPECIALISTS.find((s) => s.id === "implementor");
+    if (implementorSpec) {
+      implementorBehaviorPrompt = implementorSpec.defaultBehaviorPrompt;
+      if (!implementorModel) {
+        const activeProvider = deps.selectActiveProviderId.select(appStore.state);
+        implementorModel =
+          implementorSpec.defaultModelTier && activeProvider in PROVIDER_MODEL_TIERS
+            ? getDefaultModelForProvider(activeProvider, implementorSpec.defaultModelTier)
+            : implementorSpec.defaultModel ?? "";
+      }
+    }
+  }
+
+  const provider = getWorkspaceInitialAgentProvider(wsId, deps);
+  const fallbackModel = deps.selectWorkspaceDefaultModel.select(appStore.state, wsId);
+
+  try {
+    const result = await deps.agentFactory.createAgent(workspace, {
+      name: noteTitle || "Task Agent",
+      workspaceId: WorkspaceId(wsId),
+      model: implementorModel || fallbackModel,
+      provider,
+      agentType: createAgentTypeId("task-loop"),
+      behaviorPrompt: implementorBehaviorPrompt,
+      source: "task-metadata-bar-run",
+      metadata: { taskNoteId: noteId, source: "task-run", specialist: "implementor" },
+      initialMessage,
+    });
+    if (!result.success || !result.agentId) {
+      logger.error("Failed to run agent for note", { workspaceId: wsId, noteId, error: result.error });
+      return;
+    }
+    openCreatedAgentTab(wsId, result.agentId);
+  } catch (error) {
+    logger.error("Failed to run agent for note", {
+      workspaceId: wsId,
+      noteId,
+      error: getCreationError(error),
+    });
+  }
+}
+
+/**
+ * Fresh-workspace initial-agent activation: create/activate the pre-seeded
+ * initial agent (reusing its id), tracking ACTIVATING → ACTIVE/ERROR state.
+ * Guarded by a per-agent lock so duplicate dispatches collapse into one create.
+ */
+async function handleActivateInitialAgent(
+  wsId: string,
+  agentId: string,
+  config: UnifiedAgentConfig,
+): Promise<void> {
+  const lockKey = `${wsId}:${agentId}`;
+  if (initialAgentActivationLocks.has(lockKey)) return;
+
+  const deps = await loadCreationDeps();
+  const workspace = validateWorkspace(wsId, deps);
+  if (!workspace) return;
+
+  const agents = deps.selectAllWorkspaceAgents.select(appStore.state, wsId);
+  initialAgentActivationLocks.add(lockKey);
+  try {
+    const existing = deps.selectAgentSession.select(appStore.state, agentId);
+    const activationAttempts = (existing?.activationAttempts || 0) + 1;
+    if (hasUsableAgentSession(existing)) {
+      registerCreatedAgent(
+        wsId,
+        { ...existing, activationState: AgentActivationState.ACTIVE, activationAttempts },
+        agents,
+        true,
+      );
+      appStore.dispatch(setActiveAgentId(wsId, existing.id));
+      return;
+    }
+
+    persistSession(
+      buildInitialActivationSession(
+        wsId,
+        agentId,
+        config,
+        AgentActivationState.ACTIVATING,
+        activationAttempts,
+        existing,
+      ),
+    );
+
+    const raceResult = await raceWithTimeout(
+      deps.agentFactory.createAgent(workspace, {
+        ...config,
+        id: agentId,
+        workspaceId: WorkspaceId(wsId),
+        skipInitialPrompt: true,
+        metadata: {
+          ...config.metadata,
+          isInitialAgent: true,
+          isFirstWorkspaceAgent: config.metadata?.isFirstWorkspaceAgent,
+        },
+      }),
+      INITIAL_AGENT_ACTIVATION_TIMEOUT_MS,
+    );
+
+    if (raceResult === TIMEOUT) {
+      const errorMessage = "Timed out activating initial agent";
+      logger.warn(errorMessage, { workspaceId: wsId, agentId });
+      persistSession(
+        buildInitialActivationSession(
+          wsId,
+          agentId,
+          config,
+          AgentActivationState.ERROR,
+          activationAttempts,
+          existing,
+          errorMessage,
+        ),
+      );
+      return;
+    }
+
+    if (!raceResult.success || !raceResult.agent) {
+      const errorMessage = getCreationError(raceResult.error, "Failed to activate initial agent");
+      logger.error("Failed to activate initial agent", { workspaceId: wsId, agentId, error: errorMessage });
+      persistSession(
+        buildInitialActivationSession(
+          wsId,
+          agentId,
+          config,
+          AgentActivationState.ERROR,
+          activationAttempts,
+          existing,
+          errorMessage,
+        ),
+      );
+      return;
+    }
+
+    const session: AgentSession = {
+      ...raceResult.agent,
+      workspaceId: wsId as AgentSession["workspaceId"],
+      activationState: AgentActivationState.ACTIVE,
+      activationAttempts,
+    };
+    registerCreatedAgent(wsId, session, agents, true);
+    appStore.dispatch(setActiveAgentId(wsId, session.id));
+  } catch (error) {
+    const existing = deps.selectAgentSession.select(appStore.state, agentId);
+    const activationAttempts = (existing?.activationAttempts || 0) + 1;
+    const errorMessage = getCreationError(error, "Failed to activate initial agent");
+    logger.error("Failed to activate initial agent", { workspaceId: wsId, agentId, error: errorMessage });
+    persistSession(
+      buildInitialActivationSession(
+        wsId,
+        agentId,
+        config,
+        AgentActivationState.ERROR,
+        activationAttempts,
+        existing,
+        errorMessage,
+      ),
+    );
+  } finally {
+    initialAgentActivationLocks.delete(lockKey);
+  }
+}
+
+/**
+ * Middleware that gives the agent-creation triggers real handlers: after each
+ * action passes through the (no-op) reducer, it routes the trigger to the
+ * matching factory-backed handler. Fire-and-forget — dispatch stays synchronous
+ * and never throws.
+ */
+export function createAgentCreationMiddleware(): StoreMiddleware {
+  return () => (next) => (action) => {
+    const result = next(action);
+    if (action && typeof action.type === "string") {
+      const payload = Array.isArray(action.payload) ? action.payload : [];
+      switch (action.type) {
+        case createAgentRequested.type:
+          if (typeof payload[0] === "string") {
+            void handleCreateAgentRequested(
+              payload[0],
+              typeof payload[1] === "string" ? payload[1] : undefined,
+            );
+          }
+          break;
+        case createAgentWithSpecialistRequested.type:
+          if (typeof payload[0] === "string") {
+            void handleCreateAgentWithSpecialist(
+              payload[0],
+              typeof payload[1] === "string" ? payload[1] : null,
+            );
+          }
+          break;
+        case runAgentForNoteRequested.type:
+          if (typeof payload[0] === "string" && typeof payload[1] === "string") {
+            void handleRunAgentForNote(
+              payload[0],
+              payload[1],
+              typeof payload[2] === "string" ? payload[2] : undefined,
+            );
+          }
+          break;
+        case activateInitialAgentRequested.type:
+          if (typeof payload[0] === "string" && typeof payload[1] === "string" && payload[2]) {
+            void handleActivateInitialAgent(
+              payload[0],
+              payload[1],
+              payload[2] as UnifiedAgentConfig,
+            );
+          }
+          break;
+      }
+    }
+    return result;
+  };
+}

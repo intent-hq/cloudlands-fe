@@ -17,6 +17,7 @@ import { createStructuredCloneCheckerMiddleware } from "./middlewares/structured
 import { createStoreGuardMiddleware } from "../../store/utils/store-guard-middleware";
 import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
+import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
 import { createAppLayoutNavigationMiddleware } from "$features/layout/app-layout-navigation-service";
 import { createFileExplorerReadMiddleware } from "$features/file-explorer/file-explorer-read-service";
 import { createGitHubAuthMiddleware } from "$features/github-auth/github-auth-store-service";
@@ -75,6 +76,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // Give the (post-saga) `ensureAgentSessionLoaded` action a real read handler
     // so a selected agent's session/conversation hydrates on demand again.
     createAgentReadMiddleware(),
+    // Give the (post-saga) agent-creation triggers (create / create-with-
+    // specialist / run-for-note / activate-initial) real handlers so Cmd/Ctrl+T,
+    // the New-agent / specialist UI, the NoteMetadataBar run button, and fresh-
+    // workspace initial-agent activation create an agent via `agentFactory` and
+    // open its tab again.
+    createAgentCreationMiddleware(),
     // Give the (post-saga) `openAgentTabRequested` action a real handler so
     // clicking an agent opens (or focuses) its conversation tab again.
     createAppLayoutNavigationMiddleware(),
