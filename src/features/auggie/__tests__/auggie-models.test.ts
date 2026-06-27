@@ -8,11 +8,14 @@ import {
   expect,
   vi,
   beforeEach,
+  afterEach,
 } from 'vitest';
 import {
+  getAuggieModels,
   getModelIcon,
   type AuggieModel,
 } from '../auggie-models.client';
+import { invoke } from '$lib/electron-bridge';
 
 // Mock the electron-bridge
 vi.mock('$lib/electron-bridge', async () => await import('$store/renderer/utils/test-helpers/electron-bridge-mock'));
@@ -22,6 +25,41 @@ vi.mock('$lib/utils/client-logger', async () => await import('$store/renderer/ut
 describe('auggie-models', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('getAuggieModels', () => {
+    const originalElectronAPI = (window as any).electronAPI;
+
+    afterEach(() => {
+      (window as any).electronAPI = originalElectronAPI;
+    });
+
+    it('reaches the real Electron bridge for auggie:get-models (live path)', async () => {
+      const realInvoke = vi.fn(async () => ({
+        success: true,
+        data: [{ value: 'opus4.7', label: 'Claude Opus 4.7' }],
+      }));
+      (window as any).electronAPI = { invoke: realInvoke };
+
+      const models = await getAuggieModels();
+
+      expect(realInvoke).toHaveBeenCalledWith('auggie:get-models');
+      expect(vi.mocked(invoke)).not.toHaveBeenCalled();
+      expect(models).toEqual([{ value: 'opus4.7', label: 'Claude Opus 4.7' }]);
+    });
+
+    it('falls back to the mock-routed invoke when no real bridge is present', async () => {
+      (window as any).electronAPI = undefined;
+      vi.mocked(invoke).mockResolvedValueOnce({
+        success: true,
+        data: [{ value: 'sonnet4.5', label: 'Claude Sonnet 4.5' }],
+      });
+
+      const models = await getAuggieModels();
+
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith('auggie:get-models');
+      expect(models).toEqual([{ value: 'sonnet4.5', label: 'Claude Sonnet 4.5' }]);
+    });
   });
 
   describe('getModelIcon', () => {

@@ -19,6 +19,22 @@ function toAuggieError(message: string): Error {
   return new Error(message.startsWith('Auggie:') ? message : `Auggie: ${message}`);
 }
 
+/**
+ * Invoke a provider model IPC channel, preferring the real Electron bridge
+ * (`window.electronAPI`) so the request reaches the live main-process handler
+ * (`auggie:get-models`). The default `$lib/electron-bridge` invoke is wired to
+ * the in-memory mock IPC router, which has no handler for this channel, so on a
+ * live build it resolves to `undefined` and the model list comes back empty.
+ * Falls back to the mock-routed invoke when no real bridge is present (unit
+ * tests / non-Electron environments).
+ */
+async function invokeModelChannel<T>(channel: string): Promise<T> {
+  if (typeof window !== 'undefined' && window.electronAPI?.invoke) {
+    return (await window.electronAPI.invoke(channel)) as T;
+  }
+  return await invoke<T>(channel);
+}
+
 export interface AuggieModelBadge {
   color: string;
   label: string;
@@ -59,7 +75,7 @@ export async function getAuggieModels(): Promise<AuggieModel[]> {
   try {
     logger.debug('Getting models from auggie');
 
-    const result = await invoke<{
+    const result = await invokeModelChannel<{
       success: boolean;
       data?: AuggieModel[];
       warning?: string;
