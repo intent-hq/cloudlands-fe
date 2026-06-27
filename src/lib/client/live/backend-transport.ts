@@ -94,6 +94,38 @@ export async function backendUnsubscribe(subscriptionId: string): Promise<void> 
   }
 }
 
+/**
+ * Server capabilities advertised in the `client.hello` handshake. Confirmed on
+ * the wire that the daemon nests these inside the `server` block, i.e. the live
+ * flag lives at `result.server.capabilities.liveState` (NOT a top-level
+ * `capabilities`). The full server block is `{locality, hasDisplay, osArch,
+ * version, capabilities}`.
+ */
+export interface ServerCapabilities {
+  liveState?: boolean;
+}
+
+let liveStateCapabilityPromise: Promise<boolean> | null = null;
+
+/**
+ * Resolve whether the connected daemon advertises snapshot/delta live-state via
+ * `client.hello` (`server.capabilities.liveState === true`) — the PRIMARY,
+ * up-front live-state signal. Cached for the process so the handshake runs once
+ * and is shared across all subscriptions. Resolves `false` on any error so
+ * callers fall back to runtime first-push detection (the safety net is never
+ * regressed when the flag is absent or hello fails).
+ */
+export function detectLiveStateCapability(): Promise<boolean> {
+  if (!liveStateCapabilityPromise) {
+    liveStateCapabilityPromise = backendRequest<{
+      server?: { capabilities?: ServerCapabilities };
+    }>("client.hello", {})
+      .then((result) => result?.server?.capabilities?.liveState === true)
+      .catch(() => false);
+  }
+  return liveStateCapabilityPromise;
+}
+
 /** Daemon JSON-RPC notification forwarded from the main process. */
 export interface BackendNotification {
   method: string;

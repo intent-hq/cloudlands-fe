@@ -21,6 +21,7 @@ import type { SubscriptionHandler, Unsubscribe } from "../app-client";
 import {
   backendSubscribe,
   backendUnsubscribe,
+  detectLiveStateCapability,
   onBackendNotification,
 } from "./backend-transport";
 
@@ -144,9 +145,14 @@ export interface DeltaSubscriptionConfig<T> {
 }
 
 /**
- * Wire a dual-mode subscription: serves the legacy one-shot refetch until the
- * daemon proves live-state by sending a `subscription.push` for our id, then
- * reconciles snapshots/deltas incrementally. Returns the disposer.
+ * Wire a dual-mode subscription with layered live-state detection:
+ *   (1) PRIMARY — if `client.hello` advertises `server.capabilities.liveState`,
+ *       enter live mode up-front so the legacy firehose stops driving refetches
+ *       before the first push arrives;
+ *   (2) runtime-detect — otherwise flip live on the first `subscription.push`;
+ *   (3) fallback — until then, serve today's one-shot refetch (the safety net for
+ *       daemons without the flag, behaving exactly as before).
+ * Once live, snapshots/deltas reconcile incrementally. Returns the disposer.
  */
 export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): Unsubscribe {
   const { eventTypes, fetchAll, getId, normalize, matchLegacyEvent, handler } = config;
@@ -156,6 +162,18 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
   let live = false;
   let awaitingResnapshot = false;
   let subscriptionId: string | undefined;
+
+  // Precedence (1): consume the explicit live-state capability from the hello
+  // handshake. When advertised, enter live mode up-front so legacy events no
+  // longer trigger refetches ahead of the first snapshot push. Absent/failed
+  // detection leaves `live` false, preserving the runtime-detect + refetch path.
+  detectLiveStateCapability()
+    .then((enabled) => {
+      if (enabled && !disposed) live = true;
+    })
+    .catch(() => {
+      // Detection is best-effort; fall through to first-push runtime detection.
+    });
 
   const emitLive = () => {
     if (!disposed) handler(reconciler.values());

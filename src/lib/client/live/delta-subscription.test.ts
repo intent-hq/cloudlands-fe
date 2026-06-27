@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 let notifyHandler: ((n: { method: string; params?: unknown }) => void) | null = null;
 const subscribeCalls: unknown[] = [];
 const unsubscribeCalls: string[] = [];
+// Drives the simulated `client.hello` `server.capabilities.liveState` result.
+let liveStateCapability = false;
 
 vi.mock("./backend-transport", () => ({
   backendSubscribe: vi.fn((params: unknown) => {
@@ -15,6 +17,7 @@ vi.mock("./backend-transport", () => ({
     unsubscribeCalls.push(id);
     return Promise.resolve();
   }),
+  detectLiveStateCapability: vi.fn(() => Promise.resolve(liveStateCapability)),
   onBackendNotification: vi.fn((handler: (n: { method: string; params?: unknown }) => void) => {
     notifyHandler = handler;
     return () => {
@@ -49,6 +52,7 @@ afterEach(() => {
   notifyHandler = null;
   subscribeCalls.length = 0;
   unsubscribeCalls.length = 0;
+  liveStateCapability = false;
   vi.clearAllMocks();
 });
 
@@ -197,5 +201,31 @@ describe("createDeltaSubscription", () => {
     await flush();
     dispose();
     expect(unsubscribeCalls).toContain("sub-1");
+  });
+
+  describe("client.hello capabilities.liveState (explicit up-front detection)", () => {
+    it("enters live mode up-front when hello advertises liveState — no first push needed", async () => {
+      liveStateCapability = true;
+      const { fetchAll } = setup([{ id: "a" }]);
+      await flush();
+      // Only the initial bridge refetch; live mode is already chosen.
+      expect(fetchAll).toHaveBeenCalledTimes(1);
+
+      // A legacy firehose event must NOT trigger a refetch once live up-front.
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(1);
+    });
+
+    it("without the hello flag, legacy events drive refetch exactly as today", async () => {
+      liveStateCapability = false;
+      const { fetchAll } = setup([{ id: "a" }]);
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(1);
+
+      push("events.event", { type: "x:changed" });
+      await flush();
+      expect(fetchAll).toHaveBeenCalledTimes(2);
+    });
   });
 });
