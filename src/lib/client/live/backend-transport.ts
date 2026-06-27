@@ -19,6 +19,12 @@ export interface BackendErrorPayload {
   code: string;
   message: string;
   data?: unknown;
+  /**
+   * Raw numeric JSON-RPC code from the daemon, threaded through so the renderer
+   * can detect the optimistic-concurrency conflict (`-32005`) precisely (§11.4-D).
+   * Absent for non-JSON-RPC transport failures.
+   */
+  rpcCode?: number;
 }
 
 interface BackendResult<T> {
@@ -31,11 +37,13 @@ interface BackendResult<T> {
 export class BackendError extends Error {
   readonly code: string;
   readonly data: unknown;
+  readonly rpcCode?: number;
   constructor(payload: BackendErrorPayload) {
     super(payload.message);
     this.name = "BackendError";
     this.code = payload.code;
     this.data = payload.data;
+    this.rpcCode = payload.rpcCode;
   }
 }
 

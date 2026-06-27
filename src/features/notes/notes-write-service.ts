@@ -18,7 +18,8 @@
  * configured store, slice actions, and selectors (per src/store AGENTS.md).
  */
 import { appClient } from "$lib/client";
-import type { NoteMetadataPatch } from "$lib/client";
+import type { MutationResult, NoteMetadataPatch } from "$lib/client";
+import { toast } from "$lib/components/ui/toast";
 import { ContentType, NoteVisibility } from "$shared/types";
 import type { CreateNoteRequest, Note } from "$shared/types";
 import { NoteId, WorkspaceId } from "$shared/types/branded-ids";
@@ -28,6 +29,7 @@ import {
   applyLocalNoteUpdate,
   applyNoteCreated,
   applyNoteDeleted,
+  applyNoteUpdated,
   loadWorkspaceNotesSucceeded,
   removeOptimisticNote,
 } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
@@ -63,6 +65,33 @@ async function refetchWorkspaceNotes(workspaceId: string): Promise<void> {
   } catch (error) {
     logger.error("Failed to refetch notes after a mutation error", error);
   }
+}
+
+/**
+ * Handle an optimistic-concurrency conflict (§11.4-D): the daemon rejected the
+ * mutation because the note changed on the server. Reload-to-latest — replace
+ * the stale note with the authoritative `conflict.current` (advancing the
+ * threaded `rev`), falling back to a workspace refetch when no entity is
+ * supplied — and surface a non-destructive prompt. Returns `true` when a
+ * conflict was handled so the caller skips the generic rollback/refetch path.
+ */
+function reconcileNoteConflict(
+  workspaceId: string,
+  noteId: string,
+  result: MutationResult,
+): boolean {
+  if (!result.conflict) return false;
+  const current = result.conflict.current as Note | undefined;
+  if (current && typeof current === "object") {
+    appStore.dispatch(applyNoteUpdated(workspaceId, String(current.id ?? noteId), current));
+  } else {
+    void refetchWorkspaceNotes(workspaceId);
+  }
+  logger.warn("Note mutation conflicted; reloaded the latest version", { noteId });
+  toast.warning("This note changed on the server", {
+    description: "Your change was not applied; reloaded the latest version.",
+  });
+  return true;
 }
 
 /** Create a note with optimistic insert; reconciles to the canonical id on success. */
@@ -156,6 +185,7 @@ async function flushContent(noteId: string): Promise<void> {
       ? await appClient.notes.setContent(noteId, pending.content, rev)
       : await appClient.notes.setContent(noteId, pending.content);
   if (!result.success) {
+    if (reconcileNoteConflict(pending.workspaceId, noteId, result)) return;
     logger.error("Failed to save note content", result.error);
     await refetchWorkspaceNotes(pending.workspaceId);
   }
@@ -182,6 +212,7 @@ export async function updateNoteTitle(
       ? await appClient.notes.updateMetadata(noteId, { title }, rev)
       : await appClient.notes.updateMetadata(noteId, { title });
   if (!result.success) {
+    if (reconcileNoteConflict(workspaceId, noteId, result)) return;
     if (previous !== undefined) {
       appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { title: previous }));
     }
@@ -207,6 +238,7 @@ export async function updateNoteMetadata(
       ? await appClient.notes.updateMetadata(noteId, metadata, rev)
       : await appClient.notes.updateMetadata(noteId, metadata);
   if (!result.success) {
+    if (reconcileNoteConflict(workspaceId, noteId, result)) return;
     appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, rollback));
     logger.error("Failed to update note metadata", result.error);
   }
@@ -223,6 +255,7 @@ export async function deleteNote(workspaceId: string, noteId: string): Promise<v
       ? await appClient.notes.delete(noteId, rev)
       : await appClient.notes.delete(noteId);
   if (!result.success) {
+    if (reconcileNoteConflict(workspaceId, noteId, result)) return;
     if (snapshot) appStore.dispatch(applyNoteCreated(workspaceId, snapshot));
     logger.error("Failed to delete note", result.error);
   }

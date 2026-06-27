@@ -18,12 +18,8 @@ import type {
   TasksClient,
   Unsubscribe,
 } from "../app-client";
-import {
-  backendRequest,
-  backendSubscribe,
-  backendUnsubscribe,
-  onBackendNotification,
-} from "./backend-transport";
+import { backendRequest } from "./backend-transport";
+import { createDeltaSubscription } from "./delta-subscription";
 import {
   isEventInFamily,
   listWorkspaceIds,
@@ -52,6 +48,51 @@ function noteToTask(raw: Record<string, unknown>): WorkspaceTask | null {
     // returns it, left undefined otherwise (no behavior change → last-writer-wins).
     ...(typeof raw.rev === "number" ? { rev: raw.rev } : {}),
   };
+}
+
+/**
+ * Normalize a raw delta-channel entity into a `WorkspaceTask`. Handles both a
+ * task note (carrying `metadata.task`, via `noteToTask`) and a direct task
+ * entity that exposes a top-level `status`. Returns `null` for anything that is
+ * not task-like so non-task notes on a shared channel are never misread.
+ */
+function normalizeTaskEntity(raw: Record<string, unknown>): WorkspaceTask | null {
+  const viaNote = noteToTask(raw);
+  if (viaNote) return viaNote;
+  if (typeof raw.status !== "string") return null;
+  return {
+    id: String(raw.id ?? ""),
+    title: String(raw.title ?? ""),
+    status: raw.status as TaskStatus,
+    updatedAt:
+      typeof raw.updatedAt === "string"
+        ? raw.updatedAt
+        : typeof raw.updated_at === "string"
+          ? raw.updated_at
+          : undefined,
+    ...(typeof raw.rev === "number" ? { rev: raw.rev } : {}),
+  };
+}
+
+/**
+ * Normalize a daemon conflict's authoritative `current` into a `WorkspaceTask`.
+ * The daemon may surface either a task note (carrying `metadata.task`) or an
+ * already-shaped WorkspaceTask (status at the top level); handle both so the
+ * write service always receives a typed entity with the advanced `rev`.
+ */
+function conflictToTask(raw: Record<string, unknown>): WorkspaceTask | null {
+  const viaNote = noteToTask(raw);
+  if (viaNote) return viaNote;
+  if (typeof raw.status === "string") {
+    return {
+      id: String(raw.id ?? ""),
+      title: String(raw.title ?? ""),
+      status: raw.status as TaskStatus,
+      ...(typeof raw.updatedAt === "string" ? { updatedAt: raw.updatedAt } : {}),
+      ...(typeof raw.rev === "number" ? { rev: raw.rev } : {}),
+    };
+  }
+  return null;
 }
 
 export class LiveTasksClient implements TasksClient {
@@ -199,51 +240,36 @@ export class LiveTasksClient implements TasksClient {
     if (!workspaceId) {
       return { success: false, error: `Cannot resolve workspace for note ${noteId}` };
     }
-    return runMutationWithId(method, {
+    const result = await runMutationWithId(method, {
       workspaceId,
       noteId,
       ...params,
       ...(expectedVersion !== undefined ? { expectedVersion } : {}),
     });
+    // On an optimistic-concurrency conflict (§11.4-D), normalize the raw
+    // authoritative `current` into a `WorkspaceTask` so the write service can
+    // reload-to-latest (advancing the threaded rev) without touching daemon shapes.
+    const current = result.conflict?.current;
+    if (current && typeof current === "object") {
+      const task = conflictToTask(current as Record<string, unknown>);
+      if (task) return { ...result, conflict: { current: task } };
+    }
+    return result;
   }
 
   subscribe(handler: SubscriptionHandler<WorkspaceTask[]>): Unsubscribe {
-    let disposed = false;
-    let subscriptionId: string | undefined;
-
-    const emit = () => {
-      listWorkspaceIds()
-        .then((ids) => Promise.all(ids.map((id) => this.list(id))))
-        .then((perWorkspace) => {
-          if (!disposed) handler(perWorkspace.flat());
-        })
-        .catch(() => {
-          // Snapshot refresh failures are non-fatal for the subscription.
-        });
-    };
-
-    emit();
-
-    const off = onBackendNotification((n) => {
-      if (isEventInFamily(n.method, n.params, "task") || isEventInFamily(n.method, n.params, "note"))
-        emit();
-    });
-
-    backendSubscribe<{ subscriptionId?: string }>({
+    return createDeltaSubscription<WorkspaceTask>({
       eventTypes: ["task:status-changed", "task:ready-tasks-changed", "note:updated"],
-    })
-      .then((result) => {
-        subscriptionId = result?.subscriptionId;
-        if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
-      })
-      .catch(() => {
-        // Without a daemon subscription we still serve the initial snapshot.
-      });
-
-    return () => {
-      disposed = true;
-      off();
-      if (subscriptionId) void backendUnsubscribe(subscriptionId);
-    };
+      matchLegacyEvent: (method, params) =>
+        isEventInFamily(method, params, "task") || isEventInFamily(method, params, "note"),
+      fetchAll: async () => {
+        const ids = await listWorkspaceIds();
+        const perWorkspace = await Promise.all(ids.map((id) => this.list(id)));
+        return perWorkspace.flat();
+      },
+      getId: (raw) => String(raw.id ?? ""),
+      normalize: (raw) => normalizeTaskEntity(raw),
+      handler,
+    });
   }
 }

@@ -68,6 +68,16 @@ export interface MutationResult {
    * unaffected, so it stays backward-compatible across all domains.
    */
   id?: string;
+  /**
+   * Optimistic-concurrency conflict outcome (§11.4-D): present ONLY when the
+   * daemon rejected the mutation with the conflict error (numeric `-32005` AND
+   * `data.code === "conflict"`). Carries the authoritative server entity
+   * (`data.current`, including its advanced `rev`) so the caller can
+   * reload-to-latest. Additive: success and non-conflict error paths never set
+   * it, so existing call sites are unaffected. The live clients normalize
+   * `current` into the domain entity (`Note` / `WorkspaceTask`) before returning.
+   */
+  conflict?: { current: unknown };
 }
 
 /** Minimal request shape for creating an agent through the seam. */

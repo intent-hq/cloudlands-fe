@@ -18,7 +18,13 @@ vi.mock("$lib/client", () => ({
   },
 }));
 
+// FAKE the toast seam so the conflict prompt is asserted without svelte-sonner.
+vi.mock("$lib/components/ui/toast", () => ({
+  toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), message: vi.fn() },
+}));
+
 import { appClient } from "$lib/client";
+import { toast } from "$lib/components/ui/toast";
 import { store as appStore } from "$store/renderer/store";
 import { loadWorkspaceNotesSucceeded } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
 import {
@@ -176,5 +182,40 @@ describe("notesWriteService (fake seam, real store)", () => {
 
     await deleteNote(WS, "n1");
     expect(notesApi.delete).toHaveBeenCalledWith("n1", 9);
+  });
+
+  // ---- §11.4-D: conflict outcome → reload-to-latest + prompt ----------------
+
+  it("reloads to the server note and prompts on a content-save conflict (no generic refetch)", async () => {
+    seed(makeNote("n1", { rev: 3, content: "mine" }));
+    notesApi.setContent.mockResolvedValueOnce({
+      success: false,
+      conflict: { current: makeNote("n1", { rev: 8, content: "server" }) },
+    } as never);
+
+    updateNoteContent(WS, "n1", "mine-edited", { immediate: true });
+    await vi.advanceTimersByTimeAsync(1);
+
+    const note = selectNoteById.select(appStore.state, WS, "n1");
+    expect(note?.content).toBe("server");
+    expect(note?.rev).toBe(8);
+    expect(toast.warning).toHaveBeenCalledTimes(1);
+    // Conflict path must NOT fall through to the generic reconcile refetch.
+    expect(notesApi.list).not.toHaveBeenCalled();
+  });
+
+  it("reloads to the server title and prompts on a title-update conflict (no rollback)", async () => {
+    seed(makeNote("n1", { title: "Old", rev: 2 }));
+    notesApi.updateMetadata.mockResolvedValueOnce({
+      success: false,
+      conflict: { current: makeNote("n1", { title: "Server Title", rev: 5 }) },
+    } as never);
+
+    await updateNoteTitle(WS, "n1", "Mine");
+
+    const note = selectNoteById.select(appStore.state, WS, "n1");
+    expect(note?.title).toBe("Server Title");
+    expect(note?.rev).toBe(5);
+    expect(toast.warning).toHaveBeenCalledTimes(1);
   });
 });

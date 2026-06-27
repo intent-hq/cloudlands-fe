@@ -15,7 +15,13 @@ vi.mock("$lib/client", () => ({
   },
 }));
 
+// FAKE the toast seam so the conflict prompt is asserted without svelte-sonner.
+vi.mock("$lib/components/ui/toast", () => ({
+  toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), message: vi.fn() },
+}));
+
 import { appClient } from "$lib/client";
+import { toast } from "$lib/components/ui/toast";
 import { store as appStore } from "$store/renderer/store";
 import { loadWorkspaceNotesSucceeded } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
 import { loadWorkspaceTasksSucceeded } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
@@ -139,5 +145,29 @@ describe("tasksWriteService (fake seam, real store)", () => {
     tasksApi.createPrerequisite.mockResolvedValueOnce({ success: false, error: "no" } as never);
 
     expect(await createPrerequisiteTask("dep-1", "Prereq title")).toBeUndefined();
+  });
+
+  // ---- §11.4-D: conflict outcome → reload-to-latest + prompt ----------------
+
+  it("reloads to the server status/rev and prompts on a conflict (no rollback)", async () => {
+    appStore.dispatch(
+      loadWorkspaceNotesSucceeded([WS], {
+        [WS]: [{ ...makeTaskNote("t1", "not_started"), rev: 3 }],
+      }),
+    );
+    appStore.dispatch(loadWorkspaceTasksSucceeded(WS, [makeTask("t1", "not_started")]));
+    tasksApi.updateNoteStatus.mockResolvedValueOnce({
+      success: false,
+      conflict: { current: { id: "t1", title: "Task Title", status: "complete", rev: 12 } },
+    } as never);
+
+    await updateTaskNoteStatus(WS, "t1", "in_progress");
+
+    // Authoritative server status lands in both slices; the optimistic change is
+    // NOT rolled back to the prior "not_started".
+    expect(noteStatus()).toBe("complete");
+    expect(taskStatus()).toBe("complete");
+    expect(selectNoteById.select(appStore.state, WS, "t1")?.rev).toBe(12);
+    expect(toast.warning).toHaveBeenCalledTimes(1);
   });
 });

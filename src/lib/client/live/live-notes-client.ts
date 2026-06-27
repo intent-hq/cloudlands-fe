@@ -18,12 +18,8 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
 } from "../app-client";
-import {
-  backendRequest,
-  backendSubscribe,
-  backendUnsubscribe,
-  onBackendNotification,
-} from "./backend-transport";
+import { backendRequest } from "./backend-transport";
+import { createDeltaSubscription } from "./delta-subscription";
 import {
   isEventInFamily,
   listWorkspaceIds,
@@ -184,50 +180,42 @@ export class LiveNotesClient implements NotesClient {
     if (!workspaceId) {
       return { success: false, error: `Cannot resolve workspace for note ${noteId}` };
     }
-    return runMutation(method, {
+    const result = await runMutation(method, {
       workspaceId,
       noteId,
       ...params,
       ...(expectedVersion !== undefined ? { expectedVersion } : {}),
     });
+    // On an optimistic-concurrency conflict (§11.4-D), normalize the raw
+    // authoritative `current` into a renderer `Note` so the write service can
+    // reload-to-latest (advancing the threaded rev) without touching daemon shapes.
+    const current = result.conflict?.current;
+    if (current && typeof current === "object") {
+      return {
+        ...result,
+        conflict: { current: normalizeNote(current as Record<string, unknown>, workspaceId) },
+      };
+    }
+    return result;
   }
 
   subscribe(handler: SubscriptionHandler<Note[]>): Unsubscribe {
-    let disposed = false;
-    let subscriptionId: string | undefined;
-
-    const emit = () => {
-      listWorkspaceIds()
-        .then((ids) => Promise.all(ids.map((id) => this.list(id))))
-        .then((perWorkspace) => {
-          if (!disposed) handler(perWorkspace.flat());
-        })
-        .catch(() => {
-          // Snapshot refresh failures are non-fatal for the subscription.
-        });
-    };
-
-    emit();
-
-    const off = onBackendNotification((n) => {
-      if (isEventInFamily(n.method, n.params, "note")) emit();
-    });
-
-    backendSubscribe<{ subscriptionId?: string }>({
+    return createDeltaSubscription<Note>({
       eventTypes: ["note:created", "note:updated", "note:deleted"],
-    })
-      .then((result) => {
-        subscriptionId = result?.subscriptionId;
-        if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
-      })
-      .catch(() => {
-        // Without a daemon subscription we still serve the initial snapshot.
-      });
-
-    return () => {
-      disposed = true;
-      off();
-      if (subscriptionId) void backendUnsubscribe(subscriptionId);
-    };
+      matchLegacyEvent: (method, params) => isEventInFamily(method, params, "note"),
+      fetchAll: async () => {
+        const ids = await listWorkspaceIds();
+        const perWorkspace = await Promise.all(ids.map((id) => this.list(id)));
+        return perWorkspace.flat();
+      },
+      getId: (raw) => String(raw.id ?? ""),
+      normalize: (raw) => {
+        const workspaceId = String(raw.workspaceId ?? "");
+        const note = normalizeNote(raw, workspaceId);
+        rememberNoteWorkspace(String(note.id), String(note.workspaceId));
+        return note;
+      },
+      handler,
+    });
   }
 }

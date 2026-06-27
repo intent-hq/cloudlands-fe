@@ -229,4 +229,49 @@ describe("LiveNotesClient mutations (fake transport)", () => {
       expectedVersion: 5,
     });
   });
+
+  // ---- §11.4-D: optimistic-concurrency conflict mapping --------------------
+  // A simulated daemon conflict (-32005 + data.code "conflict") must surface a
+  // structured conflict outcome carrying the NORMALIZED authoritative note —
+  // NOT collapse into the generic error string.
+
+  function rejectWith(extra: Record<string, unknown>, message = "conflict"): void {
+    mockedRequest.mockRejectedValueOnce(Object.assign(new Error(message), extra));
+  }
+
+  it("maps a -32005 conflict to a structured outcome with the normalized current note", async () => {
+    rejectWith({
+      rpcCode: -32005,
+      data: { code: "conflict", current: { id: "note-1", title: "Server", content: "srv", rev: 7 } },
+    });
+    const client = new LiveNotesClient();
+
+    const result = await client.setContent("note-1", "mine", 3);
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("conflict");
+    expect(result.conflict?.current).toMatchObject({
+      id: "note-1",
+      title: "Server",
+      content: "srv",
+      rev: 7,
+      workspaceId: "ws-1",
+    });
+  });
+
+  it("does NOT set conflict for a generic (non -32005) daemon error", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("boom"));
+    const client = new LiveNotesClient();
+
+    const result = await client.setContent("note-1", "mine", 3);
+    expect(result).toEqual({ success: false, error: "boom" });
+  });
+
+  it("does NOT set conflict when -32005 lacks data.code 'conflict'", async () => {
+    rejectWith({ rpcCode: -32005, data: { code: "SERVER_ERROR" } }, "server error");
+    const client = new LiveNotesClient();
+
+    const result = await client.updateMetadata("note-1", { title: "X" }, 1);
+    expect(result.success).toBe(false);
+    expect(result.conflict).toBeUndefined();
+  });
 });

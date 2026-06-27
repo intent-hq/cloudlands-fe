@@ -65,7 +65,7 @@ export class JsonRpcError extends Error {
   }
 
   /** Serializable shape for crossing the IPC bridge to the renderer. */
-  toErrorPayload(): { code: string; message: string; data: unknown } {
-    return { code: this.code, message: this.message, data: this.data };
+  toErrorPayload(): { code: string; message: string; data: unknown; rpcCode: number } {
+    return { code: this.code, message: this.message, data: this.data, rpcCode: this.rpcCode };
   }
 }

@@ -30,17 +30,41 @@ function mutationErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Numeric JSON-RPC code the daemon returns for an optimistic-concurrency conflict (§11.4-D). */
+export const CONFLICT_RPC_CODE = -32005;
+
+/**
+ * Detect the daemon's optimistic-concurrency conflict response EXACTLY: numeric
+ * `rpcCode === -32005` AND `data.code === "conflict"`. On a match it returns the
+ * authoritative server entity (`data.current`, which carries the advanced `rev`)
+ * wrapped for the MutationResult; every other error returns `undefined` so
+ * generic failures behave exactly as today. Duck-typed (no `instanceof`) so it
+ * works regardless of how the transport layer is mocked in tests.
+ */
+export function extractConflict(error: unknown): { current: unknown } | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  if ((error as { rpcCode?: unknown }).rpcCode !== CONFLICT_RPC_CODE) return undefined;
+  const data = (error as { data?: unknown }).data;
+  if (!data || typeof data !== "object") return undefined;
+  if ((data as { code?: unknown }).code !== "conflict") return undefined;
+  return { current: (data as { current?: unknown }).current };
+}
+
 /**
  * Issue a mutating JSON-RPC request and fold the outcome into a `MutationResult`:
  * success on resolve, `{ success: false, error }` on any transport/daemon error.
- * The seam never throws from a mutation. State convergence is left to the
- * existing subscribe→refetch loops driven by daemon events.
+ * An optimistic-concurrency conflict (§11.4-D) additionally carries the raw
+ * `conflict.current` so callers can reload-to-latest. The seam never throws from
+ * a mutation. State convergence is otherwise left to the existing
+ * subscribe→refetch loops driven by daemon events.
  */
 export async function runMutation(method: string, params?: unknown): Promise<MutationResult> {
   try {
     await backendRequest(method, params);
     return { success: true };
   } catch (error) {
+    const conflict = extractConflict(error);
+    if (conflict) return { success: false, error: mutationErrorMessage(error), conflict };
     return { success: false, error: mutationErrorMessage(error) };
   }
 }
@@ -78,6 +102,8 @@ export async function runMutationWithId(method: string, params?: unknown): Promi
     const id = extractEntityId(result);
     return id !== undefined ? { success: true, id } : { success: true };
   } catch (error) {
+    const conflict = extractConflict(error);
+    if (conflict) return { success: false, error: mutationErrorMessage(error), conflict };
     return { success: false, error: mutationErrorMessage(error) };
   }
 }

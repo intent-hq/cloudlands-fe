@@ -18,10 +18,14 @@
  * configured store, slice actions, and selectors (per src/store AGENTS.md).
  */
 import { appClient } from "$lib/client";
-import type { CreatePrerequisiteOptions } from "$lib/client";
-import type { TaskStatus } from "$shared/types";
+import type { CreatePrerequisiteOptions, MutationResult } from "$lib/client";
+import { toast } from "$lib/components/ui/toast";
+import type { TaskStatus, WorkspaceTask } from "$shared/types";
 import { store as appStore } from "$store/renderer/store";
-import { applyTaskStatusChanged as applyNoteTaskStatusChanged } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
+import {
+  applyLocalNoteUpdate,
+  applyTaskStatusChanged as applyNoteTaskStatusChanged,
+} from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
 import { applyTaskStatusChanged as applyWorkspaceTaskStatusChanged } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
 import { selectNoteById } from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
 import { selectWorkspaceTasks } from "$store/renderer/slices/workspace-tasks/workspace-tasks-selectors";
@@ -54,6 +58,33 @@ function readCurrentRev(workspaceId: string, noteId: string): number | undefined
 }
 
 /**
+ * Handle an optimistic-concurrency conflict (§11.4-D): the daemon rejected the
+ * status change because the task note changed on the server. Reload-to-latest —
+ * apply the authoritative `conflict.current` status into both slices and advance
+ * the threaded `rev` on the note — and surface a non-destructive prompt. Returns
+ * `true` when a conflict was handled so the caller skips the rollback path.
+ */
+function reconcileTaskConflict(
+  workspaceId: string,
+  noteId: string,
+  result: MutationResult,
+): boolean {
+  if (!result.conflict) return false;
+  const current = result.conflict.current as WorkspaceTask | undefined;
+  if (current && typeof current === "object") {
+    if (current.status) applyStatus(workspaceId, noteId, current.status);
+    if (typeof current.rev === "number") {
+      appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { rev: current.rev }));
+    }
+  }
+  logger.warn("Task mutation conflicted; reloaded the latest version", { noteId });
+  toast.warning("This task changed on the server", {
+    description: "Your change was not applied; reloaded the latest version.",
+  });
+  return true;
+}
+
+/**
  * Update a task note's metadata status optimistically; rolls back both slices to
  * the prior status on failure. Mirrors the removed `updateTaskStatus` saga.
  */
@@ -73,6 +104,7 @@ export async function updateTaskNoteStatus(
       ? await appClient.tasks.updateNoteStatus(noteId, status, rev)
       : await appClient.tasks.updateNoteStatus(noteId, status);
   if (!result.success) {
+    if (reconcileTaskConflict(workspaceId, noteId, result)) return;
     if (previous !== undefined) applyStatus(workspaceId, noteId, previous);
     logger.error("Failed to update task status", result.error);
   }

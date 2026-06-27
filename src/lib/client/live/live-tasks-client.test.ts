@@ -246,4 +246,47 @@ describe("LiveTasksClient mutations (fake transport)", () => {
     const params = mockedRequest.mock.calls[0][1] as Record<string, unknown>;
     expect("expectedVersion" in params).toBe(false);
   });
+
+  // ---- §11.4-D: optimistic-concurrency conflict mapping --------------------
+
+  function rejectWith(extra: Record<string, unknown>, message = "conflict"): void {
+    mockedRequest.mockRejectedValueOnce(Object.assign(new Error(message), extra));
+  }
+
+  it("maps a -32005 conflict to a structured outcome with the current task (note shape)", async () => {
+    rejectWith({
+      rpcCode: -32005,
+      data: {
+        code: "conflict",
+        current: { id: "note-1", title: "T", metadata: { task: { status: "complete" } }, rev: 9 },
+      },
+    });
+    const client = new LiveTasksClient();
+
+    const result = await client.updateNoteStatus("note-1", "in_progress", 3);
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("conflict");
+    expect(result.conflict?.current).toMatchObject({ id: "note-1", status: "complete", rev: 9 });
+  });
+
+  it("maps a -32005 conflict whose current is already a WorkspaceTask shape", async () => {
+    rejectWith({
+      rpcCode: -32005,
+      data: { code: "conflict", current: { id: "note-1", title: "T", status: "complete", rev: 4 } },
+    });
+    const client = new LiveTasksClient();
+
+    const result = await client.updateNoteStatus("note-1", "in_progress", 1);
+    expect(result.conflict?.current).toMatchObject({ id: "note-1", status: "complete", rev: 4 });
+  });
+
+  it("does NOT set conflict for a generic (non -32005) daemon error", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("boom"));
+    const client = new LiveTasksClient();
+
+    expect(await client.updateNoteStatus("note-1", "complete")).toEqual({
+      success: false,
+      error: "boom",
+    });
+  });
 });
