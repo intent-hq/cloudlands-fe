@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => {
   const sentryMiddleware = createPassthroughMiddleware();
   const gitReadMiddleware = createPassthroughMiddleware();
   const agentReadMiddleware = createPassthroughMiddleware();
+  const chatReadMiddleware = createPassthroughMiddleware();
   const agentCreationMiddleware = createPassthroughMiddleware();
   const appLayoutNavigationMiddleware = createPassthroughMiddleware();
   const fileExplorerReadMiddleware = createPassthroughMiddleware();
@@ -39,6 +40,7 @@ const mocks = vi.hoisted(() => {
     createSentryBreadcrumbsMiddleware: vi.fn(() => sentryMiddleware),
     createGitReadMiddleware: vi.fn(() => gitReadMiddleware),
     createAgentReadMiddleware: vi.fn(() => agentReadMiddleware),
+    createChatReadMiddleware: vi.fn(() => chatReadMiddleware),
     createAgentCreationMiddleware: vi.fn(() => agentCreationMiddleware),
     createAppLayoutNavigationMiddleware: vi.fn(() => appLayoutNavigationMiddleware),
     createFileExplorerReadMiddleware: vi.fn(() => fileExplorerReadMiddleware),
@@ -59,6 +61,7 @@ const mocks = vi.hoisted(() => {
     sentryMiddleware,
     gitReadMiddleware,
     agentReadMiddleware,
+    chatReadMiddleware,
     agentCreationMiddleware,
     appLayoutNavigationMiddleware,
     fileExplorerReadMiddleware,
@@ -79,6 +82,7 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("$features/git/git-read-service", () => ({ createGitReadMiddleware: mocks.createGitReadMiddleware }));
 vi.mock("$features/agent/agent-read-service", () => ({ createAgentReadMiddleware: mocks.createAgentReadMiddleware }));
+vi.mock("$features/agent/chat-read-service", () => ({ createChatReadMiddleware: mocks.createChatReadMiddleware }));
 vi.mock("$features/agent/agent-creation-service", () => ({
   createAgentCreationMiddleware: mocks.createAgentCreationMiddleware,
 }));
@@ -174,6 +178,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.chatReadMiddleware,
       mocks.agentCreationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.fileExplorerReadMiddleware,
@@ -203,6 +208,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.chatReadMiddleware,
       mocks.agentCreationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.fileExplorerReadMiddleware,
@@ -232,6 +238,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.chatReadMiddleware,
       mocks.agentCreationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.fileExplorerReadMiddleware,
@@ -262,6 +269,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.chatReadMiddleware,
       mocks.agentCreationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.fileExplorerReadMiddleware,
@@ -309,6 +317,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.chatReadMiddleware,
       mocks.agentCreationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.fileExplorerReadMiddleware,

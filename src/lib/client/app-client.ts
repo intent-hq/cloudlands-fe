@@ -11,6 +11,7 @@
  * stays aligned with the live store shape.
  */
 import type {
+  AgentMessage,
   AgentSession,
   ContentBlock,
   CreateNoteRequest,
@@ -108,6 +109,17 @@ export interface WorkspacesClient {
 export interface AgentsClient {
   list(workspaceId: string): Promise<AgentSession[]>;
   get(agentId: string): Promise<AgentSession | null>;
+  /**
+   * Full retained transcript for an agent (`agent.getConversation`, §5.5). Returns
+   * AgentMessage-granular messages (role/turn structure preserved) — the source
+   * the conversation UI hydrates from, unlike `chat.history` (flattened blocks).
+   * `limit` caps the most-recent-N returned; `truncated`/`totalMessages` report
+   * whether older history was dropped beyond the cap.
+   */
+  getConversation(
+    agentId: string,
+    limit?: number,
+  ): Promise<{ messages: AgentMessage[]; truncated: boolean; totalMessages: number }>;
   create(request: AgentCreateRequest): Promise<MutationResult>;
   send(agentId: string, message: string): Promise<MutationResult>;
   queue(agentId: string, message: string): Promise<MutationResult>;

@@ -9,7 +9,7 @@
  */
 import { AgentStatus } from "$shared/types";
 import { AgentId, WorkspaceId } from "$shared/types/branded-ids";
-import type { AgentSession } from "$shared/types";
+import type { AgentMessage, AgentSession } from "$shared/types";
 import type {
   AgentCreateRequest,
   AgentsClient,
@@ -68,6 +68,31 @@ export class LiveAgentsClient implements AgentsClient {
         : result;
     if (!raw || typeof raw !== "object") return null;
     return normalizeAgent(raw as Record<string, unknown>);
+  }
+
+  // The list/get payloads carry message COUNTS only; the real transcript comes
+  // from `agent.getConversation` (§5.5), which returns most-recent-N messages
+  // (no continuation token — older history beyond `limit` is a documented daemon
+  // gap). `messages` is returned raw; the agent-session reducer normalizes/sorts/
+  // dedups/prunes on ingest.
+  async getConversation(
+    agentId: string,
+    limit = 500,
+  ): Promise<{ messages: AgentMessage[]; truncated: boolean; totalMessages: number }> {
+    const result = await backendRequest<{
+      messages?: unknown[];
+      truncated?: boolean;
+      totalMessages?: number;
+    }>("agent.getConversation", { agentId, limit });
+    if (!result || typeof result !== "object") {
+      return { messages: [], truncated: false, totalMessages: 0 };
+    }
+    const messages = Array.isArray(result.messages) ? (result.messages as AgentMessage[]) : [];
+    return {
+      messages,
+      truncated: Boolean(result.truncated),
+      totalMessages: typeof result.totalMessages === "number" ? result.totalMessages : 0,
+    };
   }
 
   // Mutations forward to the daemon (§7.2) and fold the outcome into a
