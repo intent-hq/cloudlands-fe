@@ -26,6 +26,7 @@ import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-st
 import { createMcpManagementMiddleware } from "$features/mcp/mcp-management-service";
 import { createWorkspaceOperationsMiddleware } from "$features/workspace/workspace-operations-service";
 import { createLifecycleReadMiddleware } from "./middlewares/lifecycle-read-service";
+import { createLifecycleIpcReadMiddleware } from "./middlewares/lifecycle-ipc-read-service";
 import { createUiLayoutPersistenceMiddleware } from "./middlewares/ui-layout-persistence-service";
 import { createUnreadTrackingPersistenceMiddleware } from "./middlewares/unread-tracking-persistence-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
@@ -106,6 +107,11 @@ function buildMiddleware(): StoreMiddleware[] {
     // list rows, hover cards, panels, and refresh buttons refetch via the
     // `appClient` seam again instead of staying stale until restart.
     createLifecycleReadMiddleware(),
+    // Give the (post-saga) raw-IPC-backed Cluster C triggers real read handlers:
+    // `loadGithubRepos` refetches the repo cache via the github-auth IPC client
+    // and `fetchEditors` re-detects installed editors via the external-editors
+    // IPC client (honoring its cache guard) instead of staying stale until restart.
+    createLifecycleIpcReadMiddleware(),
     // Give the (post-saga) ui-layout persistence triggers real handlers so panel
     // sizes / group layouts / collapsed state read on mount and persist on change
     // across sessions via localStorage again.

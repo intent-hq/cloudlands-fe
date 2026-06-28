@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => {
   const mcpManagementMiddleware = createPassthroughMiddleware();
   const workspaceOperationsMiddleware = createPassthroughMiddleware();
   const lifecycleReadMiddleware = createPassthroughMiddleware();
+  const lifecycleIpcReadMiddleware = createPassthroughMiddleware();
   const uiLayoutPersistenceMiddleware = createPassthroughMiddleware();
   const unreadTrackingPersistenceMiddleware = createPassthroughMiddleware();
   const loggerMiddleware = createPassthroughMiddleware();
@@ -47,6 +48,7 @@ const mocks = vi.hoisted(() => {
     createMcpManagementMiddleware: vi.fn(() => mcpManagementMiddleware),
     createWorkspaceOperationsMiddleware: vi.fn(() => workspaceOperationsMiddleware),
     createLifecycleReadMiddleware: vi.fn(() => lifecycleReadMiddleware),
+    createLifecycleIpcReadMiddleware: vi.fn(() => lifecycleIpcReadMiddleware),
     createUiLayoutPersistenceMiddleware: vi.fn(() => uiLayoutPersistenceMiddleware),
     createUnreadTrackingPersistenceMiddleware: vi.fn(() => unreadTrackingPersistenceMiddleware),
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
@@ -66,6 +68,7 @@ const mocks = vi.hoisted(() => {
     mcpManagementMiddleware,
     workspaceOperationsMiddleware,
     lifecycleReadMiddleware,
+    lifecycleIpcReadMiddleware,
     uiLayoutPersistenceMiddleware,
     unreadTrackingPersistenceMiddleware,
     loggerMiddleware,
@@ -102,6 +105,9 @@ vi.mock("$features/workspace/workspace-operations-service", () => ({
 }));
 vi.mock("./middlewares/lifecycle-read-service", () => ({
   createLifecycleReadMiddleware: mocks.createLifecycleReadMiddleware,
+}));
+vi.mock("./middlewares/lifecycle-ipc-read-service", () => ({
+  createLifecycleIpcReadMiddleware: mocks.createLifecycleIpcReadMiddleware,
 }));
 vi.mock("./middlewares/ui-layout-persistence-service", () => ({
   createUiLayoutPersistenceMiddleware: mocks.createUiLayoutPersistenceMiddleware,
@@ -177,6 +183,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
+      mocks.lifecycleIpcReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.structuredCloneMiddleware,
@@ -205,6 +212,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
+      mocks.lifecycleIpcReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.structuredCloneMiddleware,
@@ -233,6 +241,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
+      mocks.lifecycleIpcReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.structuredCloneMiddleware,
@@ -262,6 +271,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
+      mocks.lifecycleIpcReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.structuredCloneMiddleware,
@@ -308,6 +318,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.mcpManagementMiddleware,
       mocks.workspaceOperationsMiddleware,
       mocks.lifecycleReadMiddleware,
+      mocks.lifecycleIpcReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.structuredCloneMiddleware,
