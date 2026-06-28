@@ -18,6 +18,8 @@ import { createStoreGuardMiddleware } from "../../store/utils/store-guard-middle
 import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
 import { createChatReadMiddleware } from "$features/agent/chat-read-service";
+import { createChatSendMiddleware } from "$features/agent/chat-send-service";
+import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
 import { createAppLayoutNavigationMiddleware } from "$features/layout/app-layout-navigation-service";
 import { createFileExplorerReadMiddleware } from "$features/file-explorer/file-explorer-read-service";
@@ -82,6 +84,17 @@ function buildMiddleware(): StoreMiddleware[] {
     // so opening an agent loads its full retained transcript via
     // `agents.getConversation` instead of showing an empty conversation.
     createChatReadMiddleware(),
+    // Give the (post-saga) `sendMessage` / `sendInitialMessageRequested`
+    // actions a real consumer so pressing Send in ChatPanel routes through
+    // `agent-stream-lifecycle.sendMessage()` again — producing a user message
+    // and a live-streaming assistant response — instead of being a no-op.
+    createChatSendMiddleware(),
+    // Give the (post-saga) `agentStreamUpdateReceived` action a real consumer
+    // so a streaming agent's text/tool blocks grow live in the chat panel
+    // (placeholder on first event, in-place block update on subsequent events,
+    // finalize on complete/error/timeout) instead of staying invisible until
+    // the conversation is re-fetched.
+    createAgentStreamMiddleware(),
     // Give the (post-saga) agent-creation triggers (create / create-with-
     // specialist / run-for-note / activate-initial) real handlers so Cmd/Ctrl+T,
     // the New-agent / specialist UI, the NoteMetadataBar run button, and fresh-
