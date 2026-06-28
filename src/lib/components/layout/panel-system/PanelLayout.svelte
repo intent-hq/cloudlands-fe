@@ -105,7 +105,8 @@
   let emptyLayoutLoadingTimedOut = $state(false);
 
   $effect(() => {
-    if ($restoreStatus$ !== 'empty' || $allTabs$.length > 0) {
+    const isUnresolved = $restoreStatus$ === 'empty' || $restoreStatus$ === 'idle';
+    if (!isUnresolved || $allTabs$.length > 0) {
       untrack(() => {
         emptyLayoutLoadingTimedOut = false;
       });
@@ -128,7 +129,8 @@
   const shouldRenderPanelContainer = $derived(
     $restoreStatus$ === 'restored' ||
       $restoreStatus$ === 'invalid' ||
-      ($restoreStatus$ === 'empty' && ($allTabs$.length > 0 || emptyLayoutLoadingTimedOut)),
+      (($restoreStatus$ === 'empty' || $restoreStatus$ === 'idle') &&
+        ($allTabs$.length > 0 || emptyLayoutLoadingTimedOut)),
   );
 
   // Get or create the panel layout manager for this workspace (action methods only)
