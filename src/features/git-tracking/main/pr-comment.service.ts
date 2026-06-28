@@ -1,17 +1,17 @@
 /**
  * PR Comment Service
  *
- * Handles GitHub PR review comment operations via REST and GraphQL APIs.
- * All API calls are proxied through Augment's backend API.
+ * Handles GitHub PR review comment + thread operations via the daemon
+ * `github.*` namespace (PROTOCOL §5.27) over the shared JSON-RPC client. The
+ * daemon wire is camelCase; this service translates each DTO back to the
+ * GitHub-native snake_case shapes the existing consumers expect.
  */
 
-import yaml from 'js-yaml';
-import { augmentApiClient } from '../../../shared/augment-api/augment-api.client';
+import { getBackendClient } from '../../backend/main/backend.ipc';
+import { JsonRpcError } from '../../backend/main/json-rpc-errors';
 import { Logger } from '../../../shared/logger';
 
 const logger = new Logger('PRCommentService');
-
-const GITHUB_TOOL_ID = 8;
 
 // ============================================================================
 // Types
@@ -76,48 +76,74 @@ export interface PaginatedReviewComments {
 }
 
 // ============================================================================
+// Daemon wire shapes (camelCase, PROTOCOL §5.27)
+// ============================================================================
+
+interface WireReviewComment {
+  id: number;
+  body?: string;
+  path?: string;
+  line?: number | null;
+  user?: {
+    login?: string;
+    avatarUrl?: string;
+  };
+  createdAt?: string;
+  updatedAt?: string;
+  inReplyToId?: number;
+  htmlUrl?: string;
+}
+
+interface WireReviewThreadComment {
+  id?: string;
+  body?: string;
+  author?: {
+    login?: string;
+  };
+  path?: string;
+  line?: number | null;
+  createdAt?: string;
+}
+
+interface WireReviewThread {
+  id?: string;
+  isResolved?: boolean;
+  comments?: WireReviewThreadComment[];
+}
+
+interface WireListReviewCommentsResult {
+  comments?: WireReviewComment[];
+  nextToken?: string | null;
+}
+
+interface WireReplyReviewCommentResult {
+  comment: WireReviewComment;
+}
+
+interface WireGetReviewThreadsResult {
+  threads?: WireReviewThread[];
+  nextToken?: string | null;
+}
+
+interface WireResolveThreadResult {
+  isResolved?: boolean;
+}
+
+// ============================================================================
 // Helper functions
 // ============================================================================
 
-interface RemoteToolResponse {
-  tool_output: string;
-  tool_result_message: string;
-  status: number;
-}
-
-async function callGitHubApi(toolInput: object): Promise<RemoteToolResponse> {
-  const response = await augmentApiClient.callEndpoint<RemoteToolResponse>('agents/run-remote-tool', {
-    tool_name: 'github-api',
-    tool_input_json: JSON.stringify(toolInput),
-    tool_id: GITHUB_TOOL_ID,
-  });
-
-  // Status 1 = TOOL_EXECUTION_OK
-  if (response.status !== 1) {
-    const errorMessage = response.tool_output || response.tool_result_message || 'Unknown error';
-    throw new Error(`GitHub API error: ${errorMessage}`);
+/**
+ * Whether a daemon JSON-RPC error should degrade to an empty result rather than
+ * propagate. Covers methods that are not wired yet (-32601), missing/invalid
+ * params and "not found" lookups (-32602), and a token that is absent or fails
+ * `GET /user` / other GitHub failures (-32603) per PROTOCOL §5.27 / §9.
+ */
+function isDaemonDataError(error: unknown): boolean {
+  if (error instanceof JsonRpcError) {
+    return error.rpcCode === -32601 || error.rpcCode === -32602 || error.rpcCode === -32603;
   }
-
-  return response;
-}
-
-function parseYamlResponse<T>(yamlOutput: string): T {
-  if (!yamlOutput || yamlOutput.trim() === '') {
-    throw new Error('Empty response from GitHub API');
-  }
-  return yaml.load(yamlOutput) as T;
-}
-
-function validateGraphQLResponse(parsed: Record<string, unknown>): void {
-  const errors = parsed.errors as unknown[] | undefined;
-  if (errors && errors.length > 0) {
-    const firstError = errors[0] as Record<string, unknown>;
-    const message = (firstError?.message as string) || 'Unknown GraphQL error';
-    throw new Error(`GraphQL error: ${message}`);
-  }
-  if (parsed.data === null || parsed.data === undefined) {
-    throw new Error('GraphQL response returned no data');
-  }
+  return false;
 }
 
 // ============================================================================
@@ -130,52 +156,45 @@ export class PRCommentService {
   // --------------------------------------------------------------------------
 
   /**
-   * List review comments on a pull request
+   * List review comments on a pull request (REST inline comments).
+   *
+   * Pages through `github.listReviewComments` via the opaque `nextToken`
+   * cursor (§5.5). A not-configured / not-found daemon error degrades to an
+   * empty result rather than throwing.
    */
   async listReviewComments(owner: string, repo: string, prNumber: number): Promise<PaginatedReviewComments> {
     const allComments: ReviewComment[] = [];
-    const perPage = 100;
+    const limit = 100;
     const maxPages = 10;
     let pagesFetched = 0;
-    let lastPageCount = 0;
-    let earlyBreak = false;
+    let nextToken: string | null = null;
+    let hasMore = false;
 
     logger.info('Listing review comments', { owner, repo, prNumber });
 
     try {
-      for (let page = 1; page <= maxPages; page++) {
-        const path = `/repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=${perPage}&page=${page}&sort=created&direction=desc`;
-
-        const toolInput = {
-          summary: `List review comments for PR #${prNumber} in ${owner}/${repo} (page ${page})`,
-          method: 'GET',
-          path,
-          details: true, // Required to get all fields including in_reply_to_id for thread grouping
-        };
-
-        const response = await callGitHubApi(toolInput);
-        const parsed = parseYamlResponse<unknown[]>(response.tool_output);
-
-        if (!Array.isArray(parsed)) {
-          logger.warn('Unexpected non-array response from review comments API', { owner, repo, prNumber, page });
-          earlyBreak = true;
-          break;
+      for (let page = 0; page < maxPages; page++) {
+        const requestParams: Record<string, unknown> = { owner, repo, number: prNumber, limit };
+        if (nextToken) {
+          requestParams.nextToken = nextToken;
         }
+        const result = await getBackendClient().request<WireListReviewCommentsResult>(
+          'github.listReviewComments',
+          requestParams,
+        );
 
         pagesFetched++;
-        lastPageCount = parsed.length;
-
-        const comments = parsed.map((item: unknown) => this.mapToReviewComment(item as Record<string, unknown>));
+        const comments = (result?.comments ?? []).map((item) => this.mapWireToReviewComment(item));
         allComments.push(...comments);
 
-        // Stop if we got fewer than per_page results (last page)
-        if (parsed.length < perPage) {
+        nextToken = result?.nextToken ?? null;
+        if (!nextToken) {
           break;
         }
+        if (page === maxPages - 1) {
+          hasMore = true;
+        }
       }
-
-      // hasMore is true if we hit maxPages AND the last page was full, OR if we broke early due to an error
-      const hasMore = (pagesFetched >= maxPages && lastPageCount >= perPage) || earlyBreak;
 
       if (hasMore) {
         logger.warn('Review comments pagination hit maxPages cap, results may be truncated', {
@@ -195,13 +214,22 @@ export class PRCommentService {
         hasMore,
       };
     } catch (error) {
+      if (isDaemonDataError(error)) {
+        logger.warn('listReviewComments degraded to empty (daemon not configured / not found)', {
+          owner,
+          repo,
+          prNumber,
+        });
+        return { comments: [], totalFetched: 0, pagesFetched, hasMore: false };
+      }
       logger.error('Failed to list review comments', error as Error);
       throw error;
     }
   }
 
   /**
-   * Reply to an existing review comment
+   * Reply to an existing review comment via `github.replyReviewComment`
+   * (the daemon sets `inReplyToId = commentId`).
    */
   async replyToReviewComment(
     owner: string,
@@ -210,24 +238,14 @@ export class PRCommentService {
     commentId: number,
     body: string,
   ): Promise<ReviewComment> {
-    const path = `/repos/${owner}/${repo}/pulls/${prNumber}/comments`;
-
-    const toolInput = {
-      summary: `Reply to review comment #${commentId} on PR #${prNumber}`,
-      method: 'POST',
-      path,
-      data: {
-        body,
-        in_reply_to: commentId,
-      },
-    };
-
     logger.info('Replying to review comment', { owner, repo, prNumber, commentId });
 
     try {
-      const response = await callGitHubApi(toolInput);
-      const parsed = parseYamlResponse<Record<string, unknown>>(response.tool_output);
-      return this.mapToReviewComment(parsed);
+      const result = await getBackendClient().request<WireReplyReviewCommentResult>(
+        'github.replyReviewComment',
+        { owner, repo, number: prNumber, commentId, body },
+      );
+      return this.mapWireToReviewComment(result.comment);
     } catch (error) {
       logger.error('Failed to reply to review comment', error as Error);
       throw error;
@@ -235,68 +253,45 @@ export class PRCommentService {
   }
 
   /**
-   * List issue/PR comments (general comments, not review comments)
+   * List issue/PR conversation comments.
+   *
+   * GAP: the `github.*` namespace (PROTOCOL §5.27) has no wire method for
+   * conversation-level issue comments (the workspace-scoped `pr.listComments`
+   * in §5.7 needs workspace context unavailable at this explicit-addressing
+   * call site). Degrades gracefully to an empty list. See BE hand-off note
+   * d1df7466.
    */
   async listIssueComments(
     owner: string,
     repo: string,
     issueNumber: number,
-    count = 100,
+    _count = 100,
   ): Promise<IssueComment[]> {
-    const clampedCount = Math.min(Math.max(count, 1), 100);
-    const path = `/repos/${owner}/${repo}/issues/${issueNumber}/comments?per_page=${clampedCount}&sort=created&direction=desc`;
-
-    const toolInput = {
-      summary: `List issue comments for #${issueNumber} in ${owner}/${repo}`,
-      method: 'GET',
-      path,
-    };
-
-    logger.info('Listing issue comments', { owner, repo, issueNumber, count });
-
-    try {
-      const response = await callGitHubApi(toolInput);
-      const parsed = parseYamlResponse<unknown[]>(response.tool_output);
-
-      if (!Array.isArray(parsed)) {
-        return [];
-      }
-
-      return parsed.map((item: unknown) => this.mapToIssueComment(item as Record<string, unknown>));
-    } catch (error) {
-      logger.error('Failed to list issue comments', error as Error);
-      throw error;
-    }
+    logger.warn('listIssueComments has no github.* daemon method; returning empty', {
+      owner,
+      repo,
+      issueNumber,
+    });
+    return [];
   }
 
   /**
-   * Post a comment on an issue or PR
+   * Post a comment on an issue or PR.
+   *
+   * GAP: no `github.*` wire method exists for posting conversation-level
+   * comments (PROTOCOL §5.27). Surfaces a clear not-available error rather than
+   * fabricating a method. See BE hand-off note d1df7466.
    */
   async postIssueComment(
     owner: string,
     repo: string,
     issueNumber: number,
-    body: string,
+    _body: string,
   ): Promise<IssueComment> {
-    const path = `/repos/${owner}/${repo}/issues/${issueNumber}/comments`;
-
-    const toolInput = {
-      summary: `Post comment on issue/PR #${issueNumber} in ${owner}/${repo}`,
-      method: 'POST',
-      path,
-      data: { body },
-    };
-
-    logger.info('Posting issue comment', { owner, repo, issueNumber });
-
-    try {
-      const response = await callGitHubApi(toolInput);
-      const parsed = parseYamlResponse<Record<string, unknown>>(response.tool_output);
-      return this.mapToIssueComment(parsed);
-    } catch (error) {
-      logger.error('Failed to post issue comment', error as Error);
-      throw error;
-    }
+    logger.warn('postIssueComment has no github.* daemon method', { owner, repo, issueNumber });
+    throw new Error(
+      'Posting issue comments is not available via the daemon github.* namespace yet (no wire method; see BE hand-off note d1df7466).',
+    );
   }
 
   // --------------------------------------------------------------------------
@@ -304,179 +299,91 @@ export class PRCommentService {
   // --------------------------------------------------------------------------
 
   /**
-   * Get review threads for a pull request using GraphQL
+   * Get review threads for a pull request via `github.getReviewThreads`
+   * (GraphQL `pullRequest.reviewThreads`). Pages through the opaque `nextToken`
+   * cursor (§5.5). The daemon does not surface a total count, so `totalCount`
+   * is null. A not-configured / not-found error degrades to empty.
    */
   async getReviewThreads(owner: string, repo: string, prNumber: number): Promise<PaginatedReviewThreads> {
-    const query = `
-      query GetReviewThreads($owner: String!, $repo: String!, $prNumber: Int!, $cursor: String) {
-        repository(owner: $owner, name: $repo) {
-          pullRequest(number: $prNumber) {
-            reviewThreads(first: 100, after: $cursor) {
-              totalCount
-              pageInfo {
-                hasNextPage
-                endCursor
-              }
-              nodes {
-                id
-                isResolved
-                comments(first: 100) {
-                  nodes {
-                    id
-                    body
-                    author {
-                      login
-                    }
-                    path
-                    line
-                    createdAt
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    `;
-
     logger.info('Getting review threads', { owner, repo, prNumber });
 
     const allThreads: ReviewThread[] = [];
-    const maxGraphQLPages = 20;
-    let cursor: string | null = null;
-    let previousCursor: string | null = null;
-    let hasNextPage = true;
+    const limit = 100;
+    const maxPages = 20;
     let pagesFetched = 0;
-    let totalCount: number | null = null;
+    let nextToken: string | null = null;
+    let hasMore = false;
 
     try {
-      while (hasNextPage && pagesFetched < maxGraphQLPages) {
-        const toolInput = {
-          summary: `Get review threads for PR #${prNumber} in ${owner}/${repo}${cursor ? ' (paginated)' : ''}`,
-          method: 'POST',
-          path: '/graphql',
-          data: {
-            query,
-            variables: { owner, repo, prNumber, cursor },
-          },
-        };
-
-        const response = await callGitHubApi(toolInput);
-        const parsed = parseYamlResponse<Record<string, unknown>>(response.tool_output);
-        validateGraphQLResponse(parsed);
+      for (let page = 0; page < maxPages; page++) {
+        const requestParams: Record<string, unknown> = { owner, repo, number: prNumber, limit };
+        if (nextToken) {
+          requestParams.nextToken = nextToken;
+        }
+        const result = await getBackendClient().request<WireGetReviewThreadsResult>(
+          'github.getReviewThreads',
+          requestParams,
+        );
 
         pagesFetched++;
+        const threads = (result?.threads ?? [])
+          .filter((node): node is WireReviewThread => node != null && typeof node === 'object')
+          .map((node) => this.mapWireToReviewThread(node));
+        allThreads.push(...threads);
 
-        // Navigate the GraphQL response structure
-        const data = parsed.data as Record<string, unknown> | undefined;
-        const repository = data?.repository as Record<string, unknown> | undefined;
-        const pullRequest = repository?.pullRequest as Record<string, unknown> | undefined;
-        const reviewThreads = pullRequest?.reviewThreads as Record<string, unknown> | undefined;
-        const pageInfo = reviewThreads?.pageInfo as Record<string, unknown> | undefined;
-        const nodes = reviewThreads?.nodes as unknown[] | undefined;
-
-        // Extract totalCount from the first page response
-        if (pagesFetched === 1 && reviewThreads?.totalCount !== undefined) {
-          totalCount = reviewThreads.totalCount as number;
-        }
-
-        if (nodes && Array.isArray(nodes)) {
-          const threads = nodes
-            .filter((node): node is Record<string, unknown> => node != null && typeof node === 'object')
-            .map((node) => this.mapToReviewThread(node));
-          allThreads.push(...threads);
-        }
-
-        // Check pagination
-        hasNextPage = (pageInfo?.hasNextPage as boolean) ?? false;
-        cursor = (pageInfo?.endCursor as string) ?? null;
-
-        // Safety: stop if cursor did not advance (prevents infinite loop on bad response)
-        if (cursor === previousCursor) {
-          logger.warn('GraphQL pagination: cursor did not advance, stopping', {
-            owner,
-            repo,
-            prNumber,
-            pagesFetched,
-            cursor,
-          });
+        nextToken = result?.nextToken ?? null;
+        if (!nextToken) {
           break;
         }
-        previousCursor = cursor;
-
-        // Safety: stop if no cursor even though hasNextPage is true
-        if (hasNextPage && !cursor) {
-          logger.warn('GraphQL pagination: hasNextPage is true but endCursor is missing, stopping pagination', {
-            owner,
-            repo,
-            prNumber,
-            pagesFetched,
-          });
-          break;
+        if (page === maxPages - 1) {
+          hasMore = true;
         }
       }
 
-      // Log warning if we hit the max pages cap while more data exists
-      if (hasNextPage) {
-        logger.warn('GraphQL pagination hit maxPages cap, results may be truncated', {
+      if (hasMore) {
+        logger.warn('Review threads pagination hit maxPages cap, results may be truncated', {
           owner,
           repo,
           prNumber,
           pagesFetched,
-          maxGraphQLPages,
+          maxPages,
           totalThreadsFetched: allThreads.length,
         });
       }
 
       return {
         threads: allThreads,
-        totalCount,
+        totalCount: null,
         pagesFetched,
-        hasMore: hasNextPage, // true if we stopped before fetching all pages (cap hit, missing cursor, etc.)
+        hasMore,
       };
     } catch (error) {
+      if (isDaemonDataError(error)) {
+        logger.warn('getReviewThreads degraded to empty (daemon not configured / not found)', {
+          owner,
+          repo,
+          prNumber,
+        });
+        return { threads: [], totalCount: null, pagesFetched, hasMore: false };
+      }
       logger.error('Failed to get review threads', error as Error);
       throw error;
     }
   }
 
   /**
-   * Resolve a review thread using GraphQL
+   * Resolve a review thread via `github.resolveThread`
+   * (GraphQL `resolveReviewThread`).
    */
   async resolveThread(threadId: string): Promise<boolean> {
-    const mutation = `
-      mutation ResolveThread($threadId: ID!) {
-        resolveReviewThread(input: { threadId: $threadId }) {
-          thread {
-            id
-            isResolved
-          }
-        }
-      }
-    `;
-
-    const toolInput = {
-      summary: `Resolve review thread ${threadId}`,
-      method: 'POST',
-      path: '/graphql',
-      data: {
-        query: mutation,
-        variables: { threadId },
-      },
-    };
-
     logger.info('Resolving review thread', { threadId });
 
     try {
-      const response = await callGitHubApi(toolInput);
-      const parsed = parseYamlResponse<Record<string, unknown>>(response.tool_output);
-      validateGraphQLResponse(parsed);
-
-      const data = parsed.data as Record<string, unknown> | undefined;
-      const resolveReviewThread = data?.resolveReviewThread as Record<string, unknown> | undefined;
-      const thread = resolveReviewThread?.thread as Record<string, unknown> | undefined;
-
-      return thread?.isResolved === true;
+      const result = await getBackendClient().request<WireResolveThreadResult>(
+        'github.resolveThread',
+        { threadId },
+      );
+      return result?.isResolved === true;
     } catch (error) {
       logger.error('Failed to resolve review thread', error as Error);
       throw error;
@@ -484,42 +391,18 @@ export class PRCommentService {
   }
 
   /**
-   * Unresolve a review thread using GraphQL
+   * Unresolve a review thread via `github.unresolveThread`
+   * (GraphQL `unresolveReviewThread`).
    */
   async unresolveThread(threadId: string): Promise<boolean> {
-    const mutation = `
-      mutation UnresolveThread($threadId: ID!) {
-        unresolveReviewThread(input: { threadId: $threadId }) {
-          thread {
-            id
-            isResolved
-          }
-        }
-      }
-    `;
-
-    const toolInput = {
-      summary: `Unresolve review thread ${threadId}`,
-      method: 'POST',
-      path: '/graphql',
-      data: {
-        query: mutation,
-        variables: { threadId },
-      },
-    };
-
     logger.info('Unresolving review thread', { threadId });
 
     try {
-      const response = await callGitHubApi(toolInput);
-      const parsed = parseYamlResponse<Record<string, unknown>>(response.tool_output);
-      validateGraphQLResponse(parsed);
-
-      const data = parsed.data as Record<string, unknown> | undefined;
-      const unresolveReviewThread = data?.unresolveReviewThread as Record<string, unknown> | undefined;
-      const thread = unresolveReviewThread?.thread as Record<string, unknown> | undefined;
-
-      return thread?.isResolved === false;
+      const result = await getBackendClient().request<WireResolveThreadResult>(
+        'github.unresolveThread',
+        { threadId },
+      );
+      return result?.isResolved === false;
     } catch (error) {
       logger.error('Failed to unresolve review thread', error as Error);
       throw error;
@@ -530,62 +413,44 @@ export class PRCommentService {
   // Private Helper Methods
   // --------------------------------------------------------------------------
 
-  private mapToReviewComment(item: Record<string, unknown>): ReviewComment {
-    const user = (item.user as Record<string, unknown>) || {};
+  private mapWireToReviewComment(item: WireReviewComment): ReviewComment {
+    const user = item.user ?? {};
     return {
-      id: item.id as number,
-      body: (item.body as string) || '',
-      path: (item.path as string) || '',
-      line: (item.line as number) ?? null,
+      id: item.id,
+      body: item.body || '',
+      path: item.path || '',
+      line: item.line ?? null,
       user: {
-        login: (user.login as string) || 'unknown',
-        avatar_url: user.avatar_url as string | undefined,
+        login: user.login || 'unknown',
+        avatar_url: user.avatarUrl,
       },
-      created_at: this.normalizeDate(item.created_at),
-      updated_at: this.normalizeDate(item.updated_at),
-      in_reply_to_id: item.in_reply_to_id as number | undefined,
-      html_url: (item.html_url as string) || '',
+      created_at: this.normalizeDate(item.createdAt),
+      updated_at: this.normalizeDate(item.updatedAt),
+      in_reply_to_id: item.inReplyToId,
+      html_url: item.htmlUrl || '',
     };
   }
 
-  private mapToIssueComment(item: Record<string, unknown>): IssueComment {
-    const user = (item.user as Record<string, unknown>) || {};
+  private mapWireToReviewThread(node: WireReviewThread): ReviewThread {
+    const commentNodes = node.comments ?? [];
     return {
-      id: item.id as number,
-      body: (item.body as string) || '',
-      user: {
-        login: (user.login as string) || 'unknown',
-        avatar_url: user.avatar_url as string | undefined,
-      },
-      created_at: this.normalizeDate(item.created_at),
-      updated_at: this.normalizeDate(item.updated_at),
-      html_url: (item.html_url as string) || '',
-    };
-  }
-
-  private mapToReviewThread(node: Record<string, unknown>): ReviewThread {
-    const comments = node.comments as Record<string, unknown> | undefined;
-    const commentNodes = (comments?.nodes as unknown[]) || [];
-
-    return {
-      id: (node.id as string) || '',
-      isResolved: (node.isResolved as boolean) || false,
+      id: node.id || '',
+      isResolved: node.isResolved || false,
       comments: commentNodes
-        .filter((comment): comment is Record<string, unknown> => comment != null && typeof comment === 'object')
+        .filter((comment): comment is WireReviewThreadComment => comment != null && typeof comment === 'object')
         .map((comment) => {
-        const c = comment;
-        const author = (c.author as Record<string, unknown>) || {};
-        return {
-          id: (c.id as string) || '',
-          body: (c.body as string) || '',
-          author: {
-            login: (author.login as string) || 'unknown',
-          },
-          path: (c.path as string) || '',
-          line: (c.line as number) ?? null,
-          createdAt: this.normalizeDate(c.createdAt),
-        };
-      }),
+          const author = comment.author ?? {};
+          return {
+            id: comment.id || '',
+            body: comment.body || '',
+            author: {
+              login: author.login || 'unknown',
+            },
+            path: comment.path || '',
+            line: comment.line ?? null,
+            createdAt: this.normalizeDate(comment.createdAt),
+          };
+        }),
     };
   }
 

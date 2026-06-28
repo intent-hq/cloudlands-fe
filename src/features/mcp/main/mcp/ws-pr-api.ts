@@ -1,7 +1,5 @@
-import yaml from 'js-yaml';
-
 import { Logger } from '../../../../shared/logger';
-import { augmentApiClient } from '../../../../shared/augment-api/augment-api.client';
+import { getBackendClient } from '../../../backend/main/backend.ipc';
 import { githubService } from '../../../git-tracking/main/github.service';
 import {
   prCommentService,
@@ -20,7 +18,6 @@ export interface PRContext {
   prNumber: number;
 }
 
-const GITHUB_TOOL_ID = 8;
 const NO_ACTIVE_PR_ERROR = 'No active PR';
 const SAFETY_PADDING_SECONDS = 10;
 
@@ -176,36 +173,13 @@ function buildStatusSummary(pr: PullRequest): string {
 }
 
 async function fetchCheckRuns(owner: string, repo: string, commitSha: string): Promise<CheckRunStatus[]> {
-  const response = await augmentApiClient.callEndpoint<{
-    tool_output: string;
-    tool_result_message: string;
-    status: number;
-  }>('agents/run-remote-tool', {
-    tool_name: 'github-api',
-    tool_input_json: JSON.stringify({
-      path: `/repos/${owner}/${repo}/commits/${commitSha}/check-runs`,
-      method: 'GET',
-    }),
-    tool_id: GITHUB_TOOL_ID,
-  });
-
-  if (response.status !== 1) {
-    throw new Error(response.tool_output || response.tool_result_message || 'Unknown error');
-  }
-
-  if (!response.tool_output || response.tool_output.trim() === '') {
-    return [];
-  }
-
-  const parsed = yaml.load(response.tool_output) as {
-    check_runs?: Array<{ name: string; status: string; conclusion: string | null }>;
-  };
-
-  return (parsed.check_runs ?? []).map((checkRun) => ({
-    name: checkRun.name,
-    status: checkRun.status,
-    conclusion: checkRun.conclusion,
-  }));
+  // GAP: the daemon `github.*` namespace (PROTOCOL §5.27) has no per-commit
+  // check-runs method — that surface is workspace-scoped on `pr.listCheckRuns`
+  // (§5.7), which is unavailable at this explicit owner/repo call site. Until a
+  // github.* check-runs method lands, report no checks (see BE hand-off note
+  // d1df7466), matching githubService.getCheckRuns.
+  logger.debug('Check runs unavailable via daemon github.*; returning empty', { owner, repo, commitSha });
+  return [];
 }
 
 async function captureSnapshot(prContext: PRContext): Promise<PRSnapshot | null> {
@@ -395,18 +369,21 @@ export function buildWsPrApi(prContext?: PRContext) {
           throw new Error(`Could not find PR #${activePr.prNumber}`);
         }
 
-        const result = await augmentApiClient.updatePullRequestBranch(
-          activePr.owner,
-          activePr.repo,
-          activePr.prNumber,
-          pr.headSha || undefined,
+        const result = await getBackendClient().request<{ message?: string; url?: string | null }>(
+          'github.pulls.updateBranch',
+          {
+            owner: activePr.owner,
+            repo: activePr.repo,
+            number: activePr.prNumber,
+            expectedHeadSha: pr.headSha || undefined,
+          },
         );
 
         return {
           method: 'merge' as const,
           alreadyUpToDate: false,
-          message: result.message,
-          url: result.url ?? null,
+          message: result?.message ?? 'PR branch updated.',
+          url: result?.url ?? null,
         };
       } catch (error) {
         const errorMessage = (error as Error).message;
