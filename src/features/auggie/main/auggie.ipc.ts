@@ -39,6 +39,8 @@ import {
   saveAuggiePath,
 } from './auggie-path';
 import { createProviderModelCache } from '../../../main/utils/provider-model-cache';
+import { getBackendClient } from '../../backend/main/backend.ipc';
+import { JsonRpcError } from '../../backend/main/json-rpc-errors';
 
 // Re-export path helpers for backwards compatibility with existing consumers.
 export { findAuggiePathAsync, getEnhancedPath };
@@ -1909,15 +1911,28 @@ export function setupAuggieIPC() {
     }
   });
 
-  // Get user info from Augment API (email, tenant, etc.)
+  // Get the current user, derived from the daemon's GitHub identity.
+  // The login is surfaced as `id` for the existing analytics consumer.
+  // email/tenantId/tenantName have no GitHub equivalent and are null (see
+  // BE hand-off note d1df7466).
   ipcMain.handle(AUGGIE_CHANNELS.GET_USER_INFO, async () => {
     try {
-      const { augmentApiClient } = await import('../../../shared/augment-api/augment-api.client');
-      const userInfo = await augmentApiClient.getUserInfo();
-      if (userInfo) {
+      const response = await getBackendClient().request<{
+        user?: { login?: string; avatarUrl?: string; htmlUrl?: string } | null;
+      }>('github.getUser');
+      const user = response?.user;
+      if (user?.login) {
         return {
           success: true,
-          data: userInfo,
+          data: {
+            id: user.login,
+            email: null,
+            tenantId: null,
+            tenantName: null,
+            login: user.login,
+            avatarUrl: user.avatarUrl ?? null,
+            htmlUrl: user.htmlUrl ?? null,
+          },
         };
       }
       return {
@@ -1925,6 +1940,13 @@ export function setupAuggieIPC() {
         error: 'No user info available',
       };
     } catch (error) {
+      // Daemon not configured / method missing: treat as no user, not a crash.
+      if (error instanceof JsonRpcError && error.rpcCode === -32601) {
+        return {
+          success: false,
+          error: 'No user info available',
+        };
+      }
       logger.error('Error getting user info', error instanceof Error ? error : undefined);
       return {
         success: false,
