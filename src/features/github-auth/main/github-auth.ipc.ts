@@ -1,11 +1,37 @@
 import { ipcMain } from 'electron';
 import { Logger } from '../../../shared/logger';
-import { augmentApiClient } from '../../../shared/augment-api/augment-api.client';
+import type { GithubRepo } from '../../../shared/augment-api/augment-api.client';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 import { GITHUB_AUTH_CHANNELS } from '../constants';
 import { githubAuthService } from './github-auth.service';
 import { refreshGitHubAuthStatus } from '../../agent/main/specialists.service';
 
 const logger = new Logger('GitHubAuthIPC');
+
+/**
+ * The daemon `github.*` wire returns GitHub repos in camelCase, whereas the
+ * renderer + saga consumers expect the GitHub-native snake_case `GithubRepo`
+ * shape. Translate at this boundary so the UI stays byte-for-byte unchanged.
+ */
+interface DaemonGithubRepo {
+  owner: string;
+  name: string;
+  htmlUrl?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  defaultBranch?: string;
+}
+
+function toConsumerRepo(repo: DaemonGithubRepo): GithubRepo {
+  return {
+    owner: repo.owner,
+    name: repo.name,
+    html_url: repo.htmlUrl,
+    created_at: repo.createdAt,
+    updated_at: repo.updatedAt,
+    default_branch: repo.defaultBranch,
+  };
+}
 
 export function setupGitHubAuthIPC(): void {
   logger.info('Setting up GitHub Auth IPC handlers');
@@ -65,13 +91,30 @@ export function setupGitHubAuthIPC(): void {
   // Get GitHub status from Augment API
   ipcMain.handle(GITHUB_AUTH_CHANNELS.GET_STATUS, async () => githubAuthService.getGitHubStatus(true));
 
-  // List GitHub repositories for the authenticated user
+  // List GitHub repositories for the authenticated user.
+  // The daemon paginates via an opaque `nextToken` cursor (not numeric pages),
+  // so we walk the cursor and accumulate the full list to preserve the prior
+  // "fetch all" behavior the renderer relies on. The legacy `page` arg is
+  // accepted for channel compatibility but no longer drives pagination.
   ipcMain.handle(GITHUB_AUTH_CHANNELS.LIST_REPOS, async (_event, { page }: { page?: number }) => {
     try {
       logger.info('IPC: Listing GitHub repos', { page });
-      const repos = await augmentApiClient.listGitHubRepos(page);
-      logger.info('IPC: Got GitHub repos', { count: repos.length });
-      return { success: true, data: repos };
+      const allRepos: GithubRepo[] = [];
+      let nextToken: string | undefined;
+      const maxPages = 20; // Safety limit to avoid infinite cursor loops
+      for (let i = 0; i < maxPages; i++) {
+        const response = await getBackendClient().request<{
+          repos?: DaemonGithubRepo[];
+          nextToken?: string;
+        }>('github.repos.list', { limit: 100, nextToken });
+        if (response?.repos?.length) {
+          allRepos.push(...response.repos.map(toConsumerRepo));
+        }
+        nextToken = response?.nextToken;
+        if (!nextToken) break;
+      }
+      logger.info('IPC: Got GitHub repos', { count: allRepos.length });
+      return { success: true, data: allRepos };
     } catch (error) {
       logger.error('IPC: Failed to list GitHub repos', error as Error, {
         errorMessage: (error as Error).message,
@@ -81,13 +124,17 @@ export function setupGitHubAuthIPC(): void {
     }
   });
 
-  // Global GitHub repo search (hits /search/repositories via remote tool)
+  // Global GitHub repo search via the daemon `github.repos.search` method.
   ipcMain.handle(
     GITHUB_AUTH_CHANNELS.SEARCH_REPOS,
     async (_event, { query }: { query: string }) => {
       try {
         logger.info('IPC: Searching GitHub repos', { query });
-        const repos = await augmentApiClient.searchGitHubRepos(query);
+        const response = await getBackendClient().request<{
+          repos?: DaemonGithubRepo[];
+          nextToken?: string;
+        }>('github.repos.search', { query, limit: 20 });
+        const repos = (response?.repos ?? []).map(toConsumerRepo);
         logger.info('IPC: Got search results', { count: repos.length });
         return { success: true, data: repos };
       } catch (error) {

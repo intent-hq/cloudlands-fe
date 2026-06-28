@@ -1,10 +1,10 @@
 import { shell } from 'electron';
 import {
-  augmentApiClient,
   isAugmentAuthenticated,
   type GitHubAuthStatus,
 } from '../../../shared/augment-api/augment-api.client';
 import { Logger } from '../../../shared/logger';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 import { getDefaultProviderConfig } from '$shared/config/provider-config';
 import type { GitHubAuthState, GitHubUser, StartAuthResult } from '../types';
 
@@ -65,24 +65,20 @@ export class GitHubAuthService {
       return this.cachedStatus;
     }
 
-    // Refresh the session in case it was updated
-    augmentApiClient.refreshSession();
-
-    if (!augmentApiClient.hasSession()) {
-      return {
-        isConfigured: false,
-        oauthUrl: '',
-        configuredButNeedsUpdate: false,
-        updatedScopes: '',
-      };
-    }
-
     try {
-      const status = await augmentApiClient.checkGitHubAuthStatus();
+      // The daemon returns the GitHubAuthStatus shape directly (camelCase parity).
+      // PAT-from-env means oauthUrl is "" and hasSession is derived from isConfigured.
+      const raw = await getBackendClient().request<Partial<GitHubAuthStatus>>('github.authStatus');
+      const status: GitHubAuthStatus = {
+        isConfigured: raw?.isConfigured ?? false,
+        oauthUrl: raw?.oauthUrl ?? '',
+        configuredButNeedsUpdate: raw?.configuredButNeedsUpdate ?? false,
+        updatedScopes: raw?.updatedScopes ?? '',
+      };
       this.cachedStatus = status;
       this.statusCacheTime = Date.now();
 
-      logger.debug('GitHub auth status from Augment API', {
+      logger.debug('GitHub auth status from daemon', {
         isConfigured: status.isConfigured,
         hasOauthUrl: !!status.oauthUrl,
         configuredButNeedsUpdate: status.configuredButNeedsUpdate,
@@ -90,7 +86,7 @@ export class GitHubAuthService {
 
       return status;
     } catch (error) {
-      logger.error('Failed to get GitHub status from Augment API', error as Error);
+      logger.error('Failed to get GitHub status from daemon', error as Error);
       return {
         isConfigured: false,
         oauthUrl: '',
@@ -203,25 +199,35 @@ export class GitHubAuthService {
   }
 
   /**
-   * Revoke GitHub access through Augment API
-   * This actually disconnects the GitHub OAuth integration
+   * Revoke GitHub access through the daemon.
+   *
+   * With PAT-from-env auth, `github.revoke` is inert and returns
+   * `{ ok: false, guidance }`. We preserve the existing semantics (the UI
+   * button stays but does nothing) by always returning the daemon's `ok` flag.
    */
   async revokeAccess(): Promise<boolean> {
     logger.info('Revoking GitHub access');
-    const success = await augmentApiClient.revokeGitHubAccess();
 
-    // Clear local cache regardless of API result
+    // Clear local cache regardless of daemon result
     this.cachedStatus = null;
     this.cachedUser = null;
     this.statusCacheTime = 0;
 
-    if (success) {
-      logger.info('GitHub access revoked successfully');
-    } else {
-      logger.warn('Failed to revoke GitHub access via API');
+    try {
+      const result = await getBackendClient().request<{ ok?: boolean; guidance?: string }>(
+        'github.revoke',
+      );
+      const success = result?.ok ?? false;
+      if (success) {
+        logger.info('GitHub access revoked successfully');
+      } else {
+        logger.warn('GitHub revoke is inert', { guidance: result?.guidance });
+      }
+      return success;
+    } catch (error) {
+      logger.warn('Failed to revoke GitHub access via daemon', error as Error);
+      return false;
     }
-
-    return success;
   }
 
   /**
