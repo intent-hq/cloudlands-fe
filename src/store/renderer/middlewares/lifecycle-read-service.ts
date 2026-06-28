@@ -19,16 +19,18 @@
  * selectors — importing them would evaluate `store.createSelector` while the
  * store module is still mid-initialization through the middleware chain).
  *
- * Scope note — actions deliberately NOT wired here (documented, left alone):
- *   `workspaceMounted` is a lifecycle fan-out with no single seam read; its
- *   sub-refreshes are covered by the individual panel triggers below. The
- *   `initContextForWorkspace`, `fetchEditors`, `loadKnownRepos`, and
- *   `loadGithubRepos` triggers are not AppClient-seam backed (localStorage / raw
- *   IPC) and need IPC-client restoration instead. `refreshAcceptChangesStatus`
- *   has a direct IPC companion (`AcceptChangesClient.getStatus`) the panels
- *   already call. `refreshRequested` (changes) reads backend-gated endpoints
- *   (`git.trackedChanges`/`git.commits`) that return empty in the live client,
- *   so wiring it would clear rather than refresh tracked changes.
+ * Scope note — triggers handled elsewhere or deliberately deferred:
+ *   The `initContextForWorkspace`, `fetchEditors`, `loadKnownRepos`,
+ *   `loadGithubRepos`, `refreshAcceptChangesStatus`, and the `workspaceMounted`
+ *   fan-out are NOT AppClient-seam backed (localStorage / raw IPC), so they live
+ *   in the companion `lifecycle-ipc-read-service` instead. `workspaceMounted`
+ *   re-dispatches the per-workspace triggers a fresh mount needs (tasks/events/
+ *   accept-changes), reusing the same handlers — no fetch logic of its own.
+ *
+ *   The ONLY remaining deferral is `refreshRequested` (changes): it reads
+ *   backend-gated endpoints (`git.trackedChanges`/`git.commits`) that return
+ *   empty in the live client, so wiring it would CLEAR rather than refresh
+ *   tracked changes. Restore it once those endpoints return real data (BE gap).
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";

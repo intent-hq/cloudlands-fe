@@ -13,7 +13,16 @@
  *     context key, hydrating items via `hydrateContextItems`. Guarded so a given
  *     workspace is hydrated at most once (avoids clobbering in-memory edits).
  *   `loadKnownRepos`  → `invoke(GET_RECENT_REPOSITORIES)` (raw IPC), stored via
- *     `setRepos`; best-effort, falling back to an empty list on any failure.
+ *     `setRepos`; best-effort, leaving the prior known-repos list intact on any
+ *     failure (mirrors the `loadGithubRepos` keep-prior-on-error behavior).
+ *   `refreshAcceptChangesStatus` → `AcceptChangesClient.getStatus()` (raw IPC),
+ *     merging the trunk-relative fields into the workspace's `postMergeState` via
+ *     `setPostMergeState` (mirrors the old accept-changes-status saga).
+ *   `workspaceMounted` → FAN-OUT only: re-dispatches the per-workspace refresh
+ *     triggers a fresh mount needs (`ensureWorkspaceTasksLoaded`,
+ *     `loadEventsRequested`, `refreshAcceptChangesStatus`), reusing their existing
+ *     handlers here and in the AppClient-seam lifecycle read service — no
+ *     duplicate fetch logic lives in the fan-out.
  *
  * READ-ONLY: this module never invokes a mutation. Refreshes are coalesced per
  * key via an in-flight map so rapid dispatches collapse into a single fetch.
@@ -29,11 +38,13 @@ import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collec
 import { githubAuthClient } from "$features/github-auth/renderer/github-auth.client";
 import type { GithubRepo } from "$features/github-auth/types";
 import { externalEditorsClient } from "$features/external-editors/external-editors.client";
+import { AcceptChangesClient } from "$features/accept-changes/accept-changes.client";
 import { invoke } from "$lib/electron-bridge";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 import type { ContextItem } from "$features/context/types";
 import type { KnownRepo } from "$shared/types/known-repo";
+import type { WorkspaceId } from "$shared/types/branded-ids";
 import { store as appStore } from "$store/renderer/store";
 import { createLogger } from "$lib/utils/client-logger";
 import {
@@ -56,6 +67,12 @@ import {
   initContextForWorkspace,
 } from "../slices/context/context-slice";
 import { loadKnownRepos, setRepos } from "../slices/known-repos/known-repos-slice";
+import { refreshAcceptChangesStatus } from "../slices/changes/changes-slice";
+import { setPostMergeState } from "../slices/git/git-slice";
+import type { PostMergeState } from "../slices/git/git-types";
+import { workspaceMounted } from "../slices/workspace-lifecycle/workspace-lifecycle-slice";
+import { ensureWorkspaceTasksLoaded } from "../slices/workspace-tasks/workspace-tasks-slice";
+import { loadEventsRequested } from "../slices/workspace-events/workspace-events-slice";
 
 const logger = createLogger("LifecycleIpcReadService");
 
@@ -167,13 +184,79 @@ function refreshKnownRepos(): void {
       );
       if (result?.success && Array.isArray(result.data)) {
         appStore.dispatch(setRepos(result.data));
-        return;
+      } else {
+        // Keep the prior known-repos list intact rather than clobbering it with
+        // an empty list on a transient/unsuccessful response.
+        logger.warn("Recent-repositories IPC returned no usable data; keeping prior known repos");
       }
     } catch (error) {
-      logger.error("Failed to load known repos", error);
+      // Keep the prior known-repos list intact on a transient IPC failure
+      // (mirrors the loadGithubRepos keep-prior-on-error behavior).
+      logger.error("Failed to load known repos; keeping prior known repos", error);
     }
-    appStore.dispatch(setRepos([]));
   });
+}
+
+/** Default post-merge state for a workspace with none yet (mirrors git-selectors). */
+const DEFAULT_POST_MERGE_STATE: PostMergeState = {
+  aheadOfTrunk: null,
+  behindTrunk: 0,
+  hasConflicts: false,
+  isContentMergedToTrunk: false,
+  hasRemote: true,
+  isMergedToTrunk: false,
+  mergeHeadSha: null,
+  hasResetToTrunk: false,
+};
+
+/**
+ * Fetch `AcceptChangesClient.getStatus` and merge the trunk-relative fields into
+ * the workspace's post-merge state (mirrors the old accept-changes-status saga).
+ * In-session fields (`isMergedToTrunk`, `mergeHeadSha`, `hasResetToTrunk`) are
+ * preserved; on failure the trunk-relative fields reset to neutral defaults.
+ */
+function refreshAcceptChanges(workspaceId: string): void {
+  coalesce(`acceptChanges:${workspaceId}`, async () => {
+    const current =
+      appStore.state.git.byWorkspaceId[workspaceId]?.postMergeState ??
+      DEFAULT_POST_MERGE_STATE;
+    try {
+      const status = await AcceptChangesClient.getStatus(workspaceId as WorkspaceId);
+      appStore.dispatch(
+        setPostMergeState(workspaceId, {
+          ...current,
+          aheadOfTrunk: status.aheadOfTrunk,
+          behindTrunk: status.behindTrunk,
+          hasConflicts: status.hasConflicts,
+          hasRemote: status.hasRemote,
+          isContentMergedToTrunk: status.isContentMergedToTrunk ?? false,
+        }),
+      );
+    } catch (error) {
+      logger.warn("Failed to fetch accept-changes status", { workspaceId, error });
+      appStore.dispatch(
+        setPostMergeState(workspaceId, {
+          ...current,
+          aheadOfTrunk: null,
+          behindTrunk: 0,
+          hasConflicts: false,
+          isContentMergedToTrunk: false,
+        }),
+      );
+    }
+  });
+}
+
+/**
+ * Fan out a fresh workspace mount to the per-workspace refresh triggers it needs,
+ * mirroring what the old `workspaceMounted` sagas kicked off. Re-dispatches the
+ * existing restored triggers — handlers live here and in the AppClient-seam
+ * lifecycle read service — so no duplicate fetch logic lives in the fan-out.
+ */
+function fanOutWorkspaceMounted(workspaceId: string): void {
+  appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId));
+  appStore.dispatch(loadEventsRequested(workspaceId));
+  appStore.dispatch(refreshAcceptChangesStatus(workspaceId));
 }
 
 /** First array-payload element coerced to a boolean force-refresh flag. */
@@ -212,6 +295,16 @@ export function createLifecycleIpcReadMiddleware(): StoreMiddleware {
         case loadKnownRepos.type:
           refreshKnownRepos();
           break;
+        case refreshAcceptChangesStatus.type: {
+          const workspaceId = workspaceIdOf(action);
+          if (workspaceId) refreshAcceptChanges(workspaceId);
+          break;
+        }
+        case workspaceMounted.type: {
+          const workspaceId = workspaceIdOf(action);
+          if (workspaceId) fanOutWorkspaceMounted(workspaceId);
+          break;
+        }
       }
     }
     return result;

@@ -16,9 +16,31 @@ vi.mock(
   "$lib/electron-bridge",
   async () => await import("$store/renderer/utils/test-helpers/electron-bridge-mock"),
 );
+// FAKE seam: AcceptChangesClient.getStatus is stubbed so `refreshAcceptChangesStatus`
+// exercises the getStatus → setPostMergeState wiring without a daemon round-trip.
+vi.mock("$features/accept-changes/accept-changes.client", () => ({
+  AcceptChangesClient: { getStatus: vi.fn() },
+}));
+// FAKE seam: the AppClient-backed reads the `workspaceMounted` fan-out re-triggers
+// (tasks/events) are stubbed so the fan-out test stays hermetic.
+vi.mock("$lib/client", () => ({
+  appClient: {
+    workspaces: {
+      list: vi.fn(() => Promise.resolve([])),
+      recentViews: vi.fn(() => Promise.resolve({})),
+    },
+    tasks: { list: vi.fn(() => Promise.resolve([])) },
+    events: { list: vi.fn(() => Promise.resolve([])) },
+    skills: { list: vi.fn(() => Promise.resolve([])) },
+    scripts: { list: vi.fn(() => Promise.resolve([])) },
+    git: { prStatus: vi.fn(() => Promise.resolve(null)) },
+  },
+}));
 
 import { githubAuthClient } from "$features/github-auth/renderer/github-auth.client";
 import { externalEditorsClient } from "$features/external-editors/external-editors.client";
+import { AcceptChangesClient } from "$features/accept-changes/accept-changes.client";
+import { appClient } from "$lib/client";
 import { invoke } from "$lib/electron-bridge";
 import { store as appStore } from "$store/renderer/store";
 import {
@@ -38,12 +60,17 @@ import {
   initContextForWorkspace,
 } from "$store/renderer/slices/context/context-slice";
 import { selectContextItems } from "$store/renderer/slices/context/context-selectors";
+import { refreshAcceptChangesStatus } from "$store/renderer/slices/changes/changes-slice";
+import { setPostMergeState } from "$store/renderer/slices/git/git-slice";
+import { workspaceMounted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
 import type { ContextItem } from "$features/context/types";
+import type { WorkspaceGitStatus } from "$features/accept-changes/types";
 import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 type Fn = ReturnType<typeof vi.fn>;
 const reposApi = githubAuthClient as unknown as { listRepos: Fn };
 const editorsApi = externalEditorsClient as unknown as { detectInstalled: Fn };
+const acceptApi = AcceptChangesClient as unknown as { getStatus: Fn };
 const invokeMock = vi.mocked(invoke);
 const getItemMock = window.localStorage.getItem as unknown as Fn;
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -67,6 +94,23 @@ const editor = (id: string) => ({
   handlerType: "generic" as const,
   priority: 1,
   installed: true,
+});
+
+const gitStatus = (overrides: Partial<WorkspaceGitStatus> = {}): WorkspaceGitStatus => ({
+  branch: "feature",
+  trunkBranch: "main",
+  aheadOfTrunk: 3,
+  behindTrunk: 1,
+  hasRemote: true,
+  isPushed: false,
+  uncommittedCount: 0,
+  stagedCount: 0,
+  localCommits: [],
+  canMergeDirectly: true,
+  hasConflicts: false,
+  hasDivergedFromRemote: false,
+  isContentMergedToTrunk: true,
+  ...overrides,
 });
 
 describe("lifecycleIpcReadService (fake seams, real store)", () => {
@@ -177,24 +221,109 @@ describe("lifecycleIpcReadService (fake seams, real store)", () => {
     expect(appStore.state.knownRepos.loaded).toBe(true);
   });
 
-  it("loadKnownRepos falls back to an empty list when the IPC call fails", async () => {
-    appStore.dispatch(setRepos([{ path: "/r", name: "r", addedAt: "x", lastUsedAt: "y" }]));
+  it("loadKnownRepos keeps the prior repos intact when the IPC call fails", async () => {
+    const prior = { path: "/r", name: "r", addedAt: "x", lastUsedAt: "y" };
+    appStore.dispatch(setRepos([prior]));
     invokeMock.mockRejectedValueOnce(new Error("ipc down") as never);
 
     appStore.dispatch(loadKnownRepos());
     await flush();
 
-    expect(getItems(appStore.state.knownRepos.repos)).toEqual([]);
+    expect(getItems(appStore.state.knownRepos.repos)).toEqual([prior]);
     expect(appStore.state.knownRepos.loaded).toBe(true);
   });
 
-  it("loadKnownRepos falls back to an empty list on an unsuccessful response", async () => {
+  it("loadKnownRepos keeps the prior repos intact on an unsuccessful response", async () => {
+    const prior = { path: "/r", name: "r", addedAt: "x", lastUsedAt: "y" };
+    appStore.dispatch(setRepos([prior]));
     invokeMock.mockResolvedValueOnce({ success: false } as never);
 
     appStore.dispatch(loadKnownRepos());
     await flush();
 
-    expect(getItems(appStore.state.knownRepos.repos)).toEqual([]);
+    expect(getItems(appStore.state.knownRepos.repos)).toEqual([prior]);
+  });
+
+  it("refreshAcceptChangesStatus fetches getStatus and merges trunk fields into postMergeState", async () => {
+    const wsId = "ws-accept-merge";
+    acceptApi.getStatus.mockResolvedValueOnce(
+      gitStatus({ aheadOfTrunk: 5, behindTrunk: 2, hasConflicts: true, hasRemote: false }) as never,
+    );
+
+    appStore.dispatch(refreshAcceptChangesStatus(wsId));
+    await flush();
+
+    expect(acceptApi.getStatus).toHaveBeenCalledWith(wsId);
+    expect(appStore.state.git.byWorkspaceId[wsId].postMergeState).toEqual({
+      aheadOfTrunk: 5,
+      behindTrunk: 2,
+      hasConflicts: true,
+      isContentMergedToTrunk: true,
+      hasRemote: false,
+      isMergedToTrunk: false,
+      mergeHeadSha: null,
+      hasResetToTrunk: false,
+    });
+  });
+
+  it("refreshAcceptChangesStatus resets trunk fields on failure but preserves session fields", async () => {
+    const wsId = "ws-accept-fail";
+    appStore.dispatch(
+      setPostMergeState(wsId, {
+        aheadOfTrunk: 9,
+        behindTrunk: 4,
+        hasConflicts: true,
+        isContentMergedToTrunk: true,
+        hasRemote: true,
+        isMergedToTrunk: true,
+        mergeHeadSha: "abc123",
+        hasResetToTrunk: true,
+      }),
+    );
+    acceptApi.getStatus.mockRejectedValueOnce(new Error("status boom") as never);
+
+    appStore.dispatch(refreshAcceptChangesStatus(wsId));
+    await flush();
+
+    expect(appStore.state.git.byWorkspaceId[wsId].postMergeState).toEqual({
+      aheadOfTrunk: null,
+      behindTrunk: 0,
+      hasConflicts: false,
+      isContentMergedToTrunk: false,
+      hasRemote: true,
+      isMergedToTrunk: true,
+      mergeHeadSha: "abc123",
+      hasResetToTrunk: true,
+    });
+  });
+
+  it("refreshAcceptChangesStatus coalesces rapid dispatches into a single fetch", async () => {
+    const wsId = "ws-accept-coalesce";
+    acceptApi.getStatus.mockResolvedValue(gitStatus() as never);
+
+    appStore.dispatch(refreshAcceptChangesStatus(wsId));
+    appStore.dispatch(refreshAcceptChangesStatus(wsId));
+    appStore.dispatch(refreshAcceptChangesStatus(wsId));
+    await flush();
+
+    expect(acceptApi.getStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("workspaceMounted fans out the per-workspace tasks/events/accept-changes triggers", async () => {
+    const wsId = "ws-mounted-fanout";
+    acceptApi.getStatus.mockResolvedValue(gitStatus() as never);
+    const tasksApi = appClient.tasks as unknown as { list: Fn };
+    const eventsApi = appClient.events as unknown as { list: Fn };
+
+    appStore.dispatch(workspaceMounted(wsId));
+    await flush();
+
+    // Fresh mount fans out to the restored per-workspace handlers (tasks/events
+    // live in the AppClient-seam read service, accept-changes here) — proven by
+    // each downstream seam being invoked for this workspace.
+    expect(tasksApi.list).toHaveBeenCalledWith(wsId);
+    expect(eventsApi.list).toHaveBeenCalledWith(wsId);
+    expect(acceptApi.getStatus).toHaveBeenCalledWith(wsId);
   });
 
   it("initContextForWorkspace hydrates items persisted in localStorage", async () => {
