@@ -21,6 +21,7 @@ import { createChatReadMiddleware } from "$features/agent/chat-read-service";
 import { createChatSendMiddleware } from "$features/agent/chat-send-service";
 import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
+import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
 import { createAppLayoutNavigationMiddleware } from "$features/layout/app-layout-navigation-service";
 import { createFileExplorerReadMiddleware } from "$features/file-explorer/file-explorer-read-service";
 import { createGitHubAuthMiddleware } from "$features/github-auth/github-auth-store-service";
@@ -101,6 +102,13 @@ function buildMiddleware(): StoreMiddleware[] {
     // workspace initial-agent activation create an agent via `agentFactory` and
     // open its tab again.
     createAgentCreationMiddleware(),
+    // Give the (post-saga) agent-session mutation triggers (restore / activate
+    // / save) real handlers so `agent-stream-lifecycle.sendMessage()` — which
+    // awaits each `action.promise` before dispatching the user message and
+    // opening the stream — can resolve again instead of hanging. Restore reads
+    // via `appClient.agents.get`; activate marks the session ACTIVE and
+    // refetches; save is a no-op on the mock seam (Redux IS the state).
+    createAgentMutationMiddleware(),
     // Give the (post-saga) `openAgentTabRequested` action a real handler so
     // clicking an agent opens (or focuses) its conversation tab again.
     createAppLayoutNavigationMiddleware(),
