@@ -2,6 +2,7 @@
 import { invoke as ipcInvoke } from '$shared/generated/ipc-client';
 import { Logger } from '$shared/logger';
 import type { CommandResponse, DiffChunk, Workspace } from '$shared/types';
+import type { KnownRepo } from '$shared/types/known-repo';
 
 const logger = new Logger('APIClient');
 
@@ -170,7 +171,7 @@ class ApiClient {
   }
 
   async getRecentRepositories(limit?: number): Promise<string[]> {
-    const response = await invoke<string[]>('workspace:get-recent-repositories', {
+    const response = await invoke<KnownRepo[]>('workspace:get-recent-repositories', {
       limit: limit || 10,
     });
 
@@ -178,7 +179,7 @@ class ApiClient {
       throw new Error(response.error || 'Failed to get recent repositories');
     }
 
-    return response.data || [];
+    return (response.data || []).map((repo) => repo.path);
   }
 
   async addRecentRepository(repoPath: string): Promise<void> {

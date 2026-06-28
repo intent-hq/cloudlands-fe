@@ -109,6 +109,17 @@ export const MessageSchema = z.object({
 
 export type Message = z.infer<typeof MessageSchema>;
 
+/**
+ * KnownRepo Schema - mirrors KnownRepo in src/shared/types/known-repo.ts
+ */
+export const KnownRepoSchema = z.object({
+  path: z.string(),
+  name: z.string(),
+  owner: z.string().optional(),
+  addedAt: z.string(),
+  lastUsedAt: z.string(),
+});
+
 // ============================================================================
 // IPC Contract Schemas
 // ============================================================================
@@ -305,9 +316,13 @@ export const IpcContracts = {
   },
 
   'workspace:get-recent-repositories': {
-    request: z.object({}),
+    request: z.object({
+      limit: z.number().optional(),
+    }),
     response: z.object({
-      repositories: z.array(z.string()),
+      success: z.boolean(),
+      data: z.array(KnownRepoSchema),
+      error: z.string().optional(),
     }),
   },
 
