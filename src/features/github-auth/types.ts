@@ -6,6 +6,29 @@ export interface GitHubUser {
 }
 
 /**
+ * GitHub OAuth/PAT configuration status as reported by the daemon.
+ */
+export interface GitHubAuthStatus {
+  isConfigured: boolean;
+  oauthUrl: string;
+  configuredButNeedsUpdate: boolean;
+  updatedScopes: string;
+}
+
+/**
+ * GitHub repository in the GitHub-native snake_case shape consumed by the
+ * renderer and saga layers.
+ */
+export interface GithubRepo {
+  owner: string;
+  name: string;
+  html_url?: string;
+  created_at?: string;
+  updated_at?: string;
+  default_branch?: string;
+}
+
+/**
  * Result from starting GitHub authentication
  */
 export interface StartAuthResult {

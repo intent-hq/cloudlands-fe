@@ -1,7 +1,12 @@
 import { invoke } from '$lib/electron-bridge';
-import type { GitHubAuthStatus, GithubRepo } from '../../../shared/augment-api/augment-api.client';
 import { GITHUB_AUTH_CHANNELS } from '../constants';
-import type { GitHubAuthState, GitHubUser, StartAuthResult } from '../types';
+import type {
+  GitHubAuthState,
+  GitHubAuthStatus,
+  GithubRepo,
+  GitHubUser,
+  StartAuthResult,
+} from '../types';
 
 export const githubAuthClient = {
   /**

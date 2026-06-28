@@ -1,27 +1,26 @@
 import { shell } from 'electron';
-import {
-  isAugmentAuthenticated,
-  type GitHubAuthStatus,
-} from '../../../shared/augment-api/augment-api.client';
 import { Logger } from '../../../shared/logger';
 import { getBackendClient } from '../../backend/main/backend.ipc';
-import { getDefaultProviderConfig } from '$shared/config/provider-config';
-import type { GitHubAuthState, GitHubUser, StartAuthResult } from '../types';
+import type {
+  GitHubAuthState,
+  GitHubAuthStatus,
+  GitHubUser,
+  StartAuthResult,
+} from '../types';
 
 const logger = new Logger('GitHubAuthService');
 
 /**
  * GitHub Authentication Service
  *
- * Uses Augment's backend API for GitHub OAuth integration.
- * Authentication is managed through Augment's session.json and the
- * IsUserGithubConfigured API endpoint.
+ * Derives GitHub auth state from the daemon's `github.authStatus` method
+ * (`isConfigured`). In the PAT-from-env model there is no Augment session
+ * file, so auth state no longer depends on `~/.augment/session.json`.
  *
  * Flow:
- * 1. Check if user is authenticated with Augment (session.json exists)
- * 2. Call IsUserGithubConfigured to check GitHub OAuth status
- * 3. If not configured, redirect user to oauth_url from the API
- * 4. After OAuth completes, the API will return isConfigured: true
+ * 1. Call `github.authStatus` to check GitHub configuration status
+ * 2. If not configured, redirect user to the daemon-provided oauth_url
+ * 3. After OAuth completes, the daemon reports isConfigured: true
  */
 export class GitHubAuthService {
   private cachedStatus: GitHubAuthStatus | null = null;
@@ -38,12 +37,6 @@ export class GitHubAuthService {
    * (repo access, PR creation) still works with the base OAuth scopes.
    */
   async isAuthenticated(): Promise<boolean> {
-    // First check if Augment session exists
-    if (!isAugmentAuthenticated()) {
-      logger.debug('No Augment session - GitHub auth not available');
-      return false;
-    }
-
     const status = await this.getGitHubStatus();
 
     // Log a warning if scopes need update, but don't block authentication
@@ -119,18 +112,7 @@ export class GitHubAuthService {
   async startAuth(): Promise<StartAuthResult> {
     logger.info('Starting GitHub authentication via Augment');
 
-    // Check Augment session first
-    if (!isAugmentAuthenticated()) {
-      logger.warn('Augment not authenticated, cannot start GitHub auth');
-      const defaultProvider = getDefaultProviderConfig();
-      const loginHint = defaultProvider.loginCommandHint || `${defaultProvider.command} login`;
-      return {
-        success: false,
-        error: `Please authenticate with Augment first (run \`${loginHint}\`)`,
-      };
-    }
-
-    // Get the OAuth URL from Augment API
+    // Get the OAuth URL from the daemon
     const status = await this.getGitHubStatus(true);
 
     logger.info('GitHub status for auth flow', {
@@ -242,16 +224,6 @@ export class GitHubAuthService {
    * Get the full authentication state for the UI
    */
   async getAuthState(): Promise<GitHubAuthState> {
-    const augmentAuthenticated = isAugmentAuthenticated();
-
-    if (!augmentAuthenticated) {
-      return {
-        isAuthenticated: false,
-        requiresAugmentAuth: true,
-        user: null,
-      };
-    }
-
     const status = await this.getGitHubStatus();
     const user = await this.getUser();
 

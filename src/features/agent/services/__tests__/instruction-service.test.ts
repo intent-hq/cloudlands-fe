@@ -38,17 +38,7 @@ vi.mock('fs', async (importOriginal) => {
   };
 });
 
-// Mock augment-api client to prevent singleton initialization (calls existsSync at module level)
-vi.mock('$shared/augment-api/augment-api.client', () => ({
-  augmentApiClient: {
-    callEndpoint: vi.fn(),
-    isAuthenticated: vi.fn().mockReturnValue(false),
-  },
-  isAugmentAuthenticated: vi.fn().mockReturnValue(false),
-  getAugmentSession: vi.fn().mockReturnValue(null),
-}));
-
-// Mock github-auth service (depends on augment-api client)
+// Mock github-auth service
 vi.mock('../../../github-auth/main/github-auth.service', () => ({
   githubAuthService: {
     isAuthenticated: vi.fn().mockResolvedValue(false),

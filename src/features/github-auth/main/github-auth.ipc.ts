@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import { Logger } from '../../../shared/logger';
-import type { GithubRepo } from '../../../shared/augment-api/augment-api.client';
+import type { GithubRepo } from '../types';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { GITHUB_AUTH_CHANNELS } from '../constants';
 import { githubAuthService } from './github-auth.service';
