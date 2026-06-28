@@ -724,22 +724,6 @@ export function setupWorkspaceIPC(): void {
             logger.debug('[WorkspaceIPC] Agent context registry cleanup not available', { error });
           }
 
-          // Clean up HTTP MCP bridge cached servers for this workspace
-          try {
-            const httpMcpBridge = (global as any).__httpMcpBridgeInstance;
-            if (httpMcpBridge && typeof httpMcpBridge.clearMcpServersForWorkspace === 'function') {
-              const clearedCount = httpMcpBridge.clearMcpServersForWorkspace(id);
-              if (clearedCount > 0) {
-                logger.debug('[WorkspaceIPC] HTTP MCP bridge cache cleanup', {
-                  workspaceId: id,
-                  clearedCount,
-                });
-              }
-            }
-          } catch (error) {
-            logger.debug('[WorkspaceIPC] HTTP MCP bridge cache cleanup failed', { error });
-          }
-
           // Clean up cached EventStore (flush pending writes, free events + indexes)
           try {
             await deleteEventStoreForWorkspace(id);
@@ -1441,22 +1425,6 @@ export function setupWorkspaceIPC(): void {
           logger.warn('Failed to dispose script process manager before delete', error as Error, {
             workspaceId: validatedId,
           });
-        }
-
-        // Clean up HTTP MCP bridge cached servers
-        try {
-          const httpMcpBridge = (global as any).__httpMcpBridgeInstance;
-          if (httpMcpBridge && typeof httpMcpBridge.clearMcpServersForWorkspace === 'function') {
-            const clearedCount = httpMcpBridge.clearMcpServersForWorkspace(validatedId);
-            if (clearedCount > 0) {
-              logger.debug('HTTP MCP bridge cache cleanup before delete', {
-                workspaceId: validatedId,
-                clearedCount,
-              });
-            }
-          }
-        } catch (error) {
-          logger.debug('HTTP MCP bridge cache cleanup failed before delete', { error });
         }
 
         // Clean up cached EventStore (flush pending writes, free events + indexes)

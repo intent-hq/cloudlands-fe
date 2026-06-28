@@ -3,8 +3,15 @@ import { AgentStatus } from "$shared/types/agent.types";
 import type { AgentMessage, AgentSession, ContentBlock } from "$shared/types";
 
 import { store as appStore } from "$store/renderer/store";
-import { bulkUpsertSessions } from "$store/renderer/slices/agent-session/agent-session-slice";
-import { selectAgentMessages } from "$store/renderer/slices/agent-session/agent-session-selectors";
+import {
+  bulkUpsertSessions,
+  setAgentStreaming,
+} from "$store/renderer/slices/agent-session/agent-session-slice";
+import {
+  selectAgentIsResponding,
+  selectAgentMessages,
+} from "$store/renderer/slices/agent-session/agent-session-selectors";
+import { chatSendStarted } from "$store/renderer/slices/chat-state/chat-state-slice";
 import {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
@@ -21,7 +28,10 @@ function makeSession(messages: AgentMessage[] = []): AgentSession {
     backendSessionId: null,
     workspaceId: WS,
     name: "Agent Stream",
-    status: AgentStatus.Active,
+    // RuntimeIdle so `isActiveAgentThread` is driven solely by the session
+    // streaming flags — this is the post-daemon-idle state where the
+    // persistent "Thinking" bug actually shows up.
+    status: AgentStatus.RuntimeIdle,
     messages,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -47,6 +57,16 @@ function textBlocks(text: string): ContentBlock[] {
 
 function getMessages(): AgentMessage[] {
   return selectAgentMessages.select(appStore.state, AGENT);
+}
+
+/**
+ * Simulate the real send flow: chatSendStarted sets session-level
+ * isStreaming=true AND isProcessing=true. Without finalize clearing both,
+ * `selectAgentIsResponding` stays true forever — the persistent "Thinking" bug.
+ */
+function simulateSendInFlight(): void {
+  appStore.dispatch(chatSendStarted(AGENT, WS));
+  appStore.dispatch(setAgentStreaming(AGENT, true));
 }
 
 describe("agentStreamService (real store)", () => {
@@ -103,6 +123,50 @@ describe("agentStreamService (real store)", () => {
     expect(message.contentBlocks).toEqual(textBlocks("abc"));
     expect(message.isStreaming).toBe(false);
     expect(message.streamingComplete).toBe(true);
+  });
+
+  it("clears session-level streaming flags on complete (selectAgentIsResponding === false)", () => {
+    simulateSendInFlight();
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+
+    appStore.dispatch(
+      agentStreamUpdateReceived(makePayload({ eventType: "started", contentBlocks: textBlocks("a") })),
+    );
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({ eventType: "complete", contentBlocks: textBlocks("abc") }),
+      ),
+    );
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it("clears session-level streaming flags on error (selectAgentIsResponding === false)", () => {
+    simulateSendInFlight();
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({ eventType: "chunk", contentBlocks: textBlocks("partial") }),
+      ),
+    );
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+
+    appStore.dispatch(agentStreamUpdateReceived(makePayload({ eventType: "error" })));
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it("clears session-level streaming flags on timeout (selectAgentIsResponding === false)", () => {
+    simulateSendInFlight();
+    appStore.dispatch(
+      agentStreamUpdateReceived(
+        makePayload({ eventType: "chunk", contentBlocks: textBlocks("partial") }),
+      ),
+    );
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+
+    appStore.dispatch(agentStreamUpdateReceived(makePayload({ eventType: "timeout" })));
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
   it("skips placeholder creation when a finalized assistant for that appMessageId already exists", () => {

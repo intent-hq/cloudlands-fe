@@ -560,35 +560,6 @@ function getGlobalTmpDir(): string {
   return path.join(os.homedir(), '.augment', 'tmp');
 }
 
-/**
- * Ensure the HTTP MCP Bridge is healthy before launching an agent.
- * If the bridge is unhealthy, attempts to restart it.
- * Returns true if the bridge is healthy (after potential restart), false otherwise.
- */
-async function ensureHttpMcpBridgeHealthy(): Promise<boolean> {
-  const bridgeLogger = new Logger('HttpBridgeCheck');
-  const httpBridge = (global as any).__httpMcpBridgeInstance;
-
-  if (!httpBridge) {
-    bridgeLogger.warn('HTTP MCP Bridge instance not found in global');
-    return false;
-  }
-
-  try {
-    const healthy = await httpBridge.ensureHealthy();
-    if (!healthy) {
-      bridgeLogger.error('HTTP MCP Bridge could not be made healthy');
-      return false;
-    }
-    return true;
-  } catch (error) {
-    bridgeLogger.error('Error checking HTTP MCP Bridge health', {
-      error: (error as Error).message,
-    });
-    return false;
-  }
-}
-
 function safeJsonParse<T>(value: string | undefined): T | null {
   if (!value) return null;
   try {
@@ -2596,17 +2567,6 @@ export class ACPProvider extends BaseAgentProvider {
 
     // Enforce global process cap — evict LRU idle process or wait for a slot
     await acquireProcessSlot();
-
-    // Ensure HTTP MCP Bridge is healthy before launching any agent that may need workspace MCP tools.
-    // Background agents can also require tools (e.g. stdio MCP tool channel), so we can't assume
-    // `simpleRequest` implies "no tools".
-    if (this.config.workspaceId && this.config.workspacePath) {
-      const bridgeHealthy = await ensureHttpMcpBridgeHealthy();
-      if (!bridgeHealthy) {
-        logger.warn('HTTP MCP Bridge is not healthy, agent may not have access to MCP tools');
-        // Continue anyway - the STDIO server will handle the error gracefully
-      }
-    }
 
     logger.info('Launching agent process', {
       command: this.config.command,

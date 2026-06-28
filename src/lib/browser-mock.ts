@@ -207,153 +207,11 @@ function mockInvoke(channel: string, data?: any): any {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP IPC Bridge — try to reach the running Electron main process
-// ---------------------------------------------------------------------------
-
-/**
- * Candidate ports for the HTTP MCP Bridge (which hosts our /ipc endpoint).
- * The Electron app typically starts on 5179 but may use a nearby port.
- */
-const BRIDGE_CANDIDATE_PORTS = [5179, 5180, 5181, 5182, 5183];
-let resolvedBridgeUrl: string | null = null;
-let bridgeProbePromise: Promise<string | null> | null = null;
-
-/** Probe candidate ports once and cache the result. */
-function probeBridgeUrl(): Promise<string | null> {
-  if (bridgeProbePromise) return bridgeProbePromise;
-  bridgeProbePromise = (async () => {
-    // Use localhost (not 127.0.0.1) because the CSP allows http://localhost:*
-    for (const port of BRIDGE_CANDIDATE_PORTS) {
-      const baseUrl = `http://localhost:${port}`;
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 800);
-        const res = await fetch(`${baseUrl}/health`, {
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-        if (res.ok) {
-          // Verify this is actually the HTTP MCP bridge (not Vite or another server)
-          try {
-            const health = await res.json();
-            if (health?.service !== 'http-mcp-bridge') continue;
-          } catch {
-            continue;
-          }
-
-          // Verify /ipc endpoint exists by sending a test request
-          try {
-            const ipcTest = await fetch(`${baseUrl}/ipc`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ channel: 'app:get-version' }),
-            });
-            if (!ipcTest.ok && ipcTest.status === 404) {
-              console.info(
-                `[BrowserMock] Bridge on port ${port} does not support /ipc — needs rebuild`,
-              );
-              continue;
-            }
-          } catch {
-            continue;
-          }
-
-          console.info(`[BrowserMock] Found Electron HTTP bridge with /ipc at ${baseUrl}`);
-          resolvedBridgeUrl = baseUrl;
-          return baseUrl;
-        }
-      } catch {
-        // not available on this port
-      }
-    }
-    console.info('[BrowserMock] No Electron HTTP bridge found — using mock data');
-    return null;
-  })();
-  return bridgeProbePromise;
-}
-
-/** Invoke an IPC handler via the HTTP bridge. Returns undefined if bridge is unavailable. */
-async function bridgeInvoke(channel: string, data?: any): Promise<any> {
-  const url = resolvedBridgeUrl ?? (await probeBridgeUrl());
-  if (!url) return undefined;
-  const workspaceId = getCurrentWorkspaceId();
-
-  try {
-    const res = await fetch(`${url}/ipc`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(workspaceId ? { 'x-workspace-id': workspaceId } : {}),
-      },
-      body: JSON.stringify({ channel, data }),
-    });
-    if (!res.ok) return undefined;
-    return await res.json();
-  } catch {
-    return undefined;
-  }
-}
-
-function getCurrentWorkspaceId(): string | undefined {
-  if (typeof window === 'undefined') return undefined;
-  const match = window.location.pathname.match(/^\/workspace\/([^/?#]+)/);
-  return match ? decodeURIComponent(match[1]) : undefined;
-}
-
-// ---------------------------------------------------------------------------
-// WebSocket event connection
+// Event listeners (no live events — purely a stub for browser-mode preview)
 // ---------------------------------------------------------------------------
 
 type EventListener = { id: string; channel: string; callback: (...args: any[]) => void };
 const eventListeners: EventListener[] = [];
-let ws: WebSocket | null = null;
-let wsConnectAttempted = false;
-
-function connectEventWebSocket(): void {
-  if (wsConnectAttempted || typeof WebSocket === 'undefined') return;
-  wsConnectAttempted = true;
-
-  // Wait for bridge URL to be resolved
-  probeBridgeUrl().then((bridgeUrl) => {
-    if (!bridgeUrl) return;
-
-    const workspaceId = getCurrentWorkspaceId();
-    const eventPath = workspaceId
-      ? `/ipc-events?workspaceId=${encodeURIComponent(workspaceId)}`
-      : '/ipc-events';
-    const url = bridgeUrl.replace(/^http/, 'ws') + eventPath;
-    try {
-      ws = new WebSocket(url);
-      ws.onmessage = (event) => {
-        try {
-          const { channel, data } = JSON.parse(event.data as string);
-          for (const listener of eventListeners) {
-            if (listener.channel === channel) {
-              listener.callback(data);
-            }
-          }
-        } catch {
-          // ignore malformed messages
-        }
-      };
-      ws.onopen = () => console.info('[BrowserMock] WebSocket connected for live events');
-      ws.onclose = () => {
-        console.debug('[BrowserMock] WebSocket disconnected');
-        ws = null;
-        // Retry after a delay
-        setTimeout(() => {
-          wsConnectAttempted = false;
-          connectEventWebSocket();
-        }, 5000);
-      };
-      ws.onerror = () => {
-        // onclose will fire after this
-      };
-    } catch {
-      // WebSocket not available
-    }
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Mock electronAPI object
@@ -363,15 +221,10 @@ let listenerIdCounter = 0;
 
 const browserElectronAPI = {
   invoke: async (channel: string, data?: any): Promise<any> => {
-    // Try the real Electron backend first
-    const bridgeResult = await bridgeInvoke(channel, data);
-    if (bridgeResult !== undefined) return bridgeResult;
-
-    // Fall back to mock data
     return mockInvoke(channel, data);
   },
 
-   
+
   send: (_channel: string, ..._args: any[]) => {
     // No-op in browser
   },
@@ -379,8 +232,6 @@ const browserElectronAPI = {
   on: (channel: string, callback: (...args: any[]) => void): string => {
     const id = `browser-mock-${++listenerIdCounter}`;
     eventListeners.push({ id, channel, callback });
-    // Ensure WebSocket is connected for live events
-    connectEventWebSocket();
     return id;
   },
 
@@ -410,7 +261,6 @@ const browserElectronAPI = {
       if (idx !== -1) eventListeners.splice(idx, 1);
     };
     eventListeners.push({ id, channel, callback: wrappedCallback });
-    connectEventWebSocket();
   },
 
    
@@ -445,9 +295,6 @@ export function installBrowserMock(): boolean {
 
   console.info('[BrowserMock] Installing mock electronAPI for browser-mode rendering');
   (window as any).electronAPI = browserElectronAPI;
-
-  // Start probing for the Electron HTTP bridge in the background
-  probeBridgeUrl();
 
   return true;
 }

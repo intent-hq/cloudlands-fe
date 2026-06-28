@@ -27,6 +27,10 @@ import {
   updateMessage,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import {
+  streamCompleted,
+  streamTimedOut,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
 } from "$store/renderer/slices/workspace-agents/workspace-agents-stream-slice";
@@ -45,6 +49,28 @@ function readSession(agentId: string): AgentSession | undefined {
   return state.agentSessions?.byAgentId[agentId];
 }
 
+/**
+ * Clear session-level streaming flags (isStreaming/isProcessing/isResponding) so
+ * `selectAgentIsResponding` flips to false on finalize. The producer
+ * (`agent-stream-lifecycle`) dispatches `setAgentStreaming(true)` and
+ * `chatSendStarted` (which sets isProcessing=true) on send, but no on-path
+ * caller previously cleared them — leaving "Thinking" stuck after the first
+ * completed turn. `streamCompleted` / `streamTimedOut` are both already wired
+ * in the agent-session reducer to clear all three flags.
+ */
+function clearSessionStreaming(
+  agentId: string,
+  eventType: AgentStreamUpdatePayload["eventType"],
+): void {
+  if (eventType === "complete" || eventType === "error") {
+    appStore.dispatch(
+      streamCompleted(agentId, { lastAttemptedMessage: null, modelUnavailable: null }),
+    );
+  } else if (eventType === "timeout") {
+    appStore.dispatch(streamTimedOut(agentId));
+  }
+}
+
 function applyStreamPayload(payload: AgentStreamUpdatePayload): void {
   const {
     agentId,
@@ -55,23 +81,34 @@ function applyStreamPayload(payload: AgentStreamUpdatePayload): void {
   } = payload;
   if (!agentId) return;
 
+  const isFinalize =
+    eventType === "complete" || eventType === "error" || eventType === "timeout";
+
   const session = readSession(agentId);
   const existing = findInFlightAssistantMessage(session, assistantAppMessageId);
 
   if (eventType === "error" || eventType === "timeout") {
-    if (!existing) return;
-    appStore.dispatch(
-      updateMessage(agentId, existing.id, {
-        isStreaming: false,
-        streamingComplete: true,
-      }),
-    );
+    if (existing) {
+      appStore.dispatch(
+        updateMessage(agentId, existing.id, {
+          isStreaming: false,
+          streamingComplete: true,
+        }),
+      );
+    }
+    clearSessionStreaming(agentId, eventType);
     return;
   }
 
   if (!existing) {
-    if (isStaleFinalizedAssistantStream(session, assistantAppMessageId)) return;
-    if (!assistantMessageId) return;
+    if (isStaleFinalizedAssistantStream(session, assistantAppMessageId)) {
+      if (isFinalize) clearSessionStreaming(agentId, eventType);
+      return;
+    }
+    if (!assistantMessageId) {
+      if (isFinalize) clearSessionStreaming(agentId, eventType);
+      return;
+    }
     const placeholderBlocks = resolveStreamContentBlocks(undefined, contentBlocks, eventType) ?? [];
     const placeholder: AgentMessage = {
       id: assistantMessageId,
@@ -83,6 +120,7 @@ function applyStreamPayload(payload: AgentStreamUpdatePayload): void {
       streamingComplete: eventType === "complete",
     };
     appStore.dispatch(addMessage(agentId, placeholder));
+    if (isFinalize) clearSessionStreaming(agentId, eventType);
     return;
   }
 
@@ -97,6 +135,7 @@ function applyStreamPayload(payload: AgentStreamUpdatePayload): void {
       updates.contentBlocks = nextBlocks;
     }
     appStore.dispatch(updateMessage(agentId, existing.id, updates));
+    clearSessionStreaming(agentId, eventType);
     return;
   }
 
