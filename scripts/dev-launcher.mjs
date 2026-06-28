@@ -20,7 +20,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT_CONFIG = {
   devPort: { start: 5177, name: 'Vite Dev Server' },
   inspectPort: { start: 9229, name: 'Node Inspector' },
-  httpMcpPort: { start: 5179, name: 'HTTP MCP Bridge' },
   cdpPort: { start: 9223, name: 'CDP Debug' },
 };
 
@@ -183,7 +182,6 @@ function runDev(ports, cdpMode = false, devName = '') {
   // Set environment variables directly on process.env for cross-platform compatibility
   process.env.DEV_PORT = String(ports.devPort);
   process.env.DEV_INSPECT_PORT = String(ports.inspectPort);
-  process.env.HTTP_MCP_PORT = String(ports.httpMcpPort);
   process.env.DEV_INSTANCE = ports.instanceNum || '';
 
   // Linux-specific Electron flags (e.g. Wayland)
