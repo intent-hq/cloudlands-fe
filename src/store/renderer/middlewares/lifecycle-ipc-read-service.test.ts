@@ -10,9 +10,16 @@ vi.mock("$features/github-auth/renderer/github-auth.client", () => ({
 vi.mock("$features/external-editors/external-editors.client", () => ({
   externalEditorsClient: { detectInstalled: vi.fn(() => Promise.resolve([])) },
 }));
+// FAKE seam: the raw IPC bridge is stubbed so `loadKnownRepos` exercises the
+// invoke → setRepos wiring without a real daemon round-trip.
+vi.mock(
+  "$lib/electron-bridge",
+  async () => await import("$store/renderer/utils/test-helpers/electron-bridge-mock"),
+);
 
 import { githubAuthClient } from "$features/github-auth/renderer/github-auth.client";
 import { externalEditorsClient } from "$features/external-editors/external-editors.client";
+import { invoke } from "$lib/electron-bridge";
 import { store as appStore } from "$store/renderer/store";
 import {
   loadGithubRepos,
@@ -22,12 +29,34 @@ import {
   fetchEditors,
   fetchEditorsSuccess,
 } from "$store/renderer/slices/external-editors/external-editors-slice";
+import {
+  loadKnownRepos,
+  setRepos,
+} from "$store/renderer/slices/known-repos/known-repos-slice";
+import {
+  addContextItem,
+  initContextForWorkspace,
+} from "$store/renderer/slices/context/context-slice";
+import { selectContextItems } from "$store/renderer/slices/context/context-selectors";
+import type { ContextItem } from "$features/context/types";
 import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
 type Fn = ReturnType<typeof vi.fn>;
 const reposApi = githubAuthClient as unknown as { listRepos: Fn };
 const editorsApi = externalEditorsClient as unknown as { detectInstalled: Fn };
+const invokeMock = vi.mocked(invoke);
+const getItemMock = window.localStorage.getItem as unknown as Fn;
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+const noteItem = (id: string): ContextItem => ({
+  id,
+  type: "note",
+  title: id,
+  provider: "internal",
+  noteId: id,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+});
 
 const editor = (id: string) => ({
   id,
@@ -129,5 +158,71 @@ describe("lifecycleIpcReadService (fake seams, real store)", () => {
 
     expect(appStore.state.externalEditors.error).toBe("detect failed");
     expect(appStore.state.externalEditors.loading).toBe(false);
+  });
+
+  it("loadKnownRepos stores the registry repos via setRepos", async () => {
+    const repo = {
+      path: "/repos/acme",
+      name: "acme",
+      addedAt: "2026-01-01T00:00:00.000Z",
+      lastUsedAt: "2026-01-02T00:00:00.000Z",
+    };
+    invokeMock.mockResolvedValueOnce({ success: true, data: [repo] } as never);
+
+    appStore.dispatch(loadKnownRepos());
+    await flush();
+
+    expect(invokeMock).toHaveBeenCalledWith("workspace:get-recent-repositories", {});
+    expect(getItems(appStore.state.knownRepos.repos)).toEqual([repo]);
+    expect(appStore.state.knownRepos.loaded).toBe(true);
+  });
+
+  it("loadKnownRepos falls back to an empty list when the IPC call fails", async () => {
+    appStore.dispatch(setRepos([{ path: "/r", name: "r", addedAt: "x", lastUsedAt: "y" }]));
+    invokeMock.mockRejectedValueOnce(new Error("ipc down") as never);
+
+    appStore.dispatch(loadKnownRepos());
+    await flush();
+
+    expect(getItems(appStore.state.knownRepos.repos)).toEqual([]);
+    expect(appStore.state.knownRepos.loaded).toBe(true);
+  });
+
+  it("loadKnownRepos falls back to an empty list on an unsuccessful response", async () => {
+    invokeMock.mockResolvedValueOnce({ success: false } as never);
+
+    appStore.dispatch(loadKnownRepos());
+    await flush();
+
+    expect(getItems(appStore.state.knownRepos.repos)).toEqual([]);
+  });
+
+  it("initContextForWorkspace hydrates items persisted in localStorage", async () => {
+    const wsId = "ws-context-hydrate";
+    // The global test-setup stubs window.localStorage with vi.fn()s; drive getItem
+    // so safeLocalStorage.getJSON returns the persisted array.
+    getItemMock.mockReturnValueOnce(JSON.stringify([noteItem("n1"), noteItem("n2")]));
+
+    appStore.dispatch(initContextForWorkspace(wsId));
+    await flush();
+
+    expect(getItemMock).toHaveBeenCalledWith(`workspace:context:${wsId}`);
+    expect(selectContextItems.select(appStore.state, wsId).map((i) => i.id)).toEqual([
+      "n1",
+      "n2",
+    ]);
+  });
+
+  it("initContextForWorkspace is a no-op when no persisted context exists", async () => {
+    const wsId = "ws-context-missing";
+    getItemMock.mockReturnValueOnce(null);
+    appStore.dispatch(addContextItem(wsId, noteItem("inmemory")));
+
+    appStore.dispatch(initContextForWorkspace(wsId));
+    await flush();
+
+    expect(selectContextItems.select(appStore.state, wsId).map((i) => i.id)).toEqual([
+      "inmemory",
+    ]);
   });
 });

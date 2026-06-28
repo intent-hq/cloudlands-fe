@@ -9,20 +9,31 @@
  *     Collection-friendly `GithubRepoItem` shape and stored via `setGithubRepos`.
  *   `fetchEditors`    → `externalEditorsClient.detectInstalled()` (raw IPC),
  *     honoring the `lastFetched`/loading cache guard unless `forceRefresh`.
+ *   `initContextForWorkspace` → `safeLocalStorage.getJSON()` for the per-workspace
+ *     context key, hydrating items via `hydrateContextItems`. Guarded so a given
+ *     workspace is hydrated at most once (avoids clobbering in-memory edits).
+ *   `loadKnownRepos`  → `invoke(GET_RECENT_REPOSITORIES)` (raw IPC), stored via
+ *     `setRepos`; best-effort, falling back to an empty list on any failure.
  *
  * READ-ONLY: this module never invokes a mutation. Refreshes are coalesced per
  * key via an in-flight map so rapid dispatches collapse into a single fetch.
  *
  * Dependency-light per src/store AGENTS.md: imports only the feature IPC clients,
- * the configured store, slice actions, a pure collection lookup, and the logger
- * (NOT selectors — importing them would evaluate `store.createSelector` while the
- * store module is still mid-initialization through the middleware chain).
+ * the raw IPC bridge, safe localStorage, the configured store, slice actions, a
+ * pure collection lookup, and the logger (NOT selectors — importing them would
+ * evaluate `store.createSelector` while the store module is still mid-init
+ * through the middleware chain).
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { githubAuthClient } from "$features/github-auth/renderer/github-auth.client";
 import type { GithubRepo } from "$features/github-auth/types";
 import { externalEditorsClient } from "$features/external-editors/external-editors.client";
+import { invoke } from "$lib/electron-bridge";
+import { IPC_CHANNELS } from "$shared/ipc-registry";
+import { safeLocalStorage } from "$lib/utils/safe-storage";
+import type { ContextItem } from "$features/context/types";
+import type { KnownRepo } from "$shared/types/known-repo";
 import { store as appStore } from "$store/renderer/store";
 import { createLogger } from "$lib/utils/client-logger";
 import {
@@ -40,6 +51,11 @@ import {
   fetchEditorsSuccess,
   setLoading,
 } from "../slices/external-editors/external-editors-slice";
+import {
+  hydrateContextItems,
+  initContextForWorkspace,
+} from "../slices/context/context-slice";
+import { loadKnownRepos, setRepos } from "../slices/known-repos/known-repos-slice";
 
 const logger = createLogger("LifecycleIpcReadService");
 
@@ -113,9 +129,63 @@ function refreshEditors(forceRefresh: boolean): void {
   });
 }
 
+/** Workspace IDs already hydrated from localStorage; prevents clobbering in-memory edits. */
+const initializedContextWorkspaces = new Set<string>();
+
+/** localStorage key holding a workspace's persisted context items (mirrors the old saga). */
+function contextStorageKey(workspaceId: string): string {
+  return `workspace:context:${workspaceId}`;
+}
+
+/**
+ * Hydrate a workspace's context items from localStorage exactly once (mirrors the
+ * old context init saga). A missing/invalid key is a documented no-op: we record
+ * the workspace as initialized and dispatch nothing, leaving existing state intact.
+ */
+function refreshContextForWorkspace(workspaceId: string): void {
+  if (initializedContextWorkspaces.has(workspaceId)) return;
+  coalesce(`context:${workspaceId}`, async () => {
+    if (initializedContextWorkspaces.has(workspaceId)) return;
+    const stored = safeLocalStorage.getJSON<ContextItem[]>(contextStorageKey(workspaceId));
+    if (Array.isArray(stored)) {
+      appStore.dispatch(hydrateContextItems(workspaceId, stored));
+    }
+    initializedContextWorkspaces.add(workspaceId);
+  });
+}
+
+/** IPC response shape for the recent-repositories registry channel. */
+type KnownReposResponse = { success: boolean; data?: KnownRepo[] };
+
+/** Load the persistent known-repo registry (mirrors the old known-repos saga). */
+function refreshKnownRepos(): void {
+  coalesce("knownRepos", async () => {
+    try {
+      const result = await invoke<KnownReposResponse>(
+        IPC_CHANNELS.WORKSPACE.GET_RECENT_REPOSITORIES,
+        {},
+      );
+      if (result?.success && Array.isArray(result.data)) {
+        appStore.dispatch(setRepos(result.data));
+        return;
+      }
+    } catch (error) {
+      logger.error("Failed to load known repos", error);
+    }
+    appStore.dispatch(setRepos([]));
+  });
+}
+
 /** First array-payload element coerced to a boolean force-refresh flag. */
 function forceRefreshOf(action: { payload?: unknown }): boolean {
   return Array.isArray(action.payload) ? Boolean(action.payload[0]) : false;
+}
+
+/** First array-payload element coerced to a workspace-id string, or undefined. */
+function workspaceIdOf(action: { payload?: unknown }): string | undefined {
+  return Array.isArray(action.payload) && typeof action.payload[0] === "string"
+    ? action.payload[0]
+    : undefined;
 }
 
 /**
@@ -133,6 +203,14 @@ export function createLifecycleIpcReadMiddleware(): StoreMiddleware {
           break;
         case fetchEditors.type:
           refreshEditors(forceRefreshOf(action));
+          break;
+        case initContextForWorkspace.type: {
+          const workspaceId = workspaceIdOf(action);
+          if (workspaceId) refreshContextForWorkspace(workspaceId);
+          break;
+        }
+        case loadKnownRepos.type:
+          refreshKnownRepos();
           break;
       }
     }
