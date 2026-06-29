@@ -16,7 +16,6 @@ import { AgentStatus } from '$shared/types';
 import { Logger } from '$shared/logger';
 import type { WorkspaceId as BrandedWorkspaceId } from '$shared/types/branded-ids';
 import { typedInvoke } from '$shared/ipc/typed-invoke';
-import { agentValidator } from './agent-validator';
 import type { AgentIpc } from '$shared/ipc/contracts';
 import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 import { generateAgentNameFromText } from '$lib/utils/agent-name-generator';
@@ -206,25 +205,9 @@ export class UnifiedAgentFactory {
         logger.warn('Circuit breaker check failed, proceeding with agent creation', { error: e });
       }
 
-      // Step 2: Validate configuration BEFORE normalization to catch invalid characters
-      // First validate the raw config to check for invalid characters
-      const preValidation = agentValidator.validateConfig(config);
-      if (!preValidation.valid) {
-        // Check if the error is specifically about invalid characters in the name
-        const invalidCharError = preValidation.errors?.find((err) =>
-          err.includes('invalid characters'),
-        );
-        if (invalidCharError) {
-          logger.error('Configuration validation failed', {
-            errors: preValidation.errors,
-            config,
-          });
-          return {
-            success: false,
-            error: preValidation.errors?.join(', ') || 'Invalid configuration',
-          };
-        }
-      }
+      // Step 2: Config validation is performed server-side in the backend over
+      // AGENT_CHANNELS.CREATE (see consolidated-backend.service). The validator now
+      // lives in the main process, so the renderer create path no longer validates here.
 
       // Step 3: Normalize configuration (sanitizes names, etc.)
       // If no name provided, normalizeConfig will generate one from the initial message.
@@ -323,18 +306,7 @@ export class UnifiedAgentFactory {
         }
       }
 
-      // Step 4: Validate normalized configuration for other requirements
-      const validation = agentValidator.validateConfig(normalized);
-      if (!validation.valid) {
-        logger.error('Configuration validation failed', {
-          errors: validation.errors,
-          config: normalized,
-        });
-        return {
-          success: false,
-          error: validation.errors?.join(', ') || 'Invalid configuration',
-        };
-      }
+      // Step 4: Normalized config is validated server-side over AGENT_CHANNELS.CREATE.
       metrics.validationTime = Date.now() - validationStart;
 
       // Step 5: Generate IDs using unified service (or use provided ID)

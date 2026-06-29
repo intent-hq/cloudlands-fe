@@ -40,7 +40,7 @@ vi.mock('$shared/logger', () => {
 vi.mock('../../services/stream-manager', () => ({
   StreamManager: { getInstance: () => streamManagerMock },
 }));
-vi.mock('../../services/agent-validator', () => ({
+vi.mock('../agent-validator', () => ({
   agentValidator: { validateConfig: vi.fn(() => ({ valid: true })) },
 }));
 vi.mock('../../services/error-handler', () => ({

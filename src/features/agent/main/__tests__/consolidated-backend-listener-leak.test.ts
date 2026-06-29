@@ -59,7 +59,7 @@ vi.mock('../services/stream-manager', () => ({
     }),
   },
 }));
-vi.mock('../services/agent-validator', () => ({
+vi.mock('../agent-validator', () => ({
   agentValidator: { validateConfig: vi.fn(() => ({ valid: true })) },
 }));
 vi.mock('../services/error-handler', () => ({

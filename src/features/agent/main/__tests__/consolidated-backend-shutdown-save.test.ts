@@ -64,7 +64,7 @@ vi.mock('../services/stream-manager', () => ({
     getInstance: () => ({ destroy: vi.fn(), dispose: vi.fn(), cleanupSession: vi.fn() }),
   },
 }));
-vi.mock('../services/agent-validator', () => ({
+vi.mock('../agent-validator', () => ({
   agentValidator: { validateConfig: vi.fn(() => ({ valid: true })) },
 }));
 vi.mock('../services/error-handler', () => ({

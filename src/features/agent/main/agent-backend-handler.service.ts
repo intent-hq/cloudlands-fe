@@ -50,7 +50,7 @@ import { WorkspaceConfig } from '../../../shared/main/config';
 import { resizeImageForAgent } from '../../../shared/main/image-resize';
 import { workspaceService } from '../../workspace/main/workspace.service';
 import { isAutoCommitEnabled } from '../../workspace/main/workspace-settings.service';
-import { agentValidator } from '../services/agent-validator';
+import { agentValidator } from './agent-validator';
 import * as messageAccumulator from '../../../store/main/slices/message-accumulator/message-accumulator-api';
 import { resolveStreamingConfig, DEFAULT_PROFILE } from '../../../shared/streaming-config';
 import { agentPersistence, UnifiedPersistence } from './agent-persistence';
