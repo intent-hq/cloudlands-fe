@@ -65,6 +65,7 @@ import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcas
 import type { McpServerConfig } from '../../mcp/main/user-mcp-settings';
 import { execAsync } from '../../../shared/git/git-env';
 import { findBinary } from '../../../shared/main/find-binary';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 import {
   APP_CHANNELS,
   DEEP_LINK_CHANNELS,
@@ -2978,14 +2979,24 @@ export function setupSystemIPC() {
     ),
   );
 
-  // Check git availability
+  // Check git availability — delegated to the daemon host so detection
+  // matches the machine actually running git (and is consistent across
+  // local/remote transports). Mapped back to the existing IPC contract.
   ipcMain.handle(SYSTEM_CHANNELS.CHECK_GIT, async () => {
     try {
-      const { stdout } = await execAsync('git --version', {
-        timeout: 5000,
+      const result = await getBackendClient().request<{ available: boolean; version?: string }>(
+        'host.checkGit',
+      );
+      const available = result?.available === true;
+      const version = typeof result?.version === 'string' ? result.version : undefined;
+      return {
+        success: true,
+        data: available ? { available: true, version } : { available: false },
+      };
+    } catch (error) {
+      logger.warn('host.checkGit failed', {
+        error: error instanceof Error ? error.message : String(error),
       });
-      return { success: true, data: { available: true, version: stdout.trim() } };
-    } catch {
       return { success: true, data: { available: false } };
     }
   });
