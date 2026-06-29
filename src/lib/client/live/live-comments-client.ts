@@ -114,16 +114,34 @@ async function fetchComments(noteId: string): Promise<CommentV2[]> {
   const workspaceId = await resolveNoteWorkspaceId(noteId);
   if (!workspaceId) return [];
   try {
-    const result = await backendRequest<{ comments?: unknown[] } | unknown[]>("comment.list", {
+    // PROTOCOL §5.3: `comment.list` returns `{ threads: [...] }` and only
+    // populates each `threads[].comments` when `includeComments` is set. The
+    // renderer needs a flat `CommentV2[]`, so request the nested comments and
+    // flatten them in order.
+    const result = await backendRequest<{ threads?: unknown[] }>("comment.list", {
       workspaceId,
       noteId,
+      includeComments: true,
     });
-    const comments = Array.isArray(result)
-      ? result
-      : Array.isArray((result as { comments?: unknown[] })?.comments)
-        ? (result as { comments: unknown[] }).comments
-        : [];
-    return comments.map((c) => normalizeComment(c as Record<string, unknown>, noteId));
+    const threads = Array.isArray((result as { threads?: unknown[] })?.threads)
+      ? (result as { threads: unknown[] }).threads
+      : [];
+    const out: CommentV2[] = [];
+    for (const t of threads) {
+      if (!t || typeof t !== "object") continue;
+      const thread = t as { comments?: unknown[] };
+      if (Array.isArray(thread.comments)) {
+        for (const c of thread.comments) {
+          out.push(normalizeComment(c as Record<string, unknown>, noteId));
+        }
+      } else {
+        // Trivial fallback when `includeComments` was not honored: the
+        // thread summary itself becomes a head-comment proxy (threadId,
+        // status, timestamps) so the renderer at least sees the thread.
+        out.push(normalizeComment(thread as Record<string, unknown>, noteId));
+      }
+    }
+    return out;
   } catch {
     return [];
   }
