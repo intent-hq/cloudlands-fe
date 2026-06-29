@@ -1,363 +1,79 @@
 /**
- * Tests for GitHubService
+ * Tests for GitHubService.
+ *
+ * Covers the post-rewire surface that routes every call through the intentd
+ * `github.*` JSON-RPC namespace (PROTOCOL §5.27) instead of the deleted
+ * `augment-api.client` proxy. `getCheckRuns` and `getReviews` have no
+ * explicit-addressed §5.27 equivalent and degrade to empty results — the
+ * specs below pin that contract.
  */
 
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GitHubService } from '../main/github.service';
 
-// Mock the github-auth service
+// Mock the github-auth service used for the authenticated gate.
 vi.mock('../../github-auth/main/github-auth.service', () => ({
   githubAuthService: {
     isAuthenticated: vi.fn(),
   },
 }));
 
-// Mock the augment API client
-vi.mock('../../../shared/augment-api/augment-api.client', () => ({
-  augmentApiClient: {
-    callEndpoint: vi.fn(),
-    isAuthenticated: vi.fn(),
-  },
+// Mock the backend JSON-RPC client used by the new implementation.
+const requestMock = vi.fn();
+vi.mock('../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: requestMock }),
 }));
 
 import { githubAuthService } from '../../github-auth/main/github-auth.service';
-import { augmentApiClient } from '../../../shared/augment-api/augment-api.client';
 
 describe('GitHubService', () => {
   let service: GitHubService;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Create fresh instance to clear cache
+    requestMock.mockReset();
     service = new GitHubService();
   });
 
-  describe('getCheckRuns', () => {
-    it('should return zeros when not authenticated', async () => {
+  describe('getCheckRuns (degraded — no explicit-addressed §5.27 equivalent)', () => {
+    it('returns zeros when not authenticated and never hits the daemon', async () => {
       vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(false);
 
       const result = await service.getCheckRuns('owner', 'repo', 'sha123');
 
       expect(result).toEqual({ total: 0, passed: 0, failed: 0, pending: 0 });
+      expect(requestMock).not.toHaveBeenCalled();
     });
 
-    it('should return all checks passing', async () => {
+    it('returns zeros when authenticated without calling the daemon', async () => {
       vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
-      vi.mocked(augmentApiClient.callEndpoint).mockResolvedValue({
-        status: 1,
-        tool_output: `
-check_runs:
-  - name: test1
-    status: completed
-    conclusion: success
-  - name: test2
-    status: completed
-    conclusion: success
-  - name: test3
-    status: completed
-    conclusion: success
-`,
-        tool_result_message: 'OK',
-      });
-
-      const result = await service.getCheckRuns('owner', 'repo', 'sha123');
-
-      expect(result).toEqual({ total: 3, passed: 3, failed: 0, pending: 0 });
-    });
-
-    it('should handle mixed results', async () => {
-      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
-      vi.mocked(augmentApiClient.callEndpoint).mockResolvedValue({
-        status: 1,
-        tool_output: `
-check_runs:
-  - name: build
-    status: completed
-    conclusion: success
-  - name: lint
-    status: completed
-    conclusion: success
-  - name: e2e
-    status: completed
-    conclusion: failure
-  - name: deploy
-    status: in_progress
-    conclusion: null
-`,
-        tool_result_message: 'OK',
-      });
 
       const result = await service.getCheckRuns('owner', 'repo', 'sha456');
 
-      expect(result).toEqual({ total: 4, passed: 2, failed: 1, pending: 1 });
-    });
-
-    it('should count neutral and skipped as passed', async () => {
-      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
-      vi.mocked(augmentApiClient.callEndpoint).mockResolvedValue({
-        status: 1,
-        tool_output: `
-check_runs:
-  - name: optional-check
-    status: completed
-    conclusion: neutral
-  - name: skipped-check
-    status: completed
-    conclusion: skipped
-  - name: main-check
-    status: completed
-    conclusion: success
-`,
-        tool_result_message: 'OK',
-      });
-
-      const result = await service.getCheckRuns('owner', 'repo', 'sha789');
-
-      expect(result).toEqual({ total: 3, passed: 3, failed: 0, pending: 0 });
-    });
-
-    it('should count non-completed status as pending', async () => {
-      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
-      vi.mocked(augmentApiClient.callEndpoint).mockResolvedValue({
-        status: 1,
-        tool_output: `
-check_runs:
-  - name: queued-check
-    status: queued
-    conclusion: null
-  - name: running-check
-    status: in_progress
-    conclusion: null
-`,
-        tool_result_message: 'OK',
-      });
-
-      const result = await service.getCheckRuns('owner', 'repo', 'shaPending');
-
-      expect(result).toEqual({ total: 2, passed: 0, failed: 0, pending: 2 });
-    });
-
-    it('should count failure conclusions as failed', async () => {
-      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
-      vi.mocked(augmentApiClient.callEndpoint).mockResolvedValue({
-        status: 1,
-        tool_output: `
-check_runs:
-  - name: failed-test
-    status: completed
-    conclusion: failure
-  - name: cancelled-job
-    status: completed
-    conclusion: cancelled
-  - name: timeout-job
-    status: completed
-    conclusion: timed_out
-  - name: action-needed
-    status: completed
-    conclusion: action_required
-`,
-        tool_result_message: 'OK',
-      });
-
-      const result = await service.getCheckRuns('owner', 'repo', 'shaFailed');
-
-      expect(result).toEqual({ total: 4, passed: 0, failed: 4, pending: 0 });
-    });
-
-    it('should return zeros for empty response', async () => {
-      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
-      vi.mocked(augmentApiClient.callEndpoint).mockResolvedValue({
-        status: 1,
-        tool_output: `
-check_runs: []
-`,
-        tool_result_message: 'OK',
-      });
-
-      const result = await service.getCheckRuns('owner', 'repo', 'shaEmpty');
-
       expect(result).toEqual({ total: 0, passed: 0, failed: 0, pending: 0 });
-    });
-
-    it('should use cached result on second call', async () => {
-      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
-      vi.mocked(augmentApiClient.callEndpoint).mockResolvedValue({
-        status: 1,
-        tool_output: `
-check_runs:
-  - name: test
-    status: completed
-    conclusion: success
-`,
-        tool_result_message: 'OK',
-      });
-
-      // First call
-      await service.getCheckRuns('owner', 'repo', 'shaCached');
-      // Second call
-      await service.getCheckRuns('owner', 'repo', 'shaCached');
-
-      // API should only be called once
-      expect(augmentApiClient.callEndpoint).toHaveBeenCalledTimes(1);
+      expect(requestMock).not.toHaveBeenCalled();
     });
   });
 
-  describe('getReviews', () => {
-    it('should return empty when not authenticated', async () => {
+  describe('getReviews (degraded — no explicit-addressed §5.27 equivalent)', () => {
+    it('returns empty decision when not authenticated and never hits the daemon', async () => {
       vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(false);
-
-      const result = await service.getReviews('owner', 'repo', 123);
-
-      expect(result).toEqual({
-        reviewDecision: null,
-        approvalCount: 0,
-        changesRequestedCount: 0,
-        approvedBy: [],
-      });
-    });
-
-    it('should return APPROVED for single approval', async () => {
-      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
-      vi.mocked(augmentApiClient.callEndpoint).mockResolvedValue({
-        status: 1,
-        tool_output: `
-- state: APPROVED
-  user:
-    login: reviewer1
-  submitted_at: "2025-01-01T10:00:00Z"
-`,
-        tool_result_message: 'OK',
-      });
 
       const result = await service.getReviews('owner', 'repo', 1);
 
       expect(result).toEqual({
-        reviewDecision: 'APPROVED',
-        approvalCount: 1,
+        reviewDecision: null,
+        approvalCount: 0,
         changesRequestedCount: 0,
-        approvedBy: ['reviewer1'],
+        approvedBy: [],
       });
+      expect(requestMock).not.toHaveBeenCalled();
     });
 
-    it('should return CHANGES_REQUESTED when changes requested', async () => {
+    it('returns empty decision when authenticated without calling the daemon', async () => {
       vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
-      vi.mocked(augmentApiClient.callEndpoint).mockResolvedValue({
-        status: 1,
-        tool_output: `
-- state: CHANGES_REQUESTED
-  user:
-    login: reviewer1
-  submitted_at: "2025-01-01T10:00:00Z"
-`,
-        tool_result_message: 'OK',
-      });
 
       const result = await service.getReviews('owner', 'repo', 2);
-
-      expect(result).toEqual({
-        reviewDecision: 'CHANGES_REQUESTED',
-        approvalCount: 0,
-        changesRequestedCount: 1,
-        approvedBy: [],
-      });
-    });
-
-    it('should use latest review per user', async () => {
-      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
-      vi.mocked(augmentApiClient.callEndpoint).mockResolvedValue({
-        status: 1,
-        tool_output: `
-- state: APPROVED
-  user:
-    login: reviewer1
-  submitted_at: "2025-01-01T10:00:00Z"
-- state: CHANGES_REQUESTED
-  user:
-    login: reviewer1
-  submitted_at: "2025-01-01T11:00:00Z"
-`,
-        tool_result_message: 'OK',
-      });
-
-      const result = await service.getReviews('owner', 'repo', 3);
-
-      expect(result).toEqual({
-        reviewDecision: 'CHANGES_REQUESTED',
-        approvalCount: 0,
-        changesRequestedCount: 1,
-        approvedBy: [],
-      });
-    });
-
-    it('should return CHANGES_REQUESTED if any user has changes requested', async () => {
-      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
-      vi.mocked(augmentApiClient.callEndpoint).mockResolvedValue({
-        status: 1,
-        tool_output: `
-- state: APPROVED
-  user:
-    login: reviewer1
-  submitted_at: "2025-01-01T10:00:00Z"
-- state: CHANGES_REQUESTED
-  user:
-    login: reviewer2
-  submitted_at: "2025-01-01T10:00:00Z"
-`,
-        tool_result_message: 'OK',
-      });
-
-      const result = await service.getReviews('owner', 'repo', 4);
-
-      expect(result).toEqual({
-        reviewDecision: 'CHANGES_REQUESTED',
-        approvalCount: 1,
-        changesRequestedCount: 1,
-        approvedBy: ['reviewer1'],
-      });
-    });
-
-    it('should ignore COMMENTED state', async () => {
-      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
-      vi.mocked(augmentApiClient.callEndpoint).mockResolvedValue({
-        status: 1,
-        tool_output: `
-- state: APPROVED
-  user:
-    login: reviewer1
-  submitted_at: "2025-01-01T10:00:00Z"
-- state: COMMENTED
-  user:
-    login: reviewer2
-  submitted_at: "2025-01-01T11:00:00Z"
-`,
-        tool_result_message: 'OK',
-      });
-
-      const result = await service.getReviews('owner', 'repo', 5);
-
-      expect(result).toEqual({
-        reviewDecision: 'APPROVED',
-        approvalCount: 1,
-        changesRequestedCount: 0,
-        approvedBy: ['reviewer1'],
-      });
-    });
-
-    it('should return null decision for empty reviews', async () => {
-      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
-      vi.mocked(augmentApiClient.callEndpoint).mockResolvedValue({
-        status: 1,
-        tool_output: `[]`,
-        tool_result_message: 'OK',
-      });
-
-      const result = await service.getReviews('owner', 'repo', 6);
 
       expect(result).toEqual({
         reviewDecision: null,
@@ -365,7 +81,74 @@ check_runs:
         changesRequestedCount: 0,
         approvedBy: [],
       });
+      expect(requestMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getPullRequests (routes through github.pulls.list)', () => {
+    it('returns [] when not authenticated', async () => {
+      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(false);
+
+      const result = await service.getPullRequests('owner', 'repo');
+
+      expect(result).toEqual([]);
+      expect(requestMock).not.toHaveBeenCalled();
+    });
+
+    it('maps the wire `pulls[]` into the FE PullRequest shape', async () => {
+      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
+      requestMock.mockResolvedValue({
+        pulls: [
+          {
+            number: 7,
+            title: 'feat: thing',
+            body: 'body',
+            state: 'open',
+            htmlUrl: 'https://github.com/owner/repo/pull/7',
+            createdAt: '2026-06-01T00:00:00Z',
+            updatedAt: '2026-06-02T00:00:00Z',
+            user: { login: 'octocat', avatarUrl: 'https://x/y.png' },
+            headRef: 'feat-branch',
+            baseRef: 'main',
+            headSha: 'abc',
+            baseSha: 'def',
+            merged: false,
+            draft: false,
+            labels: ['bug'],
+            assignees: [{ login: 'alice' }],
+            comments: 0,
+            reviewComments: 0,
+            commits: 1,
+            additions: 10,
+            deletions: 2,
+            changedFiles: 3,
+          },
+        ],
+      });
+
+      const [pr] = await service.getPullRequests('owner', 'repo', { state: 'open' });
+
+      expect(requestMock).toHaveBeenCalledWith('github.pulls.list', {
+        owner: 'owner',
+        repo: 'repo',
+        state: 'open',
+      });
+      expect(pr.number).toBe(7);
+      expect(pr.sourceBranch).toBe('feat-branch');
+      expect(pr.targetBranch).toBe('main');
+      expect(pr.author.login).toBe('octocat');
+      expect(pr.author.avatarUrl).toBe('https://x/y.png');
+      expect(pr.labels).toEqual(['bug']);
+      expect(pr.assignees).toEqual(['alice']);
+    });
+
+    it('returns [] on RPC failure (caller falls back to no-PR)', async () => {
+      vi.mocked(githubAuthService.isAuthenticated).mockResolvedValue(true);
+      requestMock.mockRejectedValue(new Error('boom'));
+
+      const result = await service.getPullRequests('owner', 'repo');
+
+      expect(result).toEqual([]);
     });
   });
 });
-
