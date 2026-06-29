@@ -10,7 +10,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { homedir } from 'os';
 import { Logger } from '../../../shared/logger';
-import { findParentGitDir } from '../../../shared/git/git-utils';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 import {
   isBinaryExtension,
   detectBinaryContent,
@@ -1172,79 +1172,27 @@ export function setupFileIPC() {
     ),
   );
 
-  // Get directory status (exists, isEmpty, isGitRepo)
+  // Get directory status — delegated to the daemon host. The BE mirrors the
+  // worktree-aware .git detection and parent-git-root walk, so the IPC
+  // response shape ({ exists, isDirectory, isEmpty, isGitRepo, parentGitRoot?,
+  // relativePathFromGitRoot?, isSubdirectoryOfGitRepo, path }) is preserved.
   ipcMain.handle(
     FILE_CHANNELS.GET_DIRECTORY_STATUS,
     createSafeValidatedHandler(
       FileGetDirectoryStatusSchema,
       async (_, validated) => {
         try {
-          const expandedPath = expandPath(validated.path);
-
-          // Check if path exists
-          let exists = false;
-          let isDirectory = false;
-          let isEmpty = true;
-          let isGitRepo = false;
-          let parentGitRoot: string | undefined;
-          let relativePathFromGitRoot: string | undefined;
-          let isSubdirectoryOfGitRepo = false;
-
-          try {
-            const stats = await fs.stat(expandedPath);
-            exists = true;
-            isDirectory = stats.isDirectory();
-
-            if (isDirectory) {
-              // Check if directory is empty
-              const entries = await fs.readdir(expandedPath);
-              isEmpty = entries.length === 0;
-
-              // Check if it's a git repository (has .git in the exact directory)
-              // In worktrees, .git is a file containing "gitdir: ..." instead of a directory
-              const gitDir = path.join(expandedPath, '.git');
-              try {
-                const gitStats = await fs.stat(gitDir);
-                if (gitStats.isDirectory()) {
-                  isGitRepo = true;
-                } else if (gitStats.isFile()) {
-                  const content = await fs.readFile(gitDir, 'utf-8');
-                  isGitRepo = content.trim().startsWith('gitdir:');
-                }
-              } catch {
-                // .git doesn't exist in this directory
-                isGitRepo = false;
-              }
-
-              // If not a git repo itself, check for parent git repository
-              if (!isGitRepo) {
-                const parentGit = await findParentGitDir(expandedPath);
-                if (parentGit) {
-                  parentGitRoot = parentGit;
-                  isSubdirectoryOfGitRepo = true;
-                  // Calculate relative path from git root to selected directory
-                  relativePathFromGitRoot = path.relative(parentGit, expandedPath);
-                }
-              }
-            }
-          } catch {
-            // Path doesn't exist
-            exists = false;
-          }
-
-          return {
-            success: true,
-            data: {
-              exists,
-              isDirectory,
-              isEmpty,
-              isGitRepo,
-              parentGitRoot,
-              relativePathFromGitRoot,
-              isSubdirectoryOfGitRepo,
-              path: expandedPath,
-            },
-          };
+          const result = await getBackendClient().request<{
+            exists: boolean;
+            isDirectory: boolean;
+            isEmpty: boolean;
+            isGitRepo: boolean;
+            parentGitRoot?: string;
+            relativePathFromGitRoot?: string;
+            isSubdirectoryOfGitRepo: boolean;
+            path: string;
+          }>('host.directoryStatus', { path: validated.path });
+          return { success: true, data: result };
         } catch (error) {
           logger.error('Failed to get directory status', error as Error);
           return {
