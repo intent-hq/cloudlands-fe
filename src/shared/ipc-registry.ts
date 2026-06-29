@@ -219,17 +219,6 @@ export const IPC_CHANNELS = {
     UNSUBSCRIBE_AGENT: 'events:unsubscribe-agent',
   },
 
-  // Observability
-  OBSERVABILITY: {
-    COLLECT_EVENT: 'observability:collect-event',
-    GET_EVENTS: 'observability:get-events',
-    SUBSCRIBE: 'observability:subscribe',
-    GET_SESSION_SUMMARY: 'observability:get-session-summary',
-    GET_METRICS: 'observability:get-metrics',
-    EXPORT: 'observability:export',
-    CLEAR: 'observability:clear',
-  },
-
   // Auggie Integration
   AUGGIE: {
     CHECK_AVAILABILITY: 'auggie:check-availability',
@@ -1272,7 +1261,6 @@ export const EVENT_CHANNELS = [
   'terminal:disposed', // Terminal disposed event (from workspace cleanup)
   'events:new',
   'events:cleared',
-  'observability:event',
   'permission:event',
   'app:ready',
   'app:ui:navigate',

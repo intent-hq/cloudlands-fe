@@ -390,19 +390,12 @@ function ensureElectronBinary() {
 }
 
 /**
- * Ensure native modules (better-sqlite3, node-pty) are built for Electron.
+ * Ensure native modules (node-pty) are built for Electron.
  * In fresh worktrees where postinstall was skipped, the Electron ABI binary is missing.
  */
 function ensureNativeModules() {
   const rootDir = dirname(__dirname);
   const nativeModules = [
-    {
-      name: 'better-sqlite3',
-      hasBinary: (moduleDir) =>
-        existsSync(join(moduleDir, 'build', 'Release', 'better_sqlite3.node')) ||
-        directoryHasNodeBinary(join(moduleDir, 'lib', 'binding')) ||
-        directoryHasNodeBinary(join(moduleDir, 'compiled')),
-    },
     {
       name: 'node-pty',
       hasBinary: (moduleDir) =>

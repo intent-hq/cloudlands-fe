@@ -71,7 +71,7 @@ try {
 
   // Check which native modules need rebuilding
   const modulesToRebuild = [];
-  const nativeModules = ['better-sqlite3', 'node-pty'];
+  const nativeModules = ['node-pty'];
 
   for (const module of nativeModules) {
     const modulePath = path.join(rootDir, 'node_modules', module);
@@ -107,7 +107,7 @@ try {
     log.info('   - macOS: xcode-select --install');
     log.info('   - Windows: npm install -g windows-build-tools');
     log.info('   - Linux: sudo apt-get install build-essential');
-    log.info('2. Try running manually: npx @electron/rebuild -f -o better-sqlite3,node-pty');
+    log.info('2. Try running manually: npx @electron/rebuild -f -o node-pty');
     log.info('3. Check that Python is available in your PATH');
   }
 
@@ -134,14 +134,6 @@ log.info('🎉 Postinstall tasks completed!');
 async function verifyModules() {
   try {
     log.info('🔍 Verifying native modules...');
-
-    // Test better-sqlite3
-    try {
-      await import('better-sqlite3');
-      log.success('better-sqlite3 is working');
-    } catch (error) {
-      log.warn(`better-sqlite3 verification failed: ${error.message}`);
-    }
 
     // Test node-pty
     try {

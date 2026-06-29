@@ -120,10 +120,6 @@ vi.mock('$features/agent/services/error-handler', () => ({
   ErrorCategory: { COMMUNICATION: 'COMMUNICATION' },
   ErrorSeverity: { HIGH: 'HIGH' },
 }));
-vi.mock('../../observability/event-collector-client', () => ({
-  eventCollector: { track: vi.fn() },
-  AgentEventType: { MESSAGE_SENT: 'MESSAGE_SENT' },
-}));
 vi.mock('$store/renderer/slices/workspace/utils/workspace-metrics', () => ({
   workspaceMetrics: { incrementMessageSent: vi.fn() },
 }));

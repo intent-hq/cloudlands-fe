@@ -137,15 +137,15 @@ function main() {
   // npmRebuild is disabled in electron-builder.yml (it hangs on cpu-features),
   // so we must rebuild native modules explicitly here. Without this, the
   // packaged app ships .node binaries compiled for Node.js (wrong ABI) and
-  // crashes on startup (better-sqlite3) or fails to load (node-pty).
-  console.log('🔨 Rebuilding better-sqlite3 and node-pty for Electron...');
+  // fails to load (node-pty).
+  console.log('🔨 Rebuilding node-pty for Electron...');
   try {
-    execSync('npx @electron/rebuild -f -o better-sqlite3,node-pty', {
+    execSync('npx @electron/rebuild -f -o node-pty', {
       cwd: ROOT,
       stdio: 'inherit',
       timeout: 300000,
     });
-    console.log('✅ better-sqlite3 and node-pty rebuilt for Electron');
+    console.log('✅ node-pty rebuilt for Electron');
   } catch (err) {
     console.error(`❌ Failed to rebuild native modules: ${err.message}`);
     process.exit(1);
