@@ -122,27 +122,50 @@ describe("LiveCommentsClient mutations (fake transport)", () => {
   });
 });
 
-describe("LiveCommentsClient.normalizeComment (§8.7 subtype fields)", () => {
+describe("LiveCommentsClient.list (PROTOCOL §5.3 {threads} envelope)", () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("populates anchorContext for a comment and suggestionDiff for a suggestion", async () => {
-    mockedRequest.mockResolvedValueOnce([
-      {
-        id: "c-1",
-        type: "comment",
-        content: "hi",
-        anchorContext: { before: "B", after: "A" },
-      },
-      {
-        id: "s-1",
-        type: "suggestion",
-        content: "swap",
-        anchorContext: { before: "x", after: "y" },
-        suggestionDiff: { original: "foo", proposed: "bar" },
-      },
-    ]);
+  it("flattens threads[].comments and normalizes §8.7 subtype fields", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      threads: [
+        {
+          threadId: "t-1",
+          comments: [
+            {
+              id: "c-1",
+              threadId: "t-1",
+              type: "comment",
+              content: "hi",
+              anchorContext: { before: "B", after: "A" },
+            },
+          ],
+        },
+        {
+          threadId: "t-2",
+          comments: [
+            {
+              id: "s-1",
+              threadId: "t-2",
+              type: "suggestion",
+              content: "swap",
+              anchorContext: { before: "x", after: "y" },
+              suggestionDiff: { original: "foo", proposed: "bar" },
+            },
+          ],
+        },
+      ],
+      totalThreads: 2,
+      totalComments: 2,
+    });
 
     const comments = await new LiveCommentsClient().list("note-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith(
+      "comment.list",
+      expect.objectContaining({ workspaceId: "ws-1", noteId: "note-1", includeComments: true }),
+    );
+
+    expect(comments).toHaveLength(2);
 
     const comment = comments.find((c) => c.id === "c-1")!;
     expect(comment.type).toBe("comment");
@@ -155,5 +178,29 @@ describe("LiveCommentsClient.normalizeComment (§8.7 subtype fields)", () => {
       original: "foo",
       proposed: "bar",
     });
+  });
+
+  it("falls back to the thread summary when comments are absent (no includeComments)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      threads: [
+        {
+          threadId: "t-1",
+          noteId: "note-1",
+          status: "open",
+          createdAt: "2026-01-01T00:00:00Z",
+          lastActivity: "2026-01-01T00:00:00Z",
+          latestCommentAuthor: "User",
+          latestCommentAuthorType: "user",
+          latestCommentAt: "2026-01-01T00:00:00Z",
+          commentCount: 1,
+        },
+      ],
+      totalThreads: 1,
+      totalComments: 1,
+    });
+
+    const comments = await new LiveCommentsClient().list("note-1");
+    expect(comments).toHaveLength(1);
+    expect(comments[0].threadId).toBe("t-1");
   });
 });

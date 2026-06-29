@@ -10,6 +10,7 @@
 import { AgentStatus } from "$shared/types";
 import { AgentId, WorkspaceId } from "$shared/types/branded-ids";
 import type { AgentMessage, AgentSession } from "$shared/types";
+import type { QueuedMessage } from "$shared/types/agent-session";
 import type {
   AgentCreateRequest,
   AgentsClient,
@@ -20,6 +21,19 @@ import type {
 import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
 import { isEventOneOf, listWorkspaceIds, newIdempotencyKey, runMutation } from "./live-support";
+
+/**
+ * agentId → workspaceId cache populated by every `normalizeAgent` call (so any
+ * `list`/`get`/subscribe ingest also primes it). `agent.sendMessage` (§5.5)
+ * requires `workspaceId`, but the seam's `send(agentId, message)` does not
+ * carry it — this index lets us recover it without changing the public method
+ * signature. Miss → fall back to a fresh `agent.get`.
+ */
+const agentWorkspaceIndex = new Map<string, string>();
+
+function rememberAgentWorkspace(agentId: string, workspaceId: string): void {
+  if (agentId && workspaceId) agentWorkspaceIndex.set(agentId, workspaceId);
+}
 
 /** Lifecycle events that warrant an agent-list refresh (NOT stream/message). */
 const AGENT_LIFECYCLE_EVENTS = [
@@ -38,11 +52,13 @@ function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   const now = new Date().toISOString();
   const id = String(raw.id ?? "");
   const acpSessionId = raw.acpSessionId ? String(raw.acpSessionId) : null;
+  const workspaceId = String(raw.workspaceId ?? "");
+  rememberAgentWorkspace(id, workspaceId);
   return {
     ...(raw as Partial<AgentSession>),
     id: AgentId(id),
     backendSessionId: acpSessionId ? AgentId(acpSessionId) : null,
-    workspaceId: WorkspaceId(String(raw.workspaceId ?? "")),
+    workspaceId: WorkspaceId(workspaceId),
     name: String(raw.name ?? id),
     status: (typeof raw.status === "string" ? raw.status : AgentStatus.Pending) as AgentStatus,
     // The list/get payloads carry message COUNTS, not transcripts; chat history
@@ -111,10 +127,32 @@ export class LiveAgentsClient implements AgentsClient {
     });
   }
   async send(agentId: string, message: string): Promise<MutationResult> {
-    return runMutation("agent.send", { agentId, content: message });
+    const workspaceId = await this.resolveAgentWorkspaceId(agentId);
+    if (!workspaceId) {
+      return { success: false, error: `Unknown workspace for agent ${agentId}` };
+    }
+    // The seam's `send(agentId, message)` does not carry a messageId, so we mint
+    // a stable uuid here. The daemon echoes it back on `agent:user-message:sent`,
+    // which the renderer can use to reconcile the optimistic message it inserted
+    // (§10.3). `agent.sendMessage` auto-queues internally if the agent is
+    // mid-stream — the seam's `queue` is the explicit-enqueue path.
+    const messageId = newIdempotencyKey();
+    return runMutation("agent.sendMessage", { agentId, content: message, workspaceId, messageId });
   }
   async queue(agentId: string, message: string): Promise<MutationResult> {
-    return runMutation("agent.queue", { agentId, content: message });
+    // `agent.queueMessage` returns `{ success, queuedMessage }` (§5.5); we
+    // surface `queuedMessage` on the MutationResult so callers can render the
+    // queue position / id without an extra `agent.getQueue` round-trip.
+    try {
+      const result = await backendRequest<{ queuedMessage?: QueuedMessage } | undefined>(
+        "agent.queueMessage",
+        { agentId, content: message },
+      );
+      const queuedMessage = result?.queuedMessage;
+      return { success: true, ...(queuedMessage ? { queuedMessage } : {}) } as MutationResult;
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
   async setAvailability(agentId: string, available: boolean): Promise<MutationResult> {
     return runMutation("agent.setAvailability", { agentId, available });
@@ -124,6 +162,22 @@ export class LiveAgentsClient implements AgentsClient {
   }
   async lock(agentId: string, locked: boolean): Promise<MutationResult> {
     return runMutation("agent.lock", { agentId, locked });
+  }
+
+  /**
+   * Resolve the workspace this agent belongs to. Cached on every `normalizeAgent`
+   * call (list/get/subscribe paths); on miss we lazily refetch via `agent.get`,
+   * which normalizes the response and primes the cache as a side effect. Returns
+   * null if the agent cannot be located — caller surfaces the error rather than
+   * sending a malformed `agent.sendMessage` request.
+   */
+  private async resolveAgentWorkspaceId(agentId: string): Promise<string | null> {
+    const cached = agentWorkspaceIndex.get(agentId);
+    if (cached) return cached;
+    const agent = await this.get(agentId);
+    if (!agent) return null;
+    const resolved = String(agent.workspaceId ?? "");
+    return resolved.length > 0 ? resolved : null;
   }
 
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe {

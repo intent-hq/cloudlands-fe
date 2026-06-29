@@ -44,23 +44,82 @@ describe("LiveAgentsClient mutations (fake transport)", () => {
     );
   });
 
-  it("send forwards agent.send with content", async () => {
-    mockedRequest.mockResolvedValueOnce({ id: "agent-1" });
+  it("send forwards agent.sendMessage with workspaceId + minted messageId", async () => {
+    // First mockedRequest call resolves the agent (priming workspaceId cache);
+    // second is the actual agent.sendMessage mutation.
+    mockedRequest.mockResolvedValueOnce({ agent: { id: "agent-1", workspaceId: "ws-1" } });
+    mockedRequest.mockResolvedValueOnce({ success: true });
     const client = new LiveAgentsClient();
 
     expect(await client.send("agent-1", "hi")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("agent.send", { agentId: "agent-1", content: "hi" });
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, "agent.get", { agentId: "agent-1" });
+    expect(mockedRequest).toHaveBeenNthCalledWith(
+      2,
+      "agent.sendMessage",
+      expect.objectContaining({
+        agentId: "agent-1",
+        content: "hi",
+        workspaceId: "ws-1",
+        messageId: expect.any(String),
+      }),
+    );
   });
 
-  it("queue forwards agent.queue with content", async () => {
-    mockedRequest.mockResolvedValueOnce({ id: "agent-1" });
+  it("send reuses the cached workspaceId from a prior list/get without re-fetching", async () => {
+    // Prime the cache via list().
+    mockedRequest.mockResolvedValueOnce({
+      agents: [{ id: "agent-1", workspaceId: "ws-1", name: "A1", status: "idle" }],
+    });
+    const client = new LiveAgentsClient();
+    await client.list("ws-1");
+
+    mockedRequest.mockResolvedValueOnce({ success: true });
+    expect(await client.send("agent-1", "hi")).toEqual({ success: true });
+
+    // Exactly two backend calls total: the priming list and the sendMessage.
+    expect(mockedRequest).toHaveBeenCalledTimes(2);
+    expect(mockedRequest).toHaveBeenLastCalledWith(
+      "agent.sendMessage",
+      expect.objectContaining({ agentId: "agent-1", content: "hi", workspaceId: "ws-1" }),
+    );
+  });
+
+  it("send fails cleanly when the agent's workspace cannot be resolved", async () => {
+    // agent.get returns nothing -> resolver returns null -> send refuses to fire
+    // a malformed agent.sendMessage.
+    mockedRequest.mockResolvedValueOnce(null);
     const client = new LiveAgentsClient();
 
-    expect(await client.queue("agent-1", "later")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("agent.queue", {
+    const result = await client.send("agent-ghost", "hi");
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/agent-ghost/);
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(mockedRequest).toHaveBeenCalledWith("agent.get", { agentId: "agent-ghost" });
+  });
+
+  it("queue forwards agent.queueMessage and surfaces the returned queuedMessage", async () => {
+    const queuedMessage = {
+      id: "qm-1",
+      content: "later",
+      queuedAt: "2026-06-29T00:00:00.000Z",
+      position: 0,
+    };
+    mockedRequest.mockResolvedValueOnce({ success: true, queuedMessage });
+    const client = new LiveAgentsClient();
+
+    const result = await client.queue("agent-1", "later");
+    expect(result).toEqual({ success: true, queuedMessage });
+    expect(mockedRequest).toHaveBeenCalledWith("agent.queueMessage", {
       agentId: "agent-1",
       content: "later",
     });
+  });
+
+  it("queue still succeeds when the daemon omits queuedMessage", async () => {
+    mockedRequest.mockResolvedValueOnce({ success: true });
+    const client = new LiveAgentsClient();
+
+    expect(await client.queue("agent-1", "later")).toEqual({ success: true });
   });
 
   it("setAvailability forwards agent.setAvailability with the boolean", async () => {
@@ -94,9 +153,13 @@ describe("LiveAgentsClient mutations (fake transport)", () => {
   });
 
   it("maps a daemon error to a failed MutationResult without throwing", async () => {
+    // Use a fresh agentId so the module-level workspace cache is guaranteed to
+    // miss; the resolver call resolves successfully, then agent.sendMessage
+    // rejects and the failure is folded into a MutationResult (not thrown).
+    mockedRequest.mockResolvedValueOnce({ agent: { id: "agent-err", workspaceId: "ws-1" } });
     mockedRequest.mockRejectedValueOnce(new Error("agent busy"));
     const client = new LiveAgentsClient();
 
-    expect(await client.send("agent-1", "x")).toEqual({ success: false, error: "agent busy" });
+    expect(await client.send("agent-err", "x")).toEqual({ success: false, error: "agent busy" });
   });
 });

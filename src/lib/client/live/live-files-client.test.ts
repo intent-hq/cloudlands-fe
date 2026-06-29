@@ -100,3 +100,37 @@ describe("LiveFilesClient mutations (fake transport)", () => {
     expect(await client.write("ws-1", "a.ts", "x")).toEqual({ success: false, error: "boom" });
   });
 });
+
+describe("LiveFilesClient.explorerTree (fake transport)", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("forwards file.tree anchored at '.' and returns a synthetic root FileNode", async () => {
+    mockedRequest.mockResolvedValueOnce([
+      { path: "src", name: "src", isDirectory: true },
+      { path: "README.md", name: "README.md", isDirectory: false },
+    ]);
+    const client = new LiveFilesClient();
+
+    const tree = await client.explorerTree("ws-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("file.tree", { workspaceId: "ws-1", path: "." });
+    expect(tree).toEqual({
+      name: "",
+      path: "",
+      type: "directory",
+      children: [
+        { name: "src", path: "src", type: "directory" },
+        { name: "README.md", path: "README.md", type: "file" },
+      ],
+    });
+  });
+
+  it("resolves null when the daemon errors", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("tree boom"));
+    const client = new LiveFilesClient();
+
+    expect(await client.explorerTree("ws-1")).toBeNull();
+  });
+});
