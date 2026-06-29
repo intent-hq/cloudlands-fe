@@ -13,7 +13,7 @@
 
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { SPECIALISTS, getSpecialistById } from '../../src/lib/constants/specialists';
-import { common, taskBreakdown, workspace } from '../../src/features/agent/instructions';
+import { common, taskBreakdown, workspace } from '../../src/features/agent/main/instructions';
 import {
   formatSpecialistsForPrompt,
   initSpecialistsService,
