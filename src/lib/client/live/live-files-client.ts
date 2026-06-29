@@ -3,10 +3,12 @@
  *
  * `read` resolves via `file.read({ workspaceId, path })` and is mapped into the
  * renderer `FileContentEntry` cache shape. `gitStatusMap` is DERIVED from
- * `git.status` (the daemon exposes no per-path status map). The daemon has no
- * file-tree endpoint, so `explorerTree` resolves to `null`; `list` returns an
- * empty content cache (the daemon's directory listing is not a `FileContentEntry`
- * collection). `subscribe` refetches on `file:*` events.
+ * `git.status` (the daemon exposes no per-path status map). `explorerTree`
+ * resolves via the additive `file.tree` read (PROTOCOL §5.9), anchored at the
+ * workspace root; transport/daemon errors fold to `null` so the explorer
+ * degrades cleanly. `list` returns an empty content cache (the daemon's
+ * directory listing is not a `FileContentEntry` collection). `subscribe`
+ * refetches on `file:*` events.
  */
 import type { FileGitStatus, FileNode } from "$shared/types";
 import type { FileContentEntry } from "$store/renderer/slices/files/files-types";
@@ -110,10 +112,18 @@ export class LiveFilesClient implements FilesClient {
     }
   }
 
-  // The daemon exposes no file-tree endpoint; recursively walking `file.list`
-  // would be prohibitively chatty on real repos, so no tree is provided here.
-  async explorerTree(): Promise<null> {
-    return null;
+  // `file.tree` (PROTOCOL §5.9) returns the immediate entries under the given
+  // path as a BARE array; anchor the explorer at the workspace root (`"."`) and
+  // wrap the entries as the synthetic root `FileNode`'s children (the wire
+  // result is shallow — deeper levels load lazily via `listDirectory`).
+  async explorerTree(workspaceId: string): Promise<FileNode | null> {
+    try {
+      const result = await backendRequest<unknown>("file.tree", { workspaceId, path: "." });
+      const children = toFileNodes(result);
+      return { name: "", path: "", type: "directory", children };
+    } catch {
+      return null;
+    }
   }
 
   // Directory listing via the daemon's `file.list` (a directory listing, unlike

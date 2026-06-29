@@ -4,16 +4,25 @@
  * `status` (and `changes`, which mirrors it) resolve via `git.status`, returning
  * the daemon's working-tree summary directly in the renderer `GitStatus` shape.
  * `prStatus` resolves via `pr.status` (the daemon errors when no PR is active, so
- * that is folded to `null`). The daemon does NOT yet expose diff / commit-history
- * / tracked-change read methods, so those resolve to empty for now (no mock
- * fallback) — mirroring how `LiveWorkspacesClient.recentViews` handles
- * not-yet-exposed surfaces. `subscribe` refetches on `git:*` / `changes:git-status`
- * events. `stage` and `commit` are the two supported write mutations (`git.stage`
- * / `git.commit`); both fold the daemon outcome into a `MutationResult`.
+ * that is folded to `null`). `diffs` / `commits` / `trackedChanges` resolve via
+ * the additive `git.diffs` / `git.commits` / `git.changes` reads (PROTOCOL §5.6)
+ * and are mapped into the renderer `DiffChunk[]` / `CommitInfo[]` / `TrackedChange[]`
+ * shapes; transport/daemon errors fold to an empty list so a single failed read
+ * does not throw into the store. `subscribe` refetches on `git:*` /
+ * `changes:git-status` events. `stage` and `commit` are the two supported write
+ * mutations: `stage` forwards to `git.stage`; `commit` forwards to
+ * `git.agentCommit` (the wire-canonical commit method — `git.commit` is
+ * deprecated per §5.6). Both fold the daemon outcome into a `MutationResult`.
  */
-import { GitFileStatus } from "$shared/types";
-import type { DiffChunk, FileStatus, GitStatus } from "$shared/types";
-import type { CommitInfo, TrackedChange } from "$features/file-tracking/types";
+import { GitFileStatus, LineType } from "$shared/types";
+import type { DiffChunk, DiffLine, FileStatus, GitStatus } from "$shared/types";
+import { ChangeStage } from "$features/file-tracking/types";
+import type {
+  CommitFile,
+  CommitInfo,
+  FileChangeStatus,
+  TrackedChange,
+} from "$features/file-tracking/types";
 import type {
   GitClient,
   GitCommitParams,
@@ -28,7 +37,7 @@ import {
   backendUnsubscribe,
   onBackendNotification,
 } from "./backend-transport";
-import { isEventInFamily, listWorkspaceIds, newIdempotencyKey, runMutation } from "./live-support";
+import { isEventInFamily, listWorkspaceIds, runMutation } from "./live-support";
 
 /** Coerce a raw daemon git-status object into the renderer `GitStatus` shape. */
 function normalizeGitStatus(raw: Record<string, unknown>): GitStatus {
@@ -64,27 +73,168 @@ async function fetchStatus(workspaceId: string): Promise<GitStatus | null> {
   }
 }
 
+/** Coerce a daemon `git.diffs` line into the renderer `DiffLine`. */
+function toDiffLine(raw: unknown): DiffLine {
+  const line = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const rawType = typeof line.type === "string" ? line.type : "Context";
+  const type =
+    rawType === "Addition"
+      ? LineType.Addition
+      : rawType === "Deletion"
+        ? LineType.Deletion
+        : LineType.Context;
+  const out: DiffLine = { type, content: typeof line.content === "string" ? line.content : "" };
+  if (typeof line.oldNumber === "number") out.oldNumber = line.oldNumber;
+  if (typeof line.newNumber === "number") out.newNumber = line.newNumber;
+  return out;
+}
+
+/** Map the daemon `git.diffs` bare-array result into renderer `DiffChunk[]`. */
+function toDiffChunks(result: unknown): DiffChunk[] {
+  const entries = Array.isArray(result) ? result : [];
+  const chunks: DiffChunk[] = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    const file = typeof e.path === "string" ? e.path : "";
+    if (!file) continue;
+    const rawHunks = Array.isArray(e.hunks) ? e.hunks : [];
+    const mapped = rawHunks.map((h) => {
+      const hunk = (h && typeof h === "object" ? h : {}) as Record<string, unknown>;
+      return {
+        oldStart: Number(hunk.oldStart ?? 0),
+        oldLines: Number(hunk.oldLines ?? 0),
+        newStart: Number(hunk.newStart ?? 0),
+        newLines: Number(hunk.newLines ?? 0),
+        lines: Array.isArray(hunk.lines) ? hunk.lines.map(toDiffLine) : [],
+      };
+    });
+    chunks.push({ file, chunks: mapped });
+  }
+  return chunks;
+}
+
+/** Best-effort epoch timestamp from a daemon commit `date` (ISO/RFC string). */
+function dateToTimestamp(date: unknown): number {
+  if (typeof date !== "string" || !date) return 0;
+  const t = Date.parse(date);
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** Map a daemon `git.commits` items entry into the renderer `CommitInfo`. */
+function toCommitInfo(raw: unknown): CommitInfo | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const hash = typeof r.hash === "string" ? r.hash : "";
+  if (!hash) return null;
+  const rawFiles = Array.isArray(r.files) ? r.files : [];
+  const files: CommitFile[] = rawFiles
+    .map((p) => (typeof p === "string" ? ({ path: p } as CommitFile) : null))
+    .filter((f): f is CommitFile => f !== null);
+  const info: CommitInfo = {
+    hash,
+    message: typeof r.message === "string" ? r.message : "",
+    author: typeof r.author === "string" ? r.author : "",
+    timestamp: dateToTimestamp(r.date),
+    files,
+    stage: "local",
+  };
+  if (typeof r.email === "string") info.authorEmail = r.email;
+  if (typeof r.date === "string") info.date = r.date;
+  if (typeof r.agentId === "string") info.agentId = r.agentId;
+  if (typeof r.linkedNoteId === "string") info.linkedNoteId = r.linkedNoteId;
+  return info;
+}
+
+/** Map a daemon `git.changes` `FileStatus` into the renderer `TrackedChange`. */
+function toTrackedChange(raw: unknown): TrackedChange | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const path = typeof r.path === "string" ? r.path : "";
+  if (!path) return null;
+  const code = typeof r.status === "string" ? r.status.trim() : "";
+  const staged = Boolean(r.staged);
+  let status: FileChangeStatus | undefined;
+  switch (code) {
+    case "A":
+    case "?":
+      status = "added";
+      break;
+    case "D":
+      status = "deleted";
+      break;
+    case "R":
+      status = "renamed";
+      break;
+    case "M":
+    case "C":
+      status = "modified";
+      break;
+    default:
+      status = code ? "modified" : undefined;
+  }
+  return {
+    id: path,
+    file: path,
+    relativePath: path,
+    stage: staged ? ChangeStage.Staged : ChangeStage.Unstaged,
+    stats: { additions: 0, deletions: 0 },
+    ...(status ? { status } : {}),
+    attribution: { manual: true, timestamp: Date.now() },
+  };
+}
+
 export class LiveGitClient implements GitClient {
   async status(workspaceId: string): Promise<GitStatus | null> {
     return fetchStatus(workspaceId);
   }
 
-  // The daemon has no distinct "changes" read; the working-tree status is the
-  // single source of truth, matching the prior mock behavior.
+  // `git.changes` mirrors the working-tree file list from `git.status`; the
+  // renderer surface is the same `GitStatus` shape, so reuse `git.status` here
+  // (the dedicated `trackedChanges` read below is what consumes `git.changes`).
   async changes(workspaceId: string): Promise<GitStatus | null> {
     return fetchStatus(workspaceId);
   }
 
-  // Diff / tracked-change / commit-history reads are not exposed by the daemon
-  // yet; resolve empty until those wire methods land.
-  async diffs(_workspaceId: string): Promise<DiffChunk[]> {
-    return [];
+  // `git.diffs` (PROTOCOL §5.6) returns per-file index→workdir hunks by default;
+  // mapped into renderer `DiffChunk[]`. Errors fold to `[]` so the diff viewer
+  // degrades cleanly rather than throwing into the store.
+  async diffs(workspaceId: string): Promise<DiffChunk[]> {
+    try {
+      const result = await backendRequest<unknown>("git.diffs", { workspaceId });
+      return toDiffChunks(result);
+    } catch {
+      return [];
+    }
   }
-  async trackedChanges(_workspaceId: string): Promise<TrackedChange[]> {
-    return [];
+
+  // `git.changes` (PROTOCOL §5.6) returns the working-tree `FileStatus[]` for
+  // the workspace. Mapped into a minimal `TrackedChange[]` (path/stage/status);
+  // richer fields (`stats`, `hunks`, agent attribution) come from other paths
+  // and are intentionally not synthesized here.
+  async trackedChanges(workspaceId: string): Promise<TrackedChange[]> {
+    try {
+      const result = await backendRequest<{ files?: unknown[] }>("git.changes", { workspaceId });
+      const files = Array.isArray(result?.files) ? result.files : [];
+      return files
+        .map(toTrackedChange)
+        .filter((c): c is TrackedChange => c !== null);
+    } catch {
+      return [];
+    }
   }
-  async commits(_workspaceId: string): Promise<CommitInfo[]> {
-    return [];
+
+  // `git.commits` (PROTOCOL §5.6) returns a `{ items, nextToken }` page of
+  // reverse-chronological history. P0: first page is enough for the renderer
+  // (pagination tokens are NOT yet surfaced through the seam).
+  async commits(workspaceId: string): Promise<CommitInfo[]> {
+    try {
+      const result = await backendRequest<{ items?: unknown[] }>("git.commits", { workspaceId });
+      const items = Array.isArray(result?.items) ? result.items : [];
+      return items.map(toCommitInfo).filter((c): c is CommitInfo => c !== null);
+    } catch {
+      return [];
+    }
   }
 
   // `pr.status` returns the active PR summary; it errors when the workspace has
@@ -126,19 +276,22 @@ export class LiveGitClient implements GitClient {
     return runMutation("git.stage", { workspaceId, paths: cleaned });
   }
 
-  // `git.commit` is DESTRUCTIVE: it requires `userRequested: true` and carries
-  // an idempotencyKey (§5.6/§7.7) so retried requests are deduped server-side.
+  // `git.agentCommit` is DESTRUCTIVE: it requires `userRequested: true`. The
+  // request is refused upstream (and never hits the daemon) when the caller did
+  // not assert user intent, mirroring the `git.commit` guard. The wire method
+  // does NOT accept `amend` or `idempotencyKey` (§5.6), and no renderer call
+  // site exercises the deprecated `amend` path through this seam, so the
+  // `GitCommitParams.amend` field is intentionally not forwarded; reintroduce a
+  // `git.commit` fallback here only if a renderer surface starts needing amend.
   async commit(workspaceId: string, params: GitCommitParams): Promise<MutationResult> {
     if (!params.userRequested) {
-      return { success: false, error: "git.commit requires userRequested: true." };
+      return { success: false, error: "git.agentCommit requires userRequested: true." };
     }
-    return runMutation("git.commit", {
+    return runMutation("git.agentCommit", {
       workspaceId,
       message: params.message,
       ...(params.files !== undefined ? { files: params.files } : {}),
-      ...(params.amend !== undefined ? { amend: params.amend } : {}),
       userRequested: params.userRequested,
-      idempotencyKey: newIdempotencyKey(),
     });
   }
 
