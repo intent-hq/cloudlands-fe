@@ -8,15 +8,15 @@
    * machine running the FE. This keeps folder browsing consistent across
    * local UDS and remote WSS transports.
    *
-   * Imperative shell: parent passes `open`, `title`, `initialPath`, and
-   * `onSelect` / `onClose` callbacks. UI state (current path, listing,
-   * loading) is component-local; no Redux slice is required since the
-   * picker is ephemeral and self-contained.
+   * The `host.listDirectory` round-trip lives in the `directoryPicker` slice
+   * + companion `directory-picker-read-service` middleware so the component
+   * never imports the live backend transport directly (satisfies the
+   * `intent/no-component-async-data-fetch` ESLint rule). Component-local UI
+   * state (focused row, scroll container ref, last loaded path) stays here
+   * because it is ephemeral and self-contained.
    */
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
-  import { createLogger } from '$lib/utils/client-logger';
-  import { backendRequest } from '$lib/client/live/backend-transport';
   import {
     faFolder,
     faFolderOpen,
@@ -27,22 +27,18 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { cn } from '$lib/utils';
-
-  const logger = createLogger('DirectoryPickerModal');
-
-  interface Entry {
-    name: string;
-    path: string;
-    isDirectory: boolean;
-    isGitRepo: boolean;
-  }
-
-  interface Listing {
-    path: string;
-    parent: string | null;
-    home: string;
-    entries: Entry[];
-  }
+  import { store as appStore } from '$store/renderer/store';
+  import {
+    loadDirectoryRequested,
+    resetDirectoryPicker,
+    type DirectoryPickerEntry,
+    type DirectoryPickerListing,
+  } from '$store/renderer/slices/directory-picker/directory-picker-slice';
+  import {
+    selectDirectoryPickerError,
+    selectDirectoryPickerListing,
+    selectDirectoryPickerLoading,
+  } from '$store/renderer/slices/directory-picker/directory-picker-selectors';
 
   interface Props {
     open: boolean;
@@ -64,32 +60,27 @@
     onClose,
   }: Props = $props();
 
-  let listing = $state<Listing | null>(null);
-  let loading = $state(false);
-  let error = $state<string | null>(null);
+  // Selector readables — captured at component init per the store rules. The
+  // read-service middleware updates these stores in response to the dispatches
+  // below; the component renders purely from `$store` derefs.
+  const listing$ = selectDirectoryPickerListing();
+  const loading$ = selectDirectoryPickerLoading();
+  const error$ = selectDirectoryPickerError();
+  const listing: DirectoryPickerListing | null = $derived($listing$);
+  const loading: boolean = $derived($loading$);
+  const error: string | null = $derived($error$);
+
   let focusedIndex = $state(0);
   let listContainerRef = $state<HTMLDivElement | null>(null);
   /** Track which path was loaded so re-opening the modal re-fetches a fresh listing. */
   let loadedFor = $state<string | null>(null);
 
-  async function loadDirectory(path: string | undefined) {
-    loading = true;
-    error = null;
-    try {
-      const result = await backendRequest<Listing>('host.listDirectory', path ? { path } : {});
-      listing = result;
-      focusedIndex = 0;
-      loadedFor = result?.path ?? null;
-      // Defer scroll-into-view until DOM updates.
-      queueMicrotask(() => listContainerRef?.scrollTo({ top: 0 }));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.warn('host.listDirectory failed', { path, error: message });
-      error = message;
-      listing = null;
-    } finally {
-      loading = false;
-    }
+  function requestDirectory(path: string | undefined) {
+    focusedIndex = 0;
+    loadedFor = path ?? '';
+    appStore.dispatch(loadDirectoryRequested(path));
+    // Defer scroll-into-view until DOM updates with the new listing.
+    queueMicrotask(() => listContainerRef?.scrollTo({ top: 0 }));
   }
 
   // Re-load whenever the modal opens (or the requested initial path changes).
@@ -97,7 +88,7 @@
     if (!open) return;
     const want = initialPath?.trim() || '';
     if (loadedFor !== want || listing === null) {
-      void loadDirectory(want || undefined);
+      requestDirectory(want || undefined);
     }
   });
 
@@ -105,7 +96,7 @@
   $effect(() => {
     if (!open) {
       loadedFor = null;
-      error = null;
+      appStore.dispatch(resetDirectoryPicker());
     }
   });
 
@@ -114,18 +105,18 @@
     onSelect(listing.path);
   }
 
-  function navigateInto(entry: Entry) {
+  function navigateInto(entry: DirectoryPickerEntry) {
     if (!entry.isDirectory) return;
-    void loadDirectory(entry.path);
+    requestDirectory(entry.path);
   }
 
   function navigateUp() {
     if (!listing?.parent) return;
-    void loadDirectory(listing.parent);
+    requestDirectory(listing.parent);
   }
 
   function navigateHome() {
-    void loadDirectory(undefined);
+    requestDirectory(undefined);
   }
 
   const directoryEntries = $derived(listing?.entries.filter((e) => e.isDirectory) ?? []);
@@ -238,7 +229,7 @@
           ~
         </button>
         <div
-          class="flex-1 px-2 py-1 text-xs font-mono truncate text-foreground/90"
+          class="flex-1 px-2 py-1 text-xs font-mono truncate text-muted-foreground"
           title={listing?.path ?? ''}
         >
           {displayPath || '…'}
