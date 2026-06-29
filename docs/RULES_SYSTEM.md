@@ -61,10 +61,10 @@ Sub-agents skip the parent-only orchestration layers and workspace-context layer
 | File | Purpose |
 |------|---------|
 | `src/features/agent/main/instruction-service.ts` | Builds complete prompts, manages caches, and assembles prompt layers |
-| `src/features/agent/instructions/index.ts` | Source of truth for instruction IDs, aliases, and helper exports |
-| `src/features/agent/instructions/common.ts` | Shared instruction layer prepended to most agents |
-| `src/features/agent/instructions/workspace.ts` | Shared workspace-operating guidance |
-| `src/features/agent/instructions/base-system-prompt.ts` | Base system prompt content |
+| `src/features/agent/main/instructions/index.ts` | Source of truth for instruction IDs, aliases, and helper exports |
+| `src/features/agent/main/instructions/common.ts` | Shared instruction layer prepended to most agents |
+| `src/features/agent/main/instructions/workspace.ts` | Shared workspace-operating guidance |
+| `src/features/agent/main/instructions/base-system-prompt.ts` | Base system prompt content |
 | `src/features/agent/main/rules-loader.ts` | Loads project rule files from the workspace |
 | `src/features/rules/user-rules.service.ts` | Stores end-user rule overrides by type |
 

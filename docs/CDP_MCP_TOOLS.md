@@ -204,4 +204,4 @@ Renderer Process (UI)
 | `cdp-mcp-server/server.ts`                              | STDIO MCP server implementation  |
 | `cdp-mcp-server/cdp-helpers.js`                         | Source Playwright-style API helpers injected by `cdp_run_script` |
 | `cdp-mcp-server/dist/cdp-helpers.js`                    | Built copy loaded alongside the compiled server |
-| `src/features/agent/instructions/base-system-prompt.ts` | Agent instructions for CDP tools |
+| `src/features/agent/main/instructions/base-system-prompt.ts` | Agent instructions for CDP tools |

@@ -496,7 +496,7 @@ type AgentTypeId =
   | 'pr-description';
 ```
 
-Most typed IDs have corresponding instruction sources in `src/features/agent/instructions/`; `common` is the shared instruction layer that gets prepended during specialization assembly.
+Most typed IDs have corresponding instruction sources in `src/features/agent/main/instructions/`; `common` is the shared instruction layer that gets prepended during specialization assembly.
 
 ## Background Agents
 
