@@ -55,7 +55,7 @@ import {
   type EventActor,
 } from '../../events/types';
 import { randomUUID } from 'crypto';
-import { recoverAllPartialAnchors } from '../../comments/markdown-anchor-recovery';
+import { recoverAllPartialAnchors } from '../../comments/main/markdown-anchor-recovery';
 import { preserveAgentAnchors } from '../agent-anchor-preservation';
 import { agentBackendHandler } from '../../agent/main/agent-backend-handler.service';
 import { buildTaskAgentInitialMessage } from '../utils/task-agent-message-builder';

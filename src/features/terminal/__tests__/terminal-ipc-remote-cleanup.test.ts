@@ -42,7 +42,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../MainProcessTerminalManager', () => ({
+vi.mock('../main/TerminalManager', () => ({
   TerminalManager: class {
     getTerminal = vi.fn(() => null);
     getWorkspaceTerminals = vi.fn(() => []);

@@ -12,7 +12,7 @@
 
 import type { IPty } from 'node-pty';
 import { EventEmitter } from '$shared/utils/event-emitter';
-import { Logger } from '../../shared/logger';
+import { Logger } from '../../../shared/logger';
 import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 import * as fs from 'fs';
 import * as path from 'path';

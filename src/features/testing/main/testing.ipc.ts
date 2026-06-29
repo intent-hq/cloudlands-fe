@@ -6,7 +6,7 @@
  */
 
 import { ipcMain } from 'electron';
-import { testingService } from '../testing.service';
+import { testingService } from './testing.service';
 import { TESTING_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import {

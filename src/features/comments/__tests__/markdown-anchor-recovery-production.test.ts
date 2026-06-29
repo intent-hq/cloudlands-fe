@@ -20,7 +20,7 @@ import {
   findMostRecentHealthyVersion,
   recoverPartialAnchor,
   recoverAllPartialAnchors,
-} from '../markdown-anchor-recovery';
+} from '../main/markdown-anchor-recovery';
 import type { NoteVersion } from '../../../shared/types';
 
 describe('Markdown Anchor Recovery - Production', () => {

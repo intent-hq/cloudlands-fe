@@ -5,5 +5,4 @@
  */
 
 export { TerminalAdapter } from './TerminalAdapter';
-export { TerminalManager } from './MainProcessTerminalManager';
 export { terminalManager } from './terminal-manager.svelte';

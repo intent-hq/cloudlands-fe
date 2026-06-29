@@ -22,8 +22,8 @@
  * - Example: `<!--anchor:id:start-->## Title` → `## <!--anchor:id:start-->Title`
  */
 
-import type { NoteVersion } from '../../shared/types';
-import { Logger } from '../../shared/logger';
+import type { NoteVersion } from '../../../shared/types';
+import { Logger } from '../../../shared/logger';
 
 const logger = new Logger('MarkdownAnchorRecovery');
 

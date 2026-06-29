@@ -6,7 +6,7 @@
  */
 
 import { ipcMain } from 'electron';
-import { TerminalManager } from '../MainProcessTerminalManager';
+import { TerminalManager } from './TerminalManager';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import {
   terminalProfessionalData,

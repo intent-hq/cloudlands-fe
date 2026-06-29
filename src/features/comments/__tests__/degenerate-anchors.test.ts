@@ -10,7 +10,7 @@ import {
 import {
   scanForProblematicAnchors,
   removeDegenerateAnchors,
-} from '../markdown-anchor-recovery';
+} from '../main/markdown-anchor-recovery';
 
 describe('Degenerate Anchor Detection', () => {
   describe('scanForProblematicAnchors - DEGENERATE state', () => {

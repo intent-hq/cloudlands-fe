@@ -16,7 +16,7 @@ import {
   rmSync,
 } from 'fs';
 import { tmpdir } from 'os';
-import type { Result } from '../../shared/types';
+import type { Result } from '../../../shared/types';
 
 export interface TestOptions {
   workspaceId: string;
