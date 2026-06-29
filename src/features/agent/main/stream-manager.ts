@@ -25,7 +25,7 @@ import {
   WorkspaceId,
 } from '../../../shared/types/branded-ids';
 import { createAppMessageId } from '$shared/utils/app-message-id';
-import { memoryManager } from './memory-manager';
+import { memoryManager } from './utils/memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
 import { newAssistantMessage } from '$store/renderer/slices/unread-tracking/unread-tracking-slice';
