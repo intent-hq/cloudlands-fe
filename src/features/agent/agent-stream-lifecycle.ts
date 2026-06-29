@@ -57,10 +57,6 @@ import {
   ErrorCategory,
   ErrorSeverity,
 } from '$features/agent/services/error-handler';
-import {
-  eventCollector,
-  AgentEventType,
-} from '../observability/event-collector-client';
 import { workspaceMetrics } from '$store/renderer/slices/workspace/utils/workspace-metrics';
 import { store as appStore } from '$store/renderer/store';
 
@@ -1505,14 +1501,6 @@ export async function sendMessage(
                         );
                       }
                     }
-
-                    // Track event
-                    eventCollector.track(AgentEventType.MESSAGE_SENT, {
-                      agentId,
-                      workspaceId: workspace.id,
-                      messageLength: content.length,
-                      hasContext: !!options.contextReferences?.length,
-                    });
 
                     // Track metrics
                     workspaceMetrics.incrementMessageSent(workspace.id);

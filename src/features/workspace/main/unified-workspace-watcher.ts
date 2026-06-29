@@ -366,7 +366,7 @@ export class UnifiedWorkspaceWatcher {
     // watcher will be started on the next workspace open when memory is lower.
     //
     // We check BOTH heapUsed and RSS.  heapUsed only measures the V8 JS heap;
-    // native addons like @parcel/watcher, better-sqlite3, and ssh2 allocate
+    // native addons like @parcel/watcher and ssh2 allocate
     // outside the heap, so RSS (resident set size) is a better indicator of
     // total process memory and native-layer crash risk.
     const mem = process.memoryUsage();

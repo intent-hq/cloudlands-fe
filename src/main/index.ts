@@ -334,10 +334,6 @@ import {
 import { setupNotesIPC } from '../features/notes/main/notes.ipc';
 import { crdtDocumentManager } from '../features/notes/main/storage';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
-import {
-  setupObservabilityIPC,
-  cleanupObservability,
-} from '../features/observability/main/observability.ipc';
 import { setupRemoteFileSystemIPC } from '../features/remote-fs/main/remote-fs.ipc';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSkillsIPC } from '../features/agent/main/skills.ipc';
@@ -570,10 +566,6 @@ async function gracefulShutdown() {
 
     // Cleanup IPC handlers
     ipcCleanupManager.cleanupAll();
-
-    // Cleanup observability storage (close SQLite DB) to prevent
-    // native crashes from better-sqlite3 during exit (AUGMENT-INTENT-9)
-    cleanupObservability();
 
     // Cleanup auto-updater (stop periodic update checks)
     try {
@@ -1490,7 +1482,6 @@ app.whenReady().then(async () => {
     // setupEventsIPC(); // Already called in critical IPC setup
     // setupGitTrackingIPC(); // Already called in critical IPC setup
     // registerAcceptChangesHandlers(); // Already called in critical IPC setup
-    setupObservabilityIPC();
     setupMemoriesIPC();
     // setupBannerIPC(); // Already called in critical IPC setup
     setupRulesIPC();
@@ -2025,10 +2016,6 @@ app.on('window-all-closed', async () => {
 
   // Cleanup all IPC handlers
   ipcCleanupManager.cleanupAll();
-
-  // Cleanup observability storage (close SQLite DB) to prevent
-  // native crashes from better-sqlite3 during exit (AUGMENT-INTENT-9)
-  cleanupObservability();
 
   // Cleanup agent pool (warm providers)
   try {

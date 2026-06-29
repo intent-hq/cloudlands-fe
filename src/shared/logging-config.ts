@@ -111,8 +111,6 @@ export const LOGGING_CONFIG: LoggingConfig = {
     'AgentMissing-IPC': isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
     // Backend services - reduce noise during startup
     InitUnifiedBackend: isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
-    // Observability - reduce startup noise
-    EventStorage: isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
     // CDP - reduce startup noise
     CdpMcpBridge: isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
     CdpConnection: isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
