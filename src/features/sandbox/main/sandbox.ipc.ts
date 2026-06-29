@@ -10,8 +10,8 @@ import {
   getInstructionById,
   getInstructionWithCommon,
   common,
-} from '../../agent/instructions';
-import { getBaseInstruction } from '../../agent/instructions/base-system-prompt';
+} from '../../agent/main/instructions';
+import { getBaseInstruction } from '../../agent/main/instructions/base-system-prompt';
 
 const logger = new Logger('SandboxIPC');
 

@@ -24,7 +24,7 @@ import type { AgentIdleEvent } from '../../events/types';
 import { makeBackgroundRequest } from './background-request.service';
 import { gitService } from '../../git/main/git.service';
 import { shouldSkipFileForAI } from '../../../shared/binary-file-extensions';
-import COMMIT_MESSAGE_INSTRUCTION from '../instructions/background/commit-message';
+import COMMIT_MESSAGE_INSTRUCTION from './instructions/background/commit-message';
 import type { DiffChunk, WorkspaceId } from '../../../shared/types';
 import {
   AgentId as createAgentId,

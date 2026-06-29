@@ -15,9 +15,9 @@ import {
   it,
   expect,
 } from 'vitest';
-import common from '../instructions/common';
-import workspace from '../instructions/workspace';
-import taskFocused from '../instructions/task-focused';
+import common from '../main/instructions/common';
+import workspace from '../main/instructions/workspace';
+import taskFocused from '../main/instructions/task-focused';
 import { SPECIALISTS } from '$lib/constants/specialists';
 
 describe('Agent Instruction Patterns', () => {

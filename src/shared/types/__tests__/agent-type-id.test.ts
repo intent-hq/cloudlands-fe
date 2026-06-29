@@ -10,7 +10,7 @@ import {
   it,
   expect,
 } from 'vitest';
-import { getAvailableInstructionIds } from '../../../features/agent/instructions';
+import { getAvailableInstructionIds } from '../../../features/agent/main/instructions';
 import type { AgentTypeId } from '../agent.types';
 
 describe('AgentTypeId', () => {

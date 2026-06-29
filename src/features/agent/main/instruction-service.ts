@@ -46,8 +46,8 @@ import { EndUserRulesManager } from '../../rules/user-rules.service';
 import {
   getInstructionWithCommon,
   NON_INTERACTIVE_BACKGROUND_AGENTS,
-} from '../instructions';
-import { getBaseInstruction } from '../instructions/base-system-prompt';
+} from './instructions';
+import { getBaseInstruction } from './instructions/base-system-prompt';
 import {
   loadUserRules,
   formatUserRulesForContext,

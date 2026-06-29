@@ -159,7 +159,7 @@ export interface StreamEvent {
 
 /**
  * Valid agent type identifiers
- * These correspond to instruction files in src/features/agent/instructions/
+ * These correspond to instruction files in src/features/agent/main/instructions/
  *
  * This is a string literal union type that provides compile-time validation
  * and IDE autocomplete for agent type IDs.

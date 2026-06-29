@@ -91,7 +91,7 @@ vi.mock('../../../shared/binary-file-extensions', () => ({
   shouldSkipFileForAI: vi.fn(),
 }));
 
-vi.mock('../instructions/background/commit-message', () => ({
+vi.mock('../main/instructions/background/commit-message', () => ({
   default: 'You are a commit message generator.',
 }));
 
