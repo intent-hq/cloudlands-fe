@@ -5,7 +5,7 @@
  * Edit this file directly - it's the source of truth.
  */
 
-import { getRtkPromptInstruction } from '../main/rtk-detector';
+import { getRtkPromptInstruction } from '../rtk-detector';
 
 const INSTRUCTION = `# Augment Agent
 
