@@ -8,56 +8,13 @@
  * - Request coalescing
  * - Lazy loading
  * - Memoization
- * - Worker threads for CPU-intensive tasks
  * - Request prioritization
  */
 
 import { Logger } from '$shared/logger';
 
-// Use browser's performance API or Node's perf_hooks depending on environment
-const perf =
-  typeof window !== 'undefined' && window.performance
-    ? window.performance
-    : typeof global !== 'undefined' && global.performance
-      ? global.performance
-      : { now: () => Date.now() };
-
-// Worker threads are only available in Node.js
-let Worker: typeof import('worker_threads').Worker | undefined;
-let path: typeof import('path') | undefined;
-let fileURLToPath: typeof import('url').fileURLToPath | undefined;
-let cachedDirname: string | undefined;
-
-// Helper to get __dirname lazily (only in Node.js)
-function getDirname(): string | undefined {
-  if (typeof window !== 'undefined') return undefined;
-  if (cachedDirname) return cachedDirname;
-  if (fileURLToPath && path) {
-    try {
-      cachedDirname = path.dirname(fileURLToPath(import.meta.url));
-      return cachedDirname;
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
-}
-
-// Use an async IIFE to avoid top-level await
-if (typeof window === 'undefined') {
-  (async () => {
-    try {
-      const workerThreads = await import('worker_threads');
-      Worker = workerThreads.Worker;
-      const pathModule = await import('path');
-      path = pathModule;
-      const urlModule = await import('url');
-      fileURLToPath = urlModule.fileURLToPath;
-    } catch {
-      // Worker threads not available
-    }
-  })();
-}
+// Renderer-side high-resolution timer with a safe fallback.
+const perf = typeof performance !== 'undefined' ? performance : { now: () => Date.now() };
 
 const logger = new Logger('PerformanceOptimizer');
 
@@ -76,15 +33,6 @@ interface OptimizationStrategy {
   timeout?: number;
   maxRetries?: number;
   cacheKey?: string;
-}
-
-interface WorkerTask {
-  id: string;
-  task: string;
-  data: any;
-  resolve: (value: any) => void;
-  reject: (error: Error) => void;
-  timestamp: number;
 }
 
 interface CacheEntry<T> {
@@ -115,18 +63,9 @@ export class PerformanceOptimizer {
   private pendingRequests = new Map<string, Promise<any>>();
   private requestQueue: Array<{ key: string; priority: number; timestamp: number }> = [];
 
-  // Worker pool for CPU-intensive tasks
-  private workerPool: any[] = [];
-  private availableWorkers: any[] = [];
-  private workerTasks = new Map<any, WorkerTask>();
-  private taskQueue: WorkerTask[] = [];
-  private readonly WORKER_POOL_SIZE = 4;
-  private workerIdCounter = 0;
-
   private constructor() {
     // Pre-allocate ring buffer with nulls — avoids dynamic array growth
     this.metricsBuffer = new Array<PerformanceMetric | null>(this.MAX_METRICS).fill(null);
-    this.initializeWorkerPool();
     this.startCacheCleanup();
     logger.info('PerformanceOptimizer initialized');
   }
@@ -193,66 +132,6 @@ export class PerformanceOptimizer {
     return results;
   }
 
-  /**
-   * Initialize worker pool for CPU-intensive tasks
-   */
-  private initializeWorkerPool(): void {
-    // Worker pool is only available in Node.js environment
-    if (typeof window !== 'undefined' || !Worker || !path) {
-      logger.info('Worker pool not available in browser environment');
-      return;
-    }
-
-    try {
-      const dirname = getDirname();
-      if (!dirname) {
-        logger.info('Worker pool not available - dirname not resolved');
-        return;
-      }
-      const workerPath = path.join(dirname, 'performance-worker.js');
-
-      for (let i = 0; i < this.WORKER_POOL_SIZE; i++) {
-        const worker = new Worker(workerPath);
-        const workerId = this.workerIdCounter++;
-
-        worker.on('message', (result: any) => {
-          const task = this.workerTasks.get(worker);
-          if (task) {
-            if (result.success) {
-              task.resolve(result.data);
-            } else {
-              task.reject(new Error(result.error));
-            }
-            this.workerTasks.delete(worker);
-            this.availableWorkers.push(worker);
-            this.processTaskQueue();
-          }
-        });
-
-        worker.on('error', (error: any) => {
-          logger.error('Worker error', { workerId, error: error.message });
-          const task = this.workerTasks.get(worker);
-          if (task) {
-            task.reject(error);
-            this.workerTasks.delete(worker);
-          }
-          // Restart worker
-          this.restartWorker(worker, workerId);
-        });
-
-        this.workerPool.push(worker);
-        this.availableWorkers.push(worker);
-      }
-
-      logger.info('Worker pool initialized', { size: this.WORKER_POOL_SIZE });
-    } catch (error) {
-      logger.error('Failed to initialize worker pool', { error });
-      // Fallback to no workers
-      this.workerPool = [];
-      this.availableWorkers = [];
-    }
-  }
-
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   /**
@@ -299,75 +178,6 @@ export class PerformanceOptimizer {
       const toRemove = sortedEntries.slice(0, this.memoCache.size - this.MAX_CACHE_SIZE);
       toRemove.forEach(([key]) => this.memoCache.delete(key));
     }
-  }
-
-  /**
-   * Restart a failed worker
-   */
-  private restartWorker(oldWorker: any, workerId: number): void {
-    // Worker restart is only available in Node.js environment
-    if (typeof window !== 'undefined' || !Worker || !path) {
-      return;
-    }
-
-    try {
-      const index = this.workerPool.indexOf(oldWorker);
-      if (index !== -1) {
-        oldWorker.terminate();
-        const dirname = getDirname();
-        if (!dirname) {
-          logger.warn('Cannot restart worker - dirname not resolved');
-          return;
-        }
-        const workerPath = path.join(dirname, 'performance-worker.js');
-        const newWorker = new Worker(workerPath);
-
-        newWorker.on('message', (result: any) => {
-          const task = this.workerTasks.get(newWorker);
-          if (task) {
-            if (result.success) {
-              task.resolve(result.data);
-            } else {
-              task.reject(new Error(result.error));
-            }
-            this.workerTasks.delete(newWorker);
-            this.availableWorkers.push(newWorker);
-            this.processTaskQueue();
-          }
-        });
-
-        newWorker.on('error', (error: any) => {
-          logger.error('Worker error after restart', { workerId, error: error.message });
-        });
-
-        this.workerPool[index] = newWorker;
-        this.availableWorkers.push(newWorker);
-      }
-    } catch (error) {
-      logger.error('Failed to restart worker', { workerId, error });
-    }
-  }
-
-  /**
-   * Process queued worker tasks
-   */
-  private processTaskQueue(): void {
-    while (this.taskQueue.length > 0 && this.availableWorkers.length > 0) {
-      const task = this.taskQueue.shift();
-      const worker = this.availableWorkers.shift();
-
-      if (task && worker) {
-        this.workerTasks.set(worker, task);
-        worker.postMessage({ task: task.task, data: task.data });
-      }
-    }
-  }
-
-  /**
-   * Get an available worker from the pool
-   */
-  private getAvailableWorker(): Worker | null {
-    return this.availableWorkers.shift() || null;
   }
 
   /**
@@ -450,40 +260,6 @@ export class PerformanceOptimizer {
         this.pendingRequests.delete(operation);
       }
     }
-  }
-
-  /**
-   * Execute CPU-intensive task in worker thread
-   */
-  async executeInWorker<T>(task: string, data: any): Promise<T> {
-    const worker = this.getAvailableWorker();
-
-    if (!worker) {
-      throw new Error('No available workers in pool');
-    }
-
-    return new Promise((resolve, reject) => {
-      const taskId = `task_${Date.now()}_${Math.random()}`;
-      const timeoutId = setTimeout(() => {
-        reject(new Error('Worker task timeout'));
-      }, 30000); // 30 second timeout
-
-      const handler = (result: any) => {
-        if (result.taskId === taskId) {
-          clearTimeout(timeoutId);
-          if (result.error) {
-            reject(new Error(result.error));
-          } else {
-            resolve(result.data);
-          }
-          (worker as any).off('message', handler);
-          this.availableWorkers.push(worker);
-        }
-      };
-
-      (worker as any).on('message', handler);
-      worker.postMessage({ task, data, taskId });
-    });
   }
 
   /**

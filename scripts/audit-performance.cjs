@@ -13,7 +13,6 @@ const rootDir = path.join(__dirname, '..');
 // Files to audit
 const filesToAudit = [
   'src/features/agent/services/performance-optimizer.ts',
-  'src/features/agent/services/performance-worker.js',
   'src/features/agent/services/performance-dashboard.ts',
   'src/features/agent/agent.service.ts',
   'src/features/agent/services/stream-manager.ts',
@@ -29,10 +28,6 @@ const performanceFeatures = {
   'Request Coalescing': {
     files: ['performance-optimizer.ts'],
     patterns: ['pendingRequests', 'coalesce', 'requestQueue'],
-  },
-  'Worker Pool': {
-    files: ['performance-optimizer.ts', 'performance-worker.js'],
-    patterns: ['workerPool', 'Worker', 'postMessage'],
   },
   'Performance Tracking': {
     files: ['agent.service.ts', 'stream-manager.ts'],
