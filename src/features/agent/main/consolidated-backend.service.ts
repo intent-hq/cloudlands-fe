@@ -35,7 +35,7 @@ import {
   createMessageId,
 } from '$shared/types/branded-ids';
 import { type UnifiedAgentConfig } from '$shared/types/agent.types';
-import { StreamManager } from '../services/stream-manager';
+import { StreamManager } from './stream-manager';
 import { agentValidator } from './agent-validator';
 import { errorHandler } from '../services/error-handler';
 import { AGENT_BACKEND_CHANNELS, PERSISTENCE_CHANNELS } from '$shared/ipc/channels';

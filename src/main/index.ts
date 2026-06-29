@@ -1620,7 +1620,7 @@ app.whenReady().then(async () => {
       });
 
       if (!effectiveSkipStreamCleanup) {
-        import('../features/agent/services/stream-manager')
+        import('../features/agent/main/stream-manager')
           .then(({ streamManager }) => {
             const beforeMetrics = streamManager.getMetrics();
             logger.info('Stream manager cleanup starting', { beforeMetrics });

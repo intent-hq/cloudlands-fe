@@ -59,7 +59,7 @@ vi.mock('$shared/types/branded-ids', () => ({
   createMessageId: (id: string) => id,
   NoteId: (id: string) => id,
 }));
-vi.mock('../services/stream-manager', () => ({
+vi.mock('../stream-manager', () => ({
   StreamManager: {
     getInstance: () => ({ destroy: vi.fn(), dispose: vi.fn(), cleanupSession: vi.fn() }),
   },

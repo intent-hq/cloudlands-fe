@@ -37,7 +37,7 @@ vi.mock('$shared/logger', () => {
   }
   return { Logger: MockLogger };
 });
-vi.mock('../../services/stream-manager', () => ({
+vi.mock('../stream-manager', () => ({
   StreamManager: { getInstance: () => streamManagerMock },
 }));
 vi.mock('../agent-validator', () => ({

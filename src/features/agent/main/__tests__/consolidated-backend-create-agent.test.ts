@@ -21,7 +21,7 @@ vi.mock('$shared/logger', () => {
   }
   return { Logger: MockLogger };
 });
-vi.mock('../services/stream-manager', () => ({
+vi.mock('../stream-manager', () => ({
   StreamManager: { getInstance: () => ({ dispose: vi.fn(), cleanupSession: vi.fn() }) },
 }));
 vi.mock('../agent-validator', () => ({

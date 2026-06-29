@@ -822,65 +822,15 @@ export class AgentMessagingService {
 export const agentMessagingService = new AgentMessagingService();
 
 // ============================================================================
-// Streaming Service Proxy
+// Stream store-shaper registration
 // ============================================================================
-// Provides a simplified interface for streaming operations
-// Delegates to StreamManager for actual stream management
+// The stream manager lifecycle lives in the main process. Register the
+// renderer store-shaper so stream activity is reflected into the renderer
+// Redux store when the manager runs in a renderer context.
 
-import { StreamManager } from '$features/agent/services/stream-manager';
+import { registerRendererStreamStoreShaper } from './stream-store-shaper';
 
-class StreamingServiceProxy {
-  private streamManager = StreamManager.getInstance();
-
-  async startStream(
-    agentId: string,
-    sessionId: string,
-    workspaceId: string,
-    callbacksOrAssistantAppMessageId?: string | {
-      onChunk?: (chunk: string) => void;
-      onComplete?: () => Promise<void>;
-      onError?: (error: Error) => void;
-    },
-    callbacks?: {
-      onChunk?: (chunk: string) => void;
-      onComplete?: () => Promise<void>;
-      onError?: (error: Error) => void;
-    },
-  ): Promise<void> {
-    const assistantAppMessageId = typeof callbacksOrAssistantAppMessageId === 'string'
-      ? callbacksOrAssistantAppMessageId
-      : undefined;
-    const resolvedCallbacks = typeof callbacksOrAssistantAppMessageId === 'string'
-      ? callbacks
-      : callbacksOrAssistantAppMessageId;
-
-    this.streamManager.startStream(
-      {
-        agentId,
-        sessionId,
-        workspaceId: WorkspaceId(workspaceId),
-        assistantAppMessageId,
-      },
-      resolvedCallbacks
-        ? {
-            onChunk: resolvedCallbacks.onChunk,
-            onComplete: resolvedCallbacks.onComplete,
-            onError: resolvedCallbacks.onError,
-          }
-        : undefined,
-    );
-  }
-
-  async stopStream(agentId: string): Promise<void> {
-    this.streamManager.cancelStream(agentId);
-  }
-
-  getStats() {
-    return this.streamManager.getMetrics();
-  }
-}
-
-export const streamingService = new StreamingServiceProxy();
+registerRendererStreamStoreShaper();
 
 // ============================================================================
 // Recovery Service Proxy
