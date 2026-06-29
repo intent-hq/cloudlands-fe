@@ -6,10 +6,10 @@
    */
   import { onMount } from 'svelte';
   import { createLogger } from '$lib/utils/client-logger';
-  import { invoke } from '$shared/generated/ipc-client';
   import Input from '$lib/components/ui/input/input.svelte';
   import { faFolder } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import DirectoryPickerModal from './DirectoryPickerModal.svelte';
 
   const logger = createLogger('NewProjectTab');
 
@@ -37,23 +37,16 @@
   });
 
 
-  async function handleSelectParentFolder() {
+  let pickerOpen = $state(false);
+
+  function handleSelectParentFolder() {
+    pickerOpen = true;
+  }
+
+  function handlePickerSelect(pickedPath: string) {
+    pickerOpen = false;
     try {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await invoke<any>('dialog:open', {
-          directory: true,
-          title: 'Select Parent Folder',
-          createDirectory: true,
-        });
-        if (
-          result?.success &&
-          result?.data &&
-          !result.data.canceled &&
-          result.data.filePaths?.length > 0
-        ) {
-          onParentPathChange(result.data.filePaths[0]);
-        }
-      }
+      onParentPathChange(pickedPath);
     } catch (err) {
       logger.error('Failed to select parent folder', err);
     }
@@ -97,3 +90,12 @@
     <p class="text-sm text-red-500 px-1">{nameError}</p>
   {/if}
 </div>
+
+<DirectoryPickerModal
+  open={pickerOpen}
+  title="Select Parent Folder"
+  initialPath={parentPath}
+  selectLabel="Select folder"
+  onSelect={handlePickerSelect}
+  onClose={() => (pickerOpen = false)}
+/>

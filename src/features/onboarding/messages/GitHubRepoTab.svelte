@@ -18,10 +18,10 @@
   import { onMount } from 'svelte';
   import { cn } from '$lib/utils';
   import { createLogger } from '$lib/utils/client-logger';
-  import { invoke } from '$shared/generated/ipc-client';
   import { shell } from '$lib/electron-bridge';
   import Input from '$lib/components/ui/input/input.svelte';
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
+  import DirectoryPickerModal from './DirectoryPickerModal.svelte';
 
   import { initializeGitHubAuth } from '$store/renderer/slices/github-auth/github-auth-slice';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
@@ -248,23 +248,16 @@
     }
   }
 
-  async function handleSelectCloneFolder() {
+  let pickerOpen = $state(false);
+
+  function handleSelectCloneFolder() {
+    pickerOpen = true;
+  }
+
+  function handlePickerSelect(pickedPath: string) {
+    pickerOpen = false;
     try {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await invoke<any>('dialog:open', {
-          directory: true,
-          title: 'Select Clone Destination',
-          createDirectory: true,
-        });
-        if (
-          result?.success &&
-          result?.data &&
-          !result.data.canceled &&
-          result.data.filePaths?.length > 0
-        ) {
-          onClonePathChange(result.data.filePaths[0]);
-        }
-      }
+      onClonePathChange(pickedPath);
     } catch (err) {
       logger.error('Failed to select clone folder', err);
     }
@@ -478,3 +471,12 @@
     {clonePath ? clonePath.replace(/^\/Users\/[^/]+/, '~') : 'Select folder'}
   </span>
 </button>
+
+<DirectoryPickerModal
+  open={pickerOpen}
+  title="Select Clone Destination"
+  initialPath={clonePath || defaultCloneBase}
+  selectLabel="Select folder"
+  onSelect={handlePickerSelect}
+  onClose={() => (pickerOpen = false)}
+/>
