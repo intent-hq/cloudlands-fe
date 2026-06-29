@@ -47,7 +47,7 @@ vi.mock('../../services/error-handler', () => ({
   errorHandler: { handleError: vi.fn(), on: vi.fn(), off: vi.fn() },
 }));
 vi.mock('$shared/ipc/channels', () => ({ AGENT_BACKEND_CHANNELS: {}, PERSISTENCE_CHANNELS: {} }));
-vi.mock('../../services/memory-manager', () => ({
+vi.mock('../utils/memory-manager', () => ({
   memoryManager: { registerTimer: vi.fn(), cleanup: vi.fn(), unregister: vi.fn() },
 }));
 vi.mock('../agent-persistence', () => ({

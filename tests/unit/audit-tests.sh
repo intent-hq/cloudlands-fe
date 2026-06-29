@@ -27,7 +27,7 @@ services=(
     "src/features/agent/services/unified-state-store.ts"
     "src/features/agent/services/optimized-persistence.ts"
     "src/features/agent/services/cached-rules-service.ts"
-    "src/features/agent/services/memory-manager.ts"
+    "src/features/agent/main/utils/memory-manager.ts"
     "src/features/agent/services/performance-optimizer.ts"
 )
 

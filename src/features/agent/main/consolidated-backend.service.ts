@@ -39,7 +39,7 @@ import { StreamManager } from './stream-manager';
 import { agentValidator } from './agent-validator';
 import { errorHandler } from '../services/error-handler';
 import { AGENT_BACKEND_CHANNELS, PERSISTENCE_CHANNELS } from '$shared/ipc/channels';
-import { memoryManager } from '../services/memory-manager';
+import { memoryManager } from './utils/memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
 

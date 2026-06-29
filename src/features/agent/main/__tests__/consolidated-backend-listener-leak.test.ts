@@ -69,7 +69,7 @@ vi.mock('$shared/ipc/channels', () => ({
   AGENT_BACKEND_CHANNELS: {},
   PERSISTENCE_CHANNELS: {},
 }));
-vi.mock('../services/memory-manager', () => ({
+vi.mock('../utils/memory-manager', () => ({
   memoryManager: { register: vi.fn(), cleanup: vi.fn(), unregister: vi.fn() },
 }));
 

@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { MemoryManager } from '../../src/features/agent/services/memory-manager';
+import { MemoryManager } from '../../src/features/agent/main/utils/memory-manager';
 
 // Mock logger
 vi.mock('../../src/shared/logger', () => ({
