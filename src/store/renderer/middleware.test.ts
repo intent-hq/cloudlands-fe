@@ -17,14 +17,19 @@ const mocks = vi.hoisted(() => {
   const sentryMiddleware = createPassthroughMiddleware();
   const gitReadMiddleware = createPassthroughMiddleware();
   const agentReadMiddleware = createPassthroughMiddleware();
+  const filesReadMiddleware = createPassthroughMiddleware();
   const chatReadMiddleware = createPassthroughMiddleware();
   const chatSendMiddleware = createPassthroughMiddleware();
   const daemonEventsBridgeMiddleware = createPassthroughMiddleware();
+  const settingsHydrationMiddleware = createPassthroughMiddleware();
   const agentStreamMiddleware = createPassthroughMiddleware();
   const agentCreationMiddleware = createPassthroughMiddleware();
   const agentMutationMiddleware = createPassthroughMiddleware();
   const appLayoutNavigationMiddleware = createPassthroughMiddleware();
+  const workspaceNavigationTabMiddleware = createPassthroughMiddleware();
   const fileExplorerReadMiddleware = createPassthroughMiddleware();
+  const filesWriteMiddleware = createPassthroughMiddleware();
+  const notesWriteMiddleware = createPassthroughMiddleware();
   const githubAuthMiddleware = createPassthroughMiddleware();
   const sentryAuthMiddleware = createPassthroughMiddleware();
   const linearAuthMiddleware = createPassthroughMiddleware();
@@ -45,14 +50,19 @@ const mocks = vi.hoisted(() => {
     createSentryBreadcrumbsMiddleware: vi.fn(() => sentryMiddleware),
     createGitReadMiddleware: vi.fn(() => gitReadMiddleware),
     createAgentReadMiddleware: vi.fn(() => agentReadMiddleware),
+    createFilesReadMiddleware: vi.fn(() => filesReadMiddleware),
     createChatReadMiddleware: vi.fn(() => chatReadMiddleware),
     createChatSendMiddleware: vi.fn(() => chatSendMiddleware),
     createDaemonEventsBridgeMiddleware: vi.fn(() => daemonEventsBridgeMiddleware),
+    createSettingsHydrationMiddleware: vi.fn(() => settingsHydrationMiddleware),
     createAgentStreamMiddleware: vi.fn(() => agentStreamMiddleware),
     createAgentCreationMiddleware: vi.fn(() => agentCreationMiddleware),
     createAgentMutationMiddleware: vi.fn(() => agentMutationMiddleware),
     createAppLayoutNavigationMiddleware: vi.fn(() => appLayoutNavigationMiddleware),
+    createWorkspaceNavigationTabMiddleware: vi.fn(() => workspaceNavigationTabMiddleware),
     createFileExplorerReadMiddleware: vi.fn(() => fileExplorerReadMiddleware),
+    createFilesWriteMiddleware: vi.fn(() => filesWriteMiddleware),
+    createNotesWriteMiddleware: vi.fn(() => notesWriteMiddleware),
     createGitHubAuthMiddleware: vi.fn(() => githubAuthMiddleware),
     createSentryAuthMiddleware: vi.fn(() => sentryAuthMiddleware),
     createLinearAuthMiddleware: vi.fn(() => linearAuthMiddleware),
@@ -71,14 +81,19 @@ const mocks = vi.hoisted(() => {
     sentryMiddleware,
     gitReadMiddleware,
     agentReadMiddleware,
+    filesReadMiddleware,
     chatReadMiddleware,
     chatSendMiddleware,
     daemonEventsBridgeMiddleware,
+    settingsHydrationMiddleware,
     agentStreamMiddleware,
     agentCreationMiddleware,
     agentMutationMiddleware,
     appLayoutNavigationMiddleware,
+    workspaceNavigationTabMiddleware,
     fileExplorerReadMiddleware,
+    filesWriteMiddleware,
+    notesWriteMiddleware,
     githubAuthMiddleware,
     sentryAuthMiddleware,
     linearAuthMiddleware,
@@ -97,10 +112,14 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("$features/git/git-read-service", () => ({ createGitReadMiddleware: mocks.createGitReadMiddleware }));
 vi.mock("$features/agent/agent-read-service", () => ({ createAgentReadMiddleware: mocks.createAgentReadMiddleware }));
+vi.mock("$features/files/files-read-service", () => ({ createFilesReadMiddleware: mocks.createFilesReadMiddleware }));
 vi.mock("$features/agent/chat-read-service", () => ({ createChatReadMiddleware: mocks.createChatReadMiddleware }));
 vi.mock("$features/agent/chat-send-service", () => ({ createChatSendMiddleware: mocks.createChatSendMiddleware }));
 vi.mock("$features/events/daemon-events-bridge", () => ({
   createDaemonEventsBridgeMiddleware: mocks.createDaemonEventsBridgeMiddleware,
+}));
+vi.mock("$features/settings/settings-hydration-service", () => ({
+  createSettingsHydrationMiddleware: mocks.createSettingsHydrationMiddleware,
 }));
 vi.mock("$features/agent/agent-stream-service", () => ({
   createAgentStreamMiddleware: mocks.createAgentStreamMiddleware,
@@ -114,8 +133,17 @@ vi.mock("$features/agent/agent-mutation-service", () => ({
 vi.mock("$features/layout/app-layout-navigation-service", () => ({
   createAppLayoutNavigationMiddleware: mocks.createAppLayoutNavigationMiddleware,
 }));
+vi.mock("$features/layout/workspace-navigation-tab-service", () => ({
+  createWorkspaceNavigationTabMiddleware: mocks.createWorkspaceNavigationTabMiddleware,
+}));
 vi.mock("$features/file-explorer/file-explorer-read-service", () => ({
   createFileExplorerReadMiddleware: mocks.createFileExplorerReadMiddleware,
+}));
+vi.mock("$features/files/files-write-service", () => ({
+  createFilesWriteMiddleware: mocks.createFilesWriteMiddleware,
+}));
+vi.mock("$features/notes/notes-write-service", () => ({
+  createNotesWriteMiddleware: mocks.createNotesWriteMiddleware,
 }));
 vi.mock("$features/github-auth/github-auth-store-service", () => ({
   createGitHubAuthMiddleware: mocks.createGitHubAuthMiddleware,
@@ -206,14 +234,19 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.settingsHydrationMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
+      mocks.workspaceNavigationTabMiddleware,
       mocks.fileExplorerReadMiddleware,
+      mocks.filesWriteMiddleware,
+      mocks.notesWriteMiddleware,
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
@@ -241,14 +274,19 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.settingsHydrationMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
+      mocks.workspaceNavigationTabMiddleware,
       mocks.fileExplorerReadMiddleware,
+      mocks.filesWriteMiddleware,
+      mocks.notesWriteMiddleware,
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
@@ -276,14 +314,19 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.settingsHydrationMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
+      mocks.workspaceNavigationTabMiddleware,
       mocks.fileExplorerReadMiddleware,
+      mocks.filesWriteMiddleware,
+      mocks.notesWriteMiddleware,
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
@@ -312,14 +355,19 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.settingsHydrationMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
+      mocks.workspaceNavigationTabMiddleware,
       mocks.fileExplorerReadMiddleware,
+      mocks.filesWriteMiddleware,
+      mocks.notesWriteMiddleware,
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
@@ -365,14 +413,19 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.settingsHydrationMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
+      mocks.workspaceNavigationTabMiddleware,
       mocks.fileExplorerReadMiddleware,
+      mocks.filesWriteMiddleware,
+      mocks.notesWriteMiddleware,
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
