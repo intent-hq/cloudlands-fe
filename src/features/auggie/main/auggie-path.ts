@@ -7,7 +7,6 @@
  * the two files.
  */
 
-import ElectronStore from 'electron-store';
 import {
   existsSync,
   readdirSync,
@@ -17,20 +16,10 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { Logger } from '../../../shared/logger';
-import { findAuggieAsync } from '../../../shared/main/async-utils';
 import { findBinary } from '../../../shared/main/find-binary';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 
 const logger = new Logger('AuggiePath');
-
-// Settings store for accessing user-configured auggie path
-let settingsStore: ElectronStore | null = null;
-
-function getSettingsStore(): ElectronStore {
-  if (!settingsStore) {
-    settingsStore = new ElectronStore({ name: 'settings' });
-  }
-  return settingsStore;
-}
 
 export function getEnhancedPath(): string {
   const pathSeparator = process.platform === 'win32' ? ';' : ':';
@@ -248,122 +237,35 @@ export async function findAuggieInEnhancedPath(): Promise<string | null> {
   }
 }
 
+/**
+ * Resolve the auggie binary path by delegating to the daemon host
+ * (`host.checkAuggie`). The BE applies the settings precedence
+ * (`context.auggiePath` → `providers.paths.auggie`) and falls back to the
+ * canonical discovery (Intent-managed binary at `~/.augment/bin/auggie`,
+ * then a scan of the enhanced PATH including nvm/fnm/volta/asdf/homebrew).
+ *
+ * Return contract is unchanged (`string | null`) so existing consumers in
+ * `provider-availability.service.ts`, `acp-provider.ts`, and the spawn
+ * helpers in `execute-auggie-command.ts` keep working without changes.
+ */
 export async function findAuggiePathAsync(): Promise<string | null> {
-  // 0. Check for Intent-managed binary first (highest priority)
-  const managedBinary = path.join(
-    os.homedir(),
-    '.augment',
-    'bin',
-    process.platform === 'win32' ? 'auggie.exe' : 'auggie',
-  );
-  if (existsSync(managedBinary)) {
-    logger.info('Found Intent-managed auggie binary', { path: managedBinary });
-    return managedBinary;
-  }
-
-  // 1. First check if user has configured a custom auggie path in settings
   try {
-    const store = getSettingsStore();
-    const userConfiguredPath = store.get('auggiePath') as string | undefined;
-    if (userConfiguredPath && userConfiguredPath.trim()) {
-      const trimmedPath = userConfiguredPath.trim();
-      if (existsSync(trimmedPath)) {
-        logger.info('Using user-configured auggie path from settings', { path: trimmedPath });
-        return trimmedPath;
-      } else {
-        logger.warn('User-configured auggie path does not exist', { path: trimmedPath });
-      }
+    const result = await getBackendClient().request<{
+      available: boolean;
+      path?: string;
+      version?: string;
+    }>('host.checkAuggie');
+    if (result?.available && typeof result.path === 'string' && result.path.trim()) {
+      const resolved = result.path.trim();
+      logger.info('Resolved auggie via host.checkAuggie', { path: resolved });
+      return resolved;
     }
-  } catch (e) {
-    logger.debug('Error reading auggie path from settings', { error: (e as Error).message });
-  }
-
-  // 2. Check if we have a saved path in ~/.augment/auggie-path (auto-discovered cache)
-  // Use retry logic to handle file system sync delays after installation
-  const savedPathFile = path.join(os.homedir(), '.augment', 'auggie-path');
-  for (let attempt = 0; attempt < 3; attempt++) {
-    logger.debug('Checking for saved auggie path', {
-      file: savedPathFile,
-      exists: existsSync(savedPathFile),
-      attempt: attempt + 1,
+    logger.debug('host.checkAuggie reported auggie unavailable');
+    return null;
+  } catch (error) {
+    logger.warn('host.checkAuggie failed', {
+      error: error instanceof Error ? error.message : String(error),
     });
-    if (existsSync(savedPathFile)) {
-      try {
-        const savedPath = readFileSync(savedPathFile, 'utf8').trim();
-        logger.debug('Read saved auggie path', {
-          savedPath,
-          exists: savedPath ? existsSync(savedPath) : false,
-          attempt: attempt + 1,
-        });
-        if (savedPath && existsSync(savedPath)) {
-          logger.info('Using saved auggie path', { path: savedPath, attempt: attempt + 1 });
-
-          return savedPath;
-        }
-      } catch (e) {
-        logger.debug('Error reading saved path', {
-          error: (e as Error).message,
-          attempt: attempt + 1,
-        });
-      }
-    }
-
-    // Wait a bit before retrying (only if not the last attempt)
-    if (attempt < 2) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
+    return null;
   }
-
-  // 3. Use shared async discovery (checks common paths + nvm/fnm scan without spawning shells).
-  // This is more reliable than `which` in Electron GUI contexts where PATH may be incomplete
-  // (e.g., after reboot when launched from Finder, not terminal).
-  const asyncResult = await findAuggieAsync();
-  if (asyncResult) {
-    logger.info('Found auggie via async discovery', { path: asyncResult });
-    await saveAuggiePath(asyncResult);
-    return asyncResult;
-  }
-
-  // 4. Try using the enhanced PATH (covers common Node/NPM locations even if Electron PATH is stale)
-  const enhancedPathResult = await findAuggieInEnhancedPath();
-  if (enhancedPathResult) {
-    await saveAuggiePath(enhancedPathResult);
-    return enhancedPathResult;
-  }
-
-  // 5. Run shared binary lookup with platform-appropriate PATH/login-shell behavior
-  if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || '';
-    const windowsAuggiePaths = [
-      path.join(appData, 'npm', 'auggie.cmd'),
-      path.join(appData, 'npm', 'auggie'),
-      path.join(os.homedir(), '.npm-global', 'auggie.cmd'),
-      path.join(os.homedir(), '.npm-global', 'auggie'),
-    ];
-
-    const windowsPathResult = await findBinary('auggie', {
-      commonPaths: windowsAuggiePaths,
-      cache: false,
-      useLoginShell: false,
-      retry: true,
-    });
-
-    if (windowsPathResult) {
-      logger.info('Found auggie at Windows common path', { path: windowsPathResult });
-      await saveAuggiePath(windowsPathResult);
-      return windowsPathResult;
-    }
-  } else {
-    const foundPath = await findBinary('auggie', { cache: false, retry: true });
-    if (foundPath) {
-      logger.info('Found auggie via login shell', { path: foundPath });
-      await saveAuggiePath(foundPath);
-      return foundPath;
-    }
-
-    logger.debug('Could not find auggie via login shell');
-  }
-
-  logger.warn('Could not find auggie');
-  return null;
 }

@@ -16,6 +16,7 @@
   import Fa from 'svelte-fa';
   import Input from '$lib/components/ui/input/input.svelte';
   import { cn } from '$lib/utils';
+  import DirectoryPickerModal from './DirectoryPickerModal.svelte';
 
   const logger = createLogger('LocalRepoTab');
 
@@ -168,28 +169,20 @@
     }
   }
 
-  async function handleSelectFolder() {
+  let pickerOpen = $state(false);
+
+  function handleSelectFolder() {
+    pickerOpen = true;
+  }
+
+  async function handlePickerSelect(pickedPath: string) {
+    pickerOpen = false;
+    // Add to list if it's not already there
+    if (!recentRepos.some((r) => r.path === pickedPath)) {
+      manuallyAddedPaths = [pickedPath, ...manuallyAddedPaths];
+    }
     try {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await invoke<any>('dialog:open', {
-          directory: true,
-          title: 'Select Repository Folder',
-          createDirectory: true,
-        });
-        if (
-          result?.success &&
-          result?.data &&
-          !result.data.canceled &&
-          result.data.filePaths?.length > 0
-        ) {
-          const pickedPath = result.data.filePaths[0];
-          // Add to list if it's not already there
-          if (!recentRepos.some((r) => r.path === pickedPath)) {
-            manuallyAddedPaths = [pickedPath, ...manuallyAddedPaths];
-          }
-          await handleSelectPath(pickedPath);
-        }
-      }
+      await handleSelectPath(pickedPath);
     } catch (err) {
       logger.error('Failed to select folder', err);
     }
@@ -369,3 +362,12 @@
     {/if}
   </div>
 </div>
+
+<DirectoryPickerModal
+  open={pickerOpen}
+  title="Select Repository Folder"
+  initialPath={selectedPath}
+  selectLabel="Select folder"
+  onSelect={handlePickerSelect}
+  onClose={() => (pickerOpen = false)}
+/>

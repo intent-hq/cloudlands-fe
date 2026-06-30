@@ -20,7 +20,7 @@ import {
   baseSystemPrompt,
   common,
   workspace,
-} from '../instructions';
+} from '../main/instructions';
 import {
   SPECIALISTS,
   type Specialist,
