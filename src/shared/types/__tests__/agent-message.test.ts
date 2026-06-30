@@ -28,21 +28,21 @@ describe('AgentMessage Type Consolidation', () => {
       const message: AgentMessage = {
         id: 'msg-123',
         role: 'assistant',
-        content: 'Hello',
+        contentBlocks: [{ type: 'text', text: 'Hello' }],
         timestamp: new Date().toISOString(),
       };
       expect(message.id).toBe('msg-123');
       expect(message.role).toBe('assistant');
-      expect(message.content).toBe('Hello');
+      expect(message.contentBlocks?.[0]).toEqual({ type: 'text', text: 'Hello' });
     });
 
     it('should create a valid ProviderMessage', () => {
       const message: ProviderMessage = {
         role: 'user',
-        content: 'Hi there',
+        contentBlocks: [{ type: 'text', text: 'Hi there' }],
       };
       expect(message.role).toBe('user');
-      expect(message.content).toBe('Hi there');
+      expect(message.contentBlocks?.[0]).toEqual({ type: 'text', text: 'Hi there' });
     });
 
     it('should support ToolCall with optional fields', () => {
@@ -118,16 +118,38 @@ describe('AgentMessage Type Consolidation', () => {
       expect(content).toBe('Hello World');
     });
 
-    it('should normalize AgentMessage', () => {
+    it('should pass a canonical PROTOCOL §5.5 AgentMessage through unchanged', () => {
       const msg: AgentMessage = {
         id: 'msg-123',
         role: 'assistant',
-        content: 'Test',
+        contentBlocks: [{ type: 'text', text: 'Test' }],
         timestamp: new Date().toISOString(),
       };
       const normalized = normalizeAgentMessage(msg);
       expect(normalized.id).toBe('msg-123');
       expect(normalized.role).toBe('assistant');
+      expect(normalized.contentBlocks).toEqual([{ type: 'text', text: 'Test' }]);
+    });
+
+    it('should throw on AgentMessage missing the canonical `id` field', () => {
+      expect(() =>
+        normalizeAgentMessage({
+          role: 'assistant',
+          contentBlocks: [{ type: 'text', text: 'Test' }],
+          timestamp: new Date().toISOString(),
+        }),
+      ).toThrow(/id/);
+    });
+
+    it('should throw on AgentMessage carrying legacy `content` instead of `contentBlocks`', () => {
+      expect(() =>
+        normalizeAgentMessage({
+          id: 'msg-123',
+          role: 'assistant',
+          content: 'Test',
+          timestamp: new Date().toISOString(),
+        }),
+      ).toThrow(/content/);
     });
 
     it('should merge multiple messages', () => {
