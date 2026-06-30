@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentStatus } from "$shared/types/agent.types";
-import type { AgentSession } from "$shared/types";
+import type { AgentMessage, AgentSession } from "$shared/types";
 
 // Fake the live backend transport so the bridge installs against in-memory
 // fakes (no Electron). `vi.hoisted` keeps the spies visible to the hoisted
@@ -33,6 +33,37 @@ import {
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { selectAgentIsResponding } from "$store/renderer/slices/agent-session/agent-session-selectors";
 import { __resetDaemonEventsBridgeForTests } from "$features/events/daemon-events-bridge";
+
+const MESSAGE_ID = "msg_assistant_1";
+const STREAM_ID = "stream_1";
+
+/** Build a PROTOCOL §6.3 `events.event` notification envelope. */
+function notification(eventType: string, data: Record<string, unknown>) {
+  return {
+    method: "events.event" as const,
+    params: {
+      event: {
+        id: `evt-${eventType}-${Math.random().toString(36).slice(2, 8)}`,
+        workspaceId: WS,
+        timestamp: "2026-01-02T00:00:00.000Z",
+        type: eventType,
+        actor: { type: "agent", id: AGENT },
+        data,
+      },
+    },
+  };
+}
+
+function readSession(): AgentSession | undefined {
+  const state = appStore.state as {
+    agentSessions?: { byAgentId: Record<string, AgentSession> };
+  };
+  return state.agentSessions?.byAgentId[AGENT];
+}
+
+function readAssistantMessages(): AgentMessage[] {
+  return (readSession()?.messages ?? []).filter((m) => m.role === "assistant");
+}
 
 const WS = "ws-bridge-1";
 const AGENT = "agent-bridge-1";
@@ -167,5 +198,246 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
       },
     });
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+  });
+});
+
+describe("daemonEventsBridge (live stream wire contract — agent:stream:* → transcript)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("accumulates agent:stream:chunk into a live assistant message and finalizes on stream:end + idle", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Two consecutive text chunks at the same blockIndex must coalesce into a
+    // single text block, mirroring the BE's Transcript.push_text behaviour.
+    handler(
+      notification("agent:stream:chunk", {
+        agentId: AGENT,
+        content: "Hello ",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: "text",
+        streamId: STREAM_ID,
+      }),
+    );
+
+    let assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].id).toBe(MESSAGE_ID);
+    expect(assistantMessages[0].isStreaming).toBe(true);
+    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
+      type: "text",
+      text: "Hello ",
+    });
+
+    handler(
+      notification("agent:stream:chunk", {
+        agentId: AGENT,
+        content: "world",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: "text",
+        streamId: STREAM_ID,
+      }),
+    );
+
+    assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
+      type: "text",
+      text: "Hello world",
+    });
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+
+    handler(
+      notification("agent:stream:end", { agentId: AGENT, streamId: STREAM_ID }),
+    );
+
+    assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].isStreaming).toBe(false);
+    expect(assistantMessages[0].streamingComplete).toBe(true);
+
+    handler(
+      notification("agent:idle", {
+        agentId: AGENT,
+        status: "idle",
+        isActive: false,
+        reason: "stream_complete",
+        finishReason: "stop",
+      }),
+    );
+
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it("renders agent:tool:call as tool_use + tool_result blocks after the tool completes", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:stream:chunk", {
+        agentId: AGENT,
+        content: "Looking",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: "text",
+        streamId: STREAM_ID,
+      }),
+    );
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t1",
+        input: { path: "src/lib.rs" },
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 1,
+        blockId: `${MESSAGE_ID}:1`,
+      }),
+    );
+
+    let blocks = readAssistantMessages()[0]?.contentBlocks ?? [];
+    expect(blocks.map((b) => b.type)).toEqual(["text", "tool_use"]);
+    expect(blocks[1]).toMatchObject({
+      type: "tool_use",
+      toolCallId: "t1",
+      name: "Read",
+    });
+
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t1",
+        input: { path: "src/lib.rs" },
+        status: "completed",
+        output: "ok",
+        messageId: MESSAGE_ID,
+        blockIndex: 1,
+        blockId: `${MESSAGE_ID}:1`,
+      }),
+    );
+
+    blocks = readAssistantMessages()[0]?.contentBlocks ?? [];
+    expect(blocks.map((b) => b.type)).toEqual(["text", "tool_use", "tool_result"]);
+    expect(blocks[2]).toMatchObject({ type: "tool_result", tool_use_id: "t1", output: "ok" });
+
+    handler(
+      notification("agent:stream:end", { agentId: AGENT, streamId: STREAM_ID }),
+    );
+    handler(
+      notification("agent:idle", {
+        agentId: AGENT,
+        status: "idle",
+        isActive: false,
+        reason: "stream_complete",
+      }),
+    );
+
+    expect(readAssistantMessages()[0]?.isStreaming).toBe(false);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it("does not duplicate the assistant message when getConversation hydration follows the live stream", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:stream:chunk", {
+        agentId: AGENT,
+        content: "Done.",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: "text",
+        streamId: STREAM_ID,
+      }),
+    );
+    handler(
+      notification("agent:stream:end", { agentId: AGENT, streamId: STREAM_ID }),
+    );
+    handler(
+      notification("agent:idle", {
+        agentId: AGENT,
+        status: "idle",
+        isActive: false,
+        reason: "stream_complete",
+      }),
+    );
+
+    // Simulate the chat-read-service.getConversation hydration: a session
+    // upsert carrying the BE-canonical assistant message with the same id.
+    const session = readSession();
+    expect(session).toBeDefined();
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          ...session!,
+          messages: [
+            ...(session!.messages ?? []).filter((m) => m.role !== "assistant"),
+            {
+              id: MESSAGE_ID,
+              role: "assistant",
+              contentBlocks: [{ type: "text", text: "Done." }],
+              timestamp: "2026-01-02T00:00:00.001Z",
+            } as AgentMessage,
+          ],
+        },
+      ]),
+    );
+
+    expect(readAssistantMessages()).toHaveLength(1);
+    expect(readAssistantMessages()[0].id).toBe(MESSAGE_ID);
+  });
+
+  it("agent:failed finalizes the in-flight stream and clears the spinner", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:stream:chunk", {
+        agentId: AGENT,
+        content: "Working",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: "text",
+        streamId: STREAM_ID,
+      }),
+    );
+    handler(
+      notification("agent:failed", {
+        agentId: AGENT,
+        error: "boom",
+        status: "failed",
+        isActive: false,
+      }),
+    );
+
+    const assistant = readAssistantMessages()[0];
+    expect(assistant).toBeDefined();
+    expect(assistant.isStreaming).toBe(false);
+    expect(assistant.streamingComplete).toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 });
