@@ -21,11 +21,26 @@ vi.mock("$lib/client", () => ({
   },
 }));
 
+// Stream handler registry: controlled per-test to exercise both the
+// hasLiveHandler=false (hydration demotes phantom Active → Idle) and
+// hasLiveHandler=true (genuine live stream preserved) branches.
+vi.mock("./utils/stream-handler-registry", () => ({
+  hasStreamHandler: vi.fn(() => false),
+}));
+
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
-import { selectAgentMessages } from "$store/renderer/slices/agent-session/agent-session-selectors";
+import {
+  selectAgentMessages,
+  selectAgentSession,
+  selectAgentIsResponding,
+  selectAgentIsThinking,
+} from "$store/renderer/slices/agent-session/agent-session-selectors";
+import { hasStreamHandler } from "./utils/stream-handler-registry";
 import { loadChatTranscript } from "./chat-read-service";
+
+const hasStreamHandlerMock = hasStreamHandler as unknown as ReturnType<typeof vi.fn>;
 
 const agentsApi = appClient.agents as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const WS = "ws-chat-read-1";
@@ -67,6 +82,7 @@ describe("chatReadService (fake seam, real store)", () => {
     vi.clearAllMocks();
     agentsApi.get.mockResolvedValue(null as never);
     agentsApi.getConversation.mockResolvedValue(conversation([]) as never);
+    hasStreamHandlerMock.mockReturnValue(false);
   });
 
   it("loadChatTranscript fetches session + transcript and hydrates messages", async () => {
@@ -125,5 +141,57 @@ describe("chatReadService (fake seam, real store)", () => {
 
     expect(agentsApi.getConversation).toHaveBeenCalledWith(AGENT);
     expect(selectAgentMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual(["via-action"]);
+  });
+
+  it("normalizes phantom streaming flags: hydrating Active with no live handler demotes to Idle", async () => {
+    // Mirror the daemon-persisted mid-turn case: status=Active, isResponding=true,
+    // no streaming message, and no live ACP handler. Without normalization the
+    // selectors would report "Thinking" forever and the send guard would silently
+    // drop composer messages.
+    const agentId = "agent-hydration-idle";
+    hasStreamHandlerMock.mockReturnValue(false);
+    agentsApi.get.mockResolvedValueOnce(
+      makeSession({
+        id: agentId,
+        status: AgentStatus.Active,
+        isResponding: true,
+        isProcessing: true,
+        isStreaming: true,
+      }) as never,
+    );
+    agentsApi.getConversation.mockResolvedValueOnce(conversation([]) as never);
+
+    await loadChatTranscript(agentId);
+
+    const stored = selectAgentSession.select(appStore.state, agentId);
+    expect(stored?.status).toBe(AgentStatus.Idle);
+    expect(stored?.isResponding).toBe(false);
+    expect(stored?.isProcessing).toBe(false);
+    expect(stored?.isStreaming).toBe(false);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+    expect(selectAgentIsThinking.select(appStore.state, agentId)).toBe(false);
+  });
+
+  it("preserves Active status when a live stream handler is attached for the agent", async () => {
+    const agentId = "agent-hydration-live";
+    hasStreamHandlerMock.mockReturnValue(true);
+    agentsApi.get.mockResolvedValueOnce(
+      makeSession({
+        id: agentId,
+        status: AgentStatus.Active,
+        isResponding: true,
+        isProcessing: true,
+        isStreaming: true,
+      }) as never,
+    );
+    agentsApi.getConversation.mockResolvedValueOnce(conversation([]) as never);
+
+    await loadChatTranscript(agentId);
+
+    const stored = selectAgentSession.select(appStore.state, agentId);
+    expect(stored?.status).toBe(AgentStatus.Active);
+    expect(stored?.isResponding).toBe(true);
+    expect(stored?.isStreaming).toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(true);
   });
 });
