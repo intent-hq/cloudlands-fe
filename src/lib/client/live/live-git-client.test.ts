@@ -385,6 +385,69 @@ describe("LiveGitClient reads (fake transport)", () => {
       includeRemote: false,
     });
   });
+
+  // `git.branchStatus` is the path-based BranchSelector seam (PROTOCOL §5.6)
+  // that replaces the legacy `invoke('git:getBranchStatus')` Electron IPC. The
+  // contract asserts method + params verbatim and the renderer-shape mapping
+  // mirrors the daemon `GitBranchStatus` payload (snake_case → camelCase).
+  it("branchStatus forwards git.branchStatus with the documented params and maps the daemon payload", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      branch: "feature/x",
+      currentBranch: "main",
+      isCurrentBranch: false,
+      ahead: 0,
+      behind: 3,
+      hasUncommittedChanges: true,
+    });
+    const client = new LiveGitClient();
+
+    const result = await client.branchStatus("/Users/clement/src/intent", "feature/x");
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.branchStatus", {
+      repoPath: "/Users/clement/src/intent",
+      branchName: "feature/x",
+    });
+    expect(result).toEqual({
+      branch: "feature/x",
+      currentBranch: "main",
+      isCurrentBranch: false,
+      ahead: 0,
+      behind: 3,
+      hasUncommittedChanges: true,
+    });
+  });
+
+  it("branchStatus resolves null when the daemon errors (e.g. known-repo gate rejection)", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("Unknown or unauthorized repository path"));
+    const client = new LiveGitClient();
+
+    expect(await client.branchStatus("/tmp/not-a-repo", "main")).toBeNull();
+  });
+
+  it("branchStatus resolves null when the daemon returns undefined (no crash on missing payload)", async () => {
+    mockedRequest.mockResolvedValueOnce(undefined as unknown as Record<string, unknown>);
+    const client = new LiveGitClient();
+
+    expect(await client.branchStatus("/repo", "main")).toBeNull();
+  });
+
+  it("branchStatus tolerates partial payloads by defaulting missing fields", async () => {
+    mockedRequest.mockResolvedValueOnce({ behind: 2 });
+    const client = new LiveGitClient();
+
+    expect(await client.branchStatus("/repo", "main")).toEqual({
+      branch: "main",
+      currentBranch: "",
+      isCurrentBranch: false,
+      ahead: 0,
+      behind: 2,
+      hasUncommittedChanges: false,
+    });
+    expect(mockedRequest).toHaveBeenCalledWith("git.branchStatus", {
+      repoPath: "/repo",
+      branchName: "main",
+    });
+  });
 });
 
 describe("LiveGitClient.stage (fake transport)", () => {

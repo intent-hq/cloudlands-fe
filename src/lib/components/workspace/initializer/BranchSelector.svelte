@@ -863,10 +863,11 @@
 
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await invoke<any>('git:getBranchStatus', {
-          repoPath,
-          branchName,
-        });
+        // Daemon-backed read (PROTOCOL §5.6): `appClient.git.branchStatus` is
+        // the new path-based wire that replaces the legacy `git:getBranchStatus`
+        // Electron IPC. The live seam folds transport/gate errors to `null`,
+        // so we surface a clean "no info" state without crashing on undefined.
+        const result = await appClient.git.branchStatus(repoPath, branchName);
 
         // Only update state if this is still the branch we're interested in
         if (pendingStatusBranch !== branchName) {
@@ -877,12 +878,12 @@
           return;
         }
 
-        if (result.success && result.data) {
-          branchStatusBehind = result.data.behind ?? 0;
+        if (result) {
+          branchStatusBehind = result.behind ?? 0;
           // Only report uncommitted changes if this is the current branch
           // (git status --porcelain reports working directory state, not branch state)
           branchStatusHasUncommittedChanges =
-            branchName === currentBranch ? (result.data.hasUncommittedChanges ?? false) : false;
+            branchName === currentBranch ? (result.hasUncommittedChanges ?? false) : false;
 
           logger.debug('Branch status fetched', {
             branchName,
@@ -892,7 +893,7 @@
             isCurrentBranch: branchName === currentBranch,
           });
         } else {
-          logger.warn('Failed to get branch status', { error: result.error });
+          logger.warn('Failed to get branch status', { branchName, repoPath });
           // Reset on error
           branchStatusBehind = 0;
           branchStatusHasUncommittedChanges = false;

@@ -26,6 +26,7 @@ import type {
 import type {
   CommitDetailsResult,
   CommitFileDetail,
+  GitBranchStatusResult,
   GitBranchesResult,
   GitClient,
   GitCommitParams,
@@ -327,6 +328,36 @@ export class LiveGitClient implements GitClient {
         remoteBranches,
         currentBranch: typeof result.currentBranch === "string" ? result.currentBranch : "",
         defaultBranch: typeof result.defaultBranch === "string" ? result.defaultBranch : "",
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // `git.branchStatus` (PROTOCOL §5.6) is path-based like `git.getBranches` —
+  // the workspace-initializer `BranchSelector` queries an arbitrary repo path
+  // before a workspace exists to drive the ahead/behind + uncommitted
+  // indicators. Maps the daemon `GitBranchStatus` (snake_case → camelCase per
+  // the wire model) into the renderer `GitBranchStatusResult`. Errors
+  // (including the known-repo gate rejection) fold to `null` so the seam
+  // degrades silently — branch status is informational, never a hard failure.
+  async branchStatus(
+    repoPath: string,
+    branchName: string,
+  ): Promise<GitBranchStatusResult | null> {
+    try {
+      const result = await backendRequest<Record<string, unknown>>("git.branchStatus", {
+        repoPath,
+        branchName,
+      });
+      if (!result || typeof result !== "object") return null;
+      return {
+        branch: typeof result.branch === "string" ? result.branch : branchName,
+        currentBranch: typeof result.currentBranch === "string" ? result.currentBranch : "",
+        isCurrentBranch: Boolean(result.isCurrentBranch),
+        ahead: typeof result.ahead === "number" ? result.ahead : 0,
+        behind: typeof result.behind === "number" ? result.behind : 0,
+        hasUncommittedChanges: Boolean(result.hasUncommittedChanges),
       };
     } catch {
       return null;

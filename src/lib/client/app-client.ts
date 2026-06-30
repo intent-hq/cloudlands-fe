@@ -120,6 +120,21 @@ export interface GitBranchesResult {
   defaultBranch: string;
 }
 
+/**
+ * Branch status for an arbitrary repo path (`git.branchStatus`, §5.6). Mirrors
+ * the daemon `GitBranchStatus` shape: ahead/behind of the queried branch's
+ * upstream (`origin/<branchName>`), the worktree's currently-checked-out branch
+ * with a derived `isCurrentBranch` flag, and a porcelain dirty-tree flag.
+ */
+export interface GitBranchStatusResult {
+  branch: string;
+  currentBranch: string;
+  isCurrentBranch: boolean;
+  ahead: number;
+  behind: number;
+  hasUncommittedChanges: boolean;
+}
+
 export interface WorkspacesClient {
   list(): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
@@ -391,6 +406,14 @@ export interface GitClient {
    * surface a friendly fallback instead of crashing.
    */
   getBranches(repoPath: string, includeRemote: boolean): Promise<GitBranchesResult | null>;
+  /**
+   * Path-based branch status (`git.branchStatus`, §5.6). Used by the
+   * workspace-initializer `BranchSelector` to surface ahead/behind +
+   * uncommitted-changes indicators against an arbitrary repo path BEFORE a
+   * workspace exists. Errors fold to `null` so callers can surface a friendly
+   * fallback without crashing on `result.success` against undefined.
+   */
+  branchStatus(repoPath: string, branchName: string): Promise<GitBranchStatusResult | null>;
   subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe;
   /**
    * Stage explicit paths (`git.stage`). Rejects all-files globs ('.'/'*'/'--all')
