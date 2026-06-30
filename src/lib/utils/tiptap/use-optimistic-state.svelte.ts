@@ -1,17 +1,19 @@
 /**
  * Utility for optimistic UI updates in TipTap node views
  *
- * Provides temporary state that overrides actual state until cleared.
- * Useful for immediate UI feedback while waiting for async ProseMirror transactions.
+ * Provides temporary state that overrides actual state until the BE
+ * confirms or rejects the corresponding mutation. The optimistic overlay
+ * persists indefinitely — there is no time-based auto-clear — and the
+ * caller is responsible for invoking `commit()` on a successful BE
+ * response or `rollback()` on a failed one.
  */
 
 /**
  * Hook for optimistic UI updates
  *
- * Provides temporary state that overrides actual state until cleared.
- * Automatically clears after a specified delay to sync with actual state.
+ * Provides temporary state that overrides actual state until cleared by
+ * the caller in response to the BE's mutation result.
  *
- * @param clearDelay - Milliseconds to wait before clearing optimistic state (default: 50)
  * @returns Object with optimistic state management methods
  *
  * @example
@@ -29,45 +31,43 @@
  *   let checked = $derived(optimistic.get('checked') ?? reactiveNode.value.attrs.checked);
  *   let status = $derived(optimistic.get('status') ?? reactiveNode.value.attrs.status);
  *
- *   function handleClick() {
+ *   async function handleClick() {
  *     // Set optimistic state for immediate feedback
  *     optimistic.set({ checked: true, status: 'done' });
- *
- *     // Update actual state (async)
- *     updateNodeAttributes(editor, getPos, reactiveNode.value, {
- *       checked: true,
- *       status: 'done'
- *     });
- *
- *     // Optimistic state auto-clears after 50ms
+ *     try {
+ *       // Await the BE mutation (e.g. an IPC call backing a `note:*` event)
+ *       await updateNodeAttributes(editor, getPos, reactiveNode.value, {
+ *         checked: true,
+ *         status: 'done',
+ *       });
+ *       // BE accepted the mutation — drop the overlay so the actual
+ *       // (now-updated) attrs render through.
+ *       optimistic.commit();
+ *     } catch (err) {
+ *       // BE rejected the mutation — drop the overlay so the previous
+ *       // attrs render through again.
+ *       optimistic.rollback();
+ *     }
  *   }
  * </script>
  *
  * <input type="checkbox" {checked} onclick={handleClick} />
  * ```
  */
-export function useOptimisticState<T extends Record<string, any>>(clearDelay: number = 50) {
+export function useOptimisticState<T extends Record<string, any>>() {
   let optimisticState = $state<Partial<T>>({});
-  let clearTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Set optimistic state values
    *
-   * Merges with existing optimistic state and schedules auto-clear.
+   * Merges with existing optimistic state. The overlay persists until
+   * `commit()`, `rollback()`, or `clear()` is called — there is no
+   * time-based auto-clear.
    *
    * @param updates - Partial state updates
    */
   function set(updates: Partial<T>) {
     optimisticState = { ...optimisticState, ...updates };
-
-    // Clear previous timer
-    if (clearTimer) clearTimeout(clearTimer);
-
-    // Set new timer to clear optimistic state
-    clearTimer = setTimeout(() => {
-      optimisticState = {};
-      clearTimer = null;
-    }, clearDelay);
   }
 
   /**
@@ -84,16 +84,46 @@ export function useOptimisticState<T extends Record<string, any>>(clearDelay: nu
     return optimisticState[key];
   }
 
+  function clearKeys(keys?: ReadonlyArray<keyof T>) {
+    if (!keys) {
+      optimisticState = {};
+      return;
+    }
+    const next: Partial<T> = { ...optimisticState };
+    for (const key of keys) {
+      delete next[key];
+    }
+    optimisticState = next;
+  }
+
   /**
-   * Manually clear all optimistic state
+   * Drop the optimistic overlay after the BE has accepted the mutation.
    *
-   * Cancels any pending auto-clear timer.
+   * The actual (now-updated) state takes over because the overlay no
+   * longer shadows it. Pass `keys` to commit only a subset.
+   */
+  function commit(keys?: ReadonlyArray<keyof T>) {
+    clearKeys(keys);
+  }
+
+  /**
+   * Drop the optimistic overlay after the BE has rejected the mutation.
+   *
+   * The previous actual state takes over because the overlay no longer
+   * shadows it. Pass `keys` to roll back only a subset.
+   */
+  function rollback(keys?: ReadonlyArray<keyof T>) {
+    clearKeys(keys);
+  }
+
+  /**
+   * Manually clear all optimistic state.
+   *
+   * Equivalent to `commit()` / `rollback()` with no keys — kept as a
+   * generic alias for callers that aren't reconciling against a BE
+   * response (e.g. component teardown).
    */
   function clear() {
-    if (clearTimer) {
-      clearTimeout(clearTimer);
-      clearTimer = null;
-    }
     optimisticState = {};
   }
 
@@ -110,6 +140,8 @@ export function useOptimisticState<T extends Record<string, any>>(clearDelay: nu
   return {
     set,
     get,
+    commit,
+    rollback,
     clear,
     has,
     /**
