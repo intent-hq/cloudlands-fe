@@ -69,6 +69,24 @@ function notification(eventType: string, data: Record<string, unknown>) {
   };
 }
 
+/**
+ * Variant carrying the wire-level `params.subscriptionId` the daemon attaches
+ * when fanning a domain event out per matching subscription (PROTOCOL §6.3 /
+ * intent-transport `build_event_notification`). Used to exercise the bridge's
+ * fan-out scope gate.
+ */
+function notificationWithSub(
+  eventType: string,
+  data: Record<string, unknown>,
+  subscriptionId: string,
+) {
+  const base = notification(eventType, data);
+  return {
+    method: base.method,
+    params: { ...base.params, subscriptionId },
+  };
+}
+
 function readSession(): AgentSession | undefined {
   const state = appStore.state as {
     agentSessions?: { byAgentId: Record<string, AgentSession> };
@@ -696,5 +714,124 @@ describe("daemonEventsBridge (queue wire contract — agent:queue:updated → re
     expect(
       selectAgentQueueMessages.select(appStore.state, AGENT).map((m) => m.id),
     ).toEqual(["q-1"]);
+  });
+});
+
+
+describe("daemonEventsBridge (fan-out scope gate — subscriptionId-aware delivery)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("applies a chunk exactly once when the daemon fans the same chunk out across N subscriptions on the socket", async () => {
+    // Mock backendRequest resolves events.subscribe with `{ subscriptionId: "sub-1" }`
+    // (top-of-file vi.mock factory). That id is the bridge's own subscription.
+    // The daemon emits ONE `events.event` notification per matching subscription
+    // on the socket (PROTOCOL §6.3 / intent-transport `build_event_notification`),
+    // each carrying that subscription's id. If another live-* client subscribes
+    // to an overlapping `agent:*` filter, the chunk is delivered three times to
+    // the socket-level notification handler — once tagged "sub-1" (ours), once
+    // "sub-foreign-a", once "sub-foreign-b". Without the scope gate the bridge
+    // would `priorText + content` three times and echo as "TodayTodayToday" —
+    // the symptom this fix targets.
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const data = {
+      agentId: AGENT,
+      content: "Today",
+      messageId: MESSAGE_ID,
+      blockIndex: 0,
+      blockId: `${MESSAGE_ID}:0`,
+      blockType: "text",
+      streamId: STREAM_ID,
+    };
+
+    handler(notificationWithSub("agent:stream:chunk", data, "sub-1"));
+    handler(notificationWithSub("agent:stream:chunk", data, "sub-foreign-a"));
+    handler(notificationWithSub("agent:stream:chunk", data, "sub-foreign-b"));
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
+      type: "text",
+      text: "Today",
+    });
+  });
+
+  it("drops a notification whose envelope subscriptionId does not match the bridge's own", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Foreign subscription on the same socket — another consumer's overlapping
+    // `agent:*` subscribe. The bridge must NOT append text from these copies.
+    handler(
+      notificationWithSub(
+        "agent:stream:chunk",
+        {
+          agentId: AGENT,
+          content: "leaked",
+          messageId: MESSAGE_ID,
+          blockIndex: 0,
+          blockId: `${MESSAGE_ID}:0`,
+          blockType: "text",
+          streamId: STREAM_ID,
+        },
+        "sub-foreign",
+      ),
+    );
+
+    expect(readAssistantMessages()).toHaveLength(0);
+  });
+
+  it("still applies legacy/flat envelopes with no subscriptionId (back-compat)", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // No `params.subscriptionId` on the envelope — older transports / tests
+    // never tagged the wire copy. Must continue to apply.
+    handler(
+      notification("agent:stream:chunk", {
+        agentId: AGENT,
+        content: "Legacy ok",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: "text",
+        streamId: STREAM_ID,
+      }),
+    );
+
+    const assistantMessages = readAssistantMessages();
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0].contentBlocks?.[0]).toMatchObject({
+      type: "text",
+      text: "Legacy ok",
+    });
+  });
+
+  it("install is idempotent — repeated primeBridge dispatches register one notification listener and one events.subscribe call", async () => {
+    await primeBridge();
+    await primeBridge();
+    await primeBridge();
+
+    expect(onBackendNotificationSpy).toHaveBeenCalledTimes(1);
+    const subscribeCalls = backendRequestSpy.mock.calls.filter(
+      ([method]) => method === "events.subscribe",
+    );
+    expect(subscribeCalls).toHaveLength(1);
+    expect(subscribeCalls[0][1]).toEqual({ eventTypes: ["agent:*", "settings:changed"] });
   });
 });

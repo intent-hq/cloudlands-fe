@@ -35,6 +35,18 @@
  * single notification listener; both are cleaned up if the host store
  * disposes. The `appClient.events.subscribe(["agent:*"])` call piggybacks on
  * the existing live transport.
+ *
+ * Fan-out scoping: the daemon emits one `events.event` notification per
+ * matching subscription on the socket (PROTOCOL §6.3 / intent-transport
+ * `build_event_notification`), each tagged with `params.subscriptionId`. If any
+ * other consumer on the same socket subscribes to an overlapping `agent:*`
+ * type, the same chunk would be delivered once per subscription and
+ * `handleStreamChunkEvent`'s `priorText + content` append would run N times,
+ * echoing each delta. The handler therefore gates on the envelope's
+ * `subscriptionId`: notifications carrying a foreign id are dropped, and
+ * legacy/flat envelopes (no id) are still accepted for back-compat. This
+ * mirrors the same fan-out dedupe `live-terminals-client.ts` applies to
+ * `terminal:*` deliveries.
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import type { ContentBlock, QueuedMessage } from "$shared/types";
@@ -84,6 +96,14 @@ interface StreamState {
 const streamsByAgent = new Map<string, StreamState>();
 let installed = false;
 let cleanup: (() => void) | null = null;
+/**
+ * The subscriptionId returned by this bridge's own
+ * `events.subscribe(['agent:*', 'settings:changed'])` call. The notification
+ * handler uses it to drop foreign-subscription fan-out copies (see file header).
+ * `undefined` until the subscribe resolves; legacy/flat envelopes carrying no
+ * `subscriptionId` are always accepted regardless of this value.
+ */
+let ownSubscriptionId: string | undefined;
 
 function workspaceIdOf(event: WorkspaceEvent | undefined): string | null {
   if (!event || typeof event !== "object") return null;
@@ -101,6 +121,17 @@ function extractEvent(params: unknown): WorkspaceEvent | null {
   const wrapped = (params as { event?: unknown }).event;
   if (wrapped && typeof wrapped === "object") return wrapped as WorkspaceEvent;
   return params as WorkspaceEvent;
+}
+
+/**
+ * Read the wire-level `params.subscriptionId` tag the daemon attaches when
+ * fanning a domain event out per matching subscription. Returns `undefined`
+ * for flat/legacy envelopes that carry no id (those bypass the scope gate).
+ */
+function extractSubscriptionId(params: unknown): string | undefined {
+  if (!params || typeof params !== "object") return undefined;
+  const id = (params as { subscriptionId?: unknown }).subscriptionId;
+  return typeof id === "string" ? id : undefined;
 }
 
 function ensureStream(
@@ -317,6 +348,17 @@ function handleSettingsChangedEvent(event: WorkspaceEvent): void {
 
 function handleNotification(method: string, params: unknown): void {
   if (method !== "events.event") return;
+  // Fan-out scope gate (see file header): drop notifications delivered through
+  // a different subscription on the same socket so chunk-append/queue/idle
+  // handlers never apply the same event twice. Flat/legacy envelopes (no
+  // `subscriptionId` on params) are still accepted for back-compat.
+  const envelopeSubscriptionId = extractSubscriptionId(params);
+  if (
+    envelopeSubscriptionId !== undefined &&
+    envelopeSubscriptionId !== ownSubscriptionId
+  ) {
+    return;
+  }
   const event = extractEvent(params);
   if (!event || typeof event !== "object") return;
   const type = (event as { type?: unknown }).type;
@@ -381,7 +423,9 @@ async function installSubscriptionOnce(): Promise<void> {
     const result = (await backendRequest("events.subscribe", {
       eventTypes: ["agent:*", "settings:changed"],
     })) as { subscriptionId?: string } | undefined;
-    if (!result?.subscriptionId) {
+    if (typeof result?.subscriptionId === "string" && result.subscriptionId.length > 0) {
+      ownSubscriptionId = result.subscriptionId;
+    } else {
       logger.warn("events.subscribe returned no subscriptionId", result);
     }
   } catch (error) {
@@ -414,5 +458,6 @@ export function __resetDaemonEventsBridgeForTests(): void {
   if (cleanup) cleanup();
   cleanup = null;
   installed = false;
+  ownSubscriptionId = undefined;
   streamsByAgent.clear();
 }
