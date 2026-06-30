@@ -573,6 +573,8 @@ export const AgentSessionSchema = z.object({
   lastUserMessage: z.string().optional(),
   lastAgentResponse: z.string().optional(),
   isResponding: z.boolean().optional(),
+  isWaitingOnTool: z.boolean().optional(),
+  isWaitingForOtherAgents: z.boolean().optional(),
   isStreaming: z.boolean().optional(),
   // Agent configuration (preserved from workspace creation)
   config: z

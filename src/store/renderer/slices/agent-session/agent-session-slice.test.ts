@@ -1180,8 +1180,18 @@ describe('agent-session selectors', () => {
       expect(selectAgentIsResponding.select(state, 'blank-created')).toBe(false);
     });
 
-    it('returns true for a streaming assistant message', () => {
+    it('returns true when the daemon reports the turn is waiting on a tool', () => {
+      const session = makeSession('a1', 'ws-1', { isWaitingOnTool: true });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentIsResponding.select(state, 'a1')).toBe(true);
+    });
+
+    it('does not infer responding from a streaming assistant message when BE flags are idle', () => {
       const session = makeSession('a1', 'ws-1', {
+        status: 'idle' as any,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
         messages: [
           {
             ...makeMessage('m1', 'assistant'),
@@ -1191,7 +1201,7 @@ describe('agent-session selectors', () => {
         ],
       });
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
-      expect(selectAgentIsResponding.select(state, 'a1')).toBe(true);
+      expect(selectAgentIsResponding.select(state, 'a1')).toBe(false);
     });
 
     it('ignores stale streaming fields on interrupted/cancelled assistant messages', () => {
@@ -1230,15 +1240,8 @@ describe('agent-session selectors', () => {
       expect(selectAgentIsResponding.select(state, 'a1')).toBe(false);
     });
 
-    it('returns true while running a tool or waiting for its MCP/tool result', () => {
-      const session = makeSession('a1', 'ws-1', {
-        messages: [
-          {
-            ...makeMessage('m1', 'assistant'),
-            contentBlocks: [{ type: 'tool_use', id: 'tool-1', name: 'read_file', input: {} }],
-          },
-        ],
-      });
+    it('returns true while the daemon flags the turn waiting on a tool', () => {
+      const session = makeSession('a1', 'ws-1', { isWaitingOnTool: true });
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
       expect(selectAgentIsResponding.select(state, 'a1')).toBe(true);
     });
@@ -1348,15 +1351,15 @@ describe('agent-session selectors', () => {
       expect(selectAgentIsThinking.select(state, 'a1')).toBe(false);
     });
 
-    it('flags genuinely unresolved tool_use with no matching result as responding', () => {
-      // Negative case: a tool_use whose toolCallId/id never appears on any
-      // tool_result must still keep the agent in the responding state so we
-      // don't over-correct the pairing fix.
+    it('does not infer responding from an unresolved tool_use when BE flags are idle', () => {
+      // The FE no longer derives "working" from message internals: an unresolved
+      // tool_use without the daemon's isWaitingOnTool/isResponding flag is idle.
       const session = makeSession('a1', 'ws-1', {
         status: 'Idle' as any,
         isStreaming: false,
         isProcessing: false,
         isResponding: false,
+        isWaitingOnTool: false,
         messages: [
           {
             ...makeMessage('m1', 'assistant'),
@@ -1373,8 +1376,8 @@ describe('agent-session selectors', () => {
         ],
       });
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
-      expect(selectAgentIsResponding.select(state, 'a1')).toBe(true);
-      expect(selectAgentIsThinking.select(state, 'a1')).toBe(true);
+      expect(selectAgentIsResponding.select(state, 'a1')).toBe(false);
+      expect(selectAgentIsThinking.select(state, 'a1')).toBe(false);
     });
   });
 
@@ -1389,6 +1392,48 @@ describe('agent-session selectors', () => {
     expect(selectAgentQueuedMessages.select(state, 'unknown')).toEqual([]);
   });
 
+  describe('BE activity-flag wire-contract regression (AUDIT-P1-4)', () => {
+    it('hydrating a completed session with idle BE flags leaves it not responding (composer usable)', () => {
+      // PROTOCOL §5.5: terminal agents report all activity flags false. Hydrate
+      // through the canonical reducer intake and assert the FE renders idle
+      // verbatim rather than re-deriving "working" from the persisted transcript.
+      const completed = makeSession('done', 'ws-1', {
+        status: 'completed' as any,
+        isResponding: false,
+        isWaitingOnTool: false,
+        isWaitingForOtherAgents: false,
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            streamingComplete: true,
+            metadata: { stopReason: 'end_turn' } as any,
+            contentBlocks: [{ type: 'text', text: 'All done.' }],
+          },
+        ],
+      });
+      const reduced = agentSessionReducer(initialState, bulkUpsertSessions([completed]));
+      const state = storeWith({
+        byAgentId: reduced.byAgentId,
+        agentIdsByWorkspace: reduced.agentIdsByWorkspace,
+      });
+
+      expect(selectAgentIsResponding.select(state, 'done')).toBe(false);
+      expect(selectAgentIsThinking.select(state, 'done')).toBe(false);
+      expect(selectAgentIsRunning.select(state, 'done')).toBe(false);
+    });
+
+    it('renders an in-flight daemon turn (isResponding) as responding verbatim', () => {
+      const live = makeSession('live', 'ws-1', { status: 'active' as any, isResponding: true });
+      const reduced = agentSessionReducer(initialState, bulkUpsertSessions([live]));
+      const state = storeWith({
+        byAgentId: reduced.byAgentId,
+        agentIdsByWorkspace: reduced.agentIdsByWorkspace,
+      });
+
+      expect(selectAgentIsResponding.select(state, 'live')).toBe(true);
+    });
+  });
+
   describe('selectAgentIsThinking', () => {
     it('preserves the verified active-thread behavior via selector composition', () => {
       const session = makeSession('a1', 'ws-1', { isResponding: true });
@@ -1400,33 +1445,29 @@ describe('agent-session selectors', () => {
   });
 
   describe('selectAgentIsWaitingForOtherAgents', () => {
-    it('returns true only from waiting-for-agent relationship metadata', () => {
-      const session = makeSession('a1', 'ws-1', {
-        metadata: { waitingForAgentIds: ['a2'] } as any,
-      });
+    it('renders the daemon isWaitingForOtherAgents flag verbatim', () => {
+      const session = makeSession('a1', 'ws-1', { isWaitingForOtherAgents: true });
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
 
       expect(selectAgentIsWaitingForOtherAgents.select(state, 'a1')).toBe(true);
     });
 
-    it('returns false for empty, invalid, terminal, or unknown relationship state', () => {
-      const empty = makeSession('empty', 'ws-1', {
-        metadata: { waitingForAgentIds: [] } as any,
-      });
-      const invalid = makeSession('invalid', 'ws-1', {
-        metadata: { waitingForAgentIds: 'a2' } as any,
+    it('returns false when the flag is unset/false, terminal, or unknown', () => {
+      const unset = makeSession('unset', 'ws-1', {});
+      const explicitFalse = makeSession('explicit-false', 'ws-1', {
+        isWaitingForOtherAgents: false,
       });
       const terminal = makeSession('terminal', 'ws-1', {
         status: 'Completed' as any,
-        metadata: { waitingForAgentIds: ['a2'] } as any,
+        isWaitingForOtherAgents: true,
       });
       const state = storeWith({
-        byAgentId: { empty, invalid, terminal },
+        byAgentId: { unset, 'explicit-false': explicitFalse, terminal },
         agentIdsByWorkspace: {},
       });
 
-      expect(selectAgentIsWaitingForOtherAgents.select(state, 'empty')).toBe(false);
-      expect(selectAgentIsWaitingForOtherAgents.select(state, 'invalid')).toBe(false);
+      expect(selectAgentIsWaitingForOtherAgents.select(state, 'unset')).toBe(false);
+      expect(selectAgentIsWaitingForOtherAgents.select(state, 'explicit-false')).toBe(false);
       expect(selectAgentIsWaitingForOtherAgents.select(state, 'terminal')).toBe(false);
       expect(selectAgentIsWaitingForOtherAgents.select(state, 'unknown')).toBe(false);
     });
@@ -1441,31 +1482,24 @@ describe('agent-session selectors', () => {
     });
 
     it('returns true for waiting-for-other-agents relationships', () => {
-      const session = makeSession('a1', 'ws-1', {
-        metadata: { waitingForAgentIds: ['a2'] } as any,
-      });
+      const session = makeSession('a1', 'ws-1', { isWaitingForOtherAgents: true });
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
 
       expect(selectAgentIsWaiting.select(state, 'a1')).toBe(true);
       expect(selectAgentIsWaitingForOtherAgents.select(state, 'a1')).toBe(true);
     });
 
-    it('returns true while waiting for an unresolved MCP/tool result', () => {
-      const session = makeSession('a1', 'ws-1', {
-        messages: [
-          {
-            ...makeMessage('m1', 'assistant'),
-            contentBlocks: [{ type: 'tool_use', id: 'tool-1', name: 'read_file', input: {} }],
-          },
-        ],
-      });
+    it('returns true while the daemon flags the turn waiting on a tool', () => {
+      const session = makeSession('a1', 'ws-1', { isWaitingOnTool: true });
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
 
       expect(selectAgentIsWaiting.select(state, 'a1')).toBe(true);
     });
 
-    it('returns true for pending message tool calls', () => {
+    it('does not infer waiting from message tool calls when BE flags are idle', () => {
       const session = makeSession('a1', 'ws-1', {
+        status: 'idle' as any,
+        isWaitingOnTool: false,
         messages: [
           {
             ...makeMessage('m1', 'assistant'),
@@ -1475,7 +1509,7 @@ describe('agent-session selectors', () => {
       });
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
 
-      expect(selectAgentIsWaiting.select(state, 'a1')).toBe(true);
+      expect(selectAgentIsWaiting.select(state, 'a1')).toBe(false);
     });
 
     it('returns false after a message tool result resolves the tool call', () => {
@@ -1559,16 +1593,11 @@ describe('agent-session selectors', () => {
       expect(selectAgentIsRunning.select(state, 'a1')).toBe(true);
     });
 
-    it('returns true while running a tool with an unresolved tool_use', () => {
+    it('returns true while the daemon flags the turn waiting on a tool', () => {
       const session = makeSession('a1', 'ws-1', {
         isStreaming: false,
         isProcessing: false,
-        messages: [
-          {
-            ...makeMessage('m1', 'assistant'),
-            contentBlocks: [{ type: 'tool_use', id: 'tool-1', name: 'read_file', input: {} }],
-          },
-        ],
+        isWaitingOnTool: true,
       });
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
       expect(selectAgentIsRunning.select(state, 'a1')).toBe(true);
@@ -1600,17 +1629,17 @@ describe('agent-session selectors', () => {
         status: 'idle' as any,
         isStreaming: false,
         isProcessing: false,
-        metadata: { waitingForAgentIds: ['a2'] } as any,
+        isWaitingForOtherAgents: true,
       });
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
       expect(selectAgentIsRunning.select(state, 'a1')).toBe(true);
     });
 
-    it('returns true for an in-flight streaming assistant message', () => {
+    it('returns true for a BE-reported in-flight (responding) turn', () => {
       const session = makeSession('a1', 'ws-1', {
         isStreaming: false,
         isProcessing: false,
-        messages: [{ ...makeMessage('m1', 'assistant'), isStreaming: true }],
+        isResponding: true,
       });
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
       expect(selectAgentIsRunning.select(state, 'a1')).toBe(true);
@@ -1682,7 +1711,7 @@ describe('agent-session selectors', () => {
         isStreaming: false,
         isProcessing: false,
         isResponding: false,
-        metadata: { waitingForAgentIds: ['child'] } as any,
+        isWaitingForOtherAgents: true,
       });
       const state = storeWith({ byAgentId: { coordinator: session }, agentIdsByWorkspace: {} });
 
@@ -1703,18 +1732,13 @@ describe('agent-session selectors', () => {
       expect(selectAllRetainedAgentSessions.select(state).map((s) => s.id)).toEqual(['waiting']);
     });
 
-    it('retains agents with an unresolved tool_use', () => {
+    it('retains agents the daemon flags as waiting on a tool', () => {
       const session = makeSession('tooling', 'ws-1', {
         status: 'idle' as any,
         isStreaming: false,
         isProcessing: false,
         isResponding: false,
-        messages: [
-          {
-            ...makeMessage('m1', 'assistant'),
-            contentBlocks: [{ type: 'tool_use', id: 'tool-1', name: 'read_file', input: {} }],
-          },
-        ],
+        isWaitingOnTool: true,
       });
       const state = storeWith({ byAgentId: { tooling: session }, agentIdsByWorkspace: {} });
 

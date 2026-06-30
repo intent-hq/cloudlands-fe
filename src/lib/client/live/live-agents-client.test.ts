@@ -176,6 +176,26 @@ describe("LiveAgentsClient mutations (fake transport)", () => {
     expect(mockedRequest).toHaveBeenCalledWith("agent.lock", { agentId: "agent-1", locked: true });
   });
 
+  it("delete forwards agent.delete with §5.5 params and folds the idempotent BE body into success", async () => {
+    // PROTOCOL §5.5: agent.delete takes `{ agentId }` (workspaceId optional, the
+    // daemon resolves it) and returns `{ success: true }` — idempotently, even
+    // when the agent is already gone. The seam forwards only `{ agentId }`.
+    mockedRequest.mockResolvedValueOnce({ success: true });
+    const client = new LiveAgentsClient();
+
+    expect(await client.delete("agent-1")).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith("agent.delete", { agentId: "agent-1" });
+  });
+
+  it("delete surfaces a transport failure as a non-success MutationResult (no throw)", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("delete boom"));
+    const client = new LiveAgentsClient();
+
+    const result = await client.delete("agent-1");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("delete boom");
+  });
+
   it("maps a daemon error to a failed MutationResult without throwing", async () => {
     // Use a fresh agentId so the module-level workspace cache is guaranteed to
     // miss; the resolver call resolves successfully, then agent.sendMessage
@@ -185,5 +205,67 @@ describe("LiveAgentsClient mutations (fake transport)", () => {
     const client = new LiveAgentsClient();
 
     expect(await client.send("agent-err", "x")).toEqual({ success: false, error: "agent busy" });
+  });
+});
+
+describe("LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("list carries isResponding/isWaitingOnTool/isWaitingForOtherAgents verbatim", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      agents: [
+        {
+          id: "agent-1",
+          workspaceId: "ws-1",
+          name: "A1",
+          status: "active",
+          isResponding: true,
+          isWaitingOnTool: true,
+          isWaitingForOtherAgents: false,
+        },
+      ],
+    });
+    const client = new LiveAgentsClient();
+
+    const [agent] = await client.list("ws-1");
+    expect(agent).toMatchObject({
+      isResponding: true,
+      isWaitingOnTool: true,
+      isWaitingForOtherAgents: false,
+    });
+  });
+
+  it("get carries the daemon activity flags verbatim", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      agent: {
+        id: "agent-1",
+        workspaceId: "ws-1",
+        name: "A1",
+        status: "idle",
+        isResponding: false,
+        isWaitingOnTool: false,
+        isWaitingForOtherAgents: true,
+      },
+    });
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get("agent-1");
+    expect(agent).toMatchObject({
+      isResponding: false,
+      isWaitingOnTool: false,
+      isWaitingForOtherAgents: true,
+    });
+  });
+
+  it("does not synthesize activity flags the daemon omits (no healing)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      agent: { id: "agent-1", workspaceId: "ws-1", name: "A1", status: "completed" },
+    });
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get("agent-1");
+    expect(agent?.isResponding).toBeUndefined();
+    expect(agent?.isWaitingOnTool).toBeUndefined();
+    expect(agent?.isWaitingForOtherAgents).toBeUndefined();
   });
 });

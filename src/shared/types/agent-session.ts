@@ -181,6 +181,20 @@ export interface AgentSession {
   /** Whether the agent is currently responding */
   isResponding?: boolean;
 
+  /**
+   * Daemon-owned activity flag (PROTOCOL.md §5.5): the in-flight turn has an
+   * unresolved `tool_use` block. Implies `isResponding`. Rendered verbatim —
+   * the FE no longer derives this from message internals.
+   */
+  isWaitingOnTool?: boolean;
+
+  /**
+   * Daemon-owned activity flag (PROTOCOL.md §5.5): the agent parents one or
+   * more pending completion watches. Rendered verbatim — the FE no longer
+   * derives this from `metadata.waitingForAgentIds`.
+   */
+  isWaitingForOtherAgents?: boolean;
+
   /** Canonical stop/finish reason from the latest terminal stream/status event */
   stopReason?: string | null;
 
