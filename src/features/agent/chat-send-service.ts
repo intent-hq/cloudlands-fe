@@ -42,7 +42,11 @@ import {
   sendMessage,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { clearChatDraft } from "$store/renderer/slices/transient-ui/transient-ui-slice";
-import { replaceAgentQueue } from "$store/renderer/slices/agent-queue/agent-queue-slice";
+import {
+  removeQueuedMessageFromAgentQueue,
+  removeQueuedMessageRequested,
+  replaceAgentQueue,
+} from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import type {
   InitialMessagePayload,
   SendMessagePayload,
@@ -168,8 +172,50 @@ async function dispatchToLifecycle(
 }
 
 /**
- * Middleware that gives `sendMessage` and `sendInitialMessageRequested` a real
- * consumer. Fire-and-forget — dispatch stays synchronous and never throws.
+ * Optimistically remove a queued message and ask the daemon to remove its
+ * persisted entry. The BE has been made **idempotent** on
+ * `agent.removeQueuedMessage` (PROTOCOL §5.5) — it returns `{ success: true }`
+ * regardless of whether the messageId was actually in the queue — so we do NOT
+ * roll the optimistic delete back on any response. A thrown error is treated
+ * as a transport failure: the FE-side delete already added a tombstone via
+ * `removeQueuedMessageFromAgentQueue`, so a stale `agent:queue:updated`
+ * snapshot that still includes the entry will be suppressed by the reducer
+ * until the BE catches up.
+ */
+async function dispatchQueueRemoval(agentId: string, messageId: string): Promise<void> {
+  // Optimistic UI first: drop the message locally and record the tombstone so
+  // a late BE snapshot cannot resurrect it before self-drain catches up.
+  appStore.dispatch(removeQueuedMessageFromAgentQueue(agentId, messageId));
+  try {
+    const result = await appClient.agents.removeQueued(agentId, messageId);
+    // The daemon is idempotent: a "not found" / queue-empty response is
+    // surfaced as `success: true`. A non-success here can only mean a
+    // transport-level failure (the seam folds RPC throws into MutationResult);
+    // in either case we deliberately keep the optimistic delete in place — the
+    // BE's next `agent:queue:updated` snapshot will reconcile.
+    if (!result.success) {
+      logger.warn("agent.removeQueuedMessage reported a non-success result; keeping optimistic delete in place", {
+        agentId,
+        messageId,
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    // The seam should not throw, but if it does we still do NOT roll back —
+    // matches the §5.5 idempotency contract and the §6.5 invariant that the
+    // BE's next queue snapshot is the source of truth.
+    logger.error("agent.removeQueuedMessage threw; keeping optimistic delete in place", {
+      agentId,
+      messageId,
+      error,
+    });
+  }
+}
+
+/**
+ * Middleware that gives `sendMessage`, `sendInitialMessageRequested`, and
+ * `removeQueuedMessageRequested` a real consumer. Fire-and-forget — dispatch
+ * stays synchronous and never throws.
  */
 export function createChatSendMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
@@ -215,6 +261,20 @@ export function createChatSendMiddleware(): StoreMiddleware {
         void dispatchToLifecycle(agentId, inner.wsId, inner.message, undefined, {
           imageBlocks: inner.imageBlocks ?? undefined,
         });
+      }
+    } else if ((action as { type?: unknown }).type === removeQueuedMessageRequested.type) {
+      const payload = (action as { payload?: unknown }).payload as
+        | [agentId?: unknown, messageId?: unknown]
+        | undefined;
+      const agentId = payload?.[0];
+      const messageId = payload?.[1];
+      if (
+        typeof agentId === "string" &&
+        agentId.length > 0 &&
+        typeof messageId === "string" &&
+        messageId.length > 0
+      ) {
+        void dispatchQueueRemoval(agentId, messageId);
       }
     }
 

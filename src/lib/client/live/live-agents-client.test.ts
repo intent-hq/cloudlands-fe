@@ -122,6 +122,30 @@ describe("LiveAgentsClient mutations (fake transport)", () => {
     expect(await client.queue("agent-1", "later")).toEqual({ success: true });
   });
 
+  it("removeQueued forwards agent.removeQueuedMessage with PROTOCOL §5.5 params and folds the idempotent BE body into success", async () => {
+    // PROTOCOL §5.5: the daemon's agent.removeQueuedMessage ALWAYS returns
+    // `{ success: true }`, including when the messageId is unknown or the
+    // queue is empty. The seam folds that into the uniform MutationResult.
+    mockedRequest.mockResolvedValueOnce({ success: true });
+    const client = new LiveAgentsClient();
+
+    const result = await client.removeQueued("agent-1", "qm-1");
+    expect(result).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith("agent.removeQueuedMessage", {
+      agentId: "agent-1",
+      messageId: "qm-1",
+    });
+  });
+
+  it("removeQueued surfaces a transport failure as a non-success MutationResult (no throw)", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("ipc boom"));
+    const client = new LiveAgentsClient();
+
+    const result = await client.removeQueued("agent-1", "qm-1");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("ipc boom");
+  });
+
   it("setAvailability forwards agent.setAvailability with the boolean", async () => {
     mockedRequest.mockResolvedValueOnce({ id: "agent-1" });
     const client = new LiveAgentsClient();

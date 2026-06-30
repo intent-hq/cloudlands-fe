@@ -154,6 +154,17 @@ export class LiveAgentsClient implements AgentsClient {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
+  async removeQueued(agentId: string, messageId: string): Promise<MutationResult> {
+    // `agent.removeQueuedMessage` is **idempotent** on the daemon (§5.5): the
+    // BE returns `{ success: true }` whether or not the messageId existed in
+    // the persisted queue. `runMutation` folds the daemon body into a uniform
+    // success result; any thrown error is a transport/RPC failure, NOT a
+    // "not found" — callers (e.g. the queue-mutation handler in
+    // chat-send-service) must treat both branches as "already removed" and
+    // never roll the optimistic delete back, since the BE may have already
+    // self-drained or the FE's seeded queue may diverge after a daemon restart.
+    return runMutation("agent.removeQueuedMessage", { agentId, messageId });
+  }
   async setAvailability(agentId: string, available: boolean): Promise<MutationResult> {
     return runMutation("agent.setAvailability", { agentId, available });
   }

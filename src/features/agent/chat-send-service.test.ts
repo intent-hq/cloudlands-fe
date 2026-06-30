@@ -2,23 +2,27 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { AgentStatus } from "$shared/types/agent.types";
 import type { AgentSession, QueuedMessage, Workspace } from "$shared/types";
 
-// FAKE seams: agent-stream-lifecycle.sendMessage and appClient.agents.queue
-// are both spied so no IPC/daemon call (and never the real backend pipeline)
-// happens. The service runs against the REAL configured store so the
-// middleware wiring, workspace resolution, the BE-state in-flight read, the
-// chatSendStarted dispatch, and the queue-on-send branch are exercised end to
+// FAKE seams: agent-stream-lifecycle.sendMessage, appClient.agents.queue, and
+// appClient.agents.removeQueued are all spied so no IPC/daemon call (and never
+// the real backend pipeline) happens. The service runs against the REAL
+// configured store so the middleware wiring, workspace resolution, the
+// BE-state in-flight read, the chatSendStarted dispatch, the queue-on-send
+// branch, and the queue-removal optimistic-delete branch are exercised end to
 // end. vi.hoisted() keeps the spies in scope of the hoisted vi.mock factories.
-const { lifecycleSendMessage, agentsQueue } = vi.hoisted(() => ({
+const { lifecycleSendMessage, agentsQueue, agentsRemoveQueued } = vi.hoisted(() => ({
   lifecycleSendMessage: vi.fn(() => Promise.resolve()),
   agentsQueue: vi.fn(() =>
     Promise.resolve({ success: true } as { success: boolean; queuedMessage?: unknown }),
+  ),
+  agentsRemoveQueued: vi.fn(() =>
+    Promise.resolve({ success: true } as { success: boolean; error?: string }),
   ),
 }));
 vi.mock("$features/agent/agent-stream-lifecycle", () => ({
   sendMessage: lifecycleSendMessage,
 }));
 vi.mock("$lib/client", () => ({
-  appClient: { agents: { queue: agentsQueue } },
+  appClient: { agents: { queue: agentsQueue, removeQueued: agentsRemoveQueued } },
 }));
 
 import { store as appStore } from "$store/renderer/store";
@@ -27,7 +31,11 @@ import {
   bulkUpsertSessions,
   clearAllSessions,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
-import { clearAgentQueue } from "$store/renderer/slices/agent-queue/agent-queue-slice";
+import {
+  clearAgentQueue,
+  removeQueuedMessageRequested,
+  replaceAgentQueue,
+} from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import {
   sendMessage,
   sendInitialMessageRequested,
@@ -93,6 +101,8 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     lifecycleSendMessage.mockImplementation(() => Promise.resolve());
     agentsQueue.mockReset();
     agentsQueue.mockImplementation(() => Promise.resolve({ success: true }));
+    agentsRemoveQueued.mockReset();
+    agentsRemoveQueued.mockImplementation(() => Promise.resolve({ success: true }));
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(clearAgentQueue(AGENT));
     seedWorkspace();
@@ -275,5 +285,88 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     await flush();
 
     expect(lifecycleSendMessage).not.toHaveBeenCalled();
+  });
+
+  it("removeQueuedMessageRequested optimistically removes the entry and calls appClient.agents.removeQueued", async () => {
+    const seeded: QueuedMessage[] = [
+      { id: "q-1", content: "first", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
+      { id: "q-2", content: "second", position: 1, queuedAt: "2026-01-01T00:00:02.000Z" },
+    ];
+    appStore.dispatch(replaceAgentQueue(AGENT, seeded));
+
+    appStore.dispatch(removeQueuedMessageRequested(AGENT, "q-1"));
+    // Optimistic removal happens synchronously inside the middleware.
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual([
+      "q-2",
+    ]);
+    await flush();
+
+    // The seam is called with PROTOCOL §5.5 params.
+    expect(agentsRemoveQueued).toHaveBeenCalledTimes(1);
+    expect(agentsRemoveQueued).toHaveBeenCalledWith(AGENT, "q-1");
+  });
+
+  it("removeQueuedMessageRequested does NOT roll back when the daemon reports the message as already gone (idempotent)", async () => {
+    const seeded: QueuedMessage[] = [
+      { id: "q-1", content: "first", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
+    ];
+    appStore.dispatch(replaceAgentQueue(AGENT, seeded));
+
+    // The daemon is **idempotent** (§5.5): when the messageId is unknown to
+    // the BE (FE/BE drift, daemon restart, race with self-drain) the response
+    // is STILL `{ success: true }`. The FE must NOT rollback by re-adding
+    // the message — the tombstone in the reducer keeps it suppressed even
+    // against a stale `agent:queue:updated` snapshot.
+    agentsRemoveQueued.mockImplementationOnce(() => Promise.resolve({ success: true }));
+
+    appStore.dispatch(removeQueuedMessageRequested(AGENT, "q-1"));
+    await flush();
+    await flush();
+
+    expect(agentsRemoveQueued).toHaveBeenCalledWith(AGENT, "q-1");
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
+  });
+
+  it("removeQueuedMessageRequested keeps the optimistic delete in place even when the seam reports a non-success error", async () => {
+    const seeded: QueuedMessage[] = [
+      { id: "q-1", content: "first", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
+    ];
+    appStore.dispatch(replaceAgentQueue(AGENT, seeded));
+
+    // Simulate a hypothetical legacy "not found" failure — the FE must STILL
+    // treat the delete as successful (no re-add / rollback) per the new
+    // BE idempotency contract.
+    agentsRemoveQueued.mockImplementationOnce(() =>
+      Promise.resolve({ success: false, error: "Message not found" }),
+    );
+
+    appStore.dispatch(removeQueuedMessageRequested(AGENT, "q-1"));
+    await flush();
+    await flush();
+
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
+  });
+
+  it("removeQueuedMessageRequested keeps the optimistic delete in place even when the seam throws", async () => {
+    const seeded: QueuedMessage[] = [
+      { id: "q-1", content: "first", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
+    ];
+    appStore.dispatch(replaceAgentQueue(AGENT, seeded));
+
+    agentsRemoveQueued.mockImplementationOnce(() => Promise.reject(new Error("ipc boom")));
+
+    appStore.dispatch(removeQueuedMessageRequested(AGENT, "q-1"));
+    await flush();
+    await flush();
+
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
+  });
+
+  it("removeQueuedMessageRequested is a no-op when agentId or messageId are missing/empty", async () => {
+    appStore.dispatch(removeQueuedMessageRequested("", "q-1"));
+    appStore.dispatch(removeQueuedMessageRequested(AGENT, ""));
+    await flush();
+
+    expect(agentsRemoveQueued).not.toHaveBeenCalled();
   });
 });
