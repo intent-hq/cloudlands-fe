@@ -21,13 +21,6 @@ vi.mock("$lib/client", () => ({
   },
 }));
 
-// Stream handler registry: controlled per-test to exercise both the
-// hasLiveHandler=false (hydration demotes phantom Active → Idle) and
-// hasLiveHandler=true (genuine live stream preserved) branches.
-vi.mock("./utils/stream-handler-registry", () => ({
-  hasStreamHandler: vi.fn(() => false),
-}));
-
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
@@ -37,10 +30,7 @@ import {
   selectAgentIsResponding,
   selectAgentIsThinking,
 } from "$store/renderer/slices/agent-session/agent-session-selectors";
-import { hasStreamHandler } from "./utils/stream-handler-registry";
 import { loadChatTranscript } from "./chat-read-service";
-
-const hasStreamHandlerMock = hasStreamHandler as unknown as ReturnType<typeof vi.fn>;
 
 const agentsApi = appClient.agents as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const WS = "ws-chat-read-1";
@@ -82,7 +72,6 @@ describe("chatReadService (fake seam, real store)", () => {
     vi.clearAllMocks();
     agentsApi.get.mockResolvedValue(null as never);
     agentsApi.getConversation.mockResolvedValue(conversation([]) as never);
-    hasStreamHandlerMock.mockReturnValue(false);
   });
 
   it("loadChatTranscript fetches session + transcript and hydrates messages", async () => {
@@ -143,61 +132,28 @@ describe("chatReadService (fake seam, real store)", () => {
     expect(selectAgentMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual(["via-action"]);
   });
 
-  it("normalizes phantom streaming flags: hydrating Active with no live handler demotes to Idle", async () => {
-    // Mirror the daemon-persisted mid-turn case: status=Active, isResponding=true,
-    // no streaming message, and no live ACP handler. Without normalization the
-    // selectors would report "Thinking" forever and the send guard would silently
-    // drop composer messages.
-    const agentId = "agent-hydration-idle";
-    hasStreamHandlerMock.mockReturnValue(false);
+  it("hydrating a COMPLETED session renders BE state as-is (Idle => not Thinking, composer ungated)", async () => {
+    // BE single-source-of-truth contract (post-heal): a completed turn comes
+    // back from the daemon with status=Idle, isStreaming/isResponding=false,
+    // and a finalized assistant message (no isStreaming flag, streamingComplete:true).
+    // The FE must render that state verbatim — no client-side healing.
+    const agentId = "agent-hydration-completed";
     agentsApi.get.mockResolvedValueOnce(
       makeSession({
         id: agentId,
-        status: AgentStatus.Active,
-        isResponding: true,
-        isProcessing: true,
-        isStreaming: true,
+        status: AgentStatus.Idle,
+        isResponding: false,
+        isProcessing: false,
+        isStreaming: false,
       }) as never,
     );
-    agentsApi.getConversation.mockResolvedValueOnce(conversation([]) as never);
-
-    await loadChatTranscript(agentId);
-
-    const stored = selectAgentSession.select(appStore.state, agentId);
-    expect(stored?.status).toBe(AgentStatus.Idle);
-    expect(stored?.isResponding).toBe(false);
-    expect(stored?.isProcessing).toBe(false);
-    expect(stored?.isStreaming).toBe(false);
-    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
-    expect(selectAgentIsThinking.select(appStore.state, agentId)).toBe(false);
-  });
-
-  it("finalizes stale per-message streaming flags so isActiveAgentThread reads idle on hydration", async () => {
-    // Regression: the daemon may return a persisted assistant message with
-    // isStreaming:true (e.g. crashed mid-turn). Without finalize-stale, the
-    // session-level normalization bails out on the per-message check and the
-    // selector still reports the message as streaming via
-    // isStreamingMessage(latestAssistant) — UI stuck in "Thinking", composer
-    // gated. With finalize-stale, the message is finalized first, the session
-    // demotes to Idle, and the selector reads idle.
-    const agentId = "agent-hydration-stale-msg";
-    hasStreamHandlerMock.mockReturnValue(false);
-    agentsApi.get.mockResolvedValueOnce(
-      makeSession({
-        id: agentId,
-        status: AgentStatus.Active,
-        isResponding: true,
-        isStreaming: true,
-      }) as never,
-    );
-    const staleAssistant: AgentMessage = {
-      id: "m-stale",
+    const completedAssistant: AgentMessage = {
+      id: "m-done",
       role: "assistant",
       timestamp: "2026-01-01T00:00:00.000Z",
-      contentBlocks: [{ type: "text", text: "partial" }],
-      isStreaming: true,
-    } as AgentMessage;
-    agentsApi.getConversation.mockResolvedValueOnce(conversation([staleAssistant]) as never);
+      contentBlocks: [{ type: "text", text: "all done" }],
+    };
+    agentsApi.getConversation.mockResolvedValueOnce(conversation([completedAssistant]) as never);
 
     await loadChatTranscript(agentId);
 
@@ -205,16 +161,15 @@ describe("chatReadService (fake seam, real store)", () => {
     expect(stored?.status).toBe(AgentStatus.Idle);
     expect(stored?.isResponding).toBe(false);
     expect(stored?.isStreaming).toBe(false);
-    const storedMessages = selectAgentMessages.select(appStore.state, agentId);
-    expect(storedMessages[0]?.isStreaming).toBe(false);
-    expect((storedMessages[0] as { streamingComplete?: boolean })?.streamingComplete).toBe(true);
     expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
     expect(selectAgentIsThinking.select(appStore.state, agentId)).toBe(false);
   });
 
-  it("preserves Active status when a live stream handler is attached for the agent", async () => {
-    const agentId = "agent-hydration-live";
-    hasStreamHandlerMock.mockReturnValue(true);
+  it("hydrating a GENUINELY in-flight session renders BE Active state as-is (Thinking shows)", async () => {
+    // The BE post-heal returns isStreaming:true ONLY when a worker is genuinely
+    // active. The FE must surface that state verbatim so the composer enters
+    // the queue-on-send mode.
+    const agentId = "agent-hydration-active";
     agentsApi.get.mockResolvedValueOnce(
       makeSession({
         id: agentId,

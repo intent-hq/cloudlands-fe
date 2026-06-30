@@ -39,8 +39,6 @@ import {
   bulkUpsertSessions,
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
-import { normalizeStreamingState } from "$shared/utils/agent-streaming-state";
-import { hasStreamHandler } from "./utils/stream-handler-registry";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("ChatReadService");
@@ -65,25 +63,11 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
         appClient.agents.getConversation(agentId),
       ]);
       if (session) {
-        // Mirror the persistence-path funnel (see agent-persistence.ts:1722):
-        // a daemon-persisted mid-turn session with non-terminal status and no
-        // live ACP stream handler would otherwise re-hydrate a phantom
-        // "responding" state, leaving the UI stuck in "Thinking" and the send
-        // guard silently dropping composer messages. Clone before passing so
-        // the loaded object is not mutated.
-        //
-        // Cold-load hydration also cannot, by definition, observe a live local
-        // stream: when no handler is registered for this agent, any persisted
-        // per-message `isStreaming:true` / `streamingComplete:false` is stale
-        // and must be finalized — otherwise the session-level normalization
-        // bails out and the selector still reports the latest assistant
-        // message as streaming via `isStreamingMessage(latestAssistant)`.
-        const hasHandler = hasStreamHandler(agentId);
-        const sessionWithMessages = normalizeStreamingState(
-          { ...session, messages: conversation.messages },
-          hasHandler,
-          !hasHandler,
-        );
+        // Render BE state as-is: the daemon is the single source of truth for
+        // streaming/responding flags. If a chat opens with "Thinking", that is
+        // because the daemon snapshot actually reports a turn is in-flight;
+        // any orphan/stale healing belongs in the daemon, not the renderer.
+        const sessionWithMessages = { ...session, messages: conversation.messages };
         appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
         appStore.dispatch(upsertSession(sessionWithMessages));
       }
