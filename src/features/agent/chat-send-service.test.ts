@@ -197,7 +197,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
   });
 
-  it("queue-on-send: rejection from the daemon does NOT fall back to lifecycle.send", async () => {
+  it("queue-on-send: rejection from the daemon does NOT fall back to lifecycle.send and surfaces chatSendFailed (AUDIT-P0-2)", async () => {
     seedSession({ isResponding: true, status: AgentStatus.Active });
     agentsQueue.mockImplementationOnce(() =>
       Promise.resolve({ success: false, error: "no can do" }),
@@ -209,14 +209,42 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
 
     expect(agentsQueue).toHaveBeenCalledTimes(1);
     expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    // AUDIT-P0-2: the daemon-rejected queue attempt must dispatch
+    // chatSendFailed so the UI renders the error verbatim.
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toBe("no can do");
   });
 
-  it("no-ops when the workspace is not in the store", async () => {
+  it("queue-on-send: a thrown queue call dispatches chatSendFailed (AUDIT-P0-2)", async () => {
+    seedSession({ isResponding: true, status: AgentStatus.Active });
+    agentsQueue.mockImplementationOnce(() => Promise.reject(new Error("ipc boom")));
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "queue me" }));
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toContain("ipc boom");
+  });
+
+  it("lifecycle.sendMessage throwing dispatches chatSendFailed (AUDIT-P0-2)", async () => {
+    lifecycleSendMessage.mockImplementationOnce(() => Promise.reject(new Error("lifecycle exploded")));
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "hello" }));
+    await flush();
+    await flush();
+
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toBe("lifecycle exploded");
+  });
+
+  it("dispatches chatSendFailed when the workspace is not in the store (AUDIT-P0-2)", async () => {
     appStore.dispatch(sendMessage(AGENT, { wsId: "ws-missing", text: "hello" }));
     await flush();
     await flush();
 
     expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    // AUDIT-P0-2: the missing-workspace case must not be a silent void.
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toContain("ws-missing");
   });
 
   it("sendInitialMessageRequested routes through lifecycle when a message is present", async () => {

@@ -303,11 +303,14 @@ export function setupPiIPC() {
         warning: 'Pi model list unavailable; using default model',
       };
     } catch (error) {
-      logger.warn('Could not get models for Pi', { error: (error as Error).message });
+      // Surface the failure to the renderer (AUDIT-P0-2). Previously this
+      // returned `success: true` with DEFAULT_MODELS + a warning, which hid
+      // hard probe failures from the FE error state.
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Could not get models for Pi', { error: message });
       return {
-        success: true,
-        data: DEFAULT_MODELS,
-        warning: 'Failed to query Pi models; using default model',
+        success: false,
+        error: `Failed to query Pi models: ${message}`,
       };
     }
   });
@@ -325,20 +328,20 @@ export function setupPiIPC() {
  * Shares the module-level 5-minute TTL cache with the IPC handler.
  */
 export async function getCachedPiModels(): Promise<string[] | null> {
-  try {
-    const resolved = await resolvePiCommand();
-    if (!resolved) return null;
-    const models = await listPiModelsViaAcp();
-    if (models.length === 0) return null;
-    // Merge the curated DEFAULT_MODELS aliases (notably `default`) into the
-    // live list so validators treat them as valid overrides even when the
-    // ACP probe does not emit them. De-duplicated in case the live list
-    // eventually begins reporting one of the aliases.
-    const liveValues = models.map((m) => m.value);
-    const defaultValues = DEFAULT_MODELS.map((m) => m.value);
-    return Array.from(new Set([...liveValues, ...defaultValues]));
-  } catch (error) {
-    logger.debug('getCachedPiModels failed', { error: (error as Error).message });
-    return null;
-  }
+  // AUDIT-P0-2: do not swallow errors here. Returning `null` is reserved for
+  // the documented "live list unavailable" sentinel — `resolvePiCommand()`
+  // returning null (Pi not installed) or the probe yielding zero results.
+  // A genuine error must propagate so the dispatcher in `model-pool.ts` can
+  // log it instead of being masked as "unknown / skip validation".
+  const resolved = await resolvePiCommand();
+  if (!resolved) return null;
+  const models = await listPiModelsViaAcp();
+  if (models.length === 0) return null;
+  // Merge the curated DEFAULT_MODELS aliases (notably `default`) into the
+  // live list so validators treat them as valid overrides even when the
+  // ACP probe does not emit them. De-duplicated in case the live list
+  // eventually begins reporting one of the aliases.
+  const liveValues = models.map((m) => m.value);
+  const defaultValues = DEFAULT_MODELS.map((m) => m.value);
+  return Array.from(new Set([...liveValues, ...defaultValues]));
 }

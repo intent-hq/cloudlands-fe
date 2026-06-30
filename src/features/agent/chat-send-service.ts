@@ -36,6 +36,7 @@ import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import {
+  chatSendFailed,
   chatSendStarted,
   sendInitialMessageRequested,
   sendMessage,
@@ -87,13 +88,18 @@ async function dispatchToLifecycle(
   try {
     deps = await loadSendDeps();
   } catch (error) {
+    // AUDIT-P0-2: surface the failure through `chatSendFailed` so the UI
+    // renders an error state instead of silently dropping the message.
+    const message = error instanceof Error ? error.message : String(error);
     logger.error("Failed to load chat send deps", error);
+    appStore.dispatch(chatSendFailed(agentId, `Failed to load chat dependencies: ${message}`));
     return;
   }
 
   const workspace = deps.selectWorkspaceById.select(appStore.state, wsId);
   if (!workspace) {
     logger.warn("Cannot send: workspace not found", { agentId, wsId });
+    appStore.dispatch(chatSendFailed(agentId, `Workspace not found: ${wsId}`));
     return;
   }
 
@@ -113,11 +119,15 @@ async function dispatchToLifecycle(
     try {
       const result = await appClient.agents.queue(agentId, content);
       if (!result.success) {
+        // AUDIT-P0-2: surface the daemon-rejected queue attempt so the UI
+        // can render the error instead of silently dropping the message.
+        const errMsg = result.error ?? "queueMessage rejected";
         logger.warn("agent.queueMessage rejected by daemon", {
           agentId,
           wsId,
-          error: result.error,
+          error: errMsg,
         });
+        appStore.dispatch(chatSendFailed(agentId, errMsg));
         return;
       }
       const queuedMessage = result.queuedMessage;
@@ -129,7 +139,11 @@ async function dispatchToLifecycle(
         appStore.dispatch(replaceAgentQueue(agentId, next));
       }
     } catch (error) {
+      // AUDIT-P0-2: a queue-on-send failure must surface to the UI; do not
+      // silently drop the message.
+      const message = error instanceof Error ? error.message : String(error);
       logger.error("agent.queueMessage threw", error);
+      appStore.dispatch(chatSendFailed(agentId, `Failed to queue message: ${message}`));
     }
     return;
   }
@@ -145,7 +159,11 @@ async function dispatchToLifecycle(
       noteIds: options.noteIds,
     });
   } catch (error) {
+    // AUDIT-P0-2: dispatch chatSendFailed so the error appears in the UI
+    // instead of being swallowed in a fire-and-forget background promise.
+    const message = error instanceof Error ? error.message : String(error);
     logger.error("lifecycle.sendMessage threw", error);
+    appStore.dispatch(chatSendFailed(agentId, message));
   }
 }
 

@@ -33,17 +33,18 @@ function resolveDefaultAgent(config: AgentConfig, providerConfig?: ACPProviderCo
     return providerConfig.defaultAgent;
   }
 
-  // Fallback: parse OPENCODE_CONFIG_CONTENT if present
+  // Fallback: parse OPENCODE_CONFIG_CONTENT if present.
+  // AUDIT-P0-2: do not swallow JSON.parse errors here. A malformed
+  // OPENCODE_CONFIG_CONTENT is a real configuration failure that the caller
+  // must see — silently masking it as `default` previously meant operators
+  // could ship a broken provider config and never know why their custom
+  // default agent was being ignored.
   const opencodeConfig = config.env?.OPENCODE_CONFIG_CONTENT;
   if (opencodeConfig) {
-    try {
-      const parsed = JSON.parse(opencodeConfig);
-      const defaultAgent = (parsed as any).default_agent || (parsed as any).defaultAgent;
-      if (typeof defaultAgent === 'string') {
-        return defaultAgent;
-      }
-    } catch {
-      // Ignore parse errors; fall through to generic default
+    const parsed = JSON.parse(opencodeConfig);
+    const defaultAgent = (parsed as any).default_agent || (parsed as any).defaultAgent;
+    if (typeof defaultAgent === 'string') {
+      return defaultAgent;
     }
   }
 

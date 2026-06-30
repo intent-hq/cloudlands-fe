@@ -94,6 +94,22 @@ describe('Pi GET_MODELS handler', () => {
     ]);
     expect(response.warning).toBe('Pi command unavailable; using default model');
   });
+
+  it('surfaces failure via { success: false, error } when probing throws (AUDIT-P0-2)', async () => {
+    // AUDIT-P0-2: a probe failure must surface to the renderer instead of
+    // being masked as a success-shaped DEFAULT_MODELS list with a warning.
+    vi.mocked(resolvePiCommand).mockRejectedValue(new Error('probe boom'));
+
+    setupPiIPC();
+    const handler = registeredHandlers.get(PI_CHANNELS.GET_MODELS);
+    expect(handler).toBeDefined();
+
+    const response = await handler!({});
+
+    expect(response.success).toBe(false);
+    expect(response.error).toBe('Failed to query Pi models: probe boom');
+    expect(response.data).toBeUndefined();
+  });
 });
 
 describe('Pi MCP adapter handlers', () => {

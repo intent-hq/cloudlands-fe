@@ -17,11 +17,14 @@ import { isFatalError } from '$shared/constants/agent-streaming';
 
 const logger = createLogger('ErrorBoundary');
 
-export interface ErrorBoundaryOptions<T> {
+// NOTE: `fallback` was deliberately removed (AUDIT-P0-2). Returning a
+// success-shaped fallback on failure masked real BE errors from the UI;
+// `wrap` / `wrapSync` now always throw once retries are exhausted so the
+// caller can surface an error state.
+export interface ErrorBoundaryOptions {
   retries?: number;
   retryDelay?: number;
   exponentialBackoff?: boolean;
-  fallback?: T;
   notify?: boolean;
   notifyOnRetry?: boolean;
   context?: Record<string, any>;
@@ -51,13 +54,12 @@ export class ErrorBoundaryService {
   async wrap<T>(
     operation: () => Promise<T>,
     operationName: string,
-    options: ErrorBoundaryOptions<T> = {},
+    options: ErrorBoundaryOptions = {},
   ): Promise<T> {
     const {
       retries = RETRY.DEFAULT_ATTEMPTS,
       retryDelay = RETRY.BASE_DELAY,
       exponentialBackoff = true,
-      fallback,
       notify = false,
       notifyOnRetry = false,
       context = {},
@@ -126,13 +128,8 @@ export class ErrorBoundaryService {
       toast.error(userMessage);
     }
 
-    // Return fallback if provided
-    if (fallback !== undefined) {
-      logger.warn(`[${operationName}] Using fallback value`, { fallback });
-      return fallback;
-    }
-
-    // Throw enhanced error - use clean message for display, keep details in context
+    // Always throw once retries are exhausted (AUDIT-P0-2): the caller must
+    // see the failure and surface it — never a success-shaped fallback.
     throw new AgentError(userMessage, AgentErrorCode.OPERATION_FAILED, {
       originalError: lastError?.message,
       detailedMessage,
@@ -147,7 +144,7 @@ export class ErrorBoundaryService {
   async wrapVoid(
     operation: () => Promise<void>,
     operationName: string,
-    options: Omit<ErrorBoundaryOptions<void>, 'fallback'> = {},
+    options: ErrorBoundaryOptions = {},
   ): Promise<void> {
     await this.wrap(operation, operationName, options);
   }
@@ -158,7 +155,7 @@ export class ErrorBoundaryService {
   wrapSync<T>(
     operation: () => T,
     operationName: string,
-    options: Omit<ErrorBoundaryOptions<T>, 'retries' | 'retryDelay' | 'exponentialBackoff'> = {},
+    options: Omit<ErrorBoundaryOptions, 'retries' | 'retryDelay' | 'exponentialBackoff'> = {},
   ): T {
     try {
       return operation();
@@ -174,11 +171,8 @@ export class ErrorBoundaryService {
         toast.error(cleanErrorMessage(err.message));
       }
 
-      if (options.fallback !== undefined) {
-        logger.warn(`[${operationName}] Using fallback value`, { fallback: options.fallback });
-        return options.fallback;
-      }
-
+      // No fallback path (AUDIT-P0-2): always throw so callers can render
+      // an error state instead of silently masking the failure.
       throw new AgentError(
         cleanErrorMessage(err.message),
         AgentErrorCode.OPERATION_FAILED,
@@ -365,7 +359,7 @@ export const errorBoundary = ErrorBoundaryService.getInstance();
 export async function withErrorBoundary<T>(
   operation: () => Promise<T>,
   operationName: string,
-  options?: ErrorBoundaryOptions<T>,
+  options?: ErrorBoundaryOptions,
 ): Promise<T> {
   return errorBoundary.wrap(operation, operationName, options);
 }

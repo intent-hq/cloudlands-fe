@@ -273,18 +273,22 @@ export class PermissionManager extends EventEmitter {
   }
 
   /**
-   * Clear all rules
+   * Clear all rules.
+   *
+   * AUDIT-P0-2: returns Promise<void> and rejects on `saveRules` failure
+   * instead of swallowing the error. The previous fire-and-forget pattern
+   * (`.catch(log)`) hid persistence failures from callers, so a UI element
+   * that cleared rules would appear to succeed while disk/IPC writes were
+   * silently failing. Callers that genuinely want fire-and-forget can opt
+   * in explicitly with `void permissionManager.clearRules(...)`.
    */
-  clearRules(scope?: 'session' | 'agent' | 'global'): void {
+  async clearRules(scope?: 'session' | 'agent' | 'global'): Promise<void> {
     if (scope) {
       this.rules = this.rules.filter((rule) => rule.scope !== scope);
     } else {
       this.rules = [];
     }
-    // Save asynchronously without blocking
-    this.saveRules().catch((error) => {
-      logger.error('Failed to save rules after clearing', error as Error);
-    });
+    await this.saveRules();
   }
 
   /**
@@ -364,37 +368,54 @@ export class PermissionManager extends EventEmitter {
   }
 
   /**
-   * Save rules to storage
+   * Save rules to storage.
+   *
+   * AUDIT-P0-2: surfaces persistence failures to the caller instead of
+   * swallowing them. `localStorage` write errors and BE-rejected
+   * `config:set` responses now throw; the only catch retained is the
+   * documented "IPC unavailable in tests" path (`invokeIpc` itself
+   * throwing — e.g. no electronAPI wired up in a unit test).
    */
   private async saveRules(): Promise<void> {
-    try {
-      if (isBrowser) {
-        // Browser environment: use localStorage
-        localStorage.setItem(PERMISSION_RULES_KEY, JSON.stringify(this.rules));
-        logger.debug('Saved permission rules to localStorage');
-      } else if (typeof window !== 'undefined' && window.electronAPI) {
-        // Electron renderer: use IPC to save to config store
-        try {
-          const result = await invokeIpc<ConfigSetResponse>('config:set', {
-            key: 'permissions.rules',
-            value: this.rules,
-          });
-          if (result.success) {
-            logger.debug('Saved permission rules to config store');
-          } else {
-            logger.warn('Failed to save permission rules to config store', { error: result.error });
-          }
-        } catch  {
-          // Config IPC might not be available in tests
-          logger.debug('Config IPC not available, rules not persisted');
-        }
-      } else {
-        // Pure Node.js environment (tests, etc.)
-        logger.debug('Pure Node.js environment, rules not persisted');
-      }
-    } catch (error) {
-      logger.error('Failed to save permission rules', error as Error);
+    if (isBrowser) {
+      // Browser environment: use localStorage. A throwing setItem (quota
+      // exceeded, security exception) propagates to the caller.
+      localStorage.setItem(PERMISSION_RULES_KEY, JSON.stringify(this.rules));
+      logger.debug('Saved permission rules to localStorage');
+      return;
     }
+
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      // Electron renderer: use IPC to save to config store.
+      let result: ConfigSetResponse;
+      try {
+        result = await invokeIpc<ConfigSetResponse>('config:set', {
+          key: 'permissions.rules',
+          value: this.rules,
+        });
+      } catch (error) {
+        // Config IPC might not be available in tests — leave persistence
+        // unobserved rather than failing the caller.
+        logger.debug('Config IPC not available, rules not persisted', {
+          error: (error as Error)?.message,
+        });
+        return;
+      }
+
+      if (!result.success) {
+        const errMsg =
+          typeof result.error === 'string'
+            ? result.error
+            : 'config:set rejected permission rules';
+        logger.warn('Failed to save permission rules to config store', { error: result.error });
+        throw new Error(errMsg);
+      }
+      logger.debug('Saved permission rules to config store');
+      return;
+    }
+
+    // Pure Node.js environment (tests, etc.) — no persistence available.
+    logger.debug('Pure Node.js environment, rules not persisted');
   }
 
   /**
