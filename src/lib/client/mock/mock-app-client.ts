@@ -45,11 +45,19 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
       fx.mockTerminals.filter((terminal) => terminal.workspaceId === workspaceId),
     create: async () => OK,
     write: async () => OK,
+    resize: async () => OK,
+    kill: async () => OK,
+    getBuffer: async (terminalId) => fx.mockTerminalBuffers[terminalId] ?? "",
     output: async (terminalId) => fx.mockTerminalBuffers[terminalId] ?? "",
+    subscribeEvents: () => () => {},
     subscribe: (handler) => emitOnce(handler, fx.mockTerminals),
   };
 
   readonly settings: AppClient["settings"] = {
+    list: async () => [],
+    get: async () => null,
+    update: async (changes) => changes.map(({ path, value }) => ({ path, value })),
+    reset: async (path) => ({ path, value: null }),
     getUserPreferences: async () => fx.mockUserPreferences,
     setUserPreferences: async () => OK,
     getProviderSettings: async () => fx.mockProviderSettings,

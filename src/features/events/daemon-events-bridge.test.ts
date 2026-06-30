@@ -35,6 +35,12 @@ import { selectAgentIsResponding } from "$store/renderer/slices/agent-session/ag
 import { __resetDaemonEventsBridgeForTests } from "$features/events/daemon-events-bridge";
 import { chatReset } from "$store/renderer/slices/chat-state/chat-state-slice";
 import type { StatusEvent } from "$store/renderer/slices/chat-state/chat-state-types";
+import {
+  clearAgentQueue,
+  removeQueuedMessageFromAgentQueue,
+} from "$store/renderer/slices/agent-queue/agent-queue-slice";
+import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
+import type { QueuedMessage } from "$shared/types";
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -121,13 +127,15 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
 
   afterEach(() => vi.clearAllMocks());
 
-  it("registers a notification listener and subscribes to agent:* on first dispatch", async () => {
+  it("registers a notification listener and subscribes to agent:* + settings:changed on first dispatch", async () => {
     await primeBridge();
 
     expect(onBackendNotificationSpy).toHaveBeenCalledTimes(1);
-    expect(backendRequestSpy).toHaveBeenCalledTimes(1);
+    // The settings-hydration middleware also fires `settings.list` lazily, so
+    // we assert the bridge's events.subscribe call explicitly instead of the
+    // total spy count.
     expect(backendRequestSpy).toHaveBeenCalledWith("events.subscribe", {
-      eventTypes: ["agent:*"],
+      eventTypes: ["agent:*", "settings:changed"],
     });
   });
 
@@ -207,6 +215,31 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
       },
     });
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+  });
+
+  it("routes settings:changed (workspace-less) through applySettingsChanges into the mcp-settings slice", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-set-1",
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "settings:changed",
+          actor: { type: "system" },
+          data: {
+            changes: [
+              { path: "mcp.enableUserServers", value: true },
+            ],
+          },
+        },
+      },
+    });
+
+    const state = appStore.state as { mcpSettings: { enabled: boolean } };
+    expect(state.mcpSettings.enabled).toBe(true);
   });
 });
 
@@ -549,5 +582,119 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
       }),
     );
     expect(readStatusEvents()).toEqual([]);
+  });
+});
+
+describe("daemonEventsBridge (queue wire contract — agent:queue:updated → replaceAgentQueue)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(clearAgentQueue(AGENT));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    seedSession();
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("renders the BE queue snapshot from a PROTOCOL §5.5 agent:queue:updated payload", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const queue: QueuedMessage[] = [
+      { id: "q-1", content: "first", queuedAt: "2026-01-02T00:00:01.000Z", position: 0 },
+      { id: "q-2", content: "second", queuedAt: "2026-01-02T00:00:02.000Z", position: 1 },
+    ];
+
+    handler(notification("agent:queue:updated", { agentId: AGENT, queue }));
+
+    expect(
+      selectAgentQueueMessages.select(appStore.state, AGENT).map((m) => ({
+        id: m.id,
+        position: m.position,
+      })),
+    ).toEqual([
+      { id: "q-1", position: 0 },
+      { id: "q-2", position: 1 },
+    ]);
+  });
+
+  it("replaces the local queue when a follow-up agent:queue:updated arrives (read-through view)", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:queue:updated", {
+        agentId: AGENT,
+        queue: [
+          { id: "q-1", content: "first", queuedAt: "2026-01-02T00:00:01.000Z", position: 0 },
+        ],
+      }),
+    );
+    handler(
+      notification("agent:queue:updated", {
+        agentId: AGENT,
+        queue: [
+          { id: "q-2", content: "second", queuedAt: "2026-01-02T00:00:02.000Z", position: 0 },
+        ],
+      }),
+    );
+
+    expect(
+      selectAgentQueueMessages.select(appStore.state, AGENT).map((m) => m.id),
+    ).toEqual(["q-2"]);
+  });
+
+  it("suppresses a recently-removed message when a stale agent:queue:updated snapshot still carries it", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Simulate the optimistic delete the queue-mutation handler performs
+    // before the BE catches up — this writes a tombstone for "q-1".
+    appStore.dispatch(removeQueuedMessageFromAgentQueue(AGENT, "q-1"));
+
+    // BE has not yet self-drained, so its next snapshot still includes q-1.
+    handler(
+      notification("agent:queue:updated", {
+        agentId: AGENT,
+        queue: [
+          { id: "q-1", content: "first", queuedAt: "2026-01-02T00:00:01.000Z", position: 0 },
+          { id: "q-2", content: "second", queuedAt: "2026-01-02T00:00:02.000Z", position: 1 },
+        ],
+      }),
+    );
+
+    // The tombstone must hold — q-1 stays hidden, q-2 surfaces at position 0.
+    expect(
+      selectAgentQueueMessages.select(appStore.state, AGENT).map((m) => ({
+        id: m.id,
+        position: m.position,
+      })),
+    ).toEqual([{ id: "q-2", position: 0 }]);
+  });
+
+  it("ignores agent:queue:updated payloads without a queue array (FE never invents data)", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Seed a known good snapshot first so we can verify the malformed one is a no-op.
+    handler(
+      notification("agent:queue:updated", {
+        agentId: AGENT,
+        queue: [
+          { id: "q-1", content: "first", queuedAt: "2026-01-02T00:00:01.000Z", position: 0 },
+        ],
+      }),
+    );
+    handler(notification("agent:queue:updated", { agentId: AGENT, queue: undefined }));
+
+    expect(
+      selectAgentQueueMessages.select(appStore.state, AGENT).map((m) => m.id),
+    ).toEqual(["q-1"]);
   });
 });

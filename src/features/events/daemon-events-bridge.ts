@@ -37,11 +37,14 @@
  * the existing live transport.
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import type { ContentBlock } from "$shared/types";
+import type { ContentBlock, QueuedMessage } from "$shared/types";
+import type { AppliedSettingChange } from "$lib/client/app-client";
 import { store as appStore } from "$store/renderer/store";
 import { eventReceived } from "$store/renderer/slices/workspace-events/workspace-events-slice";
 import { agentStreamUpdateReceived } from "$store/renderer/slices/workspace-agents/workspace-agents-stream-slice";
 import { streamStatusReceived } from "$store/renderer/slices/chat-state/chat-state-slice";
+import { replaceAgentQueue } from "$store/renderer/slices/agent-queue/agent-queue-slice";
+import { applySettingsChanges } from "$features/settings/settings-hydration-service";
 import {
   backendRequest,
   onBackendNotification,
@@ -271,12 +274,61 @@ function handleAgentFailedStream(event: WorkspaceEvent): void {
   streamsByAgent.delete(agentId);
 }
 
+/**
+ * `agent:queue:updated` (§5.5 / §6.5) carries the **current** queue snapshot
+ * `{ agentId, queue: QueuedMessage[] }` — self-sufficient per the §6.7
+ * event-design rule — so the renderer mirrors the BE queue directly without a
+ * follow-up `agent.getQueue`. The reducer's recently-removed-id tombstone
+ * suppresses messages the user just deleted but the BE has not yet self-drained
+ * out of the snapshot, preventing flicker.
+ */
+function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  const queue = data.queue;
+  if (typeof agentId !== "string" || !Array.isArray(queue)) return;
+  appStore.dispatch(replaceAgentQueue(agentId, queue as QueuedMessage[]));
+}
+
+/**
+ * `settings:changed` (§6.5) carries `{ changes: [{ path, value }] }` — the
+ * applied subset of the most recent `settings.update` call (§5.12), with
+ * sensitive values pre-redacted by the BE. We hand it straight to the shared
+ * `applySettingsChanges` helper so settings panels converge from the SAME
+ * routing the boot hydration uses; the helper also emits the typed
+ * `settingsChanged` action for any consumer that watches it directly.
+ */
+function handleSettingsChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const raw = (data as { changes?: unknown }).changes;
+  if (!Array.isArray(raw)) return;
+  const changes: AppliedSettingChange[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const path = (entry as { path?: unknown }).path;
+    if (typeof path !== "string" || path.length === 0) continue;
+    const value = (entry as { value?: unknown }).value;
+    changes.push({ path, value });
+  }
+  if (changes.length > 0) applySettingsChanges(changes);
+}
+
 function handleNotification(method: string, params: unknown): void {
   if (method !== "events.event") return;
   const event = extractEvent(params);
   if (!event || typeof event !== "object") return;
   const type = (event as { type?: unknown }).type;
   if (typeof type !== "string") return;
+
+  // `settings:changed` (§6.5) is global — no `workspaceId` envelope is
+  // expected, so it must be routed BEFORE the workspace-id gate below.
+  if (type === "settings:changed") {
+    handleSettingsChangedEvent(event);
+    return;
+  }
+
   const workspaceId = workspaceIdOf(event);
   if (!workspaceId) return;
 
@@ -294,6 +346,10 @@ function handleNotification(method: string, params: unknown): void {
   }
   if (type === "agent:stream:end") {
     handleStreamEndEvent(event);
+    return;
+  }
+  if (type === "agent:queue:updated") {
+    handleQueueUpdatedEvent(event);
     return;
   }
   if (type === "agent:failed") {
@@ -317,18 +373,19 @@ async function installSubscriptionOnce(): Promise<void> {
     }
   });
 
-  // Ask the daemon to firehose `agent:*` events to this socket. The
-  // subscription id is owned by the bridge (no consumer needs it); refetch
-  // delta-subscriptions in `live-agents-client` register their own.
+  // Ask the daemon to firehose `agent:*` events AND `settings:changed`
+  // (§5.12 / §6.5) to this socket. The subscription id is owned by the bridge
+  // (no consumer needs it); refetch delta-subscriptions in
+  // `live-agents-client` register their own.
   try {
     const result = (await backendRequest("events.subscribe", {
-      eventTypes: ["agent:*"],
+      eventTypes: ["agent:*", "settings:changed"],
     })) as { subscriptionId?: string } | undefined;
     if (!result?.subscriptionId) {
       logger.warn("events.subscribe returned no subscriptionId", result);
     }
   } catch (error) {
-    logger.error("events.subscribe(agent:*) failed", error);
+    logger.error("events.subscribe(agent:*, settings:changed) failed", error);
   }
 
   cleanup = () => {

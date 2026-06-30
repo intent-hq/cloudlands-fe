@@ -155,6 +155,15 @@ export interface AgentsClient {
   create(request: AgentCreateRequest): Promise<MutationResult>;
   send(agentId: string, message: string): Promise<MutationResult>;
   queue(agentId: string, message: string): Promise<MutationResult>;
+  /**
+   * Remove a queued message (`agent.removeQueuedMessage`, §5.5). The daemon is
+   * **idempotent** — it always returns `{ success: true }` even when the queue
+   * is empty or the messageId is unknown — so callers MUST treat any thrown
+   * error as a transport failure, never as a "not found" that should roll the
+   * optimistic delete back. Emits `agent:queue:updated` (§6.5) only when the
+   * queue actually changed.
+   */
+  removeQueued(agentId: string, messageId: string): Promise<MutationResult>;
   setAvailability(agentId: string, available: boolean): Promise<MutationResult>;
   follow(agentId: string, follow: boolean): Promise<MutationResult>;
   lock(agentId: string, locked: boolean): Promise<MutationResult>;
@@ -167,15 +176,114 @@ export interface ChatClient {
   subscribe(agentId: string, handler: SubscriptionHandler<ContentBlock[]>): Unsubscribe;
 }
 
+/** Parameters for `terminal.create` (PROTOCOL §5.13). `command` omitted ⇒ default shell. */
+export interface TerminalCreateParams {
+  workspaceId: string;
+  cols: number;
+  rows: number;
+  cwd?: string;
+  command?: string;
+}
+
+/** Decoded `terminal:data` payload — `chunk` is the UTF-8 string the daemon base64-encoded. */
+export interface TerminalDataEvent {
+  terminalId: string;
+  chunk: string;
+}
+
+/** `terminal:exit` payload. */
+export interface TerminalExitEvent {
+  terminalId: string;
+  exitCode: number;
+}
+
+/** `terminal:cwd` payload. */
+export interface TerminalCwdEvent {
+  terminalId: string;
+  cwd: string;
+}
+
+/** `terminal:title` payload. */
+export interface TerminalTitleEvent {
+  terminalId: string;
+  title: string;
+}
+
+/** Per-terminal event sink registered via `TerminalsClient.subscribeEvents`. */
+export interface TerminalEventHandlers {
+  onData?(event: TerminalDataEvent): void;
+  onExit?(event: TerminalExitEvent): void;
+  onCwd?(event: TerminalCwdEvent): void;
+  onTitle?(event: TerminalTitleEvent): void;
+}
+
 export interface TerminalsClient {
   list(workspaceId: string): Promise<TerminalTab[]>;
-  create(workspaceId: string): Promise<MutationResult>;
+  /**
+   * `terminal.create` (PROTOCOL §5.13). On success the daemon-assigned
+   * terminalId is surfaced as `MutationResult.id`.
+   */
+  create(params: TerminalCreateParams): Promise<MutationResult>;
+  /** `terminal.write` — `data` is plain text; the live client base64-encodes it. */
   write(terminalId: string, data: string): Promise<MutationResult>;
+  /** `terminal.resize`. */
+  resize(terminalId: string, cols: number, rows: number): Promise<MutationResult>;
+  /** `terminal.kill` — signals the PTY; the daemon then emits `terminal:exit`. */
+  kill(terminalId: string): Promise<MutationResult>;
+  /**
+   * `terminal.getBuffer` — base64 scrollback for replay on (re)connect. The
+   * live client decodes the base64 payload so callers receive a plain string.
+   */
+  getBuffer(terminalId: string, maxBytes?: number): Promise<string>;
+  /** Ported `terminal.readOutput` — plaintext convenience read for MCP-style callers. */
   output(terminalId: string): Promise<string>;
+  /** Subscribe to `terminal:*` events scoped to a single terminalId. */
+  subscribeEvents(terminalId: string, handlers: TerminalEventHandlers): Unsubscribe;
   subscribe(handler: SubscriptionHandler<TerminalTab[]>): Unsubscribe;
 }
 
+/**
+ * Wire-level setting definition (PROTOCOL §5.12 `SettingDefinition`). The
+ * `value` field is appended by `settings.list` / `settings.get` (the spec calls
+ * this `SettingDefinitionWithValue`); sensitive entries surface a redacted
+ * placeholder rather than the raw secret.
+ */
+export interface SettingDefinitionWithValue {
+  path: string;
+  label: string;
+  description: string;
+  category: string;
+  type: "boolean" | "number" | "string" | "enum" | "object";
+  enumValues?: string[];
+  min?: number;
+  max?: number;
+  defaultValue?: unknown;
+  sensitive?: boolean;
+  value: unknown;
+}
+
+/** Wire-level change entry for `settings.update` (PROTOCOL §5.12 `AppSettingChange`). */
+export interface AppSettingChange {
+  path: string;
+  value: unknown;
+  reason?: string;
+}
+
+/** Applied entry surfaced by `settings.update` / `settings:changed` (§5.12 / §6.5). */
+export interface AppliedSettingChange {
+  path: string;
+  value: unknown;
+}
+
 export interface SettingsClient {
+  /** `settings.list` (§5.12). Returns every BE-owned setting with its current value (sensitive values redacted). */
+  list(): Promise<SettingDefinitionWithValue[]>;
+  /** `settings.get` (§5.12). Returns the single setting + its definition; `null` when the daemon rejects the path. */
+  get(path: string): Promise<SettingDefinitionWithValue | null>;
+  /** `settings.update` (§5.12). Atomic batch update; emits `settings:changed` on success. */
+  update(changes: AppSettingChange[]): Promise<AppliedSettingChange[]>;
+  /** `settings.reset` (§5.12). Restores one setting to its `defaultValue`. */
+  reset(path: string): Promise<AppliedSettingChange | null>;
   getUserPreferences(): Promise<UserPreferencesState | null>;
   setUserPreferences(prefs: Partial<UserPreferencesState>): Promise<MutationResult>;
   getProviderSettings(): Promise<ProviderSettingsState | null>;
