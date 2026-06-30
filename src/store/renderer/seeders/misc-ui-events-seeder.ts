@@ -1,14 +1,25 @@
 /**
- * Misc UI & events mock seeder (Wave 2 catch-all).
+ * Misc UI & events mock seeder (catch-all).
  *
- * Seeds the remaining UI domains not covered by the other Wave 2 seeders so the
+ * Seeds the remaining UI domains not covered by the other seeders so the
  * app boots with no empty/broken panels and no console errors: system status,
  * release notes, the WebSocket API "disabled" snapshot, available models,
  * specialists, and the per-workspace skills, browser recent URLs and workspace
  * event stream. Data is pulled from the `AppClient` seam and dispatched through
  * existing slice actions — replacing the work the corresponding sagas used to do
  * against the real backend.
+ *
+ * Also registers two boot-time mock IPC stubs for the same unregistered-channel
+ * class of bug as the workspaces/agents seeders: `external-editors:detect-installed`
+ * (dispatched via `fetchEditors` on WorkspaceActionsMenu mount; the undefined
+ * fallback throws "Failed to detect editors" in the lifecycle read service) and
+ * `file-tracking:get-line-stats` (called by WindowTitleBar on mount; the
+ * undefined fallback TypeErrors on `response.ok` even though it is caught
+ * silently). Neutral empty defaults keep both surfaces quiet until the daemon
+ * owns them.
  */
+import { IPC_CHANNELS } from "$shared/ipc-registry";
+import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import { SPECIALISTS } from "$lib/constants/specialists";
 import { registerMockSeeder } from "../mock-bootstrap";
 import { setSystemStatus } from "../slices/system-status/system-status-slice";
@@ -33,6 +44,18 @@ import {
 import { setSkills } from "../slices/skills/skills-slice";
 import { hydrateBrowserState } from "../slices/browser/browser-slice";
 import { eventsLoaded } from "../slices/workspace-events/workspace-events-slice";
+
+// Registered at import time so the dispatch sites (WorkspaceActionsMenu /
+// WindowTitleBar mounts) resolve through the mock router before any component
+// effect could read an undefined response.
+registerMockIpcHandler(IPC_CHANNELS.EXTERNAL_EDITORS.DETECT_INSTALLED, async () => ({
+  success: true,
+  data: [],
+}));
+registerMockIpcHandler(IPC_CHANNELS.FILE_TRACKING.GET_LINE_STATS, async () => ({
+  ok: true,
+  data: { additions: 0, deletions: 0 },
+}));
 
 /** Static "disabled" snapshot for the WebSocket API settings pane. */
 const DISABLED_WEBSOCKET_API: WebSocketApiStatusSnapshot = {

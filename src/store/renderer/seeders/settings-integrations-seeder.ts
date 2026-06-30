@@ -18,11 +18,14 @@
  */
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import {
+  mockGitHubUser,
   mockLinearIssues,
   mockSentryIssues,
   mockUserMcpSettingsContent,
   mockUserMcpSettingsPath,
 } from "$lib/client/mock/fixtures";
+import { GITHUB_AUTH_CHANNELS } from "$features/github-auth/constants";
+import type { GitHubAuthState } from "$features/github-auth/types";
 import { LINEAR_AUTH_CHANNELS } from "$features/linear-auth/constants";
 import { SENTRY_AUTH_CHANNELS } from "$features/sentry-auth/constants";
 import { registerMockSeeder } from "../mock-bootstrap";
@@ -74,6 +77,31 @@ const MOCK_SENTRY_ORG = "acme";
 // Registered at import time (not inside the async seeder) so the issue picker's
 // preload, which calls these channels on mount, resolves to mocks before any
 // real Linear/Sentry API call could be attempted.
+
+// `initializeGitHubAuthFlow` (the post-saga GitHub auth trigger handler) fires
+// on every AcceptChangesPanel / ConnectionsSettings mount and reads
+// `authState.isAuthenticated`, so an undefined fallback TypeErrors before the
+// slice can hydrate. These mocks mirror the connected state the async seeder
+// dispatches via `setGitHubAuthState({ user: mockGitHubUser, ... })` so the
+// trigger handler and seeder agree on the same connected snapshot.
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.IS_AUTHENTICATED, async () => mockGitHubUser !== null);
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.GET_USER, async () => mockGitHubUser);
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.GET_AUTH_STATE, async (): Promise<GitHubAuthState> => ({
+  isAuthenticated: mockGitHubUser !== null,
+  requiresAugmentAuth: false,
+  user: mockGitHubUser,
+  needsScopeUpdate: false,
+  oauthUrl: undefined,
+}));
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.GET_STATUS, async () => ({
+  isConfigured: mockGitHubUser !== null,
+  oauthUrl: "",
+  configuredButNeedsUpdate: false,
+  updatedScopes: "",
+}));
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.LIST_REPOS, async () => ({ success: true, data: [] }));
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.SEARCH_REPOS, async () => ({ success: true, data: [] }));
+
 registerMockIpcHandler(LINEAR_AUTH_CHANNELS.IS_AUTHENTICATED, async () => mockLinearIssues.length > 0);
 registerMockIpcHandler(LINEAR_AUTH_CHANNELS.GET_AUTH_STATE, async () => ({
   isAuthenticated: mockLinearIssues.length > 0,

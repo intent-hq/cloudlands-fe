@@ -11,9 +11,16 @@
  * channels are registered against the mock IPC router synchronously at import
  * time (before any component mounts) so the gate sees an available, logged-in
  * provider instead of making real CLI/network calls.
+ *
+ * `agent:get-active-streams` is registered alongside for the same
+ * unregistered-channel class of bug: `ActiveStreamsTracker.fetchActiveStreams`
+ * fires on WindowTitleBar mount and the undefined fallback produced a recurring
+ * "Failed to fetch active streams" warning (`Cannot read properties of
+ * undefined (reading 'success')`). A no-streams default keeps the tracker quiet
+ * until the daemon owns this surface.
  */
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from "$shared/ipc/channels";
+import { AGENT_CHANNELS, AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from "$shared/ipc/channels";
 import { MINIMUM_AUGGIE_VERSION } from "$shared/constants/auggie";
 import type { ProviderAvailabilityResult } from "$shared/types/provider-availability";
 import { registerMockSeeder } from "../mock-bootstrap";
@@ -58,6 +65,15 @@ registerMockIpcHandler(AUGGIE_CHANNELS.STATUS, async () => ({
     minimumVersion: MINIMUM_AUGGIE_VERSION,
     authDetails: MOCK_PROVIDER_AUTH_DETAILS,
   },
+}));
+
+// ActiveStreamsTracker.fetchActiveStreams reads `result.success` /
+// `result.data`, so an undefined fallback would TypeError on every poll.
+// No mock streams: an empty list keeps the tracker idle (matches the seam,
+// where mock agents are surfaced via `client.agents.list`, not via streams).
+registerMockIpcHandler(AGENT_CHANNELS.GET_ACTIVE_STREAMS, async () => ({
+  success: true,
+  data: [],
 }));
 
 registerMockSeeder("agents", async ({ store, client }) => {
