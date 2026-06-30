@@ -23,10 +23,14 @@ vi.mock("./live-support", async (importActual) => {
   };
 });
 
-import { backendRequest } from "./backend-transport";
+import { backendRequest, onBackendNotification } from "./backend-transport";
+import { isEventInFamily, listWorkspaceIds } from "./live-support";
 import { LiveGitClient } from "./live-git-client";
 
 const mockedRequest = vi.mocked(backendRequest);
+const mockedIsEventInFamily = vi.mocked(isEventInFamily);
+const mockedListWorkspaceIds = vi.mocked(listWorkspaceIds);
+const mockedOnBackendNotification = vi.mocked(onBackendNotification);
 
 describe("LiveGitClient reads (fake transport)", () => {
   afterEach(() => vi.clearAllMocks());
@@ -387,5 +391,97 @@ describe("LiveGitClient.commit (fake transport)", () => {
       success: false,
       error: "commit boom",
     });
+  });
+});
+
+// `subscribe` refetches `git.status` on daemon notifications routed through
+// `isEventInFamily`. Regression: when the matcher read a non-existent
+// `params.type` on the wrapped `{event:{type,…}}` envelope, the "type absent"
+// defensive branch fired for every events.event notification — including each
+// `terminal:data` keystroke from the PTY work — producing a git-status storm.
+// This suite swaps the mocked matcher for the REAL implementation and pins the
+// routing end-to-end: terminal:data does NOT trigger `git.status`; git:* and
+// changes:git-status do.
+describe("LiveGitClient.subscribe event-family routing (fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  async function setupWithRealMatcher() {
+    const real = await vi.importActual<typeof import("./live-support")>("./live-support");
+    mockedIsEventInFamily.mockImplementation(real.isEventInFamily);
+    mockedListWorkspaceIds.mockResolvedValue(["ws-1"]);
+    let captured: ((n: { method: string; params: unknown }) => void) | undefined;
+    mockedOnBackendNotification.mockImplementation((cb) => {
+      captured = cb;
+      return () => {};
+    });
+    mockedRequest.mockResolvedValue({
+      branch: "main",
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [],
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+    });
+    return { getNotify: () => captured };
+  }
+
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const gitStatusCalls = () =>
+    mockedRequest.mock.calls.filter(([method]) => method === "git.status").length;
+
+  it("does NOT refetch git.status on a wrapped terminal:data notification", async () => {
+    const { getNotify } = await setupWithRealMatcher();
+    const client = new LiveGitClient();
+
+    const unsubscribe = client.subscribe(() => {});
+    await flush();
+    const initialCount = gitStatusCalls();
+
+    getNotify()!({
+      method: "events.event",
+      params: { event: { type: "terminal:data", data: { chunk: "x" } } },
+    });
+    await flush();
+
+    expect(gitStatusCalls()).toBe(initialCount);
+    unsubscribe();
+  });
+
+  it("DOES refetch git.status on a wrapped git:commit notification", async () => {
+    const { getNotify } = await setupWithRealMatcher();
+    const client = new LiveGitClient();
+
+    const unsubscribe = client.subscribe(() => {});
+    await flush();
+    const initialCount = gitStatusCalls();
+
+    getNotify()!({
+      method: "events.event",
+      params: { event: { type: "git:commit" }, subscriptionId: "s-1" },
+    });
+    await flush();
+
+    expect(gitStatusCalls()).toBe(initialCount + 1);
+    expect(mockedRequest).toHaveBeenLastCalledWith("git.status", { workspaceId: "ws-1" });
+    unsubscribe();
+  });
+
+  it("DOES refetch git.status on a wrapped changes:git-status notification", async () => {
+    const { getNotify } = await setupWithRealMatcher();
+    const client = new LiveGitClient();
+
+    const unsubscribe = client.subscribe(() => {});
+    await flush();
+    const initialCount = gitStatusCalls();
+
+    getNotify()!({
+      method: "events.event",
+      params: { event: { type: "changes:git-status" } },
+    });
+    await flush();
+
+    expect(gitStatusCalls()).toBe(initialCount + 1);
+    unsubscribe();
   });
 });
