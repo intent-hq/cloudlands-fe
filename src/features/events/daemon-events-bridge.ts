@@ -2,7 +2,7 @@
  * Daemon events → renderer Redux bridge.
  *
  * Consumes the daemon's `events.event` JSON-RPC notifications (PROTOCOL §7)
- * and dispatches two families of actions:
+ * and dispatches three families of actions:
  *
  *   1. `workspaceEvents/eventReceived` for the agent-lifecycle subset, so the
  *      `agentSession` reducer can faithfully apply BE-canonical status
@@ -15,6 +15,12 @@
  *      in-flight assistant message live and finalizes it in place. Without
  *      this wire the assistant reply only appears after a manual refresh
  *      (the chat-read-service hydration via `agents.getConversation`).
+ *   3. `chatState/streamStatusReceived` on `agent:tool:call` (status=started)
+ *      to surface the "Calling tool" hint next to the Thinking spinner. The
+ *      chunk reducer auto-emits the "Streaming response…" hint on the first
+ *      text chunk, and the `'complete'` / `'error'` paths clear `statusEvents`
+ *      on `agent:stream:end` / `agent:failed`, so this is the only extra
+ *      status dispatch needed.
  *
  * The stream family is accumulated per agent (one in-flight assistant per
  * agent) using the BE's monotonic `blockIndex` so the candidate transcript
@@ -35,6 +41,7 @@ import type { ContentBlock } from "$shared/types";
 import { store as appStore } from "$store/renderer/store";
 import { eventReceived } from "$store/renderer/slices/workspace-events/workspace-events-slice";
 import { agentStreamUpdateReceived } from "$store/renderer/slices/workspace-agents/workspace-agents-stream-slice";
+import { streamStatusReceived } from "$store/renderer/slices/chat-state/chat-state-slice";
 import {
   backendRequest,
   onBackendNotification,
@@ -222,6 +229,26 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
   }
 
   dispatchStreamUpdate(agentId, state, "content-blocks");
+
+  // Status hint: when the tool *starts*, surface "Calling tool" next to the
+  // Thinking spinner. `resetFirstChunk: true` re-arms the chunk reducer so the
+  // next text chunk after the tool completes appends a fresh "Streaming
+  // response…" entry. Mirrors the reference acp-provider-streaming.ts
+  // `onStatus('tool-call', 'Calling tool')` behaviour.
+  if (status === "started") {
+    appStore.dispatch(
+      streamStatusReceived(
+        agentId,
+        {
+          phase: "tool-call",
+          message: "Calling tool",
+          level: "info",
+          timestamp: Date.now(),
+        },
+        true,
+      ),
+    );
+  }
 }
 
 function handleStreamEndEvent(event: WorkspaceEvent): void {

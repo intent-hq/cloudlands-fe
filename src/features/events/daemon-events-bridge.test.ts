@@ -33,6 +33,15 @@ import {
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { selectAgentIsResponding } from "$store/renderer/slices/agent-session/agent-session-selectors";
 import { __resetDaemonEventsBridgeForTests } from "$features/events/daemon-events-bridge";
+import { chatReset } from "$store/renderer/slices/chat-state/chat-state-slice";
+import type { StatusEvent } from "$store/renderer/slices/chat-state/chat-state-types";
+
+function readStatusEvents(): StatusEvent[] {
+  const state = appStore.state as {
+    chatState?: { byAgentId: Record<string, { statusEvents: StatusEvent[] }> };
+  };
+  return state.chatState?.byAgentId[AGENT]?.statusEvents ?? [];
+}
 
 const MESSAGE_ID = "msg_assistant_1";
 const STREAM_ID = "stream_1";
@@ -208,6 +217,7 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
 
   beforeEach(async () => {
     appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(AGENT));
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
@@ -439,5 +449,105 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(assistant.isStreaming).toBe(false);
     expect(assistant.streamingComplete).toBe(true);
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it("emits status hint transitions: 'Streaming response…' on first chunk → 'Calling tool' on tool:call → cleared on stream:end/idle", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // First text chunk arms the "Streaming response…" status entry via the
+    // chunk reducer (no explicit dispatch needed from the bridge).
+    handler(
+      notification("agent:stream:chunk", {
+        agentId: AGENT,
+        content: "Looking",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: "text",
+        streamId: STREAM_ID,
+      }),
+    );
+
+    let events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual([
+      { phase: "streaming", message: "Streaming response…" },
+    ]);
+
+    // tool:call (started) → "Calling tool" entry, resetting receivedFirstChunk
+    // so the next text chunk re-arms the streaming hint.
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t1",
+        input: { path: "src/lib.rs" },
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 1,
+        blockId: `${MESSAGE_ID}:1`,
+      }),
+    );
+
+    events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual([
+      { phase: "streaming", message: "Streaming response…" },
+      { phase: "tool-call", message: "Calling tool" },
+    ]);
+
+    // tool:call (completed) does NOT append a second status entry — the hint
+    // returns to "Streaming response…" when the next text chunk arrives.
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t1",
+        input: { path: "src/lib.rs" },
+        status: "completed",
+        output: "ok",
+        messageId: MESSAGE_ID,
+        blockIndex: 1,
+        blockId: `${MESSAGE_ID}:1`,
+      }),
+    );
+    expect(readStatusEvents()).toHaveLength(2);
+
+    handler(
+      notification("agent:stream:chunk", {
+        agentId: AGENT,
+        content: "Done.",
+        messageId: MESSAGE_ID,
+        blockIndex: 2,
+        blockId: `${MESSAGE_ID}:2`,
+        blockType: "text",
+        streamId: STREAM_ID,
+      }),
+    );
+
+    events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual([
+      { phase: "streaming", message: "Streaming response…" },
+      { phase: "tool-call", message: "Calling tool" },
+      { phase: "streaming", message: "Streaming response…" },
+    ]);
+
+    // Terminal: stream:end clears the status hints; subsequent agent:idle is
+    // a no-op for statusEvents (already cleared).
+    handler(
+      notification("agent:stream:end", { agentId: AGENT, streamId: STREAM_ID }),
+    );
+    expect(readStatusEvents()).toEqual([]);
+
+    handler(
+      notification("agent:idle", {
+        agentId: AGENT,
+        status: "idle",
+        isActive: false,
+        reason: "stream_complete",
+      }),
+    );
+    expect(readStatusEvents()).toEqual([]);
   });
 });
