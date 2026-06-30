@@ -1308,6 +1308,74 @@ describe('agent-session selectors', () => {
       const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
       expect(selectAgentIsResponding.select(state, 'a1')).toBe(false);
     });
+
+    it('pairs tool_use.toolCallId with tool_result.tool_use_id per PROTOCOL.md wire shape', () => {
+      // PROTOCOL.md §7 (Streaming): tool_use blocks carry both an addressable
+      // block `id` (messageId:blockIndex) and a provider `toolCallId`, and
+      // tool_result blocks reference the call via `tool_use_id` set to the
+      // toolCallId. Selectors must pair on toolCallId, not just the block id,
+      // otherwise an otherwise-finished assistant turn looks unresolved and
+      // the UI sits forever in "Thinking".
+      const session = makeSession('a1', 'ws-1', {
+        status: 'Idle' as any,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            contentBlocks: [
+              {
+                type: 'tool_use',
+                id: '019f092b-msg:0',
+                toolCallId: 'toolu_01JC',
+                name: 'sub-agent-validate',
+                input: {},
+              },
+              {
+                type: 'tool_result',
+                id: '019f092b-msg:1',
+                tool_use_id: 'toolu_01JC',
+                output: 'ok',
+              },
+              { type: 'text', text: 'done' },
+            ],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentIsResponding.select(state, 'a1')).toBe(false);
+      expect(selectAgentIsThinking.select(state, 'a1')).toBe(false);
+    });
+
+    it('flags genuinely unresolved tool_use with no matching result as responding', () => {
+      // Negative case: a tool_use whose toolCallId/id never appears on any
+      // tool_result must still keep the agent in the responding state so we
+      // don't over-correct the pairing fix.
+      const session = makeSession('a1', 'ws-1', {
+        status: 'Idle' as any,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        messages: [
+          {
+            ...makeMessage('m1', 'assistant'),
+            contentBlocks: [
+              {
+                type: 'tool_use',
+                id: '019f092b-msg:0',
+                toolCallId: 'toolu_01JC',
+                name: 'sub-agent-validate',
+                input: {},
+              },
+            ],
+          },
+        ],
+      });
+      const state = storeWith({ byAgentId: { a1: session }, agentIdsByWorkspace: {} });
+      expect(selectAgentIsResponding.select(state, 'a1')).toBe(true);
+      expect(selectAgentIsThinking.select(state, 'a1')).toBe(true);
+    });
   });
 
   it('selectAgentQueuedMessages returns agentQueue messages or empty array', () => {

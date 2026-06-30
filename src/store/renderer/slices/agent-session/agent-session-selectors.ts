@@ -92,9 +92,18 @@ function hasUnresolvedToolUse(message: AgentMessage | undefined): boolean {
   const contentBlocks = message?.contentBlocks ?? [];
   const hasUnresolvedContentBlock = contentBlocks.some((block) => {
     if (block.type !== 'tool_use' || !(block.name || block.toolName)) return false;
+    // Per PROTOCOL.md §7, tool_use blocks carry both an addressable `id`
+    // (messageId:blockIndex) and a provider `toolCallId`; tool_result blocks
+    // reference the tool call via `tool_use_id` (canonically the toolCallId).
+    // Pair against both so blocks pair regardless of which identifier shape the
+    // backend emits.
     return !contentBlocks.some((candidate) => {
       if (candidate.type !== 'tool_result') return false;
-      return candidate.tool_use_id === block.id || candidate.toolCallId === block.id;
+      const candidateRefs = [candidate.tool_use_id, candidate.toolCallId];
+      const blockRefs = [block.id, block.toolCallId];
+      return candidateRefs.some(
+        (ref) => ref !== undefined && blockRefs.some((target) => target !== undefined && ref === target),
+      );
     });
   });
   if (hasUnresolvedContentBlock) return true;

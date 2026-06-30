@@ -223,13 +223,22 @@
 
   // Update tool states based on content
   $effect(() => {
-    // First pass: collect all tool results with valid tool_use_id
+    // First pass: collect all tool results, indexed by every identifier the
+    // result carries. Per PROTOCOL.md §7, tool_use blocks carry both an
+    // addressable `id` (messageId:blockIndex) and a provider `toolCallId`, and
+    // tool_result references the call via `tool_use_id` (canonically the
+    // toolCallId). Indexing under both keys lets lookup by tool_use.id and
+    // tool_use.toolCallId both resolve.
     const resultsMap = new Map<string, ToolResultBlock>();
     for (const block of blocks) {
       if (block.type === 'tool_result') {
         const resultBlock = block as ToolResultBlock;
-        if (resultBlock.tool_use_id) {
-          resultsMap.set(resultBlock.tool_use_id, resultBlock);
+        const resultRefs = [
+          resultBlock.tool_use_id,
+          (resultBlock as { toolCallId?: string }).toolCallId,
+        ];
+        for (const ref of resultRefs) {
+          if (ref) resultsMap.set(ref, resultBlock);
         }
       }
     }
@@ -271,8 +280,12 @@
         const toolBlock = block as ToolUseBlock;
         // If there's a result for this tool, mark as completed/error
         // If streaming is done but no result, mark as completed (result may have been lost)
-        // Otherwise mark as running
-        const result = resultsMap.get(toolBlock.id);
+        // Otherwise mark as running. Look up by both the addressable block id
+        // and the provider toolCallId (when present) to align with PROTOCOL.md
+        // tool-call pairing.
+        const toolCallId = (toolBlock as { toolCallId?: string }).toolCallId;
+        const result =
+          resultsMap.get(toolBlock.id) ?? (toolCallId ? resultsMap.get(toolCallId) : undefined);
         if (result) {
           // Check both snake_case and camelCase for error flag
           const isError = result.is_error || (result as any).isError;
@@ -718,9 +731,14 @@
       </div>
     {:else if block.type === 'tool_use'}
       {@const toolBlock = block as ToolUseBlock}
-      {@const toolResultBlock = blocks.find(
-        (b) => b.type === 'tool_result' && (b as any).tool_use_id === toolBlock.id,
-      )}
+      {@const toolResultBlock = blocks.find((b) => {
+        if (b.type !== 'tool_result') return false;
+        const refs = [(b as any).tool_use_id, (b as any).toolCallId];
+        const targets = [toolBlock.id, (toolBlock as { toolCallId?: string }).toolCallId];
+        return refs.some(
+          (ref) => ref !== undefined && targets.some((t) => t !== undefined && ref === t),
+        );
+      })}
       {@const resultContent = toolResultBlock ? (toolResultBlock as ToolResultBlock).content : null}
       <div class="relative w-full min-w-0">
         <ToolCall
