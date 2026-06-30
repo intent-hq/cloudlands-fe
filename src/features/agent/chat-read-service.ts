@@ -39,6 +39,8 @@ import {
   bulkUpsertSessions,
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
+import { normalizeStreamingState } from "$shared/utils/agent-streaming-state";
+import { hasStreamHandler } from "./utils/stream-handler-registry";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("ChatReadService");
@@ -63,7 +65,16 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
         appClient.agents.getConversation(agentId),
       ]);
       if (session) {
-        const sessionWithMessages = { ...session, messages: conversation.messages };
+        // Mirror the persistence-path funnel (see agent-persistence.ts:1722):
+        // a daemon-persisted mid-turn session with non-terminal status and no
+        // live ACP stream handler would otherwise re-hydrate a phantom
+        // "responding" state, leaving the UI stuck in "Thinking" and the send
+        // guard silently dropping composer messages. Clone before passing so
+        // the loaded object is not mutated.
+        const sessionWithMessages = normalizeStreamingState(
+          { ...session, messages: conversation.messages },
+          hasStreamHandler(agentId),
+        );
         appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
         appStore.dispatch(upsertSession(sessionWithMessages));
       }
