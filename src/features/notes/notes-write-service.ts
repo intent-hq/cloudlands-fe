@@ -14,12 +14,22 @@
  * `{ immediate: true }` (or call `flushNoteContent`) to bypass the debounce on
  * teardown so no edit is lost.
  *
- * This module is dependency-light: it imports only the AppClient seam, the
- * configured store, slice actions, and selectors (per src/store AGENTS.md).
+ * Dependency-light per src/store AGENTS.md: imports only the AppClient seam,
+ * the configured store, slice actions/empty-state, collection-utils, and the
+ * logger (NOT selectors — once registered in `middleware.ts`, statically
+ * importing a `*-selectors.ts` module would evaluate `store.createSelector`
+ * while the store module is still mid-initialization through the middleware
+ * chain). State reads use the raw `appStore.state.workspaceNotes` shape via
+ * the `readWorkspaceNotes` / `readNoteById` helpers below.
  */
+import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import {
+  getItem,
+  getItems,
+} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { appClient } from "$lib/client";
 import type { MutationResult, NoteMetadataPatch } from "$lib/client";
-import { toast } from "$lib/components/ui/toast";
+import { toast } from "svelte-sonner";
 import { ContentType, NoteVisibility } from "$shared/types";
 import type { CreateNoteRequest, Note } from "$shared/types";
 import { NoteId, WorkspaceId } from "$shared/types/branded-ids";
@@ -30,13 +40,15 @@ import {
   applyNoteCreated,
   applyNoteDeleted,
   applyNoteUpdated,
+  emptyWorkspaceNotesState,
   loadWorkspaceNotesSucceeded,
   removeOptimisticNote,
 } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
 import {
-  selectAllNotes,
-  selectNoteById,
-} from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
+  createNoteRequested,
+  markNoteRead,
+} from "$store/renderer/slices/note-read-tracking/note-read-tracking-slice";
+import { openWorkspaceNote } from "$store/renderer/slices/workspace-navigation/workspace-navigation-slice";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("NotesWriteService");
@@ -56,6 +68,23 @@ function genTempNoteId(): string {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   if (typeof c?.randomUUID === "function") return `optimistic-${c.randomUUID()}`;
   return `optimistic-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// Read state directly via raw slice shape (NOT via the workspace-notes-selectors
+// module) — once registered in `middleware.ts`, statically importing a
+// `*-selectors.ts` module would evaluate `store.createSelector` while the store
+// module is still mid-initialization through the middleware chain. See
+// `git-read-service.ts` / `files-write-service.ts` for the same pattern.
+function readWorkspaceNotes(workspaceId: string): Note[] {
+  const ws =
+    appStore.state.workspaceNotes.byWorkspaceId[workspaceId] ?? emptyWorkspaceNotesState;
+  return getItems(ws.notes);
+}
+
+function readNoteById(workspaceId: string, noteId: string): Note | undefined {
+  const ws =
+    appStore.state.workspaceNotes.byWorkspaceId[workspaceId] ?? emptyWorkspaceNotesState;
+  return getItem(ws.notes, NoteId(noteId));
 }
 
 async function refetchWorkspaceNotes(workspaceId: string): Promise<void> {
@@ -98,7 +127,7 @@ function reconcileNoteConflict(
 export async function createNote(
   workspaceId: string,
   data: Omit<CreateNoteRequest, "workspaceId">,
-): Promise<void> {
+): Promise<string | undefined> {
   const tempId = genTempNoteId();
   const now = new Date().toISOString();
   const optimistic: Note = {
@@ -116,29 +145,69 @@ export async function createNote(
     updatedAt: now,
   };
 
-  const before = new Set(
-    selectAllNotes.select(appStore.state, workspaceId).map((n) => String(n.id)),
-  );
+  const before = new Set(readWorkspaceNotes(workspaceId).map((n) => String(n.id)));
   appStore.dispatch(addOptimisticNote(workspaceId, optimistic));
 
   const result = await appClient.notes.create({ workspaceId: WorkspaceId(workspaceId), ...data });
   if (!result.success) {
     appStore.dispatch(removeOptimisticNote(workspaceId, tempId));
     logger.error("Failed to create note", result.error);
-    return;
+    return undefined;
   }
 
   try {
     const notes = await appClient.notes.list(workspaceId);
     appStore.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
     const created = notes.find((n) => !before.has(String(n.id)));
-    if (created) appStore.dispatch(addOptimisticNote(workspaceId, created));
+    if (created) {
+      appStore.dispatch(addOptimisticNote(workspaceId, created));
+      return String(created.id);
+    }
   } catch (error) {
     // The create succeeded but the reconcile refetch threw. Keep the optimistic
     // note rather than dropping it — the live note:* subscribe→refetch loop will
     // converge it to the canonical id — so the user's note is neither orphaned nor duplicated.
     logger.error("Failed to refetch notes after creating a note", error);
   }
+  return undefined;
+}
+
+/**
+ * Handle the (post-saga) `createNoteRequested` action: forward to the
+ * `appClient.notes.create` seam with the same defaults the legacy
+ * "Add new note" saga used (title `"New Note"`, empty content, no tags), then
+ * mark the new note read and open it in the main panel so it appears in the
+ * Context tab without a manual reload.
+ */
+async function handleCreateNoteRequested(workspaceId: string): Promise<void> {
+  if (!workspaceId) return;
+  const newNoteId = await createNote(workspaceId, {
+    title: "New Note",
+    content: "",
+    tags: [],
+  });
+  if (!newNoteId) return;
+  appStore.dispatch(markNoteRead(workspaceId, newNoteId));
+  appStore.dispatch(openWorkspaceNote(workspaceId, newNoteId));
+}
+
+/**
+ * Middleware that gives the (post-saga) `createNoteRequested` trigger a real
+ * handler: after the (no-op) reducer passes the action through, it forwards to
+ * `appClient.notes.create` and reconciles by opening the new note.
+ * Fire-and-forget — dispatch stays synchronous and never throws.
+ */
+export function createNotesWriteMiddleware(): StoreMiddleware {
+  return () => (next) => (action) => {
+    const result = next(action);
+    if (action?.type === createNoteRequested.type && Array.isArray(action.payload)) {
+      const [wsId] = action.payload as [unknown];
+      if (typeof wsId === "string" && wsId.length > 0) {
+        void handleCreateNoteRequested(wsId);
+      }
+    }
+    return result;
+  };
 }
 
 /** Update note content optimistically; the network save is debounced per note. */
@@ -179,7 +248,7 @@ async function flushContent(noteId: string): Promise<void> {
   }
   // Forward the current known `rev` as `expectedVersion` (§11.4-D) when it is
   // known; omit it entirely otherwise so behavior is unchanged (last-writer-wins).
-  const rev = selectNoteById.select(appStore.state, pending.workspaceId, noteId)?.rev;
+  const rev = readNoteById(pending.workspaceId, noteId)?.rev;
   const result =
     rev !== undefined
       ? await appClient.notes.setContent(noteId, pending.content, rev)
@@ -202,7 +271,7 @@ export async function updateNoteTitle(
   noteId: string,
   title: string,
 ): Promise<void> {
-  const existing = selectNoteById.select(appStore.state, workspaceId, noteId);
+  const existing = readNoteById(workspaceId, noteId);
   const previous = existing?.title;
   const rev = existing?.rev;
   appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { title }));
@@ -226,7 +295,7 @@ export async function updateNoteMetadata(
   noteId: string,
   metadata: NoteMetadataPatch,
 ): Promise<void> {
-  const existing = selectNoteById.select(appStore.state, workspaceId, noteId);
+  const existing = readNoteById(workspaceId, noteId);
   const rollback: NoteMetadataPatch = {};
   if (metadata.title !== undefined) rollback.title = existing?.title ?? "";
   if (metadata.tags !== undefined) rollback.tags = existing?.tags ?? [];
@@ -246,7 +315,7 @@ export async function updateNoteMetadata(
 
 /** Delete a note optimistically; restores it from a snapshot on failure. */
 export async function deleteNote(workspaceId: string, noteId: string): Promise<void> {
-  const snapshot = selectNoteById.select(appStore.state, workspaceId, noteId);
+  const snapshot = readNoteById(workspaceId, noteId);
   const rev = snapshot?.rev;
   appStore.dispatch(applyNoteDeleted(workspaceId, noteId));
 

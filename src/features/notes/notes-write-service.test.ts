@@ -19,18 +19,20 @@ vi.mock("$lib/client", () => ({
 }));
 
 // FAKE the toast seam so the conflict prompt is asserted without svelte-sonner.
-vi.mock("$lib/components/ui/toast", () => ({
+vi.mock("svelte-sonner", () => ({
   toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), message: vi.fn() },
 }));
 
 import { appClient } from "$lib/client";
-import { toast } from "$lib/components/ui/toast";
+import { toast } from "svelte-sonner";
 import { store as appStore } from "$store/renderer/store";
 import { loadWorkspaceNotesSucceeded } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
 import {
   selectAllNotes,
   selectNoteById,
 } from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
+import { createNoteRequested } from "$store/renderer/slices/note-read-tracking/note-read-tracking-slice";
+import { selectWorkspaceNavigationMainPanel } from "$store/renderer/slices/workspace-navigation/workspace-navigation-selectors";
 import {
   NOTE_CONTENT_SAVE_DEBOUNCE_MS,
   createNote,
@@ -235,5 +237,58 @@ describe("notesWriteService (fake seam, real store)", () => {
     expect(note?.title).toBe("Server");
     expect(note?.content).toBe("server");
     expect(toast.warning).toHaveBeenCalledTimes(1);
+  });
+
+  // ---- createNoteRequested middleware: "Add new note" trigger -----------------
+  // The Context-tab "Add new note" button and the command palette "New note"
+  // command dispatch `createNoteRequested(workspaceId)`. The notes-write
+  // middleware (registered in `src/store/renderer/middleware.ts`) must forward
+  // that to `appClient.notes.create` with the legacy defaults and open the new
+  // note in the main panel.
+
+  it("dispatching createNoteRequested forwards note.create with the legacy defaults", async () => {
+    const wsCreate = "ws-create-note";
+    notesApi.list.mockResolvedValueOnce([makeNote("real-new", { workspaceId: WorkspaceId(wsCreate) })] as never);
+
+    appStore.dispatch(createNoteRequested(wsCreate));
+    // Flush the fire-and-forget middleware promise (microtasks for the awaited
+    // appClient.notes.create + appClient.notes.list resolutions + follow-ups).
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(notesApi.create).toHaveBeenCalledTimes(1);
+    expect(notesApi.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: wsCreate,
+        title: "New Note",
+        content: "",
+        tags: [],
+      }),
+    );
+  });
+
+  it("opens the new note in the main panel after createNoteRequested succeeds", async () => {
+    const wsCreate = "ws-create-note-open";
+    notesApi.list.mockResolvedValueOnce(
+      [makeNote("real-open", { workspaceId: WorkspaceId(wsCreate) })] as never,
+    );
+
+    appStore.dispatch(createNoteRequested(wsCreate));
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const mainPanel = selectWorkspaceNavigationMainPanel.select(appStore.state, wsCreate);
+    expect(mainPanel.type).toBe("notes");
+    expect(mainPanel.selectedNoteId).toBe("real-open");
+  });
+
+  it("createNoteRequested with a blank workspaceId does not call the seam", async () => {
+    appStore.dispatch(createNoteRequested(""));
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+
+    expect(notesApi.create).not.toHaveBeenCalled();
   });
 });
