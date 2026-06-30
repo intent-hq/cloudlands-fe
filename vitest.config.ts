@@ -18,6 +18,9 @@ export default defineConfig(async () => {
         '**/dist/**',
         '**/build/**',
         '**/.{idea,git,cache,output,temp}/**',
+        // Exclude any untracked git-worktree dirs (e.g. .wt-commit-details/) so
+        // vitest doesn't double-collect their test files alongside the primary tree.
+        '**/.wt-*/**',
         '**/test/**', // Exclude Playwright tests directory
         '**/*.ct.spec.ts', // Exclude Playwright component tests
         '**/parallel-runner/**', // Exclude parallel-runner tests (separate project)

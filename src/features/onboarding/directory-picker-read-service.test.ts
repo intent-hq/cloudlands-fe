@@ -3,9 +3,14 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 // FAKE seam: the live backend bridge is stubbed so dispatching
 // `loadDirectoryRequested` exercises the read service against the REAL
 // configured store (and its registered reducer + middleware) without any
-// real `window.electronAPI` IPC round-trip.
+// real `window.electronAPI` IPC round-trip. `onBackendNotification` is
+// stubbed too because the configured store now installs the daemon-events
+// bridge on first dispatched action (transitively via chat-send-service);
+// without this export the bridge throws an unhandled "no export defined"
+// error when this test triggers it.
 vi.mock("$lib/client/live/backend-transport", () => ({
   backendRequest: vi.fn(),
+  onBackendNotification: vi.fn(() => () => {}),
 }));
 
 import { backendRequest } from "$lib/client/live/backend-transport";
@@ -38,9 +43,15 @@ describe("directoryPickerReadService (fake backend, real store)", () => {
   });
 
   it("dispatches host.listDirectory with `{ path }` and stores the listing on success", async () => {
-    backendRequestMock.mockResolvedValueOnce(
-      listing("/Users/me/code") as never,
-    );
+    // The settings-hydration middleware also fires `settings.list` lazily on
+    // the first dispatched action; route mocks by method so that hydration
+    // doesn't consume the picker's queued response.
+    backendRequestMock.mockImplementation(((method: string) => {
+      if (method === "host.listDirectory") {
+        return Promise.resolve(listing("/Users/me/code"));
+      }
+      return Promise.resolve(undefined);
+    }) as never);
 
     appStore.dispatch(loadDirectoryRequested("/Users/me/code"));
 
@@ -51,7 +62,12 @@ describe("directoryPickerReadService (fake backend, real store)", () => {
 
     await flush();
 
-    expect(backendRequestMock).toHaveBeenCalledTimes(1);
+    // Assert the picker's own call via method-filtered calls instead of the
+    // total spy count (settings.list noise also lives on the same mock).
+    const hostListDirectoryCalls = backendRequestMock.mock.calls.filter(
+      ([method]) => method === "host.listDirectory",
+    );
+    expect(hostListDirectoryCalls).toHaveLength(1);
     expect(backendRequestMock).toHaveBeenCalledWith("host.listDirectory", {
       path: "/Users/me/code",
     });
