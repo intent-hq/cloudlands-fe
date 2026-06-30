@@ -335,12 +335,54 @@ export interface GitCommitParams {
   userRequested: boolean;
 }
 
+/** Per-file `(additions, deletions)` entry on a `CommitDetailsResult`. */
+export interface CommitFileDetail {
+  path: string;
+  additions: number;
+  deletions: number;
+}
+
+/**
+ * Flattened result of a `git.commitDetails` read (PROTOCOL §5.6) — metadata +
+ * per-file stats for a single commit. `files` mirrors `fileDetails[].path` for
+ * callers that only want the path list.
+ */
+export interface CommitDetailsResult {
+  commitHash: string;
+  author: string;
+  authorEmail: string;
+  date: string;
+  message: string;
+  files: string[];
+  fileDetails: CommitFileDetail[];
+}
+
+/** Optional filters for the `git.diffs` read (PROTOCOL §5.6). */
+export interface GitDiffsOptions {
+  /** Filter the result to a single workspace-relative file path. */
+  path?: string;
+  /** When `true`, returns the HEAD→index (staged) diff; ignored if `commitHash` is set. */
+  staged?: boolean;
+  /** When set, returns the per-file hunks for `<commitHash>^..<commitHash>`. */
+  commitHash?: string;
+}
+
 export interface GitClient {
   status(workspaceId: string): Promise<GitStatus | null>;
   changes(workspaceId: string): Promise<GitStatus | null>;
-  diffs(workspaceId: string): Promise<DiffChunk[]>;
+  /**
+   * `git.diffs` — per-file hunks. Defaults to the index→workdir (unstaged)
+   * diff; `options.staged` selects HEAD→index; `options.commitHash` returns the
+   * commit's own changes against its first parent (`<commitHash>^..<commitHash>`).
+   */
+  diffs(workspaceId: string, options?: GitDiffsOptions): Promise<DiffChunk[]>;
   trackedChanges(workspaceId: string): Promise<TrackedChange[]>;
   commits(workspaceId: string): Promise<CommitInfo[]>;
+  /**
+   * `git.commitDetails` — metadata + per-file `(additions, deletions)` for one
+   * commit. Returns `null` on transport failure so callers degrade gracefully.
+   */
+  commitDetails(workspaceId: string, commitHash: string): Promise<CommitDetailsResult | null>;
   prStatus(workspaceId: string): Promise<PrStatusSummary | null>;
   /**
    * Path-based branch listing (`git.getBranches`, §5.6). Used by the

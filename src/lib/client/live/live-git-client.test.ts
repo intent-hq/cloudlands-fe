@@ -145,6 +145,100 @@ describe("LiveGitClient reads (fake transport)", () => {
     expect(await client.diffs("ws-1")).toEqual([]);
   });
 
+  it("diffs forwards optional commitHash + path for the per-commit read", async () => {
+    mockedRequest.mockResolvedValueOnce([]);
+    const client = new LiveGitClient();
+
+    await client.diffs("ws-1", { commitHash: "abc123", path: "seed.txt" });
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.diffs", {
+      workspaceId: "ws-1",
+      path: "seed.txt",
+      commitHash: "abc123",
+    });
+  });
+
+  it("diffs forwards staged:true when no commitHash is set", async () => {
+    mockedRequest.mockResolvedValueOnce([]);
+    const client = new LiveGitClient();
+
+    await client.diffs("ws-1", { staged: true });
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.diffs", {
+      workspaceId: "ws-1",
+      staged: true,
+    });
+  });
+
+  it("commitDetails forwards git.commitDetails and normalizes the wire shape", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      commitHash: "abc123",
+      author: "Ada",
+      authorEmail: "ada@example.test",
+      date: "2025-01-02T03:04:05Z",
+      message: "second",
+      files: ["seed.txt", "new.txt"],
+      fileDetails: [
+        { path: "seed.txt", additions: 2, deletions: 1 },
+        { path: "new.txt", additions: 1, deletions: 0 },
+      ],
+    });
+    const client = new LiveGitClient();
+
+    const details = await client.commitDetails("ws-1", "abc123");
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.commitDetails", {
+      workspaceId: "ws-1",
+      commitHash: "abc123",
+    });
+    expect(details).toEqual({
+      commitHash: "abc123",
+      author: "Ada",
+      authorEmail: "ada@example.test",
+      date: "2025-01-02T03:04:05Z",
+      message: "second",
+      files: ["seed.txt", "new.txt"],
+      fileDetails: [
+        { path: "seed.txt", additions: 2, deletions: 1 },
+        { path: "new.txt", additions: 1, deletions: 0 },
+      ],
+    });
+  });
+
+  it("commitDetails normalizes a graceful-empty envelope from the daemon", async () => {
+    // The daemon returns an empty envelope (same `commitHash`, empty arrays)
+    // for non-repo / remote / unresolvable-hash workspaces (PROTOCOL §5.6).
+    mockedRequest.mockResolvedValueOnce({
+      commitHash: "missing",
+      author: "",
+      authorEmail: "",
+      date: "",
+      message: "",
+      files: [],
+      fileDetails: [],
+    });
+    const client = new LiveGitClient();
+
+    const details = await client.commitDetails("ws-1", "missing");
+
+    expect(details).toEqual({
+      commitHash: "missing",
+      author: "",
+      authorEmail: "",
+      date: "",
+      message: "",
+      files: [],
+      fileDetails: [],
+    });
+  });
+
+  it("commitDetails resolves null when the daemon errors", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("commit details boom"));
+    const client = new LiveGitClient();
+
+    expect(await client.commitDetails("ws-1", "abc123")).toBeNull();
+  });
+
   it("commits forwards git.commits and maps items into CommitInfo[]", async () => {
     mockedRequest.mockResolvedValueOnce({
       items: [
