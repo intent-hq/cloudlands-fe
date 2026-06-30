@@ -71,5 +71,34 @@ describe('normalizeStreamingState', () => {
     expect(result.isStreaming).toBe(false);
     expect(result.status).toBe(AgentStatus.Idle);
   });
+
+  it('finalizes stale per-message streaming flags when finalizeStaleMessages is true', () => {
+    // Daemon-persisted mid-turn scenario: status Active with no live handler
+    // and an assistant message still flagged isStreaming. The hydration path
+    // opts into finalize-stale so the session can demote to Idle instead of
+    // bailing out on the per-message check.
+    const msg = message({ isStreaming: true });
+    const result = normalizeStreamingState(session({ messages: [msg] }), false, true);
+    expect(msg.isStreaming).toBe(false);
+    expect((msg as { streamingComplete?: boolean }).streamingComplete).toBe(true);
+    expect(result.isStreaming).toBe(false);
+    expect(result.isProcessing).toBe(false);
+    expect(result.isResponding).toBe(false);
+    expect(result.status).toBe(AgentStatus.Idle);
+  });
+
+  it('also finalizes messages with streamingComplete:false (selector-side stale predicate)', () => {
+    const msg = message({ streamingComplete: false } as Partial<AgentMessage>);
+    const result = normalizeStreamingState(session({ messages: [msg] }), false, true);
+    expect((msg as { streamingComplete?: boolean }).streamingComplete).toBe(true);
+    expect(result.status).toBe(AgentStatus.Idle);
+  });
+
+  it('does NOT finalize per-message flags when a live handler is attached', () => {
+    const msg = message({ isStreaming: true });
+    const result = normalizeStreamingState(session({ messages: [msg] }), true, true);
+    expect(msg.isStreaming).toBe(true);
+    expect(result.status).toBe(AgentStatus.Active);
+  });
 });
 

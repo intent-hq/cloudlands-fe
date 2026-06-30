@@ -172,6 +172,46 @@ describe("chatReadService (fake seam, real store)", () => {
     expect(selectAgentIsThinking.select(appStore.state, agentId)).toBe(false);
   });
 
+  it("finalizes stale per-message streaming flags so isActiveAgentThread reads idle on hydration", async () => {
+    // Regression: the daemon may return a persisted assistant message with
+    // isStreaming:true (e.g. crashed mid-turn). Without finalize-stale, the
+    // session-level normalization bails out on the per-message check and the
+    // selector still reports the message as streaming via
+    // isStreamingMessage(latestAssistant) — UI stuck in "Thinking", composer
+    // gated. With finalize-stale, the message is finalized first, the session
+    // demotes to Idle, and the selector reads idle.
+    const agentId = "agent-hydration-stale-msg";
+    hasStreamHandlerMock.mockReturnValue(false);
+    agentsApi.get.mockResolvedValueOnce(
+      makeSession({
+        id: agentId,
+        status: AgentStatus.Active,
+        isResponding: true,
+        isStreaming: true,
+      }) as never,
+    );
+    const staleAssistant: AgentMessage = {
+      id: "m-stale",
+      role: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      contentBlocks: [{ type: "text", text: "partial" }],
+      isStreaming: true,
+    } as AgentMessage;
+    agentsApi.getConversation.mockResolvedValueOnce(conversation([staleAssistant]) as never);
+
+    await loadChatTranscript(agentId);
+
+    const stored = selectAgentSession.select(appStore.state, agentId);
+    expect(stored?.status).toBe(AgentStatus.Idle);
+    expect(stored?.isResponding).toBe(false);
+    expect(stored?.isStreaming).toBe(false);
+    const storedMessages = selectAgentMessages.select(appStore.state, agentId);
+    expect(storedMessages[0]?.isStreaming).toBe(false);
+    expect((storedMessages[0] as { streamingComplete?: boolean })?.streamingComplete).toBe(true);
+    expect(selectAgentIsResponding.select(appStore.state, agentId)).toBe(false);
+    expect(selectAgentIsThinking.select(appStore.state, agentId)).toBe(false);
+  });
+
   it("preserves Active status when a live stream handler is attached for the agent", async () => {
     const agentId = "agent-hydration-live";
     hasStreamHandlerMock.mockReturnValue(true);

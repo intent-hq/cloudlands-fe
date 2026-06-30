@@ -71,9 +71,18 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
         // "responding" state, leaving the UI stuck in "Thinking" and the send
         // guard silently dropping composer messages. Clone before passing so
         // the loaded object is not mutated.
+        //
+        // Cold-load hydration also cannot, by definition, observe a live local
+        // stream: when no handler is registered for this agent, any persisted
+        // per-message `isStreaming:true` / `streamingComplete:false` is stale
+        // and must be finalized — otherwise the session-level normalization
+        // bails out and the selector still reports the latest assistant
+        // message as streaming via `isStreamingMessage(latestAssistant)`.
+        const hasHandler = hasStreamHandler(agentId);
         const sessionWithMessages = normalizeStreamingState(
           { ...session, messages: conversation.messages },
-          hasStreamHandler(agentId),
+          hasHandler,
+          !hasHandler,
         );
         appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
         appStore.dispatch(upsertSession(sessionWithMessages));
