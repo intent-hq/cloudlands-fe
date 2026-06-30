@@ -1,5 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { RequestDeduplicator } from '../src/features/agent/browser/services/request-deduplicator.service';
+import {
+  mockInvoke,
+  registerMockIpcHandler,
+  resetMockIpcRouter,
+} from '../src/shared/ipc-mock-router';
 
 describe('RequestDeduplicator', () => {
   let deduplicator: RequestDeduplicator;
@@ -12,12 +17,12 @@ describe('RequestDeduplicator', () => {
     deduplicator.dispose();
   });
 
-  describe('Basic Deduplication', () => {
+  describe('In-flight Deduplication', () => {
     it('should deduplicate concurrent identical requests', async () => {
       let callCount = 0;
       const operation = async () => {
         callCount++;
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 50));
         return `result-${callCount}`;
       };
 
@@ -30,9 +35,8 @@ describe('RequestDeduplicator', () => {
 
       const results = await Promise.all(promises);
 
-      // Should only call operation once
+      // Should only call operation once — all three share the pending promise
       expect(callCount).toBe(1);
-      // All should get the same result
       expect(results).toEqual(['result-1', 'result-1', 'result-1']);
     });
 
@@ -43,95 +47,71 @@ describe('RequestDeduplicator', () => {
         return `result-${callCount}`;
       };
 
-      // Make requests with different keys
       const results = await Promise.all([
         deduplicator.deduplicate('key-1', operation),
         deduplicator.deduplicate('key-2', operation),
         deduplicator.deduplicate('key-3', operation),
       ]);
 
-      // Should call operation three times
       expect(callCount).toBe(3);
       expect(results).toEqual(['result-1', 'result-2', 'result-3']);
     });
 
-    it('should cache results within TTL', async () => {
+    it('should issue a fresh request after the prior one resolved', async () => {
+      // Audit-P0-1 invariant: no completed-result caching. A call made AFTER
+      // the prior one resolved must re-execute the operation, not replay a
+      // stale cached value.
       let callCount = 0;
       const operation = async () => {
         callCount++;
         return `result-${callCount}`;
       };
 
-      // First request
-      const result1 = await deduplicator.deduplicate('cache-key', operation, { ttl: 1000 });
+      const result1 = await deduplicator.deduplicate('sequential-key', operation);
       expect(result1).toBe('result-1');
       expect(callCount).toBe(1);
 
-      // Second request within TTL
-      const result2 = await deduplicator.deduplicate('cache-key', operation, { ttl: 1000 });
-      expect(result2).toBe('result-1');
-      expect(callCount).toBe(1); // Should not increment
+      const result2 = await deduplicator.deduplicate('sequential-key', operation);
+      expect(result2).toBe('result-2');
+      expect(callCount).toBe(2);
+
+      const result3 = await deduplicator.deduplicate('sequential-key', operation);
+      expect(result3).toBe('result-3');
+      expect(callCount).toBe(3);
     });
 
-    it('should not cache results after TTL expires', async () => {
+    it('should not deduplicate after the in-flight promise rejected', async () => {
       let callCount = 0;
       const operation = async () => {
         callCount++;
-        return `result-${callCount}`;
+        if (callCount === 1) throw new Error('first-failed');
+        return `success-${callCount}`;
       };
 
-      // First request with short TTL
-      const result1 = await deduplicator.deduplicate('ttl-key', operation, { ttl: 50 });
-      expect(result1).toBe('result-1');
-      expect(callCount).toBe(1);
+      await expect(deduplicator.deduplicate('post-error', operation)).rejects.toThrow(
+        'first-failed',
+      );
 
-      // Wait for TTL to expire
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // Second request after TTL
-      const result2 = await deduplicator.deduplicate('ttl-key', operation, { ttl: 50 });
-      expect(result2).toBe('result-2');
+      const result = await deduplicator.deduplicate('post-error', operation);
+      expect(result).toBe('success-2');
       expect(callCount).toBe(2);
     });
   });
 
   describe('Error Handling', () => {
-    it('should not cache errors', async () => {
-      let callCount = 0;
-      const operation = async () => {
-        callCount++;
-        if (callCount === 1) {
-          throw new Error('First call failed');
-        }
-        return `success-${callCount}`;
-      };
-
-      // First request fails
-      await expect(deduplicator.deduplicate('error-key', operation)).rejects.toThrow(
-        'First call failed',
-      );
-      expect(callCount).toBe(1);
-
-      // Second request should retry
-      const result = await deduplicator.deduplicate('error-key', operation);
-      expect(result).toBe('success-2');
-      expect(callCount).toBe(2);
-    });
-
     it('should propagate errors to all waiting requests', async () => {
       const operation = async () => {
         await new Promise((resolve) => setTimeout(resolve, 50));
         throw new Error('Operation failed');
       };
 
-      // Make concurrent requests
+      // Concurrent requests share the same in-flight promise
       const promises = [
         deduplicator.deduplicate('error-broadcast', operation),
         deduplicator.deduplicate('error-broadcast', operation),
         deduplicator.deduplicate('error-broadcast', operation),
       ];
 
-      // All should receive the same error
       await expect(Promise.all(promises)).rejects.toThrow('Operation failed');
     });
   });
@@ -179,81 +159,129 @@ describe('RequestDeduplicator', () => {
     });
   });
 
-  describe('Cache Management', () => {
-    it('should clear specific keys', async () => {
-      let callCount = 0;
-      const operation = async () => {
-        callCount++;
-        return `result-${callCount}`;
-      };
+  describe('In-flight Clearing', () => {
+    it('should drop an in-flight request when clearKey is called', async () => {
+      let resolveOp: ((value: string) => void) | undefined;
+      const operation = () =>
+        new Promise<string>((resolve) => {
+          resolveOp = resolve;
+        });
 
-      // Cache a result
-      await deduplicator.deduplicate('clear-key', operation);
-      expect(callCount).toBe(1);
+      const promise = deduplicator.deduplicate('clear-key', operation);
+      expect(deduplicator.getStats().pendingCount).toBe(1);
 
-      // Clear the key
       deduplicator.clearKey('clear-key');
+      expect(deduplicator.getStats().pendingCount).toBe(0);
 
-      // Next request should call operation again
-      await deduplicator.deduplicate('clear-key', operation);
-      expect(callCount).toBe(2);
+      // Original promise is still alive (the operation was never cancelled),
+      // it just no longer participates in dedup. Settle it to avoid leaks.
+      resolveOp?.('settled');
+      await expect(promise).resolves.toBe('settled');
     });
 
-    it('should clear all cached requests', async () => {
-      const operation = async (id: string) => `result-${id}`;
+    it('should drop in-flight requests for an agent on clearKeysForAgent', async () => {
+      const make = () => new Promise<string>(() => {}); // never resolves
 
-      // Cache multiple results
-      await deduplicator.deduplicate('key-1', () => operation('1'));
-      await deduplicator.deduplicate('key-2', () => operation('2'));
+      deduplicator.deduplicate('message:agent-1:hello:', make);
+      deduplicator.deduplicate('session:create::agent-1', make);
+      deduplicator.deduplicate('message:agent-2:hi:', make);
+      expect(deduplicator.getStats().pendingCount).toBe(3);
 
-      const stats1 = deduplicator.getStats();
-      expect(stats1.completedCount).toBe(2);
+      deduplicator.clearKeysForAgent('agent-1');
+      expect(deduplicator.getStats().pendingCount).toBe(1);
+    });
 
-      // Clear all
+    it('should drop all in-flight requests on clearAll', () => {
+      const make = () => new Promise<string>(() => {});
+      deduplicator.deduplicate('a', make);
+      deduplicator.deduplicate('b', make);
+      expect(deduplicator.getStats().pendingCount).toBe(2);
+
       deduplicator.clearAll();
-
-      const stats2 = deduplicator.getStats();
-      expect(stats2.completedCount).toBe(0);
-      expect(stats2.pendingCount).toBe(0);
-    });
-
-    it('should enforce cache size limit', async () => {
-      // Set a small cache limit for testing
-      const maxSize = 5;
-      (deduplicator as any).MAX_CACHE_SIZE = maxSize;
-
-      // Add more than the limit
-      for (let i = 0; i < 10; i++) {
-        await deduplicator.deduplicate(`key-${i}`, async () => i);
-      }
-
-      const stats = deduplicator.getStats();
-      expect(stats.completedCount).toBeLessThanOrEqual(maxSize);
+      expect(deduplicator.getStats().pendingCount).toBe(0);
     });
   });
 
   describe('Statistics', () => {
-    it('should track pending and completed requests', async () => {
+    it('should report pendingCount for in-flight requests only', async () => {
       const operation = async () => {
         await new Promise((resolve) => setTimeout(resolve, 50));
         return 'done';
       };
 
-      // Start a request
       const promise = deduplicator.deduplicate('stats-key', operation);
 
-      // Check pending
       const stats1 = deduplicator.getStats();
       expect(stats1.pendingCount).toBe(1);
-      expect(stats1.completedCount).toBe(0);
+      expect((stats1 as { completedCount?: number }).completedCount).toBeUndefined();
 
-      // Wait for completion
       await promise;
 
-      // Check completed
       const stats2 = deduplicator.getStats();
       expect(stats2.pendingCount).toBe(0);
-      expect(stats2.completedCount).toBe(1);
+    });
+  });
+
+  // Wire contract per docs/00_initial_porting/PROTOCOL.md (§5 agent.sendMessage):
+  // the deduplicator wraps the IPC invoke, so concurrent identical calls must
+  // share ONE BE invocation and sequential resolved calls must each issue a
+  // FRESH BE invocation. Uses the shared in-memory ipc-mock-router as the BE
+  // boundary so the test exercises the same channel-call semantics production
+  // code would.
+  describe('Wire contract (mock BE)', () => {
+    const CHANNEL = 'agent:sendMessage';
+    const PARAMS = {
+      workspaceId: 'workspace-1',
+      agentId: 'agent-1',
+      content: 'Fix the build',
+      messageId: 'm1',
+    };
+    const KEY = RequestDeduplicator.generateMessageKey(
+      PARAMS.agentId,
+      PARAMS.content,
+    );
+
+    beforeEach(() => {
+      resetMockIpcRouter();
+    });
+
+    afterEach(() => {
+      resetMockIpcRouter();
+    });
+
+    it('two concurrent resolved calls => one BE invocation', async () => {
+      const handler = vi.fn(async (params: unknown) => {
+        expect(params).toEqual(PARAMS);
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return { success: true, queued: false, messageId: PARAMS.messageId };
+      });
+      registerMockIpcHandler(CHANNEL, handler);
+
+      const operation = () => mockInvoke<unknown>(CHANNEL, PARAMS);
+
+      const [r1, r2] = await Promise.all([
+        deduplicator.deduplicate(KEY, operation),
+        deduplicator.deduplicate(KEY, operation),
+      ]);
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(r1).toEqual({ success: true, queued: false, messageId: PARAMS.messageId });
+      expect(r2).toBe(r1);
+    });
+
+    it('two sequential resolved calls => two BE invocations (no completed-result cache)', async () => {
+      const handler = vi.fn(async (params: unknown) => {
+        expect(params).toEqual(PARAMS);
+        return { success: true, queued: false, messageId: PARAMS.messageId };
+      });
+      registerMockIpcHandler(CHANNEL, handler);
+
+      const operation = () => mockInvoke<unknown>(CHANNEL, PARAMS);
+
+      await deduplicator.deduplicate(KEY, operation);
+      await deduplicator.deduplicate(KEY, operation);
+
+      expect(handler).toHaveBeenCalledTimes(2);
     });
   });
 });
