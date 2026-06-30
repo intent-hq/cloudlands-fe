@@ -1,22 +1,16 @@
 /**
  * File-explorer read service — the sanctioned post-saga directory-listing mechanism.
  *
- * The `toggleDirectoryRequested` / `expandToPathRequested` / `expandAllRequested`
- * / `refreshFileExplorer` triggers lost their handler when the saga runtime was
- * removed (they used to live in `sagas/file-explorer-saga.ts`), so expanding a
- * directory or hitting refresh became a no-op and children never loaded. This
- * restores the read path WITHOUT re-adding a saga and WITHOUT changing any call
- * site: `createFileExplorerReadMiddleware()` observes every dispatched action and,
- * on those triggers, lists the relevant directories via the `appClient.files`
- * seam (`file.list` per directory) and dispatches `setChildrenAtPathAction`.
+ * The `initializeFileExplorer` / `toggleDirectoryRequested` / `expandToPathRequested`
+ * / `expandAllRequested` / `refreshFileExplorer` / `refreshDirectoryRequested`
+ * triggers lost their handler when the saga runtime was removed (they used to live
+ * in `sagas/file-explorer-saga.ts`). This restores the read path WITHOUT re-adding
+ * a saga and WITHOUT changing any call site: `createFileExplorerReadMiddleware()`
+ * observes every dispatched action and, on those triggers, lists the relevant
+ * directories via the `appClient.files` seam (`file.tree` for the root,
+ * `file.list` per directory) and dispatches `setRootNode` / `setChildrenAtPathAction`.
  *
  * READ-ONLY: this module never invokes a file mutation (no write/delete/mkdir).
- *
- * BE gap: the daemon exposes no `file.tree` endpoint, so `explorerTree` resolves
- * to `null` and the ROOT tree never initializes (see `live-files-client.ts`).
- * Every handler here is gated on an existing root (`rootPath`/`workspacePath`);
- * with no root there is nothing to expand or refresh. This service lists deeper
- * levels on demand but does NOT fabricate the root tree.
  *
  * Dependency-light per src/store AGENTS.md: imports only the AppClient seam, the
  * configured store, the slice actions/empty-state, pure path/collection utils, and
@@ -36,12 +30,17 @@ import {
   expandAllRequested,
   expandToPathRequested,
   incrementTreeVersion,
+  initializeFileExplorer,
+  refreshDirectoryRequested,
   refreshFileExplorer,
   removeExpandedPath,
   removeLoadingPath,
   setBulkOperation,
   setChildrenAtPathAction,
+  setFileExplorerInitialized,
   setFileExplorerLoading,
+  setFileExplorerWorkspacePath,
+  setRootNode,
   toggleDirectoryRequested,
 } from "$store/renderer/slices/file-explorer/file-explorer-slice";
 import type { FileExplorerWorkspaceState } from "$store/renderer/slices/file-explorer/file-explorer-types";
@@ -172,8 +171,8 @@ export async function expandAll(wsId: string, maxDepth?: number): Promise<void> 
 
 /**
  * Re-list the root and every currently-expanded directory through the seam. When
- * no root tree exists (the daemon `file.tree` BE gap) there is nothing to refresh,
- * so this is a no-op rather than a silent failure.
+ * no root tree exists (`initializeFileExplorerTree` hasn't run for this workspace
+ * yet) there is nothing to refresh, so this is a no-op rather than a silent failure.
  */
 export async function refreshFileExplorerTree(wsId: string): Promise<void> {
   const ws = getWs(wsId);
@@ -195,6 +194,94 @@ export async function refreshFileExplorerTree(wsId: string): Promise<void> {
 }
 
 /**
+ * Compute the parent directory of an absolute path WITHIN the workspace. Returns
+ * `null` when the path is outside the workspace or when there is no parent within
+ * the workspace tree (a defensive guard matching the original saga behavior).
+ */
+function computeParentDir(filePath: string, workspacePath: string): string | null {
+  if (!filePath || !workspacePath) return null;
+  if (filePath === workspacePath) return null;
+  if (filePath !== workspacePath && !filePath.startsWith(workspacePath + "/")) return null;
+  const lastSlash = filePath.lastIndexOf("/");
+  if (lastSlash <= 0) return null;
+  const parent = filePath.slice(0, lastSlash);
+  if (parent !== workspacePath && !parent.startsWith(workspacePath + "/")) return null;
+  return parent;
+}
+
+/**
+ * Re-list a single directory in response to a file create/delete event. The caller
+ * passes the PATH of the file that was created or deleted; the parent directory
+ * is computed here. If the parent isn't in the loaded tree yet (lazy expansion
+ * hasn't reached it), this is a no-op — the children will be fetched the next
+ * time the user expands that directory.
+ */
+export async function handleRefreshDirectory(wsId: string, filePath: string): Promise<void> {
+  const ws = getWs(wsId);
+  if (!ws.workspacePath) return;
+  const parentDir = computeParentDir(filePath, ws.workspacePath);
+  if (!parentDir) return;
+  const node = getItem(ws.nodes, parentDir);
+  if (!node || node.type !== "directory") return;
+  await loadDirectoryChildren(wsId, parentDir);
+}
+
+/**
+ * Initialize the file explorer for a workspace: fetch the root tree via the seam
+ * (`file.tree` PROTOCOL §5.9), re-anchor entries at the absolute workspace path
+ * (the seam's synthetic root has an empty path), and dispatch the root node so
+ * the Files tab renders. Idempotent: if the workspace is already initialized for
+ * the same `workspacePath` it bails out, and a concurrent in-flight init is not
+ * re-entered. Errors are logged and fold to "no root" (the tree stays empty)
+ * rather than throwing into the store.
+ */
+export async function initializeFileExplorerTree(
+  wsId: string,
+  options: { workspacePath: string; workspaceId?: string },
+): Promise<void> {
+  const { workspacePath } = options;
+  if (!workspacePath) return;
+
+  const existing = getWs(wsId);
+  if (existing.isLoading) return;
+  if (existing.isInitialized && existing.workspacePath === workspacePath && existing.rootPath) {
+    return;
+  }
+
+  appStore.dispatch(setFileExplorerWorkspacePath(wsId, workspacePath));
+  appStore.dispatch(setFileExplorerLoading(wsId, true));
+
+  try {
+    const root = await appClient.files.explorerTree(wsId);
+    if (root) {
+      const rawChildren = root.children ?? [];
+      const anchoredChildren: FileNode[] = rawChildren.map((child) => ({
+        ...child,
+        path: `${workspacePath}/${child.name}`,
+        ...(child.type === "directory" ? { children: child.children ?? [] } : {}),
+      }));
+      const rootFileNode: FileNode = {
+        name: workspacePath.split("/").pop() || workspacePath,
+        path: workspacePath,
+        type: "directory",
+        children: anchoredChildren,
+      };
+      appStore.dispatch(setRootNode(wsId, rootFileNode));
+      if (!getWs(wsId).expandedPaths.includes(workspacePath)) {
+        appStore.dispatch(addExpandedPath(wsId, workspacePath));
+      }
+    } else {
+      logger.warn("explorerTree returned null; file tree remains empty");
+    }
+  } catch (error) {
+    logger.error("Failed to initialize file explorer", error);
+  } finally {
+    appStore.dispatch(setFileExplorerLoading(wsId, false));
+    appStore.dispatch(setFileExplorerInitialized(wsId, true));
+  }
+}
+
+/**
  * Middleware that gives the file-explorer directory-listing triggers a real
  * handler: after each action passes through the (no-op) reducer, it kicks off the
  * matching seam-backed load. Fire-and-forget — dispatch stays synchronous and
@@ -207,6 +294,20 @@ export function createFileExplorerReadMiddleware(): StoreMiddleware {
       const [wsId] = action.payload as [unknown];
       if (typeof wsId === "string" && wsId.length > 0) {
         switch (action.type) {
+          case initializeFileExplorer.type: {
+            const options = action.payload[1];
+            if (options && typeof options === "object") {
+              const opts = options as { workspacePath?: unknown; workspaceId?: unknown };
+              if (typeof opts.workspacePath === "string" && opts.workspacePath.length > 0) {
+                void initializeFileExplorerTree(wsId, {
+                  workspacePath: opts.workspacePath,
+                  workspaceId:
+                    typeof opts.workspaceId === "string" ? opts.workspaceId : undefined,
+                });
+              }
+            }
+            break;
+          }
           case toggleDirectoryRequested.type: {
             const nodePath = action.payload[1];
             if (typeof nodePath === "string" && nodePath.length > 0) void toggleDirectory(wsId, nodePath);
@@ -224,6 +325,13 @@ export function createFileExplorerReadMiddleware(): StoreMiddleware {
           }
           case refreshFileExplorer.type: {
             void refreshFileExplorerTree(wsId);
+            break;
+          }
+          case refreshDirectoryRequested.type: {
+            const filePath = action.payload[1];
+            if (typeof filePath === "string" && filePath.length > 0) {
+              void handleRefreshDirectory(wsId, filePath);
+            }
             break;
           }
         }

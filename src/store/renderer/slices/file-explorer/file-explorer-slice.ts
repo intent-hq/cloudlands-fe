@@ -14,6 +14,7 @@ import type {
   FileExplorerState,
   FileExplorerTreeNode,
 } from "./file-explorer-types";
+import { sortNodesRecursive } from "./file-explorer-utils";
 import type { StoreAction } from "@augmentcode/ag-redux-toolkit/types";
 
 export type { FileExplorerWorkspaceState, FileExplorerState };
@@ -296,6 +297,12 @@ function collectNormalizedNodes(node: FileNode, result: FileExplorerTreeNode[] =
   return result;
 }
 
+function sortedRoot(rootNode: FileNode): FileNode {
+  return rootNode.children
+    ? { ...rootNode, children: sortNodesRecursive(rootNode.children) }
+    : rootNode;
+}
+
 function normalizeTree(rootNode: FileNode | null): {
   rootPath: string | null;
   nodes: Collection<FileExplorerTreeNode, "path">;
@@ -307,7 +314,7 @@ function normalizeTree(rootNode: FileNode | null): {
     rootPath: rootNode.path,
     nodes: createCollection<FileExplorerTreeNode, "path">(
       "path",
-      collectNormalizedNodes(rootNode),
+      collectNormalizedNodes(sortedRoot(rootNode)),
     ),
   };
 }
@@ -345,8 +352,9 @@ function replaceChildrenInCollection(
   const parent = getItem(nodes, parentPath);
   if (!parent) return nodes;
 
-  const childPaths = children.map((child) => child.path);
-  const incomingNodes = children.flatMap((child) => collectNormalizedNodes(child));
+  const sortedChildren = sortNodesRecursive(children);
+  const childPaths = sortedChildren.map((child) => child.path);
+  const incomingNodes = sortedChildren.flatMap((child) => collectNormalizedNodes(child));
   const incomingPaths = new Set(incomingNodes.map((node) => node.path));
   const stalePaths = collectSubtreePaths(nodes, parent.children).filter(
     (path) => !incomingPaths.has(path),

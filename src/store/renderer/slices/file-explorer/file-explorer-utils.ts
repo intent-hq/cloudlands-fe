@@ -129,6 +129,20 @@ export function sortNodes(nodes: FileNode[]): FileNode[] {
   });
 }
 
+/**
+ * Recursive variant of {@link sortNodes}: applies folder-first / alphabetical
+ * ordering at every nesting depth of the supplied subtree. Used at the slice
+ * normalization boundary so the stored children path-order is the single
+ * sorted source of truth.
+ */
+export function sortNodesRecursive(nodes: FileNode[]): FileNode[] {
+  return sortNodes(nodes).map((node) =>
+    node.children
+      ? { ...node, children: sortNodesRecursive(node.children) }
+      : node,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // File count (pure)
 // ---------------------------------------------------------------------------
