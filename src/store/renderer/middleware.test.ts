@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
   const agentReadMiddleware = createPassthroughMiddleware();
   const chatReadMiddleware = createPassthroughMiddleware();
   const chatSendMiddleware = createPassthroughMiddleware();
+  const daemonEventsBridgeMiddleware = createPassthroughMiddleware();
   const agentStreamMiddleware = createPassthroughMiddleware();
   const agentCreationMiddleware = createPassthroughMiddleware();
   const agentMutationMiddleware = createPassthroughMiddleware();
@@ -46,6 +47,7 @@ const mocks = vi.hoisted(() => {
     createAgentReadMiddleware: vi.fn(() => agentReadMiddleware),
     createChatReadMiddleware: vi.fn(() => chatReadMiddleware),
     createChatSendMiddleware: vi.fn(() => chatSendMiddleware),
+    createDaemonEventsBridgeMiddleware: vi.fn(() => daemonEventsBridgeMiddleware),
     createAgentStreamMiddleware: vi.fn(() => agentStreamMiddleware),
     createAgentCreationMiddleware: vi.fn(() => agentCreationMiddleware),
     createAgentMutationMiddleware: vi.fn(() => agentMutationMiddleware),
@@ -71,6 +73,7 @@ const mocks = vi.hoisted(() => {
     agentReadMiddleware,
     chatReadMiddleware,
     chatSendMiddleware,
+    daemonEventsBridgeMiddleware,
     agentStreamMiddleware,
     agentCreationMiddleware,
     agentMutationMiddleware,
@@ -96,6 +99,9 @@ vi.mock("$features/git/git-read-service", () => ({ createGitReadMiddleware: mock
 vi.mock("$features/agent/agent-read-service", () => ({ createAgentReadMiddleware: mocks.createAgentReadMiddleware }));
 vi.mock("$features/agent/chat-read-service", () => ({ createChatReadMiddleware: mocks.createChatReadMiddleware }));
 vi.mock("$features/agent/chat-send-service", () => ({ createChatSendMiddleware: mocks.createChatSendMiddleware }));
+vi.mock("$features/events/daemon-events-bridge", () => ({
+  createDaemonEventsBridgeMiddleware: mocks.createDaemonEventsBridgeMiddleware,
+}));
 vi.mock("$features/agent/agent-stream-service", () => ({
   createAgentStreamMiddleware: mocks.createAgentStreamMiddleware,
 }));
@@ -202,6 +208,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
+      mocks.daemonEventsBridgeMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
@@ -236,6 +243,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
+      mocks.daemonEventsBridgeMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
@@ -270,6 +278,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
+      mocks.daemonEventsBridgeMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
@@ -305,6 +314,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
+      mocks.daemonEventsBridgeMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
@@ -357,6 +367,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
+      mocks.daemonEventsBridgeMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,

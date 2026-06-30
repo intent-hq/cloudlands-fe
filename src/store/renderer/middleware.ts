@@ -19,6 +19,7 @@ import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
 import { createChatReadMiddleware } from "$features/agent/chat-read-service";
 import { createChatSendMiddleware } from "$features/agent/chat-send-service";
+import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge";
 import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
 import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
@@ -91,6 +92,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // `agent-stream-lifecycle.sendMessage()` again — producing a user message
     // and a live-streaming assistant response — instead of being a no-op.
     createChatSendMiddleware(),
+    // Wire daemon `events.event` notifications (PROTOCOL §7) into the
+    // `workspaceEvents/eventReceived` action so the `agentSession` reducer
+    // can faithfully clear optimistic `isStreaming`/`isProcessing`/
+    // `isResponding` flags on `agent:idle` — without this the "Thinking"
+    // spinner stays stuck after a turn ends.
+    createDaemonEventsBridgeMiddleware(),
     // Give the (post-saga) `agentStreamUpdateReceived` action a real consumer
     // so a streaming agent's text/tool blocks grow live in the chat panel
     // (placeholder on first event, in-place block update on subsequent events,
