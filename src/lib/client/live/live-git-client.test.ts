@@ -226,6 +226,67 @@ describe("LiveGitClient reads (fake transport)", () => {
 
     expect(await client.trackedChanges("ws-1")).toEqual([]);
   });
+
+  // `git.getBranches` is path-based (not workspace-scoped) and is the new
+  // wire that replaces the dead `invoke('git:getBranches')` legacy IPC in the
+  // workspace initializer (P2 task). The contract asserts method + params
+  // verbatim, and the renderer-shape mapping mirrors the daemon `GitBranches`
+  // payload (snake_case → camelCase by serde).
+  it("getBranches forwards git.getBranches with the documented params and maps the daemon payload", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      branches: ["main", "feature/x"],
+      remoteBranches: ["origin/release"],
+      currentBranch: "feature/x",
+      defaultBranch: "main",
+    });
+    const client = new LiveGitClient();
+
+    const result = await client.getBranches("/Users/clement/src/intent", true);
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.getBranches", {
+      repoPath: "/Users/clement/src/intent",
+      includeRemote: true,
+    });
+    expect(result).toEqual({
+      branches: ["main", "feature/x"],
+      remoteBranches: ["origin/release"],
+      currentBranch: "feature/x",
+      defaultBranch: "main",
+    });
+  });
+
+  it("getBranches resolves null when the daemon errors (e.g. known-repo gate rejection)", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("Unknown or unauthorized repository path"));
+    const client = new LiveGitClient();
+
+    expect(await client.getBranches("/tmp/not-a-repo", true)).toBeNull();
+  });
+
+  it("getBranches resolves null when the daemon returns undefined (no crash on missing payload)", async () => {
+    mockedRequest.mockResolvedValueOnce(undefined as unknown as Record<string, unknown>);
+    const client = new LiveGitClient();
+
+    // Guard against the original BranchSelector crash: a missing payload
+    // would have thrown "Cannot read properties of undefined (reading
+    // 'success')" before this fix. Now it folds to null.
+    expect(await client.getBranches("/repo", true)).toBeNull();
+  });
+
+  it("getBranches tolerates partial payloads by defaulting missing fields", async () => {
+    mockedRequest.mockResolvedValueOnce({ branches: ["main"] });
+    const client = new LiveGitClient();
+
+    expect(await client.getBranches("/repo", false)).toEqual({
+      branches: ["main"],
+      remoteBranches: [],
+      currentBranch: "",
+      defaultBranch: "",
+    });
+    expect(mockedRequest).toHaveBeenCalledWith("git.getBranches", {
+      repoPath: "/repo",
+      includeRemote: false,
+    });
+  });
 });
 
 describe("LiveGitClient.stage (fake transport)", () => {

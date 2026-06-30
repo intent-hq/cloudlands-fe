@@ -24,6 +24,7 @@ import type {
   TrackedChange,
 } from "$features/file-tracking/types";
 import type {
+  GitBranchesResult,
   GitClient,
   GitCommitParams,
   MutationResult,
@@ -234,6 +235,37 @@ export class LiveGitClient implements GitClient {
       return items.map(toCommitInfo).filter((c): c is CommitInfo => c !== null);
     } catch {
       return [];
+    }
+  }
+
+  // `git.getBranches` (PROTOCOL §5.6) is path-based, NOT workspace-scoped: the
+  // workspace-initializer asks for an arbitrary repo path BEFORE a workspace
+  // exists. Maps the daemon `GitBranches` (snake_case fields are serialized as
+  // camelCase per the wire model) into the renderer `GitBranchesResult`.
+  // Errors (including the daemon's "Unknown or unauthorized repository path"
+  // gate rejection) fold to `null` so the caller surfaces a friendly fallback
+  // instead of crashing on `result.success` against an undefined payload.
+  async getBranches(repoPath: string, includeRemote: boolean): Promise<GitBranchesResult | null> {
+    try {
+      const result = await backendRequest<Record<string, unknown>>("git.getBranches", {
+        repoPath,
+        includeRemote,
+      });
+      if (!result || typeof result !== "object") return null;
+      const branches = Array.isArray(result.branches)
+        ? result.branches.filter((b): b is string => typeof b === "string")
+        : [];
+      const remoteBranches = Array.isArray(result.remoteBranches)
+        ? result.remoteBranches.filter((b): b is string => typeof b === "string")
+        : [];
+      return {
+        branches,
+        remoteBranches,
+        currentBranch: typeof result.currentBranch === "string" ? result.currentBranch : "",
+        defaultBranch: typeof result.defaultBranch === "string" ? result.defaultBranch : "",
+      };
+    } catch {
+      return null;
     }
   }
 

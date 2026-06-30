@@ -106,6 +106,20 @@ export interface PrStatusSummary {
   state?: string;
 }
 
+/**
+ * Branch listing for an arbitrary repo path (`git.getBranches`, §5.6). Mirrors
+ * the daemon `GitBranches` shape: `branches` is the local branch list,
+ * `remoteBranches` is the remote-only list (only populated when
+ * `includeRemote=true`), and `currentBranch`/`defaultBranch` carry the
+ * checkout/default names.
+ */
+export interface GitBranchesResult {
+  branches: string[];
+  remoteBranches: string[];
+  currentBranch: string;
+  defaultBranch: string;
+}
+
 export interface WorkspacesClient {
   list(): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
@@ -220,6 +234,13 @@ export interface GitClient {
   trackedChanges(workspaceId: string): Promise<TrackedChange[]>;
   commits(workspaceId: string): Promise<CommitInfo[]>;
   prStatus(workspaceId: string): Promise<PrStatusSummary | null>;
+  /**
+   * Path-based branch listing (`git.getBranches`, §5.6). Used by the
+   * workspace initializer to populate the branch picker against an arbitrary
+   * repo path BEFORE a workspace exists. Errors fold to `null` so callers can
+   * surface a friendly fallback instead of crashing.
+   */
+  getBranches(repoPath: string, includeRemote: boolean): Promise<GitBranchesResult | null>;
   subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe;
   /**
    * Stage explicit paths (`git.stage`). Rejects all-files globs ('.'/'*'/'--all')
