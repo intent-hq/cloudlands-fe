@@ -68,6 +68,19 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     editableWhileDisabled?: boolean;
     workspace: Workspace | null;
     isStreaming?: boolean;
+    /**
+     * Canonical "agent is actively responding" signal — true during the
+     * pre-first-chunk processing window in addition to active streaming.
+     * Drives the Stop-button visibility so it matches the Thinking indicator.
+     */
+    isResponding?: boolean;
+    /**
+     * Canonical "agent is running" signal — true for the broader running state
+     * including coordinators paused waiting on child/peer agents. Composed with
+     * `isStreaming` / `isResponding` to keep the Stop button visible for the
+     * full turn, mirroring the Thinking indicator's gate.
+     */
+    isRunning?: boolean;
     contextItems?: ContextItem[];
     currentContext?: MainPanelContext | null;
     editorSelection?: string | null;
@@ -113,6 +126,8 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     editableWhileDisabled = false,
     workspace,
     isStreaming = false,
+    isResponding = false,
+    isRunning = false,
     contextItems = $bindable([]),
 
     currentContext: _currentContext, // Now using multi-panel-context Redux slice instead
@@ -153,6 +168,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   // Derived state: whether there's content to send (text, context items, or inline images)
   let canSend = $derived(value.trim() || contextItems.length > 0 || hasInlineImages);
+
+  // The Stop affordance must mirror the Thinking indicator: visible for the
+  // entire turn the agent is responding, not just while text chunks are
+  // streaming. Composing the canonical responding/running signals here keeps
+  // Stop-button visibility in lockstep with `shouldShowPendingAssistantStatus`.
+  let showStopButton = $derived(isStreaming || isResponding || isRunning);
 
   $effect(() => {
     const justEnabled = previousDisabled && !disabled;
@@ -963,7 +984,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         }}
         onSubmit={handleSubmit}
         onForceSubmit={handleForceSubmit}
-        onEscape={editMode ? oncancel : isStreaming ? onstop : undefined}
+        onEscape={editMode ? oncancel : showStopButton ? onstop : undefined}
         {onHistoryPrev}
         {onHistoryNext}
         onSelectionChange={(selectedText) => (editorSelection = selectedText)}
@@ -1076,8 +1097,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         </TooltipShortcut>
       {/if}
 
-      {#if isStreaming}
-        <!-- Stop button (always visible when streaming) -->
+      {#if showStopButton}
+        <!-- Stop button — visible whenever the agent is responding/running,
+             mirroring the Thinking indicator so users can interrupt across
+             the pre-first-chunk, streaming, and waiting-on-subagents windows. -->
         <TooltipShortcut label="Stop" shortcut="Escape" side="top">
           <Button
             variant="ghost"
