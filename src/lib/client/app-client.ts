@@ -25,6 +25,7 @@ import type {
   TaskStatus,
   Workspace,
   WorkspaceTask,
+  WorkspaceTaskStats,
 } from "$shared/types";
 import type { CommitInfo, TrackedChange } from "$features/file-tracking/types";
 import type { WorkspaceEvent } from "$features/events/types";
@@ -312,7 +313,13 @@ export interface CreatePrerequisiteOptions {
 }
 
 export interface TasksClient {
-  list(workspaceId: string): Promise<WorkspaceTask[]>;
+  /**
+   * `task.list` (PROTOCOL §5.4) → `{ tasks, stats }`. `stats` is the workspace-wide
+   * rollup the BE owns (excludes `cancelled`; `complete` counts toward `completed`;
+   * `in_progress` + `review_required` count toward `inProgress`). The FE renders
+   * `stats` verbatim and never re-derives task progress from `note.list`.
+   */
+  list(workspaceId: string): Promise<{ tasks: WorkspaceTask[]; stats: WorkspaceTaskStats }>;
   get(taskId: string): Promise<WorkspaceTask | null>;
   subscribe(handler: SubscriptionHandler<WorkspaceTask[]>): Unsubscribe;
   /** Toggle a single checkbox by its task text (`task.updateStatus`). `expectedVersion` is optional (§11.4-D). */

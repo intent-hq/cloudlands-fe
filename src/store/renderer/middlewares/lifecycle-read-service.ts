@@ -96,8 +96,8 @@ function ensureTasks(wsId: string): void {
   const ws = appStore.state.workspaceTasks.byWorkspaceId[wsId];
   if (ws?.loading || ws?.initialized) return;
   coalesce(`tasks:${wsId}`, async () => {
-    const tasks = await appClient.tasks.list(wsId);
-    appStore.dispatch(loadWorkspaceTasksSucceeded(wsId, tasks));
+    const { tasks, stats } = await appClient.tasks.list(wsId);
+    appStore.dispatch(loadWorkspaceTasksSucceeded(wsId, tasks, stats));
   });
 }
 

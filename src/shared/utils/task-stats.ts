@@ -1,13 +1,16 @@
 /**
- * Canonical task filtering and counting utilities.
+ * Spec-link extraction & UI status-set helpers.
  *
- * ALL task progress computation should flow through these functions to ensure
- * consistency across the server (workspace.service.ts), client components
- * (WorkspaceProgressCard, WorkspaceCard, RadialFlameGraph, etc.), and sidebar
- * utilities (parseTaskStats).
+ * The canonical workspace-wide task progress aggregate is owned by the BE and
+ * served verbatim through `task.list` (PROTOCOL §5.4) — see the
+ * `selectWorkspaceTaskProgress` selector. The helpers here are PRESENTATIONAL:
  *
- * If you need to change how tasks are counted, filtered, or how statuses map
- * to progress categories — change it HERE, not in individual components.
+ *   - `extractSpecTaskIds` / `extractOrderedSpecTaskIds` / `getSpecTaskNotes`
+ *     parse `intent://local/task/{id}` links from markdown for tree/sort code.
+ *   - `IN_PROGRESS_STATUSES` / `EXCLUDED_STATUSES` are reused by display logic
+ *     (ordering, colouring, filtering) — they MUST NOT be used to compute the
+ *     workspace task-progress rollup. The renderer never re-derives that
+ *     rollup; it renders the BE's `WorkspaceTaskStats` directly.
  */
 
 import type { Note, TaskStatus } from '../types';
@@ -97,39 +100,18 @@ export function getSpecTaskNotes(notes: Note[]): Note[] {
 }
 
 // ---------------------------------------------------------------------------
-// Canonical stats computation
+// Per-note linked-task aggregate (NOT the workspace task-progress rollup)
 // ---------------------------------------------------------------------------
 
+/**
+ * Shape of the per-note linked-task aggregate produced by `parseTaskStats`
+ * (sidebar utils). This is a LOCAL per-note count for hover tooltips on
+ * non-spec notes that link to task notes — it is NOT the workspace-wide
+ * `WorkspaceTaskStats` rollup that lives behind `task.list` (PROTOCOL §5.4).
+ */
 export interface TaskStats {
   total: number;
   completed: number;
   inProgress: number;
-}
-
-/**
- * Compute progress stats from a flat list of notes.
- *
- * Delegates to {@link getSpecTaskNotes} for filtering, then counts statuses
- * using the shared status classification constants.
- */
-export function computeTaskStats(notes: Note[]): TaskStats {
-  const taskNotes = getSpecTaskNotes(notes);
-
-  let total = 0;
-  let completed = 0;
-  let inProgress = 0;
-
-  for (const note of taskNotes) {
-    const status = note.metadata?.task?.status;
-    if (status && EXCLUDED_STATUSES.has(status)) continue;
-    total++;
-    if (status === 'complete') {
-      completed++;
-    } else if (status && IN_PROGRESS_STATUSES.has(status)) {
-      inProgress++;
-    }
-  }
-
-  return { total, completed, inProgress };
 }
 

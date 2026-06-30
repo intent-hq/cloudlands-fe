@@ -54,9 +54,11 @@ function makeTask(id: string, status: TaskStatus): WorkspaceTask {
   return { id, title: `Task ${id}`, status };
 }
 
+const ZERO_STATS = { total: 0, completed: 0, inProgress: 0 } as const;
+
 function seed(status: TaskStatus): void {
   appStore.dispatch(loadWorkspaceNotesSucceeded([WS], { [WS]: [makeTaskNote("t1", status)] }));
-  appStore.dispatch(loadWorkspaceTasksSucceeded(WS, [makeTask("t1", status)]));
+  appStore.dispatch(loadWorkspaceTasksSucceeded(WS, [makeTask("t1", status)], ZERO_STATS));
 }
 
 function noteStatus(): TaskStatus | undefined {
@@ -106,7 +108,7 @@ describe("tasksWriteService (fake seam, real store)", () => {
         [WS]: [{ ...makeTaskNote("t1", "not_started"), rev: 5 }],
       }),
     );
-    appStore.dispatch(loadWorkspaceTasksSucceeded(WS, [makeTask("t1", "not_started")]));
+    appStore.dispatch(loadWorkspaceTasksSucceeded(WS, [makeTask("t1", "not_started")], ZERO_STATS));
 
     await updateTaskNoteStatus(WS, "t1", "in_progress");
 
@@ -118,7 +120,11 @@ describe("tasksWriteService (fake seam, real store)", () => {
       loadWorkspaceNotesSucceeded([WS], { [WS]: [makeTaskNote("t1", "not_started")] }),
     );
     appStore.dispatch(
-      loadWorkspaceTasksSucceeded(WS, [{ ...makeTask("t1", "not_started"), rev: 8 }]),
+      loadWorkspaceTasksSucceeded(
+        WS,
+        [{ ...makeTask("t1", "not_started"), rev: 8 }],
+        ZERO_STATS,
+      ),
     );
 
     await updateTaskNoteStatus(WS, "t1", "in_progress");
@@ -155,7 +161,7 @@ describe("tasksWriteService (fake seam, real store)", () => {
         [WS]: [{ ...makeTaskNote("t1", "not_started"), rev: 3 }],
       }),
     );
-    appStore.dispatch(loadWorkspaceTasksSucceeded(WS, [makeTask("t1", "not_started")]));
+    appStore.dispatch(loadWorkspaceTasksSucceeded(WS, [makeTask("t1", "not_started")], ZERO_STATS));
     tasksApi.updateNoteStatus.mockResolvedValueOnce({
       success: false,
       conflict: { current: { id: "t1", title: "Task Title", status: "complete", rev: 12 } },

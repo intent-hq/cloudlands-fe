@@ -5,10 +5,10 @@
   import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH, WorkspaceStatusEnum } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
   import {
-    computeTaskStats,
     extractOrderedSpecTaskIds,
     extractSpecTaskIds,
   } from '$shared/utils/task-stats';
+  import { selectWorkspaceTaskProgress } from '$store/renderer/slices/workspace-tasks/workspace-tasks-selectors';
   import { selectUnreadNoteIds } from '$store/renderer/slices/note-read-tracking/note-read-tracking-selectors';
   import Fa from 'svelte-fa';
   import {
@@ -97,6 +97,9 @@
   const sidebarSide$ = selectSidebarSide();
   const notes = selectAllNotes(workspaceIdStore);
   const workspace = selectWorkspaceById(workspaceIdStore);
+  // BE-owned task progress rollup served verbatim from the workspace-tasks slice
+  // (PROTOCOL §5.4 `task.list`.stats). The renderer never re-derives counts.
+  const taskStats$ = selectWorkspaceTaskProgress(workspaceIdStore);
 
   // Aggregated presentational inputs for the workspace progress selectors. Kept
   // in sync via an $effect below once the derived state is available. PR identity
@@ -571,10 +574,9 @@
   // Get spec note
   const specNote = $derived($notes.find((n) => n.id === 'spec' || n.isDefault));
 
-  // Compute task stats using the shared canonical logic.
-  // See $shared/utils/task-stats.ts for the single source of truth on
-  // which tasks are counted and how statuses map to progress categories.
-  const taskStats = $derived(computeTaskStats($notes));
+  // BE-owned task progress rollup (PROTOCOL §5.4): rendered verbatim from the
+  // workspace-tasks slice — no client classification of task status.
+  const taskStats = $derived($taskStats$);
 
   // Tree node with computed weight (leaf count)
   interface TaskTreeNode {

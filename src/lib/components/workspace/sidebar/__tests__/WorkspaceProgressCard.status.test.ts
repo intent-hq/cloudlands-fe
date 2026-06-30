@@ -65,6 +65,14 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
   selectAllNotes: mocks.selector(() => mocks.notes),
 }));
 
+vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
+  selectWorkspaceTaskProgress: mocks.selector(() => ({
+    total: 0,
+    completed: 0,
+    inProgress: 0,
+  })),
+}));
+
 vi.mock('$store/renderer/slices/note-read-tracking/note-read-tracking-selectors', () => ({
   selectUnreadNoteIds: mocks.selector(() => []),
 }));

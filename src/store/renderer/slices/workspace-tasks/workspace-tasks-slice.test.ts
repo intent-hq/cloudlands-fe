@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { WorkspaceTask } from "$shared/types";
+import type { WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
 import { getItem, getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import { removeWorkspaceEntity } from "../workspace/workspace-slice";
 import {
   applyTaskStatusChanged,
   clearWorkspaceTasks,
+  emptyWorkspaceTaskStats,
   initialState,
   loadWorkspaceTasksFailed,
   loadWorkspaceTasksRequested,
@@ -19,8 +20,10 @@ function makeTask(id: string, status: WorkspaceTask["status"] = "not_started"): 
   return { id, title: `Task ${id}`, status };
 }
 
-function loadedState(tasks: WorkspaceTask[]) {
-  return workspaceTasksReducer(initialState, loadWorkspaceTasksSucceeded(WS, tasks));
+const ZERO_STATS: WorkspaceTaskStats = emptyWorkspaceTaskStats;
+
+function loadedState(tasks: WorkspaceTask[], stats: WorkspaceTaskStats = ZERO_STATS) {
+  return workspaceTasksReducer(initialState, loadWorkspaceTasksSucceeded(WS, tasks, stats));
 }
 
 describe("workspaceTasksReducer", () => {
@@ -58,10 +61,20 @@ describe("workspaceTasksReducer", () => {
     it("replaces previously loaded tasks", () => {
       const state = workspaceTasksReducer(
         loadedState([makeTask("t1"), makeTask("t2")]),
-        loadWorkspaceTasksSucceeded(WS, [makeTask("t3")])
+        loadWorkspaceTasksSucceeded(WS, [makeTask("t3")], ZERO_STATS)
       );
 
       expect(getItems(state.byWorkspaceId[WS].tasks).map((t) => t.id)).toEqual(["t3"]);
+    });
+
+    it("stores the BE-provided stats verbatim alongside the task list", () => {
+      const stats: WorkspaceTaskStats = { total: 4, completed: 1, inProgress: 2 };
+      const state = workspaceTasksReducer(
+        initialState,
+        loadWorkspaceTasksSucceeded(WS, [makeTask("t1")], stats),
+      );
+
+      expect(state.byWorkspaceId[WS].stats).toEqual(stats);
     });
   });
 

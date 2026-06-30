@@ -1,15 +1,20 @@
 <script lang="ts">
   import { arc as d3Arc } from 'd3';
-  import type { Note, TaskStatus } from '$shared/types';
+  import type { Note, TaskStatus, WorkspaceTaskStats } from '$shared/types';
   import { isSpecNote } from '$shared/constants/notes';
   import {
-  computeTaskStats,
   extractSpecTaskIds,
   EXCLUDED_STATUSES,
 } from '$shared/utils/task-stats';
 
   interface Props {
     notes: Note[];
+    /**
+     * Workspace-wide task progress rollup (PROTOCOL §5.4 `task.list`.stats).
+     * Rendered verbatim by the centre overlay — callers MUST supply the BE
+     * aggregate; the component never re-derives counts from `notes`.
+     */
+    taskStats: WorkspaceTaskStats;
     size?: number;
     innerRadiusRatio?: number;
     onSegmentClick?: (noteId: string) => void;
@@ -18,6 +23,7 @@
 
   let {
     notes = [],
+    taskStats,
     size = 120,
     innerRadiusRatio = 0.8,
     onSegmentClick,
@@ -163,8 +169,6 @@
         return 'hsl(var(--muted-foreground) / 0.2)';
     }
   }
-
-  const taskStats = $derived(computeTaskStats(notes));
 
   const taskTree = $derived(buildTaskTree(notes));
   const radius = $derived(size / 2);
