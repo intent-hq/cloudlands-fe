@@ -23,9 +23,12 @@ import {
   it,
   vi,
 } from 'vitest';
-import { promises as fs } from 'fs';
 
-const mockSpawn = vi.hoisted(() => vi.fn());
+const { mockSpawn, mockResolveOpenCodeCommand, mockGetEnhancedPath } = vi.hoisted(() => ({
+  mockSpawn: vi.fn(),
+  mockResolveOpenCodeCommand: vi.fn(),
+  mockGetEnhancedPath: vi.fn(),
+}));
 
 vi.mock(import('child_process'), async (importOriginal) => {
   const actual = await importOriginal();
@@ -46,9 +49,17 @@ vi.mock('../../../../shared/logger', () => ({
   },
 }));
 
-// Resolve findOpencodePath() deterministically by pretending the first
-// candidate path exists.
-vi.spyOn(fs, 'access').mockResolvedValue(undefined);
+// Route opencode binary resolution through the daemon-backed seam in tests by
+// stubbing `resolveOpenCodeCommand` and `getEnhancedPath`. This mirrors how
+// the production code path goes through opencode-resolver + host.env without
+// touching the local filesystem.
+vi.mock('../opencode-resolver', () => ({
+  resolveOpenCodeCommand: mockResolveOpenCodeCommand,
+}));
+
+vi.mock('../../../../shared/main/find-binary', () => ({
+  getEnhancedPath: mockGetEnhancedPath,
+}));
 
 type MockChild = EventEmitter & {
   stdout: EventEmitter;
@@ -100,11 +111,41 @@ describe('opencode model cache', () => {
 
   beforeEach(() => {
     mockSpawn.mockReset();
+    mockResolveOpenCodeCommand.mockReset();
+    mockResolveOpenCodeCommand.mockResolvedValue({
+      command: '/mocked/opencode',
+      argsPrefix: [],
+      usesNpx: false,
+    });
+    mockGetEnhancedPath.mockReset();
+    mockGetEnhancedPath.mockReturnValue('/mocked/enhanced/path');
     Date.now = originalNow;
   });
 
   afterAll(() => {
     Date.now = originalNow;
+  });
+
+  it('routes the opencode lookup through resolveOpenCodeCommand + getEnhancedPath (no local probing)', async () => {
+    const { getCachedOpencodeModels } = await loadFreshIpc();
+    queueSpawnSuccess('openai/gpt-5.2\n');
+    await getCachedOpencodeModels();
+
+    expect(mockResolveOpenCodeCommand).toHaveBeenCalledTimes(1);
+    expect(mockGetEnhancedPath).toHaveBeenCalled();
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    const [spawnCmd, spawnArgs, spawnOpts] = mockSpawn.mock.calls[0];
+    expect(spawnCmd).toBe('/mocked/opencode');
+    expect(spawnArgs).toEqual(['models', '--log-level', 'DEBUG']);
+    expect((spawnOpts as { env: Record<string, string> }).env.PATH).toBe('/mocked/enhanced/path');
+  });
+
+  it('returns null when the resolver cannot find opencode (no client-side healing)', async () => {
+    mockResolveOpenCodeCommand.mockResolvedValueOnce(null);
+    const { getCachedOpencodeModels } = await loadFreshIpc();
+    const result = await getCachedOpencodeModels();
+    expect(result).toBeNull();
+    expect(mockSpawn).not.toHaveBeenCalled();
   });
 
   it('reads from the in-memory cache on successive calls within the TTL', async () => {

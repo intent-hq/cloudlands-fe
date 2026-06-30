@@ -11,28 +11,10 @@ import * as path from 'path';
 import { OPENCODE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { createProviderModelCache } from '../../../main/utils/provider-model-cache';
+import { getEnhancedPath } from '../../../shared/main/find-binary';
+import { resolveOpenCodeCommand } from './opencode-resolver';
 
 const logger = new Logger('OpenCodeIPC');
-
-// Common paths to look for opencode
-const OPENCODE_PATHS = [
-  path.join(os.homedir(), '.opencode/bin/opencode'),
-  '/usr/local/bin/opencode',
-  '/usr/bin/opencode',
-  '/opt/homebrew/bin/opencode',
-  path.join(os.homedir(), '.local/bin/opencode'),
-  path.join(os.homedir(), '.bun/bin/opencode'),
-  path.join(os.homedir(), '.npm-global/bin/opencode'),
-  // Windows paths
-  ...(process.platform === 'win32'
-    ? [
-        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'opencode.cmd'),
-        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'opencode'),
-        path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'opencode.exe'),
-        path.join(os.homedir(), 'scoop', 'shims', 'opencode.exe'),
-      ]
-    : []),
-];
 
 // Model list cache — avoids re-shelling to `opencode models` on every call.
 type OpencodeModel = { value: string; label: string; provider?: string };
@@ -69,8 +51,6 @@ export async function hydrateOpencodeModelCacheFromDisk(): Promise<void> {
 
 async function fetchOpencodeModels(): Promise<OpencodeModel[] | null> {
   try {
-    const opencodePath = await findOpencodePath();
-    logger.info('Getting models from opencode CLI', { opencodePath });
     const { stdout, stderr } = await executeOpencodeCommand(['models', '--log-level', 'DEBUG'], {
       timeout: 10000,
     });
@@ -121,22 +101,6 @@ export async function getCachedOpencodeModels(): Promise<string[] | null> {
 }
 
 /**
- * Find the opencode executable path
- */
-async function findOpencodePath(): Promise<string | null> {
-  const { existsSync } = await import('fs');
-
-  for (const p of OPENCODE_PATHS) {
-    if (existsSync(p)) {
-      return p;
-    }
-  }
-
-  // Fall back to just 'opencode' and hope it's in PATH
-  return 'opencode';
-}
-
-/**
  * Execute an opencode command and return the output
  */
 async function executeOpencodeCommand(
@@ -144,12 +108,15 @@ async function executeOpencodeCommand(
   options: { timeout?: number } = {},
 ): Promise<{ stdout: string; stderr: string }> {
   const timeout = options.timeout ?? 30000;
-  const opencodePath = await findOpencodePath();
+  const resolved = await resolveOpenCodeCommand();
+  if (!resolved) {
+    throw new Error('opencode binary not available (host.findBinary returned no result)');
+  }
 
   return new Promise((resolve, reject) => {
     const enhancedEnv = {
       ...process.env,
-      PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin:${path.join(os.homedir(), '.local/bin')}`,
+      PATH: getEnhancedPath(),
     };
 
     // Debug: Log environment variables that might affect opencode behavior
@@ -165,7 +132,7 @@ async function executeOpencodeCommand(
         k === 'USER',
     );
     logger.debug('OpenCode execution environment', {
-      opencodePath,
+      opencodePath: resolved.command,
       args,
       relevantEnvVars: envKeys.reduce(
         (acc, k) => {
@@ -184,16 +151,18 @@ async function executeOpencodeCommand(
 
     // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
     const useShell = process.platform === 'win32';
-    const rawCommand = opencodePath || 'opencode';
+    const rawCommand = resolved.command;
     // On Windows with shell: true, quote the command path to handle spaces (e.g. C:\Users\John Doe\...)
     const spawnCommand = useShell ? `"${rawCommand}"` : rawCommand;
+    const spawnArgs = [...resolved.argsPrefix, ...args];
 
     logger.debug('OpenCode spawn details', {
-      opencodePath,
+      opencodePath: resolved.command,
+      usesNpx: resolved.usesNpx,
       cwd,
     });
 
-    const child = spawn(spawnCommand, args, {
+    const child = spawn(spawnCommand, spawnArgs, {
       env: enhancedEnv,
       cwd,
       shell: useShell,
