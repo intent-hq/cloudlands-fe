@@ -16,6 +16,22 @@ vi.mock("$lib/client/live/backend-transport", () => ({
   backendRequest: vi.fn(),
 }));
 
+// The global `test-setup.ts` stubs `$lib/electron-bridge.invoke` to a switch
+// that returns `{success:true,data:null}` for unknown channels — which would
+// short-circuit `unifiedOrchestrator.*` calls before they reach the mock IPC
+// router. Route `invoke` through `mockInvoke` here so the orchestrator
+// exercises the seeder-registered bridges end-to-end.
+vi.mock("$lib/electron-bridge", async () => {
+  const { mockInvoke } = await import("$shared/ipc-mock-router");
+  return {
+    isElectron: () => false,
+    invoke: <T>(channel: string, data?: unknown) => mockInvoke<T>(channel, data),
+    listen: async () => () => {},
+    listenSync: () => () => {},
+    emit: async () => {},
+  };
+});
+
 // Stable idempotency key so we can assert it without leaking randomness.
 vi.mock("$lib/client/live/live-support", async (importActual) => {
   const actual = await importActual<typeof import("$lib/client/live/live-support")>();
@@ -27,6 +43,11 @@ import { mockInvoke, resetMockIpcRouter } from "$shared/ipc-mock-router";
 import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from "$shared/ipc/channels";
 import { validateIpcRequest } from "$shared/ipc/request-validation";
 import { isSuccessResponse } from "$shared/ipc/typed-invoke";
+// End-to-end: drive the real consumer proxy so the bridge is exercised
+// through `invoke → mockInvoke → handler` and the proxy's `unwrapIpcResponse`
+// fold is part of the assertion (catches envelope-shape regressions that a
+// pure `mockInvoke` test would miss).
+import { unifiedOrchestrator } from "$features/agent/services/consolidated-backend.service";
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -193,6 +214,119 @@ describe("agent-ipc-bridge-seeder", () => {
       );
       expect(response.success).toBe(false);
       expect(response.error?.message).toBe("queue blew up");
+    });
+  });
+
+  describe("agent:backend:edit-queued → daemon agent.editQueuedMessage", () => {
+    it("end-to-end: unifiedOrchestrator.editQueuedMessage sends {agentId,messageId,content} and returns the daemon QueuedMessage", async () => {
+      // PROTOCOL §5.5: `{ success, queuedMessage }`. The proxy unwraps the
+      // bridge's `{success,data}` envelope and returns the inner body, so the
+      // saga sees `{success:true, queuedMessage}`.
+      const queued = { id: "q-1", content: "edited", position: 0, queuedAt: "2026-01-01T00:00:00Z" };
+      mockedRequest.mockResolvedValueOnce({ success: true, queuedMessage: queued });
+
+      const result = await unifiedOrchestrator.editQueuedMessage("agent-7", "q-1", "edited");
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.editQueuedMessage", {
+        agentId: "agent-7",
+        messageId: "q-1",
+        content: "edited",
+      });
+      expect(result).toEqual({ success: true, queuedMessage: queued });
+    });
+
+    it("validates required messageId at the bridge boundary (no daemon call)", async () => {
+      const response = await mockInvoke<{ success: boolean; error?: { message: string } }>(
+        AGENT_BACKEND_CHANNELS.EDIT_QUEUED,
+        { agentId: "agent-7", content: "edited" },
+      );
+      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(response.success).toBe(false);
+      expect(response.error?.message).toContain("messageId");
+    });
+  });
+
+  describe("agent:backend:remove-queued → daemon agent.removeQueuedMessage", () => {
+    it("end-to-end: unifiedOrchestrator.removeQueuedMessage sends {agentId,messageId} and a bare {success:true} daemon body still resolves to {success:true}", async () => {
+      // PROTOCOL §5.5: daemon returns just `{ success: true }` for remove.
+      // The proxy's `unwrapIpcResponse` only returns `result.data` when both
+      // `result.success` AND `result.data` are truthy — so the bridge MUST
+      // wrap a bare success body as `{success:true, data:{success:true}}`
+      // or removal silently degrades to `{success:false}` (the bug iter#2b).
+      mockedRequest.mockResolvedValueOnce({ success: true });
+
+      const result = await unifiedOrchestrator.removeQueuedMessage("agent-7", "q-1");
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.removeQueuedMessage", {
+        agentId: "agent-7",
+        messageId: "q-1",
+      });
+      expect(result).toEqual({ success: true });
+    });
+
+    it("daemon error becomes {success:false,error:<message>} through the proxy unwrap", async () => {
+      mockedRequest.mockRejectedValueOnce(new Error("not found"));
+      const result = await unifiedOrchestrator.removeQueuedMessage("agent-7", "q-1");
+      expect(result).toEqual({ success: false, error: "not found" });
+    });
+  });
+
+  describe("agent:backend:force-message → daemon agent.forceMessage", () => {
+    it("end-to-end: unifiedOrchestrator.forceMessage forwards workspaceId + optional imageBlocks/noteIds and resolves the daemon body", async () => {
+      // PROTOCOL §5.5: service result; daemon today returns
+      // `{ success, queued:false, messageId }`. The proxy unwraps to that.
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-9" });
+      const blocks = [{ type: "image", data: "abc", mimeType: "image/png" }];
+      const noteIds = ["note-1", "note-2"];
+
+      const result = await unifiedOrchestrator.forceMessage(
+        "agent-7",
+        "msg-9",
+        "stop and run this",
+        WORKSPACE_ID,
+        blocks,
+        noteIds,
+      );
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.forceMessage", {
+        agentId: "agent-7",
+        messageId: "msg-9",
+        content: "stop and run this",
+        workspaceId: WORKSPACE_ID,
+        imageBlocks: blocks,
+        noteIds,
+      });
+      expect(result).toEqual({ success: true, queued: false, messageId: "msg-9" });
+    });
+
+    it("validates required workspaceId at the bridge boundary (no daemon call)", async () => {
+      const response = await mockInvoke<{ success: boolean; error?: { message: string } }>(
+        AGENT_BACKEND_CHANNELS.FORCE_MESSAGE,
+        { agentId: "agent-7", messageId: "msg-9", content: "x" },
+      );
+      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(response.success).toBe(false);
+      expect(response.error?.message).toContain("workspaceId");
+    });
+  });
+
+  describe("agent:backend:get-queue → daemon agent.getQueue", () => {
+    it("end-to-end: unifiedOrchestrator.getQueue sends {agentId} and returns the daemon {success,queue:[QueuedMessage]} body", async () => {
+      // PROTOCOL §5.5: `{ success, queue: QueuedMessage[] }`.
+      const queue = [
+        { id: "q-1", content: "a", position: 0, queuedAt: "2026-01-01T00:00:00Z" },
+        { id: "q-2", content: "b", position: 1, queuedAt: "2026-01-01T00:00:01Z" },
+      ];
+      mockedRequest.mockResolvedValueOnce({ success: true, queue });
+
+      const result = await unifiedOrchestrator.getQueue("agent-7");
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.getQueue", { agentId: "agent-7" });
+      expect(result).toEqual({ success: true, queue });
+      // QueuedMessage round-trip — the queued-message UI binds per-field.
+      expect(result.queue).toHaveLength(2);
+      expect(result.queue?.[0]?.id).toBe("q-1");
+      expect(result.queue?.[1]?.position).toBe(1);
     });
   });
 
