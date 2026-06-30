@@ -1,15 +1,24 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentStatus } from "$shared/types/agent.types";
-import type { AgentSession, Workspace } from "$shared/types";
+import type { AgentSession, QueuedMessage, Workspace } from "$shared/types";
 
-// FAKE seam: agent-stream-lifecycle.sendMessage is spied so no IPC/daemon
-// call (and never the real backend pipeline) happens. The service runs
-// against the REAL configured store so the middleware wiring, workspace
-// resolution, the streaming-guard read, and the chatSendStarted dispatch are
-// exercised end to end.
-const lifecycleSendMessage = vi.fn(() => Promise.resolve());
+// FAKE seams: agent-stream-lifecycle.sendMessage and appClient.agents.queue
+// are both spied so no IPC/daemon call (and never the real backend pipeline)
+// happens. The service runs against the REAL configured store so the
+// middleware wiring, workspace resolution, the BE-state in-flight read, the
+// chatSendStarted dispatch, and the queue-on-send branch are exercised end to
+// end. vi.hoisted() keeps the spies in scope of the hoisted vi.mock factories.
+const { lifecycleSendMessage, agentsQueue } = vi.hoisted(() => ({
+  lifecycleSendMessage: vi.fn(() => Promise.resolve()),
+  agentsQueue: vi.fn(() =>
+    Promise.resolve({ success: true } as { success: boolean; queuedMessage?: unknown }),
+  ),
+}));
 vi.mock("$features/agent/agent-stream-lifecycle", () => ({
   sendMessage: lifecycleSendMessage,
+}));
+vi.mock("$lib/client", () => ({
+  appClient: { agents: { queue: agentsQueue } },
 }));
 
 import { store as appStore } from "$store/renderer/store";
@@ -18,11 +27,13 @@ import {
   bulkUpsertSessions,
   clearAllSessions,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
+import { clearAgentQueue } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import {
   sendMessage,
   sendInitialMessageRequested,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { selectChatAgentState } from "$store/renderer/slices/chat-state/chat-state-selectors";
+import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
 
 const WS = "ws-chat-send-1";
 const AGENT = "agent-chat-send-1";
@@ -67,6 +78,7 @@ async function warmDeps(): Promise<void> {
   await Promise.all([
     import("$store/renderer/slices/workspace/workspace-selectors"),
     import("$store/renderer/slices/agent-session/agent-session-selectors"),
+    import("$store/renderer/slices/agent-queue/agent-queue-selectors"),
     import("$features/agent/agent-stream-lifecycle"),
   ]);
 }
@@ -79,7 +91,10 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
   beforeEach(() => {
     lifecycleSendMessage.mockReset();
     lifecycleSendMessage.mockImplementation(() => Promise.resolve());
+    agentsQueue.mockReset();
+    agentsQueue.mockImplementation(() => Promise.resolve({ success: true }));
     appStore.dispatch(clearAllSessions());
+    appStore.dispatch(clearAgentQueue(AGENT));
     seedWorkspace();
     seedSession();
   });
@@ -130,13 +145,69 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("CTX\n\ndo work");
   });
 
-  it("guard: skips sending when the agent is currently responding (no double-send)", async () => {
-    seedSession({ isStreaming: true });
+  it("queue-on-send: when BE reports the agent in-flight, routes through agents.queue (not lifecycle.send)", async () => {
+    // BE single-source-of-truth contract: when the daemon snapshot says the
+    // turn is in-flight (isStreaming=true here, but selectAgentIsResponding
+    // also reads isResponding / status), the FE must NOT call the normal
+    // lifecycle send (which would race the active stream) — it routes the
+    // composer text through `agent.queueMessage` instead.
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
 
-    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "racey" }));
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "queue me" }));
     await flush();
     await flush();
 
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    expect(agentsQueue).toHaveBeenCalledTimes(1);
+    expect(agentsQueue).toHaveBeenCalledWith(AGENT, "queue me");
+  });
+
+  it("queue-on-send: seeds the local agent-queue slice from the returned queuedMessage", async () => {
+    // The seam returns the persisted queue entry on success; the service
+    // must dispatch replaceAgentQueue so the queued-UI lights up immediately
+    // without waiting for a hydration round trip.
+    seedSession({ isResponding: true, status: AgentStatus.Active });
+    const queued: QueuedMessage = {
+      id: "q-1",
+      content: "queue me",
+      position: 0,
+      queuedAt: "2026-01-01T00:00:00.000Z",
+    };
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({ success: true, queuedMessage: queued }),
+    );
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "queue me" }));
+    await flush();
+    await flush();
+
+    const stored = selectAgentQueueMessages.select(appStore.state, AGENT);
+    expect(stored.map((m) => m.id)).toEqual(["q-1"]);
+  });
+
+  it("queue-on-send: leaves the local queue untouched when the daemon returns no queuedMessage", async () => {
+    seedSession({ isResponding: true, status: AgentStatus.Active });
+    agentsQueue.mockImplementationOnce(() => Promise.resolve({ success: true }));
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "queue me" }));
+    await flush();
+    await flush();
+
+    expect(agentsQueue).toHaveBeenCalledTimes(1);
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
+  });
+
+  it("queue-on-send: rejection from the daemon does NOT fall back to lifecycle.send", async () => {
+    seedSession({ isResponding: true, status: AgentStatus.Active });
+    agentsQueue.mockImplementationOnce(() =>
+      Promise.resolve({ success: false, error: "no can do" }),
+    );
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "queue me" }));
+    await flush();
+    await flush();
+
+    expect(agentsQueue).toHaveBeenCalledTimes(1);
     expect(lifecycleSendMessage).not.toHaveBeenCalled();
   });
 

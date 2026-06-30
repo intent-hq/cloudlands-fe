@@ -15,11 +15,15 @@
  *
  * Re-homed pre-send essentials (ported minimally from the deleted
  * `send-message-saga.ts`): dispatch `chatSendStarted` for immediate loading
- * UI, clear the chat draft so the input doesn't echo the just-sent text, and
- * guard against double-send while a stream is already active. Every other
- * edge case (rebind, workspace-change reinit, queueing, force-submit, rate
- * limit) is intentionally NOT re-homed — those are out of scope per the task
- * note and will be addressed in follow-ups.
+ * UI, and clear the chat draft so the input doesn't echo the just-sent text.
+ *
+ * Queue-on-send: when the daemon snapshot reports the agent is currently
+ * in-flight (`selectAgentIsResponding` true — driven entirely by BE-returned
+ * `isStreaming` / `isResponding` / status), the composer text is routed
+ * through `agent.queueMessage` (seam `appClient.agents.queue`) instead of the
+ * normal lifecycle send, and the returned `queuedMessage` seeds the local
+ * agent-queue slice so the queued-UI surfaces immediately. The BE remains the
+ * single source of truth — the FE never second-guesses the streaming flags.
  *
  * Dependency-light per src/store AGENTS.md: top-level imports are limited to
  * the configured store, slice actions, store-free types, and the logger.
@@ -29,6 +33,7 @@
  * chain.
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import {
   chatSendStarted,
@@ -36,6 +41,7 @@ import {
   sendMessage,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { clearChatDraft } from "$store/renderer/slices/transient-ui/transient-ui-slice";
+import { replaceAgentQueue } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import type {
   InitialMessagePayload,
   SendMessagePayload,
@@ -55,14 +61,16 @@ type LifecycleSendOptions = {
  * middleware-chain construction.
  */
 async function loadSendDeps() {
-  const [wsSel, asSel, lifecycle] = await Promise.all([
+  const [wsSel, asSel, queueSel, lifecycle] = await Promise.all([
     import("$store/renderer/slices/workspace/workspace-selectors"),
     import("$store/renderer/slices/agent-session/agent-session-selectors"),
+    import("$store/renderer/slices/agent-queue/agent-queue-selectors"),
     import("$features/agent/agent-stream-lifecycle"),
   ]);
   return {
     selectWorkspaceById: wsSel.selectWorkspaceById,
     selectAgentIsResponding: asSel.selectAgentIsResponding,
+    selectAgentQueueMessages: queueSel.selectAgentQueueMessages,
     sendMessage: lifecycle.sendMessage,
   };
 }
@@ -89,11 +97,40 @@ async function dispatchToLifecycle(
     return;
   }
 
-  // Double-send guard: a fresh send while the agent is mid-turn would race
-  // the active stream handler. The old saga routed this case through the
-  // queue; for now we drop it (queueing is out of scope for this task).
+  const content = workspaceContextStr
+    ? `${workspaceContextStr}\n\n${text.trim()}`
+    : text.trim();
+
+  // Queue-on-send: derive in-flight status SOLELY from BE-returned session
+  // state (selectAgentIsResponding reads `isResponding`/`isStreaming`/status
+  // off the daemon snapshot). When the daemon reports the agent is busy,
+  // route the message through `agent.queueMessage` instead of dropping it,
+  // and seed the local queue from the returned `queuedMessage` so the UI
+  // immediately shows the queued-message state (no extra hydration round
+  // trip required).
   if (deps.selectAgentIsResponding.select(appStore.state, agentId)) {
-    logger.info("Skipping send: agent is currently responding", { agentId, wsId });
+    appStore.dispatch(clearChatDraft(wsId, agentId));
+    try {
+      const result = await appClient.agents.queue(agentId, content);
+      if (!result.success) {
+        logger.warn("agent.queueMessage rejected by daemon", {
+          agentId,
+          wsId,
+          error: result.error,
+        });
+        return;
+      }
+      const queuedMessage = result.queuedMessage;
+      if (queuedMessage) {
+        const existing = deps.selectAgentQueueMessages.select(appStore.state, agentId);
+        const next = existing.some((m) => m.id === queuedMessage.id)
+          ? existing
+          : [...existing, queuedMessage];
+        appStore.dispatch(replaceAgentQueue(agentId, next));
+      }
+    } catch (error) {
+      logger.error("agent.queueMessage threw", error);
+    }
     return;
   }
 
@@ -101,10 +138,6 @@ async function dispatchToLifecycle(
   // first lifecycle dispatch to surface the spinner / streaming indicator.
   appStore.dispatch(chatSendStarted(agentId, wsId));
   appStore.dispatch(clearChatDraft(wsId, agentId));
-
-  const content = workspaceContextStr
-    ? `${workspaceContextStr}\n\n${text.trim()}`
-    : text.trim();
 
   try {
     await deps.sendMessage(agentId, content, workspace, {

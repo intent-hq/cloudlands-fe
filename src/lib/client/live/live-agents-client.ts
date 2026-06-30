@@ -149,7 +149,7 @@ export class LiveAgentsClient implements AgentsClient {
         { agentId, content: message },
       );
       const queuedMessage = result?.queuedMessage;
-      return { success: true, ...(queuedMessage ? { queuedMessage } : {}) } as MutationResult;
+      return queuedMessage ? { success: true, queuedMessage } : { success: true };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }

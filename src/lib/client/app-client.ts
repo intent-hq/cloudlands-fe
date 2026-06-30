@@ -21,6 +21,7 @@ import type {
   FileNode,
   GitStatus,
   Note,
+  QueuedMessage,
   TaskStatus,
   Workspace,
   WorkspaceTask,
@@ -79,6 +80,14 @@ export interface MutationResult {
    * `current` into the domain entity (`Note` / `WorkspaceTask`) before returning.
    */
   conflict?: { current: unknown };
+  /**
+   * Queued-message surface returned by `agents.queue` (`agent.queueMessage`,
+   * §5.5). Surfaced on the uniform mutation result so the queue-on-send caller
+   * can seed the local `agent-queue` slice from the server snapshot without an
+   * extra `agent.getQueue` round-trip. Additive and optional: other mutation
+   * paths never set it.
+   */
+  queuedMessage?: QueuedMessage;
 }
 
 /** Minimal request shape for creating an agent through the seam. */
