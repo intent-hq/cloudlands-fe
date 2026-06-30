@@ -42,6 +42,7 @@
   import Fa from 'svelte-fa';
   import ServerIcon from '$lib/components/icons/ServerIcon.svelte';
   import AddRemoteSetupModal from './AddRemoteSetupModal.svelte';
+  import DirectoryPickerModal from '$features/onboarding/messages/DirectoryPickerModal.svelte';
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -174,6 +175,19 @@
   // ═══════════════════════════════════════════════════════════════════════════
   type TabId = 'local' | 'github' | 'new' | 'remote';
   let activeTab = $state<TabId>('local');
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FOLDER-PICKER MODAL STATE
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BE-driven folder browsing via `host.listDirectory` (DirectoryPickerModal),
+  // replacing the broken `invoke('dialog:open', ...)` round-trip. One modal is
+  // open at a time; `folderPickerPurpose` routes the picked path back to the
+  // right destination (folder pick / new-repo parent / github-clone parent).
+  type FolderPickerPurpose = 'select-repo' | 'new-repo-parent' | 'github-clone-parent';
+  let folderPickerOpen = $state(false);
+  let folderPickerPurpose = $state<FolderPickerPurpose>('select-repo');
+  let folderPickerTitle = $state('Select folder');
+  let folderPickerInitialPath = $state<string | undefined>(undefined);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // REMOTE TAB STATE
@@ -876,102 +890,53 @@
     isOpen = false;
   }
 
-  // Handle folder selection
-  async function handleSelectFolder() {
+  // Open the BE-driven folder picker to choose a repository folder.
+  function handleSelectFolder() {
+    folderPickerPurpose = 'select-repo';
+    folderPickerTitle = 'Select Repository Folder';
+    folderPickerInitialPath = typeof selectedValue === 'string' ? selectedValue : undefined;
+    folderPickerOpen = true;
+  }
+
+  // Apply a path picked via DirectoryPickerModal for the "select-repo" flow.
+  async function applyPickedRepoFolder(path: string): Promise<void> {
     try {
-      // Check if we're in Electron environment
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await invoke<any>('dialog:open', {
-          directory: true,
-          title: 'Select Repository Folder',
-          createDirectory: true, // Allow creating new folders in the dialog (macOS)
-        });
-        if (
-          result &&
-          result.success &&
-          result.data &&
-          !result.data.canceled &&
-          result.data.filePaths &&
-          result.data.filePaths.length > 0
-        ) {
-          const path = result.data.filePaths[0];
+      // Check directory status first
+      await checkDirectoryStatus(path);
 
-          // Check directory status first
-          await checkDirectoryStatus(path);
-
-          // If it's an existing folder but NOT a git repo, show the prompt
-          if (
-            directoryStatus?.exists &&
-            !directoryStatus?.isGitRepo &&
-            !directoryStatus?.isSubdirectoryOfGitRepo
-          ) {
-            nonGitFolderPath = path;
-            showNonGitFolderPrompt = true;
-            // Don't close dropdown - let user decide what to do
-            return;
-          }
-
-          selectedValue = path;
-          inputValue = path;
-          confirmedGithubUrl = ''; // Clear GitHub URL when picking local folder
-          selectedRepoType = 'local';
-
-          // Folder selection is always valid
-          isValidPath = true;
-          validationMessage = '';
-
-          const detail: RepoChangeDetail = {
-            path,
-            type: 'local',
-            isNewRepo,
-            isValidPath: true,
-            scope: directoryStatus?.relativePathFromGitRoot,
-          };
-          onchangeWithTracking(detail);
-
-          saveLastSelectedRepo(detail);
-          // Close the dropdown
-          isOpen = false;
-        }
-      } else {
-        // Fallback for browser environment - use a file input
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.webkitdirectory = true;
-        input.onchange = async (e: Event) => {
-          const target = e.target as HTMLInputElement;
-          if (target.files && target.files.length > 0) {
-            // Get the directory path from the first file
-            const file = target.files[0];
-            const path = file.webkitRelativePath.split('/')[0];
-            selectedValue = path;
-            inputValue = path;
-            confirmedGithubUrl = ''; // Clear GitHub URL when picking local folder
-            selectedRepoType = 'local';
-
-            // Folder selection is always valid
-            isValidPath = true;
-            validationMessage = '';
-
-            // Check directory status
-            await checkDirectoryStatus(path);
-
-            const detail: RepoChangeDetail = {
-              path,
-              type: 'local',
-              isNewRepo,
-              isValidPath: true,
-              scope: directoryStatus?.relativePathFromGitRoot,
-            };
-            onchangeWithTracking(detail);
-
-            saveLastSelectedRepo(detail);
-            // Close the dropdown
-            isOpen = false;
-          }
-        };
-        input.click();
+      // If it's an existing folder but NOT a git repo, show the prompt
+      if (
+        directoryStatus?.exists &&
+        !directoryStatus?.isGitRepo &&
+        !directoryStatus?.isSubdirectoryOfGitRepo
+      ) {
+        nonGitFolderPath = path;
+        showNonGitFolderPrompt = true;
+        // Don't close dropdown - let user decide what to do
+        return;
       }
+
+      selectedValue = path;
+      inputValue = path;
+      confirmedGithubUrl = ''; // Clear GitHub URL when picking local folder
+      selectedRepoType = 'local';
+
+      // Folder selection is always valid
+      isValidPath = true;
+      validationMessage = '';
+
+      const detail: RepoChangeDetail = {
+        path,
+        type: 'local',
+        isNewRepo,
+        isValidPath: true,
+        scope: directoryStatus?.relativePathFromGitRoot,
+      };
+      onchangeWithTracking(detail);
+
+      saveLastSelectedRepo(detail);
+      // Close the dropdown
+      isOpen = false;
     } catch (err) {
       logger.error('Failed to select folder', err);
     }
@@ -983,34 +948,13 @@
 
   // Toggle the inline create new repo form
 
-  // Handle selecting parent folder for new repo via file picker
-  async function handleSelectNewRepoParent() {
+  // Open the BE-driven folder picker to choose a parent folder for a new repo.
+  function handleSelectNewRepoParent() {
     isDialogOpen = true;
-    try {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await invoke<any>('dialog:open', {
-          directory: true,
-          title: 'Select Parent Folder for New Repository',
-          buttonLabel: 'Select',
-          createDirectory: true,
-        });
-        if (
-          result?.success &&
-          result.data &&
-          !result.data.canceled &&
-          result.data.filePaths?.length > 0
-        ) {
-          newRepoParentPath = result.data.filePaths[0];
-          saveDefaultParentPath(newRepoParentPath);
-        }
-      }
-    } catch (err) {
-      logger.error('Failed to select parent folder', err);
-    } finally {
-      isDialogOpen = false;
-      // Re-open the dropdown after dialog closes
-      isOpen = true;
-    }
+    folderPickerPurpose = 'new-repo-parent';
+    folderPickerTitle = 'Select Parent Folder for New Repository';
+    folderPickerInitialPath = newRepoParentPath || undefined;
+    folderPickerOpen = true;
   }
 
   // Confirm and create the new repo selection
@@ -1051,32 +995,41 @@
   // GITHUB CLONE FOLDER HANDLERS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Handle selecting parent folder for GitHub clone via file picker
-  async function handleSelectGitHubCloneParent() {
+  // Open the BE-driven folder picker to choose a clone target folder.
+  function handleSelectGitHubCloneParent() {
     isDialogOpen = true;
-    try {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await invoke<any>('dialog:open', {
-          directory: true,
-          title: 'Select Folder to Clone Repository Into',
-          buttonLabel: 'Select',
-          createDirectory: true,
-        });
-        if (
-          result?.success &&
-          result.data &&
-          !result.data.canceled &&
-          result.data.filePaths?.length > 0
-        ) {
-          githubCloneParentPath = result.data.filePaths[0];
-          saveDefaultParentPath(githubCloneParentPath);
-        }
-      }
-    } catch (err) {
-      logger.error('Failed to select parent folder for clone', err);
-    } finally {
+    folderPickerPurpose = 'github-clone-parent';
+    folderPickerTitle = 'Select Folder to Clone Repository Into';
+    folderPickerInitialPath = githubCloneParentPath || undefined;
+    folderPickerOpen = true;
+  }
+
+  // Dispatch a picked path from DirectoryPickerModal to the right destination.
+  async function handleFolderPickerSelect(path: string): Promise<void> {
+    folderPickerOpen = false;
+    const purpose = folderPickerPurpose;
+    if (purpose === 'select-repo') {
+      await applyPickedRepoFolder(path);
+      return;
+    }
+    if (purpose === 'new-repo-parent') {
+      newRepoParentPath = path;
+      saveDefaultParentPath(newRepoParentPath);
+    } else if (purpose === 'github-clone-parent') {
+      githubCloneParentPath = path;
+      saveDefaultParentPath(githubCloneParentPath);
+    }
+    isDialogOpen = false;
+    // Re-open the dropdown so the user lands back in the correct flow.
+    isOpen = true;
+  }
+
+  // Close the BE-driven folder picker without applying a selection.
+  function handleFolderPickerClose(): void {
+    folderPickerOpen = false;
+    if (folderPickerPurpose !== 'select-repo') {
       isDialogOpen = false;
-      // Re-open the dropdown after dialog closes
+      // Re-open the dropdown after dialog closes (matches the prior dialog behavior).
       isOpen = true;
     }
   }
@@ -1552,3 +1505,17 @@
     onsave={handleSaveRemoteSetup}
   />
 {/if}
+
+<!--
+  BE-driven folder picker. One modal serves all three folder-selection flows
+  (repo folder, new-repo parent, github clone parent); the picked path is
+  routed back to the right destination via `folderPickerPurpose`.
+-->
+<DirectoryPickerModal
+  open={folderPickerOpen}
+  title={folderPickerTitle}
+  initialPath={folderPickerInitialPath}
+  selectLabel="Select folder"
+  onSelect={handleFolderPickerSelect}
+  onClose={handleFolderPickerClose}
+/>
