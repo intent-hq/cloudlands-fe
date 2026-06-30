@@ -26,6 +26,7 @@
   import HandleDropOverlay from './HandleDropOverlay.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
+  import { appClient } from '$lib/client';
   import { selectIsTerminalOverlayOpen } from '$store/renderer/slices/terminals/terminals-selectors';
   import {
   get,
@@ -220,20 +221,22 @@
     return unsubscribe;
   });
 
-  // Handler to create a new terminal
+  // Handler to create a new terminal via the daemon (`terminal.create`,
+  // PROTOCOL §5.13). The daemon assigns the terminalId; we surface it as
+  // `MutationResult.id` from the live client.
   async function handleCreateTerminal() {
     try {
-      const result = await invoke<any>('terminal:professional:create', {
+      const result = await appClient.terminals.create({
         workspaceId,
         cols: 80,
         rows: 24,
       });
 
-      if (result.success && result.terminalId) {
-        logger.info('Created new terminal', { terminalId: result.terminalId });
+      if (result.success && result.id) {
+        logger.info('Created new terminal', { terminalId: result.id });
 
         // Save terminal metadata
-        terminalManager.saveTerminalMetadata(result.terminalId, workspaceId, 'Terminal');
+        terminalManager.saveTerminalMetadata(result.id, workspaceId, 'Terminal');
 
         // Reload terminals to include the new one
         loadTerminals(workspaceId);
@@ -242,12 +245,14 @@
         layoutManager.openTab({
           type: 'terminal',
           title: 'Terminal',
-          terminalId: result.terminalId,
+          terminalId: result.id,
           closable: true,
         });
 
         // Track terminal creation
         track('Opened Terminal', { workspace_id: workspaceId, source: 'tab-bar' });
+      } else if (!result.success) {
+        logger.error('Failed to create terminal', { error: result.error });
       }
     } catch (error) {
       logger.error('Failed to create terminal', error);

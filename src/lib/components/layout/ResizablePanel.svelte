@@ -274,7 +274,8 @@
     }
   }
 
-  // Handle sidebar toggle event (for Cmd+B keyboard shortcut)
+  // Handle sidebar toggle event (used by the onboarding-exit force-expand flow,
+  // which sets the panel width without flipping the Redux `sidebarCollapsed` flag).
   function handleSidebarToggle(event: Event) {
     const detail = (event as CustomEvent<{ collapsed: boolean; restoreWidth: number }>).detail;
     if (detail.collapsed) {
@@ -289,9 +290,25 @@
     widthPercent = pixelsToPercent(panelWidth, true);
   }
 
+  // Apply a Redux-driven collapse/expand of the workspace left sidebar
+  // (Cmd+B keyboard shortcut, title-bar toggle, settings proposals, etc.).
+  function applySidebarCollapsedChange(collapsed: boolean) {
+    if (collapsed) {
+      widthBeforeToggle = panelWidth;
+      panelWidth = 0;
+    } else {
+      panelWidth = widthBeforeToggle > 0 ? widthBeforeToggle : defaultWidth;
+    }
+    widthPercent = pixelsToPercent(panelWidth, true);
+  }
+
   // Store width before toggle collapse (only used for workspace left sidebar)
   // svelte-ignore state_referenced_locally
   let widthBeforeToggle = $state(defaultWidth);
+
+  // Tracks the last collapsed value we reacted to, so the effect ignores
+  // its first run (which initializes from the Redux state during onMount).
+  let lastSidebarCollapsed = $state<boolean | undefined>(undefined);
 
   $effect(() => {
     if (initiallyCollapsed || isExpanded || orientation !== 'horizontal') return;
@@ -333,6 +350,22 @@
       heightPercent = pixelsToPercent(panelHeight, false);
       appliedStoredPanelSize = storedValue;
     }
+  });
+
+  // React to Redux-driven sidebar collapse changes (Cmd+B, title-bar toggle, etc.).
+  // The first run captures the baseline; subsequent runs apply collapse/expand.
+  $effect(() => {
+    if (!isWorkspaceLeftPanel || orientation !== 'horizontal') return;
+
+    const collapsed = $sidebarIsCollapsed;
+    if (lastSidebarCollapsed === undefined) {
+      lastSidebarCollapsed = collapsed;
+      return;
+    }
+    if (collapsed === lastSidebarCollapsed) return;
+
+    lastSidebarCollapsed = collapsed;
+    applySidebarCollapsedChange(collapsed);
   });
 
   // Check for collapse threshold on mount and set up resize listener
