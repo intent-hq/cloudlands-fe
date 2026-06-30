@@ -24,8 +24,11 @@ import type {
   TrackedChange,
 } from "$features/file-tracking/types";
 import type {
+  CommitDetailsResult,
+  CommitFileDetail,
   GitClient,
   GitCommitParams,
+  GitDiffsOptions,
   MutationResult,
   PrStatusSummary,
   SubscriptionHandler,
@@ -146,6 +149,40 @@ function toCommitInfo(raw: unknown): CommitInfo | null {
   return info;
 }
 
+/** Map a daemon `git.commitDetails` entry into a renderer `CommitDetailsResult`. */
+function normalizeCommitDetails(
+  raw: Record<string, unknown>,
+  fallbackHash: string,
+): CommitDetailsResult {
+  const rawFiles = Array.isArray(raw.files) ? raw.files : [];
+  const files: string[] = rawFiles
+    .map((p) => (typeof p === "string" ? p : null))
+    .filter((p): p is string => p !== null);
+  const rawDetails = Array.isArray(raw.fileDetails) ? raw.fileDetails : [];
+  const fileDetails: CommitFileDetail[] = rawDetails
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const e = entry as Record<string, unknown>;
+      const path = typeof e.path === "string" ? e.path : "";
+      if (!path) return null;
+      return {
+        path,
+        additions: typeof e.additions === "number" ? e.additions : 0,
+        deletions: typeof e.deletions === "number" ? e.deletions : 0,
+      };
+    })
+    .filter((f): f is CommitFileDetail => f !== null);
+  return {
+    commitHash: typeof raw.commitHash === "string" ? raw.commitHash : fallbackHash,
+    author: typeof raw.author === "string" ? raw.author : "",
+    authorEmail: typeof raw.authorEmail === "string" ? raw.authorEmail : "",
+    date: typeof raw.date === "string" ? raw.date : "",
+    message: typeof raw.message === "string" ? raw.message : "",
+    files,
+    fileDetails,
+  };
+}
+
 /** Map a daemon `git.changes` `FileStatus` into the renderer `TrackedChange`. */
 function toTrackedChange(raw: unknown): TrackedChange | null {
   if (!raw || typeof raw !== "object") return null;
@@ -196,15 +233,42 @@ export class LiveGitClient implements GitClient {
     return fetchStatus(workspaceId);
   }
 
-  // `git.diffs` (PROTOCOL §5.6) returns per-file index→workdir hunks by default;
-  // mapped into renderer `DiffChunk[]`. Errors fold to `[]` so the diff viewer
-  // degrades cleanly rather than throwing into the store.
-  async diffs(workspaceId: string): Promise<DiffChunk[]> {
+  // `git.diffs` (PROTOCOL §5.6) returns per-file hunks. Defaults to the
+  // index→workdir (unstaged) diff; `options.staged` selects HEAD→index;
+  // `options.commitHash` returns the per-file hunks for
+  // `<commitHash>^..<commitHash>` (the commit's own changes vs its first
+  // parent). Mapped into renderer `DiffChunk[]`. Errors fold to `[]` so the
+  // diff viewer degrades cleanly rather than throwing into the store.
+  async diffs(workspaceId: string, options?: GitDiffsOptions): Promise<DiffChunk[]> {
+    const params: Record<string, unknown> = { workspaceId };
+    if (options?.path) params.path = options.path;
+    if (options?.staged === true) params.staged = true;
+    if (options?.commitHash) params.commitHash = options.commitHash;
     try {
-      const result = await backendRequest<unknown>("git.diffs", { workspaceId });
+      const result = await backendRequest<unknown>("git.diffs", params);
       return toDiffChunks(result);
     } catch {
       return [];
+    }
+  }
+
+  // `git.commitDetails` (PROTOCOL §5.6) returns the metadata + per-file
+  // `(additions, deletions)` for one commit. The daemon already degrades
+  // non-repo / remote / unknown-hash workspaces to an empty envelope, so we
+  // only fold transport failures to `null`.
+  async commitDetails(
+    workspaceId: string,
+    commitHash: string,
+  ): Promise<CommitDetailsResult | null> {
+    try {
+      const result = await backendRequest<Record<string, unknown>>("git.commitDetails", {
+        workspaceId,
+        commitHash,
+      });
+      if (!result || typeof result !== "object") return null;
+      return normalizeCommitDetails(result, commitHash);
+    } catch {
+      return null;
     }
   }
 

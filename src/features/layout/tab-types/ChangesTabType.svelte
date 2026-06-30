@@ -37,7 +37,7 @@
   faColumns,
   faCompressAlt,
 } from '@fortawesome/free-solid-svg-icons';
-  import { invoke } from '$lib/electron-bridge';
+  import { appClient } from '$lib/client';
   import { store as appStore } from '$store/renderer/store';
 
   const lineWrapping = selectLineWrapping();
@@ -94,19 +94,21 @@
       fetchedForHash = hash;
     });
 
-    invoke<{ success: boolean; data?: any; error?: string }>('git:commit-details', {
-      workspaceId: wsId,
-      commitHash: hash,
-    })
+    // Daemon-backed read (PROTOCOL §5.6): `appClient.git.commitDetails`
+    // folds transport/gate errors to `null` and the daemon degrades non-repo /
+    // remote / unknown-hash workspaces to an empty envelope, so this $effect
+    // never throws into the renderer.
+    appClient.git
+      .commitDetails(wsId, hash)
       .then((result) => {
-        if (result?.success && result.data) {
-          fetchedFileDetails =
-            result.data.fileDetails ||
-            (result.data.files || []).map((f: string) => ({ path: f, additions: 0, deletions: 0 }));
+        if (result) {
+          fetchedFileDetails = result.fileDetails.length > 0
+            ? result.fileDetails
+            : result.files.map((f) => ({ path: f, additions: 0, deletions: 0 }));
           fetchedCommitInfo = {
-            author: result.data.author,
-            authorEmail: result.data.email,
-            date: result.data.date,
+            author: result.author || undefined,
+            authorEmail: result.authorEmail || undefined,
+            date: result.date || undefined,
           };
         }
         isFetchingDetails = false;
