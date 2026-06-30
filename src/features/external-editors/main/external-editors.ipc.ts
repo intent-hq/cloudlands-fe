@@ -17,7 +17,7 @@ import { constants } from 'fs';
 import { access } from 'fs/promises';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
-import { execAsync } from '../../../shared/git/git-env';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 import { findBinary } from '../../../shared/main/find-binary';
 
 const logger = new Logger({ category: 'ExternalEditors-IPC' });
@@ -50,35 +50,59 @@ function getLinuxFlatpakIds(editorId: string): string[] {
   return editor?.platforms?.linux?.flatpakIds ?? [];
 }
 
-// Cache for installed Flatpak app IDs
+/** Editor entry shape returned by `host.listInstalledEditors` (PROTOCOL.md §5.14). */
+interface HostInstalledEditor {
+  id: string;
+  installed: boolean;
+  path?: string;
+  source?: 'macAppBundle' | 'binary' | 'flatpak';
+  flatpakId?: string;
+}
+
+interface HostListInstalledEditorsResult {
+  editors: HostInstalledEditor[];
+}
+
+interface HostFindAppResult {
+  installed: boolean;
+  path?: string;
+  source?: string;
+}
+
+// Cache for installed Flatpak app IDs (derived from host.listInstalledEditors)
 let flatpakInstalledCache: Set<string> | null = null;
 let flatpakCacheTimestamp = 0;
 const FLATPAK_CACHE_TTL_MS = 60000; // 1 minute cache
 
 /**
- * Get the set of installed Flatpak application IDs
+ * Get the set of installed Flatpak application IDs, sourced verbatim from the
+ * daemon's `host.listInstalledEditors` enumeration (PROTOCOL.md §5.14). Flatpak
+ * detection runs on the daemon host — never on the local laptop — so remote
+ * workspaces report the BE host's flatpak inventory. On RPC failure we degrade
+ * to an empty set rather than fall back to a local probe.
  */
-async function getInstalledFlatpakApps(): Promise<Set<string>> {
+export async function getInstalledFlatpakApps(): Promise<Set<string>> {
   const now = Date.now();
   if (flatpakInstalledCache && now - flatpakCacheTimestamp < FLATPAK_CACHE_TTL_MS) {
     return flatpakInstalledCache;
   }
 
   try {
-    const { stdout } = await execAsync('flatpak list --app --columns=application', { timeout: 5000 });
-    const appIds = new Set(
-      stdout
-        .trim()
-        .split('\n')
-        .map((line: string) => line.trim())
-        .filter(Boolean),
+    const result = await getBackendClient().request<HostListInstalledEditorsResult>(
+      'host.listInstalledEditors',
     );
-    logger.info(`[ExternalEditors] Flatpak: found ${appIds.size} installed apps`);
+    const appIds = new Set<string>();
+    for (const editor of result?.editors ?? []) {
+      if (editor.installed && editor.source === 'flatpak' && editor.flatpakId) {
+        appIds.add(editor.flatpakId);
+      }
+    }
+    logger.info(`[ExternalEditors] Flatpak (host.listInstalledEditors): found ${appIds.size} installed apps`);
     flatpakInstalledCache = appIds;
     flatpakCacheTimestamp = now;
     return appIds;
-  } catch {
-    logger.info('[ExternalEditors] Flatpak: not available or no apps installed');
+  } catch (error) {
+    logger.info('[ExternalEditors] host.listInstalledEditors failed; treating Flatpak as unavailable', error as Error);
     flatpakInstalledCache = new Set();
     flatpakCacheTimestamp = now;
     return flatpakInstalledCache;
@@ -104,24 +128,23 @@ async function findFlatpakAppId(editorId: string): Promise<string | null> {
 }
 
 /**
- * Check if an app is installed on macOS by looking in /Applications and ~/Applications
+ * Check if a macOS GUI app is installed by asking the daemon (PROTOCOL.md §5.14
+ * `host.findApp`). The daemon performs the `.app` bundle probe on its own host
+ * (`/Applications/<name>.app` then `~/Applications/<name>.app`), so remote
+ * workspaces report the BE host's installed apps — not the laptop's. The
+ * daemon's `installed` flag is consumed verbatim; on RPC failure we degrade to
+ * `false` rather than fall back to a local probe.
  */
-async function isAppInstalledMacOS(appName: string): Promise<boolean> {
-  const homeDir = process.env.HOME || '';
-  const locations = [
-    `/Applications/${appName}.app`,
-    homeDir ? `${homeDir}/Applications/${appName}.app` : null,
-  ].filter(Boolean) as string[];
-
-  for (const path of locations) {
-    try {
-      await access(path);
-      return true;
-    } catch {
-      // Not found at this location
-    }
+export async function isAppInstalledMacOS(appName: string): Promise<boolean> {
+  try {
+    const result = await getBackendClient().request<HostFindAppResult>('host.findApp', {
+      name: appName,
+    });
+    return result?.installed === true;
+  } catch (error) {
+    logger.debug(`[ExternalEditors] host.findApp failed for ${appName}`, error as Error);
+    return false;
   }
-  return false;
 }
 
 /**
