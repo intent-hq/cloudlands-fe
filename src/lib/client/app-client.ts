@@ -99,6 +99,14 @@ export interface PrStatusSummary {
 export interface WorkspacesClient {
   list(): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
+  /**
+   * Open a workspace by id (route loader entry point). Returns the matching
+   * workspace, or `null` when it cannot be resolved. The daemon exposes no
+   * separate `workspace.open` RPC today — implementations resolve the workspace
+   * via `workspace.get` and let the daemon own any side effects (watchers,
+   * monitoring) that the legacy main-process handler used to start.
+   */
+  open(id: string): Promise<Workspace | null>;
   create(request: CreateWorkspaceRequest): Promise<MutationResult>;
   delete(id: string): Promise<MutationResult>;
   setActive(id: string): Promise<MutationResult>;
