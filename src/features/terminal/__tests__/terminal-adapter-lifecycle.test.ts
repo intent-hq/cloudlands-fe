@@ -1,5 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TerminalAdapter } from '../TerminalAdapter';
+import type { TerminalsClient } from '$lib/client';
+
+/** Build a TerminalsClient stub that swallows daemon traffic for DOM-focused tests. */
+function fakeTerminalsClient(): TerminalsClient {
+  return {
+    list: vi.fn(async () => []),
+    create: vi.fn(async () => ({ success: true, id: 'term-1' })),
+    write: vi.fn(async () => ({ success: true })),
+    resize: vi.fn(async () => ({ success: true })),
+    kill: vi.fn(async () => ({ success: true })),
+    getBuffer: vi.fn(async () => ''),
+    output: vi.fn(async () => ''),
+    subscribeEvents: vi.fn(() => () => {}),
+    subscribe: vi.fn(() => () => {}),
+  };
+}
 
 const xtermMock = vi.hoisted(() => ({ instances: [] as any[] }));
 
@@ -106,7 +122,13 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     const container = document.createElement('div');
     const addSpy = vi.spyOn(container, 'addEventListener');
     const removeSpy = vi.spyOn(container, 'removeEventListener');
-    const adapter = new TerminalAdapter({ workspaceId: 'ws-1', terminalId: 'term-1', container });
+    const terminals = fakeTerminalsClient();
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals },
+    });
 
     (adapter as any).setupXTermEventHandlers();
     expect(addSpy).toHaveBeenCalledWith('paste', (adapter as any).handlePasteEvent);
@@ -118,6 +140,21 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     expect((adapter as any).themeManager.container).toBeNull();
   });
 
+  it('dispose() drops the PTY through the daemon `terminal.kill`', () => {
+    const container = document.createElement('div');
+    const terminals = fakeTerminalsClient();
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals },
+    });
+
+    adapter.dispose();
+
+    expect(terminals.kill).toHaveBeenCalledWith('term-1');
+  });
+
   it('moves paste listener and theme container on reattach', async () => {
     const firstContainer = document.createElement('div');
     const secondContainer = document.createElement('div');
@@ -127,6 +164,7 @@ describe('TerminalAdapter lifecycle cleanup', () => {
       workspaceId: 'ws-1',
       terminalId: 'term-1',
       container: firstContainer,
+      appClient: { terminals: fakeTerminalsClient() },
     });
 
     (adapter as any).setupXTermEventHandlers();
@@ -137,5 +175,42 @@ describe('TerminalAdapter lifecycle cleanup', () => {
     expect((adapter as any).themeManager.container).toBe(secondContainer);
 
     adapter.detach();
+  });
+
+  it('write() forwards xterm onData input through TerminalsClient.write', () => {
+    const container = document.createElement('div');
+    const terminals = fakeTerminalsClient();
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals },
+    });
+    // Drive the state machine to CONNECTED so write() is accepted.
+    (adapter as any).stateMachine.transition('initialize');
+    (adapter as any).stateMachine.transition('connect');
+    (adapter as any).stateMachine.transition('connected');
+
+    adapter.write('ls\n');
+
+    expect(terminals.write).toHaveBeenCalledWith('term-1', 'ls\n');
+  });
+
+  it('resize() forwards dimensions through TerminalsClient.resize', () => {
+    const container = document.createElement('div');
+    const terminals = fakeTerminalsClient();
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container,
+      appClient: { terminals },
+    });
+    (adapter as any).stateMachine.transition('initialize');
+    (adapter as any).stateMachine.transition('connect');
+    (adapter as any).stateMachine.transition('connected');
+
+    adapter.resize(120, 40);
+
+    expect(terminals.resize).toHaveBeenCalledWith('term-1', 120, 40);
   });
 });
