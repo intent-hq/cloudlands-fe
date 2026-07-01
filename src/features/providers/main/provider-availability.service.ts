@@ -5,7 +5,6 @@
  * to determine if the user has any available provider at startup.
  */
 
-import { spawn } from 'child_process';
 import { ipcMain } from 'electron';
 import * as fs from 'fs/promises';
 import * as os from 'os';
@@ -13,6 +12,7 @@ import * as path from 'path';
 import { PROVIDERS_CHANNELS } from '../../../shared/ipc/channels';
 import { ACP_PROVIDERS } from '../../../shared/config/provider-config';
 import { Logger } from '../../../shared/logger';
+import { hostExec } from '../../../shared/main/host-exec';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 import { findAuggiePathAsync } from '../../auggie/main/auggie.ipc';
 import {
@@ -264,66 +264,23 @@ const AUTH_CHECK_TIMEOUT_MS = 5000;
 async function checkAuggieAuth(cliPath: string | null): Promise<boolean | undefined> {
   if (!cliPath) return undefined;
 
-  return new Promise((resolve) => {
-    try {
-      let settled = false;
-      const settle = (value: boolean | undefined) => {
-        if (!settled) {
-          settled = true;
-          resolve(value);
-        }
-      };
-
-      const child = spawn(cliPath, ['model', 'list'], {
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: AUTH_CHECK_TIMEOUT_MS,
-      });
-
-      let stdout = '';
-      let stderr = '';
-      child.stdout.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
-      child.stderr.on('data', (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      const timeoutId = setTimeout(() => {
-        try {
-          child.kill();
-        } catch {
-          // Process may have already exited
-        }
-        settle(undefined);
-      }, AUTH_CHECK_TIMEOUT_MS);
-
-      child.on('error', () => {
-        clearTimeout(timeoutId);
-        settle(undefined);
-      });
-
-      child.on('close', (code) => {
-        clearTimeout(timeoutId);
-        const output = `${stdout}\n${stderr}`;
-        const isUnauthenticated =
-          /not currently logged in|not logged in|not authenticated|login required|please log in/i.test(
-            output,
-          );
-        if (isUnauthenticated) {
-          settle(false);
-          return;
-        }
-        if (code === 0) {
-          settle(true);
-          return;
-        }
-        settle(undefined);
-      });
-    } catch {
-      resolve(undefined);
-    }
-  });
+  try {
+    const result = await hostExec(cliPath, {
+      args: ['model', 'list'],
+      timeoutMs: AUTH_CHECK_TIMEOUT_MS,
+    });
+    if (result.timedOut) return undefined;
+    const output = `${result.stdout}\n${result.stderr}`;
+    const isUnauthenticated =
+      /not currently logged in|not logged in|not authenticated|login required|please log in/i.test(
+        output,
+      );
+    if (isUnauthenticated) return false;
+    if (result.exitCode === 0) return true;
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -341,65 +298,22 @@ const OPENCODE_READY_TIMEOUT_MS = 10000;
 async function checkOpenCodeReady(cliPath: string | null): Promise<boolean | undefined> {
   if (!cliPath) return undefined;
 
-  return new Promise((resolve) => {
-    try {
-      let settled = false;
-      const settle = (value: boolean | undefined) => {
-        if (!settled) {
-          settled = true;
-          resolve(value);
-        }
-      };
-
-      const child = spawn(cliPath, ['models'], {
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: OPENCODE_READY_TIMEOUT_MS,
-      });
-
-      let stdout = '';
-      child.stdout.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
-      // Drain stderr to prevent backpressure from blocking the process
-      child.stderr.resume();
-
-      const timeoutId = setTimeout(() => {
-        try {
-          child.kill();
-        } catch {
-          // Process may have already exited
-        }
-        settle(undefined);
-      }, OPENCODE_READY_TIMEOUT_MS);
-
-      child.on('error', () => {
-        clearTimeout(timeoutId);
-        settle(undefined);
-      });
-
-      child.on('close', (code) => {
-        clearTimeout(timeoutId);
-        // code is null when terminated by signal — treat as unknown
-        if (code === null) {
-          settle(undefined);
-          return;
-        }
-        if (code !== 0) {
-          settle(false);
-          return;
-        }
-        // Ready iff at least one line matches the `provider/model` format
-        const hasModel = stdout.split('\n').some((line) => {
-          const trimmed = line.trim();
-          return trimmed.length > 0 && trimmed.includes('/') && !trimmed.startsWith('#');
-        });
-        settle(hasModel);
-      });
-    } catch {
-      resolve(undefined);
-    }
-  });
+  try {
+    const result = await hostExec(cliPath, {
+      args: ['models'],
+      timeoutMs: OPENCODE_READY_TIMEOUT_MS,
+    });
+    if (result.timedOut) return undefined;
+    if (result.exitCode !== 0) return false;
+    // Ready iff at least one line matches the `provider/model` format
+    const hasModel = result.stdout.split('\n').some((line) => {
+      const trimmed = line.trim();
+      return trimmed.length > 0 && trimmed.includes('/') && !trimmed.startsWith('#');
+    });
+    return hasModel;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -443,73 +357,24 @@ async function checkProviderAuth(
     return undefined;
   }
 
-  return new Promise((resolve) => {
-    try {
-      let settled = false;
-      const settle = (value: boolean | undefined) => {
-        if (!settled) {
-          settled = true;
-          resolve(value);
-        }
-      };
+  try {
+    const result = await hostExec(cliPath, {
+      args: authCheckArgs,
+      timeoutMs: AUTH_CHECK_TIMEOUT_MS,
+    });
+    if (result.timedOut) return undefined;
+    if (result.exitCode !== 0) return false;
 
-      // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
-      const useShell = process.platform === 'win32';
-      // On Windows with shell: true, quote the command path to handle spaces (e.g. C:\Users\John Doe\...)
-      const spawnCommand = useShell ? `"${cliPath}"` : cliPath;
-
-      const child = spawn(spawnCommand, authCheckArgs, {
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: AUTH_CHECK_TIMEOUT_MS,
-        shell: useShell,
-      });
-
-      let stdout = '';
-      child.stdout.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
-      // Drain stderr to prevent backpressure from blocking the process
-      child.stderr.resume();
-
-      const timeoutId = setTimeout(() => {
-        try {
-          child.kill();
-        } catch {
-          // Process may have already exited
-        }
-        settle(undefined);
-      }, AUTH_CHECK_TIMEOUT_MS);
-
-      child.on('error', () => {
-        clearTimeout(timeoutId);
-        settle(undefined);
-      });
-
-      child.on('close', (code) => {
-        clearTimeout(timeoutId);
-        // code is null when terminated by signal — treat as unknown, not unauthenticated
-        if (code === null) {
-          settle(undefined);
-          return;
-        }
-        if (code !== 0) {
-          settle(false);
-          return;
-        }
-
-        if (validateOutput) {
-          settle(validateOutput(stdout));
-        } else if (requireNonEmptyOutput) {
-          settle(stdout.trim().length > 0);
-        } else {
-          settle(true);
-        }
-      });
-    } catch {
-      resolve(undefined);
+    if (validateOutput) {
+      return validateOutput(result.stdout);
     }
-  });
+    if (requireNonEmptyOutput) {
+      return result.stdout.trim().length > 0;
+    }
+    return true;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

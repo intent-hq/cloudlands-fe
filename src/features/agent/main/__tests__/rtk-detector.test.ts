@@ -6,8 +6,8 @@ import {
   vi,
 } from 'vitest';
 
-const { mockExecAsync, mockFindBinary, mockGetSetting, loggerSpies } = vi.hoisted(() => ({
-  mockExecAsync: vi.fn(),
+const { mockHostExec, mockFindBinary, mockGetSetting, loggerSpies } = vi.hoisted(() => ({
+  mockHostExec: vi.fn(),
   mockFindBinary: vi.fn(),
   mockGetSetting: vi.fn(),
   loggerSpies: {
@@ -18,8 +18,8 @@ const { mockExecAsync, mockFindBinary, mockGetSetting, loggerSpies } = vi.hoiste
   },
 }));
 
-vi.mock('../../../../shared/main/async-utils', () => ({
-  execAsync: mockExecAsync,
+vi.mock('../../../../shared/main/host-exec', () => ({
+  hostExec: mockHostExec,
 }));
 
 vi.mock('../../../../shared/main/find-binary', () => ({
@@ -42,7 +42,7 @@ vi.mock('../../../../shared/logger', () => ({
 describe('rtk-detector', () => {
   beforeEach(() => {
     vi.resetModules();
-    mockExecAsync.mockReset();
+    mockHostExec.mockReset();
     mockFindBinary.mockReset();
     mockGetSetting.mockReset();
     loggerSpies.debug.mockReset();
@@ -54,15 +54,19 @@ describe('rtk-detector', () => {
 
   it('runs help using the resolved rtk path', async () => {
     mockFindBinary.mockResolvedValue('/tmp/custom tools/rtk');
-    mockExecAsync.mockResolvedValue({
+    mockHostExec.mockResolvedValue({
       stdout: 'Commands:\n  ls  List directory\n',
       stderr: '',
+      exitCode: 0,
     });
 
     const { detectRtk } = await import('../rtk-detector');
 
     await expect(detectRtk()).resolves.toEqual({ available: true, subcommands: ['ls'] });
     expect(mockFindBinary).toHaveBeenCalledWith('rtk', { cache: false });
-    expect(mockExecAsync).toHaveBeenCalledWith('"/tmp/custom tools/rtk" help', { timeout: 10000 });
+    expect(mockHostExec).toHaveBeenCalledWith('/tmp/custom tools/rtk', {
+      args: ['help'],
+      timeoutMs: 10000,
+    });
   });
 });

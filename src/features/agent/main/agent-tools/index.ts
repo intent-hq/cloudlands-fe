@@ -1,8 +1,6 @@
 import { Tool } from '../agent-providers/base-provider';
-import { remoteRPCManager } from '$shared/main/remote-rpc-manager';
-import { RemoteRPCError } from '$shared/main/remote-rpc-client';
 import * as fs from 'fs/promises';
-import { execAsync } from '../../../../shared/git/git-env';
+import { hostExec } from '../../../../shared/main/host-exec';
 
 // Track file operations for agent provenance
 interface FileOperation {
@@ -220,44 +218,27 @@ export const commandTool: Tool = {
       }
     }
 
-    if (workspaceId) {
-      // Execute remotely via RPC
-      try {
-        const rpcClient = await remoteRPCManager.getClient(workspaceId);
-        const result = await rpcClient.exec({ command, cwd });
-        return {
-          stdout: result.stdout,
-          stderr: result.stderr,
-          exitCode: 0,
-        };
-      } catch (error) {
-        if (error instanceof RemoteRPCError && error.data) {
-          const data = error.data as { stdout?: string; stderr?: string; exitCode?: number };
-          return {
-            stdout: data.stdout || '',
-            stderr: data.stderr || error.message,
-            exitCode: data.exitCode || 1,
-          };
-        }
-        throw error;
-      }
-    } else {
-      // Execute locally
-      try {
-        const { stdout, stderr } = await execAsync(command, { cwd });
-        return {
-          stdout,
-          stderr,
-          exitCode: 0,
-        };
-      } catch (error) {
-        const execError = error as Error & { stdout?: string; stderr?: string; code?: number };
-        return {
-          stdout: execError.stdout || '',
-          stderr: execError.stderr || execError.message,
-          exitCode: execError.code || 1,
-        };
-      }
+    // Delegate to the daemon's host.exec seam; locality (local/remote) is
+    // decided by whether `workspaceId` is present and how the daemon routes
+    // it — the FE no longer branches or spawns child processes itself.
+    try {
+      const result = await hostExec('/bin/sh', {
+        args: ['-c', command],
+        cwd,
+        workspaceId,
+      });
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+      };
+    } catch (error) {
+      const err = error as Error;
+      return {
+        stdout: '',
+        stderr: err.message,
+        exitCode: 1,
+      };
     }
   },
 };
@@ -330,19 +311,27 @@ export const gitTool: Tool = {
       }
     }
 
-    const command = `git ${operation} ${args.join(' ')}`.trim();
-
     try {
-      const { stdout, stderr } = await execAsync(command, { cwd });
+      const result = await hostExec('git', {
+        args: [operation, ...args],
+        cwd,
+        workspaceId: params.workspaceId,
+      });
+      if (result.exitCode !== 0) {
+        return {
+          success: false,
+          error: result.stderr || `git ${operation} exited with code ${result.exitCode}`,
+        };
+      }
       return {
         success: true,
-        output: stdout || stderr,
+        output: result.stdout || result.stderr,
       };
     } catch (error) {
-      const execError = error as Error & { stderr?: string };
+      const err = error as Error;
       return {
         success: false,
-        error: execError.stderr || execError.message,
+        error: err.message,
       };
     }
   },
@@ -412,25 +401,30 @@ export const codeAnalysisTool: Tool = {
     required: ['operation'],
   },
   execute: async (params: any) => {
-    const { operation, filePath, symbol } = params;
+    const { operation, filePath, symbol, workspaceId } = params;
 
-    // Simple grep-based implementation
+    // Simple grep-based implementation delegated to the daemon.
     // Future: Use language-specific parsers (tree-sitter, etc.)
     switch (operation) {
       case 'find_definition':
-        const defCommand = `grep -n "function ${symbol}\\|class ${symbol}\\|const ${symbol}\\|let ${symbol}\\|var ${symbol}" ${filePath}`;
         try {
-          const { stdout } = await execAsync(defCommand);
-          return stdout.split('\n').filter((line) => line.trim());
+          const pattern = `function ${symbol}\\|class ${symbol}\\|const ${symbol}\\|let ${symbol}\\|var ${symbol}`;
+          const result = await hostExec('grep', {
+            args: ['-n', pattern, filePath],
+            workspaceId,
+          });
+          return result.stdout.split('\n').filter((line) => line.trim());
         } catch {
           return [];
         }
 
       case 'find_references':
-        const refCommand = `grep -n "${symbol}" ${filePath}`;
         try {
-          const { stdout } = await execAsync(refCommand);
-          return stdout.split('\n').filter((line) => line.trim());
+          const result = await hostExec('grep', {
+            args: ['-n', symbol, filePath],
+            workspaceId,
+          });
+          return result.stdout.split('\n').filter((line) => line.trim());
         } catch {
           return [];
         }
@@ -459,58 +453,49 @@ export const environmentTool: Tool = {
   execute: async (params: any) => {
     const { workspaceId } = params;
 
-    if (workspaceId) {
-      const rpcClient = await remoteRPCManager.getClient(workspaceId);
-      const checks = [
-        { command: 'node --version', name: 'Node.js' },
-        { command: 'python --version', name: 'Python' },
-        { command: 'ruby --version', name: 'Ruby' },
-        { command: 'go version', name: 'Go' },
-        { command: 'cargo --version', name: 'Rust' },
-        { command: 'java -version', name: 'Java' },
-      ];
-      const detected = [];
-      for (const check of checks) {
-        try {
-          await rpcClient.exec({ command: check.command });
-          detected.push(check.name);
-        } catch {
-          // Not installed or command failed
-        }
-      }
-      // Get OS info
-      let os = 'unknown';
+    // A single code path that delegates to the daemon; locality is decided
+    // by whether workspaceId is present and how the daemon routes it.
+    const checks: Array<{ command: string; args: string[]; name: string }> = [
+      { command: 'node', args: ['--version'], name: 'Node.js' },
+      { command: 'python', args: ['--version'], name: 'Python' },
+      { command: 'ruby', args: ['--version'], name: 'Ruby' },
+      { command: 'go', args: ['version'], name: 'Go' },
+      { command: 'cargo', args: ['--version'], name: 'Rust' },
+      { command: 'java', args: ['-version'], name: 'Java' },
+    ];
+
+    const detected: string[] = [];
+    for (const check of checks) {
       try {
-        const osResult = await rpcClient.exec({ command: 'uname -s' });
-        os = osResult.stdout.trim().toLowerCase();
+        const result = await hostExec(check.command, {
+          args: check.args,
+          workspaceId,
+        });
+        if (result.exitCode === 0) {
+          detected.push(check.name);
+        }
+      } catch {
+        // Not installed or command failed
+      }
+    }
+
+    let os: string;
+    if (workspaceId) {
+      os = 'unknown';
+      try {
+        const osResult = await hostExec('uname', { args: ['-s'], workspaceId });
+        if (osResult.exitCode === 0) {
+          os = osResult.stdout.trim().toLowerCase();
+        }
       } catch {
         // fallback
       }
-      return { os, languages: detected, tools: [] };
-    }
-
-    // Local environment detection
-    const checks = [
-      { command: 'node --version', name: 'Node.js' },
-      { command: 'python --version', name: 'Python' },
-      { command: 'ruby --version', name: 'Ruby' },
-      { command: 'go version', name: 'Go' },
-      { command: 'cargo --version', name: 'Rust' },
-      { command: 'java -version', name: 'Java' },
-    ];
-
-    const detected = [];
-    for (const check of checks) {
-      try {
-        await execAsync(check.command);
-        detected.push(check.name);
-      } catch {
-        // Not installed
-      }
+    } else {
+      os = process.platform;
     }
 
     return {
-      os: process.platform,
+      os,
       languages: detected,
       tools: [],
     };

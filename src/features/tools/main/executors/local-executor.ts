@@ -8,15 +8,18 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { IExecutor, FileInfo, FileStats, ExecuteOptions, CommandResult } from '../../types';
 import { Logger } from '../../../../shared/logger';
-import { execAsync } from '../../../../shared/git/git-env';
+import { hostExec } from '../../../../shared/main/host-exec';
 
 const logger = new Logger('LocalExecutor');
 
 export class LocalExecutor implements IExecutor {
   readonly type = 'local' as const;
 
-  constructor(private workspacePath: string) {
-    logger.debug('LocalExecutor initialized', { workspacePath });
+  constructor(
+    private workspacePath: string,
+    private workspaceId?: string,
+  ) {
+    logger.debug('LocalExecutor initialized', { workspacePath, workspaceId });
   }
 
   /**
@@ -153,39 +156,27 @@ export class LocalExecutor implements IExecutor {
         cwd,
       });
 
-      const execOptions = {
+      // Preserve the historical shell-string interface by forwarding the
+      // command through the platform shell as argv; the daemon owns the
+      // actual spawn (argv-only, no interpolation on its side).
+      const isWindows = process.platform === 'win32';
+      const shellCommand = isWindows ? 'cmd.exe' : '/bin/sh';
+      const shellArgs = isWindows ? ['/d', '/s', '/c', command] : ['-c', command];
+
+      const result = await hostExec(shellCommand, {
+        args: shellArgs,
         cwd,
-        env: { ...process.env, ...options?.env },
-        timeout: options?.timeout || 30000,
-        maxBuffer: options?.maxBuffer || 1024 * 1024 * 10, // 10MB
-        shell: options?.shell || (process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : (process.env.SHELL || '/bin/bash')),
+        env: options?.env,
+        timeoutMs: options?.timeout,
+        workspaceId: this.workspaceId,
+      });
+
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
       };
-
-      try {
-        const { stdout, stderr } = await execAsync(command, execOptions);
-
-        return {
-          stdout,
-          stderr,
-          exitCode: 0,
-        };
-      } catch (error) {
-        // Command failed but we still have output
-        const execError = error as {
-          stdout?: string;
-          stderr?: string;
-          code?: number;
-          signal?: string;
-          killed?: boolean;
-        };
-        return {
-          stdout: execError.stdout || '',
-          stderr: execError.stderr || '',
-          exitCode: execError.code || 1,
-          signal: execError.signal,
-          timedOut: execError.killed && execError.signal === 'SIGTERM',
-        };
-      }
     } catch (error) {
       logger.error('Failed to execute command', error as Error, { command });
       throw new Error(`Failed to execute command: ${(error as Error).message}`);
