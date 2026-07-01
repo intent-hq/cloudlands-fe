@@ -573,6 +573,7 @@ export function registerExternalEditorsHandlers(): void {
           });
 
           const isWindowsGuiTerminal = process.platform === 'win32' && editorId === 'windows-terminal';
+          // LOCAL-GUI: launches the user's editor on the client host; not workspace execution
           const child = spawn(command, args, {
             detached: true,
             stdio: 'ignore',
@@ -677,20 +678,21 @@ export function registerExternalEditorsHandlers(): void {
 
           let child;
           if (process.platform === 'darwin') {
+            // LOCAL-GUI: launches the user's chosen app on the client host; not workspace execution
             child = spawn('open', ['-a', appPath, path], {
               detached: true,
               stdio: 'ignore',
               windowsHide: true,
             });
           } else if (process.platform === 'win32') {
-            // Windows: run the binary directly
+            // LOCAL-GUI: launches the user's chosen app on the client host; not workspace execution
             child = spawn(appPath, [path], {
               detached: true,
               stdio: 'ignore',
               windowsHide: true,
             });
           } else {
-            // Linux: run the binary directly
+            // LOCAL-GUI: launches the user's chosen app on the client host; not workspace execution
             child = spawn(appPath, [path], {
               detached: true,
               stdio: 'ignore',

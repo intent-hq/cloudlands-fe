@@ -55,6 +55,7 @@ export function setupEditorIPC() {
         // Try 'code' command (VS Code)
         logger.info('Spawning VS Code', { command: 'code', args });
 
+        // LOCAL-GUI: launches the user's editor on the client host; not workspace execution
         const child = spawn('code', args, {
           detached: true,
           stdio: 'ignore',
@@ -65,7 +66,7 @@ export function setupEditorIPC() {
           logger.warn('Failed to open in VS Code, falling back to system default', {
             error: err.message,
           });
-          // Fall back to system default
+          // LOCAL-GUI: fall back to the client OS default handler for the file; not workspace execution
           shell.openPath(fullPath);
         });
 

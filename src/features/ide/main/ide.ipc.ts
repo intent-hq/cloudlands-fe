@@ -156,6 +156,7 @@ export async function openInVSCode(
       // Try to spawn VSCode with the found command
       // Use shell for PATH-style invocations and Windows .cmd launchers
       const useShell = codeCommand === 'code' || (process.platform === 'win32' && codeCommand.endsWith('.cmd'));
+      // LOCAL-GUI: launches the user's editor on the client host; not workspace execution
       const child = spawn(codeCommand, args, {
         detached: true,
         stdio: 'ignore',
@@ -216,6 +217,7 @@ export async function openInVSCode(
         const flatpakArgs = ['run', appId, ...args];
         logger.info('[VSCode] Spawning via Flatpak', { command: 'flatpak', args: flatpakArgs });
 
+        // LOCAL-GUI: launches the user's Flatpak-packaged editor on the client host; not workspace execution
         const child = spawn('flatpak', flatpakArgs, {
           detached: true,
           stdio: 'ignore',
@@ -275,6 +277,7 @@ export async function openInVSCode(
       logger.info('Spawning open command', { openArgs });
 
       try {
+        // LOCAL-GUI: launches the user's editor via macOS `open` on the client host; not workspace execution
         const child = spawn('open', openArgs, {
           detached: true,
           stdio: 'ignore',
@@ -320,6 +323,7 @@ export async function openInVSCode(
       pathToOpen = pathOrPaths.file || pathOrPaths.folder;
     }
 
+    // LOCAL-GUI: hands the vscode:// URL to the client OS handler to launch the user's editor; not workspace execution
     await shell.openExternal(`vscode://file/${pathToOpen}`);
     logger.info('Opened in VSCode using protocol handler', { path: pathOrPaths });
     return { success: true };
@@ -337,6 +341,7 @@ export async function openInVSCode(
         pathToOpen = pathOrPaths.file || pathOrPaths.folder;
       }
 
+      // LOCAL-GUI: fall back to the client OS default handler for the file; not workspace execution
       await shell.openPath(pathToOpen);
       return {
         success: true,
@@ -446,6 +451,7 @@ export async function openInJetBrains(
         if (command.startsWith('open -a')) {
           // For 'open' command, open the folder first
           execCommand = `${command} "${pathOrPaths.folder}"`;
+          // LOCAL-GUI: launches the user's JetBrains IDE on the client host; not workspace execution
           await execAsync(execCommand);
           // Wait a bit for the IDE to open, then try to open the file using the
           // IDE's inner command-line tool. The `.app` bundle path comes from the
@@ -458,6 +464,7 @@ export async function openInJetBrains(
           ) {
             const toolPath = `${selectedEntry.path}/Contents/MacOS/${selectedIde}`;
             try {
+              // LOCAL-GUI: invokes the IDE's inner CLI to open the file on the client host; not workspace execution
               await execAsync(`"${toolPath}" "${pathOrPaths.file}"`);
             } catch {
               logger.info('Opened folder in JetBrains, file should be opened manually', {
@@ -480,6 +487,7 @@ export async function openInJetBrains(
     }
 
     logger.info('[JetBrains] Executing command', { execCommand });
+    // LOCAL-GUI: launches the user's JetBrains IDE on the client host; not workspace execution
     await execAsync(execCommand);
     logger.info('[JetBrains] Successfully opened in JetBrains IDE', { ide: command, path: pathOrPaths });
 
@@ -548,6 +556,7 @@ export function registerIDEHandlers(): void {
 
           // Spawn the process
           const useShell = codeCommand === 'code';
+          // LOCAL-GUI: launches the user's editor to view a diff on the client host; not workspace execution
           const child = spawnProcess(
             codeCommand,
             ['-n', '--skip-add-to-recently-opened', '-d', oldFilePath, newFilePath],
@@ -614,6 +623,7 @@ export function registerIDEHandlers(): void {
 
           // Spawn the process
           const useShell = codeCommand === 'code';
+          // LOCAL-GUI: launches the user's editor to view a git diff on the client host; not workspace execution
           const child = spawnProcess(codeCommand, args, {
             detached: true,
             stdio: 'ignore',
@@ -629,6 +639,7 @@ export function registerIDEHandlers(): void {
           // Try fallback: open via vscode:// URL
           try {
             const { shell } = await import('electron');
+            // LOCAL-GUI: hands the vscode:// URL to the client OS handler to launch the user's editor; not workspace execution
             await shell.openExternal(`vscode://file/${filePath}`);
             return { success: true };
           } catch  {
