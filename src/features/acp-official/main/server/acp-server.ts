@@ -76,7 +76,7 @@ export class ACPServer extends EventEmitter {
     this.config = config;
     this.sessionManager = new SessionManager({ workspacePath: config.workspacePath });
     this.fileSystemHandler = new FileSystemHandler(config.workspacePath, config.scope);
-    this.terminalHandler = new TerminalHandler(config.workspacePath, config.scope);
+    this.terminalHandler = new TerminalHandler(config.workspacePath, config.scope, config.workspaceId);
   }
 
   /**
