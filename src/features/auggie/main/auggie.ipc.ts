@@ -1,5 +1,3 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { ipcMain } from 'electron';
 import * as fs from 'fs/promises';
 import * as os from 'os';
@@ -8,19 +6,10 @@ import {
   MINIMUM_AUGGIE_VERSION,
   MINIMUM_NODE_VERSION,
 } from '../../../shared/constants/auggie';
-import {
-  execAsyncWithRetry,
-  execFileAsyncWithRetry,
-} from '../../../shared/git/git-env';
-
-const rawExec = promisify(exec);
 import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { checkGitVersion } from './version-checks';
-import {
-  executeAuggieCommand,
-  execWithEnhancedPath,
-} from './execute-auggie-command';
+import { executeAuggieCommand } from './execute-auggie-command';
 import {
   findAuggiePathAsync,
   getEnhancedPath,
@@ -245,100 +234,48 @@ function meetsMinimumVersion(version: string, minimum: string = MINIMUM_AUGGIE_V
 // ============================================================================
 
 /**
- * Check the installed Node.js version.
+ * Check the installed Node.js version via the daemon's `host.exec`
+ * (PROTOCOL §5.14).
  *
- * IMPORTANT: This uses rawExec with process.env (NOT execAsyncWithRetry) to
- * match how the agent process is actually spawned. The agent (acp-provider.ts)
- * uses `...process.env` without any PATH enhancement. If we used
- * execAsyncWithRetry, it would go through buildGitEnv() → getEnhancedPath()
- * which adds ESSENTIAL_SYSTEM_PATHS (including /opt/homebrew/bin), potentially
- * finding a different node (e.g. Homebrew's v24) than what the agent actually
- * runs with (e.g. nvm's v18).
+ * Post-P2 the daemon owns agent spawning (`agent.create` → `spawn.rs`) and
+ * PATH resolution (`host.env`), so the `node` that `host.exec` resolves —
+ * with the daemon's PATH-enriched env — is exactly the runtime the agent
+ * will use. The earlier `rawExec(process.env)` workaround (which avoided
+ * the app's enhanced PATH to match the launcher's PATH) is obsolete.
  */
 async function checkNodeVersion(): Promise<{
   nodeVersion?: string;
   nodeVersionOk: boolean;
 }> {
-  // Check the node version using process.env directly (NOT the enhanced/auggie PATH).
-  // The agent process is spawned via acp-provider with `...process.env` — it does
-  // NOT use getEnhancedPath() or getAuggieExecPATH(). So `#!/usr/bin/env node`
-  // resolves `node` using the exact PATH the app was launched with.
-  //
-  // We use rawExec (promisified child_process.exec) instead of execAsyncWithRetry
-  // because the latter goes through buildGitEnv() → getEnhancedPath(), which adds
-  // ESSENTIAL_SYSTEM_PATHS (including /opt/homebrew/bin). That can shadow the user's
-  // nvm/volta node with Homebrew's node, giving a false "version OK" result.
-  // Retry up to 3 times to handle transient spawn errors (e.g. EAGAIN).
-  const MAX_RETRIES = 3;
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const { stdout } = await rawExec('node --version', {
-        timeout: 5000,
-        env: process.env,
-        windowsHide: true,
-      });
-      const version = (stdout || '').trim();
-      if (version) {
-        const versionOk = meetsMinimumVersion(version, MINIMUM_NODE_VERSION);
-        logger.info('Node.js version check (runtime PATH)', { version, versionOk });
-        return { nodeVersion: version, nodeVersionOk: versionOk };
-      }
-    } catch (err) {
-      lastError = err;
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'EAGAIN' || code === 'EBADF') {
-        logger.warn(
-          `Node version check attempt ${attempt}/${MAX_RETRIES} failed with ${code}, retrying...`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
-        continue;
-      }
-      // Non-transient error — no point retrying
-      break;
-    }
-  }
-
-  logger.warn('Node not found on PATH', { error: lastError });
-  // If `node --version` fails, auggie can't run.
-  return { nodeVersionOk: false };
-}
-
-/**
- * Execute a command with enhanced PATH using args array (no shell quoting issues).
- * On Windows, uses shell-based exec with double-quoted paths (required for .cmd files).
- * On other platforms, uses execFile (no shell) which is more robust.
- */
-async function execFileWithEnhancedPath(
-  file: string,
-  args: string[],
-  options: { cwd?: string; maxBuffer?: number; timeout?: number } = {},
-): Promise<{ stdout: string; stderr: string }> {
-  const enhancedPath = getEnhancedPath();
-  const envOptions = {
-    ...options,
-    env: {
-      PATH: enhancedPath,
-    },
-  };
-
-  if (process.platform === 'win32') {
-    // On Windows, .cmd/.bat files cannot be executed with execFile (no shell).
-    // Build a shell command string with double-quoted path and properly escaped args.
-    const quotedArgs = args.map((arg) => {
-      // If arg contains spaces or special chars, wrap in double quotes
-      if (/[\s"&|<>^]/.test(arg) || arg.includes('{') || arg.includes('}')) {
-        // Escape internal double quotes
-        return `"${arg.replace(/"/g, '\\"')}"`;
-      }
-      return arg;
+  try {
+    const result = await hostExec('node', {
+      args: ['--version'],
+      timeoutMs: 5000,
     });
-    const command = `"${file}" ${quotedArgs.join(' ')}`;
-    return execAsyncWithRetry(command, envOptions);
+    if (result.timedOut) {
+      logger.warn('Node version probe (host.exec) timed out');
+      return { nodeVersionOk: false };
+    }
+    if (result.exitCode !== 0) {
+      logger.warn('Node not found on PATH (host.exec)', {
+        exitCode: result.exitCode,
+        stderr: result.stderr,
+      });
+      return { nodeVersionOk: false };
+    }
+    const version = (result.stdout || '').trim();
+    if (!version) {
+      return { nodeVersionOk: false };
+    }
+    const versionOk = meetsMinimumVersion(version, MINIMUM_NODE_VERSION);
+    logger.info('Node.js version check (host.exec)', { version, versionOk });
+    return { nodeVersion: version, nodeVersionOk: versionOk };
+  } catch (err) {
+    logger.warn('Node version probe (host.exec) failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { nodeVersionOk: false };
   }
-
-  // On macOS/Linux, use execFile (no shell) - avoids all quoting issues
-  return execFileAsyncWithRetry(file, args, envOptions);
 }
 
 // ============================================================================
@@ -1063,9 +1000,15 @@ export function setupAuggieIPC() {
       // First, try to remove any existing auggie entry (ignore errors if it doesn't exist)
       try {
         logger.info('Removing existing Claude Code MCP entry (if any)');
-        await execFileWithEnhancedPath(claudePath, ['mcp', 'remove', 'auggie', '--scope', 'user'], {
-          timeout: 15000,
+        const removeResult = await hostExec(claudePath, {
+          args: ['mcp', 'remove', 'auggie', '--scope', 'user'],
+          timeoutMs: 15000,
         });
+        if (removeResult.timedOut || removeResult.exitCode !== 0) {
+          throw new Error(
+            removeResult.stderr || `host.exec exited with code ${removeResult.exitCode}`,
+          );
+        }
         logger.info('Removed existing auggie MCP entry');
       } catch {
         // Entry didn't exist, that's fine
@@ -1079,11 +1022,16 @@ export function setupAuggieIPC() {
         command: `${claudePath} mcp add-json auggie --scope user '<json>'`,
       });
 
-      const { stdout, stderr } = await execFileWithEnhancedPath(
-        claudePath,
-        ['mcp', 'add-json', 'auggie', '--scope', 'user', jsonString],
-        { timeout: 30000 },
-      );
+      const setupResult = await hostExec(claudePath, {
+        args: ['mcp', 'add-json', 'auggie', '--scope', 'user', jsonString],
+        timeoutMs: 30000,
+      });
+      if (setupResult.timedOut || setupResult.exitCode !== 0) {
+        throw new Error(
+          setupResult.stderr || `host.exec exited with code ${setupResult.exitCode}`,
+        );
+      }
+      const { stdout, stderr } = setupResult;
 
       logger.info('Claude Code MCP setup completed', { stdout, stderr });
 
@@ -1139,9 +1087,16 @@ export function setupAuggieIPC() {
         command: `${codexPath} ${codexArgs.join(' ')}`,
       });
 
-      const { stdout, stderr } = await execFileWithEnhancedPath(codexPath, codexArgs, {
-        timeout: 30000,
+      const setupResult = await hostExec(codexPath, {
+        args: codexArgs,
+        timeoutMs: 30000,
       });
+      if (setupResult.timedOut || setupResult.exitCode !== 0) {
+        throw new Error(
+          setupResult.stderr || `host.exec exited with code ${setupResult.exitCode}`,
+        );
+      }
+      const { stdout, stderr } = setupResult;
 
       logger.info('Codex MCP setup completed', { stdout, stderr });
 
@@ -1316,9 +1271,16 @@ export function setupAuggieIPC() {
 
       try {
         // Run: claude mcp list (no --json or --scope flags, as they are not supported)
-        const { stdout } = await execWithEnhancedPath(claudePath, ['mcp', 'list'], {
-          timeout: 5000,
+        const listResult = await hostExec(claudePath, {
+          args: ['mcp', 'list'],
+          timeoutMs: 5000,
         });
+        if (listResult.timedOut || listResult.exitCode !== 0) {
+          throw new Error(
+            listResult.stderr || `host.exec exited with code ${listResult.exitCode}`,
+          );
+        }
+        const { stdout } = listResult;
 
         // Parse text output: check if 'auggie' appears in the output
         const isConfigured = stdout.includes('auggie');
@@ -1365,9 +1327,16 @@ export function setupAuggieIPC() {
 
       try {
         // Try to run: codex mcp list
-        const { stdout } = await execWithEnhancedPath(codexPath, ['mcp', 'list'], {
-          timeout: 5000,
+        const listResult = await hostExec(codexPath, {
+          args: ['mcp', 'list'],
+          timeoutMs: 5000,
         });
+        if (listResult.timedOut || listResult.exitCode !== 0) {
+          throw new Error(
+            listResult.stderr || `host.exec exited with code ${listResult.exitCode}`,
+          );
+        }
+        const { stdout } = listResult;
 
         // Check if output contains codebase-retrieval entry referencing auggie
         const isConfigured = stdout.includes('codebase-retrieval') && stdout.includes('auggie');
@@ -1507,11 +1476,16 @@ export function setupAuggieIPC() {
 
       logger.info('Executing Claude Code MCP uninstall', { command });
 
-      const { stdout, stderr } = await execWithEnhancedPath(
-        claudePath,
-        ['mcp', 'remove', 'auggie', '--scope', 'user'],
-        { timeout: 30000 },
-      );
+      const uninstallResult = await hostExec(claudePath, {
+        args: ['mcp', 'remove', 'auggie', '--scope', 'user'],
+        timeoutMs: 30000,
+      });
+      if (uninstallResult.timedOut || uninstallResult.exitCode !== 0) {
+        throw new Error(
+          uninstallResult.stderr || `host.exec exited with code ${uninstallResult.exitCode}`,
+        );
+      }
+      const { stdout, stderr } = uninstallResult;
 
       logger.info('Claude Code MCP uninstall completed', { stdout, stderr });
 
@@ -1547,11 +1521,16 @@ export function setupAuggieIPC() {
 
       logger.info('Executing Codex MCP uninstall', { command });
 
-      const { stdout, stderr } = await execWithEnhancedPath(
-        codexPath,
-        ['mcp', 'remove', 'codebase-retrieval'],
-        { timeout: 30000 },
-      );
+      const uninstallResult = await hostExec(codexPath, {
+        args: ['mcp', 'remove', 'codebase-retrieval'],
+        timeoutMs: 30000,
+      });
+      if (uninstallResult.timedOut || uninstallResult.exitCode !== 0) {
+        throw new Error(
+          uninstallResult.stderr || `host.exec exited with code ${uninstallResult.exitCode}`,
+        );
+      }
+      const { stdout, stderr } = uninstallResult;
 
       logger.info('Codex MCP uninstall completed', { stdout, stderr });
 
@@ -1597,11 +1576,16 @@ export function setupAuggieIPC() {
 
       logger.info('Executing Cortex MCP setup', { command });
 
-      const { stdout, stderr } = await execWithEnhancedPath(
-        cortexPath,
-        ['mcp', 'add', 'augment-context-engine', auggiePath, '--', '--mcp', '--mcp-auto-workspace'],
-        { timeout: 30000 },
-      );
+      const setupResult = await hostExec(cortexPath, {
+        args: ['mcp', 'add', 'augment-context-engine', auggiePath, '--', '--mcp', '--mcp-auto-workspace'],
+        timeoutMs: 30000,
+      });
+      if (setupResult.timedOut || setupResult.exitCode !== 0) {
+        throw new Error(
+          setupResult.stderr || `host.exec exited with code ${setupResult.exitCode}`,
+        );
+      }
+      const { stdout, stderr } = setupResult;
 
       logger.info('Cortex MCP setup completed', { stdout, stderr });
 
@@ -1636,9 +1620,16 @@ export function setupAuggieIPC() {
 
       try {
         // Run: cortex mcp list
-        const { stdout } = await execWithEnhancedPath(cortexPath, ['mcp', 'list'], {
-          timeout: 5000,
+        const listResult = await hostExec(cortexPath, {
+          args: ['mcp', 'list'],
+          timeoutMs: 5000,
         });
+        if (listResult.timedOut || listResult.exitCode !== 0) {
+          throw new Error(
+            listResult.stderr || `host.exec exited with code ${listResult.exitCode}`,
+          );
+        }
+        const { stdout } = listResult;
 
         // Check if output contains augment-context-engine
         const isConfigured = stdout.includes('augment-context-engine');
@@ -1686,11 +1677,16 @@ export function setupAuggieIPC() {
 
       logger.info('Executing Cortex MCP uninstall', { command });
 
-      const { stdout, stderr } = await execWithEnhancedPath(
-        cortexPath,
-        ['mcp', 'remove', 'augment-context-engine'],
-        { timeout: 30000 },
-      );
+      const uninstallResult = await hostExec(cortexPath, {
+        args: ['mcp', 'remove', 'augment-context-engine'],
+        timeoutMs: 30000,
+      });
+      if (uninstallResult.timedOut || uninstallResult.exitCode !== 0) {
+        throw new Error(
+          uninstallResult.stderr || `host.exec exited with code ${uninstallResult.exitCode}`,
+        );
+      }
+      const { stdout, stderr } = uninstallResult;
 
       logger.info('Cortex MCP uninstall completed', { stdout, stderr });
 
