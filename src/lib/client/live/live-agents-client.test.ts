@@ -222,6 +222,7 @@ describe("LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)",
           isResponding: true,
           isWaitingOnTool: true,
           isWaitingForOtherAgents: false,
+          waitingForAgentIds: [],
         },
       ],
     });
@@ -232,6 +233,7 @@ describe("LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)",
       isResponding: true,
       isWaitingOnTool: true,
       isWaitingForOtherAgents: false,
+      waitingForAgentIds: [],
     });
   });
 
@@ -245,6 +247,7 @@ describe("LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)",
         isResponding: false,
         isWaitingOnTool: false,
         isWaitingForOtherAgents: true,
+        waitingForAgentIds: ["agent-child-1", "agent-child-2"],
       },
     });
     const client = new LiveAgentsClient();
@@ -254,6 +257,7 @@ describe("LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)",
       isResponding: false,
       isWaitingOnTool: false,
       isWaitingForOtherAgents: true,
+      waitingForAgentIds: ["agent-child-1", "agent-child-2"],
     });
   });
 
@@ -267,5 +271,6 @@ describe("LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)",
     expect(agent?.isResponding).toBeUndefined();
     expect(agent?.isWaitingOnTool).toBeUndefined();
     expect(agent?.isWaitingForOtherAgents).toBeUndefined();
+    expect(agent?.waitingForAgentIds).toBeUndefined();
   });
 });

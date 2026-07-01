@@ -177,7 +177,9 @@ function computeGraphState(
     // UI consumers with agentId subscribe to the selectors directly where possible.
     const isResponding = selectAgentIsResponding.select(state, agentId);
     const isWaitingForOtherAgents = selectAgentIsWaitingForOtherAgents.select(state, agentId);
-    const waitingForAgentIds = (session.metadata as any)?.waitingForAgentIds as string[] | undefined;
+    // Read the top-level daemon-owned array verbatim (PROTOCOL.md §5.5). The BE
+    // emits it on AgentLite (agent.list/get) and chat.subscribe seq-0.
+    const waitingForAgentIds = session.waitingForAgentIds;
 
     let nodeStatus = getNodeStatus(session, isResponding);
     if (isWaitingForOtherAgents) {

@@ -160,7 +160,7 @@ describe("selectGraphState", () => {
       name: "Agent a1",
       status: "Waiting" as any,
       isWaitingForOtherAgents: true,
-      metadata: { waitingForAgentIds: ["a2"] } as any,
+      waitingForAgentIds: ["a2"],
       messages: [],
       createdAt: "2026-03-20T13:00:00.000Z",
       updatedAt: "2026-03-20T13:00:00.000Z",

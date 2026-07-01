@@ -190,10 +190,19 @@ export interface AgentSession {
 
   /**
    * Daemon-owned activity flag (PROTOCOL.md §5.5): the agent parents one or
-   * more pending completion watches. Rendered verbatim — the FE no longer
-   * derives this from `metadata.waitingForAgentIds`.
+   * more pending completion watches. Rendered verbatim.
    */
   isWaitingForOtherAgents?: boolean;
+
+  /**
+   * Daemon-owned companion to `isWaitingForOtherAgents` (PROTOCOL.md §5.5): the
+   * distinct child `agentId`s this agent currently parents a pending completion
+   * watch against. Emitted on `AgentLite` (`agent.list`/`agent.get`) and the
+   * `chat.subscribe` seq-0 snapshot as `string[]` (never `null`/omitted). Not
+   * present on `workspace.agentSummary.agents[]` — read it from those surfaces.
+   * Rendered verbatim.
+   */
+  waitingForAgentIds?: string[];
 
   /** Canonical stop/finish reason from the latest terminal stream/status event */
   stopReason?: string | null;

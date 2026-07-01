@@ -1547,7 +1547,6 @@ describe('agent-session selectors', () => {
     it('returns false for terminal or unknown agents', () => {
       const session = makeSession('a1', 'ws-1', {
         status: 'Completed' as any,
-        metadata: { waitingForAgentIds: ['a2'] } as any,
         messages: [
           {
             ...makeMessage('m1', 'assistant'),
@@ -1651,7 +1650,6 @@ describe('agent-session selectors', () => {
           status: 'Completed' as any,
           isStreaming: true,
           isProcessing: true,
-          metadata: { waitingForAgentIds: ['a2'] } as any,
         }),
         makeSession('error', 'ws-1', { status: 'error' as any, isStreaming: true }),
         makeSession('deleted', 'ws-1', { status: 'deleted' as any, isProcessing: true }),
@@ -1749,7 +1747,6 @@ describe('agent-session selectors', () => {
       const completed = makeSession('completed', 'ws-1', {
         status: 'Completed' as any,
         isStreaming: true,
-        metadata: { waitingForAgentIds: ['child'] } as any,
       });
       const idle = makeSession('idle', 'ws-1', {
         status: 'idle' as any,
