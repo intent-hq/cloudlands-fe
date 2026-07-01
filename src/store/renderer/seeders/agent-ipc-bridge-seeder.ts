@@ -71,9 +71,13 @@ async function forwardToOrchestrator(
  *
  * The FE's `CreateRequest` carries more fields than `agent.create` accepts;
  * we forward only the parameters the daemon router consumes (`workspaceId`,
- * `name`, `model`, `specialistId`, `idempotencyKey`). The `specialist` value
- * lives under `metadata.specialist` (set by the specialist picker in
- * `agent-creation-service.ts`) — surface it as the daemon's `specialistId`.
+ * `name`, `model`, `specialistId`, `agentId`, `idempotencyKey`). The
+ * `specialist` value lives under `metadata.specialist` (set by the specialist
+ * picker in `agent-creation-service.ts`) — surface it as the daemon's
+ * `specialistId`. The FE-minted `agentId` is forwarded verbatim so the daemon
+ * adopts the same id: the follow-up `agent.sendMessage` (queued right after
+ * the create) then targets a persisted session instead of racing to `-32602
+ * not found: agent session`.
  *
  * Response envelope: `UnifiedAgentFactory.createInBackend` reads
  * `result.success` (typedInvoke wraps everything in `IpcResponse<T>`), so we
@@ -91,13 +95,17 @@ registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
     };
   }
   const metadata = asRecord(request.metadata);
-  const params = {
+  const params: Record<string, unknown> = {
     workspaceId,
     name: readString(request, "name"),
     model: readString(request, "model"),
     specialistId: readString(metadata, "specialist"),
     idempotencyKey: newIdempotencyKey(),
   };
+  const clientAgentId = readString(request, "agentId");
+  if (clientAgentId) {
+    params.agentId = clientAgentId;
+  }
   try {
     const result = await backendRequest<{ agent?: unknown }>("agent.create", params);
     return {

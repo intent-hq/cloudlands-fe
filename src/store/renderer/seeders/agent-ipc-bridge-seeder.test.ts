@@ -68,7 +68,7 @@ describe("agent-ipc-bridge-seeder", () => {
   });
 
   describe("agent:create → daemon agent.create", () => {
-    it("forwards workspaceId / name / model / specialistId and wraps the result in IpcResponse<{agent,sessionId}>", async () => {
+    it("forwards workspaceId / name / model / specialistId / agentId and wraps the result in IpcResponse<{agent,sessionId}>", async () => {
       // PROTOCOL-shaped daemon response for `agent.create` (§5.5):
       // `{ agent: { id, name } }` — the bridge must accept this verbatim.
       mockedRequest.mockResolvedValueOnce({ agent: { id: "agent-42", name: "Coordinator" } });
@@ -89,12 +89,17 @@ describe("agent-ipc-bridge-seeder", () => {
 
       const response = await mockInvoke(AGENT_CHANNELS.CREATE, request);
 
+      // The FE-minted `agentId` MUST flow through to `agent.create` verbatim
+      // so the daemon adopts it — otherwise the follow-up `agent.sendMessage`
+      // (queued right after the create) targets a non-existent session and
+      // the FE surfaces `-32602 not found: agent session` (PROTOCOL §5.5).
       expect(mockedRequest).toHaveBeenCalledWith("agent.create", {
         workspaceId: WORKSPACE_ID,
         name: "Coordinator",
         model: "claude-opus",
         specialistId: "coordinator",
         idempotencyKey: "idk-test",
+        agentId: "agent-42",
       });
       // `typedInvoke` consumers (UnifiedAgentFactory.createInBackend) gate on
       // `isSuccessResponse`, so the bridge envelope MUST satisfy that guard.
@@ -103,6 +108,17 @@ describe("agent-ipc-bridge-seeder", () => {
         success: true,
         data: { agent: { id: "agent-42", name: "Coordinator" }, sessionId: "agent-42" },
       });
+    });
+
+    it("omits agentId from the daemon call when the FE request does not carry one (daemon mints its own)", async () => {
+      mockedRequest.mockResolvedValueOnce({ agent: { id: "agent-be-99", name: "anon" } });
+      await mockInvoke(AGENT_CHANNELS.CREATE, {
+        workspaceId: WORKSPACE_ID,
+        workspacePath: "/tmp/ws",
+      });
+      const params = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(params).toBeDefined();
+      expect("agentId" in params).toBe(false);
     });
 
     it("returns an IpcResponse error when workspaceId is missing (no daemon call)", async () => {

@@ -814,6 +814,21 @@ export class UnifiedAgentFactory {
         };
       }
 
+      // Defensive: the daemon (PROTOCOL §5.5) now adopts the FE-supplied
+      // `agentId` verbatim, so `result.data.agent.id` should equal `agent.id`.
+      // If they diverge, the follow-up `agent.sendMessage` (addressed at
+      // `agent.id`) would race back to `-32602 not found: agent session`.
+      // Warn loudly so the mismatch is surfaced before the send lands.
+      const returnedAgent = (result.data as { agent?: { id?: unknown } } | undefined)?.agent;
+      const returnedId =
+        returnedAgent && typeof returnedAgent.id === 'string' ? returnedAgent.id : undefined;
+      if (returnedId && returnedId !== agent.id) {
+        logger.warn('Backend returned a different agent id than the FE supplied', {
+          requestedAgentId: agent.id,
+          returnedAgentId: returnedId,
+        });
+      }
+
       return { success: true };
     } catch (error) {
       logger.error('Backend creation failed', error);
