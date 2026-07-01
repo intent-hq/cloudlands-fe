@@ -1,20 +1,22 @@
 /**
  * Server Manager
  *
- * Manages MCP server processes - spawning, monitoring, and restarting.
+ * Thin registration shim over the daemon's `mcp.servers.*` surface
+ * (PROTOCOL.md §5.22). The daemon owns the child process lifecycle;
+ * this class translates the pre-existing `startServer` / `stopServer`
+ * / `restartServer` calls from {@link McpHub} into `mcp.servers.create`
+ * / `toggle` / `restart` / `getStatus` / `delete` JSON-RPC round-trips
+ * and emits the same `server:started` / `server:stopped` / `server:error`
+ * events its callers already listen for.
  */
 
 import { app } from 'electron';
 import { EventEmitter } from '$shared/utils/event-emitter';
-import {
-  ChildProcess,
-  spawn,
-} from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { Logger } from '../../../../shared/logger';
-import { killChildProcessTree } from '../../../../shared/main/process-tree-kill';
+import { getBackendClient } from '../../../backend/main/backend.ipc';
 import type { McpServerConfig } from './mcp-hub';
 
 // ESM polyfill for __dirname (not available in ES modules)
@@ -23,20 +25,9 @@ const __dirname = path.dirname(__filename);
 
 const logger = new Logger('ServerManager');
 
-interface ServerProcess {
+interface RegisteredServer {
   config: McpServerConfig;
-  process: ChildProcess;
-  restartCount: number;
-  lastRestart: number;
-  isHealthy: boolean;
-  requestQueue: Map<
-    string,
-    {
-      resolve: (value: any) => void;
-      reject: (error: any) => void;
-      timeout: NodeJS.Timeout;
-    }
-  >;
+  serverId: string;
 }
 
 export interface ServerManagerOptions {
@@ -46,9 +37,9 @@ export interface ServerManagerOptions {
 }
 
 export class ServerManager extends EventEmitter {
-  private servers: Map<string, ServerProcess> = new Map();
+  private servers: Map<string, RegisteredServer> = new Map();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private options: Required<ServerManagerOptions>;
-  private restartTimers: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(options: ServerManagerOptions = {}) {
     super();
@@ -61,100 +52,81 @@ export class ServerManager extends EventEmitter {
   }
 
   /**
-   * Start a new server process
+   * Register `config` with the daemon and start it. The daemon owns the child
+   * process; this call is idempotent — an existing daemon-side registration
+   * for the same id is updated and restarted instead of re-created.
    */
   async startServer(config: McpServerConfig): Promise<void> {
     if (this.servers.has(config.id)) {
       throw new Error(`Server ${config.id} is already running`);
     }
 
-    const serverPath = this.getServerPath(config.type);
-    const args = this.getServerArgs(config);
+    const wireConfig = this.buildWireConfig(config);
+    logger.info(
+      `Registering daemon-managed MCP server ${config.id}: ${wireConfig.command} ${(wireConfig.args as string[]).join(' ')}`,
+    );
 
-    logger.info(`Spawning server process: ${serverPath} ${args.join(' ')}`);
+    const client = getBackendClient();
 
-    const nodeEnv = process.env.NODE_ENV || 'production';
-    const processEnv = { ...process.env };
+    try {
+      try {
+        await client.request('mcp.servers.create', { config: wireConfig });
+      } catch (error) {
+        // If a definition with this id already exists in the daemon's persistent
+        // secret store (from a prior run), update it with the current command/env
+        // so the FE stays authoritative for the bundled binaries.
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/already exists/i.test(message)) throw error;
+        await client.request('mcp.servers.update', {
+          serverId: config.id,
+          config: wireConfig,
+        });
+      }
 
-    // On Windows packaged apps, use Electron's embedded Node.js (ELECTRON_RUN_AS_NODE=1)
-    // since 'node' may not be on the system PATH.
-    const useElectronAsNode = process.platform === 'win32' && app.isPackaged;
-    const command = useElectronAsNode ? process.execPath : 'node';
+      const toggleResult = (await client.request('mcp.servers.toggle', {
+        serverId: config.id,
+        enabled: true,
+      })) as { status?: { state?: string; lastError?: string } } | undefined;
 
-    logger.info(`Using command: ${command} (useElectronAsNode=${useElectronAsNode})`);
+      const state = toggleResult?.status?.state;
+      if (state === 'error') {
+        const lastError = toggleResult?.status?.lastError ?? 'unknown error';
+        throw new Error(`daemon reported error status: ${lastError}`);
+      }
 
-    const childProcess = spawn(command, [serverPath, ...args], {
-      stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
-      env: {
-        ...processEnv,
-        ...(useElectronAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
-        NODE_ENV: nodeEnv,
-        MCP_SERVER_ID: config.id,
-        MCP_SERVER_TYPE: config.type,
-        MCP_WORKSPACE_ID: config.workspaceId || '',
-        MCP_WORKSPACE_PATH: config.workspacePath || '',
-        MCP_METADATA_PATH: config.metadataPath || '',
-      },
-      windowsHide: true,
-    });
-
-    const serverProcess: ServerProcess = {
-      config,
-      process: childProcess,
-      restartCount: 0,
-      lastRestart: Date.now(),
-      isHealthy: true,
-      requestQueue: new Map(),
-    };
-
-    this.setupProcessHandlers(serverProcess);
-    this.servers.set(config.id, serverProcess);
-
-    // Wait for server to be ready
-    await this.waitForServerReady(config.id);
-
-    this.emit('server:started', config);
+      this.servers.set(config.id, { config, serverId: config.id });
+      this.emit('server:started', config);
+    } catch (error) {
+      const wrapped = error instanceof Error ? error : new Error(String(error));
+      logger.error(`Failed to register MCP server ${config.id}:`, wrapped);
+      this.emit('server:error', config, wrapped);
+      throw wrapped;
+    }
   }
 
   /**
-   * Stop a server process
+   * Ask the daemon to stop `serverId` and drop the registration from its
+   * persistent settings.
    */
   async stopServer(serverId: string): Promise<void> {
     const server = this.servers.get(serverId);
-    if (!server) {
-      return;
-    }
+    if (!server) return;
 
-    // CRITICAL: Remove from servers map BEFORE killing the process.
-    // The exit handler checks this.servers.has(config.id) to decide whether to restart.
-    // If we kill first, the exit handler fires while the server is still in the map,
-    // triggering an unwanted restartServer() that creates a zombie server process.
     this.servers.delete(serverId);
 
-    // Cancel any pending restart
-    const restartTimer = this.restartTimers.get(serverId);
-    if (restartTimer) {
-      clearTimeout(restartTimer);
-      this.restartTimers.delete(serverId);
+    const client = getBackendClient();
+    try {
+      await client.request('mcp.servers.toggle', { serverId, enabled: false });
+    } catch (error) {
+      logger.warn(`toggle(false) failed for ${serverId}: ${(error as Error).message}`);
     }
-
-    // Reject all pending requests
-    for (const [, request] of server.requestQueue) {
-      clearTimeout(request.timeout);
-      request.reject(new Error('Server is shutting down'));
-    }
-    server.requestQueue.clear();
-
-    // Kill the process tree
-    if (!server.process.killed) {
-      await killChildProcessTree(server.process);
-
-      // Give it time to shutdown gracefully
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Force kill if still running
-      if (!server.process.killed) {
-        await killChildProcessTree(server.process, 'SIGKILL');
+    try {
+      await client.request('mcp.servers.delete', { serverId });
+    } catch (error) {
+      // NotFound is fine — the daemon may have never persisted a config for it.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/not found/i.test(message)) {
+        logger.warn(`delete failed for ${serverId}: ${message}`);
       }
     }
 
@@ -162,227 +134,122 @@ export class ServerManager extends EventEmitter {
   }
 
   /**
-   * Restart a server
+   * Ask the daemon to restart `serverId` (stop-then-start). Emits
+   * `server:restarting` for observers and `server:error` when the daemon
+   * reports the resulting status as `error`.
    */
   async restartServer(serverId: string): Promise<void> {
     const server = this.servers.get(serverId);
-    if (!server) {
-      return;
-    }
-
-    // Check restart limits
-    const now = Date.now();
-    const timeSinceLastRestart = now - server.lastRestart;
-
-    if (timeSinceLastRestart < 60000) {
-      // Within 1 minute
-      server.restartCount++;
-    } else {
-      server.restartCount = 1;
-    }
-
-    if (server.restartCount > this.options.maxRetries) {
-      logger.error(`Server ${serverId} exceeded max restart attempts`);
-      this.emit('server:error', server.config, new Error('Max restart attempts exceeded'));
-      await this.stopServer(serverId);
-      return;
-    }
-
-    // Calculate backoff delay
-    const delay = this.options.retryDelay * Math.pow(2, server.restartCount - 1);
-
-    logger.info(
-      `Scheduling restart for server ${serverId} in ${delay}ms (attempt ${server.restartCount})`,
-    );
+    if (!server) return;
 
     this.emit('server:restarting', server.config);
 
-    // Schedule restart
-    const timer = setTimeout(async () => {
-      this.restartTimers.delete(serverId);
-
-      const config = server.config;
-      await this.stopServer(serverId);
-      await this.startServer(config);
-    }, delay);
-
-    this.restartTimers.set(serverId, timer);
+    try {
+      const result = (await getBackendClient().request('mcp.servers.restart', {
+        serverId,
+      })) as { status?: { state?: string; lastError?: string } } | undefined;
+      const state = result?.status?.state;
+      if (state === 'error') {
+        const lastError = result?.status?.lastError ?? 'unknown error';
+        throw new Error(`daemon reported error status: ${lastError}`);
+      }
+    } catch (error) {
+      const wrapped = error instanceof Error ? error : new Error(String(error));
+      logger.error(`Failed to restart MCP server ${serverId}:`, wrapped);
+      this.emit('server:error', server.config, wrapped);
+    }
   }
 
   /**
-   * Call a tool on a server
+   * Not supported — the daemon owns the child and MCP tool calls do not
+   * round-trip back through the FE. Kept on the class so existing
+   * {@link McpHub} plumbing continues to typecheck; throws so any live caller
+   * is exposed rather than silently no-op'd.
    */
-  async callTool(serverId: string, toolName: string, params: any): Promise<any> {
-    const server = this.servers.get(serverId);
-    if (!server) {
-      throw new Error(`Server ${serverId} not found`);
-    }
-
-    if (!server.isHealthy) {
-      throw new Error(`Server ${serverId} is not healthy`);
-    }
-
-    const requestId = `${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-
-    return new Promise((resolve, reject) => {
-      // Set up timeout
-      const timeout = setTimeout(() => {
-        server.requestQueue.delete(requestId);
-        reject(new Error(`Request ${requestId} timed out`));
-      }, this.options.requestTimeout);
-
-      // Store request handler
-      server.requestQueue.set(requestId, { resolve, reject, timeout });
-
-      // Send request to server
-      const request = {
-        jsonrpc: '2.0',
-        id: requestId,
-        method: 'tools/call',
-        params: {
-          name: toolName,
-          arguments: params,
-        },
-      };
-
-      server.process.send(request);
-    });
+  async callTool(serverId: string, _toolName: string, _params: unknown): Promise<never> {
+    throw new Error(
+      `ServerManager.callTool is not supported: server ${serverId} is daemon-managed. ` +
+        `Route MCP tool calls through the daemon's MCP surface, not through the FE.`,
+    );
   }
 
   /**
-   * Ping a server for health check
+   * Point-read the daemon-reported status; treat `state === "running"` as
+   * healthy. Kept as an async boolean so the {@link HealthMonitor} contract
+   * (a `() => Promise<boolean>` check) stays unchanged.
    */
   async pingServer(serverId: string): Promise<boolean> {
-    const server = this.servers.get(serverId);
-    if (!server || !server.isHealthy) {
-      return false;
-    }
-
+    if (!this.servers.has(serverId)) return false;
     try {
-      const response = await this.sendRequest(serverId, 'ping', {});
-      return response === 'pong';
-    } catch {
+      const result = (await getBackendClient().request('mcp.servers.getStatus', {
+        serverId,
+      })) as { status?: { state?: string } } | undefined;
+      return result?.status?.state === 'running';
+    } catch (error) {
+      logger.debug(`getStatus(${serverId}) failed: ${(error as Error).message}`);
       return false;
     }
   }
 
   /**
-   * Send a request to a server
+   * A local snapshot of the servers this manager has registered with the
+   * daemon. Runtime health is authoritative on the daemon side; consumers
+   * that need live per-server state should subscribe to the
+   * `mcp.servers:status-changed` event stream (§10).
    */
-  private async sendRequest(serverId: string, method: string, params: any): Promise<any> {
-    const server = this.servers.get(serverId);
-    if (!server) {
-      throw new Error(`Server ${serverId} not found`);
+  getServerStatus(): Map<string, unknown> {
+    const status = new Map<string, unknown>();
+    for (const [id, server] of this.servers) {
+      status.set(id, {
+        id,
+        type: server.config.type,
+        workspaceId: server.config.workspaceId,
+        isDaemonManaged: true,
+      });
     }
-
-    const requestId = `${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        server.requestQueue.delete(requestId);
-        reject(new Error(`Request ${requestId} timed out`));
-      }, 5000); // Short timeout for internal requests
-
-      server.requestQueue.set(requestId, { resolve, reject, timeout });
-
-      const request = {
-        jsonrpc: '2.0',
-        id: requestId,
-        method,
-        params,
-      };
-
-      server.process.send(request);
-    });
+    return status;
   }
 
   /**
-   * Setup process event handlers
+   * Build a PROTOCOL §5.22 `McpServerConfig` from the FE-side hub config:
+   * resolve the bundled binary path, mirror the arg/env layout the FE used
+   * to spawn locally, and pin `transport: "stdio"` + `enabled: true` so the
+   * subsequent `toggle` actually starts it.
    */
-  private setupProcessHandlers(server: ServerProcess): void {
-    const { process, config } = server;
+  private buildWireConfig(config: McpServerConfig): Record<string, unknown> {
+    const serverPath = this.getServerPath(config.type);
+    const args: string[] = [serverPath, ...this.getServerArgs(config)];
 
-    // Handle messages from server
-    process.on('message', (message: any) => {
-      const request = message.id ? server.requestQueue.get(message.id) : undefined;
-      if (request) {
-        server.requestQueue.delete(message.id);
-        clearTimeout(request.timeout);
+    // On Windows packaged apps Electron ships without a bare `node` on PATH,
+    // so re-use its own binary via ELECTRON_RUN_AS_NODE (matches the previous
+    // FE spawn strategy).
+    const useElectronAsNode = process.platform === 'win32' && app.isPackaged;
+    const command = useElectronAsNode ? process.execPath : 'node';
 
-        if (message.error) {
-          request.reject(new Error(message.error.message || 'Unknown error'));
-        } else {
-          request.resolve(message.result);
-        }
-      } else if (message.type === 'event') {
-        // Forward events from server
-        logger.info(`[ServerManager] Received event from server ${config.id}:`, message.event);
-        logger.info(`[ServerManager] Emitting server:event for ${config.id}`);
-        this.emit('server:event', config.id, message.event);
-        logger.info(`[ServerManager] Emitted server:event for ${config.id}`);
-      }
-    });
+    const env: Record<string, string> = {
+      NODE_ENV: process.env.NODE_ENV || 'production',
+      MCP_SERVER_ID: config.id,
+      MCP_SERVER_TYPE: config.type,
+      MCP_WORKSPACE_ID: config.workspaceId || '',
+      MCP_WORKSPACE_PATH: config.workspacePath || '',
+      MCP_METADATA_PATH: config.metadataPath || '',
+    };
+    if (useElectronAsNode) env.ELECTRON_RUN_AS_NODE = '1';
 
-    // Handle stdout
-    process.stdout?.on('data', (data) => {
-      logger.debug(`[${config.id}] ${data.toString()}`);
-    });
-
-    // Handle stderr
-    process.stderr?.on('data', (data) => {
-      logger.error(`[${config.id}] ${data.toString()}`);
-    });
-
-    // Handle process exit
-    process.on('exit', (code, signal) => {
-      logger.info(`Server ${config.id} exited with code ${code} signal ${signal}`);
-      server.isHealthy = false;
-
-      // Reject all pending requests
-      for (const [, request] of server.requestQueue) {
-        clearTimeout(request.timeout);
-        request.reject(new Error('Server process exited'));
-      }
-      server.requestQueue.clear();
-
-      // Attempt restart if not intentionally stopped
-      if (this.servers.has(config.id)) {
-        this.restartServer(config.id);
-      }
-    });
-
-    // Handle process error
-    process.on('error', (error) => {
-      logger.error(`Server ${config.id} process error:`, error);
-      server.isHealthy = false;
-      this.emit('server:error', config, error);
-    });
+    return {
+      id: config.id,
+      name: config.name,
+      transport: 'stdio',
+      command,
+      args,
+      env,
+      enabled: true,
+    };
   }
 
   /**
-   * Wait for server to be ready
-   */
-  private async waitForServerReady(serverId: string, maxWait = 10000): Promise<void> {
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < maxWait) {
-      try {
-        const ready = await this.pingServer(serverId);
-        if (ready) {
-          return;
-        }
-      } catch {
-        // Ignore errors during startup
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-
-    throw new Error(`Server ${serverId} failed to become ready`);
-  }
-
-  /**
-   * Get server executable path
+   * Locate the bundled server script on disk. Preserved from the previous
+   * FE-spawn implementation so the daemon runs the exact same binary.
    */
   private getServerPath(type: McpServerConfig['type']): string {
     // __dirname is dist/features/mcp/main/hub, servers are at dist/features/mcp/servers
@@ -407,19 +274,13 @@ export class ServerManager extends EventEmitter {
     // Node cannot execute scripts directly from inside the asar archive.
     if (app.isPackaged) {
       const unpackedPath = serverPath.replace('app.asar', 'app.asar.unpacked');
-
       logger.info('Server path resolution (packaged)', {
         isPackaged: true,
         serverPath,
         unpackedPath,
         unpackedPathExists: fs.existsSync(unpackedPath),
       });
-
-      if (fs.existsSync(unpackedPath)) {
-        return unpackedPath;
-      }
-
-      // Fallback to original path if unpacked doesn't exist
+      if (fs.existsSync(unpackedPath)) return unpackedPath;
       logger.warn('Unpacked server path not found, falling back to original', {
         unpackedPath,
         serverPath,
@@ -429,44 +290,12 @@ export class ServerManager extends EventEmitter {
     return serverPath;
   }
 
-  /**
-   * Get server arguments
-   */
+  /** CLI arg layout the bundled workspace/notes/git binaries expect. */
   private getServerArgs(config: McpServerConfig): string[] {
     const args: string[] = [];
-
-    if (config.workspaceId) {
-      args.push('--workspace-id', config.workspaceId);
-    }
-
-    if (config.workspacePath) {
-      args.push('--workspace-path', config.workspacePath);
-    }
-
-    if (config.metadataPath) {
-      args.push('--metadata-path', config.metadataPath);
-    }
-
+    if (config.workspaceId) args.push('--workspace-id', config.workspaceId);
+    if (config.workspacePath) args.push('--workspace-path', config.workspacePath);
+    if (config.metadataPath) args.push('--metadata-path', config.metadataPath);
     return args;
-  }
-
-  /**
-   * Get server status
-   */
-  getServerStatus(): Map<string, any> {
-    const status = new Map();
-
-    for (const [id, server] of this.servers) {
-      status.set(id, {
-        id,
-        type: server.config.type,
-        workspaceId: server.config.workspaceId,
-        isHealthy: server.isHealthy,
-        restartCount: server.restartCount,
-        pendingRequests: server.requestQueue.size,
-      });
-    }
-
-    return status;
   }
 }
