@@ -292,19 +292,40 @@ function createJsonRpcRequester(child: ReturnType<typeof spawn>, label: string) 
   };
 }
 
-function spawnCodexProbe(command: string, args: string[], env?: Record<string, string>) {
-  // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
-  const useShell = process.platform === 'win32';
-  // On Windows with shell: true, quote the command path to handle spaces (e.g. C:\Users\John Doe\...)
-  const spawnCommand = useShell ? `"${command}"` : command;
+/**
+ * AUDIT-R1b: FE provider-CLI spawn removed. The codex-acp / codex-app-server
+ * probes require a bidirectional stdio JSON-RPC handshake (initialize +
+ * session/new), which today's daemon RPC surface does not expose — `host.exec`
+ * (PROTOCOL §5.14) is one-shot argv-based with no stdin, and `agent.create`
+ * (§5.5) is for full agent sessions, not lightweight model probes. Until a
+ * daemon-side "list models via ACP" seam exists, the spawn is replaced with a
+ * self-throwing IIFE mirroring AUDIT-P2-12b's pattern; the enclosing probes
+ * catch the throw and finish([]) so the IPC handler falls through to the
+ * static Codex model list (see setupCodexIPC's GET_MODELS branch).
+ *
+ * BE-GAP: needs `provider.listModelsViaAcp(providerId, cliPath, args, env?)`
+ * or equivalent that owns the stdio JSON-RPC handshake and returns models.
+ * `spawn` and `ChildProcess` are retained solely so `createJsonRpcRequester`
+ * and the (now-unreachable) downstream event wiring keep type-checking.
+ */
+/**
+ * AUDIT-R1b: honest-degradation stub returned in place of the deleted
+ * `spawn(...)`. Kept as a standalone declaration (rather than an inline
+ * throwing IIFE) so TypeScript does not narrow the returned `child` to
+ * `never` at call sites — the downstream JSON-RPC scaffolding still needs
+ * to type-check even though the sync throw makes it unreachable at runtime.
+ */
+function throwR1bSpawnGap(): ReturnType<typeof spawn> {
+  throw new Error(
+    'Codex ACP model-list probe removed (AUDIT-R1b): FE spawn deleted; awaiting daemon-side ACP handshake seam.',
+  );
+}
 
-  return spawn(spawnCommand, args, {
-    cwd: os.homedir(),
-    env: { ...process.env, ...(env || {}) },
-    stdio: ['pipe', 'pipe', 'pipe'],
-    shell: useShell,
-    windowsHide: true,
-  });
+function spawnCodexProbe(command: string, args: string[], env?: Record<string, string>) {
+  void command;
+  void args;
+  void env;
+  return throwR1bSpawnGap();
 }
 
 async function probeCodexModelsViaAcp(
@@ -499,10 +520,23 @@ async function fetchCodexModelsDynamically(): Promise<CodexModelListProbeResult>
       codexCliVersion: candidate.codexCliVersion,
     });
 
-    const models =
-      candidate.source === 'codex-app-server'
-        ? await probeCodexModelsViaAppServer(candidate)
-        : await probeCodexModelsViaAcp(candidate);
+    // AUDIT-R1b: the probe's spawn seam throws synchronously (BE-gap: no
+    // daemon-side ACP handshake RPC yet). Wrap so a probe failure moves to
+    // the next candidate instead of aborting the whole loop and losing the
+    // `attemptedSources` breadcrumb the IPC handler emits in its warning.
+    let models: CodexModel[];
+    try {
+      models =
+        candidate.source === 'codex-app-server'
+          ? await probeCodexModelsViaAppServer(candidate)
+          : await probeCodexModelsViaAcp(candidate);
+    } catch (error) {
+      logger.debug('Codex dynamic model probe threw', {
+        source,
+        error: (error as Error).message,
+      });
+      models = [];
+    }
 
     if (models.length > 0) {
       logger.info('Using dynamic Codex model list', { source, count: models.length });

@@ -12,7 +12,22 @@
 
 import { ipcMain } from 'electron';
 import * as os from 'os';
+import type { ChildProcessWithoutNullStreams } from 'child_process';
 import { spawn } from 'child_process';
+
+/**
+ * AUDIT-R1b: honest-degradation stub that stands in for the deleted
+ * `child_process.spawn(...)` in listPiModelsViaAcp. Kept as a standalone
+ * declaration (rather than an inline throwing IIFE) so TypeScript does not
+ * narrow `child` to `never` at the call site — the enclosing Promise
+ * executor still needs to type-check even though the sync throw makes it
+ * unreachable at runtime.
+ */
+function throwR1bSpawnGap(): ChildProcessWithoutNullStreams {
+  throw new Error(
+    'Pi ACP model-list probe removed (AUDIT-R1b): FE spawn deleted; awaiting daemon-side ACP handshake seam.',
+  );
+}
 import { PI_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { killChildProcessTree } from '../../../shared/main/process-tree-kill';
@@ -105,15 +120,25 @@ async function listPiModelsViaAcp(): Promise<PiModel[]> {
   const useShell = process.platform === 'win32';
   // On Windows with shell: true, quote the command path to handle spaces (e.g. C:\Users\John Doe\...)
   const spawnCommand = useShell ? `"${command}"` : command;
+  void spawnCommand;
+  void args;
 
-  return await new Promise((resolve) => {
-    const child = spawn(spawnCommand, args, {
-      cwd: os.homedir(),
-      env: { ...process.env },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: useShell,
-      windowsHide: true,
-    });
+  // AUDIT-R1b: preserve the never-throws contract by catching the R1b probe
+  // rejection at the outer boundary — the GET_MODELS handler and
+  // getCachedPiModels both rely on this function resolving with `[]` on probe
+  // failure so they can fall through to DEFAULT_MODELS (see AUDIT-P0-2).
+  return await new Promise<PiModel[]>((resolve) => {
+    // AUDIT-R1b: FE spawn deleted. The pi-acp probe requires a bidirectional
+    // stdio JSON-RPC handshake (initialize + session/new) which the daemon's
+    // `host.exec` (one-shot argv, no stdin) cannot host and which has no
+    // dedicated seam today. Mirrors AUDIT-P2-12b's self-throwing IIFE pattern;
+    // the enclosing `.catch(() => [])` converts the rejection back to the
+    // pre-refactor empty-list resolution so callers stay on their fallback
+    // paths (DEFAULT_MODELS).
+    //
+    // BE-GAP: needs a daemon-side `provider.listModelsViaAcp` (or equivalent)
+    // that owns the ACP JSON-RPC handshake and returns models.
+    const child = throwR1bSpawnGap();
 
     let buffer = '';
     let requestId = 0;
@@ -268,6 +293,14 @@ async function listPiModelsViaAcp(): Promise<PiModel[]> {
         finish([]);
       }
     })();
+  }).catch((error) => {
+    // AUDIT-R1b: the retired FE spawn now throws synchronously in the Promise
+    // executor. Convert that rejection back to the pre-refactor empty-list
+    // resolution so callers stay on their DEFAULT_MODELS fallback path.
+    logger.debug('Pi ACP model probe seam unavailable', {
+      error: (error as Error).message,
+    });
+    return [] as PiModel[];
   });
 }
 

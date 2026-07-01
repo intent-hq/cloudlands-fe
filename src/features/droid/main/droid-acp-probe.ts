@@ -16,6 +16,23 @@ import { killChildProcessTree } from '../../../shared/main/process-tree-kill';
 
 const logger = new Logger('DroidAcpProbe');
 
+/**
+ * AUDIT-R1b: honest-degradation stub that stands in for the deleted
+ * `child_process.spawn(...)` in probeDroidAcp. Kept as a standalone
+ * declaration (rather than an inline throwing IIFE) so TypeScript does not
+ * narrow the downstream child references to `never` — the JSON-RPC scaffolding
+ * still needs to type-check even though the sync throw makes it unreachable at
+ * runtime. The caller (probeDroidAcp) already wraps the spawn seam in
+ * try/catch and returns `{ ok: false, models: [], error }` on failure, which
+ * degrades cleanly to the "unknown readiness" path in
+ * provider-availability.service.ts.
+ */
+function throwR1bSpawnGap(): ReturnType<typeof spawn> {
+  throw new Error(
+    'Droid ACP readiness probe removed (AUDIT-R1b): FE spawn deleted; awaiting daemon-side ACP handshake seam.',
+  );
+}
+
 export type DroidAcpModel = {
   modelId: string;
   name: string;
@@ -198,16 +215,23 @@ export async function probeDroidAcp(
   // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
   const useShell = process.platform === 'win32';
   const spawnCommand = useShell ? `"${cliPath}"` : cliPath;
+  void spawnCommand;
+  void args;
 
+  // AUDIT-R1b: FE spawn deleted. The droid ACP probe requires a bidirectional
+  // stdio JSON-RPC handshake (initialize + session/new) which the daemon's
+  // `host.exec` (one-shot argv, no stdin) cannot host and which has no
+  // dedicated seam today. Mirrors AUDIT-P2-12b's self-throwing IIFE pattern
+  // but returns via the existing try/catch so callers keep the "unknown
+  // readiness" degradation path (see provider-availability.service.ts's
+  // checkDroidReady → returns undefined when the probe fails).
+  //
+  // BE-GAP: needs a daemon-side `provider.probeAcpReadiness(providerId,
+  // cliPath, args, env?)` (or equivalent) that owns the ACP JSON-RPC
+  // handshake and returns models + auth status.
   let child: ReturnType<typeof spawn>;
   try {
-    child = spawn(spawnCommand, args, {
-      cwd,
-      env: { ...process.env },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: useShell,
-      windowsHide: true,
-    });
+    child = throwR1bSpawnGap();
   } catch (e) {
     return { ok: false, models: [], error: (e as Error).message };
   }

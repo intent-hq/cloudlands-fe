@@ -1,4 +1,3 @@
-import { spawn } from 'child_process';
 import {
   createHash,
   randomUUID,
@@ -10,6 +9,7 @@ import * as https from 'https';
 import { createRequire } from 'module';
 import * as path from 'path';
 import { pipeline } from 'stream/promises';
+import { hostExec } from '../../../shared/main/host-exec';
 
 export const MANAGED_CODEX_ACP_VERSION = '0.13.0';
 const CODEX_ACP_APPLE_TEAM_ID = 'MQ55VZLNZQ';
@@ -354,42 +354,36 @@ async function validateWrapper(wrapperPath: string): Promise<void> {
   });
 }
 
-function runProcess(
+/**
+ * AUDIT-R1b: one-shot process execution routed through the daemon's
+ * `host.exec` seam (PROTOCOL §5.14). Preserves the previous rejection contract
+ * — non-zero exit / spawn error / timeout all reject with a descriptive Error
+ * — so callers (`verifyMacCodeSignature`, `validateWrapper`) are unchanged.
+ */
+async function runProcess(
   command: string,
   args: string[],
   options: { timeoutMs: number; env?: NodeJS.ProcessEnv },
 ): Promise<SpawnResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      env: options.env ?? process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    const timeout = setTimeout(() => {
-      child.kill();
-      reject(new Error(`${command} timed out after ${options.timeoutMs}ms`));
-    }, options.timeoutMs);
-
-    child.stdout?.on('data', (chunk) => stdout.push(Buffer.from(chunk)));
-    child.stderr?.on('data', (chunk) => stderr.push(Buffer.from(chunk)));
-    child.on('error', (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.on('exit', (code, signal) => {
-      clearTimeout(timeout);
-      const output = {
-        stdout: Buffer.concat(stdout).toString('utf8'),
-        stderr: Buffer.concat(stderr).toString('utf8'),
-      };
-      if (code === 0) {
-        resolve(output);
-      } else {
-        reject(new Error(`${command} exited with ${code ?? signal}: ${output.stderr || output.stdout}`));
-      }
-    });
+  const env = options.env
+    ? Object.fromEntries(
+        Object.entries(options.env).filter(([, value]) => typeof value === 'string'),
+      ) as Record<string, string>
+    : undefined;
+  const result = await hostExec(command, {
+    args,
+    env,
+    timeoutMs: options.timeoutMs,
   });
+  if (result.timedOut) {
+    throw new Error(`${command} timed out after ${options.timeoutMs}ms`);
+  }
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `${command} exited with ${result.exitCode}: ${result.stderr || result.stdout}`,
+    );
+  }
+  return { stdout: result.stdout, stderr: result.stderr };
 }
 
 async function pruneOldManagedVersions(baseDir: string, currentVersion: string): Promise<void> {

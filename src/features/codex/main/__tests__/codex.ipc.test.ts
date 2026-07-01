@@ -1,4 +1,3 @@
-import { EventEmitter } from 'events';
 import {
   beforeEach,
   describe,
@@ -11,13 +10,12 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
   resolveCodexModelListCommands: vi.fn(),
   getManagedCodexAcpStatus: vi.fn(),
+  // Retained after AUDIT-R1b so the tests can still assert the FE never
+  // reaches a spawn (`spawnCodexProbe` throws synchronously — the assertion
+  // guards against a regression that re-introduces local spawning).
   spawn: vi.fn(),
   killChildProcessTree: vi.fn(),
   webContentsSend: vi.fn(),
-  appServerInitialize: vi.fn(),
-  appServerListModels: vi.fn(),
-  appServerDispose: vi.fn(),
-  appServerOn: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -53,38 +51,18 @@ vi.mock('../codex-acp-manager', () => ({
   getManagedCodexAcpStatus: mocks.getManagedCodexAcpStatus,
 }));
 
+// AUDIT-R1b: `CodexAppServerAcpAdapter` is still constructed by the module
+// under test — mock it minimally so the import doesn't touch the real
+// transport. The adapter methods are never reached at runtime because the
+// preceding `spawnCodexProbe` throws.
 vi.mock('../codex-app-server-transport', () => ({
-  CodexAppServerAcpAdapter: vi.fn().mockImplementation(function () {
-    return {
-      initialize: mocks.appServerInitialize,
-      listModels: mocks.appServerListModels,
-      dispose: mocks.appServerDispose,
-      on: mocks.appServerOn,
-    };
-  }),
+  CodexAppServerAcpAdapter: vi.fn().mockImplementation(() => ({
+    initialize: vi.fn(),
+    listModels: vi.fn(),
+    dispose: vi.fn(),
+    on: vi.fn(),
+  })),
 }));
-
-function createRpcChild(handler: (request: any) => any) {
-  const child = new EventEmitter() as any;
-  child.stdout = new EventEmitter();
-  child.stderr = new EventEmitter();
-  child.pid = 1234;
-  child.kill = vi.fn();
-  child.stdin = {
-    write: vi.fn((line: string) => {
-      const request = JSON.parse(line);
-      const result = handler(request);
-      if (result !== undefined) {
-        const response = `${JSON.stringify({ id: request.id, result })}\n`;
-        const midpoint = Math.ceil(response.length / 2);
-        child.stdout.emit('data', Buffer.from(response.slice(0, midpoint)));
-        child.stdout.emit('data', Buffer.from(response.slice(midpoint)));
-      }
-      return true;
-    }),
-  };
-  return child;
-}
 
 async function setupAndGetModels() {
   const { setupCodexIPC } = await import('../codex.ipc');
@@ -108,16 +86,16 @@ describe('codex IPC model listing', () => {
     mocks.spawn.mockReset();
     mocks.killChildProcessTree.mockReset();
     mocks.webContentsSend.mockReset();
-    mocks.appServerInitialize.mockReset();
-    mocks.appServerListModels.mockReset();
-    mocks.appServerDispose.mockReset();
-    mocks.appServerOn.mockReset();
     mocks.getManagedCodexAcpStatus.mockReturnValue({ state: 'not_installed', version: '0.13.0' });
-    mocks.appServerInitialize.mockResolvedValue({});
-    mocks.appServerListModels.mockResolvedValue({ data: [] });
   });
 
-  it('returns models from the preferred codex app-server candidate', async () => {
+  // AUDIT-R1b: the FE spawn seam behind the dynamic Codex model probes was
+  // deleted (no daemon-side ACP handshake RPC yet), so every attempted probe
+  // now fails synchronously and the GET_MODELS handler falls back to the
+  // static Codex model list with an "unavailable" warning. These tests
+  // assert that fallback path — and that spawn is never invoked, since the
+  // production code never reaches it.
+  it('falls back to the static Codex model list with an unavailable warning when a dynamic candidate is present (AUDIT-R1b)', async () => {
     mocks.resolveCodexModelListCommands.mockResolvedValue([
       {
         command: '/opt/homebrew/bin/codex',
@@ -127,39 +105,21 @@ describe('codex IPC model listing', () => {
         codexCliVersion: '0.128.0',
       },
     ]);
-    const child = createRpcChild(() => undefined);
-    mocks.spawn.mockReturnValueOnce(child);
-    mocks.appServerListModels.mockResolvedValueOnce({
-      data: [
-        {
-          id: 'model-1',
-          model: 'gpt-5.5-codex',
-          displayName: 'GPT-5.5 Codex',
-          description: 'App-server model',
-        },
-      ],
-    });
 
     const handler = await setupAndGetModels();
     const result = await handler();
 
     expect(result.success).toBe(true);
-    expect(result.warning).toBeUndefined();
-    expect(result.data).toEqual([
-      { value: 'gpt-5.5-codex', label: 'GPT-5.5 Codex', description: 'App-server model' },
-    ]);
-    expect(mocks.spawn).toHaveBeenCalledWith(
-      '/opt/homebrew/bin/codex',
-      ['app-server', '--listen', 'stdio://'],
-      expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }),
+    expect(result.data.length).toBeGreaterThan(0);
+    expect(result.warning).toBe(
+      'Codex dynamic model list unavailable; using static model list',
     );
-    expect(mocks.appServerInitialize).toHaveBeenCalledTimes(1);
-    expect(mocks.appServerDispose).toHaveBeenCalledTimes(1);
-    expect(child.kill).not.toHaveBeenCalled();
-    expect(mocks.killChildProcessTree).toHaveBeenCalledWith(child);
+    // spawn is retained as an import to keep createJsonRpcRequester typed but
+    // is never invoked at runtime after AUDIT-R1b.
+    expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
-  it('falls through to the next candidate when codex app-server probing fails', async () => {
+  it('attempts every candidate before falling back so `attemptedSources` covers the full list (AUDIT-R1b)', async () => {
     mocks.resolveCodexModelListCommands.mockResolvedValue([
       {
         command: '/opt/homebrew/bin/codex',
@@ -176,85 +136,16 @@ describe('codex IPC model listing', () => {
         env: { ELECTRON_RUN_AS_NODE: '1' },
       },
     ]);
-    const appServerChild = createRpcChild(() => undefined);
-    const acpChild = createRpcChild((request) => {
-      if (request.method === 'initialize') return {};
-      if (request.method === 'session/new') {
-        return { models: { available: [{ modelId: 'fallback-model', name: 'Fallback Model' }] } };
-      }
-      return undefined;
-    });
-    mocks.spawn.mockReturnValueOnce(appServerChild).mockReturnValueOnce(acpChild);
-    mocks.appServerInitialize.mockRejectedValueOnce(new Error('app-server unavailable'));
 
     const handler = await setupAndGetModels();
     const result = await handler();
 
     expect(result.success).toBe(true);
-    expect(result.warning).toBeUndefined();
-    expect(result.data).toEqual([{ value: 'fallback-model', label: 'Fallback Model' }]);
-    expect(mocks.spawn).toHaveBeenCalledTimes(2);
-    expect(mocks.appServerDispose).toHaveBeenCalledTimes(1);
-    expect(appServerChild.kill).not.toHaveBeenCalled();
-    expect(mocks.killChildProcessTree).toHaveBeenCalledWith(appServerChild);
-    expect(mocks.killChildProcessTree).toHaveBeenCalledWith(acpChild);
-  });
-
-  it('passes managed codex-acp env into the dynamic model-list probe spawn', async () => {
-    mocks.resolveCodexModelListCommands.mockResolvedValue([
-      {
-        command: process.execPath,
-        argsPrefix: ['/managed/codex-acp.js'],
-        usesNpx: false,
-        source: 'managed-codex-acp',
-        env: { ELECTRON_RUN_AS_NODE: '1' },
-      },
-    ]);
-
-    mocks.spawn.mockReturnValueOnce(
-      createRpcChild((request) => {
-        if (request.method === 'initialize') return {};
-        if (request.method === 'session/new') {
-          return {
-            models: {
-              available: [
-                {
-                  modelId: 'gpt-5.5',
-                  name: 'GPT-5.5',
-                  description: 'Newest frontier model',
-                },
-              ],
-            },
-          };
-        }
-        return undefined;
-      }),
+    expect(result.data.length).toBeGreaterThan(0);
+    expect(result.warning).toBe(
+      'Codex dynamic model list unavailable; using static model list',
     );
-
-    const handler = await setupAndGetModels();
-    const result = await handler();
-
-    expect(result.success).toBe(true);
-    expect(result.warning).toBeUndefined();
-    expect(result.data).toEqual([
-      {
-        value: 'gpt-5.5',
-        label: 'GPT-5.5',
-        description: 'Newest frontier model',
-      },
-    ]);
-    expect(mocks.spawn).toHaveBeenCalledWith(
-      process.execPath,
-      ['/managed/codex-acp.js'],
-      expect.objectContaining({
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1' }),
-      }),
-    );
-
-    const cachedResult = await handler();
-    expect(cachedResult.data).toEqual(result.data);
-    expect(mocks.spawn).toHaveBeenCalledTimes(1);
+    expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
   it('returns the static fallback warning when no dynamic path is available', async () => {
