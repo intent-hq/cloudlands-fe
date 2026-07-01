@@ -68,7 +68,7 @@
   selectRestoreStatus,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { focusBrowserTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import { closeActiveTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
+  import { closeActiveTerminalRequested, removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { renameAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -234,6 +234,13 @@
 
       if (result.success && result.id) {
         logger.info('Created new terminal', { terminalId: result.id });
+
+        // Clear any stale Redux entry for this id before saving fresh metadata.
+        // `saveTerminalMetadata` spreads the existing entry to preserve
+        // customName across remounts, but for a freshly daemon-assigned id
+        // (e.g. after a daemon restart that resets the id counter) a stale
+        // customName from a previously renamed terminal must not carry over.
+        appStore.dispatch(removeTerminal(workspaceId, result.id));
 
         // Save terminal metadata
         terminalManager.saveTerminalMetadata(result.id, workspaceId, 'Terminal');
