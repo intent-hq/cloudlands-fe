@@ -1,41 +1,23 @@
+/**
+ * Tests for the daemon-backed ScriptProcessManager. The manager is a thin
+ * client over `script.*` (PROTOCOL §5.8): these tests mock the backend client,
+ * assert the RPC requests the manager sends, and drive `script:state` /
+ * `script:output` notifications back through the same seam to check state and
+ * output-buffer plumbing.
+ */
 import { EventEmitter } from 'events';
-import {
-  afterAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockSpawn, mockAccessSync, mockReadFileSync, mockMkdirSync, mockWriteFileSync } = vi.hoisted(() => ({
-  mockSpawn: vi.fn(),
-  mockAccessSync: vi.fn(),
-  mockReadFileSync: vi.fn(),
-  mockMkdirSync: vi.fn(),
-  mockWriteFileSync: vi.fn(),
-}));
+const { mockRequest } = vi.hoisted(() => ({ mockRequest: vi.fn() }));
 
-vi.mock(import('child_process'), async (importOriginal) => {
-  const actual = await importOriginal();
-  const patched = { ...actual, spawn: mockSpawn };
-  return { ...patched, default: patched };
-});
+class FakeBackendClient extends EventEmitter {
+  request = mockRequest;
+}
 
-vi.mock('fs', () => {
-  const mockFs = {
-    accessSync: mockAccessSync,
-    readFileSync: mockReadFileSync,
-    mkdirSync: mockMkdirSync,
-    writeFileSync: mockWriteFileSync,
-    existsSync: vi.fn(() => false),
-    constants: { F_OK: 0, X_OK: 1, R_OK: 4, W_OK: 2 },
-  };
-  return { ...mockFs, default: mockFs };
-});
+const fakeClient = new FakeBackendClient();
 
-vi.mock('../../../shared/git/git-env', () => ({
-  createShellEnv: vi.fn((env: any) => env),
+vi.mock('../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => fakeClient,
 }));
 
 vi.mock('../../../shared/logger', () => ({
@@ -47,135 +29,171 @@ vi.mock('../../../shared/logger', () => ({
   },
 }));
 
-vi.mock('../../../shared/main/process-tree-kill', () => ({
-  killProcessTree: vi.fn().mockResolvedValue(undefined),
-  killChildProcessTree: vi.fn().mockResolvedValue(undefined),
-}));
+import {
+  ScriptProcessManager,
+  disposeAllScriptProcessManagers,
+  type WorkspaceScript,
+} from './script-process-manager';
 
-import { ScriptProcessManager } from './script-process-manager';
-import type { WorkspaceScript } from './script-process-manager';
-
-function setPlatform(platform: NodeJS.Platform): void {
-  Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+function makeScript(overrides: Partial<WorkspaceScript> = {}): WorkspaceScript {
+  return {
+    id: 'script-1',
+    name: 'dev',
+    command: 'pnpm dev',
+    mode: 'service',
+    source: 'user',
+    createdAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
 }
 
-function createMockChildProcess() {
-  const child = new EventEmitter() as any;
-  child.pid = 1234;
-  child.stdout = new EventEmitter();
-  child.stderr = new EventEmitter();
-  child.stdin = new EventEmitter();
-  return child;
+function emitEvent(type: string, data: Record<string, unknown>): void {
+  fakeClient.emit('notification', {
+    method: 'events.event',
+    params: { subscriptionId: 'sub-1', event: { type, data } },
+  });
 }
 
-const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
-const originalComSpec = process.env.COMSPEC;
+async function flush(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
 
-describe('ScriptProcessManager shell args', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    delete process.env.COMSPEC;
-    setPlatform('linux');
-    mockReadFileSync.mockImplementation(() => {
-      throw new Error('missing pid file');
-    });
-    mockSpawn.mockReturnValue(createMockChildProcess());
-  });
+beforeEach(async () => {
+  mockRequest.mockReset();
+  await disposeAllScriptProcessManagers();
+  fakeClient.removeAllListeners();
+});
 
-  afterAll(() => {
-    if (originalPlatform) {
-      Object.defineProperty(process, 'platform', originalPlatform);
-    }
-    if (originalComSpec === undefined) {
-      delete process.env.COMSPEC;
-    } else {
-      process.env.COMSPEC = originalComSpec;
-    }
-  });
+afterEach(async () => {
+  await disposeAllScriptProcessManagers();
+});
 
-  it('uses EncodedCommand for Windows PowerShell without shell:true', () => {
-    setPlatform('win32');
-    mockAccessSync.mockImplementation((target: any) => {
-      if (String(target).toLowerCase().includes('powershell.exe')) return;
-      throw new Error('missing shell');
+describe('ScriptProcessManager daemon integration', () => {
+  it('subscribes to script events, registers the script, then calls script.start', async () => {
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'events.subscribe') return { subscriptionId: 'sub-1' };
+      return { ok: true };
     });
 
-    const command = 'foreach ($x in @(1,2,3)) { Write-Output $x }';
-    const manager = new ScriptProcessManager('ws-1', 'C:\\workspace', 'C:\\workspace\\.intent');
-    const script: WorkspaceScript = {
-      id: 'script-1',
-      name: 'PowerShell script',
-      command,
-      mode: 'command',
-      source: 'user',
-      createdAt: '2026-03-18T00:00:00Z',
-    };
+    const manager = new ScriptProcessManager('ws-1');
+    manager.start(makeScript({ cwd: 'apps/web', env: { FOO: 'bar' }, category: 'dev' }));
 
-    manager.start(script);
+    await flush();
+    await flush();
 
-    expect(mockSpawn).toHaveBeenCalledWith(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-NoLogo',
-        '-NonInteractive',
-        '-EncodedCommand',
-        Buffer.from(command, 'utf16le').toString('base64'),
-      ],
-      expect.objectContaining({ cwd: 'C:\\workspace', windowsHide: true, detached: false }),
-    );
-    expect(mockSpawn.mock.calls[0]?.[2]).not.toHaveProperty('shell');
-  });
+    const methods = mockRequest.mock.calls.map((c) => c[0]);
+    expect(methods).toContain('events.subscribe');
+    expect(methods).toContain('script.create');
+    expect(methods).toContain('script.start');
 
-  it('keeps cmd.exe on /c for Windows shells that are not PowerShell', () => {
-    setPlatform('win32');
-    mockAccessSync.mockImplementation((target: any) => {
-      const value = String(target).toLowerCase();
-      if (value.includes('cmd.exe')) return;
-      throw new Error('missing shell');
+    const createCall = mockRequest.mock.calls.find((c) => c[0] === 'script.create');
+    expect(createCall?.[1]).toMatchObject({
+      workspaceId: 'ws-1',
+      scriptId: 'script-1',
+      name: 'dev',
+      command: 'pnpm dev',
+      mode: 'service',
+      cwd: 'apps/web',
+      env: { FOO: 'bar' },
+      category: 'dev',
     });
 
-    const manager = new ScriptProcessManager('ws-1', 'C:\\workspace', 'C:\\workspace\\.intent');
-    const script: WorkspaceScript = {
-      id: 'script-2',
-      name: 'cmd script',
-      command: 'echo hello',
-      mode: 'command',
-      source: 'user',
-      createdAt: '2026-03-18T00:00:00Z',
-    };
-
-    manager.start(script);
-
-    expect(mockSpawn).toHaveBeenCalledWith(
-      'cmd.exe',
-      ['/c', 'echo hello'],
-      expect.objectContaining({ cwd: 'C:\\workspace', windowsHide: true, detached: false }),
-    );
+    const startCall = mockRequest.mock.calls.find((c) => c[0] === 'script.start');
+    expect(startCall?.[1]).toEqual({ scriptId: 'script-1' });
   });
 
-  it('keeps Unix shell args unchanged', () => {
-    mockAccessSync.mockImplementation((target: any) => {
-      if (String(target) === '/bin/bash') return;
-      throw new Error('missing shell');
+  it('applies script:state events and invokes the state callback', async () => {
+    mockRequest.mockResolvedValue({ subscriptionId: 'sub-1' });
+
+    const manager = new ScriptProcessManager('ws-1');
+    const stateCb = vi.fn();
+    manager.setStateChangeCallback(stateCb);
+    manager.start(makeScript());
+    await flush();
+
+    emitEvent('script:state', {
+      scriptId: 'script-1',
+      status: 'running',
+      pid: 4242,
+      startedAt: '2026-01-01T00:00:01Z',
+      restartCount: 0,
     });
 
-    const manager = new ScriptProcessManager('ws-1', '/workspace', '/workspace/.intent');
-    const script: WorkspaceScript = {
-      id: 'script-3',
-      name: 'bash script',
-      command: 'echo hello',
-      mode: 'command',
-      source: 'user',
-      createdAt: '2026-03-18T00:00:00Z',
-    };
+    expect(stateCb).toHaveBeenLastCalledWith('script-1', expect.objectContaining({
+      status: 'running',
+      pid: 4242,
+      startedAt: '2026-01-01T00:00:01Z',
+      restartCount: 0,
+    }));
+    expect(manager.getState('script-1')?.status).toBe('running');
+  });
 
-    manager.start(script);
+  it('base64-decodes script:output chunks and delivers them via the output buffer', async () => {
+    mockRequest.mockResolvedValue({ subscriptionId: 'sub-1' });
 
-    expect(mockSpawn).toHaveBeenCalledWith(
-      '/bin/bash',
-      ['-l', '-c', 'echo hello'],
-      expect.objectContaining({ cwd: '/workspace', windowsHide: true, detached: false }),
-    );
+    const manager = new ScriptProcessManager('ws-1');
+    const outputCb = vi.fn();
+    manager.setOutputCallback(outputCb);
+    manager.start(makeScript());
+    await flush();
+
+    const chunk = Buffer.from('hello\nworld\n', 'utf8').toString('base64');
+    emitEvent('script:output', { scriptId: 'script-1', chunk });
+
+    // Buffer batches via a small setTimeout window; advance timers to flush.
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(outputCb).toHaveBeenCalled();
+    const delivered = outputCb.mock.calls.flatMap((c) => c[1] as Array<{ text: string }>);
+    expect(delivered.map((l) => l.text)).toEqual(['hello', 'world']);
+  });
+
+  it('routes stop / restart / remove through the daemon', async () => {
+    mockRequest.mockResolvedValue({ subscriptionId: 'sub-1' });
+
+    const manager = new ScriptProcessManager('ws-1');
+    manager.start(makeScript());
+    await flush();
+
+    mockRequest.mockClear();
+    mockRequest.mockResolvedValue({ ok: true });
+
+    await manager.stop('script-1');
+    expect(mockRequest).toHaveBeenCalledWith('script.stop', { scriptId: 'script-1' });
+
+    mockRequest.mockClear();
+    await manager.restart('script-1');
+    // Definition matches what was registered, so we take the fast path.
+    expect(mockRequest).toHaveBeenCalledWith('script.restart', { scriptId: 'script-1' });
+
+    mockRequest.mockClear();
+    await manager.remove('script-1');
+    expect(mockRequest).toHaveBeenCalledWith('script.remove', { scriptId: 'script-1' });
+    expect(manager.getManagedScriptIds()).toEqual([]);
+  });
+
+  it('re-registers the daemon definition after updateDefinition before restart', async () => {
+    mockRequest.mockResolvedValue({ subscriptionId: 'sub-1' });
+
+    const manager = new ScriptProcessManager('ws-1');
+    manager.start(makeScript());
+    await flush();
+
+    mockRequest.mockClear();
+    mockRequest.mockResolvedValue({ ok: true });
+
+    manager.updateDefinition('script-1', makeScript({ command: 'pnpm build' }));
+    await manager.restart('script-1');
+
+    const methods = mockRequest.mock.calls.map((c) => c[0]);
+    expect(methods).toContain('script.stop');
+    expect(methods).toContain('script.create');
+    expect(methods).toContain('script.start');
+    expect(methods).not.toContain('script.restart');
+
+    const createCall = mockRequest.mock.calls.find((c) => c[0] === 'script.create');
+    expect(createCall?.[1]).toMatchObject({ scriptId: 'script-1', command: 'pnpm build' });
   });
 });
