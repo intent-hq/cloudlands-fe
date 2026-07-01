@@ -174,6 +174,13 @@ export class LiveAgentsClient implements AgentsClient {
   async lock(agentId: string, locked: boolean): Promise<MutationResult> {
     return runMutation("agent.lock", { agentId, locked });
   }
+  async delete(agentId: string): Promise<MutationResult> {
+    // `agent.delete` (§5.5) takes `agentId` (req) and an optional `workspaceId`;
+    // the daemon resolves the workspace itself (agent_delete_op only consumes
+    // agent_id) and is idempotent, so we forward just `{ agentId }` and rely on
+    // the emitted `agent:deleted` event to reconcile the list.
+    return runMutation("agent.delete", { agentId });
+  }
 
   /**
    * Resolve the workspace this agent belongs to. Cached on every `normalizeAgent`

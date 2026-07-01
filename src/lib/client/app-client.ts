@@ -182,6 +182,14 @@ export interface AgentsClient {
   setAvailability(agentId: string, available: boolean): Promise<MutationResult>;
   follow(agentId: string, follow: boolean): Promise<MutationResult>;
   lock(agentId: string, locked: boolean): Promise<MutationResult>;
+  /**
+   * Permanently delete an agent session (`agent.delete`, §5.5). The daemon is
+   * **idempotent** — it returns `{ success: true }` even when the agent is
+   * already gone — and emits `agent:deleted` (in `AGENT_LIFECYCLE_EVENTS`), so
+   * the reactive `subscribe` refetch reconciles the list. `workspaceId` is
+   * optional per the contract; the daemon resolves the workspace itself.
+   */
+  delete(agentId: string, workspaceId?: string): Promise<MutationResult>;
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe;
 }
 
