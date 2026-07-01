@@ -168,9 +168,17 @@
 </script>
 
 {#if open}
-  <Portal>
+  <!--
+    Render through Portal so the overlay escapes any clipping/stacking ancestor
+    (notably the create-workspace Select.Content popover and the folder picker
+    portal, both at z-[9999]) and sits strictly above them. The Portal container
+    z-index (10000) is what wins over those layers; the inner `fixed inset-0` is
+    the full-screen backdrop that blocks pointer interaction with the
+    create-workspace UI behind it.
+  -->
+  <Portal target="body" zIndex={10000}>
     <div
-      class="bg-black/50 flex items-center justify-center w-screen h-screen fixed inset-0"
+      class="bg-black/50 flex items-center justify-center w-screen h-screen fixed inset-0 z-[10000]"
       role="button"
       tabindex="0"
       onkeydown={handleKeydown}
