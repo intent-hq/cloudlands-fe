@@ -21,10 +21,12 @@ import {
   closeAllTabs,
   closeTabsByType,
   reopenClosedTab,
+  pruneRecentlyClosed,
   setDeferSpecTab,
   updateTabTitle,
   clearPanelLayout,
 } from "./panel-layout-slice";
+import { removeTerminal } from "../terminals/terminals-slice";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import type { PanelLayoutSliceState } from "./panel-layout-types";
 
@@ -381,6 +383,102 @@ describe("panelLayoutReducer", () => {
       const panel = afterReopen.byWorkspaceId[WS].panels.p1;
       expect(panel.tabs).toHaveLength(2);
       expect(afterReopen.byWorkspaceId[WS].recentlyClosed).toHaveLength(0);
+    });
+  });
+
+  describe("pruneRecentlyClosed", () => {
+    it("removes recentlyClosed entries matching the given agentId", () => {
+      const state = stateWithPanel("p1", [
+        { id: "t-agent", type: "agent", title: "Agent A", agentId: "agent-1" } as any,
+        { id: "t-note", type: "note", title: "Note", noteId: "n1" },
+      ]);
+      let s = panelLayoutReducer(state, closeTab(WS, "t-agent", "p1", 1000));
+      s = panelLayoutReducer(s, closeTab(WS, "t-note", "p1", 1001));
+      expect(s.byWorkspaceId[WS].recentlyClosed).toHaveLength(2);
+
+      const pruned = panelLayoutReducer(s, pruneRecentlyClosed(WS, { agentId: "agent-1" }));
+      expect(pruned.byWorkspaceId[WS].recentlyClosed).toHaveLength(1);
+      expect(pruned.byWorkspaceId[WS].recentlyClosed[0].tab.type).toBe("note");
+    });
+
+    it("removes recentlyClosed entries matching the given terminalId", () => {
+      const state = stateWithPanel("p1", [
+        { id: "t-term", type: "terminal", title: "Terminal", terminalId: "term-1" } as any,
+        { id: "t-note", type: "note", title: "Note", noteId: "n1" },
+      ]);
+      let s = panelLayoutReducer(state, closeTab(WS, "t-term", "p1", 1000));
+      s = panelLayoutReducer(s, closeTab(WS, "t-note", "p1", 1001));
+      expect(s.byWorkspaceId[WS].recentlyClosed).toHaveLength(2);
+
+      const pruned = panelLayoutReducer(s, pruneRecentlyClosed(WS, { terminalId: "term-1" }));
+      expect(pruned.byWorkspaceId[WS].recentlyClosed).toHaveLength(1);
+      expect(pruned.byWorkspaceId[WS].recentlyClosed[0].tab.type).toBe("note");
+    });
+
+    it("does not touch non-agent/non-terminal recents when pruning by agentId", () => {
+      const state = stateWithPanel("p1", [
+        { id: "t-file", type: "file", title: "File" },
+        { id: "t-browser", type: "browser", title: "Browser" },
+      ]);
+      let s = panelLayoutReducer(state, closeTab(WS, "t-file", "p1", 1000));
+      s = panelLayoutReducer(s, closeTab(WS, "t-browser", "p1", 1001));
+      const pruned = panelLayoutReducer(s, pruneRecentlyClosed(WS, { agentId: "agent-anything" }));
+      expect(pruned.byWorkspaceId[WS].recentlyClosed).toHaveLength(2);
+    });
+
+    it("is a no-op when no match is provided", () => {
+      const state = stateWithPanel("p1", [
+        { id: "t-agent", type: "agent", title: "Agent A", agentId: "agent-1" } as any,
+      ]);
+      const closed = panelLayoutReducer(state, closeTab(WS, "t-agent", "p1", 1000));
+      const pruned = panelLayoutReducer(closed, pruneRecentlyClosed(WS, {}));
+      expect(pruned).toBe(closed);
+    });
+
+    it("reopenClosedTab does not restore a pruned agent entry", () => {
+      const state = stateWithPanel("p1", [
+        { id: "t-agent", type: "agent", title: "Agent A", agentId: "agent-1" } as any,
+      ]);
+      const closed = panelLayoutReducer(state, closeTab(WS, "t-agent", "p1", 1000));
+      const pruned = panelLayoutReducer(closed, pruneRecentlyClosed(WS, { agentId: "agent-1" }));
+      expect(pruned.byWorkspaceId[WS].recentlyClosed).toHaveLength(0);
+      const afterReopen = panelLayoutReducer(pruned, reopenClosedTab(WS));
+      // No entry to restore, panel remains empty
+      expect(afterReopen.byWorkspaceId[WS].panels.p1.tabs).toHaveLength(0);
+    });
+  });
+
+  describe("cross-slice: removeTerminal prunes recentlyClosed", () => {
+    it("removes matching terminal recents when terminals/removeTerminal is dispatched", () => {
+      const state = stateWithPanel("p1", [
+        { id: "t-term", type: "terminal", title: "Terminal", terminalId: "term-1" } as any,
+        { id: "t-note", type: "note", title: "Note", noteId: "n1" },
+      ]);
+      let s = panelLayoutReducer(state, closeTab(WS, "t-term", "p1", 1000));
+      s = panelLayoutReducer(s, closeTab(WS, "t-note", "p1", 1001));
+      const after = panelLayoutReducer(s, removeTerminal(WS, "term-1"));
+      expect(after.byWorkspaceId[WS].recentlyClosed).toHaveLength(1);
+      expect(after.byWorkspaceId[WS].recentlyClosed[0].tab.type).toBe("note");
+    });
+
+    it("is a no-op when no recentlyClosed terminal entries match", () => {
+      const state = stateWithPanel("p1", [
+        { id: "t-note", type: "note", title: "Note", noteId: "n1" },
+      ]);
+      const closed = panelLayoutReducer(state, closeTab(WS, "t-note", "p1", 1000));
+      const after = panelLayoutReducer(closed, removeTerminal(WS, "term-nope"));
+      expect(after).toBe(closed);
+    });
+
+    it("reopenClosedTab does not restore a terminal removed via removeTerminal", () => {
+      const state = stateWithPanel("p1", [
+        { id: "t-term", type: "terminal", title: "Terminal", terminalId: "term-1" } as any,
+      ]);
+      const closed = panelLayoutReducer(state, closeTab(WS, "t-term", "p1", 1000));
+      const after = panelLayoutReducer(closed, removeTerminal(WS, "term-1"));
+      expect(after.byWorkspaceId[WS].recentlyClosed).toHaveLength(0);
+      const afterReopen = panelLayoutReducer(after, reopenClosedTab(WS));
+      expect(afterReopen.byWorkspaceId[WS].panels.p1.tabs).toHaveLength(0);
     });
   });
 });

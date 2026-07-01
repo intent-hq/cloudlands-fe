@@ -8,6 +8,7 @@
 import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
 import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
+import { removeTerminal } from "../terminals/terminals-slice";
 import type {
   PanelTab,
   PanelTabType,
@@ -177,6 +178,16 @@ export const reopenClosedTab = createAction(
     timestamp: timestamp ?? Date.now(),
   }),
 );
+
+/**
+ * Prune `recentlyClosed` entries that reference a deleted agent or a removed
+ * terminal so the empty-state recent list and `reopenClosedTab` cannot resurrect
+ * tombstoned entities. Match by `agentId` and/or `terminalId`.
+ */
+export const pruneRecentlyClosed = createAction<[
+  wsId: string,
+  match: { agentId?: string; terminalId?: string },
+]>("panelLayout/pruneRecentlyClosed");
 
 export const setActiveTab = createAction(
   "panelLayout/setActiveTab",
@@ -918,6 +929,30 @@ export const panelLayoutReducer = createReducer<PanelLayoutSliceState>(initialSt
       result = selfDispatch(result, closeTab(wsId, tabId, panelId, timestamp));
     }
     return result;
+  })
+  // --- Prune Recently Closed ---
+  .with(pruneRecentlyClosed, (state, { payload: [wsId, match] }) => {
+    const ws = getWorkspaceState(state, wsId);
+    if (ws.recentlyClosed.length === 0) return state;
+    const { agentId, terminalId } = match;
+    if (!agentId && !terminalId) return state;
+    const filtered = ws.recentlyClosed.filter((entry) => {
+      if (agentId && entry.tab.type === "agent" && entry.tab.agentId === agentId) return false;
+      if (terminalId && entry.tab.type === "terminal" && entry.tab.terminalId === terminalId) return false;
+      return true;
+    });
+    if (filtered.length === ws.recentlyClosed.length) return state;
+    return setWorkspaceState(state, wsId, { ...ws, recentlyClosed: filtered });
+  })
+  // --- Cross-slice: prune recentlyClosed when a terminal is removed ---
+  .with(removeTerminal, (state, { payload: [wsId, termId] }) => {
+    const ws = state.byWorkspaceId[wsId];
+    if (!ws || ws.recentlyClosed.length === 0) return state;
+    const filtered = ws.recentlyClosed.filter(
+      (entry) => !(entry.tab.type === "terminal" && entry.tab.terminalId === termId),
+    );
+    if (filtered.length === ws.recentlyClosed.length) return state;
+    return setWorkspaceState(state, wsId, { ...ws, recentlyClosed: filtered });
   })
   // --- Reopen Closed Tab ---
   .with(reopenClosedTab, (state, { payload }) => {

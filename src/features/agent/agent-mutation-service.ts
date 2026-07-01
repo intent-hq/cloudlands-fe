@@ -24,12 +24,22 @@
  * ACTIVE (promoting `status` to Active when a backendSessionId is present);
  * on failure mark ERROR and reject.
  *
+ * It also services the orphaned agent-deletion triggers
+ * (`deleteAgentWithUndoRequested`, `deleteAgentSessionRequested`,
+ * `undoAgentDeletionRequested`, `commitPendingAgentDeletionRequested`,
+ * `flushPendingAgentDeletionsRequested`) using a soft-hide-then-commit pattern:
+ * delete soft-hides the session locally (no daemon call) and arms a commit
+ * timer; undo un-hides it (no daemon call); only commit/flush/timer-elapse fire
+ * the real `agent.delete`. The daemon then emits `agent:deleted`
+ * (`AGENT_LIFECYCLE_EVENTS`), which reconciles the list. See AGENTS.md.
+ *
  * Dependency-light per src/store AGENTS.md: imports only the AppClient seam,
  * the configured store, the slice actions/types, store-free constants, shared
  * types, and the logger. No selector modules (importing them would evaluate
  * `store.createSelector` during middleware-chain construction); state is read
  * directly off `appStore.state.agentSessions.byAgentId`, mirroring the
- * sibling `agent-stream-service.ts`.
+ * sibling `agent-stream-service.ts`. The toast library is imported lazily
+ * inside handlers so the static graph stays light.
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import type { AgentSession } from "$shared/types";
@@ -39,16 +49,48 @@ import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import {
   bulkUpsertSessions,
+  removeSession,
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
+import { pruneRecentlyClosed } from "$store/renderer/slices/panel-layout/panel-layout-slice";
 import {
   activateAgentRequested,
+  commitPendingAgentDeletionRequested,
+  deleteAgentSessionRequested,
+  deleteAgentWithUndoRequested,
+  flushPendingAgentDeletionsRequested,
+  removeAgent,
   restoreAgentSessionRequested,
   saveAgentSessionRequested,
+  undoAgentDeletionRequested,
 } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("AgentMutationService");
+
+/** Undo window before a soft-hidden agent deletion is committed to the daemon. */
+const UNDO_DURATION_MS = 15000;
+
+/** Lazily pull the toast lib so this middleware-reachable module stays light. */
+async function getToast() {
+  const { toast } = await import("svelte-sonner");
+  return toast;
+}
+
+/**
+ * Soft-hidden agent deletions awaiting commit, keyed by agentId. Transient,
+ * UI-only state (per src/store AGENTS.md) — it never enters Redux. Each entry
+ * snapshots the removed session so `undo` can restore it without a wire call,
+ * and holds the timer that commits the real `agent.delete` when the undo window
+ * elapses.
+ */
+interface PendingAgentDeletion {
+  wsId: string;
+  agentId: string;
+  snapshot: AgentSession;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+const pendingAgentDeletions = new Map<string, PendingAgentDeletion>();
 
 /** Direct one-time session read, dependency-light (no selector import). */
 function readSession(agentId: string): AgentSession | undefined {
@@ -167,6 +209,177 @@ function handleSave(
   appStore.dispatch(action.success(undefined as never));
 }
 
+// ---------------------------------------------------------------------------
+// Agent deletion — soft-hide-then-commit (see this file's header + AGENTS.md).
+// ---------------------------------------------------------------------------
+
+/** Remove an agent from BOTH the workspace index and the session store. */
+function softHideSession(wsId: string, agentId: string): void {
+  appStore.dispatch(removeAgent(wsId, agentId));
+  appStore.dispatch(removeSession(agentId));
+  // Prune any recently-closed tab entries for this agent so the empty-state
+  // recent list and "Reopen Closed Tab" cannot resurrect the deleted agent.
+  appStore.dispatch(pruneRecentlyClosed(wsId, { agentId }));
+}
+
+/** Re-add a soft-hidden session to both stores (mirror of softHideSession). */
+function restoreHiddenSession(session: AgentSession): void {
+  persistSession(session);
+}
+
+/** Surface a deletion error to the user (best-effort; never throws). */
+async function showDeletionError(message: string): Promise<void> {
+  try {
+    const toast = await getToast();
+    toast.error(message);
+  } catch (error) {
+    logger.error("Failed to surface agent-deletion error", error);
+  }
+}
+
+/**
+ * Commit a pending soft-hidden deletion to the daemon. On success the daemon
+ * emits `agent:deleted`, which reconciles the list; on failure the session is
+ * un-hidden and the error surfaced. Idempotent: a no-op if nothing is pending.
+ */
+async function commitAgentDeletion(agentId: string): Promise<void> {
+  const pending = pendingAgentDeletions.get(agentId);
+  if (!pending) return;
+  if (pending.timer) clearTimeout(pending.timer);
+  pendingAgentDeletions.delete(agentId);
+  try {
+    const result = await appClient.agents.delete(pending.agentId, pending.wsId);
+    if (!result.success) {
+      restoreHiddenSession(pending.snapshot);
+      await showDeletionError(result.error || "Failed to delete agent");
+      return;
+    }
+    // Persistently prune any recently-closed tab entries for this agent on
+    // successful commit; the soft-hide prune covers the UI immediately, this
+    // covers any later closes that landed in the undo window.
+    appStore.dispatch(pruneRecentlyClosed(pending.wsId, { agentId: pending.agentId }));
+  } catch (error) {
+    logger.error("Failed to commit agent deletion", error);
+    restoreHiddenSession(pending.snapshot);
+    await showDeletionError(errorMessage(error, "Failed to delete agent"));
+  }
+}
+
+/** Show the undo affordance; its action re-dispatches the undo trigger. */
+async function showUndoToast(wsId: string, agentId: string, agentName?: string): Promise<void> {
+  try {
+    const toast = await getToast();
+    toast.warning(`Deleted ${agentName || "agent"}`, {
+      duration: UNDO_DURATION_MS,
+      action: {
+        label: "Undo",
+        onClick: () => appStore.dispatch(undoAgentDeletionRequested(wsId, agentId)),
+      },
+    });
+  } catch (error) {
+    logger.error("Failed to show agent-deletion undo toast", error);
+  }
+}
+
+/**
+ * `deleteAgentWithUndoRequested`: optimistically soft-hide the session WITHOUT
+ * a daemon call, show the undo affordance, and arm a commit timer. Resolves the
+ * promise immediately with the removed session so awaiting dispatch sites
+ * proceed. A true daemon undo is impossible post-delete, so the real
+ * `agent.delete` is deferred until the undo window elapses (or is committed).
+ */
+function handleDeleteWithUndo(
+  action: ReturnType<typeof deleteAgentWithUndoRequested>,
+): void {
+  const [wsId, agentId, agentName] = action.payload;
+  try {
+    const snapshot = readSession(agentId);
+    if (!snapshot) {
+      appStore.dispatch(action.success(null));
+      return;
+    }
+    const existing = pendingAgentDeletions.get(agentId);
+    if (existing?.timer) clearTimeout(existing.timer);
+    softHideSession(wsId, agentId);
+    const timer = setTimeout(() => void commitAgentDeletion(agentId), UNDO_DURATION_MS);
+    pendingAgentDeletions.set(agentId, { wsId, agentId, snapshot, timer });
+    void showUndoToast(wsId, agentId, agentName);
+    appStore.dispatch(action.success(snapshot));
+  } catch (error) {
+    logger.error("Failed to soft-hide agent for deletion", error);
+    appStore.dispatch(action.failure(toError(error, "Failed to delete agent")));
+  }
+}
+
+/**
+ * `deleteAgentSessionRequested`: the no-undo path — soft-hide and commit the
+ * daemon delete immediately. On failure the session is restored.
+ */
+async function handleDeleteSession(
+  action: ReturnType<typeof deleteAgentSessionRequested>,
+): Promise<void> {
+  const [wsId, agentId] = action.payload;
+  const snapshot = readSession(agentId);
+  try {
+    softHideSession(wsId, agentId);
+    const result = await appClient.agents.delete(agentId, wsId);
+    if (!result.success) {
+      if (snapshot) restoreHiddenSession(snapshot);
+      await showDeletionError(result.error || "Failed to delete agent");
+      appStore.dispatch(action.failure(new Error(result.error || "Failed to delete agent")));
+      return;
+    }
+    appStore.dispatch(action.success(undefined as never));
+  } catch (error) {
+    logger.error("Failed to delete agent session", error);
+    if (snapshot) restoreHiddenSession(snapshot);
+    appStore.dispatch(action.failure(toError(error, "Failed to delete agent session")));
+  }
+}
+
+/**
+ * `undoAgentDeletionRequested`: cancel the pending commit and un-hide the
+ * session — no daemon call, since the delete was never sent. Resolves `true`
+ * when an undo actually happened, `false` when nothing was pending.
+ */
+function handleUndoDeletion(
+  action: ReturnType<typeof undoAgentDeletionRequested>,
+): void {
+  const [, agentId] = action.payload;
+  try {
+    const pending = pendingAgentDeletions.get(agentId);
+    if (!pending) {
+      appStore.dispatch(action.success(false));
+      return;
+    }
+    if (pending.timer) clearTimeout(pending.timer);
+    pendingAgentDeletions.delete(agentId);
+    restoreHiddenSession(pending.snapshot);
+    appStore.dispatch(action.success(true));
+  } catch (error) {
+    logger.error("Failed to undo agent deletion", error);
+    appStore.dispatch(action.failure(toError(error, "Failed to undo agent deletion")));
+  }
+}
+
+/**
+ * `flushPendingAgentDeletionsRequested`: commit every pending deletion for the
+ * workspace now (e.g. on workspace unmount), then resolve.
+ */
+async function handleFlushPendingDeletions(
+  action: ReturnType<typeof flushPendingAgentDeletionsRequested>,
+): Promise<void> {
+  const [wsId] = action.payload;
+  try {
+    const pending = [...pendingAgentDeletions.values()].filter((entry) => entry.wsId === wsId);
+    await Promise.all(pending.map((entry) => commitAgentDeletion(entry.agentId)));
+    appStore.dispatch(action.success(undefined as never));
+  } catch (error) {
+    logger.error("Failed to flush pending agent deletions", error);
+    appStore.dispatch(action.failure(toError(error, "Failed to flush pending agent deletions")));
+  }
+}
+
 /**
  * Middleware that gives the agent-session mutation triggers real handlers:
  * after each action passes through the (no-op) reducer, it routes the trigger
@@ -187,6 +400,26 @@ export function createAgentMutationMiddleware(): StoreMiddleware {
         break;
       case saveAgentSessionRequested.type:
         handleSave(action as ReturnType<typeof saveAgentSessionRequested>);
+        break;
+      case deleteAgentWithUndoRequested.type:
+        handleDeleteWithUndo(action as ReturnType<typeof deleteAgentWithUndoRequested>);
+        break;
+      case deleteAgentSessionRequested.type:
+        void handleDeleteSession(action as ReturnType<typeof deleteAgentSessionRequested>);
+        break;
+      case undoAgentDeletionRequested.type:
+        handleUndoDeletion(action as ReturnType<typeof undoAgentDeletionRequested>);
+        break;
+      case commitPendingAgentDeletionRequested.type: {
+        const [, agentId] = (action as ReturnType<typeof commitPendingAgentDeletionRequested>)
+          .payload;
+        void commitAgentDeletion(agentId);
+        break;
+      }
+      case flushPendingAgentDeletionsRequested.type:
+        void handleFlushPendingDeletions(
+          action as ReturnType<typeof flushPendingAgentDeletionsRequested>,
+        );
         break;
     }
     return result;
