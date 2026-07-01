@@ -42,8 +42,27 @@ function inFlightKey(requestedPath: string | null): string {
 }
 
 /**
+ * True when `message` looks like a "path does not exist" failure surfaced by
+ * the daemon (matches Rust's `io::Error` display for `NotFound` on macOS/Linux
+ * — "os error 2" / "No such file or directory" — plus the `ENOENT` alias).
+ */
+function isMissingPathError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("enoent") ||
+    lower.includes("os error 2") ||
+    lower.includes("no such file or directory")
+  );
+}
+
+/**
  * Fetch a listing via `host.listDirectory` and dispatch the result back to the
  * slice. Concurrent calls for the same `requestedPath` share one fetch.
+ *
+ * When a non-home `requestedPath` fails because the path is missing (ENOENT),
+ * dispatch `loadDirectoryRequested()` to retry against the daemon-host home
+ * instead of surfacing a dead-end error. Home failures and non-missing errors
+ * (permission, etc.) still fall through to `directoryListingFailed`.
  */
 async function refreshDirectoryListing(requestedPath: string | null): Promise<void> {
   const key = inFlightKey(requestedPath);
@@ -60,7 +79,14 @@ async function refreshDirectoryListing(requestedPath: string | null): Promise<vo
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.warn("host.listDirectory failed", { requestedPath, error: message });
-      appStore.dispatch(directoryListingFailed(requestedPath, message));
+      if (requestedPath !== null && isMissingPathError(message)) {
+        logger.info("initial path missing; falling back to daemon-host home", {
+          requestedPath,
+        });
+        appStore.dispatch(loadDirectoryRequested());
+      } else {
+        appStore.dispatch(directoryListingFailed(requestedPath, message));
+      }
     } finally {
       inFlight.delete(key);
     }
