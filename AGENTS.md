@@ -126,6 +126,36 @@ treat it as the single source of truth.
 - Caches in the renderer are read-through views of BE responses, invalidated by BE-driven
   events, never an alternative source of truth.
 
+### Mutation middleware & soft-hide-then-commit
+
+Some async-action triggers (`*Requested` actions with a `.promise`) lost their handlers
+when the saga runtime was removed. They are re-homed in a **mutation middleware** rather
+than a new saga: `createAgentMutationMiddleware()` in
+`src/features/agent/agent-mutation-service.ts` observes dispatched actions and, after the
+reducer runs, calls the `AppClient` seam and dispatches the per-dispatch
+`action.success`/`action.failure` so the awaited promise settles. Keep these middlewares
+dependency-light (no selector imports — they evaluate `store.createSelector` at chain
+construction); read state directly off `appStore.state` and import the toast lib lazily.
+
+Agent **deletion** uses a **soft-hide-then-commit** pattern (the handlers live in that
+same middleware):
+
+- `deleteAgentWithUndoRequested` optimistically **soft-hides** the session locally (drops
+  it from the visible list) **without** calling the daemon, shows an Undo toast, and arms a
+  15s commit timer. The action resolves immediately with the removed session.
+- `undoAgentDeletionRequested` cancels the timer and **un-hides** the session — no daemon
+  call, because the delete was never sent.
+- `commitPendingAgentDeletionRequested` / `flushPendingAgentDeletionsRequested` (and the
+  timer elapsing) call the real `appClient.agents.delete` (`agent.delete`, PROTOCOL §5.5).
+  On success the daemon emits `agent:deleted` (in `AGENT_LIFECYCLE_EVENTS`), so the
+  reactive `subscribe` refetch reconciles the list — the FE does not hand-roll list
+  mutation. On failure the session is un-hidden and the error surfaced.
+
+Why not a true undo? Once `agent.delete` reaches the daemon the deletion is permanent, so
+"undo" can only exist **before** commit. Deferring the wire call for the undo window is the
+only way to offer undo without a daemon-side restore path. The pending deletions are
+transient UI-only state (a module-level `Map`), never Redux.
+
 ### Testing — every feature/fix against a mock BE
 
 Every feature and every bug fix that touches the wire **MUST** ship with tests that:
