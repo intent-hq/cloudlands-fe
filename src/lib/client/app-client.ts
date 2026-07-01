@@ -91,12 +91,36 @@ export interface MutationResult {
   queuedMessage?: QueuedMessage;
 }
 
-/** Minimal request shape for creating an agent through the seam. */
+/**
+ * Request shape for creating an agent through the seam (PROTOCOL §5.5). The
+ * widened P2-12a wire lets the FE hand the daemon everything it needs when it
+ * stops spawning agent processes locally and routes creation through
+ * `agent.create` instead. All new fields are optional and additive — omitted
+ * fields fall back to the pre-widening behavior.
+ *
+ * - `prompt` maps to the wire `behaviorPrompt` (the seam field predates the
+ *   §5.5 rename; kept as `prompt` here for caller ergonomics).
+ * - `name` names the session at creation instead of the auto-generated
+ *   `"Agent <hex>"` fallback.
+ * - `agentId` is honored verbatim by the daemon (`agent-{uuid}` shape); used
+ *   so the caller can address `agent.sendMessage` at the same id it just
+ *   handed us (fixes the create→send race).
+ * - `provider` / `agentType` / `metadata` / `workspacePath` / `workspaceContext`
+ *   are the widened FE-facing spawn hints — the daemon persists `provider` on
+ *   the session; the rest are accepted but not yet stored (deferred).
+ */
 export interface AgentCreateRequest {
   workspaceId: string;
   prompt?: string;
   model?: string;
   specialist?: string | null;
+  name?: string;
+  agentId?: string;
+  provider?: string;
+  agentType?: string;
+  metadata?: Record<string, unknown>;
+  workspacePath?: string;
+  workspaceContext?: Record<string, unknown>;
 }
 
 /** Pull-request summary surfaced by the git domain. */
@@ -167,7 +191,15 @@ export interface AgentsClient {
     agentId: string,
     limit?: number,
   ): Promise<{ messages: AgentMessage[]; truncated: boolean; totalMessages: number }>;
-  create(request: AgentCreateRequest): Promise<MutationResult>;
+  /**
+   * Create an agent session (`agent.create`, §5.5). The daemon returns the
+   * full `AgentLite` projection of the newly persisted session (widened in
+   * P2-12a from the earlier `{id, name}` snippet), which this method
+   * normalizes into the renderer `AgentSession` shape and returns directly so
+   * callers can upsert into the store without a follow-up `agent.get`.
+   * Transport / daemon errors propagate as rejections.
+   */
+  create(request: AgentCreateRequest): Promise<AgentSession>;
   send(agentId: string, message: string): Promise<MutationResult>;
   queue(agentId: string, message: string): Promise<MutationResult>;
   /**

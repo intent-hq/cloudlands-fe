@@ -19,29 +19,87 @@ const mockedRequest = vi.mocked(backendRequest);
 describe("LiveAgentsClient mutations (fake transport)", () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("create forwards agent.create, mapping prompt→behaviorPrompt + idempotencyKey", async () => {
-    mockedRequest.mockResolvedValueOnce({ id: "agent-1" });
+  it("create forwards agent.create with the widened P2-12a params and returns the normalized session", async () => {
+    // Daemon returns the full `AgentLite` projection (P2-12a widened §5.5).
+    // Unique id so the module-level agentWorkspaceIndex cache does not bleed
+    // into the sibling `send` tests below (which expect a cold cache).
+    mockedRequest.mockResolvedValueOnce({
+      agent: {
+        id: "agent-p212a-1",
+        workspaceId: "ws-p212a",
+        name: "widened",
+        model: "opus",
+        provider: "auggie",
+        status: "pending",
+        createdAt: "2026-06-30T00:00:00.000Z",
+        updatedAt: "2026-06-30T00:00:00.000Z",
+      },
+    });
     const client = new LiveAgentsClient();
 
     const request: AgentCreateRequest = {
-      workspaceId: "ws-1",
+      workspaceId: "ws-p212a",
       prompt: "do the thing",
       model: "opus",
       specialist: "implementor",
+      name: "widened",
+      agentId: "agent-p212a-1",
+      provider: "auggie",
+      agentType: "task-loop",
+      metadata: { tag: "unit" },
+      workspacePath: "/tmp/wid",
+      workspaceContext: { selection: "note:1" },
     };
-    const result = await client.create(request);
+    const session = await client.create(request);
 
-    expect(result).toEqual({ success: true });
+    expect(session.id).toBe("agent-p212a-1");
+    expect(session.workspaceId).toBe("ws-p212a");
+    expect(session.name).toBe("widened");
     expect(mockedRequest).toHaveBeenCalledWith(
       "agent.create",
       expect.objectContaining({
-        workspaceId: "ws-1",
+        workspaceId: "ws-p212a",
         model: "opus",
-        specialist: "implementor",
+        specialistId: "implementor",
         behaviorPrompt: "do the thing",
+        name: "widened",
+        agentId: "agent-p212a-1",
+        provider: "auggie",
+        agentType: "task-loop",
+        metadata: { tag: "unit" },
+        workspacePath: "/tmp/wid",
+        workspaceContext: { selection: "note:1" },
         idempotencyKey: expect.any(String),
       }),
     );
+  });
+
+  it("create omits absent optional params (backward-compat with the pre-P2-12a callers)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      agent: { id: "agent-p212a-2", workspaceId: "ws-p212a", status: "pending" },
+    });
+    const client = new LiveAgentsClient();
+
+    await client.create({ workspaceId: "ws-p212a" });
+
+    const params = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(params.workspaceId).toBe("ws-p212a");
+    expect(params.idempotencyKey).toEqual(expect.any(String));
+    // Every optional param stays off the wire when the caller didn't supply it.
+    for (const key of [
+      "model",
+      "specialistId",
+      "behaviorPrompt",
+      "name",
+      "agentId",
+      "provider",
+      "agentType",
+      "metadata",
+      "workspacePath",
+      "workspaceContext",
+    ]) {
+      expect(params).not.toHaveProperty(key);
+    }
   });
 
   it("send forwards agent.sendMessage with workspaceId + minted messageId", async () => {

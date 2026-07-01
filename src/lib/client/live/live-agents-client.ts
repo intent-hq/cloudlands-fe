@@ -111,20 +111,45 @@ export class LiveAgentsClient implements AgentsClient {
     };
   }
 
-  // Mutations forward to the daemon (§7.2) and fold the outcome into a
-  // MutationResult; daemon agent-lifecycle events drive the reactive refresh.
-  async create(request: AgentCreateRequest): Promise<MutationResult> {
-    // create requires an idempotencyKey (§5.6). The seam's AgentCreateRequest
-    // only carries workspaceId/model/specialist/prompt; prompt maps to the
-    // wire `behaviorPrompt`. (name/provider/agentType/taskNoteId are not on the
-    // request — see the gap noted in the task report.)
-    return runMutation("agent.create", {
+  // Mutations forward to the daemon (§7.2); daemon agent-lifecycle events
+  // drive the reactive refresh. `create` returns the full session projection
+  // (widened in P2-12a) so the caller can upsert without a follow-up `agent.get`.
+  async create(request: AgentCreateRequest): Promise<AgentSession> {
+    // create requires an idempotencyKey (§5.6). The widened P2-12a wire also
+    // accepts optional `name` / `agentId` / `provider` / `agentType` /
+    // `metadata` / `workspacePath` / `workspaceContext`; each is only sent
+    // when the caller supplied it so the daemon sees `undefined` params
+    // (equivalent to omitted) rather than explicit nulls it would reject.
+    const params: Record<string, unknown> = {
       workspaceId: request.workspaceId,
-      model: request.model,
-      specialist: request.specialist,
-      behaviorPrompt: request.prompt,
       idempotencyKey: newIdempotencyKey(),
-    });
+    };
+    if (request.model !== undefined) params.model = request.model;
+    if (request.specialist !== undefined && request.specialist !== null) {
+      params.specialistId = request.specialist;
+    }
+    if (request.prompt !== undefined) params.behaviorPrompt = request.prompt;
+    if (request.name !== undefined) params.name = request.name;
+    if (request.agentId !== undefined) params.agentId = request.agentId;
+    if (request.provider !== undefined) params.provider = request.provider;
+    if (request.agentType !== undefined) params.agentType = request.agentType;
+    if (request.metadata !== undefined) params.metadata = request.metadata;
+    if (request.workspacePath !== undefined) params.workspacePath = request.workspacePath;
+    if (request.workspaceContext !== undefined) {
+      params.workspaceContext = request.workspaceContext;
+    }
+    const result = await backendRequest<{ agent?: unknown } | unknown>("agent.create", params);
+    // Widened §5.5 wire returns `{ agent: AgentLite }`; the pre-widening
+    // `{ id, name }` shape is a strict subset, so we tolerate a bare object
+    // for older daemons without healing anything the current contract owns.
+    const raw =
+      result && typeof result === "object" && "agent" in result
+        ? (result as { agent?: unknown }).agent
+        : result;
+    if (!raw || typeof raw !== "object") {
+      throw new Error("agent.create returned no agent object");
+    }
+    return normalizeAgent(raw as Record<string, unknown>);
   }
   async send(agentId: string, message: string): Promise<MutationResult> {
     const workspaceId = await this.resolveAgentWorkspaceId(agentId);
