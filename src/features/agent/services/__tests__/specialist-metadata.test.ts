@@ -12,9 +12,25 @@ import {
   vi,
 } from 'vitest';
 
-// Mock IPC and Redux dependencies
-vi.mock('$shared/ipc/typed-invoke', () => ({
-  typedInvoke: vi.fn().mockResolvedValue({ success: true, data: {} }),
+// AUDIT-P2-12b: agent creation now routes through `appClient.agents.create`
+// (→ daemon `agent.create`, PROTOCOL §5.5) instead of the legacy
+// `AGENT_CHANNELS.CREATE` IPC. Mock the widened seam so the FE-supplied
+// agentId is echoed back per contract.
+vi.mock('$lib/client', () => ({
+  appClient: {
+    agents: {
+      create: vi.fn(async (request: { agentId?: string; workspaceId: string; name?: string }) => ({
+        id: request.agentId ?? 'agent-mock',
+        backendSessionId: null,
+        workspaceId: request.workspaceId,
+        name: request.name ?? 'Mock Agent',
+        status: 'Idle',
+        messages: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })),
+    },
+  },
 }));
 
 vi.mock('$lib/electron-bridge', () => ({

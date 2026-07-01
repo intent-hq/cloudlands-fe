@@ -15,9 +15,8 @@ import type { Workspace, AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import { Logger } from '$shared/logger';
 import type { WorkspaceId as BrandedWorkspaceId } from '$shared/types/branded-ids';
-import { typedInvoke } from '$shared/ipc/typed-invoke';
-import type { AgentIpc } from '$shared/ipc/contracts';
-import { AGENT_CHANNELS, AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
+import { AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
+import { appClient } from '$lib/client';
 import { generateAgentNameFromText } from '$lib/utils/agent-name-generator';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
 import { track } from '$lib/services/analytics';
@@ -205,9 +204,9 @@ export class UnifiedAgentFactory {
         logger.warn('Circuit breaker check failed, proceeding with agent creation', { error: e });
       }
 
-      // Step 2: Config validation is performed server-side in the backend over
-      // AGENT_CHANNELS.CREATE (see consolidated-backend.service). The validator now
-      // lives in the main process, so the renderer create path no longer validates here.
+      // Step 2: Config validation is performed server-side by the daemon on
+      // `agent.create` (PROTOCOL §5.5). The renderer create path no longer
+      // validates here.
 
       // Step 3: Normalize configuration (sanitizes names, etc.)
       // If no name provided, normalizeConfig will generate one from the initial message.
@@ -306,7 +305,7 @@ export class UnifiedAgentFactory {
         }
       }
 
-      // Step 4: Normalized config is validated server-side over AGENT_CHANNELS.CREATE.
+      // Step 4: Normalized config is validated server-side by the daemon on `agent.create`.
       metrics.validationTime = Date.now() - validationStart;
 
       // Step 5: Generate IDs using unified service (or use provided ID)
@@ -758,9 +757,13 @@ export class UnifiedAgentFactory {
    */
 
   /**
-   * Create agent in backend via IPC
-   * Uses Wave 1 IPC contracts for type safety
-   * Backend will build system prompt from agentType via InstructionService
+   * Create the agent session on the daemon via the widened `agent.create` seam
+   * (PROTOCOL §5.5, widened in AUDIT-P2-12a). Routes directly through
+   * `appClient.agents.create` — the daemon owns provider spawn/session
+   * lifecycle, so the FE no longer round-trips through `AGENT_CHANNELS.CREATE`
+   * and the main-process `ConsolidatedBackendService` + `ACPProvider` spawn
+   * chain (deleted in AUDIT-P2-12b). `skipInitialPrompt` is a legacy
+   * main-process flag that is unused by the daemon and intentionally dropped.
    */
   private async createInBackend(
     agent: AgentSession,
@@ -776,65 +779,52 @@ export class UnifiedAgentFactory {
       }>;
     },
     provider?: string,
-    skipInitialPrompt?: boolean,
+    _skipInitialPrompt?: boolean,
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      // Build IPC request using Wave 1 contracts
-      const request: AgentIpc.CreateRequest = {
-        workspaceId: agent.workspaceId,
+      const request = {
+        workspaceId: String(agent.workspaceId),
         workspacePath,
         name: agent.name,
-        agentId: agent.id, // Pass the frontend-generated agent ID to backend
+        agentId: String(agent.id), // Daemon adopts FE-supplied id verbatim
         model: agent.model,
         provider, // Provider ID (e.g., 'auggie', 'claude-code', 'codex') from activeProviderStore
-        agentType: agent.metadata?.agentType, // Backend builds system prompt from this
-        behaviorPrompt, // Custom behavior instructions from specialist
+        agentType: agent.metadata?.agentType, // Daemon builds system prompt from this
+        prompt: behaviorPrompt, // Maps to wire `behaviorPrompt` (AgentCreateRequest.prompt)
         metadata: agent.metadata,
-        skipInitialPrompt: skipInitialPrompt ?? true,
-        workspaceContext, // Open panels + linked references for agent context
+        workspaceContext: workspaceContext as Record<string, unknown> | undefined,
       };
 
-      logger.info('📤 Sending to backend via IPC', {
+      logger.info('📤 Creating agent via daemon (agent.create)', {
         agentId: agent.id,
         model: request.model,
         provider: request.provider,
-        hasBehaviorPrompt: !!request.behaviorPrompt,
-        behaviorPromptLength: request.behaviorPrompt?.length || 0,
+        hasBehaviorPrompt: !!request.prompt,
+        behaviorPromptLength: request.prompt?.length || 0,
         agentType: request.agentType,
         openPanelsCount: workspaceContext?.openPanels.length || 0,
         linkedReferencesCount: workspaceContext?.linkedReferences.length || 0,
       });
 
-      const result = await typedInvoke(AGENT_CHANNELS.CREATE, request);
+      const created = await appClient.agents.create(request);
 
-      if (!result.success) {
-        return {
-          success: false,
-          error: result.error?.message || 'Failed to create agent in backend',
-        };
-      }
-
-      // Defensive: the daemon (PROTOCOL §5.5) now adopts the FE-supplied
-      // `agentId` verbatim, so `result.data.agent.id` should equal `agent.id`.
-      // If they diverge, the follow-up `agent.sendMessage` (addressed at
-      // `agent.id`) would race back to `-32602 not found: agent session`.
-      // Warn loudly so the mismatch is surfaced before the send lands.
-      const returnedAgent = (result.data as { agent?: { id?: unknown } } | undefined)?.agent;
-      const returnedId =
-        returnedAgent && typeof returnedAgent.id === 'string' ? returnedAgent.id : undefined;
-      if (returnedId && returnedId !== agent.id) {
-        logger.warn('Backend returned a different agent id than the FE supplied', {
+      // Defensive: the daemon (PROTOCOL §5.5) adopts the FE-supplied `agentId`
+      // verbatim. A divergence here would race the follow-up `agent.sendMessage`
+      // back to `-32602 not found: agent session`. Warn loudly so the mismatch
+      // is surfaced before the send lands.
+      if (created.id && String(created.id) !== String(agent.id)) {
+        logger.warn('Daemon returned a different agent id than the FE supplied', {
           requestedAgentId: agent.id,
-          returnedAgentId: returnedId,
+          returnedAgentId: created.id,
         });
       }
 
       return { success: true };
     } catch (error) {
-      logger.error('Backend creation failed', error);
+      logger.error('Daemon agent.create failed', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Backend error',
+        error: error instanceof Error ? error.message : 'Daemon error',
       };
     }
   }
