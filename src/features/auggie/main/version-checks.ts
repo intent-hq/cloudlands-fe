@@ -1,63 +1,52 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { Logger } from '../../../shared/logger';
-import { getEnhancedPath } from '../../../shared/main/find-binary';
+import { hostExec } from '../../../shared/main/host-exec';
 
-const rawExec = promisify(exec);
 const logger = new Logger('VersionChecks');
 
 /**
- * Check whether git is available using the enhanced PATH.
+ * Check whether git is available on the daemon's host by probing
+ * `git --version` via `host.exec` (PROTOCOL §5.14).
  *
- * Unlike checkNodeVersion() (which uses the raw process.env PATH to match
- * how the agent process is spawned), this uses getEnhancedPath() because
- * the rest of the app executes git through buildGitEnv() / getEnhancedPath().
- * Using the raw launcher PATH would undercount installed Git on macOS GUI
- * launches and standard Windows installs where git is only on the enhanced PATH.
- *
- * Retries for transient spawn errors (EAGAIN/EBADF).
- *
- * @param execFn - Optional executor for testing. Defaults to promisified child_process.exec.
+ * The FE no longer spawns git locally: post-P2 the daemon owns arbitrary exec
+ * (with argv, no shell, and its own PATH-enriched env), so the `git` that
+ * `host.exec` resolves is exactly the git the daemon uses for its own git
+ * operations. Honest-degrade on RPC failure / non-zero exit: return
+ * `{ gitInstalled: false }` without throwing.
  */
-export async function checkGitVersion(
-  execFn: (cmd: string, opts: object) => Promise<{ stdout: string; stderr: string }> = rawExec,
-): Promise<{
+export async function checkGitVersion(): Promise<{
   gitInstalled: boolean;
   gitVersion?: string;
 }> {
-  const MAX_RETRIES = 3;
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const { stdout } = await execFn('git --version', {
-        timeout: 5000,
-        env: { ...process.env, PATH: getEnhancedPath() },
-        windowsHide: true,
-      });
-      const output = (stdout || '').trim();
-      if (output) {
-        // `git --version` outputs e.g. "git version 2.39.0" or
-        // "git version 2.44.0.windows.1" on Windows
-        const versionMatch = output.match(/(\d+(?:\.\d+)+)/);
-        const version = versionMatch ? versionMatch[1] : output;
-        logger.info('Git version check', { version });
-        return { gitInstalled: true, gitVersion: version };
-      }
-    } catch (err) {
-      lastError = err;
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'EAGAIN' || code === 'EBADF') {
-        logger.warn(
-          `Git version check attempt ${attempt}/${MAX_RETRIES} failed with ${code}, retrying...`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
-        continue;
-      }
-      // Non-transient error — no point retrying
-      break;
+  try {
+    const result = await hostExec('git', {
+      args: ['--version'],
+      timeoutMs: 5000,
+    });
+    if (result.timedOut) {
+      logger.warn('Git version probe (host.exec) timed out');
+      return { gitInstalled: false };
     }
+    if (result.exitCode !== 0) {
+      logger.warn('Git not found on PATH (host.exec)', {
+        exitCode: result.exitCode,
+        stderr: result.stderr,
+      });
+      return { gitInstalled: false };
+    }
+    const output = (result.stdout || '').trim();
+    if (output) {
+      // `git --version` outputs e.g. "git version 2.39.0" or
+      // "git version 2.44.0.windows.1" on Windows
+      const versionMatch = output.match(/(\d+(?:\.\d+)+)/);
+      const version = versionMatch ? versionMatch[1] : output;
+      logger.info('Git version check (host.exec)', { version });
+      return { gitInstalled: true, gitVersion: version };
+    }
+    return { gitInstalled: false };
+  } catch (err) {
+    logger.warn('Git version probe (host.exec) failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { gitInstalled: false };
   }
-
-  logger.warn('Git not found on PATH', { error: lastError });
-  return { gitInstalled: false };
 }

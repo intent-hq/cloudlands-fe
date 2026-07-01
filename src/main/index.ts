@@ -657,18 +657,27 @@ app.whenReady().then(async () => {
     });
   }
 
-  // Asynchronously fetch active provider version and update the about panel
+  // Asynchronously fetch active provider version and update the about panel.
+  // Routed through the daemon's `host.exec` (PROTOCOL §5.14) — the FE no longer
+  // spawns provider `--version` locally. Failure is silent: the About panel just
+  // omits the CLI version line (honest-degrade on RPC / non-zero exit).
   (async () => {
     try {
-      const { execAsync } = await import('../shared/main/async-utils.js');
+      const { hostExec } = await import('../shared/main/host-exec.js');
       const { getDefaultProviderConfig } = await import('../shared/config/provider-config.js');
       const defaultProvider = getDefaultProviderConfig();
 
-      // Try to get version from the default provider's CLI
-      const { stdout } = await execAsync(`${defaultProvider.command} --version`, {
-        timeout: 5000,
+      const result = await hostExec(defaultProvider.command, {
+        args: ['--version'],
+        timeoutMs: 5000,
       });
-      const providerVersion = stdout.trim();
+      if (result.exitCode !== 0) {
+        logger.debug('Could not get provider CLI version for about panel', {
+          exitCode: result.exitCode,
+        });
+        return;
+      }
+      const providerVersion = (result.stdout || '').trim();
       if (providerVersion) {
         aboutPanelInfo.providerVersion = `${defaultProvider.displayName} CLI: ${providerVersion}`;
         if (isMacOS) {
@@ -680,9 +689,11 @@ app.whenReady().then(async () => {
           });
         }
       }
-    } catch {
-      // Provider CLI not installed or not accessible - that's fine
-      logger.debug('Could not get provider CLI version for about panel');
+    } catch (err) {
+      // Provider CLI not installed / not accessible / RPC failure - that's fine
+      logger.debug('Could not get provider CLI version for about panel', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   })();
 
