@@ -48,7 +48,7 @@ import {
   createNoteRequested,
   markNoteRead,
 } from "$store/renderer/slices/note-read-tracking/note-read-tracking-slice";
-import { openWorkspaceNote } from "$store/renderer/slices/workspace-navigation/workspace-navigation-slice";
+import { openTab } from "$store/renderer/slices/panel-layout/panel-layout-slice";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("NotesWriteService");
@@ -176,8 +176,10 @@ export async function createNote(
  * Handle the (post-saga) `createNoteRequested` action: forward to the
  * `appClient.notes.create` seam with the same defaults the legacy
  * "Add new note" saga used (title `"New Note"`, empty content, no tags), then
- * mark the new note read and open it in the main panel so it appears in the
- * Context tab without a manual reload.
+ * mark the new note read and open it as a real panel-layout tab so it appears
+ * in its own focused tab without a manual reload. Mirrors the sidebar's
+ * `handleOpenNoteInPanel` path (`openTab` + `markNoteRead`); the panel-layout
+ * reducer dedupes by `noteId` so a repeat dispatch focuses the existing tab.
  */
 async function handleCreateNoteRequested(workspaceId: string): Promise<void> {
   if (!workspaceId) return;
@@ -188,7 +190,15 @@ async function handleCreateNoteRequested(workspaceId: string): Promise<void> {
   });
   if (!newNoteId) return;
   appStore.dispatch(markNoteRead(workspaceId, newNoteId));
-  appStore.dispatch(openWorkspaceNote(workspaceId, newNoteId));
+  appStore.dispatch(
+    openTab(workspaceId, {
+      type: "note",
+      title: "New Note",
+      closable: true,
+      noteId: newNoteId,
+      workspaceId,
+    }),
+  );
 }
 
 /**

@@ -32,7 +32,11 @@ import {
   selectNoteById,
 } from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
 import { createNoteRequested } from "$store/renderer/slices/note-read-tracking/note-read-tracking-slice";
-import { selectWorkspaceNavigationMainPanel } from "$store/renderer/slices/workspace-navigation/workspace-navigation-selectors";
+import { initializeLayout } from "$store/renderer/slices/panel-layout/panel-layout-slice";
+import {
+  selectActiveTab,
+  selectAllTabs,
+} from "$store/renderer/slices/panel-layout/panel-layout-selectors";
 import {
   NOTE_CONTENT_SAVE_DEBOUNCE_MS,
   createNote,
@@ -268,8 +272,17 @@ describe("notesWriteService (fake seam, real store)", () => {
     );
   });
 
-  it("opens the new note in the main panel after createNoteRequested succeeds", async () => {
+  it("opens the new note as a focused panel-layout tab after createNoteRequested succeeds", async () => {
     const wsCreate = "ws-create-note-open";
+    // Seed a focused panel so the openTab reducer has somewhere to place the tab —
+    // the sidebar's "Add note" path is exercised against the real panel-layout slice.
+    appStore.dispatch(
+      initializeLayout(wsCreate, {
+        root: { type: "panel", panelId: "p1" },
+        panels: { p1: { id: "p1", tabs: [], activeTabId: null } },
+        focusedPanelId: "p1",
+      }),
+    );
     notesApi.list.mockResolvedValueOnce(
       [makeNote("real-open", { workspaceId: WorkspaceId(wsCreate) })] as never,
     );
@@ -279,9 +292,16 @@ describe("notesWriteService (fake seam, real store)", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const mainPanel = selectWorkspaceNavigationMainPanel.select(appStore.state, wsCreate);
-    expect(mainPanel.type).toBe("notes");
-    expect(mainPanel.selectedNoteId).toBe("real-open");
+    const tabs = selectAllTabs.select(appStore.state, wsCreate);
+    const noteTab = tabs.find((t) => t.type === "note" && t.noteId === "real-open");
+    expect(noteTab).toBeDefined();
+    expect(noteTab?.title).toBe("New Note");
+    expect(noteTab?.closable).toBe(true);
+    expect(noteTab?.workspaceId).toBe(wsCreate);
+
+    // The new tab is focused (matches the sidebar's openTab path).
+    const active = selectActiveTab.select(appStore.state, wsCreate);
+    expect(active?.id).toBe(noteTab?.id);
   });
 
   it("createNoteRequested with a blank workspaceId does not call the seam", async () => {
