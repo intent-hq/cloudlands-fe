@@ -6,12 +6,17 @@ import {
   beforeEach,
   afterEach,
 } from 'vitest';
-import EventEmitter from 'events';
 
 // Mock auggie-path before importing the module under test
 vi.mock('../main/auggie-path', () => ({
   findAuggiePathAsync: vi.fn(),
   getEnhancedPath: vi.fn(() => '/usr/bin:/bin:/usr/sbin:/sbin'),
+}));
+
+// Mock the hostExec seam — the module under test now proxies every auggie
+// invocation through `host.exec` (PROTOCOL §5.14) instead of spawning locally.
+vi.mock('../../../shared/main/host-exec', () => ({
+  hostExec: vi.fn(),
 }));
 
 // Mock logger to avoid side effects in tests
@@ -24,37 +29,17 @@ vi.mock('../../../shared/logger', () => ({
   },
 }));
 
-// The source uses createRequire(import.meta.url)('child_process').spawn at runtime.
-// We can intercept this by patching the module-level `requireNode` via vi.hoisted + vi.mock on 'module'.
-const { mockSpawn } = vi.hoisted(() => {
-  const mockSpawn = vi.fn();
-  return { mockSpawn };
-});
-
-vi.mock('module', () => {
-  const mockCreateRequire = () => (id: string) => {
-    if (id === 'child_process') {
-      return { spawn: mockSpawn };
-    }
-    throw new Error(`Unmocked requireNode call: ${id}`);
-  };
-  // vitest requires a default export for the 'module' built-in
-  return {
-    default: { createRequire: mockCreateRequire },
-    createRequire: mockCreateRequire,
-  };
-});
-
 import {
   getAuggieExecPATH,
   shouldUseWindowsShell,
   executeAuggieCommand,
+  execWithEnhancedPath,
 } from '../main/execute-auggie-command';
 import {
   getEnhancedPath,
   findAuggiePathAsync,
 } from '../main/auggie-path';
-
+import { hostExec } from '../../../shared/main/host-exec';
 
 describe('getAuggieExecPATH', () => {
   const MOCK_ENHANCED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -68,7 +53,6 @@ describe('getAuggieExecPATH', () => {
   });
 
   it('returns enhanced PATH unchanged when auggiePath is undefined (cast)', () => {
-    // executeAuggieCommand may pass undefined in edge cases
     expect(getAuggieExecPATH(undefined as unknown as string | null)).toBe(MOCK_ENHANCED_PATH);
   });
 
@@ -77,7 +61,6 @@ describe('getAuggieExecPATH', () => {
   });
 
   it('returns enhanced PATH unchanged when auggiePath is a bare name (non-absolute)', () => {
-    // This is the key fix: path.dirname('auggie') === '.' which would leak CWD into PATH
     expect(getAuggieExecPATH('auggie')).toBe(MOCK_ENHANCED_PATH);
   });
 
@@ -123,8 +106,6 @@ describe('shouldUseWindowsShell', () => {
 
   it('returns false on Windows when auggiePath is an absolute non-shim binary', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
-    // Use a POSIX-style absolute path so path.isAbsolute() returns true on macOS test host.
-    // On a real Windows box, path.isAbsolute('C:\\...\\auggie.exe') would also be true.
     expect(shouldUseWindowsShell('/opt/auggie/auggie.exe')).toBe(false);
   });
 
@@ -155,221 +136,122 @@ describe('shouldUseWindowsShell', () => {
 });
 
 
-
-describe('executeAuggieWithStdin timeout tree-kill', () => {
-  const originalPlatform = process.platform;
-
-  function createFakeChild(pid: number) {
-    const child = new EventEmitter() as EventEmitter & {
-      pid: number;
-      kill: ReturnType<typeof vi.fn>;
-      stdin: EventEmitter & { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
-      stdout: EventEmitter;
-      stderr: EventEmitter;
-    };
-    child.pid = pid;
-    child.kill = vi.fn();
-    child.stdin = Object.assign(new EventEmitter(), {
-      write: vi.fn(),
-      end: vi.fn(),
-    });
-    child.stdout = new EventEmitter();
-    child.stderr = new EventEmitter();
-    return child;
-  }
-
+describe('executeAuggieCommand (host.exec seam)', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    mockSpawn.mockReset();
+    vi.mocked(hostExec).mockReset();
+    vi.mocked(findAuggiePathAsync).mockReset();
+  });
+
+  it('proxies to hostExec with the resolved auggie path and argv', async () => {
     vi.mocked(findAuggiePathAsync).mockResolvedValue('/usr/local/bin/auggie');
+    vi.mocked(hostExec).mockResolvedValue({
+      stdout: '0.14.0',
+      stderr: '',
+      exitCode: 0,
+    });
+
+    const result = await executeAuggieCommand('--version', { timeout: 8000 });
+
+    expect(hostExec).toHaveBeenCalledTimes(1);
+    expect(hostExec).toHaveBeenCalledWith('/usr/local/bin/auggie', {
+      args: ['--version'],
+      timeoutMs: 8000,
+    });
+    expect(result).toEqual({ stdout: '0.14.0', stderr: '' });
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-    Object.defineProperty(process, 'platform', { value: originalPlatform });
-  });
-
-  it('uses taskkill /T /F on Windows when shell is true', async () => {
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-
-    // findAuggiePathAsync returns null so executablePath='auggie' → useShell=true on win32
+  it('falls back to the bare `auggie` command when path resolution returns null', async () => {
     vi.mocked(findAuggiePathAsync).mockResolvedValue(null);
+    vi.mocked(hostExec).mockResolvedValue({
+      stdout: '',
+      stderr: '',
+      exitCode: 0,
+    });
 
-    const fakeChild = createFakeChild(12345);
-    const fakeTaskkill = createFakeChild(0);
+    await executeAuggieCommand('model list --json');
 
-    mockSpawn
-      .mockReturnValueOnce(fakeChild) // first call: auggie spawn
-      .mockReturnValueOnce(fakeTaskkill); // second call: taskkill spawn
+    expect(hostExec).toHaveBeenCalledWith('auggie', {
+      args: ['model', 'list', '--json'],
+      timeoutMs: 30_000,
+    });
+  });
 
-    const promise = executeAuggieCommand('session stats', { stdin: 'data', timeout: 5000 });
-    // Attach catch handler early to prevent unhandled rejection warning
-    const caught = promise.catch((e: Error) => e);
+  it('throws when hostExec reports a non-zero exit code', async () => {
+    vi.mocked(findAuggiePathAsync).mockResolvedValue('/usr/local/bin/auggie');
+    vi.mocked(hostExec).mockResolvedValue({
+      stdout: '',
+      stderr: 'not logged in',
+      exitCode: 1,
+    });
 
-    // Let the async findAuggiePathAsync resolve
-    await vi.advanceTimersByTimeAsync(0);
+    await expect(executeAuggieCommand('model list')).rejects.toThrow('not logged in');
+  });
 
-    // Advance past the timeout
-    await vi.advanceTimersByTimeAsync(5000);
+  it('throws a timeout error when hostExec reports timedOut', async () => {
+    vi.mocked(findAuggiePathAsync).mockResolvedValue('/usr/local/bin/auggie');
+    vi.mocked(hostExec).mockResolvedValue({
+      stdout: '',
+      stderr: '',
+      exitCode: 124,
+      timedOut: true,
+    });
 
-    // Verify taskkill was spawned with the correct args
-    expect(mockSpawn).toHaveBeenCalledTimes(2);
-    expect(mockSpawn).toHaveBeenLastCalledWith(
-      'taskkill',
-      ['/pid', '12345', '/T', '/F'],
-      { windowsHide: true },
+    await expect(executeAuggieCommand('--version', { timeout: 500 })).rejects.toThrow(
+      /timed out after 500ms/,
     );
-
-    // child.kill should NOT have been called directly (taskkill handles it)
-    expect(fakeChild.kill).not.toHaveBeenCalled();
-
-    // The promise should reject with timeout error
-    const error = await caught;
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe('Command timed out after 5000ms');
   });
 
-  it('uses child.kill() on macOS/Linux (no taskkill)', async () => {
-    Object.defineProperty(process, 'platform', { value: 'darwin' });
-
+  it('rejects when caller supplies stdin (host.exec has no stdin channel)', async () => {
     vi.mocked(findAuggiePathAsync).mockResolvedValue('/usr/local/bin/auggie');
 
-    const fakeChild = createFakeChild(99999);
-    mockSpawn.mockReturnValueOnce(fakeChild);
-
-    const promise = executeAuggieCommand('session stats', { stdin: 'data', timeout: 3000 });
-    const caught = promise.catch((e: Error) => e);
-
-    // Let the async findAuggiePathAsync resolve
-    await vi.advanceTimersByTimeAsync(0);
-
-    // Advance past the timeout
-    await vi.advanceTimersByTimeAsync(3000);
-
-    // Only one spawn call (the auggie child), no taskkill
-    expect(mockSpawn).toHaveBeenCalledTimes(1);
-
-    // child.kill should have been called directly
-    expect(fakeChild.kill).toHaveBeenCalledTimes(1);
-
-    const error = await caught;
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe('Command timed out after 3000ms');
-  });
-
-  it('falls back to child.kill() when taskkill spawn errors', async () => {
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-
-    vi.mocked(findAuggiePathAsync).mockResolvedValue(null);
-
-    const fakeChild = createFakeChild(12345);
-    const fakeTaskkill = createFakeChild(0);
-
-    mockSpawn
-      .mockReturnValueOnce(fakeChild)
-      .mockReturnValueOnce(fakeTaskkill);
-
-    const promise = executeAuggieCommand('session stats', { stdin: 'data', timeout: 5000 });
-    const caught = promise.catch((e: Error) => e);
-
-    await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(5000);
-
-    // Simulate taskkill spawn error
-    fakeTaskkill.emit('error', new Error('spawn taskkill ENOENT'));
-
-    // Should fall back to child.kill()
-    expect(fakeChild.kill).toHaveBeenCalledTimes(1);
-
-    const error = await caught;
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe('Command timed out after 5000ms');
+    await expect(
+      executeAuggieCommand('login', { stdin: 'y\n' }),
+    ).rejects.toThrow(/stdin is not supported/);
+    expect(hostExec).not.toHaveBeenCalled();
   });
 });
 
-describe('executeAuggieWithStdin — spawn error clears timeout', () => {
-  const originalPlatform = process.platform;
-
-  function createFakeChild(pid: number) {
-    const child = new EventEmitter() as EventEmitter & {
-      pid: number;
-      kill: ReturnType<typeof vi.fn>;
-      stdin: EventEmitter & { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
-      stdout: EventEmitter;
-      stderr: EventEmitter;
-    };
-    child.pid = pid;
-    child.kill = vi.fn();
-    child.stdin = Object.assign(new EventEmitter(), {
-      write: vi.fn(),
-      end: vi.fn(),
-    });
-    child.stdout = new EventEmitter();
-    child.stderr = new EventEmitter();
-    return child;
-  }
-
+describe('execWithEnhancedPath (host.exec seam)', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    mockSpawn.mockReset();
-    Object.defineProperty(process, 'platform', { value: 'darwin' });
-    vi.mocked(findAuggiePathAsync).mockResolvedValue('/usr/local/bin/auggie');
+    vi.mocked(hostExec).mockReset();
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-    Object.defineProperty(process, 'platform', { value: originalPlatform });
-  });
-
-  it('rejects with spawn error and does not fire timeout afterwards', async () => {
-    const fakeChild = createFakeChild(0);
-    // Simulate spawn emitting error synchronously after creation
-    mockSpawn.mockImplementation(() => {
-      // Defer the error to next microtick so the promise constructor finishes
-      Promise.resolve().then(() => fakeChild.emit('error', new Error('spawn ENOENT')));
-      return fakeChild;
+  it('forwards command + argv + timeout to hostExec', async () => {
+    vi.mocked(hostExec).mockResolvedValue({
+      stdout: 'ok',
+      stderr: '',
+      exitCode: 0,
     });
 
-    const promise = executeAuggieCommand('session stats', { stdin: 'data', timeout: 5000 });
-    const caught = promise.catch((e: Error) => e);
+    const result = await execWithEnhancedPath('/opt/claude/claude', ['mcp', 'list'], {
+      timeout: 5000,
+    });
 
-    // Let findAuggiePathAsync resolve and the spawn error emit
-    await vi.advanceTimersByTimeAsync(0);
-
-    // The promise should have rejected with the spawn error
-    const error = await caught;
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe('spawn ENOENT');
-
-    // Advance well past the timeout — should NOT cause taskkill spawn
-    await vi.advanceTimersByTimeAsync(10000);
-
-    // Only 1 spawn call (the auggie child), no taskkill
-    expect(mockSpawn).toHaveBeenCalledTimes(1);
-    // child.kill should NOT have been called by the timeout
-    expect(fakeChild.kill).not.toHaveBeenCalled();
+    expect(hostExec).toHaveBeenCalledWith('/opt/claude/claude', {
+      args: ['mcp', 'list'],
+      timeoutMs: 5000,
+    });
+    expect(result).toEqual({ stdout: 'ok', stderr: '' });
   });
 
-  it('promise settles only once even if close fires after error', async () => {
-    const fakeChild = createFakeChild(12345);
-    mockSpawn.mockReturnValue(fakeChild);
+  it('propagates cwd + workspaceId when provided', async () => {
+    vi.mocked(hostExec).mockResolvedValue({
+      stdout: '',
+      stderr: '',
+      exitCode: 0,
+    });
 
-    const promise = executeAuggieCommand('session stats', { stdin: 'data', timeout: 5000 });
-    // Attach catch handler early to prevent unhandled rejection warning
-    const caught = promise.catch((e: Error) => e);
+    await execWithEnhancedPath('/opt/bin/tool', ['run'], {
+      timeout: 1000,
+      cwd: '/workspace/repo',
+      workspaceId: 'ws-1',
+    });
 
-    // Let findAuggiePathAsync resolve
-    await vi.advanceTimersByTimeAsync(0);
-
-    // Emit error first, then close
-    fakeChild.emit('error', new Error('spawn EACCES'));
-    fakeChild.emit('close', 1);
-
-    // Advance past timeout
-    await vi.advanceTimersByTimeAsync(10000);
-
-    // Promise should reject with the spawn error (first rejection wins)
-    const error = await caught;
-    expect((error as Error).message).toBe('spawn EACCES');
+    expect(hostExec).toHaveBeenCalledWith('/opt/bin/tool', {
+      args: ['run'],
+      timeoutMs: 1000,
+      cwd: '/workspace/repo',
+      workspaceId: 'ws-1',
+    });
   });
 });
