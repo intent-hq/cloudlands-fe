@@ -17,6 +17,7 @@
   import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { shell } from '$lib/electron-bridge';
+  import AuggieInstructionsPanel from '$lib/components/AuggieInstructionsPanel.svelte';
 
   import { selectProviderLoadingMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { checkSingleProviderRequested } from '$store/renderer/slices/agent-availability/agent-availability-slice';
@@ -50,26 +51,24 @@
     auggieNeedsUpdate: boolean;
     /** Whether an auggie action (install/login) is in progress */
     auggieActionInProgress: boolean;
-    /** Whether auggie is waiting for browser auth */
-    auggieWaitingForBrowser: boolean;
-    /** Whether to show the manual auth paste UI */
-    auggieShowManualAuth: boolean;
-    /** Current manual auth input value */
-    auggieManualAuthInput: string;
-    /** Auth URL for manual open fallback */
-    auggieAuthUrl: string | null;
-    /** Auth error message */
-    auggieAuthError: string | null;
+    /**
+     * Manual instructions returned by AUGGIE_CHANNELS.INSTALL /
+     * AUGGIE_CHANNELS.AUTHENTICATE — when set, the card renders an
+     * inline instructions panel with the copyable `command`.
+     */
+    auggieInstructions: string[] | null;
+    /** Copyable shell command paired with `auggieInstructions`. */
+    auggieCommand: string | null;
     /** Called when a ready provider is selected */
     onSelect: (providerId: string) => void;
-    /** Called to install auggie binary */
+    /** Called to install auggie */
     onAuggieInstall: () => void;
     /** Called to start auggie login */
     onAuggieLogin: () => void;
-    /** Called to complete manual auggie auth */
-    onAuggieManualAuth: () => void;
-    /** Called when manual auth input changes */
-    onAuggieManualAuthInputChange: (value: string) => void;
+    /** Called when the user finishes the manual step and asks for a recheck. */
+    onAuggieRecheck: () => void;
+    /** Called when the user dismisses the instructions panel. */
+    onAuggieDismissInstructions: () => void;
   }
 
   let {
@@ -77,16 +76,13 @@
     brand,
     auggieNeedsUpdate,
     auggieActionInProgress,
-    auggieWaitingForBrowser,
-    auggieShowManualAuth,
-    auggieManualAuthInput,
-    auggieAuthUrl,
-    auggieAuthError,
+    auggieInstructions,
+    auggieCommand,
     onSelect,
     onAuggieInstall,
     onAuggieLogin,
-    onAuggieManualAuth,
-    onAuggieManualAuthInputChange,
+    onAuggieRecheck,
+    onAuggieDismissInstructions,
   }: Props = $props();
 
   const installed = $derived(provider.available);
@@ -282,56 +278,16 @@
           {/if}
         </div>
       </div>
-      <!-- Auggie inline auth UI (slides in) -->
-      {#if provider.id === 'auggie' && (auggieWaitingForBrowser || auggieShowManualAuth || auggieAuthError)}
-        <div class="space-y-1.5" transition:slide={{ duration: 200 }}>
-          {#if auggieWaitingForBrowser}
-            <p class="text-xs opacity-50">
-              Waiting for browser…
-              {#if auggieAuthUrl}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <span
-                  class="underline cursor-pointer hover:opacity-100"
-                  onclick={() => auggieAuthUrl && shell.open(auggieAuthUrl)}
-                  role="link"
-                  tabindex={0}
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter') auggieAuthUrl && shell.open(auggieAuthUrl);
-                  }}
-                >
-                  Open manually
-                </span>
-              {/if}
-            </p>
-          {/if}
-
-          {#if auggieShowManualAuth}
-            <div class="flex items-center gap-1.5" transition:slide={{ duration: 200 }}>
-              <input
-                type="text"
-                class="flex-1 min-w-0 py-1 text-xs focus:outline-none empty:opacity-40 placeholder-current"
-                placeholder="Paste auth code…"
-                value={auggieManualAuthInput}
-                oninput={(e) => onAuggieManualAuthInputChange(e.currentTarget.value)}
-                onkeydown={(e) => {
-                  if (e.key === 'Enter' && auggieManualAuthInput.trim()) onAuggieManualAuth();
-                }}
-              />
-              <button
-                class="shrink-0 text-xs opacity-70 hover:opacity-100 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                disabled={auggieActionInProgress || !auggieManualAuthInput.trim()}
-                onclick={() => onAuggieManualAuth()}
-              >
-                {auggieActionInProgress ? 'Submitting…' : 'Submit'}
-              </button>
-            </div>
-          {/if}
-
-          {#if auggieAuthError}
-            <p class="text-xs text-destructive truncate" title={auggieAuthError}>
-              {auggieAuthError}
-            </p>
-          {/if}
+      <!-- Auggie instructions panel (rendered from IPC data.instructions/data.command) -->
+      {#if provider.id === 'auggie' && auggieInstructions && auggieInstructions.length > 0}
+        <div class="mt-2">
+          <AuggieInstructionsPanel
+            instructions={auggieInstructions}
+            command={auggieCommand ?? undefined}
+            onRecheck={onAuggieRecheck}
+            onDismiss={onAuggieDismissInstructions}
+            rechecking={auggieActionInProgress}
+          />
         </div>
       {/if}
     </div>
