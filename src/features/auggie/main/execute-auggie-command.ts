@@ -1,6 +1,8 @@
 import * as path from 'path';
+import { Buffer } from 'node:buffer';
 import { Logger } from '../../../shared/logger';
 import { hostExec } from '../../../shared/main/host-exec';
+import { hostExecStream } from '../../../shared/main/host-exec-stream';
 import {
   findAuggiePathAsync,
   getEnhancedPath,
@@ -63,40 +65,44 @@ export async function execWithEnhancedPath(
 }
 
 /**
- * Execute the auggie CLI via the daemon's `host.exec` (argv-based, no shell).
+ * Execute the auggie CLI via the daemon (argv-based, no shell).
  *
  * `args` is a whitespace-separated argument string (kept for backwards
  * compatibility with existing call-sites) and is split on spaces before being
  * forwarded to the daemon as positional `args`. Tokens with inner whitespace
  * are not supported.
  *
- * `stdin` is not forwarded — `host.exec` is a buffered one-shot RPC with no
- * stdin channel (PROTOCOL §5.14). If a caller passes `stdin`, the call is
- * rejected so the caller can surface the gap rather than silently ignoring
- * the input. The only historical `stdin` caller was `auggie login`, which is
- * now retired in favour of instructions rendered by the FE.
+ * When `stdin` is provided, the call is routed through the daemon's streaming
+ * `host.execStream` surface (PROTOCOL §5.14): the initial payload rides with
+ * the request, stdin is closed via a follow-up `host.execStream.write { eof: true }`
+ * so the child sees EOF, and stdout/stderr are buffered until the terminal
+ * `host:exec:exit` frame lands — preserving the buffered `{ stdout, stderr }`
+ * shape the legacy `child_process` exec returned. When `stdin` is absent, the
+ * call uses the buffered one-shot `host.exec` for lower overhead.
  */
 export async function executeAuggieCommand(
   args: string,
   options: { timeout?: number; stdin?: string; cwd?: string; workspaceId?: string } = {},
 ): Promise<{ stdout: string; stderr: string }> {
   const timeout = options.timeout ?? DEFAULT_AUGGIE_TIMEOUT_MS;
-
-  if (options.stdin != null) {
-    // host.exec is buffered and does not forward stdin; refuse rather than
-    // silently drop input. Callers that need interactive stdin must wait for
-    // a streaming/interactive host surface (BE gap).
-    logger.warn('executeAuggieCommand: stdin is not supported (host.exec has no stdin channel)', {
-      argPreview: args.slice(0, 80),
-    });
-    throw new Error(
-      'executeAuggieCommand: stdin is not supported by host.exec (buffered RPC). See host.exec (PROTOCOL §5.14).',
-    );
-  }
-
   const auggiePath = await findAuggiePathAsync();
   const executablePath = auggiePath || 'auggie';
   const argsArray = args.split(' ').filter(Boolean);
+
+  if (options.stdin != null) {
+    logger.debug('Executing auggie command via host.execStream (stdin)', {
+      path: executablePath,
+      args: argsArray,
+      timeout,
+      stdinBytes: options.stdin.length,
+    });
+    return execAuggieStreamed(executablePath, argsArray, options.stdin, {
+      timeout,
+      ...(options.cwd ? { cwd: options.cwd } : {}),
+      ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+    });
+  }
+
   logger.debug('Executing auggie command via host.exec', {
     path: executablePath,
     args: argsArray,
@@ -108,6 +114,64 @@ export async function executeAuggieCommand(
     ...(options.cwd ? { cwd: options.cwd } : {}),
     ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
   });
+}
+
+/**
+ * Streamed exec that buffers stdout/stderr and returns the same
+ * `{ stdout, stderr }` shape as {@link execWithEnhancedPath}. Used when the
+ * caller has stdin to forward, since `host.exec` is buffered-response-only.
+ * Errors mirror the legacy `child_process`-exec surface: non-zero exit throws
+ * with `.code`, `.stdout`, `.stderr`; timeouts throw a `timed out` message.
+ */
+async function execAuggieStreamed(
+  command: string,
+  args: string[],
+  stdin: string,
+  options: { timeout: number; cwd?: string; workspaceId?: string },
+): Promise<{ stdout: string; stderr: string }> {
+  const stdoutChunks: Buffer[] = [];
+  const stderrChunks: Buffer[] = [];
+
+  const handle = await hostExecStream(command, {
+    args,
+    timeoutMs: options.timeout,
+    ...(options.cwd ? { cwd: options.cwd } : {}),
+    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+    stdin,
+    onStdout: (chunk: Buffer) => stdoutChunks.push(chunk),
+    onStderr: (chunk: Buffer) => stderrChunks.push(chunk),
+  });
+
+  // Close stdin so `auggie` (or any read-to-EOF child) exits cleanly. A failed
+  // `eof` write is non-fatal: the child may have already exited and closed the
+  // pipe; `done` still settles from the terminal `host:exec:exit` frame.
+  try {
+    await handle.endStdin();
+  } catch (error) {
+    logger.debug('host.execStream.write { eof:true } failed (child may have exited)', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const exitResult = await handle.done;
+  const stdout = Buffer.concat(stdoutChunks).toString('utf8');
+  const stderr = Buffer.concat(stderrChunks).toString('utf8');
+
+  if (exitResult.timedOut) {
+    throw new Error(`Command timed out after ${options.timeout}ms`);
+  }
+  if (exitResult.cancelled) {
+    throw new Error('Command cancelled');
+  }
+  if (!exitResult.ok || exitResult.exitCode !== 0) {
+    const code = exitResult.exitCode ?? null;
+    const err = new Error(stderr || `Command exited with code ${code}`);
+    (err as NodeJS.ErrnoException & { stdout?: string; stderr?: string }).code = String(code);
+    (err as { stdout?: string }).stdout = stdout;
+    (err as { stderr?: string }).stderr = stderr;
+    throw err;
+  }
+  return { stdout, stderr };
 }
 
 /**

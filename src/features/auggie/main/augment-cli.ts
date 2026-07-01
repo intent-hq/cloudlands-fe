@@ -1,7 +1,3 @@
-import {
-  spawn,
-  ChildProcess,
-} from 'child_process';
 import { EventEmitter } from '$shared/utils/event-emitter';
 import { homedir } from 'os';
 import { join } from 'path';
@@ -12,6 +8,8 @@ import {
   findAuggieAsync,
   existsAsync,
 } from '../../../shared/main/async-utils';
+import { hostExec } from '../../../shared/main/host-exec';
+import { hostExecStream, type HostExecStreamHandle } from '../../../shared/main/host-exec-stream';
 
 interface StreamResponse {
   content: string;
@@ -31,7 +29,7 @@ export class AugmentCLI extends EventEmitter {
   private auggiePath: string | null = null;
   private auggiePathPromise: Promise<string> | null = null;
   private tokenPath: string;
-  private activeProcesses: Map<string, ChildProcess>;
+  private activeProcesses: Map<string, HostExecStreamHandle>;
   private logger: Logger;
 
   constructor() {
@@ -151,51 +149,18 @@ export class AugmentCLI extends EventEmitter {
   }
 
   async executeCommand(command: string, args: string[], cwd?: string): Promise<any> {
-    // PERF: Get auggie path asynchronously before spawning
+    // Route through the daemon's buffered one-shot exec (`host.exec`, PROTOCOL
+    // §5.14). No local shell, no argv splitting — the daemon owns the process
+    // group and honours the enriched PATH the host reports.
     const auggiePath = await this.getAuggiePath();
-
-    return new Promise((resolve, reject) => {
-      // Create environment with full shell access
-      const env = { ...process.env };
-
-      // On Windows, use shell: true (handles .cmd/.bat files and resolves commands via cmd.exe).
-      // On Unix, use user's default shell.
-      const shellOption: string | boolean =
-        process.platform === 'win32' ? true : (process.env.SHELL || '/bin/bash');
-
-      // On Windows with shell: true, quote the path to handle spaces (e.g. C:\Users\John Doe\...)
-      const spawnCommand = process.platform === 'win32' ? `"${auggiePath}"` : auggiePath;
-
-      const childProcess = spawn(spawnCommand, [command, ...args], {
-        cwd: cwd || process.cwd(),
-        env,
-        shell: shellOption,
-        windowsHide: true,
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      childProcess.stdout.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
-
-      childProcess.stderr.on('data', (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      childProcess.on('close', (code: number | null) => {
-        if (code === 0) {
-          resolve({ success: true, output: stdout });
-        } else {
-          reject(new Error(`Command failed with code ${code}: ${stderr}`));
-        }
-      });
-
-      childProcess.on('error', (error: Error) => {
-        reject(error);
-      });
+    const result = await hostExec(auggiePath, {
+      args: [command, ...args],
+      ...(cwd ? { cwd } : {}),
     });
+    if (result.exitCode !== 0) {
+      throw new Error(`Command failed with code ${result.exitCode}: ${result.stderr}`);
+    }
+    return { success: true, output: result.stdout };
   }
 
   async streamChat(
@@ -205,216 +170,184 @@ export class AugmentCLI extends EventEmitter {
     signal?: AbortSignal,
     timeoutMs: number = 60000, // Default 60 second timeout
   ): Promise<StreamResponse> {
-    // PERF: Get auggie path asynchronously before spawning
+    // Route through the daemon's streaming exec (`host.execStream`, PROTOCOL
+    // §5.14). The initial `stdin` ships the prompt with the request payload;
+    // a follow-up `write { eof: true }` closes stdin so the reader-to-EOF
+    // `auggie --print` exits cleanly.
     const auggiePath = await this.getAuggiePath();
 
-    return new Promise((resolve, reject) => {
-      // Use --print mode for piped input support (without --quiet to show tool calls)
-      const args = ['--print'];
+    // Use --print mode for piped input support (without --quiet to show tool calls)
+    const args = ['--print'];
+    if (context.skipMcp) {
+      args.push('--mcp-config', '{"mcpServers":{}}');
+    }
 
-      // Skip MCP server initialization for faster simple requests (like prompt enhancement)
-      if (context.skipMcp) {
-        args.push('--mcp-config', '{"mcpServers":{}}');
-      }
+    let fullPrompt = message;
+    if (context.systemPrompt) {
+      fullPrompt = `System: ${context.systemPrompt}\n\n${message}`;
+    }
 
-      // Build the full prompt with context
-      let fullPrompt = message;
-      if (context.systemPrompt) {
-        fullPrompt = `System: ${context.systemPrompt}\n\n${message}`;
-      }
+    const processKey = `${context.workspaceId}:${context.agentId}`;
+    const workspacePath = (context as any).workspacePath as string | undefined;
 
-      const childProcess = spawn(auggiePath, args, {
-        env: { ...process.env, PYTHONUNBUFFERED: '1' },
-        cwd: (context as any).workspacePath || process.cwd(),
-        windowsHide: true,
+    // The daemon enforces `cwd` ⇒ `workspaceId` containment (PROTOCOL §5.14); if a
+    // caller supplied a bare `workspacePath` without a `workspaceId` (e.g. the
+    // setup-scripts flow that runs against an unregistered repo), we drop `cwd`
+    // rather than trip a `-32602`. The auggie prompt still carries the path in
+    // its context message, so the LLM sees where the repo lives.
+    const cwdArgs: { cwd?: string; workspaceId?: string } = {};
+    if (workspacePath && context.workspaceId) {
+      cwdArgs.cwd = workspacePath;
+      cwdArgs.workspaceId = context.workspaceId;
+    } else if (workspacePath) {
+      this.logger.debug('streamChat: dropping cwd (no workspaceId for containment)', {
+        workspacePath,
       });
+    }
 
-      const processKey = `${context.workspaceId}:${context.agentId}`;
-      this.activeProcesses.set(processKey, childProcess);
+    let fullContent = '';
+    let buffer = '';
+    const toolCalls: any[] = [];
+    let currentToolCall: any = null;
+    let responseStarted = false;
 
-      let fullContent = '';
-      let buffer = '';
-      const toolCalls: any[] = [];
-      let currentToolCall: any = null;
-
-      let responseStarted = false;
-      let hasResolved = false;
-
-      // Cleanup function to handle abort handler and timeout
-      const cleanup = () => {
-        if (signal && abortHandler) {
-          signal.removeEventListener('abort', abortHandler);
-        }
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-      };
-
-      // Set up timeout to prevent infinite hanging
-      const timeoutId = setTimeout(() => {
-        if (!hasResolved) {
-          hasResolved = true;
-          this.logger.warn('streamChat timed out', { timeoutMs, processKey });
-          childProcess.kill('SIGTERM');
-          this.activeProcesses.delete(processKey);
-          cleanup();
-          reject(new Error(`Chat request timed out after ${timeoutMs}ms`));
-        }
-      }, timeoutMs);
-
-      // Handle abort signal
-      let abortHandler: (() => void) | null = null;
-      if (signal) {
-        abortHandler = () => {
-          if (!hasResolved) {
-            hasResolved = true;
-            childProcess.kill('SIGTERM');
-            this.activeProcesses.delete(processKey);
-            cleanup();
-            reject(new Error('Generation aborted'));
-          }
+    const consumeLine = (line: string): void => {
+      const cleanLine = this.removeAnsiCodes(line).trim();
+      if (!cleanLine) {
+        onChunk(`${line}\n`);
+        fullContent += (fullContent ? '\n' : '') + line;
+        return;
+      }
+      if (cleanLine.startsWith('🔧 Tool call:')) {
+        const toolName = cleanLine.replace('🔧 Tool call:', '').trim();
+        currentToolCall = {
+          id: `tool_${Date.now()}`,
+          name: toolName,
+          input: {},
+          status: 'pending',
         };
-        signal.addEventListener('abort', abortHandler);
+        toolCalls.push(currentToolCall);
+        return;
       }
-
-      childProcess.stdout.on('data', (data: Buffer) => {
-        const text = data.toString();
-        buffer += text;
-
-        // Process line by line
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-        for (const line of lines) {
-          const cleanLine = this.removeAnsiCodes(line).trim();
-
-          // Skip empty lines
-          if (!cleanLine) {
-            onChunk(`${line}\n`);
-            fullContent += (fullContent ? '\n' : '') + line;
-            continue;
-          }
-
-          // Detect tool call markers
-          if (cleanLine.startsWith('🔧 Tool call:')) {
-            const toolName = cleanLine.replace('🔧 Tool call:', '').trim();
-            currentToolCall = {
-              id: `tool_${Date.now()}`,
-              name: toolName,
-              input: {},
-              status: 'pending',
-            };
-            toolCalls.push(currentToolCall);
-            continue;
-          }
-
-          // Detect tool result markers
-          if (cleanLine.startsWith('📋 Tool result:')) {
-            if (currentToolCall) {
-              currentToolCall.status = 'completed';
-              currentToolCall.output = '';
-            }
-            continue;
-          }
-
-          // Detect robot emoji delimiter (separates tool output from response)
-          if (cleanLine === '🤖') {
-            currentToolCall = null;
-            responseStarted = true;
-            continue;
-          }
-
-          // Collect tool input parameters
-          if (currentToolCall && currentToolCall.status === 'pending' && cleanLine.includes(':')) {
-            const [key, ...valueParts] = cleanLine.split(':');
-            const value = valueParts.join(':').trim();
-            currentToolCall.input[key.trim()] = value;
-            continue;
-          }
-
-          // Collect tool output
-          if (currentToolCall && currentToolCall.status === 'completed') {
-            if (currentToolCall.output) {
-              currentToolCall.output += `\n${cleanLine}`;
-            } else {
-              currentToolCall.output = cleanLine;
-            }
-            continue;
-          }
-
-          // Regular content - only stream after response has started (after 🤖 delimiter)
-          // and skip tool-related lines
-          if (
-            responseStarted &&
-            !cleanLine.startsWith('🔧') &&
-            !cleanLine.startsWith('📋') &&
-            !cleanLine.startsWith('Tool call:') &&
-            !cleanLine.startsWith('Tool result:')
-          ) {
-            fullContent += (fullContent ? '\n' : '') + line;
-            onChunk(`${line}\n`);
-          } else if (responseStarted) {
-            // Still add to fullContent even if we don't stream it
-            fullContent += (fullContent ? '\n' : '') + line;
-          }
+      if (cleanLine.startsWith('📋 Tool result:')) {
+        if (currentToolCall) {
+          currentToolCall.status = 'completed';
+          currentToolCall.output = '';
         }
-      });
-
-      childProcess.stderr.on('data', (data: Buffer) => {
-        this.logger.error('Auggie stderr:', new Error(data.toString()));
-      });
-
-      childProcess.on('close', (code: number | null) => {
-        if (hasResolved) return; // Already resolved by timeout or abort
-        this.activeProcesses.delete(processKey);
-
-        // Process any remaining buffer
-        if (buffer) {
-          fullContent += (fullContent ? '\n' : '') + buffer;
-          onChunk(buffer);
-        }
-
-        // Add a small delay to ensure file system changes are fully persisted
-        // This prevents race conditions where the page reloads before files are written
-        setTimeout(() => {
-          if (hasResolved) return; // Check again after delay
-          hasResolved = true;
-          cleanup();
-
-          if (code === 0) {
-            resolve({
-              content: this.cleanAgentMessage(fullContent),
-              tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-            });
-          } else {
-            reject(new Error(`Auggie process exited with code ${code}`));
-          }
-        }, 500); // 500ms delay to ensure file system changes are persisted
-      });
-
-      childProcess.on('error', (error: Error) => {
-        if (hasResolved) return; // Already resolved
-        hasResolved = true;
-        this.activeProcesses.delete(processKey);
-        cleanup();
-        reject(error);
-      });
-
-      // Handle stdin EPIPE errors (child process may exit before consuming all input)
-      childProcess.stdin.on('error', (error) => {
-        const msg = error instanceof Error ? error.message : String(error);
-        if (msg.includes('EPIPE')) {
-          // Benign: child process exited before reading all stdin data
-          this.logger.debug('Stdin EPIPE (child exited before consuming input)');
+        return;
+      }
+      if (cleanLine === '🤖') {
+        currentToolCall = null;
+        responseStarted = true;
+        return;
+      }
+      if (currentToolCall && currentToolCall.status === 'pending' && cleanLine.includes(':')) {
+        const [key, ...valueParts] = cleanLine.split(':');
+        const value = valueParts.join(':').trim();
+        currentToolCall.input[key.trim()] = value;
+        return;
+      }
+      if (currentToolCall && currentToolCall.status === 'completed') {
+        if (currentToolCall.output) {
+          currentToolCall.output += `\n${cleanLine}`;
         } else {
-          this.logger.error('Stdin error:', error);
+          currentToolCall.output = cleanLine;
         }
-      });
+        return;
+      }
+      if (
+        responseStarted &&
+        !cleanLine.startsWith('🔧') &&
+        !cleanLine.startsWith('📋') &&
+        !cleanLine.startsWith('Tool call:') &&
+        !cleanLine.startsWith('Tool result:')
+      ) {
+        fullContent += (fullContent ? '\n' : '') + line;
+        onChunk(`${line}\n`);
+      } else if (responseStarted) {
+        fullContent += (fullContent ? '\n' : '') + line;
+      }
+    };
 
-      // Send the message to the child process's stdin
-      childProcess.stdin.write(fullPrompt);
-      childProcess.stdin.end();
-    });
+    let handle;
+    try {
+      handle = await hostExecStream(auggiePath, {
+        args,
+        env: { PYTHONUNBUFFERED: '1' },
+        ...cwdArgs,
+        timeoutMs,
+        stdin: fullPrompt,
+        ...(signal ? { signal } : {}),
+        onStdout: (chunk: Buffer) => {
+          buffer += chunk.toString('utf8');
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) consumeLine(line);
+        },
+        onStderr: (chunk: Buffer) => {
+          this.logger.error('Auggie stderr:', new Error(chunk.toString('utf8')));
+        },
+      });
+    } catch (error) {
+      // Honest degradation: RPC failed (transport down or events.subscribe error).
+      // Mirrors the old spawn `error` event surfacing the raw error to the caller.
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+
+    this.activeProcesses.set(processKey, handle);
+
+    // Close the child's stdin so `auggie --print` reads to EOF and exits cleanly.
+    // A failed write is non-fatal — the child may have already exited; `done`
+    // still settles from the terminal `host:exec:exit` frame.
+    try {
+      await handle.endStdin();
+    } catch (error) {
+      this.logger.debug('host.execStream.write { eof:true } failed (child may have exited)', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    let exitResult;
+    try {
+      exitResult = await handle.done;
+    } catch (error) {
+      this.activeProcesses.delete(processKey);
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes('aborted')) {
+        throw new Error('Generation aborted');
+      }
+      throw error instanceof Error ? error : new Error(msg);
+    }
+    this.activeProcesses.delete(processKey);
+
+    // Drain any tail bytes without a terminating newline (mirrors the old
+    // `close`-handler buffer flush before the FS-settle delay).
+    if (buffer) {
+      fullContent += (fullContent ? '\n' : '') + buffer;
+      onChunk(buffer);
+      buffer = '';
+    }
+
+    if (exitResult.timedOut) {
+      this.logger.warn('streamChat timed out', { timeoutMs, processKey });
+      throw new Error(`Chat request timed out after ${timeoutMs}ms`);
+    }
+    if (exitResult.cancelled) {
+      throw new Error('Generation aborted');
+    }
+    if (!exitResult.ok) {
+      const exitCode = exitResult.exitCode ?? null;
+      throw new Error(`Auggie process exited with code ${exitCode}`);
+    }
+
+    // Preserve the 500ms FS-settle delay from the old spawn path — prevents
+    // race conditions where the caller reloads before the child's writes land.
+    await new Promise((r) => setTimeout(r, 500));
+
+    return {
+      content: this.cleanAgentMessage(fullContent),
+      tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+    };
   }
 
   private removeAnsiCodes(text: string): string {
@@ -498,8 +431,12 @@ export class AugmentCLI extends EventEmitter {
   }
 
   stopAllProcesses(): void {
-    for (const [, process] of this.activeProcesses) {
-      process.kill('SIGTERM');
+    // Fire cancel RPCs for every in-flight stream; errors are logged inside
+    // `hostExecStream` so we intentionally do not await here.
+    for (const [, stream] of this.activeProcesses) {
+      void stream.cancel().catch(() => {
+        /* logged inside hostExecStream */
+      });
     }
     this.activeProcesses.clear();
   }
