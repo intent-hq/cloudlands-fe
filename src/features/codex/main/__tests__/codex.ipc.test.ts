@@ -10,11 +10,11 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
   resolveCodexModelListCommands: vi.fn(),
   getManagedCodexAcpStatus: vi.fn(),
-  // Retained after AUDIT-R1b so the tests can still assert the FE never
-  // reaches a spawn (`spawnCodexProbe` throws synchronously — the assertion
-  // guards against a regression that re-introduces local spawning).
-  spawn: vi.fn(),
-  killChildProcessTree: vi.fn(),
+  // AUDIT-R1c: the four ACP probes now spawn through the daemon
+  // (`host.execStream`, PROTOCOL §5.14) via `startAcpChildStream`. The mock
+  // lets each test decide whether the daemon-side stream starts, streams
+  // handshake responses, or fails to start.
+  startAcpChildStream: vi.fn(),
   webContentsSend: vi.fn(),
 }));
 
@@ -34,13 +34,8 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('child_process', () => ({
-  default: { spawn: mocks.spawn },
-  spawn: mocks.spawn,
-}));
-
-vi.mock('../../../../shared/main/process-tree-kill', () => ({
-  killChildProcessTree: mocks.killChildProcessTree,
+vi.mock('../../../../shared/main/acp-child-stream', () => ({
+  startAcpChildStream: mocks.startAcpChildStream,
 }));
 
 vi.mock('../codex-resolver', () => ({
@@ -51,14 +46,13 @@ vi.mock('../codex-acp-manager', () => ({
   getManagedCodexAcpStatus: mocks.getManagedCodexAcpStatus,
 }));
 
-// AUDIT-R1b: `CodexAppServerAcpAdapter` is still constructed by the module
-// under test — mock it minimally so the import doesn't touch the real
-// transport. The adapter methods are never reached at runtime because the
-// preceding `spawnCodexProbe` throws.
+// `CodexAppServerAcpAdapter` is still constructed by the module under test —
+// mock it minimally so the import doesn't touch the real transport. The
+// adapter methods are only reached when startAcpChildStream succeeds.
 vi.mock('../codex-app-server-transport', () => ({
   CodexAppServerAcpAdapter: vi.fn().mockImplementation(() => ({
     initialize: vi.fn(),
-    listModels: vi.fn(),
+    listModels: vi.fn().mockResolvedValue({ data: [] }),
     dispose: vi.fn(),
     on: vi.fn(),
   })),
@@ -83,19 +77,17 @@ describe('codex IPC model listing', () => {
     vi.clearAllMocks();
     mocks.handlers.clear();
     mocks.resolveCodexModelListCommands.mockReset();
-    mocks.spawn.mockReset();
-    mocks.killChildProcessTree.mockReset();
+    mocks.startAcpChildStream.mockReset();
     mocks.webContentsSend.mockReset();
     mocks.getManagedCodexAcpStatus.mockReturnValue({ state: 'not_installed', version: '0.13.0' });
   });
 
-  // AUDIT-R1b: the FE spawn seam behind the dynamic Codex model probes was
-  // deleted (no daemon-side ACP handshake RPC yet), so every attempted probe
-  // now fails synchronously and the GET_MODELS handler falls back to the
-  // static Codex model list with an "unavailable" warning. These tests
-  // assert that fallback path — and that spawn is never invoked, since the
-  // production code never reaches it.
-  it('falls back to the static Codex model list with an unavailable warning when a dynamic candidate is present (AUDIT-R1b)', async () => {
+  // AUDIT-R1c: the FE probes route through the daemon (`host.execStream`)
+  // via `startAcpChildStream`. When the daemon-side stream cannot be started
+  // — the daemon is unavailable or times out — GET_MODELS falls back to the
+  // static Codex list with an "unavailable" warning.
+  it('routes every candidate through startAcpChildStream and falls back to the static list when the stream cannot start', async () => {
+    mocks.startAcpChildStream.mockRejectedValue(new Error('stream unavailable'));
     mocks.resolveCodexModelListCommands.mockResolvedValue([
       {
         command: '/opt/homebrew/bin/codex',
@@ -114,12 +106,16 @@ describe('codex IPC model listing', () => {
     expect(result.warning).toBe(
       'Codex dynamic model list unavailable; using static model list',
     );
-    // spawn is retained as an import to keep createJsonRpcRequester typed but
-    // is never invoked at runtime after AUDIT-R1b.
-    expect(mocks.spawn).not.toHaveBeenCalled();
+    expect(mocks.startAcpChildStream).toHaveBeenCalledWith(
+      '/opt/homebrew/bin/codex',
+      expect.objectContaining({
+        args: ['app-server', '--listen', 'stdio://'],
+      }),
+    );
   });
 
-  it('attempts every candidate before falling back so `attemptedSources` covers the full list (AUDIT-R1b)', async () => {
+  it('attempts every candidate before falling back so `attemptedSources` covers the full list', async () => {
+    mocks.startAcpChildStream.mockRejectedValue(new Error('stream unavailable'));
     mocks.resolveCodexModelListCommands.mockResolvedValue([
       {
         command: '/opt/homebrew/bin/codex',
@@ -145,7 +141,20 @@ describe('codex IPC model listing', () => {
     expect(result.warning).toBe(
       'Codex dynamic model list unavailable; using static model list',
     );
-    expect(mocks.spawn).not.toHaveBeenCalled();
+    expect(mocks.startAcpChildStream).toHaveBeenCalledTimes(2);
+    expect(mocks.startAcpChildStream).toHaveBeenNthCalledWith(
+      1,
+      '/opt/homebrew/bin/codex',
+      expect.objectContaining({ args: ['app-server', '--listen', 'stdio://'] }),
+    );
+    expect(mocks.startAcpChildStream).toHaveBeenNthCalledWith(
+      2,
+      process.execPath,
+      expect.objectContaining({
+        args: ['/managed/codex-acp.js'],
+        env: { ELECTRON_RUN_AS_NODE: '1' },
+      }),
+    );
   });
 
   it('returns the static fallback warning when no dynamic path is available', async () => {
@@ -157,7 +166,7 @@ describe('codex IPC model listing', () => {
     expect(result.success).toBe(true);
     expect(result.data.length).toBeGreaterThan(0);
     expect(result.warning).toBe('Codex not installed; using static model list');
-    expect(mocks.spawn).not.toHaveBeenCalled();
+    expect(mocks.startAcpChildStream).not.toHaveBeenCalled();
   });
 
   it('returns no models for malformed codex CLI model/list responses', async () => {

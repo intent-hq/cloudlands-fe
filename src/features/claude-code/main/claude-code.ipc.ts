@@ -6,25 +6,9 @@
 
 import { ipcMain } from 'electron';
 import * as os from 'os';
-import type { ChildProcessWithoutNullStreams } from 'child_process';
-import { spawn } from 'child_process';
-
-/**
- * AUDIT-R1b: honest-degradation stub that stands in for the deleted
- * `child_process.spawn(...)` in fetchClaudeCodeModelsViaAcp. Kept as a
- * standalone declaration (rather than an inline throwing IIFE) so TypeScript
- * does not narrow `child` to `never` at the call site — the enclosing Promise
- * executor still needs to type-check even though the sync throw makes it
- * unreachable at runtime.
- */
-function throwR1bSpawnGap(): ChildProcessWithoutNullStreams {
-  throw new Error(
-    'Claude Code ACP model-list probe removed (AUDIT-R1b): FE spawn deleted; awaiting daemon-side ACP handshake seam.',
-  );
-}
 import { CLAUDE_CODE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
-import { killChildProcessTree } from '../../../shared/main/process-tree-kill';
+import { startAcpChildStream } from '../../../shared/main/acp-child-stream';
 import { resolveClaudeCodeCommand } from './claude-code-resolver';
 import { createProviderModelCache } from '../../../main/utils/provider-model-cache';
 
@@ -104,26 +88,21 @@ async function fetchClaudeCodeModelsViaAcp(): Promise<ClaudeCodeModel[]> {
   const args = [...resolved.argsPrefix];
   const command = resolved.command;
 
-  // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
-  const useShell = process.platform === 'win32';
-  // On Windows with shell: true, quote the command path to handle spaces (e.g. C:\Users\John Doe\...)
-  const spawnCommand = useShell ? `"${command}"` : command;
-  void spawnCommand;
-  void args;
+  // AUDIT-R1c: probe the claude-agent-acp CLI through the daemon
+  // (`host.execStream`, PROTOCOL.md §5.14). The daemon owns argv-based spawn
+  // (no shell), the process tree, and stream cancellation; the FE just drives
+  // the stdio JSON-RPC handshake through the returned handle.
+  let child: Awaited<ReturnType<typeof startAcpChildStream>>;
+  try {
+    child = await startAcpChildStream(command, { args, timeoutMs: 14000 });
+  } catch (e) {
+    logger.debug('Claude Code ACP stream failed to start', {
+      error: (e as Error).message,
+    });
+    return [];
+  }
 
   return await new Promise((resolve) => {
-    // AUDIT-R1b: FE spawn deleted. The claude-agent-acp probe requires a
-    // bidirectional stdio JSON-RPC handshake (initialize + session/new), which
-    // the daemon's `host.exec` (one-shot argv, no stdin) cannot host and which
-    // has no dedicated seam today. Mirrors AUDIT-P2-12b's self-throwing IIFE
-    // pattern; the enclosing Promise executor turns the throw into a rejection
-    // → caught by the claudeCodeModelCache fetch wrapper → GET_MODELS handler
-    // falls back to DEFAULT_MODELS with an "unavailable" warning.
-    //
-    // BE-GAP: needs a daemon-side `provider.listModelsViaAcp` (or equivalent)
-    // that owns the ACP JSON-RPC handshake and returns models.
-    const child = throwR1bSpawnGap();
-
     let buffer = '';
     let requestId = 0;
     let done = false;
@@ -131,11 +110,9 @@ async function fetchClaudeCodeModelsViaAcp(): Promise<ClaudeCodeModel[]> {
     const finish = (models: ClaudeCodeModel[]) => {
       if (done) return;
       done = true;
-      // CRITICAL: Kill the entire process tree, not just the parent npx/npm-exec process.
-      // child.kill() only sends SIGTERM to the direct child (npx), but the actual
-      // claude-agent-acp adapter runs as a grandchild and is left orphaned.
-      // This was causing massive memory leaks (80GB+) from accumulated orphan processes.
-      killChildProcessTree(child);
+      // The daemon owns the process tree behind `host.execStream`; `kill()`
+      // proxies to `host.execStream.cancel` which tears the tree down cleanly.
+      child.kill();
       resolve(models);
     };
 

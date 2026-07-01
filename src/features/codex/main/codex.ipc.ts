@@ -6,7 +6,6 @@
  * falling back to a static list.
  */
 
-import { spawn } from 'child_process';
 import {
   BrowserWindow,
   ipcMain,
@@ -19,7 +18,10 @@ import {
 } from '../../../shared/config/open-ai-codex-models';
 import { CODEX_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
-import { killChildProcessTree } from '../../../shared/main/process-tree-kill';
+import {
+  startAcpChildStream,
+  type AcpChildStream,
+} from '../../../shared/main/acp-child-stream';
 import { CodexAppServerAcpAdapter } from './codex-app-server-transport';
 import {
   resolveCodexModelListCommands,
@@ -222,7 +224,7 @@ export function parseModelsFromCodexCliResponse(raw: unknown): CodexModel[] {
   return models;
 }
 
-function createJsonRpcRequester(child: ReturnType<typeof spawn>, label: string) {
+function createJsonRpcRequester(child: AcpChildStream, label: string) {
   let requestId = 0;
   let stdoutBuffer = '';
   const pending = new Map<
@@ -293,45 +295,39 @@ function createJsonRpcRequester(child: ReturnType<typeof spawn>, label: string) 
 }
 
 /**
- * AUDIT-R1b: FE provider-CLI spawn removed. The codex-acp / codex-app-server
- * probes require a bidirectional stdio JSON-RPC handshake (initialize +
- * session/new), which today's daemon RPC surface does not expose — `host.exec`
- * (PROTOCOL §5.14) is one-shot argv-based with no stdin, and `agent.create`
- * (§5.5) is for full agent sessions, not lightweight model probes. Until a
- * daemon-side "list models via ACP" seam exists, the spawn is replaced with a
- * self-throwing IIFE mirroring AUDIT-P2-12b's pattern; the enclosing probes
- * catch the throw and finish([]) so the IPC handler falls through to the
- * static Codex model list (see setupCodexIPC's GET_MODELS branch).
- *
- * BE-GAP: needs `provider.listModelsViaAcp(providerId, cliPath, args, env?)`
- * or equivalent that owns the stdio JSON-RPC handshake and returns models.
- * `spawn` and `ChildProcess` are retained solely so `createJsonRpcRequester`
- * and the (now-unreachable) downstream event wiring keep type-checking.
+ * AUDIT-R1c: probe codex-acp / codex-app-server through the daemon
+ * (`host.execStream`, PROTOCOL.md §5.14). The daemon owns argv-based spawn
+ * (no shell), the process tree, and stream cancellation; the FE just drives
+ * the stdio JSON-RPC handshake through the returned handle. Probe failures
+ * are surfaced as an empty model list so the IPC handler falls through to
+ * the static Codex list with an "unavailable" warning.
  */
-/**
- * AUDIT-R1b: honest-degradation stub returned in place of the deleted
- * `spawn(...)`. Kept as a standalone declaration (rather than an inline
- * throwing IIFE) so TypeScript does not narrow the returned `child` to
- * `never` at call sites — the downstream JSON-RPC scaffolding still needs
- * to type-check even though the sync throw makes it unreachable at runtime.
- */
-function throwR1bSpawnGap(): ReturnType<typeof spawn> {
-  throw new Error(
-    'Codex ACP model-list probe removed (AUDIT-R1b): FE spawn deleted; awaiting daemon-side ACP handshake seam.',
-  );
-}
-
-function spawnCodexProbe(command: string, args: string[], env?: Record<string, string>) {
-  void command;
-  void args;
-  void env;
-  return throwR1bSpawnGap();
+async function spawnCodexProbe(
+  command: string,
+  args: string[],
+  env?: Record<string, string>,
+): Promise<AcpChildStream> {
+  return await startAcpChildStream(command, {
+    args,
+    env,
+    // Give the handshake a slightly longer timeout than the outer probe so
+    // the daemon reap window is a strict superset of the FE-side wait.
+    timeoutMs: 17000,
+  });
 }
 
 async function probeCodexModelsViaAcp(
   resolved: CodexResolvedModelListCommand,
 ): Promise<CodexModel[]> {
-  const child = spawnCodexProbe(resolved.command, resolved.argsPrefix, resolved.env);
+  let child: AcpChildStream;
+  try {
+    child = await spawnCodexProbe(resolved.command, resolved.argsPrefix, resolved.env);
+  } catch (error) {
+    logger.debug('Codex ACP stream failed to start', {
+      error: (error as Error).message,
+    });
+    return [];
+  }
   const rpc = createJsonRpcRequester(child, 'Codex ACP');
 
   return await new Promise((resolve) => {
@@ -341,10 +337,9 @@ async function probeCodexModelsViaAcp(
       if (done) return;
       done = true;
       rpc.dispose();
-      // CRITICAL: Kill the entire process tree, not just the parent npx/npm-exec process.
-      // child.kill() only sends SIGTERM to the direct child (npx), but the actual
-      // codex-acp adapter runs as a grandchild and is left orphaned.
-      killChildProcessTree(child);
+      // The daemon owns the process tree behind `host.execStream`; `kill()`
+      // proxies to `host.execStream.cancel` which tears the tree down cleanly.
+      child.kill();
       resolve(models);
     };
 
@@ -415,7 +410,15 @@ async function probeCodexModelsViaAcp(
 async function probeCodexModelsViaAppServer(
   resolved: CodexResolvedModelListCommand,
 ): Promise<CodexModel[]> {
-  const child = spawnCodexProbe(resolved.command, resolved.argsPrefix, resolved.env);
+  let child: AcpChildStream;
+  try {
+    child = await spawnCodexProbe(resolved.command, resolved.argsPrefix, resolved.env);
+  } catch (error) {
+    logger.debug('Codex app-server stream failed to start', {
+      error: (error as Error).message,
+    });
+    return [];
+  }
   const adapter = new CodexAppServerAcpAdapter(child, { requestTimeoutMs: 8000 });
 
   return await new Promise((resolve) => {
@@ -425,7 +428,7 @@ async function probeCodexModelsViaAppServer(
       if (done) return;
       done = true;
       adapter.dispose();
-      killChildProcessTree(child);
+      child.kill();
       resolve(models);
     };
 
@@ -520,10 +523,9 @@ async function fetchCodexModelsDynamically(): Promise<CodexModelListProbeResult>
       codexCliVersion: candidate.codexCliVersion,
     });
 
-    // AUDIT-R1b: the probe's spawn seam throws synchronously (BE-gap: no
-    // daemon-side ACP handshake RPC yet). Wrap so a probe failure moves to
-    // the next candidate instead of aborting the whole loop and losing the
-    // `attemptedSources` breadcrumb the IPC handler emits in its warning.
+    // Wrap so a probe failure moves to the next candidate instead of
+    // aborting the whole loop and losing the `attemptedSources` breadcrumb
+    // the IPC handler emits in its warning.
     let models: CodexModel[];
     try {
       models =
