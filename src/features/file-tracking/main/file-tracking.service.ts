@@ -10,37 +10,47 @@ import { ChangeStage } from '../types';
 import type { TrackedChange, StageTransition, ChangeFilter } from './types';
 import { Logger } from '$lib/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
-import { spawn } from 'child_process';
+import { Buffer } from 'node:buffer';
 import { TRACKING_CONFIG } from '../tracking.config';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
+import { hostExecStream } from '../../../shared/main/host-exec-stream';
 
 // Centralized git environment to prevent credential prompts
 import { gitEnv } from '../../../shared/git/git-env';
 
 /**
- * Execute git command safely with proper argument escaping (local only)
+ * Coerce a NodeJS.ProcessEnv (values may be undefined) into the
+ * Record<string, string> shape the daemon exec seam accepts.
+ */
+function toHostEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(env)) {
+    const value = env[key];
+    if (typeof value === 'string') out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * Execute git command safely with proper argument escaping (local only).
+ * Routes through the daemon's `host.execStream` seam (PROTOCOL.md §5.14) so no
+ * git process is spawned in the renderer; preserves the throw-on-nonzero
+ * contract with the collected stderr.
  */
 async function execGitCommandLocal(args: string[], cwd: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const git = spawn('git', args, { cwd, env: gitEnv, windowsHide: true });
-
-    let stderr = '';
-    git.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    git.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`Git command failed with code ${code}: ${stderr}`));
-      } else {
-        resolve();
-      }
-    });
-
-    git.on('error', (err) => {
-      reject(err);
-    });
+  const stderrChunks: Buffer[] = [];
+  const handle = await hostExecStream('git', {
+    args,
+    cwd,
+    env: toHostEnv(gitEnv),
+    onStderr: (chunk: Buffer) => stderrChunks.push(chunk),
   });
+  const result = await handle.done;
+  const code = typeof result.exitCode === 'number' ? result.exitCode : result.ok ? 0 : 1;
+  if (code !== 0) {
+    const stderr = Buffer.concat(stderrChunks).toString();
+    throw new Error(`Git command failed with code ${code}: ${stderr}`);
+  }
 }
 
 const logger = new Logger({ category: 'FileTrackingService' });
