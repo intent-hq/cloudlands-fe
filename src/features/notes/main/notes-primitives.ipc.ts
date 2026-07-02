@@ -11,9 +11,9 @@
 import { Logger } from '$shared/logger';
 import { WorkspaceConfig } from '$shared/main/config';
 import { createWorkspaceId } from '$shared/types';
-import { exec } from 'child_process';
 import { ipcMain } from 'electron';
 import { killChildProcessTree } from '../../../shared/main/process-tree-kill';
+import { hostExecStream } from '../../../shared/main/host-exec-stream';
 import { existsSync } from 'fs';
 import {
   copyFile,
@@ -278,41 +278,115 @@ export function setupNotesPrimitivesIPC() {
           }
 
           const cwd = validated.cwd || workspacePath;
-          const env = { ...process.env, ...validated.env };
           const timeout = validated.timeoutMs || 60000;
 
           // Create terminal ID
           const terminalId = ++terminalIdCounter;
 
-          // Execute command
-          const childProcess = exec(
-            validated.command,
-            {
-              cwd,
-              env,
-              timeout,
-              windowsHide: true,
-            },
-            (error, stdout, stderr) => {
-              const terminal = activeTerminals.get(terminalId);
-              if (terminal) {
-                terminal.output = stdout + stderr;
-              }
+          // Arbitrary command execution is daemon-owned under thin-presenter, so
+          // the command runs over `host.execStream` (PROTOCOL.md §5.14) rather
+          // than a local `exec`. The wire schema is a single shell-form command
+          // string, so it is wrapped via the host shell (`sh -c` on POSIX /
+          // `cmd /c` on Windows) — the same shim R5a used for system.ipc. A
+          // minimal ChildProcess-like adapter is stored in `activeTerminals` so
+          // the existing `terminal:subscribeOutput` / `terminal:killProcess`
+          // streamed-output contract keeps working unchanged: each stdout/stderr
+          // channel buffers until a `data` listener attaches (then goes live),
+          // and a late `exit` listener still receives the final exit code.
+          const makeChannel = () => {
+            const listeners = new Set<(chunk: string) => void>();
+            const pending: string[] = [];
+            let live = false;
+            return {
+              push(chunk: string): void {
+                if (live) {
+                  for (const cb of listeners) cb(chunk);
+                } else {
+                  pending.push(chunk);
+                }
+              },
+              on(eventName: string, cb: (chunk: string) => void): void {
+                if (eventName !== 'data') return;
+                listeners.add(cb);
+                if (!live) {
+                  live = true;
+                  const drained = pending.splice(0, pending.length);
+                  for (const chunk of drained) cb(chunk);
+                }
+              },
+            };
+          };
 
-              if (error) {
-                logger.error('Command execution failed', error);
-              }
+          const stdoutChannel = makeChannel();
+          const stderrChannel = makeChannel();
+          const exitListeners = new Set<(code: number) => void>();
+          let exited = false;
+          let exitCode = 0;
+          const controller = new AbortController();
+
+          const processAdapter = {
+            pid: undefined as number | undefined,
+            stdout: stdoutChannel,
+            stderr: stderrChannel,
+            on(eventName: string, cb: (code: number) => void): void {
+              if (eventName !== 'exit') return;
+              if (exited) cb(exitCode);
+              else exitListeners.add(cb);
             },
-          );
+            kill(): boolean {
+              controller.abort();
+              return true;
+            },
+          };
+
+          const entry = { process: processAdapter, output: '' };
+
+          const [shellCmd, shellFlag] =
+            process.platform === 'win32' ? ['cmd.exe', '/c'] : ['/bin/sh', '-c'];
+
+          const handle = await hostExecStream(shellCmd, {
+            args: [shellFlag, validated.command],
+            cwd,
+            env: validated.env,
+            timeoutMs: timeout,
+            workspaceId: validated.workspaceId,
+            signal: controller.signal,
+            onStdout: (chunk) => {
+              const text = chunk.toString('utf8');
+              entry.output += text;
+              stdoutChannel.push(text);
+            },
+            onStderr: (chunk) => {
+              const text = chunk.toString('utf8');
+              entry.output += text;
+              stderrChannel.push(text);
+            },
+          });
 
           // Store terminal info
-          activeTerminals.set(terminalId, {
-            process: childProcess,
-            output: '',
-          });
+          activeTerminals.set(terminalId, entry);
+
+          // Resolve the daemon exit into the adapter's `exit` listeners so
+          // `terminal:subscribeOutput` forwards `terminal:exit:${terminalId}`.
+          void handle.done
+            .then((result) => {
+              exited = true;
+              exitCode =
+                typeof result.exitCode === 'number' ? result.exitCode : result.ok ? 0 : 1;
+              for (const cb of exitListeners) cb(exitCode);
+              exitListeners.clear();
+            })
+            .catch((error) => {
+              logger.error('Command execution failed', error);
+              exited = true;
+              exitCode = 1;
+              for (const cb of exitListeners) cb(exitCode);
+              exitListeners.clear();
+            });
 
           return { ok: true, data: { terminalId } };
         } catch (error) {
+          // Honest-degrade on RPC/transport failure — no local spawn fallback.
           logger.error('Failed to run command', error);
           return {
             ok: false,
