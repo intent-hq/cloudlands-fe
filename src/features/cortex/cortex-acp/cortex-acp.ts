@@ -10,14 +10,14 @@
  * Usage: node cortex-acp.js
  */
 
-import {
-  spawn,
-  type ChildProcess,
-} from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
+import {
+  startAcpChildStream,
+  type AcpChildStream,
+} from '../../../shared/main/acp-child-stream';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -236,7 +236,7 @@ function getToolLocations(toolName: string, input: Record<string, unknown>): Arr
 // ---------------------------------------------------------------------------
 
 class CortexProcess {
-  private proc: ChildProcess | null = null;
+  private proc: AcpChildStream | null = null;
   private sessionId: string | null = null;
   private workingDir: string;
   private model: string | null;
@@ -244,6 +244,7 @@ class CortexProcess {
   private onEvent: (event: CortexEvent) => void;
   private onExit: (code: number | null, signal: string | null) => void;
   private killed = false;
+  private exited = false;
 
   constructor(opts: {
     workingDir: string;
@@ -262,10 +263,10 @@ class CortexProcess {
   }
 
   get isAlive(): boolean {
-    return this.proc !== null && !this.killed && this.proc.exitCode === null;
+    return this.proc !== null && !this.killed && !this.exited;
   }
 
-  spawn(prompt: string, resumeSessionId?: string): void {
+  async spawn(prompt: string, resumeSessionId?: string): Promise<void> {
     const args = ['--output-format', 'stream-json', '--dangerously-allow-all-tool-calls'];
     if (this.model) {
       args.push('--model', this.model);
@@ -279,50 +280,59 @@ class CortexProcess {
     log('info', 'Spawning cortex process', { args: args.map((a, i) => args[i - 1] === '--print' ? `<prompt ${a.length} chars>` : a), cwd: this.workingDir });
 
     this.killed = false;
+    this.exited = false;
     this.stdoutBuffer = '';
-    this.proc = spawn('cortex', args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
+    // Route through the daemon's `host.execStream` (PROTOCOL.md §5.14) via
+    // the shared ACP child-stream helper. The daemon owns argv-based spawn,
+    // the process tree, and stream cancellation.
+    const child = await startAcpChildStream('cortex', {
+      args,
       cwd: this.workingDir,
-      env: { ...process.env, TERM: 'dumb' },
-      windowsHide: true,
-      shell: process.platform === 'win32',
+      env: { TERM: 'dumb' },
     });
+    this.proc = child;
 
-    this.proc.stdout?.on('data', (data: Buffer) => {
+    child.stdout.on('data', (data: Buffer) => {
       this.stdoutBuffer += data.toString();
       this.processBuffer();
     });
 
-    this.proc.stderr?.on('data', (data: Buffer) => {
+    child.stderr.on('data', (data: Buffer) => {
       const text = data.toString().trim();
       if (text) {
         log('debug', 'cortex stderr', { text: text.substring(0, 500) });
       }
     });
 
-    this.proc.on('error', (err) => {
+    child.on('error', (err: Error) => {
       log('error', 'cortex process error', { error: err.message });
+      this.exited = true;
       this.proc = null;
       if (!this.killed) {
         this.onExit(null, null);
       }
     });
 
-    this.proc.on('exit', (code, signal) => {
+    child.on('exit', (code: number | null, signal: string | null) => {
       log('info', 'cortex process exited', { code, signal: signal ?? undefined });
+      this.exited = true;
       this.proc = null;
       if (!this.killed) {
         this.onExit(code, signal);
       }
     });
+
+    // Cortex reads the prompt from `--print`, not stdin. Close stdin so the
+    // child sees EOF (mirrors the retired `stdio[0]: 'ignore'`).
+    child.stdin.end();
   }
 
   kill(): void {
-    if (this.proc && this.proc.exitCode === null) {
+    if (this.proc && !this.exited) {
       this.killed = true;
-      // Note: On Windows, SIGTERM triggers an unconditional process termination
-      // (equivalent to SIGKILL). There is no graceful shutdown on Windows.
-      this.proc.kill('SIGTERM');
+      // `kill()` on the ACP child stream proxies to `host.execStream.cancel`
+      // so the daemon reaps the whole cortex process tree.
+      this.proc.kill();
       log('info', 'Killed cortex process');
     }
   }
@@ -521,7 +531,16 @@ class CortexAcpAdapter {
       await new Promise<void>((resolve, reject) => {
         this.promptResolve = resolve;
         this.promptReject = reject;
-        cortex.spawn(promptText, resumeId);
+        // `spawn` is now async — surface daemon-side stream-start failures
+        // as a prompt rejection so callers still degrade cleanly.
+        cortex.spawn(promptText, resumeId).catch((err: unknown) => {
+          if (this.promptReject) {
+            const rejectFn = this.promptReject;
+            this.promptResolve = null;
+            this.promptReject = null;
+            rejectFn(err instanceof Error ? err : new Error(String(err)));
+          }
+        });
       });
 
       sendResponse(req.id, { stopReason: 'end_turn' });
