@@ -65,6 +65,8 @@ import type { McpServerConfig } from '../../mcp/main/user-mcp-settings';
 import { execAsync } from '../../../shared/git/git-env';
 import { findBinary } from '../../../shared/main/find-binary';
 import { getBackendClient } from '../../backend/main/backend.ipc';
+import { hostExec } from '../../../shared/main/host-exec';
+import { hostExecStream } from '../../../shared/main/host-exec-stream';
 import {
   APP_CHANNELS,
   DEEP_LINK_CHANNELS,
@@ -435,6 +437,8 @@ export async function installIntentCli(): Promise<{
           const escapedCommand = command.replace(/"/g, '\\"');
           const osascriptCmd = `osascript -e 'do shell script "${escapedCommand}" with administrator privileges'`;
 
+          // LOCAL-GUI: shows the macOS admin-auth prompt on the client host to
+          // symlink the Intent CLI into /usr/local/bin; not workspace execution.
           await execAsync(osascriptCmd);
 
           logger.info('CLI installed with admin privileges');
@@ -1139,6 +1143,8 @@ export function setupSystemIPC() {
       VscodeOpenGitDiffSchema,
       async (_event, validated) => {
         try {
+          // LOCAL-GUI: launches the user's VSCode on the client host to view a
+          // git diff; not workspace execution.
           const { spawn } = require('child_process');
 
           logger.info('Opening git diff in VSCode:', {
@@ -1244,7 +1250,8 @@ export function setupSystemIPC() {
 
                           logger.info('Executing VSCode command:', { command });
 
-                          // Use exec to run the command through the shell
+                          // LOCAL-GUI: launches the user's VSCode binary on the
+                          // client host to open a file; not workspace execution.
                           const { exec: execCommand } = require('child_process');
                           execCommand(command, { windowsHide: true }, (error: any) => {
                             if (error) {
@@ -1330,6 +1337,8 @@ export function setupSystemIPC() {
           const { promises: fsPromises } = require('fs');
           const path = require('path');
           const os = require('os');
+          // LOCAL-GUI: launches the user's VSCode on the client host to view a
+          // diff of two temp files; not workspace execution.
           const { spawn } = require('child_process');
 
           // Create temp directory (ASYNC)
@@ -1437,6 +1446,8 @@ export function setupSystemIPC() {
                 ? `open -a "Visual Studio Code" --args -n --skip-add-to-recently-opened --goto "${validated.file}:${validated.line}"`
                 : `open -a "Visual Studio Code" --args -n --skip-add-to-recently-opened "${validated.file}"`;
 
+              // LOCAL-GUI: launches the user's VSCode via macOS `open` on the
+              // client host; not workspace execution.
               await execAsync(openCommand);
               return { success: true };
             } else {
@@ -1450,6 +1461,8 @@ export function setupSystemIPC() {
             ? `"${codeCommand}" -n --skip-add-to-recently-opened --goto "${validated.file}:${validated.line}"`
             : `"${codeCommand}" -n --skip-add-to-recently-opened "${validated.file}"`;
 
+          // LOCAL-GUI: launches the user's VSCode on the client host to open a
+          // file; not workspace execution.
           await execAsync(command);
           return { success: true };
         } catch (error) {
@@ -1481,6 +1494,8 @@ export function setupSystemIPC() {
       JetbrainsOpenSchema,
       async (_event, validated) => {
         try {
+          // LOCAL-GUI: launches the user's JetBrains IDE on the client host to
+          // open a project/file; not workspace execution.
           const { spawn } = require('child_process');
           let args: string[] = [];
 
@@ -1538,6 +1553,8 @@ export function setupSystemIPC() {
 
             for (const command of commands) {
               try {
+                // LOCAL-GUI: launches the user's JetBrains IDE on the client
+                // host as a fallback; not workspace execution.
                 await execAsync(command);
                 return { success: true };
               } catch  {
@@ -1569,6 +1586,8 @@ export function setupSystemIPC() {
       XcodeOpenSchema,
       async (_event, validated) => {
         try {
+          // LOCAL-GUI: launches Xcode on the client host via `open -a Xcode`;
+          // not workspace execution.
           const { spawn } = require('child_process');
           const fs = require('fs');
           const path = require('path');
@@ -2285,7 +2304,8 @@ export function setupSystemIPC() {
     ),
   );
 
-  // MCP CLI: List servers
+  // MCP CLI: List servers — delegated to the daemon (`host.exec`, PROTOCOL.md §5.14)
+  // so the auggie CLI runs on the workspace host, not the FE main process.
   ipcMain.handle(
     USER_MCP_CHANNELS.MCP_LIST,
     createSafeValidatedHandler(
@@ -2298,46 +2318,30 @@ export function setupSystemIPC() {
             return { success: false, error: 'Auggie CLI not found' };
           }
 
-          const { spawn } = require('child_process');
-          return new Promise((resolve) => {
-            const child = spawn(auggiePath, ['mcp', 'list', '--json'], {
-              env: process.env,
-              windowsHide: true,
-            });
-            let stdout = '';
-            let stderr = '';
-
-            child.stdout.on('data', (data: Buffer) => {
-              stdout += data.toString();
-            });
-            child.stderr.on('data', (data: Buffer) => {
-              stderr += data.toString();
-            });
-            child.on('close', (code: number) => {
-              if (code === 0) {
-                try {
-                  const servers = parseJsonFromCliOutput(stdout);
-                  resolve({ success: true, data: servers });
-                } catch (error) {
-                  logger.error('Failed to parse MCP list JSON output', {
-                    error: error instanceof Error ? error.message : String(error),
-                    stdout,
-                    stderr,
-                  });
-                  resolve({
-                    success: false,
-                    error:
-                      error instanceof Error ? error.message : 'Failed to parse MCP server list output',
-                  });
-                }
-              } else {
-                resolve({ success: false, error: stderr || 'Failed to list MCP servers' });
-              }
-            });
-            child.on('error', (err: Error) => {
-              resolve({ success: false, error: err.message });
-            });
+          const result = await hostExec(auggiePath, {
+            args: ['mcp', 'list', '--json'],
+            timeoutMs: 30_000,
           });
+          if (result.exitCode === 0) {
+            try {
+              const servers = parseJsonFromCliOutput(result.stdout);
+              return { success: true, data: servers };
+            } catch (parseError) {
+              logger.error('Failed to parse MCP list JSON output', {
+                error: parseError instanceof Error ? parseError.message : String(parseError),
+                stdout: result.stdout,
+                stderr: result.stderr,
+              });
+              return {
+                success: false,
+                error:
+                  parseError instanceof Error
+                    ? parseError.message
+                    : 'Failed to parse MCP server list output',
+              };
+            }
+          }
+          return { success: false, error: result.stderr || 'Failed to list MCP servers' };
         } catch (error) {
           return { success: false, error: String(error) };
         }
@@ -2400,7 +2404,7 @@ export function setupSystemIPC() {
             }
           }
 
-          const { spawn } = require('child_process');
+          // Delegate `auggie mcp add` to the daemon (`host.exec`, PROTOCOL.md §5.14).
           const args = ['mcp', 'add', validated.name];
 
           // Add transport-specific options
@@ -2434,47 +2438,33 @@ export function setupSystemIPC() {
           // Use --replace instead of -r to avoid conflict with auggie's top-level -r (--resume) flag
           args.push('--replace');
 
-          return new Promise((resolve) => {
-            const child = spawn(auggiePath, args, {
-              env: process.env,
-              windowsHide: true,
-            });
-            let stdout = '';
-            let stderr = '';
-
-            child.stdout.on('data', (data: Buffer) => {
-              stdout += data.toString();
-            });
-            child.stderr.on('data', (data: Buffer) => {
-              stderr += data.toString();
-            });
-            child.on('close', async (code: number) => {
-              if (code === 0) {
-                // The CLI doesn't support authType, so patch it directly into settings.json
-                // after the CLI has written the base config.
-                if (validated.authType && validated.authType !== 'none') {
-                  try {
-                    const { patchServerAuthType } = await import(
-                      '../../mcp/main/user-mcp-settings'
-                    );
-                    await patchServerAuthType(validated.name, validated.authType);
-                  } catch (patchError) {
-                    logger.warn('Failed to persist authType to settings.json', {
-                      name: validated.name,
-                      authType: validated.authType,
-                      error: String(patchError),
-                    });
-                  }
-                }
-                resolve({ success: true, data: { message: stdout.trim() || 'Server added' } });
-              } else {
-                resolve({ success: false, error: stderr || stdout || 'Failed to add MCP server' });
-              }
-            });
-            child.on('error', (err: Error) => {
-              resolve({ success: false, error: err.message });
-            });
+          const result = await hostExec(auggiePath, {
+            args,
+            timeoutMs: 60_000,
           });
+          if (result.exitCode === 0) {
+            // The CLI doesn't support authType, so patch it directly into settings.json
+            // after the CLI has written the base config.
+            if (validated.authType && validated.authType !== 'none') {
+              try {
+                const { patchServerAuthType } = await import(
+                  '../../mcp/main/user-mcp-settings'
+                );
+                await patchServerAuthType(validated.name, validated.authType);
+              } catch (patchError) {
+                logger.warn('Failed to persist authType to settings.json', {
+                  name: validated.name,
+                  authType: validated.authType,
+                  error: String(patchError),
+                });
+              }
+            }
+            return { success: true, data: { message: result.stdout.trim() || 'Server added' } };
+          }
+          return {
+            success: false,
+            error: result.stderr || result.stdout || 'Failed to add MCP server',
+          };
         } catch (error) {
           return { success: false, error: String(error) };
         }
@@ -2528,35 +2518,21 @@ export function setupSystemIPC() {
             }
           }
 
-          const { spawn } = require('child_process');
-          return new Promise((resolve) => {
-            const child = spawn(auggiePath, ['mcp', 'remove', validated.name], {
-              env: process.env,
-              windowsHide: true,
-            });
-            let stdout = '';
-            let stderr = '';
-
-            child.stdout.on('data', (data: Buffer) => {
-              stdout += data.toString();
-            });
-            child.stderr.on('data', (data: Buffer) => {
-              stderr += data.toString();
-            });
-            child.on('close', (code: number) => {
-              if (code === 0) {
-                resolve({ success: true, data: { message: stdout.trim() || 'Server removed' } });
-              } else {
-                resolve({
-                  success: false,
-                  error: stderr || stdout || 'Failed to remove MCP server',
-                });
-              }
-            });
-            child.on('error', (err: Error) => {
-              resolve({ success: false, error: err.message });
-            });
+          // Delegate `auggie mcp remove` to the daemon (`host.exec`, PROTOCOL.md §5.14).
+          const result = await hostExec(auggiePath, {
+            args: ['mcp', 'remove', validated.name],
+            timeoutMs: 30_000,
           });
+          if (result.exitCode === 0) {
+            return {
+              success: true,
+              data: { message: result.stdout.trim() || 'Server removed' },
+            };
+          }
+          return {
+            success: false,
+            error: result.stderr || result.stdout || 'Failed to remove MCP server',
+          };
         } catch (error) {
           return { success: false, error: String(error) };
         }
@@ -2696,7 +2672,10 @@ export function setupSystemIPC() {
     ),
   );
 
-  // Execute command (with security warning)
+  // Execute command (with security warning) — delegated to the daemon
+  // (`host.exec`, PROTOCOL.md §5.14). The wire schema is a shell-form command
+  // string, so we wrap it via the host shell (`sh -c` on POSIX / `cmd /c` on
+  // Windows) and let the daemon run it on the workspace host.
   ipcMain.handle(
     SYSTEM_CHANNELS.EXECUTE_COMMAND,
     createSafeValidatedHandler(
@@ -2707,29 +2686,39 @@ export function setupSystemIPC() {
 
           // SECURITY WARNING: This executes arbitrary commands
           // This should only be used for trusted, internal operations
-          // Consider using execFile with specific command allowlist for production
           logger.warn('Executing command - ensure input is trusted', {
             command: command.substring(0, 100),
             cwd,
           });
 
-          // Add timeout to prevent resource exhaustion
-          const { stdout, stderr } = await execAsync(command, {
+          const [shellCmd, shellFlag] =
+            process.platform === 'win32' ? ['cmd.exe', '/c'] : ['/bin/sh', '-c'];
+          const result = await hostExec(shellCmd, {
+            args: [shellFlag, command],
             cwd,
-            timeout: 30000, // 30 second timeout
-            maxBuffer: 10 * 1024 * 1024, // 10MB max buffer
+            timeoutMs: 30_000,
           });
 
+          if (result.exitCode === 0) {
+            return {
+              success: true,
+              data: {
+                stdout: result.stdout,
+                stderr: result.stderr,
+                code: 0,
+              },
+            };
+          }
           return {
-            success: true,
+            success: false,
+            error: 'Command execution failed', // Don't expose full error message
             data: {
-              stdout,
-              stderr,
-              code: 0,
+              stdout: result.stdout,
+              stderr: result.stderr,
+              code: result.exitCode,
             },
           };
         } catch (error) {
-          const execError = error as Error & { stdout?: string; stderr?: string; code?: number };
           logger.error('Command execution failed', error as Error, {
             command: validated.command?.substring(0, 100),
           });
@@ -2737,9 +2726,9 @@ export function setupSystemIPC() {
             success: false,
             error: 'Command execution failed', // Don't expose full error message
             data: {
-              stdout: execError.stdout || '',
-              stderr: execError.stderr || '',
-              code: execError.code || 1,
+              stdout: '',
+              stderr: '',
+              code: 1,
             },
           };
         }
@@ -2748,75 +2737,64 @@ export function setupSystemIPC() {
     ),
   );
 
-  // Execute command with streaming
+  // Execute command with streaming — delegated to the daemon
+  // (`host.execStream`, PROTOCOL.md §5.14). The wire schema is a shell-form
+  // command string, so we wrap it via the host shell (`sh -c` on POSIX /
+  // `cmd /c` on Windows) and stream stdout/stderr/close back to the renderer
+  // over the existing `auggie:stream:${sessionId}` channel.
   ipcMain.handle(
     SYSTEM_CHANNELS.EXECUTE_COMMAND_STREAMING,
     createSafeValidatedHandler(
       SystemExecuteCommandStreamingSchema,
       async (event, validated) => {
         try {
-          const { spawn } = require('child_process');
           const { sessionId, command, cwd, stdin } = validated;
+          const [shellCmd, shellFlag] =
+            process.platform === 'win32' ? ['cmd.exe', '/c'] : ['/bin/sh', '-c'];
 
-          const childProcess = spawn(command, {
+          const handle = await hostExecStream(shellCmd, {
+            args: [shellFlag, command],
             cwd,
-            shell: true,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            windowsHide: true,
+            stdin,
+            onStdout: (chunk) => {
+              event.sender.send(`auggie:stream:${sessionId}`, {
+                sessionId,
+                type: 'stdout',
+                data: chunk.toString('utf8'),
+              });
+            },
+            onStderr: (chunk) => {
+              event.sender.send(`auggie:stream:${sessionId}`, {
+                sessionId,
+                type: 'stderr',
+                data: chunk.toString('utf8'),
+              });
+            },
           });
 
-          // Write stdin if provided
-          if (stdin) {
-            // Handle stdin EPIPE errors (child process may exit before consuming all input)
-            childProcess.stdin.on('error', (error: Error) => {
-              const msg = error instanceof Error ? error.message : String(error);
-              if (msg.includes('EPIPE')) {
-                // Benign: child process exited before reading all stdin data
-                logger.debug('Stdin EPIPE (child exited before consuming input)');
-              } else {
-                logger.error('Stdin error in streaming command:', error);
-              }
+          // Fire-and-forget: emit terminal `close` frame on exit, and surface
+          // wire/transport failures as a `stderr` frame (matches the previous
+          // spawn `error` handler shape).
+          handle.done
+            .then((result) => {
+              event.sender.send(`auggie:stream:${sessionId}`, {
+                sessionId,
+                type: 'close',
+                code: typeof result.exitCode === 'number' ? result.exitCode : null,
+              });
+            })
+            .catch((err: Error) => {
+              event.sender.send(`auggie:stream:${sessionId}`, {
+                sessionId,
+                type: 'stderr',
+                data: err.message,
+              });
+              event.sender.send(`auggie:stream:${sessionId}`, {
+                sessionId,
+                type: 'close',
+                code: null,
+              });
             });
-
-            childProcess.stdin.write(stdin);
-            childProcess.stdin.end();
-          }
-
-          // Stream stdout
-          childProcess.stdout.on('data', (data: Buffer) => {
-            event.sender.send(`auggie:stream:${sessionId}`, {
-              sessionId,
-              type: 'stdout',
-              data: data.toString(),
-            });
-          });
-
-          // Stream stderr
-          childProcess.stderr.on('data', (data: Buffer) => {
-            event.sender.send(`auggie:stream:${sessionId}`, {
-              sessionId,
-              type: 'stderr',
-              data: data.toString(),
-            });
-          });
-
-          // Handle exit
-          childProcess.on('exit', (code: number) => {
-            event.sender.send(`auggie:stream:${sessionId}`, {
-              sessionId,
-              type: 'close',
-              code,
-            });
-          });
-
-          // Handle error
-          childProcess.on('error', (error: Error) => {
-            event.sender.send(`auggie:stream:${sessionId}`, {
-              sessionId,
-              type: 'stderr',
-              data: error.message,
-            });
-          });
 
           return { success: true };
         } catch (error) {
