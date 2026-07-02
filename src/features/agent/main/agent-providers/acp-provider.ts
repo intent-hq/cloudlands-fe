@@ -33,7 +33,6 @@ import { fileURLToPath } from 'url';
 import { Logger } from '../../../../shared/logger';
 import { WorkspaceConfig } from '../../../../shared/main/config';
 import { writeJsonWithSync } from '../../../../shared/main/file-sync-utils';
-import { killChildProcessTree } from '../../../../shared/main/process-tree-kill';
 import { sshManager } from '../../../../shared/main/ssh-manager';
 import { findAuggiePathAsync } from '../../../auggie/main/auggie.ipc';
 import type { ContentBlock } from '../../../../shared/types';
@@ -7027,9 +7026,8 @@ export class ACPProvider extends BaseAgentProvider {
       }
     }
 
-    // Kill local agent process and its entire process tree
-    // CRITICAL: Use killChildProcessTree instead of child.kill() because npx/npm-exec
-    // spawns a child process that child.kill() doesn't reach, causing orphaned processes
+    // Cancel the daemon-owned child via the stream adapter's kill(); the
+    // daemon reaps the entire process tree in response to host.execStream.cancel.
     if (this.agentProcess) {
       logger.info('Killing agent process tree', { pid: this.agentProcess.pid });
       // Remove all stream listeners before killing to prevent orphaned native handles
@@ -7039,7 +7037,7 @@ export class ACPProvider extends BaseAgentProvider {
       this.agentProcess.stdout?.removeAllListeners();
       this.agentProcess.stderr?.removeAllListeners();
       this.agentProcess.stdin?.removeAllListeners();
-      await killChildProcessTree(this.agentProcess);
+      this.agentProcess.kill();
       this.agentProcess = undefined;
       logger.info('Agent process tree killed');
     }
@@ -7181,7 +7179,8 @@ export class ACPProvider extends BaseAgentProvider {
       this.remoteProcess = undefined;
     }
 
-    // Kill local agent process tree
+    // Cancel the daemon-owned child via the stream adapter's kill(); the
+    // daemon reaps the entire process tree in response to host.execStream.cancel.
     if (this.agentProcess) {
       const pid = this.agentProcess.pid;
       logger.info('Killing local agent process tree for recovery', { pid });
@@ -7192,7 +7191,7 @@ export class ACPProvider extends BaseAgentProvider {
       this.agentProcess.stdout?.removeAllListeners();
       this.agentProcess.stderr?.removeAllListeners();
       this.agentProcess.stdin?.removeAllListeners();
-      await killChildProcessTree(this.agentProcess);
+      this.agentProcess.kill();
       // Wait a bit for process tree to fully terminate
       await new Promise((resolve) => setTimeout(resolve, 200));
       // Deregister from global registry — exit listeners were removed so handleProcessExit won't fire
@@ -7921,7 +7920,7 @@ export class ACPProvider extends BaseAgentProvider {
       this.agentProcess.stdout?.removeAllListeners();
       this.agentProcess.stderr?.removeAllListeners();
       this.agentProcess.stdin?.removeAllListeners();
-      await killChildProcessTree(this.agentProcess);
+      this.agentProcess.kill();
       this.agentProcess = undefined;
     }
     this.sessionId = undefined;

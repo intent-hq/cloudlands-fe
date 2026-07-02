@@ -12,7 +12,6 @@ import { Logger } from '$shared/logger';
 import { WorkspaceConfig } from '$shared/main/config';
 import { createWorkspaceId } from '$shared/types';
 import { ipcMain } from 'electron';
-import { killChildProcessTree } from '../../../shared/main/process-tree-kill';
 import { hostExecStream } from '../../../shared/main/host-exec-stream';
 import { existsSync } from 'fs';
 import {
@@ -402,9 +401,9 @@ export function setupNotesPrimitivesIPC() {
   ipcMain.handle('terminal:killProcess', async (_, { terminalId }: { terminalId: number }) => {
     const terminal = activeTerminals.get(terminalId);
     if (terminal) {
-      // exec() uses a shell, so child.kill() only kills the shell, not the command.
-      // Use killChildProcessTree to kill the actual command underneath.
-      await killChildProcessTree(terminal.process);
+      // Cancel the daemon-owned child via the stream adapter's kill(); the
+      // daemon reaps the entire process tree in response to host.execStream.cancel.
+      terminal.process.kill();
       activeTerminals.delete(terminalId);
       return { ok: true };
     }
@@ -758,7 +757,7 @@ export function setupNotesPrimitivesIPC() {
 export async function cleanupNoteTerminals(): Promise<void> {
   for (const [terminalId, terminal] of activeTerminals.entries()) {
     try {
-      await killChildProcessTree(terminal.process);
+      terminal.process.kill();
       logger.debug('Killed note terminal on cleanup', { terminalId });
     } catch {
       // Process may already be dead

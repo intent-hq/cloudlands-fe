@@ -3,10 +3,6 @@
  * Used via resolve alias in vitest.config.ts
  */
 import { vi } from 'vitest';
-import { killChildProcessTree } from './process-tree-kill';
-
-// Re-export from process-tree-kill (as the real module does)
-export { killChildProcessTree };
 
 export const getGitEnv = vi.fn(() => ({ GIT_TERMINAL_PROMPT: '0' }));
 export const gitEnv: NodeJS.ProcessEnv = { GIT_TERMINAL_PROMPT: '0' };
