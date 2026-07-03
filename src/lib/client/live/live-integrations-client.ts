@@ -12,6 +12,7 @@
  */
 import type {
   AppClient,
+  GitHubBranchListing,
   IntegrationsClient,
   SubscriptionHandler,
   Unsubscribe,
@@ -48,6 +49,35 @@ export class LiveIntegrationsClient implements IntegrationsClient {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * `github.branches.list` (§5.27) for the branch names plus `github.repos.get`
+   * for the repo's default branch. Unlike the issue reads, branch-list failures
+   * PROPAGATE: the BranchSelector must render an explicit error/auth state,
+   * never an empty-or-fabricated list. The default-branch read is best-effort —
+   * its failure degrades to `undefined`.
+   */
+  async githubBranches(owner: string, repo: string): Promise<GitHubBranchListing> {
+    const result = await backendRequest<{ branches?: unknown }>("github.branches.list", {
+      owner,
+      repo,
+    });
+    const branches = Array.isArray(result?.branches)
+      ? result.branches.filter((branch): branch is string => typeof branch === "string")
+      : [];
+    let defaultBranch: string | undefined;
+    try {
+      const repoResult = await backendRequest<{ repo?: { defaultBranch?: unknown } | null }>(
+        "github.repos.get",
+        { owner, repo },
+      );
+      const value = repoResult?.repo?.defaultBranch;
+      if (typeof value === "string" && value.length > 0) defaultBranch = value;
+    } catch {
+      // Default branch is a nicety; the branch list alone is sufficient.
+    }
+    return { branches, defaultBranch };
   }
 
   async linearIssues(): Promise<LinearIssueResult[]> {

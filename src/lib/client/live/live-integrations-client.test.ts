@@ -163,6 +163,51 @@ describe("LiveIntegrationsClient (fake transport)", () => {
   });
 });
 
+describe("LiveIntegrationsClient.githubBranches (github.branches.list + github.repos.get, §5.27)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("lists remote branch names and the repo's default branch", async () => {
+    // PROTOCOL §5.27: { branches: string[], nextToken? } then { repo: GithubRepo | null }.
+    mockedRequest
+      .mockResolvedValueOnce({ branches: ["main", "feat/x"], nextToken: null })
+      .mockResolvedValueOnce({ repo: { name: "intent", defaultBranch: "main" } });
+    const client = new LiveIntegrationsClient();
+
+    const listing = await client.githubBranches("octo", "intent");
+
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, "github.branches.list", {
+      owner: "octo",
+      repo: "intent",
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, "github.repos.get", {
+      owner: "octo",
+      repo: "intent",
+    });
+    expect(listing).toEqual({ branches: ["main", "feat/x"], defaultBranch: "main" });
+  });
+
+  it("degrades the default branch to undefined when github.repos.get fails", async () => {
+    mockedRequest
+      .mockResolvedValueOnce({ branches: ["main"] })
+      .mockRejectedValueOnce(new Error("boom"));
+    const client = new LiveIntegrationsClient();
+
+    expect(await client.githubBranches("octo", "intent")).toEqual({
+      branches: ["main"],
+      defaultBranch: undefined,
+    });
+  });
+
+  it("propagates a branch-list failure so the caller renders an error/auth state", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("GitHub is not configured."));
+    const client = new LiveIntegrationsClient();
+
+    await expect(client.githubBranches("octo", "intent")).rejects.toThrow(
+      "GitHub is not configured.",
+    );
+  });
+});
+
 describe("settings-integrations seeder hydrates the connections slices from the daemon", () => {
   afterEach(() => vi.clearAllMocks());
 

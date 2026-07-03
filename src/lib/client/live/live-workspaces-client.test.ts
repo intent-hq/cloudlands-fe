@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CreateWorkspaceRequest } from "$shared/types";
+import type { CreateWorkspaceRequest, UpdateWorkspaceRequest } from "$shared/types";
 
 // FAKE transport only: the backend bridge is mocked so no request ever reaches
 // the user's real daemon. Each test asserts the JSON-RPC method + params the
@@ -69,6 +69,54 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     const client = new LiveWorkspacesClient();
 
     expect(await client.delete("ws-1")).toEqual({ success: false, error: "workspace exists" });
+  });
+});
+
+describe("LiveWorkspacesClient update/archive/unarchive (PROTOCOL §5.1, fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("update maps the FE id to workspaceId and surfaces the daemon's updated workspace", async () => {
+    const wsId = "0f7a13d7-5a96-455a-9aaf-e62303a8f2d1";
+    // PROTOCOL §5.1: workspace.update returns { workspace: Workspace }.
+    mockedRequest.mockResolvedValueOnce({
+      workspace: { id: wsId, title: "Renamed", branch: "main", status: "active" },
+    });
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.update({ id: wsId, title: "Renamed" } as UpdateWorkspaceRequest);
+
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.update", {
+      workspaceId: wsId,
+      title: "Renamed",
+    });
+    expect(result.success).toBe(true);
+    expect(result.workspace).toMatchObject({ id: wsId, title: "Renamed", branch: "main" });
+  });
+
+  it("update folds a daemon error into a failed result without throwing", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("update failed"));
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.update({ id: "ws-1", title: "X" } as UpdateWorkspaceRequest)).toEqual({
+      success: false,
+      error: "update failed",
+    });
+  });
+
+  it("archive forwards workspace.archive with the workspaceId", async () => {
+    mockedRequest.mockResolvedValueOnce({ success: true });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.archive("ws-1")).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.archive", { workspaceId: "ws-1" });
+  });
+
+  it("unarchive forwards workspace.unarchive with the workspaceId (archive undo)", async () => {
+    mockedRequest.mockResolvedValueOnce({ success: true });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.unarchive("ws-1")).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.unarchive", { workspaceId: "ws-1" });
   });
 });
 

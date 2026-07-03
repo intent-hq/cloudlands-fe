@@ -23,6 +23,7 @@ import type {
   Note,
   QueuedMessage,
   TaskStatus,
+  UpdateWorkspaceRequest,
   Workspace,
   WorkspaceTask,
   WorkspaceTaskStats,
@@ -161,6 +162,11 @@ export interface GitBranchStatusResult {
   hasUncommittedChanges: boolean;
 }
 
+/** `workspace.update` outcome — carries the daemon's updated workspace on success. */
+export interface WorkspaceUpdateResult extends MutationResult {
+  workspace?: Workspace;
+}
+
 export interface WorkspacesClient {
   list(): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
@@ -173,7 +179,18 @@ export interface WorkspacesClient {
    */
   open(id: string): Promise<Workspace | null>;
   create(request: CreateWorkspaceRequest): Promise<MutationResult>;
+  /**
+   * Update workspace fields (`workspace.update`, §5.1). The FE request `id`
+   * maps to the wire `workspaceId`. On success the daemon's authoritative
+   * updated `Workspace` is surfaced as `workspace` so callers can upsert it
+   * without a follow-up `workspace.get`.
+   */
+  update(request: UpdateWorkspaceRequest): Promise<WorkspaceUpdateResult>;
   delete(id: string): Promise<MutationResult>;
+  /** Archive a workspace (`workspace.archive`, §5.1). */
+  archive(id: string): Promise<MutationResult>;
+  /** Unarchive a workspace (`workspace.unarchive`, §5.1) — the archive-undo path. */
+  unarchive(id: string): Promise<MutationResult>;
   setActive(id: string): Promise<MutationResult>;
   recentViews(): Promise<Record<string, number>>;
   /**
@@ -768,8 +785,26 @@ export interface BrowserClient {
   subscribe(handler: SubscriptionHandler<RecentUrl[]>): Unsubscribe;
 }
 
+/**
+ * GitHub-URL branch listing (`github.branches.list` + `github.repos.get`,
+ * §5.27) for a repo the user has not cloned yet: remote branch names plus the
+ * repo's default branch when the metadata read succeeds.
+ */
+export interface GitHubBranchListing {
+  branches: string[];
+  defaultBranch?: string;
+}
+
 export interface IntegrationsClient {
   githubUser(): Promise<GitHubUser | null>;
+  /**
+   * Remote branch names for a GitHub repo (`github.branches.list`, §5.27),
+   * with the default branch from `github.repos.get` (best-effort). Unlike the
+   * issue reads this THROWS on transport/daemon errors (e.g. "GitHub is not
+   * configured.") so the workspace-initializer BranchSelector can render an
+   * explicit error/auth state — never a fabricated branch list.
+   */
+  githubBranches(owner: string, repo: string): Promise<GitHubBranchListing>;
   linearIssues(): Promise<LinearIssueResult[]>;
   sentryIssues(): Promise<SentryIssueResult[]>;
   subscribe(handler: SubscriptionHandler<{ githubUser: GitHubUser | null }>): Unsubscribe;

@@ -19,6 +19,7 @@ import type {
 import { Logger } from '$shared/logger';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { invoke as invokeIpc } from '$shared/generated/ipc-client';
+import { appClient } from '$lib/client';
 
 const logger = new Logger('WorkspaceClient');
 const WORKSPACE_CLIENT_CACHE_MAX_ENTRIES = 100;
@@ -318,15 +319,18 @@ export class WorkspaceClient {
   }
 
   async update(request: UpdateWorkspaceRequest): Promise<Result<Workspace, string>> {
-    const result = await this.invoke<Workspace>(WORKSPACE_CHANNELS.UPDATE, request);
-    // Clear cache for this workspace after update
-    if (result.ok) {
+    // Daemon-backed mutation (`workspace.update`, PROTOCOL §5.1) through the
+    // AppClient seam; the legacy `workspace:update` IPC path is gone. The
+    // daemon returns the authoritative updated Workspace.
+    const result = await appClient.workspaces.update(request);
+    if (result.success && result.workspace) {
+      // Clear cache for this workspace after update
       this.clearCache(request.id);
       // Also clear list cache since this operation changes which/how workspaces are returned
       this.clearCache();
-      return { ok: true, data: normalizeWorkspacePaths(result.data) };
+      return { ok: true, data: normalizeWorkspacePaths(result.workspace) };
     }
-    return result;
+    return { ok: false, error: result.error || 'Failed to update workspace' };
   }
 
   async delete(id: WorkspaceId): Promise<Result<void, string>> {
@@ -341,25 +345,31 @@ export class WorkspaceClient {
   }
 
   async archive(id: WorkspaceId): Promise<Result<void, string>> {
-    const result = await this.invoke<void>(WORKSPACE_CHANNELS.ARCHIVE, { id });
+    // Daemon-backed mutation (`workspace.archive`, PROTOCOL §5.1) through the
+    // AppClient seam; the legacy `workspace:archive` IPC path is gone.
+    const result = await appClient.workspaces.archive(id);
     // Clear cache for this workspace and list cache after archiving
-    if (result.ok) {
+    if (result.success) {
       this.clearCache(id);
       // Also clear list cache since archiving changes which workspaces are returned
       this.clearCache();
+      return { ok: true, data: undefined };
     }
-    return result;
+    return { ok: false, error: result.error || 'Failed to archive workspace' };
   }
 
   async unarchive(id: WorkspaceId): Promise<Result<void, string>> {
-    const result = await this.invoke<void>(WORKSPACE_CHANNELS.UNARCHIVE, { id });
+    // Daemon-backed mutation (`workspace.unarchive`, PROTOCOL §5.1) — the
+    // archive-undo path routes through the same seam as archive.
+    const result = await appClient.workspaces.unarchive(id);
     // Clear cache for this workspace and list cache after unarchiving
-    if (result.ok) {
+    if (result.success) {
       this.clearCache(id);
       // Also clear list cache since unarchiving changes which workspaces are returned
       this.clearCache();
+      return { ok: true, data: undefined };
     }
-    return result;
+    return { ok: false, error: result.error || 'Failed to unarchive workspace' };
   }
 
   async duplicate(id: WorkspaceId, newTitle?: string): Promise<Result<Workspace, string>> {
