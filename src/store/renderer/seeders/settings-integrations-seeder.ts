@@ -7,20 +7,14 @@
  * so the settings panel and connections list render with mock data — replacing
  * the work the settings/auth sagas used to do against the real backend.
  *
- * The MCP advanced editor also reads the raw settings file directly over IPC
- * (`user-mcp:get-settings-*`); those channels are registered against the mock
- * IPC router so that pane renders.
+ * The MCP advanced editor renders from the daemon-backed slice state directly
+ * (PROTOCOL §5.22) — no raw settings-file IPC fixtures remain here.
  *
  * The issue picker's direct IPC reads (auth-state + issue fetch) are bridged
  * to the daemon's `github.*` / `linear.*` / `sentry.*` namespaces by
  * integrations-bridge-seeder.ts; here the async seeder only hydrates the
  * store slices from the same daemon-backed `AppClient` integrations seam.
  */
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import {
-  mockUserMcpSettingsContent,
-  mockUserMcpSettingsPath,
-} from "$lib/client/mock/fixtures";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
@@ -157,14 +151,4 @@ registerMockSeeder("settings-integrations", async ({ store, client }) => {
     store.dispatch(setSentryConnected(sentryStatus.organization ?? ""));
     store.dispatch(setSentryIssues(await client.integrations.sentryIssues()));
   }
-
-  // ── Direct IPC reads (not routed through Redux) ──
-  registerMockIpcHandler("user-mcp:get-settings-file", async () => ({
-    success: true,
-    data: { content: mockUserMcpSettingsContent },
-  }));
-  registerMockIpcHandler("user-mcp:get-settings-path", async () => ({
-    success: true,
-    data: mockUserMcpSettingsPath,
-  }));
 });

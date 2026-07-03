@@ -103,3 +103,13 @@ export const selectMcpLastImportedCount = store.createSelector(
   (state) => state.mcpSettings.lastImportedCount as number | null
 );
 
+/** Select the advanced JSON editor save status */
+export const selectMcpAdvancedSaveStatus = store.createSelector(
+  (state) => state.mcpSettings.advancedSaveStatus as "idle" | "saving" | "saved" | "error"
+);
+
+/** Select the advanced JSON editor save error */
+export const selectMcpAdvancedSaveError = store.createSelector(
+  (state) => state.mcpSettings.advancedSaveError as string | null
+);
+

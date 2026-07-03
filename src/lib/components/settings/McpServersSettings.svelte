@@ -40,6 +40,8 @@
   selectMcpEnabled,
   selectMcpServers,
   selectMcpLastImportedCount,
+  selectMcpAdvancedSaveStatus,
+  selectMcpAdvancedSaveError,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-selectors';
   import {
   loadServers,
@@ -51,6 +53,7 @@
   importFromJson,
   testServerConnection,
   restartServer,
+  saveAdvancedJson,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 
   const activeWorkspaceId = selectActiveWorkspaceId();
@@ -59,6 +62,8 @@
   const error$ = selectMcpError();
   const enabled$ = selectMcpEnabled();
   const lastImportedCount$ = selectMcpLastImportedCount();
+  const advancedSaveStatus$ = selectMcpAdvancedSaveStatus();
+  const advancedSaveError$ = selectMcpAdvancedSaveError();
 
   // Props
   let { isAuggieProvider = true }: { isAuggieProvider?: boolean } = $props();
@@ -76,11 +81,8 @@
   let userInputValues = $state<Record<string, string>>({});
   let installError = $state('');
 
-  // Advanced editor state
+  // Advanced editor state (content is seeded from the daemon-backed slice, not a raw file)
   let userMcpSettingsContent = $state('');
-  let userMcpSettingsPath = $state('');
-  let userMcpSaveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  let userMcpSaveError = $state('');
   let showAdvanced = $state(false);
 
   let isOpeningDiagnosticTerminal = $state(false);
@@ -90,7 +92,6 @@
 
   onMount(() => {
     appStore.dispatch(loadServers());
-    loadSettingsFile();
   });
 
   // React to import completion from the saga (avoids double-parsing JSON in the component)
@@ -103,26 +104,16 @@
     }
   });
 
-  async function loadSettingsFile() {
-    if (!window.electronAPI) return;
-    try {
-      const contentResult = await invoke<any>(
-        'user-mcp:get-settings-file',
-        undefined,
-      );
-      if (contentResult?.success && contentResult.data?.content) {
-        userMcpSettingsContent = contentResult.data.content;
-      } else if (contentResult?.data?.content === null) {
-        userMcpSettingsContent = JSON.stringify({ mcpServers: {} }, null, 2);
-      }
-
-      const pathResult = await invoke<any>('user-mcp:get-settings-path', undefined);
-      if (pathResult?.success) {
-        userMcpSettingsPath = pathResult.data;
-      }
-    } catch (err) {
-      logger.error('Failed to load settings file:', err);
+  // Rebuild the advanced editor's JSON from the daemon-backed slice state
+  // (PROTOCOL §5.22 structured config — no raw settings-file IPC).
+  function loadSettingsFile() {
+    const servers = selectMcpServersWithStatus.select(appStore.state);
+    const mcpServers: Record<string, unknown> = {};
+    for (const server of servers) {
+      const { name, status: _status, tools: _tools, toolCount: _toolCount, errorMessage: _err, disabled, ...config } = server;
+      mcpServers[name] = disabled ? { ...config, disabled: true } : config;
     }
+    userMcpSettingsContent = JSON.stringify({ mcpServers }, null, 2);
   }
 
   function handleToggleEnabled() {
@@ -191,26 +182,26 @@
     });
   }
 
-  async function handleAddServer(config: McpServerConfig) {
-    // The saga handles auth checks and connection testing.
+  function handleAddServer(config: McpServerConfig) {
+    // The management service handles auth checks and connection testing.
     // Auth-required status will be reflected in the server card via the status map.
     appStore.dispatch(addServer(config));
     showAddPanel = false;
-    await loadSettingsFile();
+    loadSettingsFile();
   }
 
   async function handleEditServer(server: McpServerWithStatus) {
     editingServer = server;
   }
 
-  async function handleUpdateServer(config: McpServerConfig) {
+  function handleUpdateServer(config: McpServerConfig) {
     if (!editingServer) return;
     appStore.dispatch(updateServer(editingServer.name, config));
     editingServer = null;
-    await loadSettingsFile();
+    loadSettingsFile();
   }
 
-  async function handleDeleteServer(name: string) {
+  function handleDeleteServer(name: string) {
     // Get the server config before deleting (for undo)
     const currentServers = selectMcpServers.select(appStore.state);
     const serverConfig = currentServers.find((s) => s.name === name);
@@ -218,15 +209,15 @@
 
     // Delete immediately
     appStore.dispatch(removeServer(name));
-    await loadSettingsFile();
+    loadSettingsFile();
 
     // Show toast with undo action
     toast.warning(`Deleted "${name}"`, {
       action: {
         label: 'Undo',
-        onClick: async () => {
+        onClick: () => {
           appStore.dispatch(addServer(serverConfig));
-          await loadSettingsFile();
+          loadSettingsFile();
         },
       },
       duration: 5000,
@@ -363,7 +354,7 @@
       appStore.dispatch(addServer(config));
       activeConfig = null;
       userInputValues = {};
-      await loadSettingsFile();
+      loadSettingsFile();
     } catch (e) {
       installError = e instanceof Error ? e.message : 'Installation failed';
     } finally {
@@ -394,40 +385,20 @@
   async function handleImportJson(json: string) {
     appStore.dispatch(importFromJson(json));
     showAddPanel = false;
-    // Success feedback is driven by the saga dispatching importFromJsonCompleted,
+    // Success feedback is driven by the service dispatching importFromJsonCompleted,
     // observed reactively via $lastImportedCount$ below.
-    await loadSettingsFile();
+    loadSettingsFile();
   }
 
-  async function handleSaveAdvanced() {
-    if (!window.electronAPI) return;
-    try {
-      JSON.parse(userMcpSettingsContent);
-    } catch {
-      userMcpSaveStatus = 'error';
-      userMcpSaveError = 'Invalid JSON format';
-      return;
-    }
+  // Replace-all save through the daemon seam; the management service parses,
+  // validates, persists, and reports progress via the advanced-save selectors.
+  function handleSaveAdvanced() {
+    appStore.dispatch(saveAdvancedJson(userMcpSettingsContent));
+  }
 
-    userMcpSaveStatus = 'saving';
-    userMcpSaveError = '';
-
-    try {
-      const result = await invoke<any>('user-mcp:write-settings-file', {
-        content: userMcpSettingsContent,
-      });
-      if (result?.success) {
-        userMcpSaveStatus = 'saved';
-        appStore.dispatch(loadServers());
-        setTimeout(() => (userMcpSaveStatus = 'idle'), 2000);
-      } else {
-        userMcpSaveStatus = 'error';
-        userMcpSaveError = result?.error || 'Failed to save';
-      }
-    } catch (err) {
-      userMcpSaveStatus = 'error';
-      userMcpSaveError = err instanceof Error ? err.message : 'Unknown error';
-    }
+  function handleToggleAdvanced() {
+    showAdvanced = !showAdvanced;
+    if (showAdvanced) loadSettingsFile();
   }
 
   function handleCancelAdd() {
@@ -785,19 +756,19 @@
         </div>
       </section>
 
-      <!-- Advanced: Settings JSON Editor -->
+      <!-- Advanced: Settings JSON Editor (daemon `mcp.servers` structured config) -->
       <section class="bg-card rounded-xl overflow-hidden">
         <button
           type="button"
           class="w-full flex items-center justify-between px-6 py-4 hover:bg-muted/30 transition-colors cursor-pointer"
-          onclick={() => (showAdvanced = !showAdvanced)}
+          onclick={handleToggleAdvanced}
         >
           <div class="text-left">
-            <p class="text-sm font-medium text-foreground">Advanced: Edit Settings File</p>
+            <p class="text-sm font-medium text-foreground">Advanced: Edit Servers as JSON</p>
             <p class="text-xs text-subtle">
-              Directly edit <code class="bg-muted px-1 py-0.5 rounded text-xs"
-                >{userMcpSettingsPath || '~/.augment/settings.json'}</code
-              >
+              Directly edit the daemon's <code class="bg-muted px-1 py-0.5 rounded text-xs"
+                >mcp.servers</code
+              > configuration
             </p>
           </div>
           <span class="text-subtle text-xs transition-transform {showAdvanced ? 'rotate-90' : ''}"
@@ -819,11 +790,13 @@
 
             <div class="flex items-center justify-between gap-4">
               <div class="flex items-center gap-2">
-                {#if userMcpSaveStatus === 'saved'}
+                {#if $advancedSaveStatus$ === 'saved'}
                   <span class="text-xs text-green-500">✓ Saved</span>
-                {:else if userMcpSaveStatus === 'error'}
-                  <span class="text-xs text-destructive-foreground">✗ {userMcpSaveError}</span>
-                {:else if userMcpSaveStatus === 'saving'}
+                {:else if $advancedSaveStatus$ === 'error'}
+                  <span class="text-xs text-destructive-foreground"
+                    >✗ {$advancedSaveError$ || 'Failed to save'}</span
+                  >
+                {:else if $advancedSaveStatus$ === 'saving'}
                   <span class="text-xs text-subtle">Saving...</span>
                 {/if}
               </div>
@@ -845,7 +818,7 @@
                   variant="outline"
                   size="sm"
                   onclick={handleSaveAdvanced}
-                  disabled={userMcpSaveStatus === 'saving'}
+                  disabled={$advancedSaveStatus$ === 'saving'}
                 >
                   Save Settings
                 </Button>

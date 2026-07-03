@@ -8,6 +8,7 @@ import {
   applyWorkspaceDisabledServers,
   initialState,
   mcpSettingsReducer,
+  setAdvancedSaveStatus,
   setServerErrorMessage,
   setServerStatus,
   setServers,
@@ -33,6 +34,18 @@ describe("mcpSettingsReducer", () => {
 
     expect(state.statusMap.linear).toBe("error");
     expect(state.errorMessages.linear).toBe("Unauthorized");
+  });
+
+  it("tracks the advanced-editor save status and clears the error on non-error states", () => {
+    expect(initialState.advancedSaveStatus).toBe("idle");
+
+    let state = mcpSettingsReducer(initialState, setAdvancedSaveStatus("error", "bad JSON"));
+    expect(state.advancedSaveStatus).toBe("error");
+    expect(state.advancedSaveError).toBe("bad JSON");
+
+    state = mcpSettingsReducer(state, setAdvancedSaveStatus("saved"));
+    expect(state.advancedSaveStatus).toBe("saved");
+    expect(state.advancedSaveError).toBeNull();
   });
 
   it("applies workspace disabled server names without enabled booleans", () => {

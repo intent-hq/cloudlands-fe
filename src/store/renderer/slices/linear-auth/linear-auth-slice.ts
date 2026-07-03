@@ -15,16 +15,25 @@ export const initialState: LinearAuthSliceState = {
 
 // --- Actions ---
 
-/** Trigger: initialize linear auth (saga handles IPC) */
+/** Trigger: initialize linear auth (store-service probes the daemon) */
 export const initializeLinearAuth = createAction("linearAuth/initialize");
 
-/** Trigger: start auth flow (saga handles IPC + polling) */
+/**
+ * Trigger: connect with a pasted Linear personal API key. The store-service
+ * stores it via the daemon keyring path (`linear.token`, PROTOCOL §5.28) and
+ * re-probes `linear.authStatus`.
+ */
+export const connectLinear = createAction<[apiKey: string]>("linearAuth/connect");
+
+/**
+ * Legacy trigger kept for surfaces with a one-click "Connect" button
+ * (LinearPicker, IssueSuggestions). §5.28 has no OAuth flow to launch, so the
+ * store-service maps this to a status re-probe; the real connect is
+ * `connectLinear(apiKey)` from the settings panel.
+ */
 export const startLinearAuth = createAction("linearAuth/startAuth");
 
-/** Trigger: cancel auth flow */
-export const cancelLinearAuth = createAction("linearAuth/cancelAuth");
-
-/** Trigger: logout */
+/** Trigger: logout — clears the daemon-held API key and re-probes */
 export const logoutLinear = createAction("linearAuth/logout");
 
 /** Trigger: refresh auth state */
@@ -55,11 +64,6 @@ export const setLinearIsAuthenticating = createAction<[value: boolean]>(
   "linearAuth/setIsAuthenticating",
 );
 
-/** Set OAuth URL */
-export const setLinearOauthUrl = createAction<[url: string | null]>(
-  "linearAuth/setOauthUrl",
-);
-
 /** Set error */
 export const setLinearError = createAction<[error: string | null]>(
   "linearAuth/setError",
@@ -87,10 +91,6 @@ export const linearAuthReducer = createReducer<LinearAuthSliceState>(initialStat
   .with(setLinearIsAuthenticating, (state, { payload: [value] }) => ({
     ...state,
     isAuthenticating: value,
-  }))
-  .with(setLinearOauthUrl, (state, { payload: [url] }) => ({
-    ...state,
-    oauthUrl: url,
   }))
   .with(setLinearError, (state, { payload: [error] }) => ({
     ...state,

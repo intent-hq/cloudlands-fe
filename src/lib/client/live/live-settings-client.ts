@@ -7,8 +7,18 @@
  * accessors translate FE state shapes ↔ BE setting paths so callers do not
  * need to know the dotted-path catalog:
  *
- *   - `mcp.servers`                       ↔ `getMcpServers` / `setMcpServers`
+ *   - `mcp.servers.*` (§5.22)             ↔ `getMcpServers` / `setMcpServers`
  *   - `mcp.disabledServers` / `mcp.enableUserServers` are surfaced via `list()`.
+ *
+ * MCP note: the `mcp.servers` setting is **sensitive** (§5.12) — `settings.get`
+ * only ever returns the redacted placeholder — and the daemon persists it as an
+ * id→config object owned by the `mcp.servers.*` lifecycle service. The seam's
+ * list-shaped accessors therefore translate to the §5.22 CRUD: `getMcpServers`
+ * reads `mcp.servers.list`, and `setMcpServers` diffs the desired list against
+ * the daemon's and issues `create` / `update` / `delete` / `toggle` calls.
+ * Untouched servers never produce an `update`, so their keychain-held `env` /
+ * `headers` secrets (redacted on the wire) are preserved; an *edited* server is
+ * replaced wholesale per §5.22 semantics.
  *   - `providers.active` / `providers.enabled`            ↔ provider settings
  *   - `backgroundAgents.defaultModel` / `.typeOverrides` /
  *     `.providerSettings`                                 ↔ background agents
@@ -179,16 +189,54 @@ export class LiveSettingsClient implements SettingsClient {
   }
 
   async getMcpServers(): Promise<McpServerConfig[]> {
-    const entry = await this.get("mcp.servers");
-    if (!entry) return [];
-    const value = entry.value;
-    return Array.isArray(value) ? (value as McpServerConfig[]) : [];
+    const wire = await listWireMcpServers();
+    return wire.flatMap((server) => fromWireMcpConfig(server) ?? []);
   }
 
   async setMcpServers(servers: McpServerConfig[]): Promise<MutationResult> {
-    return runMutation("settings.update", {
-      changes: [{ path: "mcp.servers", value: servers }],
-    });
+    try {
+      const existing = await listWireMcpServers();
+      const existingByName = new Map<string, WireMcpServerConfig>();
+      for (const server of existing) {
+        if (typeof server.name === "string" && server.name) {
+          existingByName.set(server.name, server);
+        }
+      }
+      const desiredNames = new Set(servers.map((s) => s.name));
+
+      for (const server of existing) {
+        if (server.name && server.id && !desiredNames.has(server.name)) {
+          await backendRequest("mcp.servers.delete", { serverId: server.id });
+        }
+      }
+      for (const config of servers) {
+        const current = existingByName.get(config.name);
+        if (!current?.id) {
+          await backendRequest("mcp.servers.create", { config: toWireMcpConfig(config) });
+          continue;
+        }
+        if (!sameMcpConfigBody(current, config)) {
+          await backendRequest("mcp.servers.update", {
+            serverId: current.id,
+            config: toWireMcpConfig(config, current.id),
+          });
+        }
+        const desiredEnabled = config.disabled !== true;
+        const currentEnabled = current.enabled !== false;
+        if (currentEnabled !== desiredEnabled) {
+          await backendRequest("mcp.servers.toggle", {
+            serverId: current.id,
+            enabled: desiredEnabled,
+          });
+        }
+      }
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   async getWorkspaceSettings(_workspaceId: string): Promise<SingleWorkspaceSettings | null> {
@@ -250,6 +298,86 @@ export class LiveSettingsClient implements SettingsClient {
     handler(null);
     return () => {};
   }
+}
+
+/** Wire `McpServerConfig` (PROTOCOL §5.22) — the daemon's id/transport/enabled shape. */
+interface WireMcpServerConfig {
+  id?: string;
+  name?: string;
+  transport?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  enabled?: boolean;
+  scope?: string;
+}
+
+/** `mcp.servers.list` (§5.22) — sensitive `env`/`headers` values arrive redacted. */
+async function listWireMcpServers(): Promise<WireMcpServerConfig[]> {
+  try {
+    const result = await backendRequest<{ servers?: WireMcpServerConfig[] }>(
+      "mcp.servers.list",
+    );
+    return Array.isArray(result?.servers) ? result.servers : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Map a wire config (§5.22) to the FE `McpServerConfig` shape; `null` when nameless. */
+function fromWireMcpConfig(wire: WireMcpServerConfig): McpServerConfig | null {
+  if (typeof wire?.name !== "string" || !wire.name) return null;
+  const type = wire.transport === "http" || wire.transport === "sse" ? wire.transport : "stdio";
+  const config: McpServerConfig = { name: wire.name, type };
+  if (typeof wire.command === "string" && wire.command) config.command = wire.command;
+  if (Array.isArray(wire.args)) config.args = wire.args;
+  if (wire.env && typeof wire.env === "object") config.env = wire.env;
+  if (typeof wire.url === "string" && wire.url) config.url = wire.url;
+  if (wire.headers && typeof wire.headers === "object") config.headers = wire.headers;
+  if (wire.enabled === false) config.disabled = true;
+  return config;
+}
+
+/** Map an FE config to the wire shape (§5.22): `type`→`transport`, `disabled`→`enabled`. */
+function toWireMcpConfig(config: McpServerConfig, id?: string): Record<string, unknown> {
+  const wire: Record<string, unknown> = {
+    name: config.name,
+    transport: config.type,
+    enabled: config.disabled !== true,
+  };
+  if (id) wire.id = id;
+  if (config.command) wire.command = config.command;
+  if (config.args) wire.args = config.args;
+  if (config.env) wire.env = config.env;
+  if (config.url) wire.url = config.url;
+  if (config.headers) wire.headers = config.headers;
+  return wire;
+}
+
+/**
+ * Whether the desired FE config matches the daemon's stored body (enabled flag
+ * excluded — that is `toggle`'s job). Both sides are compared in the mapped FE
+ * shape, so a list that round-tripped through `getMcpServers` unchanged issues
+ * no `update` — keeping the daemon's real (redacted-on-the-wire) secrets intact.
+ */
+function sameMcpConfigBody(current: WireMcpServerConfig, desired: McpServerConfig): boolean {
+  const mapped = fromWireMcpConfig(current);
+  if (!mapped) return false;
+  const sortedEntries = (record?: Record<string, string>) =>
+    record ? Object.entries(record).sort(([a], [b]) => a.localeCompare(b)) : null;
+  const canonical = (c: McpServerConfig) =>
+    JSON.stringify([
+      c.name,
+      c.type,
+      c.command ?? null,
+      c.args ?? null,
+      sortedEntries(c.env),
+      c.url ?? null,
+      sortedEntries(c.headers),
+    ]);
+  return canonical(mapped) === canonical(desired);
 }
 
 /** Find a `SettingDefinitionWithValue` by path; `null` when missing or the daemon redacted it. */

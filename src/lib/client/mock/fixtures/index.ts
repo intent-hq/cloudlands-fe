@@ -284,24 +284,6 @@ export const mockMcpServers: McpServerConfig[] = [
   },
 ];
 
-/** Raw contents of ~/.augment/settings.json for the MCP advanced editor. */
-export const mockUserMcpSettingsContent = JSON.stringify(
-  {
-    mcpServers: {
-      github: { type: "http", url: "https://mcp.github.com/mcp", authType: "oauth" },
-      filesystem: {
-        command: "npx",
-        args: ["-y", "@modelcontextprotocol/server-filesystem", "/mock/web-app"],
-      },
-    },
-  },
-  null,
-  2,
-);
-
-/** Filesystem path shown for the MCP advanced editor. */
-export const mockUserMcpSettingsPath = "/mock/home/.augment/settings.json";
-
 /** Background-agent model assignments for the background-agent settings panel. */
 export const mockBackgroundAgentSettings: BackgroundAgentSettingsState = {
   defaultModel: "mock-model",

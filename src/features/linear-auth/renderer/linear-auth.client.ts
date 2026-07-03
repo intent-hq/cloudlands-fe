@@ -1,45 +1,22 @@
 import { invoke } from '$lib/electron-bridge';
 import { LINEAR_AUTH_CHANNELS } from '../constants';
-import type { LinearAuthState, LinearAuthStatus, StartAuthResult } from '../types';
+import type { LinearAuthState, LinearAuthStatus } from '../types';
 
 /**
  * Linear Auth Client
  *
- * Renderer-side client for Linear authentication operations.
- * Communicates with the main process via IPC.
+ * Renderer-side client for Linear read operations, bridged to the daemon's
+ * `linear.*` namespace (PROTOCOL §5.28). There is no OAuth flow in the
+ * API-key model — connect/disconnect run through the daemon settings seam
+ * (see linear-auth-store-service.ts), so this client exposes reads only.
  */
 export const linearAuthClient = {
   /**
-   * Check if user is authenticated with Linear via Augment
+   * Check if user is authenticated with Linear
    */
   async isAuthenticated(): Promise<boolean> {
     try {
       return await invoke<boolean>(LINEAR_AUTH_CHANNELS.IS_AUTHENTICATED);
-    } catch {
-      return false;
-    }
-  },
-
-  /**
-   * Start Linear authentication - opens OAuth URL in browser
-   */
-  async startAuth(): Promise<StartAuthResult> {
-    return await invoke<StartAuthResult>(LINEAR_AUTH_CHANNELS.START_AUTH);
-  },
-
-  /**
-   * Cancel ongoing authentication
-   */
-  async cancelAuth(): Promise<void> {
-    await invoke(LINEAR_AUTH_CHANNELS.CANCEL_AUTH);
-  },
-
-  /**
-   * Logout / revoke Linear access
-   */
-  async logout(): Promise<boolean> {
-    try {
-      return await invoke<boolean>(LINEAR_AUTH_CHANNELS.LOGOUT);
     } catch {
       return false;
     }

@@ -19,6 +19,8 @@ import { store as appStore } from "$store/renderer/store";
 import {
   addServer,
   loadServers,
+  saveAdvancedJson,
+  setAdvancedSaveStatus,
   setDisabledServers,
   setEnabled,
   setServers,
@@ -30,6 +32,7 @@ import {
   refreshMcpServers,
   removeMcpServer,
   restartMcpServer,
+  saveAdvancedMcpJson,
   testMcpServerConnection,
   toggleMcpServer,
 } from "./mcp-management-service";
@@ -51,6 +54,7 @@ describe("mcpManagementService (fake seam, real store)", () => {
     appStore.dispatch(setServers([]));
     appStore.dispatch(setDisabledServers({}));
     appStore.dispatch(setEnabled(false));
+    appStore.dispatch(setAdvancedSaveStatus("idle"));
   });
 
   it("refreshMcpServers fetches via the seam and converges the store", async () => {
@@ -158,6 +162,55 @@ describe("mcpManagementService (fake seam, real store)", () => {
     await flush();
 
     expect(mcp().servers.map((s) => s.name)).toEqual(["viaAdd"]);
+    expect(settings.setMcpServers).toHaveBeenCalledTimes(1);
+  });
+
+  it("saveAdvancedMcpJson replaces the whole set (removals included) and persists", async () => {
+    appStore.dispatch(setServers([makeServer({ name: "stale" })]));
+
+    await saveAdvancedMcpJson(
+      JSON.stringify({
+        mcpServers: {
+          fresh: { command: "npx", args: ["serve"] },
+          paused: { command: "npx", disabled: true },
+        },
+      }),
+    );
+
+    expect(mcp().servers.map((s) => s.name)).toEqual(["fresh", "paused"]);
+    expect(mcp().disabledServers).toEqual({ paused: true });
+    expect(mcp().statusMap.paused).toBe("disabled");
+    expect(settings.setMcpServers).toHaveBeenCalledTimes(1);
+    const persisted = settings.setMcpServers.mock.calls[0][0] as McpServerConfig[];
+    expect(persisted.map((s) => s.name)).toEqual(["fresh", "paused"]);
+    expect(mcp().advancedSaveStatus).toBe("saved");
+  });
+
+  it("saveAdvancedMcpJson surfaces invalid JSON without touching state or seam", async () => {
+    appStore.dispatch(setServers([makeServer({ name: "keep" })]));
+
+    await saveAdvancedMcpJson("{not json");
+
+    expect(mcp().servers.map((s) => s.name)).toEqual(["keep"]);
+    expect(settings.setMcpServers).not.toHaveBeenCalled();
+    expect(mcp().advancedSaveStatus).toBe("error");
+    expect(mcp().advancedSaveError).toBe("Invalid JSON format");
+  });
+
+  it("saveAdvancedMcpJson surfaces a seam persistence failure as an error status", async () => {
+    settings.setMcpServers.mockResolvedValueOnce({ success: false, error: "boom" } as never);
+
+    await saveAdvancedMcpJson(JSON.stringify({ mcpServers: { x: { command: "x" } } }));
+
+    expect(mcp().advancedSaveStatus).toBe("error");
+    expect(mcp().advancedSaveError).toBe("boom");
+  });
+
+  it("dispatching saveAdvancedJson triggers the replace-all save (middleware wiring)", async () => {
+    appStore.dispatch(saveAdvancedJson(JSON.stringify({ mcpServers: { via: { command: "c" } } })));
+    await flush();
+
+    expect(mcp().servers.map((s) => s.name)).toEqual(["via"]);
     expect(settings.setMcpServers).toHaveBeenCalledTimes(1);
   });
 });

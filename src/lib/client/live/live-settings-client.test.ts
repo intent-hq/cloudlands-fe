@@ -124,40 +124,116 @@ describe("LiveSettingsClient wire requests (fake transport)", () => {
 });
 
 describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () => {
-  it("getMcpServers reads `mcp.servers` via settings.get and unwraps the value array", async () => {
-    const servers = [
-      { name: "github", type: "http" as const, url: "https://mcp.github.com/mcp" },
-    ];
+  it("getMcpServers reads mcp.servers.list (§5.22) and maps transport/enabled → type/disabled", async () => {
     mockedRequest.mockResolvedValueOnce({
-      path: "mcp.servers",
-      value: servers,
-      definition: {
-        path: "mcp.servers",
-        label: "MCP servers",
-        description: "External MCP server configs",
-        category: "mcp",
-        type: "string",
-        sensitive: true,
-      },
+      servers: [
+        {
+          id: "srv-fs",
+          name: "filesystem",
+          transport: "stdio",
+          command: "npx",
+          args: ["-y", "@modelcontextprotocol/server-filesystem"],
+          env: { API_KEY: "********" },
+          enabled: true,
+        },
+        { id: "srv-gh", name: "github", transport: "http", url: "https://mcp.github.com/mcp", enabled: false },
+      ],
     });
     const client = new LiveSettingsClient();
 
     const result = await client.getMcpServers();
-    expect(mockedRequest).toHaveBeenCalledWith("settings.get", { path: "mcp.servers" });
-    expect(result).toEqual(servers);
+    expect(mockedRequest).toHaveBeenCalledWith("mcp.servers.list");
+    expect(result).toEqual([
+      {
+        name: "filesystem",
+        type: "stdio",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem"],
+        env: { API_KEY: "********" },
+      },
+      { name: "github", type: "http", url: "https://mcp.github.com/mcp", disabled: true },
+    ]);
   });
 
-  it("setMcpServers writes the array via settings.update under path mcp.servers", async () => {
+  it("getMcpServers folds a transport failure to an empty list", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("boom"));
+    const client = new LiveSettingsClient();
+    expect(await client.getMcpServers()).toEqual([]);
+  });
+
+  it("setMcpServers diffs against mcp.servers.list: creates new, deletes missing", async () => {
     mockedRequest.mockResolvedValueOnce({
-      applied: [{ path: "mcp.servers", value: [] }],
+      servers: [{ id: "srv-old", name: "old-server", transport: "stdio", command: "old", enabled: true }],
     });
+    mockedRequest.mockResolvedValue({});
     const client = new LiveSettingsClient();
 
-    const result = await client.setMcpServers([]);
-    expect(mockedRequest).toHaveBeenCalledWith("settings.update", {
-      changes: [{ path: "mcp.servers", value: [] }],
+    const result = await client.setMcpServers([
+      { name: "fresh", type: "stdio", command: "npx", args: ["serve"] },
+    ]);
+
+    expect(mockedRequest).toHaveBeenNthCalledWith(1, "mcp.servers.list");
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, "mcp.servers.delete", { serverId: "srv-old" });
+    expect(mockedRequest).toHaveBeenNthCalledWith(3, "mcp.servers.create", {
+      config: { name: "fresh", transport: "stdio", enabled: true, command: "npx", args: ["serve"] },
     });
     expect(result).toEqual({ success: true });
+  });
+
+  it("setMcpServers updates a changed body and toggles a changed enabled flag", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      servers: [
+        { id: "srv-a", name: "alpha", transport: "stdio", command: "alpha-cmd", enabled: true },
+        { id: "srv-b", name: "beta", transport: "stdio", command: "beta-cmd", enabled: true },
+      ],
+    });
+    mockedRequest.mockResolvedValue({});
+    const client = new LiveSettingsClient();
+
+    const result = await client.setMcpServers([
+      { name: "alpha", type: "stdio", command: "alpha-cmd-v2" },
+      { name: "beta", type: "stdio", command: "beta-cmd", disabled: true },
+    ]);
+
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, "mcp.servers.update", {
+      serverId: "srv-a",
+      config: { name: "alpha", transport: "stdio", enabled: true, command: "alpha-cmd-v2", id: "srv-a" },
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(3, "mcp.servers.toggle", {
+      serverId: "srv-b",
+      enabled: false,
+    });
+    expect(mockedRequest).toHaveBeenCalledTimes(3);
+    expect(result).toEqual({ success: true });
+  });
+
+  it("setMcpServers issues no update for an unchanged round-tripped server (secrets preserved)", async () => {
+    const wire = {
+      id: "srv-fs",
+      name: "filesystem",
+      transport: "stdio" as const,
+      command: "npx",
+      env: { TOKEN: "********" },
+      enabled: true,
+    };
+    mockedRequest.mockResolvedValueOnce({ servers: [wire] });
+    const client = new LiveSettingsClient();
+
+    const result = await client.setMcpServers([
+      { name: "filesystem", type: "stdio", command: "npx", env: { TOKEN: "********" } },
+    ]);
+
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ success: true });
+  });
+
+  it("setMcpServers folds a wire failure to { success: false, error }", async () => {
+    mockedRequest.mockResolvedValueOnce({ servers: [] });
+    mockedRequest.mockRejectedValueOnce(new Error("mcp server already exists: srv-x"));
+    const client = new LiveSettingsClient();
+
+    const result = await client.setMcpServers([{ name: "x", type: "stdio", command: "x" }]);
+    expect(result).toEqual({ success: false, error: "mcp server already exists: srv-x" });
   });
 
   it("getProviderSettings folds providers.active + providers.enabled out of settings.list", async () => {
