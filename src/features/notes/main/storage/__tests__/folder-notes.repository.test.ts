@@ -14,15 +14,12 @@ import {
   expect,
   beforeEach,
   afterEach,
-  beforeAll,
-  afterAll,
 } from 'vitest';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { FolderBasedNotesRepository } from '../folder-notes.repository';
 import { crdtDocumentManager } from '../crdt-document-manager';
 import { getNoteStoragePaths } from '../note-storage-paths';
-import { setGitEnabled } from '../git-version.service';
 import { parseFrontmatter } from '../frontmatter';
 import {
   ContentType,
@@ -69,15 +66,6 @@ function createTestNote(overrides: Partial<Note> = {}): Note {
 describe('FolderBasedNotesRepository', () => {
   let repository: FolderBasedNotesRepository;
   let testNotePaths: ReturnType<typeof getNoteStoragePaths>;
-
-  // Disable git for tests (avoids spawn issues in test environment)
-  beforeAll(() => {
-    setGitEnabled(false);
-  });
-
-  afterAll(() => {
-    setGitEnabled(true);
-  });
 
   beforeEach(async () => {
     repository = new FolderBasedNotesRepository();
