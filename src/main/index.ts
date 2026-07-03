@@ -303,7 +303,6 @@ import { setupCortexIPC } from '../features/cortex/main/cortex.ipc';
 import { setupDroidIPC } from '../features/droid/main/droid.ipc';
 import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
-import { setupCommentsIPC } from '../features/comments/main/comments.ipc';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
 import { setupDiffsIPC } from '../features/diffs/main/diffs.ipc';
 import { setupEditorIPC } from '../features/editor/main/editor.ipc';
@@ -1462,7 +1461,6 @@ app.whenReady().then(async () => {
 
     setupFirstVisitStateIPC();
     setupPanelLayoutHistoryIPC();
-    setupCommentsIPC();
     setupUserActivityIPC();
     setupLineAttributionIPC();
     setupFileAttributionIPC();

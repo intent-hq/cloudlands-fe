@@ -572,17 +572,6 @@ export const IPC_CHANNELS = {
     INSTALL_CLI: 'shell:install-cli',
   },
 
-  // Comments
-  COMMENTS: {
-    CREATE: 'comments:create',
-    LIST: 'comments:list',
-    UPDATE: 'comments:update',
-    DELETE: 'comments:delete',
-    ADD: 'comments:add',
-    SUGGEST_CHANGE: 'comments:suggest-change',
-    UPDATE_STATUS: 'comments:update-status',
-  },
-
   // Editor
   EDITOR: {
     GET_SELECTION: 'editor:get-selection',
