@@ -92,6 +92,7 @@
   chatRebindEnded,
   chatTrackedWorkspaceSet,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
+  import type { InitialMessagePayload } from '$store/renderer/slices/chat-state/chat-state-types';
   import {
   selectChatError,
   selectChatIsStalled,
@@ -1220,23 +1221,59 @@
     }
   }
 
-  function shouldRequestInitialMessageFallback(wsId: string, currentAgentId: string): boolean {
+  // Build the sendInitialMessageRequested payload from the orphaned pending
+  // config, or return null when no fallback send is needed. The payload MUST
+  // carry the message content — dispatching `{ wsId }` alone is silently
+  // rejected by the chat-send middleware and the initial message never
+  // reaches agent.sendMessage.
+  function getInitialMessageFallbackPayload(
+    wsId: string,
+    currentAgentId: string,
+  ): InitialMessagePayload | null {
     const agentConfigKey = `workspace:${wsId}:agent-config`;
     const agentConfigData = sessionStorage.getItem(agentConfigKey);
-    if (!agentConfigData) return false;
+    if (!agentConfigData) return null;
 
     try {
       const config = JSON.parse(agentConfigData);
-      if (config.agentId !== currentAgentId || !hasInitialMessageContent(config)) return false;
-      if (config.messageSent) return false;
-      return !hasFreshInitialAgentActivationMarker(wsId, currentAgentId);
+      if (config.agentId !== currentAgentId || !hasInitialMessageContent(config)) return null;
+      if (config.messageSent) return null;
+      if (hasFreshInitialAgentActivationMarker(wsId, currentAgentId)) return null;
+      // Mirror the activation path (agent-factory): substitute the placeholder
+      // when the config carries only context references so the payload always
+      // has sendable text.
+      const message =
+        config.prompt?.trim?.() ||
+        (config.contextReferences?.length
+          ? 'I have linked some context above. Please review it and help me with this task.'
+          : '');
+      return {
+        wsId,
+        message,
+        imageBlocks: config.imageBlocks ?? null,
+        contextReferences: config.contextReferences ?? null,
+      };
     } catch (err) {
       logger.warn('Failed to parse agent config for fallback send', {
         agentId: currentAgentId,
         wsId,
         error: err,
       });
-      return false;
+      return null;
+    }
+  }
+
+  // Mark the pending config as sent BEFORE dispatching the fallback send
+  // (mirrors the activation saga's onInitialSendCommit) so a remount cannot
+  // double-send the initial message.
+  function markInitialMessageSent(wsId: string): void {
+    const agentConfigKey = `workspace:${wsId}:agent-config`;
+    try {
+      const raw = sessionStorage.getItem(agentConfigKey);
+      if (!raw) return;
+      sessionStorage.setItem(agentConfigKey, JSON.stringify({ ...JSON.parse(raw), messageSent: true }));
+    } catch (err) {
+      logger.warn('Failed to mark initial message as sent', { wsId, error: err });
     }
   }
 
@@ -1670,13 +1707,12 @@
     // Request initial message send only for orphaned pending config.
     // Fresh workspace creation is owned by the activation saga, which sends the
     // first prompt and marks messageSent via onInitialSendCommit before sending.
-    if (
-      workspace &&
-      agentId &&
-      $agentMessages$.length === 0 &&
-      shouldRequestInitialMessageFallback(workspace.id, agentId)
-    ) {
-      appStore.dispatch(sendInitialMessageRequested(agentId, { wsId: workspace.id }));
+    if (workspace && agentId && $agentMessages$.length === 0) {
+      const fallbackPayload = getInitialMessageFallbackPayload(workspace.id, agentId);
+      if (fallbackPayload) {
+        markInitialMessageSent(workspace.id);
+        appStore.dispatch(sendInitialMessageRequested(agentId, fallbackPayload));
+      }
     }
 
     // Scroll handling on mount

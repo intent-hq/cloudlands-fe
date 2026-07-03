@@ -248,19 +248,34 @@ export function createChatSendMiddleware(): StoreMiddleware {
         | undefined;
       const agentId = payload?.agentId;
       const inner = payload?.payload;
-      if (
-        typeof agentId === "string" &&
-        agentId.length > 0 &&
-        inner &&
-        !inner.alreadySent &&
-        typeof inner.wsId === "string" &&
-        inner.wsId.length > 0 &&
-        typeof inner.message === "string" &&
-        inner.message.length > 0
-      ) {
-        void dispatchToLifecycle(agentId, inner.wsId, inner.message, undefined, {
-          imageBlocks: inner.imageBlocks ?? undefined,
-        });
+      if (typeof agentId !== "string" || agentId.length === 0) {
+        // No agent id — chatSendFailed cannot be addressed; log loudly instead.
+        logger.error("sendInitialMessageRequested dropped: missing agentId", { payload });
+      } else if (inner?.alreadySent) {
+        // Intentional no-op: the backend already sent the message before
+        // ChatPanel hydration.
+      } else {
+        const wsId = typeof inner?.wsId === "string" && inner.wsId.length > 0 ? inner.wsId : null;
+        const message = typeof inner?.message === "string" ? inner.message : "";
+        const imageBlocks = inner?.imageBlocks ?? undefined;
+        const hasSendableContent = message.trim().length > 0 || (imageBlocks?.length ?? 0) > 0;
+        if (!wsId || !hasSendableContent) {
+          // Fail LOUDLY (mirrors the agent-send silent-drop guard): a
+          // malformed initial-send trigger must surface as a send failure —
+          // dispatching without the `message` field was exactly how initial
+          // messages silently never reached agent.sendMessage.
+          const reason = !wsId
+            ? "Initial message dispatch is missing its workspace id (wsId)"
+            : "Initial message dispatch has no sendable content (missing `message` text and imageBlocks)";
+          logger.error("sendInitialMessageRequested dropped: malformed payload", {
+            agentId,
+            wsId,
+            reason,
+          });
+          appStore.dispatch(chatSendFailed(agentId, reason));
+        } else {
+          void dispatchToLifecycle(agentId, wsId, message, undefined, { imageBlocks });
+        }
       }
     } else if ((action as { type?: unknown }).type === removeQueuedMessageRequested.type) {
       const payload = (action as { payload?: unknown }).payload as
