@@ -12,10 +12,6 @@
  * between `auggie.ipc.ts` and `execute-auggie-command.ts`.
  */
 
-import { existsSync } from 'fs';
-import * as fs from 'fs/promises';
-import * as os from 'os';
-import * as path from 'path';
 import { Logger } from '../../../shared/logger';
 import { getEnhancedPath as getHostEnhancedPath } from '../../../shared/main/find-binary';
 import { getBackendClient } from '../../backend/main/backend.ipc';
@@ -29,44 +25,6 @@ const logger = new Logger('AuggiePath');
  */
 export function getEnhancedPath(): string {
   return getHostEnhancedPath();
-}
-
-export async function saveAuggiePath(auggiePath: string): Promise<void> {
-  const savedPathFile = path.join(os.homedir(), '.augment', 'auggie-path');
-  const augmentDir = path.join(os.homedir(), '.augment');
-
-  try {
-    if (!existsSync(augmentDir)) {
-      await fs.mkdir(augmentDir, { recursive: true });
-    }
-
-    await fs.writeFile(savedPathFile, auggiePath, 'utf8');
-    logger.debug('Saved auggie path to file', { file: savedPathFile });
-
-    // Verify the file is immediately readable (handles file system sync delays)
-    for (let verifyAttempt = 0; verifyAttempt < 5; verifyAttempt++) {
-      try {
-        const verifyContent = await fs.readFile(savedPathFile, 'utf8');
-        if (verifyContent.trim() === auggiePath) {
-          logger.debug('Verified saved auggie path file is readable', {
-            attempt: verifyAttempt + 1,
-          });
-          break;
-        }
-      } catch (verifyError) {
-        logger.debug('File not yet readable, retrying', {
-          attempt: verifyAttempt + 1,
-          error: (verifyError as Error).message,
-        });
-      }
-
-      if (verifyAttempt < 4) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-    }
-  } catch (error) {
-    logger.debug('Could not save auggie path', { error: (error as Error).message });
-  }
 }
 
 /**

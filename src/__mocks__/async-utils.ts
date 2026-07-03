@@ -17,4 +17,3 @@ export const getNpmGlobalBinAsync = vi.fn().mockResolvedValue(null);
 export const writeJsonAsync = vi.fn().mockResolvedValue(undefined);
 export const readJsonAsync = vi.fn().mockResolvedValue(null);
 export const VSCODE_COMMON_PATHS: string[] = [];
-export const AUGGIE_COMMON_PATHS: string[] = [];

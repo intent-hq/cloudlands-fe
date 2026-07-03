@@ -9,15 +9,15 @@
  * PROTOCOL.md §5.14), frame-accumulating stdout/stderr and throwing on
  * non-zero exit with `.stdout` / `.stderr` / numeric `.code` — the same
  * G1 fidelity contract git-env exposes. `findExecutableAsync` /
- * `findVSCodeAsync` / `findAuggieAsync` forward to `host.findBinary` via
- * the shared `findBinary` helper. The fs helpers below stay as local
- * promisified `fs` calls (not execution — untouched by this seam).
+ * `findVSCodeAsync` forward to `host.findBinary` via the shared
+ * `findBinary` helper; `findAuggieAsync` delegates to the daemon-backed
+ * `findAuggiePathAsync` (`host.checkAuggie`). The fs helpers below stay as
+ * local promisified `fs` calls (not execution — untouched by this seam).
  */
 
 import { Buffer } from 'node:buffer';
 import { promisify } from 'node:util';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { Logger } from '../logger';
 import { renameWithRetry } from './file-sync-utils';
@@ -234,129 +234,6 @@ export const VSCODE_COMMON_PATHS: string[] =
       : ['/usr/bin/code', '/snap/bin/code'];
 
 /**
- * Get common paths for Auggie CLI based on platform.
- * Includes npm global bin locations, nvm paths, and other node version managers.
- */
-function getAuggieCommonPaths(): string[] {
-  const homeDir = os.homedir();
-  const paths: string[] = [];
-
-  if (process.platform === 'win32') {
-    // Windows: npm global locations
-    const appData = process.env.APPDATA || '';
-    const localAppData = process.env.LOCALAPPDATA || '';
-    paths.push(
-      path.join(appData, 'npm', 'auggie.cmd'),
-      path.join(appData, 'npm', 'auggie'),
-      path.join(localAppData, 'npm', 'auggie.cmd'),
-      path.join(localAppData, 'npm', 'auggie'),
-      // nvm-windows
-      path.join(appData, 'nvm', 'auggie.cmd'),
-      // volta on windows
-      path.join(localAppData, 'Volta', 'bin', 'auggie.exe'),
-    );
-  } else {
-    // macOS / Linux
-    paths.push(
-      // Standard system locations
-      '/usr/local/bin/auggie',
-      '/opt/homebrew/bin/auggie', // Apple Silicon Macs
-
-      // npm global bin locations (various configurations)
-      path.join(homeDir, '.npm-global', 'bin', 'auggie'),
-      path.join(homeDir, '.npm-packages', 'bin', 'auggie'),
-      path.join(homeDir, '.local', 'bin', 'auggie'),
-      path.join(homeDir, 'npm', 'bin', 'auggie'),
-
-      // volta
-      path.join(homeDir, '.volta', 'bin', 'auggie'),
-
-      // fnm (Fast Node Manager)
-      path.join(homeDir, '.fnm', 'aliases', 'default', 'bin', 'auggie'),
-
-      // asdf
-      path.join(homeDir, '.asdf', 'shims', 'auggie'),
-
-      // n (node version manager)
-      path.join(homeDir, 'n', 'bin', 'auggie'),
-      '/usr/local/n/bin/auggie',
-
-      // Homebrew node paths (Intel and Apple Silicon)
-      '/usr/local/opt/node/bin/auggie',
-      '/opt/homebrew/opt/node/bin/auggie',
-      '/usr/local/opt/node@18/bin/auggie',
-      '/usr/local/opt/node@20/bin/auggie',
-      '/usr/local/opt/node@22/bin/auggie',
-      '/opt/homebrew/opt/node@18/bin/auggie',
-      '/opt/homebrew/opt/node@20/bin/auggie',
-      '/opt/homebrew/opt/node@22/bin/auggie',
-    );
-  }
-
-  return paths;
-}
-
-/**
- * Dynamically scan nvm directories to find auggie in any installed node version.
- * Returns paths sorted by version (newest first) so we prefer newer node versions.
- */
-async function scanNvmPaths(): Promise<string[]> {
-  const homeDir = os.homedir();
-  const nvmDir = path.join(homeDir, '.nvm', 'versions', 'node');
-  const paths: string[] = [];
-
-  try {
-    const nodeDirs = await fs.promises.readdir(nvmDir);
-    // Sort by version descending (v22 before v20 before v18, etc.)
-    const sortedDirs = nodeDirs
-      .filter((dir) => dir.startsWith('v'))
-      .sort((a, b) => {
-        const versionA = a.replace('v', '').split('.').map(Number);
-        const versionB = b.replace('v', '').split('.').map(Number);
-        for (let i = 0; i < 3; i++) {
-          if ((versionA[i] || 0) !== (versionB[i] || 0)) {
-            return (versionB[i] || 0) - (versionA[i] || 0);
-          }
-        }
-        return 0;
-      });
-
-    for (const dir of sortedDirs) {
-      paths.push(path.join(nvmDir, dir, 'bin', 'auggie'));
-    }
-  } catch {
-    // nvm directory doesn't exist or can't be read
-  }
-
-  return paths;
-}
-
-/**
- * Dynamically scan fnm directories to find auggie in any installed node version.
- */
-async function scanFnmPaths(): Promise<string[]> {
-  const homeDir = os.homedir();
-  const fnmDir = path.join(homeDir, '.fnm', 'node-versions');
-  const paths: string[] = [];
-
-  try {
-    const nodeDirs = await fs.promises.readdir(fnmDir);
-    for (const dir of nodeDirs) {
-      paths.push(path.join(fnmDir, dir, 'installation', 'bin', 'auggie'));
-    }
-  } catch {
-    // fnm directory doesn't exist or can't be read
-  }
-
-  return paths;
-}
-
-/**
- * Common paths for Auggie CLI (static list, use getAuggieCommonPaths() for dynamic)
- */
-export const AUGGIE_COMMON_PATHS: string[] = getAuggieCommonPaths();
-
-/**
  * Find VSCode executable asynchronously
  */
 export async function findVSCodeAsync(): Promise<string | null> {
@@ -364,50 +241,17 @@ export async function findVSCodeAsync(): Promise<string | null> {
 }
 
 /**
- * Find Auggie CLI asynchronously.
- * First checks saved path in ~/.augment/auggie-path, then tries shared binary lookup,
- * then checks common hardcoded paths, then dynamically scans nvm and fnm directories.
+ * Find the Auggie CLI asynchronously by delegating to the daemon-backed
+ * `findAuggiePathAsync` (`host.checkAuggie`). The BE owns the settings
+ * precedence (`context.auggiePath` → `providers.paths.auggie`) and the
+ * canonical discovery (`~/.augment/bin/auggie`, enhanced-PATH scan) — no
+ * local cache files or hardcoded install-path lists on this side.
  */
 export async function findAuggieAsync(): Promise<string | null> {
-  // Check for saved auggie path in ~/.augment/auggie-path (cached from previous discovery)
-  try {
-    const savedPathFile = path.join(os.homedir(), '.augment', 'auggie-path');
-    if (await existsAsync(savedPathFile)) {
-      const savedPath = (await fs.promises.readFile(savedPathFile, 'utf8')).trim();
-      if (savedPath && (await existsAsync(savedPath))) {
-        logger.debug('Found auggie via saved path file', { path: savedPath });
-        return savedPath;
-      }
-    }
-  } catch {
-    // Ignore errors reading saved path
-  }
-
-  // Try shared binary lookup and static common paths
-  const result = await findExecutableAsync('auggie', AUGGIE_COMMON_PATHS);
-  if (result) {
-    return result;
-  }
-
-  // Dynamically scan nvm paths
-  const nvmPaths = await scanNvmPaths();
-  for (const nvmPath of nvmPaths) {
-    if (await existsAsync(nvmPath)) {
-      logger.debug('Found auggie in nvm path', { path: nvmPath });
-      return nvmPath;
-    }
-  }
-
-  // Dynamically scan fnm paths
-  const fnmPaths = await scanFnmPaths();
-  for (const fnmPath of fnmPaths) {
-    if (await existsAsync(fnmPath)) {
-      logger.debug('Found auggie in fnm path', { path: fnmPath });
-      return fnmPath;
-    }
-  }
-
-  return null;
+  const { findAuggiePathAsync } = await import(
+    '../../features/auggie/main/auggie-path'
+  );
+  return findAuggiePathAsync();
 }
 
 /**

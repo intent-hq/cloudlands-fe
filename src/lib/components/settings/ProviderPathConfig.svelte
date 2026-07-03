@@ -6,6 +6,7 @@
    * a provider's CLI executable path. Designed for the Integrations > Providers section.
    */
   import { invoke } from '$lib/electron-bridge';
+  import { appClient } from '$lib/client';
   import {
   faFolder,
   faCheck,
@@ -74,6 +75,19 @@
       // For other providers, we'll need per-provider path storage
       const settingsKey = providerId === 'auggie' ? 'auggiePath' : `${providerId}Path`;
       await invoke('settings:set', { key: settingsKey, value: inputValue });
+      if (providerId === 'auggie') {
+        // The daemon owns auggie discovery (host.checkAuggie reads
+        // context.auggiePath → providers.paths.auggie), so mirror the
+        // configured path into the daemon's providers.paths setting.
+        const entry = await appClient.settings.get('providers.paths');
+        const existing =
+          entry?.value && typeof entry.value === 'object' && !Array.isArray(entry.value)
+            ? (entry.value as Record<string, unknown>)
+            : {};
+        await appClient.settings.update([
+          { path: 'providers.paths', value: { ...existing, auggie: inputValue } },
+        ]);
+      }
       onPathChange?.(inputValue);
       toast.success('Path saved');
       logger.info(`[ProviderPathConfig] Saved ${providerId} path:`, inputValue);

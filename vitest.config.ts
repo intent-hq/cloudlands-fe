@@ -31,8 +31,6 @@ export default defineConfig(async () => {
         // that existed before being excluded. They now run but fail due to these bugs.
         // TODO: Fix these tests and remove exclusions.
         // ================================================================================
-        // Tests that use the real async-utils module (conflicts with mock alias)
-        '**/shared/__tests__/async-utils.test.ts',
         // Tests with wrong import paths (../notes.service instead of ../main/notes.service)
         '**/features/notes/__tests__/add-dependency.test.ts',
         '**/features/notes/__tests__/add-dependency-edge-cases.test.ts',

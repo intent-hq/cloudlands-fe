@@ -265,7 +265,6 @@ vi.mock('$shared/main/async-utils', () => ({
   writeJsonAsync: vi.fn(async () => undefined),
   readJsonAsync: vi.fn(async () => null),
   VSCODE_COMMON_PATHS: [],
-  AUGGIE_COMMON_PATHS: [],
 }));
 
 // Mock child_process.exec to avoid spawning git and shell, but keep spawn intact for integration tests

@@ -4,10 +4,7 @@ import { join } from 'path';
 import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { Logger } from '$shared/logger';
-import {
-  findAuggieAsync,
-  existsAsync,
-} from '../../../shared/main/async-utils';
+import { findAuggieAsync } from '../../../shared/main/async-utils';
 import { hostExec } from '../../../shared/main/host-exec';
 import { hostExecStream, type HostExecStreamHandle } from '../../../shared/main/host-exec-stream';
 
@@ -62,45 +59,14 @@ export class AugmentCLI extends EventEmitter {
   }
 
   /**
-   * Find auggie path asynchronously
-   * PERF: Replaced synchronous execSync with async alternatives
+   * Find auggie path asynchronously via the daemon-backed discovery
+   * (`findAuggieAsync` → `host.checkAuggie`). No local install-path probing.
    */
   private async findAuggiePathAsync(): Promise<string> {
-    // Try using the shared async utility first
     const foundPath = await findAuggieAsync();
     if (foundPath) {
       this.logger.debug('Found auggie at:', { path: foundPath });
       return foundPath;
-    }
-
-    // Try common npm global locations (async, platform-specific)
-    const commonPaths: string[] = [];
-    if (process.platform === 'win32') {
-      const appData = process.env.APPDATA || '';
-      if (appData) {
-        commonPaths.push(`${appData}\\npm\\auggie.cmd`);
-        commonPaths.push(`${appData}\\npm\\auggie`);
-      }
-      commonPaths.push(`${homedir()}\\.npm-global\\auggie.cmd`);
-      commonPaths.push(`${homedir()}\\.npm-global\\auggie`);
-      if (process.env.LOCALAPPDATA) {
-        commonPaths.push(`${process.env.LOCALAPPDATA}\\Volta\\bin\\auggie.exe`);
-      }
-    } else {
-      commonPaths.push(
-        '/usr/local/bin/auggie',
-        '/opt/homebrew/bin/auggie',
-        `${homedir()}/.npm-global/bin/auggie`,
-        `${homedir()}/.local/bin/auggie`,
-        `${homedir()}/.cargo/bin/auggie`,
-      );
-    }
-
-    for (const path of commonPaths) {
-      if (await existsAsync(path)) {
-        this.logger.debug('Found auggie at common location:', { path });
-        return path;
-      }
     }
 
     // Fall back to just "auggie" and let the shell resolve it
