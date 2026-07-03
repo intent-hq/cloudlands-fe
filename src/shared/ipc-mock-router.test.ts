@@ -3,12 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   addMockIpcListener,
   emitMockIpcEvent,
+  getRegisteredMockIpcChannels,
   hasMockIpcHandler,
   mockInvoke,
   mockIpcListenerCount,
   registerMockIpcHandler,
   resetMockIpcRouter,
   setMockIpcInvokeFallback,
+  UNBRIDGED_INVOKE_ALLOWLIST,
+  UnbridgedMockIpcChannelError,
   unregisterMockIpcHandler,
 } from './ipc-mock-router';
 
@@ -18,13 +21,36 @@ describe('ipc-mock-router', () => {
   });
 
   describe('mockInvoke', () => {
-    it('resolves unknown channels to the safe default (undefined)', async () => {
-      expect(await mockInvoke('unknown:channel')).toBeUndefined();
+    it('rejects unknown channels loudly with the channel name and a bridging hint', async () => {
+      const promise = mockInvoke('unknown:channel');
+      await expect(promise).rejects.toBeInstanceOf(UnbridgedMockIpcChannelError);
+      await expect(mockInvoke('unknown:channel')).rejects.toThrow(
+        /No mock IPC handler registered for channel 'unknown:channel'/,
+      );
+      await expect(mockInvoke('unknown:channel')).rejects.toThrow(/seeder/);
+    });
+
+    it('exposes the offending channel on the rejection error', async () => {
+      const error = await mockInvoke('bogus:channel').catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(UnbridgedMockIpcChannelError);
+      expect((error as UnbridgedMockIpcChannelError).channel).toBe('bogus:channel');
+    });
+
+    it('resolves allowlisted absence-tolerant channels to their mapped value', async () => {
+      for (const [channel, value] of UNBRIDGED_INVOKE_ALLOWLIST) {
+        expect(hasMockIpcHandler(channel)).toBe(false);
+        expect(await mockInvoke(channel)).toBe(value);
+      }
     });
 
     it('resolves unknown channels to a configured fallback value', async () => {
       setMockIpcInvokeFallback({ success: true, data: null });
       expect(await mockInvoke('unknown:channel')).toEqual({ success: true, data: null });
+    });
+
+    it('treats an explicitly configured undefined fallback as opting out of rejection', async () => {
+      setMockIpcInvokeFallback(undefined);
+      expect(await mockInvoke('unknown:channel')).toBeUndefined();
     });
 
     it('invokes a registered handler with the original args', async () => {
@@ -48,14 +74,20 @@ describe('ipc-mock-router', () => {
       expect(await mockInvoke('demo:dup')).toBe('second');
     });
 
-    it('falls back again after a handler is unregistered', async () => {
+    it('rejects again after a handler is unregistered', async () => {
       registerMockIpcHandler('demo:temp', () => 'value');
       expect(hasMockIpcHandler('demo:temp')).toBe(true);
 
       unregisterMockIpcHandler('demo:temp');
 
       expect(hasMockIpcHandler('demo:temp')).toBe(false);
-      expect(await mockInvoke('demo:temp')).toBeUndefined();
+      await expect(mockInvoke('demo:temp')).rejects.toBeInstanceOf(UnbridgedMockIpcChannelError);
+    });
+
+    it('lists registered channels for reconciliation', () => {
+      registerMockIpcHandler('demo:b', () => null);
+      registerMockIpcHandler('demo:a', () => null);
+      expect(getRegisteredMockIpcChannels()).toEqual(['demo:a', 'demo:b']);
     });
   });
 
@@ -90,7 +122,7 @@ describe('ipc-mock-router', () => {
   });
 
   describe('resetMockIpcRouter', () => {
-    it('clears handlers, listeners, and the fallback', async () => {
+    it('clears handlers, listeners, and the fallback (loud failure restored)', async () => {
       registerMockIpcHandler('demo:reset', () => 'value');
       addMockIpcListener('evt:reset', () => {});
       setMockIpcInvokeFallback('fallback');
@@ -99,7 +131,7 @@ describe('ipc-mock-router', () => {
 
       expect(hasMockIpcHandler('demo:reset')).toBe(false);
       expect(mockIpcListenerCount('evt:reset')).toBe(0);
-      expect(await mockInvoke('demo:reset')).toBeUndefined();
+      await expect(mockInvoke('demo:reset')).rejects.toBeInstanceOf(UnbridgedMockIpcChannelError);
     });
   });
 });
