@@ -130,7 +130,9 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
   it('scanner sanity: detects the known invoke surface', () => {
     // Guard against the scanner silently matching nothing after a refactor.
     expect(invoked.size).toBeGreaterThan(200);
-    expect(invoked.has('git:status')).toBe(true);
+    // git:status moved to the daemon (backendRequest('git.status'), 4C-3);
+    // git:show-file remains a local-IPC invoke until D2.
+    expect(invoked.has('git:show-file')).toBe(true);
     expect(invoked.has('dialog:open')).toBe(true);
     // Aliased import call site (`import { invoke as invokeIpc }`, scripts.client.ts).
     expect(invoked.has('scripts:get-output')).toBe(true);
@@ -304,25 +306,22 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'get_workspace',
   'git-tracking:get-pull-request',
   'git-tracking:get-remote-url',
-  'git:commit',
+  // 4C-3: git:status/stage/unstage/commit/pull/history/log/file-history were
+  // retired here — those reads/mutations now reach the daemon directly via
+  // backendRequest('git.*') (PROTOCOL §5.6). The remaining git:* entries have
+  // no daemon arm yet (git:diff/show-file/numstat carry the full-file-content
+  // enrichment deferred to D2).
   'git:diff',
   'git:fetch',
-  'git:file-history',
   'git:get-auto-commit-status',
   'git:getRemotes',
-  'git:history',
   'git:isRepository',
-  'git:log',
   'git:numstat',
-  'git:pull',
   'git:push',
   'git:removeLock',
   'git:rename-branch',
   'git:show-file',
-  'git:stage',
   'git:stage-hunk',
-  'git:status',
-  'git:unstage',
   'git:unstage-hunk',
   'github-auth:cancel',
   'github-auth:logout',

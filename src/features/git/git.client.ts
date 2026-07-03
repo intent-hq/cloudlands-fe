@@ -1,20 +1,31 @@
 /**
- * Git IPC Client
+ * Git Client
  *
- * Client-side wrapper for git IPC communication.
- * Used by renderer process to communicate with main process.
+ * Renderer-side wrapper for git operations. Channels with a daemon arm
+ * (PROTOCOL.md §5.6) resolve via `backendRequest('git.*')`: status, stage,
+ * unstage, commit (→ `git.agentCommit`, the wire-canonical commit), history
+ * (→ `git.commits`) and commit details (→ `git.commitDetails`). Operations the
+ * daemon does not serve yet stay on local Electron IPC: hunk staging, push,
+ * fetch, show-file (D2 in flight), lock-file removal, branch rename and
+ * remote listing. All daemon-backed reads/mutations preserve the historical
+ * `Result<T, string>` contract — transport/daemon errors fold to
+ * `{ ok: false, error }`, never a throw.
  */
 
 import type {
   GitStatus,
   CommitInfo,
   WorkspaceId,
-  DiffChunk,
   Result,
   CommandResponse,
 } from '../../shared/types';
-import { GIT_CHANNELS } from '../../shared/ipc';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
+import { backendRequest } from '$lib/client/live/backend-transport';
+
+/** Fold a thrown transport/daemon error into a failed Result. */
+function toError(error: unknown, fallback: string): { ok: false; error: string } {
+  return { ok: false, error: error instanceof Error ? error.message : fallback };
+}
 
 class GitClient {
   private async invoke<T>(channel: string, data?: any): Promise<Result<T, string>> {
@@ -61,17 +72,37 @@ class GitClient {
     }
   }
 
+  // `git.status` (PROTOCOL §5.6) returns the working-tree summary directly in
+  // the renderer `GitStatus` shape.
   async getStatus(workspaceId: WorkspaceId): Promise<Result<GitStatus, string>> {
-    const result = await this.invoke<GitStatus>('git:status', { workspaceId });
-    return result;
+    try {
+      const data = await backendRequest<GitStatus>('git.status', { workspaceId });
+      return { ok: true, data };
+    } catch (error) {
+      return toError(error, 'Failed to get git status');
+    }
   }
 
+  // `git.stage` (PROTOCOL §5.6) requires explicit paths; all-files globs
+  // ('.'/'*'/'--all') are rejected by the daemon with -32603.
   async stageFiles(workspaceId: WorkspaceId, files: string[]): Promise<Result<void, string>> {
-    return this.invoke<void>('git:stage', { workspaceId, paths: files });
+    try {
+      await backendRequest('git.stage', { workspaceId, paths: files });
+      return { ok: true, data: undefined };
+    } catch (error) {
+      return toError(error, 'Failed to stage files');
+    }
   }
 
+  // `git.unstage` (PROTOCOL §5.6 extensions) — the inverse of `git.stage`;
+  // idempotent on already-unstaged paths.
   async unstageFiles(workspaceId: WorkspaceId, files: string[]): Promise<Result<void, string>> {
-    return this.invoke<void>('git:unstage', { workspaceId, paths: files });
+    try {
+      await backendRequest('git.unstage', { workspaceId, paths: files });
+      return { ok: true, data: undefined };
+    } catch (error) {
+      return toError(error, 'Failed to unstage files');
+    }
   }
 
   /**
@@ -104,8 +135,22 @@ class GitClient {
     return this.invoke<void>('git:unstage-hunk', { workspaceId, filePath, hunkPatch });
   }
 
+  // `git.agentCommit` (PROTOCOL §5.6) is the wire-canonical commit method
+  // (`git.commit` is deprecated). This client only serves user-driven commits,
+  // so `userRequested: true` is asserted on every call.
   async commit(workspaceId: WorkspaceId, message: string): Promise<Result<CommitInfo, string>> {
-    return this.invoke<CommitInfo>('git:commit', { workspaceId, message });
+    try {
+      const result = await backendRequest<{ hash?: string }>('git.agentCommit', {
+        workspaceId,
+        message,
+        userRequested: true,
+      });
+      // Historical contract: the legacy git:commit handler returned only the
+      // commit hash in the CommitInfo slot.
+      return { ok: true, data: { hash: result?.hash ?? '' } as CommitInfo };
+    } catch (error) {
+      return toError(error, 'Failed to commit');
+    }
   }
 
   async push(
@@ -116,10 +161,6 @@ class GitClient {
     return this.invoke<void>('git:push', { workspaceId, branch, force });
   }
 
-  async pull(workspaceId: WorkspaceId, branch?: string): Promise<Result<void, string>> {
-    return this.invoke<void>('git:pull', { workspaceId, branch });
-  }
-
   /**
    * Fetch remote changes without merging.
    * Updates remote tracking branches so divergence can be detected.
@@ -128,39 +169,27 @@ class GitClient {
     return this.invoke<void>('git:fetch', { workspaceId });
   }
 
-  async getDiff(workspaceId: WorkspaceId, file?: string): Promise<Result<DiffChunk[], string>> {
-    return this.invoke<DiffChunk[]>('git:diff', { workspaceId, file });
-  }
-
+  // `git.commits` (PROTOCOL §5.6, alias `git.log`) — paginated reverse-
+  // chronological first-parent history. Items already carry the renderer
+  // `CommitInfo` shape (hash/sha/author/email/date/message/files). The
+  // pagination envelope (`nextToken`) is not threaded through this seam.
   async getHistory(
     workspaceId: WorkspaceId,
     limit?: number,
-    since?: string,
-    baseRef?: string,
-    baseCommitSha?: string,
   ): Promise<Result<CommitInfo[], string>> {
-    // Note: git:history returns flat CommitInfo[] (boundary info is only in file-tracking:load-commits)
-    return this.invoke<CommitInfo[]>('git:history', {
-      workspaceId,
-      limit,
-      since,
-      baseRef,
-      baseCommitSha,
-    });
+    try {
+      const result = await backendRequest<{ items?: CommitInfo[] }>('git.commits', {
+        workspaceId,
+        ...(limit !== undefined ? { limit } : {}),
+      });
+      return { ok: true, data: Array.isArray(result?.items) ? result.items : [] };
+    } catch (error) {
+      return toError(error, 'Failed to get git history');
+    }
   }
 
-  async getFileHistory(
-    workspaceId: WorkspaceId,
-    filePath: string,
-    limit?: number,
-  ): Promise<Result<CommitInfo[], string>> {
-    return this.invoke<CommitInfo[]>('git:file-history', {
-      workspaceId,
-      filePath,
-      limit,
-    });
-  }
-
+  // TODO(D2): `git:show-file` has no daemon arm yet — full-file content reads
+  // land with D2. Until then this stays on the local Electron IPC path.
   async showFile(
     workspaceId: WorkspaceId,
     filePath: string,
@@ -189,24 +218,35 @@ class GitClient {
     });
   }
 
+  // `git.commitDetails` (PROTOCOL §5.6) — metadata + per-file
+  // `(additions, deletions)` for one commit. The wire envelope
+  // (`commitHash`/`authorEmail`) is mapped onto the renderer `CommitInfo`
+  // field names (`hash`/`email`); this method keeps its historical throwing
+  // contract.
   async getCommitDetails(
     workspaceId: WorkspaceId,
     commitHash: string,
   ): Promise<
     CommitInfo & { fileDetails?: Array<{ path: string; additions: number; deletions: number }> }
   > {
-    const result = await this.invoke<
-      CommitInfo & { fileDetails?: Array<{ path: string; additions: number; deletions: number }> }
-    >(GIT_CHANNELS.COMMIT_DETAILS, {
-      workspaceId,
-      commitHash,
-    });
-
-    if (result.ok) {
-      return result.data;
-    } else {
-      throw new Error(result.error);
-    }
+    const result = await backendRequest<{
+      commitHash?: string;
+      author?: string;
+      authorEmail?: string;
+      date?: string;
+      message?: string;
+      files?: string[];
+      fileDetails?: Array<{ path: string; additions: number; deletions: number }>;
+    }>('git.commitDetails', { workspaceId, commitHash });
+    return {
+      hash: result?.commitHash || commitHash,
+      author: result?.author ?? '',
+      email: result?.authorEmail ?? '',
+      date: result?.date ?? '',
+      message: result?.message ?? '',
+      files: Array.isArray(result?.files) ? result.files : [],
+      ...(Array.isArray(result?.fileDetails) ? { fileDetails: result.fileDetails } : {}),
+    };
   }
 
   async getRemotes(repoPath: string): Promise<

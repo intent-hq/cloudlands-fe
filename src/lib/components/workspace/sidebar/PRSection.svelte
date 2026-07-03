@@ -3,6 +3,7 @@
    * PRSection - Pull request creation, push/pull/sync, force push, rebase, connect remote, PR list
    * Manages all PR-related UI state and handlers.
    */
+  import { appClient } from '$lib/client';
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import { backgroundGitActionsService } from '$features/accept-changes/background-git-actions.service';
   import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
@@ -516,8 +517,17 @@
   async function handlePull() {
     appStore.dispatch(setGitOperationFlag(workspaceId, 'isPulling', true));
     try {
-      const result = await gitClient.pull(workspaceId as WorkspaceId);
-      if (result.ok) {
+      // Daemon-backed pull (`git.pull`, PROTOCOL §5.6) via the appClient seam.
+      // The wire method is path-based (repoPath + branchName), replacing the
+      // retired workspace-scoped `git:pull` IPC.
+      const repoPath = $workspace$?.worktreePath || $workspace$?.path;
+      const branch = $workspace$?.branch;
+      if (!repoPath || !branch) {
+        toast.error('Failed to pull: workspace path or branch unavailable');
+        return;
+      }
+      const result = await appClient.git.pull(repoPath, branch);
+      if (result.success) {
         toast.success('Pulled remote commits successfully');
         gitCache.invalidateWorkspace(workspaceId as WorkspaceId);
         appStore.dispatch(loadGitStatus(workspaceId, true));

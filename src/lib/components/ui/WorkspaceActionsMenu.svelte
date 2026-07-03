@@ -25,6 +25,7 @@
   import WarpIcon from '$lib/components/shared/icons/WarpIcon.svelte';
   import XcodeIcon from '$lib/components/shared/icons/XcodeIcon.svelte';
   import { invoke } from '$lib/electron-bridge';
+  import { appClient } from '$lib/client';
   import { fetchEditors } from '$store/renderer/slices/external-editors/external-editors-slice';
   import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
 
@@ -301,17 +302,14 @@
       return;
     }
     try {
-      // Fetch changed files to help find the right Xcode project in monorepos
+      // Fetch changed files to help find the right Xcode project in monorepos.
+      // Daemon-backed read (`git.status`, PROTOCOL §5.6) via the appClient seam.
       let changedFiles: string[] = [];
       if (workspaceId && resolvedFolderPath) {
         try {
-          const statusResult = await invoke<{
-            success: boolean;
-            data?: { files: Array<{ path: string }> };
-          }>('git:status', { workspaceId });
-
-          if (statusResult?.success && statusResult.data?.files) {
-            changedFiles = statusResult.data.files.map((f) => f.path);
+          const status = await appClient.git.status(workspaceId);
+          if (status?.files) {
+            changedFiles = status.files.map((f) => f.path);
             logger.info('[WorkspaceActionsMenu] Found changed files for Xcode', {
               count: changedFiles.length,
             });

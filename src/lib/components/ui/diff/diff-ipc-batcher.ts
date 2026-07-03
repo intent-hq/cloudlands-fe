@@ -11,6 +11,14 @@
  *
  * Results are NOT cached across calls — callers are responsible for their own
  * invalidation (the existing file-watcher path already triggers a re-fetch).
+ *
+ * TODO(D2): these channels intentionally stay on local Electron IPC. The
+ * consumers (ChatChangesPanel, TrackedChangeDiffViewer) rely on the
+ * `oldContent`/`newContent` full-file enrichment the local `git:diff` handler
+ * provides, and on `git:show-file` / `git:numstat` — none of which the daemon
+ * serves yet. The hunk-only wire read (`git.diffs`, PROTOCOL §5.6) cannot
+ * replace them until the D2 full-file-content reads land; migrate this module
+ * (and drop the KNOWN_UNBRIDGED_CHANNELS entries) then.
  */
 import { invoke } from '$lib/electron-bridge';
 

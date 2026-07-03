@@ -27,6 +27,8 @@
   import type { TrackedChange } from '$features/file-tracking/types';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { invoke } from '$lib/electron-bridge';
+  import { appClient } from '$lib/client';
+  import { LineType } from '$shared/types';
   import { getLanguageFromPath } from '$lib/utils/file-utils';
   import {
   parseHunksToLineChanges,
@@ -207,41 +209,28 @@
     }
     (async () => {
       try {
-        type DiffChunk = {
-          file: string;
-          chunks: {
-            oldStart: number;
-            oldLines: number;
-            newStart: number;
-            newLines: number;
-            lines: { type: string; content: string }[];
-          }[];
-        };
-        const response = await invoke<{ success: boolean; data?: DiffChunk[]; error?: string }>(
-          'git:diff',
-          {
-            workspaceId,
-            paths: [filePath],
-            staged: change.stage === 'staged',
-          },
-        );
+        // Daemon-backed per-file hunks (`git.diffs`, PROTOCOL §5.6) via the
+        // appClient seam — this consumer only needs hunk line data, replacing
+        // the retired local `git:diff` read.
+        const chunks = await appClient.git.diffs(workspaceId, {
+          path: filePath,
+          staged: change.stage === 'staged',
+        });
         if (!isMounted) return;
-        if (response.success && response.data && response.data.length > 0) {
-          const fileChunk = response.data[0];
-          if (fileChunk?.chunks && fileChunk.chunks.length > 0) {
-            const hunks = fileChunk.chunks.map((chunk) => ({
-              oldStart: chunk.oldStart,
-              oldLines: chunk.oldLines,
-              newStart: chunk.newStart,
-              newLines: chunk.newLines,
-              lines: chunk.lines.map((line) => {
-                if (line.type === 'Addition') return '+' + line.content;
-                if (line.type === 'Deletion') return '-' + line.content;
-                return ' ' + line.content;
-              }),
-            }));
-            fileLineChanges = parseHunksToLineChanges(hunks);
-          }
+        const fileChunk = chunks.find((c) => c.file === filePath) ?? chunks[0];
+        if (fileChunk?.chunks && fileChunk.chunks.length > 0) {
+          const hunks = fileChunk.chunks.map((chunk) => ({
+            oldStart: chunk.oldStart,
+            oldLines: chunk.oldLines,
+            newStart: chunk.newStart,
+            newLines: chunk.newLines,
+            lines: chunk.lines.map((line) => {
+              if (line.type === LineType.Addition) return '+' + line.content;
+              if (line.type === LineType.Deletion) return '-' + line.content;
+              return ' ' + line.content;
+            }),
+          }));
+          fileLineChanges = parseHunksToLineChanges(hunks);
         }
       } catch {
         if (isMounted) fileLineChanges = [];

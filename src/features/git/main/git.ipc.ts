@@ -1,9 +1,14 @@
 /**
  * Git IPC Handlers
  *
- * Registers IPC handlers for git operations.
- * These handlers bridge the renderer process to the GitService.
- * Supports both local and remote workspaces.
+ * Registers IPC handlers for the git operations the intentd daemon does not
+ * serve yet. Channels with a daemon arm (PROTOCOL §5.6) — status, stage,
+ * unstage, commit, pull, history/log, commit-details, pullBranch (→ path-based
+ * `git.pull`) and getBranchStatus (→ `git.branchStatus`) — have been retired
+ * here: the renderer reaches the daemon directly via
+ * `backendRequest('git.*')`. What remains is the local-only surface: hunk
+ * staging, discard, push, fetch, diff-with-content/numstat, show-file
+ * (TODO(D2)), lock removal, branch listing/rename and remote inspection.
  */
 
 import { ipcMain } from 'electron';
@@ -27,10 +32,7 @@ import {
   getRemoteGitManager,
   validatePathsInScope,
 } from './git-router.js';
-import {
-  execAsync,
-  execFileAsync,
-} from '../../../shared/git/git-env';
+import { execAsync } from '../../../shared/git/git-env';
 import { getAutoCommitStatuses } from '../../agent/main/auto-commit.service';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import { trackMain } from '$lib/services/analytics/main';
@@ -54,11 +56,6 @@ const StageFilesSchema = z.object({
   paths: z.array(z.string()),
 });
 
-const CommitSchema = z.object({
-  workspaceId: z.string(),
-  message: z.string(),
-});
-
 const DiffSchema = z.object({
   workspaceId: z.string(),
   paths: z.array(z.string()).optional(),
@@ -69,14 +66,6 @@ const DiffSchema = z.object({
 });
 
 const NumstatSchema = DiffSchema;
-
-const HistorySchema = z.object({
-  workspaceId: z.string(),
-  limit: z.number().optional(),
-  since: z.string().optional(),
-  baseRef: z.string().optional(),
-  baseCommitSha: z.string().optional(),
-});
 
 const GetBranchesSchema = z.object({
   workspaceId: z.string(),
@@ -189,175 +178,11 @@ function parseDiffOutput(diffOutput: string): DiffChunk[] {
 export function setupGitIPC() {
   logger.info('Setting up git IPC handlers');
 
-  // Get git status
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.STATUS,
-    createSafeValidatedHandler(
-      WorkspaceIdSchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        const gitInfo = await getWorkspaceGitInfo(workspaceId);
-        // Check if this is a remote workspace
-        if (gitInfo?.isRemote) {
-          try {
-            const remoteGit = getRemoteGitManager(
-              workspaceId,
-              gitInfo.repositoryPath || gitInfo.worktreePath,
-            );
-            const status = await remoteGit.getStatus(gitInfo.worktreePath);
-            // Convert RemoteGitManager status to GitService format
-            return {
-              success: true,
-              data: {
-                branch: status.branch,
-                ahead: status.ahead,
-                behind: status.behind,
-                diverged: status.diverged,
-                files: [
-                  ...status.staged.map((f: string) => ({ path: f, status: 'staged' as const })),
-                  ...status.modified.map((f: string) => ({ path: f, status: 'modified' as const })),
-                  ...status.untracked.map((f: string) => ({
-                    path: f,
-                    status: 'untracked' as const,
-                  })),
-                  ...status.deleted.map((f: string) => ({ path: f, status: 'deleted' as const })),
-                ],
-              },
-            };
-          } catch (error) {
-            logger.error('Failed to get remote git status', error as Error, { workspaceId });
-            return { success: false, error: (error as Error).message };
-          }
-        }
-
-        // Local workspace - use GitService
-        const result = await gitService.getStatus(workspaceId as WorkspaceId);
-        if (result.ok) {
-          logger.info('IPC returning git status', { workspaceId, diverged: result.data.diverged });
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.STATUS,
-    ),
-  );
-
-  // Stage files
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.STAGE,
-    createSafeValidatedHandler(
-      StageFilesSchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        // Check if this is a remote workspace
-        const gitInfo = await getWorkspaceGitInfo(workspaceId);
-        if (!gitInfo) {
-          return { success: false, error: 'Failed to get workspace git info' };
-        }
-
-        // Validate that all paths are within scope
-        const scopeError = validatePathsInScope(
-          validated.paths,
-          gitInfo.scope,
-          gitInfo.worktreePath,
-        );
-        if (scopeError) {
-          logger.warn('Attempted to stage files outside scope', {
-            workspaceId,
-            scope: gitInfo.scope,
-          });
-          return { success: false, error: scopeError };
-        }
-
-        if (gitInfo.isRemote) {
-          try {
-            const remoteGit = getRemoteGitManager(
-              workspaceId,
-              gitInfo.repositoryPath || gitInfo.worktreePath,
-            );
-            await remoteGit.stageFiles(validated.paths, gitInfo.worktreePath);
-            return { success: true, data: undefined };
-          } catch (error) {
-            logger.error('Failed to stage files on remote', error as Error, { workspaceId });
-            return { success: false, error: (error as Error).message };
-          }
-        }
-
-        const result = await gitService.stageFiles(workspaceId as WorkspaceId, validated.paths);
-        if (result.ok) {
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.STAGE,
-    ),
-  );
-
-  // Unstage files
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.UNSTAGE,
-    createSafeValidatedHandler(
-      StageFilesSchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        // Check if this is a remote workspace
-        const gitInfo = await getWorkspaceGitInfo(workspaceId);
-        if (!gitInfo) {
-          return { success: false, error: 'Failed to get workspace git info' };
-        }
-
-        // Validate that all paths are within scope
-        const scopeError = validatePathsInScope(
-          validated.paths,
-          gitInfo.scope,
-          gitInfo.worktreePath,
-        );
-        if (scopeError) {
-          logger.warn('Attempted to unstage files outside scope', {
-            workspaceId,
-            scope: gitInfo.scope,
-          });
-          return { success: false, error: scopeError };
-        }
-
-        if (gitInfo.isRemote) {
-          try {
-            const remoteGit = getRemoteGitManager(
-              workspaceId,
-              gitInfo.repositoryPath || gitInfo.worktreePath,
-            );
-            await remoteGit.unstageFiles(validated.paths, gitInfo.worktreePath);
-            return { success: true, data: undefined };
-          } catch (error) {
-            logger.error('Failed to unstage files on remote', error as Error, { workspaceId });
-            return { success: false, error: (error as Error).message };
-          }
-        }
-
-        const result = await gitService.unstageFiles(workspaceId as WorkspaceId, validated.paths);
-        if (result.ok) {
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.UNSTAGE,
-    ),
-  );
+  // git:status / git:stage / git:unstage / git:commit / git:pull /
+  // git:history / git:log / git:commit-details / git:pullBranch /
+  // git:getBranchStatus have been retired: the renderer now reaches the
+  // daemon directly via backendRequest('git.*') (PROTOCOL §5.6), which also
+  // retires their local execFileAsync and RemoteGitManager routing.
 
   // Stage a specific hunk (partial staging)
   ipcMain.handle(
@@ -507,76 +332,6 @@ export function setupGitIPC() {
     ),
   );
 
-  // Commit changes
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.COMMIT,
-    createSafeValidatedHandler(
-      CommitSchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        let commitHash: string | undefined;
-
-        // Check if this is a remote workspace
-        const gitInfo = await getWorkspaceGitInfo(workspaceId);
-        if (gitInfo?.isRemote) {
-          try {
-            const remoteGit = getRemoteGitManager(
-              workspaceId,
-              gitInfo.repositoryPath || gitInfo.worktreePath,
-            );
-            commitHash = await remoteGit.commit(validated.message, gitInfo.worktreePath);
-          } catch (error) {
-            logger.error('Failed to commit on remote', error as Error, { workspaceId });
-            return { success: false, error: (error as Error).message };
-          }
-        } else {
-          const result = await gitService.commit(workspaceId as WorkspaceId, validated.message);
-          if (!result.ok) {
-            return { success: false, error: result.error };
-          }
-          commitHash = result.data?.hash;
-        }
-
-        // After successful commit, handle the post-commit transition
-        try {
-          logger.info('Handling post-commit transition', {
-            workspaceId,
-            commitHash,
-          });
-
-          // Get git integration from global storage
-          const gitIntegration = global.gitIntegrations?.get(validated.workspaceId);
-          if (gitIntegration) {
-            // Handle post-commit transition (staged -> committed)
-            await gitIntegration.handlePostCommit(commitHash);
-
-            // Then sync the current state
-            await gitIntegration.syncCurrentState(true); // Force sync
-            logger.info('Post-commit transition and sync complete', { workspaceId });
-          } else {
-            logger.warn('No git integration found for workspace after commit', { workspaceId });
-          }
-        } catch (syncError) {
-          logger.error('Failed to sync file tracking after commit', syncError as Error);
-          // Don't fail the commit response, just log the error
-        }
-
-        // Track commit event
-        trackMain('Committed Changes', {
-          workspace_id: workspaceId,
-          success: true,
-        });
-
-        return { success: true, data: { hash: commitHash } };
-      },
-      IPC_CHANNELS.GIT.COMMIT,
-    ),
-  );
-
   // Push changes
   ipcMain.handle(
     IPC_CHANNELS.GIT.PUSH,
@@ -624,45 +379,6 @@ export function setupGitIPC() {
         }
       },
       IPC_CHANNELS.GIT.PUSH,
-    ),
-  );
-
-  // Pull changes
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.PULL,
-    createSafeValidatedHandler(
-      WorkspaceIdSchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        // Check if this is a remote workspace
-        const gitInfo = await getWorkspaceGitInfo(workspaceId);
-        if (gitInfo?.isRemote) {
-          try {
-            const remoteGit = getRemoteGitManager(
-              workspaceId,
-              gitInfo.repositoryPath || gitInfo.worktreePath,
-            );
-            await remoteGit.pull(gitInfo.worktreePath);
-            return { success: true, data: undefined };
-          } catch (error) {
-            logger.error('Failed to pull on remote', error as Error, { workspaceId });
-            return { success: false, error: (error as Error).message };
-          }
-        }
-
-        // Pass the workspace's target branch so pull knows which remote branch to use
-        const result = await gitService.pull(workspaceId as WorkspaceId, gitInfo?.branch);
-        if (result.ok) {
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.PULL,
     ),
   );
 
@@ -853,112 +569,6 @@ export function setupGitIPC() {
     ),
   );
 
-  // Get history
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.HISTORY,
-    createSafeValidatedHandler(
-      HistorySchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        // Check if this is a remote workspace
-        const gitInfo = await getWorkspaceGitInfo(workspaceId);
-        if (gitInfo?.isRemote) {
-          try {
-            const remoteGit = getRemoteGitManager(
-              workspaceId,
-              gitInfo.repositoryPath || gitInfo.worktreePath,
-            );
-            const commits = await remoteGit.getHistory(validated.limit || 50, gitInfo.worktreePath);
-            return { success: true, data: commits };
-          } catch (error) {
-            logger.error('Failed to get history on remote', error as Error, { workspaceId });
-            return { success: false, error: (error as Error).message };
-          }
-        }
-
-        const result = await gitService.getHistory(
-          workspaceId as WorkspaceId,
-          validated.limit,
-          validated.since,
-          validated.baseRef,
-          validated.baseCommitSha,
-        );
-        if (result.ok) {
-          return { success: true, data: result.data.commits };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.HISTORY,
-    ),
-  );
-
-  // Get log (alias for history, returns commit list)
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.LOG,
-    createSafeValidatedHandler(
-      HistorySchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        // Check if this is a remote workspace
-        const gitInfo = await getWorkspaceGitInfo(workspaceId);
-        if (gitInfo?.isRemote) {
-          try {
-            const remoteGit = getRemoteGitManager(
-              workspaceId,
-              gitInfo.repositoryPath || gitInfo.worktreePath,
-            );
-            const commits = await remoteGit.getHistory(validated.limit || 50, gitInfo.worktreePath);
-            // Map to expected format with 'sha' field for compatibility
-            const mappedCommits = commits.map(
-              (commit: {
-                hash: string;
-                message: string;
-                author: string;
-                email: string;
-                date: string;
-              }) => ({
-                ...commit,
-                sha: commit.hash,
-              }),
-            );
-            return { success: true, data: mappedCommits };
-          } catch (error) {
-            logger.error('Failed to get log on remote', error as Error, { workspaceId });
-            return { success: false, error: (error as Error).message };
-          }
-        }
-
-        const result = await gitService.getHistory(
-          workspaceId as WorkspaceId,
-          validated.limit,
-          validated.since,
-          validated.baseRef,
-          validated.baseCommitSha,
-        );
-        if (result.ok) {
-          // Map to expected format with 'sha' field for compatibility
-          const commits = result.data.commits.map((commit) => ({
-            ...commit,
-            sha: commit.hash, // Alias hash as sha for compatibility
-          }));
-          return { success: true, data: commits };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.LOG,
-    ),
-  );
-
   // Remove lock file
   ipcMain.handle(
     IPC_CHANNELS.GIT.REMOVE_LOCK,
@@ -977,33 +587,6 @@ export function setupGitIPC() {
         }
       },
       IPC_CHANNELS.GIT.REMOVE_LOCK,
-    ),
-  );
-
-  // Get commit details
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.COMMIT_DETAILS,
-    createSafeValidatedHandler(
-      z.object({
-        workspaceId: z.string(),
-        commitHash: z.string(),
-      }),
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-        const result = await gitService.getCommitDetails(
-          workspaceId as WorkspaceId,
-          validated.commitHash,
-        );
-        if (result.ok) {
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.COMMIT_DETAILS,
     ),
   );
 
@@ -1248,6 +831,9 @@ export function setupGitIPC() {
   );
 
   // Get file content at a specific git ref
+  // TODO(D2): git:show-file has NO daemon arm yet — full-file content reads
+  // land with D2. Keep this local path (and its KNOWN_UNBRIDGED_CHANNELS
+  // entry) until the daemon serves file-at-ref reads.
   ipcMain.handle(
     IPC_CHANNELS.GIT.SHOW_FILE,
     createSafeValidatedHandler(
@@ -1325,239 +911,6 @@ export function setupGitIPC() {
         }
       },
       IPC_CHANNELS.GIT.RENAME_BRANCH,
-    ),
-  );
-
-  // Pull a specific branch with rebase
-  // Includes auto-stash functionality: if pull fails due to unstaged changes,
-  // automatically stashes changes, pulls, and unstashes
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.PULL_BRANCH,
-    createSafeValidatedHandler(
-      z.object({
-        repoPath: z.string(),
-        branchName: z.string(),
-      }),
-      async (_, validated) => {
-        const execOptions = {
-          cwd: validated.repoPath,
-          timeout: 120_000, // 2 minute timeout
-          env: {
-            ...process.env,
-            GIT_TERMINAL_PROMPT: '0', // Disable interactive prompts
-          },
-        };
-
-        /**
-         * Helper to detect if an error is due to unstaged changes
-         */
-        const isUnstagedChangesError = (errorMsg: string): boolean => {
-          return (
-            errorMsg.includes('cannot pull with rebase: You have unstaged changes') ||
-            errorMsg.includes('Please commit or stash them')
-          );
-        };
-
-        /**
-         * Helper to attempt git pull with rebase
-         */
-        const attemptPull = async (): Promise<{ success: boolean; error?: string }> => {
-          try {
-            await execFileAsync(
-              'git',
-              ['pull', '--rebase', 'origin', validated.branchName],
-              execOptions,
-            );
-            return { success: true };
-          } catch (error) {
-            const err = error as Error & { stderr?: string };
-            const errorMessage = err.stderr || err.message || 'Failed to pull branch';
-            return { success: false, error: errorMessage };
-          }
-        };
-
-        try {
-          // First, verify the current branch matches the requested branch
-          // git pull --rebase origin <branch> only works correctly if that branch is checked out
-          const { stdout: currentBranch } = await execFileAsync(
-            'git',
-            ['branch', '--show-current'],
-            {
-              cwd: validated.repoPath,
-              timeout: 10_000,
-            },
-          );
-
-          const currentBranchName = currentBranch.trim();
-          if (currentBranchName !== validated.branchName) {
-            // Branch is not checked out - use git fetch to update the remote tracking branch
-            // This is sufficient for workspace creation since worktrees are created from origin/<branch>
-            logger.info('Branch not checked out, using fetch instead of pull', {
-              branchName: validated.branchName,
-              currentBranch: currentBranchName,
-            });
-
-            try {
-              // Fetch the specific branch from origin to update origin/<branch>
-              await execFileAsync(
-                'git',
-                [
-                  'fetch',
-                  'origin',
-                  `${validated.branchName}:refs/remotes/origin/${validated.branchName}`,
-                ],
-                {
-                  ...execOptions,
-                  timeout: 60_000, // 1 minute for fetch
-                },
-              );
-              logger.info('Successfully fetched branch from origin', {
-                branchName: validated.branchName,
-              });
-              return { success: true };
-            } catch (fetchError) {
-              const err = fetchError as Error & { stderr?: string };
-              const errorMessage = err.stderr || err.message || 'Failed to fetch branch';
-              logger.error('Failed to fetch branch', err, {
-                branchName: validated.branchName,
-              });
-              return { success: false, error: errorMessage };
-            }
-          }
-
-          // First attempt: try to pull directly
-          const firstAttempt = await attemptPull();
-          if (firstAttempt.success) {
-            return { success: true };
-          }
-
-          // Check if the error is due to unstaged changes
-          if (!isUnstagedChangesError(firstAttempt.error || '')) {
-            // Not an unstaged changes error, return the original error
-            logger.error('Failed to pull branch', new Error(firstAttempt.error), {
-              branchName: validated.branchName,
-            });
-            return { success: false, error: firstAttempt.error };
-          }
-
-          // Auto-stash workflow: stash -> pull -> pop
-          logger.info('Pull failed due to unstaged changes, attempting auto-stash workflow', {
-            branchName: validated.branchName,
-          });
-
-          // Step 1: Stash changes (including untracked files)
-          let stashCreated = false;
-          try {
-            const { stdout: stashOutput } = await execFileAsync(
-              'git',
-              ['stash', 'push', '--include-untracked', '-m', 'Intent: auto-stash before pull'],
-              {
-                cwd: validated.repoPath,
-                timeout: 30_000,
-              },
-            );
-            // Check if stash was actually created (git stash outputs "No local changes to save" if nothing to stash)
-            stashCreated = !stashOutput.includes('No local changes to save');
-            logger.info('Stash result', {
-              stashCreated,
-              output: stashOutput.trim(),
-            });
-          } catch (stashError) {
-            const err = stashError as Error & { stderr?: string };
-            logger.error('Failed to stash changes', err);
-            return {
-              success: false,
-              error: `Failed to auto-stash changes: ${err.stderr || err.message}`,
-            };
-          }
-
-          // Step 2: Pull with rebase
-          const pullAfterStash = await attemptPull();
-          if (!pullAfterStash.success) {
-            // Pull still failed - try to restore stash if we created one
-            if (stashCreated) {
-              try {
-                await execFileAsync('git', ['stash', 'pop'], {
-                  cwd: validated.repoPath,
-                  timeout: 30_000,
-                });
-                logger.info('Restored stash after failed pull');
-              } catch (popError) {
-                logger.warn('Failed to restore stash after failed pull', popError as Error);
-              }
-            }
-            logger.error(
-              'Failed to pull branch even after stashing',
-              new Error(pullAfterStash.error),
-            );
-            return { success: false, error: pullAfterStash.error };
-          }
-
-          // Step 3: Pop stash to restore changes
-          if (stashCreated) {
-            try {
-              await execFileAsync('git', ['stash', 'pop'], {
-                cwd: validated.repoPath,
-                timeout: 30_000,
-              });
-              logger.info('Successfully restored stashed changes after pull');
-            } catch (popError) {
-              const err = popError as Error & { stderr?: string };
-              const popErrorMsg = err.stderr || err.message || '';
-
-              // Check if this is a conflict during stash pop
-              if (popErrorMsg.includes('CONFLICT') || popErrorMsg.includes('conflict')) {
-                logger.warn('Stash pop resulted in conflicts', err);
-                return {
-                  success: false,
-                  error: `Pull succeeded but your local changes conflict with the pulled changes. Your changes are saved in the stash. Run 'git stash pop' and resolve conflicts manually, or use 'git stash drop' to discard your local changes.`,
-                };
-              }
-
-              logger.error('Failed to restore stash', err);
-              return {
-                success: false,
-                error: `Pull succeeded but failed to restore your local changes: ${popErrorMsg}. Your changes are saved in the stash - run 'git stash pop' to restore them.`,
-              };
-            }
-          }
-
-          logger.info('Auto-stash workflow completed successfully', {
-            branchName: validated.branchName,
-            stashCreated,
-          });
-          return { success: true };
-        } catch (error) {
-          const err = error as Error & { stderr?: string };
-          const errorMessage = err.stderr || err.message || 'Failed to pull branch';
-          logger.error('Failed to pull branch', err, {
-            branchName: validated.branchName,
-          });
-          return { success: false, error: errorMessage };
-        }
-      },
-      IPC_CHANNELS.GIT.PULL_BRANCH,
-    ),
-  );
-
-  // Get branch status (ahead/behind counts and unstaged changes)
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.GET_BRANCH_STATUS,
-    createSafeValidatedHandler(
-      z.object({
-        repoPath: z.string(),
-        branchName: z.string(),
-      }),
-      async (_, validated) => {
-        const result = await gitService.getBranchStatus(validated.repoPath, validated.branchName);
-
-        if (result.ok) {
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.GET_BRANCH_STATUS,
     ),
   );
 
