@@ -5,9 +5,12 @@
  * The mock IPC router rejects invokes on unregistered channels
  * (`UnbridgedMockIpcChannelError`) instead of resolving undefined. This suite
  * keeps that guarantee auditable: it statically scans every renderer source
- * file for `invoke(...)` / `typedInvoke(...)` call sites, resolves the channel
- * names (string literals, `X_CHANNELS.KEY`, `IPC_CHANNELS.GROUP.KEY`), and
- * reconciles them against the channels the seeders register.
+ * file for `invoke(...)` / `typedInvoke(...)` call sites — including named
+ * import aliases such as `import { invoke as invokeIpc }` — resolves the
+ * channel names (string literals, `X_CHANNELS.KEY`, `IPC_CHANNELS.GROUP.KEY`),
+ * and reconciles them against the channels the seeders register. Channels only
+ * ever invoked through a runtime variable are a scanner limitation and must be
+ * recorded in `DYNAMIC_INVOKE_CALL_SITES` below.
  *
  * A NEW invoke call site referencing an unregistered channel fails this suite.
  * To make it pass, either bridge the channel in a seeder (preferred), add it to
@@ -33,8 +36,24 @@ const EXCLUDED_DIR_SEGMENTS = /(^|\/)(main|preload|__tests__|node_modules)(\/|$)
 const EXCLUDED_FILES = /(\.test\.ts|\.spec\.ts|test-setup|\.d\.ts)$/;
 const INCLUDED_FILES = /\.(ts|svelte)$/;
 
-/** invoke( / typedInvoke( call sites, capturing the first argument expression. */
-const CALL_SITE_RE = /\b(?:typedInvoke|invoke)\s*(?:<[^>]*>)?\s*\(\s*([^,)\n]+)/g;
+/** Named-import clauses, whose contents may alias invoke/typedInvoke. */
+const IMPORT_CLAUSE_RE = /import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*['"][^'"]+['"]/g;
+const INVOKE_ALIAS_RE = /\b(?:typedInvoke|invoke)\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)/g;
+
+/**
+ * Build the invoke( / typedInvoke( call-site regex for one source file,
+ * capturing the first argument expression. Import aliases declared in the file
+ * (e.g. `import { invoke as invokeIpc }`) are matched as call sites too, so
+ * aliased invokes cannot escape the audit.
+ */
+function buildCallSiteRegex(source: string): RegExp {
+  const names = new Set(['typedInvoke', 'invoke']);
+  for (const clause of source.matchAll(IMPORT_CLAUSE_RE)) {
+    for (const alias of clause[1].matchAll(INVOKE_ALIAS_RE)) names.add(alias[1]);
+  }
+  const alternation = [...names].sort((a, b) => b.length - a.length).join('|');
+  return new RegExp(`\\b(?:${alternation})\\s*(?:<[^>]*>)?\\s*\\(\\s*([^,)\\n]+)`, 'g');
+}
 const LITERAL_RE = /^['"`]([^'"`$]+)['"`]$/;
 const CHANNELS_CONST_RE = /^([A-Z][A-Z0-9_]*_CHANNELS)\.([A-Z0-9_]+)$/;
 const REGISTRY_REF_RE = /^IPC_CHANNELS\.([A-Z0-9_]+)\.([A-Z0-9_]+)$/;
@@ -77,7 +96,7 @@ function scanInvokedChannels(): ScanResult {
   for (const file of walkRendererSources(SRC_ROOT)) {
     const source = fs.readFileSync(file, 'utf8');
     const relative = path.relative(SRC_ROOT, file);
-    for (const match of source.matchAll(CALL_SITE_RE)) {
+    for (const match of source.matchAll(buildCallSiteRegex(source))) {
       const argument = match[1].trim();
       const line = source.slice(0, match.index).split('\n').length;
       const site = `${relative}:${line}`;
@@ -113,6 +132,8 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     expect(invoked.size).toBeGreaterThan(200);
     expect(invoked.has('git:status')).toBe(true);
     expect(invoked.has('dialog:open')).toBe(true);
+    // Aliased import call site (`import { invoke as invokeIpc }`, scripts.client.ts).
+    expect(invoked.has('scripts:get-output')).toBe(true);
     expect([...invoked.keys()].some((channel) => registered.has(channel))).toBe(true);
   });
 
@@ -125,7 +146,7 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
   });
 
   it('every invoked channel is bridged, allowlisted, or a recorded audit finding', () => {
-    const uncovered = [...invoked.keys()]
+    const uncovered = [...new Set([...invoked.keys(), ...DYNAMIC_INVOKE_CALL_SITES.keys()])]
       .filter(
         (channel) =>
           !registered.has(channel) &&
@@ -133,7 +154,10 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
           !KNOWN_UNBRIDGED_CHANNELS.has(channel),
       )
       .sort()
-      .map((channel) => `${channel}\n    ${invoked.get(channel)!.join('\n    ')}`);
+      .map(
+        (channel) =>
+          `${channel}\n    ${(invoked.get(channel) ?? [DYNAMIC_INVOKE_CALL_SITES.get(channel)!]).join('\n    ')}`,
+      );
     expect(
       uncovered,
       'New invoke call sites reference channels with no registered mock-router bridge. ' +
@@ -155,13 +179,43 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
   });
 
   it('KNOWN_UNBRIDGED_CHANNELS holds no dead entries with zero remaining call sites', () => {
-    const dead = [...KNOWN_UNBRIDGED_CHANNELS].filter((channel) => !invoked.has(channel));
+    const dead = [...KNOWN_UNBRIDGED_CHANNELS].filter(
+      (channel) => !invoked.has(channel) && !DYNAMIC_INVOKE_CALL_SITES.has(channel),
+    );
     expect(
       dead,
       'Channels with no remaining invoke call sites must be removed from KNOWN_UNBRIDGED_CHANNELS',
     ).toEqual([]);
   });
+
+  it('DYNAMIC_INVOKE_CALL_SITES holds no entries the scanner now resolves statically', () => {
+    const covered = [...DYNAMIC_INVOKE_CALL_SITES.keys()].filter((channel) =>
+      invoked.has(channel),
+    );
+    expect(
+      covered,
+      'Statically-resolved channels must be removed from DYNAMIC_INVOKE_CALL_SITES',
+    ).toEqual([]);
+  });
 });
+
+/**
+ * Scanner limitation — dynamically invoked channels. These channels are only
+ * ever passed to `invoke` through a runtime variable (e.g. a provider →
+ * channel map), so the static argument resolver above cannot see them. Each
+ * entry records the call site that dispatches it. They count as invoked for
+ * the coverage and dead-entry checks; remove an entry when its call site is
+ * retired or rewritten as a statically-resolvable invoke.
+ */
+const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([
+  // ProviderSelector.svelte handleSetupMcp(): invoke(channelMap[providerId]).
+  ['auggie:setup-mcp-claude-code', 'lib/components/settings/ProviderSelector.svelte'],
+  ['auggie:setup-mcp-codex', 'lib/components/settings/ProviderSelector.svelte'],
+  ['auggie:setup-mcp-cortex', 'lib/components/settings/ProviderSelector.svelte'],
+  ['auggie:setup-mcp-droid', 'lib/components/settings/ProviderSelector.svelte'],
+  ['auggie:setup-mcp-opencode', 'lib/components/settings/ProviderSelector.svelte'],
+  ['auggie:setup-mcp-pi', 'lib/components/settings/ProviderSelector.svelte'],
+]);
 
 /**
  * Audit findings (P3 FE audit): channels invoked by production renderer code
@@ -200,7 +254,19 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'auggie:check-mcp-pi',
   'auggie:get-user-info',
   'auggie:install',
+  // Surfaced by the alias-aware scan (4A-2 audit debt): invoked only through the
+  // provider→channel map in ProviderSelector.svelte (see DYNAMIC_INVOKE_CALL_SITES).
+  'auggie:setup-mcp-claude-code',
+  'auggie:setup-mcp-codex',
+  'auggie:setup-mcp-cortex',
+  'auggie:setup-mcp-droid',
+  'auggie:setup-mcp-opencode',
+  'auggie:setup-mcp-pi',
+  // Surfaced by the alias-aware scan: invokeIpc site in auto-update.client.ts.
+  'auto-update:install',
   'banner:fetch',
+  // Surfaced by the alias-aware scan: ipcInvoke site in PanelLayout.svelte.
+  'browser:list-tabs-response',
   'browser:register-tab',
   'changes:get-current',
   'changes:mark-agent-active',
@@ -211,6 +277,8 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'config:get',
   'config:get-stats',
   'config:invalidate',
+  // Surfaced by the alias-aware scan: invokeIpc site in acp-official permission-manager.ts.
+  'config:set',
   'cortex:check-availability',
   'create_workspace',
   'debug:trigger-backend-resume',
@@ -290,6 +358,9 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'mcp:remove-server',
   'mcp:transition-workspace',
   'opencode:check-availability',
+  // Surfaced by the alias-aware scan: invokeIpc sites in panel-layout-history.client.ts.
+  'panel-layout:load',
+  'panel-layout:save',
   'patch:apply',
   'patch:revert',
   'persistence:delete',
@@ -306,6 +377,9 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'providers:get-paths',
   'reference:resolve',
   'remote-fs:exists',
+  // Surfaced by the alias-aware scan: invokeIpc sites in scripts.client.ts (4A-2 finding).
+  'scripts:detect',
+  'scripts:get-output',
   'scripts:save-to-repo',
   'scripts:update',
   'sentry-auth:get-issue',
@@ -373,6 +447,8 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'workspace:openTimelineEvent',
   'workspace:preflight-clone-check',
   'workspace:rename-branch',
+  // Surfaced by the alias-aware scan: invokeIpc site in workspace.client.ts.
+  'workspace:trigger-check',
   'workspace:unarchive',
   'workspace:update',
   'workspace:update-current-context',
