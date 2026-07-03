@@ -131,4 +131,33 @@ describe("host-bridge-seeder", () => {
       expect(response.error).toBe("path outside workspace");
     });
   });
+
+  describe("system:check-rtk → daemon host.findBinary", () => {
+    it("forwards { name:'rtk' } and folds a positive probe to {success:true, data:{available:true}}", async () => {
+      // PROTOCOL host.findBinary: `{ available, path? }` — the daemon does the
+      // `which` walk on the host where workspaces run.
+      mockedRequest.mockResolvedValueOnce({ available: true, path: "/opt/homebrew/bin/rtk" });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_RTK);
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "rtk" });
+      expect(response).toEqual({ success: true, data: { available: true } });
+    });
+
+    it("folds a daemon-reported missing binary to {available:false}", async () => {
+      mockedRequest.mockResolvedValueOnce({ available: false });
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_RTK);
+
+      expect(response).toEqual({ success: true, data: { available: false } });
+    });
+
+    it("folds an RPC failure to {available:false} so the toggle just stays disabled", async () => {
+      mockedRequest.mockRejectedValueOnce(new Error("transport down"));
+
+      const response = await mockInvoke(IPC_CHANNELS.SYSTEM.CHECK_RTK);
+
+      expect(response).toEqual({ success: true, data: { available: false } });
+    });
+  });
 });

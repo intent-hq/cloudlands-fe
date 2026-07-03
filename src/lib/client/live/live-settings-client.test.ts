@@ -211,3 +211,81 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
   });
 });
 
+describe("LiveSettingsClient user-rule accessors (rules.* — PROTOCOL §5.21)", () => {
+  it("getUserRule forwards rules.get with the global-sentinel workspaceId + ruleType", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      enabled: true,
+      content: "Always write tests.",
+      updatedAt: 1750000000000,
+    });
+    const client = new LiveSettingsClient();
+
+    const rule = await client.getUserRule("base-system-prompt");
+
+    expect(mockedRequest).toHaveBeenCalledWith("rules.get", {
+      workspaceId: "global",
+      ruleType: "base-system-prompt",
+    });
+    expect(rule).toEqual({
+      enabled: true,
+      content: "Always write tests.",
+      updatedAt: 1750000000000,
+    });
+  });
+
+  it("getUserRule surfaces the daemon's absent-override default verbatim", async () => {
+    // §5.21: an absent type reads back as a disabled empty default — not null.
+    mockedRequest.mockResolvedValueOnce({ enabled: false, content: "", updatedAt: 0 });
+    const client = new LiveSettingsClient();
+    expect(await client.getUserRule("base-system-prompt")).toEqual({
+      enabled: false,
+      content: "",
+      updatedAt: 0,
+    });
+  });
+
+  it("getUserRule folds a failed wire probe to null (visible load-error path)", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("boom"));
+    const client = new LiveSettingsClient();
+    expect(await client.getUserRule("base-system-prompt")).toBeNull();
+  });
+
+  it("updateUserRule forwards rules.update with workspaceId/ruleType/content", async () => {
+    mockedRequest.mockResolvedValueOnce({ rules: { rules: [] } });
+    const client = new LiveSettingsClient();
+
+    const result = await client.updateUserRule("base-system-prompt", "Be thorough.");
+
+    expect(mockedRequest).toHaveBeenCalledWith("rules.update", {
+      workspaceId: "global",
+      ruleType: "base-system-prompt",
+      content: "Be thorough.",
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("updateUserRule includes enabled only when the caller passes it", async () => {
+    mockedRequest.mockResolvedValueOnce({ rules: { rules: [] } });
+    const client = new LiveSettingsClient();
+
+    await client.updateUserRule("base-system-prompt", "Be thorough.", false);
+
+    expect(mockedRequest).toHaveBeenCalledWith("rules.update", {
+      workspaceId: "global",
+      ruleType: "base-system-prompt",
+      content: "Be thorough.",
+      enabled: false,
+    });
+  });
+
+  it("updateUserRule surfaces a rejected update as { success:false, error }", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("rule content exceeds 50000 characters"));
+    const client = new LiveSettingsClient();
+
+    const result = await client.updateUserRule("base-system-prompt", "x");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("rule content exceeds");
+  });
+});
+

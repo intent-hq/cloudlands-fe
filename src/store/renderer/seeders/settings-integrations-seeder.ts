@@ -8,8 +8,8 @@
  * the work the settings/auth sagas used to do against the real backend.
  *
  * The MCP advanced editor also reads the raw settings file directly over IPC
- * (`user-mcp:get-settings-*`) and the settings footer reads `app:version`; those
- * channels are registered against the mock IPC router so those panes render.
+ * (`user-mcp:get-settings-*`); those channels are registered against the mock
+ * IPC router so that pane renders.
  *
  * The issue picker's direct IPC reads (auth-state + issue fetch) are bridged
  * to the daemon's `github.*` / `linear.*` / `sentry.*` namespaces by
@@ -167,5 +167,4 @@ registerMockSeeder("settings-integrations", async ({ store, client }) => {
     success: true,
     data: mockUserMcpSettingsPath,
   }));
-  registerMockIpcHandler("app:version", async () => ({ success: true, data: "0.0.0-mock" }));
 });

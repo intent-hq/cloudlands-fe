@@ -14,7 +14,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import { Logger } from '$lib/utils/logger';
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
-  import { invoke } from '$shared/generated/ipc-client';
+  import { appClient } from '$lib/client';
 
 
   const logger = new Logger({ category: 'AgentRulesEditor' });
@@ -72,38 +72,16 @@
       loading = true;
       errorMessage = null;
 
-      // Check if legacy 'system' type exists and migrate
-      const legacyResult = await invoke<any>('user-rules:get-by-type', {
-        type: 'system',
-      });
-      if (legacyResult.success && legacyResult.data?.content) {
-        logger.info('Migrating legacy system rules to base-system-prompt');
-        await invoke<any>('user-rules:update-by-type', {
-          type: RULE_TYPE,
-          content: legacyResult.data.content,
-          enabled: legacyResult.data.enabled !== false,
-        });
-        await invoke<any>('user-rules:update-by-type', {
-          type: 'system',
-          content: '',
-          enabled: false,
-        });
+      // rules.get (§5.21): an absent override reads back as an empty default;
+      // null means the wire probe itself failed.
+      const rule = await appClient.settings.getUserRule(RULE_TYPE);
+      if (rule === null) {
+        showError('Failed to load rules. Please try again.');
+        return;
       }
-
-      const result = await invoke<any>('user-rules:get-by-type', {
-        type: RULE_TYPE,
-      });
-
-      if (result.success) {
-        rulesContent = result.data?.content || '';
-        originalContent = rulesContent;
-        hasChanges = false;
-      } else {
-        logger.debug('No rules found, initializing empty');
-        rulesContent = '';
-        originalContent = '';
-        hasChanges = false;
-      }
+      rulesContent = rule.content;
+      originalContent = rulesContent;
+      hasChanges = false;
     } catch (error) {
       logger.error('Failed to load rules', error instanceof Error ? error : undefined);
       showError('Failed to load rules. Please try again.');
@@ -129,10 +107,7 @@
       errorMessage = null;
 
       const trimmedContent = rulesContent.trim();
-      const result = await invoke<any>('user-rules:update-by-type', {
-        type: RULE_TYPE,
-        content: trimmedContent,
-      });
+      const result = await appClient.settings.updateUserRule(RULE_TYPE, trimmedContent);
 
       if (result.success) {
         rulesContent = trimmedContent;

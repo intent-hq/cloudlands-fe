@@ -29,6 +29,7 @@ import type {
   SettingsClient,
   SubscriptionHandler,
   Unsubscribe,
+  UserRuleState,
 } from "../app-client";
 import type { McpServerConfig } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
 import type { ProviderSettingsState } from "$store/renderer/slices/provider-settings/provider-settings-slice";
@@ -39,6 +40,15 @@ import { backendRequest } from "./backend-transport";
 import { runMutation } from "./live-support";
 
 type UserPrefsResult = UserPreferencesState | null;
+
+/**
+ * `rules.get`/`rules.update` (§5.21) require a `workspaceId` on the wire, but
+ * the global settings page edits user-override rules that the daemon stores
+ * globally (endUserRules): `rules_get` ignores the id entirely and
+ * `rules_update` only echoes it back in the returned RuleSet, so a sentinel
+ * satisfies the contract without binding the edit to a real workspace.
+ */
+const GLOBAL_RULES_WORKSPACE_ID = "global";
 
 /** Build a fresh `update` change list, omitting `undefined` values. */
 function changesFrom(patch: Record<string, unknown>): AppSettingChange[] {
@@ -95,6 +105,37 @@ export class LiveSettingsClient implements SettingsClient {
     } catch {
       return null;
     }
+  }
+
+  async getUserRule(ruleType: string): Promise<UserRuleState | null> {
+    try {
+      const result = await backendRequest<{
+        enabled?: boolean;
+        content?: string;
+        updatedAt?: number;
+      }>("rules.get", { workspaceId: GLOBAL_RULES_WORKSPACE_ID, ruleType });
+      if (!result || typeof result.content !== "string") return null;
+      return {
+        enabled: result.enabled === true,
+        content: result.content,
+        updatedAt: typeof result.updatedAt === "number" ? result.updatedAt : 0,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async updateUserRule(
+    ruleType: string,
+    content: string,
+    enabled?: boolean,
+  ): Promise<MutationResult> {
+    return runMutation("rules.update", {
+      workspaceId: GLOBAL_RULES_WORKSPACE_ID,
+      ruleType,
+      content,
+      ...(enabled !== undefined ? { enabled } : {}),
+    });
   }
 
   async getUserPreferences(): Promise<UserPrefsResult> {

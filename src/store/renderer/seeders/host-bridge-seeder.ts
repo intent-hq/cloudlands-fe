@@ -102,3 +102,28 @@ registerMockIpcHandler(IPC_CHANNELS.FILE.GET_DIRECTORY_STATUS, async (arg) => {
     };
   }
 });
+
+/** Daemon `host.findBinary` response shape (intent-transport host_ops.rs §host). */
+interface HostFindBinaryResult {
+  available: boolean;
+  path?: string;
+}
+
+/**
+ * `system:check-rtk` → daemon `host.findBinary` (name `rtk`).
+ *
+ * `RtkSettings.svelte` reads `result.data.available` to gate the toggle, so
+ * the daemon body folds to `{ available }` under `data`. Mirrors `CHECK_GIT`:
+ * a missing rtk binary (or a failed probe) is never an RPC error — it renders
+ * as "rtk is not installed" with the re-check affordance.
+ */
+registerMockIpcHandler(IPC_CHANNELS.SYSTEM.CHECK_RTK, async () => {
+  try {
+    const result = await backendRequest<HostFindBinaryResult>("host.findBinary", {
+      name: "rtk",
+    });
+    return { success: true, data: { available: result?.available === true } };
+  } catch {
+    return { success: true, data: { available: false } };
+  }
+});

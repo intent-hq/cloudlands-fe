@@ -5,7 +5,7 @@
 } from '$features/linear-auth/constants';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import { Select } from '$lib/components/ui/select';
-  import { invoke } from '$shared/generated/ipc-client';
+  import { safeLocalStorage } from '$lib/utils/safe-storage';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
@@ -38,25 +38,21 @@
   let issueFilter = $state<LinearIssueFilter>('all');
   let filterLoaded = $state(false);
 
-  onMount(async () => {
+  // PROTOCOL §5.12 classifies `linear.issueFilter` as FE-only ("Not exposed")
+  // — the filter persists locally, not through daemon settings.*.
+  const LINEAR_ISSUE_FILTER_STORAGE_KEY = 'linearIssueFilter';
+
+  onMount(() => {
     if (!skipInitialize) {
       appStore.dispatch(initializeLinearAuth());
     }
-    await loadFilter();
+    loadFilter();
   });
 
-  async function loadFilter() {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      try {
-        const result = await invoke<any>('settings:get', {
-          key: 'linearIssueFilter',
-        });
-        if (result?.data && typeof result.data === 'string') {
-          issueFilter = result.data as LinearIssueFilter;
-        }
-      } catch {
-        // Use default filter
-      }
+  function loadFilter() {
+    const stored = safeLocalStorage.getItem(LINEAR_ISSUE_FILTER_STORAGE_KEY);
+    if (stored && LINEAR_ISSUE_FILTER_OPTIONS.some((option) => option.value === stored)) {
+      issueFilter = stored as LinearIssueFilter;
     }
     filterLoaded = true;
   }
@@ -64,21 +60,8 @@
   // Save filter when it changes (after initial load)
   $effect(() => {
     if (!filterLoaded) return;
-    const currentFilter = issueFilter;
-    saveFilter(currentFilter);
+    safeLocalStorage.setItem(LINEAR_ISSUE_FILTER_STORAGE_KEY, issueFilter);
   });
-
-  async function saveFilter(filter: LinearIssueFilter) {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      try {
-        await invoke<any>('settings:update', {
-          settings: { linearIssueFilter: filter },
-        });
-      } catch {
-        // Ignore save errors
-      }
-    }
-  }
 
   function handleLinearConnect() {
     appStore.dispatch(startLinearAuth());

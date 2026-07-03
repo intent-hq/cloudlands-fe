@@ -7,12 +7,10 @@
    */
 
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
-  import {
-  SETTINGS_CHANNELS,
-  SYSTEM_CHANNELS,
-} from '$shared/ipc/channels';
+  import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
   import { onMount } from 'svelte';
   import { invoke } from '$shared/generated/ipc-client';
+  import { safeLocalStorage } from '$lib/utils/safe-storage';
 
   import {
   addTerminal,
@@ -28,19 +26,17 @@
   let loaded = $state(false);
   let checking = $state(false);
 
-  onMount(async () => {
-    if (!window.electronAPI) return;
+  // PROTOCOL §5.12 classifies `rtk.enabled` as FE-only ("Not exposed") — the
+  // flag persists locally, while availability comes from the daemon-backed
+  // `system:check-rtk` bridge (`host.findBinary`).
+  const RTK_ENABLED_STORAGE_KEY = 'rtkEnabled';
 
+  onMount(async () => {
+    rtkEnabled = safeLocalStorage.getItem(RTK_ENABLED_STORAGE_KEY) === 'true';
     try {
       // Check if rtk is installed
       const availResult = await invoke<any>(SYSTEM_CHANNELS.CHECK_RTK, undefined);
       rtkAvailable = availResult?.data?.available ?? false;
-
-      // Load the current setting
-      const settingResult = await invoke<any>(SETTINGS_CHANNELS.GET, {
-        key: 'rtkEnabled',
-      });
-      rtkEnabled = settingResult?.data ?? false;
     } catch {
       // Silently fail
     } finally {
@@ -52,10 +48,7 @@
     if (checking) return;
     checking = true;
     try {
-      const availResult =
-        typeof window !== 'undefined' && window.electronAPI
-          ? await invoke<any>(SYSTEM_CHANNELS.CHECK_RTK, undefined)
-          : undefined;
+      const availResult = await invoke<any>(SYSTEM_CHANNELS.CHECK_RTK, undefined);
       rtkAvailable = availResult?.data?.available ?? false;
     } catch {
       // Silently fail
@@ -94,20 +87,9 @@
     }
   }
 
-  async function handleToggle() {
-    const newValue = !rtkEnabled;
-    rtkEnabled = newValue;
-    try {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        await invoke(SETTINGS_CHANNELS.SET, {
-          key: 'rtkEnabled',
-          value: newValue,
-        });
-      }
-    } catch {
-      // Revert on failure
-      rtkEnabled = !newValue;
-    }
+  function handleToggle() {
+    rtkEnabled = !rtkEnabled;
+    safeLocalStorage.setItem(RTK_ENABLED_STORAGE_KEY, String(rtkEnabled));
   }
 </script>
 

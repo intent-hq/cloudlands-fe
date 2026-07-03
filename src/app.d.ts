@@ -14,6 +14,8 @@ declare global {
 
   const __DEV_GIT_BRANCH__: string;
 
+  const __APP_VERSION__: string;
+
   interface Window {
     intent?: {
       reduxContext?:

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { logger } from '../../../shared/logger';
   import { invoke } from '$shared/generated/ipc-client';
+  import { appClient } from '$lib/client';
   import Fa from 'svelte-fa';
   import {
   faFolder,
@@ -17,11 +18,27 @@
   // Settings state
   let worktreesLocation = $state('');
   let sshKeyPath = $state('');
-  let autoFetch = $state(true);
+  let autoFetch = $state(false);
   let autoCommit = $state(true);
   let defaultShell = $state('auto');
   let branchPrefix = $state('');
   let branchPrefixError = $state('');
+  let settingsError = $state('');
+
+  // Daemon setting path per field (PROTOCOL §5.12, BE-owned workspace/git group).
+  const SETTING_PATHS = {
+    worktreesLocation: 'workspace.worktreesLocation',
+    sshKeyPath: 'workspace.sshKeyPath',
+    defaultShell: 'workspace.defaultShell',
+    autoFetch: 'workspace.autoFetch',
+    autoCommit: 'git.autoCommit',
+    branchPrefix: 'workspace.branchPrefix',
+  } as const;
+
+  // Last-loaded/saved value per daemon path so saves only send changed
+  // settings — `workspace.sshKeyPath` is sensitive and reads back redacted
+  // (§5.12), so its placeholder must never be written back unchanged.
+  let loadedValues: Record<string, unknown> = {};
 
   // Available shells (filtered by platform)
   const isWindows = navigator.platform.startsWith('Win');
@@ -46,42 +63,54 @@
     await loadSettings();
   });
 
+  function stringValue(value: unknown): string {
+    return typeof value === 'string' ? value : '';
+  }
+
+  function currentValues(): Record<string, unknown> {
+    return {
+      [SETTING_PATHS.worktreesLocation]: worktreesLocation,
+      [SETTING_PATHS.sshKeyPath]: sshKeyPath,
+      [SETTING_PATHS.defaultShell]: defaultShell,
+      [SETTING_PATHS.autoFetch]: autoFetch,
+      [SETTING_PATHS.autoCommit]: autoCommit,
+      [SETTING_PATHS.branchPrefix]: branchPrefix,
+    };
+  }
+
   async function loadSettings() {
-    if (window.electronAPI) {
-      try {
-        const result = await invoke<any>('settings:getAll', undefined);
-        const settings = (result && result.data) || {};
-        worktreesLocation = settings.worktreesLocation || '';
-        sshKeyPath = settings.sshKeyPath || '';
-        autoFetch = settings.autoFetch !== false;
-        autoCommit = settings.autoCommit !== false;
-        defaultShell = settings.defaultShell || 'auto';
-        branchPrefix = settings.branchPrefix || '';
-      } catch (error) {
-        logger.error('Failed to load settings:', error);
-      }
+    const settings = await appClient.settings.list();
+    if (settings.length === 0) {
+      settingsError = 'Failed to load settings from the backend.';
+      return;
     }
+    settingsError = '';
+    const byPath = new Map(settings.map((entry) => [entry.path, entry.value]));
+    worktreesLocation = stringValue(byPath.get(SETTING_PATHS.worktreesLocation));
+    sshKeyPath = stringValue(byPath.get(SETTING_PATHS.sshKeyPath));
+    defaultShell = stringValue(byPath.get(SETTING_PATHS.defaultShell)) || 'auto';
+    autoFetch = byPath.get(SETTING_PATHS.autoFetch) === true;
+    autoCommit = byPath.get(SETTING_PATHS.autoCommit) !== false;
+    branchPrefix = stringValue(byPath.get(SETTING_PATHS.branchPrefix));
+    loadedValues = currentValues();
   }
 
   async function handleSave() {
-    if (window.electronAPI) {
-      try {
-        await invoke<any>('settings:update', {
-          settings: {
-            worktreesLocation,
-            sshKeyPath,
-            autoFetch,
-            autoCommit,
-            defaultShell,
-            branchPrefix,
-          },
-        });
+    const values = currentValues();
+    const changes = Object.entries(values)
+      .filter(([path, value]) => value !== loadedValues[path])
+      .map(([path, value]) => ({ path, value }));
+    if (changes.length === 0) return;
+    try {
+      await appClient.settings.update(changes);
+      settingsError = '';
+      loadedValues = values;
 
-        // Refresh global autoCommit so workspaces pick up the new setting
-        appStore.dispatch(refreshAutoCommitSettings());
-      } catch (error) {
-        logger.error('Failed to save settings:', error);
-      }
+      // Refresh global autoCommit so workspaces pick up the new setting
+      appStore.dispatch(refreshAutoCommitSettings());
+    } catch (error) {
+      settingsError = 'Failed to save settings. Please try again.';
+      logger.error('Failed to save settings:', error);
     }
   }
 
@@ -137,7 +166,7 @@
   export function resetToDefaults() {
     worktreesLocation = '';
     sshKeyPath = '';
-    autoFetch = true;
+    autoFetch = false;
     autoCommit = true;
     defaultShell = 'auto';
     branchPrefix = '';
@@ -147,6 +176,14 @@
 </script>
 
 <div class="flex flex-col bg-card rounded-xl pt-1 pb-3">
+  {#if settingsError}
+    <section class="px-6 py-2">
+      <p class="text-xs text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+        {settingsError}
+      </p>
+    </section>
+  {/if}
+
   <!-- Worktrees Location -->
   <section class="px-6 py-2">
     <div class="flex items-center justify-between gap-4">
