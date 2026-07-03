@@ -190,6 +190,87 @@ describe("notesWriteService (fake seam, real store)", () => {
     expect(notesApi.delete).toHaveBeenCalledWith("n1", 9);
   });
 
+  // ---- §11.4-D: successful conditional writes advance the stored rev --------
+  // The daemon's success responses don't echo the entity, but a conditional
+  // write only succeeds when the stored rev equals expectedVersion and every
+  // write bumps rev by exactly one — so `sentRev + 1` is authoritative and must
+  // land in the store immediately (not after the async subscribe→refetch).
+
+  it("advances the stored rev immediately after a successful content save", async () => {
+    seed(makeNote("n1", { rev: 4 }));
+
+    updateNoteContent(WS, "n1", "edited", { immediate: true });
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(selectNoteById.select(appStore.state, WS, "n1")?.rev).toBe(5);
+  });
+
+  it("advances the stored rev immediately after a successful title update", async () => {
+    seed(makeNote("n1", { rev: 2 }));
+
+    await updateNoteTitle(WS, "n1", "New");
+    expect(selectNoteById.select(appStore.state, WS, "n1")?.rev).toBe(3);
+  });
+
+  it("never regresses a newer rev already landed by a refetch", async () => {
+    seed(makeNote("n1", { rev: 4 }));
+    notesApi.setContent.mockImplementationOnce(async () => {
+      // A subscribe→refetch lands a newer server rev while the save is in flight.
+      seed(makeNote("n1", { rev: 9, content: "refetched" }));
+      return { success: true };
+    });
+
+    updateNoteContent(WS, "n1", "edited", { immediate: true });
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(selectNoteById.select(appStore.state, WS, "n1")?.rev).toBe(9);
+  });
+
+  // ---- §11.4-D: content-save-then-rename race (stale-rev regression) ---------
+  // Repro: type (debounced save) → immediately rename. The rename must await the
+  // in-flight save and read the advanced rev — both changes apply, no conflict.
+
+  it("applies content-save-then-rename without a conflict (mock daemon gates on expectedVersion)", async () => {
+    seed(makeNote("n1", { rev: 3, title: "Old", content: "body" }));
+
+    // Stateful daemon-conditional mock (§11.4-D): reject with -32005-shaped
+    // conflict when expectedVersion mismatches the server rev, else bump it.
+    let serverRev = 3;
+    const conflictResult = () => ({
+      success: false,
+      error: "conflict",
+      conflict: { current: makeNote("n1", { rev: serverRev }) },
+    });
+    notesApi.setContent.mockImplementation((_id: string, _c: string, expectedVersion?: number) => {
+      if (expectedVersion !== serverRev) return Promise.resolve(conflictResult());
+      serverRev += 1;
+      return Promise.resolve({ success: true });
+    });
+    notesApi.updateMetadata.mockImplementation(
+      (_id: string, _m: unknown, expectedVersion?: number) => {
+        if (expectedVersion !== serverRev) return Promise.resolve(conflictResult());
+        serverRev += 1;
+        return Promise.resolve({ success: true });
+      },
+    );
+
+    updateNoteContent(WS, "n1", "typed content", { immediate: true });
+    // Rename issued while the content save is still in flight (the race window).
+    await updateNoteTitle(WS, "n1", "Renamed");
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(notesApi.setContent).toHaveBeenCalledWith("n1", "typed content", 3);
+    // The rename waited for the save and read the advanced rev — not the stale 3.
+    expect(notesApi.updateMetadata).toHaveBeenCalledWith("n1", { title: "Renamed" }, 4);
+
+    const note = selectNoteById.select(appStore.state, WS, "n1");
+    expect(note?.title).toBe("Renamed");
+    expect(note?.content).toBe("typed content");
+    expect(note?.rev).toBe(5);
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(notesApi.list).not.toHaveBeenCalled();
+  });
+
   // ---- §11.4-D: conflict outcome → reload-to-latest + prompt ----------------
 
   it("reloads to the server note and prompts on a content-save conflict (no generic refetch)", async () => {
