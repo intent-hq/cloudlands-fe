@@ -9,10 +9,12 @@
  * and are mapped into the renderer `DiffChunk[]` / `CommitInfo[]` / `TrackedChange[]`
  * shapes; transport/daemon errors fold to an empty list so a single failed read
  * does not throw into the store. `subscribe` refetches on `git:*` /
- * `changes:git-status` events. `stage` and `commit` are the two supported write
- * mutations: `stage` forwards to `git.stage`; `commit` forwards to
+ * `changes:git-status` events. `stage`, `commit`, and `pull` are the supported
+ * write mutations: `stage` forwards to `git.stage`; `commit` forwards to
  * `git.agentCommit` (the wire-canonical commit method — `git.commit` is
- * deprecated per §5.6). Both fold the daemon outcome into a `MutationResult`.
+ * deprecated per §5.6); `pull` forwards to the path-based `git.pull`
+ * (workspace-create auto-pull). All fold the daemon outcome into a
+ * `MutationResult`.
  */
 import { GitFileStatus, LineType } from "$shared/types";
 import type { DiffChunk, DiffLine, FileStatus, GitStatus } from "$shared/types";
@@ -420,6 +422,30 @@ export class LiveGitClient implements GitClient {
       ...(params.files !== undefined ? { files: params.files } : {}),
       userRequested: params.userRequested,
     });
+  }
+
+  // `git.pull` (PROTOCOL §5.6) is path-based like `git.getBranches` — the
+  // workspace-create auto-pull runs BEFORE the repo is registered as a
+  // workspace. Ordinary pull failures (conflicts, unreachable remote, stash
+  // recovery) come back as the structured `{ ok: false, error }` result, never
+  // a JSON-RPC error; both that and transport/validation errors (bad repoPath
+  // → -32602) fold into `{ success: false, error }` so callers drive the
+  // PullConflictDialog off the MutationResult without a throw path.
+  async pull(repoPath: string, branchName: string): Promise<MutationResult> {
+    try {
+      const result = await backendRequest<Record<string, unknown>>("git.pull", {
+        repoPath,
+        branchName,
+      });
+      if (result && typeof result === "object" && result.ok === true) return { success: true };
+      const error =
+        result && typeof result === "object" && typeof result.error === "string" && result.error
+          ? result.error
+          : "Failed to pull changes";
+      return { success: false, error };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe {

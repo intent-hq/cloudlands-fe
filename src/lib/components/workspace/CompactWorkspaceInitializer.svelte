@@ -83,6 +83,7 @@
   faCodeBranch,
 } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
+  import { appClient } from '$lib/client';
   import Fa from 'svelte-fa';
   import PullConflictDialog, { type PullErrorType } from '../modals/PullConflictDialog.svelte';
 
@@ -1402,12 +1403,13 @@
           behind: branchBehind,
         });
         try {
+          // Daemon-backed pull (`git.pull`, PROTOCOL §5.6) via the appClient
+          // seam — replaces the dead legacy `git:pullBranch` IPC. The seam
+          // folds the daemon's structured `{ ok: false, error }` failure into
+          // `{ success: false, error }` and never throws.
           const pullResult =
             typeof window !== 'undefined' && window.electronAPI
-              ? await invoke<any>('git:pullBranch', {
-                repoPath,
-                branchName: branch,
-              })
+              ? await appClient.git.pull(repoPath, branch)
               : undefined;
           if (!pullResult?.success) {
             pullError = pullResult?.error || 'Failed to pull changes';

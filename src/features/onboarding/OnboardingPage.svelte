@@ -15,6 +15,7 @@
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
+  import { appClient } from '$lib/client';
   import { v4 as uuidv4 } from 'uuid';
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
@@ -663,12 +664,13 @@
           behind: onboardingBranchBehind,
         });
         try {
+          // Daemon-backed pull (`git.pull`, PROTOCOL §5.6) via the appClient
+          // seam — replaces the dead legacy `git:pullBranch` IPC. The seam
+          // folds the daemon's structured `{ ok: false, error }` failure into
+          // `{ success: false, error }` and never throws.
           const pullResult =
             typeof window !== 'undefined' && window.electronAPI
-              ? await invoke<any>('git:pullBranch', {
-                repoPath: projectSelection.repoPath,
-                branchName: projectSelection.branch,
-              })
+              ? await appClient.git.pull(projectSelection.repoPath, projectSelection.branch)
               : undefined;
           if (!pullResult?.success) {
             onboardingPullError = pullResult?.error || 'Failed to pull changes';

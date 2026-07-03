@@ -450,6 +450,15 @@ export interface GitClient {
    * fallback without crashing on `result.success` against undefined.
    */
   branchStatus(repoPath: string, branchName: string): Promise<GitBranchStatusResult | null>;
+  /**
+   * Path-based pull (`git.pull`, §5.6) — ports the legacy `git:pullBranch` IPC
+   * used by the workspace-create auto-pull, which runs against an arbitrary
+   * repo path BEFORE a workspace exists. Ordinary pull failures (conflicts,
+   * unreachable remote, stash recovery) are the daemon's structured
+   * `{ ok: false, error }` result, folded into `{ success: false, error }`;
+   * transport/validation errors fold the same way. Never throws.
+   */
+  pull(repoPath: string, branchName: string): Promise<MutationResult>;
   subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe;
   /**
    * Stage explicit paths (`git.stage`). Rejects all-files globs ('.'/'*'/'--all')

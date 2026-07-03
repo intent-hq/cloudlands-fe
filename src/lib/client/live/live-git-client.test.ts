@@ -551,6 +551,61 @@ describe("LiveGitClient.commit (fake transport)", () => {
   });
 });
 
+// `git.pull` (PROTOCOL §5.6) is path-based like `git.getBranches`: the
+// workspace-create auto-pull runs before the repo is registered as a
+// workspace. It replaces the dead legacy `invoke('git:pullBranch')` IPC.
+// Ordinary pull failures are the structured `{ ok: false, error }` result,
+// never a JSON-RPC error.
+describe("LiveGitClient.pull (fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("forwards git.pull with the documented params and folds { ok: true } to success", async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true });
+    const client = new LiveGitClient();
+
+    const result = await client.pull("/Users/clement/src/intent", "main");
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.pull", {
+      repoPath: "/Users/clement/src/intent",
+      branchName: "main",
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("maps the structured { ok: false, error } failure into a failed MutationResult", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      ok: false,
+      error: "Merge conflict detected. Please resolve conflicts manually.",
+    });
+    const client = new LiveGitClient();
+
+    expect(await client.pull("/repo", "main")).toEqual({
+      success: false,
+      error: "Merge conflict detected. Please resolve conflicts manually.",
+    });
+  });
+
+  it("falls back to a generic message when the structured failure carries no error text", async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: false });
+    const client = new LiveGitClient();
+
+    expect(await client.pull("/repo", "main")).toEqual({
+      success: false,
+      error: "Failed to pull changes",
+    });
+  });
+
+  it("maps a JSON-RPC error (e.g. repoPath validation) into a failed MutationResult", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("Repository path does not exist: /tmp/nope"));
+    const client = new LiveGitClient();
+
+    expect(await client.pull("/tmp/nope", "main")).toEqual({
+      success: false,
+      error: "Repository path does not exist: /tmp/nope",
+    });
+  });
+});
+
 // `subscribe` refetches `git.status` on daemon notifications routed through
 // `isEventInFamily`. Regression: when the matcher read a non-existent
 // `params.type` on the wrapped `{event:{type,…}}` envelope, the "type absent"

@@ -264,7 +264,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'git:log',
   'git:numstat',
   'git:pull',
-  'git:pullBranch',
   'git:push',
   'git:removeLock',
   'git:rename-branch',
