@@ -89,8 +89,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   };
 
   readonly specialists: AppClient["specialists"] = {
-    listCustom: async () => fx.mockSpecialists,
-    listFile: async () => [],
+    list: async () => fx.mockSpecialists,
     subscribe: (handler) => emitOnce(handler, fx.mockSpecialists),
   };
 

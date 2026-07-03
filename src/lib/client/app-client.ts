@@ -33,10 +33,6 @@ import type { TerminalTab } from "$store/renderer/slices/terminals/terminals-sli
 import type { ScriptWithState } from "$store/renderer/slices/scripts/scripts-types";
 import type { SetupScript } from "$store/renderer/slices/setup-scripts/setup-scripts-types";
 import type { SkillInfo } from "$store/renderer/slices/skills/skills-types";
-import type {
-  CustomSpecialist,
-  FileSpecialist,
-} from "$store/renderer/slices/specialists/specialists-slice";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
 import type { RecentUrl } from "$store/renderer/slices/browser/browser-types";
 import type { McpServerConfig } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
@@ -638,10 +634,34 @@ export interface SkillsClient {
   subscribe(handler: SubscriptionHandler<SkillInfo[]>): Unsubscribe;
 }
 
+/**
+ * Wire `SpecialistDef` (`specialist.list`, PROTOCOL §5.11): the resolved view
+ * of one definition. `source` is the winning tier (project > user > bundled)
+ * and `path` the file it resolved from (omitted for `bundled`). The optional
+ * frontmatter scalars (`codingAgent`/`model`/`modelTier`/`roleReminder`/
+ * `agentType`) are carried through verbatim when present; `behaviorPrompt`
+ * mirrors `prompt` (the markdown body).
+ */
+export interface SpecialistDef {
+  id: string;
+  name: string;
+  description: string;
+  codingAgent?: string;
+  model?: string;
+  modelTier?: string;
+  roleReminder?: string;
+  agentType?: string;
+  prompt?: string;
+  behaviorPrompt?: string;
+  source: "project" | "user" | "bundled";
+  isCustomized?: boolean;
+  path?: string;
+}
+
 export interface SpecialistsClient {
-  listCustom(): Promise<CustomSpecialist[]>;
-  listFile(): Promise<FileSpecialist[]>;
-  subscribe(handler: SubscriptionHandler<CustomSpecialist[]>): Unsubscribe;
+  /** Merged bundled + user + project definitions (`specialist.list`, PROTOCOL §5.11). */
+  list(): Promise<SpecialistDef[]>;
+  subscribe(handler: SubscriptionHandler<SpecialistDef[]>): Unsubscribe;
 }
 
 export interface ModelsClient {

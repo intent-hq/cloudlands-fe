@@ -20,7 +20,9 @@
  */
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import { SPECIALISTS } from "$lib/constants/specialists";
+import { SPECIALISTS, type Specialist } from "$lib/constants/specialists";
+import type { ModelTier, SpecialistFileScope } from "$shared/specialist-file-types";
+import type { SpecialistDef } from "$lib/client/app-client";
 import { registerMockSeeder } from "../mock-bootstrap";
 import { setSystemStatus } from "../slices/system-status/system-status-slice";
 import { setInitialized } from "../slices/release-notes/release-notes-slice";
@@ -40,6 +42,7 @@ import {
   setFileSpecialists,
   setFileSpecialistsLoaded,
   setOverridesLoaded,
+  type FileSpecialist,
 } from "../slices/specialists/specialists-slice";
 import { setSkills } from "../slices/skills/skills-slice";
 import { hydrateBrowserState } from "../slices/browser/browser-slice";
@@ -56,6 +59,45 @@ registerMockIpcHandler(IPC_CHANNELS.FILE_TRACKING.GET_LINE_STATS, async () => ({
   ok: true,
   data: { additions: 0, deletions: 0 },
 }));
+
+/** Wire `modelTier` is carried verbatim from frontmatter; only known tiers map. */
+const MODEL_TIERS: ReadonlySet<string> = new Set(["fast", "balanced", "smart"]);
+
+function toModelTier(value: string | undefined): ModelTier | undefined {
+  return value !== undefined && MODEL_TIERS.has(value) ? (value as ModelTier) : undefined;
+}
+
+/** Map a bundled-tier wire `SpecialistDef` (PROTOCOL §5.11) to the store's `Specialist`. */
+function toBundledSpecialist(def: SpecialistDef): Specialist {
+  return {
+    id: def.id,
+    name: def.name,
+    description: def.description,
+    codingAgent: def.codingAgent,
+    defaultModel: def.model,
+    defaultModelTier: toModelTier(def.modelTier),
+    defaultBehaviorPrompt: def.behaviorPrompt ?? def.prompt ?? "",
+    roleReminder: def.roleReminder,
+    source: "bundled",
+    defaultAgentType: def.agentType,
+  };
+}
+
+/** Map a user/project-tier wire `SpecialistDef` to the store's `FileSpecialist`. */
+function toFileSpecialist(def: SpecialistDef): FileSpecialist {
+  return {
+    id: def.id,
+    name: def.name,
+    description: def.description,
+    codingAgent: def.codingAgent,
+    model: def.model ?? "",
+    modelTier: toModelTier(def.modelTier),
+    behaviorPrompt: def.behaviorPrompt ?? def.prompt ?? "",
+    roleReminder: def.roleReminder,
+    filePath: def.path ?? "",
+    source: def.source as SpecialistFileScope,
+  };
+}
 
 /** Static "disabled" snapshot for the WebSocket API settings pane. */
 const DISABLED_WEBSOCKET_API: WebSocketApiStatusSnapshot = {
@@ -95,13 +137,25 @@ registerMockSeeder("misc-ui-events", async ({ store, client }) => {
     );
   }
 
-  // ── Specialists: bundled + file specialists, mark every source loaded ──
-  store.dispatch(setBundledSpecialists(SPECIALISTS));
+  // ── Specialists: split the daemon's merged `specialist.list` view ──
+  // (PROTOCOL §5.11: 3-tier resolution, project > user > bundled) into the
+  // bundled and file-backed slices. When no bundled entries arrive (daemon
+  // offline / empty resources) the hardcoded SPECIALISTS constant keeps the
+  // picker populated, matching the selector's last-resort fallback.
+  const specialistDefs = await client.specialists.list();
+  const bundledDefs = specialistDefs.filter((def) => def.source === "bundled");
+  const fileDefs = specialistDefs.filter(
+    (def) => def.source === "user" || def.source === "project",
+  );
+  store.dispatch(
+    setBundledSpecialists(
+      bundledDefs.length > 0 ? bundledDefs.map(toBundledSpecialist) : SPECIALISTS,
+    ),
+  );
   store.dispatch(setBundledSpecialistsLoaded(true));
   store.dispatch(setOverridesLoaded(true));
   store.dispatch(setCustomSpecialistsLoaded(true));
-  const fileSpecialists = await client.specialists.listFile();
-  store.dispatch(setFileSpecialists(fileSpecialists));
+  store.dispatch(setFileSpecialists(fileDefs.map(toFileSpecialist)));
   store.dispatch(setFileSpecialistsLoaded(true));
 
   // ── Per-workspace: skills, browser recent URLs, workspace event stream ──
