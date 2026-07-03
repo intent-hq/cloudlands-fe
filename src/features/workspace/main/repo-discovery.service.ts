@@ -8,8 +8,8 @@
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execFile } from 'child_process';
 import { Logger } from '../../../shared/logger';
+import { hostExec } from '../../../shared/main/host-exec';
 
 const logger = new Logger({ category: 'RepoDiscovery' });
 
@@ -161,48 +161,49 @@ async function discoverFromFilesystem(): Promise<DiscoveredRepo[]> {
 
   if (existingDirs.length === 0) return [];
 
-  return new Promise<DiscoveredRepo[]>((resolve) => {
-    const args = [
-      ...existingDirs,
-      '-maxdepth',
-      '3',
-      '-name',
-      '.git',
-      '-type',
-      'd',
-      '-not',
-      '-path',
-      '*/node_modules/*',
-      '-not',
-      '-path',
-      '*/Library/*',
-      '-not',
-      '-path',
-      '*/.Trash/*',
-    ];
+  const args = [
+    ...existingDirs,
+    '-maxdepth',
+    '3',
+    '-name',
+    '.git',
+    '-type',
+    'd',
+    '-not',
+    '-path',
+    '*/node_modules/*',
+    '-not',
+    '-path',
+    '*/Library/*',
+    '-not',
+    '-path',
+    '*/.Trash/*',
+  ];
 
-    const child = execFile('find', args, { timeout: 5000 }, (error, stdout) => {
-      if (error && !stdout) {
-        logger.warn('Filesystem scan failed or timed out', error);
-        resolve([]);
-        return;
-      }
-      const repos: DiscoveredRepo[] = [];
-      for (const line of stdout.trim().split('\n').filter(Boolean)) {
-        repos.push(toRepo(path.dirname(line), 'filesystem'));
-      }
-      resolve(repos);
-    });
+  // Route through the daemon's one-shot `host.exec` seam (PROTOCOL.md §5.14);
+  // the daemon owns argv-based exec and tree-kills the child on `timeoutMs`.
+  // `find` frequently exits non-zero on permission-denied entries while still
+  // emitting valid matches on stdout, so we mirror the previous callback's
+  // `error && !stdout` guard: parse whatever stdout we got, only bail on the
+  // timeout / no-output failure mode.
+  let stdout = '';
+  try {
+    const result = await hostExec('find', { args, timeoutMs: 5000 });
+    stdout = result.stdout;
+    if (result.timedOut && !stdout) {
+      logger.warn('Filesystem scan timed out');
+      return [];
+    }
+  } catch (error) {
+    logger.warn('Filesystem scan failed or timed out', error);
+    return [];
+  }
 
-    // Safety: kill on timeout (execFile timeout sends SIGTERM but we also guard)
-    setTimeout(() => {
-      try {
-        child.kill();
-      } catch {
-        /* already dead */
-      }
-    }, 5500);
-  });
+  const repos: DiscoveredRepo[] = [];
+  for (const line of stdout.trim().split('\n').filter(Boolean)) {
+    repos.push(toRepo(path.dirname(line), 'filesystem'));
+  }
+  return repos;
 }
 
 // ── Main entry point ─────────────────────────────────────────────────────────
