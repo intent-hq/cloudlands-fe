@@ -5,8 +5,23 @@
  * This module provides a mock electronAPI that returns sensible defaults so
  * the renderer can boot and render the full UI for development/preview purposes.
  *
+ * DEV-ONLY: the mock masks missing daemon wiring, so it must never activate in
+ * packaged/daemon-bridged runs. `installBrowserMock()` refuses to install
+ * unless the build is a dev build (`import.meta.env.DEV`) or the mock is
+ * explicitly opted into via `VITE_ENABLE_BROWSER_MOCK=true`. Every served mock
+ * response also logs a loud `[BrowserMock]` console warning naming the channel
+ * so mock data can never silently pass for real data.
+ *
  * Install by importing this module early (e.g., in hooks.client.ts).
  */
+
+/**
+ * Whether the browser mock is allowed to activate: dev builds or explicit
+ * opt-in only — never packaged/daemon-bridged runs.
+ */
+export function isBrowserMockEnabled(): boolean {
+  return !!import.meta.env.DEV || import.meta.env.VITE_ENABLE_BROWSER_MOCK === 'true';
+}
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -221,6 +236,9 @@ let listenerIdCounter = 0;
 
 const browserElectronAPI = {
   invoke: async (channel: string, data?: any): Promise<any> => {
+    console.warn(
+      `[BrowserMock] Serving MOCK response for IPC channel '${channel}' — this is dev-only mock data, not a real bridge`,
+    );
     return mockInvoke(channel, data);
   },
 
@@ -286,14 +304,23 @@ const browserElectronAPI = {
 /**
  * Install the browser mock if we're not in Electron.
  * Call this as early as possible (e.g., in hooks.client.ts).
+ *
+ * Refuses to install outside dev builds / explicit opt-in (see
+ * `isBrowserMockEnabled`), so a packaged run without a bridge fails loudly via
+ * `UnbridgedMockIpcChannelError` instead of silently serving mock data.
  */
 export function installBrowserMock(): boolean {
   if (typeof window === 'undefined') return false;
 
+  // Dev-only affordance — never activate in packaged/daemon-bridged runs
+  if (!isBrowserMockEnabled()) return false;
+
   // Already have a real electronAPI — don't overwrite
   if ((window as any).electronAPI) return false;
 
-  console.info('[BrowserMock] Installing mock electronAPI for browser-mode rendering');
+  console.warn(
+    '[BrowserMock] Installing mock electronAPI for browser-mode rendering — all IPC responses are DEV MOCKS',
+  );
   (window as any).electronAPI = browserElectronAPI;
 
   return true;

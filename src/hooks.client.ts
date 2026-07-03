@@ -178,8 +178,14 @@ async function initAnalyticsClient() {
 
 // Install a full browser mock for window.electronAPI when running outside Electron.
 // This provides mock data for workspaces, settings, etc. so the app renders fully.
-// The import auto-installs the mock if window.electronAPI is not already present.
-import '$lib/browser-mock';
+// DEV-ONLY: gated on import.meta.env.DEV (or explicit VITE_ENABLE_BROWSER_MOCK=true
+// opt-in) so packaged/daemon-bridged builds never load the mock — unbridged
+// channels then fail loudly (UnbridgedMockIpcChannelError) instead of silently
+// serving mock data. The import auto-installs the mock if window.electronAPI is
+// not already present (installBrowserMock re-checks the same gate internally).
+if (import.meta.env.DEV || import.meta.env.VITE_ENABLE_BROWSER_MOCK === 'true') {
+  void import('$lib/browser-mock');
+}
 
 // Initialize Sentry and Analytics asynchronously
 initSentry();
