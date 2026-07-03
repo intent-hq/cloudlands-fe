@@ -192,6 +192,30 @@ export function setupWorkspaceAssetProtocolHandler() {
       return new Response('Invalid asset URL', { status: 400 });
     }
 
+    // Daemon-first: assets saved via `note.saveAsset` live under the daemon's
+    // data dir, so resolve through `note.readAsset` (PROTOCOL §5.2) and fall
+    // back to the legacy local assets dir for pre-daemon assets.
+    try {
+      const { getBackendClient } = await import('../features/backend/main/backend.ipc');
+      const result = (await getBackendClient().request('note.readAsset', {
+        workspaceId,
+        asset: assetId,
+      })) as { assetId: string; mimeType: string; data: string; sizeKb: number };
+      return new Response(new Uint8Array(Buffer.from(result.data, 'base64')), {
+        status: 200,
+        headers: {
+          'Content-Type': result.mimeType,
+          'Cache-Control': 'max-age=31536000', // 1 year — assets are content-addressed
+        },
+      });
+    } catch (error) {
+      logger.warn('Daemon note.readAsset failed; trying legacy local assets', {
+        workspaceId,
+        assetId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     try {
       const { assetsService } = await import('../features/notes/main/assets.service');
       const assetPath = assetsService.getAssetPath(workspaceId, assetId);

@@ -371,8 +371,8 @@ export const IPC_CHANNELS = {
   },
 
   // Assets (images and files for notes)
+  // Asset writes go to the daemon via `note.saveAsset` (PROTOCOL §5.2).
   ASSETS: {
-    SAVE: 'assets:save',
     GET: 'assets:get',
     GET_DATA_URL: 'assets:get-data-url',
     DELETE: 'assets:delete',

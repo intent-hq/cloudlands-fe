@@ -1518,13 +1518,6 @@ export const NotesBatchListSchema = z.object({
 // Assets Schemas
 // ============================================================================
 
-export const AssetsSaveSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  data: z.string().min(1, 'Image data is required'),
-  mimeType: z.string().min(1, 'MIME type is required'),
-  originalName: z.string().optional(),
-});
-
 export const AssetsGetSchema = z.object({
   workspaceId: WorkspaceIdSchema,
   assetId: z.string().min(1, 'Asset ID is required'),

@@ -8,7 +8,6 @@ import { ipcMain } from 'electron';
 import { ASSETS_CHANNELS } from '$shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import {
-  AssetsSaveSchema,
   AssetsGetSchema,
   AssetsDeleteSchema,
   AssetsListSchema,
@@ -25,28 +24,8 @@ export function setupAssetsIPC() {
   // Wire up IMetadataFS resolver for remote workspace support
   assetsService.setMetadataFSResolver(getMetadataFS);
 
-  // Save an asset
-  ipcMain.handle(
-    ASSETS_CHANNELS.SAVE,
-    createSafeValidatedHandler(
-      AssetsSaveSchema,
-      async (_, validated) => {
-        try {
-          const result = await assetsService.saveAsset(
-            validated.workspaceId,
-            validated.data,
-            validated.mimeType,
-            validated.originalName,
-          );
-          return { success: true, data: result };
-        } catch (error) {
-          logger.error('Failed to save asset', error as Error);
-          return { success: false, error: (error as Error).message };
-        }
-      },
-      ASSETS_CHANNELS.SAVE,
-    ),
-  );
+  // Asset saves from the renderer go to the daemon via `note.saveAsset`
+  // (PROTOCOL §5.2); main-process MCP tools still use assetsService directly.
 
   // Get asset as data URL
   ipcMain.handle(

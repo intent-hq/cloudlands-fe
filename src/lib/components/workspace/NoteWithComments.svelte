@@ -96,7 +96,7 @@
   import { selectAssociationsForNote } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import { selectWorkspaceDefaultModel } from '$store/renderer/slices/model/model-selectors';
 
-  import { invoke } from '$lib/electron-bridge';
+
   import {
   selectNoteFontStyle,
   selectSpellcheckEnabled,
@@ -162,14 +162,12 @@
   const handleImagePaste = createImagePasteHandler({
     getEditor: () => editor,
     getWorkspaceId: () => workspace?.id,
-    invoke,
     logger,
   });
 
   const handleDrop = createImageDropHandler({
     getEditor: () => editor,
     getWorkspaceId: () => workspace?.id,
-    invoke,
     logger,
   });
 

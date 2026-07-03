@@ -241,7 +241,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'analytics:get-config',
   'app:get-version',
   'archive_workspace',
-  'assets:save',
   'auggie:authenticate',
   'auggie:check-mcp-claude-code',
   'auggie:check-mcp-codex',

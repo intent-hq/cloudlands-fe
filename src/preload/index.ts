@@ -313,7 +313,6 @@ const ALLOWED_CHANNELS = [
   "notes:convert-task-blocks",
   "notes:flush-pending-version",
   "notes:batch-list",
-  "assets:save",
   "assets:get",
   "assets:get-data-url",
   "assets:delete",
