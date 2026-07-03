@@ -265,16 +265,20 @@ async function navigateToNote(info: WorkspacesLinkInfo): Promise<void> {
 }
 
 /**
- * Check if a note exists in a workspace
+ * Check if a note exists in a workspace (daemon `note.get`, PROTOCOL §5.2)
  */
 async function checkNoteExists(workspaceId: string, noteId: string): Promise<boolean> {
   try {
-    const { invoke } = await import('$lib/electron-bridge');
-    const result = await invoke<{ success: boolean; data?: any }>('notes:get', {
+    const { backendRequest } = await import('$lib/client/live/backend-transport');
+    const result = await backendRequest<{ note?: unknown } | unknown>('note.get', {
       workspaceId,
       noteId,
     });
-    return result.success && result.data != null;
+    const note =
+      result && typeof result === 'object' && 'note' in result
+        ? (result as { note?: unknown }).note
+        : result;
+    return note != null && typeof note === 'object';
   } catch {
     return false;
   }

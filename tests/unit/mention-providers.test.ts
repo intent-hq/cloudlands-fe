@@ -15,19 +15,27 @@ import {
 } from '../../src/lib/services/mentions/providers';
 import type { SearchContext } from '../../src/lib/services/mentions/types';
 
-// Mock electron-bridge
-vi.mock('$lib/electron-bridge', () => ({
-  invoke: vi.fn(),
+// Mock the daemon transport (FolderProvider → search.fileNames)
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(),
+}));
+
+// Mock the appClient (NoteProvider → note.list / workspace list)
+vi.mock('$lib/client', () => ({
+  appClient: {
+    notes: { list: vi.fn() },
+    workspaces: { list: vi.fn() },
+  },
 }));
 
 describe('FolderProvider', () => {
   let provider: FolderProvider;
-  let mockInvoke: any;
+  let mockBackendRequest: any;
 
   beforeEach(async () => {
     provider = new FolderProvider();
-    const electronBridge = await import('$lib/electron-bridge');
-    mockInvoke = electronBridge.invoke as any;
+    const transport = await import('$lib/client/live/backend-transport');
+    mockBackendRequest = transport.backendRequest as any;
     vi.clearAllMocks();
   });
 
@@ -36,21 +44,21 @@ describe('FolderProvider', () => {
     expect(provider.triggers).toEqual(['@folder', '@dir']);
   });
 
-  it('should return folders from workspace:list-files', async () => {
-    // Mock workspace:get-by-id call
-    mockInvoke.mockResolvedValueOnce({ success: true, data: { worktreePath: '/workspace/root' } });
-
-    // Mock file:list call with folders
-    mockInvoke.mockResolvedValueOnce({
-      success: true,
-      data: [
-        { name: 'src', path: '/workspace/root/src', isFile: false },
-        { name: 'lib', path: '/workspace/root/lib', isFile: false },
-      ],
+  it('should derive folders from search.fileNames results', async () => {
+    mockBackendRequest.mockResolvedValueOnce({
+      requestId: 'srch-1',
+      files: ['src/main.ts', 'lib/util.ts'],
+      truncated: false,
     });
 
     const context: SearchContext = { workspaceId: 'test-workspace' };
     const results = await provider.search('', context);
+
+    expect(mockBackendRequest).toHaveBeenCalledWith('search.fileNames', {
+      workspaceId: 'test-workspace',
+      pattern: '',
+      limit: 200,
+    });
 
     expect(results).toHaveLength(2);
     expect(results[0]).toMatchObject({
@@ -60,36 +68,48 @@ describe('FolderProvider', () => {
     });
   });
 
-  it('should use fallback folders when IPC fails', async () => {
-    mockInvoke.mockRejectedValue(new Error('IPC error'));
+  it('should return empty results when the daemon request fails — never fabricated data', async () => {
+    mockBackendRequest.mockRejectedValue(new Error('daemon error'));
 
     const context: SearchContext = { workspaceId: 'test-workspace' };
     const results = await provider.search('src', context);
 
-    expect(results.length).toBeGreaterThan(0);
-    expect(results.some((r) => r.label === 'src')).toBe(true);
+    expect(results).toEqual([]);
   });
 
-  it('should filter folders by query', async () => {
-    mockInvoke.mockResolvedValue({ folders: [] });
+  it('should return empty results without a workspaceId (no wire call)', async () => {
+    const results = await provider.search('src', {} as SearchContext);
+
+    expect(mockBackendRequest).not.toHaveBeenCalled();
+    expect(results).toEqual([]);
+  });
+
+  it('should filter derived folders by query', async () => {
+    mockBackendRequest.mockResolvedValueOnce({
+      requestId: 'srch-1',
+      files: ['tests/foo.test.ts', 'src/main.ts'],
+      truncated: false,
+    });
 
     const context: SearchContext = { workspaceId: 'test-workspace' };
     const results = await provider.search('test', context);
 
-    // Should filter fallback folders
     expect(results.every((r) => r.label.toLowerCase().includes('test'))).toBe(true);
   });
 });
 
 describe('NoteProvider', () => {
   let provider: NoteProvider;
-  let mockInvoke: any;
+  let mockNotesList: any;
+  let mockWorkspacesList: any;
 
   beforeEach(async () => {
     provider = new NoteProvider();
-    const electronBridge = await import('$lib/electron-bridge');
-    mockInvoke = electronBridge.invoke as any;
+    const { appClient } = await import('$lib/client');
+    mockNotesList = appClient.notes.list as any;
+    mockWorkspacesList = appClient.workspaces.list as any;
     vi.clearAllMocks();
+    mockWorkspacesList.mockResolvedValue([]);
   });
 
   it('should have correct properties', () => {
@@ -98,17 +118,18 @@ describe('NoteProvider', () => {
     expect(provider.supportsRanges).toBe(true);
   });
 
-  it('should return notes from notes:list', async () => {
+  it('should return notes from the live notes client (note.list)', async () => {
     const mockNotes = [
       { id: 'note-1', title: 'Spec', content: 'Specification' },
       { id: 'note-2', title: 'Plan', content: 'Planning doc' },
     ];
 
-    mockInvoke.mockResolvedValue({ success: true, data: mockNotes });
+    mockNotesList.mockResolvedValue(mockNotes);
 
     const context: SearchContext = { workspaceId: 'test-workspace' };
     const results = await provider.search('', context);
 
+    expect(mockNotesList).toHaveBeenCalledWith('test-workspace');
     expect(results).toHaveLength(2);
     expect(results[0]).toMatchObject({
       type: 'note',
@@ -119,7 +140,7 @@ describe('NoteProvider', () => {
 
   it('should cache notes for synchronous access', async () => {
     const mockNotes = [{ id: 'note-1', title: 'Spec', content: 'Test' }];
-    mockInvoke.mockResolvedValue({ success: true, data: mockNotes });
+    mockNotesList.mockResolvedValue(mockNotes);
 
     const context: SearchContext = { workspaceId: 'test-workspace' };
     await provider.search('', context);
@@ -130,21 +151,21 @@ describe('NoteProvider', () => {
     expect(cached[0].label).toBe('Spec');
   });
 
-  it('should return default notes when cache is expired', () => {
-    // Don't populate cache, should return defaults
+  it('should return no notes when cache is expired — never fabricated defaults', () => {
+    // Don't populate cache; must NOT return fake default notes
     const cached = provider.getCachedNotes();
 
-    expect(cached.length).toBeGreaterThan(0);
-    expect(cached.some((n) => n.id === 'spec')).toBe(true);
+    expect(cached).toEqual([]);
   });
 
-  it('should use fallback notes when IPC fails', async () => {
-    mockInvoke.mockRejectedValue(new Error('IPC error'));
+  it('should return empty results when the daemon request fails — never fabricated data', async () => {
+    mockNotesList.mockRejectedValue(new Error('daemon error'));
+    mockWorkspacesList.mockRejectedValue(new Error('daemon error'));
 
     const context: SearchContext = { workspaceId: 'test-workspace' };
     const results = await provider.search('', context);
 
-    expect(results.length).toBeGreaterThan(0);
+    expect(results).toEqual([]);
   });
 });
 

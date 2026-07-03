@@ -29,6 +29,7 @@
   faPlay,
 } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
+  import { backendRequest } from '$lib/client/live/backend-transport';
   import { createLogger } from '$lib/utils/client-logger';
 
   import { selectBrowserRecentUrls } from '$store/renderer/slices/browser/browser-selectors';
@@ -300,22 +301,22 @@
   // Grouped results state (only files need async loading)
   let groupFiles: any[] = $state([]);
 
-  // IPC helper to query files and map to palette items (with fuzzy/MRU)
+  // Daemon helper to query files (search.fileNames, PROTOCOL §5.15) and map to palette items (with fuzzy/MRU)
   async function queryFiles(pattern: string): Promise<any[]> {
     if (!workspaceId) return [];
     try {
-      const resp = (await invoke('workspace:list-files', {
+      const resp = await backendRequest<{ files?: string[] }>('search.fileNames', {
         workspaceId,
         pattern: (pattern || '').trim(),
         limit: 50,
-      })) as any;
-      const files = Array.isArray(resp) ? resp : resp?.files || [];
-      const mapped = files.map((file: any) => ({
-        id: file.path,
-        label: file.name || (file.path?.split('/').pop() ?? file.path),
-        path: file.path,
+      });
+      const files = Array.isArray(resp?.files) ? resp.files : [];
+      const mapped = files.map((path: string) => ({
+        id: path,
+        label: path.split('/').pop() ?? path,
+        path,
         icon: faFile,
-        description: file.relativePath || file.path,
+        description: path,
       }));
       const q = (pattern || '').trim();
       if (q) {

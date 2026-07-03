@@ -4,7 +4,7 @@
   import { tick } from 'svelte';
   import { writable } from 'svelte/store';
 
-  import { invoke } from '$lib/electron-bridge';
+  import { backendRequest } from '$lib/client/live/backend-transport';
   import { ScrollArea } from '$lib/components/ui/scroll-area';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { getFileTypeIconSvg } from '$lib/utils/file-type-icons';
@@ -41,7 +41,7 @@
   import { store as appStore } from '$store/renderer/store';
   import type { FlattenedFileNode } from '$store/renderer/slices/file-explorer/file-explorer-types';
 
-  // Search result type from workspace:list-files
+  // Search result type mapped from daemon search.fileNames (PROTOCOL §5.15)
   interface SearchResult {
     name: string;
     path: string;
@@ -231,14 +231,21 @@
       }, 500);
 
       try {
-        const resp = (await invoke('workspace:list-files', {
+        const resp = await backendRequest<{ files?: string[] }>('search.fileNames', {
           workspaceId,
           pattern: query,
           limit: 100,
-        })) as { files?: SearchResult[]; folders?: SearchResult[] } | SearchResult[];
+        });
 
-        // Handle response format
-        let files = Array.isArray(resp) ? resp : resp?.files || [];
+        // Map daemon workspace-relative paths into search results
+        let files: SearchResult[] = (Array.isArray(resp?.files) ? resp.files : []).map(
+          (path) => ({
+            name: path.split('/').pop() || path,
+            path,
+            relativePath: path,
+            type: 'file' as const,
+          }),
+        );
 
         // Filter to only changed files if showOnlyChanged is enabled
         const gitStatusRec = $gitStatusRecord$;

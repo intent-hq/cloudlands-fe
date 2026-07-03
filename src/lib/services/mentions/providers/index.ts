@@ -20,201 +20,58 @@ import { formatRelativeTimeCompact } from '$lib/utils/date';
 import type { Workspace } from '$shared/types';
 import { store as appStore } from '$store/renderer/store';
 
-// Cache for workspace repo paths to avoid repeated IPC calls
-const workspaceRepoPathCache = new Map<string, string>();
-
-/**
- * Get the workspace repo/worktree path for a given workspace ID.
- * Returns the actual repository path (worktreePath or repositoryPath),
- * NOT the workspace storage/metadata folder.
- * Uses caching to avoid repeated IPC calls.
- */
-async function getWorkspaceRoot(workspaceId: string): Promise<string | null> {
-  if (workspaceRepoPathCache.has(workspaceId)) {
-    return workspaceRepoPathCache.get(workspaceId) || null;
-  }
-
-  try {
-    const { invoke } = await import('$lib/electron-bridge');
-    // Fetch the full workspace object to get the actual repo path
-    const response = await invoke<{ success: boolean; data?: any }>('workspace:get-by-id', { workspaceId });
-    if (response?.success && response.data) {
-      const repoPath = response.data.worktreePath || response.data.repositoryPath;
-      if (repoPath) {
-        workspaceRepoPathCache.set(workspaceId, repoPath);
-        return repoPath;
-      }
-    }
-  } catch (error) {
-    logger.debug('[FolderProvider] Failed to get workspace repo path:', error);
-  }
-
-  // Fallback to workspace:get-root if workspace:get-by-id fails
-  try {
-    const { invoke } = await import('$lib/electron-bridge');
-    const result = await invoke<string>('workspace:get-root', { workspaceId });
-    if (result) {
-      workspaceRepoPathCache.set(workspaceId, result);
-      return result;
-    }
-  } catch (error) {
-    logger.debug('[FolderProvider] Failed to get workspace root:', error);
-  }
-
-  return null;
-}
-
-/**
- * Convert an absolute path to a relative path based on workspace root
- * If the path is already relative or workspace root cannot be determined, returns the original path
- */
-async function makePathRelative(absolutePath: string, workspaceId: string): Promise<string> {
-  // If path is already relative, return as-is
-  if (!absolutePath.startsWith('/')) {
-    return absolutePath;
-  }
-
-  const workspaceRoot = await getWorkspaceRoot(workspaceId);
-  if (!workspaceRoot) {
-    return absolutePath;
-  }
-
-  // Remove trailing slash from workspace root for consistent comparison
-  const normalizedRoot = workspaceRoot.endsWith('/') ? workspaceRoot.slice(0, -1) : workspaceRoot;
-
-  // If path starts with workspace root, make it relative
-  if (absolutePath.startsWith(normalizedRoot + '/')) {
-    return absolutePath.slice(normalizedRoot.length + 1);
-  }
-
-  // If path equals workspace root, return empty string or '.'
-  if (absolutePath === normalizedRoot) {
-    return '.';
-  }
-
-  // Path is outside workspace root, return as-is
-  return absolutePath;
-}
-
-// Folder Provider
+// Folder Provider — daemon-backed via search.fileNames (PROTOCOL §5.15);
+// folders are derived from the workspace-relative file paths the daemon returns.
 export class FolderProvider implements Provider {
   id = 'folder';
   triggers = ['@folder', '@dir'];
 
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
-    try {
-      const { invoke } = await import('$lib/electron-bridge');
-
-      // Try workspace path first
-      if (context.workspaceId) {
-        const workspaceId = context.workspaceId;
-        const workspaceRoot = await getWorkspaceRoot(workspaceId);
-        if (workspaceRoot) {
-          logger.debug('[FolderProvider] Searching workspace at:', workspaceRoot);
-          const result: any = await invoke('file:list', {
-            path: workspaceRoot,
-            recursive: true,
-          });
-
-          if (result && result.success && result.data && result.data.length > 0) {
-            const folders = result.data
-              .filter((entry: any) => !entry.isFile)
-              .filter((folder: any) => {
-                if (!query) return true;
-                return fuzzyMatch(query, folder.name) !== null;
-              })
-              .slice(0, 10)
-              .map(async (folder: any) => {
-                const displayPath = await makePathRelative(folder.path, workspaceId);
-                return {
-                  id: `folder-${folder.path}`,
-                  type: 'folder' as MentionType,
-                  label: folder.name || folder.path.split('/').pop() || folder.path,
-                  description: displayPath,
-                  icon: '📁',
-                  uri: `devspace://folder/${encodeURIComponent(folder.path)}`,
-                  meta: {
-                    path: displayPath,
-                    fullPath: folder.path,
-                    relativePath: displayPath,
-                  },
-                };
-              });
-
-            if (folders.length > 0) {
-              return await Promise.all(folders);
-            }
-          }
-        }
-      }
-
-      // Try repoPath if workspace didn't work
-      if (context.repoPath) {
-        logger.debug('[FolderProvider] Searching repo at:', context.repoPath);
-        const result: any = await invoke('file:list', {
-          path: context.repoPath,
-          recursive: true,
-        });
-
-        if (result && result.success && result.data && result.data.length > 0) {
-          const folders = result.data
-            .filter((entry: any) => !entry.isFile)
-            .filter((folder: any) => {
-              if (!query) return true;
-              return fuzzyMatch(query, folder.name) !== null;
-            })
-            .slice(0, 10)
-            .map((folder: any) => {
-              const relativePath = folder.path.replace(context.repoPath, '').replace(/^\//, '');
-              return {
-                id: `folder-${folder.path}`,
-                type: 'folder' as MentionType,
-                label: folder.name || folder.path.split('/').pop() || folder.path,
-                description: relativePath,
-                icon: '📁',
-                uri: `devspace://folder/${encodeURIComponent(folder.path)}`,
-                meta: {
-                  path: relativePath,
-                  fullPath: folder.path,
-                  relativePath: relativePath,
-                },
-              };
-            });
-
-          if (folders.length > 0) {
-            return folders;
-          }
-        }
-      }
-    } catch (error) {
-      logger.debug('[FolderProvider] Failed to get folders:', error);
+    const workspaceId = context.workspaceId;
+    if (!workspaceId) {
+      return [];
     }
 
-    // Fallback to common folders
-    const folders = [
-      { path: 'src', label: 'src' },
-      { path: 'lib', label: 'lib' },
-      { path: 'tests', label: 'tests' },
-      { path: 'docs', label: 'docs' },
-    ];
+    try {
+      const { backendRequest } = await import('$lib/client/live/backend-transport');
+      const result = await backendRequest<{ files?: string[] }>('search.fileNames', {
+        workspaceId,
+        pattern: query || '',
+        limit: 200,
+      });
 
-    // Use fuzzy matching for better filtering
-    const filtered = query
-      ? folders.filter((f) => fuzzyMatch(query, f.label) !== null)
-      : folders;
+      const files = Array.isArray(result?.files) ? result.files : [];
+      const folderPaths = new Set<string>();
+      for (const file of files) {
+        const segments = file.split('/');
+        for (let i = 1; i < segments.length; i++) {
+          folderPaths.add(segments.slice(0, i).join('/'));
+        }
+      }
 
-    return filtered.map((folder) => ({
-      id: `folder-${folder.path}`,
-      type: 'folder' as MentionType,
-      label: folder.label,
-      description: folder.path,
-      icon: '📁',
-      uri: `devspace://folder/${encodeURIComponent(folder.path)}`,
-      meta: {
-        path: folder.path,
-        relativePath: folder.path,
-      },
-    }));
+      return [...folderPaths]
+        .filter((path) => {
+          if (!query) return true;
+          return fuzzyMatch(query, path.split('/').pop() || path) !== null;
+        })
+        .slice(0, 10)
+        .map((path) => ({
+          id: `folder-${path}`,
+          type: 'folder' as MentionType,
+          label: path.split('/').pop() || path,
+          description: path,
+          icon: '📁',
+          uri: `devspace://folder/${encodeURIComponent(path)}`,
+          meta: {
+            path,
+            fullPath: path,
+            relativePath: path,
+          },
+        }));
+    } catch (error) {
+      logger.debug('[FolderProvider] Failed to get folders:', error);
+      return [];
+    }
   }
 }
 
@@ -230,7 +87,7 @@ export class NoteProvider implements Provider {
   private cacheTimeout: number = 5000; // 5 seconds
 
   /**
-   * Get sibling workspaces (workspaces in the same repository)
+   * Get sibling workspaces (workspaces in the same repository) via the appClient
    */
   private async getSiblingWorkspaces(
     currentWorkspaceId: string | undefined,
@@ -241,19 +98,13 @@ export class NoteProvider implements Provider {
     }
 
     try {
-      const { invoke } = await import('$lib/electron-bridge');
-
-      // Get current workspace to find its repository path
-      const currentWorkspace = await invoke<Workspace | null>('workspace:get', {
-        id: currentWorkspaceId,
-      });
+      const { appClient } = await import('$lib/client');
+      const allWorkspaces = await appClient.workspaces.list();
+      const currentWorkspace = allWorkspaces.find((w) => w.id === currentWorkspaceId);
 
       if (!currentWorkspace || !currentWorkspace.repositoryPath) {
         return [];
       }
-
-      // Get all workspaces
-      const allWorkspaces = await invoke<Workspace[]>('workspace:list', {});
 
       // Filter to only workspaces with the same repository path (excluding current)
       return allWorkspaces.filter(
@@ -267,30 +118,20 @@ export class NoteProvider implements Provider {
   }
 
   /**
-   * Fetch notes from a specific workspace
+   * Fetch notes from a specific workspace via the live notes client (note.list, PROTOCOL §5.2)
    */
   private async fetchNotesFromWorkspace(
     workspaceId: string,
+    workspaceTitle?: string,
   ): Promise<Array<{ note: any; workspaceId: string; workspaceTitle?: string }>> {
     try {
-      const { invoke } = await import('$lib/electron-bridge');
-      const result = await invoke<import('$shared/types').CommandResponse<any[]>>('notes:list', {
+      const { appClient } = await import('$lib/client');
+      const notes = await appClient.notes.list(workspaceId);
+      return notes.map((note) => ({
+        note,
         workspaceId,
-      });
-
-      if (result && result.success && result.data && Array.isArray(result.data)) {
-        // Get workspace title for context via IPC
-        const workspace = await invoke<Workspace | null>('workspace:get', {
-          id: workspaceId,
-        });
-        const workspaceTitle = workspace?.title;
-
-        return result.data.map((note: any) => ({
-          note,
-          workspaceId,
-          workspaceTitle,
-        }));
-      }
+        workspaceTitle,
+      }));
     } catch (error) {
       logger.debug(`[NoteProvider] Failed to fetch notes from workspace ${workspaceId}:`, error);
     }
@@ -310,7 +151,7 @@ export class NoteProvider implements Provider {
       // Fetch notes from sibling workspaces
       const siblingWorkspaces = await this.getSiblingWorkspaces(context.workspaceId);
       const siblingNotesPromises = siblingWorkspaces.map((ws) =>
-        this.fetchNotesFromWorkspace(ws.id),
+        this.fetchNotesFromWorkspace(ws.id, ws.title),
       );
       const siblingNotesResults = await Promise.all(siblingNotesPromises);
       const siblingNotes = siblingNotesResults.flat();
@@ -360,7 +201,8 @@ export class NoteProvider implements Provider {
       logger.debug('[NoteProvider] Failed to fetch notes:', error);
     }
 
-    // Return cached notes if available
+    // Return cached notes if available (real data from a previous fetch);
+    // never fabricate default notes.
     if (this.cachedNotes.length > 0) {
       return this.cachedNotes.filter(
         (n) =>
@@ -370,51 +212,15 @@ export class NoteProvider implements Provider {
       );
     }
 
-    // Fallback to default notes
-    const defaultNotes = [
-      { id: 'spec', label: 'spec', description: 'Space specification' },
-      { id: 'plan', label: 'plan', description: 'Implementation plan' },
-      { id: 'notes', label: 'notes', description: 'General notes' },
-    ];
-
-    return defaultNotes
-      .filter((n) => !query || fuzzyMatch(query, n.label) !== null)
-      .map((note) => ({
-        id: note.id,
-        type: 'note' as MentionType,
-        label: note.label,
-        description: note.description,
-        icon: '📝',
-        uri: `devspace://note/${note.id}`,
-        meta: {},
-      }));
+    return [];
   }
 
   // Method for synchronous access
   getCachedNotes(): MentionCandidate[] {
     const now = Date.now();
     if (now - this.lastCacheUpdate > this.cacheTimeout) {
-      // Cache expired, return default notes
-      return [
-        {
-          id: 'spec',
-          type: 'note' as MentionType,
-          label: 'spec',
-          description: 'Space specification',
-          icon: '📝',
-          uri: 'devspace://note/spec',
-          meta: {},
-        },
-        {
-          id: 'plan',
-          type: 'note' as MentionType,
-          label: 'plan',
-          description: 'Implementation plan',
-          icon: '📝',
-          uri: 'devspace://note/plan',
-          meta: {},
-        },
-      ];
+      // Cache expired — no fabricated defaults
+      return [];
     }
     return this.cachedNotes;
   }

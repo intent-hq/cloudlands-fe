@@ -9,93 +9,9 @@ import type {
   MentionGroup,
   MentionType,
 } from '../types';
-import { invoke } from '$lib/electron-bridge';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { logger } from '$lib/utils/client-logger';
-import {
-  fuzzyMatch,
-  pathFuzzyMatch,
-} from '../fuzzy-matcher';
-
-// Cache for workspace repo paths to avoid repeated IPC calls
-const workspaceRepoPathCache = new Map<string, string>();
-
-/**
- * Clear the workspace root cache (for testing purposes)
- */
-export function clearWorkspaceRootCache(): void {
-  workspaceRepoPathCache.clear();
-}
-
-/**
- * Get the workspace repo/worktree path for a given workspace ID.
- * Returns the actual repository path (worktreePath or repositoryPath),
- * NOT the workspace storage/metadata folder.
- * Uses caching to avoid repeated IPC calls.
- */
-async function getWorkspaceRoot(workspaceId: string): Promise<string | null> {
-  if (workspaceRepoPathCache.has(workspaceId)) {
-    return workspaceRepoPathCache.get(workspaceId) || null;
-  }
-
-  try {
-    // Fetch the full workspace object to get the actual repo path
-    const response = await invoke<{ success: boolean; data?: any }>('workspace:get-by-id', { workspaceId });
-    if (response?.success && response.data) {
-      const repoPath = response.data.worktreePath || response.data.repositoryPath;
-      if (repoPath) {
-        workspaceRepoPathCache.set(workspaceId, repoPath);
-        return repoPath;
-      }
-    }
-  } catch (error) {
-    logger.debug('[FileProvider] Failed to get workspace repo path:', error);
-  }
-
-  // Fallback to workspace:get-root if workspace:get-by-id fails
-  try {
-    const result = await invoke<string>('workspace:get-root', { workspaceId });
-    if (result) {
-      workspaceRepoPathCache.set(workspaceId, result);
-      return result;
-    }
-  } catch (error) {
-    logger.debug('[FileProvider] Failed to get workspace root:', error);
-  }
-
-  return null;
-}
-
-/**
- * Convert an absolute path to a relative path based on workspace root
- * If the path is already relative or workspace root cannot be determined, returns the original path
- */
-async function makePathRelative(absolutePath: string, workspaceId: string): Promise<string> {
-  // If path is already relative, return as-is
-  if (!absolutePath.startsWith('/')) {
-    return absolutePath;
-  }
-
-  const workspaceRoot = await getWorkspaceRoot(workspaceId);
-  if (!workspaceRoot) {
-    return absolutePath;
-  }
-
-  // Remove trailing slash from workspace root for consistent comparison
-  const normalizedRoot = workspaceRoot.endsWith('/') ? workspaceRoot.slice(0, -1) : workspaceRoot;
-
-  // If path starts with workspace root, make it relative
-  if (absolutePath.startsWith(normalizedRoot + '/')) {
-    return absolutePath.slice(normalizedRoot.length + 1);
-  }
-
-  // If path equals workspace root, return empty string or '.'
-  if (absolutePath === normalizedRoot) {
-    return '.';
-  }
-
-  // Path is outside workspace root, return as-is
-  return absolutePath;
-}
+import { fuzzyMatch } from '../fuzzy-matcher';
 
 interface FileSearchResult {
   path: string;
@@ -154,129 +70,49 @@ export class FileProvider implements Provider {
   };
 
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
-    logger.debug('[FileProvider] Searching for:', { query, context: { workspaceId: context.workspaceId, repoPath: context.repoPath } });
+    logger.debug('[FileProvider] Searching for:', { query, context: { workspaceId: context.workspaceId } });
 
-    try {
-      // Support both workspace and local repo search
-      const workspaceId = context.workspaceId;
-      const repoPath = context.repoPath;
-
-      // If we have a workspace, use authorized IPC channels
-      if (workspaceId) {
-        // Get workspace root using authorized IPC
-        const workspaceRoot = await getWorkspaceRoot(workspaceId);
-        if (workspaceRoot) {
-          // Use authorized file:list IPC with recursive option
-          logger.debug('[FileProvider] Searching workspace at:', workspaceRoot);
-          const result: any = await invoke('file:list', {
-            path: workspaceRoot,
-            recursive: true,
-          });
-
-          if (result && result.success && result.data && result.data.length > 0) {
-            const files = result.data
-              .filter((entry: any) => entry.isFile)
-              .filter((file: any) => {
-                if (!query) return true;
-                return pathFuzzyMatch(query, file.path || file.name) !== null;
-              })
-              .slice(0, 10)
-              .map(async (file: any) => {
-                const extension = file.name.split('.').pop() || '';
-                const displayPath = await makePathRelative(file.path, workspaceId);
-                return {
-                  id: `file-${file.path}`,
-                  label: file.name,
-                  type: 'file' as MentionType,
-                  uri: `file:${file.path}`,
-                  description: displayPath,
-                  subtitle: displayPath,
-                  score: 0.5,
-                  meta: {
-                    path: displayPath,
-                    fullPath: file.path,
-                    relativePath: displayPath,
-                    extension: extension,
-                    language: this.getLanguageFromExtension(extension),
-                  },
-                };
-              });
-
-            if (files.length > 0) {
-              const resolvedFiles = await Promise.all(files);
-              return this.deduplicateAndDistinguish(resolvedFiles);
-            }
-          }
-        }
-      } else if (repoPath) {
-        // Search local repo using file:list IPC with recursive option
-        logger.debug('[FileProvider] Searching local repo at:', repoPath);
-        const result: any = await invoke('file:list', {
-          path: repoPath,
-          recursive: true,
-        });
-
-        if (result && result.success && result.data && result.data.length > 0) {
-          // Normalize repoPath by removing trailing slash for consistent comparison
-          const normalizedRepoPath = repoPath.endsWith('/') ? repoPath.slice(0, -1) : repoPath;
-
-          const files = result.data
-            .filter((entry: any) => entry.isFile)
-            .filter((file: any) => {
-              if (!query) return true;
-              return pathFuzzyMatch(query, file.path || file.name) !== null;
-            })
-            .slice(0, 10)
-            .map((file: any) => {
-              const extension = file.name.split('.').pop() || '';
-              // Safely strip repo path prefix using startsWith check
-              let relativePath = file.path;
-              if (file.path.startsWith(normalizedRepoPath + '/')) {
-                relativePath = file.path.slice(normalizedRepoPath.length + 1);
-              } else if (file.path === normalizedRepoPath) {
-                relativePath = '.';
-              }
-              return {
-                id: `file-${file.path}`,
-                label: file.name,
-                type: 'file' as MentionType,
-                uri: `file:${file.path}`,
-                description: relativePath,
-                subtitle: relativePath,
-                score: 0.5,
-                meta: {
-                  path: relativePath,
-                  fullPath: file.path,
-                  extension: extension,
-                  language: this.getLanguageFromExtension(extension),
-                },
-              };
-            });
-
-          if (files.length > 0) {
-            return this.deduplicateAndDistinguish(files);
-          }
-        }
-      }
-    } catch (error) {
-      logger.error('[FileProvider] Search failed:', error);
+    const workspaceId = context.workspaceId;
+    if (!workspaceId) {
+      return [];
     }
 
-    // Fallback to common files if search fails
-    const fallbackFiles = [
-      { path: 'README.md', name: 'README.md', extension: 'md' },
-      { path: 'package.json', name: 'package.json', extension: 'json' },
-      { path: 'tsconfig.json', name: 'tsconfig.json', extension: 'json' },
-      { path: '.gitignore', name: '.gitignore', extension: '' },
-      { path: 'src/index.ts', name: 'index.ts', extension: 'ts' },
-    ];
+    try {
+      // Daemon-backed path search (search.fileNames, PROTOCOL §5.15); returns
+      // workspace-relative paths.
+      const result = await backendRequest<{ files?: string[] }>('search.fileNames', {
+        workspaceId,
+        pattern: query || '',
+        limit: 10,
+      });
 
-    const filtered = fallbackFiles.filter((file) => {
-      if (!query) return true;
-      return pathFuzzyMatch(query, file.path) !== null;
-    });
+      const paths = Array.isArray(result?.files) ? result.files : [];
+      const files = paths.map((path) => {
+        const name = path.split('/').pop() || path;
+        const extension = name.split('.').pop() || '';
+        return {
+          id: `file-${path}`,
+          label: name,
+          type: 'file' as MentionType,
+          uri: `file:${path}`,
+          description: path,
+          subtitle: path,
+          score: 0.5,
+          meta: {
+            path,
+            fullPath: path,
+            relativePath: path,
+            extension: extension,
+            language: this.getLanguageFromExtension(extension),
+          },
+        };
+      });
 
-    return Promise.all(filtered.map((file) => this.fileToCandidate(file)));
+      return this.deduplicateAndDistinguish(files);
+    } catch (error) {
+      logger.error('[FileProvider] Search failed:', error);
+      return [];
+    }
   }
 
   private async searchRecent(query: string, context: SearchContext): Promise<MentionCandidate[]> {
@@ -294,7 +130,7 @@ export class FileProvider implements Provider {
         .map((path) => {
           const name = path.split('/').pop() || path;
           const extension = name.split('.').pop() || '';
-          return this.fileToCandidate({ path, name, extension }, context.workspaceId);
+          return this.fileToCandidate({ path, name, extension });
         }),
     );
 
@@ -322,10 +158,9 @@ export class FileProvider implements Provider {
     return [];
   }
 
-  private async fileToCandidate(file: FileSearchResult, workspaceId?: string): Promise<MentionCandidate> {
+  private async fileToCandidate(file: FileSearchResult): Promise<MentionCandidate> {
     const icon = this.getFileIcon(file.extension);
-    // Convert absolute path to relative if workspace ID is provided
-    const displayPath = workspaceId ? await makePathRelative(file.path, workspaceId) : file.path;
+    const displayPath = file.path;
     const shortPath = this.formatPath(displayPath);
 
     return {
