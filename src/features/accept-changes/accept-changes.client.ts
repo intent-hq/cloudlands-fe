@@ -1,9 +1,14 @@
 /**
  * Accept Changes Client
  *
- * Client-side wrapper for accept changes IPC calls.
+ * Client-side wrapper for the accept-changes workflow. Git/forge orchestration
+ * (commit → push → create-PR → merge) lives in the intentd daemon and is
+ * reached via `backendRequest('accept-changes.*')` (PROTOCOL.md §5.18).
+ * Only `checkPathHasChanges` stays on local Electron IPC — it probes an
+ * arbitrary local filesystem path, which the daemon does not manage.
  */
 
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { IPC_CHANNELS } from '../../shared/ipc-registry';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 import type { WorkspaceId } from '../../shared/types/branded-ids';
@@ -13,7 +18,6 @@ import type {
   PrepareAcceptResponse,
   ExecuteAcceptRequest,
   AcceptChangesResult,
-  ExportFilesResult,
   MergeStrategy,
   UndoCommitMetadata,
 } from './types';
@@ -22,6 +26,15 @@ interface IPCResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
+}
+
+/** Convert a thrown transport/daemon error into a failed AcceptChangesResult. */
+function toFailureResult(error: unknown, fallbackMessage: string): AcceptChangesResult {
+  return {
+    success: false,
+    steps: [],
+    error: error instanceof Error ? error.message : fallbackMessage,
+  };
 }
 
 export class AcceptChangesClient {
@@ -36,15 +49,7 @@ export class AcceptChangesClient {
    * Get the current git status for accept changes workflow
    */
   static async getStatus(workspaceId: WorkspaceId): Promise<WorkspaceGitStatus> {
-    const response = await this.invoke<WorkspaceGitStatus>(IPC_CHANNELS.ACCEPT_CHANGES.GET_STATUS, {
-      workspaceId,
-    });
-
-    if (!response.success || !response.data) {
-      throw new Error(response.error || 'Failed to get status');
-    }
-
-    return response.data;
+    return backendRequest<WorkspaceGitStatus>('accept-changes.getStatus', { workspaceId });
   }
 
   /**
@@ -55,17 +60,11 @@ export class AcceptChangesClient {
     action: AcceptAction,
     files?: string[],
   ): Promise<PrepareAcceptResponse> {
-    const response = await this.invoke<PrepareAcceptResponse>(IPC_CHANNELS.ACCEPT_CHANGES.PREPARE, {
+    return backendRequest<PrepareAcceptResponse>('accept-changes.prepare', {
       workspaceId,
       action,
       files,
     });
-
-    if (!response.success || !response.data) {
-      throw new Error(response.error || 'Failed to prepare');
-    }
-
-    return response.data;
   }
 
   /**
@@ -81,7 +80,6 @@ export class AcceptChangesClient {
       prBody?: string;
       targetBranch?: string;
       mergeStrategy?: MergeStrategy;
-      exportPath?: string;
       upToCommitHash?: string;
       /** Metadata about commits being undone, used to restore attributions */
       undoCommitsMetadata?: UndoCommitMetadata[];
@@ -101,7 +99,6 @@ export class AcceptChangesClient {
       prBody: options?.prBody,
       targetBranch: options?.targetBranch,
       mergeStrategy: options?.mergeStrategy,
-      exportPath: options?.exportPath,
       upToCommitHash: options?.upToCommitHash,
       undoCommitsMetadata: options?.undoCommitsMetadata,
       options: {
@@ -113,23 +110,12 @@ export class AcceptChangesClient {
       },
     };
 
-    const response = await this.invoke<AcceptChangesResult>(
-      IPC_CHANNELS.ACCEPT_CHANGES.EXECUTE,
-      request,
-    );
-
-    if (!response.success) {
-      // Return the result even on failure - it contains step info
-      return (
-        response.data || {
-          success: false,
-          steps: [],
-          error: response.error || 'Failed to execute',
-        }
-      );
+    try {
+      return await backendRequest<AcceptChangesResult>('accept-changes.execute', request);
+    } catch (error) {
+      // Preserve the historical contract: execute() reports failures in-band.
+      return toFailureResult(error, 'Failed to execute');
     }
-
-    return response.data as AcceptChangesResult;
   }
 
   /**
@@ -144,60 +130,17 @@ export class AcceptChangesClient {
       commitMessage?: string;
     },
   ): Promise<AcceptChangesResult> {
-    const response = await this.invoke<AcceptChangesResult>(
-      IPC_CHANNELS.ACCEPT_CHANGES.MERGE_PR,
-      {
+    try {
+      return await backendRequest<AcceptChangesResult>('accept-changes.mergePR', {
         workspaceId,
         prNumber,
         mergeMethod: options?.mergeMethod,
         commitTitle: options?.commitTitle,
         commitMessage: options?.commitMessage,
-      },
-    );
-
-    if (!response.success) {
-      return (
-        response.data || {
-          success: false,
-          steps: [],
-          error: response.error || 'Failed to merge PR',
-        }
-      );
+      });
+    } catch (error) {
+      return toFailureResult(error, 'Failed to merge PR');
     }
-
-    return response.data as AcceptChangesResult;
-  }
-
-  /**
-   * Export files to a target folder
-   */
-  static async exportFiles(
-    workspaceId: WorkspaceId,
-    targetPath: string,
-    options?: {
-      files?: string[];
-      preserveStructure?: boolean;
-    },
-  ): Promise<ExportFilesResult> {
-    const response = await this.invoke<ExportFilesResult>(IPC_CHANNELS.ACCEPT_CHANGES.EXPORT, {
-      workspaceId,
-      targetPath,
-      files: options?.files,
-      preserveStructure: options?.preserveStructure,
-    });
-
-    if (!response.success) {
-      return (
-        response.data || {
-          success: false,
-          exportedFiles: [],
-          targetPath,
-          error: response.error || 'Failed to export',
-        }
-      );
-    }
-
-    return response.data as ExportFilesResult;
   }
 
   /**
@@ -207,20 +150,18 @@ export class AcceptChangesClient {
     workspaceId: WorkspaceId,
     remoteUrl: string,
   ): Promise<WorkspaceGitStatus> {
-    const response = await this.invoke<WorkspaceGitStatus>(
-      IPC_CHANNELS.ACCEPT_CHANGES.ADD_REMOTE,
-      { workspaceId, remoteUrl },
-    );
-
-    if (!response.success || !response.data) {
-      throw new Error(response.error || 'Failed to add remote');
-    }
-
-    return response.data;
+    return backendRequest<WorkspaceGitStatus>('accept-changes.addRemote', {
+      workspaceId,
+      remoteUrl,
+    });
   }
 
   /**
-   * Check if a path has uncommitted git changes
+   * Check if a path has uncommitted git changes.
+   *
+   * Stays on local Electron IPC (not the daemon): it inspects an arbitrary
+   * local filesystem path (e.g. an export destination) that is not a
+   * daemon-managed workspace.
    */
   static async checkPathHasChanges(
     targetPath: string,
@@ -243,29 +184,13 @@ export class AcceptChangesClient {
    * Performs a hard reset, discarding all local commits and changes
    */
   static async resetToTrunk(workspaceId: WorkspaceId): Promise<AcceptChangesResult> {
-    const response = await this.invoke<AcceptChangesResult>(
-      IPC_CHANNELS.ACCEPT_CHANGES.EXECUTE,
-      { workspaceId, action: 'reset-to-trunk' },
-    );
-
-    if (!response.success) {
-      return (
-        response.data || {
-          success: false,
-          steps: [],
-          error: response.error || 'Failed to reset to trunk',
-        }
-      );
+    try {
+      return await backendRequest<AcceptChangesResult>('accept-changes.execute', {
+        workspaceId,
+        action: 'reset-to-trunk',
+      });
+    } catch (error) {
+      return toFailureResult(error, 'Failed to reset to trunk');
     }
-
-    if (!response.data) {
-      return {
-        success: false,
-        steps: [],
-        error: 'Reset succeeded but received no result data',
-      };
-    }
-
-    return response.data;
   }
 }

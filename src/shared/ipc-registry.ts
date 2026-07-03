@@ -824,23 +824,6 @@ export const IPC_CHANNELS = {
     GET: 'diffs:get',
   },
 
-  // Line Changes
-  LINE_CHANGES: {
-    GET_WORKSPACE_STATS: 'line-changes:get-workspace-stats',
-    GET_ALL_WORKSPACE_STATS: 'line-changes:get-all-workspace-stats',
-    GET_AGENT_STATS: 'line-changes:get-agent-stats',
-    CALCULATE_DIFF: 'line-changes:calculate-diff',
-    UPDATE_WORKSPACE_STATS: 'line-changes:update-workspace-stats',
-    UPDATE_AGENT_STATS: 'line-changes:update-agent-stats',
-    CLEAR_WORKSPACE_STATS: 'line-changes:clear-workspace-stats',
-    CLEAR_AGENT_STATS: 'line-changes:clear-agent-stats',
-    MARK_AGENT_ACTIVE: 'changes:mark-agent-active',
-    GET_CURRENT: 'changes:get-current',
-    START_AGENT_EXECUTION: 'changes:start-agent-execution',
-    STOP_AGENT_EXECUTION: 'changes:stop-agent-execution',
-    MARK_AGENT_MODIFIED_FILES: 'changes:mark-agent-modified-files',
-  },
-
   // Line Attribution
   LINE_ATTRIBUTION: {
     LOAD: 'line-attribution:load',
@@ -986,15 +969,11 @@ export const IPC_CHANNELS = {
     GET_BACKGROUND_OPS_STATUS: 'git:background-ops-status',
   },
 
-  // Accept Changes
+  // Accept Changes — the workflow itself (status/prepare/execute/merge-pr/
+  // add-remote) is served by the intentd daemon over `backend:request`
+  // (PROTOCOL.md §5.18); only the local filesystem probe stays on IPC.
   ACCEPT_CHANGES: {
-    GET_STATUS: 'accept-changes:get-status',
-    PREPARE: 'accept-changes:prepare',
-    EXECUTE: 'accept-changes:execute',
-    EXPORT: 'accept-changes:export',
     CHECK_PATH_HAS_CHANGES: 'accept-changes:check-path-has-changes',
-    ADD_REMOTE: 'accept-changes:add-remote',
-    MERGE_PR: 'accept-changes:merge-pr',
   },
 
   // Chat Export

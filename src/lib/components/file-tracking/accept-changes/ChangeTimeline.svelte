@@ -17,7 +17,6 @@
   faRobot,
   faArrowRight,
   faCodePullRequest,
-  faFolderOpen,
   faEye,
   faChevronRight,
   faUser,
@@ -35,7 +34,6 @@
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
   import { Input } from '$lib/components/ui/input';
-  import FileActionsDropdown from '$lib/components/ui/FileActionsDropdown.svelte';
   import type { LocalCommitInfo } from '$features/accept-changes/types';
   import FileRow from './FileRow.svelte';
   import CommitNode from './CommitNode.svelte';
@@ -79,7 +77,6 @@
     isCommitting?: boolean;
     isPushing?: boolean;
     isCreatingPR?: boolean;
-    isExporting?: boolean;
     onFileClick?: (path: string, commitHash?: string, staged?: boolean) => void;
     onStage?: (path: string) => void;
     onUnstage?: (path: string) => void;
@@ -104,9 +101,6 @@
       targetBranch: string;
     }) => void;
     onCreatePR?: () => void;
-    onPickExportFolder?: () => Promise<string | undefined>;
-    onExport?: (path: string) => void;
-    defaultExportPath?: string;
     onOpenCommit?: (hash: string) => void;
     onOpenPR?: (url: string) => void;
     onOpenLocalChanges?: () => void;
@@ -183,7 +177,6 @@
     isCommitting = false,
     isPushing = false,
     isCreatingPR = false,
-    isExporting = false,
     onFileClick,
     onStage,
     onUnstage,
@@ -202,9 +195,6 @@
     onPRDescriptionChange,
     onGeneratePR,
     onCreatePR,
-    onPickExportFolder,
-    onExport,
-    defaultExportPath,
     onOpenCommit,
     onOpenPR,
     onOpenLocalChanges,
@@ -241,11 +231,6 @@
     onAddRemote,
   }: Props = $props();
 
-  // Export folder state - default to the repository path if provided
-  // Note: We intentionally capture defaultExportPath at initialization as the initial value
-  // svelte-ignore state_referenced_locally
-  let exportFolderPath = $state<string | null>(defaultExportPath ?? null);
-
   // Connect remote state
   let connectRemoteOpen = $state(false);
   let connectRemoteUrl = $state('');
@@ -270,7 +255,6 @@
   // svelte-ignore state_referenced_locally
   let unstagedExpanded = $state(!stagedFiles.length);
   let commitDrawerOpen = $state(false);
-  let exportDrawerOpen = $state(false);
   let pushDrawerOpen = $state(false);
   let prDrawerOpen = $state(false);
   let mergeDrawerOpen = $state(false);
@@ -455,31 +439,27 @@
 
   function closeAllDrawers() {
     commitDrawerOpen = false;
-    exportDrawerOpen = false;
     pushDrawerOpen = false;
     prDrawerOpen = false;
     mergeDrawerOpen = false;
     addToPRDrawerOpen = false;
   }
 
-  function toggleDrawer(drawer: 'commit' | 'export' | 'push' | 'pr' | 'merge' | 'addToPR') {
+  function toggleDrawer(drawer: 'commit' | 'push' | 'pr' | 'merge' | 'addToPR') {
     const wasOpen =
       drawer === 'commit'
         ? commitDrawerOpen
-        : drawer === 'export'
-          ? exportDrawerOpen
-          : drawer === 'push'
-            ? pushDrawerOpen
-            : drawer === 'pr'
-              ? prDrawerOpen
-              : drawer === 'addToPR'
-                ? addToPRDrawerOpen
-                : mergeDrawerOpen;
+        : drawer === 'push'
+          ? pushDrawerOpen
+          : drawer === 'pr'
+            ? prDrawerOpen
+            : drawer === 'addToPR'
+              ? addToPRDrawerOpen
+              : mergeDrawerOpen;
     closeAllDrawers();
     selectedCommitIndex = null;
     if (!wasOpen) {
       if (drawer === 'commit') commitDrawerOpen = true;
-      else if (drawer === 'export') exportDrawerOpen = true;
       else if (drawer === 'push') pushDrawerOpen = true;
       else if (drawer === 'merge') mergeDrawerOpen = true;
       else if (drawer === 'pr') prDrawerOpen = true;
@@ -1373,16 +1353,6 @@
                       > to commit and create a pull request
                     </p>
                   {/if}
-
-                  <Button
-                    variant="ghost-light"
-                    class="py-0! {exportDrawerOpen ? 'bg-background' : ''}"
-                    size="xs"
-                    onclick={() => toggleDrawer('export')}
-                  >
-                    <Fa icon={faFolderOpen} class="h-3 w-3 opacity-50" />
-                    <span>Copy changes to folder</span>
-                  </Button>
                 </div>
 
                 <!-- Commit drawer -->
@@ -1598,51 +1568,6 @@
                         </Button>
                       </div>
                     {/if}
-                  </div>
-                {/if}
-
-                <!-- Export drawer -->
-                {#if exportDrawerOpen}
-                  <div class="p-3 space-y-2" transition:slide={{ duration: 150 }}>
-                    <button
-                      type="button"
-                      class="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded border border-border/50 bg-background hover:bg-muted/30 transition-colors"
-                      onclick={async () => {
-                        const path = await onPickExportFolder?.();
-                        if (path) exportFolderPath = path;
-                      }}
-                    >
-                      <Fa icon={faFolderOpen} class="h-3 w-3 text-ghost shrink-0" />
-                      <span
-                        class="text-sm truncate flex-1 {exportFolderPath
-                          ? ''
-                          : 'text-subtle'}"
-                      >
-                        {exportFolderPath || 'Choose folder...'}
-                      </span>
-                    </button>
-                    <div class="flex items-center gap-2">
-                      <Button
-                        variant="default"
-                        size="xs"
-                        onclick={() => exportFolderPath && onExport?.(exportFolderPath)}
-                        disabled={isExporting || !exportFolderPath}
-                      >
-                        {#if isExporting}
-                          <Fa icon={faSpinner} class="h-3 w-3 animate-spin" />
-                        {/if}
-                        <span>Copy changes over</span>
-                      </Button>
-                      {#if exportFolderPath}
-                        <FileActionsDropdown
-                          filePath={exportFolderPath}
-                          {workspaceId}
-                          isDirectory={true}
-                          size="xs"
-                          workspaceFolderPath={exportFolderPath}
-                        />
-                      {/if}
-                    </div>
                   </div>
                 {/if}
 

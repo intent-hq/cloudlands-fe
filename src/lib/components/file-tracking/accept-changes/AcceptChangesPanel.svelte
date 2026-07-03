@@ -215,7 +215,6 @@
   let isPushing = $state(false);
   let isCreatingPR = $state(false);
   let isCommitting = $state(false);
-  let isExporting = $state(false);
   let isMergingToTrunk = $state(false);
   let isMergedToTrunk = $state(false);
 
@@ -896,45 +895,6 @@
       refreshPrepareData().catch((err) => {
         logger.error('Failed to refresh prepare data after revert', err as Error);
       });
-    }
-  }
-
-  async function handlePickExportFolder(): Promise<string | undefined> {
-    try {
-      if (typeof window === 'undefined' || !window.electronAPI) return undefined;
-
-      const result = await invoke<any>('dialog:open', {
-        directory: true,
-        title: 'Select Export Folder',
-      });
-
-      if (result && typeof result === 'object' && 'data' in result) {
-        if (!result.data?.canceled && result.data?.filePaths?.[0]) {
-          return result.data.filePaths[0];
-        }
-      } else if (result && typeof result === 'string') {
-        return result;
-      }
-      return undefined;
-    } catch (error) {
-      logger.error('Failed to open folder picker', error as Error);
-      toast.error('Failed to open folder picker');
-      return undefined;
-    }
-  }
-
-  async function handleExport(targetPath: string) {
-    isExporting = true;
-    try {
-      await AcceptChangesClient.exportFiles(WorkspaceId(workspaceId), targetPath, {
-        preserveStructure: true,
-      });
-      toast.success('Files exported successfully');
-    } catch (error) {
-      logger.error('Failed to export files', error as Error, { targetPath });
-      toast.error('Failed to export files');
-    } finally {
-      isExporting = false;
     }
   }
 
@@ -1913,7 +1873,6 @@
       {isCommitting}
       {isPushing}
       {isCreatingPR}
-      {isExporting}
       onFileClick={handleFileClick}
       onStage={handleStage}
       onUnstage={handleUnstage}
@@ -1940,9 +1899,6 @@
       }}
       onGeneratePR={handleGeneratePR}
       onCreatePR={handleCreatePR}
-      onPickExportFolder={handlePickExportFolder}
-      onExport={handleExport}
-      defaultExportPath={$workspace?.repositoryPath}
       onOpenCommit={handleOpenCommit}
       onOpenPR={handleOpenPR}
       onOpenLocalChanges={() => {

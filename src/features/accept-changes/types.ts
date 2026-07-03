@@ -12,7 +12,6 @@ export type AcceptAction =
   | 'push'
   | 'create-pr'
   | 'merge'
-  | 'export'
   | 'undo-push'
   | 'undo-commit'
   | 'reset-to-trunk'
@@ -137,7 +136,6 @@ export interface ExecuteAcceptRequest {
   prBody?: string;
   targetBranch?: string;
   mergeStrategy?: MergeStrategy;
-  exportPath?: string;
   /** Commit hash to push up to (for partial push) or reset to (for undo-push) */
   upToCommitHash?: string;
   /** Metadata about commits being undone, used to restore attributions */
@@ -170,7 +168,6 @@ export interface AcceptChangesResult {
     prNumber?: number;
     prUrl?: string;
     prHtmlUrl?: string;
-    exportedFiles?: string[];
     mergeCommitHash?: string;
     existingPR?: boolean; // True if we found an existing PR instead of creating a new one
     autoRebased?: boolean; // True if auto-rebase was performed before merging
@@ -180,18 +177,4 @@ export interface AcceptChangesResult {
   error?: string;
 }
 
-/** Request to export files to a folder */
-export interface ExportFilesRequest {
-  workspaceId: WorkspaceId;
-  targetPath: string;
-  files?: string[];
-  preserveStructure?: boolean;
-}
 
-/** Result of exporting files */
-export interface ExportFilesResult {
-  success: boolean;
-  exportedFiles: string[];
-  targetPath: string;
-  error?: string;
-}

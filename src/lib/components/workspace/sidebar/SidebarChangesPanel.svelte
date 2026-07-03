@@ -234,7 +234,6 @@
 
   // Drawer/form states (collapsed by default)
   let commitDrawerOpen = $state(false);
-  let exportDrawerOpen = $state(false);
   let mergeDrawerOpen = $state(false);
   let mergePanelRef: MergePanel | undefined = $state(undefined);
   let prSectionRef: PRSection | undefined = $state(undefined);
@@ -460,12 +459,10 @@
   $effect(() => {
     // Read all reactive deps outside untrack
     const shouldCloseCommit = commitDrawerOpen && !hasStaged;
-    const shouldCloseExport = exportDrawerOpen && !hasStaged && !hasUnstaged;
     const shouldCloseMerge = mergeDrawerOpen && !hasStaged && !hasCommits;
 
     untrack(() => {
       if (shouldCloseCommit) commitDrawerOpen = false;
-      if (shouldCloseExport) exportDrawerOpen = false;
       if (shouldCloseMerge) mergeDrawerOpen = false;
     });
   });
@@ -1073,13 +1070,8 @@
             bind:commitMessage
             bind:isCommitting
             bind:commitDrawerOpen
-            bind:exportDrawerOpen
             {hasStaged}
-            {hasUnstaged}
             {stagedChanges}
-            {unstagedChanges}
-            allCommitsCount={allCommits.length}
-            {repoPath}
             onCommit={() => handleCommit()}
           />
 

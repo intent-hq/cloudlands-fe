@@ -15,17 +15,9 @@
  * the workspace via the live AppClient seam and returns it in the
  * CommandResponse shape the legacy main-process handler produced, so
  * `workspace.client.ts` `normalizeResponse` folds it into `{ ok: true, data }`.
- *
- * The accept-changes status channel is registered alongside for the same
- * unregistered-channel class of bug: `lifecycle-ipc-read-service` fires
- * `AcceptChangesClient.getStatus` on every workspace mount, and the
- * undefined fallback produced a recurring "Failed to fetch accept-changes
- * status" warning. A no-changes default keeps the post-merge slice quiet
- * until the daemon owns this surface.
  */
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
-import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { appClient } from "$lib/client";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
@@ -59,28 +51,6 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.OPEN, async (arg) => {
   }
   return { success: true, data: workspace };
 });
-
-// AcceptChangesClient.getStatus expects { success, data: WorkspaceGitStatus }.
-// A neutral no-changes default mirrors the lifecycle service's own error-path
-// fallback so the post-merge slice lands in the same shape it would have on a
-// failed fetch — without the warning that signals an unregistered channel.
-registerMockIpcHandler(IPC_CHANNELS.ACCEPT_CHANGES.GET_STATUS, async () => ({
-  success: true,
-  data: {
-    branch: "",
-    trunkBranch: "",
-    aheadOfTrunk: 0,
-    behindTrunk: 0,
-    hasRemote: false,
-    isPushed: false,
-    uncommittedCount: 0,
-    stagedCount: 0,
-    localCommits: [],
-    canMergeDirectly: false,
-    hasConflicts: false,
-    hasDivergedFromRemote: false,
-  },
-}));
 
 registerMockSeeder("workspaces", async ({ store, client }) => {
   const workspaces = await client.workspaces.list();
