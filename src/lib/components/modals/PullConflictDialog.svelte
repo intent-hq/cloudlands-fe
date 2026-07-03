@@ -22,6 +22,7 @@
   import { selectInstalledEditorsFiltered } from '$store/renderer/slices/external-editors/external-editors-selectors';
 
   import { invoke } from '$lib/electron-bridge';
+  import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
 
   // Icon components for well-known editors
@@ -152,6 +153,7 @@
       onCancel?.();
     } catch (err) {
       logger.error(`Failed to open in ${editor.appName}:`, err);
+      toast.error(err instanceof Error ? err.message : `Failed to open in ${editor.appName}`);
     }
   }
 

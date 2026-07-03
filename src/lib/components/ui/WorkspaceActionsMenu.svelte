@@ -265,6 +265,7 @@
       onClose?.();
     } catch (error) {
       logger.error('Failed to open in VSCode:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to open in VS Code');
     }
   }
 
@@ -290,6 +291,7 @@
       onClose?.();
     } catch (error) {
       logger.error('Failed to open in JetBrains:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to open in JetBrains');
     }
   }
 
@@ -344,6 +346,7 @@
       onClose?.();
     } catch (error) {
       logger.error('Failed to open in Xcode:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to open in Xcode');
     }
   }
 
@@ -407,6 +410,9 @@
       onClose?.();
     } catch (error) {
       logger.error(`[WorkspaceActionsMenu] Failed to open in ${editor.appName}:`, error);
+      toast.error(
+        error instanceof Error ? error.message : `Failed to open in ${editor.appName}`,
+      );
     }
   }
 

@@ -9,14 +9,13 @@
  * existing slice actions — replacing the work the corresponding sagas used to do
  * against the real backend.
  *
- * Also registers two boot-time mock IPC stubs for the same unregistered-channel
- * class of bug as the workspaces/agents seeders: `external-editors:detect-installed`
- * (dispatched via `fetchEditors` on WorkspaceActionsMenu mount; the undefined
- * fallback throws "Failed to detect editors" in the lifecycle read service) and
- * `file-tracking:get-line-stats` (called by WindowTitleBar on mount; the
- * undefined fallback TypeErrors on `response.ok` even though it is caught
- * silently). Neutral empty defaults keep both surfaces quiet until the daemon
- * owns them.
+ * Also registers a boot-time mock IPC stub for the same unregistered-channel
+ * class of bug as the workspaces/agents seeders: `file-tracking:get-line-stats`
+ * (called by WindowTitleBar on mount; the undefined fallback TypeErrors on
+ * `response.ok` even though it is caught silently). A neutral empty default
+ * keeps the surface quiet until the daemon owns it.
+ * (`external-editors:detect-installed` is bridged to the daemon's
+ * `host.listInstalledEditors` in host-bridge-seeder.ts.)
  */
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
@@ -48,13 +47,9 @@ import { setSkills } from "../slices/skills/skills-slice";
 import { hydrateBrowserState } from "../slices/browser/browser-slice";
 import { eventsLoaded } from "../slices/workspace-events/workspace-events-slice";
 
-// Registered at import time so the dispatch sites (WorkspaceActionsMenu /
-// WindowTitleBar mounts) resolve through the mock router before any component
-// effect could read an undefined response.
-registerMockIpcHandler(IPC_CHANNELS.EXTERNAL_EDITORS.DETECT_INSTALLED, async () => ({
-  success: true,
-  data: [],
-}));
+// Registered at import time so the dispatch site (WindowTitleBar mount)
+// resolves through the mock router before any component effect could read an
+// undefined response.
 registerMockIpcHandler(IPC_CHANNELS.FILE_TRACKING.GET_LINE_STATS, async () => ({
   ok: true,
   data: { additions: 0, deletions: 0 },
