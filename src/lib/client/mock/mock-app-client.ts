@@ -58,6 +58,8 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     get: async () => null,
     update: async (changes) => changes.map(({ path, value }) => ({ path, value })),
     reset: async (path) => ({ path, value: null }),
+    getUserRule: async () => ({ enabled: true, content: "", updatedAt: 0 }),
+    updateUserRule: async () => OK,
     getUserPreferences: async () => fx.mockUserPreferences,
     setUserPreferences: async () => OK,
     getProviderSettings: async () => fx.mockProviderSettings,
@@ -74,12 +76,24 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly scripts: AppClient["scripts"] = {
     list: async (workspaceId) =>
       fx.mockScripts.filter((script) => script.workspaceId === workspaceId),
+    create: async () => OK,
+    remove: async () => OK,
+    start: async () => OK,
+    stop: async () => OK,
+    restart: async () => OK,
+    output: async () => "",
+    status: async () => null,
+    run: async () => null,
     subscribe: (handler) => emitOnce(handler, fx.mockScripts),
   };
 
   readonly setupScripts: AppClient["setupScripts"] = {
     list: async () => fx.mockSetupScripts,
     subscribe: (handler) => emitOnce(handler, fx.mockSetupScripts),
+    get: async () => null,
+    save: async () => null,
+    detectProjectType: async () => null,
+    generate: async () => null,
   };
 
   readonly skills: AppClient["skills"] = {

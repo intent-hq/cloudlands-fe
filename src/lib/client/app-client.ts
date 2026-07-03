@@ -30,7 +30,12 @@ import type {
 import type { CommitInfo, TrackedChange } from "$features/file-tracking/types";
 import type { WorkspaceEvent } from "$features/events/types";
 import type { TerminalTab } from "$store/renderer/slices/terminals/terminals-slice";
-import type { ScriptWithState } from "$store/renderer/slices/scripts/scripts-types";
+import type {
+  ScriptRuntimeState,
+  ScriptWithState,
+  WorkspaceScript,
+} from "$store/renderer/slices/scripts/scripts-types";
+import type { ScriptCategory, ScriptMode } from "$features/scripts/types";
 import type { SetupScript } from "$store/renderer/slices/setup-scripts/setup-scripts-types";
 import type { SkillInfo } from "$store/renderer/slices/skills/skills-types";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
@@ -326,6 +331,13 @@ export interface AppliedSettingChange {
   value: unknown;
 }
 
+/** One user-override rule as read via `rules.get` (§5.21). */
+export interface UserRuleState {
+  enabled: boolean;
+  content: string;
+  updatedAt: number;
+}
+
 export interface SettingsClient {
   /** `settings.list` (§5.12). Returns every BE-owned setting with its current value (sensitive values redacted). */
   list(): Promise<SettingDefinitionWithValue[]>;
@@ -335,6 +347,10 @@ export interface SettingsClient {
   update(changes: AppSettingChange[]): Promise<AppliedSettingChange[]>;
   /** `settings.reset` (§5.12). Restores one setting to its `defaultValue`. */
   reset(path: string): Promise<AppliedSettingChange | null>;
+  /** `rules.get` (§5.21). Reads one global user-override rule type; `null` when the probe fails. */
+  getUserRule(ruleType: string): Promise<UserRuleState | null>;
+  /** `rules.update` (§5.21). Upserts the global user-override body (+ `enabled`) for one rule type. */
+  updateUserRule(ruleType: string, content: string, enabled?: boolean): Promise<MutationResult>;
   getUserPreferences(): Promise<UserPreferencesState | null>;
   setUserPreferences(prefs: Partial<UserPreferencesState>): Promise<MutationResult>;
   getProviderSettings(): Promise<ProviderSettingsState | null>;
@@ -628,14 +644,75 @@ export interface CommentsClient {
   delete(noteId: string, commentId: string): Promise<MutationResult>;
 }
 
+/** Wire input for `script.create` (PROTOCOL §5.8); `workspaceId` is passed separately. */
+export interface ScriptCreateInput {
+  name: string;
+  command: string;
+  mode: ScriptMode;
+  cwd?: string;
+  env?: Record<string, string>;
+  category?: ScriptCategory;
+  autoStart?: boolean;
+  scriptId?: string;
+}
+
+/** `script.create` outcome — carries the daemon's created definition on success. */
+export interface ScriptCreateResult extends MutationResult {
+  script?: WorkspaceScript;
+}
+
+/** `script.run` result envelope (PROTOCOL §5.8). */
+export interface ScriptRunResult {
+  exitCode?: number;
+  output: string;
+  timedOut?: boolean;
+  warning?: string;
+}
+
 export interface ScriptsClient {
+  /** `script.list` — definitions with merged runtime state. */
   list(workspaceId: string): Promise<ScriptWithState[]>;
+  /** `script.create` — register a definition; returns the stored record. */
+  create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult>;
+  /** `script.remove` — stop (if running) and forget a script. */
+  remove(scriptId: string): Promise<MutationResult>;
+  /** `script.start`. */
+  start(scriptId: string): Promise<MutationResult>;
+  /** `script.stop`. */
+  stop(scriptId: string): Promise<MutationResult>;
+  /** `script.restart`. */
+  restart(scriptId: string): Promise<MutationResult>;
+  /** `script.output` — historical output-buffer text. */
+  output(scriptId: string, maxLines?: number): Promise<string>;
+  /** `script.status` — the script's runtime state, or null when unavailable. */
+  status(scriptId: string): Promise<ScriptRuntimeState | null>;
+  /** `script.run` — run a command-mode script to completion. */
+  run(
+    scriptId: string,
+    options?: { maxLines?: number; timeoutSeconds?: number },
+  ): Promise<ScriptRunResult | null>;
   subscribe(handler: SubscriptionHandler<ScriptWithState[]>): Unsubscribe;
+}
+
+/** Wire `SetupScript` record (PROTOCOL §5.25) — the per-workspace worktree setup script. */
+export interface WorkspaceSetupScript {
+  script: string;
+  projectType?: string | null;
+  updatedAt: number;
+  generatedBy?: "user" | "agent";
 }
 
 export interface SetupScriptsClient {
   list(): Promise<SetupScript[]>;
   subscribe(handler: SubscriptionHandler<SetupScript[]>): Unsubscribe;
+  /** `workspace.getSetupScript` (§5.25). */
+  get(workspaceId: string): Promise<WorkspaceSetupScript | null>;
+  /** `workspace.saveSetupScript` (§5.25) — persists the body; returns the stored record. */
+  save(workspaceId: string, script: string): Promise<WorkspaceSetupScript | null>;
+  /** `workspace.detectProjectType` (§5.25) — null when no known manifest is found. */
+  detectProjectType(workspaceId: string): Promise<string | null>;
+  /** `workspace.generateSetupScript` (§5.25) — AI-assisted draft (not auto-saved). */
+  generate(workspaceId: string): Promise<WorkspaceSetupScript | null>;
 }
 
 export interface SkillsClient {

@@ -11,7 +11,9 @@
  * `tasks`, `comments`, `git`, `files` (Wave 6.1); `terminals`, `settings`
  * (Wave 10 — interactive PTY + settings foundation); `specialists`
  * (`specialist.list`, PROTOCOL §5.11); `integrations` (`github.*` /
- * `linear.*` / `sentry.*`, PROTOCOL §5.27–5.29).
+ * `linear.*` / `sentry.*`, PROTOCOL §5.27–5.29); `scripts` (`script.*`,
+ * PROTOCOL §5.8); `setupScripts` (`workspace.*SetupScript` /
+ * `detectProjectType`, PROTOCOL §5.25).
  */
 import type { AppClient } from "../app-client";
 import { MockAppClient } from "../mock/mock-app-client";
@@ -21,7 +23,9 @@ import { LiveFilesClient } from "./live-files-client";
 import { LiveGitClient } from "./live-git-client";
 import { LiveIntegrationsClient } from "./live-integrations-client";
 import { LiveNotesClient } from "./live-notes-client";
+import { LiveScriptsClient } from "./live-scripts-client";
 import { LiveSettingsClient } from "./live-settings-client";
+import { LiveSetupScriptsClient } from "./live-setup-scripts-client";
 import { LiveSpecialistsClient } from "./live-specialists-client";
 import { LiveTasksClient } from "./live-tasks-client";
 import { LiveTerminalsClient } from "./live-terminals-client";
@@ -43,11 +47,11 @@ export class LiveAppClient implements AppClient {
   readonly settings = new LiveSettingsClient();
   readonly specialists = new LiveSpecialistsClient();
   readonly integrations = new LiveIntegrationsClient();
+  readonly scripts = new LiveScriptsClient();
+  readonly setupScripts = new LiveSetupScriptsClient();
 
   // Delegated to the mock until their own migration wave.
   readonly chat = this.mock.chat;
-  readonly scripts = this.mock.scripts;
-  readonly setupScripts = this.mock.setupScripts;
   readonly skills = this.mock.skills;
   readonly models = this.mock.models;
   readonly browser = this.mock.browser;
