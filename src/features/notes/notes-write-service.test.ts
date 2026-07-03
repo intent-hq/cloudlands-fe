@@ -19,18 +19,24 @@ vi.mock("$lib/client", () => ({
 }));
 
 // FAKE the toast seam so the conflict prompt is asserted without svelte-sonner.
-vi.mock("$lib/components/ui/toast", () => ({
+vi.mock("svelte-sonner", () => ({
   toast: { warning: vi.fn(), success: vi.fn(), error: vi.fn(), message: vi.fn() },
 }));
 
 import { appClient } from "$lib/client";
-import { toast } from "$lib/components/ui/toast";
+import { toast } from "svelte-sonner";
 import { store as appStore } from "$store/renderer/store";
 import { loadWorkspaceNotesSucceeded } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
 import {
   selectAllNotes,
   selectNoteById,
 } from "$store/renderer/slices/workspace-notes/workspace-notes-selectors";
+import { createNoteRequested } from "$store/renderer/slices/note-read-tracking/note-read-tracking-slice";
+import { initializeLayout } from "$store/renderer/slices/panel-layout/panel-layout-slice";
+import {
+  selectActiveTab,
+  selectAllTabs,
+} from "$store/renderer/slices/panel-layout/panel-layout-selectors";
 import {
   NOTE_CONTENT_SAVE_DEBOUNCE_MS,
   createNote,
@@ -235,5 +241,74 @@ describe("notesWriteService (fake seam, real store)", () => {
     expect(note?.title).toBe("Server");
     expect(note?.content).toBe("server");
     expect(toast.warning).toHaveBeenCalledTimes(1);
+  });
+
+  // ---- createNoteRequested middleware: "Add new note" trigger -----------------
+  // The Context-tab "Add new note" button and the command palette "New note"
+  // command dispatch `createNoteRequested(workspaceId)`. The notes-write
+  // middleware (registered in `src/store/renderer/middleware.ts`) must forward
+  // that to `appClient.notes.create` with the legacy defaults and open the new
+  // note in the main panel.
+
+  it("dispatching createNoteRequested forwards note.create with the legacy defaults", async () => {
+    const wsCreate = "ws-create-note";
+    notesApi.list.mockResolvedValueOnce([makeNote("real-new", { workspaceId: WorkspaceId(wsCreate) })] as never);
+
+    appStore.dispatch(createNoteRequested(wsCreate));
+    // Flush the fire-and-forget middleware promise (microtasks for the awaited
+    // appClient.notes.create + appClient.notes.list resolutions + follow-ups).
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(notesApi.create).toHaveBeenCalledTimes(1);
+    expect(notesApi.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: wsCreate,
+        title: "New Note",
+        content: "",
+        tags: [],
+      }),
+    );
+  });
+
+  it("opens the new note as a focused panel-layout tab after createNoteRequested succeeds", async () => {
+    const wsCreate = "ws-create-note-open";
+    // Seed a focused panel so the openTab reducer has somewhere to place the tab —
+    // the sidebar's "Add note" path is exercised against the real panel-layout slice.
+    appStore.dispatch(
+      initializeLayout(wsCreate, {
+        root: { type: "panel", panelId: "p1" },
+        panels: { p1: { id: "p1", tabs: [], activeTabId: null } },
+        focusedPanelId: "p1",
+      }),
+    );
+    notesApi.list.mockResolvedValueOnce(
+      [makeNote("real-open", { workspaceId: WorkspaceId(wsCreate) })] as never,
+    );
+
+    appStore.dispatch(createNoteRequested(wsCreate));
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const tabs = selectAllTabs.select(appStore.state, wsCreate);
+    const noteTab = tabs.find((t) => t.type === "note" && t.noteId === "real-open");
+    expect(noteTab).toBeDefined();
+    expect(noteTab?.title).toBe("New Note");
+    expect(noteTab?.closable).toBe(true);
+    expect(noteTab?.workspaceId).toBe(wsCreate);
+
+    // The new tab is focused (matches the sidebar's openTab path).
+    const active = selectActiveTab.select(appStore.state, wsCreate);
+    expect(active?.id).toBe(noteTab?.id);
+  });
+
+  it("createNoteRequested with a blank workspaceId does not call the seam", async () => {
+    appStore.dispatch(createNoteRequested(""));
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+
+    expect(notesApi.create).not.toHaveBeenCalled();
   });
 });

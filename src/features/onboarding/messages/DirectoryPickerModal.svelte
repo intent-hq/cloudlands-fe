@@ -26,6 +26,7 @@
     faCodeBranch,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import Portal from '$lib/components/ui/Portal.svelte';
   import { cn } from '$lib/utils';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -170,16 +171,24 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if open}
-  <!-- Overlay traps clicks and acts as a backdrop. Clicking it closes. -->
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-    transition:fade={{ duration: 120 }}
-    role="presentation"
-    onclick={(e) => {
-      if (e.target === e.currentTarget) onClose();
-    }}
-    onkeydown={() => {}}
-  >
+  <!--
+    Render through Portal so the overlay escapes any clipping/stacking ancestor
+    (notably the Select.Content popover at z-[9999]) and sits strictly above it.
+    The Portal container z-index (10000) is what wins over the popover; the inner
+    `fixed inset-0` is the full-screen backdrop that blocks pointer interaction
+    with everything behind it.
+  -->
+  <Portal target="body" zIndex={10000}>
+    <!-- Overlay traps clicks and acts as a backdrop. Clicking it closes. -->
+    <div
+      class="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      transition:fade={{ duration: 120 }}
+      role="presentation"
+      onclick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onkeydown={() => {}}
+    >
     <div
       bind:this={dialogRef}
       tabindex="-1"
@@ -316,4 +325,5 @@
       </div>
     </div>
   </div>
+  </Portal>
 {/if}

@@ -473,6 +473,74 @@ describe("terminalsReducer", () => {
     });
   });
 
+  describe("fresh-create stale customName regression (PanelLayout.handleCreateTerminal)", () => {
+    // A previously-renamed terminal can leave a stale entry in the slice
+    // (e.g. tab closed without removing the terminal, or daemon restart that
+    // resets the id counter and reuses a prior id). `saveTerminalMetadata`
+    // intentionally preserves customName for the remount/reattach case, so the
+    // fresh-create path in `PanelLayout.handleCreateTerminal` must dispatch
+    // `removeTerminal` for the freshly daemon-assigned id before calling
+    // `saveTerminalMetadata`, otherwise the new terminal inherits the stale
+    // customName from the previous renamed terminal.
+    it("dispatching removeTerminal + saveTerminalMetadata clears stale customName for a reused id", () => {
+      const stateWithStale: TerminalOverlayState = {
+        ...initialState,
+        workspaces: {
+          [WS]: {
+            isOpen: false,
+            activeTerminalId: null,
+            terminals: col([{ id: "pty-0", name: "Terminal", customName: "Build", type: "terminal", workspaceId: WS, createdAt: "2026-01-01T00:00:00.000Z" }]),
+            terminalsLoaded: false,
+            isLoadingTerminals: false,
+            recentlyCreatedTerminals: [],
+          },
+        },
+      };
+
+      let state = terminalsReducer(stateWithStale, removeTerminal(WS, "pty-0"));
+      state = terminalsReducer(
+        state,
+        saveTerminalMetadata(WS, "pty-0", "Terminal", "2026-06-30T00:00:00.000Z"),
+      );
+
+      const term = getItem(getWs(state).terminals, "pty-0");
+      expect(term).toEqual({
+        id: "pty-0",
+        name: "Terminal",
+        type: "terminal",
+        workspaceId: WS,
+        createdAt: "2026-06-30T00:00:00.000Z",
+      });
+      expect(term?.customName).toBeUndefined();
+    });
+
+    // Sanity check: without the removeTerminal step (the pre-fix buggy flow),
+    // the stale customName carries over to the fresh terminal — this asserts
+    // the bug exists at the reducer level and motivates the fix above.
+    it("saveTerminalMetadata alone preserves stale customName (documents the bug)", () => {
+      const stateWithStale: TerminalOverlayState = {
+        ...initialState,
+        workspaces: {
+          [WS]: {
+            isOpen: false,
+            activeTerminalId: null,
+            terminals: col([{ id: "pty-0", name: "Terminal", customName: "Build" }]),
+            terminalsLoaded: false,
+            isLoadingTerminals: false,
+            recentlyCreatedTerminals: [],
+          },
+        },
+      };
+
+      const state = terminalsReducer(
+        stateWithStale,
+        saveTerminalMetadata(WS, "pty-0", "Terminal", "2026-06-30T00:00:00.000Z"),
+      );
+
+      expect(getItem(getWs(state).terminals, "pty-0")?.customName).toBe("Build");
+    });
+  });
+
   describe("setTerminalsList", () => {
     it("should replace terminal list preserving custom names", () => {
       const stateWith: TerminalOverlayState = {

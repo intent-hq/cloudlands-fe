@@ -385,7 +385,10 @@ export function setupNotesIPC() {
     }
   });
 
-  // Batch list notes for multiple workspaces (for homepage progress cards)
+  // Batch list notes for multiple workspaces (for homepage progress cards).
+  // Per-workspace status is surfaced explicitly so a load failure for one
+  // workspace is rendered as an error state instead of being silently masked
+  // as zero notes (AUDIT-P0-2).
   ipcMain.handle(
     NOTES_CHANNELS.BATCH_LIST,
     createSafeValidatedHandler(
@@ -393,7 +396,10 @@ export function setupNotesIPC() {
       async (_, validated) => {
         const { workspaceIds } = validated;
         const openWorkspaceIds = new Set(getAllOpenWorkspaceIds());
-        const result: Record<string, any[]> = {};
+        const result: Record<
+          string,
+          { success: true; notes: any[] } | { success: false; error: string }
+        > = {};
 
         // Load notes for each workspace in parallel
         const promises = workspaceIds.map(async (workspaceId: string) => {
@@ -401,16 +407,26 @@ export function setupNotesIPC() {
             const notes = await protocolAdapter.listNotes(workspaceId, {
               summariesOnly: !openWorkspaceIds.has(workspaceId),
             });
-            return { workspaceId, notes: Array.isArray(notes) ? notes : [] };
+            return {
+              workspaceId,
+              entry: {
+                success: true as const,
+                notes: Array.isArray(notes) ? notes : [],
+              },
+            };
           } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             logger.warn('Failed to load notes for workspace', { workspaceId, error });
-            return { workspaceId, notes: [] };
+            return {
+              workspaceId,
+              entry: { success: false as const, error: message },
+            };
           }
         });
 
         const results = await Promise.all(promises);
-        for (const { workspaceId, notes } of results) {
-          result[workspaceId] = notes;
+        for (const { workspaceId, entry } of results) {
+          result[workspaceId] = entry;
         }
 
         return { success: true, data: result };

@@ -5,10 +5,6 @@
  * without interfering with the user's development server.
  */
 
-import {
-  spawn,
-  ChildProcess,
-} from 'child_process';
 import { join } from 'path';
 import {
   existsSync,
@@ -17,6 +13,7 @@ import {
 } from 'fs';
 import { tmpdir } from 'os';
 import type { Result } from '../../../shared/types';
+import { hostExec } from '../../../shared/main/host-exec';
 
 export interface TestOptions {
   workspaceId: string;
@@ -71,7 +68,10 @@ export interface BuildResult {
 }
 
 class TestingService {
-  private runningProcesses: Map<string, ChildProcess> = new Map();
+  // Track process IDs so callers can still enumerate in-flight runs. Actual
+  // process lifecycle is owned by the daemon (host.exec, timeoutMs-based
+  // termination); the FE no longer holds ChildProcess handles.
+  private runningProcesses: Set<string> = new Set();
   private tempDirs: Map<string, string> = new Map();
 
   /**
@@ -101,11 +101,12 @@ class TestingService {
         args.push('--run');
       }
 
-      // Run tests
+      // Run tests via the daemon; workspace cwd is decided daemon-side.
       const result = await this.runCommand('npm', args, {
-        cwd: process.cwd(),
+        cwd: '',
         timeout: options.timeout || 60000,
         processId,
+        workspaceId: options.workspaceId,
       });
 
       // Parse test results
@@ -143,11 +144,12 @@ class TestingService {
         args.push('--fix');
       }
 
-      // Run linting
+      // Run linting via the daemon; workspace cwd is decided daemon-side.
       const result = await this.runCommand('npm', args, {
-        cwd: process.cwd(),
+        cwd: '',
         timeout: 30000,
         processId,
+        workspaceId: options.workspaceId,
       });
 
       // Parse lint results
@@ -185,11 +187,12 @@ class TestingService {
         args.push('build:dev');
       }
 
-      // Run build
+      // Run build via the daemon; workspace cwd is decided daemon-side.
       const result = await this.runCommand('npm', args, {
-        cwd: process.cwd(),
+        cwd: '',
         timeout: 120000,
         processId,
+        workspaceId: options.workspaceId,
       });
 
       const duration = Date.now() - startTime;
@@ -214,36 +217,34 @@ class TestingService {
 
   /**
    * Stop a running process
+   *
+   * Note: `host.exec` is a one-shot buffered exec — the daemon reaps the child
+   * tree via `timeoutMs` (§5.14) and does not expose an out-of-band cancel
+   * handle. Mid-flight cancellation therefore honestly degrades to "not
+   * supported" here rather than pretending to kill a process the FE no longer
+   * owns. Long-running / cancellable workloads belong on `script.*` /
+   * `terminal.*` (§5.8, §12).
    */
   async stopProcess(processId: string): Promise<Result<void, string>> {
-    const process = this.runningProcesses.get(processId);
-
-    if (!process) {
+    if (!this.runningProcesses.has(processId)) {
       return {
         ok: false,
         error: 'Process not found',
       };
     }
 
-    try {
-      process.kill('SIGTERM');
-      this.runningProcesses.delete(processId);
-      this.cleanup(processId);
-
-      return { ok: true, data: undefined };
-    } catch (error) {
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : 'Failed to stop process',
-      };
-    }
+    return {
+      ok: false,
+      error:
+        'Mid-flight cancellation is not supported for host.exec runs; the run will end on its configured timeout',
+    };
   }
 
   /**
    * Get list of running processes
    */
   getRunningProcesses(): string[] {
-    return Array.from(this.runningProcesses.keys());
+    return Array.from(this.runningProcesses);
   }
 
   // Private helper methods
@@ -267,11 +268,7 @@ class TestingService {
     }
     this.tempDirs.delete(processId);
 
-    // Clean up process
-    const process = this.runningProcesses.get(processId);
-    if (process && !process.killed) {
-      process.kill();
-    }
+    // Clean up bookkeeping; the daemon owns the child process lifecycle.
     this.runningProcesses.delete(processId);
   }
 
@@ -282,53 +279,31 @@ class TestingService {
       cwd: string;
       timeout: number;
       processId: string;
+      workspaceId?: string;
     },
   ): Promise<{ output: string; exitCode: number }> {
-    return new Promise((resolve, reject) => {
-      let output = '';
-      let errorOutput = '';
-
-      const childProcess = spawn(command, args, {
+    this.runningProcesses.add(options.processId);
+    try {
+      const result = await hostExec(command, {
+        args,
         cwd: options.cwd,
         env: {
-          ...process.env,
           CI: 'true',
           FORCE_COLOR: '0',
         },
-        windowsHide: true,
+        timeoutMs: options.timeout,
+        workspaceId: options.workspaceId,
       });
-
-      this.runningProcesses.set(options.processId, childProcess);
-
-      childProcess.stdout.on('data', (data: Buffer) => {
-        output += data.toString();
-      });
-
-      childProcess.stderr.on('data', (data: Buffer) => {
-        errorOutput += data.toString();
-      });
-
-      const timeout = setTimeout(() => {
-        childProcess.kill();
-        reject(new Error('Command timed out'));
-      }, options.timeout);
-
-      childProcess.on('close', (code: number | null) => {
-        clearTimeout(timeout);
-        this.runningProcesses.delete(options.processId);
-
-        resolve({
-          output: output + errorOutput,
-          exitCode: code || 0,
-        });
-      });
-
-      childProcess.on('error', (error: Error) => {
-        clearTimeout(timeout);
-        this.runningProcesses.delete(options.processId);
-        reject(error);
-      });
-    });
+      if (result.timedOut) {
+        throw new Error('Command timed out');
+      }
+      return {
+        output: `${result.stdout}${result.stderr}`,
+        exitCode: result.exitCode,
+      };
+    } finally {
+      this.runningProcesses.delete(options.processId);
+    }
   }
 
   private parseTestOutput(output: string): TestResult {

@@ -20,7 +20,6 @@ import { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import {
   ChildProcess,
-  spawn,
   SpawnOptions,
 } from 'child_process';
 import {
@@ -34,7 +33,6 @@ import { fileURLToPath } from 'url';
 import { Logger } from '../../../../shared/logger';
 import { WorkspaceConfig } from '../../../../shared/main/config';
 import { writeJsonWithSync } from '../../../../shared/main/file-sync-utils';
-import { killChildProcessTree } from '../../../../shared/main/process-tree-kill';
 import { sshManager } from '../../../../shared/main/ssh-manager';
 import { findAuggiePathAsync } from '../../../auggie/main/auggie.ipc';
 import type { ContentBlock } from '../../../../shared/types';
@@ -2415,78 +2413,6 @@ export class ACPProvider extends BaseAgentProvider {
   }
 
   /**
-   * Helper function to spawn a process with fallback stdio configurations
-   * to handle EBADF errors in Electron environments
-   */
-  private safeSpawn(command: string, args: string[], options: any): ChildProcess {
-    const attempts: Array<{ stdio: any; error?: Error }> = [];
-
-    // Try different stdio configurations in order of preference
-    const stdioConfigs = [
-      ['pipe', 'pipe', 'pipe'],
-      [0, 1, 2], // Use parent's file descriptors
-      ['pipe', 'pipe', 2], // Pipe stdin/stdout, inherit stderr
-      'inherit', // Inherit all from parent
-      ['ignore', 'ignore', 'ignore'], // Last resort
-    ];
-
-    for (const stdio of stdioConfigs) {
-      try {
-        const spawnOpts = { ...options, stdio, windowsHide: true };
-        const proc = spawn(command, args, spawnOpts);
-
-        if (proc && proc.pid) {
-          logger.info('Process spawned successfully with stdio config', {
-            stdio: Array.isArray(stdio) ? stdio.join(',') : stdio,
-            pid: proc.pid,
-            hasStdin: !!proc.stdin,
-            hasStdout: !!proc.stdout,
-            hasStderr: !!proc.stderr,
-          });
-          return proc;
-        }
-
-        // spawn() returned a process object but without a PID. This typically means
-        // the command was not found or not executable. Node.js emits the actual error
-        // asynchronously via the 'error' event, so we can't capture it here.
-        // Record this as a failed attempt.
-        logger.warn(`spawn returned process without PID for stdio ${JSON.stringify(stdio)}`, {
-          command,
-          hasProc: !!proc,
-        });
-        attempts.push({
-          stdio,
-          error: new Error(
-            `spawn returned without PID (command "${command}" may not be found or not executable)`,
-          ),
-        });
-        // Attach a no-op error listener to prevent the asynchronous ENOENT 'error'
-        // event from becoming an uncaught exception. Do NOT call proc.kill() here —
-        // killing a process with no PID causes a hang in Node.js internals.
-        proc?.on('error', () => {});
-      } catch (error) {
-        const errnoError = error as NodeJS.ErrnoException;
-        attempts.push({ stdio, error: errnoError });
-
-        if (errnoError.code === 'EBADF') {
-          logger.warn(`EBADF error with stdio ${JSON.stringify(stdio)}, trying next...`);
-        } else if (errnoError.code !== 'ENOENT') {
-          logger.error(`Spawn error with stdio ${JSON.stringify(stdio)}`, error as Error);
-        }
-      }
-    }
-
-    // If we get here, all attempts failed
-    const errorDetails = attempts
-      .map((a) => `${JSON.stringify(a.stdio)}: ${a.error?.message || 'unknown error'}`)
-      .join('; ');
-
-    throw new Error(
-      `Failed to spawn process after trying all stdio configurations (command: "${command}"): ${errorDetails}`,
-    );
-  }
-
-  /**
    * Get tools to remove based on specialist/agent type.
    * This enforces role-based tool access at the CLI level using --remove-tool flags.
    *
@@ -3421,6 +3347,13 @@ export class ACPProvider extends BaseAgentProvider {
       cwd: spawnOptions.cwd,
     });
 
+    // AUDIT-P2-12b: FE provider-CLI spawn deleted. The daemon (intentd) now owns
+    // provider-process spawn + lifecycle via `agent.create` (PROTOCOL §5.5).
+    // Both spawn branches previously living at ~:3438/:3454 are replaced with
+    // self-throwing IIFEs so that (a) callers of `launchAgent()` get an
+    // honest-degradation error identifying the deleted seam and (b) the
+    // downstream (now-unreachable) code — narrowed by the returned
+    // `ChildProcess` annotation — keeps type-checking without further edits.
     try {
       if (isExternalProvider) {
         // External providers REQUIRE piped stdio for ACP communication
@@ -3435,26 +3368,35 @@ export class ACPProvider extends BaseAgentProvider {
           command: spawnCommand,
           args: args.join(' '),
         });
-        this.agentProcess = spawn(spawnCommand, args, externalSpawnOpts);
+        void externalSpawnOpts;
+        this.agentProcess = ((): ChildProcess => {
+          throw new Error(
+            `ACPProvider provider-CLI spawn removed (AUDIT-P2-12b): agent creation for '${caps.id}' must flow through the daemon (agent.create). ACPProvider.launchAgent is no longer reachable in the FE creation path.`,
+          );
+        })();
 
-        if (!this.agentProcess || !this.agentProcess.pid) {
+        if (!this.agentProcess || !this.agentProcess!.pid) {
           throw new Error(
             `Failed to spawn external provider ${caps.id} - the command "${spawnCommand}" may not be installed or accessible`,
           );
         }
 
         // Verify we have the required stdio streams
-        if (!this.agentProcess.stdin || !this.agentProcess.stdout) {
+        if (!this.agentProcess!.stdin || !this.agentProcess!.stdout) {
           throw new Error(
-            `External provider ${caps.id} spawned without required stdio streams - stdin: ${!!this.agentProcess.stdin}, stdout: ${!!this.agentProcess.stdout}`,
+            `External provider ${caps.id} spawned without required stdio streams - stdin: ${!!this.agentProcess!.stdin}, stdout: ${!!this.agentProcess!.stdout}`,
           );
         }
       } else {
-        // Use safeSpawn for auggie - it can handle various stdio configs
-        this.agentProcess = this.safeSpawn(spawnCommand, args, spawnOptions);
+        // Auggie branch — safeSpawn is deleted (AUDIT-P2-12b); route via daemon.
+        this.agentProcess = ((): ChildProcess => {
+          throw new Error(
+            `ACPProvider provider-CLI spawn removed (AUDIT-P2-12b): agent creation for 'auggie' must flow through the daemon (agent.create). ACPProvider.launchAgent is no longer reachable in the FE creation path.`,
+          );
+        })();
 
         // Verify process spawned successfully
-        if (!this.agentProcess || !this.agentProcess.pid) {
+        if (!this.agentProcess || !this.agentProcess!.pid) {
           throw new Error('Failed to spawn agent process - no PID assigned');
         }
       }
@@ -3462,20 +3404,24 @@ export class ACPProvider extends BaseAgentProvider {
       // Clear stale exit info from a previous process so it doesn't leak into future errors
       this.lastProcessExitInfo = undefined;
 
+      // AUDIT-P2-12b: `!` assertions below acknowledge that this code is
+      // unreachable at runtime (the spawn IIFEs above always throw); the
+      // assertions exist only to keep the (dead) downstream narrowing shape
+      // that the pre-P2-12b `spawn(...)` return typing used to provide.
       logger.info('Agent process spawned successfully', {
-        pid: this.agentProcess.pid,
+        pid: this.agentProcess!.pid,
         command: this.config.command,
         args,
-        hasStdin: !!this.agentProcess.stdin,
-        hasStdout: !!this.agentProcess.stdout,
-        hasStderr: !!this.agentProcess.stderr,
-        stdinWritable: this.agentProcess.stdin?.writable,
-        stdoutReadable: this.agentProcess.stdout?.readable,
+        hasStdin: !!this.agentProcess!.stdin,
+        hasStdout: !!this.agentProcess!.stdout,
+        hasStderr: !!this.agentProcess!.stderr,
+        stdinWritable: this.agentProcess!.stdin?.writable,
+        stdoutReadable: this.agentProcess!.stdout?.readable,
       });
 
       logger.info('Process started', {
         agentId: this.config.agentId,
-        pid: this.agentProcess.pid,
+        pid: this.agentProcess!.pid,
         sessionId: this.sessionId,
       });
     } catch (spawnError) {
@@ -3497,7 +3443,7 @@ export class ACPProvider extends BaseAgentProvider {
     // Register in the global process registry for cap enforcement
     if (this.agentProcess?.pid) {
       registerProcess({
-        pid: this.agentProcess.pid,
+        pid: this.agentProcess!.pid!,
         agentId: this.config.agentId,
         workspaceId: this.config.workspaceId || '',
         lastActiveTimestamp: Date.now(),
@@ -3541,18 +3487,18 @@ export class ACPProvider extends BaseAgentProvider {
 
     // Log process information
     logger.info('Auggie process spawned', {
-      pid: this.agentProcess.pid,
+      pid: this.agentProcess!.pid,
       command: this.config.command,
       args,
     });
 
     logger.info('Agent process spawned, checking streams', {
-      pid: this.agentProcess.pid,
-      hasStdin: !!this.agentProcess.stdin,
-      hasStdout: !!this.agentProcess.stdout,
-      hasStderr: !!this.agentProcess.stderr,
-      stdoutReadable: this.agentProcess.stdout?.readable,
-      stdinWritable: this.agentProcess.stdin?.writable,
+      pid: this.agentProcess!.pid,
+      hasStdin: !!this.agentProcess!.stdin,
+      hasStdout: !!this.agentProcess!.stdout,
+      hasStderr: !!this.agentProcess!.stderr,
+      stdoutReadable: this.agentProcess!.stdout?.readable,
+      stdinWritable: this.agentProcess!.stdin?.writable,
     });
 
     // Check if process is still alive after spawn
@@ -3640,8 +3586,8 @@ export class ACPProvider extends BaseAgentProvider {
     this.healthCheckInterval = healthCheckInterval;
 
     // Handle stdout (agent responses) - only if available
-    if (this.agentProcess.stdout) {
-      this.agentProcess.stdout.on('data', (data) => {
+    if (this.agentProcess!.stdout) {
+      this.agentProcess!.stdout!.on('data', (data) => {
         const rawData = data.toString();
         logger.debug('Raw stdout from auggie', {
           length: rawData.length,
@@ -3670,8 +3616,8 @@ export class ACPProvider extends BaseAgentProvider {
     }
 
     // Handle stderr (agent logs) - only if available
-    if (this.agentProcess.stderr) {
-      this.agentProcess.stderr.on('data', (data) => {
+    if (this.agentProcess!.stderr) {
+      this.agentProcess!.stderr!.on('data', (data) => {
         const stderr = data.toString().trim();
         if (!stderr) return;
 
@@ -7080,9 +7026,8 @@ export class ACPProvider extends BaseAgentProvider {
       }
     }
 
-    // Kill local agent process and its entire process tree
-    // CRITICAL: Use killChildProcessTree instead of child.kill() because npx/npm-exec
-    // spawns a child process that child.kill() doesn't reach, causing orphaned processes
+    // Cancel the daemon-owned child via the stream adapter's kill(); the
+    // daemon reaps the entire process tree in response to host.execStream.cancel.
     if (this.agentProcess) {
       logger.info('Killing agent process tree', { pid: this.agentProcess.pid });
       // Remove all stream listeners before killing to prevent orphaned native handles
@@ -7092,7 +7037,7 @@ export class ACPProvider extends BaseAgentProvider {
       this.agentProcess.stdout?.removeAllListeners();
       this.agentProcess.stderr?.removeAllListeners();
       this.agentProcess.stdin?.removeAllListeners();
-      await killChildProcessTree(this.agentProcess);
+      this.agentProcess.kill();
       this.agentProcess = undefined;
       logger.info('Agent process tree killed');
     }
@@ -7234,7 +7179,8 @@ export class ACPProvider extends BaseAgentProvider {
       this.remoteProcess = undefined;
     }
 
-    // Kill local agent process tree
+    // Cancel the daemon-owned child via the stream adapter's kill(); the
+    // daemon reaps the entire process tree in response to host.execStream.cancel.
     if (this.agentProcess) {
       const pid = this.agentProcess.pid;
       logger.info('Killing local agent process tree for recovery', { pid });
@@ -7245,7 +7191,7 @@ export class ACPProvider extends BaseAgentProvider {
       this.agentProcess.stdout?.removeAllListeners();
       this.agentProcess.stderr?.removeAllListeners();
       this.agentProcess.stdin?.removeAllListeners();
-      await killChildProcessTree(this.agentProcess);
+      this.agentProcess.kill();
       // Wait a bit for process tree to fully terminate
       await new Promise((resolve) => setTimeout(resolve, 200));
       // Deregister from global registry — exit listeners were removed so handleProcessExit won't fire
@@ -7974,7 +7920,7 @@ export class ACPProvider extends BaseAgentProvider {
       this.agentProcess.stdout?.removeAllListeners();
       this.agentProcess.stderr?.removeAllListeners();
       this.agentProcess.stdin?.removeAllListeners();
-      await killChildProcessTree(this.agentProcess);
+      this.agentProcess.kill();
       this.agentProcess = undefined;
     }
     this.sessionId = undefined;

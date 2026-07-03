@@ -454,3 +454,111 @@ describe('SimpleRichInput provider switch sync', () => {
     });
   });
 });
+
+describe('SimpleRichInput Stop-button visibility', () => {
+  const baseProps = () => ({
+    value: '',
+    contextItems: [],
+    workspace: {
+      id: 'ws-1',
+      name: 'Workspace',
+      path: '/tmp/workspace',
+      createdAt: new Date().toISOString(),
+    } as any,
+    agentId: 'agent-1',
+    selectedModel: 'gpt5.4',
+  });
+
+  // The mocked Button component strips aria-label, so locate the Send/Stop
+  // affordances via the Fa icon's data-icon attribute instead. The icon mocks
+  // above render `data-icon="stop"` for the Stop button and
+  // `data-icon="paper-plane"` for the Send button.
+  function stopButton(): HTMLButtonElement | null {
+    const icon = document.body.querySelector('[data-icon="stop"]');
+    return (icon?.closest('button') as HTMLButtonElement | null) ?? null;
+  }
+  function sendButton(): HTMLButtonElement | null {
+    const icons = document.body.querySelectorAll('[data-icon="paper-plane"]');
+    for (const icon of icons) {
+      const btn = icon.closest('button') as HTMLButtonElement | null;
+      // Skip the interrupt-and-send split button inside the Stop block; that
+      // button carries data-testid="interrupt-btn".
+      if (btn && btn.dataset.testid !== 'interrupt-btn') return btn;
+    }
+    return null;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    addMockSession('ws-1', createSession());
+  });
+
+  afterEach(() => {
+    cleanup();
+    removeMockSession('ws-1', 'agent-1');
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+  });
+
+  it('shows Send (not Stop) when the agent is idle', () => {
+    render(SimpleRichInput, { props: baseProps() });
+
+    expect(stopButton()).toBeNull();
+    expect(sendButton()).not.toBeNull();
+  });
+
+  it('shows Stop when isResponding is true (pre-first-chunk processing window)', () => {
+    render(SimpleRichInput, { props: { ...baseProps(), isResponding: true } });
+
+    expect(stopButton()).not.toBeNull();
+    expect(sendButton()).toBeNull();
+  });
+
+  it('shows Stop when isStreaming is true (assistant chunks arriving)', () => {
+    render(SimpleRichInput, { props: { ...baseProps(), isStreaming: true } });
+
+    expect(stopButton()).not.toBeNull();
+    expect(sendButton()).toBeNull();
+  });
+
+  it('shows Stop when isRunning is true (coordinator waiting on sub-agents)', () => {
+    render(SimpleRichInput, { props: { ...baseProps(), isRunning: true } });
+
+    expect(stopButton()).not.toBeNull();
+    expect(sendButton()).toBeNull();
+  });
+
+  it('reverts to Send when all responding signals go false (agent:idle)', async () => {
+    const { rerender } = render(SimpleRichInput, {
+      props: { ...baseProps(), isResponding: true, isStreaming: true, isRunning: true },
+    });
+    expect(stopButton()).not.toBeNull();
+
+    await rerender({
+      ...baseProps(),
+      isResponding: false,
+      isStreaming: false,
+      isRunning: false,
+    });
+
+    await waitFor(() => {
+      expect(stopButton()).toBeNull();
+      expect(sendButton()).not.toBeNull();
+    });
+  });
+
+  it('invokes onstop when the Stop button is clicked while responding', async () => {
+    const onstop = vi.fn();
+    render(SimpleRichInput, { props: { ...baseProps(), isResponding: true, onstop } });
+
+    const btn = stopButton();
+    expect(btn).not.toBeNull();
+    await fireEvent.click(btn!);
+
+    expect(onstop).toHaveBeenCalledTimes(1);
+  });
+});

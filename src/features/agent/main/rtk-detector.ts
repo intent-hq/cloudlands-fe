@@ -6,8 +6,8 @@
  * prompt instruction that tells agents to prefix supported commands with `rtk`.
  */
 
-import { execAsync } from '../../../shared/main/async-utils';
 import { findBinary } from '../../../shared/main/find-binary';
+import { hostExec } from '../../../shared/main/host-exec';
 import { getSetting } from '../../workspace/main/app-settings.service';
 import { Logger } from '../../../shared/logger';
 
@@ -83,7 +83,7 @@ async function doDetect(): Promise<RtkStatus> {
     }
 
     // 2. Parse subcommands from `rtk help`
-    const { stdout } = await execAsync(`"${rtkPath}" help`, { timeout: 10000 });
+    const { stdout } = await hostExec(rtkPath, { args: ['help'], timeoutMs: 10000 });
     const subcommands = parseRtkHelp(stdout);
 
     logger.info('rtk detected', { subcommandCount: subcommands.length });

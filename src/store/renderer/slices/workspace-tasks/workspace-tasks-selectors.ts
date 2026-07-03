@@ -10,7 +10,7 @@ import { store } from "../../store";
 import type { WorkspaceTask } from "$shared/types";
 import { EXCLUDED_STATUSES, IN_PROGRESS_STATUSES } from "$shared/utils/task-stats";
 import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
-import { emptyWorkspaceTasksState } from "./workspace-tasks-slice";
+import { emptyWorkspaceTaskStats, emptyWorkspaceTasksState } from "./workspace-tasks-slice";
 import type { WorkspaceTaskProgress, WorkspaceTasksWorkspaceState } from "./workspace-tasks-types";
 
 // ============================================================================
@@ -64,28 +64,15 @@ export const selectWorkspaceTasks = store.createSelector(
 );
 
 /**
- * Task progress counts derived from canonical task entities.
- * Cancelled (excluded) tasks do not count toward any bucket.
+ * Workspace-wide task progress rollup. Served VERBATIM from the BE — `task.list`
+ * (PROTOCOL §5.4) emits the canonical `{ total, completed, inProgress }`
+ * aggregate and the slice stores it as-is; this selector returns that stored
+ * value with no client-side classification. Unknown workspaces fall back to
+ * the zero aggregate so callers can render a sparser card without a null check.
  */
 export const selectWorkspaceTaskProgress = store.createSelector(
-  (state, workspaceId: string): WorkspaceTaskProgress => {
-    const ws = state.workspaceTasks.byWorkspaceId[workspaceId];
-    let total = 0;
-    let completed = 0;
-    let inProgress = 0;
-
-    for (const task of ws ? getItems(ws.tasks) : []) {
-      if (EXCLUDED_STATUSES.has(task.status)) continue;
-      total++;
-      if (task.status === "complete") {
-        completed++;
-      } else if (IN_PROGRESS_STATUSES.has(task.status)) {
-        inProgress++;
-      }
-    }
-
-    return { total, completed, inProgress };
-  },
+  (state, workspaceId: string): WorkspaceTaskProgress =>
+    state.workspaceTasks.byWorkspaceId[workspaceId]?.stats ?? emptyWorkspaceTaskStats,
 );
 
 /**

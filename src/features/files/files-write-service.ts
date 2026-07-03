@@ -14,21 +14,34 @@
  * provide. Pass `{ immediate: true }` (or call `flushFileContent`) to bypass the
  * debounce on teardown so no edit is lost.
  *
- * This module is dependency-light: it imports only the AppClient seam, the
- * configured store, slice actions, and selectors (per src/store AGENTS.md).
+ * Dependency-light per src/store AGENTS.md: imports only the AppClient seam,
+ * the configured store, slice actions/empty-state, pure path utils, and the
+ * logger (NOT selectors — once registered in `middleware.ts`, statically
+ * importing a `*-selectors.ts` module would evaluate `store.createSelector`
+ * while the store module is still mid-initialization through the middleware
+ * chain). State reads use the raw `appStore.state` shape instead.
  */
+import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { appClient } from "$lib/client";
 import type { MutationResult } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import {
   applyExternalFileContent,
+  emptyFilesWorkspaceState,
   removeFileContentEntry,
   saveFileContentFailed,
   saveFileContentRequested,
   saveFileContentSucceeded,
   updateFileContent,
 } from "$store/renderer/slices/files/files-slice";
-import { selectFileContentEntry } from "$store/renderer/slices/files/files-selectors";
+import {
+  emptyFileExplorerWorkspaceState,
+  refreshDirectoryRequested,
+} from "$store/renderer/slices/file-explorer/file-explorer-slice";
+import { createFileRequested } from "$store/renderer/slices/app-layout/app-layout-slice";
+import { openWorkspaceFile } from "$store/renderer/slices/workspace-navigation/workspace-navigation-slice";
+import { stripWorkspacePrefix } from "$lib/utils/file-utils";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("FilesWriteService");
@@ -123,9 +136,15 @@ export async function createFile(
   return result;
 }
 
+/** Direct (selector-free) read of the cached file entry; see header note. */
+function readFileEntry(workspaceId: string, path: string) {
+  const ws = appStore.state.files.byWorkspaceId[workspaceId] ?? emptyFilesWorkspaceState;
+  return getItem(ws.files, path);
+}
+
 /** Delete a file optimistically (drop the cached entry); refetch it on failure. */
 export async function deleteFile(workspaceId: string, path: string): Promise<MutationResult> {
-  const snapshot = selectFileContentEntry.select(appStore.state, workspaceId, path);
+  const snapshot = readFileEntry(workspaceId, path);
   appStore.dispatch(removeFileContentEntry(workspaceId, path));
 
   const result = await appClient.files.delete(workspaceId, path);
@@ -160,4 +179,69 @@ export async function renameFile(
     logger.error("Failed to rename file", result.error);
   }
   return result;
+}
+
+/**
+ * Handle the (post-saga) `createFileRequested` action. The action carries the
+ * absolute `folderPath` (under the workspace root) and the bare `fileName`; the
+ * daemon's `file.write` expects a workspace-relative path, so we strip the
+ * workspace prefix before forwarding. On success we dispatch
+ * `refreshDirectoryRequested` so the new file appears in the tree and
+ * `openWorkspaceFile` to mirror the original "create then open" behavior.
+ */
+async function handleCreateFileRequested(
+  workspaceId: string,
+  folderPath: string,
+  fileName: string,
+): Promise<void> {
+  if (!workspaceId || !folderPath || !fileName) return;
+  const absoluteFilePath = `${folderPath}/${fileName}`;
+
+  // Read workspacePath directly from the file-explorer slice (no selector
+  // import — see header note about the middleware-chain init cycle).
+  const ws =
+    appStore.state.fileExplorer.byWorkspaceId[workspaceId] ?? emptyFileExplorerWorkspaceState;
+  const workspacePath = ws.workspacePath;
+  if (!workspacePath) {
+    logger.error("Cannot create file without workspacePath", { workspaceId });
+    return;
+  }
+
+  const relativePath = stripWorkspacePrefix(absoluteFilePath, workspacePath);
+  if (!relativePath || relativePath === absoluteFilePath) {
+    logger.error("Refusing to create file outside workspace", { workspaceId, absoluteFilePath });
+    return;
+  }
+
+  const result = await createFile(workspaceId, relativePath, "");
+  if (!result.success) return;
+
+  appStore.dispatch(refreshDirectoryRequested(workspaceId, absoluteFilePath));
+  appStore.dispatch(openWorkspaceFile(workspaceId, absoluteFilePath));
+}
+
+/**
+ * Middleware that gives the (post-saga) `createFileRequested` trigger a real
+ * handler: after the (no-op) reducer passes the action through, it forwards to
+ * `appClient.files.write` and reconciles the tree + opens the new file.
+ * Fire-and-forget — dispatch stays synchronous and never throws.
+ */
+export function createFilesWriteMiddleware(): StoreMiddleware {
+  return () => (next) => (action) => {
+    const result = next(action);
+    if (action?.type === createFileRequested.type && Array.isArray(action.payload)) {
+      const [wsId, folderPath, fileName] = action.payload as [unknown, unknown, unknown];
+      if (
+        typeof wsId === "string" &&
+        wsId.length > 0 &&
+        typeof folderPath === "string" &&
+        folderPath.length > 0 &&
+        typeof fileName === "string" &&
+        fileName.length > 0
+      ) {
+        void handleCreateFileRequested(wsId, folderPath, fileName);
+      }
+    }
+    return result;
+  };
 }

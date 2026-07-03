@@ -31,6 +31,8 @@
   batchedGitDiff,
   dedupedShowFile,
 } from './diff-ipc-batcher';
+  import { appClient } from '$lib/client';
+  import { LineType, type DiffChunk } from '$shared/types';
   import { hashContent } from './DiffViewer.svelte';
   import * as Diff from 'diff';
   import { getChangedLineNumbersFromContent } from './line-staging';
@@ -117,6 +119,11 @@
   let error: string | null = $state(null);
   let oldContent = $state('');
   let newContent = $state('');
+  // Pre-rendered unified diff patch for the committed branch — sourced from
+  // the daemon's `git.diffs` with `commitHash` (PROTOCOL §5.6) so the diff
+  // body renders from hunks instead of dead legacy `git:show-file` content
+  // round-trips. When set, DiffViewer's `patch` parser branch takes over.
+  let committedPatch = $state('');
   let resolvedFilePath = $state(''); // The actual relative path used for git operations
   let contentTooLarge = $state(false);
   let noChangesAtStage = $state(false);
@@ -293,6 +300,43 @@
     );
   }
 
+  /**
+   * Serialize a daemon `DiffChunk` into a git-style unified diff patch the
+   * pure `DiffViewer` (`patch` prop, parsed via `@pierre/diffs.parsePatchFiles`)
+   * can render directly. Lines arrive without the unified-diff prefix
+   * (libgit2 convention via `intent-git::diff`), so we prepend ' ' / '+' / '-'
+   * by line type. Trailing newlines on each `content` are preserved.
+   */
+  function chunksToUnifiedPatch(chunk: DiffChunk, path: string): string {
+    const a = `a/${path}`;
+    const b = `b/${path}`;
+    const lines: string[] = [
+      `diff --git ${a} ${b}`,
+      `--- ${a}`,
+      `+++ ${b}`,
+    ];
+    for (const hunk of chunk.chunks) {
+      lines.push(
+        `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
+      );
+      for (const line of hunk.lines) {
+        const prefix =
+          line.type === LineType.Addition
+            ? '+'
+            : line.type === LineType.Deletion
+              ? '-'
+              : ' ';
+        // Strip a single trailing newline so we can re-emit it after the prefix;
+        // pierre's parser expects one entry per logical line in the patch text.
+        const body = line.content.endsWith('\n')
+          ? line.content.slice(0, -1)
+          : line.content;
+        lines.push(`${prefix}${body}`);
+      }
+    }
+    return lines.join('\n') + '\n';
+  }
+
   // forceRefresh: when true, ignore useProvidedContent and fetch fresh from git
   // This is used after staging/unstaging operations to show the updated diff
   async function loadDiffContent(forceRefresh = false) {
@@ -309,6 +353,7 @@
     noChangesAtStage = false;
     oldContent = '';
     newContent = '';
+    committedPatch = '';
 
     try {
       if (!change) {
@@ -400,29 +445,28 @@
           noChangesAtStage = true;
         }
       } else if (change.stage === 'committed' && change.commitHash) {
-        // For committed changes without provided content, fetch using git:show-file
-        logger.info('[loadDiffContent] Fetching committed file content', {
+        // Daemon-backed committed-diff source (PROTOCOL §5.6): fetch the
+        // per-file hunks for `<commitHash>^..<commitHash>` and render them as
+        // a unified-diff patch. Replaces the dead legacy `git:show-file` IPC
+        // pair that previously sourced raw old/new file contents.
+        logger.info('[loadDiffContent] Fetching committed-commit hunks', {
           commitHash: change.commitHash,
           filePath,
         });
 
-        const wsIdForShow = workspaceId || workspace?.id || '';
-        // Parallel show-file fetches via the dedup cache so overlapping
-        // mounts for the same file+commit share a single IPC round-trip.
-        const [newContentResult, oldContentResult] = await Promise.all([
-          dedupedShowFile(wsIdForShow, change.commitHash, filePath),
-          dedupedShowFile(wsIdForShow, `${change.commitHash}^`, filePath),
-        ]);
-
-        newContent = newContentResult?.success ? newContentResult.data || '' : '';
-        oldContent = oldContentResult?.success ? oldContentResult.data || '' : '';
-
-        logger.info('[loadDiffContent] Committed content fetched', {
-          oldContentLength: oldContent.length,
-          newContentLength: newContent.length,
+        const wsIdForCommit = workspaceId || workspace?.id || '';
+        const chunks = await appClient.git.diffs(wsIdForCommit, {
+          commitHash: change.commitHash,
+          path: filePath,
         });
-
-        if (!newContent && !oldContent) {
+        const chunk = chunks.find((c) => c.file === filePath) ?? chunks[0];
+        if (chunk && chunk.chunks.length > 0) {
+          committedPatch = chunksToUnifiedPatch(chunk, filePath);
+          logger.info('[loadDiffContent] Committed hunks rendered to patch', {
+            chunkCount: chunk.chunks.length,
+            patchLength: committedPatch.length,
+          });
+        } else {
           noChangesAtStage = true;
         }
       } else {
@@ -1206,6 +1250,7 @@
 
       <div class="diff-content">
         <DiffViewer
+          patch={committedPatch || undefined}
           oldContent={displayOldContent}
           newContent={displayNewContent}
           oldCacheKey={oldDiffCacheKey}

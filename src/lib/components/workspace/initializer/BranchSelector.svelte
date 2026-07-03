@@ -9,6 +9,7 @@
   import { debugConfig } from '$lib/config/debug';
   import { createLogger } from '$lib/utils/client-logger';
   import { invoke } from '$shared/generated/ipc-client';
+  import { appClient } from '$lib/client';
   import { performanceMonitor } from '$lib/utils/performance';
 
   import { setWorkspaceInitializerBranchForRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
@@ -452,13 +453,16 @@
       }
 
       if (effectiveRepoType === 'local') {
-        // Fetch branches from local git repo
+        // Fetch branches from local git repo via the daemon (`git.getBranches`).
+        // The live seam returns null on transport/gate errors so we surface the
+        // friendly "enter manually" fallback rather than crashing on undefined.
         if (typeof window !== 'undefined' && window.electronAPI) {
-          const result = await invoke<any>('git:getBranches', { repoPath });
-          if (result.success && result.data) {
-            branches = result.data.branches;
-            defaultBranch = result.data.defaultBranch || 'main';
-            currentBranch = result.data.currentBranch || '';
+          const result = await appClient.git.getBranches(repoPath, true);
+          if (result) {
+            branches = result.branches;
+            remoteBranches = result.remoteBranches;
+            defaultBranch = result.defaultBranch || 'main';
+            currentBranch = result.currentBranch || '';
 
             // Set internal state - always ensure a valid branch is selected
             // If value prop is provided, trust it (e.g., for remote branches like origin/...)
@@ -486,7 +490,7 @@
               }
             }
           } else {
-            throw new Error(result.error || 'Failed to fetch branches');
+            throw new Error('Failed to fetch branches');
           }
         } else {
           // Fallback for browser environment - provide common branches
@@ -859,10 +863,11 @@
 
     try {
       if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await invoke<any>('git:getBranchStatus', {
-          repoPath,
-          branchName,
-        });
+        // Daemon-backed read (PROTOCOL §5.6): `appClient.git.branchStatus` is
+        // the new path-based wire that replaces the legacy `git:getBranchStatus`
+        // Electron IPC. The live seam folds transport/gate errors to `null`,
+        // so we surface a clean "no info" state without crashing on undefined.
+        const result = await appClient.git.branchStatus(repoPath, branchName);
 
         // Only update state if this is still the branch we're interested in
         if (pendingStatusBranch !== branchName) {
@@ -873,12 +878,12 @@
           return;
         }
 
-        if (result.success && result.data) {
-          branchStatusBehind = result.data.behind ?? 0;
+        if (result) {
+          branchStatusBehind = result.behind ?? 0;
           // Only report uncommitted changes if this is the current branch
           // (git status --porcelain reports working directory state, not branch state)
           branchStatusHasUncommittedChanges =
-            branchName === currentBranch ? (result.data.hasUncommittedChanges ?? false) : false;
+            branchName === currentBranch ? (result.hasUncommittedChanges ?? false) : false;
 
           logger.debug('Branch status fetched', {
             branchName,
@@ -888,7 +893,7 @@
             isCurrentBranch: branchName === currentBranch,
           });
         } else {
-          logger.warn('Failed to get branch status', { error: result.error });
+          logger.warn('Failed to get branch status', { branchName, repoPath });
           // Reset on error
           branchStatusBehind = 0;
           branchStatusHasUncommittedChanges = false;

@@ -83,24 +83,28 @@ export function isFileBlock(
 }
 
 /**
- * Check if a ContentBlock has text content (either text or content field)
+ * Check whether a ContentBlock carries canonical PROTOCOL §7 text content. Reads
+ * only `text` — the legacy `content` alias was removed in AUDIT-P1-5 so any FE
+ * caller relying on it surfaces during typecheck instead of being silently masked.
  */
 export function hasTextContent(block: ContentBlock): boolean {
-  return typeof block.text === 'string' || typeof block.content === 'string';
+  return typeof block.text === 'string';
 }
 
 /**
- * Get text content from a block (handles both text and content fields)
+ * Read canonical PROTOCOL §7 text from a block. Returns `block.text` only — the
+ * legacy `content` alias is no longer consulted (AUDIT-P1-5).
  */
 export function getTextContent(block: ContentBlock): string | undefined {
-  return block.text || block.content;
+  return block.text;
 }
 
 /**
- * Check if a ContentBlock represents an error
+ * Whether a ContentBlock represents an error. Reads the canonical PROTOCOL §7
+ * `is_error` flag only — the legacy `isError` alias was removed in AUDIT-P1-5.
  */
 export function isErrorBlock(block: ContentBlock): boolean {
-  return block.is_error === true || block.isError === true;
+  return block.is_error === true;
 }
 
 /**

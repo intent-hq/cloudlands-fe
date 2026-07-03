@@ -111,20 +111,45 @@ export class LiveAgentsClient implements AgentsClient {
     };
   }
 
-  // Mutations forward to the daemon (§7.2) and fold the outcome into a
-  // MutationResult; daemon agent-lifecycle events drive the reactive refresh.
-  async create(request: AgentCreateRequest): Promise<MutationResult> {
-    // create requires an idempotencyKey (§5.6). The seam's AgentCreateRequest
-    // only carries workspaceId/model/specialist/prompt; prompt maps to the
-    // wire `behaviorPrompt`. (name/provider/agentType/taskNoteId are not on the
-    // request — see the gap noted in the task report.)
-    return runMutation("agent.create", {
+  // Mutations forward to the daemon (§7.2); daemon agent-lifecycle events
+  // drive the reactive refresh. `create` returns the full session projection
+  // (widened in P2-12a) so the caller can upsert without a follow-up `agent.get`.
+  async create(request: AgentCreateRequest): Promise<AgentSession> {
+    // create requires an idempotencyKey (§5.6). The widened P2-12a wire also
+    // accepts optional `name` / `agentId` / `provider` / `agentType` /
+    // `metadata` / `workspacePath` / `workspaceContext`; each is only sent
+    // when the caller supplied it so the daemon sees `undefined` params
+    // (equivalent to omitted) rather than explicit nulls it would reject.
+    const params: Record<string, unknown> = {
       workspaceId: request.workspaceId,
-      model: request.model,
-      specialist: request.specialist,
-      behaviorPrompt: request.prompt,
       idempotencyKey: newIdempotencyKey(),
-    });
+    };
+    if (request.model !== undefined) params.model = request.model;
+    if (request.specialist !== undefined && request.specialist !== null) {
+      params.specialistId = request.specialist;
+    }
+    if (request.prompt !== undefined) params.behaviorPrompt = request.prompt;
+    if (request.name !== undefined) params.name = request.name;
+    if (request.agentId !== undefined) params.agentId = request.agentId;
+    if (request.provider !== undefined) params.provider = request.provider;
+    if (request.agentType !== undefined) params.agentType = request.agentType;
+    if (request.metadata !== undefined) params.metadata = request.metadata;
+    if (request.workspacePath !== undefined) params.workspacePath = request.workspacePath;
+    if (request.workspaceContext !== undefined) {
+      params.workspaceContext = request.workspaceContext;
+    }
+    const result = await backendRequest<{ agent?: unknown } | unknown>("agent.create", params);
+    // Widened §5.5 wire returns `{ agent: AgentLite }`; the pre-widening
+    // `{ id, name }` shape is a strict subset, so we tolerate a bare object
+    // for older daemons without healing anything the current contract owns.
+    const raw =
+      result && typeof result === "object" && "agent" in result
+        ? (result as { agent?: unknown }).agent
+        : result;
+    if (!raw || typeof raw !== "object") {
+      throw new Error("agent.create returned no agent object");
+    }
+    return normalizeAgent(raw as Record<string, unknown>);
   }
   async send(agentId: string, message: string): Promise<MutationResult> {
     const workspaceId = await this.resolveAgentWorkspaceId(agentId);
@@ -149,10 +174,21 @@ export class LiveAgentsClient implements AgentsClient {
         { agentId, content: message },
       );
       const queuedMessage = result?.queuedMessage;
-      return { success: true, ...(queuedMessage ? { queuedMessage } : {}) } as MutationResult;
+      return queuedMessage ? { success: true, queuedMessage } : { success: true };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
+  }
+  async removeQueued(agentId: string, messageId: string): Promise<MutationResult> {
+    // `agent.removeQueuedMessage` is **idempotent** on the daemon (§5.5): the
+    // BE returns `{ success: true }` whether or not the messageId existed in
+    // the persisted queue. `runMutation` folds the daemon body into a uniform
+    // success result; any thrown error is a transport/RPC failure, NOT a
+    // "not found" — callers (e.g. the queue-mutation handler in
+    // chat-send-service) must treat both branches as "already removed" and
+    // never roll the optimistic delete back, since the BE may have already
+    // self-drained or the FE's seeded queue may diverge after a daemon restart.
+    return runMutation("agent.removeQueuedMessage", { agentId, messageId });
   }
   async setAvailability(agentId: string, available: boolean): Promise<MutationResult> {
     return runMutation("agent.setAvailability", { agentId, available });
@@ -162,6 +198,13 @@ export class LiveAgentsClient implements AgentsClient {
   }
   async lock(agentId: string, locked: boolean): Promise<MutationResult> {
     return runMutation("agent.lock", { agentId, locked });
+  }
+  async delete(agentId: string): Promise<MutationResult> {
+    // `agent.delete` (§5.5) takes `agentId` (req) and an optional `workspaceId`;
+    // the daemon resolves the workspace itself (agent_delete_op only consumes
+    // agent_id) and is idempotent, so we forward just `{ agentId }` and rely on
+    // the emitted `agent:deleted` event to reconcile the list.
+    return runMutation("agent.delete", { agentId });
   }
 
   /**

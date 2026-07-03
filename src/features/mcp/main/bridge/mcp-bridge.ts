@@ -20,9 +20,7 @@ import {
 import type { ToolName } from '../../types/schemas';
 import { createHash } from 'crypto';
 import { emitAgentFileChange } from '../mcp/workspace-file-tools';
-import { remoteRPCManager } from '../../../../shared/main/remote-rpc-manager';
-import { RemoteRPCError } from '../../../../shared/main/remote-rpc-client';
-import { execAsync } from '../../../../shared/git/git-env';
+import { hostExec } from '../../../../shared/main/host-exec';
 import { assertAgentCommitAllowed } from '$features/workspace/main/workspace-settings.service';
 
 const logger = new Logger('McpBridge');
@@ -1021,25 +1019,19 @@ export class McpBridge extends EventEmitter {
         ? workspace?.worktreePath || workspace?.path || ''
         : this.getWorkspacePath(params.workspaceId);
 
-      // Helper to execute git commands (local or remote)
+      // Helper to execute git commands via the daemon's host.exec seam;
+      // locality (local/remote) is decided by workspaceId — the FE no longer
+      // branches on remote vs. local transports itself.
       const execGitCommand = async (
         command: string,
       ): Promise<{ stdout: string; stderr: string }> => {
-        if (isRemote) {
-          const rpcClient = await remoteRPCManager.getClient(params.workspaceId);
-          const fullCommand = `cd "${workspacePath}" && ${command}`;
-          try {
-            const result = await rpcClient.exec({ command: fullCommand, timeout: 60000 });
-            return { stdout: result.stdout, stderr: result.stderr };
-          } catch (error) {
-            if (error instanceof RemoteRPCError && error.code === -32000) {
-              const data = error.data as { stdout?: string; stderr?: string; exitCode?: number } | undefined;
-              return { stdout: data?.stdout ?? '', stderr: data?.stderr ?? error.message };
-            }
-            throw error;
-          }
-        }
-        return execAsync(command, { cwd: workspacePath });
+        const result = await hostExec('/bin/sh', {
+          args: ['-c', command],
+          cwd: workspacePath,
+          workspaceId: params.workspaceId,
+          timeoutMs: 60000,
+        });
+        return { stdout: result.stdout, stderr: result.stderr };
       };
 
       // Determine the operation

@@ -30,25 +30,25 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 
-// Mock the typed invoke
-vi.mock('$shared/ipc/typed-invoke', () => ({
-  typedInvoke: vi.fn().mockResolvedValue({
-    success: true,
-    data: {
-      agent: {
-        id: 'agent-123',
-        backendSessionId: 'session-123',
-        workspaceId: 'workspace-123',
-        name: 'Test Agent',
-        model: 'sonnet4.5',
+// Mock the widened AgentsClient seam (AUDIT-P2-12b): `createInBackend` now
+// routes agent creation through `appClient.agents.create` (→ daemon
+// `agent.create`, PROTOCOL §5.5) instead of the legacy `AGENT_CHANNELS.CREATE`
+// IPC. The mock echoes the FE-supplied id back per the daemon contract.
+vi.mock('$lib/client', () => ({
+  appClient: {
+    agents: {
+      create: vi.fn(async (request: { agentId?: string; workspaceId: string; name?: string }) => ({
+        id: request.agentId ?? 'agent-123',
+        backendSessionId: null,
+        workspaceId: request.workspaceId,
+        name: request.name ?? 'Test Agent',
         status: 'Idle',
         messages: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      sessionId: 'session-123',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })),
     },
-  }),
+  },
 }));
 
 // Mock electron-bridge for user rules
@@ -58,6 +58,9 @@ vi.mock('$lib/electron-bridge', () => ({
     data: 'User defined rules',
   }),
 }));
+
+import { appClient } from '$lib/client';
+const agentsApi = appClient.agents as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
 describe('UnifiedAgentFactory', () => {
   let factory: UnifiedAgentFactory;
@@ -189,6 +192,37 @@ describe('UnifiedAgentFactory', () => {
       expect(result.success).toBe(true);
       expect(result.agent?.metadata?.source).toBe('workspace-initializer');
       expect(result.agent?.metadata?.custom).toBe('value');
+    });
+
+    it('routes create through appClient.agents.create with the widened wire shape', async () => {
+      agentsApi.create.mockClear();
+      const config: UnifiedAgentConfig = {
+        id: 'agent-fixed-1',
+        name: 'Wire Agent',
+        workspaceId: mockWorkspace.id as any,
+        model: 'sonnet4.5',
+        provider: 'auggie',
+        agentType: 'chat' as any,
+        behaviorPrompt: 'be nice',
+        metadata: { source: 'wire-test' },
+      };
+
+      const result = await factory.createAgent(mockWorkspace, config);
+      expect(result.success).toBe(true);
+
+      expect(agentsApi.create).toHaveBeenCalledTimes(1);
+      const [request] = agentsApi.create.mock.calls[0] as [Record<string, unknown>];
+      // AUDIT-P2-12b: FE forwards the widened AgentCreateRequest fields
+      // consumed by the daemon (§5.5). `prompt` carries the behaviorPrompt.
+      expect(request.workspaceId).toBe(String(mockWorkspace.id));
+      expect(request.workspacePath).toBe(mockWorkspace.repositoryPath);
+      expect(request.agentId).toBe('agent-fixed-1');
+      expect(request.name).toBe('Wire Agent');
+      expect(request.model).toBe('sonnet4.5');
+      expect(request.provider).toBe('auggie');
+      expect(request.agentType).toBe('chat');
+      expect(request.prompt).toBe('be nice');
+      expect(request.metadata).toMatchObject({ source: 'wire-test' });
     });
   });
 });

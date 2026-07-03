@@ -231,18 +231,21 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Auggie-specific install & login (mirrors AuggieSetupGate flows)
+  // Auggie instructions-only setup surface.
+  //
+  // Post-P2-12c the daemon no longer executes install / OAuth login on the FE's
+  // behalf. AUGGIE_CHANNELS.INSTALL and AUGGIE_CHANNELS.AUTHENTICATE return
+  // `data.instructions` (ordered manual steps) + `data.command` (copyable
+  // shell command) that the user runs in their own terminal. This component
+  // renders those steps and re-runs detection (host.checkAuggie via
+  // provider-availability + AUGGIE_CHANNELS.STATUS) when the user clicks
+  // "check again".
   // ---------------------------------------------------------------------------
   const logger = createLogger('AgentGrid');
 
   let auggieActionInProgress = $state(false);
-  let auggieAuthUrl = $state<string | null>(null);
-  let auggieWaitingForBrowser = $state(false);
-  let auggieShowManualAuth = $state(false);
-  let auggieManualAuthInput = $state('');
-  let auggieAuthError = $state<string | null>(null);
-  let auggieAuthPollHandle: ReturnType<typeof setInterval> | null = null;
-  let auggieAuthPollInFlight = false;
+  let auggieInstructions = $state<string[] | null>(null);
+  let auggieCommand = $state<string | null>(null);
   let auggieVersionOk = $state<boolean | undefined>(undefined);
   let auggieNeedsUpdate = $derived(auggieVersionOk === false);
 
@@ -261,225 +264,114 @@
     }
   }
 
-  /** Called after successful auggie install or login to refresh models + analytics. */
-  /** Reset all auggie auth UI state (manual paste, waiting, error). */
-  function clearAuggieAuthUI() {
-    auggieShowManualAuth = false;
-    auggieWaitingForBrowser = false;
-    auggieAuthError = null;
-    auggieManualAuthInput = '';
-    auggieAuthUrl = null;
-    stopAuggieAuthPolling();
+  /** Reset the instructions panel state. */
+  function clearAuggieInstructions() {
+    auggieInstructions = null;
+    auggieCommand = null;
   }
 
+  /** Called after auggie is detected as ready to refresh models + analytics. */
   async function onAuggieReady() {
-    clearAuggieAuthUI();
-    await Promise.all([checkSingleProvider('auggie'), checkAuggieVersion()]);
+    clearAuggieInstructions();
     identifyUser({ force: true }).catch(() => {});
     appStore.dispatch(retryLoadModels());
   }
 
-  // Auto-clear auth UI when auggie becomes authenticated (e.g. after refresh)
+  // Auto-clear instructions once auggie becomes authenticated
   $effect(() => {
     const statusMap = $providerStatusMap$;
     if (statusMap.auggie?.authenticated === true) {
-      clearAuggieAuthUI();
+      clearAuggieInstructions();
     }
   });
 
-  /** Download the auggie binary via the managed install path (no npm needed). */
+  type InstructionResponse = {
+    success: boolean;
+    error?: string;
+    data?: {
+      instructions?: string[];
+      command?: string;
+      authenticated?: boolean;
+      completed?: boolean;
+    };
+  };
+
+  function applyInstructionResponse(result: InstructionResponse): void {
+    if (result.data?.instructions && result.data.instructions.length > 0) {
+      auggieInstructions = result.data.instructions;
+      auggieCommand = result.data.command ?? null;
+    } else if (result.error) {
+      auggieInstructions = [result.error];
+      auggieCommand = result.data?.command ?? null;
+    }
+  }
+
+  /** Ask the daemon for install instructions and render them. */
   async function installAuggieBinary() {
     try {
       auggieActionInProgress = true;
-      const result = await invoke<{ success: boolean; error?: string }>(AUGGIE_CHANNELS.INSTALL);
-      if (!result.success) throw new Error(result.error || 'Installation failed');
-      toast.success('Auggie installed');
-      await onAuggieReady();
+      const result = await invoke<InstructionResponse>(AUGGIE_CHANNELS.INSTALL);
+      applyInstructionResponse(result);
     } catch (err) {
       const message = (err as Error).message;
-      toast.error('Install failed', { description: message });
+      logger.error('Failed to fetch install instructions', { error: err });
+      auggieInstructions = [message];
+      auggieCommand = null;
     } finally {
       auggieActionInProgress = false;
     }
   }
 
-  function stopAuggieAuthPolling() {
-    if (auggieAuthPollHandle) {
-      clearInterval(auggieAuthPollHandle);
-      auggieAuthPollHandle = null;
-    }
-  }
-
-  /** Poll the running auth process to see if the browser OAuth completed. */
-  async function pollAuggieAuthOnce() {
-    if (auggieAuthPollInFlight) return;
-    auggieAuthPollInFlight = true;
-    try {
-      const result = await invoke<{
-        success: boolean;
-        data?: { completed?: boolean; authenticated?: boolean };
-        error?: string;
-      }>(AUGGIE_CHANNELS.AUTHENTICATE, { action: 'poll' });
-      if (result.success && result.data?.completed) {
-        stopAuggieAuthPolling();
-        auggieWaitingForBrowser = false;
-        if (result.data.authenticated) {
-          logger.info('Auggie auth completed via browser callback');
-          toast.success('Logged in to Auggie');
-          await onAuggieReady();
-        } else {
-          logger.info('Auggie login process ended without authenticating, showing manual paste');
-          auggieShowManualAuth = true;
-        }
-      }
-    } catch (err) {
-      logger.error('Error polling auggie auth status', { error: err });
-    } finally {
-      auggieAuthPollInFlight = false;
-    }
-  }
-
-  function startAuggieAuthPolling() {
-    stopAuggieAuthPolling();
-    const POLL_INTERVAL_MS = 2000;
-    const MAX_POLL_TIME_MS = 120_000;
-    const startTime = Date.now();
-    auggieAuthPollHandle = setInterval(async () => {
-      await pollAuggieAuthOnce();
-      if (Date.now() - startTime > MAX_POLL_TIME_MS && auggieWaitingForBrowser) {
-        logger.info('Auggie auth polling timed out, falling back to manual paste');
-        stopAuggieAuthPolling();
-        auggieWaitingForBrowser = false;
-        auggieShowManualAuth = true;
-      }
-    }, POLL_INTERVAL_MS);
-  }
-
-  /** Normalize manual auth input: JSON passthrough, URL→JSON, or plain code. */
-  function normalizeAuthResponse(input: string): string {
-    const trimmed = input.trim();
-    if (!trimmed) return trimmed;
-    try {
-      JSON.parse(trimmed);
-      return trimmed;
-    } catch {
-      /* not JSON */
-    }
-    try {
-      const url = new URL(trimmed);
-      const code = url.searchParams.get('code');
-      const state = url.searchParams.get('state');
-      const tenantUrl = url.searchParams.get('tenant_url');
-      if (code) {
-        return JSON.stringify({
-          code,
-          ...(state ? { state } : {}),
-          ...(tenantUrl ? { tenant_url: tenantUrl } : {}),
-        });
-      }
-    } catch {
-      /* not a URL */
-    }
-    return JSON.stringify({ code: trimmed });
-  }
-
-  /** Start the auggie OAuth login flow (opens browser). Retries up to 2 times. */
-  async function loginAuggie(retryCount = 0) {
+  /** Ask the daemon whether auggie is authenticated; otherwise render login instructions. */
+  async function loginAuggie() {
     try {
       auggieActionInProgress = true;
-      auggieAuthError = null;
-      auggieAuthUrl = null;
-      auggieManualAuthInput = '';
-      auggieShowManualAuth = false;
-      auggieWaitingForBrowser = false;
-      stopAuggieAuthPolling();
+      const result = await invoke<InstructionResponse>(AUGGIE_CHANNELS.AUTHENTICATE, {
+        action: 'start',
+      });
+      if (result.success && result.data?.authenticated) {
+        toast.success('Logged in to Auggie');
+        await checkSingleProvider('auggie');
+        await checkAuggieVersion();
+        await onAuggieReady();
+        return;
+      }
+      applyInstructionResponse(result);
+    } catch (err) {
+      const message = (err as Error).message;
+      logger.error('Failed to fetch login instructions', { error: err });
+      auggieInstructions = [message];
+      auggieCommand = null;
+    } finally {
+      auggieActionInProgress = false;
+    }
+  }
 
-      const result = await invoke<{
-        success: boolean;
-        data?: {
-          autoCompleted?: boolean;
-          processStarted?: boolean;
-          authUrl?: string;
-          isJsonPasteFlow?: boolean;
-        };
-        error?: string;
-      }>(AUGGIE_CHANNELS.AUTHENTICATE, { action: 'start' });
-
-      if (!result.success) throw new Error(result.error || 'Failed to start authentication');
-
-      if (result.data?.autoCompleted) {
+  /** Re-run detection after the user completes the manual step. */
+  async function recheckAuggie() {
+    try {
+      auggieActionInProgress = true;
+      const status = await checkSingleProvider('auggie');
+      await checkAuggieVersion();
+      if (status?.available && status?.authenticated === true) {
+        toast.success('Auggie ready');
+        await onAuggieReady();
+        return;
+      }
+      // Not yet ready — refresh the instructions to reflect current state
+      const channel = status?.available
+        ? AUGGIE_CHANNELS.AUTHENTICATE
+        : AUGGIE_CHANNELS.INSTALL;
+      const args = channel === AUGGIE_CHANNELS.AUTHENTICATE ? [{ action: 'start' }] : [];
+      const result = await invoke<InstructionResponse>(channel, ...args);
+      if (result.success && result.data?.authenticated) {
         toast.success('Logged in to Auggie');
         await onAuggieReady();
         return;
       }
-      if (!result.data?.processStarted) throw new Error('Failed to start authentication process');
-
-      // Capture auth URL for fallback link
-      if (result.data.authUrl) auggieAuthUrl = result.data.authUrl;
-
-      // JSON paste flow (remote/SSH session) — go straight to paste textarea
-      if (result.data.isJsonPasteFlow) {
-        auggieShowManualAuth = true;
-        auggieActionInProgress = false;
-        return;
-      }
-
-      // Normal browser flow — poll for completion
-      auggieWaitingForBrowser = true;
-      auggieActionInProgress = false;
-      startAuggieAuthPolling();
+      applyInstructionResponse(result);
     } catch (err) {
-      if (retryCount < 2) {
-        logger.debug('Auggie auth failed, retrying...', { retryCount });
-        await new Promise((r) => setTimeout(r, 1000));
-        return loginAuggie(retryCount + 1);
-      }
-      const message = (err as Error).message;
-      auggieAuthError = message;
-      toast.error('Login failed', { description: message });
-      auggieActionInProgress = false;
-    }
-  }
-
-  /** Complete manual auth by submitting the pasted token/JSON. */
-  async function completeAuggieManualAuth(retryCount = 0) {
-    if (!auggieManualAuthInput.trim()) {
-      toast.error('Please paste the session code or JSON response');
-      return;
-    }
-    try {
-      auggieActionInProgress = true;
-      auggieAuthError = null;
-      const normalized = normalizeAuthResponse(auggieManualAuthInput);
-      const result = await invoke<{ success: boolean; error?: string }>(
-        AUGGIE_CHANNELS.AUTHENTICATE,
-        { action: 'complete', authResponse: normalized },
-      );
-      if (!result.success) {
-        // Check if auth actually succeeded despite error response
-        const status = await checkSingleProvider('auggie');
-        if (status?.authenticated === true) {
-          auggieManualAuthInput = '';
-          auggieShowManualAuth = false;
-          toast.success('Logged in to Auggie');
-          await onAuggieReady();
-          return;
-        }
-        throw new Error(result.error || 'Failed to complete authentication');
-      }
-      auggieManualAuthInput = '';
-      auggieShowManualAuth = false;
-      toast.success('Logged in to Auggie');
-      await onAuggieReady();
-    } catch (err) {
-      const message = (err as Error).message;
-      const isSessionExpired = message.includes('session has expired');
-      if (!isSessionExpired && retryCount < 2) {
-        await new Promise((r) => setTimeout(r, 1000));
-        return completeAuggieManualAuth(retryCount + 1);
-      }
-      auggieAuthError = message;
-      toast.error('Authentication failed', { description: message });
+      logger.error('Failed to recheck auggie status', { error: err });
     } finally {
       auggieActionInProgress = false;
     }
@@ -490,15 +382,13 @@
     checkAuggieVersion();
 
     // Re-check all provider statuses on window focus/visibility
-    // (user may have installed a CLI tool or logged in via browser)
+    // (user may have finished the manual install/login in their terminal)
     const handleFocus = () => {
       appStore.dispatch(checkAllProvidersRequested());
-      if (auggieWaitingForBrowser) pollAuggieAuthOnce();
     };
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         appStore.dispatch(checkAllProvidersRequested());
-        if (auggieWaitingForBrowser) pollAuggieAuthOnce();
       }
     };
     window.addEventListener('focus', handleFocus);
@@ -507,7 +397,6 @@
     return () => {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
-      stopAuggieAuthPolling();
     };
   });
 </script>
@@ -523,16 +412,13 @@
         brand={PROVIDER_BRAND_COLORS[provider.id] ?? DEFAULT_BRAND}
         {auggieNeedsUpdate}
         {auggieActionInProgress}
-        {auggieWaitingForBrowser}
-        {auggieShowManualAuth}
-        {auggieManualAuthInput}
-        {auggieAuthUrl}
-        {auggieAuthError}
+        {auggieInstructions}
+        {auggieCommand}
         onSelect={handleSelectProvider}
         onAuggieInstall={installAuggieBinary}
         onAuggieLogin={() => loginAuggie()}
-        onAuggieManualAuth={() => completeAuggieManualAuth()}
-        onAuggieManualAuthInputChange={(v) => (auggieManualAuthInput = v)}
+        onAuggieRecheck={() => recheckAuggie()}
+        onAuggieDismissInstructions={clearAuggieInstructions}
       />
     </div>
   {/each}

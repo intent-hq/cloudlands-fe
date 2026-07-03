@@ -28,6 +28,8 @@
   selectRecentlyClosed,
   selectFocusedPanelId,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
+  import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+  import { selectTerminalsForWorkspace } from '$store/renderer/slices/terminals/terminals-selectors';
 
   import CreateAgentSection from '$lib/components/workspace/CreateAgentSection.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -62,7 +64,28 @@
 
   // Get recently closed tabs via Redux selector (reactive)
   const recentlyClosed$ = selectRecentlyClosed(workspaceIdStore);
-  const recentItems = $derived($recentlyClosed$?.slice(0, 5) ?? []);
+  const workspaceAgents$ = selectAllWorkspaceAgents(workspaceIdStore);
+  const workspaceTerminals$ = selectTerminalsForWorkspace(workspaceIdStore);
+  // Defensively drop agent/terminal recents whose entity is gone so deleted
+  // agents and closed terminals don't linger in the empty-state list even if
+  // the prune dispatch was somehow missed. Non-agent/terminal recents pass
+  // through unchanged.
+  const recentItems = $derived.by(() => {
+    const closed = $recentlyClosed$ ?? [];
+    if (closed.length === 0) return [];
+    const validAgentIds = new Set<string>(($workspaceAgents$ ?? []).map((a) => String(a.id)));
+    const validTerminalIds = new Set<string>(($workspaceTerminals$ ?? []).map((t) => t.id));
+    const filtered = closed.filter((item) => {
+      if (item.tab.type === 'agent') {
+        return item.tab.agentId ? validAgentIds.has(item.tab.agentId) : true;
+      }
+      if (item.tab.type === 'terminal') {
+        return item.tab.terminalId ? validTerminalIds.has(item.tab.terminalId) : true;
+      }
+      return true;
+    });
+    return filtered.slice(0, 5);
+  });
 
   // Get icon for tab type
   function getTabIcon(type: PanelTab['type']) {

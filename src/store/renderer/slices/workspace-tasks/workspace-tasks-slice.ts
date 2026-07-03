@@ -1,4 +1,4 @@
-import type { TaskStatus, WorkspaceTask } from "$shared/types";
+import type { TaskStatus, WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
 import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
 import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import {
@@ -13,8 +13,16 @@ import type { WorkspaceTasksState, WorkspaceTasksWorkspaceState } from "./worksp
 
 export type { WorkspaceTasksState, WorkspaceTasksWorkspaceState };
 
+/** Empty `WorkspaceTaskStats` used until the BE rollup arrives from `task.list`. */
+export const emptyWorkspaceTaskStats: WorkspaceTaskStats = {
+  total: 0,
+  completed: 0,
+  inProgress: 0,
+};
+
 export const emptyWorkspaceTasksState: WorkspaceTasksWorkspaceState = {
   tasks: createCollection<WorkspaceTask, "id">("id"),
+  stats: emptyWorkspaceTaskStats,
   loading: false,
   error: null,
   initialized: false,
@@ -45,8 +53,13 @@ export const ensureWorkspaceTasksLoaded = createAction<[workspaceId: string]>(
   "workspaceTasks/ensureWorkspaceTasksLoaded"
 );
 
+/**
+ * Saga/middleware success action — applies the `task.list` payload to the
+ * slice. The BE-owned `stats` rollup is stored alongside `tasks`; selectors
+ * serve it verbatim per the AUDIT-P1-2 thin-presenter rule.
+ */
 export const loadWorkspaceTasksSucceeded = createAction<
-  [workspaceId: string, tasks: WorkspaceTask[]]
+  [workspaceId: string, tasks: WorkspaceTask[], stats: WorkspaceTaskStats]
 >("workspaceTasks/loadWorkspaceTasksSucceeded");
 
 export const loadWorkspaceTasksFailed = createAction<[workspaceId: string, error: string]>(
@@ -77,11 +90,12 @@ export const workspaceTasksReducer = createReducer<WorkspaceTasksState>(initialS
       error: null,
     });
   })
-  .with(loadWorkspaceTasksSucceeded, (state, { payload: [workspaceId, tasks] }) => {
+  .with(loadWorkspaceTasksSucceeded, (state, { payload: [workspaceId, tasks, stats] }) => {
     const ws = getWorkspaceState(state, workspaceId);
     return setWorkspaceState(state, workspaceId, {
       ...ws,
       tasks: createCollection<WorkspaceTask, "id">("id", tasks),
+      stats,
       loading: false,
       error: null,
       initialized: true,

@@ -11,10 +11,11 @@ vi.mock("./backend-transport", () => ({
   onBackendNotification: vi.fn(() => () => {}),
 }));
 
-import { backendRequest } from "./backend-transport";
+import { backendRequest, onBackendNotification } from "./backend-transport";
 import { LiveFilesClient } from "./live-files-client";
 
 const mockedRequest = vi.mocked(backendRequest);
+const mockedOnBackendNotification = vi.mocked(onBackendNotification);
 
 describe("LiveFilesClient mutations (fake transport)", () => {
   afterEach(() => {
@@ -132,5 +133,58 @@ describe("LiveFilesClient.explorerTree (fake transport)", () => {
     const client = new LiveFilesClient();
 
     expect(await client.explorerTree("ws-1")).toBeNull();
+  });
+});
+
+// Regression: `subscribe` re-emits to its handler on file:* notifications via
+// `isEventInFamily`. When the matcher misread the wrapped `{event:{type,…}}`
+// envelope, every events.event notification (including PTY terminal:data
+// keystrokes) re-emitted. This test exercises the REAL matcher end-to-end and
+// pins routing: terminal:data does NOT re-emit; file:changed does.
+describe("LiveFilesClient.subscribe event-family routing (fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  function setupCapture() {
+    let captured: ((n: { method: string; params: unknown }) => void) | undefined;
+    mockedOnBackendNotification.mockImplementation((cb) => {
+      captured = cb;
+      return () => {};
+    });
+    return { getNotify: () => captured };
+  }
+
+  it("does NOT re-emit on a wrapped terminal:data notification", () => {
+    const { getNotify } = setupCapture();
+    const client = new LiveFilesClient();
+    const handler = vi.fn();
+
+    const unsubscribe = client.subscribe(handler);
+    // Initial snapshot emit is synchronous.
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    getNotify()!({
+      method: "events.event",
+      params: { event: { type: "terminal:data", data: { chunk: "x" } } },
+    });
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it("DOES re-emit on a wrapped file:changed notification", () => {
+    const { getNotify } = setupCapture();
+    const client = new LiveFilesClient();
+    const handler = vi.fn();
+
+    const unsubscribe = client.subscribe(handler);
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    getNotify()!({
+      method: "events.event",
+      params: { event: { type: "file:changed" }, subscriptionId: "s-1" },
+    });
+
+    expect(handler).toHaveBeenCalledTimes(2);
+    unsubscribe();
   });
 });

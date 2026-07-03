@@ -1,13 +1,13 @@
 /**
  * Live tasks domain backed by the intentd daemon.
  *
- * The daemon exposes no dedicated `task.*` read methods today; task notes are
- * regular notes carrying `metadata.task`. This client therefore DERIVES the
- * canonical `WorkspaceTask` facts from `note.list` (filtering to notes that have
- * task metadata) — a live read, not a mock fallback. `subscribe` refetches on
- * `task:*` and `note:*` events (task status lives in note metadata).
+ * `list()` calls `task.list` (PROTOCOL §5.4) which returns the canonical
+ * `WorkspaceTask[]` projection AND the workspace-wide `taskStats` aggregate the
+ * BE owns. The FE renders `stats` verbatim — it never re-derives task progress
+ * from the task list (or from `note.list`). `subscribe` refetches on `task:*`
+ * and `note:*` events (task status lives in note metadata).
  */
-import type { TaskStatus, WorkspaceTask } from "$shared/types";
+import type { TaskStatus, WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
 import type {
   CreatePrerequisiteOptions,
   MarkAsTaskOptions,
@@ -95,19 +95,44 @@ function conflictToTask(raw: Record<string, unknown>): WorkspaceTask | null {
   return null;
 }
 
+/** Zero-aggregate fallback for the synthesized `subscribe` snapshot (workspace not loaded). */
+const EMPTY_STATS: WorkspaceTaskStats = { total: 0, completed: 0, inProgress: 0 };
+
+/**
+ * Normalize the wire `stats` aggregate from `task.list` into the canonical
+ * `WorkspaceTaskStats` shape. The daemon emits `{ total, completed, inProgress }`
+ * verbatim per PROTOCOL §5.4 — this function is the explicit boundary that
+ * defends the call site if a field is absent without re-deriving the rollup.
+ */
+function normalizeStats(raw: unknown): WorkspaceTaskStats {
+  if (!raw || typeof raw !== "object") return { ...EMPTY_STATS };
+  const r = raw as Record<string, unknown>;
+  return {
+    total: typeof r.total === "number" ? r.total : 0,
+    completed: typeof r.completed === "number" ? r.completed : 0,
+    inProgress: typeof r.inProgress === "number" ? r.inProgress : 0,
+  };
+}
+
 export class LiveTasksClient implements TasksClient {
-  async list(workspaceId: string): Promise<WorkspaceTask[]> {
-    const result = await backendRequest<{ notes?: unknown[] }>("note.list", { workspaceId });
-    const notes = Array.isArray(result?.notes) ? result.notes : [];
+  /**
+   * `task.list` (PROTOCOL §5.4) → `{ tasks, stats }`. The BE owns the
+   * `taskStats` rollup; the FE renders it verbatim. Tasks are also remembered
+   * by workspace so note-scoped mutations can resolve their owning workspace.
+   */
+  async list(workspaceId: string): Promise<{ tasks: WorkspaceTask[]; stats: WorkspaceTaskStats }> {
+    const result = await backendRequest<{ tasks?: unknown[]; stats?: unknown }>("task.list", {
+      workspaceId,
+    });
+    const rawTasks = Array.isArray(result?.tasks) ? result.tasks : [];
     const tasks: WorkspaceTask[] = [];
-    for (const note of notes) {
-      const raw = note as Record<string, unknown>;
-      const id = String(raw.id ?? "");
-      if (id) rememberNoteWorkspace(id, workspaceId);
-      const task = noteToTask(raw);
-      if (task) tasks.push(task);
+    for (const entry of rawTasks) {
+      const task = normalizeTaskEntity(entry as Record<string, unknown>);
+      if (!task) continue;
+      if (task.id) rememberNoteWorkspace(task.id, workspaceId);
+      tasks.push(task);
     }
-    return tasks;
+    return { tasks, stats: normalizeStats(result?.stats) };
   }
 
   async get(taskId: string): Promise<WorkspaceTask | null> {
@@ -265,7 +290,7 @@ export class LiveTasksClient implements TasksClient {
       fetchAll: async () => {
         const ids = await listWorkspaceIds();
         const perWorkspace = await Promise.all(ids.map((id) => this.list(id)));
-        return perWorkspace.flat();
+        return perWorkspace.flatMap((entry) => entry.tasks);
       },
       getId: (raw) => String(raw.id ?? ""),
       normalize: (raw) => normalizeTaskEntity(raw),

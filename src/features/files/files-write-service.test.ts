@@ -24,6 +24,8 @@ import {
   selectFileError,
   selectFileIsDirty,
 } from "$store/renderer/slices/files/files-selectors";
+import { createFileRequested } from "$store/renderer/slices/app-layout/app-layout-slice";
+import { setFileExplorerWorkspacePath } from "$store/renderer/slices/file-explorer/file-explorer-slice";
 import {
   FILE_CONTENT_SAVE_DEBOUNCE_MS,
   createDirectory,
@@ -143,5 +145,30 @@ describe("filesWriteService (fake seam, real store)", () => {
     expect(await renameFile(WS, PATH, "src/b.ts")).toEqual({ success: true });
     expect(filesApi.rename).toHaveBeenCalledWith(WS, PATH, "src/b.ts");
     expect(selectFileContentEntry.select(appStore.state, WS, PATH)).toBeUndefined();
+  });
+
+  it("dispatching createFileRequested writes a workspace-relative file via the seam", async () => {
+    const wsCreate = "ws-create-file";
+    const workspaceRoot = "/repo-create";
+    appStore.dispatch(setFileExplorerWorkspacePath(wsCreate, workspaceRoot));
+    filesApi.write.mockResolvedValueOnce({ success: true } as never);
+
+    appStore.dispatch(createFileRequested(wsCreate, `${workspaceRoot}/src`, "new.ts"));
+    // Flush the fire-and-forget middleware promise (one microtask for the awaited
+    // appClient.files.write mock resolution + dispatch follow-ups).
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+
+    expect(filesApi.write).toHaveBeenCalledWith(wsCreate, "src/new.ts", "");
+  });
+
+  it("createFileRequested does not call the seam when workspacePath is missing", async () => {
+    const wsCreate = "ws-create-no-root";
+
+    appStore.dispatch(createFileRequested(wsCreate, "/elsewhere", "new.ts"));
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+
+    expect(filesApi.write).not.toHaveBeenCalled();
   });
 });

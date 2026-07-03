@@ -79,6 +79,15 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     return normalizeWorkspace(raw as Record<string, unknown>);
   }
 
+  // The daemon owns watcher/monitoring start-up that the legacy main-process
+  // `workspace:open` handler used to drive (see ~/src/intent .../workspace.ipc.ts
+  // → protocolAdapter.getWorkspace), so resolving the workspace via `workspace.get`
+  // is the parity-preserving wire shape; side effects are intentionally not
+  // ported here per FE Iteration #1 scope.
+  async open(id: string): Promise<Workspace | null> {
+    return this.get(id);
+  }
+
   // Mutations forward to the daemon (§7.1) and fold the outcome into a
   // MutationResult; daemon `workspace:*` events drive the reactive refresh.
   async create(request: CreateWorkspaceRequest): Promise<MutationResult> {

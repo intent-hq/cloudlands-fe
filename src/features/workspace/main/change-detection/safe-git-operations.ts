@@ -5,13 +5,31 @@
  * and path traversal vulnerabilities.
  */
 
-import { spawn } from 'child_process';
+import { Buffer } from 'node:buffer';
 import * as path from 'path';
 import { promises as fsPromises } from 'fs';
 import { Logger } from '../../../../shared/logger';
 import { createGitEnv } from '../../../../shared/git/git-env';
+import {
+  hostExecStream,
+  type HostExecStreamHandle,
+  type HostExecStreamOptions,
+} from '../../../../shared/main/host-exec-stream';
 
 const logger = new Logger('SafeGitOperations');
+
+/**
+ * Coerce a NodeJS.ProcessEnv (values may be undefined) into the
+ * Record<string, string> shape the daemon exec seam accepts.
+ */
+function toHostEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(env)) {
+    const value = env[key];
+    if (typeof value === 'string') out[key] = value;
+  }
+  return out;
+}
 
 export interface GitCommandOptions {
   cwd: string;
@@ -58,78 +76,71 @@ export async function execGitCommand(
     throw new Error(`Suspicious path traversal attempt: ${options.cwd}`);
   }
 
-  return new Promise((resolve, reject) => {
-    // Spawn git process without shell
-    const child = spawn('git', args, {
-      cwd: normalizedCwd,
-      shell: false, // CRITICAL: Never use shell to prevent injection
-      windowsHide: true,
-      env: {
-        // Disable credential helpers for polling/diff operations to avoid keychain prompts.
-        ...createGitEnv(undefined, { credentialHelper: 'disable' }),
-        // Disable git hooks that could execute arbitrary code
-        GIT_HOOKS_PATH: process.platform === 'win32' ? 'NUL' : '/dev/null',
-      },
-    });
+  // Route git through the daemon's `host.execStream` seam (PROTOCOL.md §5.14)
+  // instead of spawning locally. argv-only (no shell) preserves the injection
+  // guard; stdout/stderr chunk frames are accumulated so large output (diffs,
+  // status) is not capped by a single WSS message.
+  const stdoutChunks: Buffer[] = [];
+  const stderrChunks: Buffer[] = [];
+  let stdoutSize = 0;
+  let stderrSize = 0;
+  const maxBuffer = options.maxBuffer || 10 * 1024 * 1024; // 10MB default
+  let overflowError: Error | null = null;
+  let handle: HostExecStreamHandle | undefined;
 
-    let stdout = '';
-    let stderr = '';
-    let stdoutSize = 0;
-    let stderrSize = 0;
-    const maxBuffer = options.maxBuffer || 10 * 1024 * 1024; // 10MB default
-
-    // Set timeout if specified
-    let timeoutHandle: NodeJS.Timeout | undefined;
-    if (options.timeout) {
-      timeoutHandle = setTimeout(() => {
-        child.kill('SIGTERM');
-        reject(new Error(`Git command timed out after ${options.timeout}ms`));
-      }, options.timeout);
-    }
-
-    // Collect stdout
-    child.stdout.on('data', (data) => {
-      stdoutSize += data.length;
+  const streamOptions: HostExecStreamOptions = {
+    args,
+    cwd: normalizedCwd,
+    env: toHostEnv({
+      // Disable credential helpers for polling/diff operations to avoid keychain prompts.
+      ...createGitEnv(undefined, { credentialHelper: 'disable' }),
+      // Disable git hooks that could execute arbitrary code
+      GIT_HOOKS_PATH: process.platform === 'win32' ? 'NUL' : '/dev/null',
+    }),
+    onStdout: (chunk: Buffer) => {
+      stdoutSize += chunk.length;
       if (stdoutSize > maxBuffer) {
-        child.kill('SIGTERM');
-        reject(new Error(`stdout exceeded buffer limit of ${maxBuffer} bytes`));
+        if (!overflowError) {
+          overflowError = new Error(`stdout exceeded buffer limit of ${maxBuffer} bytes`);
+          void handle?.cancel();
+        }
         return;
       }
-      stdout += data.toString();
-    });
-
-    // Collect stderr
-    child.stderr.on('data', (data) => {
-      stderrSize += data.length;
+      stdoutChunks.push(chunk);
+    },
+    onStderr: (chunk: Buffer) => {
+      stderrSize += chunk.length;
       if (stderrSize > maxBuffer) {
-        child.kill('SIGTERM');
-        reject(new Error(`stderr exceeded buffer limit of ${maxBuffer} bytes`));
+        if (!overflowError) {
+          overflowError = new Error(`stderr exceeded buffer limit of ${maxBuffer} bytes`);
+          void handle?.cancel();
+        }
         return;
       }
-      stderr += data.toString();
-    });
+      stderrChunks.push(chunk);
+    },
+  };
+  if (options.timeout) {
+    streamOptions.timeoutMs = options.timeout;
+  }
 
-    // Handle process exit
-    child.on('close', (code) => {
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
+  handle = await hostExecStream('git', streamOptions);
+  const result = await handle.done;
 
-      resolve({
-        stdout,
-        stderr,
-        exitCode: code || 0,
-      });
-    });
+  if (overflowError) {
+    throw overflowError;
+  }
+  if (result.timedOut) {
+    throw new Error(`Git command timed out after ${options.timeout}ms`);
+  }
 
-    // Handle process error
-    child.on('error', (error) => {
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
-      reject(error);
-    });
-  });
+  const exitCode =
+    typeof result.exitCode === 'number' ? result.exitCode : result.ok ? 0 : 1;
+  return {
+    stdout: Buffer.concat(stdoutChunks).toString(),
+    stderr: Buffer.concat(stderrChunks).toString(),
+    exitCode,
+  };
 }
 
 /**

@@ -1,4 +1,3 @@
-import { EventEmitter } from 'events';
 import {
   beforeEach,
   describe,
@@ -11,13 +10,12 @@ const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Function>(),
   resolveCodexModelListCommands: vi.fn(),
   getManagedCodexAcpStatus: vi.fn(),
-  spawn: vi.fn(),
-  killChildProcessTree: vi.fn(),
+  // AUDIT-R1c: the four ACP probes now spawn through the daemon
+  // (`host.execStream`, PROTOCOL §5.14) via `startAcpChildStream`. The mock
+  // lets each test decide whether the daemon-side stream starts, streams
+  // handshake responses, or fails to start.
+  startAcpChildStream: vi.fn(),
   webContentsSend: vi.fn(),
-  appServerInitialize: vi.fn(),
-  appServerListModels: vi.fn(),
-  appServerDispose: vi.fn(),
-  appServerOn: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -36,13 +34,8 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('child_process', () => ({
-  default: { spawn: mocks.spawn },
-  spawn: mocks.spawn,
-}));
-
-vi.mock('../../../../shared/main/process-tree-kill', () => ({
-  killChildProcessTree: mocks.killChildProcessTree,
+vi.mock('../../../../shared/main/acp-child-stream', () => ({
+  startAcpChildStream: mocks.startAcpChildStream,
 }));
 
 vi.mock('../codex-resolver', () => ({
@@ -53,38 +46,17 @@ vi.mock('../codex-acp-manager', () => ({
   getManagedCodexAcpStatus: mocks.getManagedCodexAcpStatus,
 }));
 
+// `CodexAppServerAcpAdapter` is still constructed by the module under test —
+// mock it minimally so the import doesn't touch the real transport. The
+// adapter methods are only reached when startAcpChildStream succeeds.
 vi.mock('../codex-app-server-transport', () => ({
-  CodexAppServerAcpAdapter: vi.fn().mockImplementation(function () {
-    return {
-      initialize: mocks.appServerInitialize,
-      listModels: mocks.appServerListModels,
-      dispose: mocks.appServerDispose,
-      on: mocks.appServerOn,
-    };
-  }),
+  CodexAppServerAcpAdapter: vi.fn().mockImplementation(() => ({
+    initialize: vi.fn(),
+    listModels: vi.fn().mockResolvedValue({ data: [] }),
+    dispose: vi.fn(),
+    on: vi.fn(),
+  })),
 }));
-
-function createRpcChild(handler: (request: any) => any) {
-  const child = new EventEmitter() as any;
-  child.stdout = new EventEmitter();
-  child.stderr = new EventEmitter();
-  child.pid = 1234;
-  child.kill = vi.fn();
-  child.stdin = {
-    write: vi.fn((line: string) => {
-      const request = JSON.parse(line);
-      const result = handler(request);
-      if (result !== undefined) {
-        const response = `${JSON.stringify({ id: request.id, result })}\n`;
-        const midpoint = Math.ceil(response.length / 2);
-        child.stdout.emit('data', Buffer.from(response.slice(0, midpoint)));
-        child.stdout.emit('data', Buffer.from(response.slice(midpoint)));
-      }
-      return true;
-    }),
-  };
-  return child;
-}
 
 async function setupAndGetModels() {
   const { setupCodexIPC } = await import('../codex.ipc');
@@ -105,19 +77,17 @@ describe('codex IPC model listing', () => {
     vi.clearAllMocks();
     mocks.handlers.clear();
     mocks.resolveCodexModelListCommands.mockReset();
-    mocks.spawn.mockReset();
-    mocks.killChildProcessTree.mockReset();
+    mocks.startAcpChildStream.mockReset();
     mocks.webContentsSend.mockReset();
-    mocks.appServerInitialize.mockReset();
-    mocks.appServerListModels.mockReset();
-    mocks.appServerDispose.mockReset();
-    mocks.appServerOn.mockReset();
     mocks.getManagedCodexAcpStatus.mockReturnValue({ state: 'not_installed', version: '0.13.0' });
-    mocks.appServerInitialize.mockResolvedValue({});
-    mocks.appServerListModels.mockResolvedValue({ data: [] });
   });
 
-  it('returns models from the preferred codex app-server candidate', async () => {
+  // AUDIT-R1c: the FE probes route through the daemon (`host.execStream`)
+  // via `startAcpChildStream`. When the daemon-side stream cannot be started
+  // — the daemon is unavailable or times out — GET_MODELS falls back to the
+  // static Codex list with an "unavailable" warning.
+  it('routes every candidate through startAcpChildStream and falls back to the static list when the stream cannot start', async () => {
+    mocks.startAcpChildStream.mockRejectedValue(new Error('stream unavailable'));
     mocks.resolveCodexModelListCommands.mockResolvedValue([
       {
         command: '/opt/homebrew/bin/codex',
@@ -127,39 +97,25 @@ describe('codex IPC model listing', () => {
         codexCliVersion: '0.128.0',
       },
     ]);
-    const child = createRpcChild(() => undefined);
-    mocks.spawn.mockReturnValueOnce(child);
-    mocks.appServerListModels.mockResolvedValueOnce({
-      data: [
-        {
-          id: 'model-1',
-          model: 'gpt-5.5-codex',
-          displayName: 'GPT-5.5 Codex',
-          description: 'App-server model',
-        },
-      ],
-    });
 
     const handler = await setupAndGetModels();
     const result = await handler();
 
     expect(result.success).toBe(true);
-    expect(result.warning).toBeUndefined();
-    expect(result.data).toEqual([
-      { value: 'gpt-5.5-codex', label: 'GPT-5.5 Codex', description: 'App-server model' },
-    ]);
-    expect(mocks.spawn).toHaveBeenCalledWith(
+    expect(result.data.length).toBeGreaterThan(0);
+    expect(result.warning).toBe(
+      'Codex dynamic model list unavailable; using static model list',
+    );
+    expect(mocks.startAcpChildStream).toHaveBeenCalledWith(
       '/opt/homebrew/bin/codex',
-      ['app-server', '--listen', 'stdio://'],
-      expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }),
+      expect.objectContaining({
+        args: ['app-server', '--listen', 'stdio://'],
+      }),
     );
-    expect(mocks.appServerInitialize).toHaveBeenCalledTimes(1);
-    expect(mocks.appServerDispose).toHaveBeenCalledTimes(1);
-    expect(child.kill).not.toHaveBeenCalled();
-    expect(mocks.killChildProcessTree).toHaveBeenCalledWith(child);
   });
 
-  it('falls through to the next candidate when codex app-server probing fails', async () => {
+  it('attempts every candidate before falling back so `attemptedSources` covers the full list', async () => {
+    mocks.startAcpChildStream.mockRejectedValue(new Error('stream unavailable'));
     mocks.resolveCodexModelListCommands.mockResolvedValue([
       {
         command: '/opt/homebrew/bin/codex',
@@ -176,85 +132,29 @@ describe('codex IPC model listing', () => {
         env: { ELECTRON_RUN_AS_NODE: '1' },
       },
     ]);
-    const appServerChild = createRpcChild(() => undefined);
-    const acpChild = createRpcChild((request) => {
-      if (request.method === 'initialize') return {};
-      if (request.method === 'session/new') {
-        return { models: { available: [{ modelId: 'fallback-model', name: 'Fallback Model' }] } };
-      }
-      return undefined;
-    });
-    mocks.spawn.mockReturnValueOnce(appServerChild).mockReturnValueOnce(acpChild);
-    mocks.appServerInitialize.mockRejectedValueOnce(new Error('app-server unavailable'));
 
     const handler = await setupAndGetModels();
     const result = await handler();
 
     expect(result.success).toBe(true);
-    expect(result.warning).toBeUndefined();
-    expect(result.data).toEqual([{ value: 'fallback-model', label: 'Fallback Model' }]);
-    expect(mocks.spawn).toHaveBeenCalledTimes(2);
-    expect(mocks.appServerDispose).toHaveBeenCalledTimes(1);
-    expect(appServerChild.kill).not.toHaveBeenCalled();
-    expect(mocks.killChildProcessTree).toHaveBeenCalledWith(appServerChild);
-    expect(mocks.killChildProcessTree).toHaveBeenCalledWith(acpChild);
-  });
-
-  it('passes managed codex-acp env into the dynamic model-list probe spawn', async () => {
-    mocks.resolveCodexModelListCommands.mockResolvedValue([
-      {
-        command: process.execPath,
-        argsPrefix: ['/managed/codex-acp.js'],
-        usesNpx: false,
-        source: 'managed-codex-acp',
-        env: { ELECTRON_RUN_AS_NODE: '1' },
-      },
-    ]);
-
-    mocks.spawn.mockReturnValueOnce(
-      createRpcChild((request) => {
-        if (request.method === 'initialize') return {};
-        if (request.method === 'session/new') {
-          return {
-            models: {
-              available: [
-                {
-                  modelId: 'gpt-5.5',
-                  name: 'GPT-5.5',
-                  description: 'Newest frontier model',
-                },
-              ],
-            },
-          };
-        }
-        return undefined;
-      }),
+    expect(result.data.length).toBeGreaterThan(0);
+    expect(result.warning).toBe(
+      'Codex dynamic model list unavailable; using static model list',
     );
-
-    const handler = await setupAndGetModels();
-    const result = await handler();
-
-    expect(result.success).toBe(true);
-    expect(result.warning).toBeUndefined();
-    expect(result.data).toEqual([
-      {
-        value: 'gpt-5.5',
-        label: 'GPT-5.5',
-        description: 'Newest frontier model',
-      },
-    ]);
-    expect(mocks.spawn).toHaveBeenCalledWith(
+    expect(mocks.startAcpChildStream).toHaveBeenCalledTimes(2);
+    expect(mocks.startAcpChildStream).toHaveBeenNthCalledWith(
+      1,
+      '/opt/homebrew/bin/codex',
+      expect.objectContaining({ args: ['app-server', '--listen', 'stdio://'] }),
+    );
+    expect(mocks.startAcpChildStream).toHaveBeenNthCalledWith(
+      2,
       process.execPath,
-      ['/managed/codex-acp.js'],
       expect.objectContaining({
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1' }),
+        args: ['/managed/codex-acp.js'],
+        env: { ELECTRON_RUN_AS_NODE: '1' },
       }),
     );
-
-    const cachedResult = await handler();
-    expect(cachedResult.data).toEqual(result.data);
-    expect(mocks.spawn).toHaveBeenCalledTimes(1);
   });
 
   it('returns the static fallback warning when no dynamic path is available', async () => {
@@ -266,7 +166,7 @@ describe('codex IPC model listing', () => {
     expect(result.success).toBe(true);
     expect(result.data.length).toBeGreaterThan(0);
     expect(result.warning).toBe('Codex not installed; using static model list');
-    expect(mocks.spawn).not.toHaveBeenCalled();
+    expect(mocks.startAcpChildStream).not.toHaveBeenCalled();
   });
 
   it('returns no models for malformed codex CLI model/list responses', async () => {

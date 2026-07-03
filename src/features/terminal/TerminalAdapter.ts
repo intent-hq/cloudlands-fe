@@ -16,6 +16,8 @@ const SearchAddon = AddOnSearch.SearchAddon;
 import '@xterm/xterm/css/xterm.css';
 import { Logger } from '../../shared/logger';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
+import { appClient as defaultAppClient } from '$lib/client';
+import type { AppClient, TerminalsClient } from '$lib/client';
 import {
   TerminalStateMachine,
   TerminalState,
@@ -34,21 +36,6 @@ import {
 
 const logger = new Logger('TerminalAdapter');
 
-interface TerminalInfoResponse {
-  success: boolean;
-  info?: unknown;
-}
-
-interface TerminalBufferResponse {
-  success: boolean;
-  buffer?: string;
-}
-
-interface TerminalCreateResponse {
-  success: boolean;
-  error?: string;
-}
-
 export interface TerminalCallbacks {
   onReady?: () => void;
   onExit?: (exitCode: number) => void;
@@ -64,6 +51,12 @@ export interface TerminalOptions extends TerminalCallbacks {
   workspaceId: string;
   terminalId?: string;
   container: HTMLElement;
+  /**
+   * AppClient seam through which the adapter reaches the daemon. Defaults to
+   * the renderer-wide singleton; tests inject a fake. Only the `terminals`
+   * domain is consumed today.
+   */
+  appClient?: Pick<AppClient, 'terminals'>;
 }
 
 export interface TerminalInfo {
@@ -143,11 +136,15 @@ export class TerminalAdapter {
   // Callbacks
   private callbacks: TerminalCallbacks;
 
+  /** TerminalsClient seam — defaults to the renderer-wide AppClient singleton. */
+  private terminals: TerminalsClient;
+
   constructor(options: TerminalOptions) {
     this.workspaceId = options.workspaceId;
     this.terminalId =
       options.terminalId || `terminal-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     this.container = options.container;
+    this.terminals = (options.appClient ?? defaultAppClient).terminals;
     this.callbacks = {
       onReady: options.onReady,
       onExit: options.onExit,
@@ -329,37 +326,23 @@ export class TerminalAdapter {
       const cols = this.xterm.cols;
       const rows = this.xterm.rows;
 
-      // Check if terminal exists on backend
-      let terminalExists = false;
-      try {
-        const info = await invokeIpc<TerminalInfoResponse>('terminal:professional:info', {
-          terminalId: this.terminalId,
-        });
-        terminalExists = info.success && Boolean(info.info);
-      } catch (error) {
-        logger.warn(`Could not check terminal existence: ${error}`);
-      }
+      // Check if terminal exists on backend (daemon `terminal.list` per
+      // PROTOCOL §5.9; the entry is keyed by `terminalId`).
+      const terminalExists = await this.terminalExistsOnBackend();
 
       // Restore buffer based on whether terminal exists on backend
       // - If terminal exists on backend: use backend buffer (has real PTY output)
       // - If terminal doesn't exist: use local buffer (from localStorage)
       if (!skipBufferRestore) {
         if (terminalExists) {
-          // Terminal exists on backend - restore from backend buffer
+          // Terminal exists on backend - restore from `terminal.getBuffer`
+          // (PROTOCOL §5.13); the live client decodes the base64 payload.
           try {
-            const bufferResult = await invokeIpc<TerminalBufferResponse>(
-              'terminal:professional:get-buffer',
-              {
-                terminalId: this.terminalId,
-              },
-            );
-            if (bufferResult.success && bufferResult.buffer) {
-              logger.info(
-                `Restoring ${bufferResult.buffer.length} bytes of buffered output from backend`,
-              );
-              this.xterm.write(bufferResult.buffer);
-              // Parse the restored buffer to extract command history
-              this.parseTerminalOutput(bufferResult.buffer);
+            const buffer = await this.terminals.getBuffer(this.terminalId);
+            if (buffer) {
+              logger.info(`Restoring ${buffer.length} bytes of buffered output from backend`);
+              this.xterm.write(buffer);
+              this.parseTerminalOutput(buffer);
             }
           } catch (error) {
             logger.warn('Could not restore terminal buffer from backend:', error);
@@ -411,12 +394,13 @@ export class TerminalAdapter {
   }
 
   /**
-   * Open connection to PTY process
+   * Open connection to PTY process via `terminal.create` (PROTOCOL §5.13).
+   * The daemon assigns the PTY id; we adopt it as `this.terminalId` so all
+   * subsequent `terminal.write/resize/kill/getBuffer` calls hit the same PTY.
    */
   private async openPtyConnection(cols: number, rows: number): Promise<void> {
     try {
-      const result = await invokeIpc<TerminalCreateResponse>('terminal:professional:create', {
-        terminalId: this.terminalId,
+      const result = await this.terminals.create({
         workspaceId: this.workspaceId,
         cols,
         rows,
@@ -425,8 +409,11 @@ export class TerminalAdapter {
       if (!result.success) {
         throw new Error(result.error || 'Failed to open terminal');
       }
+      if (result.id) {
+        this.terminalId = result.id;
+      }
 
-      // Setup IPC event handlers
+      // Setup event subscription for the (now-known) PTY id.
       this.setupIpcEventHandlers();
 
       // Mark as connected
@@ -437,6 +424,21 @@ export class TerminalAdapter {
     } catch (error) {
       this.stateMachine.reportError(error as Error);
       throw error;
+    }
+  }
+
+  /**
+   * Check whether the daemon currently has a PTY with `this.terminalId`.
+   * Folds transport errors to `false` so the caller treats them as "not
+   * present" and goes through the create path.
+   */
+  private async terminalExistsOnBackend(): Promise<boolean> {
+    try {
+      const list = await this.terminals.list(this.workspaceId);
+      return list.some((t) => t.id === this.terminalId);
+    } catch (error) {
+      logger.warn(`Could not check terminal existence: ${error}`);
+      return false;
     }
   }
 
@@ -578,129 +580,50 @@ export class TerminalAdapter {
   }
 
   /**
-   * Setup IPC event handlers for PTY communication
+   * Subscribe to daemon `terminal:*` events for this PTY (PROTOCOL §6.5):
+   * `terminal:data` (decoded chunk), `terminal:exit`, and `terminal:cwd`. The
+   * adapter derives command-start/finished locally from the data stream, so no
+   * BE command-tracking events are consumed here.
    */
   private setupIpcEventHandlers(): void {
-    // Clean up existing IPC handlers to prevent duplicates
     if (this.ipcCleanup) {
       this.ipcCleanup();
       this.ipcCleanup = null;
     }
 
-    // Use a closure flag to disable the handler - this works even if off() fails to remove the listener
-    // (contextBridge may wrap functions, breaking reference equality for removeListener)
+    // Closure flag to short-circuit handlers immediately on cleanup — survives
+    // any race where the unsubscribe runs after an event has already been
+    // dispatched into the queue.
     let handlerDisabled = false;
 
-    const handleData = (data: { terminalId: string; data: string }) => {
-      // Skip if handler has been disabled by cleanup
-      if (handlerDisabled) {
-        return;
-      }
-
-      if (
-        data &&
-        data.terminalId === this.terminalId &&
-        !this.isDisposed &&
-        this.stateMachine.canAcceptInput()
-      ) {
-        this.xterm.write(data.data);
-        this.parseTerminalOutput(data.data);
-      }
-    };
-
-    // Handle exit
-    const handleExit = (data: { terminalId: string; exitCode: number }) => {
-      if (data && data.terminalId === this.terminalId && !this.isDisposed) {
+    const unsubscribe = this.terminals.subscribeEvents(this.terminalId, {
+      onData: ({ chunk }) => {
+        if (handlerDisabled || this.isDisposed) return;
+        if (!this.stateMachine.canAcceptInput()) return;
+        this.xterm.write(chunk);
+        this.parseTerminalOutput(chunk);
+      },
+      onExit: ({ exitCode }) => {
+        if (handlerDisabled || this.isDisposed) return;
         this.exitedNormally = true;
-        this.callbacks.onExit?.(data.exitCode);
+        this.callbacks.onExit?.(exitCode);
         this.stateMachine.transition('disconnect');
-      }
-    };
+      },
+      onCwd: ({ cwd }) => {
+        if (handlerDisabled || this.isDisposed) return;
+        this.lastCwd = cwd;
+        this.callbacks.onCwdChanged?.(cwd);
+      },
+    });
 
-    // Handle errors
-    const handleError = (data: { terminalId: string; error: string }) => {
-      if (data && data.terminalId === this.terminalId && !this.isDisposed) {
-        this.stateMachine.reportError(new Error(data.error));
-      }
-    };
-
-    // Handle command start
-    const handleCommandStart = (data: { terminalId: string }) => {
-      if (data && data.terminalId === this.terminalId && !this.isDisposed) {
-        this.isExecuting = true;
-        this.callbacks.onCommandStart?.();
-      }
-    };
-
-    // Handle command finished
-    const handleCommandFinished = (data: { terminalId: string }) => {
-      if (data && data.terminalId === this.terminalId && !this.isDisposed) {
-        this.isExecuting = false;
-        this.callbacks.onCommandFinished?.();
-      }
-    };
-
-    // Handle command executed (from backend, e.g., setup script)
-    const handleCommandExecuted = (data: { terminalId: string; command: string }) => {
-      if (data && data.terminalId === this.terminalId && !this.isDisposed) {
-        logger.debug(`[TerminalAdapter] Backend command executed: ${sanitizeCommandForDisplay(data.command)}`);
-        // Track the command in history
-        terminalHistoryTracker.onCommandStart(this.terminalId, this.workspaceId, data.command);
-        this.isExecuting = true;
-        this.callbacks.onCommandStart?.();
-      }
-    };
-
-    // Handle CWD changes
-    const handleCwdChanged = (data: { terminalId: string; cwd: string }) => {
-      if (data && data.terminalId === this.terminalId && !this.isDisposed) {
-        this.lastCwd = data.cwd;
-        this.callbacks.onCwdChanged?.(data.cwd);
-      }
-    };
-
-    // Register listeners - use professional terminal events
-    // Use ID-based listener removal for reliable cleanup with context isolation
-    const dataListenerId = window.electronAPI.on('terminal:professional:data', handleData);
-    const exitListenerId = window.electronAPI.on('terminal:professional:exit', handleExit);
-    const errorListenerId = window.electronAPI.on('terminal:professional:error', handleError);
-    const commandStartListenerId = window.electronAPI.on(
-      'terminal:professional:command:start',
-      handleCommandStart,
-    );
-    const commandFinishedListenerId = window.electronAPI.on(
-      'terminal:professional:command:finished',
-      handleCommandFinished,
-    );
-    const commandExecutedListenerId = window.electronAPI.on(
-      'terminal:professional:command:executed',
-      handleCommandExecuted,
-    );
-    const cwdChangedListenerId = window.electronAPI.on(
-      'terminal:professional:cwd:changed',
-      handleCwdChanged,
-    );
-
-    // Store cleanup function for IPC handlers
     this.ipcCleanup = () => {
-      // CRITICAL: Set the disabled flag FIRST to immediately stop processing
-      // This works even if offById() fails to remove the listener
       handlerDisabled = true;
-
-      // Remove the listeners using ID-based removal for reliable cleanup
-      if (dataListenerId) window.electronAPI.offById('terminal:professional:data', dataListenerId);
-      if (exitListenerId) window.electronAPI.offById('terminal:professional:exit', exitListenerId);
-      if (errorListenerId) window.electronAPI.offById('terminal:professional:error', errorListenerId);
-      if (commandStartListenerId)
-        window.electronAPI.offById('terminal:professional:command:start', commandStartListenerId);
-      if (commandFinishedListenerId)
-        window.electronAPI.offById('terminal:professional:command:finished', commandFinishedListenerId);
-      if (commandExecutedListenerId)
-        window.electronAPI.offById('terminal:professional:command:executed', commandExecutedListenerId);
-      if (cwdChangedListenerId)
-        window.electronAPI.offById('terminal:professional:cwd:changed', cwdChangedListenerId);
+      try {
+        unsubscribe();
+      } catch (error) {
+        logger.warn('Failed to unsubscribe terminal events:', error);
+      }
     };
-    // Note: ipcCleanup is called in dispose() directly, no need to add to eventListeners
   }
 
   /**
@@ -1244,18 +1167,15 @@ export class TerminalAdapter {
       this.currentLineBuffer += data;
     }
 
-    window.electronAPI
-      .invoke('terminal:professional:write', {
-        terminalId: this.terminalId,
-        data,
-      })
+    this.terminals
+      .write(this.terminalId, data)
       .then((result) => {
         if (!result.success) {
           logger.error(`[write] Terminal ${this.terminalId}: write failed - ${result.error}`);
         }
       })
       .catch((error) => {
-        logger.error(`[write] Terminal ${this.terminalId}: IPC error - ${error}`);
+        logger.error(`[write] Terminal ${this.terminalId}: transport error - ${error}`);
         if (!this.isDisposed) {
           this.stateMachine.reportError(error);
         }
@@ -1299,22 +1219,16 @@ export class TerminalAdapter {
   }
 
   /**
-   * Resize terminal
+   * Resize terminal via `terminal.resize` (PROTOCOL §5.13).
    */
   resize(cols: number, rows: number): void {
     if (this.isDisposed || !this.stateMachine.canAcceptInput()) {
       return;
     }
 
-    window.electronAPI
-      .invoke('terminal:professional:resize', {
-        terminalId: this.terminalId,
-        cols,
-        rows,
-      })
-      .catch((error) => {
-        logger.error('Failed to resize terminal:', error);
-      });
+    this.terminals.resize(this.terminalId, cols, rows).catch((error) => {
+      logger.error('Failed to resize terminal:', error);
+    });
   }
 
   /**
@@ -1369,25 +1283,16 @@ export class TerminalAdapter {
         `[reattach] Terminal ${this.terminalId} not in CONNECTED state (${currentState}), attempting to restore`,
       );
       // Check if terminal exists on backend and transition accordingly
-      try {
-        const info = await invokeIpc<TerminalInfoResponse>('terminal:professional:info', {
-          terminalId: this.terminalId,
-        });
-        if (info.success && info.info) {
-          // Terminal exists on backend, force state to connected
-          // This is safe because we know the PTY is running
-          if (currentState === TerminalState.DISCONNECTED || currentState === TerminalState.ERROR) {
-            this.stateMachine.transition('reconnect');
-            this.stateMachine.transition('reconnected');
-          } else if (currentState === TerminalState.CONNECTING) {
-            this.stateMachine.transition('connected');
-          }
-          logger.info(
-            `[reattach] Terminal ${this.terminalId} state restored to ${this.stateMachine.getState()}`,
-          );
+      if (await this.terminalExistsOnBackend()) {
+        if (currentState === TerminalState.DISCONNECTED || currentState === TerminalState.ERROR) {
+          this.stateMachine.transition('reconnect');
+          this.stateMachine.transition('reconnected');
+        } else if (currentState === TerminalState.CONNECTING) {
+          this.stateMachine.transition('connected');
         }
-      } catch (error) {
-        logger.warn(`[reattach] Could not check terminal state: ${error}`);
+        logger.info(
+          `[reattach] Terminal ${this.terminalId} state restored to ${this.stateMachine.getState()}`,
+        );
       }
     }
 
@@ -1629,8 +1534,9 @@ export class TerminalAdapter {
   }
 
   /**
-   * Perform a single health check by pinging the backend PTY via terminal:professional:info.
-   * If the ping fails or times out, transition to DISCONNECTED to trigger auto-reconnect.
+   * Perform a single health check by asking the daemon whether the PTY is
+   * still in `terminal.list`. If the lookup fails or times out, transition to
+   * DISCONNECTED to trigger auto-reconnect.
    */
   private async performHealthCheck(): Promise<void> {
     // Only check while CONNECTED and IPC handlers are set up
@@ -1640,11 +1546,10 @@ export class TerminalAdapter {
 
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
-      // Race the info call against a timeout
-      const result = await Promise.race([
-        invokeIpc<TerminalInfoResponse>('terminal:professional:info', {
-          terminalId: this.terminalId,
-        }),
+      // Race the existence check against a timeout — the daemon either lists
+      // the PTY in `terminal.list` (PROTOCOL §5.9) or it has been killed/lost.
+      const alive = await Promise.race([
+        this.terminalExistsOnBackend(),
         new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error('Heartbeat timeout')), TerminalAdapter.HEARTBEAT_TIMEOUT_MS);
         }),
@@ -1654,8 +1559,7 @@ export class TerminalAdapter {
 
       if (this.isDisposed) return;
 
-      // Check if the PTY is still alive
-      if (!result.success || !result.info) {
+      if (!alive) {
         logger.warn(
           `[heartbeat] Terminal ${this.terminalId}: PTY not found on backend, transitioning to DISCONNECTED`,
         );
@@ -1745,14 +1649,12 @@ export class TerminalAdapter {
     );
 
     try {
-      // Check if PTY still exists on backend
-      const info = await invokeIpc<TerminalInfoResponse>('terminal:professional:info', {
-        terminalId: this.terminalId,
-      });
+      // Check if PTY still exists on backend via daemon `terminal.list`
+      const alive = await this.terminalExistsOnBackend();
 
       if (this.isDisposed) return; // Check again after async call
 
-      if (info.success && info.info) {
+      if (alive) {
         // PTY exists — re-setup IPC handlers and transition back to CONNECTED
         logger.info(
           `[auto-reconnect] Terminal ${this.terminalId}: PTY exists on backend, re-establishing connection`,
@@ -1863,9 +1765,8 @@ export class TerminalAdapter {
       const cols = this.xterm.cols;
       const rows = this.xterm.rows;
 
-      // Create new PTY connection
-      const result = await invokeIpc<TerminalCreateResponse>('terminal:professional:create', {
-        terminalId: this.terminalId,
+      // Create new PTY via `terminal.create`; the daemon assigns the new id.
+      const result = await this.terminals.create({
         workspaceId: this.workspaceId,
         cols,
         rows,
@@ -1874,14 +1775,12 @@ export class TerminalAdapter {
       if (!result.success) {
         throw new Error(result.error || 'Failed to reconnect terminal');
       }
+      if (result.id) {
+        this.terminalId = result.id;
+      }
 
-      // Setup IPC event handlers
       this.setupIpcEventHandlers();
-
-      // Mark as reconnected (different action than 'connected')
       this.stateMachine.transition('reconnected');
-
-      // Notify ready
       this.callbacks.onReady?.();
     } catch (error) {
       this.stateMachine.reportError(error as Error);
@@ -2039,14 +1938,11 @@ export class TerminalAdapter {
     });
     this.eventListeners = [];
 
-    // Close PTY connection - use dispose instead of close
-    window.electronAPI
-      .invoke('terminal:professional:dispose', {
-        terminalId: this.terminalId,
-      })
-      .catch((error) => {
-        logger.error('Error disposing PTY connection:', error);
-      });
+    // Close PTY connection via `terminal.kill` (PROTOCOL §5.13); the daemon
+    // emits `terminal:exit` once the PTY is reaped.
+    this.terminals.kill(this.terminalId).catch((error) => {
+      logger.error('Error killing PTY connection:', error);
+    });
 
     // Dispose addons first (before disposing xterm)
     try {

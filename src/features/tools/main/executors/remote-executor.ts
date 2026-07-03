@@ -13,8 +13,8 @@ import type {
   CommandResult,
 } from '../../types';
 import { remoteRPCManager } from '../../../../shared/main/remote-rpc-manager';
-import { RemoteRPCError } from '../../../../shared/main/remote-rpc-client';
 import type { RemoteRPCClient } from '../../../../shared/main/remote-rpc-client';
+import { hostExec } from '../../../../shared/main/host-exec';
 import { Logger } from '../../../../shared/logger';
 import * as path from 'path';
 
@@ -56,13 +56,6 @@ export class RemoteExecutor implements IExecutor {
     return path.posix.join(this.config.workspacePath, filePath);
   }
 
-  /**
-   * Escape a path for shell commands
-   */
-  private escapePath(filePath: string): string {
-    return `'${filePath.replace(/'/g, "'\\''")}'`;
-  }
-
   async readFile(filePath: string): Promise<string> {
     try {
       const fullPath = this.resolvePath(filePath);
@@ -98,11 +91,14 @@ export class RemoteExecutor implements IExecutor {
   async deleteFile(filePath: string): Promise<void> {
     try {
       const fullPath = this.resolvePath(filePath);
-      const rpcClient = await this.getRPCClient();
 
       logger.debug('Deleting remote file', { path: fullPath });
 
-      await rpcClient.exec({ command: `rm -f ${this.escapePath(fullPath)}` });
+      await hostExec('rm', {
+        args: ['-f', fullPath],
+        cwd: this.config.workspacePath,
+        workspaceId: this.workspaceId,
+      });
     } catch (error) {
       logger.error('Failed to delete remote file', error as Error, { path: filePath });
       throw new Error(`Failed to delete file ${filePath}: ${(error as Error).message}`);
@@ -170,11 +166,11 @@ export class RemoteExecutor implements IExecutor {
 
   async execute(command: string, options?: ExecuteOptions): Promise<CommandResult> {
     try {
-      const rpcClient = await this.getRPCClient();
       const cwd = options?.cwd ? this.resolvePath(options.cwd) : this.config.workspacePath;
 
-      // SECURITY WARNING: This executes arbitrary commands on remote server
-      // Ensure all input is properly validated before calling this method
+      // SECURITY WARNING: This executes arbitrary commands on the remote host
+      // (via the daemon's host.exec seam). Ensure all input is properly
+      // validated before calling this method.
       logger.warn('Executing remote command - ensure input is trusted', {
         command: command.substring(0, 100),
         cwd,
@@ -182,41 +178,23 @@ export class RemoteExecutor implements IExecutor {
         user: this.config.username,
       });
 
-      // Security: Set default timeout and buffer limits
-      const timeout = options?.timeout || 30000; // Default 30 seconds
+      // Preserve the historical shell-string interface by forwarding through
+      // /bin/sh -c so `cmd1 && cmd2`-style callers keep working; the daemon
+      // owns the actual spawn (argv-only, no interpolation on its side).
+      const result = await hostExec('/bin/sh', {
+        args: ['-c', command],
+        cwd,
+        env: options?.env,
+        timeoutMs: options?.timeout,
+        workspaceId: this.workspaceId,
+      });
 
-      // Build command with environment and cwd
-      let fullCommand = '';
-
-      if (options?.env) {
-        const envVars = Object.entries(options.env)
-          .map(([key, value]) => `${key}='${value.replace(/'/g, "'\\''")}'`)
-          .join(' ');
-        fullCommand = `${envVars} `;
-      }
-
-      fullCommand += `cd ${this.escapePath(cwd)} && ${command}`;
-
-      try {
-        const result = await rpcClient.exec({ command: fullCommand, timeout });
-
-        return {
-          stdout: result.stdout,
-          stderr: result.stderr,
-          exitCode: result.exitCode,
-        };
-      } catch (execError) {
-        // RPC exec returns non-zero exit codes as JSON-RPC errors (code -32000)
-        if (execError instanceof RemoteRPCError && execError.code === -32000) {
-          const data = execError.data as { stdout?: string; stderr?: string; exitCode?: number } | undefined;
-          return {
-            stdout: data?.stdout ?? '',
-            stderr: data?.stderr ?? execError.message,
-            exitCode: data?.exitCode ?? 1,
-          };
-        }
-        throw execError;
-      }
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+      };
     } catch (error) {
       // Security: Sanitize error messages to prevent information disclosure
       logger.error('Failed to execute remote command', error as Error, {
@@ -232,11 +210,14 @@ export class RemoteExecutor implements IExecutor {
   async createDirectory(dirPath: string): Promise<void> {
     try {
       const fullPath = this.resolvePath(dirPath);
-      const rpcClient = await this.getRPCClient();
 
       logger.debug('Creating remote directory', { path: fullPath });
 
-      await rpcClient.exec({ command: `mkdir -p ${this.escapePath(fullPath)}` });
+      await hostExec('mkdir', {
+        args: ['-p', fullPath],
+        cwd: this.config.workspacePath,
+        workspaceId: this.workspaceId,
+      });
     } catch (error) {
       logger.error('Failed to create remote directory', error as Error, { path: dirPath });
       throw new Error(`Failed to create directory ${dirPath}: ${(error as Error).message}`);
@@ -246,11 +227,14 @@ export class RemoteExecutor implements IExecutor {
   async deleteDirectory(dirPath: string): Promise<void> {
     try {
       const fullPath = this.resolvePath(dirPath);
-      const rpcClient = await this.getRPCClient();
 
       logger.debug('Deleting remote directory', { path: fullPath });
 
-      await rpcClient.exec({ command: `rm -rf ${this.escapePath(fullPath)}` });
+      await hostExec('rm', {
+        args: ['-rf', fullPath],
+        cwd: this.config.workspacePath,
+        workspaceId: this.workspaceId,
+      });
     } catch (error) {
       logger.error('Failed to delete remote directory', error as Error, { path: dirPath });
       throw new Error(`Failed to delete directory ${dirPath}: ${(error as Error).message}`);

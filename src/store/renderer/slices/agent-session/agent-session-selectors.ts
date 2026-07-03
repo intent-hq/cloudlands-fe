@@ -24,14 +24,6 @@ function materializeSession(stored: StoredAgentSession | undefined): AgentSessio
   return stored;
 }
 
-function getLatestAssistantMessage(stored: StoredAgentSession): AgentMessage | undefined {
-  const messages = stored.messages;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === 'assistant') return messages[i];
-  }
-  return undefined;
-}
-
 function hasTerminalMessageMetadata(message: AgentMessage | undefined): boolean {
   const metadata = message?.metadata;
   return metadata?.interrupted === true || typeof metadata?.stopReason === 'string';
@@ -79,36 +71,6 @@ function getCurrentStreamingText(message: AgentMessage | undefined): string {
   return streamingText;
 }
 
-function hasUnresolvedToolUse(message: AgentMessage | undefined): boolean {
-  // Finalized messages cannot have "still running" tool calls. A persisted
-  // message whose stream completed or terminated (interrupted, stop reason,
-  // explicit streamingComplete) may still contain a trailing tool_use without
-  // a matching tool_result — that's a leftover from a crashed/interrupted
-  // stream, not an in-flight tool call. Treat it as resolved so the agent is
-  // not stuck in the "Thinking" state after reload.
-  if (hasTerminalMessageMetadata(message)) return false;
-  if (message?.streamingComplete === true) return false;
-
-  const contentBlocks = message?.contentBlocks ?? [];
-  const hasUnresolvedContentBlock = contentBlocks.some((block) => {
-    if (block.type !== 'tool_use' || !(block.name || block.toolName)) return false;
-    return !contentBlocks.some((candidate) => {
-      if (candidate.type !== 'tool_result') return false;
-      return candidate.tool_use_id === block.id || candidate.toolCallId === block.id;
-    });
-  });
-  if (hasUnresolvedContentBlock) return true;
-
-  const toolCalls = message?.toolCalls ?? [];
-  const toolResults = message?.toolResults ?? [];
-  return toolCalls.some((toolCall) => {
-    if (toolCall.status === 'pending' || toolCall.status === 'running') return true;
-    if (toolCall.status === 'completed' || toolCall.status === 'failed') return false;
-    if (toolCall.result !== undefined || toolCall.error !== undefined) return false;
-    return !toolResults.some((result) => result.toolCallId === toolCall.id);
-  });
-}
-
 function isTerminalAgentStatus(status: AgentStatus): boolean {
   return (
     status === AgentStatus.Completed ||
@@ -117,43 +79,45 @@ function isTerminalAgentStatus(status: AgentStatus): boolean {
   );
 }
 
-function hasWaitingForAgentRelationships(stored: StoredAgentSession): boolean {
-  const waitingForAgentIds = (stored.metadata as { waitingForAgentIds?: unknown } | undefined)
-    ?.waitingForAgentIds;
-  return Array.isArray(waitingForAgentIds) && waitingForAgentIds.length > 0;
-}
-
+/**
+ * Daemon-owned "paused on child/peer agents" flag (PROTOCOL.md §5.5), rendered
+ * verbatim. The FE no longer infers this from `metadata.waitingForAgentIds`.
+ */
 function isAgentWaitingForOtherAgents(stored: StoredAgentSession): boolean {
   if (isTerminalAgentStatus(stored.status)) return false;
-  return hasWaitingForAgentRelationships(stored);
+  return stored.isWaitingForOtherAgents === true;
 }
 
+/**
+ * Waiting state driven by BE-owned signals: explicit `Waiting` status or the
+ * daemon's `isWaitingOnTool` flag (unresolved tool_use on the in-flight turn).
+ * The FE no longer re-derives tool/MCP resolution from message internals.
+ */
 function isAgentWaiting(stored: StoredAgentSession): boolean {
   if (isTerminalAgentStatus(stored.status)) return false;
-
-  return (
-    stored.status === AgentStatus.Waiting ||
-    hasUnresolvedToolUse(getLatestAssistantMessage(stored))
-  );
+  return stored.status === AgentStatus.Waiting || stored.isWaitingOnTool === true;
 }
 
+/**
+ * Active-thread state driven by BE-owned activity flags (PROTOCOL.md §5.5:
+ * `isResponding`, `isWaitingOnTool`) plus transient FE-owned signals
+ * (optimistic `isStreaming`/`isProcessing` set on send, `ACTIVATING`) and the
+ * agent status. The FE no longer infers "working" from raw message internals.
+ */
 function isActiveAgentThread(stored: StoredAgentSession): boolean {
   if (isTerminalAgentStatus(stored.status)) {
     return false;
   }
 
-  const latestAssistant = getLatestAssistantMessage(stored);
-
   return (
     stored.isProcessing === true ||
     stored.isStreaming === true ||
     stored.isResponding === true ||
+    stored.isWaitingOnTool === true ||
     stored.activationState === AgentActivationState.ACTIVATING ||
     stored.status === AgentStatus.Active ||
     stored.status === AgentStatus.Processing ||
-    stored.status === AgentStatus.Waiting ||
-    hasUnresolvedToolUse(latestAssistant) ||
-    isStreamingMessage(latestAssistant)
+    stored.status === AgentStatus.Waiting
   );
 }
 
@@ -330,9 +294,9 @@ export const selectAgentIsThinking = store.createSelector(
 );
 
 /**
- * Canonical boolean selector for agents paused on child/peer agents. It is
- * derived only from existing waiting-for-agent relationship metadata and never
- * exposes an object model or graph transport field.
+ * Canonical boolean selector for agents paused on child/peer agents. It renders
+ * the daemon's `isWaitingForOtherAgents` flag verbatim (PROTOCOL.md §5.5) and
+ * never re-derives it from relationship metadata.
  */
 export const selectAgentIsWaitingForOtherAgents = store.createSelector(
   (state, agentId: string): boolean => {
@@ -343,10 +307,9 @@ export const selectAgentIsWaitingForOtherAgents = store.createSelector(
 );
 
 /**
- * Canonical selector for agent waiting state. Includes explicit Waiting status,
- * waiting-for-other-agents relationships, and unresolved tool/MCP calls represented
- * by either tool_use blocks without matching tool_result blocks or pending/running
- * message toolCalls without a result.
+ * Canonical selector for agent waiting state. Driven by BE-owned signals:
+ * explicit Waiting status, the daemon's `isWaitingOnTool` flag (unresolved
+ * tool_use on the in-flight turn), and the `isWaitingForOtherAgents` flag.
  */
 export const selectAgentIsWaiting = store.createSelector(
   (state, agentId: string): boolean => {
@@ -360,11 +323,11 @@ export const selectAgentIsWaiting = store.createSelector(
  * THE canonical "is the agent currently running" selector.
  *
  * Returns true whenever the agent is actively doing work and is NOT in a
- * terminal state (Completed/Error/Deleted). It is true for any of: `isStreaming`,
- * `isProcessing`, `isResponding`, activation `ACTIVATING`, status
- * `Active`/`Processing`/`Waiting`, unresolved/in-flight tool calls, an in-flight
- * streaming assistant message, and waiting-for-other-agents relationships. It is
- * false for terminal statuses and for genuinely idle/cleanly-ended turns.
+ * terminal state (Completed/Error/Deleted). It is true for any of the BE-owned
+ * activity flags (`isResponding`, `isWaitingOnTool`, `isWaitingForOtherAgents`),
+ * the transient FE-owned `isStreaming`/`isProcessing`/`ACTIVATING` send signals,
+ * and status `Active`/`Processing`/`Waiting`. It is false for terminal statuses
+ * and for genuinely idle/cleanly-ended turns.
  *
  * This is the single source of truth UI surfaces should consult when gating
  * idle-only affordances (such as next-steps links). It composes the existing

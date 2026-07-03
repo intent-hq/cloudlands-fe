@@ -10,25 +10,56 @@ import {
 } from 'electron';
 import { spawn } from 'child_process';
 import { unlinkSync } from 'fs';
-import {
-  writeFile,
-  access,
-} from 'fs/promises';
+import { writeFile } from 'fs/promises';
 import {
   homedir,
   tmpdir,
 } from 'os';
 import { join } from 'path';
 import { Logger } from '$lib/utils/logger';
-import { EDITOR_REGISTRY } from '$shared/editors/editor-registry';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { z } from 'zod';
 import { execAsync } from '../../../shared/git/git-env';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
 import { findBinary } from '../../../shared/main/find-binary';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 
 const logger = new Logger({ category: 'IDE-IPC' });
+
+/**
+ * Editor entry shape returned by `host.listInstalledEditors` (PROTOCOL.md §5.14).
+ * Consumed verbatim — no client-side aliasing or normalization.
+ */
+interface HostInstalledEditor {
+  id: string;
+  installed: boolean;
+  path?: string;
+  source?: 'macAppBundle' | 'binary' | 'flatpak';
+  flatpakId?: string;
+}
+
+interface HostListInstalledEditorsResult {
+  editors: HostInstalledEditor[];
+}
+
+/**
+ * Fetch the daemon's editor catalog (PROTOCOL.md §5.14 `host.listInstalledEditors`).
+ * Detection runs on the daemon host, not the local laptop, so remote workspaces
+ * report the BE host's inventory. On RPC failure we degrade to an empty list
+ * rather than fall back to a local probe (no `which`/`flatpak info`/`.app` access).
+ */
+async function fetchHostInstalledEditors(): Promise<HostInstalledEditor[]> {
+  try {
+    const result = await getBackendClient().request<HostListInstalledEditorsResult>(
+      'host.listInstalledEditors',
+    );
+    return result?.editors ?? [];
+  } catch (error) {
+    logger.debug('[IDE-IPC] host.listInstalledEditors failed', error as Error);
+    return [];
+  }
+}
 
 // Validation schemas
 const OpenPathSchema = z.union([
@@ -56,9 +87,9 @@ const OpenGitDiffSchema = z.object({
 });
 
 /**
- * Open a path in VSCode
+ * Open a path in VSCode. Exported for wire-contract tests.
  */
-async function openInVSCode(
+export async function openInVSCode(
   pathOrPaths: string | { folder: string; file?: string } | { filePath: string },
 ): Promise<{ success: boolean; error?: string }> {
   try {
@@ -125,6 +156,7 @@ async function openInVSCode(
       // Try to spawn VSCode with the found command
       // Use shell for PATH-style invocations and Windows .cmd launchers
       const useShell = codeCommand === 'code' || (process.platform === 'win32' && codeCommand.endsWith('.cmd'));
+      // LOCAL-GUI: launches the user's editor on the client host; not workspace execution
       const child = spawn(codeCommand, args, {
         detached: true,
         stdio: 'ignore',
@@ -167,25 +199,32 @@ async function openInVSCode(
       }
     }
 
-    // If code command not found, try Flatpak on Linux
+    // If code command not found, try Flatpak on Linux — detection sourced from
+    // the daemon (PROTOCOL.md §5.14 `host.listInstalledEditors`). Launch remains
+    // local via `flatpak run <flatpakId>` using the id the daemon reported.
     if (!codeCommand && process.platform === 'linux') {
-      logger.info('[VSCode] Trying Flatpak fallback on Linux');
-      const vscodeEntry = EDITOR_REGISTRY.find((e) => e.id === 'vscode');
-      const flatpakAppIds = vscodeEntry?.platforms?.linux?.flatpakIds ?? [];
-      for (const appId of flatpakAppIds) {
+      logger.info('[VSCode] Trying Flatpak fallback on Linux (host.listInstalledEditors)');
+      const editors = await fetchHostInstalledEditors();
+      const vscodeEntry = editors.find((e) => e.id === 'vscode');
+      if (
+        vscodeEntry?.installed === true &&
+        vscodeEntry.source === 'flatpak' &&
+        vscodeEntry.flatpakId
+      ) {
+        const appId = vscodeEntry.flatpakId;
+        logger.info(`[VSCode] host reports vscode installed via Flatpak: ${appId}`);
+
+        const flatpakArgs = ['run', appId, ...args];
+        logger.info('[VSCode] Spawning via Flatpak', { command: 'flatpak', args: flatpakArgs });
+
+        // LOCAL-GUI: launches the user's Flatpak-packaged editor on the client host; not workspace execution
+        const child = spawn('flatpak', flatpakArgs, {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+
         try {
-          await execAsync(`flatpak info ${appId}`, { timeout: 5000 });
-          logger.info(`[VSCode] Found VS Code via Flatpak: ${appId}`);
-
-          const flatpakArgs = ['run', appId, ...args];
-          logger.info('[VSCode] Spawning via Flatpak', { command: 'flatpak', args: flatpakArgs });
-
-          const child = spawn('flatpak', flatpakArgs, {
-            detached: true,
-            stdio: 'ignore',
-            windowsHide: true,
-          });
-
           await new Promise<void>((resolve, reject) => {
             let resolved = false;
 
@@ -208,9 +247,11 @@ async function openInVSCode(
 
           logger.info('Opened in VSCode via Flatpak', { path: pathOrPaths, appId });
           return { success: true };
-        } catch {
-          logger.info(`[VSCode] Flatpak app ${appId} not found`);
+        } catch (spawnError) {
+          logger.error('Failed to spawn VSCode via Flatpak', spawnError as Error);
         }
+      } else {
+        logger.info('[VSCode] host.listInstalledEditors reports no flatpak vscode');
       }
     }
 
@@ -236,6 +277,7 @@ async function openInVSCode(
       logger.info('Spawning open command', { openArgs });
 
       try {
+        // LOCAL-GUI: launches the user's editor via macOS `open` on the client host; not workspace execution
         const child = spawn('open', openArgs, {
           detached: true,
           stdio: 'ignore',
@@ -281,6 +323,7 @@ async function openInVSCode(
       pathToOpen = pathOrPaths.file || pathOrPaths.folder;
     }
 
+    // LOCAL-GUI: hands the vscode:// URL to the client OS handler to launch the user's editor; not workspace execution
     await shell.openExternal(`vscode://file/${pathToOpen}`);
     logger.info('Opened in VSCode using protocol handler', { path: pathOrPaths });
     return { success: true };
@@ -298,6 +341,7 @@ async function openInVSCode(
         pathToOpen = pathOrPaths.file || pathOrPaths.folder;
       }
 
+      // LOCAL-GUI: fall back to the client OS default handler for the file; not workspace execution
       await shell.openPath(pathToOpen);
       return {
         success: true,
@@ -314,108 +358,72 @@ async function openInVSCode(
 }
 
 /**
- * Open a path in JetBrains IDE
+ * Open a path in JetBrains IDE. Exported for wire-contract tests.
  */
-async function openInJetBrains(
+export async function openInJetBrains(
   pathOrPaths: string | { folder: string; file?: string } | { filePath: string },
 ): Promise<{ success: boolean; error?: string }> {
   try {
     logger.info('[JetBrains] openInJetBrains called', { pathOrPaths, platform: process.platform });
 
-    // Try to detect which JetBrains IDE is installed
+    // Detect which JetBrains IDE is installed via the daemon (PROTOCOL.md §5.14
+    // `host.listInstalledEditors`). Detection runs on the daemon host — never on
+    // the local laptop — so remote workspaces see the BE host's inventory. The
+    // launch itself (spawn / `open -a` / `flatpak run`) still happens locally.
     const ideCommands = ['idea', 'webstorm', 'pycharm', 'rubymine', 'goland', 'phpstorm'];
+    // Map IDE command names to editor-registry IDs (including community editions).
+    const ideToRegistryIds: Record<string, string[]> = {
+      idea: ['intellij', 'intellij-ce'],
+      webstorm: ['webstorm'],
+      pycharm: ['pycharm', 'pycharm-ce'],
+      rubymine: ['rubymine'],
+      goland: ['goland'],
+      phpstorm: ['phpstorm'],
+    };
+    // Map IDE command names to macOS `.app` bundle display names (for `open -a`).
+    const ideAppNames: Record<string, string> = {
+      idea: 'IntelliJ IDEA',
+      webstorm: 'WebStorm',
+      pycharm: 'PyCharm',
+      rubymine: 'RubyMine',
+      goland: 'GoLand',
+      phpstorm: 'PhpStorm',
+    };
+
+    const editors = await fetchHostInstalledEditors();
+
     let command: string | null = null;
+    let selectedIde: string | null = null;
+    let selectedEntry: HostInstalledEditor | null = null;
 
-    // First, check if any JetBrains command is in PATH
-    logger.info('[JetBrains] Checking PATH for IDE commands', { ideCommands });
     for (const ide of ideCommands) {
-      try {
-        const result = await execAsync(`which ${ide}`);
-        command = ide;
-        logger.info(`[JetBrains] Found ${ide} in PATH`, { path: result.stdout.trim() });
-        break;
-      } catch {
-        logger.info(`[JetBrains] ${ide} not found in PATH`);
-      }
-    }
-
-    // If not found in PATH, try Flatpak on Linux
-    if (!command && process.platform === 'linux') {
-      logger.info('[JetBrains] Trying Flatpak fallback on Linux');
-      // Map IDE command names to registry IDs (including community editions)
-      const ideToRegistryIds: Record<string, string[]> = {
-        idea: ['intellij', 'intellij-ce'],
-        webstorm: ['webstorm'],
-        pycharm: ['pycharm', 'pycharm-ce'],
-        rubymine: ['rubymine'],
-        goland: ['goland'],
-        phpstorm: ['phpstorm'],
-      };
-
-      for (const ide of ideCommands) {
-        const registryIds = ideToRegistryIds[ide] ?? [];
-        const appIds = registryIds.flatMap((regId) => {
-          const entry = EDITOR_REGISTRY.find((e) => e.id === regId);
-          return entry?.platforms?.linux?.flatpakIds ?? [];
+      const registryIds = ideToRegistryIds[ide] ?? [];
+      for (const regId of registryIds) {
+        const entry = editors.find((e) => e.id === regId);
+        if (!entry || entry.installed !== true) continue;
+        if (entry.source === 'binary' && entry.path) {
+          command = entry.path;
+        } else if (entry.source === 'flatpak' && entry.flatpakId) {
+          command = `flatpak run ${entry.flatpakId}`;
+        } else if (entry.source === 'macAppBundle' && ideAppNames[ide]) {
+          command = `open -a "${ideAppNames[ide]}"`;
+        } else {
+          continue;
+        }
+        selectedIde = ide;
+        selectedEntry = entry;
+        logger.info(`[JetBrains] Selected ${ide} (${regId}) via host.listInstalledEditors`, {
+          source: entry.source,
+          path: entry.path,
+          flatpakId: entry.flatpakId,
         });
-        for (const appId of appIds) {
-          try {
-            await execAsync(`flatpak info ${appId}`, { timeout: 5000 });
-            command = `flatpak run ${appId}`;
-            logger.info(`[JetBrains] Found ${ide} via Flatpak: ${appId}`);
-            break;
-          } catch {
-            logger.info(`[JetBrains] Flatpak app ${appId} not found`);
-          }
-        }
-        if (command) break;
+        break;
       }
-    }
-
-    // If not found in PATH or Flatpak, check for macOS Applications
-    if (!command && process.platform !== 'darwin') {
-      logger.info(`[JetBrains] No IDE found in PATH or Flatpak, platform=${process.platform}`);
-    }
-    if (!command && process.platform === 'darwin') {
-      const homeDir = process.env.HOME || process.env.USERPROFILE || homedir();
-      const appLocations = [
-        '/Applications',
-        homeDir ? `${homeDir}/Applications` : null,
-      ].filter(Boolean) as string[];
-
-      // Map command names to app bundle names
-      const ideAppNames: Record<string, string> = {
-        idea: 'IntelliJ IDEA',
-        webstorm: 'WebStorm',
-        pycharm: 'PyCharm',
-        rubymine: 'RubyMine',
-        goland: 'GoLand',
-        phpstorm: 'PhpStorm',
-      };
-
-      // Check for each IDE in common locations
-      for (const ide of ideCommands) {
-        const appName = ideAppNames[ide];
-        if (!appName) continue;
-
-        for (const appLocation of appLocations) {
-          const appPath = `${appLocation}/${appName}.app`;
-          try {
-            await access(appPath);
-            // Found the app, use 'open' command to launch it
-            command = `open -a "${appName}"`;
-            logger.info('Found JetBrains IDE app', { appPath, ide });
-            break;
-          } catch {
-            // Continue checking
-          }
-        }
-        if (command) break;
-      }
+      if (command) break;
     }
 
     if (!command) {
-      logger.error('[JetBrains] No JetBrains IDE found on this system');
+      logger.error('[JetBrains] host.listInstalledEditors reports no JetBrains IDE installed');
       return {
         success: false,
         error: 'No JetBrains IDE found. Please install IntelliJ IDEA, WebStorm, PyCharm, or another JetBrains IDE.',
@@ -443,32 +451,26 @@ async function openInJetBrains(
         if (command.startsWith('open -a')) {
           // For 'open' command, open the folder first
           execCommand = `${command} "${pathOrPaths.folder}"`;
+          // LOCAL-GUI: launches the user's JetBrains IDE on the client host; not workspace execution
           await execAsync(execCommand);
-          // Wait a bit for the IDE to open, then try to open the file
+          // Wait a bit for the IDE to open, then try to open the file using the
+          // IDE's inner command-line tool. The `.app` bundle path comes from the
+          // daemon (host.listInstalledEditors) — no local `access()` probe.
           await new Promise((resolve) => setTimeout(resolve, 1000));
-          // Try to open the file using the IDE's command-line tool
-          const appName = command.match(/open -a "([^"]+)"/)?.[1];
-          if (appName) {
-            const ideAppNames: Record<string, string> = {
-              idea: 'IntelliJ IDEA',
-              webstorm: 'WebStorm',
-              pycharm: 'PyCharm',
-              rubymine: 'RubyMine',
-              goland: 'GoLand',
-              phpstorm: 'PhpStorm',
-            };
-            const ideKey = Object.entries(ideAppNames).find(([, name]) => name === appName)?.[0];
-            if (ideKey) {
-              try {
-                const toolPath = `/Applications/${appName}.app/Contents/MacOS/${ideKey}`;
-                await access(toolPath);
-                await execAsync(`"${toolPath}" "${pathOrPaths.file}"`);
-              } catch {
-                logger.info('Opened folder in JetBrains, file should be opened manually', {
-                  folder: pathOrPaths.folder,
-                  file: pathOrPaths.file,
-                });
-              }
+          if (
+            selectedEntry?.source === 'macAppBundle' &&
+            selectedEntry.path &&
+            selectedIde
+          ) {
+            const toolPath = `${selectedEntry.path}/Contents/MacOS/${selectedIde}`;
+            try {
+              // LOCAL-GUI: invokes the IDE's inner CLI to open the file on the client host; not workspace execution
+              await execAsync(`"${toolPath}" "${pathOrPaths.file}"`);
+            } catch {
+              logger.info('Opened folder in JetBrains, file should be opened manually', {
+                folder: pathOrPaths.folder,
+                file: pathOrPaths.file,
+              });
             }
           }
           logger.info('Opened in JetBrains IDE', { ide: command, folder: pathOrPaths.folder, file: pathOrPaths.file });
@@ -485,6 +487,7 @@ async function openInJetBrains(
     }
 
     logger.info('[JetBrains] Executing command', { execCommand });
+    // LOCAL-GUI: launches the user's JetBrains IDE on the client host; not workspace execution
     await execAsync(execCommand);
     logger.info('[JetBrains] Successfully opened in JetBrains IDE', { ide: command, path: pathOrPaths });
 
@@ -553,6 +556,7 @@ export function registerIDEHandlers(): void {
 
           // Spawn the process
           const useShell = codeCommand === 'code';
+          // LOCAL-GUI: launches the user's editor to view a diff on the client host; not workspace execution
           const child = spawnProcess(
             codeCommand,
             ['-n', '--skip-add-to-recently-opened', '-d', oldFilePath, newFilePath],
@@ -619,6 +623,7 @@ export function registerIDEHandlers(): void {
 
           // Spawn the process
           const useShell = codeCommand === 'code';
+          // LOCAL-GUI: launches the user's editor to view a git diff on the client host; not workspace execution
           const child = spawnProcess(codeCommand, args, {
             detached: true,
             stdio: 'ignore',
@@ -634,6 +639,7 @@ export function registerIDEHandlers(): void {
           // Try fallback: open via vscode:// URL
           try {
             const { shell } = await import('electron');
+            // LOCAL-GUI: hands the vscode:// URL to the client OS handler to launch the user's editor; not workspace execution
             await shell.openExternal(`vscode://file/${filePath}`);
             return { success: true };
           } catch  {

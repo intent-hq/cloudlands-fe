@@ -3667,6 +3667,8 @@
       onHistoryNext={handleHistoryNext}
       disabled={!workspace || !$agentSession$}
       isStreaming={$agentSessionIsStreaming$}
+      isResponding={$agentIsResponding$}
+      isRunning={$agentIsRunning$}
       {workspace}
       currentContext={currentMainPanelContext}
       {agentId}

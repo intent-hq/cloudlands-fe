@@ -17,7 +17,12 @@ import {
 const mocks = vi.hoisted(() => ({
   userData: '',
   httpsGet: vi.fn(),
-  spawn: vi.fn(),
+  // AUDIT-R1b: codex-acp-manager's `runProcess` now routes through
+  // `hostExec` -> `getBackendClient().request('host.exec', ...)`. The old
+  // `child_process.spawn` mock is replaced with a backend-request mock so we
+  // still capture invocations shape-for-shape (command / args / env /
+  // timeoutMs) without going through spawn.
+  backendRequest: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -31,9 +36,8 @@ vi.mock('https', () => ({
   default: { get: mocks.httpsGet },
 }));
 
-vi.mock('child_process', () => ({
-  spawn: mocks.spawn,
-  default: { spawn: mocks.spawn },
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mocks.backendRequest }),
 }));
 
 type PlatformKey = 'darwin-arm64' | 'darwin-x64' | 'linux-x64' | 'win32-x64';
@@ -53,7 +57,8 @@ beforeEach(async () => {
   vi.clearAllMocks();
   mocks.userData = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-acp-manager-'));
   tempRoots.push(mocks.userData);
-  mocks.spawn.mockImplementation(() => spawnExit(0));
+  // Default: any host.exec call succeeds with empty stdout / stderr.
+  mocks.backendRequest.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
 });
 
 afterEach(async () => {
@@ -105,10 +110,14 @@ describe('codex-acp-manager', () => {
       path.join('runtimes', 'codex-acp', '0.13.0', 'node_modules', '@zed-industries', 'codex-acp'),
     );
     await expect(fs.access(first.wrapperPath)).resolves.toBeUndefined();
-    expect(mocks.spawn).toHaveBeenCalledWith(
-      process.execPath,
-      [expect.stringContaining(path.join('codex-acp', 'bin', 'codex-acp.js')), '--help'],
+    expect(mocks.backendRequest).toHaveBeenCalledWith(
+      'host.exec',
       expect.objectContaining({
+        command: process.execPath,
+        args: [
+          expect.stringContaining(path.join('codex-acp', 'bin', 'codex-acp.js')),
+          '--help',
+        ],
         env: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1' }),
       }),
     );
@@ -198,32 +207,40 @@ describe('codex-acp-manager', () => {
       manifest: fixtures.manifest,
     });
     mockDownloads(fixtures.downloads);
-    mocks.spawn.mockImplementation((command: string, args: string[]) => {
-      if (command === 'codesign' && args[0] === '-dv') {
-        return spawnExit(0, '', 'TeamIdentifier=MQ55VZLNZQ\n');
-      }
-      return spawnExit(0);
-    });
+    mocks.backendRequest.mockImplementation(
+      async (_method: string, params: { command: string; args?: string[] }) => {
+        if (params.command === 'codesign' && params.args?.[0] === '-dv') {
+          return { stdout: '', stderr: 'TeamIdentifier=MQ55VZLNZQ\n', exitCode: 0 };
+        }
+        return { stdout: '', stderr: '', exitCode: 0 };
+      },
+    );
 
     await manager.ensureManagedCodexAcp();
 
-    expect(mocks.spawn).toHaveBeenNthCalledWith(
+    expect(mocks.backendRequest).toHaveBeenNthCalledWith(
       1,
-      'codesign',
-      expect.arrayContaining(['--verify', '--deep', '--strict']),
-      expect.any(Object),
+      'host.exec',
+      expect.objectContaining({
+        command: 'codesign',
+        args: expect.arrayContaining(['--verify', '--deep', '--strict']),
+      }),
     );
-    expect(mocks.spawn).toHaveBeenNthCalledWith(
+    expect(mocks.backendRequest).toHaveBeenNthCalledWith(
       2,
-      'codesign',
-      expect.arrayContaining(['-dv', '--verbose=2']),
-      expect.any(Object),
+      'host.exec',
+      expect.objectContaining({
+        command: 'codesign',
+        args: expect.arrayContaining(['-dv', '--verbose=2']),
+      }),
     );
-    expect(mocks.spawn).toHaveBeenNthCalledWith(
+    expect(mocks.backendRequest).toHaveBeenNthCalledWith(
       3,
-      process.execPath,
-      expect.arrayContaining(['--help']),
-      expect.any(Object),
+      'host.exec',
+      expect.objectContaining({
+        command: process.execPath,
+        args: expect.arrayContaining(['--help']),
+      }),
     );
   });
 });
@@ -287,19 +304,6 @@ function mockDownloads(downloads: Map<string, Buffer>): void {
     });
     return request;
   });
-}
-
-function spawnExit(code: number, stdout = '', stderr = '') {
-  const child = new EventEmitter() as any;
-  child.stdout = new EventEmitter();
-  child.stderr = new EventEmitter();
-  child.kill = vi.fn();
-  setImmediate(() => {
-    if (stdout) child.stdout.emit('data', Buffer.from(stdout));
-    if (stderr) child.stderr.emit('data', Buffer.from(stderr));
-    child.emit('exit', code, null);
-  });
-  return child;
 }
 
 function integrityFor(buffer: Buffer): string {

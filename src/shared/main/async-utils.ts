@@ -4,41 +4,174 @@
  * Provides async alternatives to synchronous operations to prevent
  * blocking the main thread and causing UI freezes (beach balls).
  *
- * All functions in this file are designed to be non-blocking.
+ * Execution helpers (`execAsync`, `execFileAsync`, `getNpmGlobalBinAsync`)
+ * route through the daemon's streaming exec seam (`host.execStream`,
+ * PROTOCOL.md §5.14), frame-accumulating stdout/stderr and throwing on
+ * non-zero exit with `.stdout` / `.stderr` / numeric `.code` — the same
+ * G1 fidelity contract git-env exposes. `findExecutableAsync` /
+ * `findVSCodeAsync` / `findAuggieAsync` forward to `host.findBinary` via
+ * the shared `findBinary` helper. The fs helpers below stay as local
+ * promisified `fs` calls (not execution — untouched by this seam).
  */
 
-import {
-  exec,
-  execFile,
-} from 'child_process';
-import { promisify } from 'util';
+import { Buffer } from 'node:buffer';
+import { promisify } from 'node:util';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Logger } from '../logger';
 import { renameWithRetry } from './file-sync-utils';
+import {
+  hostExecStream,
+  type HostExecStreamOptions,
+} from './host-exec-stream';
 
 const logger = new Logger('AsyncUtils');
 
-// Promisified versions of child_process functions
-// Wrapped to inject windowsHide: true, which prevents visible cmd.exe windows on Windows
-const _execAsync = promisify(exec);
-const _execFileAsync = promisify(execFile);
+/**
+ * Options accepted by the routed exec helpers. Subset of the legacy
+ * `child_process.exec` / `execFile` option bag — callers pass `cwd`,
+ * `timeout`, `env`, and `encoding` (retained for signature compat; the
+ * daemon streams bytes and we always decode as UTF-8 on this side).
+ */
+export interface AsyncExecOptions {
+  cwd?: string;
+  timeout?: number;
+  encoding?: BufferEncoding;
+  env?: NodeJS.ProcessEnv;
+  maxBuffer?: number;
+  windowsHide?: boolean;
+  shell?: string | boolean;
+}
 
-export const execAsync = ((command: string, options?: any) =>
-  _execAsync(command, { windowsHide: true, ...options })) as typeof _execAsync;
+export interface AsyncExecResult {
+  stdout: string;
+  stderr: string;
+}
 
-export const execFileAsync = ((file: string, ...rest: any[]) => {
-  // execFile has overloads: (file, args?, options?, callback?)
-  // We need to inject windowsHide into the options argument
-  const args = rest[0];
-  const options = rest[1];
-  if (Array.isArray(args)) {
-    return _execFileAsync(file, args, { windowsHide: true, ...options });
+/**
+ * Error thrown when a daemon-routed exec exits non-zero (or times out).
+ * Reconstructs the `promisify(child_process.exec)` contract call-sites
+ * rely on: `.stdout` / `.stderr` buffers plus a numeric `.code` exit
+ * status (and `.killed` on timeout).
+ */
+interface AsyncExecError extends Error {
+  stdout?: string;
+  stderr?: string;
+  code?: number;
+  killed?: boolean;
+}
+
+/**
+ * Resolve the host shell binary + flag for shell-form commands. Mirrors
+ * the `system.ipc` EXECUTE_COMMAND shim: `/bin/sh -c` on POSIX,
+ * `cmd.exe /c` on Windows.
+ */
+function resolveShell(customShell?: string): [string, string] {
+  if (process.platform === 'win32') return ['cmd.exe', '/c'];
+  return [customShell && customShell.length > 0 ? customShell : '/bin/sh', '-c'];
+}
+
+/** Coerce a `NodeJS.ProcessEnv` into the string-valued env the daemon accepts. */
+function toHostEnv(env?: NodeJS.ProcessEnv): Record<string, string> | undefined {
+  if (!env) return undefined;
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(env)) {
+    const value = env[key];
+    if (typeof value === 'string') out[key] = value;
   }
-  // args is actually options
-  return _execFileAsync(file, { windowsHide: true, ...args });
-}) as typeof _execFileAsync;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Core exec runner: routes a single command through the daemon's
+ * `host.execStream` seam, accumulating stdout/stderr chunk frames so
+ * large output is not capped by the single WSS message limit. Resolves
+ * `{ stdout, stderr }` on exit 0; on non-zero exit or timeout throws an
+ * Error carrying `.stdout` / `.stderr` / numeric `.code` (+ `.killed`
+ * on timeout), matching the legacy `promisify(exec)` contract.
+ */
+async function runViaHostStream(
+  command: string,
+  args: readonly string[] | undefined,
+  options: AsyncExecOptions | undefined,
+  label: string,
+): Promise<AsyncExecResult> {
+  const stdoutChunks: Buffer[] = [];
+  const stderrChunks: Buffer[] = [];
+
+  const streamOptions: HostExecStreamOptions = {
+    onStdout: (chunk: Buffer) => stdoutChunks.push(chunk),
+    onStderr: (chunk: Buffer) => stderrChunks.push(chunk),
+  };
+  if (args && args.length > 0) streamOptions.args = [...args];
+  if (typeof options?.cwd === 'string' && options.cwd.length > 0) {
+    streamOptions.cwd = options.cwd;
+  }
+  if (typeof options?.timeout === 'number' && options.timeout > 0) {
+    streamOptions.timeoutMs = options.timeout;
+  }
+  const envMap = toHostEnv(options?.env);
+  if (envMap) streamOptions.env = envMap;
+
+  const handle = await hostExecStream(command, streamOptions);
+  const result = await handle.done;
+  const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
+  const stderr = Buffer.concat(stderrChunks).toString('utf-8');
+
+  if (result.timedOut) {
+    const err = new Error(`Command timed out: ${label}`) as AsyncExecError;
+    err.stdout = stdout;
+    err.stderr = stderr;
+    err.killed = true;
+    if (typeof result.exitCode === 'number') err.code = result.exitCode;
+    throw err;
+  }
+
+  const exitCode =
+    typeof result.exitCode === 'number' ? result.exitCode : result.ok ? 0 : 1;
+  if (exitCode !== 0) {
+    const err = new Error(`Command failed: ${label}\n${stderr}`) as AsyncExecError;
+    err.stdout = stdout;
+    err.stderr = stderr;
+    err.code = exitCode;
+    throw err;
+  }
+
+  return { stdout, stderr };
+}
+
+/**
+ * Execute a shell command via the daemon's `host.execStream` seam.
+ * Returns `{ stdout, stderr }` on exit 0; throws with `.stdout` /
+ * `.stderr` / numeric `.code` on non-zero exit or timeout.
+ */
+export async function execAsync(
+  command: string,
+  options?: AsyncExecOptions,
+): Promise<AsyncExecResult> {
+  const [shellCmd, shellFlag] = resolveShell(
+    typeof options?.shell === 'string' ? options.shell : undefined,
+  );
+  return runViaHostStream(shellCmd, [shellFlag, command], options, command);
+}
+
+/**
+ * Execute a file with argv via the daemon's `host.execStream` seam.
+ * Supports the legacy `(file, args, options)` and `(file, options)`
+ * overload shapes callers relied on.
+ */
+export async function execFileAsync(
+  file: string,
+  argsOrOptions?: readonly string[] | AsyncExecOptions,
+  maybeOptions?: AsyncExecOptions,
+): Promise<AsyncExecResult> {
+  if (Array.isArray(argsOrOptions)) {
+    const args = argsOrOptions as readonly string[];
+    return runViaHostStream(file, args, maybeOptions, `${file} ${args.join(' ')}`);
+  }
+  return runViaHostStream(file, undefined, argsOrOptions as AsyncExecOptions | undefined, file);
+}
 
 // Promisified fs functions
 export const writeFileAsync = promisify(fs.writeFile);

@@ -1,0 +1,15 @@
+diff --git a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
+index 924869bdb3eedccf57345314adb7c1a9b2a12b20..c35414273ee5e35d4cc197d99ad31ce175ba38f5 100644
+--- a/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
++++ b/dist/bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js
+@@ -105,6 +105,10 @@ export class DismissibleLayerState {
+             this.#unsubClickListener();
+             return;
+         }
++        if (typeof this.opts.isValidEvent?.current !== "function") {
++            this.#unsubClickListener();
++            return;
++        }
+         const isEventValid = this.opts.isValidEvent.current(e, this.opts.ref.current) ||
+             isValidEvent(e, this.opts.ref.current);
+         if (!this.#isResponsibleLayer || this.#isAnyEventIntercepted() || !isEventValid) {

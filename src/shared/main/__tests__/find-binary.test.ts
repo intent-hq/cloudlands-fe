@@ -7,38 +7,27 @@ import {
   vi,
 } from 'vitest';
 
-const { mockExecAsync, mockExecAsyncWithRetry, mockExistsSync, loggerSpies, originalPlatform, originalEnv } = vi.hoisted(
-  () => ({
-    mockExecAsync: vi.fn(),
-    mockExecAsyncWithRetry: vi.fn(),
-    mockExistsSync: vi.fn<(path: string | Buffer) => boolean>(() => false),
-    loggerSpies: {
-      debug: vi.fn(),
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-    },
-    originalPlatform: process.platform,
-    originalEnv: { ...process.env },
-  }),
-);
+/**
+ * Wire-contract tests for find-binary.ts.
+ *
+ * Per PROTOCOL.md §5.14, all binary/PATH discovery is delegated to the daemon
+ * via `host.findBinary` / `host.env`. These tests assert the exact request
+ * shape sent on the wire and feed back PROTOCOL-shaped mock responses.
+ */
 
-vi.mock('../async-utils', () => ({
-  execAsync: mockExecAsync,
+const { mockRequest, loggerSpies } = vi.hoisted(() => ({
+  mockRequest: vi.fn(),
+  loggerSpies: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
 }));
 
-vi.mock('../../git/git-env', () => ({
-  execAsyncWithRetry: mockExecAsyncWithRetry,
+vi.mock('../../../features/backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockRequest }),
 }));
-
-vi.mock('fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('fs')>();
-  const mocked = {
-    ...actual,
-    existsSync: mockExistsSync,
-  };
-  return { ...mocked, default: mocked };
-});
 
 vi.mock('../../logger', () => ({
   Logger: class MockLogger {
@@ -52,18 +41,23 @@ vi.mock('../../logger', () => ({
 import {
   clearBinaryCache,
   findBinary,
+  getCachedHostEnv,
+  getCommonNpmPaths,
+  getCommonNpxPaths,
+  getEnhancedPath,
+  initializeHostEnv,
 } from '../find-binary';
+
+const originalPlatform = process.platform;
+const originalEnv = { ...process.env };
 
 function setPlatform(platform: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', { value: platform });
 }
 
-describe('findBinary', () => {
+describe('findBinary (host.findBinary wire contract)', () => {
   beforeEach(() => {
-    mockExecAsync.mockReset();
-    mockExecAsyncWithRetry.mockReset();
-    mockExistsSync.mockReset();
-    mockExistsSync.mockReturnValue(false);
+    mockRequest.mockReset();
     loggerSpies.debug.mockReset();
     loggerSpies.info.mockReset();
     loggerSpies.warn.mockReset();
@@ -79,191 +73,165 @@ describe('findBinary', () => {
     setPlatform(originalPlatform);
   });
 
-  it('returns a cached result immediately on the second lookup', async () => {
-    setPlatform('win32');
-    mockExecAsync.mockResolvedValue({
-      stdout: 'C:\\Users\\test\\AppData\\Roaming\\npm\\foo.cmd\r\n',
-      stderr: '',
-    });
+  it('sends `host.findBinary` with just the name when no commonPaths are supplied', async () => {
+    mockRequest.mockResolvedValue({ available: true, path: '/usr/local/bin/foo' });
 
-    const firstResult = await findBinary('foo');
-    const secondResult = await findBinary('foo');
+    const result = await findBinary('foo', { cache: false });
 
-    expect(firstResult).toBe('C:\\Users\\test\\AppData\\Roaming\\npm\\foo.cmd');
-    expect(secondResult).toBe(firstResult);
-    expect(mockExecAsync).toHaveBeenCalledTimes(1);
+    expect(result).toBe('/usr/local/bin/foo');
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(mockRequest).toHaveBeenCalledWith('host.findBinary', { name: 'foo' });
   });
 
-  it('rejects invalid binary names before running shell commands', async () => {
+  it('forwards `commonPaths` verbatim to the daemon', async () => {
+    mockRequest.mockResolvedValue({ available: true, path: '/custom/foo' });
+
+    const result = await findBinary('foo', {
+      cache: false,
+      commonPaths: ['/custom/foo', '/other/foo', '/custom/foo'],
+    });
+
+    expect(result).toBe('/custom/foo');
+    expect(mockRequest).toHaveBeenCalledWith('host.findBinary', {
+      name: 'foo',
+      commonPaths: ['/custom/foo', '/other/foo'],
+    });
+  });
+
+  it('returns null when the daemon reports the binary as unavailable', async () => {
+    mockRequest.mockResolvedValue({ available: false });
+
+    const result = await findBinary('foo', { cache: false });
+
+    expect(result).toBeNull();
+    expect(mockRequest).toHaveBeenCalledWith('host.findBinary', { name: 'foo' });
+  });
+
+  it('rejects unsafe binary names before touching the wire', async () => {
     const result = await findBinary('foo; rm -rf /');
 
     expect(result).toBeNull();
-    expect(mockExecAsync).not.toHaveBeenCalled();
-    expect(loggerSpies.warn).toHaveBeenCalledWith('Invalid binary name rejected', { name: 'foo; rm -rf /' });
+    expect(mockRequest).not.toHaveBeenCalled();
+    expect(loggerSpies.warn).toHaveBeenCalledWith('Invalid binary name rejected', {
+      name: 'foo; rm -rf /',
+    });
   });
 
-  it('keeps cached results separate for option sets that affect discovery', async () => {
-    setPlatform('win32');
-    mockExecAsync
-      .mockResolvedValueOnce({ stdout: 'C:\\Tools\\foo.exe\r\n', stderr: '' })
-      .mockResolvedValueOnce({ stdout: 'C:\\Users\\test\\AppData\\Roaming\\npm\\foo.cmd\r\n', stderr: '' });
+  it('caches resolved paths per (name, commonPaths) so a second lookup is wire-free', async () => {
+    mockRequest.mockResolvedValue({ available: true, path: '/usr/local/bin/foo' });
 
-    const withoutEnhancedPath = await findBinary('foo', { useEnhancedPath: false });
-    const withEnhancedPath = await findBinary('foo', { useEnhancedPath: true });
+    const first = await findBinary('foo');
+    const second = await findBinary('foo');
 
-    expect(withoutEnhancedPath).toBe('C:\\Tools\\foo.exe');
-    expect(withEnhancedPath).toBe('C:\\Users\\test\\AppData\\Roaming\\npm\\foo.cmd');
-    expect(mockExecAsync).toHaveBeenCalledTimes(2);
+    expect(first).toBe('/usr/local/bin/foo');
+    expect(second).toBe(first);
+    expect(mockRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('clears all cached variants for a binary name', async () => {
-    setPlatform('win32');
-    mockExecAsync
-      .mockResolvedValueOnce({ stdout: 'C:\\Tools\\foo.exe\r\n', stderr: '' })
-      .mockResolvedValueOnce({ stdout: 'C:\\Users\\test\\AppData\\Roaming\\npm\\foo.cmd\r\n', stderr: '' })
-      .mockResolvedValueOnce({ stdout: 'C:\\Refreshed\\foo.exe\r\n', stderr: '' })
-      .mockResolvedValueOnce({ stdout: 'C:\\Refreshed\\foo.cmd\r\n', stderr: '' });
+  it('keeps cache entries separate for different commonPaths sets', async () => {
+    mockRequest
+      .mockResolvedValueOnce({ available: true, path: '/usr/local/bin/foo' })
+      .mockResolvedValueOnce({ available: true, path: '/opt/homebrew/bin/foo' });
 
-    await findBinary('foo', { useEnhancedPath: false });
-    await findBinary('foo', { useEnhancedPath: true });
+    const a = await findBinary('foo', { commonPaths: ['/a/foo'] });
+    const b = await findBinary('foo', { commonPaths: ['/b/foo'] });
 
+    expect(a).toBe('/usr/local/bin/foo');
+    expect(b).toBe('/opt/homebrew/bin/foo');
+    expect(mockRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('clearBinaryCache(name) drops every cached variant for that binary', async () => {
+    mockRequest
+      .mockResolvedValueOnce({ available: true, path: '/first/foo' })
+      .mockResolvedValueOnce({ available: true, path: '/refreshed/foo' });
+
+    await findBinary('foo');
     clearBinaryCache('foo');
+    const refreshed = await findBinary('foo');
 
-    const refreshedWithoutEnhancedPath = await findBinary('foo', { useEnhancedPath: false });
-    const refreshedWithEnhancedPath = await findBinary('foo', { useEnhancedPath: true });
-
-    expect(refreshedWithoutEnhancedPath).toBe('C:\\Refreshed\\foo.exe');
-    expect(refreshedWithEnhancedPath).toBe('C:\\Refreshed\\foo.cmd');
-    expect(mockExecAsync).toHaveBeenCalledTimes(4);
+    expect(refreshed).toBe('/refreshed/foo');
+    expect(mockRequest).toHaveBeenCalledTimes(2);
   });
 
-  it('returns the where result on Windows when a single path is found', async () => {
-    setPlatform('win32');
-    mockExecAsync.mockResolvedValue({ stdout: 'C:\\Tools\\foo.exe\r\n', stderr: '' });
+  it('returns null and caches the miss when the daemon request rejects', async () => {
+    mockRequest.mockRejectedValue(new Error('transport down'));
 
-    const result = await findBinary('foo', { cache: false });
+    const first = await findBinary('foo');
+    const second = await findBinary('foo');
 
-    expect(result).toBe('C:\\Tools\\foo.exe');
-    expect(mockExecAsync).toHaveBeenCalledWith(
-      'where foo',
-      expect.objectContaining({
-        timeout: 5000,
-        env: expect.objectContaining({ PATH: expect.stringContaining('System32') }),
-      }),
-    );
+    expect(first).toBeNull();
+    expect(second).toBeNull();
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('initializeHostEnv / getEnhancedPath (host.env wire contract)', () => {
+  beforeEach(() => {
+    mockRequest.mockReset();
+    clearBinaryCache();
+    process.env = { ...originalEnv };
   });
 
-  it('uses retry-enabled exec for command lookup when retry is true', async () => {
-    setPlatform('win32');
-    mockExecAsyncWithRetry.mockResolvedValue({ stdout: 'C:\\Tools\\foo.exe\r\n', stderr: '' });
-
-    const result = await findBinary('foo', { cache: false, retry: true });
-
-    expect(result).toBe('C:\\Tools\\foo.exe');
-    expect(mockExecAsyncWithRetry).toHaveBeenCalledWith(
-      'where foo',
-      expect.objectContaining({
-        timeout: 5000,
-        env: expect.objectContaining({ PATH: expect.stringContaining('System32') }),
-      }),
-    );
-    expect(mockExecAsync).not.toHaveBeenCalled();
+  afterEach(() => {
+    process.env = { ...originalEnv };
   });
 
-  it('prefers .cmd results from where on Windows when multiple paths are returned', async () => {
-    setPlatform('win32');
-    mockExecAsync.mockResolvedValue({
-      stdout: [
-        'C:\\Program Files\\nodejs\\foo.exe',
-        'C:\\Users\\test\\AppData\\Roaming\\npm\\foo.cmd',
-      ].join('\r\n'),
-      stderr: '',
-    });
+  it('sends `host.env` (no params) and caches the response', async () => {
+    const mockEnv = {
+      path: '/usr/local/bin:/usr/bin:/bin',
+      pathEntries: ['/usr/local/bin', '/usr/bin', '/bin'],
+      enhancedPath: '/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin',
+      shell: '/bin/zsh',
+      home: '/Users/test',
+      varNames: ['PATH', 'SHELL', 'HOME'],
+    };
+    mockRequest.mockResolvedValue(mockEnv);
 
-    const result = await findBinary('foo', { cache: false });
+    const result = await initializeHostEnv();
 
-    expect(result).toBe('C:\\Users\\test\\AppData\\Roaming\\npm\\foo.cmd');
+    expect(mockRequest).toHaveBeenCalledWith('host.env');
+    expect(result).toEqual(mockEnv);
+    expect(getCachedHostEnv()).toEqual(mockEnv);
+    expect(getEnhancedPath()).toBe(mockEnv.enhancedPath);
   });
 
-  it('returns the which result on macOS', async () => {
+  it('falls back to process.env.PATH when host.env has not been seeded', async () => {
+    // Reset the cached env by simulating a failed initialize call.
+    mockRequest.mockRejectedValue(new Error('not connected'));
+    await initializeHostEnv();
+    process.env.PATH = '/local/only';
+
+    expect(getEnhancedPath()).toBe('/local/only');
+  });
+});
+
+describe('getCommonNpmPaths / getCommonNpxPaths (static hints)', () => {
+  const savedPlatform = process.platform;
+  afterEach(() => {
+    setPlatform(savedPlatform);
+  });
+
+  it('returns POSIX candidates on darwin without touching the filesystem', () => {
     setPlatform('darwin');
-    mockExecAsync.mockResolvedValue({ stdout: '/opt/homebrew/bin/foo\n', stderr: '' });
-
-    const result = await findBinary('foo', { cache: false, useLoginShell: false });
-
-    expect(result).toBe('/opt/homebrew/bin/foo');
-    expect(mockExecAsync).toHaveBeenCalledWith(
-      'which foo',
-      expect.objectContaining({ timeout: 5000 }),
-    );
+    const paths = getCommonNpmPaths('foo');
+    expect(paths).toContain('/usr/local/bin/foo');
+    expect(paths).toContain('/opt/homebrew/bin/foo');
   });
 
-  it('falls back to commonPaths when command lookup fails', async () => {
+  it('returns Windows candidates on win32 without touching the filesystem', () => {
     setPlatform('win32');
-    const commonPath = 'C:\\custom\\foo.cmd';
-    mockExecAsync.mockRejectedValue(new Error('not found'));
-    mockExistsSync.mockImplementation((candidate) => String(candidate) === commonPath);
-
-    const result = await findBinary('foo', {
-      commonPaths: ['C:\\other\\foo.cmd', commonPath],
-      cache: false,
-    });
-
-    expect(result).toBe(commonPath);
-    expect(mockExistsSync).toHaveBeenCalledWith(commonPath);
+    process.env.APPDATA = 'C:\\Users\\test\\AppData\\Roaming';
+    process.env.LOCALAPPDATA = 'C:\\Users\\test\\AppData\\Local';
+    const paths = getCommonNpmPaths('foo');
+    // path.join() uses the host OS's separator, so just assert that a
+    // Windows-only candidate (foo.cmd) appears — the daemon does the actual
+    // resolution on the target host.
+    expect(paths.some((p) => p.endsWith('foo.cmd'))).toBe(true);
   });
 
-  it('falls back to a login shell on macOS when which fails', async () => {
+  it('getCommonNpxPaths delegates to getCommonNpmPaths(npx)', () => {
     setPlatform('darwin');
-    process.env.SHELL = '/bin/zsh';
-    const loginShellPath = '/Users/test/.local/bin/foo';
-    mockExecAsync
-      .mockRejectedValueOnce(new Error('which failed'))
-      .mockResolvedValueOnce({ stdout: `${loginShellPath}\n`, stderr: '' });
-    mockExistsSync.mockImplementation((candidate) => String(candidate) === loginShellPath);
-
-    const result = await findBinary('foo', { cache: false });
-
-    expect(result).toBe(loginShellPath);
-    expect(mockExecAsync).toHaveBeenNthCalledWith(
-      2,
-      '/bin/zsh -l -c "which foo"',
-      expect.objectContaining({ timeout: 5000 }),
-    );
-  });
-
-  it('uses retry-enabled exec for login shell fallback when retry is true', async () => {
-    setPlatform('darwin');
-    process.env.SHELL = '/bin/zsh';
-    const loginShellPath = '/Users/test/.local/bin/foo';
-    mockExecAsyncWithRetry
-      .mockRejectedValueOnce(new Error('which failed'))
-      .mockResolvedValueOnce({ stdout: `${loginShellPath}\n`, stderr: '' });
-    mockExistsSync.mockImplementation((candidate) => String(candidate) === loginShellPath);
-
-    const result = await findBinary('foo', { cache: false, retry: true });
-
-    expect(result).toBe(loginShellPath);
-    expect(mockExecAsyncWithRetry).toHaveBeenNthCalledWith(
-      1,
-      'which foo',
-      expect.objectContaining({ timeout: 5000 }),
-    );
-    expect(mockExecAsyncWithRetry).toHaveBeenNthCalledWith(
-      2,
-      '/bin/zsh -l -c "which foo"',
-      expect.objectContaining({ timeout: 5000 }),
-    );
-    expect(mockExecAsync).not.toHaveBeenCalled();
-  });
-
-  it('returns null when nothing is found', async () => {
-    setPlatform('darwin');
-    mockExecAsync.mockRejectedValue(new Error('not found'));
-
-    const result = await findBinary('foo', { cache: false });
-
-    expect(result).toBeNull();
-    expect(mockExecAsync).toHaveBeenCalledTimes(2);
+    expect(getCommonNpxPaths()).toEqual(getCommonNpmPaths('npx'));
   });
 });

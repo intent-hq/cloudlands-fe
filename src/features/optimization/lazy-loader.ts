@@ -10,8 +10,6 @@ import { Logger } from '$lib/utils/logger';
 const logger = new Logger({ category: 'LazyLoader' });
 
 export interface LazyLoadOptions {
-  /** Delay before loading in milliseconds */
-  delay?: number;
   /** Whether to preload on hover/focus */
   preload?: boolean;
   /** Priority level (higher = load sooner) */
@@ -94,12 +92,7 @@ export async function lazyLoad<T>(
   loader: () => Promise<T>,
   options: LazyLoadOptions = {},
 ): Promise<T> {
-  const { delay = 0, priority = 0, maxRetries = 3 } = options;
-
-  // Add delay if specified
-  if (delay > 0) {
-    await new Promise((resolve) => setTimeout(resolve, delay));
-  }
+  const { priority = 0, maxRetries = 3 } = options;
 
   let lastError: any;
   for (let attempt = 0; attempt < maxRetries; attempt++) {

@@ -44,13 +44,13 @@ export function fromProviderMessage(
 }
 
 /**
- * Extract plain text content from content blocks
- * Concatenates all text blocks into a single string
+ * Extract plain text content from content blocks. Reads the canonical PROTOCOL §7
+ * `text` field only — the legacy `content` alias is no longer accepted (AUDIT-P1-5).
  */
 export function extractContentFromBlocks(blocks: ContentBlock[]): string {
   return blocks
     .filter((b) => b.type === 'text')
-    .map((b) => b.text || b.content || '')
+    .map((b) => b.text ?? '')
     .join('');
 }
 
@@ -66,24 +66,46 @@ export function extractAllContent(msg: AgentMessage): string {
 }
 
 /**
- * Normalize a message to ensure consistent field values
- * Handles backward compatibility with legacy field names
+ * Strictly validate a PROTOCOL §5.5 AgentMessage payload. The daemon always emits
+ * `id`/`role`/`timestamp` on every message and uses `contentBlocks` (never a flat
+ * `content` string) — this no longer fills defaults or aliases. A divergent envelope
+ * surfaces as a thrown error so the BE (or PROTOCOL.md) is corrected at the source
+ * rather than silently patched on the client (AUDIT-P1-5).
  */
 export function normalizeAgentMessage(msg: any): AgentMessage {
+  if (!msg || typeof msg !== 'object') {
+    throw new Error('Invalid AgentMessage: must be an object');
+  }
+  if (typeof msg.id !== 'string') {
+    throw new Error(
+      `Invalid AgentMessage: required 'id' field missing (PROTOCOL §5.5). Received: ${JSON.stringify(msg)}`,
+    );
+  }
+  if (typeof msg.role !== 'string') {
+    throw new Error(
+      `Invalid AgentMessage: required 'role' field missing (PROTOCOL §5.5). Received: ${JSON.stringify(msg)}`,
+    );
+  }
+  if (msg.timestamp === undefined || msg.timestamp === null) {
+    throw new Error(
+      `Invalid AgentMessage: required 'timestamp' field missing (PROTOCOL §5.5). Received: ${JSON.stringify(msg)}`,
+    );
+  }
+  if (msg.content !== undefined && msg.contentBlocks === undefined) {
+    throw new Error(
+      `Invalid AgentMessage: legacy 'content' field is not part of PROTOCOL §5.5 (use 'contentBlocks'). Received: ${JSON.stringify(msg)}`,
+    );
+  }
+
   const normalized: AgentMessage = {
-    id: msg.id || `msg_${uuidv4()}`,
-    role: msg.role || 'assistant',
-    timestamp: msg.timestamp || new Date(),
+    id: msg.id,
+    role: msg.role,
+    timestamp: msg.timestamp,
   };
 
   if (msg.appMessageId) normalized.appMessageId = msg.appMessageId;
   if (msg.agentId) normalized.agentId = msg.agentId;
-  // Handle legacy content field by converting to contentBlocks
-  if (msg.content && !msg.contentBlocks) {
-    normalized.contentBlocks = [{ type: 'text' as const, text: msg.content }];
-  } else if (msg.contentBlocks) {
-    normalized.contentBlocks = msg.contentBlocks;
-  }
+  if (msg.contentBlocks) normalized.contentBlocks = msg.contentBlocks;
   if (msg.turnNumber !== undefined) normalized.turnNumber = msg.turnNumber;
   if (msg.toolCalls) normalized.toolCalls = msg.toolCalls;
   if (msg.toolResults) normalized.toolResults = msg.toolResults;

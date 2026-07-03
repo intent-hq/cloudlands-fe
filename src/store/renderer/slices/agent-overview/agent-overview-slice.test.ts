@@ -131,21 +131,15 @@ describe("selectGraphState", () => {
     expect(agentNode && "isWaitingForOtherAgents" in agentNode).toBe(false);
   });
 
-  it("marks unresolved tool calls as selector-derived waiting without changing Thinking label eligibility", () => {
+  it("marks daemon tool-waiting turns as selector-derived waiting without changing Thinking label eligibility", () => {
     const session: AgentSession = {
       id: "a1" as any,
       backendSessionId: null,
       workspaceId: WS as any,
       name: "Agent a1",
       status: "idle" as any,
-      messages: [
-        {
-          id: "m1",
-          role: "assistant",
-          timestamp: "2026-03-20T13:00:00.000Z",
-          contentBlocks: [{ type: "tool_use", id: "tool-1", name: "read_file", input: {} }],
-        } as any,
-      ],
+      isWaitingOnTool: true,
+      messages: [],
       createdAt: "2026-03-20T13:00:00.000Z",
       updatedAt: "2026-03-20T13:00:00.000Z",
     };
@@ -165,7 +159,8 @@ describe("selectGraphState", () => {
       workspaceId: WS as any,
       name: "Agent a1",
       status: "Waiting" as any,
-      metadata: { waitingForAgentIds: ["a2"] } as any,
+      isWaitingForOtherAgents: true,
+      waitingForAgentIds: ["a2"],
       messages: [],
       createdAt: "2026-03-20T13:00:00.000Z",
       updatedAt: "2026-03-20T13:00:00.000Z",

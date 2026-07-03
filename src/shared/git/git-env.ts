@@ -225,21 +225,11 @@ export function createShellEnv(additionalEnv?: NodeJS.ProcessEnv): NodeJS.Proces
 // Centralized exec utilities with git environment
 // ============================================================================
 
+import { Buffer } from 'node:buffer';
 import {
-  exec,
-  execFile,
-  spawn,
-} from 'child_process';
-import { promisify } from 'util';
-import { killChildProcessTree } from '../main/process-tree-kill';
-
-const execAsyncOriginal = promisify(exec);
-const execFileAsyncOriginal = promisify(execFile);
-
-// Default maxBuffer of 50MB for git operations.
-// Node.js defaults to 1MB which is easily exceeded by git commands
-// on large repositories (e.g., git fetch, git lfs pull, git worktree list).
-const DEFAULT_MAX_BUFFER = 50 * 1024 * 1024;
+  hostExecStream,
+  type HostExecStreamOptions,
+} from '../main/host-exec-stream';
 
 export interface ExecOptions {
   cwd?: string;
@@ -349,6 +339,100 @@ function buildGitEnv(additionalEnv?: NodeJS.ProcessEnv, policy?: GitEnvPolicy): 
 }
 
 /**
+ * Error thrown when a daemon-routed exec exits non-zero (or times out).
+ * Reconstructs the `promisify(child_process.exec)` contract call-sites rely on:
+ * `.stdout` / `.stderr` buffers plus a numeric `.code` exit status.
+ */
+interface ExecError extends Error {
+  stdout?: string;
+  stderr?: string;
+  code?: number;
+  killed?: boolean;
+}
+
+/**
+ * Coerce a NodeJS.ProcessEnv (values may be undefined) into the
+ * Record<string, string> shape the daemon exec seam accepts.
+ */
+function toHostEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(env)) {
+    const value = env[key];
+    if (typeof value === 'string') out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * Resolve the host shell binary + flag for shell-form commands. Mirrors the
+ * `system.ipc` EXECUTE_COMMAND shell-shim: `/bin/sh -c` on POSIX, `cmd.exe /c`
+ * on Windows.
+ */
+function resolveShell(options?: ExecOptions): [string, string] {
+  if (process.platform === 'win32') return ['cmd.exe', '/c'];
+  return [options?.shell ?? '/bin/sh', '-c'];
+}
+
+/**
+ * Core exec runner: routes a single command through the daemon's
+ * `host.execStream` seam (PROTOCOL.md §5.14), accumulating stdout/stderr chunk
+ * frames so large git output (diffs, log, fetch) is not capped by the single
+ * WSS message limit. The computed `gitEnv` rides as the caller env (the daemon
+ * merges it over its own host env). Resolves `{ stdout, stderr }` on exit 0; on
+ * non-zero exit or timeout throws an Error carrying `.stdout` / `.stderr` /
+ * numeric `.code`, matching the legacy `promisify(exec)` contract.
+ */
+async function runViaHostStream(
+  command: string,
+  args: readonly string[] | undefined,
+  options: ExecOptions | undefined,
+  label: string,
+): Promise<ExecResult> {
+  const env = toHostEnv(buildGitEnv(options?.env, options?.gitPolicy));
+  const stdoutChunks: Buffer[] = [];
+  const stderrChunks: Buffer[] = [];
+
+  const streamOptions: HostExecStreamOptions = {
+    env,
+    onStdout: (chunk: Buffer) => stdoutChunks.push(chunk),
+    onStderr: (chunk: Buffer) => stderrChunks.push(chunk),
+  };
+  if (args && args.length > 0) streamOptions.args = [...args];
+  if (typeof options?.cwd === 'string' && options.cwd.length > 0) {
+    streamOptions.cwd = options.cwd;
+  }
+  if (typeof options?.timeout === 'number' && options.timeout > 0) {
+    streamOptions.timeoutMs = options.timeout;
+  }
+
+  const handle = await hostExecStream(command, streamOptions);
+  const result = await handle.done;
+  const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
+  const stderr = Buffer.concat(stderrChunks).toString('utf-8');
+
+  if (result.timedOut) {
+    const err = new Error(`Command timed out: ${label}`) as ExecError;
+    err.stdout = stdout;
+    err.stderr = stderr;
+    err.killed = true;
+    if (typeof result.exitCode === 'number') err.code = result.exitCode;
+    throw err;
+  }
+
+  const exitCode =
+    typeof result.exitCode === 'number' ? result.exitCode : result.ok ? 0 : 1;
+  if (exitCode !== 0) {
+    const err = new Error(`Command failed: ${label}\n${stderr}`) as ExecError;
+    err.stdout = stdout;
+    err.stderr = stderr;
+    err.code = exitCode;
+    throw err;
+  }
+
+  return { stdout, stderr };
+}
+
+/**
  * Execute a shell command with git-safe environment.
  * Automatically applies gitEnv to prevent terminal prompts.
  *
@@ -360,18 +444,8 @@ function buildGitEnv(additionalEnv?: NodeJS.ProcessEnv, policy?: GitEnvPolicy): 
  * ```
  */
 export async function execAsync(command: string, options?: ExecOptions): Promise<ExecResult> {
-  const result = await execAsyncOriginal(command, {
-    encoding: 'utf-8',
-    maxBuffer: DEFAULT_MAX_BUFFER,
-    ...options,
-    env: buildGitEnv(options?.env, options?.gitPolicy),
-    windowsHide: true,
-  });
-  // With encoding: 'utf-8', stdout and stderr are always strings
-  return {
-    stdout: result.stdout ?? '',
-    stderr: result.stderr ?? '',
-  };
+  const [shellCmd, shellFlag] = resolveShell(options);
+  return runViaHostStream(shellCmd, [shellFlag, command], options, command);
 }
 
 /**
@@ -390,18 +464,7 @@ export async function execFileAsync(
   args: readonly string[],
   options?: ExecOptions,
 ): Promise<ExecResult> {
-  const result = await execFileAsyncOriginal(file, args, {
-    encoding: 'utf-8',
-    maxBuffer: DEFAULT_MAX_BUFFER,
-    ...options,
-    env: buildGitEnv(options?.env, options?.gitPolicy),
-    windowsHide: true,
-  });
-  // With encoding: 'utf-8', stdout and stderr are always strings
-  return {
-    stdout: result.stdout ?? '',
-    stderr: result.stderr ?? '',
-  };
+  return runViaHostStream(file, args, options, `${file} ${args.join(' ')}`);
 }
 
 // ============================================================================
@@ -546,59 +609,16 @@ export async function execAsyncWithRetry(
 }
 
 /**
- * Execute command using spawn as a fallback when exec fails.
- * Used internally by execAsyncWithRetry for EBADF errors.
+ * Fallback exec path retained for the retry wrapper's EBADF branch. The former
+ * local `child_process.spawn` fallback is gone — every exec now routes through
+ * the daemon — so this simply re-issues the shell-form command over
+ * `host.execStream`, preserving the `{ stdout, stderr }` / throw-on-non-zero
+ * contract.
  */
 function execWithSpawnFallback(command: string, options?: ExecOptions): Promise<ExecResult> {
-  return new Promise((resolve, reject) => {
-    const [cmd, ...args] = command.split(' ');
-    const timeout = options?.timeout ?? DEFAULT_EXEC_TIMEOUT_MS;
-    let timeoutId: NodeJS.Timeout | undefined;
-
-    const child = spawn(cmd, args, {
-      cwd: options?.cwd,
-      shell: true,
-      env: buildGitEnv(options?.env, options?.gitPolicy),
-      windowsHide: true,
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    // Set up timeout for spawn fallback
-    if (timeout > 0) {
-      timeoutId = setTimeout(() => {
-        // spawned with shell: true, so child.kill() only kills the shell.
-        // Use killChildProcessTree to kill the actual command underneath.
-        killChildProcessTree(child);
-        reject(new Error(`Command timed out after ${timeout}ms: ${command}`));
-      }, timeout);
-    }
-
-    child.stdout?.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    child.stderr?.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    child.on('error', (err) => {
-      if (timeoutId) clearTimeout(timeoutId);
-      reject(err);
-    });
-
-    child.on('close', (code) => {
-      if (timeoutId) clearTimeout(timeoutId);
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        const spawnError = new Error(`Command failed: ${command}\n${stderr}`);
-        (spawnError as NodeJS.ErrnoException).code = String(code);
-        reject(spawnError);
-      }
-    });
-  });
+  const timeout = options?.timeout ?? DEFAULT_EXEC_TIMEOUT_MS;
+  const [shellCmd, shellFlag] = resolveShell(options);
+  return runViaHostStream(shellCmd, [shellFlag, command], { ...options, timeout }, command);
 }
 
 /**

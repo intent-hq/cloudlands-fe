@@ -19,11 +19,17 @@ import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
 import { createChatReadMiddleware } from "$features/agent/chat-read-service";
 import { createChatSendMiddleware } from "$features/agent/chat-send-service";
+import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge";
+import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
 import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
 import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
 import { createAppLayoutNavigationMiddleware } from "$features/layout/app-layout-navigation-service";
+import { createWorkspaceNavigationTabMiddleware } from "$features/layout/workspace-navigation-tab-service";
 import { createFileExplorerReadMiddleware } from "$features/file-explorer/file-explorer-read-service";
+import { createFilesReadMiddleware } from "$features/files/files-read-service";
+import { createFilesWriteMiddleware } from "$features/files/files-write-service";
+import { createNotesWriteMiddleware } from "$features/notes/notes-write-service";
 import { createGitHubAuthMiddleware } from "$features/github-auth/github-auth-store-service";
 import { createSentryAuthMiddleware } from "$features/sentry-auth/sentry-auth-store-service";
 import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-store-service";
@@ -82,6 +88,11 @@ function buildMiddleware(): StoreMiddleware[] {
     // Give the (post-saga) `ensureAgentSessionLoaded` action a real read handler
     // so a selected agent's session/conversation hydrates on demand again.
     createAgentReadMiddleware(),
+    // Give the (post-saga) `loadFileContentRequested` action a real read handler
+    // so file tabs and the diff viewer fetch content via `appClient.files.read`
+    // and clear the loading skeleton (or surface an error) instead of hanging
+    // forever.
+    createFilesReadMiddleware(),
     // Give the (post-saga) `initializeChatRequested` action a real read handler
     // so opening an agent loads its full retained transcript via
     // `agents.getConversation` instead of showing an empty conversation.
@@ -91,6 +102,18 @@ function buildMiddleware(): StoreMiddleware[] {
     // `agent-stream-lifecycle.sendMessage()` again — producing a user message
     // and a live-streaming assistant response — instead of being a no-op.
     createChatSendMiddleware(),
+    // Wire daemon `events.event` notifications (PROTOCOL §7) into the
+    // `workspaceEvents/eventReceived` action so the `agentSession` reducer
+    // can faithfully clear optimistic `isStreaming`/`isProcessing`/
+    // `isResponding` flags on `agent:idle` — without this the "Thinking"
+    // spinner stays stuck after a turn ends.
+    createDaemonEventsBridgeMiddleware(),
+    // Boot-hydrate the BE-owned settings slices (providers, background-agents,
+    // MCP, model overrides) by calling `settings.list` once on first dispatched
+    // action, then keep them in sync via the `settings:changed` routing the
+    // daemon-events bridge above plugs into. The hydration is fire-and-forget
+    // so dispatch stays synchronous and unaffected.
+    createSettingsHydrationMiddleware(),
     // Give the (post-saga) `agentStreamUpdateReceived` action a real consumer
     // so a streaming agent's text/tool blocks grow live in the chat panel
     // (placeholder on first event, in-place block update on subsequent events,
@@ -113,9 +136,24 @@ function buildMiddleware(): StoreMiddleware[] {
     // Give the (post-saga) `openAgentTabRequested` action a real handler so
     // clicking an agent opens (or focuses) its conversation tab again.
     createAppLayoutNavigationMiddleware(),
+    // Give the (post-saga) `openWorkspaceCommitChangeset` action a real handler
+    // so clicking a commit in the Changes / Code-Changes / Overview panels
+    // opens (or focuses) a `changes` tab keyed by `commitHash` instead of just
+    // updating the navigation slice's `mainPanel.type`.
+    createWorkspaceNavigationTabMiddleware(),
     // Give the (post-saga) file-explorer toggle/expand/refresh triggers a real
     // read handler so directories list their children via `files.list` again.
     createFileExplorerReadMiddleware(),
+    // Give the (post-saga) `createFileRequested` trigger a real write handler so
+    // the "New file" command palette / sidebar action creates a file via
+    // `appClient.files.write` and refreshes the tree again instead of being a
+    // no-op.
+    createFilesWriteMiddleware(),
+    // Give the (post-saga) `createNoteRequested` trigger a real write handler so
+    // the Context tab "Add new note" action and the command palette "New note"
+    // command create a note via `appClient.notes.create` and open it in the
+    // main panel again instead of being a no-op.
+    createNotesWriteMiddleware(),
     // Give the (post-saga) GitHub / Sentry / Linear OAuth connect/status/logout
     // triggers real handlers so the settings buttons run their auth flows again.
     createGitHubAuthMiddleware(),

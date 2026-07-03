@@ -1,173 +1,34 @@
 /**
- * Auggie Path Helpers
+ * Auggie path helpers — daemon-backed.
  *
- * Shared PATH and auggie-binary discovery helpers used by both `auggie.ipc.ts`
- * (IPC handlers) and `execute-auggie-command.ts` (CLI invocation). Extracted
- * into a dedicated module to break the circular import that existed between
- * the two files.
+ * Shared PATH / auggie-binary discovery used by `auggie.ipc.ts` (IPC handlers)
+ * and `execute-auggie-command.ts` (CLI invocation). All probing is delegated
+ * to the daemon: `getEnhancedPath()` returns the cached `host.env.enhancedPath`
+ * (see `shared/main/find-binary.ts#initializeHostEnv`) so synchronous callers
+ * still get an authoritative PATH, and `findAuggiePathAsync()` /
+ * `findAuggieInEnhancedPath()` both delegate to `host.checkAuggie`.
+ *
+ * Lives in its own module to avoid the circular import that previously existed
+ * between `auggie.ipc.ts` and `execute-auggie-command.ts`.
  */
 
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-} from 'fs';
+import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { Logger } from '../../../shared/logger';
-import { findBinary } from '../../../shared/main/find-binary';
+import { getEnhancedPath as getHostEnhancedPath } from '../../../shared/main/find-binary';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 
 const logger = new Logger('AuggiePath');
 
+/**
+ * Return the daemon's enhanced PATH (sourced via `host.env`). No local shell
+ * profile parsing, NVM directory scans, or `existsSync` probes — every PATH
+ * entry is what the daemon reports for the host the workspace targets.
+ */
 export function getEnhancedPath(): string {
-  const pathSeparator = process.platform === 'win32' ? ';' : ':';
-  const paths = new Set<string>();
-
-  // Start with current PATH
-  if (process.env.PATH) {
-    process.env.PATH.split(pathSeparator).forEach((p) => {
-      if (p.trim()) paths.add(p.trim());
-    });
-  }
-
-  const homeDir = os.homedir();
-
-  // Try to read PATH from shell profiles (for macOS GUI apps)
-  if (process.platform === 'darwin') {
-    const shellProfiles = [
-      path.join(homeDir, '.zshrc'),
-      path.join(homeDir, '.bash_profile'),
-      path.join(homeDir, '.bashrc'),
-      path.join(homeDir, '.profile'),
-    ];
-
-    for (const profile of shellProfiles) {
-      if (existsSync(profile)) {
-        try {
-          const content = readFileSync(profile, 'utf8');
-          // Look for PATH exports
-          const pathMatches = content.match(/export\s+PATH=["']?([^"'\n]+)["']?/gm);
-          if (pathMatches) {
-            for (const match of pathMatches) {
-              const pathValue = match.replace(/export\s+PATH=["']?/, '').replace(/["']?$/, '');
-              // Expand $PATH references
-              const expandedPath = pathValue.replace(
-                /\$PATH/g,
-                Array.from(paths).join(pathSeparator),
-              );
-              // Expand $HOME references
-              const finalPath = expandedPath.replace(/\$HOME/g, homeDir).replace(/~/g, homeDir);
-              finalPath.split(pathSeparator).forEach((p) => {
-                if (p.trim() && !p.includes('$')) {
-                  paths.add(p.trim());
-                }
-              });
-            }
-          }
-        } catch {
-          // Ignore errors reading shell profiles
-        }
-      }
-    }
-  }
-
-  // Add common npm/node locations (platform-specific)
-  const commonPaths: string[] = [];
-
-  if (process.platform === 'win32') {
-    // Windows-specific paths
-    const appData = process.env.APPDATA || '';
-    const localAppData = process.env.LOCALAPPDATA || '';
-    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
-    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-
-    if (appData) {
-      commonPaths.push(path.join(appData, 'npm')); // npm global bin on Windows
-      commonPaths.push(path.join(appData, 'nvm')); // nvm-windows
-    }
-    if (localAppData) {
-      commonPaths.push(path.join(localAppData, 'Volta', 'bin'));
-      commonPaths.push(path.join(localAppData, 'fnm'));
-    }
-    commonPaths.push(path.join(programFiles, 'nodejs'));
-    commonPaths.push(path.join(programFilesX86, 'nodejs'));
-    commonPaths.push(path.join(homeDir, '.npm-global'));
-  } else {
-    // Unix paths
-    commonPaths.push(
-      '/usr/local/bin',
-      '/usr/bin',
-      '/bin',
-      '/usr/sbin',
-      '/sbin',
-      path.join(homeDir, '.npm-global', 'bin'),
-      path.join(homeDir, '.npm-packages', 'bin'),
-      path.join(homeDir, '.local', 'bin'),
-      '/opt/homebrew/bin', // Apple Silicon Macs
-      '/opt/homebrew/sbin',
-      '/usr/local/opt/node/bin',
-      '/usr/local/opt/node@18/bin',
-      '/usr/local/opt/node@20/bin',
-      '/usr/local/opt/node@22/bin',
-      path.join(homeDir, '.volta', 'bin'),
-      path.join(homeDir, '.fnm', 'aliases', 'default', 'bin'),
-      path.join(homeDir, '.asdf', 'shims'),
-      path.join(homeDir, 'n', 'bin'),
-      '/usr/local/n/versions/node',
-    );
-  }
-
-  // Add NVM paths (Unix-style nvm)
-  if (process.platform !== 'win32') {
-    const nvmDir = path.join(homeDir, '.nvm', 'versions', 'node');
-    if (existsSync(nvmDir)) {
-      try {
-        const nodeDirs = readdirSync(nvmDir);
-        for (const dir of nodeDirs) {
-          paths.add(path.join(nvmDir, dir, 'bin'));
-        }
-      } catch {
-        // Ignore
-      }
-    }
-  }
-
-  // Add common npm global bin directories (without calling npm since it might not be available)
-  const npmGlobalPaths =
-    process.platform === 'win32'
-      ? [path.join(process.env.APPDATA || '', 'npm'), path.join(homeDir, '.npm-global')].filter(
-          Boolean,
-        )
-      : [
-          path.join(homeDir, '.npm-global', 'bin'),
-          path.join(homeDir, '.npm-packages', 'bin'),
-          path.join(homeDir, 'npm', 'bin'),
-          '/usr/local/lib/node_modules/npm/bin',
-          '/opt/homebrew/lib/node_modules/npm/bin',
-        ];
-  npmGlobalPaths.forEach((p) => {
-    if (existsSync(p)) {
-      paths.add(p);
-    }
-  });
-
-  // Add all common paths
-  commonPaths.forEach((p) => paths.add(p));
-
-  const finalPath = Array.from(paths).join(pathSeparator);
-
-  // Log the enhanced PATH for debugging (only log first few paths to avoid clutter)
-  const pathArray = Array.from(paths);
-  logger.debug('Enhanced PATH created', {
-    totalPaths: pathArray.length,
-    samplePaths: pathArray.slice(0, 10),
-    includesHomebrew: pathArray.includes('/opt/homebrew/bin'),
-    includesNvm: pathArray.some((p) => p.includes('.nvm')),
-  });
-
-  return finalPath;
+  return getHostEnhancedPath();
 }
 
 export async function saveAuggiePath(auggiePath: string): Promise<void> {
@@ -208,35 +69,6 @@ export async function saveAuggiePath(auggiePath: string): Promise<void> {
   }
 }
 
-export async function findAuggieInEnhancedPath(): Promise<string | null> {
-  // Temporarily override process.env.PATH with the richer enhanced PATH from
-  // this module so that findBinary's internal `which`/`where` lookup inherits
-  // NVM, FNM, Volta, Homebrew node@N, and shell-profile-derived directories.
-  const originalPath = process.env.PATH;
-  try {
-    process.env.PATH = getEnhancedPath();
-    const foundPath = await findBinary('auggie', {
-      cache: false,
-      useLoginShell: false,
-      retry: true,
-    });
-
-    if (foundPath) {
-      logger.info('Found auggie via enhanced PATH search', { path: foundPath });
-      return foundPath;
-    }
-
-    logger.debug('Enhanced PATH search for auggie failed');
-    return null;
-  } finally {
-    if (originalPath === undefined) {
-      delete process.env.PATH;
-    } else {
-      process.env.PATH = originalPath;
-    }
-  }
-}
-
 /**
  * Resolve the auggie binary path by delegating to the daemon host
  * (`host.checkAuggie`). The BE applies the settings precedence
@@ -268,4 +100,14 @@ export async function findAuggiePathAsync(): Promise<string | null> {
     });
     return null;
   }
+}
+
+/**
+ * Backwards-compatible alias for the daemon-backed `findAuggiePathAsync()`.
+ * Pre-host-services this routine temporarily mutated `process.env.PATH` to
+ * include NVM/FNM/Volta/Homebrew dirs before invoking `findBinary`; the daemon
+ * now owns that scan, so the FE just forwards the request.
+ */
+export async function findAuggieInEnhancedPath(): Promise<string | null> {
+  return findAuggiePathAsync();
 }

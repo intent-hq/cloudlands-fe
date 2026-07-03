@@ -23,10 +23,14 @@ vi.mock("./live-support", async (importActual) => {
   };
 });
 
-import { backendRequest } from "./backend-transport";
+import { backendRequest, onBackendNotification } from "./backend-transport";
+import { isEventInFamily, listWorkspaceIds } from "./live-support";
 import { LiveGitClient } from "./live-git-client";
 
 const mockedRequest = vi.mocked(backendRequest);
+const mockedIsEventInFamily = vi.mocked(isEventInFamily);
+const mockedListWorkspaceIds = vi.mocked(listWorkspaceIds);
+const mockedOnBackendNotification = vi.mocked(onBackendNotification);
 
 describe("LiveGitClient reads (fake transport)", () => {
   afterEach(() => vi.clearAllMocks());
@@ -141,6 +145,100 @@ describe("LiveGitClient reads (fake transport)", () => {
     expect(await client.diffs("ws-1")).toEqual([]);
   });
 
+  it("diffs forwards optional commitHash + path for the per-commit read", async () => {
+    mockedRequest.mockResolvedValueOnce([]);
+    const client = new LiveGitClient();
+
+    await client.diffs("ws-1", { commitHash: "abc123", path: "seed.txt" });
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.diffs", {
+      workspaceId: "ws-1",
+      path: "seed.txt",
+      commitHash: "abc123",
+    });
+  });
+
+  it("diffs forwards staged:true when no commitHash is set", async () => {
+    mockedRequest.mockResolvedValueOnce([]);
+    const client = new LiveGitClient();
+
+    await client.diffs("ws-1", { staged: true });
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.diffs", {
+      workspaceId: "ws-1",
+      staged: true,
+    });
+  });
+
+  it("commitDetails forwards git.commitDetails and normalizes the wire shape", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      commitHash: "abc123",
+      author: "Ada",
+      authorEmail: "ada@example.test",
+      date: "2025-01-02T03:04:05Z",
+      message: "second",
+      files: ["seed.txt", "new.txt"],
+      fileDetails: [
+        { path: "seed.txt", additions: 2, deletions: 1 },
+        { path: "new.txt", additions: 1, deletions: 0 },
+      ],
+    });
+    const client = new LiveGitClient();
+
+    const details = await client.commitDetails("ws-1", "abc123");
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.commitDetails", {
+      workspaceId: "ws-1",
+      commitHash: "abc123",
+    });
+    expect(details).toEqual({
+      commitHash: "abc123",
+      author: "Ada",
+      authorEmail: "ada@example.test",
+      date: "2025-01-02T03:04:05Z",
+      message: "second",
+      files: ["seed.txt", "new.txt"],
+      fileDetails: [
+        { path: "seed.txt", additions: 2, deletions: 1 },
+        { path: "new.txt", additions: 1, deletions: 0 },
+      ],
+    });
+  });
+
+  it("commitDetails normalizes a graceful-empty envelope from the daemon", async () => {
+    // The daemon returns an empty envelope (same `commitHash`, empty arrays)
+    // for non-repo / remote / unresolvable-hash workspaces (PROTOCOL §5.6).
+    mockedRequest.mockResolvedValueOnce({
+      commitHash: "missing",
+      author: "",
+      authorEmail: "",
+      date: "",
+      message: "",
+      files: [],
+      fileDetails: [],
+    });
+    const client = new LiveGitClient();
+
+    const details = await client.commitDetails("ws-1", "missing");
+
+    expect(details).toEqual({
+      commitHash: "missing",
+      author: "",
+      authorEmail: "",
+      date: "",
+      message: "",
+      files: [],
+      fileDetails: [],
+    });
+  });
+
+  it("commitDetails resolves null when the daemon errors", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("commit details boom"));
+    const client = new LiveGitClient();
+
+    expect(await client.commitDetails("ws-1", "abc123")).toBeNull();
+  });
+
   it("commits forwards git.commits and maps items into CommitInfo[]", async () => {
     mockedRequest.mockResolvedValueOnce({
       items: [
@@ -225,6 +323,130 @@ describe("LiveGitClient reads (fake transport)", () => {
     const client = new LiveGitClient();
 
     expect(await client.trackedChanges("ws-1")).toEqual([]);
+  });
+
+  // `git.getBranches` is path-based (not workspace-scoped) and is the new
+  // wire that replaces the dead `invoke('git:getBranches')` legacy IPC in the
+  // workspace initializer (P2 task). The contract asserts method + params
+  // verbatim, and the renderer-shape mapping mirrors the daemon `GitBranches`
+  // payload (snake_case → camelCase by serde).
+  it("getBranches forwards git.getBranches with the documented params and maps the daemon payload", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      branches: ["main", "feature/x"],
+      remoteBranches: ["origin/release"],
+      currentBranch: "feature/x",
+      defaultBranch: "main",
+    });
+    const client = new LiveGitClient();
+
+    const result = await client.getBranches("/Users/clement/src/intent", true);
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.getBranches", {
+      repoPath: "/Users/clement/src/intent",
+      includeRemote: true,
+    });
+    expect(result).toEqual({
+      branches: ["main", "feature/x"],
+      remoteBranches: ["origin/release"],
+      currentBranch: "feature/x",
+      defaultBranch: "main",
+    });
+  });
+
+  it("getBranches resolves null when the daemon errors (e.g. known-repo gate rejection)", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("Unknown or unauthorized repository path"));
+    const client = new LiveGitClient();
+
+    expect(await client.getBranches("/tmp/not-a-repo", true)).toBeNull();
+  });
+
+  it("getBranches resolves null when the daemon returns undefined (no crash on missing payload)", async () => {
+    mockedRequest.mockResolvedValueOnce(undefined as unknown as Record<string, unknown>);
+    const client = new LiveGitClient();
+
+    // Guard against the original BranchSelector crash: a missing payload
+    // would have thrown "Cannot read properties of undefined (reading
+    // 'success')" before this fix. Now it folds to null.
+    expect(await client.getBranches("/repo", true)).toBeNull();
+  });
+
+  it("getBranches tolerates partial payloads by defaulting missing fields", async () => {
+    mockedRequest.mockResolvedValueOnce({ branches: ["main"] });
+    const client = new LiveGitClient();
+
+    expect(await client.getBranches("/repo", false)).toEqual({
+      branches: ["main"],
+      remoteBranches: [],
+      currentBranch: "",
+      defaultBranch: "",
+    });
+    expect(mockedRequest).toHaveBeenCalledWith("git.getBranches", {
+      repoPath: "/repo",
+      includeRemote: false,
+    });
+  });
+
+  // `git.branchStatus` is the path-based BranchSelector seam (PROTOCOL §5.6)
+  // that replaces the legacy `invoke('git:getBranchStatus')` Electron IPC. The
+  // contract asserts method + params verbatim and the renderer-shape mapping
+  // mirrors the daemon `GitBranchStatus` payload (snake_case → camelCase).
+  it("branchStatus forwards git.branchStatus with the documented params and maps the daemon payload", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      branch: "feature/x",
+      currentBranch: "main",
+      isCurrentBranch: false,
+      ahead: 0,
+      behind: 3,
+      hasUncommittedChanges: true,
+    });
+    const client = new LiveGitClient();
+
+    const result = await client.branchStatus("/Users/clement/src/intent", "feature/x");
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.branchStatus", {
+      repoPath: "/Users/clement/src/intent",
+      branchName: "feature/x",
+    });
+    expect(result).toEqual({
+      branch: "feature/x",
+      currentBranch: "main",
+      isCurrentBranch: false,
+      ahead: 0,
+      behind: 3,
+      hasUncommittedChanges: true,
+    });
+  });
+
+  it("branchStatus resolves null when the daemon errors (e.g. known-repo gate rejection)", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("Unknown or unauthorized repository path"));
+    const client = new LiveGitClient();
+
+    expect(await client.branchStatus("/tmp/not-a-repo", "main")).toBeNull();
+  });
+
+  it("branchStatus resolves null when the daemon returns undefined (no crash on missing payload)", async () => {
+    mockedRequest.mockResolvedValueOnce(undefined as unknown as Record<string, unknown>);
+    const client = new LiveGitClient();
+
+    expect(await client.branchStatus("/repo", "main")).toBeNull();
+  });
+
+  it("branchStatus tolerates partial payloads by defaulting missing fields", async () => {
+    mockedRequest.mockResolvedValueOnce({ behind: 2 });
+    const client = new LiveGitClient();
+
+    expect(await client.branchStatus("/repo", "main")).toEqual({
+      branch: "main",
+      currentBranch: "",
+      isCurrentBranch: false,
+      ahead: 0,
+      behind: 2,
+      hasUncommittedChanges: false,
+    });
+    expect(mockedRequest).toHaveBeenCalledWith("git.branchStatus", {
+      repoPath: "/repo",
+      branchName: "main",
+    });
   });
 });
 
@@ -326,5 +548,97 @@ describe("LiveGitClient.commit (fake transport)", () => {
       success: false,
       error: "commit boom",
     });
+  });
+});
+
+// `subscribe` refetches `git.status` on daemon notifications routed through
+// `isEventInFamily`. Regression: when the matcher read a non-existent
+// `params.type` on the wrapped `{event:{type,…}}` envelope, the "type absent"
+// defensive branch fired for every events.event notification — including each
+// `terminal:data` keystroke from the PTY work — producing a git-status storm.
+// This suite swaps the mocked matcher for the REAL implementation and pins the
+// routing end-to-end: terminal:data does NOT trigger `git.status`; git:* and
+// changes:git-status do.
+describe("LiveGitClient.subscribe event-family routing (fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  async function setupWithRealMatcher() {
+    const real = await vi.importActual<typeof import("./live-support")>("./live-support");
+    mockedIsEventInFamily.mockImplementation(real.isEventInFamily);
+    mockedListWorkspaceIds.mockResolvedValue(["ws-1"]);
+    let captured: ((n: { method: string; params: unknown }) => void) | undefined;
+    mockedOnBackendNotification.mockImplementation((cb) => {
+      captured = cb;
+      return () => {};
+    });
+    mockedRequest.mockResolvedValue({
+      branch: "main",
+      ahead: 0,
+      behind: 0,
+      diverged: false,
+      files: [],
+      hasUncommittedChanges: false,
+      hasUntrackedFiles: false,
+    });
+    return { getNotify: () => captured };
+  }
+
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const gitStatusCalls = () =>
+    mockedRequest.mock.calls.filter(([method]) => method === "git.status").length;
+
+  it("does NOT refetch git.status on a wrapped terminal:data notification", async () => {
+    const { getNotify } = await setupWithRealMatcher();
+    const client = new LiveGitClient();
+
+    const unsubscribe = client.subscribe(() => {});
+    await flush();
+    const initialCount = gitStatusCalls();
+
+    getNotify()!({
+      method: "events.event",
+      params: { event: { type: "terminal:data", data: { chunk: "x" } } },
+    });
+    await flush();
+
+    expect(gitStatusCalls()).toBe(initialCount);
+    unsubscribe();
+  });
+
+  it("DOES refetch git.status on a wrapped git:commit notification", async () => {
+    const { getNotify } = await setupWithRealMatcher();
+    const client = new LiveGitClient();
+
+    const unsubscribe = client.subscribe(() => {});
+    await flush();
+    const initialCount = gitStatusCalls();
+
+    getNotify()!({
+      method: "events.event",
+      params: { event: { type: "git:commit" }, subscriptionId: "s-1" },
+    });
+    await flush();
+
+    expect(gitStatusCalls()).toBe(initialCount + 1);
+    expect(mockedRequest).toHaveBeenLastCalledWith("git.status", { workspaceId: "ws-1" });
+    unsubscribe();
+  });
+
+  it("DOES refetch git.status on a wrapped changes:git-status notification", async () => {
+    const { getNotify } = await setupWithRealMatcher();
+    const client = new LiveGitClient();
+
+    const unsubscribe = client.subscribe(() => {});
+    await flush();
+    const initialCount = gitStatusCalls();
+
+    getNotify()!({
+      method: "events.event",
+      params: { event: { type: "changes:git-status" } },
+    });
+    await flush();
+
+    expect(gitStatusCalls()).toBe(initialCount + 1);
+    unsubscribe();
   });
 });

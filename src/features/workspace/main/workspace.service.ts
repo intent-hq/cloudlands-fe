@@ -10,9 +10,9 @@ import { BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
 import * as fsSync from 'fs';
 import * as fsExtra from 'fs-extra';
-import { spawn } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { DEFAULT_AGENT_MODEL } from '../../../shared/constants/agent-services';
 import {
   createCompoundModelId,
@@ -25,12 +25,13 @@ import {
   execAsync,
   execFileAsync,
   getConfiguredSshKeyPath,
-  gitEnv,
 } from '../../../shared/git/git-env';
 import { findParentGitDir } from '../../../shared/git/git-utils';
 import { Logger } from '../../../shared/logger';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import { addRepo } from './repo-registry';
+import { getBackendClient } from '../../backend/main/backend.ipc';
+import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import {
   unifiedIdService,
@@ -813,116 +814,143 @@ export class WorkspaceService {
   }
 
   /**
-   * Clone a git repository with progress streaming
-   * Uses spawn instead of exec to stream progress output
+   * Clone a git repository with progress streaming via the daemon's
+   * `git.clone` method (PROTOCOL.md §5.6). The FE mints a `requestId`,
+   * subscribes to `git:clone:progress`/`git:clone:done` (§6.5), and
+   * translates each progress frame into the unchanged `workspace:clone-progress`
+   * renderer broadcast — the previous local `spawn('git', 'clone', …)` +
+   * stderr regex parser is retired. Rejects on RPC/stream failure with no
+   * silent local fallback.
    */
   private async cloneWithProgress(
     url: string,
     clonePath: string,
     parentDir: string,
   ): Promise<void> {
+    const targetName = path.basename(clonePath);
+    const requestId = randomUUID();
+    const client = getBackendClient();
+
     await new Promise<void>((resolve, reject) => {
-      // Start with "starting" phase
+      // Immediate UX cue while the RPC round-trips; the daemon then drives
+      // subsequent phases via `git:clone:progress`.
       this.broadcastCloneProgress({
         phase: 'starting',
         percent: 0,
         message: 'Starting clone...',
       });
 
-      // Skip LFS smudge filter during clone checkout to prevent failures when
-      // LFS objects are missing or unreachable. We'll attempt git lfs pull after clone.
-      const child = spawn('git', ['clone', '--progress', url, clonePath], {
-        cwd: parentDir,
-        env: { ...gitEnv, GIT_LFS_SKIP_SMUDGE: '1' },
-        windowsHide: true,
-      });
+      let subscriptionId: string | undefined;
+      let settled = false;
+      let sawComplete = false;
+      let timeoutHandle: NodeJS.Timeout | null = null;
+      let notificationHandler: ((n: JsonRpcNotification) => void) | null = null;
 
-      let lastPercent = 0;
-      let lastPhase = 'starting';
-      let stderrBuffer = '';
-
-      // Git outputs progress to stderr
-      child.stderr.on('data', (data: Buffer) => {
-        const text = data.toString();
-        stderrBuffer += text;
-
-        // Parse git progress output
-        // Examples:
-        // "Receiving objects:  45% (1234/2743), 672.00 MiB | 12.34 MiB/s"
-        // "Resolving deltas:  85% (100/118)"
-        // "Checking out files:  95%"
-        const patterns = [
-          { regex: /Receiving objects:\s+(\d+)%/, phase: 'receiving' },
-          { regex: /Resolving deltas:\s+(\d+)%/, phase: 'resolving' },
-          { regex: /Checking out files:\s+(\d+)%/, phase: 'checkout' },
-          { regex: /Cloning into/, phase: 'starting' },
-          { regex: /Counting objects/, phase: 'counting' },
-          { regex: /Compressing objects:\s+(\d+)%/, phase: 'compressing' },
-        ];
-
-        for (const { regex, phase } of patterns) {
-          const match = text.match(regex);
-          if (match) {
-            const percent = match[1] ? parseInt(match[1], 10) : 0;
-
-            // Only broadcast if we have meaningful progress
-            if (phase !== lastPhase || percent > lastPercent) {
-              lastPhase = phase;
-              lastPercent = percent;
-
-              let message = '';
-              switch (phase) {
-                case 'receiving':
-                  message = `Receiving objects: ${percent}%`;
-                  break;
-                case 'resolving':
-                  message = `Resolving deltas: ${percent}%`;
-                  break;
-                case 'checkout':
-                  message = `Checking out files: ${percent}%`;
-                  break;
-                case 'counting':
-                  message = 'Counting objects...';
-                  break;
-                case 'compressing':
-                  message = `Compressing objects: ${percent}%`;
-                  break;
-                default:
-                  message = 'Cloning repository...';
-              }
-
-              this.broadcastCloneProgress({ phase, percent, message });
-            }
-            break;
-          }
+      const cleanup = (): void => {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+          timeoutHandle = null;
         }
-      });
+        if (notificationHandler) {
+          client.off('notification', notificationHandler);
+          notificationHandler = null;
+        }
+        if (subscriptionId) {
+          const idToRelease = subscriptionId;
+          subscriptionId = undefined;
+          client.request('events.unsubscribe', { subscriptionId: idToRelease }).catch((err) => {
+            logger.debug('events.unsubscribe after git.clone failed', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
+        }
+      };
 
-      child.on('error', (error) => {
-        logger.error('Git clone spawn error', { error });
-        reject(error);
-      });
-
-      child.on('close', (code) => {
-        if (code === 0) {
+      const settleOk = (): void => {
+        if (settled) return;
+        settled = true;
+        if (!sawComplete) {
           this.broadcastCloneProgress({
             phase: 'complete',
             percent: 100,
             message: 'Clone complete!',
           });
-          resolve();
-        } else {
-          reject(new Error(`Git clone failed with code ${code}. ${stderrBuffer}`));
         }
-      });
+        cleanup();
+        resolve();
+      };
 
-      // Timeout after 5 minutes
-      const timeout = setTimeout(() => {
-        child.kill('SIGTERM');
-        reject(new Error('Git clone timed out after 5 minutes'));
-      }, 300000);
+      const settleErr = (error: Error): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
 
-      child.on('close', () => clearTimeout(timeout));
+      notificationHandler = (n: JsonRpcNotification): void => {
+        if (n.method !== 'events.event') return;
+        const params = n.params as { event?: unknown } | undefined;
+        const event = (params && typeof params === 'object' && 'event' in params
+          ? (params as { event?: unknown }).event
+          : params) as { type?: unknown; data?: unknown } | undefined;
+        if (!event || typeof event !== 'object') return;
+        const type = event.type;
+        if (type !== 'git:clone:progress' && type !== 'git:clone:done') return;
+        const data = event.data as
+          | { requestId?: unknown; phase?: unknown; percent?: unknown; message?: unknown; ok?: unknown; error?: unknown }
+          | undefined;
+        if (!data || data.requestId !== requestId) return;
+
+        if (type === 'git:clone:progress') {
+          const phase = typeof data.phase === 'string' ? data.phase : '';
+          const percent = typeof data.percent === 'number' ? data.percent : 0;
+          const message = typeof data.message === 'string' ? data.message : '';
+          if (phase === 'complete') sawComplete = true;
+          this.broadcastCloneProgress({ phase, percent, message });
+          return;
+        }
+
+        // git:clone:done
+        if (data.ok === true) {
+          settleOk();
+        } else {
+          const errMsg = typeof data.error === 'string' && data.error.length > 0
+            ? data.error
+            : 'Git clone failed';
+          settleErr(new Error(errMsg));
+        }
+      };
+
+      client.on('notification', notificationHandler);
+
+      // Defensive FE-side ceiling slightly beyond the daemon's 5-min hard cap;
+      // guards against the daemon dying mid-clone without a terminal `done`.
+      timeoutHandle = setTimeout(() => {
+        settleErr(new Error('Git clone timed out waiting for daemon'));
+      }, 360_000);
+
+      (async () => {
+        try {
+          const subResult = (await client.request('events.subscribe', {
+            eventTypes: ['git:clone:progress', 'git:clone:done'],
+          })) as { subscriptionId?: string } | undefined;
+          if (typeof subResult?.subscriptionId === 'string' && subResult.subscriptionId.length > 0) {
+            subscriptionId = subResult.subscriptionId;
+          }
+
+          await client.request<{ requestId: string; targetPath: string }>('git.clone', {
+            url,
+            parentDir,
+            targetName,
+            requestId,
+          });
+        } catch (rpcError) {
+          const message =
+            rpcError instanceof Error ? rpcError.message : String(rpcError);
+          logger.error('git.clone RPC failed', { message });
+          settleErr(rpcError instanceof Error ? rpcError : new Error(message));
+        }
+      })();
     });
 
     // Best-effort: attempt to pull LFS objects now that the clone exists.

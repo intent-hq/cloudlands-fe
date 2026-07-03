@@ -1,20 +1,20 @@
 /**
  * Script Process Manager
  *
- * Manages spawning, lifecycle, output buffering, auto-restart, PID tracking,
- * and URL detection for workspace scripts. One instance per workspace,
- * accessed via getScriptProcessManager(workspaceId).
+ * Thin FE client over the daemon's `script.*` RPC surface (PROTOCOL §5.8). The
+ * daemon owns the process (spawn / PID / auto-restart / URL detection / output
+ * fan-out); this file only mirrors runtime state, buffers `script:output` chunks
+ * for the renderer, and forwards user intent through `getBackendClient()`.
+ *
+ * The public API (`ScriptProcessManager`, `getScriptProcessManager`,
+ * `disposeScriptProcessManager`, `disposeAllScriptProcessManagers`) is preserved
+ * so `scripts.ipc.ts`, `workspace.ipc.ts`, and `ws-script-api.ts` keep working
+ * without touching their call sites.
  */
 
-import {
-  spawn,
-  ChildProcess,
-} from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
 import { Logger } from '../../../shared/logger';
-import { createShellEnv } from '../../../shared/git/git-env';
-import { killProcessTree } from '../../../shared/main/process-tree-kill';
+import { getBackendClient } from '../../backend/main/backend.ipc';
+import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
 import {
   ScriptOutputBuffer,
   OutputLine,
@@ -53,139 +53,8 @@ export interface ScriptRuntimeState {
   detectedUrl?: string;
 }
 
-// ============================================================================
-// Constants
-// ============================================================================
-
-const AUTO_RESTART_DELAY_MS = 1000;
-const AUTO_RESTART_MAX_RETRIES = 5;
-const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 5000;
-const PID_FILE_NAME = 'scripts.pid';
-
-/** URL detection regex for common local dev server URLs. */
-const URL_REGEX = /https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)(?:\/[^\s)}\]"']*)?/gi;
-
-// ============================================================================
-// PID File Types
-// ============================================================================
-
-interface PidEntry {
-  scriptId: string;
-  pid: number;
-  startTime: number;
-}
-
-interface PidFile {
-  entries: PidEntry[];
-}
-
-// ============================================================================
-// Shell Detection (mirrors terminal.ipc.ts findValidShell — not exported there)
-// ============================================================================
-
-function shellExists(shellPath: string): boolean {
-  try {
-    if (process.platform === 'win32') {
-      fs.accessSync(shellPath, fs.constants.F_OK);
-      return true;
-    } else {
-      fs.accessSync(shellPath, fs.constants.F_OK | fs.constants.X_OK);
-      return true;
-    }
-  } catch {
-    if (!path.isAbsolute(shellPath) && !shellPath.includes(path.sep)) {
-      const pathEnv = process.env.PATH || '';
-      const pathDirs = pathEnv.split(process.platform === 'win32' ? ';' : ':');
-      for (const dir of pathDirs) {
-        const fullPath = path.join(dir, shellPath);
-        try {
-          if (process.platform === 'win32') {
-            for (const ext of ['', '.exe', '.cmd', '.bat']) {
-              try {
-                fs.accessSync(fullPath + ext, fs.constants.F_OK);
-                return true;
-              } catch {
-                /* continue */
-              }
-            }
-          } else {
-            fs.accessSync(fullPath, fs.constants.F_OK | fs.constants.X_OK);
-            return true;
-          }
-        } catch {
-          /* continue */
-        }
-      }
-    }
-    return false;
-  }
-}
-
-function findValidShell(): string {
-  if (process.platform === 'win32') {
-    const windowsShells = [
-      process.env.COMSPEC,
-      'powershell.exe',
-      'cmd.exe',
-      path.join(process.env.WINDIR || 'C:\\Windows', 'System32', 'cmd.exe'),
-    ].filter(Boolean) as string[];
-    for (const shell of windowsShells) {
-      if (shellExists(shell)) return shell;
-    }
-    return 'cmd.exe';
-  }
-  const shells = [
-    process.env.SHELL,
-    '/bin/zsh',
-    '/bin/bash',
-    '/bin/sh',
-    '/usr/bin/zsh',
-    '/usr/bin/bash',
-    'zsh',
-    'bash',
-    'sh',
-  ].filter(Boolean) as string[];
-  for (const shell of shells) {
-    if (shellExists(shell)) return shell;
-  }
-  return '/bin/sh';
-}
-
-function encodePowerShellCommand(command: string): string {
-  return Buffer.from(command, 'utf16le').toString('base64');
-}
-
-/**
- * Build shell args based on the detected shell type.
- * - PowerShell/pwsh: -NoProfile -NoLogo -NonInteractive -EncodedCommand <utf16le-base64>
- * - cmd.exe: /c
- * - /bin/sh: -c (no -l, not reliably supported)
- * - zsh/bash: -l -c (login shell for PATH via nvm/fnm)
- */
-function getShellArgs(shell: string, command: string): string[] {
-  const shellBase = path.basename(shell).toLowerCase().replace(/\.exe$/, '');
-
-  if (process.platform === 'win32') {
-    if (shellBase === 'powershell' || shellBase === 'pwsh') {
-      return [
-        '-NoProfile',
-        '-NoLogo',
-        '-NonInteractive',
-        '-EncodedCommand',
-        encodePowerShellCommand(command),
-      ];
-    }
-    // cmd.exe or other Windows shells
-    return ['/c', command];
-  }
-
-  // Unix: /bin/sh doesn't support -l reliably
-  if (shellBase === 'sh') {
-    return ['-c', command];
-  }
-  // zsh/bash: use -l (login shell) to pick up nvm/fnm PATH
-  return ['-l', '-c', command];
-}
+export type ScriptStateChangeCallback = (scriptId: string, state: ScriptRuntimeState) => void;
+export type ScriptOutputCallback = (scriptId: string, lines: OutputLine[]) => void;
 
 // ============================================================================
 // Internal Types
@@ -194,16 +63,98 @@ function getShellArgs(shell: string, command: string): string[] {
 interface ManagedScript {
   script: WorkspaceScript;
   state: ScriptRuntimeState;
-  process: ChildProcess | null;
   buffer: ScriptOutputBuffer;
-  restartTimer: ReturnType<typeof setTimeout> | null;
-  stoppedByUser: boolean;
-  killTimer: ReturnType<typeof setTimeout> | null;
-  processStartTime: number | null;
+  /** True when the local definition differs from what the daemon last saw. */
+  dirty: boolean;
+  /** True once we have successfully called `script.create` for this script. */
+  registered: boolean;
 }
 
-export type ScriptStateChangeCallback = (scriptId: string, state: ScriptRuntimeState) => void;
-export type ScriptOutputCallback = (scriptId: string, lines: OutputLine[]) => void;
+// ============================================================================
+// Module-level daemon event dispatch hub
+// ============================================================================
+
+/** Global scriptId → owning manager map so daemon events reach the right buffer. */
+const managersByScriptId = new Map<string, ScriptProcessManager>();
+
+let subscriptionId: string | undefined;
+let notificationListener: ((n: JsonRpcNotification) => void) | undefined;
+let subscribePromise: Promise<void> | undefined;
+
+function decodeBase64(input: unknown): string {
+  if (typeof input !== 'string' || input.length === 0) return '';
+  try {
+    return Buffer.from(input, 'base64').toString('utf8');
+  } catch {
+    return '';
+  }
+}
+
+/** Map the daemon's serialized `ScriptRuntimeState` onto the FE shape. */
+function parseDaemonState(data: Record<string, unknown> | undefined): ScriptRuntimeState {
+  const status = data?.status;
+  const restartCount = data?.restartCount;
+  return {
+    status:
+      status === 'running' || status === 'exited' || status === 'idle' ? status : 'idle',
+    pid: typeof data?.pid === 'number' ? (data.pid as number) : undefined,
+    exitCode:
+      typeof data?.exitCode === 'number' || data?.exitCode === null
+        ? (data.exitCode as number | null)
+        : undefined,
+    startedAt: typeof data?.startedAt === 'string' ? (data.startedAt as string) : undefined,
+    stoppedAt: typeof data?.stoppedAt === 'string' ? (data.stoppedAt as string) : undefined,
+    restartCount: typeof restartCount === 'number' ? (restartCount as number) : 0,
+    error: typeof data?.error === 'string' ? (data.error as string) : undefined,
+    detectedUrl:
+      typeof data?.detectedUrl === 'string' ? (data.detectedUrl as string) : undefined,
+  };
+}
+
+async function ensureSubscription(): Promise<void> {
+  if (subscriptionId || subscribePromise) {
+    if (subscribePromise) await subscribePromise;
+    return;
+  }
+  const client = getBackendClient();
+  const listener = (n: JsonRpcNotification): void => {
+    if (n.method !== 'events.event') return;
+    const params = n.params as { subscriptionId?: unknown; event?: unknown } | undefined;
+    const subId = typeof params?.subscriptionId === 'string' ? params.subscriptionId : undefined;
+    if (subscriptionId !== undefined && subId !== subscriptionId) return;
+    const event = params?.event as
+      | { type?: unknown; data?: Record<string, unknown> }
+      | undefined;
+    if (!event) return;
+    const type = typeof event.type === 'string' ? event.type : '';
+    if (!type.startsWith('script:')) return;
+    const scriptId =
+      typeof event.data?.scriptId === 'string' ? (event.data.scriptId as string) : undefined;
+    if (!scriptId) return;
+    const manager = managersByScriptId.get(scriptId);
+    if (!manager) return;
+    if (type === 'script:state') {
+      manager.handleStateEvent(scriptId, parseDaemonState(event.data));
+    } else if (type === 'script:output') {
+      manager.handleOutputEvent(scriptId, decodeBase64(event.data?.chunk));
+    }
+  };
+  notificationListener = listener;
+  client.on('notification', listener);
+  subscribePromise = (async () => {
+    try {
+      const result = await client.request<{ subscriptionId?: string }>('events.subscribe', {
+        eventTypes: ['script:state', 'script:output'],
+      });
+      subscriptionId = result?.subscriptionId;
+    } catch (error) {
+      logger.warn('[Scripts] events.subscribe failed; live script events will not stream', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })();
+  await subscribePromise;
+}
 
 // ============================================================================
 // ScriptProcessManager
@@ -211,16 +162,15 @@ export type ScriptOutputCallback = (scriptId: string, lines: OutputLine[]) => vo
 
 export class ScriptProcessManager {
   private readonly workspaceId: string;
-  private readonly workspacePath: string;
-  private readonly metadataPath: string;
   private scripts: Map<string, ManagedScript> = new Map();
   private onStateChange: ScriptStateChangeCallback | null = null;
   private onOutput: ScriptOutputCallback | null = null;
 
-  constructor(workspaceId: string, workspacePath: string, metadataPath: string) {
+  // `workspacePath` / `metadataPath` are accepted for backwards compatibility
+  // with existing callers but ignored — the daemon resolves cwd from the
+  // workspace store and owns any PID/state files.
+  constructor(workspaceId: string, _workspacePath?: string, _metadataPath?: string) {
     this.workspaceId = workspaceId;
-    this.workspacePath = workspacePath;
-    this.metadataPath = metadataPath;
   }
 
   /** Set callback for state changes. */
@@ -233,83 +183,79 @@ export class ScriptProcessManager {
     this.onOutput = cb;
   }
 
-  /** Start a script. Creates the managed entry if needed. */
+  /**
+   * Start a script through the daemon. Fire-and-forget: the async work (register
+   * with the daemon if needed, then `script.start`) runs in the background so
+   * the sync-style call sites in `scripts.ipc.ts` and `ws-script-api.ts` keep
+   * working. Errors surface via the runtime-state callback.
+   */
   start(script: WorkspaceScript): void {
     let managed = this.scripts.get(script.id);
+    if (managed && managed.state.status === 'running') {
+      logger.warn(`[Scripts] Script "${script.name}" is already running`, { scriptId: script.id });
+      return;
+    }
     if (managed) {
-      if (managed.state.status === 'running') {
-        logger.warn(`[Scripts] Script "${script.name}" is already running`, { scriptId: script.id });
-        return;
+      // Local def may differ from daemon; capture the latest and let the
+      // daemon-sync path re-create if it has changed.
+      if (!scriptDefsEqual(managed.script, script)) {
+        managed.dirty = true;
       }
       managed.script = script;
-      managed.stoppedByUser = false;
     } else {
       managed = this.createManagedScript(script);
       this.scripts.set(script.id, managed);
     }
-    this.spawnProcess(managed);
+    managersByScriptId.set(script.id, this);
+    void this.startAsync(managed);
   }
 
-  /** Stop a running script. Graceful: SIGTERM → 5s → SIGKILL. */
+  /** Stop a running script via the daemon. */
   async stop(scriptId: string): Promise<void> {
     const managed = this.scripts.get(scriptId);
     if (!managed) return;
-
-    // Cancel pending restart
-    if (managed.restartTimer) {
-      clearTimeout(managed.restartTimer);
-      managed.restartTimer = null;
+    try {
+      await ensureSubscription();
+      await getBackendClient().request('script.stop', { scriptId });
+    } catch (error) {
+      logger.warn('[Scripts] script.stop failed', {
+        scriptId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-    managed.stoppedByUser = true;
-
-    if (managed.state.status !== 'running' || !managed.process) {
-      managed.state.status = 'idle';
-      this.emitStateChange(managed);
-      return;
-    }
-
-    const pid = managed.process.pid;
-    if (!pid) return;
-
-    logger.info(`[Scripts] Stopping "${managed.script.name}" (PID: ${pid})`);
-    killProcessTree(pid, 'SIGTERM');
-
-    managed.killTimer = setTimeout(() => {
-      managed.killTimer = null;
-      if (managed.process && !managed.process.killed) {
-        logger.warn(`[Scripts] Force-killing "${managed.script.name}"`);
-        const killPid = managed.process.pid;
-        if (killPid) killProcessTree(killPid, 'SIGKILL');
-      }
-    }, GRACEFUL_SHUTDOWN_TIMEOUT_MS);
   }
 
-  /** Update the in-memory script definition for a managed script. */
+  /** Update the in-memory script definition; marks it for daemon re-sync. */
   updateDefinition(scriptId: string, updatedScript: WorkspaceScript): void {
     const managed = this.scripts.get(scriptId);
-    if (managed) {
-      managed.script = updatedScript;
+    if (!managed) return;
+    if (!scriptDefsEqual(managed.script, updatedScript)) {
+      managed.dirty = true;
     }
+    managed.script = updatedScript;
   }
 
-  /** Restart a script (stop then start). */
+  /** Restart a script (stop → start). Uses the daemon's `script.restart` when
+   *  the local def matches; otherwise stops, re-syncs the definition, restarts. */
   async restart(scriptId: string): Promise<void> {
     const managed = this.scripts.get(scriptId);
     if (!managed) return;
-
-    await this.stop(scriptId);
-    // Wait for exit
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        if (managed.state.status !== 'running') resolve();
-        else setTimeout(check, 100);
-      };
-      check();
-    });
-
-    managed.stoppedByUser = false;
-    managed.state.restartCount = 0;
-    this.spawnProcess(managed);
+    try {
+      await ensureSubscription();
+      if (managed.dirty || !managed.registered) {
+        await getBackendClient()
+          .request('script.stop', { scriptId })
+          .catch(() => undefined);
+        await this.ensureRegistered(managed);
+        await getBackendClient().request('script.start', { scriptId });
+      } else {
+        await getBackendClient().request('script.restart', { scriptId });
+      }
+    } catch (error) {
+      logger.error('[Scripts] script.restart failed', error as Error);
+      managed.state.error = error instanceof Error ? error.message : String(error);
+      this.emitStateChange(managed);
+    }
   }
 
   /** Get runtime state. */
@@ -327,30 +273,30 @@ export class ScriptProcessManager {
     return Array.from(this.scripts.keys());
   }
 
-  /** Remove a script from management. */
+  /** Remove a script from management. Also removes it from the daemon. */
   async remove(scriptId: string): Promise<void> {
     const managed = this.scripts.get(scriptId);
     if (!managed) return;
-    if (managed.state.status === 'running') await this.stop(scriptId);
+    try {
+      await getBackendClient().request('script.remove', { scriptId });
+    } catch (error) {
+      // Not-found is fine — the daemon may never have seen this script.
+      logger.debug('[Scripts] script.remove ignored', {
+        scriptId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     managed.buffer.dispose();
     this.scripts.delete(scriptId);
-    this.removePidEntry(scriptId);
+    managersByScriptId.delete(scriptId);
   }
 
-  /** Clean up stale PIDs on startup. Cannot reliably verify PID ownership cross-platform,
-   *  so we only remove entries from the PID file without killing processes. */
+  /**
+   * No-op retained for API compatibility. Cross-session PID reconciliation now
+   * lives in the daemon (PROTOCOL §5.8); the FE no longer owns a PID file.
+   */
   cleanupStalePids(): void {
-    const pidFile = this.readPidFile();
-    if (!pidFile || pidFile.entries.length === 0) return;
-
-    logger.info(`[Scripts] Clearing ${pidFile.entries.length} stale PID entries (not killing — cannot verify PID ownership)`);
-    for (const entry of pidFile.entries) {
-      if (this.isProcessAlive(entry.pid)) {
-        logger.warn(`[Scripts] PID ${entry.pid} (script: ${entry.scriptId}) is still alive but may have been reused by another process — skipping kill`);
-      }
-    }
-    // Clear the PID file without killing
-    this.writePidFile({ entries: [] });
+    // Intentionally empty — the daemon owns process lifecycle.
   }
 
   /** Dispose all scripts and clean up. */
@@ -363,7 +309,31 @@ export class ScriptProcessManager {
   }
 
   // ==========================================================================
-  // Private Methods
+  // Daemon-facing helpers
+  // ==========================================================================
+
+  /** Callback invoked by the module-level dispatcher for `script:state`. */
+  handleStateEvent(scriptId: string, state: ScriptRuntimeState): void {
+    const managed = this.scripts.get(scriptId);
+    if (!managed) return;
+    // Flush any buffered output before an exit transition so `stoppedAt`
+    // consumers see the final lines first (mirrors the pre-daemon behaviour).
+    if (state.status === 'exited') {
+      managed.buffer.flush();
+    }
+    managed.state = state;
+    this.emitStateChange(managed);
+  }
+
+  /** Callback invoked by the module-level dispatcher for `script:output`. */
+  handleOutputEvent(scriptId: string, chunk: string): void {
+    const managed = this.scripts.get(scriptId);
+    if (!managed || !chunk) return;
+    managed.buffer.append(chunk, 'stdout');
+  }
+
+  // ==========================================================================
+  // Private helpers
   // ==========================================================================
 
   private createManagedScript(script: WorkspaceScript): ManagedScript {
@@ -373,202 +343,53 @@ export class ScriptProcessManager {
         this.onOutput(script.id, lines);
       }
     });
-
     return {
       script,
-      state: {
-        status: 'idle',
-        restartCount: 0,
-      },
-      process: null,
+      state: { status: 'idle', restartCount: 0 },
       buffer,
-      restartTimer: null,
-      stoppedByUser: false,
-      killTimer: null,
-      processStartTime: null,
+      dirty: true,
+      registered: false,
     };
   }
 
-  private spawnProcess(managed: ManagedScript): void {
+  /**
+   * Ensure the daemon holds the current definition for this script. Calls
+   * `script.create` (which acts as an upsert on the daemon side) whenever we
+   * have not yet registered the script, or the definition has changed since
+   * the last sync.
+   */
+  private async ensureRegistered(managed: ManagedScript): Promise<void> {
+    if (managed.registered && !managed.dirty) return;
     const { script } = managed;
-    const shell = findValidShell();
-
-    // Clear stale detected URL so a fresh run can detect a new one
-    managed.state.detectedUrl = undefined;
-
-    // Resolve cwd: script.cwd is relative to workspace repo root
-    const cwd = script.cwd
-      ? path.resolve(this.workspacePath, script.cwd)
-      : this.workspacePath;
-
-    // Validate cwd stays within workspace root to prevent path traversal
-    const normalizedCwd = path.resolve(cwd);
-    const normalizedWorkspace = path.resolve(this.workspacePath);
-    if (!normalizedCwd.startsWith(normalizedWorkspace + path.sep) && normalizedCwd !== normalizedWorkspace) {
-      const errMsg = `Script "${script.name}" cwd escapes workspace root: ${script.cwd}`;
-      logger.error(`[Scripts] ${errMsg}`);
-      managed.state.status = 'exited';
-      managed.state.error = errMsg;
-      this.emitStateChange(managed);
-      return;
-    }
-
-    // Build environment
-    const env = createShellEnv({
-      FORCE_COLOR: '1',
-      TERM: 'xterm-256color',
-      ...script.env,
-    });
-
-    // Build shell args based on detected shell type
-    const shellArgs = getShellArgs(shell, script.command);
-
-    logger.info(`[Scripts] Spawning "${script.name}": ${shell} [command: ${script.command}]`, {
-      cwd,
+    const params: Record<string, unknown> = {
+      workspaceId: this.workspaceId,
       scriptId: script.id,
+      name: script.name,
+      command: script.command,
       mode: script.mode,
-    });
+    };
+    if (script.cwd) params.cwd = script.cwd;
+    if (script.env && Object.keys(script.env).length > 0) params.env = script.env;
+    if (script.category) params.category = script.category;
+    if (script.autoStart !== undefined) params.autoStart = script.autoStart;
+    await getBackendClient().request('script.create', params);
+    managed.registered = true;
+    managed.dirty = false;
+  }
 
+  private async startAsync(managed: ManagedScript): Promise<void> {
     try {
-      const child = spawn(shell, shellArgs, {
-        cwd,
-        env: env as Record<string, string>,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-        detached: false,
-      });
-
-      managed.process = child;
-      managed.processStartTime = Date.now();
-      managed.state.status = 'running';
-      managed.state.pid = child.pid;
-      managed.state.startedAt = new Date().toISOString();
-      managed.state.exitCode = undefined;
-      managed.state.stoppedAt = undefined;
-      managed.state.error = undefined;
-
-      // Write PID file
-      if (child.pid) {
-        this.addPidEntry(script.id, child.pid, managed.processStartTime);
-      }
-
-      this.emitStateChange(managed);
-
-      // Handle stdin EPIPE (child exits before consuming input)
-      if (child.stdin) {
-        child.stdin.on('error', (error) => {
-          const msg = error instanceof Error ? error.message : String(error);
-          if (!msg.includes('EPIPE')) {
-            logger.error(`[Scripts] Stdin error for "${script.name}":`, error);
-          }
-        });
-      }
-
-      // Capture stdout
-      child.stdout?.on('data', (data: Buffer) => {
-        const text = data.toString();
-        managed.buffer.append(text, 'stdout');
-        this.detectUrl(managed, text);
-      });
-
-      // Capture stderr
-      child.stderr?.on('data', (data: Buffer) => {
-        const text = data.toString();
-        managed.buffer.append(text, 'stderr');
-        this.detectUrl(managed, text);
-      });
-
-      // Handle exit
-      child.on('exit', (code, signal) => {
-        this.handleExit(managed, code, signal);
-      });
-
-      child.on('error', (error) => {
-        logger.error(`[Scripts] Process error for "${script.name}":`, error);
-        managed.state.status = 'exited';
-        managed.state.error = error.message;
-        managed.state.stoppedAt = new Date().toISOString();
-        managed.process = null;
-        this.removePidEntry(script.id);
-        this.emitStateChange(managed);
-      });
+      await ensureSubscription();
+      await this.ensureRegistered(managed);
+      await getBackendClient().request('script.start', { scriptId: managed.script.id });
     } catch (error) {
-      logger.error(`[Scripts] Failed to spawn "${script.name}":`, error as Error);
-      managed.state.status = 'exited';
-      managed.state.error = (error as Error).message;
-      this.emitStateChange(managed);
-    }
-  }
-
-  private handleExit(managed: ManagedScript, code: number | null, signal: string | null): void {
-    const { script } = managed;
-
-    // Clear kill timer if set
-    if (managed.killTimer) {
-      clearTimeout(managed.killTimer);
-      managed.killTimer = null;
-    }
-
-    // Flush any pending output before emitting exit state
-    managed.buffer.flush();
-
-    managed.process = null;
-    managed.state.status = 'exited';
-    managed.state.exitCode = code;
-    managed.state.stoppedAt = new Date().toISOString();
-    this.removePidEntry(script.id);
-
-    logger.info(`[Scripts] "${script.name}" exited`, {
-      code,
-      signal,
-      stoppedByUser: managed.stoppedByUser,
-      mode: script.mode,
-    });
-
-    this.emitStateChange(managed);
-
-    // Auto-restart logic for service mode
-    const runDuration = managed.processStartTime ? Date.now() - managed.processStartTime : 0;
-    const tooFast = runDuration < 2000; // Less than 2 seconds = likely config error
-
-    if (tooFast && script.mode === 'service' && !managed.stoppedByUser) {
-      managed.buffer.addSeparator(
-        `Exited too quickly (${runDuration}ms) — not restarting. Check your configuration.`,
-      );
-      managed.buffer.flush();
-    } else if (
-      script.mode === 'service' &&
-      !managed.stoppedByUser &&
-      managed.state.restartCount < AUTO_RESTART_MAX_RETRIES
-    ) {
-      managed.state.restartCount++;
-      logger.info(
-        `[Scripts] Auto-restarting "${script.name}" (attempt ${managed.state.restartCount}/${AUTO_RESTART_MAX_RETRIES})`,
-      );
-
-      managed.restartTimer = setTimeout(() => {
-        managed.restartTimer = null;
-        // Double-check stoppedByUser hasn't been set during the delay
-        if (!managed.stoppedByUser) {
-          managed.buffer.addSeparator(
-            `Restarting (attempt ${managed.state.restartCount}/${AUTO_RESTART_MAX_RETRIES})`,
-          );
-          this.spawnProcess(managed);
-        }
-      }, AUTO_RESTART_DELAY_MS);
-    }
-  }
-
-  private detectUrl(managed: ManagedScript, text: string): void {
-    if (managed.state.detectedUrl) return; // Already detected
-    if (managed.script.mode !== 'service') return; // Only for services
-
-    // Strip ANSI escape codes before matching
-    const clean = text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
-    const match = clean.match(URL_REGEX);
-    if (match) {
-      managed.state.detectedUrl = match[0];
-      logger.info(`[Scripts] Detected URL for "${managed.script.name}": ${match[0]}`);
+      logger.error('[Scripts] script.start failed', error as Error);
+      managed.state = {
+        ...managed.state,
+        status: 'exited',
+        error: error instanceof Error ? error.message : String(error),
+        stoppedAt: new Date().toISOString(),
+      };
       this.emitStateChange(managed);
     }
   }
@@ -578,56 +399,18 @@ export class ScriptProcessManager {
       this.onStateChange(managed.script.id, { ...managed.state });
     }
   }
+}
 
-  // ==========================================================================
-  // PID File Management
-  // ==========================================================================
-
-  private get pidFilePath(): string {
-    return path.join(this.metadataPath, PID_FILE_NAME);
-  }
-
-  private readPidFile(): PidFile | null {
-    try {
-      const raw = fs.readFileSync(this.pidFilePath, 'utf-8');
-      return JSON.parse(raw) as PidFile;
-    } catch {
-      return null;
-    }
-  }
-
-  private writePidFile(pidFile: PidFile): void {
-    try {
-      fs.mkdirSync(path.dirname(this.pidFilePath), { recursive: true });
-      fs.writeFileSync(this.pidFilePath, JSON.stringify(pidFile, null, 2), 'utf-8');
-    } catch (error) {
-      logger.error('[Scripts] Failed to write PID file:', error as Error);
-    }
-  }
-
-  private addPidEntry(scriptId: string, pid: number, startTime: number): void {
-    const pidFile = this.readPidFile() || { entries: [] };
-    // Remove existing entry for this script
-    pidFile.entries = pidFile.entries.filter((e) => e.scriptId !== scriptId);
-    pidFile.entries.push({ scriptId, pid, startTime });
-    this.writePidFile(pidFile);
-  }
-
-  private removePidEntry(scriptId: string): void {
-    const pidFile = this.readPidFile();
-    if (!pidFile) return;
-    pidFile.entries = pidFile.entries.filter((e) => e.scriptId !== scriptId);
-    this.writePidFile(pidFile);
-  }
-
-  private isProcessAlive(pid: number): boolean {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  }
+function scriptDefsEqual(a: WorkspaceScript, b: WorkspaceScript): boolean {
+  return (
+    a.name === b.name &&
+    a.command === b.command &&
+    a.mode === b.mode &&
+    a.cwd === b.cwd &&
+    a.category === b.category &&
+    a.autoStart === b.autoStart &&
+    JSON.stringify(a.env ?? null) === JSON.stringify(b.env ?? null)
+  );
 }
 
 // ============================================================================
@@ -639,6 +422,10 @@ const instances = new Map<string, ScriptProcessManager>();
 /**
  * Get the ScriptProcessManager for a workspace.
  * Creates a new instance if one doesn't exist.
+ *
+ * The `workspacePath` / `metadataPath` parameters are accepted for backwards
+ * compatibility with existing call sites but are ignored — the daemon resolves
+ * the workspace root from its store.
  */
 export function getScriptProcessManager(
   workspaceId: string,
@@ -647,12 +434,6 @@ export function getScriptProcessManager(
 ): ScriptProcessManager {
   let instance = instances.get(workspaceId);
   if (!instance) {
-    if (!workspacePath || !metadataPath) {
-      throw new Error(
-        `ScriptProcessManager for workspace "${workspaceId}" not initialized. ` +
-          'Provide workspacePath and metadataPath on first call.',
-      );
-    }
     instance = new ScriptProcessManager(workspaceId, workspacePath, metadataPath);
     instances.set(workspaceId, instance);
     logger.info(`[Scripts] Created ScriptProcessManager for workspace ${workspaceId}`);
@@ -680,4 +461,22 @@ export async function disposeAllScriptProcessManagers(): Promise<void> {
   for (const id of ids) {
     await disposeScriptProcessManager(id);
   }
+  // Tear down the shared event subscription when nothing needs it anymore.
+  if (subscriptionId) {
+    try {
+      await getBackendClient().request('events.unsubscribe', { subscriptionId });
+    } catch {
+      // Best-effort cleanup on shutdown.
+    }
+    subscriptionId = undefined;
+  }
+  if (notificationListener) {
+    try {
+      getBackendClient().off('notification', notificationListener);
+    } catch {
+      // Client may already be torn down.
+    }
+    notificationListener = undefined;
+  }
+  subscribePromise = undefined;
 }

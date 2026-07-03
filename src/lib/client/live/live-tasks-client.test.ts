@@ -187,26 +187,65 @@ describe("LiveTasksClient mutations (fake transport)", () => {
     });
   });
 
-  // ---- §11.4-D: rev normalization (inert; read-only carry-through) ----------
+  // ---- PROTOCOL §5.4: task.list wire contract ------------------------------
 
-  it("list carries a numeric rev from the daemon note onto the WorkspaceTask", async () => {
+  it("list issues a `task.list` request with the workspaceId param (no client task derivation)", async () => {
     mockedRequest.mockResolvedValueOnce({
-      notes: [{ id: "note-1", title: "T", metadata: { task: { status: "not_started" } }, rev: 3 }],
+      tasks: [],
+      stats: { total: 0, completed: 0, inProgress: 0 },
     });
     const client = new LiveTasksClient();
 
-    const [task] = await client.list("ws-1");
-    expect(task.rev).toBe(3);
+    await client.list("ws-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("task.list", { workspaceId: "ws-1" });
+  });
+
+  it("list returns the BE-provided `stats` aggregate verbatim from the wire", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      tasks: [{ id: "t1", title: "T1", status: "complete" }],
+      // PROTOCOL §5.4 shape — `total` excludes cancelled, `complete` counts as
+      // completed, `in_progress` + `review_required` count as inProgress.
+      stats: { total: 4, completed: 1, inProgress: 2 },
+    });
+    const client = new LiveTasksClient();
+
+    const { tasks, stats } = await client.list("ws-1");
+
+    expect(tasks).toEqual([{ id: "t1", title: "T1", status: "complete" }]);
+    expect(stats).toEqual({ total: 4, completed: 1, inProgress: 2 });
+  });
+
+  it("list defaults to the zero aggregate when the daemon omits `stats`", async () => {
+    mockedRequest.mockResolvedValueOnce({ tasks: [] });
+    const client = new LiveTasksClient();
+
+    const { stats } = await client.list("ws-1");
+    expect(stats).toEqual({ total: 0, completed: 0, inProgress: 0 });
+  });
+
+  // ---- §11.4-D: rev normalization (inert; read-only carry-through) ----------
+
+  it("list carries a numeric rev from the daemon task entity onto the WorkspaceTask", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      tasks: [{ id: "note-1", title: "T", status: "not_started", rev: 3 }],
+      stats: { total: 0, completed: 0, inProgress: 0 },
+    });
+    const client = new LiveTasksClient();
+
+    const { tasks } = await client.list("ws-1");
+    expect(tasks[0].rev).toBe(3);
   });
 
   it("list leaves rev undefined when the daemon omits it", async () => {
     mockedRequest.mockResolvedValueOnce({
-      notes: [{ id: "note-1", title: "T", metadata: { task: { status: "not_started" } } }],
+      tasks: [{ id: "note-1", title: "T", status: "not_started" }],
+      stats: { total: 0, completed: 0, inProgress: 0 },
     });
     const client = new LiveTasksClient();
 
-    const [task] = await client.list("ws-1");
-    expect(task.rev).toBeUndefined();
+    const { tasks } = await client.list("ws-1");
+    expect(tasks[0].rev).toBeUndefined();
   });
 
   // ---- §11.4-D: expectedVersion forwarding (only when defined) --------------

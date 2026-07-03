@@ -34,8 +34,9 @@ describe("appClient seam (mock-delegated domains)", () => {
     unsubscribe();
   });
 
-  it("accepts mock-delegated mutations as no-op successes", async () => {
+  it("accepts FE-only setUserPreferences as a no-op success on the live settings client", async () => {
+    // UserPreferences are FE-only per PROTOCOL §5.12 — the live client accepts
+    // the call but does not forward it to the daemon.
     expect(await appClient.settings.setUserPreferences({})).toEqual({ success: true });
-    expect(await appClient.terminals.create("ws-mock-1")).toEqual({ success: true });
   });
 });

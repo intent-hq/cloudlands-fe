@@ -280,21 +280,21 @@ describe('Type Guards', () => {
     expect(isAudioBlock({ type: 'audio' })).toBe(false);
   });
 
-  it('hasTextContent should check for text', () => {
+  it('hasTextContent reads canonical PROTOCOL §7 `text` only (no legacy `content` alias)', () => {
     expect(hasTextContent({ type: 'text', text: 'hello' })).toBe(true);
-    expect(hasTextContent({ type: 'text', content: 'hello' })).toBe(true);
+    expect(hasTextContent({ type: 'text', content: 'hello' })).toBe(false);
     expect(hasTextContent({ type: 'code' })).toBe(false);
   });
 
-  it('getTextContent should extract text', () => {
+  it('getTextContent reads canonical PROTOCOL §7 `text` only (no legacy `content` alias)', () => {
     expect(getTextContent({ type: 'text', text: 'hello' })).toBe('hello');
-    expect(getTextContent({ type: 'text', content: 'world' })).toBe('world');
+    expect(getTextContent({ type: 'text', content: 'world' })).toBeUndefined();
     expect(getTextContent({ type: 'code' })).toBeUndefined();
   });
 
-  it('isErrorBlock should identify error blocks', () => {
+  it('isErrorBlock reads canonical PROTOCOL §7 `is_error` only (no legacy `isError` alias)', () => {
     expect(isErrorBlock({ type: 'tool_result', is_error: true })).toBe(true);
-    expect(isErrorBlock({ type: 'tool_result', isError: true })).toBe(true);
+    expect(isErrorBlock({ type: 'tool_result', isError: true })).toBe(false);
     expect(isErrorBlock({ type: 'tool_result' })).toBe(false);
   });
 
@@ -311,17 +311,48 @@ describe('Type Guards', () => {
   });
 });
 
-describe('Migration Utilities', () => {
-  it('migrateFromLegacy should handle legacy format', () => {
-    const legacy = { type: 'text', content: 'hello' };
-    const migrated = migrateFromLegacy(legacy);
+describe('Strict Intake Utilities (AUDIT-P1-5)', () => {
+  it('migrateFromLegacy passes canonical PROTOCOL §7 text blocks through unchanged', () => {
+    const canonical = { type: 'text', text: 'hello' };
+    const migrated = migrateFromLegacy(canonical);
     expect(migrated.text).toBe('hello');
+    expect(migrated.type).toBe('text');
+  });
+
+  it('migrateFromLegacy throws when text block uses legacy `content` alias', () => {
+    expect(() => migrateFromLegacy({ type: 'text', content: 'hello' })).toThrow(/content/);
+  });
+
+  it('migrateFromLegacy throws when tool_use block uses legacy `toolName` alias', () => {
+    expect(() => migrateFromLegacy({ type: 'tool_use', toolName: 'test', input: {} })).toThrow(
+      /toolName/,
+    );
+  });
+
+  it('migrateFromLegacy throws when tool_result block uses legacy `toolCallId` alias', () => {
+    expect(() =>
+      migrateFromLegacy({ type: 'tool_result', toolCallId: 't1' }),
+    ).toThrow(/tool_use_id/);
+  });
+
+  it('migrateFromLegacy throws when tool_result block uses legacy `isError` alias', () => {
+    expect(() =>
+      migrateFromLegacy({ type: 'tool_result', tool_use_id: 't1', isError: true }),
+    ).toThrow(/isError/);
+  });
+
+  it('migrateFromLegacy throws when `type` discriminator is missing', () => {
+    expect(() => migrateFromLegacy({ text: 'hello' })).toThrow(/type/);
   });
 
   it('convertFromACP should convert ACP format', () => {
     const acp = { type: 'text', text: 'hello' };
     const converted = convertFromACP(acp);
     expect(converted.text).toBe('hello');
+  });
+
+  it('convertFromACP throws when the ACP `type` discriminator is missing', () => {
+    expect(() => convertFromACP({ text: 'hello' })).toThrow(/type/);
   });
 
   it('convertFromACP should convert proposal resources to proposal blocks', () => {
@@ -349,15 +380,23 @@ describe('Migration Utilities', () => {
     expect(acp.text).toBe('hello');
   });
 
-  it('migrateContentBlocks should batch migrate', () => {
+  it('migrateContentBlocks passes canonical PROTOCOL §7 blocks through unchanged', () => {
     const blocks = [
-      { type: 'text', content: 'hello' },
-      { type: 'tool_use', toolName: 'test', input: {} },
+      { type: 'text', text: 'hello' },
+      { type: 'tool_use', name: 'test', input: {} },
     ];
     const migrated = migrateContentBlocks(blocks);
     expect(migrated).toHaveLength(2);
     expect(migrated[0].text).toBe('hello');
     expect(migrated[1].name).toBe('test');
+  });
+
+  it('migrateContentBlocks throws on the first divergent block (no silent drop)', () => {
+    const blocks = [
+      { type: 'text', text: 'hello' },
+      { type: 'tool_use', toolName: 'test', input: {} },
+    ];
+    expect(() => migrateContentBlocks(blocks)).toThrow(/toolName/);
   });
 
   it('migrateFromLegacy should preserve proposal fields', () => {

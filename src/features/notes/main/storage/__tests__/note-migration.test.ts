@@ -8,8 +8,6 @@ import {
   expect,
   beforeEach,
   afterEach,
-  beforeAll,
-  afterAll,
 } from 'vitest';
 import { promises as fs } from 'fs';
 import {
@@ -22,7 +20,6 @@ import {
 } from '../note-storage-paths';
 import { FolderBasedNotesRepository } from '../folder-notes.repository';
 import { crdtDocumentManager } from '../crdt-document-manager';
-import { setGitEnabled } from '../git-version.service';
 import { parseFrontmatter } from '../frontmatter';
 import {
   ContentType,
@@ -68,15 +65,6 @@ function createLegacyNoteJson(noteId: NoteId): Note {
 
 describe('Note Migration', () => {
   let notesDir: string;
-
-  // Disable git for tests
-  beforeAll(() => {
-    setGitEnabled(false);
-  });
-
-  afterAll(() => {
-    setGitEnabled(true);
-  });
 
   beforeEach(async () => {
     notesDir = WorkspaceConfig.paths.notes(TEST_WORKSPACE_ID);

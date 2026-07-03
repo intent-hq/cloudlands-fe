@@ -14,11 +14,37 @@ import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { hostExec } from '../../../shared/main/host-exec';
 import SSHConfig, { LineType } from 'ssh-config';
 
-const execAsync = promisify(exec);
+interface ExecError extends Error {
+  code?: number;
+  stdout?: string;
+  stderr?: string;
+}
+
+/**
+ * SSH-agent / key discovery probes are routed through the daemon's `host.exec`
+ * seam (PROTOCOL.md §5.14) — the FE no longer spawns `child_process`. The
+ * wrapper preserves the legacy `promisify(exec)` contract call-sites rely on:
+ * resolves `{ stdout, stderr }` on exit 0; on non-zero exit throws an Error
+ * carrying `.code` / `.stdout` / `.stderr` so degrade-on-failure branches
+ * (notably `ssh-add -l` exit 1 when the agent has no identities) still work.
+ */
+async function execAsync(command: string): Promise<{ stdout: string; stderr: string }> {
+  const [shellCmd, shellFlag] =
+    process.platform === 'win32' ? ['cmd.exe', '/c'] : ['/bin/sh', '-c'];
+  const result = await hostExec(shellCmd, { args: [shellFlag, command] });
+  if (result.exitCode !== 0) {
+    const err = new Error(`Command failed: ${command}\n${result.stderr}`) as ExecError;
+    err.stdout = result.stdout;
+    err.stderr = result.stderr;
+    err.code = result.exitCode;
+    throw err;
+  }
+  return { stdout: result.stdout, stderr: result.stderr };
+}
+
 const logger = new Logger('SSH-IPC');
 
 // ==================== SSH Config Parsing ====================
@@ -414,9 +440,16 @@ async function getSSHAgentStatus(): Promise<SSHAgentStatus> {
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    // With `ssh-add -l 2>&1` the "no identities" line lands on stdout, so the
+    // wrapper's `err.stderr` (and hence `err.message`) is empty on exit 1 —
+    // also inspect `.stdout` from the reconstructed exec contract.
+    const errorStdout =
+      typeof (error as { stdout?: unknown })?.stdout === 'string'
+        ? ((error as { stdout: string }).stdout)
+        : '';
 
     // ssh-add -l exits with code 1 when agent has no identities
-    if (errorMessage.includes('no identities')) {
+    if (errorMessage.includes('no identities') || errorStdout.includes('no identities')) {
       return {
         available: true,
         socketPath,

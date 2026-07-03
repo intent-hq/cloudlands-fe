@@ -26,6 +26,7 @@
   import HandleDropOverlay from './HandleDropOverlay.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
+  import { appClient } from '$lib/client';
   import { selectIsTerminalOverlayOpen } from '$store/renderer/slices/terminals/terminals-selectors';
   import {
   get,
@@ -67,7 +68,7 @@
   selectRestoreStatus,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { focusBrowserTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-  import { closeActiveTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
+  import { closeActiveTerminalRequested, removeTerminal } from '$store/renderer/slices/terminals/terminals-slice';
   import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
   import { renameAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -220,20 +221,29 @@
     return unsubscribe;
   });
 
-  // Handler to create a new terminal
+  // Handler to create a new terminal via the daemon (`terminal.create`,
+  // PROTOCOL §5.13). The daemon assigns the terminalId; we surface it as
+  // `MutationResult.id` from the live client.
   async function handleCreateTerminal() {
     try {
-      const result = await invoke<any>('terminal:professional:create', {
+      const result = await appClient.terminals.create({
         workspaceId,
         cols: 80,
         rows: 24,
       });
 
-      if (result.success && result.terminalId) {
-        logger.info('Created new terminal', { terminalId: result.terminalId });
+      if (result.success && result.id) {
+        logger.info('Created new terminal', { terminalId: result.id });
+
+        // Clear any stale Redux entry for this id before saving fresh metadata.
+        // `saveTerminalMetadata` spreads the existing entry to preserve
+        // customName across remounts, but for a freshly daemon-assigned id
+        // (e.g. after a daemon restart that resets the id counter) a stale
+        // customName from a previously renamed terminal must not carry over.
+        appStore.dispatch(removeTerminal(workspaceId, result.id));
 
         // Save terminal metadata
-        terminalManager.saveTerminalMetadata(result.terminalId, workspaceId, 'Terminal');
+        terminalManager.saveTerminalMetadata(result.id, workspaceId, 'Terminal');
 
         // Reload terminals to include the new one
         loadTerminals(workspaceId);
@@ -242,12 +252,14 @@
         layoutManager.openTab({
           type: 'terminal',
           title: 'Terminal',
-          terminalId: result.terminalId,
+          terminalId: result.id,
           closable: true,
         });
 
         // Track terminal creation
         track('Opened Terminal', { workspace_id: workspaceId, source: 'tab-bar' });
+      } else if (!result.success) {
+        logger.error('Failed to create terminal', { error: result.error });
       }
     } catch (error) {
       logger.error('Failed to create terminal', error);

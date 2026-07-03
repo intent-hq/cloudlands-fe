@@ -2,17 +2,20 @@
  * Droid ACP probe
  *
  * Droid has no `models`/`auth status` CLI subcommand, so readiness is gauged
- * by an ACP handshake: spawn `droid exec --output-format acp`, send
- * `initialize` + `session/new` over stdio JSON-RPC, and inspect the response.
- * A session/new result with a non-empty model list means droid is
- * authenticated and usable. This single probe powers both the availability
- * auth check and dynamic model listing.
+ * by an ACP handshake: spawn `droid exec --output-format acp` through the
+ * daemon (`host.execStream`, PROTOCOL.md §5.14), send `initialize` +
+ * `session/new` over stdio JSON-RPC, and inspect the response. A session/new
+ * result with a non-empty model list means droid is authenticated and usable.
+ * This single probe powers both the availability auth check and dynamic model
+ * listing.
  */
 
-import { spawn } from 'child_process';
 import * as os from 'os';
 import { Logger } from '../../../shared/logger';
-import { killChildProcessTree } from '../../../shared/main/process-tree-kill';
+import {
+  startAcpChildStream,
+  type AcpChildStream,
+} from '../../../shared/main/acp-child-stream';
 
 const logger = new Logger('DroidAcpProbe');
 
@@ -92,7 +95,7 @@ type JsonRpcMessage = {
   error?: { code?: number; message?: string };
 };
 
-function createJsonRpcRequester(child: ReturnType<typeof spawn>) {
+function createJsonRpcRequester(child: AcpChildStream) {
   let requestId = 0;
   let stdoutBuffer = '';
   const pending = new Map<
@@ -195,18 +198,15 @@ export async function probeDroidAcp(
   const cwd = options.cwd ?? os.homedir();
   const args = options.args ?? ['exec', '--output-format', 'acp'];
 
-  // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
-  const useShell = process.platform === 'win32';
-  const spawnCommand = useShell ? `"${cliPath}"` : cliPath;
-
-  let child: ReturnType<typeof spawn>;
+  // AUDIT-R1c: the droid ACP probe now spawns the CLI through the daemon
+  // (`host.execStream`, PROTOCOL.md §5.14). The daemon owns the process tree
+  // and honours cancel/timeout; the FE just drives the stdio JSON-RPC
+  // handshake through the returned handle.
+  let child: AcpChildStream;
   try {
-    child = spawn(spawnCommand, args, {
-      cwd,
-      env: { ...process.env },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: useShell,
-      windowsHide: true,
+    child = await startAcpChildStream(cliPath, {
+      args,
+      timeoutMs: timeoutMs + 2000,
     });
   } catch (e) {
     return { ok: false, models: [], error: (e as Error).message };
@@ -222,7 +222,7 @@ export async function probeDroidAcp(
       if (done) return;
       done = true;
       rpc.dispose();
-      killChildProcessTree(child);
+      child.kill();
       resolve(result);
     };
 

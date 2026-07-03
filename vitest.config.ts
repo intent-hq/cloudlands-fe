@@ -18,6 +18,9 @@ export default defineConfig(async () => {
         '**/dist/**',
         '**/build/**',
         '**/.{idea,git,cache,output,temp}/**',
+        // Exclude any untracked git-worktree dirs (e.g. .wt-commit-details/) so
+        // vitest doesn't double-collect their test files alongside the primary tree.
+        '**/.wt-*/**',
         '**/test/**', // Exclude Playwright tests directory
         '**/*.ct.spec.ts', // Exclude Playwright component tests
         '**/parallel-runner/**', // Exclude parallel-runner tests (separate project)
@@ -119,7 +122,6 @@ export default defineConfig(async () => {
         // Test-only stubs: avoid promisify(exec) at module load time (breaks jsdom)
         '$shared/git/git-env': path.resolve(__dirname, './src/__mocks__/git-env'),
         '$shared/main/async-utils': path.resolve(__dirname, './src/__mocks__/async-utils'),
-        '$shared/main/process-tree-kill': path.resolve(__dirname, './src/__mocks__/process-tree-kill'),
         // Test-only stub: lru_map module doesn't provide proper ESM exports
         'lru_map': path.resolve(__dirname, './src/__mocks__/lru_map'),
         // Test-only stub: @pierre/diffs/worker has lru_map ESM import issues

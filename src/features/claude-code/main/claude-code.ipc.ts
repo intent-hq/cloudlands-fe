@@ -6,10 +6,9 @@
 
 import { ipcMain } from 'electron';
 import * as os from 'os';
-import { spawn } from 'child_process';
 import { CLAUDE_CODE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
-import { killChildProcessTree } from '../../../shared/main/process-tree-kill';
+import { startAcpChildStream } from '../../../shared/main/acp-child-stream';
 import { resolveClaudeCodeCommand } from './claude-code-resolver';
 import { createProviderModelCache } from '../../../main/utils/provider-model-cache';
 
@@ -89,20 +88,21 @@ async function fetchClaudeCodeModelsViaAcp(): Promise<ClaudeCodeModel[]> {
   const args = [...resolved.argsPrefix];
   const command = resolved.command;
 
-  // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
-  const useShell = process.platform === 'win32';
-  // On Windows with shell: true, quote the command path to handle spaces (e.g. C:\Users\John Doe\...)
-  const spawnCommand = useShell ? `"${command}"` : command;
+  // AUDIT-R1c: probe the claude-agent-acp CLI through the daemon
+  // (`host.execStream`, PROTOCOL.md §5.14). The daemon owns argv-based spawn
+  // (no shell), the process tree, and stream cancellation; the FE just drives
+  // the stdio JSON-RPC handshake through the returned handle.
+  let child: Awaited<ReturnType<typeof startAcpChildStream>>;
+  try {
+    child = await startAcpChildStream(command, { args, timeoutMs: 14000 });
+  } catch (e) {
+    logger.debug('Claude Code ACP stream failed to start', {
+      error: (e as Error).message,
+    });
+    return [];
+  }
 
   return await new Promise((resolve) => {
-    const child = spawn(spawnCommand, args, {
-      cwd: os.homedir(),
-      env: { ...process.env },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: useShell,
-      windowsHide: true,
-    });
-
     let buffer = '';
     let requestId = 0;
     let done = false;
@@ -110,11 +110,9 @@ async function fetchClaudeCodeModelsViaAcp(): Promise<ClaudeCodeModel[]> {
     const finish = (models: ClaudeCodeModel[]) => {
       if (done) return;
       done = true;
-      // CRITICAL: Kill the entire process tree, not just the parent npx/npm-exec process.
-      // child.kill() only sends SIGTERM to the direct child (npx), but the actual
-      // claude-agent-acp adapter runs as a grandchild and is left orphaned.
-      // This was causing massive memory leaks (80GB+) from accumulated orphan processes.
-      killChildProcessTree(child);
+      // The daemon owns the process tree behind `host.execStream`; `kill()`
+      // proxies to `host.execStream.cancel` which tears the tree down cleanly.
+      child.kill();
       resolve(models);
     };
 

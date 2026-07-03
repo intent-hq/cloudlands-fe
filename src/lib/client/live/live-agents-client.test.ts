@@ -19,29 +19,87 @@ const mockedRequest = vi.mocked(backendRequest);
 describe("LiveAgentsClient mutations (fake transport)", () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("create forwards agent.create, mapping prompt→behaviorPrompt + idempotencyKey", async () => {
-    mockedRequest.mockResolvedValueOnce({ id: "agent-1" });
+  it("create forwards agent.create with the widened P2-12a params and returns the normalized session", async () => {
+    // Daemon returns the full `AgentLite` projection (P2-12a widened §5.5).
+    // Unique id so the module-level agentWorkspaceIndex cache does not bleed
+    // into the sibling `send` tests below (which expect a cold cache).
+    mockedRequest.mockResolvedValueOnce({
+      agent: {
+        id: "agent-p212a-1",
+        workspaceId: "ws-p212a",
+        name: "widened",
+        model: "opus",
+        provider: "auggie",
+        status: "pending",
+        createdAt: "2026-06-30T00:00:00.000Z",
+        updatedAt: "2026-06-30T00:00:00.000Z",
+      },
+    });
     const client = new LiveAgentsClient();
 
     const request: AgentCreateRequest = {
-      workspaceId: "ws-1",
+      workspaceId: "ws-p212a",
       prompt: "do the thing",
       model: "opus",
       specialist: "implementor",
+      name: "widened",
+      agentId: "agent-p212a-1",
+      provider: "auggie",
+      agentType: "task-loop",
+      metadata: { tag: "unit" },
+      workspacePath: "/tmp/wid",
+      workspaceContext: { selection: "note:1" },
     };
-    const result = await client.create(request);
+    const session = await client.create(request);
 
-    expect(result).toEqual({ success: true });
+    expect(session.id).toBe("agent-p212a-1");
+    expect(session.workspaceId).toBe("ws-p212a");
+    expect(session.name).toBe("widened");
     expect(mockedRequest).toHaveBeenCalledWith(
       "agent.create",
       expect.objectContaining({
-        workspaceId: "ws-1",
+        workspaceId: "ws-p212a",
         model: "opus",
-        specialist: "implementor",
+        specialistId: "implementor",
         behaviorPrompt: "do the thing",
+        name: "widened",
+        agentId: "agent-p212a-1",
+        provider: "auggie",
+        agentType: "task-loop",
+        metadata: { tag: "unit" },
+        workspacePath: "/tmp/wid",
+        workspaceContext: { selection: "note:1" },
         idempotencyKey: expect.any(String),
       }),
     );
+  });
+
+  it("create omits absent optional params (backward-compat with the pre-P2-12a callers)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      agent: { id: "agent-p212a-2", workspaceId: "ws-p212a", status: "pending" },
+    });
+    const client = new LiveAgentsClient();
+
+    await client.create({ workspaceId: "ws-p212a" });
+
+    const params = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(params.workspaceId).toBe("ws-p212a");
+    expect(params.idempotencyKey).toEqual(expect.any(String));
+    // Every optional param stays off the wire when the caller didn't supply it.
+    for (const key of [
+      "model",
+      "specialistId",
+      "behaviorPrompt",
+      "name",
+      "agentId",
+      "provider",
+      "agentType",
+      "metadata",
+      "workspacePath",
+      "workspaceContext",
+    ]) {
+      expect(params).not.toHaveProperty(key);
+    }
   });
 
   it("send forwards agent.sendMessage with workspaceId + minted messageId", async () => {
@@ -122,6 +180,30 @@ describe("LiveAgentsClient mutations (fake transport)", () => {
     expect(await client.queue("agent-1", "later")).toEqual({ success: true });
   });
 
+  it("removeQueued forwards agent.removeQueuedMessage with PROTOCOL §5.5 params and folds the idempotent BE body into success", async () => {
+    // PROTOCOL §5.5: the daemon's agent.removeQueuedMessage ALWAYS returns
+    // `{ success: true }`, including when the messageId is unknown or the
+    // queue is empty. The seam folds that into the uniform MutationResult.
+    mockedRequest.mockResolvedValueOnce({ success: true });
+    const client = new LiveAgentsClient();
+
+    const result = await client.removeQueued("agent-1", "qm-1");
+    expect(result).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith("agent.removeQueuedMessage", {
+      agentId: "agent-1",
+      messageId: "qm-1",
+    });
+  });
+
+  it("removeQueued surfaces a transport failure as a non-success MutationResult (no throw)", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("ipc boom"));
+    const client = new LiveAgentsClient();
+
+    const result = await client.removeQueued("agent-1", "qm-1");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("ipc boom");
+  });
+
   it("setAvailability forwards agent.setAvailability with the boolean", async () => {
     mockedRequest.mockResolvedValueOnce({ id: "agent-1" });
     const client = new LiveAgentsClient();
@@ -152,6 +234,26 @@ describe("LiveAgentsClient mutations (fake transport)", () => {
     expect(mockedRequest).toHaveBeenCalledWith("agent.lock", { agentId: "agent-1", locked: true });
   });
 
+  it("delete forwards agent.delete with §5.5 params and folds the idempotent BE body into success", async () => {
+    // PROTOCOL §5.5: agent.delete takes `{ agentId }` (workspaceId optional, the
+    // daemon resolves it) and returns `{ success: true }` — idempotently, even
+    // when the agent is already gone. The seam forwards only `{ agentId }`.
+    mockedRequest.mockResolvedValueOnce({ success: true });
+    const client = new LiveAgentsClient();
+
+    expect(await client.delete("agent-1")).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith("agent.delete", { agentId: "agent-1" });
+  });
+
+  it("delete surfaces a transport failure as a non-success MutationResult (no throw)", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("delete boom"));
+    const client = new LiveAgentsClient();
+
+    const result = await client.delete("agent-1");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("delete boom");
+  });
+
   it("maps a daemon error to a failed MutationResult without throwing", async () => {
     // Use a fresh agentId so the module-level workspace cache is guaranteed to
     // miss; the resolver call resolves successfully, then agent.sendMessage
@@ -161,5 +263,72 @@ describe("LiveAgentsClient mutations (fake transport)", () => {
     const client = new LiveAgentsClient();
 
     expect(await client.send("agent-err", "x")).toEqual({ success: false, error: "agent busy" });
+  });
+});
+
+describe("LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("list carries isResponding/isWaitingOnTool/isWaitingForOtherAgents verbatim", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      agents: [
+        {
+          id: "agent-1",
+          workspaceId: "ws-1",
+          name: "A1",
+          status: "active",
+          isResponding: true,
+          isWaitingOnTool: true,
+          isWaitingForOtherAgents: false,
+          waitingForAgentIds: [],
+        },
+      ],
+    });
+    const client = new LiveAgentsClient();
+
+    const [agent] = await client.list("ws-1");
+    expect(agent).toMatchObject({
+      isResponding: true,
+      isWaitingOnTool: true,
+      isWaitingForOtherAgents: false,
+      waitingForAgentIds: [],
+    });
+  });
+
+  it("get carries the daemon activity flags verbatim", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      agent: {
+        id: "agent-1",
+        workspaceId: "ws-1",
+        name: "A1",
+        status: "idle",
+        isResponding: false,
+        isWaitingOnTool: false,
+        isWaitingForOtherAgents: true,
+        waitingForAgentIds: ["agent-child-1", "agent-child-2"],
+      },
+    });
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get("agent-1");
+    expect(agent).toMatchObject({
+      isResponding: false,
+      isWaitingOnTool: false,
+      isWaitingForOtherAgents: true,
+      waitingForAgentIds: ["agent-child-1", "agent-child-2"],
+    });
+  });
+
+  it("does not synthesize activity flags the daemon omits (no healing)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      agent: { id: "agent-1", workspaceId: "ws-1", name: "A1", status: "completed" },
+    });
+    const client = new LiveAgentsClient();
+
+    const agent = await client.get("agent-1");
+    expect(agent?.isResponding).toBeUndefined();
+    expect(agent?.isWaitingOnTool).toBeUndefined();
+    expect(agent?.isWaitingForOtherAgents).toBeUndefined();
+    expect(agent?.waitingForAgentIds).toBeUndefined();
   });
 });

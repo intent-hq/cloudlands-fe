@@ -100,7 +100,7 @@ describe('ExecutorManager', () => {
 
       expect(executor).toBeDefined();
       expect(executor.type).toBe('local');
-      expect(LocalExecutor).toHaveBeenCalledWith('/path/to/workspace');
+      expect(LocalExecutor).toHaveBeenCalledWith('/path/to/workspace', 'workspace-1');
     });
 
     it('should create a remote executor for remote workspaces', () => {

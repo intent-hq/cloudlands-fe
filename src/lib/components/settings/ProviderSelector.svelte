@@ -33,44 +33,33 @@
   AUGGIE_CHANNELS,
   PROVIDERS_CHANNELS,
 } from '$shared/ipc/channels';
-  import {
-  MINIMUM_AUGGIE_VERSION,
-  MINIMUM_NODE_VERSION,
-  type InstallErrorType,
-} from '$shared/constants/auggie';
+  import { MINIMUM_AUGGIE_VERSION } from '$shared/constants/auggie';
   import { createLogger } from '$lib/utils/client-logger';
   import { track } from '$lib/services/analytics';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
   faCheck,
   faCircleNotch,
-  faPaste,
   faTerminal,
   faXmark,
   faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
   import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
+  import AuggieInstructionsPanel from '$lib/components/AuggieInstructionsPanel.svelte';
   import Fa from 'svelte-fa';
-  import { slide } from 'svelte/transition';
   import { toast } from 'svelte-sonner';
   import Logo from '../Logo.svelte';
   import ProviderPathConfig from './ProviderPathConfig.svelte';
-  import { handleLink } from '$features/navigation/link-handler';
   import {
   checkPiMcpAdapterInstalled,
   installPiMcpAdapter,
 } from '$features/pi/pi-models.client';
-  import { selectActiveWorkspaceId } from '$store/renderer/slices/workspace/workspace-selectors';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
   import Button from '../ui/button/button.svelte';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('ProviderSelector');
   const activeProviderId = selectActiveProviderId();
-  const activeWorkspaceId = selectActiveWorkspaceId();
   const enabledProviders$ = selectEnabledProviders();
-
-  const INSTALL_COMMAND = 'npm install -g @augmentcode/auggie';
 
   // Provider availability state
   let providerAvailability: ProviderAvailabilityResult | null = $state(null);
@@ -94,20 +83,13 @@
   let auggieStatus: AuggieStatus | null = $state(null);
   let auggieLoading = $state(true);
   let actionInProgress = $state(false);
-
-  // Install error handling
-  let installError: string | null = $state(null);
-  let installErrorType: InstallErrorType | null = $state(null);
-  let showManualInstall = $state(false);
-
-  // Auth flow state
   let authInProgress = $state(false);
-  let showAuthInput = $state(false);
-  let waitingForBrowserAuth = $state(false);
-  let authInput = $state('');
-  let authUrl: string | null = $state(null);
-  let authError: string | null = $state(null);
-  let authPollHandle: ReturnType<typeof setInterval> | null = null;
+
+  // Instructions returned by AUGGIE_CHANNELS.INSTALL / AUTHENTICATE. Post-P2-12c
+  // the FE renders manual steps + a copyable command instead of driving install
+  // or OAuth flows itself.
+  let auggieInstructions = $state<string[] | null>(null);
+  let auggieCommand = $state<string | null>(null);
 
   // MCP state
   let mcpLoading = $state(true);
@@ -259,20 +241,15 @@
     checkProviderAvailability();
     loadProviderPaths();
 
-    // Focus/visibility listener to silently recheck provider availability (including auth)
-    // when the app returns to focus, so status updates after the user logs in via CLI or browser.
+    // Focus/visibility listener to silently recheck provider availability
+    // when the app returns to focus — the user may have finished the manual
+    // install/login in their terminal.
     const handleFocus = () => {
-      if (waitingForBrowserAuth) {
-        checkAuthPollOnce();
-      }
       silentRefreshProviderAvailability();
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return;
-      if (waitingForBrowserAuth) {
-        checkAuthPollOnce();
-      }
       silentRefreshProviderAvailability();
     };
 
@@ -282,10 +259,6 @@
     return () => {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (authPollHandle) {
-        clearInterval(authPollHandle);
-        authPollHandle = null;
-      }
     };
   });
 
@@ -575,225 +548,98 @@
     }
   }
 
-  function deriveInstallErrorType(
-    explicitType: InstallErrorType | undefined,
-    message: string,
-  ): InstallErrorType | null {
-    if (explicitType) return explicitType;
-    const lowerMessage = message.toLowerCase();
-    if (
-      lowerMessage.includes('permission') ||
-      lowerMessage.includes('eacces') ||
-      lowerMessage.includes('sudo')
-    ) {
-      return 'permission';
+  type InstructionResponse = {
+    success: boolean;
+    error?: string;
+    data?: {
+      instructions?: string[];
+      command?: string;
+      authenticated?: boolean;
+    };
+  };
+
+  function applyInstructionResponse(result: InstructionResponse): void {
+    if (result.data?.instructions && result.data.instructions.length > 0) {
+      auggieInstructions = result.data.instructions;
+      auggieCommand = result.data.command ?? null;
+    } else if (result.error) {
+      auggieInstructions = [result.error];
+      auggieCommand = result.data?.command ?? null;
     }
-    if (lowerMessage.includes('npm is not installed') || lowerMessage.includes('node.js')) {
-      return 'missing_npm';
-    }
-    return 'unknown';
   }
 
+  /** Ask the daemon for install instructions and render them. */
   async function installAuggie() {
     actionInProgress = true;
-    installError = null;
-    installErrorType = null;
-    showManualInstall = false;
     try {
-      const result = await invoke<{
-        success: boolean;
-        error?: string;
-        errorType?: InstallErrorType;
-      }>(AUGGIE_CHANNELS.INSTALL);
-      if (result.success) {
-        toast.success('Auggie installed successfully');
-        await checkProviderAvailability();
-        appStore.dispatch(retryLoadModels());
-      } else {
-        const message = result.error || 'Installation failed';
-        installError = message;
-        installErrorType = deriveInstallErrorType(result.errorType, message);
-        showManualInstall = true;
-        toast.error('Install failed', { description: message });
-      }
+      const result = await invoke<InstructionResponse>(AUGGIE_CHANNELS.INSTALL);
+      applyInstructionResponse(result);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Installation failed';
-      installError = message;
-      installErrorType = deriveInstallErrorType(undefined, message);
-      showManualInstall = true;
-      toast.error('Install failed', { description: message });
+      const message = err instanceof Error ? err.message : 'Failed to fetch install instructions';
+      auggieInstructions = [message];
+      auggieCommand = null;
     } finally {
       actionInProgress = false;
     }
   }
 
-  function stopAuthPolling() {
-    if (authPollHandle) {
-      clearInterval(authPollHandle);
-      authPollHandle = null;
-    }
-  }
-
-  let authPollCheckInFlight = $state(false);
-
-  async function checkAuthPollOnce() {
-    if (authPollCheckInFlight) return;
-    authPollCheckInFlight = true;
-    try {
-      const result = await invoke<{
-        success: boolean;
-        data?: { completed?: boolean; authenticated?: boolean };
-      }>(AUGGIE_CHANNELS.AUTHENTICATE, { action: 'poll' });
-
-      if (result.success && result.data?.completed) {
-        stopAuthPolling();
-        waitingForBrowserAuth = false;
-        if (result.data.authenticated) {
-          toast.success('Logged in successfully');
-          await checkProviderAvailability();
-          appStore.dispatch(reloadModelsForProvider());
-        } else {
-          showAuthInput = true;
-        }
-      }
-    } catch {
-      // ignore poll errors
-    } finally {
-      authPollCheckInFlight = false;
-    }
-  }
-
-  function startAuthPolling() {
-    stopAuthPolling();
-    const POLL_INTERVAL_MS = 2000;
-    const MAX_POLL_TIME_MS = 120000;
-    const startTime = Date.now();
-
-    authPollHandle = setInterval(async () => {
-      await checkAuthPollOnce();
-      if (Date.now() - startTime > MAX_POLL_TIME_MS && waitingForBrowserAuth) {
-        stopAuthPolling();
-        waitingForBrowserAuth = false;
-        showAuthInput = true;
-      }
-    }, POLL_INTERVAL_MS);
-  }
-
+  /** Ask the daemon whether auggie is authenticated; otherwise render login instructions. */
   async function startAuth() {
     authInProgress = true;
-    authError = null;
-    waitingForBrowserAuth = false;
-    showAuthInput = false;
-    stopAuthPolling();
     try {
-      const result = await invoke<{
-        success: boolean;
-        data?: {
-          authUrl?: string;
-          processStarted?: boolean;
-          autoCompleted?: boolean;
-          isJsonPasteFlow?: boolean;
-        };
-        error?: string;
-      }>(AUGGIE_CHANNELS.AUTHENTICATE, { action: 'start' });
-
-      if (result.success && result.data?.autoCompleted) {
+      const result = await invoke<InstructionResponse>(AUGGIE_CHANNELS.AUTHENTICATE, {
+        action: 'start',
+      });
+      if (result.success && result.data?.authenticated) {
         toast.success('Logged in successfully');
+        auggieInstructions = null;
+        auggieCommand = null;
         await checkProviderAvailability();
         appStore.dispatch(reloadModelsForProvider());
         return;
       }
-
-      if (result.success && result.data?.processStarted) {
-        if (result.data.authUrl) {
-          authUrl = result.data.authUrl;
-        }
-        // Old JSON paste flow (remote/SSH) — go straight to paste textarea
-        if (result.data.isJsonPasteFlow) {
-          showAuthInput = true;
-        } else {
-          waitingForBrowserAuth = true;
-          startAuthPolling();
-        }
-      } else {
-        authError = result.error || 'Failed to start authentication';
-      }
-    } catch {
-      authError = 'Failed to start authentication';
+      applyInstructionResponse(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch login instructions';
+      auggieInstructions = [message];
+      auggieCommand = null;
     } finally {
       authInProgress = false;
     }
   }
 
-  function normalizeAuthResponse(input: string): string {
-    const trimmed = input.trim();
-    if (!trimmed) return trimmed;
-    // Already valid JSON — pass through
+  /** Re-run detection after the user completes the manual step. */
+  async function recheckAuggie() {
+    actionInProgress = true;
     try {
-      JSON.parse(trimmed);
-      return trimmed;
-    } catch {
-      // Not JSON — check if it's a callback URL with OAuth params
-      // e.g. http://localhost:12345/callback?code=ABC&state=XYZ&tenant_url=https://...
-      try {
-        const url = new URL(trimmed);
-        const code = url.searchParams.get('code');
-        const state = url.searchParams.get('state');
-        const tenantUrl = url.searchParams.get('tenant_url');
-        if (code) {
-          return JSON.stringify({
-            code,
-            ...(state ? { state } : {}),
-            ...(tenantUrl ? { tenant_url: tenantUrl } : {}),
-          });
-        }
-      } catch {
-        // Not a URL either
-      }
-      // Treat as a plain code string
-      return JSON.stringify({ code: trimmed });
-    }
-  }
-
-  async function completeAuth() {
-    if (!authInput.trim()) return;
-    authInProgress = true;
-    authError = null;
-    try {
-      const normalizedResponse = normalizeAuthResponse(authInput);
-      const result = await invoke<{ success: boolean; error?: string }>(
-        AUGGIE_CHANNELS.AUTHENTICATE,
-        { action: 'complete', authResponse: normalizedResponse },
-      );
-      if (result.success) {
-        toast.success('Logged in successfully');
-        showAuthInput = false;
-        authInput = '';
-        authUrl = null;
-        await checkProviderAvailability();
+      await checkProviderAvailability();
+      if (auggieStatus?.installed && auggieStatus?.versionOk && auggieStatus?.authenticated) {
+        auggieInstructions = null;
+        auggieCommand = null;
+        toast.success('Auggie ready');
         appStore.dispatch(reloadModelsForProvider());
-      } else {
-        await loadAuggieStatus();
-        if (auggieStatus?.authenticated) {
-          toast.success('Logged in successfully');
-          showAuthInput = false;
-          authInput = '';
-          authUrl = null;
-          appStore.dispatch(reloadModelsForProvider());
-        } else {
-          authError = result.error || 'Authentication failed';
-        }
+        return;
       }
-    } catch {
-      authError = 'Authentication failed';
+      const channel =
+        auggieStatus?.installed && auggieStatus?.versionOk
+          ? AUGGIE_CHANNELS.AUTHENTICATE
+          : AUGGIE_CHANNELS.INSTALL;
+      const args = channel === AUGGIE_CHANNELS.AUTHENTICATE ? [{ action: 'start' }] : [];
+      const result = await invoke<InstructionResponse>(channel, ...args);
+      if (result.success && result.data?.authenticated) {
+        auggieInstructions = null;
+        auggieCommand = null;
+        return;
+      }
+      applyInstructionResponse(result);
     } finally {
-      authInProgress = false;
+      actionInProgress = false;
     }
   }
 
-  function copyCommand(cmd: string) {
-    navigator.clipboard.writeText(cmd);
-    toast.success('Copied to clipboard');
+  function dismissAuggieInstructions() {
+    auggieInstructions = null;
+    auggieCommand = null;
   }
 
   function openDocs(url: string) {
@@ -946,8 +792,8 @@
                 </button>
               {/if}
             {:else if !auggieStatus?.authenticated}
-              {#if authInProgress || waitingForBrowserAuth}
-                <span class="text-subtle">Waiting for authorization...</span>
+              {#if authInProgress}
+                <span class="text-subtle">Loading…</span>
               {:else}
                 <button
                   type="button"
@@ -1016,152 +862,15 @@
           </div>
         {/if}
 
-        <!-- Waiting for browser auth (localhost OAuth flow) -->
-        {#if waitingForBrowserAuth}
-          <div
-            class="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg ml-0"
-            transition:slide={{ axis: 'y', duration: 200 }}
-          >
-            <p class="text-xs text-subtle">Waiting for browser authentication...</p>
-            {#if authUrl}
-              <button
-                type="button"
-                class="text-xs text-muted-foreground hover:text-foreground text-left bg-transparent border-none p-0 cursor-pointer transition-colors"
-                onclick={() => authUrl && shell.open(authUrl)}
-              >
-                Browser didn't open? <span class="underline">Click here</span>
-              </button>
-            {/if}
-            <div class="flex gap-2 text-xs">
-              <button
-                type="button"
-                class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium disabled:opacity-50"
-                onclick={() => checkAuthPollOnce()}
-                disabled={authPollCheckInFlight}
-              >
-                {authPollCheckInFlight ? 'Checking...' : 'Check now'}
-              </button>
-              <button
-                type="button"
-                class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-                onclick={() => {
-                  stopAuthPolling();
-                  waitingForBrowserAuth = false;
-                  showAuthInput = true;
-                }}
-              >
-                Paste code manually instead
-              </button>
-            </div>
-          </div>
-        {/if}
-
-        <!-- Auth input (for Auggie) -->
-        {#if showAuthInput}
-          <div
-            class="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg ml-0"
-            transition:slide={{ axis: 'y', duration: 200 }}
-          >
-            {#if authError}
-              <p class="text-xs text-destructive-foreground">{authError}</p>
-            {/if}
-            <textarea
-              bind:value={authInput}
-              placeholder={'e.g. {"code":"...","state":"...","tenant_url":"..."}'}
-              class="w-full h-16 p-2 bg-background border border-border rounded font-mono text-xs resize-none outline-none focus:border-primary/50 transition-colors"
-            ></textarea>
-            {#if authUrl}
-              <button
-                type="button"
-                class="text-xs text-muted-foreground hover:text-foreground text-left bg-transparent border-none p-0 cursor-pointer transition-colors"
-                onclick={() => authUrl && shell.open(authUrl)}
-              >
-                Browser didn't open? <span class="underline">Click here</span>
-              </button>
-            {/if}
-            <div class="flex gap-2 text-xs">
-              <button
-                type="button"
-                class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium disabled:opacity-50"
-                onclick={completeAuth}
-                disabled={authInProgress || !authInput.trim()}
-              >
-                {authInProgress ? 'Completing...' : 'Complete Login'}
-              </button>
-              <span class="text-ghost">·</span>
-              <button
-                type="button"
-                class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-                onclick={() => {
-                  showAuthInput = false;
-                  authInput = '';
-                  authError = null;
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        {/if}
-
-        <!-- Manual install fallback -->
-        {#if showManualInstall && installError}
-          <div
-            class="flex flex-col gap-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg"
-            transition:slide={{ axis: 'y', duration: 200 }}
-          >
-            <p class="text-xs text-destructive-foreground">{installError}</p>
-            {#if installErrorType === 'binary_download_failed'}
-              <p class="text-xs text-subtle">
-                Download failed — check your connection and file permissions, then try again.
-              </p>
-            {:else if installErrorType === 'permission'}
-              <p class="text-xs text-subtle">Try running with sudo or fix npm permissions.</p>
-            {:else if installErrorType === 'node_too_old' && !auggieStatus?.binaryInstallAvailable}
-              <p class="text-xs text-muted-foreground">
-                Update <a
-                  href="https://nodejs.org"
-                  class="underline text-primary"
-                  onclick={(e) => {
-                    e.preventDefault();
-                    const wsId = $activeWorkspaceId;
-                    if (wsId)
-                      handleLink('https://nodejs.org', {
-                        workspaceId: wsId as WorkspaceId,
-                        event: e,
-                      });
-                  }}>Node.js</a
-                >
-                to version {MINIMUM_NODE_VERSION.split('.')[0]} or later.
-              </p>
-            {:else if installErrorType === 'missing_npm' && !auggieStatus?.binaryInstallAvailable}
-              <p class="text-xs text-subtle">
-                Install <a
-                  href="https://nodejs.org"
-                  class="underline text-primary"
-                  onclick={(e) => {
-                    e.preventDefault();
-                    const wsId = $activeWorkspaceId;
-                    if (wsId)
-                      handleLink('https://nodejs.org', {
-                        workspaceId: wsId as WorkspaceId,
-                        event: e,
-                      });
-                  }}>Node.js</a
-                > first.
-              </p>
-            {/if}
-            {#if !auggieStatus?.binaryInstallAvailable}
-              <button
-                type="button"
-                class="flex items-center gap-1.5 px-2 py-1 bg-muted border border-border rounded text-xs text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors w-fit cursor-pointer"
-                onclick={() => copyCommand(INSTALL_COMMAND)}
-              >
-                <code class="font-mono">{INSTALL_COMMAND}</code>
-                <Fa icon={faPaste} size="xs" />
-              </button>
-            {/if}
-          </div>
+        <!-- Instructions panel from AUGGIE_CHANNELS.INSTALL / AUTHENTICATE -->
+        {#if auggieInstructions && auggieInstructions.length > 0}
+          <AuggieInstructionsPanel
+            instructions={auggieInstructions}
+            command={auggieCommand ?? undefined}
+            onRecheck={recheckAuggie}
+            onDismiss={dismissAuggieInstructions}
+            rechecking={actionInProgress || authInProgress}
+          />
         {/if}
       {/if}
     {/if}

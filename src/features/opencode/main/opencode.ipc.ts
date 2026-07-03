@@ -4,35 +4,16 @@
  * IPC handlers for OpenCode CLI integration
  */
 
-import { spawn } from 'child_process';
 import { ipcMain } from 'electron';
 import * as os from 'os';
 import * as path from 'path';
 import { OPENCODE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { createProviderModelCache } from '../../../main/utils/provider-model-cache';
+import { hostExec } from '../../../shared/main/host-exec';
+import { resolveOpenCodeCommand } from './opencode-resolver';
 
 const logger = new Logger('OpenCodeIPC');
-
-// Common paths to look for opencode
-const OPENCODE_PATHS = [
-  path.join(os.homedir(), '.opencode/bin/opencode'),
-  '/usr/local/bin/opencode',
-  '/usr/bin/opencode',
-  '/opt/homebrew/bin/opencode',
-  path.join(os.homedir(), '.local/bin/opencode'),
-  path.join(os.homedir(), '.bun/bin/opencode'),
-  path.join(os.homedir(), '.npm-global/bin/opencode'),
-  // Windows paths
-  ...(process.platform === 'win32'
-    ? [
-        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'opencode.cmd'),
-        path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'opencode'),
-        path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'opencode.exe'),
-        path.join(os.homedir(), 'scoop', 'shims', 'opencode.exe'),
-      ]
-    : []),
-];
 
 // Model list cache — avoids re-shelling to `opencode models` on every call.
 type OpencodeModel = { value: string; label: string; provider?: string };
@@ -69,8 +50,6 @@ export async function hydrateOpencodeModelCacheFromDisk(): Promise<void> {
 
 async function fetchOpencodeModels(): Promise<OpencodeModel[] | null> {
   try {
-    const opencodePath = await findOpencodePath();
-    logger.info('Getting models from opencode CLI', { opencodePath });
     const { stdout, stderr } = await executeOpencodeCommand(['models', '--log-level', 'DEBUG'], {
       timeout: 10000,
     });
@@ -121,117 +100,46 @@ export async function getCachedOpencodeModels(): Promise<string[] | null> {
 }
 
 /**
- * Find the opencode executable path
- */
-async function findOpencodePath(): Promise<string | null> {
-  const { existsSync } = await import('fs');
-
-  for (const p of OPENCODE_PATHS) {
-    if (existsSync(p)) {
-      return p;
-    }
-  }
-
-  // Fall back to just 'opencode' and hope it's in PATH
-  return 'opencode';
-}
-
-/**
- * Execute an opencode command and return the output
+ * Execute an opencode command via the daemon's `host.exec` seam (PROTOCOL §5.14).
+ * Routing here (AUDIT-R1b) replaces the previous local `spawn(...)` — the daemon
+ * owns argv-based one-shot exec on the workspace's target host and returns
+ * captured stdout/stderr/exit code. Rejects with the RPC error on transport
+ * failure; a non-zero exit is surfaced by rejecting with a stderr-derived
+ * message, matching the pre-refactor contract observed by callers.
  */
 async function executeOpencodeCommand(
   args: string[],
   options: { timeout?: number } = {},
 ): Promise<{ stdout: string; stderr: string }> {
   const timeout = options.timeout ?? 30000;
-  const opencodePath = await findOpencodePath();
+  const resolved = await resolveOpenCodeCommand();
+  if (!resolved) {
+    throw new Error('opencode binary not available (host.findBinary returned no result)');
+  }
 
-  return new Promise((resolve, reject) => {
-    const enhancedEnv = {
-      ...process.env,
-      PATH: `${process.env.PATH}:/usr/local/bin:/opt/homebrew/bin:${path.join(os.homedir(), '.local/bin')}`,
-    };
+  // Run from user's home directory to ensure config files are found.
+  const cwd = os.homedir();
 
-    // Debug: Log environment variables that might affect opencode behavior
-    const envRecord = enhancedEnv as Record<string, string | undefined>;
-    const envKeys = Object.keys(envRecord).filter(
-      (k) =>
-        k.startsWith('OPENCODE') ||
-        k.startsWith('OPENAI') ||
-        k.startsWith('ANTHROPIC') ||
-        k.includes('API') ||
-        k.includes('KEY') ||
-        k === 'HOME' ||
-        k === 'USER',
-    );
-    logger.debug('OpenCode execution environment', {
-      opencodePath,
-      args,
-      relevantEnvVars: envKeys.reduce(
-        (acc, k) => {
-          // Mask API keys for security
-          const val = envRecord[k] || '';
-          acc[k] =
-            val.length > 8 ? `${val.substring(0, 4)}...${val.substring(val.length - 4)}` : val;
-          return acc;
-        },
-        {} as Record<string, string>,
-      ),
-    });
-
-    // Run from user's home directory to ensure config files are found
-    const cwd = os.homedir();
-
-    // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
-    const useShell = process.platform === 'win32';
-    const rawCommand = opencodePath || 'opencode';
-    // On Windows with shell: true, quote the command path to handle spaces (e.g. C:\Users\John Doe\...)
-    const spawnCommand = useShell ? `"${rawCommand}"` : rawCommand;
-
-    logger.debug('OpenCode spawn details', {
-      opencodePath,
-      cwd,
-    });
-
-    const child = spawn(spawnCommand, args, {
-      env: enhancedEnv,
-      cwd,
-      shell: useShell,
-      windowsHide: true,
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    child.on('error', (err) => {
-      reject(err);
-    });
-
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(new Error(stderr || `Command exited with code ${code}`));
-      }
-    });
-
-    const timeoutId = setTimeout(() => {
-      child.kill();
-      reject(new Error(`Command timed out after ${timeout}ms`));
-    }, timeout);
-
-    child.on('close', () => {
-      clearTimeout(timeoutId);
-    });
+  logger.debug('OpenCode host.exec details', {
+    opencodePath: resolved.command,
+    usesNpx: resolved.usesNpx,
+    cwd,
+    args,
   });
+
+  const result = await hostExec(resolved.command, {
+    args: [...resolved.argsPrefix, ...args],
+    cwd,
+    timeoutMs: timeout,
+  });
+
+  if (result.timedOut) {
+    throw new Error(`Command timed out after ${timeout}ms`);
+  }
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr || `Command exited with code ${result.exitCode}`);
+  }
+  return { stdout: result.stdout, stderr: result.stderr };
 }
 
 export function setupOpencodeIPC() {

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { normalizeStreamingState } from '../agent-streaming-state';
 import { AgentStatus, type AgentMessage, type AgentSession } from '$shared/types';
 
+
 function message(overrides: Partial<AgentMessage> = {}): AgentMessage {
   return {
     id: 'm1',
@@ -71,5 +72,6 @@ describe('normalizeStreamingState', () => {
     expect(result.isStreaming).toBe(false);
     expect(result.status).toBe(AgentStatus.Idle);
   });
+
 });
 

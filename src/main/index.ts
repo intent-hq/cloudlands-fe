@@ -196,62 +196,63 @@ const logStartupTiming = (phase: string) => {
 };
 logStartupTiming('Module initialization complete');
 
-// Fix PATH for macOS GUI apps (when launched from Finder)
-// This must be done as early as possible, before any other modules are loaded
+// Seed PATH from the daemon (`host.env`, PROTOCOL §5.14) so child processes
+// spawned locally inherit the BE host's authoritative PATH instead of a PATH
+// we'd have to reconstruct from local shell profiles. The FE pre-populates
+// the OS-essential directories synchronously so the JSON-RPC client itself
+// has enough PATH to launch its socket transport on macOS GUI starts; the
+// daemon's enhanced PATH then overwrites it once `host.env` returns. Failure
+// is fail-open (we keep the essential PATH) so startup is never blocked by
+// an unreachable daemon.
 const mainLogger = new Logger('Main');
-if (process.platform === 'darwin' && !process.env.RUNNING_IN_TERMINAL) {
-  // CRITICAL: Pre-populate PATH with essential system directories BEFORE fix-path
-  // This is necessary because fix-path itself needs to spawn a shell,
-  // which requires /bin/sh to be in PATH. When Electron apps are launched
-  // from Finder, PATH may not include /bin or /usr/bin, causing fix-path to fail.
+if (process.platform !== 'win32') {
   const essentialPaths = [
     '/bin',
     '/usr/bin',
     '/usr/local/bin',
-    '/opt/homebrew/bin', // Apple Silicon Homebrew
+    '/opt/homebrew/bin',
     '/usr/sbin',
     '/sbin',
   ];
-
   const currentPath = process.env.PATH || '';
   const pathSet = new Set(currentPath.split(':').filter(Boolean));
-
-  // Add essential paths if not already present
   for (const p of essentialPaths) {
     pathSet.add(p);
   }
-
   process.env.PATH = Array.from(pathSet).join(':');
-  mainLogger.info('Pre-populated PATH with essential system directories', {
-    path: process.env.PATH,
-  });
-
-  // Now run fix-path with a timeout to get the user's full shell PATH
-  // This adds user-specific paths like ~/.nvm, ~/.cargo, etc.
-  const fixPathPromise = (async () => {
-    try {
-      const fixPath = await import('fix-path');
-      fixPath.default();
-      mainLogger.info('Fixed PATH for macOS GUI app', { path: process.env.PATH });
-    } catch (error) {
-      mainLogger.warn(
-        'Failed to fix PATH, app may have issues finding npm/auggie when launched from Finder',
-        { error },
-      );
-    }
-  })();
-
-  // Don't block startup - let fix-path run in background with timeout
-  const timeoutPromise = new Promise<void>((resolve) => {
-    setTimeout(() => {
-      mainLogger.warn('fix-path took too long, continuing without waiting');
-      resolve();
-    }, 2000); // 2 second timeout
-  });
-
-  await Promise.race([fixPathPromise, timeoutPromise]);
 }
-logStartupTiming('fix-path complete');
+
+const hostEnvPromise = (async () => {
+  try {
+    const { initializeHostEnv } = await import('../shared/main/find-binary');
+    const result = await initializeHostEnv();
+    if (result) {
+      if (result.enhancedPath) {
+        process.env.PATH = result.enhancedPath;
+      } else if (result.path) {
+        process.env.PATH = result.path;
+      }
+      mainLogger.info('Seeded PATH from host.env', {
+        pathEntries: result.pathEntries.length,
+        shell: result.shell,
+      });
+    }
+  } catch (error) {
+    mainLogger.warn('host.env seed failed; keeping pre-populated PATH', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+})();
+
+const hostEnvTimeout = new Promise<void>((resolve) => {
+  setTimeout(() => {
+    mainLogger.warn('host.env took too long, continuing without waiting');
+    resolve();
+  }, 2000);
+});
+
+await Promise.race([hostEnvPromise, hostEnvTimeout]);
+logStartupTiming('host.env seed complete');
 
 // Initialize warning suppression early
 initializeWarningSuppression();
@@ -656,18 +657,27 @@ app.whenReady().then(async () => {
     });
   }
 
-  // Asynchronously fetch active provider version and update the about panel
+  // Asynchronously fetch active provider version and update the about panel.
+  // Routed through the daemon's `host.exec` (PROTOCOL §5.14) — the FE no longer
+  // spawns provider `--version` locally. Failure is silent: the About panel just
+  // omits the CLI version line (honest-degrade on RPC / non-zero exit).
   (async () => {
     try {
-      const { execAsync } = await import('../shared/main/async-utils.js');
+      const { hostExec } = await import('../shared/main/host-exec.js');
       const { getDefaultProviderConfig } = await import('../shared/config/provider-config.js');
       const defaultProvider = getDefaultProviderConfig();
 
-      // Try to get version from the default provider's CLI
-      const { stdout } = await execAsync(`${defaultProvider.command} --version`, {
-        timeout: 5000,
+      const result = await hostExec(defaultProvider.command, {
+        args: ['--version'],
+        timeoutMs: 5000,
       });
-      const providerVersion = stdout.trim();
+      if (result.exitCode !== 0) {
+        logger.debug('Could not get provider CLI version for about panel', {
+          exitCode: result.exitCode,
+        });
+        return;
+      }
+      const providerVersion = (result.stdout || '').trim();
       if (providerVersion) {
         aboutPanelInfo.providerVersion = `${defaultProvider.displayName} CLI: ${providerVersion}`;
         if (isMacOS) {
@@ -679,9 +689,11 @@ app.whenReady().then(async () => {
           });
         }
       }
-    } catch {
-      // Provider CLI not installed or not accessible - that's fine
-      logger.debug('Could not get provider CLI version for about panel');
+    } catch (err) {
+      // Provider CLI not installed / not accessible / RPC failure - that's fine
+      logger.debug('Could not get provider CLI version for about panel', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   })();
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StoreState } from "../../types";
-import type { WorkspaceTask } from "$shared/types";
+import type { WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
 import { createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
   selectWorkspaceTaskDisplayList,
@@ -11,6 +11,7 @@ import {
   selectWorkspaceTasksLoading,
   selectWorkspaceTasksState,
 } from "./workspace-tasks-selectors";
+import { emptyWorkspaceTaskStats } from "./workspace-tasks-slice";
 
 const WS = "ws-1";
 
@@ -20,17 +21,24 @@ function makeTask(id: string, status: WorkspaceTask["status"]): WorkspaceTask {
 
 function stateWith(
   tasks: WorkspaceTask[],
-  overrides: Partial<{ loading: boolean; error: string | null; initialized: boolean }> = {}
+  overrides: Partial<{
+    loading: boolean;
+    error: string | null;
+    initialized: boolean;
+    stats: WorkspaceTaskStats;
+  }> = {}
 ): StoreState {
+  const { stats, ...rest } = overrides;
   return {
     workspaceTasks: {
       byWorkspaceId: {
         [WS]: {
           tasks: createCollection<WorkspaceTask, "id">("id", tasks),
+          stats: stats ?? emptyWorkspaceTaskStats,
           loading: false,
           error: null,
           initialized: true,
-          ...overrides,
+          ...rest,
         },
       },
     },
@@ -65,20 +73,20 @@ describe("workspace-tasks selectors", () => {
   });
 
   describe("selectWorkspaceTaskProgress", () => {
-    it("derives counts and excludes cancelled tasks", () => {
-      const state = stateWith([
-        makeTask("t1", "complete"),
-        makeTask("t2", "in_progress"),
-        makeTask("t3", "review_required"),
-        makeTask("t4", "not_started"),
-        makeTask("t5", "cancelled"),
-      ]);
+    it("returns the BE-provided WorkspaceTaskStats verbatim (no client re-derivation)", () => {
+      const stats: WorkspaceTaskStats = { total: 4, completed: 1, inProgress: 2 };
+      // Seed `tasks` that DIVERGE from `stats` to prove the selector never recomputes
+      // (the FE renders whatever the daemon emits per PROTOCOL §5.4).
+      const state = stateWith(
+        [
+          makeTask("t1", "not_started"),
+          makeTask("t2", "not_started"),
+          makeTask("t3", "not_started"),
+        ],
+        { stats },
+      );
 
-      expect(selectWorkspaceTaskProgress.select(state, WS)).toEqual({
-        total: 4,
-        completed: 1,
-        inProgress: 2,
-      });
+      expect(selectWorkspaceTaskProgress.select(state, WS)).toBe(stats);
     });
 
     it("returns zero counts for unknown workspaces", () => {

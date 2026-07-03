@@ -58,8 +58,23 @@
     }));
   }
 
+  // Mock seed: builds the workspace-wide `WorkspaceTaskStats` rollup from the
+  // seeded tasks so the demo page mirrors what `task.list` (PROTOCOL §5.4) would
+  // emit — this isn't production code, just a deterministic fixture for visual
+  // tests of WorkspaceProgressCard / hover surfaces.
   function seedTasks(wsId: string, tasks: WorkspaceTask[]) {
-    appStore.dispatch(loadWorkspaceTasksSucceeded(wsId, tasks));
+    let total = 0;
+    let completed = 0;
+    let inProgress = 0;
+    for (const t of tasks) {
+      if (t.status === 'cancelled') continue;
+      total++;
+      if (t.status === 'complete') completed++;
+      else if (t.status === 'in_progress' || t.status === 'review_required') inProgress++;
+    }
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(wsId, tasks, { total, completed, inProgress }),
+    );
   }
 
   function seedSummaries(

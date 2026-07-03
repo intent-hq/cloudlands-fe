@@ -9,6 +9,7 @@ vi.mock("$lib/client", () => ({
   appClient: {
     files: {
       listDirectory: vi.fn(() => Promise.resolve([] as FileNode[])),
+      explorerTree: vi.fn(() => Promise.resolve(null as FileNode | null)),
     },
   },
 }));
@@ -16,16 +17,24 @@ vi.mock("$lib/client", () => ({
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import {
+  initializeFileExplorer,
+  refreshDirectoryRequested,
   refreshFileExplorer,
   setRootNode,
   setFileExplorerWorkspacePath,
   toggleDirectoryRequested,
 } from "$store/renderer/slices/file-explorer/file-explorer-slice";
 import {
+  selectFileExplorerIsInitialized,
   selectFileExplorerNodeMap,
+  selectFileExplorerRootNode,
   selectIsPathExpanded,
 } from "$store/renderer/slices/file-explorer/file-explorer-selectors";
-import { refreshFileExplorerTree, toggleDirectory } from "./file-explorer-read-service";
+import {
+  initializeFileExplorerTree,
+  refreshFileExplorerTree,
+  toggleDirectory,
+} from "./file-explorer-read-service";
 
 const filesApi = appClient.files as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -143,5 +152,85 @@ describe("fileExplorerReadService (fake seam, real store)", () => {
     await flush();
 
     expect(filesApi.listDirectory).toHaveBeenCalledWith(wsId, "");
+  });
+
+  it("initializeFileExplorerTree fetches file.tree and anchors the root at workspacePath", async () => {
+    const wsId = "ws-fx-init";
+    const root = "/repo-init";
+    filesApi.explorerTree.mockResolvedValueOnce({
+      name: "",
+      path: "",
+      type: "directory",
+      children: [
+        { name: "src", path: "src", type: "directory", children: [] },
+        { name: "README.md", path: "README.md", type: "file" },
+      ],
+    } as never);
+
+    await initializeFileExplorerTree(wsId, { workspacePath: root });
+
+    expect(filesApi.explorerTree).toHaveBeenCalledWith(wsId);
+    const rootNode = selectFileExplorerRootNode.select(appStore.state, wsId);
+    expect(rootNode?.path).toBe(root);
+    expect(selectFileExplorerIsInitialized.select(appStore.state, wsId)).toBe(true);
+    const nodeMap = selectFileExplorerNodeMap.select(appStore.state, wsId);
+    expect(nodeMap).toHaveProperty(`${root}/src`);
+    expect(nodeMap).toHaveProperty(`${root}/README.md`);
+  });
+
+  it("initializeFileExplorerTree is idempotent for the same workspacePath", async () => {
+    const wsId = "ws-fx-init-idem";
+    const root = "/repo-init-idem";
+    filesApi.explorerTree.mockResolvedValueOnce({
+      name: "",
+      path: "",
+      type: "directory",
+      children: [{ name: "a", path: "a", type: "directory", children: [] }],
+    } as never);
+
+    await initializeFileExplorerTree(wsId, { workspacePath: root });
+    filesApi.explorerTree.mockClear();
+    await initializeFileExplorerTree(wsId, { workspacePath: root });
+
+    expect(filesApi.explorerTree).not.toHaveBeenCalled();
+  });
+
+  it("dispatching initializeFileExplorer triggers explorerTree (middleware wiring)", async () => {
+    const wsId = "ws-fx-init-mw";
+    const root = "/repo-init-mw";
+    filesApi.explorerTree.mockResolvedValueOnce({
+      name: "",
+      path: "",
+      type: "directory",
+      children: [{ name: "x.ts", path: "x.ts", type: "file" }],
+    } as never);
+
+    appStore.dispatch(initializeFileExplorer(wsId, { workspacePath: root }));
+    await flush();
+    await flush();
+
+    expect(filesApi.explorerTree).toHaveBeenCalledWith(wsId);
+    expect(selectFileExplorerRootNode.select(appStore.state, wsId)?.path).toBe(root);
+  });
+
+  it("dispatching refreshDirectoryRequested re-lists the parent dir (middleware wiring)", async () => {
+    const wsId = "ws-fx-refresh-dir";
+    const root = "/repo-refresh-dir";
+    seedRoot(wsId, root);
+    filesApi.listDirectory.mockResolvedValueOnce([
+      { name: "n.ts", path: "n.ts", type: "file" },
+    ] as never);
+    await toggleDirectory(wsId, `${root}/src`);
+    filesApi.listDirectory.mockClear();
+    filesApi.listDirectory.mockResolvedValueOnce([
+      { name: "n.ts", path: "n.ts", type: "file" },
+      { name: "new.ts", path: "new.ts", type: "file" },
+    ] as never);
+
+    appStore.dispatch(refreshDirectoryRequested(wsId, `${root}/src/new.ts`));
+    await flush();
+
+    expect(filesApi.listDirectory).toHaveBeenCalledWith(wsId, "src");
+    expect(selectFileExplorerNodeMap.select(appStore.state, wsId)).toHaveProperty(`${root}/src/new.ts`);
   });
 });

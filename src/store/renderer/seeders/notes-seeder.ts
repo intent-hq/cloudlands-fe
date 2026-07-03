@@ -26,8 +26,8 @@ registerMockSeeder("notes", async ({ store, client }) => {
     const notes = await client.notes.list(wsId);
     store.dispatch(loadWorkspaceNotesSucceeded([wsId], { [wsId]: notes }));
 
-    const tasks = await client.tasks.list(wsId);
-    store.dispatch(loadWorkspaceTasksSucceeded(wsId, tasks));
+    const { tasks, stats } = await client.tasks.list(wsId);
+    store.dispatch(loadWorkspaceTasksSucceeded(wsId, tasks, stats));
 
     // Select the spec note so the notes panel renders content on first paint.
     const spec = notes.find((note) => String(note.id) === SPEC_NOTE_ID);

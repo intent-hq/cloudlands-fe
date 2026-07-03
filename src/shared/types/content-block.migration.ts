@@ -1,10 +1,21 @@
 /**
- * ContentBlock Migration Utilities
+ * ContentBlock Strict Intake Utilities
  *
- * Provides utilities for converting between different ContentBlock formats:
- * - Legacy internal format (with field aliases)
- * - ACP format (official Agent Client Protocol)
- * - Normalized format (canonical representation)
+ * Validates incoming ContentBlock-shaped payloads against the canonical PROTOCOL.md §7
+ * shape. The daemon (`intentd`) emits canonical fields directly; the renderer is a thin
+ * presenter and MUST NOT silently heal/alias divergent payloads — any divergence
+ * surfaces as a thrown error so the BE (or PROTOCOL.md) gets fixed at the source.
+ *
+ * Heals removed in AUDIT-P1-5:
+ * - `content → text` aliasing  (PROTOCOL uses `text`)
+ * - `toolName → name` aliasing  (PROTOCOL uses `name`)
+ * - `toolCallId → tool_use_id` aliasing on tool_result  (different field on tool_use)
+ * - `isError → is_error` aliasing
+ * - default `type || 'text'`
+ *
+ * Structural transforms (proposal-from-resource, nav-link, flat→nested proposal) are
+ * NOT field-name heals — they materialize FE-domain block types from canonical
+ * wire-shaped envelopes — and remain.
  */
 
 import type { ContentBlock } from './content-block';
@@ -12,9 +23,28 @@ import { normalizeContentBlock } from './content-block';
 import { isProposalKind } from './proposal';
 import { getProposalFromResourceBlock } from './proposal-resource';
 
+const CANONICAL_BLOCK_TYPES = new Set<ContentBlock['type']>([
+  'text',
+  'code',
+  'tool_use',
+  'tool_result',
+  'thinking',
+  'image',
+  'audio',
+  'file',
+  'nav-link',
+  'proposal',
+]);
+
 /**
- * Convert legacy ContentBlock format to normalized format
- * Handles various field name aliases and formats
+ * Strictly validate a ContentBlock-shaped payload against the canonical PROTOCOL.md §7
+ * shape. Returns the block unchanged on success. Throws on any divergence — the FE
+ * never silently rewrites field names or fills defaults for BE-owned payloads.
+ *
+ * Proposal-from-resource and nav-link structural transforms remain because they
+ * materialize FE-domain block types from canonical wire-shaped envelopes (a
+ * `type:"resource"` block carrying a proposal MIME, or a `kind:"nav-link"` flat
+ * envelope) — they do not rename or default existing canonical fields.
  */
 export function migrateFromLegacy(block: any): ContentBlock {
   if (!block || typeof block !== 'object') {
@@ -65,48 +95,57 @@ export function migrateFromLegacy(block: any): ContentBlock {
     };
   }
 
-  const normalized: ContentBlock = {
-    type: block.type || 'text',
-  };
+  if (typeof block.type !== 'string') {
+    throw new Error(
+      `Invalid ContentBlock: missing canonical 'type' field (PROTOCOL §7). Received: ${JSON.stringify(block)}`,
+    );
+  }
+  if (!CANONICAL_BLOCK_TYPES.has(block.type as ContentBlock['type'])) {
+    throw new Error(
+      `Invalid ContentBlock: unknown 'type' "${block.type}" (PROTOCOL §7). Received: ${JSON.stringify(block)}`,
+    );
+  }
 
-  // Handle text content
-  if (block.text) normalized.text = block.text;
-  else if (block.content) normalized.text = block.content;
+  assertNoLegacyAliases(block);
 
-  // Handle code blocks
-  if (block.language) normalized.language = block.language;
-
-  // Handle tool use
-  if (block.name) normalized.name = block.name;
-  else if (block.toolName) normalized.name = block.toolName;
-
-  if (block.input) normalized.input = block.input;
-
-  // Handle tool result
-  if (block.tool_use_id) normalized.tool_use_id = block.tool_use_id;
-  else if (block.toolCallId) normalized.tool_use_id = block.toolCallId;
-
-  if (block.output) normalized.output = block.output;
-
-  // Handle error flag
-  if (block.is_error !== undefined) normalized.is_error = block.is_error;
-  else if (block.isError !== undefined) normalized.is_error = block.isError;
-
-  // Handle media
-  if (block.data) normalized.data = block.data;
-  if (block.mimeType) normalized.mimeType = block.mimeType;
-  if (block.transcript) normalized.transcript = block.transcript;
-
-  // Handle metadata
-  if (block.id) normalized.id = block.id;
-  if (block.metadata) normalized.metadata = block.metadata;
-
-  return normalized;
+  return validateCanonicalBlock(block);
 }
 
 /**
- * Convert ACP ContentBlock to internal format
- * ACP format: { type: "text" | "image" | "audio" | "resource", ... }
+ * Reject legacy field-name aliases that the FE used to silently rewrite. A divergent
+ * payload must surface so the daemon (or PROTOCOL.md) is corrected at the source.
+ */
+function assertNoLegacyAliases(block: Record<string, any>): void {
+  if (block.text === undefined && typeof block.content === 'string') {
+    throw new Error(
+      `Invalid ContentBlock: legacy 'content' field is not part of PROTOCOL §7 (use 'text'). Received: ${JSON.stringify(block)}`,
+    );
+  }
+  if (block.name === undefined && typeof block.toolName === 'string') {
+    throw new Error(
+      `Invalid ContentBlock: legacy 'toolName' field is not part of PROTOCOL §7 (use 'name'). Received: ${JSON.stringify(block)}`,
+    );
+  }
+  if (
+    block.type === 'tool_result' &&
+    block.tool_use_id === undefined &&
+    typeof block.toolCallId === 'string'
+  ) {
+    throw new Error(
+      `Invalid ContentBlock: tool_result must use 'tool_use_id' (PROTOCOL §7). Received: ${JSON.stringify(block)}`,
+    );
+  }
+  if (block.is_error === undefined && block.isError !== undefined) {
+    throw new Error(
+      `Invalid ContentBlock: legacy 'isError' field is not part of PROTOCOL §7 (use 'is_error'). Received: ${JSON.stringify(block)}`,
+    );
+  }
+}
+
+/**
+ * Convert an ACP-shaped ContentBlock to the internal representation. The ACP spec
+ * requires a `type` discriminator — a missing/non-string `type` is an upstream
+ * divergence and surfaces here rather than being silently defaulted to `"text"`.
  */
 export function convertFromACP(acpBlock: any): ContentBlock {
   if (!acpBlock || typeof acpBlock !== 'object') {
@@ -125,9 +164,13 @@ export function convertFromACP(acpBlock: any): ContentBlock {
     };
   }
 
-  const block: ContentBlock = {
-    type: acpBlock.type || 'text',
-  };
+  if (typeof acpBlock.type !== 'string') {
+    throw new Error(
+      `Invalid ACP block: missing 'type' discriminator. Received: ${JSON.stringify(acpBlock)}`,
+    );
+  }
+
+  const block: ContentBlock = { type: acpBlock.type };
 
   // Text content
   if (acpBlock.text) {
@@ -208,21 +251,70 @@ export function convertToACP(block: ContentBlock): any {
 }
 
 /**
- * Batch migrate an array of ContentBlocks
+ * Strictly validate an array of ContentBlocks. Throws on the first divergent block —
+ * the FE never silently drops blocks it cannot parse, because dropping is itself a
+ * silent heal that hides BE/PROTOCOL drift from operators.
  */
 export function migrateContentBlocks(blocks: any[]): ContentBlock[] {
   if (!Array.isArray(blocks)) {
     return [];
   }
+  return blocks.map((block) => migrateFromLegacy(block));
+}
 
-  return blocks
-    .map((block) => {
-      try {
-        return migrateFromLegacy(block);
-      } catch {
-        // Failed to migrate block, return null
-        return null;
+/**
+ * Validate a block whose `type` has already been confirmed to be canonical. Returns
+ * the block (a shallow copy, to prevent caller mutation surfacing here) when the
+ * canonical required fields for its type are present and well-typed; throws otherwise.
+ */
+function validateCanonicalBlock(block: Record<string, any>): ContentBlock {
+  switch (block.type as ContentBlock['type']) {
+    case 'text':
+    case 'thinking':
+      if (typeof block.text !== 'string') {
+        throw new Error(
+          `Invalid ${block.type} block: required 'text' field missing (PROTOCOL §7). Received: ${JSON.stringify(block)}`,
+        );
       }
-    })
-    .filter((block): block is ContentBlock => block !== null);
+      break;
+    case 'tool_use':
+      if (typeof block.name !== 'string') {
+        throw new Error(
+          `Invalid tool_use block: required 'name' field missing (PROTOCOL §7). Received: ${JSON.stringify(block)}`,
+        );
+      }
+      break;
+    case 'tool_result':
+      if (typeof block.tool_use_id !== 'string') {
+        throw new Error(
+          `Invalid tool_result block: required 'tool_use_id' field missing (PROTOCOL §7). Received: ${JSON.stringify(block)}`,
+        );
+      }
+      break;
+    case 'image':
+    case 'audio':
+      if (typeof block.data !== 'string' || typeof block.mimeType !== 'string') {
+        throw new Error(
+          `Invalid ${block.type} block: required 'data'/'mimeType' fields missing. Received: ${JSON.stringify(block)}`,
+        );
+      }
+      break;
+    case 'file':
+      if (
+        typeof block.data !== 'string' ||
+        typeof block.mimeType !== 'string' ||
+        typeof block.fileName !== 'string'
+      ) {
+        throw new Error(
+          `Invalid file block: required 'data'/'mimeType'/'fileName' fields missing. Received: ${JSON.stringify(block)}`,
+        );
+      }
+      break;
+    case 'code':
+    case 'nav-link':
+    case 'proposal':
+      // Handled by dedicated branches above or carries no required text/tool fields.
+      break;
+  }
+  return { ...block } as ContentBlock;
 }

@@ -1,43 +1,20 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { ipcMain } from 'electron';
-import {
-  existsSync,
-  readdirSync,
-} from 'fs';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import * as https from 'https';
 import {
-  AUGGIE_APPLE_TEAM_ID,
-  AUGGIE_BINARY_BASE_URL,
   MINIMUM_AUGGIE_VERSION,
   MINIMUM_NODE_VERSION,
 } from '../../../shared/constants/auggie';
-import {
-  execAsync,
-  execAsyncWithRetry,
-  execFileAsyncWithRetry,
-} from '../../../shared/git/git-env';
-
-const rawExec = promisify(exec);
 import { AUGGIE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
-import { findBinary } from '../../../shared/main/find-binary';
-import { trackMain } from '../../../lib/services/analytics/main';
 import { checkGitVersion } from './version-checks';
+import { executeAuggieCommand } from './execute-auggie-command';
 import {
-  executeAuggieCommand,
-  execWithEnhancedPath,
-  getAuggieExecPATH,
-} from './execute-auggie-command';
-import {
-  findAuggieInEnhancedPath,
   findAuggiePathAsync,
   getEnhancedPath,
-  saveAuggiePath,
 } from './auggie-path';
+import { hostExec } from '../../../shared/main/host-exec';
 import { createProviderModelCache } from '../../../main/utils/provider-model-cache';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { JsonRpcError } from '../../backend/main/json-rpc-errors';
@@ -257,110 +234,49 @@ function meetsMinimumVersion(version: string, minimum: string = MINIMUM_AUGGIE_V
 // ============================================================================
 
 /**
- * Check the installed Node.js version.
+ * Check the installed Node.js version via the daemon's `host.exec`
+ * (PROTOCOL §5.14).
  *
- * IMPORTANT: This uses rawExec with process.env (NOT execAsyncWithRetry) to
- * match how the agent process is actually spawned. The agent (acp-provider.ts)
- * uses `...process.env` without any PATH enhancement. If we used
- * execAsyncWithRetry, it would go through buildGitEnv() → getEnhancedPath()
- * which adds ESSENTIAL_SYSTEM_PATHS (including /opt/homebrew/bin), potentially
- * finding a different node (e.g. Homebrew's v24) than what the agent actually
- * runs with (e.g. nvm's v18).
+ * Post-P2 the daemon owns agent spawning (`agent.create` → `spawn.rs`) and
+ * PATH resolution (`host.env`), so the `node` that `host.exec` resolves —
+ * with the daemon's PATH-enriched env — is exactly the runtime the agent
+ * will use. The earlier `rawExec(process.env)` workaround (which avoided
+ * the app's enhanced PATH to match the launcher's PATH) is obsolete.
  */
 async function checkNodeVersion(): Promise<{
   nodeVersion?: string;
   nodeVersionOk: boolean;
 }> {
-  // Check the node version using process.env directly (NOT the enhanced/auggie PATH).
-  // The agent process is spawned via acp-provider with `...process.env` — it does
-  // NOT use getEnhancedPath() or getAuggieExecPATH(). So `#!/usr/bin/env node`
-  // resolves `node` using the exact PATH the app was launched with.
-  //
-  // We use rawExec (promisified child_process.exec) instead of execAsyncWithRetry
-  // because the latter goes through buildGitEnv() → getEnhancedPath(), which adds
-  // ESSENTIAL_SYSTEM_PATHS (including /opt/homebrew/bin). That can shadow the user's
-  // nvm/volta node with Homebrew's node, giving a false "version OK" result.
-  // Retry up to 3 times to handle transient spawn errors (e.g. EAGAIN).
-  const MAX_RETRIES = 3;
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const { stdout } = await rawExec('node --version', {
-        timeout: 5000,
-        env: process.env,
-        windowsHide: true,
-      });
-      const version = (stdout || '').trim();
-      if (version) {
-        const versionOk = meetsMinimumVersion(version, MINIMUM_NODE_VERSION);
-        logger.info('Node.js version check (runtime PATH)', { version, versionOk });
-        return { nodeVersion: version, nodeVersionOk: versionOk };
-      }
-    } catch (err) {
-      lastError = err;
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'EAGAIN' || code === 'EBADF') {
-        logger.warn(
-          `Node version check attempt ${attempt}/${MAX_RETRIES} failed with ${code}, retrying...`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
-        continue;
-      }
-      // Non-transient error — no point retrying
-      break;
-    }
-  }
-
-  logger.warn('Node not found on PATH', { error: lastError });
-  // If `node --version` fails, auggie can't run.
-  return { nodeVersionOk: false };
-}
-
-/**
- * Execute a command with enhanced PATH using args array (no shell quoting issues).
- * On Windows, uses shell-based exec with double-quoted paths (required for .cmd files).
- * On other platforms, uses execFile (no shell) which is more robust.
- */
-async function execFileWithEnhancedPath(
-  file: string,
-  args: string[],
-  options: { cwd?: string; maxBuffer?: number; timeout?: number } = {},
-): Promise<{ stdout: string; stderr: string }> {
-  const enhancedPath = getEnhancedPath();
-  const envOptions = {
-    ...options,
-    env: {
-      PATH: enhancedPath,
-    },
-  };
-
-  if (process.platform === 'win32') {
-    // On Windows, .cmd/.bat files cannot be executed with execFile (no shell).
-    // Build a shell command string with double-quoted path and properly escaped args.
-    const quotedArgs = args.map((arg) => {
-      // If arg contains spaces or special chars, wrap in double quotes
-      if (/[\s"&|<>^]/.test(arg) || arg.includes('{') || arg.includes('}')) {
-        // Escape internal double quotes
-        return `"${arg.replace(/"/g, '\\"')}"`;
-      }
-      return arg;
+  try {
+    const result = await hostExec('node', {
+      args: ['--version'],
+      timeoutMs: 5000,
     });
-    const command = `"${file}" ${quotedArgs.join(' ')}`;
-    return execAsyncWithRetry(command, envOptions);
+    if (result.timedOut) {
+      logger.warn('Node version probe (host.exec) timed out');
+      return { nodeVersionOk: false };
+    }
+    if (result.exitCode !== 0) {
+      logger.warn('Node not found on PATH (host.exec)', {
+        exitCode: result.exitCode,
+        stderr: result.stderr,
+      });
+      return { nodeVersionOk: false };
+    }
+    const version = (result.stdout || '').trim();
+    if (!version) {
+      return { nodeVersionOk: false };
+    }
+    const versionOk = meetsMinimumVersion(version, MINIMUM_NODE_VERSION);
+    logger.info('Node.js version check (host.exec)', { version, versionOk });
+    return { nodeVersion: version, nodeVersionOk: versionOk };
+  } catch (err) {
+    logger.warn('Node version probe (host.exec) failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { nodeVersionOk: false };
   }
-
-  // On macOS/Linux, use execFile (no shell) - avoids all quoting issues
-  return execFileAsyncWithRetry(file, args, envOptions);
 }
-
-// ============================================================================
-// OAuth Helper Functions
-// ============================================================================
-
-import { createRequire } from 'module';
-
-// Create require function for ESM context to access Node.js built-in modules
-const requireNode = createRequire(import.meta.url);
 
 // ============================================================================
 // Model Parsing Helper
@@ -536,23 +452,11 @@ export function setupAuggieIPC() {
 
   // Get installation/authentication status for Auggie CLI
   ipcMain.handle(AUGGIE_CHANNELS.STATUS, async () => {
-    // Check if the managed binary exists (binary install is always available as fallback)
-    const managedBinaryPath = path.join(
-      os.homedir(),
-      '.augment',
-      'bin',
-      process.platform === 'win32' ? 'auggie.exe' : 'auggie',
-    );
-    const supportedBinaryPlatforms: Record<string, string[]> = {
-      darwin: ['arm64'],
-      linux: ['x64'],
-      win32: ['x64'],
-    };
-    const managedBinaryInstalled = existsSync(managedBinaryPath);
-    const binaryInstallAvailable =
-      managedBinaryInstalled ||
-      (supportedBinaryPlatforms[process.platform]?.includes(process.arch) ?? false);
-
+    // Install/version detection is delegated to the daemon (`host.checkAuggie`,
+    // PROTOCOL §5.14 companion); the FE-local binary download flow is retired
+    // (Decision 3), so `binaryInstallAvailable`/`managedBinaryInstalled` remain
+    // in the payload for renderer compatibility but are always false — install
+    // is now a manual step surfaced by AUGGIE_CHANNELS.INSTALL instructions.
     const status: {
       installed: boolean;
       authenticated: boolean;
@@ -573,13 +477,14 @@ export function setupAuggieIPC() {
       minimumVersion: MINIMUM_AUGGIE_VERSION,
       nodeVersionOk: false,
       gitInstalled: false,
-      binaryInstallAvailable,
-      managedBinaryInstalled,
+      binaryInstallAvailable: false,
+      managedBinaryInstalled: false,
     };
 
     try {
-      // Check Node.js and Git versions in parallel (independent of auggie status).
-      // Use Promise.allSettled so one failure doesn't drop the other's result.
+      // Node.js and Git checks stay FE-local — they describe the host that
+      // will run auggie (the daemon's host from the FE's PoV) and are used by
+      // the setup UI to render the platform-support instructions text.
       const [nodeSettled, gitSettled] = await Promise.allSettled([
         checkNodeVersion(),
         checkGitVersion(),
@@ -611,18 +516,23 @@ export function setupAuggieIPC() {
         logger.debug('Failed to check Git version', { error: gitSettled.reason });
       }
 
-      // Check installation by running --version
+      // Install + version detection via the daemon. `host.checkAuggie` applies
+      // the settings precedence and canonical PATH scan; failures are logged
+      // and surfaced as "not installed" (honest degradation, no local probe).
+      let auggiePath: string | null = null;
       try {
-        const { stdout, stderr } = await executeAuggieCommand('--version', { timeout: 8000 });
-        const versionOutput = (stdout || '').trim() || (stderr || '').trim();
-        status.installed =
-          !!versionOutput &&
-          (versionOutput.includes('auggie') ||
-            versionOutput.includes('version') ||
-            /\d+\.\d+\.\d+/.test(versionOutput));
-        status.version = versionOutput || undefined;
-
-        // Check if version meets minimum requirements
+        const check = await getBackendClient().request<{
+          available: boolean;
+          path?: string;
+          version?: string;
+        }>('host.checkAuggie');
+        status.installed = Boolean(check?.available);
+        if (typeof check?.version === 'string' && check.version.trim()) {
+          status.version = check.version.trim();
+        }
+        if (typeof check?.path === 'string' && check.path.trim()) {
+          auggiePath = check.path.trim();
+        }
         if (status.installed && status.version) {
           status.versionOk = meetsMinimumVersion(status.version);
           if (!status.versionOk) {
@@ -633,59 +543,53 @@ export function setupAuggieIPC() {
           }
         }
       } catch (error) {
-        const errnoError = error as NodeJS.ErrnoException;
-        const errorMessage = (error as Error).message;
-        if (errnoError.code === 'ENOENT' || errorMessage.includes('not found')) {
-          logger.info('Auggie not found while fetching status');
-          return {
-            success: true,
-            data: status,
-          };
-        }
-        // Command exists but failed unexpectedly - return error instead of installed: false
-        // This shows "Something went wrong" instead of misleading setup screen
-        logger.warn('Error while running auggie --version during status check', {
-          error: errorMessage,
+        logger.warn('host.checkAuggie failed during status', {
+          error: error instanceof Error ? error.message : String(error),
         });
         return {
           success: false,
-          error: `Auggie CLI failed: ${errorMessage}. Please try again.`,
+          error: `Auggie CLI check failed: ${
+            error instanceof Error ? error.message : String(error)
+          }. Please try again.`,
           data: status,
         };
       }
 
-      // If not installed or version is too old, return early
-      if (!status.installed || !status.versionOk) {
+      if (!status.installed || !status.versionOk || !auggiePath) {
         return {
           success: true,
           data: status,
         };
       }
 
-      // Check authentication via session file or environment variable first (fast path)
+      // Auth probe via `host.exec`: `auggie model list` is fast and its stderr
+      // contains a stable "not logged in" marker. Mirrors the existing pattern
+      // in provider-availability.service#checkAuggieAuth. On RPC failure we
+      // report unauthenticated + a debug log rather than falling back locally.
       try {
-        const sessionPath = path.join(os.homedir(), '.augment', 'session.json');
-        let sessionFileExists = false;
-        try {
-          await fs.access(sessionPath);
-          sessionFileExists = true;
-        } catch {
-          // File does not exist
-        }
-        if (sessionFileExists) {
-          // Verify the session file has valid content
-          const sessionContent = await fs.readFile(sessionPath, 'utf8');
-          const session = JSON.parse(sessionContent);
-          if (session.accessToken) {
+        const probe = await hostExec(auggiePath, {
+          args: ['model', 'list'],
+          timeoutMs: 8000,
+        });
+        if (probe.timedOut) {
+          logger.debug('Auggie auth probe timed out');
+        } else {
+          const output = `${probe.stdout}\n${probe.stderr}`;
+          const isUnauthenticated =
+            /not currently logged in|not logged in|not authenticated|login required|please log in/i.test(
+              output,
+            );
+          if (probe.exitCode === 0 && !isUnauthenticated) {
             status.authenticated = true;
-            status.authDetails = 'Found valid session at ~/.augment/session.json';
+            status.authDetails = 'auggie model list succeeded (host.exec probe)';
+          } else if (isUnauthenticated) {
+            status.authDetails = 'auggie reports not logged in';
           }
-        } else if (process.env.AUGMENT_SESSION_AUTH) {
-          status.authenticated = true;
-          status.authDetails = 'Using AUGMENT_SESSION_AUTH environment variable';
         }
-      } catch (sessionError) {
-        logger.debug('Session check failed during auggie status', { error: sessionError });
+      } catch (probeError) {
+        logger.debug('Auggie auth probe (host.exec) failed', {
+          error: probeError instanceof Error ? probeError.message : String(probeError),
+        });
       }
 
       return {
@@ -701,1047 +605,153 @@ export function setupAuggieIPC() {
     }
   });
 
-  /**
-   * Download a standalone auggie binary when Node.js is not available or is an incompatible version.
-   * Downloads a pre-built binary from GitHub releases and saves it to ~/.augment/bin/auggie.
-   */
-  async function downloadAuggieBinary(): Promise<{ success: boolean }> {
+  // Install auggie. Local install (npm-install / binary download / codesign)
+  // is retired per Decision 3: the FE returns platform-specific instructions
+  // for the user to run in their own terminal. The envelope shape
+  // ({ success, error, errorType, data }) is preserved so existing renderers
+  // keep functioning; `data.instructions` / `data.command` carry the
+  // actionable payload for callers that render the new UX.
+  ipcMain.handle(AUGGIE_CHANNELS.INSTALL, async () => {
     const platform = process.platform;
-    const arch = process.arch;
+    const command =
+      platform === 'win32'
+        ? 'npm install -g @augmentcode/auggie'
+        : 'npm install -g @augmentcode/auggie';
+    const nodeCheck = await checkNodeVersion();
 
-    // Map platform/arch to asset name
-    const assetMap: Record<string, Record<string, string>> = {
-      darwin: {
-        arm64: 'auggie-darwin-arm64',
-      },
-      linux: {
-        x64: 'auggie-linux-x64',
-      },
-      win32: {
-        x64: 'auggie-windows-x64.exe',
-      },
-    };
-
-    const assetName = assetMap[platform]?.[arch];
-    if (!assetName) {
-      throw new Error(`Unsupported platform/arch: ${platform}/${arch}`);
-    }
-
-    const url = `${AUGGIE_BINARY_BASE_URL}/${assetName}`;
-    const binDir = path.join(os.homedir(), '.augment', 'bin');
-    const binaryName = platform === 'win32' ? 'auggie.exe' : 'auggie';
-    const binaryPath = path.join(binDir, binaryName);
-    const downloadTimeoutMs = 60_000;
-
-    logger.info('Auggie install: downloading binary', {
-      url,
-      path: binaryPath,
-    });
-
-    // Create ~/.augment/bin/ directory if it doesn't exist
-    await fs.mkdir(binDir, { recursive: true });
-
-    // Download the binary, following redirects (GitHub releases redirect to S3)
-    await new Promise<void>((resolve, reject) => {
-      const download = (downloadUrl: string, redirectCount = 0) => {
-        if (redirectCount > 5) {
-          reject(new Error('Too many redirects'));
-          return;
-        }
-
-        const request = https.get(downloadUrl, (response) => {
-          // Follow redirects (GitHub releases return 302)
-          if (
-            response.statusCode &&
-            response.statusCode >= 300 &&
-            response.statusCode < 400 &&
-            response.headers.location
-          ) {
-            response.resume();
-            download(response.headers.location, redirectCount + 1);
-            return;
-          }
-
-          if (response.statusCode !== 200) {
-            response.resume();
-            reject(new Error(`Download failed with status ${response.statusCode}`));
-            return;
-          }
-
-          const chunks: Buffer[] = [];
-          response.on('data', (chunk: Buffer) => chunks.push(chunk));
-          response.on('end', async () => {
-            try {
-              await fs.writeFile(binaryPath, Buffer.concat(chunks));
-              resolve();
-            } catch (err) {
-              reject(err);
-            }
-          });
-          response.on('error', reject);
-        });
-
-        request.setTimeout(downloadTimeoutMs, () => {
-          request.destroy(new Error(`Download timed out after ${downloadTimeoutMs}ms`));
-        });
-        request.on('error', reject);
-      };
-
-      download(url);
-    });
-
-    // Set execute permissions on macOS/Linux
-    if (platform !== 'win32') {
-      await fs.chmod(binaryPath, 0o755);
-    }
-
-    // Verify code signature on macOS before running the binary
-    if (platform === 'darwin') {
-      try {
-        await execFileAsyncWithRetry('codesign', ['--verify', '--deep', '--strict', binaryPath], {
-          timeout: 10_000,
-        });
-      } catch (codesignErr) {
-        try {
-          await fs.unlink(binaryPath);
-        } catch {
-          // ignore cleanup errors
-        }
-        throw new Error(
-          `Downloaded binary failed code signature verification: ${(codesignErr as Error).message}`,
-        );
-      }
-
-      // Verify signing identity if Team ID is configured
-      if (AUGGIE_APPLE_TEAM_ID) {
-        try {
-          const { stderr: codesignInfo } = await execAsync(
-            `codesign -d --verbose=2 "${binaryPath}"`,
-            { timeout: 10_000 },
-          );
-          const teamMatch = codesignInfo.match(/TeamIdentifier=(\S+)/);
-          const actualTeamId = teamMatch?.[1];
-          if (actualTeamId !== AUGGIE_APPLE_TEAM_ID) {
-            try {
-              await fs.unlink(binaryPath);
-            } catch {
-              /* ignore */
-            }
-            throw new Error(
-              `Downloaded binary signed by unexpected team: expected ${AUGGIE_APPLE_TEAM_ID}, got ${actualTeamId || 'unknown'}`,
-            );
-          }
-        } catch (identityErr) {
-          if ((identityErr as Error).message.includes('unexpected team')) throw identityErr;
-          // If codesign -d itself fails, treat as verification failure
-          try {
-            await fs.unlink(binaryPath);
-          } catch {
-            /* ignore */
-          }
-          throw new Error(
-            `Failed to verify binary signing identity: ${(identityErr as Error).message}`,
-          );
-        }
-      }
-    }
-
-    let versionOutput: string;
-    try {
-      const result = await execFileAsyncWithRetry(binaryPath, ['--version'], {
-        timeout: 10_000,
-      });
-      versionOutput = (result.stdout || '').trim();
-    } catch (verifyErr) {
-      try {
-        await fs.unlink(binaryPath);
-      } catch {
-        // ignore cleanup errors
-      }
-      throw new Error(`Downloaded binary failed verification: ${(verifyErr as Error).message}`);
-    }
-
-    // Verify downloaded binary meets minimum version requirement
-    if (!meetsMinimumVersion(versionOutput)) {
-      try {
-        await fs.unlink(binaryPath);
-      } catch {
-        // ignore cleanup errors
-      }
-      const parsed = parseVersion(versionOutput);
-      const displayVersion = parsed
-        ? `${parsed.major}.${parsed.minor}.${parsed.patch}`
-        : versionOutput;
-      throw new Error(
-        `Downloaded binary version ${displayVersion} is below minimum required version ${MINIMUM_AUGGIE_VERSION}`,
+    const instructions: string[] = [];
+    if (!nodeCheck.nodeVersionOk) {
+      const versionInfo = nodeCheck.nodeVersion
+        ? ` (found ${nodeCheck.nodeVersion})`
+        : ' (not found)';
+      instructions.push(
+        `Install Node.js ${MINIMUM_NODE_VERSION.split('.')[0]}+ from https://nodejs.org${versionInfo}.`,
       );
     }
+    instructions.push(
+      `Run \`${command}\` in your terminal (see https://docs.augmentcode.com/cli for details).`,
+      `After install, verify with \`auggie --version\` (must be >= ${MINIMUM_AUGGIE_VERSION}).`,
+    );
 
-    await saveAuggiePath(binaryPath);
-    logger.info('Auggie install: binary download succeeded', { path: binaryPath });
-
-    trackMain('Installed CLI', {
-      auggie_version: versionOutput,
-      install_method: 'binary_download',
+    const errorMessage = instructions.join(' ');
+    logger.info('Auggie install: returning manual-install instructions', {
       platform,
-      arch,
+      nodeVersionOk: nodeCheck.nodeVersionOk,
     });
 
-    return { success: true };
-  }
-
-  // Install auggie using npm
-  ipcMain.handle(AUGGIE_CHANNELS.INSTALL, async () => {
-    try {
-      logger.info('Auggie install: starting');
-
-      // Pre-check: ensure Node.js 22+ is available before attempting install
-      const nodeCheck = await checkNodeVersion();
-      if (!nodeCheck.nodeVersionOk) {
-        const versionInfo = nodeCheck.nodeVersion
-          ? ` (found ${nodeCheck.nodeVersion})`
-          : ' (not found)';
-        logger.warn('Node.js version check failed before install', {
-          version: nodeCheck.nodeVersion,
-        });
-
-        // No compatible Node.js — try downloading standalone binary instead
-        logger.info(
-          'Auggie install: Node.js not available or incompatible, trying binary download path',
-        );
-        let binaryDownloadAttempted = false;
-        try {
-          binaryDownloadAttempted = true;
-          const result = await downloadAuggieBinary();
-          if (result.success) return result;
-        } catch (err) {
-          logger.warn('Auggie install: binary download failed', { error: err });
-          // If the error is "Unsupported platform/arch", the download was never actually attempted
-          if (err instanceof Error && err.message.startsWith('Unsupported platform/arch')) {
-            binaryDownloadAttempted = false;
-          }
-        }
-
-        // If binary download was attempted but failed, return a download-specific error
-        if (binaryDownloadAttempted) {
-          return {
-            success: false,
-            error:
-              'Failed to download or install auggie. Please check your internet connection and try again. If the problem persists, check file permissions on ~/.augment/bin.',
-            errorType: 'binary_download_failed',
-          };
-        }
-
-        // Unsupported platform — binary download was never attempted, return the Node.js error
-        return {
-          success: false,
-          error: `Node.js ${MINIMUM_NODE_VERSION.split('.')[0]}+ is required to install auggie${versionInfo}. Please install Node.js ${MINIMUM_NODE_VERSION.split('.')[0]} or later from https://nodejs.org`,
-          errorType: nodeCheck.nodeVersion ? 'node_too_old' : 'missing_npm',
-        };
-      }
-
-      logger.info('Auggie install: Node.js found, using npm install path');
-
-      // Try to find npm in common locations - expanded list (platform-specific)
-      const npmPaths: string[] = [];
-      if (process.platform === 'win32') {
-        // Windows npm locations
-        const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
-        const appData = process.env.APPDATA || '';
-        npmPaths.push(
-          path.join(programFiles, 'nodejs', 'npm.cmd'),
-          path.join(programFiles, 'nodejs', 'npm'),
-        );
-        if (appData) {
-          npmPaths.push(path.join(appData, 'npm', 'npm.cmd'), path.join(appData, 'nvm', 'npm.cmd'));
-        }
-        npmPaths.push(
-          path.join(os.homedir(), '.npm-global', 'npm.cmd'),
-          path.join(os.homedir(), '.npm-global', 'npm'),
-        );
-        if (process.env.LOCALAPPDATA) {
-          npmPaths.push(path.join(process.env.LOCALAPPDATA, 'Volta', 'bin', 'npm.exe'));
-        }
-      } else {
-        npmPaths.push(
-          '/usr/local/bin/npm',
-          '/usr/bin/npm',
-          '/opt/homebrew/bin/npm',
-          '/opt/homebrew/opt/node/bin/npm',
-          '/opt/homebrew/opt/node@20/bin/npm',
-          '/opt/homebrew/opt/node@18/bin/npm',
-          path.join(os.homedir(), '.volta/bin/npm'),
-          path.join(os.homedir(), '.fnm/aliases/default/bin/npm'),
-          path.join(os.homedir(), '.asdf/shims/npm'),
-          path.join(os.homedir(), 'n/bin/npm'),
-          path.join(os.homedir(), '.npm-global/bin/npm'),
-          '/Applications/Node.app/Contents/MacOS/npm',
-        );
-      }
-
-      // Add Homebrew Cellar paths dynamically (macOS only)
-      if (process.platform !== 'win32') {
-        const cellarPaths = ['/usr/local/Cellar/node', '/opt/homebrew/Cellar/node'];
-        for (const cellarPath of cellarPaths) {
-          if (existsSync(cellarPath)) {
-            try {
-              const versions = readdirSync(cellarPath);
-              for (const version of versions) {
-                npmPaths.push(path.join(cellarPath, version, 'bin/npm'));
-              }
-            } catch {
-              // Ignore
-            }
-          }
-        }
-      }
-
-      let npmPath: string | null = null;
-      let npmVersion: string | null = null;
-
-      // First try direct paths (more reliable when launched from Finder)
-      logger.debug('Checking for npm in direct paths...');
-      for (const testPath of npmPaths) {
-        try {
-          if (existsSync(testPath)) {
-            // On Windows, .cmd files need shell execution; on Unix use execFile
-            const isCmd = testPath.endsWith('.cmd') || testPath.endsWith('.bat');
-            const { stdout } = isCmd
-              ? await execAsyncWithRetry(`"${testPath}" --version`, { timeout: 5000 })
-              : await execFileAsyncWithRetry(testPath, ['--version'], { timeout: 5000 });
-            npmPath = testPath;
-            npmVersion = stdout.trim();
-            logger.info('Found npm at direct path', { path: npmPath, version: npmVersion });
-            break;
-          }
-        } catch (err) {
-          logger.debug(`Failed to test npm at ${testPath}:`, err);
-        }
-      }
-
-      // If not found via direct paths, try to find npm via nvm
-      if (!npmPath) {
-        const nvmDir = path.join(os.homedir(), '.nvm/versions/node');
-        if (existsSync(nvmDir)) {
-          try {
-            const versions = readdirSync(nvmDir).sort().reverse();
-            for (const version of versions) {
-              const npmBin = path.join(nvmDir, version, 'bin/npm');
-              if (existsSync(npmBin)) {
-                // Use execFile for robustness against EAGAIN
-                const { stdout } = await execFileAsyncWithRetry(npmBin, ['--version'], {
-                  timeout: 5000,
-                });
-                npmPath = npmBin;
-                npmVersion = stdout.trim();
-                logger.info('Found npm via nvm', { path: npmPath, version: npmVersion });
-                break;
-              }
-            }
-          } catch (err) {
-            logger.debug('Failed to check nvm paths', { error: err });
-          }
-        }
-      }
-
-      // Finally, check if npm is available with enhanced PATH
-      if (!npmPath) {
-        try {
-          const npmCheckCommand = process.platform === 'win32' ? 'where npm' : 'which npm';
-          const { stdout: foundPath } = await execWithEnhancedPath(npmCheckCommand, {
-            timeout: 5000,
-          });
-          // Verify it actually works
-          const versionResult = await execWithEnhancedPath('npm --version', { timeout: 5000 });
-          npmPath = 'npm'; // Use npm from PATH
-          npmVersion = versionResult.stdout.trim();
-          logger.info('Found npm in enhanced PATH', {
-            path: foundPath.trim(),
-            version: npmVersion,
-          });
-        } catch (npmCheckError) {
-          logger.debug('npm not found in enhanced PATH', { error: npmCheckError });
-        }
-      }
-
-      // If npm not found, try to find node and use npx as fallback
-      if (!npmPath) {
-        logger.debug('npm not found, checking for node/npx as fallback...');
-        const nodePaths: string[] = [];
-        if (process.platform === 'win32') {
-          const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
-          nodePaths.push(
-            path.join(programFiles, 'nodejs', 'node.exe'),
-            path.join(os.homedir(), '.volta', 'bin', 'node.exe'),
-          );
-          if (process.env.APPDATA) {
-            nodePaths.push(path.join(process.env.APPDATA, 'nvm', 'node.exe'));
-          }
-        } else {
-          nodePaths.push(
-            '/usr/local/bin/node',
-            '/usr/bin/node',
-            '/opt/homebrew/bin/node',
-            '/opt/homebrew/opt/node/bin/node',
-            path.join(os.homedir(), '.volta/bin/node'),
-            path.join(os.homedir(), '.fnm/aliases/default/bin/node'),
-            path.join(os.homedir(), '.asdf/shims/node'),
-            path.join(os.homedir(), 'n/bin/node'),
-          );
-        }
-
-        let nodeFound = false;
-        for (const nodePath of nodePaths) {
-          if (existsSync(nodePath)) {
-            try {
-              const { stdout } = await execAsync(`"${nodePath}" --version`, { timeout: 5000 });
-              logger.info('Found node but not npm', { path: nodePath, version: stdout.trim() });
-              nodeFound = true;
-
-              // Try to use npx if available
-              const npxSuffix = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-              const npxPath = path.join(path.dirname(nodePath), npxSuffix);
-              if (existsSync(npxPath)) {
-                npmPath = npxPath;
-                logger.info('Found npx, will use it to install auggie', { path: npxPath });
-              }
-              break;
-            } catch {
-              // Continue
-            }
-          }
-        }
-
-        if (!npmPath) {
-          const errorMsg = nodeFound
-            ? 'Node.js is installed but npm/npx is not available. Please reinstall Node.js.'
-            : 'npm is not installed or not in PATH. Please install Node.js and npm first.';
-          logger.error('Package manager not found', { nodeFound, errorMsg });
-          return {
-            success: false,
-            error: errorMsg,
-            errorType: 'missing_npm',
-          };
-        }
-      }
-
-      // Use npm/npx to install auggie globally with enhanced PATH
-      let npmCommand: string;
-      if (npmPath === 'npm') {
-        // npm is in PATH, use it directly
-        npmCommand =
-          process.platform === 'win32'
-            ? 'npm.cmd install -g @augmentcode/auggie'
-            : 'npm install -g @augmentcode/auggie';
-      } else if (npmPath && npmPath.endsWith('npx')) {
-        // Using npx as fallback
-        npmCommand = `"${npmPath}" -y @augmentcode/auggie`;
-        logger.info('Using npx to run auggie directly without global install');
-      } else {
-        // Use direct path to npm
-        npmCommand = `"${npmPath}" install -g @augmentcode/auggie`;
-      }
-
-      logger.info('Installing auggie with command', { command: npmCommand });
-
-      const { stdout, stderr } =
-        npmPath === 'npm'
-          ? await execWithEnhancedPath(npmCommand, { timeout: 60000 })
-          : await execAsync(npmCommand, {
-              env: {
-                ...process.env,
-                PATH: getEnhancedPath(),
-              },
-              timeout: 60000,
-            });
-
-      logger.info('Auggie installation output', { stdout, stderr });
-
-      // Derive auggie path from npm path (they're in the same bin directory)
-      // This is more reliable than `which auggie` since shell caches may not be updated
-      let auggiePath: string | null = null;
-
-      logger.info('Looking for auggie after installation', { npmPath });
-
-      if (npmPath && npmPath !== 'npm') {
-        // npm is at something like /path/to/bin/npm, so auggie is at /path/to/bin/auggie
-        const binDir = path.dirname(npmPath);
-        // On Windows, npm installs auggie.cmd; on Unix it's just auggie
-        const auggieNames = process.platform === 'win32' ? ['auggie.cmd', 'auggie'] : ['auggie'];
-        for (const name of auggieNames) {
-          const derivedAuggiePath = path.join(binDir, name);
-          logger.info('Checking derived auggie path', {
-            binDir,
-            derivedAuggiePath,
-            exists: existsSync(derivedAuggiePath),
-          });
-          if (existsSync(derivedAuggiePath)) {
-            auggiePath = derivedAuggiePath;
-            logger.info('Derived auggie path from npm location', { auggiePath });
-            break;
-          }
-        }
-      } else if (npmPath === 'npm') {
-        // npm was found in PATH, resolve its actual location first
-        logger.info('npm found in PATH, resolving actual location');
-        try {
-          let resolvedNpmPath: string | null = null;
-          if (process.platform === 'win32') {
-            // On Windows, use 'where npm' to find its location
-            const { stdout: npmWhere } = await execWithEnhancedPath('where npm', {
-              timeout: 10000,
-            });
-            // 'where' may return multiple lines; take the first one
-            resolvedNpmPath = npmWhere.trim().split(/\r?\n/)[0]?.trim() || null;
-          } else {
-            const shell = process.env.SHELL || '/bin/zsh';
-            const { stdout: npmWhich } = await execAsync(`${shell} -i -c "which npm"`, {
-              timeout: 10000,
-              env: { ...process.env, PATH: getEnhancedPath() },
-            });
-            resolvedNpmPath = npmWhich.trim() || null;
-          }
-          logger.info('Resolved npm path', { resolvedNpmPath });
-          if (resolvedNpmPath) {
-            const binDir = path.dirname(resolvedNpmPath);
-            const auggieNames =
-              process.platform === 'win32' ? ['auggie.cmd', 'auggie'] : ['auggie'];
-            for (const name of auggieNames) {
-              const derivedAuggiePath = path.join(binDir, name);
-              logger.info('Checking derived auggie path from resolved npm', {
-                resolvedNpmPath,
-                derivedAuggiePath,
-                exists: existsSync(derivedAuggiePath),
-              });
-              if (existsSync(derivedAuggiePath)) {
-                auggiePath = derivedAuggiePath;
-                logger.info('Derived auggie path from resolved npm location', { auggiePath });
-                break;
-              }
-            }
-          }
-        } catch (resolveError) {
-          logger.warn('Could not resolve npm path', { error: (resolveError as Error).message });
-        }
-      } else {
-        logger.warn('No npm path available for derivation', { npmPath });
-      }
-
-      // Fallback: try to find auggie via shell (platform-appropriate)
-      if (!auggiePath) {
-        logger.info('Trying to find auggie via shell fallback');
-        try {
-          const foundPath = await findBinary('auggie', { cache: false, retry: true });
-          logger.info('auggie search result', {
-            foundPath,
-            exists: foundPath ? existsSync(foundPath) : false,
-          });
-          if (foundPath && existsSync(foundPath)) {
-            auggiePath = foundPath;
-            logger.info('Found auggie via shell', { auggiePath });
-          }
-        } catch (shellError) {
-          logger.warn('Could not find auggie via shell', { error: (shellError as Error).message });
-        }
-      }
-
-      // Final fallback: search using enhanced PATH to catch fresh installs where PATH isn't updated yet
-      if (!auggiePath) {
-        const enhancedPathResult = await findAuggieInEnhancedPath();
-        if (enhancedPathResult) {
-          auggiePath = enhancedPathResult;
-          logger.info('Found auggie via enhanced PATH after install', { auggiePath });
-        }
-      }
-
-      if (auggiePath && existsSync(auggiePath)) {
-        logger.info('Auggie successfully installed and cached', { path: auggiePath });
-        await saveAuggiePath(auggiePath);
-
-        // Verify it works
-        let installedVersion: string | undefined;
-        try {
-          const { stdout: versionOutput } = await execAsync(`"${auggiePath}" --version`, {
-            timeout: 10_000,
-          });
-          installedVersion = versionOutput.trim();
-          logger.info('Auggie version verified', { version: installedVersion });
-        } catch (verifyError) {
-          logger.warn('Could not verify auggie version', { error: verifyError });
-        }
-
-        trackMain('Installed CLI', {
-          auggie_version: installedVersion,
-          install_method: 'npm',
-          platform: process.platform,
-          arch: process.arch,
-        });
-
-        return {
-          success: true,
-        };
-      }
-
-      logger.warn('Auggie installed but could not determine path');
-      trackMain('Installed CLI', {
-        install_method: 'npm',
-        platform: process.platform,
-        arch: process.arch,
-      });
-      return {
-        success: true,
-      };
-    } catch (error) {
-      const err = error as Error;
-      logger.error('Failed to install auggie', { error: err.message, stack: err.stack });
-
-      // Provide helpful error messages
-      let errorMessage = err.message;
-      let errorType: 'permission' | 'missing_npm' | 'unknown' = 'unknown';
-      const lowerMessage = err.message.toLowerCase();
-      if (
-        err.message.includes('EACCES') ||
-        err.message.includes('EPERM') ||
-        lowerMessage.includes('permission')
-      ) {
-        errorMessage =
-          'Permission denied. You may need to run with administrator privileges or use sudo.';
-        errorType = 'permission';
-      } else if (err.message.includes('ENOENT') || lowerMessage.includes('not found')) {
-        errorMessage = 'npm is not installed or not in PATH. Please install Node.js and npm first.';
-        errorType = 'missing_npm';
-      }
-
-      return {
-        success: false,
-        error: errorMessage,
-        errorType,
-      };
-    }
+    return {
+      success: false,
+      error: errorMessage,
+      errorType: 'manual_install_required' as const,
+      data: {
+        instructions,
+        command,
+        platform,
+        minimumAuggieVersion: MINIMUM_AUGGIE_VERSION,
+        minimumNodeVersion: MINIMUM_NODE_VERSION,
+      },
+    };
   });
 
-  // Persistent login process for the authentication flow
-  let loginProcess: import('child_process').ChildProcess | null = null;
-  let loginProcessResolve:
-    | ((value: { success: boolean; stdout: string; stderr: string }) => void)
-    | null = null;
-  let loginProcessReject: ((error: Error) => void) | null = null;
-  let loginStdout = '';
-  let loginStderr = '';
-  // Track the auth URL from the start action so we can extract client_id / redirect_uri
-  // for the direct token exchange in the complete action.
-  let lastAuthUrl: string | undefined;
-
-  // Authenticate with Augment - spawns `auggie login` and forwards user input
+  // Authenticate with Augment. The FE-side interactive OAuth flow
+  // (spawning `auggie login`, stdout scraping, JSON paste, direct token
+  // exchange) is retired per Decision 3. The FE now detects auth via
+  // `host.checkAuggie` + a `host.exec` probe and returns instructions for
+  // the user to run `auggie login` themselves.
+  //
+  // The `{ action }` param is preserved for renderer compat: `start` and
+  // `complete` return the instruction payload; `poll` re-runs detection so
+  // the setup UI can show "logged in" once the user finishes the flow.
   ipcMain.handle(
     AUGGIE_CHANNELS.AUTHENTICATE,
     async (
       _,
-      { action, authResponse }: { action: 'start' | 'complete' | 'poll'; authResponse?: string },
+      _params?: { action?: 'start' | 'complete' | 'poll'; authResponse?: string },
     ) => {
-      const { spawn } = requireNode('child_process') as typeof import('child_process');
-
+      // Re-check via the daemon so callers get the current install state.
+      let auggiePath: string | null = null;
+      let installed = false;
       try {
-        if (action === 'start') {
-          // Start OAuth flow by spawning `auggie login`
-          // The new auggie CLI uses a localhost callback flow on local machines:
-          // it opens the browser, starts a localhost server, receives the OAuth callback,
-          // exchanges the code for a token, saves session.json, and exits with code 0.
-          // The old flow (JSON paste) is still available as a fallback for remote sessions.
-          logger.info('Starting OAuth authentication via auggie login');
-
-          // Kill any existing login process
-          if (loginProcess) {
-            loginProcess.kill();
-            loginProcess = null;
-          }
-          loginStdout = '';
-          loginStderr = '';
-
-          // Find auggie path - MUST exist for authentication to work
-          const auggiePath = await findAuggiePathAsync();
-
-          logger.info('AUTHENTICATE handler: findAuggiePathAsync result', {
-            auggiePath,
-            exists: auggiePath ? existsSync(auggiePath) : false,
-          });
-
-          if (!auggiePath) {
-            logger.error('Cannot start authentication: auggie CLI not found');
-            return {
-              success: false,
-              error: 'Auggie CLI not found. Please install it first.',
-            };
-          }
-
-          logger.info('Starting auggie login process', { auggiePath });
-
-          return new Promise((resolve) => {
-            let hasErrored = false;
-            let processClosed = false;
-            let closeCode: number | null = null;
-            let closeSignal: NodeJS.Signals | null = null;
-            let startErrorMessage: string | null = null;
-
-            // Spawn auggie login
-            // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
-            // On macOS, don't use shell: true - /bin/sh may not be accessible
-            // in macOS GUI apps launched from Finder.
-            const isWindowsCmdFile =
-              process.platform === 'win32' &&
-              (auggiePath.endsWith('.cmd') || auggiePath.endsWith('.bat'));
-            // On Windows with shell: true, quote the path to handle spaces (e.g. C:\Users\John Doe\...)
-            const loginSpawnCommand = isWindowsCmdFile ? `"${auggiePath}"` : auggiePath;
-            loginProcess = spawn(loginSpawnCommand, ['login'], {
-              env: { ...process.env, PATH: getAuggieExecPATH(auggiePath) },
-              shell: isWindowsCmdFile,
-              windowsHide: true,
-            });
-
-            let browserOpened = false;
-            let authUrl: string | undefined;
-            let isJsonPasteFlow = false;
-
-            loginProcess.stdout?.on('data', (data: Buffer) => {
-              const text = data.toString();
-              loginStdout += text;
-              logger.debug('auggie login stdout', { text });
-
-              // Check if we need to confirm re-authentication
-              if (text.includes('(y/N)') && !browserOpened) {
-                // Send 'y' to confirm re-authentication
-                loginProcess?.stdin?.write('y\n');
-              }
-
-              // Check if browser was opened (auth URL shown)
-              if (text.includes('authorize?') || text.includes('Opening authentication')) {
-                browserOpened = true;
-              }
-
-              // Detect JSON paste flow (old/remote flow) — the process prompts for stdin
-              if (text.includes('Paste') || text.includes('manual authentication')) {
-                isJsonPasteFlow = true;
-              }
-
-              // Extract auth URL from the output - it's printed on its own line
-              // Look for URLs that contain authorize? (the OAuth endpoint)
-              const urlMatch = text.match(/(https?:\/\/[^\s]+authorize\?[^\s]+)/);
-              if (urlMatch) {
-                authUrl = urlMatch[1];
-                logger.debug('Captured auth URL', { authUrl });
-              }
-            });
-
-            loginProcess.stderr?.on('data', (data: Buffer) => {
-              const text = data.toString();
-              loginStderr += text;
-              logger.debug('auggie login stderr', { text });
-              if (!authUrl) {
-                const urlMatch = text.match(/(https?:\/\/[^\s]+authorize\?[^\s]+)/);
-                if (urlMatch) {
-                  authUrl = urlMatch[1];
-                  logger.debug('Captured auth URL from stderr', { authUrl });
-                }
-              }
-            });
-
-            loginProcess.on('error', (err) => {
-              logger.error('auggie login process error', { error: err.message });
-              hasErrored = true;
-              startErrorMessage = err.message;
-              loginProcess = null;
-              if (loginProcessReject) {
-                loginProcessReject(err);
-                loginProcessReject = null;
-                loginProcessResolve = null;
-              }
-            });
-
-            loginProcess.on('close', (code, signal) => {
-              logger.info('auggie login process closed', {
-                code,
-                signal,
-                stdout: loginStdout,
-                stderr: loginStderr,
-              });
-              processClosed = true;
-              closeCode = code ?? null;
-              closeSignal = signal ?? null;
-              const success = code === 0;
-              if (loginProcessResolve) {
-                loginProcessResolve({ success, stdout: loginStdout, stderr: loginStderr });
-                loginProcessResolve = null;
-                loginProcessReject = null;
-              }
-              loginProcess = null;
-            });
-
-            // Wait a bit for the process to start and output the auth URL.
-            // With the new localhost flow, the process may still be running
-            // (waiting for the browser callback). That's fine — we return
-            // processStarted: true and the renderer will poll for completion.
-            // If it already exited with code 0, the localhost flow succeeded
-            // and we return autoCompleted: true.
-            setTimeout(() => {
-              if (hasErrored) {
-                resolve({
-                  success: false,
-                  error:
-                    startErrorMessage || 'Auggie login process failed to start. Please try again.',
-                });
-                return;
-              }
-
-              // Process already exited — check if it was a successful localhost flow
-              if (processClosed) {
-                if (closeCode === 0) {
-                  // Localhost flow completed successfully (or was already authenticated)
-                  logger.info('auggie login completed automatically (localhost OAuth flow)');
-                  resolve({
-                    success: true,
-                    data: {
-                      autoCompleted: true,
-                    },
-                  });
-                } else {
-                  const suffix =
-                    closeCode !== null || closeSignal
-                      ? ` (exit ${closeCode ?? 'unknown'}${closeSignal ? `, ${closeSignal}` : ''})`
-                      : '';
-                  resolve({
-                    success: false,
-                    error: `Auggie login process exited unexpectedly${suffix}. Please try again.`,
-                  });
-                }
-                return;
-              }
-
-              // Process still running — likely waiting for browser callback
-              // (localhost flow) or waiting for JSON paste (remote flow).
-              // Extract auth URL for fallback display.
-              if (!authUrl) {
-                const urlMatch = loginStdout.match(/(https?:\/\/[^\s]+authorize\?[^\s]+)/);
-                if (urlMatch) {
-                  authUrl = urlMatch[1];
-                  logger.debug('Captured auth URL from accumulated stdout', {
-                    authUrl,
-                  });
-                }
-              }
-              if (!authUrl) {
-                const urlMatch = loginStderr.match(/(https?:\/\/[^\s]+authorize\?[^\s]+)/);
-                if (urlMatch) {
-                  authUrl = urlMatch[1];
-                  logger.debug('Captured auth URL from accumulated stderr', {
-                    authUrl,
-                  });
-                }
-              }
-              // Remember the auth URL so we can extract client_id/redirect_uri
-              // for the direct token exchange in the complete action.
-              lastAuthUrl = authUrl;
-              resolve({
-                success: true,
-                data: {
-                  processStarted: true,
-                  authUrl,
-                  isJsonPasteFlow,
-                },
-              });
-            }, 2000);
-          });
-        } else if (action === 'poll') {
-          // Poll for auth completion — used by the renderer to check if the
-          // localhost OAuth flow finished (process exited with code 0)
-          if (!loginProcess) {
-            // Process is gone — check if it exited successfully
-            // by verifying session.json has a token
-            const homedir = requireNode('os').homedir();
-            const sessionPath = requireNode('path').join(homedir, '.augment', 'session.json');
-            try {
-              const pollSessionContent = await fs.readFile(sessionPath, 'utf-8');
-              const sessionData = JSON.parse(pollSessionContent);
-              if (sessionData.accessToken) {
-                return {
-                  success: true,
-                  data: { completed: true, authenticated: true },
-                };
-              }
-            } catch {
-              // Ignore read/parse errors (file may not exist yet)
-            }
-            return {
-              success: true,
-              data: { completed: true, authenticated: false },
-            };
-          }
-          // Process still running — auth not complete yet
-          return {
-            success: true,
-            data: { completed: false },
-          };
-        } else if (action === 'complete' && authResponse) {
-          // Complete OAuth flow by exchanging the authorization code for a token
-          // directly, instead of piping to the auggie login process's stdin.
-          // The old approach (writing to stdin) failed because:
-          // - In the localhost flow, the process wasn't reading from stdin
-          // - If the process had already exited, there was nothing to write to
-          logger.info('Completing OAuth authentication with direct token exchange');
-
-          // Parse the auth response JSON
-          let authArgs: { code?: string; state?: string; tenant_url?: string };
-          try {
-            authArgs = JSON.parse(authResponse);
-          } catch {
-            return {
-              success: false,
-              error:
-                'Invalid authentication response format. Please paste the full JSON from the browser (e.g. {"code":"...","state":"...","tenant_url":"..."}).',
-            };
-          }
-
-          // Kill any existing login process — we handle the exchange directly
-          if (loginProcess) {
-            loginProcessResolve = null;
-            loginProcessReject = null;
-            loginProcess.kill();
-            loginProcess = null;
-          }
-
-          // Read the OAuth state from disk (written by auggie login during 'start')
-          const homedir = os.homedir();
-          const oauthStatePath = path.join(homedir, '.augment', 'oauth-state.json');
-          let oauthState: {
-            codeVerifier: string;
-            codeChallenge: string;
-            state: string;
-            creationTime: number;
-          };
-          try {
-            const oauthRaw = await fs.readFile(oauthStatePath, 'utf-8');
-            oauthState = JSON.parse(oauthRaw);
-            // Check that the state is not too old (10 minutes)
-            if (Date.now() - oauthState.creationTime > 10 * 60 * 1000) {
-              throw new Error('expired');
-            }
-          } catch {
-            return {
-              success: false,
-              error:
-                'Your login session has expired. Please click "Login with Augment" to start a new session.',
-            };
-          }
-
-          // Verify state if the pasted response includes it
-          if (authArgs.state && oauthState.state !== authArgs.state) {
-            return {
-              success: false,
-              error:
-                'State parameter mismatch. Please make sure you pasted the response from the correct login session.',
-            };
-          }
-
-          if (!authArgs.code) {
-            return {
-              success: false,
-              error:
-                'No authorization code found. Please paste the full JSON response from the browser.',
-            };
-          }
-
-          if (!authArgs.tenant_url) {
-            return {
-              success: false,
-              error:
-                'No tenant URL found. Please paste the full JSON response from the browser (must include tenant_url).',
-            };
-          }
-
-          // Determine client_id and redirect_uri from the original auth URL.
-          // The localhost flow uses client_id="auggie-cli" with a localhost redirect,
-          // while the JSON paste flow uses client_id="v" with an empty redirect.
-          let clientId = 'v';
-          let redirectUri = '';
-          if (lastAuthUrl) {
-            try {
-              const parsed = new URL(lastAuthUrl);
-              const urlClientId = parsed.searchParams.get('client_id');
-              const urlRedirectUri = parsed.searchParams.get('redirect_uri');
-              if (urlClientId) clientId = urlClientId;
-              if (urlRedirectUri) redirectUri = urlRedirectUri;
-            } catch {
-              // Ignore URL parsing errors, use JSON-paste defaults
-            }
-          }
-
-          // Exchange the authorization code for an access token
-          try {
-            const tokenUrl = new URL('token', authArgs.tenant_url).href;
-            logger.info('Exchanging auth code for token', { tokenUrl, clientId });
-
-            const tokenResponse = await fetch(tokenUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                grant_type: 'authorization_code',
-                client_id: clientId,
-                code_verifier: oauthState.codeVerifier,
-                redirect_uri: redirectUri,
-                code: authArgs.code,
-              }),
-            });
-
-            if (!tokenResponse.ok) {
-              const errorText = await tokenResponse.text();
-              logger.error('Token exchange failed', { status: tokenResponse.status, errorText });
-              throw new Error(`Token exchange failed (${tokenResponse.status})`);
-            }
-
-            const tokenData = (await tokenResponse.json()) as { access_token?: string };
-            if (!tokenData.access_token) {
-              throw new Error('No access token in server response');
-            }
-
-            // Save the session to ~/.augment/session.json
-            const sessionPath = path.join(homedir, '.augment', 'session.json');
-            const session = {
-              accessToken: tokenData.access_token,
-              tenantURL: authArgs.tenant_url,
-              scopes: ['read', 'write'],
-            };
-            await fs.writeFile(sessionPath, JSON.stringify(session, null, 2), 'utf-8');
-
-            // Clean up the OAuth state file
-            try {
-              await fs.unlink(oauthStatePath);
-            } catch {
-              // Ignore cleanup errors
-            }
-
-            logger.info('Direct token exchange succeeded — user authenticated');
-            return { success: true, data: { authenticated: true } };
-          } catch (exchangeErr) {
-            logger.error('Direct token exchange failed', {
-              error: (exchangeErr as Error).message,
-            });
-            return {
-              success: false,
-              error: (exchangeErr as Error).message || 'Failed to complete authentication',
-            };
-          }
+        const check = await getBackendClient().request<{
+          available: boolean;
+          path?: string;
+          version?: string;
+        }>('host.checkAuggie');
+        installed = Boolean(check?.available);
+        if (typeof check?.path === 'string' && check.path.trim()) {
+          auggiePath = check.path.trim();
         }
-
-        return {
-          success: false,
-          error: 'Invalid action',
-        };
       } catch (error) {
-        logger.error('Authentication failed', { error: (error as Error).message });
+        logger.warn('host.checkAuggie failed during authenticate', {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return {
           success: false,
-          error: (error as Error).message || 'Authentication failed',
+          error: 'Could not reach the daemon to check for the Auggie CLI. Please try again.',
         };
       }
+
+      if (!installed || !auggiePath) {
+        return {
+          success: false,
+          error: 'Auggie CLI not found. Install it first, then click Login again.',
+          errorType: 'not_installed' as const,
+          data: {
+            instructions: [
+              'Install the Auggie CLI first (npm install -g @augmentcode/auggie).',
+              'Then run `auggie login` in your terminal.',
+            ],
+            command: 'auggie login',
+          },
+        };
+      }
+
+      // Probe auth state. If already logged in, tell the renderer so it can
+      // skip the login step. Otherwise return the instruction to run
+      // `auggie login` interactively (host.exec is buffered and cannot host
+      // the OAuth interactive TTY session; the user runs it in their own
+      // terminal).
+      let authenticated = false;
+      try {
+        const probe = await hostExec(auggiePath, {
+          args: ['model', 'list'],
+          timeoutMs: 8000,
+        });
+        if (!probe.timedOut) {
+          const output = `${probe.stdout}\n${probe.stderr}`;
+          const isUnauthenticated =
+            /not currently logged in|not logged in|not authenticated|login required|please log in/i.test(
+              output,
+            );
+          authenticated = probe.exitCode === 0 && !isUnauthenticated;
+        }
+      } catch (probeError) {
+        logger.debug('Auggie auth probe (host.exec) failed', {
+          error: probeError instanceof Error ? probeError.message : String(probeError),
+        });
+      }
+
+      if (authenticated) {
+        return {
+          success: true,
+          data: { authenticated: true, completed: true },
+        };
+      }
+
+      return {
+        success: false,
+        error: 'Run `auggie login` in your terminal to sign in, then click Login again.',
+        errorType: 'manual_login_required' as const,
+        data: {
+          authenticated: false,
+          instructions: [
+            `Run \`${auggiePath} login\` (or just \`auggie login\`) in your terminal.`,
+            'Complete the browser flow, then return here and click Login again.',
+          ],
+          command: 'auggie login',
+          auggiePath,
+        },
+      };
     },
   );
 
@@ -1990,9 +1000,15 @@ export function setupAuggieIPC() {
       // First, try to remove any existing auggie entry (ignore errors if it doesn't exist)
       try {
         logger.info('Removing existing Claude Code MCP entry (if any)');
-        await execFileWithEnhancedPath(claudePath, ['mcp', 'remove', 'auggie', '--scope', 'user'], {
-          timeout: 15000,
+        const removeResult = await hostExec(claudePath, {
+          args: ['mcp', 'remove', 'auggie', '--scope', 'user'],
+          timeoutMs: 15000,
         });
+        if (removeResult.timedOut || removeResult.exitCode !== 0) {
+          throw new Error(
+            removeResult.stderr || `host.exec exited with code ${removeResult.exitCode}`,
+          );
+        }
         logger.info('Removed existing auggie MCP entry');
       } catch {
         // Entry didn't exist, that's fine
@@ -2006,11 +1022,16 @@ export function setupAuggieIPC() {
         command: `${claudePath} mcp add-json auggie --scope user '<json>'`,
       });
 
-      const { stdout, stderr } = await execFileWithEnhancedPath(
-        claudePath,
-        ['mcp', 'add-json', 'auggie', '--scope', 'user', jsonString],
-        { timeout: 30000 },
-      );
+      const setupResult = await hostExec(claudePath, {
+        args: ['mcp', 'add-json', 'auggie', '--scope', 'user', jsonString],
+        timeoutMs: 30000,
+      });
+      if (setupResult.timedOut || setupResult.exitCode !== 0) {
+        throw new Error(
+          setupResult.stderr || `host.exec exited with code ${setupResult.exitCode}`,
+        );
+      }
+      const { stdout, stderr } = setupResult;
 
       logger.info('Claude Code MCP setup completed', { stdout, stderr });
 
@@ -2066,9 +1087,16 @@ export function setupAuggieIPC() {
         command: `${codexPath} ${codexArgs.join(' ')}`,
       });
 
-      const { stdout, stderr } = await execFileWithEnhancedPath(codexPath, codexArgs, {
-        timeout: 30000,
+      const setupResult = await hostExec(codexPath, {
+        args: codexArgs,
+        timeoutMs: 30000,
       });
+      if (setupResult.timedOut || setupResult.exitCode !== 0) {
+        throw new Error(
+          setupResult.stderr || `host.exec exited with code ${setupResult.exitCode}`,
+        );
+      }
+      const { stdout, stderr } = setupResult;
 
       logger.info('Codex MCP setup completed', { stdout, stderr });
 
@@ -2243,9 +1271,16 @@ export function setupAuggieIPC() {
 
       try {
         // Run: claude mcp list (no --json or --scope flags, as they are not supported)
-        const { stdout } = await execWithEnhancedPath(`"${claudePath}" mcp list`, {
-          timeout: 5000,
+        const listResult = await hostExec(claudePath, {
+          args: ['mcp', 'list'],
+          timeoutMs: 5000,
         });
+        if (listResult.timedOut || listResult.exitCode !== 0) {
+          throw new Error(
+            listResult.stderr || `host.exec exited with code ${listResult.exitCode}`,
+          );
+        }
+        const { stdout } = listResult;
 
         // Parse text output: check if 'auggie' appears in the output
         const isConfigured = stdout.includes('auggie');
@@ -2292,9 +1327,16 @@ export function setupAuggieIPC() {
 
       try {
         // Try to run: codex mcp list
-        const { stdout } = await execWithEnhancedPath(`"${codexPath}" mcp list`, {
-          timeout: 5000,
+        const listResult = await hostExec(codexPath, {
+          args: ['mcp', 'list'],
+          timeoutMs: 5000,
         });
+        if (listResult.timedOut || listResult.exitCode !== 0) {
+          throw new Error(
+            listResult.stderr || `host.exec exited with code ${listResult.exitCode}`,
+          );
+        }
+        const { stdout } = listResult;
 
         // Check if output contains codebase-retrieval entry referencing auggie
         const isConfigured = stdout.includes('codebase-retrieval') && stdout.includes('auggie');
@@ -2430,11 +1472,20 @@ export function setupAuggieIPC() {
         };
       }
 
-      const command = `"${claudePath}" mcp remove auggie --scope user`;
+      const command = `${claudePath} mcp remove auggie --scope user`;
 
       logger.info('Executing Claude Code MCP uninstall', { command });
 
-      const { stdout, stderr } = await execWithEnhancedPath(command, { timeout: 30000 });
+      const uninstallResult = await hostExec(claudePath, {
+        args: ['mcp', 'remove', 'auggie', '--scope', 'user'],
+        timeoutMs: 30000,
+      });
+      if (uninstallResult.timedOut || uninstallResult.exitCode !== 0) {
+        throw new Error(
+          uninstallResult.stderr || `host.exec exited with code ${uninstallResult.exitCode}`,
+        );
+      }
+      const { stdout, stderr } = uninstallResult;
 
       logger.info('Claude Code MCP uninstall completed', { stdout, stderr });
 
@@ -2466,11 +1517,20 @@ export function setupAuggieIPC() {
         };
       }
 
-      const command = `"${codexPath}" mcp remove codebase-retrieval`;
+      const command = `${codexPath} mcp remove codebase-retrieval`;
 
       logger.info('Executing Codex MCP uninstall', { command });
 
-      const { stdout, stderr } = await execWithEnhancedPath(command, { timeout: 30000 });
+      const uninstallResult = await hostExec(codexPath, {
+        args: ['mcp', 'remove', 'codebase-retrieval'],
+        timeoutMs: 30000,
+      });
+      if (uninstallResult.timedOut || uninstallResult.exitCode !== 0) {
+        throw new Error(
+          uninstallResult.stderr || `host.exec exited with code ${uninstallResult.exitCode}`,
+        );
+      }
+      const { stdout, stderr } = uninstallResult;
 
       logger.info('Codex MCP uninstall completed', { stdout, stderr });
 
@@ -2512,11 +1572,20 @@ export function setupAuggieIPC() {
       }
 
       // Execute: cortex mcp add augment-context-engine <auggiePath> -- --mcp --mcp-auto-workspace
-      const command = `"${cortexPath}" mcp add augment-context-engine "${auggiePath}" -- --mcp --mcp-auto-workspace`;
+      const command = `${cortexPath} mcp add augment-context-engine ${auggiePath} -- --mcp --mcp-auto-workspace`;
 
       logger.info('Executing Cortex MCP setup', { command });
 
-      const { stdout, stderr } = await execWithEnhancedPath(command, { timeout: 30000 });
+      const setupResult = await hostExec(cortexPath, {
+        args: ['mcp', 'add', 'augment-context-engine', auggiePath, '--', '--mcp', '--mcp-auto-workspace'],
+        timeoutMs: 30000,
+      });
+      if (setupResult.timedOut || setupResult.exitCode !== 0) {
+        throw new Error(
+          setupResult.stderr || `host.exec exited with code ${setupResult.exitCode}`,
+        );
+      }
+      const { stdout, stderr } = setupResult;
 
       logger.info('Cortex MCP setup completed', { stdout, stderr });
 
@@ -2551,9 +1620,16 @@ export function setupAuggieIPC() {
 
       try {
         // Run: cortex mcp list
-        const { stdout } = await execWithEnhancedPath(`"${cortexPath}" mcp list`, {
-          timeout: 5000,
+        const listResult = await hostExec(cortexPath, {
+          args: ['mcp', 'list'],
+          timeoutMs: 5000,
         });
+        if (listResult.timedOut || listResult.exitCode !== 0) {
+          throw new Error(
+            listResult.stderr || `host.exec exited with code ${listResult.exitCode}`,
+          );
+        }
+        const { stdout } = listResult;
 
         // Check if output contains augment-context-engine
         const isConfigured = stdout.includes('augment-context-engine');
@@ -2597,11 +1673,20 @@ export function setupAuggieIPC() {
         };
       }
 
-      const command = `"${cortexPath}" mcp remove augment-context-engine`;
+      const command = `${cortexPath} mcp remove augment-context-engine`;
 
       logger.info('Executing Cortex MCP uninstall', { command });
 
-      const { stdout, stderr } = await execWithEnhancedPath(command, { timeout: 30000 });
+      const uninstallResult = await hostExec(cortexPath, {
+        args: ['mcp', 'remove', 'augment-context-engine'],
+        timeoutMs: 30000,
+      });
+      if (uninstallResult.timedOut || uninstallResult.exitCode !== 0) {
+        throw new Error(
+          uninstallResult.stderr || `host.exec exited with code ${uninstallResult.exitCode}`,
+        );
+      }
+      const { stdout, stderr } = uninstallResult;
 
       logger.info('Cortex MCP uninstall completed', { stdout, stderr });
 

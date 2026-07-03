@@ -87,7 +87,7 @@ export class ExecutorManager {
     if (!cached) {
       const executor = remote
         ? new RemoteExecutor(remote, workspaceId)
-        : new LocalExecutor(workspacePath);
+        : new LocalExecutor(workspacePath, workspaceId);
       cached = { executor, lastUsed: Date.now() };
       this.executors.set(key, cached);
       this.logger.debug('Created executor', { workspaceId, type });

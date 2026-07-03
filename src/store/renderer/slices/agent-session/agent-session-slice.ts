@@ -422,6 +422,8 @@ type SessionComparisonSnapshot = Pick<
   | 'isStreaming'
   | 'isProcessing'
   | 'isResponding'
+  | 'isWaitingOnTool'
+  | 'isWaitingForOtherAgents'
   | 'digest'
   | 'backendSessionId'
   | 'acpSessionId'
@@ -448,6 +450,8 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
     isStreaming: session.isStreaming,
     isProcessing: session.isProcessing,
     isResponding: session.isResponding,
+    isWaitingOnTool: session.isWaitingOnTool,
+    isWaitingForOtherAgents: session.isWaitingForOtherAgents,
     digest: session.digest,
     backendSessionId: session.backendSessionId,
     acpSessionId: session.acpSessionId,

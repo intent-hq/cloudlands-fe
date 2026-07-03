@@ -12,13 +12,9 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import {
   findBinary,
-  getEnhancedPath,
   getCommonNpmPaths,
 } from '../../../shared/main/find-binary';
-import {
-  execAsyncWithRetry,
-  execFileAsyncWithRetry,
-} from '../../../shared/git/git-env';
+import { hostExec } from '../../../shared/main/host-exec';
 
 // Common paths to look for npx (adapter runner)
 const NPX_PATHS = [
@@ -145,32 +141,6 @@ async function isPiMcpAdapterInSettings(): Promise<boolean> {
   }
 }
 
-async function execFileWithEnhancedPath(
-  file: string,
-  args: string[],
-  options: { cwd?: string; maxBuffer?: number; timeout?: number } = {},
-): Promise<{ stdout: string; stderr: string }> {
-  const envOptions = {
-    ...options,
-    env: {
-      ...process.env,
-      PATH: getEnhancedPath(),
-    },
-  };
-
-  if (process.platform === 'win32') {
-    const quotedArgs = args.map((arg) => {
-      if (/[\s"&|<>^]/.test(arg) || arg.includes('{') || arg.includes('}')) {
-        return `"${arg.replace(/"/g, '\\"')}"`;
-      }
-      return arg;
-    });
-    return execAsyncWithRetry(`"${file}" ${quotedArgs.join(' ')}`, envOptions);
-  }
-
-  return execFileAsyncWithRetry(file, args, envOptions);
-}
-
 /**
  * Check whether pi-mcp-adapter is installed in Pi's package manager.
  *
@@ -190,8 +160,14 @@ export async function isPiMcpAdapterInstalled(): Promise<boolean> {
   if (!piPath) return false;
 
   try {
-    const { stdout } = await execFileWithEnhancedPath(piPath, ['list'], { timeout: 10_000 });
-    return stdout.split(/\r?\n/).some((line) => line.includes(PI_MCP_ADAPTER_PACKAGE));
+    const result = await hostExec(piPath, {
+      args: ['list'],
+      timeoutMs: 10_000,
+    });
+    if (result.timedOut || result.exitCode !== 0) {
+      return false;
+    }
+    return result.stdout.split(/\r?\n/).some((line) => line.includes(PI_MCP_ADAPTER_PACKAGE));
   } catch {
     return false;
   }
@@ -204,10 +180,19 @@ export async function installPiMcpAdapter(): Promise<{ success: boolean; error?:
   }
 
   try {
-    await execFileWithEnhancedPath(piPath, ['install', PI_MCP_ADAPTER_INSTALL_SOURCE], {
-      timeout: 120_000,
-      maxBuffer: 1024 * 1024 * 10,
+    const result = await hostExec(piPath, {
+      args: ['install', PI_MCP_ADAPTER_INSTALL_SOURCE],
+      timeoutMs: 120_000,
     });
+    if (result.timedOut) {
+      return { success: false, error: 'pi install timed out' };
+    }
+    if (result.exitCode !== 0) {
+      return {
+        success: false,
+        error: result.stderr || `pi install exited with code ${result.exitCode}`,
+      };
+    }
     return { success: true };
   } catch (error) {
     return {

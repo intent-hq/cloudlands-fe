@@ -15,11 +15,15 @@
  *
  * Re-homed pre-send essentials (ported minimally from the deleted
  * `send-message-saga.ts`): dispatch `chatSendStarted` for immediate loading
- * UI, clear the chat draft so the input doesn't echo the just-sent text, and
- * guard against double-send while a stream is already active. Every other
- * edge case (rebind, workspace-change reinit, queueing, force-submit, rate
- * limit) is intentionally NOT re-homed — those are out of scope per the task
- * note and will be addressed in follow-ups.
+ * UI, and clear the chat draft so the input doesn't echo the just-sent text.
+ *
+ * Queue-on-send: when the daemon snapshot reports the agent is currently
+ * in-flight (`selectAgentIsResponding` true — driven entirely by BE-returned
+ * `isStreaming` / `isResponding` / status), the composer text is routed
+ * through `agent.queueMessage` (seam `appClient.agents.queue`) instead of the
+ * normal lifecycle send, and the returned `queuedMessage` seeds the local
+ * agent-queue slice so the queued-UI surfaces immediately. The BE remains the
+ * single source of truth — the FE never second-guesses the streaming flags.
  *
  * Dependency-light per src/store AGENTS.md: top-level imports are limited to
  * the configured store, slice actions, store-free types, and the logger.
@@ -29,13 +33,20 @@
  * chain.
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import {
+  chatSendFailed,
   chatSendStarted,
   sendInitialMessageRequested,
   sendMessage,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { clearChatDraft } from "$store/renderer/slices/transient-ui/transient-ui-slice";
+import {
+  removeQueuedMessageFromAgentQueue,
+  removeQueuedMessageRequested,
+  replaceAgentQueue,
+} from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import type {
   InitialMessagePayload,
   SendMessagePayload,
@@ -55,14 +66,16 @@ type LifecycleSendOptions = {
  * middleware-chain construction.
  */
 async function loadSendDeps() {
-  const [wsSel, asSel, lifecycle] = await Promise.all([
+  const [wsSel, asSel, queueSel, lifecycle] = await Promise.all([
     import("$store/renderer/slices/workspace/workspace-selectors"),
     import("$store/renderer/slices/agent-session/agent-session-selectors"),
+    import("$store/renderer/slices/agent-queue/agent-queue-selectors"),
     import("$features/agent/agent-stream-lifecycle"),
   ]);
   return {
     selectWorkspaceById: wsSel.selectWorkspaceById,
     selectAgentIsResponding: asSel.selectAgentIsResponding,
+    selectAgentQueueMessages: queueSel.selectAgentQueueMessages,
     sendMessage: lifecycle.sendMessage,
   };
 }
@@ -79,21 +92,63 @@ async function dispatchToLifecycle(
   try {
     deps = await loadSendDeps();
   } catch (error) {
+    // AUDIT-P0-2: surface the failure through `chatSendFailed` so the UI
+    // renders an error state instead of silently dropping the message.
+    const message = error instanceof Error ? error.message : String(error);
     logger.error("Failed to load chat send deps", error);
+    appStore.dispatch(chatSendFailed(agentId, `Failed to load chat dependencies: ${message}`));
     return;
   }
 
   const workspace = deps.selectWorkspaceById.select(appStore.state, wsId);
   if (!workspace) {
     logger.warn("Cannot send: workspace not found", { agentId, wsId });
+    appStore.dispatch(chatSendFailed(agentId, `Workspace not found: ${wsId}`));
     return;
   }
 
-  // Double-send guard: a fresh send while the agent is mid-turn would race
-  // the active stream handler. The old saga routed this case through the
-  // queue; for now we drop it (queueing is out of scope for this task).
+  const content = workspaceContextStr
+    ? `${workspaceContextStr}\n\n${text.trim()}`
+    : text.trim();
+
+  // Queue-on-send: derive in-flight status SOLELY from BE-returned session
+  // state (selectAgentIsResponding reads `isResponding`/`isStreaming`/status
+  // off the daemon snapshot). When the daemon reports the agent is busy,
+  // route the message through `agent.queueMessage` instead of dropping it,
+  // and seed the local queue from the returned `queuedMessage` so the UI
+  // immediately shows the queued-message state (no extra hydration round
+  // trip required).
   if (deps.selectAgentIsResponding.select(appStore.state, agentId)) {
-    logger.info("Skipping send: agent is currently responding", { agentId, wsId });
+    appStore.dispatch(clearChatDraft(wsId, agentId));
+    try {
+      const result = await appClient.agents.queue(agentId, content);
+      if (!result.success) {
+        // AUDIT-P0-2: surface the daemon-rejected queue attempt so the UI
+        // can render the error instead of silently dropping the message.
+        const errMsg = result.error ?? "queueMessage rejected";
+        logger.warn("agent.queueMessage rejected by daemon", {
+          agentId,
+          wsId,
+          error: errMsg,
+        });
+        appStore.dispatch(chatSendFailed(agentId, errMsg));
+        return;
+      }
+      const queuedMessage = result.queuedMessage;
+      if (queuedMessage) {
+        const existing = deps.selectAgentQueueMessages.select(appStore.state, agentId);
+        const next = existing.some((m) => m.id === queuedMessage.id)
+          ? existing
+          : [...existing, queuedMessage];
+        appStore.dispatch(replaceAgentQueue(agentId, next));
+      }
+    } catch (error) {
+      // AUDIT-P0-2: a queue-on-send failure must surface to the UI; do not
+      // silently drop the message.
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("agent.queueMessage threw", error);
+      appStore.dispatch(chatSendFailed(agentId, `Failed to queue message: ${message}`));
+    }
     return;
   }
 
@@ -102,23 +157,65 @@ async function dispatchToLifecycle(
   appStore.dispatch(chatSendStarted(agentId, wsId));
   appStore.dispatch(clearChatDraft(wsId, agentId));
 
-  const content = workspaceContextStr
-    ? `${workspaceContextStr}\n\n${text.trim()}`
-    : text.trim();
-
   try {
     await deps.sendMessage(agentId, content, workspace, {
       imageBlocks: options.imageBlocks,
       noteIds: options.noteIds,
     });
   } catch (error) {
+    // AUDIT-P0-2: dispatch chatSendFailed so the error appears in the UI
+    // instead of being swallowed in a fire-and-forget background promise.
+    const message = error instanceof Error ? error.message : String(error);
     logger.error("lifecycle.sendMessage threw", error);
+    appStore.dispatch(chatSendFailed(agentId, message));
   }
 }
 
 /**
- * Middleware that gives `sendMessage` and `sendInitialMessageRequested` a real
- * consumer. Fire-and-forget — dispatch stays synchronous and never throws.
+ * Optimistically remove a queued message and ask the daemon to remove its
+ * persisted entry. The BE has been made **idempotent** on
+ * `agent.removeQueuedMessage` (PROTOCOL §5.5) — it returns `{ success: true }`
+ * regardless of whether the messageId was actually in the queue — so we do NOT
+ * roll the optimistic delete back on any response. A thrown error is treated
+ * as a transport failure: the FE-side delete already added a tombstone via
+ * `removeQueuedMessageFromAgentQueue`, so a stale `agent:queue:updated`
+ * snapshot that still includes the entry will be suppressed by the reducer
+ * until the BE catches up.
+ */
+async function dispatchQueueRemoval(agentId: string, messageId: string): Promise<void> {
+  // Optimistic UI first: drop the message locally and record the tombstone so
+  // a late BE snapshot cannot resurrect it before self-drain catches up.
+  appStore.dispatch(removeQueuedMessageFromAgentQueue(agentId, messageId));
+  try {
+    const result = await appClient.agents.removeQueued(agentId, messageId);
+    // The daemon is idempotent: a "not found" / queue-empty response is
+    // surfaced as `success: true`. A non-success here can only mean a
+    // transport-level failure (the seam folds RPC throws into MutationResult);
+    // in either case we deliberately keep the optimistic delete in place — the
+    // BE's next `agent:queue:updated` snapshot will reconcile.
+    if (!result.success) {
+      logger.warn("agent.removeQueuedMessage reported a non-success result; keeping optimistic delete in place", {
+        agentId,
+        messageId,
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    // The seam should not throw, but if it does we still do NOT roll back —
+    // matches the §5.5 idempotency contract and the §6.5 invariant that the
+    // BE's next queue snapshot is the source of truth.
+    logger.error("agent.removeQueuedMessage threw; keeping optimistic delete in place", {
+      agentId,
+      messageId,
+      error,
+    });
+  }
+}
+
+/**
+ * Middleware that gives `sendMessage`, `sendInitialMessageRequested`, and
+ * `removeQueuedMessageRequested` a real consumer. Fire-and-forget — dispatch
+ * stays synchronous and never throws.
  */
 export function createChatSendMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
@@ -164,6 +261,20 @@ export function createChatSendMiddleware(): StoreMiddleware {
         void dispatchToLifecycle(agentId, inner.wsId, inner.message, undefined, {
           imageBlocks: inner.imageBlocks ?? undefined,
         });
+      }
+    } else if ((action as { type?: unknown }).type === removeQueuedMessageRequested.type) {
+      const payload = (action as { payload?: unknown }).payload as
+        | [agentId?: unknown, messageId?: unknown]
+        | undefined;
+      const agentId = payload?.[0];
+      const messageId = payload?.[1];
+      if (
+        typeof agentId === "string" &&
+        agentId.length > 0 &&
+        typeof messageId === "string" &&
+        messageId.length > 0
+      ) {
+        void dispatchQueueRemoval(agentId, messageId);
       }
     }
 

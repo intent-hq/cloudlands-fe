@@ -1,10 +1,8 @@
 import * as path from 'path';
-import { createRequire } from 'module';
-import {
-  execAsyncWithRetry,
-  execFileAsyncWithRetry,
-} from '../../../shared/git/git-env';
+import { Buffer } from 'node:buffer';
 import { Logger } from '../../../shared/logger';
+import { hostExec } from '../../../shared/main/host-exec';
+import { hostExecStream } from '../../../shared/main/host-exec-stream';
 import {
   findAuggiePathAsync,
   getEnhancedPath,
@@ -12,23 +10,16 @@ import {
 
 const logger = new Logger('ExecuteAuggieCommand');
 
-// Create require function for ESM context to access Node.js built-in modules
-const requireNode = createRequire(import.meta.url);
-
 // Default timeout for auggie commands (30 seconds)
 export const DEFAULT_AUGGIE_TIMEOUT_MS = 30_000;
 
 /**
  * Build a PATH string for executing the auggie CLI binary.
  *
- * On macOS, GUI apps launched from Finder have a severely limited PATH
- * (/usr/bin:/bin:/usr/sbin:/sbin). If auggie was installed via nvm/fnm,
- * the `node` binary lives in the same bin directory as auggie. Without
- * including that directory, the #!/usr/bin/env node shebang in the auggie
- * script can't find node, causing silent execution failures.
- *
- * This function prepends the auggie binary's parent directory to the
- * enhanced PATH so the correct node binary is always discoverable.
+ * Retained as a pure helper for main-process callers that need to construct
+ * an env-augmented PATH string (e.g. when they still spawn locally pending
+ * migration). Auggie exec itself now routes through `host.exec`, which uses
+ * the daemon's own PATH resolution.
  */
 export function getAuggieExecPATH(auggiePath: string | null): string {
   const enhancedPath = getEnhancedPath();
@@ -40,186 +31,158 @@ export function getAuggieExecPATH(auggiePath: string | null): string {
   return `${auggieBinDir}${sep}${enhancedPath}`;
 }
 
+/**
+ * Run an arbitrary command via the daemon's `host.exec` (argv-based, no shell).
+ * Returns `{ stdout, stderr }` on exit code 0; throws with the same shape as
+ * the legacy `child_process` exec (message = stderr, `.code`, `.stdout`,
+ * `.stderr`) on non-zero exit so pre-existing catch sites stay compatible.
+ */
 export async function execWithEnhancedPath(
   command: string,
-  options: { cwd?: string; maxBuffer?: number; timeout?: number } = {},
+  args: string[] = [],
+  options: { cwd?: string; timeout?: number; workspaceId?: string } = {},
 ): Promise<{ stdout: string; stderr: string }> {
-  const enhancedPath = getEnhancedPath();
-  // Use retry-enabled exec to handle transient errors like EAGAIN
-  return execAsyncWithRetry(command, {
-    ...options,
-    env: {
-      PATH: enhancedPath,
-    },
+  const timeout = options.timeout ?? DEFAULT_AUGGIE_TIMEOUT_MS;
+  const result = await hostExec(command, {
+    args,
+    timeoutMs: timeout,
+    ...(options.cwd ? { cwd: options.cwd } : {}),
+    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+  });
+  if (result.timedOut) {
+    throw new Error(`Command timed out after ${timeout}ms`);
+  }
+  if (result.exitCode !== 0) {
+    const err = new Error(result.stderr || `Command exited with code ${result.exitCode}`);
+    (err as NodeJS.ErrnoException & { stdout?: string; stderr?: string }).code = String(
+      result.exitCode,
+    );
+    (err as { stdout?: string }).stdout = result.stdout;
+    (err as { stderr?: string }).stderr = result.stderr;
+    throw err;
+  }
+  return { stdout: result.stdout, stderr: result.stderr };
+}
+
+/**
+ * Execute the auggie CLI via the daemon (argv-based, no shell).
+ *
+ * `args` is a whitespace-separated argument string (kept for backwards
+ * compatibility with existing call-sites) and is split on spaces before being
+ * forwarded to the daemon as positional `args`. Tokens with inner whitespace
+ * are not supported.
+ *
+ * When `stdin` is provided, the call is routed through the daemon's streaming
+ * `host.execStream` surface (PROTOCOL §5.14): the initial payload rides with
+ * the request, stdin is closed via a follow-up `host.execStream.write { eof: true }`
+ * so the child sees EOF, and stdout/stderr are buffered until the terminal
+ * `host:exec:exit` frame lands — preserving the buffered `{ stdout, stderr }`
+ * shape the legacy `child_process` exec returned. When `stdin` is absent, the
+ * call uses the buffered one-shot `host.exec` for lower overhead.
+ */
+export async function executeAuggieCommand(
+  args: string,
+  options: { timeout?: number; stdin?: string; cwd?: string; workspaceId?: string } = {},
+): Promise<{ stdout: string; stderr: string }> {
+  const timeout = options.timeout ?? DEFAULT_AUGGIE_TIMEOUT_MS;
+  const auggiePath = await findAuggiePathAsync();
+  const executablePath = auggiePath || 'auggie';
+  const argsArray = args.split(' ').filter(Boolean);
+
+  if (options.stdin != null) {
+    logger.debug('Executing auggie command via host.execStream (stdin)', {
+      path: executablePath,
+      args: argsArray,
+      timeout,
+      stdinBytes: options.stdin.length,
+    });
+    return execAuggieStreamed(executablePath, argsArray, options.stdin, {
+      timeout,
+      ...(options.cwd ? { cwd: options.cwd } : {}),
+      ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+    });
+  }
+
+  logger.debug('Executing auggie command via host.exec', {
+    path: executablePath,
+    args: argsArray,
+    timeout,
+  });
+
+  return execWithEnhancedPath(executablePath, argsArray, {
+    timeout,
+    ...(options.cwd ? { cwd: options.cwd } : {}),
+    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
   });
 }
 
 /**
- * Execute the auggie CLI. `args` is passed through to a shell on Windows (and
- * to the PATH-lookup shell fallback on macOS/Linux), so callers MUST sanitize
- * it — cmd metacharacters (&, |, ;, `, $, ", etc.) in `args` will be
- * interpreted by the shell.
- *
- * Note: `args` is split on spaces (`args.split(' ')`) before being passed to
- * `execFile` / `spawn`, so each token must be a single space-separated value
- * with no inner whitespace (e.g. `"session stats --json"`, not values that
- * themselves contain spaces).
+ * Streamed exec that buffers stdout/stderr and returns the same
+ * `{ stdout, stderr }` shape as {@link execWithEnhancedPath}. Used when the
+ * caller has stdin to forward, since `host.exec` is buffered-response-only.
+ * Errors mirror the legacy `child_process`-exec surface: non-zero exit throws
+ * with `.code`, `.stdout`, `.stderr`; timeouts throw a `timed out` message.
  */
-export async function executeAuggieCommand(
-  args: string,
-  options: { timeout?: number; stdin?: string } = {},
+async function execAuggieStreamed(
+  command: string,
+  args: string[],
+  stdin: string,
+  options: { timeout: number; cwd?: string; workspaceId?: string },
 ): Promise<{ stdout: string; stderr: string }> {
-  const timeout = options.timeout ?? DEFAULT_AUGGIE_TIMEOUT_MS;
-  // PERF: Use async path finding to avoid blocking main thread
-  const auggiePath = await findAuggiePathAsync();
+  const stdoutChunks: Buffer[] = [];
+  const stderrChunks: Buffer[] = [];
 
-  const executablePath = auggiePath || 'auggie';
-  const argsArray = args.split(' ').filter(Boolean);
-  logger.debug('Executing auggie command', {
-    path: executablePath,
-    args: argsArray,
-    timeout,
-    hasStdin: !!options.stdin,
+  const handle = await hostExecStream(command, {
+    args,
+    timeoutMs: options.timeout,
+    ...(options.cwd ? { cwd: options.cwd } : {}),
+    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+    stdin,
+    onStdout: (chunk: Buffer) => stdoutChunks.push(chunk),
+    onStderr: (chunk: Buffer) => stderrChunks.push(chunk),
   });
 
-  // If stdin is provided, use spawn instead of exec to pipe input
-  if (options.stdin) {
-    return executeAuggieWithStdin(executablePath, argsArray, options.stdin, timeout);
-  }
-
-  if (!auggiePath) {
-    // Try to execute directly in case it's in PATH but not found by our search
-    return execWithEnhancedPath(`auggie ${args}`, { timeout });
-  }
-
-  const auggieEnvPath = getAuggieExecPATH(auggiePath);
-
-  // On Windows, npm-installed commands (both .cmd wrappers and non-.cmd shims)
-  // cannot be executed with execFile (no shell). Always use exec (shell-based) on Windows.
-  if (process.platform === 'win32') {
-    return execAsyncWithRetry(`"${auggiePath}" ${args}`, {
-      timeout,
-      env: { PATH: auggieEnvPath },
+  // Close stdin so `auggie` (or any read-to-EOF child) exits cleanly. A failed
+  // `eof` write is non-fatal: the child may have already exited and closed the
+  // pipe; `done` still settles from the terminal `host:exec:exit` frame.
+  try {
+    await handle.endStdin();
+  } catch (error) {
+    logger.debug('host.execStream.write { eof:true } failed (child may have exited)', {
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 
-  // On macOS/Linux, use execFile (no shell) when we have the full path - more robust
-  // against EAGAIN because it doesn't spawn a shell process
-  return execFileAsyncWithRetry(auggiePath, argsArray, {
-    timeout,
-    env: { PATH: auggieEnvPath },
-  });
+  const exitResult = await handle.done;
+  const stdout = Buffer.concat(stdoutChunks).toString('utf8');
+  const stderr = Buffer.concat(stderrChunks).toString('utf8');
+
+  if (exitResult.timedOut) {
+    throw new Error(`Command timed out after ${options.timeout}ms`);
+  }
+  if (exitResult.cancelled) {
+    throw new Error('Command cancelled');
+  }
+  if (!exitResult.ok || exitResult.exitCode !== 0) {
+    const code = exitResult.exitCode ?? null;
+    const err = new Error(stderr || `Command exited with code ${code}`);
+    (err as NodeJS.ErrnoException & { stdout?: string; stderr?: string }).code = String(code);
+    (err as { stdout?: string }).stdout = stdout;
+    (err as { stderr?: string }).stderr = stderr;
+    throw err;
+  }
+  return { stdout, stderr };
 }
 
 /**
  * Determine whether spawn should use `shell: true` for the given auggie path.
  *
- * On Windows, we need shell: true when auggiePath is either:
- *   - A bare name (e.g. 'auggie') — cmd.exe resolves via PATH/PATHEXT to the .cmd shim.
- *   - A .cmd or .bat file — npm shims require a shell to invoke.
- * Absolute paths to non-shim binaries keep shell: false (safer — avoids cmd.exe
- * interpretation of args).
- * On macOS/Linux, always returns false — /bin/sh may not be accessible in
- * macOS GUI apps launched from Finder.
+ * Retained as a pure helper for callers that still spawn locally. Not used by
+ * the host.exec-based `executeAuggieCommand`, which forwards argv to the
+ * daemon and does not run through a shell on the FE.
  */
 export function shouldUseWindowsShell(auggiePath: string): boolean {
   if (process.platform !== 'win32') return false;
   const lower = auggiePath.toLowerCase();
   return !path.isAbsolute(auggiePath) || lower.endsWith('.cmd') || lower.endsWith('.bat');
-}
-
-async function executeAuggieWithStdin(
-  auggiePath: string,
-  args: string[],
-  stdinData: string,
-  timeout: number,
-): Promise<{ stdout: string; stderr: string }> {
-  const { spawn } = requireNode('child_process') as typeof import('child_process');
-
-  return new Promise((resolve, reject) => {
-    const enhancedEnv = {
-      ...process.env,
-      PATH: getAuggieExecPATH(auggiePath),
-    };
-
-    const useShell = shouldUseWindowsShell(auggiePath);
-
-    // On Windows-with-shell, quote the path to handle spaces (e.g. C:\Users\John Doe\...).
-    const spawnCommand = useShell ? `"${auggiePath}"` : auggiePath;
-
-    const child = spawn(spawnCommand, args, {
-      env: enhancedEnv,
-      shell: useShell,
-      windowsHide: true,
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    // Kill the child process tree. On Windows with shell mode, cmd.exe is the
-    // direct child and killing it alone leaves the actual auggie process orphaned.
-    // Use taskkill /T /F to terminate the entire process tree in that case.
-    const killChild = () => {
-      if (process.platform === 'win32' && useShell && child.pid) {
-        const taskkill = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
-          windowsHide: true,
-        });
-        taskkill.on('error', () => {
-          child.kill();
-        });
-        taskkill.on('exit', (code) => {
-          if (code !== 0) {
-            child.kill();
-          }
-        });
-      } else {
-        child.kill();
-      }
-    };
-
-    // Set up timeout before attaching event handlers so the error handler
-    // can clear it via closure (prevents a stale timeout from firing after
-    // the promise has already been rejected by a spawn error).
-    const timeoutId = setTimeout(() => {
-      killChild();
-      reject(new Error(`Command timed out after ${timeout}ms`));
-    }, timeout);
-
-    child.on('error', (err) => {
-      clearTimeout(timeoutId);
-      reject(err);
-    });
-
-    child.on('close', (code) => {
-      clearTimeout(timeoutId);
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(new Error(stderr || `Command exited with code ${code}`));
-      }
-    });
-
-    // Handle stdin EPIPE errors (child process may exit before consuming all input)
-    child.stdin.on('error', (error) => {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes('EPIPE')) {
-        // Benign: child process exited before reading all stdin data
-        logger.debug('Stdin EPIPE (child exited before consuming input)');
-      } else {
-        logger.error('Stdin error:', error);
-      }
-    });
-
-    // Write stdin and close
-    child.stdin.write(stdinData);
-    child.stdin.end();
-  });
 }

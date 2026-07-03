@@ -359,6 +359,121 @@ describe("fileExplorerReducer — updateAgentFileEditsEntries / removeAgentFileE
 
 
 
+describe("fileExplorerReducer — folder-first sorting", () => {
+  it("sorts root children: directories first (alphabetical) then files (alphabetical)", () => {
+    const interleaved = directory(WS_PATH, [
+      file(`${WS_PATH}/zeta.txt`),
+      directory(`${WS_PATH}/Beta`),
+      file(`${WS_PATH}/alpha.md`),
+      directory(`${WS_PATH}/alpha-dir`),
+      file(`${WS_PATH}/Bravo.txt`),
+    ]);
+
+    const state = fileExplorerReducer(initialState, setRootNode(WS_ID, interleaved));
+    const ws = state.byWorkspaceId[WS_ID];
+
+    expect(getItem(ws.nodes, WS_PATH)?.children).toEqual([
+      `${WS_PATH}/alpha-dir`,
+      `${WS_PATH}/Beta`,
+      `${WS_PATH}/alpha.md`,
+      `${WS_PATH}/Bravo.txt`,
+      `${WS_PATH}/zeta.txt`,
+    ]);
+  });
+
+  it("sorts at every nested depth in setRootNode", () => {
+    const interleaved = directory(WS_PATH, [
+      file(`${WS_PATH}/z.txt`),
+      directory(`${WS_PATH}/src`, [
+        file(`${WS_PATH}/src/index.ts`),
+        directory(`${WS_PATH}/src/utils`, [
+          file(`${WS_PATH}/src/utils/b.ts`),
+          directory(`${WS_PATH}/src/utils/inner`),
+          file(`${WS_PATH}/src/utils/a.ts`),
+        ]),
+        directory(`${WS_PATH}/src/lib`),
+      ]),
+    ]);
+
+    const state = fileExplorerReducer(initialState, setRootNode(WS_ID, interleaved));
+    const ws = state.byWorkspaceId[WS_ID];
+
+    expect(getItem(ws.nodes, WS_PATH)?.children).toEqual([`${WS_PATH}/src`, `${WS_PATH}/z.txt`]);
+    expect(getItem(ws.nodes, `${WS_PATH}/src`)?.children).toEqual([
+      `${WS_PATH}/src/lib`,
+      `${WS_PATH}/src/utils`,
+      `${WS_PATH}/src/index.ts`,
+    ]);
+    expect(getItem(ws.nodes, `${WS_PATH}/src/utils`)?.children).toEqual([
+      `${WS_PATH}/src/utils/inner`,
+      `${WS_PATH}/src/utils/a.ts`,
+      `${WS_PATH}/src/utils/b.ts`,
+    ]);
+  });
+
+  it("sorts lazily-loaded children via setChildrenAtPathAction at root and nested depth", () => {
+    const root = directory(WS_PATH, [directory(`${WS_PATH}/src`)]);
+    let state = fileExplorerReducer(initialState, setRootNode(WS_ID, root));
+
+    state = fileExplorerReducer(
+      state,
+      setChildrenAtPathAction(WS_ID, `${WS_PATH}/src`, [
+        file(`${WS_PATH}/src/zeta.ts`),
+        directory(`${WS_PATH}/src/Utils`, [
+          file(`${WS_PATH}/src/Utils/b.ts`),
+          directory(`${WS_PATH}/src/Utils/inner`),
+          file(`${WS_PATH}/src/Utils/a.ts`),
+        ]),
+        file(`${WS_PATH}/src/alpha.ts`),
+        directory(`${WS_PATH}/src/api`),
+      ]),
+    );
+
+    const ws = state.byWorkspaceId[WS_ID];
+    expect(getItem(ws.nodes, `${WS_PATH}/src`)?.children).toEqual([
+      `${WS_PATH}/src/api`,
+      `${WS_PATH}/src/Utils`,
+      `${WS_PATH}/src/alpha.ts`,
+      `${WS_PATH}/src/zeta.ts`,
+    ]);
+    expect(getItem(ws.nodes, `${WS_PATH}/src/Utils`)?.children).toEqual([
+      `${WS_PATH}/src/Utils/inner`,
+      `${WS_PATH}/src/Utils/a.ts`,
+      `${WS_PATH}/src/Utils/b.ts`,
+    ]);
+  });
+
+  it("is idempotent — re-applying the same already-sorted children is a no-op", () => {
+    const root = directory(WS_PATH, [directory(`${WS_PATH}/src`)]);
+    let state = fileExplorerReducer(initialState, setRootNode(WS_ID, root));
+    state = fileExplorerReducer(
+      state,
+      setChildrenAtPathAction(WS_ID, `${WS_PATH}/src`, [
+        directory(`${WS_PATH}/src/a-dir`),
+        file(`${WS_PATH}/src/b.ts`),
+      ]),
+    );
+
+    const next = fileExplorerReducer(
+      state,
+      setChildrenAtPathAction(WS_ID, `${WS_PATH}/src`, [
+        directory(`${WS_PATH}/src/a-dir`),
+        file(`${WS_PATH}/src/b.ts`),
+      ]),
+    );
+    expect(next).toBe(state);
+
+    const reordered = fileExplorerReducer(
+      state,
+      setChildrenAtPathAction(WS_ID, `${WS_PATH}/src`, [
+        file(`${WS_PATH}/src/b.ts`),
+        directory(`${WS_PATH}/src/a-dir`),
+      ]),
+    );
+    expect(reordered).toBe(state);
+  });
+});
+
 describe("refreshDirectoryRequested", () => {
   it("is a pure saga-trigger action — reducer does not mutate state for it", () => {
     const seededState = seeded();

@@ -12,10 +12,9 @@
 
 import { ipcMain } from 'electron';
 import * as os from 'os';
-import { spawn } from 'child_process';
 import { PI_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
-import { killChildProcessTree } from '../../../shared/main/process-tree-kill';
+import { startAcpChildStream } from '../../../shared/main/acp-child-stream';
 import {
   installPiMcpAdapter,
   isPiMcpAdapterInstalled,
@@ -101,20 +100,24 @@ async function listPiModelsViaAcp(): Promise<PiModel[]> {
   const args = [...resolved.argsPrefix];
   const command = resolved.command;
 
-  // On Windows, .cmd/.bat files need shell: true to be executed via spawn.
-  const useShell = process.platform === 'win32';
-  // On Windows with shell: true, quote the command path to handle spaces (e.g. C:\Users\John Doe\...)
-  const spawnCommand = useShell ? `"${command}"` : command;
-
-  return await new Promise((resolve) => {
-    const child = spawn(spawnCommand, args, {
-      cwd: os.homedir(),
-      env: { ...process.env },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: useShell,
-      windowsHide: true,
+  // AUDIT-R1c: probe pi-acp through the daemon (`host.execStream`,
+  // PROTOCOL.md §5.14). The daemon owns argv-based spawn (no shell), the
+  // process tree, and stream cancellation; the FE just drives the stdio
+  // JSON-RPC handshake through the returned handle.
+  let child: Awaited<ReturnType<typeof startAcpChildStream>>;
+  try {
+    child = await startAcpChildStream(command, { args, timeoutMs: 14000 });
+  } catch (error) {
+    // Preserve the never-throws contract: probe failure resolves to `[]` so
+    // callers (GET_MODELS handler + getCachedPiModels) fall through to
+    // DEFAULT_MODELS (AUDIT-P0-2).
+    logger.debug('Pi ACP model probe stream failed to start', {
+      error: (error as Error).message,
     });
+    return [];
+  }
 
+  return await new Promise<PiModel[]>((resolve) => {
     let buffer = '';
     let requestId = 0;
     let done = false;
@@ -122,12 +125,10 @@ async function listPiModelsViaAcp(): Promise<PiModel[]> {
     const finish = (models: PiModel[]) => {
       if (done) return;
       done = true;
-      // CRITICAL: Kill the entire process tree, not just the parent npx/npm-exec process.
-      // child.kill() only sends SIGTERM to the direct child (npx), but the actual
-      // pi-acp adapter (and the `pi --mode rpc` engine it spawns) runs as a
-      // grandchild and would be left orphaned, leaking memory.
-      killChildProcessTree(child);
-      // Cache successful results to avoid spawning processes on every call
+      // The daemon owns the process tree behind `host.execStream`; `kill()`
+      // proxies to `host.execStream.cancel` which tears the tree down cleanly.
+      child.kill();
+      // Cache successful results to avoid re-probing on every call.
       if (models.length > 0) {
         cachedModels = models;
         cacheTimestamp = Date.now();
@@ -303,11 +304,14 @@ export function setupPiIPC() {
         warning: 'Pi model list unavailable; using default model',
       };
     } catch (error) {
-      logger.warn('Could not get models for Pi', { error: (error as Error).message });
+      // Surface the failure to the renderer (AUDIT-P0-2). Previously this
+      // returned `success: true` with DEFAULT_MODELS + a warning, which hid
+      // hard probe failures from the FE error state.
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Could not get models for Pi', { error: message });
       return {
-        success: true,
-        data: DEFAULT_MODELS,
-        warning: 'Failed to query Pi models; using default model',
+        success: false,
+        error: `Failed to query Pi models: ${message}`,
       };
     }
   });
@@ -325,20 +329,20 @@ export function setupPiIPC() {
  * Shares the module-level 5-minute TTL cache with the IPC handler.
  */
 export async function getCachedPiModels(): Promise<string[] | null> {
-  try {
-    const resolved = await resolvePiCommand();
-    if (!resolved) return null;
-    const models = await listPiModelsViaAcp();
-    if (models.length === 0) return null;
-    // Merge the curated DEFAULT_MODELS aliases (notably `default`) into the
-    // live list so validators treat them as valid overrides even when the
-    // ACP probe does not emit them. De-duplicated in case the live list
-    // eventually begins reporting one of the aliases.
-    const liveValues = models.map((m) => m.value);
-    const defaultValues = DEFAULT_MODELS.map((m) => m.value);
-    return Array.from(new Set([...liveValues, ...defaultValues]));
-  } catch (error) {
-    logger.debug('getCachedPiModels failed', { error: (error as Error).message });
-    return null;
-  }
+  // AUDIT-P0-2: do not swallow errors here. Returning `null` is reserved for
+  // the documented "live list unavailable" sentinel — `resolvePiCommand()`
+  // returning null (Pi not installed) or the probe yielding zero results.
+  // A genuine error must propagate so the dispatcher in `model-pool.ts` can
+  // log it instead of being masked as "unknown / skip validation".
+  const resolved = await resolvePiCommand();
+  if (!resolved) return null;
+  const models = await listPiModelsViaAcp();
+  if (models.length === 0) return null;
+  // Merge the curated DEFAULT_MODELS aliases (notably `default`) into the
+  // live list so validators treat them as valid overrides even when the
+  // ACP probe does not emit them. De-duplicated in case the live list
+  // eventually begins reporting one of the aliases.
+  const liveValues = models.map((m) => m.value);
+  const defaultValues = DEFAULT_MODELS.map((m) => m.value);
+  return Array.from(new Set([...liveValues, ...defaultValues]));
 }
