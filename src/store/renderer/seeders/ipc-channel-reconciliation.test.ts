@@ -252,8 +252,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'git-tracking:get-github-branches',
   'git-tracking:get-pull-request',
   'git-tracking:get-remote-url',
-  'git-tracking:search-github-issues',
-  'git-tracking:search-pull-requests',
   'git:commit',
   'git:diff',
   'git:fetch',
