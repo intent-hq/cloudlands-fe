@@ -16,11 +16,22 @@ vi.mock("$lib/client", () => ({
     events: { list: vi.fn(() => Promise.resolve([])) },
     skills: { list: vi.fn(() => Promise.resolve([])) },
     scripts: { list: vi.fn(() => Promise.resolve([])) },
-    git: { prStatus: vi.fn(() => Promise.resolve(null)) },
+    git: {
+      prStatus: vi.fn(() => Promise.resolve(null)),
+      trackedChanges: vi.fn(() => Promise.resolve([])),
+      commits: vi.fn(() => Promise.resolve([])),
+    },
   },
 }));
 
+// FAKE §5.20 metrics seam: `metrics.getAgentStats` reads go through the
+// line-changes client; mock it so no backendRequest reaches a daemon.
+vi.mock("$features/line-changes/line-changes.client", () => ({
+  getAgentLineStats: vi.fn(() => Promise.resolve(null)),
+}));
+
 import { appClient } from "$lib/client";
+import { getAgentLineStats } from "$features/line-changes/line-changes.client";
 import { store as appStore } from "$store/renderer/store";
 import { loadWorkspacesRequested } from "$store/renderer/slices/workspace/workspace-slice";
 import { ensureWorkspaceTasksLoaded } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
@@ -29,6 +40,10 @@ import { fetchWorkspaceTokenUsage } from "$store/renderer/slices/token-usage/tok
 import { loadSkillsRequested } from "$store/renderer/slices/skills/skills-slice";
 import { refreshScripts } from "$store/renderer/slices/scripts/scripts-slice";
 import { refreshPRStatusRequested } from "$store/renderer/slices/pr-status/pr-status-slice";
+import {
+  refreshRequested,
+  requestAgentLineStats,
+} from "$store/renderer/slices/changes/changes-slice";
 
 type Fn = ReturnType<typeof vi.fn>;
 const wsApi = appClient.workspaces as unknown as Record<string, Fn>;
@@ -37,6 +52,7 @@ const eventsApi = appClient.events as unknown as Record<string, Fn>;
 const skillsApi = appClient.skills as unknown as Record<string, Fn>;
 const scriptsApi = appClient.scripts as unknown as Record<string, Fn>;
 const gitApi = appClient.git as unknown as Record<string, Fn>;
+const mockedGetAgentLineStats = vi.mocked(getAgentLineStats);
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("lifecycleReadService (fake seam, real store)", () => {
@@ -174,5 +190,97 @@ describe("lifecycleReadService (fake seam, real store)", () => {
     await flush();
 
     expect(eventsApi.list).toHaveBeenCalledWith(ws);
+  });
+
+  // Restored changes-panel refresh: reads the daemon file-tracking surface
+  // (§5.19 file-tracking.getChanges / loadCommits) through the git seam.
+  it("refreshRequested re-fetches tracked changes + commits and converges the changes slice", async () => {
+    const ws = "ws-changes-1";
+    const change = {
+      id: "git-1-src/x.ts",
+      file: "/ws/src/x.ts",
+      relativePath: "src/x.ts",
+      stage: "committed",
+      status: "modified",
+      stats: { additions: 10, deletions: 2 },
+      attribution: { manual: true, timestamp: 1750000000000 },
+    };
+    const commit = {
+      hash: "abc123",
+      message: "init",
+      author: "Ada",
+      timestamp: 1750000000000,
+      files: [],
+      stage: "local",
+    };
+    gitApi.trackedChanges.mockResolvedValueOnce([change] as never);
+    gitApi.commits.mockResolvedValueOnce([commit] as never);
+
+    appStore.dispatch(refreshRequested(ws));
+    await flush();
+
+    expect(gitApi.trackedChanges).toHaveBeenCalledWith(ws);
+    expect(gitApi.commits).toHaveBeenCalledWith(ws);
+    const changesState = appStore.state.changes.byWorkspaceId[ws];
+    expect(changesState?.changes).toEqual([change]);
+    expect(changesState?.commits).toEqual([commit]);
+    expect(changesState?.boundarySha).toBe("abc123");
+    expect(changesState?.hasLoadedInitialData).toBe(true);
+  });
+
+  // §5.20 agent line stats: requestAgentLineStats → metrics.getAgentStats via
+  // the line-changes client, folded into agentStats + request state.
+  it("requestAgentLineStats fetches metrics.getAgentStats and stores agent stats", async () => {
+    const agentId = "agent-stats-1";
+    mockedGetAgentLineStats.mockResolvedValueOnce({
+      additions: 140,
+      deletions: 12,
+      filesChanged: 3,
+    });
+
+    appStore.dispatch(requestAgentLineStats(agentId));
+    await flush();
+
+    expect(mockedGetAgentLineStats).toHaveBeenCalledWith(agentId);
+    expect(appStore.state.changes.agentStats[agentId]).toMatchObject({
+      additions: 140,
+      deletions: 12,
+    });
+    const request = appStore.state.changes.agentLineStatsRequests[agentId];
+    expect(request?.isLoading).toBe(false);
+    expect(request?.error).toBeNull();
+    expect(request?.lastFinishedAt).not.toBeNull();
+  });
+
+  it("requestAgentLineStats skips a refetch when stats exist, unless forceRefresh", async () => {
+    const agentId = "agent-stats-2";
+    mockedGetAgentLineStats.mockResolvedValue({ additions: 1, deletions: 1, filesChanged: 1 });
+
+    appStore.dispatch(requestAgentLineStats(agentId));
+    await flush();
+    expect(mockedGetAgentLineStats).toHaveBeenCalledTimes(1);
+
+    appStore.dispatch(requestAgentLineStats(agentId));
+    await flush();
+    expect(mockedGetAgentLineStats).toHaveBeenCalledTimes(1);
+
+    appStore.dispatch(requestAgentLineStats(agentId, true));
+    await flush();
+    expect(mockedGetAgentLineStats).toHaveBeenCalledTimes(2);
+    mockedGetAgentLineStats.mockReset();
+    mockedGetAgentLineStats.mockResolvedValue(null);
+  });
+
+  it("requestAgentLineStats folds a failed read into the request error state", async () => {
+    const agentId = "agent-stats-fail";
+    mockedGetAgentLineStats.mockRejectedValueOnce(new Error("metrics boom"));
+
+    appStore.dispatch(requestAgentLineStats(agentId));
+    await flush();
+
+    const request = appStore.state.changes.agentLineStatsRequests[agentId];
+    expect(request?.isLoading).toBe(false);
+    expect(request?.error).toBe("metrics boom");
+    expect(appStore.state.changes.agentStats[agentId]).toBeUndefined();
   });
 });

@@ -23,11 +23,12 @@ vi.mock("./live-support", async (importActual) => {
   };
 });
 
-import { backendRequest, onBackendNotification } from "./backend-transport";
+import { backendRequest, backendSubscribe, onBackendNotification } from "./backend-transport";
 import { isEventInFamily, listWorkspaceIds } from "./live-support";
 import { LiveGitClient } from "./live-git-client";
 
 const mockedRequest = vi.mocked(backendRequest);
+const mockedSubscribe = vi.mocked(backendSubscribe);
 const mockedIsEventInFamily = vi.mocked(isEventInFamily);
 const mockedListWorkspaceIds = vi.mocked(listWorkspaceIds);
 const mockedOnBackendNotification = vi.mocked(onBackendNotification);
@@ -239,40 +240,69 @@ describe("LiveGitClient reads (fake transport)", () => {
     expect(await client.commitDetails("ws-1", "abc123")).toBeNull();
   });
 
-  it("commits forwards git.commits and maps items into CommitInfo[]", async () => {
+  // §5.19 `file-tracking.loadCommits` returns `{ commits: CommitWithAttribution[] }`
+  // (hash/message/author/date/filesChanged/isPushed/files?/agentId?/linkedNoteId?).
+  it("commits forwards file-tracking.loadCommits and maps CommitWithAttribution[] into CommitInfo[]", async () => {
     mockedRequest.mockResolvedValueOnce({
-      items: [
+      commits: [
         {
           hash: "abc123",
-          sha: "abc1234",
-          author: "Ada",
-          email: "ada@example.test",
-          date: "2025-01-02T03:04:05Z",
           message: "init",
-          files: ["a.ts", "b.ts"],
+          author: "Ada",
+          date: "2025-01-02T03:04:05Z",
+          filesChanged: 2,
+          isPushed: false,
+          files: [
+            { path: "a.ts", additions: 10, deletions: 2, status: "modified" },
+            { path: "b.ts" },
+          ],
           agentId: "agent-1",
           linkedNoteId: "note-1",
         },
+        {
+          hash: "def456",
+          message: "pushed one",
+          author: "Ada",
+          date: "2025-01-01T00:00:00Z",
+          filesChanged: 0,
+          isPushed: true,
+        },
       ],
-      nextToken: null,
     });
     const client = new LiveGitClient();
 
     const commits = await client.commits("ws-1");
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.commits", { workspaceId: "ws-1" });
+    expect(mockedRequest).toHaveBeenCalledWith("file-tracking.loadCommits", {
+      workspaceId: "ws-1",
+    });
     expect(commits).toEqual([
       {
         hash: "abc123",
         message: "init",
         author: "Ada",
-        authorEmail: "ada@example.test",
         timestamp: Date.parse("2025-01-02T03:04:05Z"),
         date: "2025-01-02T03:04:05Z",
-        files: [{ path: "a.ts" }, { path: "b.ts" }],
+        files: [
+          { path: "a.ts", additions: 10, deletions: 2, status: "modified" },
+          { path: "b.ts" },
+        ],
+        filesChanged: 2,
         stage: "local",
+        isPushed: false,
         agentId: "agent-1",
         linkedNoteId: "note-1",
+      },
+      {
+        hash: "def456",
+        message: "pushed one",
+        author: "Ada",
+        timestamp: Date.parse("2025-01-01T00:00:00Z"),
+        date: "2025-01-01T00:00:00Z",
+        files: [],
+        filesChanged: 0,
+        stage: "pushed",
+        isPushed: true,
       },
     ]);
   });
@@ -284,37 +314,76 @@ describe("LiveGitClient reads (fake transport)", () => {
     expect(await client.commits("ws-1")).toEqual([]);
   });
 
-  it("trackedChanges forwards git.changes and maps files into TrackedChange[]", async () => {
+  // §5.19 `file-tracking.getChanges` returns `{ changes, truncated, totalCount }`
+  // where each change mirrors the renderer `TrackedChange` (stage/stats/attribution).
+  it("trackedChanges forwards file-tracking.getChanges and carries the §5.19 TrackedChange fields through", async () => {
     mockedRequest.mockResolvedValueOnce({
-      files: [
-        { path: "a.ts", status: "M", staged: true },
-        { path: "b.ts", status: "?", staged: false },
-        { path: "c.ts", status: "D", staged: false },
+      changes: [
+        {
+          id: "git-1-src/x.ts",
+          file: "/ws/src/x.ts",
+          relativePath: "src/x.ts",
+          stage: "committed",
+          status: "modified",
+          stats: { additions: 10, deletions: 2 },
+          attribution: {
+            agent: {
+              agentId: "agent-123",
+              agentName: "Coordinator",
+              sessionId: "sess-9",
+              turnNumber: 4,
+              timestamp: 1750000000000,
+            },
+            timestamp: 1750000000000,
+          },
+          commitHash: "abc123",
+        },
+        {
+          id: "b.ts",
+          file: "b.ts",
+          relativePath: "b.ts",
+          stage: "unstaged",
+          status: "added",
+          stats: { additions: 3, deletions: 0 },
+          attribution: { manual: true, timestamp: 1750000001000 },
+        },
       ],
+      truncated: false,
+      totalCount: 2,
     });
     const client = new LiveGitClient();
 
     const tracked = await client.trackedChanges("ws-1");
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.changes", { workspaceId: "ws-1" });
-    expect(tracked).toHaveLength(3);
-    expect(tracked[0]).toMatchObject({
-      id: "a.ts",
-      file: "a.ts",
-      relativePath: "a.ts",
-      stage: "staged",
+    expect(mockedRequest).toHaveBeenCalledWith("file-tracking.getChanges", {
+      workspaceId: "ws-1",
+    });
+    expect(tracked).toHaveLength(2);
+    expect(tracked[0]).toEqual({
+      id: "git-1-src/x.ts",
+      file: "/ws/src/x.ts",
+      relativePath: "src/x.ts",
+      stage: "committed",
       status: "modified",
-      stats: { additions: 0, deletions: 0 },
+      stats: { additions: 10, deletions: 2 },
+      attribution: {
+        agent: {
+          agentId: "agent-123",
+          agentName: "Coordinator",
+          sessionId: "sess-9",
+          turnNumber: 4,
+          timestamp: 1750000000000,
+        },
+        timestamp: 1750000000000,
+      },
+      commitHash: "abc123",
     });
     expect(tracked[1]).toMatchObject({
       id: "b.ts",
       stage: "unstaged",
       status: "added",
-    });
-    expect(tracked[2]).toMatchObject({
-      id: "c.ts",
-      stage: "unstaged",
-      status: "deleted",
+      stats: { additions: 3, deletions: 0 },
+      attribution: { manual: true, timestamp: 1750000001000 },
     });
   });
 
@@ -694,6 +763,48 @@ describe("LiveGitClient.subscribe event-family routing (fake transport)", () => 
     await flush();
 
     expect(gitStatusCalls()).toBe(initialCount + 1);
+    unsubscribe();
+  });
+
+  // §6.5: `changes:tracked` (daemon tracked-change writes) must refresh the
+  // display like `changes:git-status` does — the local file-tracking store is
+  // retired, so these events are the only signal that tracked changes moved.
+  it("DOES refetch git.status on a wrapped changes:tracked notification", async () => {
+    const { getNotify } = await setupWithRealMatcher();
+    const client = new LiveGitClient();
+
+    const unsubscribe = client.subscribe(() => {});
+    await flush();
+    const initialCount = gitStatusCalls();
+
+    getNotify()!({
+      method: "events.event",
+      params: { event: { type: "changes:tracked" } },
+    });
+    await flush();
+
+    expect(gitStatusCalls()).toBe(initialCount + 1);
+    unsubscribe();
+  });
+
+  it("subscribes to the git:* family plus changes:tracked and changes:git-status (§6.5)", async () => {
+    await setupWithRealMatcher();
+    const client = new LiveGitClient();
+
+    const unsubscribe = client.subscribe(() => {});
+    await flush();
+
+    expect(mockedSubscribe).toHaveBeenCalledWith({
+      eventTypes: [
+        "git:commit",
+        "git:push",
+        "git:pull",
+        "git:branch",
+        "git:merge",
+        "changes:tracked",
+        "changes:git-status",
+      ],
+    });
     unsubscribe();
   });
 });

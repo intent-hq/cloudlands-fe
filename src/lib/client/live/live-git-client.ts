@@ -4,12 +4,15 @@
  * `status` (and `changes`, which mirrors it) resolve via `git.status`, returning
  * the daemon's working-tree summary directly in the renderer `GitStatus` shape.
  * `prStatus` resolves via `pr.status` (the daemon errors when no PR is active, so
- * that is folded to `null`). `diffs` / `commits` / `trackedChanges` resolve via
- * the additive `git.diffs` / `git.commits` / `git.changes` reads (PROTOCOL §5.6)
- * and are mapped into the renderer `DiffChunk[]` / `CommitInfo[]` / `TrackedChange[]`
- * shapes; transport/daemon errors fold to an empty list so a single failed read
- * does not throw into the store. `subscribe` refetches on `git:*` /
- * `changes:git-status` events. `stage`, `commit`, and `pull` are the supported
+ * that is folded to `null`). `diffs` resolves via the additive `git.diffs` read
+ * (PROTOCOL §5.6); `trackedChanges` / `commits` resolve via the daemon
+ * file-tracking reads `file-tracking.getChanges` / `file-tracking.loadCommits`
+ * (PROTOCOL §5.19 — the per-file audit trail with agent attribution, replacing
+ * the retired local file-tracking.json store). All are mapped into the renderer
+ * `DiffChunk[]` / `TrackedChange[]` / `CommitInfo[]` shapes; transport/daemon
+ * errors fold to an empty list so a single failed read does not throw into the
+ * store. `subscribe` refetches on `git:*` / `changes:tracked` /
+ * `changes:git-status` events (§6.5). `stage`, `commit`, and `pull` are the supported
  * write mutations: `stage` forwards to `git.stage`; `commit` forwards to
  * `git.agentCommit` (the wire-canonical commit method — `git.commit` is
  * deprecated per §5.6); `pull` forwards to the path-based `git.pull`
@@ -128,7 +131,24 @@ function dateToTimestamp(date: unknown): number {
   return Number.isFinite(t) ? t : 0;
 }
 
-/** Map a daemon `git.commits` items entry into the renderer `CommitInfo`. */
+/** Map a §5.19 `CommitWithAttribution` file entry into the renderer `CommitFile`. */
+function toCommitFile(raw: unknown): CommitFile | null {
+  if (!raw || typeof raw !== "object") return null;
+  const f = raw as Record<string, unknown>;
+  const path = typeof f.path === "string" ? f.path : "";
+  if (!path) return null;
+  const file: CommitFile = { path };
+  if (typeof f.additions === "number") file.additions = f.additions;
+  if (typeof f.deletions === "number") file.deletions = f.deletions;
+  if (typeof f.status === "string") file.status = f.status;
+  return file;
+}
+
+/**
+ * Map a daemon `file-tracking.loadCommits` entry (§5.19 `CommitWithAttribution`:
+ * hash/message/author/date/filesChanged/isPushed/files?/agentId?/linkedNoteId?)
+ * into the renderer `CommitInfo`.
+ */
 function toCommitInfo(raw: unknown): CommitInfo | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
@@ -136,17 +156,19 @@ function toCommitInfo(raw: unknown): CommitInfo | null {
   if (!hash) return null;
   const rawFiles = Array.isArray(r.files) ? r.files : [];
   const files: CommitFile[] = rawFiles
-    .map((p) => (typeof p === "string" ? ({ path: p } as CommitFile) : null))
+    .map(toCommitFile)
     .filter((f): f is CommitFile => f !== null);
+  const isPushed = Boolean(r.isPushed);
   const info: CommitInfo = {
     hash,
     message: typeof r.message === "string" ? r.message : "",
     author: typeof r.author === "string" ? r.author : "",
     timestamp: dateToTimestamp(r.date),
     files,
-    stage: "local",
+    stage: isPushed ? "pushed" : "local",
+    isPushed,
   };
-  if (typeof r.email === "string") info.authorEmail = r.email;
+  if (typeof r.filesChanged === "number") info.filesChanged = r.filesChanged;
   if (typeof r.date === "string") info.date = r.date;
   if (typeof r.agentId === "string") info.agentId = r.agentId;
   if (typeof r.linkedNoteId === "string") info.linkedNoteId = r.linkedNoteId;
@@ -187,41 +209,61 @@ function normalizeCommitDetails(
   };
 }
 
-/** Map a daemon `git.changes` `FileStatus` into the renderer `TrackedChange`. */
+/** Wire stage values (§5.19) — a 1:1 match with the renderer `ChangeStage` enum. */
+const WIRE_CHANGE_STAGES: ReadonlySet<string> = new Set(Object.values(ChangeStage));
+const WIRE_CHANGE_STATUSES: ReadonlySet<string> = new Set([
+  "added",
+  "modified",
+  "deleted",
+  "renamed",
+]);
+
+/**
+ * Map a daemon `file-tracking.getChanges` entry (§5.19 `TrackedChange`:
+ * id/file/relativePath/stage/status?/stats/attribution) into the renderer
+ * `TrackedChange`. The wire shape mirrors the renderer type, so fields are
+ * carried through with type guards rather than re-derived.
+ */
 function toTrackedChange(raw: unknown): TrackedChange | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
-  const path = typeof r.path === "string" ? r.path : "";
-  if (!path) return null;
-  const code = typeof r.status === "string" ? r.status.trim() : "";
-  const staged = Boolean(r.staged);
-  let status: FileChangeStatus | undefined;
-  switch (code) {
-    case "A":
-    case "?":
-      status = "added";
-      break;
-    case "D":
-      status = "deleted";
-      break;
-    case "R":
-      status = "renamed";
-      break;
-    case "M":
-    case "C":
-      status = "modified";
-      break;
-    default:
-      status = code ? "modified" : undefined;
-  }
+  const file = typeof r.file === "string" ? r.file : "";
+  const relativePath = typeof r.relativePath === "string" ? r.relativePath : file;
+  if (!file && !relativePath) return null;
+  const stage =
+    typeof r.stage === "string" && WIRE_CHANGE_STAGES.has(r.stage)
+      ? (r.stage as ChangeStage)
+      : ChangeStage.Unstaged;
+  const status =
+    typeof r.status === "string" && WIRE_CHANGE_STATUSES.has(r.status)
+      ? (r.status as FileChangeStatus)
+      : undefined;
+  const rawStats = (r.stats && typeof r.stats === "object" ? r.stats : {}) as Record<
+    string,
+    unknown
+  >;
+  const rawAttribution = (
+    r.attribution && typeof r.attribution === "object" ? r.attribution : {}
+  ) as Record<string, unknown>;
   return {
-    id: path,
-    file: path,
-    relativePath: path,
-    stage: staged ? ChangeStage.Staged : ChangeStage.Unstaged,
-    stats: { additions: 0, deletions: 0 },
+    id: typeof r.id === "string" && r.id ? r.id : relativePath || file,
+    file: file || relativePath,
+    relativePath: relativePath || file,
+    stage,
+    stats: {
+      additions: typeof rawStats.additions === "number" ? rawStats.additions : 0,
+      deletions: typeof rawStats.deletions === "number" ? rawStats.deletions : 0,
+    },
     ...(status ? { status } : {}),
-    attribution: { manual: true, timestamp: Date.now() },
+    attribution: {
+      ...(rawAttribution.agent && typeof rawAttribution.agent === "object"
+        ? { agent: rawAttribution.agent as TrackedChange["attribution"]["agent"] }
+        : {}),
+      ...(typeof rawAttribution.manual === "boolean" ? { manual: rawAttribution.manual } : {}),
+      timestamp:
+        typeof rawAttribution.timestamp === "number" ? rawAttribution.timestamp : 0,
+    },
+    ...(typeof r.commitHash === "string" ? { commitHash: r.commitHash } : {}),
   };
 }
 
@@ -276,15 +318,18 @@ export class LiveGitClient implements GitClient {
     }
   }
 
-  // `git.changes` (PROTOCOL §5.6) returns the working-tree `FileStatus[]` for
-  // the workspace. Mapped into a minimal `TrackedChange[]` (path/stage/status);
-  // richer fields (`stats`, `hunks`, agent attribution) come from other paths
-  // and are intentionally not synthesized here.
+  // `file-tracking.getChanges` (PROTOCOL §5.19) returns the daemon's tracked
+  // changes `{ changes, truncated, totalCount }` — the per-file audit trail
+  // with stats and agent attribution the local file-tracking.json store used
+  // to hold. The seam surfaces only `TrackedChange[]`; the pagination envelope
+  // (`truncated`/`totalCount`) is not yet threaded through.
   async trackedChanges(workspaceId: string): Promise<TrackedChange[]> {
     try {
-      const result = await backendRequest<{ files?: unknown[] }>("git.changes", { workspaceId });
-      const files = Array.isArray(result?.files) ? result.files : [];
-      return files
+      const result = await backendRequest<{ changes?: unknown[] }>("file-tracking.getChanges", {
+        workspaceId,
+      });
+      const changes = Array.isArray(result?.changes) ? result.changes : [];
+      return changes
         .map(toTrackedChange)
         .filter((c): c is TrackedChange => c !== null);
     } catch {
@@ -292,14 +337,17 @@ export class LiveGitClient implements GitClient {
     }
   }
 
-  // `git.commits` (PROTOCOL §5.6) returns a `{ items, nextToken }` page of
-  // reverse-chronological history. P0: first page is enough for the renderer
-  // (pagination tokens are NOT yet surfaced through the seam).
+  // `file-tracking.loadCommits` (PROTOCOL §5.19) returns
+  // `{ commits: CommitWithAttribution[] }` — local commits carrying agent
+  // provenance (agentId / linkedNoteId) and per-file stats, replacing the
+  // attribution-less `git.commits` page for the changes panel.
   async commits(workspaceId: string): Promise<CommitInfo[]> {
     try {
-      const result = await backendRequest<{ items?: unknown[] }>("git.commits", { workspaceId });
-      const items = Array.isArray(result?.items) ? result.items : [];
-      return items.map(toCommitInfo).filter((c): c is CommitInfo => c !== null);
+      const result = await backendRequest<{ commits?: unknown[] }>("file-tracking.loadCommits", {
+        workspaceId,
+      });
+      const commits = Array.isArray(result?.commits) ? result.commits : [];
+      return commits.map(toCommitInfo).filter((c): c is CommitInfo => c !== null);
     } catch {
       return [];
     }
@@ -471,7 +519,15 @@ export class LiveGitClient implements GitClient {
     });
 
     backendSubscribe<{ subscriptionId?: string }>({
-      eventTypes: ["git:commit", "git:push", "git:pull", "git:branch", "git:merge", "changes:git-status"],
+      eventTypes: [
+        "git:commit",
+        "git:push",
+        "git:pull",
+        "git:branch",
+        "git:merge",
+        "changes:tracked",
+        "changes:git-status",
+      ],
     })
       .then((result) => {
         subscriptionId = result?.subscriptionId;

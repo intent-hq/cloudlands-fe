@@ -1,18 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { tmpdir } from 'os';
-import { ChangeStage, type TrackedChange } from '../types';
-
-const mockMetadata = vi.hoisted(() => ({ root: '' }));
-
-vi.mock('$shared/main/config', () => ({
-  WorkspaceConfig: {
-    paths: {
-      metadata: (workspaceId: string) => `${mockMetadata.root}/${workspaceId}`,
-    },
-  },
-}));
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  ChangeStage,
+  type AgentAttribution,
+  type StageTransition,
+  type TrackedChange,
+} from '../types';
 
 vi.mock('$lib/utils/logger', () => ({
   Logger: vi.fn(function Logger() {
@@ -40,102 +32,114 @@ function createChange(overrides: Partial<TrackedChange> = {}): TrackedChange {
   };
 }
 
-describe('FileTrackingStorage payload retention', () => {
-  let testDir: string;
-  let workspaceId: string;
-
-  beforeEach(async () => {
-    workspaceId = `file-tracking-storage-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    testDir = path.join(tmpdir(), workspaceId);
-    mockMetadata.root = testDir;
-    await fs.mkdir(testDir, { recursive: true });
-  });
-
-  afterEach(async () => {
+describe('FileTrackingStorage (in-memory)', () => {
+  afterEach(() => {
     FileTrackingStorage.clearAllInstances();
-    await fs.rm(testDir, { recursive: true, force: true });
   });
 
-  function trackingFilePath(): string {
-    return path.join(testDir, workspaceId, 'file-tracking', 'file-tracking.json');
-  }
+  it('returns an empty list for a fresh instance', async () => {
+    const storage = FileTrackingStorage.getInstance('ws-fresh');
+    await expect(storage.loadTrackedChanges()).resolves.toEqual([]);
+    await expect(storage.loadTransitions()).resolves.toEqual([]);
+    await expect(storage.loadAttributions()).resolves.toEqual(new Map());
+  });
 
-  it('bounds saved tracked-change content and keeps required metadata', async () => {
-    const storage = FileTrackingStorage.getInstance(workspaceId);
-    const change = createChange({
-      content: {
-        oldContent: 'o'.repeat(80_000),
-        oldContentSha: 'old-sha',
-        newContent: 'n'.repeat(80_000),
-        diff: 'd'.repeat(30_000),
-        isFullFileContent: true,
-      },
-    });
+  it('round-trips tracked changes in memory', async () => {
+    const storage = FileTrackingStorage.getInstance('ws-roundtrip');
+    const change = createChange();
 
     await storage.saveTrackedChanges([change]);
 
-    const saved = JSON.parse(await fs.readFile(trackingFilePath(), 'utf-8'));
-    const content = saved.trackedChanges[0].content;
-    expect(content.oldContent).toBeUndefined();
-    expect(content.oldContentSha).toBe('old-sha');
-    expect(content.newContent).toBeUndefined();
-    expect(content.diff.length).toBeLessThan(30_000);
-    expect(content.diff).toContain('[truncated]');
-    expect(content.isFullFileContent).toBe(true);
+    await expect(storage.loadTrackedChanges()).resolves.toEqual([change]);
   });
 
-  it('sanitizes loaded tracked changes before caching them', async () => {
-    const storage = FileTrackingStorage.getInstance(workspaceId);
-    const filePath = trackingFilePath();
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(
-      filePath,
-      JSON.stringify({
-        version: '1.0.0',
-        workspaceId,
-        trackedChanges: [
-          createChange({
-            id: 'loaded-large',
-            content: {
-              oldContent: 'o'.repeat(80_000),
-              newContent: 'n'.repeat(80_000),
-              diff: 'd'.repeat(30_000),
-            },
-          }),
-        ],
-      }),
-      'utf-8',
-    );
+  it('keeps instances isolated per workspace', async () => {
+    const storageA = FileTrackingStorage.getInstance('ws-a');
+    const storageB = FileTrackingStorage.getInstance('ws-b');
 
-    const [loaded] = await storage.loadTrackedChanges();
-    expect(loaded.content?.oldContent).toBeUndefined();
-    expect(loaded.content?.newContent).toBeUndefined();
-    expect(loaded.content?.diff?.length).toBeLessThan(30_000);
-    expect((storage as any).trackedChangesCache.get('tracked-changes')[0]).toBe(loaded);
+    await storageA.saveTrackedChanges([createChange()]);
+
+    await expect(storageB.loadTrackedChanges()).resolves.toEqual([]);
+    expect(FileTrackingStorage.getInstance('ws-a')).toBe(storageA);
   });
 
-  it('updates the cache after cleanup removes stale tracked changes', async () => {
+  it('deduplicates changes keeping the latest per file and stage', async () => {
+    const storage = FileTrackingStorage.getInstance('ws-dedupe');
+    const older = createChange({
+      id: 'older',
+      attribution: { manual: true, timestamp: 1000 },
+    });
+    const newer = createChange({
+      id: 'newer',
+      attribution: { manual: true, timestamp: 2000 },
+    });
+
+    await storage.saveTrackedChanges([older, newer]);
+
+    await expect(storage.loadTrackedChanges()).resolves.toEqual([newer]);
+  });
+
+  it('preserves committed changes with distinct commit hashes', async () => {
+    const storage = FileTrackingStorage.getInstance('ws-commits');
+    const commitA = createChange({
+      id: 'commit-a',
+      stage: ChangeStage.Committed,
+      commitHash: 'aaa',
+    });
+    const commitB = createChange({
+      id: 'commit-b',
+      stage: ChangeStage.Committed,
+      commitHash: 'bbb',
+    });
+
+    await storage.saveTrackedChanges([commitA, commitB]);
+
+    const loaded = await storage.loadTrackedChanges();
+    expect(loaded.map((change) => change.id).sort()).toEqual(['commit-a', 'commit-b']);
+  });
+
+  it('round-trips stage transitions in memory', async () => {
+    const storage = FileTrackingStorage.getInstance('ws-transitions');
+    const transition: StageTransition = {
+      id: 'transition-1',
+      changeId: 'change-1',
+      fromStage: ChangeStage.Unstaged,
+      toStage: ChangeStage.Staged,
+      timestamp: Date.now(),
+      actor: { type: 'user', id: 'user-1' },
+    };
+
+    await storage.saveTransitions([transition]);
+
+    await expect(storage.loadTransitions()).resolves.toEqual([transition]);
+  });
+
+  it('round-trips agent attributions in memory', async () => {
+    const storage = FileTrackingStorage.getInstance('ws-attributions');
+    const attribution: AgentAttribution = {
+      agentId: 'agent-1',
+      agentName: 'Agent One',
+      sessionId: 'session-1',
+      turnNumber: 1,
+      timestamp: Date.now(),
+    };
+
+    await storage.saveAttributions(new Map([['src/app.ts', attribution]]));
+
+    const loaded = await storage.loadAttributions();
+    expect(loaded.get('src/app.ts')).toEqual(attribution);
+  });
+
+  it('cleanupWorkspace resets instance state', async () => {
+    const workspaceId = 'ws-cleanup';
     const storage = FileTrackingStorage.getInstance(workspaceId);
-    const oldTimestamp = Date.now() - 8 * 24 * 60 * 60 * 1000;
-    await storage.saveTrackedChanges([
-      createChange({ id: 'old-change', attribution: { manual: true, timestamp: oldTimestamp } }),
-      createChange({
-        id: 'new-change',
-        file: 'src/new.ts',
-        attribution: { manual: true, timestamp: Date.now() },
-      }),
-    ]);
-    await storage.loadTrackedChanges();
+    await storage.saveTrackedChanges([createChange()]);
+    await storage.saveTransitions([]);
 
-    (storage as any).lastAccessTime = 0;
-    (storage as any).lastCleanupTime = 0;
-    await (storage as any).performCleanup();
+    FileTrackingStorage.cleanupWorkspace(workspaceId);
 
-    expect(
-      (storage as any).trackedChangesCache
-        .get('tracked-changes')
-        .map((change: TrackedChange) => change.id),
-    ).toEqual(['new-change']);
-    await expect(storage.loadTrackedChanges()).resolves.toMatchObject([{ id: 'new-change' }]);
+    const fresh = FileTrackingStorage.getInstance(workspaceId);
+    expect(fresh).not.toBe(storage);
+    await expect(fresh.loadTrackedChanges()).resolves.toEqual([]);
   });
 });

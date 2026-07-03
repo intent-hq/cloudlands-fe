@@ -9,16 +9,12 @@
  * existing slice actions — replacing the work the corresponding sagas used to do
  * against the real backend.
  *
- * Also registers a boot-time mock IPC stub for the same unregistered-channel
- * class of bug as the workspaces/agents seeders: `file-tracking:get-line-stats`
- * (called by WindowTitleBar on mount; the undefined fallback TypeErrors on
- * `response.ok` even though it is caught silently). A neutral empty default
- * keeps the surface quiet until the daemon owns it.
  * (`external-editors:detect-installed` is bridged to the daemon's
- * `host.listInstalledEditors` in host-bridge-seeder.ts.)
+ * `host.listInstalledEditors` in host-bridge-seeder.ts. The former
+ * `file-tracking:get-line-stats` stub is gone — WindowTitleBar's line stats
+ * now read the daemon directly via `file-tracking.getLineStats`, PROTOCOL
+ * §5.19.)
  */
-import { IPC_CHANNELS } from "$shared/ipc-registry";
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import { SPECIALISTS, type Specialist } from "$lib/constants/specialists";
 import type { ModelTier, SpecialistFileScope } from "$shared/specialist-file-types";
 import type { SpecialistDef } from "$lib/client/app-client";
@@ -46,14 +42,6 @@ import {
 import { setSkills } from "../slices/skills/skills-slice";
 import { hydrateBrowserState } from "../slices/browser/browser-slice";
 import { eventsLoaded } from "../slices/workspace-events/workspace-events-slice";
-
-// Registered at import time so the dispatch site (WindowTitleBar mount)
-// resolves through the mock router before any component effect could read an
-// undefined response.
-registerMockIpcHandler(IPC_CHANNELS.FILE_TRACKING.GET_LINE_STATS, async () => ({
-  ok: true,
-  data: { additions: 0, deletions: 0 },
-}));
 
 /** Wire `modelTier` is carried verbatim from frontmatter; only known tiers map. */
 const MODEL_TIERS: ReadonlySet<string> = new Set(["fast", "balanced", "smart"]);

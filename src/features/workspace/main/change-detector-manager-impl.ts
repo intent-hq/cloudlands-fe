@@ -1,7 +1,4 @@
-import {
-  WorkspaceId as WorkspaceIdBrand,
-  createAgentId,
-} from '$shared/types/branded-ids';
+import { WorkspaceId as WorkspaceIdBrand } from '$shared/types/branded-ids';
 import { ChangeDetectorRefactored as ChangeDetector } from './change-detector-refactored';
 import {
   DiffChunk,
@@ -22,10 +19,6 @@ import {
   type WorkspaceDiffSummary,
   type WorkspaceDiffSummaryFile,
 } from '../../../shared/types';
-import {
-  trackFileChanges,
-  type FileLineChange,
-} from '../../line-changes/line-changes-main-state';
 
 interface WorkspaceInfo {
   id: string;
@@ -465,20 +458,6 @@ export class ChangeDetectorManager extends EventEmitter {
     this.addToHistory(workspaceId, diffChunk);
     logger.debug('[ChangeDetectorManager] Added diffChunk to history');
 
-    // Update line changes store with file statistics
-    if (diffChunk.files && Array.isArray(diffChunk.files)) {
-      const fileChanges: FileLineChange[] = diffChunk.files.map((file) => ({
-        path: file.path,
-        additions: file.additions || 0,
-        deletions: file.deletions || 0,
-        action: (file.action?.toLowerCase() || 'modify') as 'create' | 'modify' | 'delete',
-      }));
-      trackFileChanges(WorkspaceIdBrand(workspaceId), fileChanges);
-      logger.debug(
-        `[ChangeDetectorManager] Updated line changes store for workspace ${workspaceId}`,
-      );
-    }
-
     void this.persistDiffSummary(workspaceId, diffChunk);
 
     // Emit to IPC
@@ -742,18 +721,6 @@ export class ChangeDetectorManager extends EventEmitter {
     logger.info(
       `[ChangeDetectorManager] trackAgentChanges returned diffChunk with id: ${diffChunk?.id}`,
     );
-
-    // Update line changes store for agent if sessionId is provided
-    if (sessionId && diffChunk?.files) {
-      const fileChanges: FileLineChange[] = diffChunk.files.map((file: any) => ({
-        path: file.path,
-        additions: file.additions || 0,
-        deletions: file.deletions || 0,
-        action: (file.action?.toLowerCase() || 'modify') as 'create' | 'modify' | 'delete',
-      }));
-      trackFileChanges(createAgentId(sessionId), fileChanges);
-      logger.debug(`[ChangeDetectorManager] Updated line changes store for agent ${sessionId}`);
-    }
 
     this.addToHistory(workspaceId, diffChunk);
     logger.debug(`[ChangeDetectorManager] Added diffChunk to history for workspace ${workspaceId}`);

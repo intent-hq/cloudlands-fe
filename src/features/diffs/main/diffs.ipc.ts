@@ -11,10 +11,7 @@ import { LineType } from '../../../shared/types';
 import { WorkspaceId } from '../../../shared/types/branded-ids';
 import { diffsService } from '../diffs.service';
 import { Logger } from '../../../shared/logger';
-import {
-  DIFFS_CHANNELS,
-  LINE_CHANGES_CHANNELS,
-} from '../../../shared/ipc/channels';
+import { DIFFS_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import {
   getWorkspaceGitInfo,
@@ -26,11 +23,6 @@ import {
   DiffsCreateSchema,
   DiffsUpdateSchema,
   DiffsGetSchema,
-  LineChangesMarkAgentActiveSchema,
-  LineChangesGetCurrentSchema,
-  LineChangesStartAgentExecutionSchema,
-  LineChangesStopAgentExecutionSchema,
-  LineChangesMarkAgentModifiedFilesSchema,
 } from '../../../main/ipc-schemas';
 
 const logger = new Logger('Diffs-IPC');
@@ -103,91 +95,6 @@ export function setupDiffsIPC() {
         return resultToCommandResponse(result);
       },
       DIFFS_CHANNELS.UPDATE,
-    ),
-  );
-
-  // Mark agent as active
-  ipcMain.handle(
-    LINE_CHANGES_CHANNELS.MARK_AGENT_ACTIVE,
-    createSafeValidatedHandler(
-      LineChangesMarkAgentActiveSchema,
-      async (_, validated) => {
-        const result = await diffsService.markAgentActive(
-          validated.workspaceId,
-          validated.agentName,
-          validated.durationMs || 30000, // Default to 30 seconds
-        );
-        return resultToCommandResponse(result);
-      },
-      LINE_CHANGES_CHANNELS.MARK_AGENT_ACTIVE,
-    ),
-  );
-
-  // Get current changes
-  ipcMain.handle(
-    LINE_CHANGES_CHANNELS.GET_CURRENT,
-    createSafeValidatedHandler(
-      LineChangesGetCurrentSchema,
-      async (_, validated) => {
-        // Handle both string workspaceId and object with workspaceId property
-        const workspaceId = typeof validated === 'string' ? validated : validated?.workspaceId;
-        const result = await diffsService.getCurrentChanges(workspaceId);
-        return resultToCommandResponse(result);
-      },
-      LINE_CHANGES_CHANNELS.GET_CURRENT,
-    ),
-  );
-
-  // Start agent execution tracking
-  ipcMain.handle(
-    LINE_CHANGES_CHANNELS.START_AGENT_EXECUTION,
-    createSafeValidatedHandler(
-      LineChangesStartAgentExecutionSchema,
-      async (_, validated) => {
-        const result = await diffsService.startAgentExecution(
-          validated.workspaceId,
-          validated.agentName,
-          validated.sessionId,
-          validated.turnNumber,
-        );
-        return resultToCommandResponse(result);
-      },
-      LINE_CHANGES_CHANNELS.START_AGENT_EXECUTION,
-    ),
-  );
-
-  // Stop agent execution tracking
-  ipcMain.handle(
-    LINE_CHANGES_CHANNELS.STOP_AGENT_EXECUTION,
-    createSafeValidatedHandler(
-      LineChangesStopAgentExecutionSchema,
-      async (_, validated) => {
-        const result = await diffsService.stopAgentExecution(validated.workspaceId);
-        return resultToCommandResponse(result);
-      },
-      LINE_CHANGES_CHANNELS.STOP_AGENT_EXECUTION,
-    ),
-  );
-
-  // Mark files as modified by agent
-  ipcMain.handle(
-    LINE_CHANGES_CHANNELS.MARK_AGENT_MODIFIED_FILES,
-    createSafeValidatedHandler(
-      LineChangesMarkAgentModifiedFilesSchema,
-      async (_, validated) => {
-        try {
-          logger.debug(
-            `Marking ${validated.files?.length || 0} files as modified by agent in workspace ${
-              validated.workspaceId
-            }`,
-            { files: validated.files },
-          );
-          return { success: true, data: undefined };
-        } catch (error) {
-          return { success: false, error: (error as Error).message };
-        }
-      },
-      LINE_CHANGES_CHANNELS.MARK_AGENT_MODIFIED_FILES,
     ),
   );
 
