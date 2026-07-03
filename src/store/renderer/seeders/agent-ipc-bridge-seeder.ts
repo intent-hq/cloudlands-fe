@@ -256,3 +256,33 @@ registerMockIpcHandler(AGENT_BACKEND_CHANNELS.GET_QUEUE, async (arg) => {
   }
   return forwardToOrchestrator("agent.getQueue", { agentId });
 });
+
+/**
+ * `agent:set-model` → daemon `agent.setModel` (PROTOCOL §5.5:
+ * `{ agentId, modelId, workspaceId }` → `{ success, modelId }`, emits
+ * `agent:updated`). The caller is `agentClient.setModel` (ModelPicker), which
+ * expects a `CommandResponse` envelope — `{ success: true, data: <daemonBody> }`
+ * on success, `{ success: false, error: <string> }` on failure. Without this
+ * bridge the channel fell through the mock router's `undefined` default and
+ * `commandResponseToResult` threw
+ * "Cannot read properties of undefined (reading 'success')" on every model
+ * change for daemon-created agents.
+ */
+registerMockIpcHandler(AGENT_CHANNELS.SET_MODEL, async (arg) => {
+  const request = asRecord(arg);
+  const agentId = readString(request, "agentId");
+  const modelId = readString(request, "modelId");
+  const workspaceId = readString(request, "workspaceId");
+  if (!agentId || !modelId || !workspaceId) {
+    return { success: false, error: "agentId, modelId and workspaceId are required" };
+  }
+  try {
+    const result = await backendRequest("agent.setModel", { agentId, modelId, workspaceId });
+    return { success: true, data: result };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+});

@@ -48,6 +48,11 @@ import { isSuccessResponse } from "$shared/ipc/typed-invoke";
 // fold is part of the assertion (catches envelope-shape regressions that a
 // pure `mockInvoke` test would miss).
 import { unifiedOrchestrator } from "$features/agent/services/consolidated-backend.service";
+// End-to-end consumer for the set-model bridge: ModelPicker calls
+// `agentClient.setModel`, which folds the bridge's CommandResponse envelope
+// into a `Result` — exercising it here catches envelope regressions (the
+// original bug: no bridge → `undefined` → TypeError inside the fold).
+import { agentClient } from "$features/agent/agent.client";
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -343,6 +348,41 @@ describe("agent-ipc-bridge-seeder", () => {
       expect(result.queue).toHaveLength(2);
       expect(result.queue?.[0]?.id).toBe("q-1");
       expect(result.queue?.[1]?.position).toBe(1);
+    });
+  });
+
+  describe("agent:set-model → daemon agent.setModel", () => {
+    it("end-to-end: agentClient.setModel sends {agentId,modelId,workspaceId} and folds the PROTOCOL body into an ok Result", async () => {
+      // PROTOCOL §5.5: `agent.setModel` → `{ success, modelId }` (emits
+      // `agent:updated`). The bridge wraps it as CommandResponse
+      // `{success:true, data:<daemonBody>}` so `commandResponseToResult`
+      // yields `ok:true` and ModelPicker reads `result.data.success`.
+      mockedRequest.mockResolvedValueOnce({ success: true, modelId: "fable-5" });
+
+      const result = await agentClient.setModel("agent-7", "fable-5", WORKSPACE_ID);
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.setModel", {
+        agentId: "agent-7",
+        modelId: "fable-5",
+        workspaceId: WORKSPACE_ID,
+      });
+      expect(result).toEqual({ ok: true, data: { success: true, modelId: "fable-5" } });
+    });
+
+    it("daemon failure surfaces as {ok:false,error:<message>} so ModelPicker toasts the daemon error", async () => {
+      mockedRequest.mockRejectedValueOnce(new Error("not found: agent session"));
+      const result = await agentClient.setModel("agent-7", "fable-5", WORKSPACE_ID);
+      expect(result).toEqual({ ok: false, error: "not found: agent session" });
+    });
+
+    it("validates required params at the bridge boundary (no daemon call)", async () => {
+      const response = await mockInvoke<{ success: boolean; error?: string }>(
+        AGENT_CHANNELS.SET_MODEL,
+        { agentId: "agent-7" },
+      );
+      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(response.success).toBe(false);
+      expect(response.error).toContain("modelId");
     });
   });
 
