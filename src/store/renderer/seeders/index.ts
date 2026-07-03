@@ -9,6 +9,7 @@ import "./workspaces-seeder";
 import "./agents-seeder";
 import "./agent-ipc-bridge-seeder";
 import "./host-bridge-seeder";
+import "./integrations-bridge-seeder";
 import "./notes-seeder";
 import "./files-git-seeder";
 import "./terminals-scripts-seeder";

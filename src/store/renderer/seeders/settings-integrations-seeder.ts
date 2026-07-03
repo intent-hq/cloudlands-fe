@@ -11,23 +11,17 @@
  * (`user-mcp:get-settings-*`) and the settings footer reads `app:version`; those
  * channels are registered against the mock IPC router so those panes render.
  *
- * The issue picker preloads Linear/Sentry issues directly over IPC at boot
- * (auth-state + fetch). Those channels are registered synchronously at import
- * time so the preload sees a connected integration with mock issues instead of
- * making real Linear/Sentry API calls.
+ * The issue picker's direct IPC reads (auth-state + issue fetch) are bridged
+ * to the daemon's `github.*` / `linear.*` / `sentry.*` namespaces by
+ * integrations-bridge-seeder.ts; here the async seeder only hydrates the
+ * store slices from the same daemon-backed `AppClient` integrations seam.
  */
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import {
-  mockGitHubUser,
-  mockLinearIssues,
-  mockSentryIssues,
   mockUserMcpSettingsContent,
   mockUserMcpSettingsPath,
 } from "$lib/client/mock/fixtures";
-import { GITHUB_AUTH_CHANNELS } from "$features/github-auth/constants";
-import type { GitHubAuthState } from "$features/github-auth/types";
-import { LINEAR_AUTH_CHANNELS } from "$features/linear-auth/constants";
-import { SENTRY_AUTH_CHANNELS } from "$features/sentry-auth/constants";
+import { backendRequest } from "$lib/client/live/backend-transport";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
   setAgentFontStyle,
@@ -69,59 +63,6 @@ import {
   setSentryConnected,
   setSentryIssues,
 } from "../slices/sentry-auth/sentry-auth-slice";
-
-/** Deterministic Sentry organization for the connected mock state. */
-const MOCK_SENTRY_ORG = "acme";
-
-// ── Boot-time integration IPC stubs ──
-// Registered at import time (not inside the async seeder) so the issue picker's
-// preload, which calls these channels on mount, resolves to mocks before any
-// real Linear/Sentry API call could be attempted.
-
-// `initializeGitHubAuthFlow` (the post-saga GitHub auth trigger handler) fires
-// on every AcceptChangesPanel / ConnectionsSettings mount and reads
-// `authState.isAuthenticated`, so an undefined fallback TypeErrors before the
-// slice can hydrate. These mocks mirror the connected state the async seeder
-// dispatches via `setGitHubAuthState({ user: mockGitHubUser, ... })` so the
-// trigger handler and seeder agree on the same connected snapshot.
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.IS_AUTHENTICATED, async () => mockGitHubUser !== null);
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.GET_USER, async () => mockGitHubUser);
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.GET_AUTH_STATE, async (): Promise<GitHubAuthState> => ({
-  isAuthenticated: mockGitHubUser !== null,
-  requiresAugmentAuth: false,
-  user: mockGitHubUser,
-  needsScopeUpdate: false,
-  oauthUrl: undefined,
-}));
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.GET_STATUS, async () => ({
-  isConfigured: mockGitHubUser !== null,
-  oauthUrl: "",
-  configuredButNeedsUpdate: false,
-  updatedScopes: "",
-}));
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.LIST_REPOS, async () => ({ success: true, data: [] }));
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.SEARCH_REPOS, async () => ({ success: true, data: [] }));
-
-registerMockIpcHandler(LINEAR_AUTH_CHANNELS.IS_AUTHENTICATED, async () => mockLinearIssues.length > 0);
-registerMockIpcHandler(LINEAR_AUTH_CHANNELS.GET_AUTH_STATE, async () => ({
-  isAuthenticated: mockLinearIssues.length > 0,
-  requiresAugmentAuth: false,
-}));
-registerMockIpcHandler(LINEAR_AUTH_CHANNELS.GET_STATUS, async () => ({
-  isConfigured: mockLinearIssues.length > 0,
-  oauthUrl: "",
-}));
-registerMockIpcHandler(LINEAR_AUTH_CHANNELS.FETCH_MY_ISSUES, async () => mockLinearIssues);
-registerMockIpcHandler(LINEAR_AUTH_CHANNELS.SEARCH_ISSUES, async () => mockLinearIssues);
-
-registerMockIpcHandler(SENTRY_AUTH_CHANNELS.IS_AUTHENTICATED, async () => mockSentryIssues.length > 0);
-registerMockIpcHandler(SENTRY_AUTH_CHANNELS.GET_AUTH_STATE, async () => ({
-  isAuthenticated: mockSentryIssues.length > 0,
-  organization: MOCK_SENTRY_ORG,
-}));
-registerMockIpcHandler(SENTRY_AUTH_CHANNELS.FETCH_PROJECTS, async () => []);
-registerMockIpcHandler(SENTRY_AUTH_CHANNELS.FETCH_ISSUES, async () => mockSentryIssues);
-registerMockIpcHandler(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, async () => mockSentryIssues);
 
 registerMockSeeder("settings-integrations", async ({ store, client }) => {
   // ── User preferences ──
@@ -185,6 +126,9 @@ registerMockSeeder("settings-integrations", async ({ store, client }) => {
   }
 
   // ── Integrations (GitHub / Linear / Sentry) ──
+  // Connection state comes from the daemon auth probes (PROTOCOL §5.28/§5.29
+  // — `authenticated` + derived identity only), not from whether any issues
+  // exist: an authenticated integration with zero issues is still connected.
   const githubUser = await client.integrations.githubUser();
   store.dispatch(
     setGitHubAuthState({
@@ -196,16 +140,22 @@ registerMockSeeder("settings-integrations", async ({ store, client }) => {
     }),
   );
 
-  const linearIssues = await client.integrations.linearIssues();
-  store.dispatch(setLinearAuthState(linearIssues.length > 0, false, null));
-  if (linearIssues.length > 0) {
-    store.dispatch(setLinearIssues(linearIssues));
+  const linearAuthenticated = await backendRequest<{ authenticated?: boolean }>(
+    "linear.authStatus",
+  )
+    .then((status) => status?.authenticated === true)
+    .catch(() => false);
+  store.dispatch(setLinearAuthState(linearAuthenticated, false, null));
+  if (linearAuthenticated) {
+    store.dispatch(setLinearIssues(await client.integrations.linearIssues()));
   }
 
-  const sentryIssues = await client.integrations.sentryIssues();
-  if (sentryIssues.length > 0) {
-    store.dispatch(setSentryConnected(MOCK_SENTRY_ORG));
-    store.dispatch(setSentryIssues(sentryIssues));
+  const sentryStatus = await backendRequest<{ authenticated?: boolean; organization?: string }>(
+    "sentry.authStatus",
+  ).catch(() => null);
+  if (sentryStatus?.authenticated === true) {
+    store.dispatch(setSentryConnected(sentryStatus.organization ?? ""));
+    store.dispatch(setSentryIssues(await client.integrations.sentryIssues()));
   }
 
   // ── Direct IPC reads (not routed through Redux) ──
