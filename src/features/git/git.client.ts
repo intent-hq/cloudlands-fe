@@ -4,11 +4,11 @@
  * Renderer-side wrapper for git operations. Channels with a daemon arm
  * (PROTOCOL.md §5.6) resolve via `backendRequest('git.*')`: status, stage,
  * unstage, commit (→ `git.agentCommit`, the wire-canonical commit), history
- * (→ `git.commits`) and commit details (→ `git.commitDetails`). Operations the
- * daemon does not serve yet stay on local Electron IPC: hunk staging, push,
- * fetch, show-file (D2 in flight), lock-file removal, branch rename and
- * remote listing. All daemon-backed reads/mutations preserve the historical
- * `Result<T, string>` contract — transport/daemon errors fold to
+ * (→ `git.commits`), commit details (→ `git.commitDetails`) and show-file
+ * (→ `git.showFile`). Operations the daemon does not serve yet stay on local
+ * Electron IPC: hunk staging, push, fetch, lock-file removal, branch rename
+ * and remote listing. All daemon-backed reads/mutations preserve the
+ * historical `Result<T, string>` contract — transport/daemon errors fold to
  * `{ ok: false, error }`, never a throw.
  */
 
@@ -188,18 +188,25 @@ class GitClient {
     }
   }
 
-  // TODO(D2): `git:show-file` has no daemon arm yet — full-file content reads
-  // land with D2. Until then this stays on the local Electron IPC path.
+  // `git.showFile` (PROTOCOL §5.6) — raw file content at a revision
+  // (`git show <ref>:<path>` semantics; index ref ':0' supported). A path
+  // missing at the ref folds to '' on the daemon side, mirroring the legacy
+  // local handler.
   async showFile(
     workspaceId: WorkspaceId,
     filePath: string,
     ref: string,
   ): Promise<Result<string, string>> {
-    return this.invoke<string>('git:show-file', {
-      workspaceId,
-      filePath,
-      ref,
-    });
+    try {
+      const result = await backendRequest<{ content?: unknown }>('git.showFile', {
+        workspaceId,
+        filePath,
+        ref,
+      });
+      return { ok: true, data: typeof result?.content === 'string' ? result.content : '' };
+    } catch (error) {
+      return toError(error, 'Failed to show file');
+    }
   }
 
   async removeLockFile(workspaceId: WorkspaceId): Promise<Result<void, string>> {

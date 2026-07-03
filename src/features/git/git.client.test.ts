@@ -116,6 +116,33 @@ describe('GitClient daemon-backed wire contract (fake transport)', () => {
     expect(failed).toEqual({ ok: false, error: 'boom' });
   });
 
+  it('showFile forwards git.showFile and unwraps { content }', async () => {
+    mockedRequest.mockResolvedValueOnce({ content: 'file body at ref' });
+
+    const result = await gitClient.showFile(wsId, 'src/a.ts', ':0');
+
+    expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
+      workspaceId: wsId,
+      filePath: 'src/a.ts',
+      ref: ':0',
+    });
+    expect(result).toEqual({ ok: true, data: 'file body at ref' });
+  });
+
+  it('showFile folds a malformed payload to empty content and folds errors', async () => {
+    mockedRequest.mockResolvedValueOnce({});
+    await expect(gitClient.showFile(wsId, 'a.ts', 'HEAD')).resolves.toEqual({
+      ok: true,
+      data: '',
+    });
+
+    mockedRequest.mockRejectedValueOnce(new Error('unresolvable ref'));
+    await expect(gitClient.showFile(wsId, 'a.ts', 'nope')).resolves.toEqual({
+      ok: false,
+      error: 'unresolvable ref',
+    });
+  });
+
   it('getCommitDetails forwards git.commitDetails and maps the wire envelope', async () => {
     mockedRequest.mockResolvedValueOnce({
       commitHash: 'abc1234',

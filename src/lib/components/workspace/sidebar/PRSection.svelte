@@ -60,7 +60,6 @@
   import { Textarea } from '$lib/components/ui/textarea';
   import { toast } from '$lib/components/ui/toast';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
-  import { invoke } from '$shared/generated/ipc-client';
   import {
   track,
   trackGitOp,
@@ -588,20 +587,14 @@
     if (!workspaceId || !$workspace$) return;
     try {
       const baseRef = $workspace$.baseRef || 'main';
+      // Daemon-backed file-at-ref reads (`git.showFile`, PROTOCOL §5.6);
+      // errors fold to { ok: false } inside the git client.
       const [oldContentResult, newContentResult] = await Promise.all([
-        typeof window !== 'undefined' && window.electronAPI
-          ? invoke<{ success: boolean; data?: string; error?: string }>('git:show-file', {
-            workspaceId, filePath, ref: baseRef,
-          })
-          : Promise.resolve(undefined),
-        typeof window !== 'undefined' && window.electronAPI
-          ? invoke<{ success: boolean; data?: string; error?: string }>('git:show-file', {
-            workspaceId, filePath, ref: 'HEAD',
-          })
-          : Promise.resolve(undefined),
+        gitClient.showFile(workspaceId as WorkspaceId, filePath, baseRef),
+        gitClient.showFile(workspaceId as WorkspaceId, filePath, 'HEAD'),
       ]);
-      const oldContent = oldContentResult?.success ? oldContentResult.data || '' : '';
-      const newContent = newContentResult?.success ? newContentResult.data || '' : '';
+      const oldContent = oldContentResult.ok ? oldContentResult.data : '';
+      const newContent = newContentResult.ok ? newContentResult.data : '';
       const fileStats = prFiles.find((f) => f.path === filePath);
       const change: TrackedChange = {
         id: `pr-file:${filePath}`,

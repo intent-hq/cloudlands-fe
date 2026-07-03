@@ -1,3 +1,11 @@
+/**
+ * Wire-contract tests for the daemon-backed diff batcher (D2).
+ *
+ * FAKE transport only: `backendRequest` is mocked so no request reaches a
+ * real daemon. Asserts the JSON-RPC methods + params the batcher emits
+ * (PROTOCOL.md §5.6 `git.diffs`/`git.showFile`, §5.9 `file.read`) and how the
+ * hunk-only `git.diffs` result is composed with the per-file full contents.
+ */
 import {
   afterEach,
   beforeEach,
@@ -6,14 +14,51 @@ import {
   it,
   vi,
 } from 'vitest';
-import { invoke } from '$lib/electron-bridge';
-import { batchedGitDiff } from '../diff-ipc-batcher';
 
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(),
+}));
 vi.mock('$lib/electron-bridge', async () =>
   await import('$store/renderer/utils/test-helpers/electron-bridge-mock'),
 );
 
-describe('diff-ipc-batcher', () => {
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { batchedGitDiff, dedupedShowFile } from '../diff-ipc-batcher';
+
+const mockedRequest = vi.mocked(backendRequest);
+
+const HUNK = {
+  oldStart: 1,
+  oldLines: 0,
+  newStart: 1,
+  newLines: 1,
+  lines: [{ type: 'Addition', content: 'x', newNumber: 1 }],
+};
+
+/** PROTOCOL-shaped daemon: `git.diffs` → bare `[{ path, hunks }]`,
+ * `git.showFile` → `{ content }` keyed by `<ref>:<filePath>`, `file.read` →
+ * `{ content }` keyed by path (missing → rejects, like a deleted file). */
+function mockDaemon({
+  diffs = [] as unknown[],
+  showFiles = {} as Record<string, string>,
+  files = {} as Record<string, string>,
+} = {}) {
+  mockedRequest.mockImplementation(async (method: string, params?: unknown) => {
+    const p = (params ?? {}) as Record<string, unknown>;
+    if (method === 'git.diffs') return diffs;
+    if (method === 'git.showFile') {
+      return { content: showFiles[`${p.ref}:${p.filePath}`] ?? '' };
+    }
+    if (method === 'file.read') {
+      const path = String(p.path);
+      if (path in files) return { content: files[path] };
+      throw new Error(`file not found: ${path}`);
+    }
+    throw new Error(`unexpected method: ${method}`);
+  });
+}
+
+describe('diff-ipc-batcher (daemon wire)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
@@ -23,54 +68,151 @@ describe('diff-ipc-batcher', () => {
     vi.useRealTimers();
   });
 
-  it('retries missing paths when a mixed batch only returns a synthesized new-file chunk', async () => {
-    const newChunk = { file: 'new-file.ts', oldContent: '', newContent: 'new file' };
-    const modifiedChunk = {
-      file: 'modified-file.ts',
-      oldContent: 'old content',
-      newContent: 'new content',
-    };
+  it('coalesces same-tick unstaged requests into one git.diffs read and composes ":0" + file.read contents', async () => {
+    mockDaemon({
+      diffs: [
+        { path: 'a.ts', hunks: [HUNK] },
+        { path: 'b.ts', hunks: [] },
+      ],
+      showFiles: { ':0:a.ts': 'old a', ':0:b.ts': 'old b' },
+      files: { 'a.ts': 'new a', 'b.ts': 'new b' },
+    });
 
-    vi.mocked(invoke)
-      .mockResolvedValueOnce({ success: true, data: [newChunk] })
-      .mockResolvedValueOnce({ success: true, data: [modifiedChunk] });
-
-    const newFilePromise = batchedGitDiff('workspace-1', false, 'new-file.ts');
-    const modifiedFilePromise = batchedGitDiff('workspace-1', false, 'modified-file.ts');
-
+    const aPromise = batchedGitDiff('ws-1', false, 'a.ts');
+    const bPromise = batchedGitDiff('ws-1', false, 'b.ts');
     await vi.runAllTimersAsync();
 
-    await expect(Promise.all([newFilePromise, modifiedFilePromise])).resolves.toEqual([
-      newChunk,
-      modifiedChunk,
+    await expect(Promise.all([aPromise, bPromise])).resolves.toEqual([
+      { file: 'a.ts', chunks: [HUNK], oldContent: 'old a', newContent: 'new a' },
+      { file: 'b.ts', chunks: [], oldContent: 'old b', newContent: 'new b' },
     ]);
-    expect(invoke).toHaveBeenNthCalledWith(1, 'git:diff', {
-      workspaceId: 'workspace-1',
-      staged: false,
-      paths: ['new-file.ts', 'modified-file.ts'],
+
+    const diffCalls = mockedRequest.mock.calls.filter(([method]) => method === 'git.diffs');
+    expect(diffCalls).toEqual([['git.diffs', { workspaceId: 'ws-1' }]]);
+    expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
+      workspaceId: 'ws-1',
+      filePath: 'a.ts',
+      ref: ':0',
     });
-    expect(invoke).toHaveBeenNthCalledWith(2, 'git:diff', {
-      workspaceId: 'workspace-1',
-      staged: false,
-      paths: ['modified-file.ts'],
+    expect(mockedRequest).toHaveBeenCalledWith('file.read', { workspaceId: 'ws-1', path: 'a.ts' });
+  });
+
+  it('sends staged: true for the staged group and composes HEAD + ":0" contents', async () => {
+    mockDaemon({
+      diffs: [{ path: 'a.ts', hunks: [HUNK] }],
+      showFiles: { 'HEAD:a.ts': 'head a', ':0:a.ts': 'index a' },
+    });
+
+    const promise = batchedGitDiff('ws-2', true, 'a.ts');
+    await vi.runAllTimersAsync();
+
+    await expect(promise).resolves.toEqual({
+      file: 'a.ts',
+      chunks: [HUNK],
+      oldContent: 'head a',
+      newContent: 'index a',
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('git.diffs', {
+      workspaceId: 'ws-2',
+      staged: true,
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
+      workspaceId: 'ws-2',
+      filePath: 'a.ts',
+      ref: 'HEAD',
+    });
+    expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
+      workspaceId: 'ws-2',
+      filePath: 'a.ts',
+      ref: ':0',
+    });
+    expect(
+      mockedRequest.mock.calls.some(([method]) => method === 'file.read'),
+    ).toBe(false);
+  });
+
+  it('resolves undefined for a path the daemon returned no diff entry for', async () => {
+    mockDaemon({ diffs: [{ path: 'other.ts', hunks: [] }], files: { 'other.ts': 'x' } });
+
+    const promise = batchedGitDiff('ws-3', false, 'missing.ts');
+    await vi.runAllTimersAsync();
+
+    await expect(promise).resolves.toBeUndefined();
+  });
+
+  it('folds a deleted working-tree file to an empty new side', async () => {
+    // `files` is empty → file.read rejects, mirroring an unstaged deletion.
+    mockDaemon({
+      diffs: [{ path: 'gone.ts', hunks: [HUNK] }],
+      showFiles: { ':0:gone.ts': 'index content' },
+    });
+
+    const promise = batchedGitDiff('ws-4', false, 'gone.ts');
+    await vi.runAllTimersAsync();
+
+    await expect(promise).resolves.toEqual({
+      file: 'gone.ts',
+      chunks: [HUNK],
+      oldContent: 'index content',
+      newContent: '',
     });
   });
 
-  it('does not retry when the batch returns chunks for all requested paths', async () => {
-    const firstChunk = { file: 'first.ts', oldContent: 'a', newContent: 'b' };
-    const secondChunk = { file: 'second.ts', oldContent: 'c', newContent: 'd' };
+  it('leaves a side undefined (hunk-only fallback) when its git.showFile read fails', async () => {
+    mockedRequest.mockImplementation(async (method: string) => {
+      if (method === 'git.diffs') return [{ path: 'a.ts', hunks: [HUNK] }];
+      if (method === 'git.showFile') throw new Error('daemon unavailable');
+      if (method === 'file.read') return { content: 'workdir a' };
+      throw new Error(`unexpected method: ${method}`);
+    });
 
-    vi.mocked(invoke).mockResolvedValueOnce({ success: true, data: [firstChunk, secondChunk] });
-
-    const firstPromise = batchedGitDiff('workspace-1', false, 'first.ts');
-    const secondPromise = batchedGitDiff('workspace-1', false, 'second.ts');
-
+    const promise = batchedGitDiff('ws-5', false, 'a.ts');
     await vi.runAllTimersAsync();
 
-    await expect(Promise.all([firstPromise, secondPromise])).resolves.toEqual([
-      firstChunk,
-      secondChunk,
+    await expect(promise).resolves.toEqual({
+      file: 'a.ts',
+      chunks: [HUNK],
+      newContent: 'workdir a',
+    });
+  });
+
+  it('rejects every batched request when the git.diffs read fails', async () => {
+    mockedRequest.mockRejectedValue(new Error('boom'));
+
+    // Attach the rejection handlers before flushing timers so the settled
+    // promises never surface as unhandled rejections.
+    const aExpectation = expect(batchedGitDiff('ws-6', false, 'a.ts')).rejects.toThrow('boom');
+    const bExpectation = expect(batchedGitDiff('ws-6', false, 'b.ts')).rejects.toThrow('boom');
+    await vi.runAllTimersAsync();
+
+    await aExpectation;
+    await bExpectation;
+  });
+
+  it('dedupedShowFile shares one in-flight git.showFile per (workspace, ref, path) and maps { content }', async () => {
+    mockDaemon({ showFiles: { 'HEAD:a.ts': 'head a' } });
+
+    const [first, second] = await Promise.all([
+      dedupedShowFile('ws-7', 'HEAD', 'a.ts'),
+      dedupedShowFile('ws-7', 'HEAD', 'a.ts'),
     ]);
-    expect(invoke).toHaveBeenCalledTimes(1);
+
+    expect(first).toEqual({ success: true, data: 'head a' });
+    expect(second).toEqual({ success: true, data: 'head a' });
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+    expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
+      workspaceId: 'ws-7',
+      filePath: 'a.ts',
+      ref: 'HEAD',
+    });
+  });
+
+  it('dedupedShowFile folds daemon/transport errors into { success: false, error }', async () => {
+    mockedRequest.mockRejectedValueOnce(new Error('unresolvable ref'));
+
+    await expect(dedupedShowFile('ws-8', 'nope', 'a.ts')).resolves.toEqual({
+      success: false,
+      error: 'unresolvable ref',
+    });
   });
 });

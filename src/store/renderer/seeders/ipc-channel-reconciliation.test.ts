@@ -130,9 +130,10 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
   it('scanner sanity: detects the known invoke surface', () => {
     // Guard against the scanner silently matching nothing after a refactor.
     expect(invoked.size).toBeGreaterThan(200);
-    // git:status moved to the daemon (backendRequest('git.status'), 4C-3);
-    // git:show-file remains a local-IPC invoke until D2.
-    expect(invoked.has('git:show-file')).toBe(true);
+    // git:status moved to the daemon (backendRequest('git.status'), 4C-3) and
+    // git:show-file followed with D2 (backendRequest('git.showFile'));
+    // git:numstat remains a local-IPC invoke (no daemon arm yet).
+    expect(invoked.has('git:numstat')).toBe(true);
     expect(invoked.has('dialog:open')).toBe(true);
     // Aliased import call site (`import { invoke as invokeIpc }`, scripts.client.ts).
     expect(invoked.has('scripts:get-output')).toBe(true);
@@ -307,9 +308,11 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'git-tracking:get-remote-url',
   // 4C-3: git:status/stage/unstage/commit/pull/history/log/file-history were
   // retired here — those reads/mutations now reach the daemon directly via
-  // backendRequest('git.*') (PROTOCOL §5.6). The remaining git:* entries have
-  // no daemon arm yet (git:diff/show-file/numstat carry the full-file-content
-  // enrichment deferred to D2).
+  // backendRequest('git.*') (PROTOCOL §5.6). D2 retired git:show-file (→
+  // git.showFile) and the diff batcher's plain/staged group (→ git.diffs +
+  // git.showFile/file.read content composition). git:diff remains only for
+  // the branch-base committed diff (baseRef/baseCommitSha) and the
+  // walkthrough's staged read; git:numstat still has no daemon arm.
   'git:diff',
   'git:fetch',
   'git:get-auto-commit-status',
@@ -319,7 +322,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'git:push',
   'git:removeLock',
   'git:rename-branch',
-  'git:show-file',
   'git:stage-hunk',
   'git:unstage-hunk',
   'github-auth:cancel',

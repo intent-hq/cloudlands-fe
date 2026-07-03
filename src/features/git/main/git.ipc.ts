@@ -4,11 +4,11 @@
  * Registers IPC handlers for the git operations the intentd daemon does not
  * serve yet. Channels with a daemon arm (PROTOCOL §5.6) — status, stage,
  * unstage, commit, pull, history/log, commit-details, pullBranch (→ path-based
- * `git.pull`) and getBranchStatus (→ `git.branchStatus`) — have been retired
- * here: the renderer reaches the daemon directly via
- * `backendRequest('git.*')`. What remains is the local-only surface: hunk
- * staging, discard, push, fetch, diff-with-content/numstat, show-file
- * (TODO(D2)), lock removal, branch listing/rename and remote inspection.
+ * `git.pull`), getBranchStatus (→ `git.branchStatus`) and show-file (→
+ * `git.showFile`) — have been retired here: the renderer reaches the daemon
+ * directly via `backendRequest('git.*')`. What remains is the local-only
+ * surface: hunk staging, discard, push, fetch, diff-with-content/numstat,
+ * lock removal, branch listing/rename and remote inspection.
  */
 
 import { ipcMain } from 'electron';
@@ -827,63 +827,6 @@ export function setupGitIPC() {
         }
       },
       IPC_CHANNELS.GIT.GET_REMOTES,
-    ),
-  );
-
-  // Get file content at a specific git ref
-  // TODO(D2): git:show-file has NO daemon arm yet — full-file content reads
-  // land with D2. Keep this local path (and its KNOWN_UNBRIDGED_CHANNELS
-  // entry) until the daemon serves file-at-ref reads.
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.SHOW_FILE,
-    createSafeValidatedHandler(
-      z.object({
-        workspaceId: z.string(),
-        filePath: z.string(),
-        ref: z.string(),
-      }),
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        // Check if this is a remote workspace
-        const gitInfo = await getWorkspaceGitInfo(workspaceId);
-        if (gitInfo?.isRemote) {
-          try {
-            const remoteGit = getRemoteGitManager(
-              workspaceId,
-              gitInfo.repositoryPath || gitInfo.worktreePath,
-            );
-            const result = await remoteGit.showFile(
-              validated.filePath,
-              validated.ref,
-              gitInfo.worktreePath,
-            );
-            if (result.ok) {
-              return { success: true, data: result.data };
-            } else {
-              return { success: false, error: result.error };
-            }
-          } catch (error) {
-            logger.error('Failed to show file on remote', error as Error, { workspaceId });
-            return { success: false, error: (error as Error).message };
-          }
-        }
-
-        const result = await gitService.showFile(
-          workspaceId as WorkspaceId,
-          validated.filePath,
-          validated.ref,
-        );
-        if (result.ok) {
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.SHOW_FILE,
     ),
   );
 

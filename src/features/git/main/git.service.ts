@@ -3640,69 +3640,6 @@ export class GitService {
       });
   }
 
-  /**
-   * Get file content at a specific git ref (commit, branch, tag, etc.)
-   * @param workspaceId - The workspace ID
-   * @param filePath - The file path relative to the repository root
-   * @param ref - The git ref (commit hash, branch name, tag, etc.)
-   */
-  async showFile(
-    workspaceId: WorkspaceId,
-    filePath: string,
-    ref: string,
-  ): Promise<Result<string, string>> {
-    // Validate workspaceId
-    if (!workspaceId) {
-      logger.warn('showFile called with undefined workspaceId');
-      return {
-        ok: false,
-        error: 'Invalid workspace ID',
-      };
-    }
-
-    try {
-      const worktreePath = this.getWorktreePath(workspaceId);
-
-      // Convert absolute path to relative if needed (with directory boundary check)
-      let relativePath = filePath;
-      if (filePath.startsWith('/') && worktreePath) {
-        if (filePath === worktreePath) {
-          relativePath = '';
-        } else if (filePath.startsWith(worktreePath + '/')) {
-          relativePath = filePath.slice(worktreePath.length + 1);
-        }
-      }
-
-      logger.debug('showFile', { workspaceId, filePath, relativePath, ref, worktreePath });
-
-      // Use git show to get file content at the specified ref
-      const command = `git show "${ref}:${relativePath}"`;
-      logger.debug('Running git show command', { command, cwd: worktreePath });
-
-      const { stdout } = await execAsync(command, {
-        cwd: worktreePath,
-        maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large files
-      });
-
-      logger.debug('showFile success', { filePath, ref, contentLength: stdout.length });
-      return { ok: true, data: stdout };
-    } catch (error) {
-      // If the file doesn't exist at this ref (e.g., new file), return empty string
-      const errorMessage = (error as Error).message || '';
-      if (errorMessage.includes('does not exist') || errorMessage.includes('fatal: path')) {
-        logger.debug('File does not exist at ref', { filePath, ref, error: errorMessage });
-        return { ok: true, data: '' };
-      }
-
-      logger.error('Failed to show file at ref', {
-        filePath,
-        ref,
-        worktreePath: this.getWorktreePath(workspaceId),
-        error: error as Error,
-      });
-      return { ok: false, error: `Failed to get file content: ${(error as Error).message}` };
-    }
-  }
 }
 
 // Export singleton instance

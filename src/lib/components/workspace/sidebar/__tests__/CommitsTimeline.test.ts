@@ -116,6 +116,11 @@ vi.mock('$lib/electron-bridge', () => ({
   invoke: mockInvoke,
 }));
 
+const mockShowFile = vi.hoisted(() => vi.fn());
+vi.mock('$features/git/git.client', () => ({
+  gitClient: { showFile: mockShowFile },
+}));
+
 vi.mock('$features/git/git-cache', () => ({
   gitCache: { invalidate: vi.fn(), invalidateWorkspace: vi.fn(), set: vi.fn() },
 }));
@@ -218,6 +223,7 @@ describe('CommitsTimeline', () => {
     mockExecute.mockReset();
     mockWorkspaceUpdate.mockReset().mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
     mockInvoke.mockReset();
+    mockShowFile.mockReset();
     mocks.ftCommits.splice(0, mocks.ftCommits.length);
     mocks.workspaceEntity.baseCommitSha = '';
     mocks.postMergeState.hasRemote = true;
@@ -363,13 +369,10 @@ describe('CommitsTimeline', () => {
         files: [{ path: 'src/a.ts', additions: 1, deletions: 0 } as unknown as CommitInfo['files'][number]],
       }),
     );
-    mockInvoke.mockImplementation(async (channel: string, args: unknown) => {
-      if (channel === 'git:show-file') {
-        const ref = (args as { ref: string }).ref;
-        return { success: true, data: ref.includes('^') ? 'old' : 'new' };
-      }
-      return { success: true };
-    });
+    mockShowFile.mockImplementation(async (_wsId: string, _filePath: string, ref: string) => ({
+      ok: true,
+      data: ref.includes('^') ? 'old' : 'new',
+    }));
 
     const { container } = await renderTimeline();
     const toggle = Array.from(container.querySelectorAll('button')).find((b) =>

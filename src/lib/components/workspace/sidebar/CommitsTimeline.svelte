@@ -6,6 +6,7 @@
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import type { UndoCommitMetadata } from '$features/accept-changes/types';
   import { gitCache } from '$features/git/git-cache';
+  import { gitClient } from '$features/git/git.client';
   import { handleLink } from '$features/navigation/link-handler';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import {
@@ -355,15 +356,15 @@
       if (file) {
         try {
           logger.info('[handleCommitFileClick] Fetching content from commit', { filePath, commitHash });
-          const newContentResult = (await invoke('git:show-file', {
-            workspaceId, filePath, ref: commitHash,
-          })) as { success: boolean; data?: string; error?: string };
-          const oldContentResult = (await invoke('git:show-file', {
-            workspaceId, filePath, ref: `${commitHash}^`,
-          })) as { success: boolean; data?: string; error?: string };
+          // Daemon-backed file-at-ref reads (`git.showFile`, PROTOCOL §5.6);
+          // errors fold to { ok: false } inside the git client.
+          const [newContentResult, oldContentResult] = await Promise.all([
+            gitClient.showFile(workspaceId as WorkspaceId, filePath, commitHash),
+            gitClient.showFile(workspaceId as WorkspaceId, filePath, `${commitHash}^`),
+          ]);
 
-          const newContent = newContentResult?.success ? newContentResult.data || '' : '';
-          const oldContent = oldContentResult?.success ? oldContentResult.data || '' : '';
+          const newContent = newContentResult.ok ? newContentResult.data : '';
+          const oldContent = oldContentResult.ok ? oldContentResult.data : '';
 
           logger.info('[handleCommitFileClick] Content fetched', {
             filePath, commitHash,
