@@ -53,7 +53,7 @@
   <div class="flex items-start justify-between gap-2">
     <ol class="list-decimal pl-4 space-y-1 flex-1 min-w-0">
       {#each instructions as step (step)}
-        <li class="text-foreground/90">{step}</li>
+        <li class="text-foreground">{step}</li>
       {/each}
     </ol>
     {#if onDismiss}
