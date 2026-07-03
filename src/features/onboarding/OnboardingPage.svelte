@@ -16,6 +16,7 @@
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
   import { appClient } from '$lib/client';
+  import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
   import { v4 as uuidv4 } from 'uuid';
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
@@ -572,21 +573,18 @@
     isOnboardingEnhancing = true;
     track('Used Prompt Enhance', { prompt_length: onboardingInputValue.trim().length });
     try {
-      const result = await invoke<{
-        success: boolean;
-        enhanced?: string;
-        error?: string;
-      }>('agent:enhance-prompt', { prompt: onboardingInputValue });
-      if (result?.success && result.enhanced) {
-        onboardingInputValue = result.enhanced;
-        await getOnboardingRichTextarea()?.setContent(result.enhanced);
-        toast.success('Prompt enhanced');
-      } else {
-        toast.error('Failed to enhance prompt');
-      }
+      // Daemon-side enhancement (agent.enhancePrompt, PROTOCOL §5.31)
+      const result = await enhancePrompt(onboardingInputValue);
+      onboardingInputValue = result.enhanced;
+      await getOnboardingRichTextarea()?.setContent(result.enhanced);
+      toast.success('Prompt enhanced');
     } catch (error) {
       logger.error('Failed to enhance prompt', error);
-      toast.error('Failed to enhance prompt');
+      toast.error(
+        error instanceof Error && error.message
+          ? `Failed to enhance prompt: ${error.message}`
+          : 'Failed to enhance prompt',
+      );
     } finally {
       isOnboardingEnhancing = false;
     }

@@ -68,7 +68,7 @@
   import Fa from 'svelte-fa';
   import { cn } from '$lib/utils';
   import { Tooltip } from '$lib/components/ui/tooltip';
-  import { invoke } from '$lib/electron-bridge';
+  import { generateLayout } from '$lib/client/live/live-prompt-enhancement';
   import { selectModelForType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -210,39 +210,33 @@
       // Build the layout suggestion prompt
       const layoutPrompt = buildLayoutPrompt(prompt);
 
-      const result = await invoke<{
-        success: boolean;
-        enhanced?: string;
-        original?: string;
-        error?: string;
-      }>('agent:generate-layout', {
-        prompt: layoutPrompt,
+      // Daemon-side one-shot generation (agent.enhancePrompt mode "layout", PROTOCOL §5.31)
+      const result = await generateLayout(layoutPrompt, {
         workspaceId,
-        modelId: $fastModel$,
+        model: $fastModel$,
       });
 
-      if (result?.success && result.enhanced) {
-        logger.info('AI response received', { response: result.enhanced.substring(0, 500) });
+      logger.info('AI response received', { response: result.enhanced.substring(0, 500) });
 
-        // Parse the layout from the response
-        const layout = parseLayoutResponse(result.enhanced);
-        if (layout) {
-          logger.info('Parsed layout', { layout });
-          applyParsedLayout(layout);
-          promptValue = '';
-          showPrompt = false;
-          toast.success('Layout updated!');
-        } else {
-          toast.error('Could not parse layout suggestion');
-          logger.warn('Failed to parse layout response', { response: result.enhanced });
-        }
+      // Parse the layout from the response
+      const layout = parseLayoutResponse(result.enhanced);
+      if (layout) {
+        logger.info('Parsed layout', { layout });
+        applyParsedLayout(layout);
+        promptValue = '';
+        showPrompt = false;
+        toast.success('Layout updated!');
       } else {
-        toast.error('Failed to generate layout suggestion');
-        logger.warn('AI layout generation failed', { result });
+        toast.error('Could not parse layout suggestion');
+        logger.warn('Failed to parse layout response', { response: result.enhanced });
       }
     } catch (error) {
       logger.error('Layout generation failed', error);
-      toast.error('Layout generation failed');
+      toast.error(
+        error instanceof Error && error.message
+          ? `Layout generation failed: ${error.message}`
+          : 'Layout generation failed',
+      );
     } finally {
       isGenerating = false;
     }

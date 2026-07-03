@@ -232,8 +232,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'agent:activate',
   'agent:backend:list',
   'agent:delete-session',
-  'agent:enhance-prompt',
-  'agent:generate-layout',
   'agent:lifecycle:start',
   'agent:lifecycle:stop',
   'agent:messaging:receive',

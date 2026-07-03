@@ -18,7 +18,7 @@
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectForegroundWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
 
-  import { invoke } from '$lib/electron-bridge';
+  import { generateLayout } from '$lib/client/live/live-prompt-enhancement';
   import { selectModelForType } from '$store/renderer/slices/background-agent-settings/background-agent-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import { toast } from 'svelte-sonner';
@@ -80,36 +80,30 @@
 
       const layoutPrompt = buildLayoutPrompt(prompt);
 
-      const result = await invoke<{
-        success: boolean;
-        enhanced?: string;
-        original?: string;
-        error?: string;
-      }>('agent:generate-layout', {
-        prompt: layoutPrompt,
+      // Daemon-side one-shot generation (agent.enhancePrompt mode "layout", PROTOCOL §5.31)
+      const result = await generateLayout(layoutPrompt, {
         workspaceId,
-        modelId: $fastModel$,
+        model: $fastModel$,
       });
 
-      if (result?.success && result.enhanced) {
-        logger.info('AI response received', { response: result.enhanced.substring(0, 500) });
-        const layout = parseLayoutResponse(result.enhanced);
-        if (layout) {
-          logger.info('Parsed layout', { layout });
-          applyParsedLayout(layout);
-          promptValue = '';
-          toast.success('Layout updated!');
-        } else {
-          logger.warn('Failed to parse layout response', { response: result.enhanced });
-          toast.error('Could not parse layout suggestion');
-        }
+      logger.info('AI response received', { response: result.enhanced.substring(0, 500) });
+      const layout = parseLayoutResponse(result.enhanced);
+      if (layout) {
+        logger.info('Parsed layout', { layout });
+        applyParsedLayout(layout);
+        promptValue = '';
+        toast.success('Layout updated!');
       } else {
-        logger.warn('AI layout generation failed', { result });
-        toast.error('Failed to generate layout suggestion');
+        logger.warn('Failed to parse layout response', { response: result.enhanced });
+        toast.error('Could not parse layout suggestion');
       }
     } catch (error) {
       logger.error('Layout generation failed', error);
-      toast.error('Layout generation failed');
+      toast.error(
+        error instanceof Error && error.message
+          ? `Layout generation failed: ${error.message}`
+          : 'Layout generation failed',
+      );
     } finally {
       isGenerating = false;
     }

@@ -84,6 +84,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
+  import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
   import Fa from 'svelte-fa';
   import PullConflictDialog, { type PullErrorType } from '../modals/PullConflictDialog.svelte';
 
@@ -2368,25 +2369,22 @@
     const currentRequestId = ++enhanceRequestId;
 
     try {
-      const result = await invoke<{
-        success: boolean;
-        enhanced?: string;
-        error?: string;
-      }>('agent:enhance-prompt', { prompt: initialPrompt });
+      // Daemon-side enhancement (agent.enhancePrompt, PROTOCOL §5.31)
+      const result = await enhancePrompt(initialPrompt);
 
       if (currentRequestId === cancelledRequestId) return;
 
-      if (result?.success && result.enhanced) {
-        initialPrompt = result.enhanced;
-        await richTextarea?.setContent(result.enhanced);
-        toast.success('Prompt enhanced');
-      } else {
-        toast.error('Failed to enhance prompt');
-      }
+      initialPrompt = result.enhanced;
+      await richTextarea?.setContent(result.enhanced);
+      toast.success('Prompt enhanced');
     } catch (error) {
       if (currentRequestId === cancelledRequestId) return;
       logger.error('Failed to enhance prompt:', error);
-      toast.error('Failed to enhance prompt');
+      toast.error(
+        error instanceof Error && error.message
+          ? `Failed to enhance prompt: ${error.message}`
+          : 'Failed to enhance prompt',
+      );
     } finally {
       if (currentRequestId !== cancelledRequestId) {
         isEnhancing = false;

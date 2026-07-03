@@ -199,8 +199,6 @@ const ALLOWED_CHANNELS = [
   "agent:get-workflow-tags",
   "agent:remove-workflow-tag",
   "agent:set-model",
-  "agent:enhance-prompt",
-  "agent:generate-layout",
   "agent:persistence:save",
   "agent:persistence:load",
   "agent:persistence:delete",

@@ -191,9 +191,6 @@ export const IPC_CHANNELS = {
     REMOVE_WORKFLOW_TAG: 'agent:remove-workflow-tag',
     // Agent model operations
     SET_MODEL: 'agent:set-model',
-    // Agent prompt operations
-    ENHANCE_PROMPT: 'agent:enhance-prompt',
-    GENERATE_LAYOUT: 'agent:generate-layout',
     // Agent persistence operations
     PERSISTENCE_SAVE: 'agent:persistence:save',
     PERSISTENCE_LOAD: 'agent:persistence:load',
