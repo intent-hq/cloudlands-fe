@@ -27,10 +27,13 @@
  *   re-dispatches the per-workspace triggers a fresh mount needs (tasks/events/
  *   accept-changes), reusing the same handlers — no fetch logic of its own.
  *
- *   The ONLY remaining deferral is `refreshRequested` (changes): it reads
- *   backend-gated endpoints (`git.trackedChanges`/`git.commits`) that return
- *   empty in the live client, so wiring it would CLEAR rather than refresh
- *   tracked changes. Restore it once those endpoints return real data (BE gap).
+ *   `refreshRequested` / `loadWorkspaceDataRequested` (changes) are restored
+ *   here now that the live client reads the daemon file-tracking surface
+ *   (`file-tracking.getChanges` / `file-tracking.loadCommits`, PROTOCOL §5.19)
+ *   instead of the formerly-empty `git.*` placeholders. `requestAgentLineStats`
+ *   is likewise served from the §5.20 metrics read (`metrics.getAgentStats`)
+ *   via the line-changes client — the daemon owns aggregation; the FE only
+ *   reads.
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
@@ -49,6 +52,11 @@ import {
   loadWorkspaceTasksSucceeded,
 } from "../slices/workspace-tasks/workspace-tasks-slice";
 import { eventsLoaded, loadEventsRequested } from "../slices/workspace-events/workspace-events-slice";
+import {
+  fetchWorkspaceTokenUsage,
+  tokenUsageFetchFailed,
+  tokenUsageReceived,
+} from "../slices/token-usage/token-usage-slice";
 import { loadSkillsRequested, setSkills } from "../slices/skills/skills-slice";
 import { refreshScripts, setScriptsData, setScriptsInitialized } from "../slices/scripts/scripts-slice";
 import {
@@ -58,6 +66,19 @@ import {
 } from "../slices/pr-status/pr-status-slice";
 import { prBranchLookupSucceeded } from "../slices/pr-branch-lookup/pr-branch-lookup-slice";
 import type { PrBranchLookupPayload } from "../slices/pr-branch-lookup/pr-branch-lookup-types";
+import {
+  agentLineStatsRequestFailed,
+  agentLineStatsRequestStarted,
+  agentLineStatsRequestSucceeded,
+  loadWorkspaceDataRequested,
+  refreshRequested,
+  requestAgentLineStats,
+  setChangesData,
+  setCommitsData,
+  setHasLoadedInitialData,
+  updateAgentStats,
+} from "../slices/changes/changes-slice";
+import { getAgentLineStats } from "$features/line-changes/line-changes.client";
 
 const logger = createLogger("LifecycleReadService");
 
@@ -109,6 +130,28 @@ function refreshEvents(wsId: string): void {
   });
 }
 
+/**
+ * Fetch the daemon-owned token usage rollup (`workspace.getTokenUsage`,
+ * PROTOCOL §5.23). A `null` result (unknown workspace) or a failed read marks
+ * the cached numbers stale; pushes arrive separately via the
+ * `workspace:tokenUsage-changed` handler in daemon-events-bridge.
+ */
+function refreshTokenUsage(wsId: string): void {
+  coalesce(`tokenUsage:${wsId}`, async () => {
+    try {
+      const usage = await appClient.workspaces.getTokenUsage(wsId);
+      if (usage) {
+        appStore.dispatch(tokenUsageReceived(wsId, usage));
+      } else {
+        appStore.dispatch(tokenUsageFetchFailed(wsId));
+      }
+    } catch (error) {
+      appStore.dispatch(tokenUsageFetchFailed(wsId));
+      throw error;
+    }
+  });
+}
+
 /** Re-fetch the workspace skills (mirrors misc-ui-events-seeder). */
 function refreshSkills(wsId: string): void {
   coalesce(`skills:${wsId}`, async () => {
@@ -151,6 +194,59 @@ function refreshPrStatus(wsId: string): void {
   });
 }
 
+/**
+ * Re-fetch tracked changes + commit history from the daemon file-tracking
+ * reads (§5.19, mirrors the files-git-seeder changes section) so the changes
+ * panel refresh/init triggers converge the store from BE state.
+ */
+function refreshChanges(wsId: string): void {
+  coalesce(`changes:${wsId}`, async () => {
+    const [changes, commits] = await Promise.all([
+      appClient.git.trackedChanges(wsId),
+      appClient.git.commits(wsId),
+    ]);
+    appStore.dispatch(setChangesData(wsId, changes, false, changes.length));
+    const boundarySha = commits.length > 0 ? commits[commits.length - 1].hash : null;
+    appStore.dispatch(setCommitsData(wsId, commits, boundarySha));
+    appStore.dispatch(setHasLoadedInitialData(wsId, true));
+  });
+}
+
+/**
+ * Fetch one agent's §5.20 line-change totals (`metrics.getAgentStats`) into
+ * the changes slice. Skips when a request is in flight or stats are already
+ * present (unless forced) — AgentPeekCard dispatches from a mount effect.
+ */
+function refreshAgentLineStats(agentId: string, forceRefresh: boolean): void {
+  const requestState = appStore.state.changes.agentLineStatsRequests[agentId];
+  if (requestState?.isLoading) return;
+  if (!forceRefresh && appStore.state.changes.agentStats[agentId]) return;
+  coalesce(`agentLineStats:${agentId}`, async () => {
+    appStore.dispatch(agentLineStatsRequestStarted(agentId, new Date().toISOString()));
+    try {
+      const metrics = await getAgentLineStats(agentId);
+      if (metrics) {
+        appStore.dispatch(
+          updateAgentStats(agentId, {
+            additions: metrics.additions,
+            deletions: metrics.deletions,
+            timestamp: new Date().toISOString(),
+          }),
+        );
+      }
+      appStore.dispatch(agentLineStatsRequestSucceeded(agentId, new Date().toISOString()));
+    } catch (error) {
+      appStore.dispatch(
+        agentLineStatsRequestFailed(
+          agentId,
+          error instanceof Error ? error.message : String(error),
+          new Date().toISOString(),
+        ),
+      );
+    }
+  });
+}
+
 /** First array-payload element as a non-empty workspace id, else undefined. */
 function wsIdOf(action: { payload?: unknown }): string | undefined {
   const id = Array.isArray(action.payload) ? action.payload[0] : undefined;
@@ -180,6 +276,11 @@ export function createLifecycleReadMiddleware(): StoreMiddleware {
           if (wsId) refreshEvents(wsId);
           break;
         }
+        case fetchWorkspaceTokenUsage.type: {
+          const wsId = wsIdOf(action);
+          if (wsId) refreshTokenUsage(wsId);
+          break;
+        }
         case loadSkillsRequested.type: {
           const wsId = wsIdOf(action);
           if (wsId) refreshSkills(wsId);
@@ -193,6 +294,23 @@ export function createLifecycleReadMiddleware(): StoreMiddleware {
         case refreshPRStatusRequested.type: {
           const wsId = wsIdOf(action);
           if (wsId) refreshPrStatus(wsId);
+          break;
+        }
+        case refreshRequested.type:
+        case loadWorkspaceDataRequested.type: {
+          const wsId = wsIdOf(action);
+          if (wsId) refreshChanges(wsId);
+          break;
+        }
+        case requestAgentLineStats.type: {
+          const payload = (
+            action as { payload?: { agentId?: unknown; forceRefresh?: unknown } }
+          ).payload;
+          const agentId =
+            typeof payload?.agentId === "string" && payload.agentId.length > 0
+              ? payload.agentId
+              : undefined;
+          if (agentId) refreshAgentLineStats(agentId, payload?.forceRefresh === true);
           break;
         }
       }

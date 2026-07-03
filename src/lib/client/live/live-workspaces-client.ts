@@ -9,6 +9,7 @@
  */
 import { WorkspaceStatus, createWorkspaceId } from "$shared/types";
 import type { CreateWorkspaceRequest, Workspace } from "$shared/types";
+import type { TokenUsage } from "$features/token-usage/token-usage-types";
 import type {
   MutationResult,
   SubscriptionHandler,
@@ -107,6 +108,21 @@ export class LiveWorkspacesClient implements WorkspacesClient {
   // Recency is renderer/daemon state not yet exposed by the daemon; empty for now.
   async recentViews(): Promise<Record<string, number>> {
     return {};
+  }
+
+  /**
+   * `workspace.getTokenUsage` (PROTOCOL §5.23): the daemon-owned usage rollup
+   * written by its internal scan job. `null` when the workspace is unknown or
+   * the result shape is unexpected; updated rollups arrive via the
+   * `workspace:tokenUsage-changed` event handled in `daemon-events-bridge`.
+   */
+  async getTokenUsage(workspaceId: string): Promise<TokenUsage | null> {
+    const result = await backendRequest<{ tokenUsage?: TokenUsage }>(
+      "workspace.getTokenUsage",
+      { workspaceId },
+    );
+    const usage = result?.tokenUsage;
+    return usage && typeof usage === "object" ? usage : null;
   }
 
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe {

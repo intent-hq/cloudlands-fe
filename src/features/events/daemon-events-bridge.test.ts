@@ -145,7 +145,7 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
 
   afterEach(() => vi.clearAllMocks());
 
-  it("registers a notification listener and subscribes to agent:* + settings:changed on first dispatch", async () => {
+  it("registers a notification listener and subscribes to agent:* + settings:changed + tokenUsage-changed on first dispatch", async () => {
     await primeBridge();
 
     expect(onBackendNotificationSpy).toHaveBeenCalledTimes(1);
@@ -153,7 +153,7 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
     // we assert the bridge's events.subscribe call explicitly instead of the
     // total spy count.
     expect(backendRequestSpy).toHaveBeenCalledWith("events.subscribe", {
-      eventTypes: ["agent:*", "settings:changed"],
+      eventTypes: ["agent:*", "settings:changed", "workspace:tokenUsage-changed"],
     });
   });
 
@@ -832,6 +832,64 @@ describe("daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
       ([method]) => method === "events.subscribe",
     );
     expect(subscribeCalls).toHaveLength(1);
-    expect(subscribeCalls[0][1]).toEqual({ eventTypes: ["agent:*", "settings:changed"] });
+    expect(subscribeCalls[0][1]).toEqual({
+      eventTypes: ["agent:*", "settings:changed", "workspace:tokenUsage-changed"],
+    });
+  });
+});
+
+describe("daemonEventsBridge (usage wire contract — workspace:tokenUsage-changed → tokenUsage slice)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("mirrors the pushed §5.23 TokenUsage rollup into the tokenUsage slice", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+    expect(handler).toBeTypeOf("function");
+
+    // PROTOCOL §6.5: data = { workspaceId, tokenUsage } (self-sufficient §6.7).
+    const tokenUsage = {
+      byAgentId: {
+        "agent-123": { inputTokens: 12000, outputTokens: 3400, cacheReadTokens: 8000, cacheCreationTokens: 1200 },
+      },
+      byModel: {
+        "opus-4.8": { inputTokens: 12000, outputTokens: 3400, cacheReadTokens: 8000, cacheCreationTokens: 1200 },
+      },
+      totals: { inputTokens: 12000, outputTokens: 3400, cacheReadTokens: 8000, cacheCreationTokens: 1200 },
+      lastScanAt: "2026-06-17T12:00:00Z",
+    };
+    handler!(
+      notification("workspace:tokenUsage-changed", { workspaceId: WS, tokenUsage }),
+    );
+
+    const state = appStore.state as {
+      tokenUsage: { byWorkspaceId: Record<string, unknown> };
+    };
+    expect(state.tokenUsage.byWorkspaceId[WS]).toEqual({
+      ...tokenUsage,
+      isStale: false,
+    });
+  });
+
+  it("ignores a push without a tokenUsage object", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(notification("workspace:tokenUsage-changed", { workspaceId: "ws-token-empty" }));
+
+    const state = appStore.state as {
+      tokenUsage: { byWorkspaceId: Record<string, unknown> };
+    };
+    expect(state.tokenUsage.byWorkspaceId["ws-token-empty"]).toBeUndefined();
   });
 });

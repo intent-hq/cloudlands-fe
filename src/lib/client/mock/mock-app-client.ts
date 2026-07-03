@@ -135,6 +135,19 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly events: AppClient["events"] = {
     list: async (workspaceId) =>
       workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockWorkspaceEvents : [],
+    // Mirrors `event.query` (PROTOCOL §5.10): exact-match filters, wire order
+    // newest→oldest, daemon default limit of 50.
+    query: async (workspaceId, options = {}) => {
+      if (workspaceId !== String(fx.MOCK_WORKSPACE_ID)) return [];
+      const matching = fx.mockWorkspaceEvents.filter(
+        (event) =>
+          (!options.eventType || event.type === options.eventType) &&
+          (!options.actorType || event.actor?.type === options.actorType) &&
+          (!options.actorId || event.actor?.id === options.actorId),
+      );
+      matching.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      return matching.slice(0, options.limit || 50);
+    },
     subscribe: (workspaceId, handler) =>
       emitOnce(handler, workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockWorkspaceEvents : []),
   };

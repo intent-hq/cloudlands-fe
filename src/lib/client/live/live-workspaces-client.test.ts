@@ -71,3 +71,50 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     expect(await client.delete("ws-1")).toEqual({ success: false, error: "workspace exists" });
   });
 });
+
+describe("LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("sends workspace.getTokenUsage with the workspaceId and unwraps the tokenUsage envelope", async () => {
+    // PROTOCOL §5.23 response shape, verbatim.
+    const tokenUsage = {
+      byAgentId: {
+        "agent-123": {
+          inputTokens: 12000,
+          outputTokens: 3400,
+          cacheReadTokens: 8000,
+          cacheCreationTokens: 1200,
+        },
+      },
+      byModel: {
+        "opus-4.8": {
+          inputTokens: 12000,
+          outputTokens: 3400,
+          cacheReadTokens: 8000,
+          cacheCreationTokens: 1200,
+        },
+      },
+      totals: {
+        inputTokens: 12000,
+        outputTokens: 3400,
+        cacheReadTokens: 8000,
+        cacheCreationTokens: 1200,
+      },
+      lastScanAt: "2026-06-17T12:00:00Z",
+    };
+    mockedRequest.mockResolvedValueOnce({ tokenUsage });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.getTokenUsage("ws-abc")).toEqual(tokenUsage);
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.getTokenUsage", {
+      workspaceId: "ws-abc",
+    });
+  });
+
+  it("returns null when the result carries no tokenUsage object", async () => {
+    mockedRequest.mockResolvedValueOnce({});
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.getTokenUsage("ws-abc")).toBeNull();
+  });
+});

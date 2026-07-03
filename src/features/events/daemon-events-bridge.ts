@@ -56,6 +56,8 @@ import { eventReceived } from "$store/renderer/slices/workspace-events/workspace
 import { agentStreamUpdateReceived } from "$store/renderer/slices/workspace-agents/workspace-agents-stream-slice";
 import { streamStatusReceived } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { replaceAgentQueue } from "$store/renderer/slices/agent-queue/agent-queue-slice";
+import { tokenUsageReceived } from "$store/renderer/slices/token-usage/token-usage-slice";
+import type { TokenUsage } from "$features/token-usage/token-usage-types";
 import { applySettingsChanges } from "$features/settings/settings-hydration-service";
 import {
   backendRequest,
@@ -323,6 +325,25 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
 }
 
 /**
+ * `workspace:tokenUsage-changed` (§5.23 / §6.5) carries the full recomputed
+ * `{ workspaceId, tokenUsage }` rollup — self-sufficient per §6.7 — so the
+ * renderer mirrors it straight into the tokenUsage slice without a follow-up
+ * `workspace.getTokenUsage` read.
+ */
+function handleTokenUsageChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === "string" && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : workspaceIdOf(event);
+  const tokenUsage = data.tokenUsage;
+  if (!workspaceId || !tokenUsage || typeof tokenUsage !== "object") return;
+  appStore.dispatch(tokenUsageReceived(workspaceId, tokenUsage as TokenUsage));
+}
+
+/**
  * `settings:changed` (§6.5) carries `{ changes: [{ path, value }] }` — the
  * applied subset of the most recent `settings.update` call (§5.12), with
  * sensitive values pre-redacted by the BE. We hand it straight to the shared
@@ -371,6 +392,13 @@ function handleNotification(method: string, params: unknown): void {
     return;
   }
 
+  // `workspace:tokenUsage-changed` (§5.23) carries its workspaceId inside
+  // `data`, so it is routed before the envelope workspace-id gate too.
+  if (type === "workspace:tokenUsage-changed") {
+    handleTokenUsageChangedEvent(event);
+    return;
+  }
+
   const workspaceId = workspaceIdOf(event);
   if (!workspaceId) return;
 
@@ -415,13 +443,13 @@ async function installSubscriptionOnce(): Promise<void> {
     }
   });
 
-  // Ask the daemon to firehose `agent:*` events AND `settings:changed`
-  // (§5.12 / §6.5) to this socket. The subscription id is owned by the bridge
-  // (no consumer needs it); refetch delta-subscriptions in
-  // `live-agents-client` register their own.
+  // Ask the daemon to firehose `agent:*` events, `settings:changed`
+  // (§5.12 / §6.5), and `workspace:tokenUsage-changed` (§5.23) to this socket.
+  // The subscription id is owned by the bridge (no consumer needs it); refetch
+  // delta-subscriptions in `live-agents-client` register their own.
   try {
     const result = (await backendRequest("events.subscribe", {
-      eventTypes: ["agent:*", "settings:changed"],
+      eventTypes: ["agent:*", "settings:changed", "workspace:tokenUsage-changed"],
     })) as { subscriptionId?: string } | undefined;
     if (typeof result?.subscriptionId === "string" && result.subscriptionId.length > 0) {
       ownSubscriptionId = result.subscriptionId;
@@ -429,7 +457,7 @@ async function installSubscriptionOnce(): Promise<void> {
       logger.warn("events.subscribe returned no subscriptionId", result);
     }
   } catch (error) {
-    logger.error("events.subscribe(agent:*, settings:changed) failed", error);
+    logger.error("events.subscribe(agent:*, settings:changed, tokenUsage-changed) failed", error);
   }
 
   cleanup = () => {

@@ -29,6 +29,7 @@ import type {
 } from "$shared/types";
 import type { CommitInfo, TrackedChange } from "$features/file-tracking/types";
 import type { WorkspaceEvent } from "$features/events/types";
+import type { TokenUsage } from "$features/token-usage/token-usage-types";
 import type { TerminalTab } from "$store/renderer/slices/terminals/terminals-slice";
 import type {
   ScriptRuntimeState,
@@ -175,6 +176,13 @@ export interface WorkspacesClient {
   delete(id: string): Promise<MutationResult>;
   setActive(id: string): Promise<MutationResult>;
   recentViews(): Promise<Record<string, number>>;
+  /**
+   * `workspace.getTokenUsage` (PROTOCOL §5.23): the daemon-owned usage rollup
+   * for one workspace (the scan job itself is daemon-internal). Returns `null`
+   * when the workspace is unknown. Updated rollups are pushed via the
+   * `workspace:tokenUsage-changed` event (§6.5).
+   */
+  getTokenUsage(workspaceId: string): Promise<TokenUsage | null>;
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe;
 }
 
@@ -774,8 +782,24 @@ export interface SystemClient {
   subscribe(handler: SubscriptionHandler<SystemStatusState>): Unsubscribe;
 }
 
+/** Filter options for `event.query` (PROTOCOL §5.10); all optional. */
+export interface EventQueryOptions {
+  eventType?: string;
+  actorType?: string;
+  actorId?: string;
+  path?: string;
+  minutesAgo?: number;
+  limit?: number;
+}
+
 export interface EventsClient {
+  /** Boot snapshot of the workspace event stream, oldest→newest. */
   list(workspaceId: string): Promise<WorkspaceEvent[]>;
+  /**
+   * Historical `event.query` read (PROTOCOL §5.10). Returns matching events in
+   * wire order (newest→oldest); the daemon defaults `limit` to 50.
+   */
+  query(workspaceId: string, options?: EventQueryOptions): Promise<WorkspaceEvent[]>;
   subscribe(workspaceId: string, handler: SubscriptionHandler<WorkspaceEvent[]>): Unsubscribe;
 }
 

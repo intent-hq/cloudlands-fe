@@ -315,7 +315,6 @@ import { setupGitIPC } from '../features/git/main/git.ipc';
 import { setupGitHubAuthIPC } from '../features/github-auth/main/github-auth.ipc';
 import { registerIDEHandlers } from '../features/ide/main/ide.ipc';
 import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout-history.ipc';
-import { registerLineChangesIPC } from '../features/line-changes/line-changes.ipc';
 import { setupLinearAuthIPC } from '../features/linear-auth/main/linear-auth.ipc';
 import { setupLogIPC } from '../features/log/main/log.ipc';
 import {
@@ -337,7 +336,6 @@ import { setupNotificationIPC } from '../features/notifications/main/notificatio
 import { setupRemoteFileSystemIPC } from '../features/remote-fs/main/remote-fs.ipc';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSkillsIPC } from '../features/agent/main/skills.ipc';
-import { setupTokenUsageIPC } from '../features/token-usage/main/token-usage.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
 import { setupPermissionIPC } from '../features/acp-official/main/permission.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
@@ -1498,9 +1496,9 @@ app.whenReady().then(async () => {
     setupRepoConfigIPC();
     // setupSpecialistsIPC(); // Already called in critical IPC setup
     setupSkillsIPC();
-    setupTokenUsageIPC();
+    // Token usage is daemon-owned (workspace.getTokenUsage, PROTOCOL §5.23);
+    // the renderer reads it directly over the JSON-RPC bridge.
     // setupWorkspaceRulesIPC(); // Already called in critical IPC setup
-    registerLineChangesIPC();
     // registerSetupScriptsHandlers(); // Already called in critical IPC setup
     // setupThirdPartySourcesIPC(); // Already called in critical IPC setup
 

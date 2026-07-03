@@ -10,6 +10,7 @@ vi.mock("$lib/client", () => ({
     workspaces: {
       list: vi.fn(() => Promise.resolve([])),
       recentViews: vi.fn(() => Promise.resolve({})),
+      getTokenUsage: vi.fn(() => Promise.resolve(null)),
     },
     tasks: { list: vi.fn(() => Promise.resolve([])) },
     events: { list: vi.fn(() => Promise.resolve([])) },
@@ -24,6 +25,7 @@ import { store as appStore } from "$store/renderer/store";
 import { loadWorkspacesRequested } from "$store/renderer/slices/workspace/workspace-slice";
 import { ensureWorkspaceTasksLoaded } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
 import { loadEventsRequested } from "$store/renderer/slices/workspace-events/workspace-events-slice";
+import { fetchWorkspaceTokenUsage } from "$store/renderer/slices/token-usage/token-usage-slice";
 import { loadSkillsRequested } from "$store/renderer/slices/skills/skills-slice";
 import { refreshScripts } from "$store/renderer/slices/scripts/scripts-slice";
 import { refreshPRStatusRequested } from "$store/renderer/slices/pr-status/pr-status-slice";
@@ -77,6 +79,53 @@ describe("lifecycleReadService (fake seam, real store)", () => {
     await flush();
 
     expect(eventsApi.list).toHaveBeenCalledWith(ws);
+  });
+
+  it("fetchWorkspaceTokenUsage stores the daemon rollup (workspace.getTokenUsage, §5.23)", async () => {
+    const ws = "ws-token-1";
+    // PROTOCOL §5.23 TokenUsage shape.
+    const tokenUsage = {
+      byAgentId: {
+        "agent-123": { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 },
+      },
+      totals: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 },
+      byModel: {
+        "opus-4.8": { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 },
+      },
+      lastScanAt: "2026-06-17T12:00:00Z",
+    };
+    wsApi.getTokenUsage.mockResolvedValueOnce(tokenUsage as never);
+
+    appStore.dispatch(fetchWorkspaceTokenUsage(ws));
+    await flush();
+
+    expect(wsApi.getTokenUsage).toHaveBeenCalledWith(ws);
+    expect(appStore.state.tokenUsage.byWorkspaceId[ws]).toEqual({
+      ...tokenUsage,
+      isStale: false,
+    });
+  });
+
+  it("fetchWorkspaceTokenUsage marks cached numbers stale when the read fails", async () => {
+    const ws = "ws-token-2";
+    const tokenUsage = {
+      byAgentId: {},
+      totals: { inputTokens: 5, outputTokens: 6, cacheReadTokens: 7, cacheCreationTokens: 8 },
+      byModel: {},
+      lastScanAt: "2026-06-17T12:00:00Z",
+    };
+    wsApi.getTokenUsage.mockResolvedValueOnce(tokenUsage as never);
+    appStore.dispatch(fetchWorkspaceTokenUsage(ws));
+    await flush();
+
+    wsApi.getTokenUsage.mockRejectedValueOnce(new Error("boom") as never);
+    appStore.dispatch(fetchWorkspaceTokenUsage(ws));
+    await flush();
+
+    expect(appStore.state.tokenUsage.byWorkspaceId[ws]).toEqual({
+      ...tokenUsage,
+      isStale: true,
+    });
   });
 
   it("loadSkillsRequested refetches the workspace skills via the seam", async () => {

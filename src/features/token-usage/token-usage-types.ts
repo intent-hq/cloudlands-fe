@@ -1,14 +1,13 @@
 /**
  * Token Usage Types
  *
- * Shared types for workspace token usage scanning. Consumed by the main-process
- * scanner service and the main/renderer tokenUsage store slices.
+ * Wire types for the daemon-owned token usage read (`workspace.getTokenUsage`,
+ * PROTOCOL §5.23) and its `workspace:tokenUsage-changed` push event. The
+ * daemon-internal periodic scan job owns the accounting; the FE only mirrors
+ * this shape.
  */
 
-/**
- * Aggregated token consumption counters: the 4 consumption fields from
- * type-10 `token_usage` nodes.
- */
+/** Aggregated token consumption counters (the 4 consumption fields). */
 export interface TokenUsageTotals {
   inputTokens: number;
   outputTokens: number;
@@ -17,63 +16,20 @@ export interface TokenUsageTotals {
 }
 
 /**
- * Per-model token totals keyed by `effective_model_name` from the type-9
- * `billing_metadata` node preceding each type-10 `token_usage` node; token
- * nodes without a resolvable model name aggregate under `"unknown"`.
+ * Per-model token totals keyed by the effective model name (`"unknown"`
+ * fallback).
  */
 export type TokenUsageByModel = Record<string, TokenUsageTotals>;
 
-/** Totals + per-model breakdown summed from one session file in a single pass. */
-export interface SessionTokenUsage {
-  totals: TokenUsageTotals;
-  byModel: TokenUsageByModel;
-}
-
 /**
- * Cached per-agent token totals. `lastMessageId` is the cache validity token:
- * if the agent's persisted last message id is unchanged, the cached totals are
- * reused without re-reading the session file.
+ * `TokenUsage` (PROTOCOL §5.23): the durable per-workspace usage rollup.
+ * `byAgentId` keys are `agent-{uuid}`; `lastScanAt` is the RFC-3339 timestamp
+ * of the daemon's last internal scan (`null` before the first scan).
  */
-export interface CachedAgentTokens extends TokenUsageTotals {
-  agentId: string;
-  sessionId: string;
-  lastMessageId: string | null;
-  /** Per-model breakdown of this agent's totals. */
-  byModel: TokenUsageByModel;
-  computedAt: number;
-}
-
-/**
- * Snapshot of a workspace's aggregated token usage as exposed over IPC
- * (`TOKEN_USAGE_CHANNELS.GET` response data and `CHANGED` push payload).
- */
-export interface WorkspaceTokenUsageSnapshot {
-  workspaceId: string;
-  /** Per-agent cached totals keyed by agentId (aggregated numbers + lastMessageId only). */
-  byAgentId: Record<string, CachedAgentTokens>;
-  /** Workspace-wide totals across all agents in `byAgentId`. */
+export interface TokenUsage {
+  byAgentId: Record<string, TokenUsageTotals>;
   totals: TokenUsageTotals;
-  /** Workspace-wide per-model totals merged across all agents in `byAgentId`. */
   byModel: TokenUsageByModel;
-  /** Epoch ms of the last completed scan; null before the first scan. */
-  lastScanAt: number | null;
-  /** Whether a scan for this workspace is currently in flight. */
-  status: 'idle' | 'scanning';
-}
-
-/** Result of a full workspace token usage scan. */
-export interface WorkspaceTokenScanResult {
-  /** Per-agent totals keyed by agentId (cache hits included). */
-  perAgent: Record<string, CachedAgentTokens>;
-  /** Workspace-wide totals across all agents in `perAgent`. */
-  totals: TokenUsageTotals;
-  /** Workspace-wide per-model totals merged across all agents in `perAgent`. */
-  byModel: TokenUsageByModel;
-  /** Number of agents whose session file was actually read and summed. */
-  scannedCount: number;
-  /** Number of agents served from the cache without a session-file read. */
-  cacheHits: number;
-  /** Agents skipped (no session id, or missing/corrupt files). */
-  skippedAgentIds: string[];
+  lastScanAt: string | null;
 }
 

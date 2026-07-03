@@ -124,6 +124,7 @@ const WorkspaceIdSchema = z
     'Invalid workspace ID format (expected slug like "amber-forest" or "amber-forest-2", UUID, or __root__)',
   );
 const AgentIdSchema = z.string().min(1, 'Agent ID is required');
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const SessionIdSchema = z.string().min(1, 'Session ID is required');
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MessageIdSchema = z.string().min(1, 'Message ID is required');
@@ -998,12 +999,6 @@ export const EventsUnsubscribeSchema = z.object({
   subscriptionId: z.string().min(1, 'Subscription ID is required'),
 });
 
-export const EventsQuerySchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  filters: z.array(z.any()),
-  limit: z.number().optional(),
-});
-
 export const EventsGetLastEventSchema = z.object({
   // Mirrors `EventsEmitSchema.event.type`: drift-resistant union pulled from
   // `WorkspaceEventType`. Reserved-but-unused types (e.g. `file:created`) are
@@ -1436,36 +1431,6 @@ export const DiffsGetSchema = z.object({
   workspaceId: WorkspaceIdSchema,
   filePath: z.string().min(1, 'File path is required'),
   staged: z.boolean().optional(),
-});
-
-// Line Changes Schemas
-export const LineChangesMarkAgentActiveSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  agentName: z.string().min(1, 'Agent name is required'),
-  durationMs: z.number().int().positive().optional(),
-});
-
-export const LineChangesGetCurrentSchema = z.union([
-  WorkspaceIdSchema,
-  z.object({
-    workspaceId: WorkspaceIdSchema,
-  }),
-]);
-
-export const LineChangesStartAgentExecutionSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  agentName: z.string().min(1, 'Agent name is required'),
-  sessionId: SessionIdSchema.optional(),
-  turnNumber: z.number().int().min(0).optional(),
-});
-
-export const LineChangesStopAgentExecutionSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-});
-
-export const LineChangesMarkAgentModifiedFilesSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  files: z.array(z.string()),
 });
 
 // ============================================================================
@@ -2107,41 +2072,6 @@ export const TestingGetProcessesSchema = z.object({
 });
 
 // ============================================================================
-// Line Changes Schemas (Additional)
-// ============================================================================
-
-export const LineChangesGetWorkspaceStatsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const LineChangesGetAgentStatsSchema = z.object({
-  agentId: z.string().min(1, 'Agent ID is required'),
-});
-
-export const LineChangesCalculateDiffSchema = z.object({
-  oldContent: z.string().optional().default(''),
-  newContent: z.string().optional().default(''),
-});
-
-export const LineChangesUpdateWorkspaceStatsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  stats: z.record(z.any()).optional(),
-});
-
-export const LineChangesUpdateAgentStatsSchema = z.object({
-  agentId: z.string().min(1, 'Agent ID is required'),
-  stats: z.record(z.any()).optional(),
-});
-
-export const LineChangesClearWorkspaceStatsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const LineChangesClearAgentStatsSchema = z.object({
-  agentId: z.string().min(1, 'Agent ID is required'),
-});
-
-// ============================================================================
 // Memories Schemas
 // ============================================================================
 
@@ -2304,10 +2234,3 @@ export const SkillsListSchema = z.object({
   workspaceId: WorkspaceIdSchema,
 });
 
-// ============================================================================
-// Token Usage Schemas
-// ============================================================================
-
-export const TokenUsageGetSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-});
