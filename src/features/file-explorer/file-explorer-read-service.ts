@@ -10,6 +10,14 @@
  * directories via the `appClient.files` seam (`file.tree` for the root,
  * `file.list` per directory) and dispatches `setRootNode` / `setChildrenAtPathAction`.
  *
+ * It also restores the agent file-edit badge pipeline (the old saga's
+ * `loadAgentFileEditsSaga`): on init / refresh / `refreshAgentFileEditsRequested`
+ * / `syncGitStatusFromStoresRequested` it pulls agent-authored `file:changed` /
+ * `file:created` events from the daemon via `getAgentFileEdits` (which reads
+ * `appClient.events.query` — `event.query`, PROTOCOL §5.10), propagates them to
+ * parent directories, and dispatches `updateAgentFileEditsEntries` /
+ * `removeAgentFileEditsEntries` so file-tree badges render.
+ *
  * READ-ONLY: this module never invokes a file mutation (no write/delete/mkdir).
  *
  * Dependency-light per src/store AGENTS.md: imports only the AppClient seam, the
@@ -24,6 +32,10 @@ import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { stripWorkspacePrefix } from "$lib/utils/file-utils";
 import {
+  getAgentFileEdits,
+  propagateAgentEditsToParents,
+} from "$lib/utils/agent-file-edits";
+import {
   addExpandedPath,
   addLoadingPath,
   emptyFileExplorerWorkspaceState,
@@ -31,8 +43,10 @@ import {
   expandToPathRequested,
   incrementTreeVersion,
   initializeFileExplorer,
+  refreshAgentFileEditsRequested,
   refreshDirectoryRequested,
   refreshFileExplorer,
+  removeAgentFileEditsEntries,
   removeExpandedPath,
   removeLoadingPath,
   setBulkOperation,
@@ -41,7 +55,9 @@ import {
   setFileExplorerLoading,
   setFileExplorerWorkspacePath,
   setRootNode,
+  syncGitStatusFromStoresRequested,
   toggleDirectoryRequested,
+  updateAgentFileEditsEntries,
 } from "$store/renderer/slices/file-explorer/file-explorer-slice";
 import type { FileExplorerWorkspaceState } from "$store/renderer/slices/file-explorer/file-explorer-types";
 import { createLogger } from "$lib/utils/client-logger";
@@ -57,6 +73,90 @@ function getWs(wsId: string): FileExplorerWorkspaceState {
 function onlyDirectoryChild(children: readonly FileNode[]): FileNode | null {
   if (children.length !== 1) return null;
   return children[0].type === "directory" ? children[0] : null;
+}
+
+// ---------------------------------------------------------------------------
+// Agent file-edit badges (ports the old saga's loadAgentFileEditsSaga /
+// refreshAgentFileEditsForWorkspace)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-workspace coalescing for in-flight badge refreshes: a refresh requested
+ * while one is running marks it dirty, and exactly one replay runs afterwards
+ * so the final state always reflects the latest daemon events.
+ */
+const agentFileEditsRefreshByWorkspace = new Map<
+  string,
+  { inProgress: boolean; dirty: boolean }
+>();
+
+/** Test-only — clear the coalescing state between suites. */
+export function __resetAgentFileEditsRefreshStateForTests(): void {
+  agentFileEditsRefreshByWorkspace.clear();
+}
+
+/**
+ * Pull agent-authored file events from the daemon (`getAgentFileEdits` →
+ * `appClient.events.query`, PROTOCOL §5.10), propagate them to parent
+ * directories, and merge them into `ws.agentFileEdits`. Stale entries are
+ * removed first so badges clear when the daemon no longer reports a file;
+ * unchanged entries keep their array identity via the reducer's merge
+ * semantics (per-row selector memoization depends on it).
+ */
+async function loadAgentFileEdits(wsId: string): Promise<void> {
+  try {
+    const editsMap = await getAgentFileEdits(wsId);
+    const editsRecord: Record<string, string[]> = {};
+    for (const [file, agents] of editsMap.entries()) {
+      editsRecord[file] = agents;
+    }
+    const { workspacePath } = getWs(wsId);
+    if (workspacePath) {
+      const propagated = propagateAgentEditsToParents(editsMap, workspacePath, workspacePath);
+      for (const [file, agents] of propagated.entries()) {
+        if (!editsRecord[file]) {
+          editsRecord[file] = agents;
+        }
+      }
+    }
+    const previous = getWs(wsId).agentFileEdits;
+    const stalePaths = Object.keys(previous).filter((key) => !(key in editsRecord));
+    if (stalePaths.length > 0) {
+      appStore.dispatch(removeAgentFileEditsEntries(wsId, stalePaths));
+    }
+    if (Object.keys(editsRecord).length > 0) {
+      appStore.dispatch(updateAgentFileEditsEntries(wsId, editsRecord));
+    }
+  } catch (error) {
+    logger.error("Failed to load agent file edits", error);
+  }
+}
+
+/** Refresh agent file-edit badges for a workspace, coalescing concurrent calls. */
+export async function refreshAgentFileEditsForWorkspace(wsId: string): Promise<void> {
+  if (!wsId) return;
+  let refreshState = agentFileEditsRefreshByWorkspace.get(wsId);
+  if (!refreshState) {
+    refreshState = { inProgress: false, dirty: false };
+    agentFileEditsRefreshByWorkspace.set(wsId, refreshState);
+  }
+  if (refreshState.inProgress) {
+    refreshState.dirty = true;
+    return;
+  }
+  refreshState.inProgress = true;
+  try {
+    await loadAgentFileEdits(wsId);
+  } finally {
+    const shouldReplay = refreshState.dirty;
+    refreshState.inProgress = false;
+    refreshState.dirty = false;
+    if (shouldReplay) {
+      await refreshAgentFileEditsForWorkspace(wsId);
+    } else {
+      agentFileEditsRefreshByWorkspace.delete(wsId);
+    }
+  }
 }
 
 /**
@@ -191,6 +291,7 @@ export async function refreshFileExplorerTree(wsId: string): Promise<void> {
   } finally {
     appStore.dispatch(setFileExplorerLoading(wsId, false));
   }
+  await refreshAgentFileEditsForWorkspace(wsId);
 }
 
 /**
@@ -279,6 +380,7 @@ export async function initializeFileExplorerTree(
     appStore.dispatch(setFileExplorerLoading(wsId, false));
     appStore.dispatch(setFileExplorerInitialized(wsId, true));
   }
+  await refreshAgentFileEditsForWorkspace(wsId);
 }
 
 /**
@@ -332,6 +434,11 @@ export function createFileExplorerReadMiddleware(): StoreMiddleware {
             if (typeof filePath === "string" && filePath.length > 0) {
               void handleRefreshDirectory(wsId, filePath);
             }
+            break;
+          }
+          case refreshAgentFileEditsRequested.type:
+          case syncGitStatusFromStoresRequested.type: {
+            void refreshAgentFileEditsForWorkspace(wsId);
             break;
           }
         }
