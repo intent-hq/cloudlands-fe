@@ -15,7 +15,7 @@
    * state (focused row, scroll container ref, last loaded path) stays here
    * because it is ephemeral and self-contained.
    */
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import {
     faFolder,
@@ -85,12 +85,17 @@
   }
 
   // Re-load whenever the modal opens (or the requested initial path changes).
+  // `loadedFor` and `listing` are read via `untrack` so user navigation —
+  // which updates `loadedFor` through requestDirectory() — does not re-run
+  // this effect and bounce the listing back to the initial path.
   $effect(() => {
     if (!open) return;
     const want = initialPath?.trim() || '';
-    if (loadedFor !== want || listing === null) {
-      requestDirectory(want || undefined);
-    }
+    untrack(() => {
+      if (loadedFor !== want || listing === null) {
+        requestDirectory(want || undefined);
+      }
+    });
   });
 
   // Reset transient state when the modal closes so the next open is clean.
