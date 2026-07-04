@@ -185,6 +185,55 @@ describe("workspaces-seeder legacy IPC bridges", () => {
     });
   });
 
+  describe("workspace:remove-recent-repository → daemon repo.remove", () => {
+    it("forwards the path and wraps { removed } in {success, data}", async () => {
+      // PROTOCOL §5.11: repo.remove { path } → { removed: bool }.
+      mockedRequest.mockResolvedValueOnce({ removed: true });
+
+      const response = await mockInvoke<CommandResponse<{ removed: boolean }>>(
+        WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
+        { repository: "/Users/me/src/intent" },
+      );
+
+      expect(mockedRequest).toHaveBeenCalledWith("repo.remove", {
+        path: "/Users/me/src/intent",
+      });
+      expect(response).toEqual({ success: true, data: { removed: true } });
+    });
+
+    it("passes through removed:false for an unregistered path (daemon no-op)", async () => {
+      mockedRequest.mockResolvedValueOnce({ removed: false });
+
+      const response = await mockInvoke<CommandResponse<{ removed: boolean }>>(
+        WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
+        { repository: "/never/registered" },
+      );
+
+      expect(response).toEqual({ success: true, data: { removed: false } });
+    });
+
+    it("folds a daemon failure into {success:false, error} for the loud toast", async () => {
+      mockedRequest.mockRejectedValueOnce(new Error("daemon unreachable"));
+
+      const response = await mockInvoke<CommandResponse<never>>(
+        WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
+        { repository: "/Users/me/src/intent" },
+      );
+
+      expect(response).toEqual({ success: false, error: "daemon unreachable" });
+    });
+
+    it("rejects a missing repository param without touching the daemon", async () => {
+      const response = await mockInvoke<CommandResponse<never>>(
+        WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
+        {},
+      );
+
+      expect(response).toEqual({ success: false, error: "repository is required" });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+  });
+
   describe("workspace:get-root (allowlisted absence)", () => {
     it("resolves undefined instead of rejecting — NoteTabType hides the open-file button", async () => {
       expect(UNBRIDGED_INVOKE_ALLOWLIST.has("workspace:get-root")).toBe(true);

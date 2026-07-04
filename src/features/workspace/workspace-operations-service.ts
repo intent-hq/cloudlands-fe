@@ -45,17 +45,22 @@ import {
   closeBulkDeleteArchivedConfirm,
   closeBulkDeleteWarningConfirm,
   closeDeleteWarning,
+  closeRemoveRepoConfirm,
   confirmBulkArchive,
   confirmBulkDeleteArchived,
   confirmBulkDeleteWarning,
   confirmDeleteWorkspace,
+  confirmRemoveRepo,
   openBulkDeleteWarningConfirm,
   openDeleteWarning,
   requestArchiveWorkspace,
   requestDeleteWorkspace,
   requestUnarchiveWorkspace,
 } from "$store/renderer/slices/workspace-operations/workspace-operations-slice";
+import { removeRepo } from "$store/renderer/slices/known-repos/known-repos-slice";
 import { workspaceClient } from "$store/renderer/slices/workspace/utils/workspace.client";
+import { invoke } from "$lib/electron-bridge";
+import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("WorkspaceOperationsService");
@@ -412,6 +417,42 @@ export async function bulkDeleteAfterWarning(): Promise<void> {
   await performBulkDeleteArchived(repoKey);
 }
 
+/** Legacy safe-handler envelope for `workspace:remove-recent-repository`. */
+type RemoveRepoResponse = { success: boolean; data?: { removed: boolean }; error?: string };
+
+/**
+ * Remove a repo with no active spaces from the persistent known-repo registry
+ * (the "Remove" confirm on a repositories-list card). Routes through the
+ * `workspace:remove-recent-repository` channel — bridged to the daemon's
+ * `repo.remove` (PROTOCOL §5.11) — then converges the known-repos slice so the
+ * card disappears without a reload; the next `repo.list` hydration agrees
+ * because the daemon registry row is gone. Failures surface as a loud toast
+ * and leave the list intact.
+ */
+export async function removeRepoFromRegistry(): Promise<void> {
+  const repoPath = appStore.state.workspaceOperations.pendingRemoveRepoPath;
+  appStore.dispatch(closeRemoveRepoConfirm());
+  if (!repoPath) {
+    logger.error("removeRepoFromRegistry called without a repo path");
+    return;
+  }
+
+  const toast = await getToast();
+  try {
+    const result = await invoke<RemoveRepoResponse>(
+      WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
+      { repository: repoPath }
+    );
+    if (!result?.success) {
+      throw new Error(result?.error || "Remove failed");
+    }
+    appStore.dispatch(removeRepo(repoPath));
+  } catch (error) {
+    logger.error("Failed to remove repository from registry", error);
+    toast.error("Failed to remove repository");
+  }
+}
+
 /**
  * Middleware that gives the workspace-operation triggers a real handler: after
  * each action passes through the (no-op) reducer, it routes the trigger to the
@@ -444,6 +485,9 @@ export function createWorkspaceOperationsMiddleware(): StoreMiddleware {
           break;
         case confirmBulkDeleteWarning.type:
           void bulkDeleteAfterWarning();
+          break;
+        case confirmRemoveRepo.type:
+          void removeRepoFromRegistry();
           break;
       }
     }

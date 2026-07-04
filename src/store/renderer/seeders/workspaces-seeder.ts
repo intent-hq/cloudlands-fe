@@ -115,13 +115,38 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.CREATE, async (arg) => {
 
 // `workspace:get-recent-repositories` — LifecycleIpcReadService's known-repos
 // hydration, fired unconditionally on every app load. Bridges to the daemon's
-// `repo.list` (PROTOCOL §5.6): the persistent known-repo registry, MRU-first,
+// `repo.list` (PROTOCOL §5.11): the persistent known-repo registry, MRU-first,
 // with the legacy handler's one-time workspace→registry sync performed
 // daemon-side. Failures propagate as rejections — the caller keeps the prior
 // known-repos list on error (mirrors the legacy safe-handler contract).
 registerMockIpcHandler(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, async () => {
   const result = await backendRequest<{ repos: KnownRepo[] }>("repo.list");
   return { success: true, data: result.repos ?? [] };
+});
+
+// `workspace:remove-recent-repository` — the repositories list's "Remove"
+// affordance for repos with no active spaces (confirmRemoveRepo → the
+// workspace-operations middleware). Bridges to the daemon's `repo.remove`
+// (PROTOCOL §5.11), which deletes the entry from the same persistent
+// known-repo registry `repo.list` serves. Returns the legacy safe-handler
+// envelope `{ success:true, data:{ removed } }`, with failures folded to
+// `{ success:false, error }` so the caller surfaces them loud.
+registerMockIpcHandler(WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY, async (arg) => {
+  const repository = (arg as { repository?: unknown } | undefined)?.repository;
+  if (typeof repository !== "string" || repository.length === 0) {
+    return { success: false, error: "repository is required" };
+  }
+  try {
+    const result = await backendRequest<{ removed: boolean }>("repo.remove", {
+      path: repository,
+    });
+    return { success: true, data: { removed: result.removed === true } };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 });
 
 registerMockSeeder("workspaces", async ({ store, client }) => {
