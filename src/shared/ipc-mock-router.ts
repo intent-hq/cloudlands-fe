@@ -51,9 +51,13 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // Legacy notes-on-disk workspace root (`WorkspaceConfig.paths.workspace(id)`,
   // used to build `.workspace/notes/<id>.md` paths). The daemon owns notes in
   // SQLite (PROTOCOL §5.2) — this build has no on-disk notes mirror, so there
-  // is no root to return. The only production caller (NoteTabType's
-  // noteFilePath → OpenComboButton) guards `if (rootPath)` and hides the
-  // open-file affordance when absent.
+  // is no root to return. All production callers tolerate undefined:
+  // NoteTabType's noteFilePath → OpenComboButton guards `if (rootPath)` and
+  // hides the open-file affordance; WorkspaceActionsMenu's `__WORKSPACE_ROOT__`
+  // path resolution falls back to the raw filePath (with a logged warning) when
+  // no root comes back; PanelTabBar's getAgentSessionAbsolutePath /
+  // getNoteAbsolutePath return null on a missing root and their copy/reveal
+  // actions surface a "Could not resolve" toast instead of throwing.
   ['workspace:get-root', undefined],
   // MCP "is the Context Engine configured in <CLI>?" probes (ProviderSelector
   // loadMcpStatus, fired on settings-page load). The MCP setup/uninstall flows
