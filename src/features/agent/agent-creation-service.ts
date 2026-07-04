@@ -402,7 +402,8 @@ async function handleRunAgentForNote(
 
 /**
  * Fresh-workspace initial-agent activation: create/activate the pre-seeded
- * initial agent (reusing its id), tracking ACTIVATING → ACTIVE/ERROR state.
+ * initial agent (reusing its id), tracking ACTIVATING → ACTIVE/ERROR state,
+ * then open/focus its conversation tab like the manual creation paths do.
  * Guarded by a per-agent lock so duplicate dispatches collapse into one create.
  */
 async function handleActivateInitialAgent(
@@ -430,6 +431,7 @@ async function handleActivateInitialAgent(
         true,
       );
       appStore.dispatch(setActiveAgentId(wsId, existing.id));
+      openCreatedAgentTab(wsId, existing.id);
       return;
     }
 
@@ -501,6 +503,7 @@ async function handleActivateInitialAgent(
     };
     registerCreatedAgent(wsId, session, agents, true);
     appStore.dispatch(setActiveAgentId(wsId, session.id));
+    openCreatedAgentTab(wsId, session.id);
   } catch (error) {
     const existing = deps.selectAgentSession.select(appStore.state, agentId);
     const activationAttempts = (existing?.activationAttempts || 0) + 1;

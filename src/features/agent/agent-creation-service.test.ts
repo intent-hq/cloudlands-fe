@@ -150,7 +150,7 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     expect(agentTabs(WS, AGENT)).toHaveLength(1);
   });
 
-  it("activateInitialAgentRequested activates the initial agent and sets it active", async () => {
+  it("activateInitialAgentRequested activates the initial agent, sets it active, and opens the tab", async () => {
     const WS = "ws-init";
     const AGENT = "agent-init";
     seedWorkspace(WS);
@@ -164,6 +164,7 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     await waitFor(
       () => appStore.state.workspaceAgents.byWorkspaceId[WS]?.activeAgentId === AGENT,
     );
+    await waitFor(() => agentTabs(WS, AGENT).length > 0);
 
     expect(createAgent).toHaveBeenCalledTimes(1);
     const [, config] = createAgent.mock.calls[0];
@@ -172,6 +173,7 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     const session = selectAgentSession.select(appStore.state, AGENT);
     expect(session?.activationState).toBe(AgentActivationState.ACTIVE);
     expect(appStore.state.workspaceAgents.byWorkspaceId[WS]?.activeAgentId).toBe(AGENT);
+    expect(agentTabs(WS, AGENT)).toHaveLength(1);
   });
 
   it("ignores the trigger when the workspace is missing (no factory call)", async () => {
@@ -184,9 +186,10 @@ describe("agentCreationService (fake factory + client, real store)", () => {
   // Post-create bootstrap regression: the workspace page's
   // activatePendingInitialAgent (fed by the creation dialog's pending config)
   // must reach the create seam with the prompt as initialMessage and the
-  // selected specialist forwarded, so the initial agent is created and the
-  // prompt is sent (agentFactory.createAgent sends initialMessage itself).
-  it("post-create bootstrap: pending dialog config activates the agent with its prompt", async () => {
+  // selected specialist forwarded, so the initial agent is created, the prompt
+  // is sent (agentFactory.createAgent sends initialMessage itself), and the
+  // agent's conversation tab is opened/focused like a manual spawn.
+  it("post-create bootstrap: pending dialog config activates the agent with its prompt and opens the tab", async () => {
     const { activatePendingInitialAgent } = await import(
       "../../routes/workspace/[id]/composables/initial-agent-config"
     );
@@ -233,24 +236,28 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     });
     expect(config.metadata).toMatchObject({ isInitialAgent: true, specialist: "coordinator" });
     expect(appStore.state.workspaceAgents.byWorkspaceId[WS]?.activeAgentId).toBe(AGENT);
+    await waitFor(() => agentTabs(WS, AGENT).length > 0);
+    expect(agentTabs(WS, AGENT)).toHaveLength(1);
   });
 
-  it("post-create bootstrap: empty prompt spawns nothing", async () => {
+  it("post-create bootstrap: empty prompt spawns nothing (no tab churn)", async () => {
     const { activatePendingInitialAgent } = await import(
       "../../routes/workspace/[id]/composables/initial-agent-config"
     );
     const WS = "ws-bootstrap-empty";
+    const AGENT = "agent-bootstrap-empty";
     seedWorkspace(WS);
 
     const activated = activatePendingInitialAgent(
       WS,
-      "agent-bootstrap-empty",
-      { agentId: "agent-bootstrap-empty", prompt: undefined },
+      AGENT,
+      { agentId: AGENT, prompt: undefined },
       appStore.dispatch,
     );
     expect(activated).toBe(false);
     await flush();
     await flush();
     expect(createAgent).not.toHaveBeenCalled();
+    expect(agentTabs(WS, AGENT)).toHaveLength(0);
   });
 });
