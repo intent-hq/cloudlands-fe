@@ -59,6 +59,31 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.OPEN, async (arg) => {
   return { success: true, data: workspace };
 });
 
+// `workspace:get` — WorkspaceActionsMenu's "open in editor / reveal" path
+// resolves worktreePath/repositoryPath through a one-off workspace read.
+// Bridges to the daemon's `workspace.get` (PROTOCOL §5.1) through the
+// AppClient seam; a missing workspace and transport failures both fold to
+// the legacy `{ success:false, error }` envelope the caller's success-check
+// already handles.
+registerMockIpcHandler(WORKSPACE_CHANNELS.GET, async (arg) => {
+  const id = readWorkspaceOpenId(arg);
+  if (!id) {
+    return { success: false, error: "Workspace not found" };
+  }
+  try {
+    const workspace = await appClient.workspaces.get(id);
+    if (!workspace) {
+      return { success: false, error: "Workspace not found" };
+    }
+    return { success: true, data: workspace };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+});
+
 // `workspace:list` — the RepoSelector recent-repo scan and every
 // `workspaceClient.list()` read. The legacy handler returned the paginated
 // `{ workspaces }` wrapper or a bare array; the bare array is returned here and

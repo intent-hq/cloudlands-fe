@@ -232,8 +232,8 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // SET_TITLE), and browser-panel focus tracking for menu shortcuts
   // (PanelLayout SET_BROWSER_FOCUSED). There is no window chrome in this
   // build and no daemon surface for it; every caller is fire-and-forget with
-  // `.catch(() => {})`, so resolving undefined keeps startup quiet. The
-  // interaction-gated window:open-new stays loud audit debt.
+  // `.catch(() => {})`, so resolving undefined keeps startup quiet.
+  // (window:open-new is bridged to window.open in misc-ui-events-seeder.)
   ['window:set-browser-focused', undefined],
   ['window:set-in-workspace', undefined],
   ['window:set-open-workspace-tabs', undefined],
@@ -262,6 +262,181 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     'scripts:save-to-repo',
     { success: false, error: 'Saving scripts to the repo config is not available in this build' },
   ],
+  // ── IPC batch 8: the remaining frozen audit debt, dispositioned ──
+  // Analytics config read (fetchAnalyticsConfig, fired on EVERY page load via
+  // hooks.client.ts initAnalytics). The Segment write key lived in the
+  // Electron main process; there is no daemon analytics surface. The caller
+  // folds an absent config into "analytics disabled" (debug log only), which
+  // is the correct dev-analytics mode — events echo to the console via the
+  // track() dev fallback. Allowlisting (vs the previous rejection) removes
+  // the boot console error. app:get-version / auggie:get-user-info above are
+  // the same boot family.
+  ['analytics:get-config', undefined],
+  // Promotional-banner CDN fetch (PromotionalBanner on layout mount). The
+  // fetch ran in the Electron main process; the caller requires
+  // `success && data` and folds this shaped failure to "no banners".
+  [
+    'banner:fetch',
+    { success: false, error: 'Promotional banners are not available in this build' },
+  ],
+  // The interaction-gated install arm of the auto-updater above. The
+  // installUpdate() client ignores the response; the update UI is unreachable
+  // anyway because auto-update:get-state resolves the shaped failure above.
+  [
+    'auto-update:install',
+    { success: false, error: { message: 'Auto-update is not available in this build' } },
+  ],
+  // AddRemoteSetupModal's SSH host/key/agent discovery probes (fired when the
+  // add-remote modal opens) and its Test Connection action. SSH config, keys
+  // and the agent live on the machine running the legacy Electron main
+  // process — no daemon surface (remotes are configured on the daemon host).
+  // The loaders check `.success` inside try/catch (fold to empty lists); the
+  // test-connection caller surfaces the first failed check's error string.
+  [
+    'ssh:get-config-hosts',
+    { success: false, error: 'SSH config discovery is not available in this build' },
+  ],
+  ['ssh:list-keys', { success: false, error: 'SSH key discovery is not available in this build' }],
+  [
+    'ssh:get-agent-status',
+    { success: false, error: 'SSH agent probing is not available in this build' },
+  ],
+  [
+    'ssh:test-connection',
+    {
+      success: false,
+      checks: {
+        connection: {
+          passed: false,
+          error:
+            'SSH connection testing is not available in this build — configure remotes on the daemon host',
+        },
+      },
+    },
+  ],
+  // Native OS file dialogs (GitWorkspaceSettings / ProviderPathConfig pickers
+  // and the electron-bridge showOpenDialog/showSaveDialog wrappers). There is
+  // no native dialog in this build; every caller already has a
+  // "user cancelled" branch, so the canceled envelope folds each picker into
+  // a clean no-op instead of a rejection. dialog:message's only invoke site
+  // is the electron-bridge showMessageBox wrapper, which has no production
+  // consumers — undefined is never observed.
+  ['dialog:open', { success: true, data: { canceled: true, filePaths: [] } }],
+  ['dialog:save', { success: true, data: { canceled: true } }],
+  ['dialog:message', undefined],
+  // Interaction-gated host-side actions with no daemon arm: the
+  // McpServersSettings osascript probe, its MCP OAuth trigger, the
+  // CommandPalette CLI-symlink install, and the DebugPanel resume trigger.
+  // Every caller requires `.success` and folds the shaped failure into its
+  // toast/status feedback.
+  [
+    'system:execute-command',
+    { success: false, error: 'Host command execution is not available in this build' },
+  ],
+  [
+    'user-mcp:initiate-oauth',
+    {
+      success: false,
+      error: 'MCP OAuth is not available in this build — configure the server on the daemon host',
+    },
+  ],
+  [
+    'shell:install-cli',
+    { success: false, error: 'CLI install is not available in this build' },
+  ],
+  [
+    'debug:trigger-backend-resume',
+    { success: false, error: 'The backend-resume debug trigger is not bridged in this build' },
+  ],
+  // Clipboard write (writeTextToClipboard). MUST stay a shaped failure, never
+  // a bare resolve: the caller treats `success:false` (or a rejection) as
+  // "Electron clipboard unavailable" and falls back to the browser
+  // navigator.clipboard API, which is the working path in this build. A
+  // resolved undefined would claim success without writing (the original
+  // silent-corruption bug class).
+  [
+    'system:write-clipboard',
+    { success: false, error: 'Clipboard IPC is not available in this build' },
+  ],
+  // Note-primitive actions against the legacy main process: patch blocks
+  // (PatchBlock apply/revert) and code-reference resolution (ReferenceBlock).
+  // No daemon patch/reference surface; the callers check `.ok` and surface
+  // the error in the block UI / a toast on the triggering interaction.
+  ['patch:apply', { ok: false, error: 'Applying patches is not available in this build' }],
+  ['patch:revert', { ok: false, error: 'Reverting patches is not available in this build' }],
+  [
+    'reference:resolve',
+    { ok: false, error: 'Code-reference resolution is not bridged to the daemon' },
+  ],
+  // FilesPanel's remote-file existence probe (only reached for
+  // environmentConfig.type === 'remote' workspaces). The legacy SSH
+  // connection pool is Electron-main-only; the caller folds `success:false`
+  // to "file not present remotely".
+  [
+    'remote-fs:exists',
+    { success: false, error: 'Remote SSH file access is not available in this build' },
+  ],
+  // Reveal-in-file-manager (OpenComboButton / WorkspaceActionsMenu /
+  // PanelTabBar / VirtualizedFileTree / CodeEditor / PullConflictDialog).
+  // A file-manager reveal targets the local desktop shell, which this build
+  // does not have; callers fire-and-forget inside try/catch, so the
+  // affordance is inert. (Editor opens are bridged to host.openInEditor in
+  // host-bridge-seeder; URL opens to window.open.)
+  ['shell:showItemInFolder', undefined],
+  // The "Open with…" native application chooser (OpenComboButton /
+  // WorkspaceActionsMenu). PROTOCOL §5.14 defines host.pickApplication as a
+  // daemon→client reverse RPC — the CLIENT must supply the chooser, and this
+  // build has none. Callers require `.success` and log/toast the error.
+  [
+    'external-editors:open-with-other',
+    { success: false, error: 'Opening with another application is not available in this build' },
+  ],
+  // Electron-main CDP plumbing: EmbeddedBrowser's webContents registration
+  // (caller `.catch`es and logs) and PanelLayout's response arm for the
+  // browser:list-tabs-request event — which never fires in this build (see
+  // UNEMITTED_LISTENER_ALLOWLIST), so the invoke is statically present but
+  // unreachable.
+  ['browser:register-tab', undefined],
+  ['browser:list-tabs-response', undefined],
+  // Chat-input context enrichment (context-api getWorkspaceInfo). The caller
+  // folds an absent info payload to the Workspace object it already holds.
+  ['workspace:get-info', undefined],
+  // Onboarding repo discovery (LocalRepoTab mount): the legacy handler
+  // scanned local editors/CLI state on the Electron host — no daemon
+  // surface. The caller requires `success && data` and keeps its known-repos
+  // list (daemon repo.list) as the source.
+  [
+    'workspace:discover-repos',
+    { success: false, error: 'Host repo discovery is not available in this build' },
+  ],
+  // Diagram-edge binding intents (DiagramEdge handleClick): legacy
+  // main-process panel-router intents with no daemon surface. The caller
+  // wraps the whole switch in try/catch and logs at debug level; resolving
+  // undefined keeps the click a quiet no-op.
+  ['workspace:openFile', undefined],
+  ['workspace:openSymbol', undefined],
+  ['workspace:openSpec', undefined],
+  ['workspace:openNote', undefined],
+  ['workspace:openTimelineEvent', undefined],
+  ['workspace:openMetric', undefined],
+  ['workspace:openLog', undefined],
+  ['workspace:openTest', undefined],
+  // Sentry credential writes. PROTOCOL §5.29: the daemon reads
+  // SENTRY_AUTH_TOKEN/SENTRY_ORG from its environment — there is deliberately
+  // no sentry.connect/revoke wire method, so in-app config/logout cannot be
+  // bridged. saveConfig surfaces the shaped failure in the settings form;
+  // logout resolves as a no-op and the auth-state UI re-probes the daemon
+  // (sentry.authStatus via integrations-bridge-seeder), so it stays truthful.
+  // (sentry-auth:get-issue IS bridged — sentry.getIssue, same seeder.)
+  [
+    'sentry-auth:save-config',
+    {
+      success: false,
+      error:
+        'Sentry credentials are read from SENTRY_AUTH_TOKEN / SENTRY_ORG on the daemon host — in-app configuration is not available',
+    },
+  ],
+  ['sentry-auth:logout', undefined],
 ]);
 
 /**
@@ -315,7 +490,7 @@ export const UNEMITTED_LISTENER_ALLOWLIST: ReadonlyMap<string, string> = new Map
   // PanelLayout ↔ Electron-main CDP agent plumbing (focus a browser tab / list
   // open tabs). The CDP agent lives in the unported Electron main process;
   // nothing in the daemon build issues these requests. The paired
-  // browser:list-tabs-response invoke is already frozen audit debt.
+  // browser:list-tabs-response invoke is an allowlisted absent surface above.
   ['browser:focus-tab', 'Electron-main CDP agent request — no emitter in the daemon build'],
   ['browser:list-tabs-request', 'Electron-main CDP agent request — no emitter in the daemon build'],
   // Note-editor line-attribution gutter refresh. Per-line attribution was

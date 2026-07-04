@@ -478,4 +478,32 @@ describe('integrations-bridge-seeder', () => {
       ).toEqual({ success: false, error: 'GitHub is not configured.' });
     });
   });
+
+  describe('sentry-auth:get-issue → daemon sentry.getIssue (§5.29)', () => {
+    it('maps a numeric/UUID id to { id } and returns the bare issue', async () => {
+      // PROTOCOL §5.29: sentry.getIssue → one flattened SentryIssueResult.
+      mockedRequest.mockResolvedValueOnce({ id: '12345', shortId: 'WEB-7', title: 'TypeError' });
+
+      const issue = await mockInvoke(SENTRY_AUTH_CHANNELS.GET_ISSUE, '12345');
+
+      expect(mockedRequest).toHaveBeenCalledWith('sentry.getIssue', { id: '12345' });
+      expect(issue).toEqual({ id: '12345', shortId: 'WEB-7', title: 'TypeError' });
+    });
+
+    it('maps a WEB-1-style short id to { shortId }', async () => {
+      mockedRequest.mockResolvedValueOnce({ id: '9', shortId: 'WEB-1', title: 'Crash' });
+
+      await mockInvoke(SENTRY_AUTH_CHANNELS.GET_ISSUE, 'WEB-1');
+
+      expect(mockedRequest).toHaveBeenCalledWith('sentry.getIssue', { shortId: 'WEB-1' });
+    });
+
+    it('folds an empty id (no wire call) and a daemon failure to null', async () => {
+      expect(await mockInvoke(SENTRY_AUTH_CHANNELS.GET_ISSUE, '')).toBeNull();
+      expect(mockedRequest).not.toHaveBeenCalled();
+
+      mockedRequest.mockRejectedValueOnce(new Error('issue not found'));
+      expect(await mockInvoke(SENTRY_AUTH_CHANNELS.GET_ISSUE, 'WEB-404')).toBeNull();
+    });
+  });
 });

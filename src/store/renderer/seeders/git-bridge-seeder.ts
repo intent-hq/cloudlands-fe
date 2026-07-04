@@ -354,3 +354,26 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.GET_REMOTE_URL, async (arg) => 
     return { success: false, error: errorMessage(error) };
   }
 });
+
+// ── workspace:rename-branch (sidebar inline branch rename) ──
+
+// WorkspaceSidebarHeader / BranchDisplay rename the CURRENT worktree branch
+// and then persist the new name onto the Workspace themselves through
+// workspaceClient.update (daemon `workspace.update`, PROTOCOL §5.1), so only
+// the git mutation needs a bridge: git branch -m in the workspace root via
+// `host.exec` (§5.14). Callers check `.success` and toast `error`.
+registerMockIpcHandler(IPC_CHANNELS.WORKSPACE.RENAME_BRANCH, async (arg) => {
+  const record = asRecord(arg);
+  const workspaceId = typeof record.id === 'string' && record.id ? record.id : null;
+  const newBranchName =
+    typeof record.newBranchName === 'string' ? record.newBranchName.trim() : '';
+  if (!workspaceId) return { success: false, error: 'Invalid workspace ID' };
+  if (!newBranchName) return { success: false, error: 'Invalid branch name' };
+  try {
+    const result = await gitExec(workspaceId, ['branch', '-m', newBranchName]);
+    if (result.exitCode === 0) return { success: true };
+    return { success: false, error: execError(result, 'Failed to rename branch') };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+});

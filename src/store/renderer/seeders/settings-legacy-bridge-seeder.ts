@@ -30,7 +30,11 @@
  * Handlers are registered at import time (host-bridge-seeder idiom).
  */
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import { FEATURE_CODES_CHANNELS, SETTINGS_CHANNELS } from "$shared/ipc/channels";
+import {
+  FEATURE_CODES_CHANNELS,
+  PERSISTENCE_CHANNELS,
+  SETTINGS_CHANNELS,
+} from "$shared/ipc/channels";
 import { backendRequest } from "$lib/client/live/backend-transport";
 
 /** Legacy electron-store key → daemon settings-catalog path (settings.rs). */
@@ -176,3 +180,74 @@ registerMockIpcHandler(FEATURE_CODES_CHANNELS.ACTIVATE, () => {
 registerMockIpcHandler(FEATURE_CODES_CHANNELS.RESTART_APP, () => {
   throw new Error("App restart is not available in this build");
 });
+
+// ── Legacy agent-persistence store (persistence:*, reference persistence.ipc.ts) ──
+//
+// The legacy in-browser agent runtime (`features/agent/browser/index.ts`
+// PersistenceService, still lazily reachable through agent-factory) persisted
+// agent state/sessions to main-process disk files. The daemon owns canonical
+// agent sessions (PROTOCOL §5.5); this legacy store only ever holds
+// renderer-local, non-canonical leftovers, so it bridges to namespaced
+// localStorage — the same durability class as the callers' own catch-path
+// fallback (which also writes localStorage). `load-agent-config` resolves
+// `{ data: null }`: nothing in this build invokes
+// `persistence:save-agent-config`, so there is never a stored config (the
+// caller folds null into defaults).
+const LEGACY_PERSISTENCE_PREFIX = "legacy-persistence:";
+
+const legacySessionKey = (workspaceId: string, agentId: string): string =>
+  `${LEGACY_PERSISTENCE_PREFIX}session:${workspaceId}:${agentId}`;
+
+registerMockIpcHandler(PERSISTENCE_CHANNELS.SAVE, async (arg) => {
+  const { key, data } = (arg ?? {}) as { key?: unknown; data?: unknown };
+  if (typeof key !== "string" || !key) {
+    return { success: false, error: "persistence:save requires a key" };
+  }
+  localStorage.setItem(LEGACY_PERSISTENCE_PREFIX + key, JSON.stringify(data ?? null));
+  return { success: true };
+});
+
+registerMockIpcHandler(PERSISTENCE_CHANNELS.LOAD, async (arg) => {
+  const { key } = (arg ?? {}) as { key?: unknown };
+  if (typeof key !== "string" || !key) {
+    return { success: false, data: null };
+  }
+  const raw = localStorage.getItem(LEGACY_PERSISTENCE_PREFIX + key);
+  return { success: true, data: raw === null ? null : JSON.parse(raw) };
+});
+
+registerMockIpcHandler(PERSISTENCE_CHANNELS.DELETE, async (arg) => {
+  const { key } = (arg ?? {}) as { key?: unknown };
+  if (typeof key === "string" && key) {
+    localStorage.removeItem(LEGACY_PERSISTENCE_PREFIX + key);
+  }
+  return { success: true };
+});
+
+registerMockIpcHandler(PERSISTENCE_CHANNELS.SAVE_SESSION, async (arg) => {
+  const { session, workspaceId } = (arg ?? {}) as {
+    session?: { id?: unknown };
+    workspaceId?: unknown;
+  };
+  const agentId = typeof session?.id === "string" ? session.id : "";
+  if (!agentId || typeof workspaceId !== "string" || !workspaceId) {
+    return {
+      success: false,
+      error: "persistence:save-session requires a session id and workspaceId",
+    };
+  }
+  localStorage.setItem(legacySessionKey(workspaceId, agentId), JSON.stringify(session));
+  return { success: true };
+});
+
+registerMockIpcHandler(PERSISTENCE_CHANNELS.LOAD_SESSION, async (arg) => {
+  const { agentId, workspaceId } = (arg ?? {}) as { agentId?: unknown; workspaceId?: unknown };
+  if (typeof agentId !== "string" || !agentId || typeof workspaceId !== "string") {
+    return { success: false, data: null };
+  }
+  const raw = localStorage.getItem(legacySessionKey(workspaceId, agentId));
+  const data = raw === null ? null : JSON.parse(raw);
+  return { success: data !== null, data };
+});
+
+registerMockIpcHandler(PERSISTENCE_CHANNELS.LOAD_AGENT_CONFIG, async () => ({ data: null }));

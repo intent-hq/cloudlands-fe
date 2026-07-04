@@ -17,7 +17,11 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { mockInvoke } from "$shared/ipc-mock-router";
-import { FEATURE_CODES_CHANNELS, SETTINGS_CHANNELS } from "$shared/ipc/channels";
+import {
+  FEATURE_CODES_CHANNELS,
+  PERSISTENCE_CHANNELS,
+  SETTINGS_CHANNELS,
+} from "$shared/ipc/channels";
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -161,6 +165,68 @@ describe("settings-legacy-bridge-seeder", () => {
       await expect(mockInvoke(FEATURE_CODES_CHANNELS.RESTART_APP)).rejects.toThrow(
         "App restart is not available in this build",
       );
+    });
+  });
+
+  describe("persistence:* → namespaced localStorage (legacy agent-persistence store)", () => {
+    it("save/load/delete round-trip under the legacy-persistence namespace", async () => {
+      expect(
+        await mockInvoke(PERSISTENCE_CHANNELS.SAVE, { key: "agent-state", data: { a: 1 } }),
+      ).toEqual({ success: true });
+      expect(localStore.get("legacy-persistence:agent-state")).toBe('{"a":1}');
+
+      expect(await mockInvoke(PERSISTENCE_CHANNELS.LOAD, { key: "agent-state" })).toEqual({
+        success: true,
+        data: { a: 1 },
+      });
+
+      expect(await mockInvoke(PERSISTENCE_CHANNELS.DELETE, { key: "agent-state" })).toEqual({
+        success: true,
+      });
+      expect(localStore.has("legacy-persistence:agent-state")).toBe(false);
+      expect(await mockInvoke(PERSISTENCE_CHANNELS.LOAD, { key: "agent-state" })).toEqual({
+        success: true,
+        data: null,
+      });
+    });
+
+    it("save-session/load-session key by workspaceId + session id", async () => {
+      const session = { id: "agent-1", messages: [{ role: "user", content: "hi" }] };
+      expect(
+        await mockInvoke(PERSISTENCE_CHANNELS.SAVE_SESSION, { session, workspaceId: "ws-1" }),
+      ).toEqual({ success: true });
+
+      expect(
+        await mockInvoke(PERSISTENCE_CHANNELS.LOAD_SESSION, {
+          agentId: "agent-1",
+          workspaceId: "ws-1",
+        }),
+      ).toEqual({ success: true, data: session });
+
+      // A session never saved folds to the legacy "no session" envelope.
+      expect(
+        await mockInvoke(PERSISTENCE_CHANNELS.LOAD_SESSION, {
+          agentId: "agent-2",
+          workspaceId: "ws-1",
+        }),
+      ).toEqual({ success: false, data: null });
+    });
+
+    it("validates missing keys/ids and always resolves load-agent-config to { data: null }", async () => {
+      expect(await mockInvoke(PERSISTENCE_CHANNELS.SAVE, { data: 1 })).toEqual({
+        success: false,
+        error: "persistence:save requires a key",
+      });
+      expect(await mockInvoke(PERSISTENCE_CHANNELS.SAVE_SESSION, { session: {} })).toEqual({
+        success: false,
+        error: "persistence:save-session requires a session id and workspaceId",
+      });
+      expect(
+        await mockInvoke(PERSISTENCE_CHANNELS.LOAD_AGENT_CONFIG, {
+          agentId: "agent-1",
+          workspaceId: "ws-1",
+        }),
+      ).toEqual({ data: null });
     });
   });
 });

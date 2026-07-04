@@ -313,4 +313,88 @@ describe("host-bridge-seeder", () => {
       expect(response).toEqual({ success: false, error: "transport down" });
     });
   });
+
+  describe("vscode:openFile → daemon host.openInEditor", () => {
+    it("opens the file in VS Code on the daemon host", async () => {
+      mockedRequest.mockResolvedValueOnce({});
+
+      const response = await mockInvoke("vscode:openFile", { file: "/repo/src/main.ts" });
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.openInEditor", {
+        editorId: "vscode",
+        path: "/repo/src/main.ts",
+      });
+      expect(response).toEqual({ success: true });
+    });
+
+    it("rejects a missing file path without touching the wire (caller catch surfaces it)", async () => {
+      await expect(mockInvoke("vscode:openFile", {})).rejects.toThrow(
+        "Missing required parameter: path",
+      );
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("shell:openExternal → window.open (FE-served, PROTOCOL §5.14 reverse-RPC locus)", () => {
+    it("opens the URL in a new browsing context and severs the opener", async () => {
+      const fakeWindow = { opener: {} } as unknown as Window;
+      const openSpy = vi.spyOn(window, "open").mockReturnValue(fakeWindow);
+
+      const response = await mockInvoke("shell:openExternal", { url: "https://example.com" });
+
+      expect(openSpy).toHaveBeenCalledWith("https://example.com", "_blank");
+      expect(fakeWindow.opener).toBeNull();
+      expect(response).toEqual({ success: true });
+      openSpy.mockRestore();
+    });
+
+    it("rejects when the open is blocked or the url is missing (caller catch surfaces it)", async () => {
+      const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+
+      await expect(mockInvoke("shell:openExternal", { url: "https://example.com" })).rejects.toThrow(
+        "Unable to open external URL in this build",
+      );
+      await expect(mockInvoke("shell:openExternal", {})).rejects.toThrow(
+        "Missing required parameter: url",
+      );
+      openSpy.mockRestore();
+    });
+  });
+});
+
+describe("misc-ui-events-seeder window:open-new bridge", () => {
+  // Registered by misc-ui-events-seeder (the catch-all UI seeder); tested
+  // here alongside the other window.open-backed handler so the window-locus
+  // bridges stay covered together.
+  beforeAll(async () => {
+    await import("./misc-ui-events-seeder");
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("opens the route as a new browsing context off the current origin", async () => {
+    const fakeWindow = { opener: {} } as unknown as Window;
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(fakeWindow);
+
+    const response = await mockInvoke("window:open-new", { route: "/workspace/ws-1" });
+
+    expect(openSpy).toHaveBeenCalledWith(
+      `${window.location.origin}/workspace/ws-1`,
+      "_blank",
+    );
+    expect(fakeWindow.opener).toBeNull();
+    expect(response).toEqual({ success: true });
+    openSpy.mockRestore();
+  });
+
+  it("throws when the open is blocked so the callers' catch-fallback navigation runs", async () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+
+    await expect(mockInvoke("window:open-new", { route: "/workspace/new" })).rejects.toThrow(
+      "Opening a new window is not available in this build",
+    );
+    openSpy.mockRestore();
+  });
 });

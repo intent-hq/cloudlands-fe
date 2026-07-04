@@ -18,6 +18,7 @@
 import { SPECIALISTS, type Specialist } from "$lib/constants/specialists";
 import type { ModelTier, SpecialistFileScope } from "$shared/specialist-file-types";
 import type { SpecialistDef } from "$lib/client/app-client";
+import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import { registerMockSeeder } from "../mock-bootstrap";
 import { setSystemStatus } from "../slices/system-status/system-status-slice";
 import { setInitialized } from "../slices/release-notes/release-notes-slice";
@@ -92,6 +93,30 @@ const DISABLED_WEBSOCKET_API: WebSocketApiStatusSnapshot = {
   localIps: ["127.0.0.1"],
   certFingerprint: "",
 };
+
+// ── window:open-new (cmd-click "open in new window" affordances) ──
+// SidebarNav / NewWorkspaceCard fall back to in-window navigation from their
+// `.catch`, and openWorkspaceInNewWindow folds both a `{ success:false }`
+// envelope and a rejection into `goto(route)`. The legacy Electron
+// BrowserWindow spawner is gone, so this handler opens the route as a new
+// browser window/tab when the environment allows it and otherwise THROWS — a
+// resolved failure would strand the `.catch`-only callers on a silent no-op
+// (same "a throw is the honest terminal state" idiom as the
+// settings-legacy-bridge feature-codes gate). Registered at import time so
+// the affordance works from the very first render.
+registerMockIpcHandler("window:open-new", async (arg) => {
+  const rawRoute = (arg as { route?: unknown } | undefined)?.route;
+  const route = typeof rawRoute === "string" && rawRoute.startsWith("/") ? rawRoute : "/";
+  const opened =
+    typeof window !== "undefined"
+      ? window.open(`${window.location.origin}${route}`, "_blank")
+      : null;
+  if (!opened) {
+    throw new Error("Opening a new window is not available in this build");
+  }
+  opened.opener = null;
+  return { success: true };
+});
 
 registerMockSeeder("misc-ui-events", async ({ store, client }) => {
   // ── System status (Node / auggie install indicators) ──

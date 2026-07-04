@@ -193,4 +193,55 @@ describe("workspaces-seeder legacy IPC bridges", () => {
       ).resolves.toBeUndefined();
     });
   });
+
+  describe("workspace:get → daemon workspace.get", () => {
+    it("forwards to workspace.get and wraps the workspace in {success, data}", async () => {
+      // PROTOCOL §5.1: workspace.get → { workspace: Workspace }.
+      mockedRequest.mockResolvedValueOnce({
+        workspace: {
+          id: "11111111-1111-4111-8111-111111111111",
+          title: "Repo A",
+          branch: "main",
+          status: "Active",
+          path: "/tmp/repo-a",
+          repositoryPath: "/tmp/repo-a",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-02T00:00:00Z",
+        },
+      });
+
+      const response = (await mockInvoke(WORKSPACE_CHANNELS.GET, {
+        id: "11111111-1111-4111-8111-111111111111",
+      })) as CommandResponse<{ id: string; title: string }>;
+
+      expect(mockedRequest).toHaveBeenCalledWith("workspace.get", {
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+      });
+      expect(response.success).toBe(true);
+      expect(response.data?.title).toBe("Repo A");
+    });
+
+    it("folds a missing id, a missing workspace, and a transport failure to {success:false}", async () => {
+      expect(await mockInvoke(WORKSPACE_CHANNELS.GET, {})).toEqual({
+        success: false,
+        error: "Workspace not found",
+      });
+      expect(mockedRequest).not.toHaveBeenCalled();
+
+      // A response without a workspace payload (daemon "not found") folds to
+      // {success:false} — the live client's normalization throws and the
+      // handler's catch shapes it; the exact message is the client's.
+      const validId = "22222222-2222-4222-8222-222222222222";
+      mockedRequest.mockResolvedValueOnce({});
+      expect(await mockInvoke(WORKSPACE_CHANNELS.GET, { id: validId })).toMatchObject({
+        success: false,
+      });
+
+      mockedRequest.mockRejectedValueOnce(new Error("daemon offline"));
+      expect(await mockInvoke(WORKSPACE_CHANNELS.GET, { id: validId })).toEqual({
+        success: false,
+        error: "daemon offline",
+      });
+    });
+  });
 });

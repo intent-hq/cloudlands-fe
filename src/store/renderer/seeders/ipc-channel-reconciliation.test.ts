@@ -219,7 +219,11 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
 
   it('scanner sanity: detects the known invoke surface', () => {
     // Guard against the scanner silently matching nothing after a refactor.
-    expect(invoked.size).toBeGreaterThan(200);
+    // (Threshold rebased from 200 after IPC batch 8 retired the caller-less
+    // legacy clients — lib/api/{client,mcp-client,ssh-client}.ts and
+    // panel-layout-history.client.ts — and their ~25 channels; the scan now
+    // resolves ~175 channels.)
+    expect(invoked.size).toBeGreaterThan(150);
     // git:status moved to the daemon (backendRequest('git.status'), 4C-3) and
     // git:show-file followed with D2 (backendRequest('git.showFile'));
     // git:numstat remains a local-IPC invoke (bridged via git-bridge-seeder).
@@ -376,122 +380,30 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
 
 /**
  * Audit findings (P3 FE audit): channels invoked by production renderer code
- * with NO mock-router bridge. Every invoke of these channels currently rejects
- * with UnbridgedMockIpcChannelError. Frozen debt — entries may only be REMOVED
- * (when bridged to the daemon or retired with their call sites in P3-1.5);
+ * with NO mock-router bridge. Every invoke of such a channel rejects with
+ * UnbridgedMockIpcChannelError. Frozen debt — entries may only be REMOVED;
  * never add to this list for new work.
+ *
+ * IPC batch 8 drained the list to empty. The final tranche: the analytics
+ * boot family (analytics:get-config allowlisted; app:get-version /
+ * auggie:get-user-info were already allowlisted), workspace:get bridged to
+ * the daemon workspace.get (workspaces-seeder), sentry-auth:get-issue
+ * bridged to sentry.getIssue (integrations-bridge-seeder), shell:openExternal
+ * / vscode:openFile bridged in host-bridge-seeder (window.open /
+ * host.openInEditor), window:open-new bridged to window.open
+ * (misc-ui-events-seeder), persistence:* bridged to namespaced localStorage
+ * (settings-legacy-bridge-seeder), workspace:rename-branch bridged to
+ * host.exec git branch -m (git-bridge-seeder), the ssh probes / dialogs /
+ * patch / reference / misc interaction debt moved to justified
+ * UNBRIDGED_INVOKE_ALLOWLIST entries, and the caller-less legacy clients were
+ * retired with their channels (src/lib/api/{client,mcp-client,ssh-client}.ts
+ * — the snake_case workspace family, changes:*, mcp:*, and 8 ssh:* channels;
+ * features/layout/panel-layout-history.client.ts — panel-layout:*; and the
+ * uncalled workspaceClient get/close/duplicate/renameBranch/
+ * preflightCloneCheck methods, retiring workspace:close / workspace:duplicate
+ * / workspace:preflight-clone-check).
  */
-const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
-  // IPC batch 6 dispositioned the notes/files + agents/chat debt: the file:*
-  // CRUD (read/write/open/save/exists/delete/move/copy) is bridged onto the
-  // daemon file.* / host.directoryStatus surface (file-bridge-seeder),
-  // line-attribution:load is an allowlisted shaped failure (no daemon
-  // surface), and the rest were retired with their caller-less code:
-  // AgentIpcProxy/lifecycle/messaging proxies (agent:activate,
-  // agent:delete-session, agent:lifecycle:*, agent:messaging:*), agent-loader
-  // (agent:persistence:list + the last system:home-directory demand), the
-  // renderer listAgents proxy (agent:backend:list), the diff-chunk API
-  // methods (diffs:list/update), AcceptChangesClient.checkPathHasChanges
-  // (accept-changes:check-path-has-changes), and the unimported
-  // repo-visualizer component (file:getTreeWithSizes).
-  'analytics:get-config',
-  'archive_workspace',
-  // Surfaced by the alias-aware scan: invokeIpc site in auto-update.client.ts.
-  'auto-update:install',
-  'banner:fetch',
-  // Surfaced by the alias-aware scan: ipcInvoke site in PanelLayout.svelte.
-  'browser:list-tabs-response',
-  'browser:register-tab',
-  'changes:get-current',
-  'changes:mark-agent-active',
-  'changes:track-agent',
-  'create_workspace',
-  'debug:trigger-backend-resume',
-  'delete_workspace',
-  'dialog:message',
-  'dialog:open',
-  'dialog:save',
-  'external-editors:open-with-other',
-  'get_current_workspace',
-  'get_workspace',
-  // 4C-3/D2 moved the git reads onto backendRequest('git.*') (PROTOCOL §5.6);
-  // IPC batch 5 dispositioned the remaining git:* debt: push/fetch/hunk
-  // staging, numstat, and the branch-base git:diff are bridged through the
-  // daemon host.exec (git-bridge-seeder), git:isRepository rides
-  // host.directoryStatus, the git-tracking PR/remote lookups and the
-  // github-auth OAuth triggers ride github.* / host.exec
-  // (integrations-bridge-seeder / git-bridge-seeder), and
-  // git:get-auto-commit-status is allowlisted (no daemon status read).
-  // git:removeLock / git:rename-branch / git:getRemotes were retired with
-  // their caller-less client methods.
-  'list_workspaces',
-  'mcp:call-tool',
-  'mcp:create-server',
-  'mcp:list-tools',
-  'mcp:remove-server',
-  'mcp:transition-workspace',
-  // Surfaced by the alias-aware scan: invokeIpc sites in panel-layout-history.client.ts.
-  'panel-layout:load',
-  'panel-layout:save',
-  'patch:apply',
-  'patch:revert',
-  'persistence:delete',
-  'persistence:load',
-  'persistence:load-agent-config',
-  'persistence:load-session',
-  'persistence:save',
-  'persistence:save-session',
-  'reference:resolve',
-  'remote-fs:exists',
-  // IPC batch 5: scripts:update moved onto the script.create scriptId upsert
-  // (§5.8), scripts:get-output was retired with its caller-less client method,
-  // and scripts:detect / scripts:save-to-repo are allowlisted shaped failures
-  // (no daemon scanner / repo-config surface).
-  'sentry-auth:get-issue',
-  'sentry-auth:logout',
-  'sentry-auth:save-config',
-  'set_current_workspace',
-  'shell:install-cli',
-  'shell:openExternal',
-  'shell:showItemInFolder',
-  'ssh:connect',
-  'ssh:detectEnvironment',
-  'ssh:disconnect',
-  'ssh:downloadFile',
-  'ssh:execute',
-  'ssh:get-agent-status',
-  'ssh:get-config-hosts',
-  'ssh:isConnected',
-  'ssh:list-keys',
-  'ssh:listDirectory',
-  'ssh:test-connection',
-  'ssh:uploadFile',
-  'system:execute-command',
-  'system:write-clipboard',
-  'update_workspace',
-  'user-mcp:initiate-oauth',
-  'vscode:openFile',
-  'window:open-new',
-  'workspace:add-recent-repository',
-  'workspace:cleanup',
-  'workspace:clear-recent-repositories',
-  'workspace:close',
-  'workspace:discover-repos',
-  'workspace:duplicate',
-  'workspace:find-repositories',
-  'workspace:get',
-  'workspace:get-info',
-  'workspace:openFile',
-  'workspace:openLog',
-  'workspace:openMetric',
-  'workspace:openNote',
-  'workspace:openSpec',
-  'workspace:openSymbol',
-  'workspace:openTest',
-  'workspace:openTimelineEvent',
-  'workspace:preflight-clone-check',
-  'workspace:rename-branch',
-]);
+const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([]);
 
 // ───────────────────────────────────────────────────────────────────────────
 // Event-channel reconciliation (silent-gap class)
@@ -720,6 +632,51 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
       dead,
       'Channels with no remaining listener call sites must be removed from ' +
         'UNEMITTED_LISTENER_ALLOWLIST',
+    ).toEqual([]);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// MCP hub server boundary (dynamic invoke(toolName) blind spot)
+//
+// `src/features/mcp/servers/{workspace,notes,git}` are Node child processes
+// spawned by the MAIN-process MCP hub (features/mcp/main/hub/server-manager.ts
+// launches them from dist/features/mcp/servers). Their dynamic
+// `this.bridge.invoke(toolName, …)` calls dispatch through the main-side
+// McpBridge (features/mcp/main/bridge/mcp-bridge.ts) IN-PROCESS — they are
+// NOT renderer→main electron IPC, so the invoke scan above rightly resolves
+// none of them and they need no mock-router bridge or allowlist entry.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('MCP hub server sources stay off the renderer IPC surface', () => {
+  it('features/mcp/servers/** never import the renderer invoke seam', () => {
+    // If one of these files ever imported the renderer invoke seam, its
+    // dynamic `invoke(toolName)` dispatch would enter the mock router with
+    // runtime-only channel names — invisible to this audit and rejecting at
+    // runtime. Keep the boundary structural.
+    const serversRoot = path.join(SRC_ROOT, 'features', 'mcp', 'servers');
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const absolute = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(absolute);
+        } else if (/\.ts$/.test(entry.name)) {
+          const source = fs.readFileSync(absolute, 'utf8');
+          if (
+            /from\s+['"](?:\$shared\/generated\/ipc-client|\$lib\/electron-bridge)['"]/.test(source)
+          ) {
+            offenders.push(path.relative(SRC_ROOT, absolute));
+          }
+        }
+      }
+    };
+    walk(serversRoot);
+    expect(
+      offenders,
+      'MCP hub server processes must keep dispatching tools through the main-side McpBridge — ' +
+        'importing the renderer invoke seam would route dynamic toolName channels through the ' +
+        'mock router unaudited.',
     ).toEqual([]);
   });
 });

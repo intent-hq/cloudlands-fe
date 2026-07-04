@@ -349,4 +349,41 @@ describe('git-bridge-seeder', () => {
       });
     });
   });
+
+  describe('workspace:rename-branch → host.exec git branch -m (§5.14)', () => {
+    it('renames the current worktree branch in the workspace root', async () => {
+      mockedRequest.mockResolvedValueOnce(execResult());
+
+      const result = await mockInvoke(IPC_CHANNELS.WORKSPACE.RENAME_BRANCH, {
+        id: 'ws-1',
+        newBranchName: 'feature/renamed',
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith('host.exec', {
+        command: 'git',
+        args: ['branch', '-m', 'feature/renamed'],
+        cwd: '.',
+        workspaceId: 'ws-1',
+        timeoutMs: 60_000,
+      });
+      expect(result).toEqual({ success: true });
+    });
+
+    it('folds a non-zero exit to the stderr message and validates params without touching the wire', async () => {
+      mockedRequest.mockResolvedValueOnce(
+        execResult({ exitCode: 128, stderr: 'fatal: a branch named x already exists\n' }),
+      );
+      expect(
+        await mockInvoke(IPC_CHANNELS.WORKSPACE.RENAME_BRANCH, { id: 'ws-1', newBranchName: 'x' }),
+      ).toEqual({ success: false, error: 'fatal: a branch named x already exists' });
+
+      expect(
+        await mockInvoke(IPC_CHANNELS.WORKSPACE.RENAME_BRANCH, { newBranchName: 'x' }),
+      ).toEqual({ success: false, error: 'Invalid workspace ID' });
+      expect(
+        await mockInvoke(IPC_CHANNELS.WORKSPACE.RENAME_BRANCH, { id: 'ws-1', newBranchName: '  ' }),
+      ).toEqual({ success: false, error: 'Invalid branch name' });
+      expect(mockedRequest).toHaveBeenCalledTimes(1);
+    });
+  });
 });

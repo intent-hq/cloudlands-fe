@@ -469,3 +469,24 @@ registerMockIpcHandler(SENTRY_AUTH_CHANNELS.SEARCH_ISSUES, async (arg) => {
     return [];
   }
 });
+
+// `sentry-auth:get-issue` — the single-issue read behind Sentry deep links.
+// The legacy handler took the bare issue id as its single argument; the
+// daemon's `sentry.getIssue` (PROTOCOL §5.29) takes `{ id }` for
+// UUID/numeric ids and `{ shortId }` for `WEB-1`-style short ids. Failures
+// fold to null — the same "not found" value sentryAuthClient.getIssue
+// already catches into.
+registerMockIpcHandler(SENTRY_AUTH_CHANNELS.GET_ISSUE, async (arg) => {
+  const raw = typeof arg === 'string' ? arg.trim() : '';
+  if (!raw) return null;
+  const isPlainId =
+    /^[0-9]+$/.test(raw) || /^[0-9a-f]{32}$/i.test(raw) || /^[0-9a-f-]{36}$/i.test(raw);
+  try {
+    return await backendRequest<SentryIssueResult>(
+      'sentry.getIssue',
+      isPlainId ? { id: raw } : { shortId: raw },
+    );
+  } catch {
+    return null;
+  }
+});

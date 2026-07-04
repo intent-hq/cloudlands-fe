@@ -242,6 +242,29 @@ registerMockIpcHandler("xcode:open", async (arg) =>
   openInEditor("xcode", resolveEditorPath(arg, false)),
 );
 
+/** `vscode:openFile` (CodeEditor's "Open in VS Code") → `host.openInEditor { editorId: "vscode" }`. */
+registerMockIpcHandler("vscode:openFile", async (arg) => {
+  const file = asRecord(arg).file;
+  return openInEditor("vscode", typeof file === "string" ? file : "");
+});
+
+/**
+ * `shell:openExternal` — open a URL on the user's machine. PROTOCOL §5.14
+ * defines `host.openExternal` as a daemon→client reverse RPC ("FE-served"):
+ * the CLIENT owns opening URLs, so the legacy channel bridges to
+ * `window.open` here rather than to a daemon call. A blocked/refused open
+ * throws so each invoking component's catch path surfaces the failure
+ * instead of a silent no-op.
+ */
+registerMockIpcHandler("shell:openExternal", async (arg) => {
+  const url = typeof arg === "string" ? arg : String(asRecord(arg).url ?? "");
+  if (!url) throw new Error("Missing required parameter: url");
+  const opened = typeof window !== "undefined" ? window.open(url, "_blank") : null;
+  if (!opened) throw new Error("Unable to open external URL in this build");
+  opened.opener = null;
+  return { success: true };
+});
+
 /** `external-editors:open` → `host.openInEditor` with the caller's editor id. */
 registerMockIpcHandler("external-editors:open", async (arg) => {
   const params = asRecord(arg);
