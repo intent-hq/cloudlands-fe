@@ -22,6 +22,7 @@ import { createChatSendMiddleware } from "$features/agent/chat-send-service";
 import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge";
 import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
 import { createModelSelectionPersistenceMiddleware } from "$features/settings/model-selection-persistence-service";
+import { createProviderAvailabilityCheckMiddleware } from "$features/providers/provider-availability-check-service";
 import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
 import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
@@ -121,6 +122,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // `model.workspaceOverrides`, PROTOCOL §5.12) so the selection survives a
     // reload — the hydration middleware above reads the same paths on boot.
     createModelSelectionPersistenceMiddleware(),
+    // Give the (post-saga) agent-availability triggers (`ensureProvidersChecked`,
+    // `checkAllProvidersRequested`, `checkSingleProviderRequested`) a real
+    // handler so onboarding/settings provider cards resolve to a terminal
+    // installed / not-installed / error state (and `hasCheckedOnce` flips)
+    // instead of spinning on "Checking…" forever.
+    createProviderAvailabilityCheckMiddleware(),
     // Give the (post-saga) `agentStreamUpdateReceived` action a real consumer
     // so a streaming agent's text/tool blocks grow live in the chat panel
     // (placeholder on first event, in-place block update on subsequent events,

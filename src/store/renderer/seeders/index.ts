@@ -10,6 +10,7 @@ import "./agents-seeder";
 import "./agent-ipc-bridge-seeder";
 import "./host-bridge-seeder";
 import "./provider-status-bridge-seeder";
+import "./model-catalog-bridge-seeder";
 import "./integrations-bridge-seeder";
 import "./notes-seeder";
 import "./files-git-seeder";

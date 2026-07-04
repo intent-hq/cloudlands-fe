@@ -390,12 +390,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'app:get-version',
   'archive_workspace',
   'auggie:authenticate',
-  // Surfaced by the passthrough-wrapper scan: the 7 `*:get-models` channels are
-  // invoked through per-provider `invokeModelChannel` helpers that prefer the
-  // real `window.electronAPI` bridge; in a pure-browser build they fall through
-  // to the mock router and reject. Daemon bridge (models.list, PROTOCOL §5.30)
-  // is separate model-catalog migration scope.
-  'auggie:get-models',
   'auggie:get-user-info',
   'auggie:install',
   // Surfaced by the alias-aware scan (4A-2 audit debt): invoked only through the
@@ -416,11 +410,7 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'changes:mark-agent-active',
   'changes:track-agent',
   'claude-code:check-availability',
-  // Passthrough-wrapper scan finding (see auggie:get-models).
-  'claude-code:get-models',
   'codex:check-availability',
-  // Passthrough-wrapper scan finding (see auggie:get-models).
-  'codex:get-models',
   'config:clear-cache',
   'config:get',
   'config:get-stats',
@@ -428,8 +418,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   // Surfaced by the alias-aware scan: invokeIpc site in acp-official permission-manager.ts.
   'config:set',
   'cortex:check-availability',
-  // Passthrough-wrapper scan finding (see auggie:get-models).
-  'cortex:get-models',
   'create_workspace',
   'debug:trigger-backend-resume',
   'delete_workspace',
@@ -439,8 +427,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'diffs:list',
   'diffs:update',
   'droid:check-availability',
-  // Passthrough-wrapper scan finding (see auggie:get-models).
-  'droid:get-models',
   'external-editors:open-with-other',
   'feature-codes:activate',
   'feature-codes:restart-app',
@@ -491,8 +477,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'mcp:remove-server',
   'mcp:transition-workspace',
   'opencode:check-availability',
-  // Passthrough-wrapper scan finding (see auggie:get-models).
-  'opencode:get-models',
   // Surfaced by the alias-aware scan: invokeIpc sites in panel-layout-history.client.ts.
   'panel-layout:load',
   'panel-layout:save',
@@ -504,8 +488,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'persistence:load-session',
   'persistence:save',
   'persistence:save-session',
-  // Passthrough-wrapper scan finding (see auggie:get-models).
-  'pi:get-models',
   'pi:install-mcp-adapter',
   'reference:resolve',
   'remote-fs:exists',
