@@ -446,6 +446,82 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
+  // Regression: the daemon's `map_tool_call_update` (crates/intent-acp) emits
+  // `agent:tool:call` events on every ACP `tool_call_update` where unchanged
+  // fields default to empty (`toolName: ""`, `toolKind: "other"`, `input: null`)
+  // — only `status` (and sometimes `output`) is authoritative on updates.
+  // Mirroring the daemon-side `record_tool` (crates/intent-services/agent_session.rs),
+  // which only patches `metadata.status` on repeated `toolCallId`s, the FE
+  // bridge must preserve the initial name/input/toolKind so the classifier
+  // keeps rendering a rich label instead of falling through to the generic
+  // "Run" row (bug 19).
+  it("preserves the initial name/input/toolKind when a tool_call_update event omits them", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t1",
+        input: { path: "src/lib.rs" },
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+
+    // Mid-flight update the daemon emits from `map_tool_call_update` when the
+    // ACP provider reports a progress-only tick: title/kind/rawInput are None
+    // upstream, so the wire payload defaults them out.
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "",
+        toolKind: "other",
+        toolCallId: "t1",
+        input: null,
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+
+    // Completion update: only `status` (and `output`) are authoritative.
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "",
+        toolKind: "other",
+        toolCallId: "t1",
+        input: null,
+        status: "completed",
+        output: "ok",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+
+    const blocks = readAssistantMessages()[0]?.contentBlocks ?? [];
+    expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result"]);
+    expect(blocks[0]).toMatchObject({
+      type: "tool_use",
+      toolCallId: "t1",
+      name: "Read",
+      input: { path: "src/lib.rs" },
+      metadata: { toolKind: "file", status: "completed" },
+    });
+    expect(blocks[1]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "t1",
+      output: "ok",
+    });
+  });
+
   it("does not duplicate the assistant message when getConversation hydration follows the live stream", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

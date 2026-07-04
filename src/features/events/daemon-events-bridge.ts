@@ -255,14 +255,57 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
   }
   const state = ensureStream(agentId, messageId, workspaceId);
 
+  // Merge subsequent `agent:tool:call` events for the same tool_use block
+  // (identified by `blockIndex`, which the daemon holds constant across a
+  // toolCallId's lifetime — see `crates/intent-services/agent_session.rs`
+  // `record_tool`). The daemon's `map_tool_call_update` (crates/intent-acp)
+  // maps a partial ACP `tool_call_update` into `MappedToolCall` by defaulting
+  // any unset field (`title` → "", `kind` → "other", `raw_input` → null); on
+  // the wire only `status` (and sometimes `output`) is authoritative for a
+  // progress-only tick. Mirror the daemon-side `record_tool` merge policy so
+  // the tool_use block retains the initial name/input/toolKind and the
+  // classifier keeps a rich label instead of collapsing to a generic "Run".
+  const prior = state.blocksByIndex.get(blockIndex) as
+    | (ContentBlock & { toolCallId?: string })
+    | undefined;
+  const priorIsSameToolUse =
+    prior?.type === "tool_use" && prior.toolCallId === toolCallId;
+  // A non-empty `toolName` on the wire signals an authoritative update
+  // (the daemon's `map_tool_call_update` only supplies a `title` when the
+  // upstream ACP update carries one); an empty string is the mapper's default
+  // for a status-only tick, in which case we preserve every non-status field
+  // on the prior block. This mirrors the persisted transcript on the daemon
+  // side (`record_tool` only patches `metadata.status` on repeats).
+  const isProgressOnlyUpdate =
+    priorIsSameToolUse && (typeof toolName !== "string" || toolName.length === 0);
+  const priorMetadata =
+    priorIsSameToolUse && typeof (prior as { metadata?: unknown }).metadata === "object"
+      ? ((prior as { metadata?: Record<string, unknown> }).metadata ?? {})
+      : {};
+  const nextName = isProgressOnlyUpdate
+    ? ((prior as { name?: string }).name ?? "")
+    : typeof toolName === "string"
+      ? toolName
+      : "";
+  const nextInput = isProgressOnlyUpdate
+    ? ((prior as { input?: Record<string, unknown> | undefined }).input ?? undefined)
+    : input !== undefined && input !== null
+      ? (input as Record<string, unknown>)
+      : undefined;
+  const nextToolKind = isProgressOnlyUpdate
+    ? (priorMetadata as { toolKind?: string }).toolKind
+    : typeof toolKind === "string" && toolKind.length > 0
+      ? toolKind
+      : undefined;
+
   const toolUseBlock: ContentBlock = {
     type: "tool_use",
     ...(typeof blockId === "string" ? { id: blockId } : {}),
-    name: typeof toolName === "string" ? toolName : "",
-    input: (input as Record<string, unknown> | undefined) ?? undefined,
+    name: nextName,
+    input: nextInput,
     toolCallId,
     metadata: {
-      ...(typeof toolKind === "string" ? { toolKind } : {}),
+      ...(typeof nextToolKind === "string" ? { toolKind: nextToolKind } : {}),
       ...(typeof status === "string" ? { status } : {}),
     },
   } as ContentBlock;
