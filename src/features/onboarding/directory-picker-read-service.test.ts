@@ -17,6 +17,7 @@ import { backendRequest } from "$lib/client/live/backend-transport";
 import { store as appStore } from "$store/renderer/store";
 import {
   loadDirectoryRequested,
+  navigateToPathRequested,
   resetDirectoryPicker,
   type DirectoryPickerListing,
 } from "$store/renderer/slices/directory-picker/directory-picker-slice";
@@ -184,6 +185,75 @@ describe("directoryPickerReadService (fake backend, real store)", () => {
     expect(state.loading).toBe(false);
     expect(state.error).toBe("Permission denied (os error 13)");
     expect(state.listing).toBeNull();
+  });
+
+  it("navigates to a typed path and stores the listing on success", async () => {
+    backendRequestMock.mockImplementation(((method: string) => {
+      if (method === "host.listDirectory") {
+        return Promise.resolve(listing("/Users/me/typed"));
+      }
+      return Promise.resolve(undefined);
+    }) as never);
+
+    appStore.dispatch(navigateToPathRequested("/Users/me/typed"));
+    expect(appStore.state.directoryPicker.loading).toBe(true);
+    await flush();
+
+    expect(backendRequestMock).toHaveBeenCalledWith("host.listDirectory", {
+      path: "/Users/me/typed",
+    });
+    const state = appStore.state.directoryPicker;
+    expect(state.loading).toBe(false);
+    expect(state.pathError).toBeNull();
+    expect(state.listing?.path).toBe("/Users/me/typed");
+  });
+
+  it("keeps the current listing and hints 'Path not found' for a missing typed path", async () => {
+    // Seed a loaded listing first, then navigate to a nonexistent typed path.
+    backendRequestMock.mockImplementation(((method: string, params: unknown) => {
+      if (method !== "host.listDirectory") return Promise.resolve(undefined);
+      const path = (params as { path?: string } | undefined)?.path;
+      if (path === "/Users/me") return Promise.resolve(listing("/Users/me"));
+      return Promise.reject(
+        new Error(`failed to read ${String(path)}: No such file or directory (os error 2)`),
+      );
+    }) as never);
+
+    appStore.dispatch(loadDirectoryRequested("/Users/me"));
+    await flush();
+    expect(appStore.state.directoryPicker.listing?.path).toBe("/Users/me");
+
+    appStore.dispatch(navigateToPathRequested("/nope"));
+    await flush();
+    await flush();
+
+    // No home fallback for typed paths: exactly one extra listDirectory call.
+    const hostListDirectoryCalls = backendRequestMock.mock.calls.filter(
+      ([method]) => method === "host.listDirectory",
+    );
+    expect(hostListDirectoryCalls).toHaveLength(2);
+
+    const state = appStore.state.directoryPicker;
+    expect(state.loading).toBe(false);
+    expect(state.pathError).toBe("Path not found");
+    expect(state.error).toBeNull();
+    // The pre-navigation listing survives so the picker stays where it was.
+    expect(state.listing?.path).toBe("/Users/me");
+  });
+
+  it("surfaces non-missing typed-path errors verbatim as the hint", async () => {
+    backendRequestMock.mockImplementation(((method: string) => {
+      if (method === "host.listDirectory") {
+        return Promise.reject(new Error("Permission denied (os error 13)"));
+      }
+      return Promise.resolve(undefined);
+    }) as never);
+
+    appStore.dispatch(navigateToPathRequested("/forbidden"));
+    await flush();
+
+    const state = appStore.state.directoryPicker;
+    expect(state.pathError).toBe("Permission denied (os error 13)");
   });
 
   it("coalesces rapid same-path dispatches into a single fetch", async () => {

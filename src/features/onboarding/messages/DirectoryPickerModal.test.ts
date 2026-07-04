@@ -22,7 +22,9 @@ const mocks = vi.hoisted(() => {
       { name: 'notes.txt', path: '/Users/me/notes.txt', isDirectory: false, isGitRepo: false },
     ],
   };
-  return { dispatch, listing };
+  // Mutable so individual tests can render with a typed-path failure hint.
+  const overrides = { pathError: null as string | null };
+  return { dispatch, listing, overrides };
 });
 
 vi.mock('$store/renderer/store', async () => {
@@ -36,6 +38,7 @@ vi.mock('$store/renderer/store', async () => {
         loading: false,
         error: null,
         requestedPath: null,
+        pathError: mocks.overrides.pathError,
       },
     }),
     dispatch: mocks.dispatch,
@@ -49,6 +52,7 @@ vi.mock('svelte-fa', async () => ({
 import DirectoryPickerModal from './DirectoryPickerModal.svelte';
 import {
   loadDirectoryRequested,
+  navigateToPathRequested,
   resetDirectoryPicker,
 } from '$store/renderer/slices/directory-picker/directory-picker-slice';
 
@@ -57,6 +61,12 @@ const loadCalls = (): Array<{ type: string; payload: unknown[] }> =>
   mocks.dispatch.mock.calls
     .map(([action]) => action)
     .filter((action) => action?.type === loadDirectoryRequested.type);
+
+/** All `directoryPicker/navigateToPathRequested` actions dispatched so far. */
+const navigateCalls = (): Array<{ type: string; payload: unknown[] }> =>
+  mocks.dispatch.mock.calls
+    .map(([action]) => action)
+    .filter((action) => action?.type === navigateToPathRequested.type);
 
 /** Requested path of a loadRequested action (`undefined` = daemon-host home). */
 const requestedPath = (action: { payload: unknown[] }) => action.payload?.[0];
@@ -74,6 +84,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   mocks.dispatch.mockClear();
+  mocks.overrides.pathError = null;
 });
 
 describe('DirectoryPickerModal navigation', () => {
@@ -129,5 +140,124 @@ describe('DirectoryPickerModal navigation', () => {
       .map(([action]) => action)
       .filter((action) => action?.type === resetDirectoryPicker.type);
     expect(resets).toHaveLength(1);
+  });
+});
+
+describe('DirectoryPickerModal editable path input', () => {
+  const baseProps = { open: true, onSelect: vi.fn(), onClose: vi.fn() };
+
+  const pathInput = (): HTMLInputElement =>
+    screen.getByRole('textbox', { name: 'Path' }) as HTMLInputElement;
+
+  it('shows the collapsed display path in the input', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    // listing.path === listing.home, so the display form is `~`.
+    expect(pathInput().value).toBe('~');
+  });
+
+  it('typing a path and pressing Enter dispatches navigateToPathRequested', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    const input = pathInput();
+    await fireEvent.input(input, { target: { value: '/tmp/projects' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await flush();
+
+    const calls = navigateCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].payload[0]).toBe('/tmp/projects');
+    // Enter inside the input must not act as list navigation.
+    expect(loadCalls()).toHaveLength(1); // only the load-on-open request
+  });
+
+  it('expands a leading ~ to the daemon-host home before dispatching', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    const input = pathInput();
+    await fireEvent.input(input, { target: { value: '~/src' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await flush();
+
+    const calls = navigateCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].payload[0]).toBe('/Users/me/src');
+  });
+
+  it('blur commits the typed path like Enter', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    const input = pathInput();
+    await fireEvent.input(input, { target: { value: '/tmp/elsewhere' } });
+    await fireEvent.blur(input);
+    await flush();
+
+    const calls = navigateCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].payload[0]).toBe('/tmp/elsewhere');
+  });
+
+  it('Escape cancels the edit, restores the path, and does not close the modal', async () => {
+    const onClose = vi.fn();
+    render(DirectoryPickerModal, { props: { ...baseProps, onClose } });
+    await flush();
+
+    const input = pathInput();
+    await fireEvent.input(input, { target: { value: '/typo/pat' } });
+    await fireEvent.keyDown(input, { key: 'Escape' });
+    await flush();
+
+    expect(input.value).toBe('~');
+    expect(navigateCalls()).toHaveLength(0);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('committing the unchanged current path does not dispatch a navigation', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    const input = pathInput();
+    // Re-typing the same collapsed path expands back to the current listing path.
+    await fireEvent.input(input, { target: { value: '~' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await flush();
+
+    expect(navigateCalls()).toHaveLength(0);
+  });
+
+  it('renders the failure hint and keeps the typed value for correction', async () => {
+    mocks.overrides.pathError = 'Path not found';
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+
+    expect(screen.getByRole('alert').textContent?.trim()).toBe('Path not found');
+
+    // The listing is still rendered — the failed navigation did not clear it.
+    expect(screen.getByRole('option', { name: /code/ })).toBeTruthy();
+
+    // A failed commit keeps the typed value in the input for correction.
+    const input = pathInput();
+    await fireEvent.input(input, { target: { value: '/does/not/exist' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    await flush();
+    expect(input.value).toBe('/does/not/exist');
+  });
+
+  it('typing Backspace in the input does not navigate up', async () => {
+    render(DirectoryPickerModal, { props: { ...baseProps } });
+    await flush();
+    expect(loadCalls()).toHaveLength(1);
+
+    const input = pathInput();
+    await fireEvent.input(input, { target: { value: '/tmp/x' } });
+    await fireEvent.keyDown(input, { key: 'Backspace' });
+    await flush();
+
+    // No extra loadDirectoryRequested (navigate-up) beyond the load-on-open.
+    expect(loadCalls()).toHaveLength(1);
   });
 });

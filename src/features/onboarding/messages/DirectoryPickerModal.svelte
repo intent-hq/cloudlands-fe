@@ -30,7 +30,9 @@
   import { cn } from '$lib/utils';
   import { store as appStore } from '$store/renderer/store';
   import {
+    clearPathNavigationError,
     loadDirectoryRequested,
+    navigateToPathRequested,
     resetDirectoryPicker,
     type DirectoryPickerEntry,
     type DirectoryPickerListing,
@@ -39,6 +41,7 @@
     selectDirectoryPickerError,
     selectDirectoryPickerListing,
     selectDirectoryPickerLoading,
+    selectDirectoryPickerPathError,
   } from '$store/renderer/slices/directory-picker/directory-picker-selectors';
 
   interface Props {
@@ -67,9 +70,11 @@
   const listing$ = selectDirectoryPickerListing();
   const loading$ = selectDirectoryPickerLoading();
   const error$ = selectDirectoryPickerError();
+  const pathError$ = selectDirectoryPickerPathError();
   const listing: DirectoryPickerListing | null = $derived($listing$);
   const loading: boolean = $derived($loading$);
   const error: string | null = $derived($error$);
+  const pathError: string | null = $derived($pathError$);
 
   let focusedIndex = $state(0);
   let listContainerRef = $state<HTMLDivElement | null>(null);
@@ -129,6 +134,10 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (!open) return;
+    // The path input owns its own keyboard handling (Enter commit, Escape
+    // cancel, plain text editing incl. Backspace) — never treat its keystrokes
+    // as list navigation or modal close.
+    if (pathInputRef && e.target === pathInputRef) return;
     if (e.key === 'Escape') {
       e.preventDefault();
       onClose();
@@ -165,6 +174,73 @@
     }
     return listing.path;
   });
+
+  // --- Editable path input -------------------------------------------------
+  // The path bar is a textbox: Enter/blur commits the typed path (navigating
+  // there via `navigateToPathRequested`), Escape cancels and restores the
+  // current path. While an edit is pending or failed, the typed value is kept
+  // so the user can correct it; the draft re-syncs to `displayPath` whenever
+  // the loaded listing actually changes (typed commit success or click nav).
+  let pathInputRef = $state<HTMLInputElement | null>(null);
+  let pathDraft = $state('');
+  let pathEditing = $state(false);
+  let lastListingPath: string | null = null;
+
+  $effect(() => {
+    const dp = displayPath;
+    const path = listing?.path ?? null;
+    untrack(() => {
+      if (path !== lastListingPath) {
+        lastListingPath = path;
+        pathEditing = false;
+      }
+      if (!pathEditing) pathDraft = dp;
+    });
+  });
+
+  /** Expand a leading `~` to the daemon-host home before hitting the wire. */
+  function expandTypedPath(raw: string): string {
+    const trimmed = raw.trim();
+    const home = listing?.home;
+    if (!home) return trimmed;
+    if (trimmed === '~') return home;
+    if (trimmed.startsWith('~/')) return home + trimmed.slice(1);
+    return trimmed;
+  }
+
+  function commitPathInput() {
+    if (!pathEditing) return;
+    const target = expandTypedPath(pathDraft);
+    if (!target) {
+      cancelPathEdit();
+      return;
+    }
+    if (listing && target === listing.path) {
+      // No-op navigation: just leave edit mode and clear any stale hint.
+      pathEditing = false;
+      pathDraft = displayPath;
+      if (pathError) appStore.dispatch(clearPathNavigationError());
+      return;
+    }
+    appStore.dispatch(navigateToPathRequested(target));
+  }
+
+  function cancelPathEdit() {
+    pathEditing = false;
+    pathDraft = displayPath;
+    if (pathError) appStore.dispatch(clearPathNavigationError());
+    pathInputRef?.blur();
+  }
+
+  function handlePathInputKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitPathInput();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelPathEdit();
+    }
+  }
 
   let dialogRef = $state<HTMLDivElement | null>(null);
   onMount(() => {
@@ -242,13 +318,36 @@
         >
           ~
         </button>
-        <div
-          class="flex-1 px-2 py-1 text-xs font-mono truncate text-muted-foreground"
+        <input
+          bind:this={pathInputRef}
+          bind:value={pathDraft}
+          type="text"
+          class={cn(
+            'flex-1 min-w-0 px-2 py-1 text-xs font-mono rounded bg-transparent text-muted-foreground',
+            'border border-transparent focus:border-border focus:bg-background focus:text-foreground focus:outline-none',
+            pathError && 'border-destructive/60 focus:border-destructive/60',
+          )}
+          placeholder="…"
+          aria-label="Path"
+          aria-invalid={pathError ? true : undefined}
+          spellcheck="false"
+          autocomplete="off"
           title={listing?.path ?? ''}
-        >
-          {displayPath || '…'}
-        </div>
+          oninput={() => (pathEditing = true)}
+          onkeydown={handlePathInputKeydown}
+          onblur={commitPathInput}
+        />
       </div>
+
+      <!-- Inline hint for a failed typed-path navigation -->
+      {#if pathError}
+        <div
+          class="px-3 py-1.5 text-xs text-destructive-foreground/90 border-b border-border/30 bg-destructive/10"
+          role="alert"
+        >
+          {pathError}
+        </div>
+      {/if}
 
       <!-- Directory list -->
       <div

@@ -28,6 +28,8 @@ import {
   directoryListingFailed,
   directoryListingLoaded,
   loadDirectoryRequested,
+  navigateToPathRequested,
+  pathNavigationFailed,
   type DirectoryPickerListing,
 } from "$store/renderer/slices/directory-picker/directory-picker-slice";
 
@@ -96,6 +98,28 @@ async function refreshDirectoryListing(requestedPath: string | null): Promise<vo
   return run;
 }
 
+/**
+ * List a user-typed path via `host.listDirectory`. Unlike
+ * `refreshDirectoryListing`, a failure never falls back to home and never
+ * clears the current listing: it dispatches `pathNavigationFailed` so the
+ * picker can render an inline hint next to the path input instead. Missing
+ * paths get a friendly "Path not found" hint; other errors surface verbatim.
+ */
+async function navigateToTypedPath(path: string): Promise<void> {
+  try {
+    const listing = await backendRequest<DirectoryPickerListing>(
+      "host.listDirectory",
+      { path },
+    );
+    appStore.dispatch(directoryListingLoaded(path, listing));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn("host.listDirectory failed for typed path", { path, error: message });
+    const hint = isMissingPathError(message) ? "Path not found" : message;
+    appStore.dispatch(pathNavigationFailed(path, hint));
+  }
+}
+
 /** First tuple-payload element, treated as an optional path string. */
 function requestedPathOf(action: { payload?: unknown }): string | null {
   if (!Array.isArray(action.payload)) return null;
@@ -104,14 +128,18 @@ function requestedPathOf(action: { payload?: unknown }): string | null {
 }
 
 /**
- * Middleware that observes `loadDirectoryRequested` and triggers the
- * (deduped) IPC fetch. Fire-and-forget — dispatch stays synchronous.
+ * Middleware that observes `loadDirectoryRequested` /
+ * `navigateToPathRequested` and triggers the IPC fetch. Fire-and-forget —
+ * dispatch stays synchronous.
  */
 export function createDirectoryPickerReadMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     const result = next(action);
     if (action && action.type === loadDirectoryRequested.type) {
       void refreshDirectoryListing(requestedPathOf(action));
+    } else if (action && action.type === navigateToPathRequested.type) {
+      const path = requestedPathOf(action);
+      if (path) void navigateToTypedPath(path);
     }
     return result;
   };
