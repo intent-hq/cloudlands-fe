@@ -69,12 +69,54 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // (ProviderSelector handleSetupMcp). Setup edits another CLI's MCP config on
   // the host — no daemon surface; the caller folds `success: false` into an
   // error toast carrying this message.
-  ['auggie:setup-mcp-claude-code', { success: false, error: 'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host' }],
-  ['auggie:setup-mcp-codex', { success: false, error: 'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host' }],
-  ['auggie:setup-mcp-cortex', { success: false, error: 'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host' }],
-  ['auggie:setup-mcp-droid', { success: false, error: 'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host' }],
-  ['auggie:setup-mcp-opencode', { success: false, error: 'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host' }],
-  ['auggie:setup-mcp-pi', { success: false, error: 'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host' }],
+  [
+    'auggie:setup-mcp-claude-code',
+    {
+      success: false,
+      error:
+        'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host',
+    },
+  ],
+  [
+    'auggie:setup-mcp-codex',
+    {
+      success: false,
+      error:
+        'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host',
+    },
+  ],
+  [
+    'auggie:setup-mcp-cortex',
+    {
+      success: false,
+      error:
+        'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host',
+    },
+  ],
+  [
+    'auggie:setup-mcp-droid',
+    {
+      success: false,
+      error:
+        'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host',
+    },
+  ],
+  [
+    'auggie:setup-mcp-opencode',
+    {
+      success: false,
+      error:
+        'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host',
+    },
+  ],
+  [
+    'auggie:setup-mcp-pi',
+    {
+      success: false,
+      error:
+        'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host',
+    },
+  ],
   // Analytics identity probe (identifyUser). The daemon has no Augment
   // user/session surface; the caller requires `success && data.id` and
   // try/catches, so identify simply never fires — the same graceful skip as a
@@ -86,25 +128,56 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // The interaction-gated adapter install behind that probe (installPiMcpAdapter):
   // an npm install on the host with no daemon arm; the caller surfaces the
   // shaped failure's message next to the install affordance.
-  ['pi:install-mcp-adapter', { success: false, error: 'Pi MCP adapter install is not available in this build — run "npm i -g pi-mcp-adapter" on the daemon host' }],
+  [
+    'pi:install-mcp-adapter',
+    {
+      success: false,
+      error:
+        'Pi MCP adapter install is not available in this build — run "npm i -g pi-mcp-adapter" on the daemon host',
+    },
+  ],
   // Electron main-process auto-updater — not a daemon surface. +layout.svelte
   // reads the state on startup with `.catch(() => null)`, and the settings
   // affordances surface the folded error message; a shaped failure keeps both
   // paths clean instead of a startup UnbridgedMockIpcChannelError.
-  ['auto-update:check', { success: false, error: { message: 'Auto-update is not available in this build' } }],
-  ['auto-update:check-manual', { success: false, error: { message: 'Auto-update is not available in this build' } }],
-  ['auto-update:download', { success: false, error: { message: 'Auto-update is not available in this build' } }],
-  ['auto-update:get-state', { success: false, error: { message: 'Auto-update is not available in this build' } }],
-  ['auto-update:set-channel', { success: false, error: { message: 'Auto-update is not available in this build' } }],
+  [
+    'auto-update:check',
+    { success: false, error: { message: 'Auto-update is not available in this build' } },
+  ],
+  [
+    'auto-update:check-manual',
+    { success: false, error: { message: 'Auto-update is not available in this build' } },
+  ],
+  [
+    'auto-update:download',
+    { success: false, error: { message: 'Auto-update is not available in this build' } },
+  ],
+  [
+    'auto-update:get-state',
+    { success: false, error: { message: 'Auto-update is not available in this build' } },
+  ],
+  [
+    'auto-update:set-channel',
+    { success: false, error: { message: 'Auto-update is not available in this build' } },
+  ],
   // Legacy main-process model-config cache (ConfigCacheProxyService). The
   // service is exported but has no production callers — models load through
   // the provider seam. Callers fold `success: false` to null / [], the
   // cache-admin envelopes to a no-op / empty stats.
-  ['config:get-model', { success: false, error: 'Model config cache is not bridged to the daemon' }],
-  ['config:get-all-models', { success: false, error: 'Model config cache is not bridged to the daemon' }],
+  [
+    'config:get-model',
+    { success: false, error: 'Model config cache is not bridged to the daemon' },
+  ],
+  [
+    'config:get-all-models',
+    { success: false, error: 'Model config cache is not bridged to the daemon' },
+  ],
   ['config:clear-cache', undefined],
   ['config:invalidate', undefined],
-  ['config:get-stats', { success: false, error: 'Model config cache is not bridged to the daemon' }],
+  [
+    'config:get-stats',
+    { success: false, error: 'Model config cache is not bridged to the daemon' },
+  ],
   // Legacy main-process ConfigManager store (reference config.ipc.ts). The
   // only production caller (acp-official permission-manager) takes its
   // localStorage branch first (`isBrowser` is true in this build), so these
@@ -112,7 +185,14 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // reference handler's fallbacks (get → null on error, set → failure
   // envelope) so even a future call degrades the same way.
   ['config:get', null],
-  ['config:set', { success: false, error: 'Legacy config store is not bridged to the daemon (renderer persistence uses localStorage)' }],
+  [
+    'config:set',
+    {
+      success: false,
+      error:
+        'Legacy config store is not bridged to the daemon (renderer persistence uses localStorage)',
+    },
+  ],
   // Legacy diff-chunk tracking write (apiClient.createDiff) — no production
   // renderer callers remain; diffs render via git.diffs (PROTOCOL §5.6).
   ['diffs:create', { success: false, error: 'Legacy diff tracking is not bridged to the daemon' }],
@@ -124,10 +204,16 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // and the UI surfaces the message on the triggering interaction.
   ['sources:create', { success: false, error: 'Third-party sources are not ported to the daemon' }],
   ['sources:delete', { success: false, error: 'Third-party sources are not ported to the daemon' }],
-  ['sources:extract-metadata', { success: false, error: 'Third-party sources are not ported to the daemon' }],
+  [
+    'sources:extract-metadata',
+    { success: false, error: 'Third-party sources are not ported to the daemon' },
+  ],
   ['sources:get', { success: false, error: 'Third-party sources are not ported to the daemon' }],
   ['sources:list', { success: false, error: 'Third-party sources are not ported to the daemon' }],
-  ['sources:refresh', { success: false, error: 'Third-party sources are not ported to the daemon' }],
+  [
+    'sources:refresh',
+    { success: false, error: 'Third-party sources are not ported to the daemon' },
+  ],
   ['sources:update', { success: false, error: 'Third-party sources are not ported to the daemon' }],
   // Electron app version read for analytics common properties
   // (buildStaticCommonProperties, fired on startup via hooks.client.ts). The
@@ -146,6 +232,30 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   ['window:set-in-workspace', undefined],
   ['window:set-open-workspace-tabs', undefined],
   ['window:set-title', undefined],
+  // Per-agent auto-commit status badges (ChatPanel refreshAutoCommitStatuses).
+  // The daemon auto-commits via git.agentCommit (PROTOCOL §5.6) but exposes no
+  // per-agent commit-status-history read; the caller requires
+  // `response?.success && response.data` and `.catch`es, so the badges simply
+  // stay hidden until a daemon surface exists.
+  ['git:get-auto-commit-status', undefined],
+  // Interaction-gated script detection + repo-config write (TerminalSidebar /
+  // QuakeTerminalOverlay). The legacy handlers ran the main-process script
+  // scanner and wrote the repo-level scripts file — neither has a daemon arm
+  // (§5.8 covers lifecycle only; §5.25 setup-script detection is a different
+  // surface). Both callers fold `success: false` into their toast/agent-assist
+  // fallback paths.
+  [
+    'scripts:detect',
+    {
+      success: false,
+      error:
+        'Script detection is not available in this build — add scripts manually or ask an agent to register them',
+    },
+  ],
+  [
+    'scripts:save-to-repo',
+    { success: false, error: 'Saving scripts to the repo config is not available in this build' },
+  ],
 ]);
 
 /** Rejection raised when an invoke hits a channel with no registered handler. */

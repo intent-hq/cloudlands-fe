@@ -5,11 +5,12 @@
  * (PROTOCOL.md §5.6) resolve via `backendRequest('git.*')`: status, stage,
  * unstage, commit (→ `git.agentCommit`, the wire-canonical commit), history
  * (→ `git.commits`), commit details (→ `git.commitDetails`) and show-file
- * (→ `git.showFile`). Operations the daemon does not serve yet stay on local
- * Electron IPC: hunk staging, push, fetch, lock-file removal, branch rename
- * and remote listing. All daemon-backed reads/mutations preserve the
- * historical `Result<T, string>` contract — transport/daemon errors fold to
- * `{ ok: false, error }`, never a throw.
+ * (→ `git.showFile`). Operations without a dedicated daemon RPC (hunk
+ * staging/unstaging, push, fetch) stay on their legacy channels, which the
+ * git-bridge-seeder serves through the daemon-owned `host.exec` (§5.14). All
+ * daemon-backed reads/mutations preserve the historical `Result<T, string>`
+ * contract — transport/daemon errors fold to `{ ok: false, error }`, never a
+ * throw.
  */
 
 import type {
@@ -209,22 +210,6 @@ class GitClient {
     }
   }
 
-  async removeLockFile(workspaceId: WorkspaceId): Promise<Result<void, string>> {
-    return this.invoke<void>('git:removeLock', { workspaceId });
-  }
-
-  async renameBranch(
-    workspaceId: WorkspaceId,
-    oldBranchName: string,
-    newBranchName: string,
-  ): Promise<Result<void, string>> {
-    return this.invoke<void>('git:rename-branch', {
-      workspaceId,
-      oldBranchName,
-      newBranchName,
-    });
-  }
-
   // `git.commitDetails` (PROTOCOL §5.6) — metadata + per-file
   // `(additions, deletions)` for one commit. The wire envelope
   // (`commitHash`/`authorEmail`) is mapped onto the renderer `CommitInfo`
@@ -254,18 +239,6 @@ class GitClient {
       files: Array.isArray(result?.files) ? result.files : [],
       ...(Array.isArray(result?.fileDetails) ? { fileDetails: result.fileDetails } : {}),
     };
-  }
-
-  async getRemotes(repoPath: string): Promise<
-    Result<
-      {
-        remotes: Array<{ name: string; fetchUrl: string; pushUrl: string }>;
-        defaultRemote: string;
-      },
-      string
-    >
-  > {
-    return this.invoke('git:getRemotes', { repoPath });
   }
 }
 

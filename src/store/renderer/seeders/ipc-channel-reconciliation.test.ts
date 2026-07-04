@@ -215,11 +215,11 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     expect(invoked.size).toBeGreaterThan(200);
     // git:status moved to the daemon (backendRequest('git.status'), 4C-3) and
     // git:show-file followed with D2 (backendRequest('git.showFile'));
-    // git:numstat remains a local-IPC invoke (no daemon arm yet).
+    // git:numstat remains a local-IPC invoke (bridged via git-bridge-seeder).
     expect(invoked.has('git:numstat')).toBe(true);
     expect(invoked.has('dialog:open')).toBe(true);
     // Aliased import call site (`import { invoke as invokeIpc }`, scripts.client.ts).
-    expect(invoked.has('scripts:get-output')).toBe(true);
+    expect(invoked.has('scripts:detect')).toBe(true);
     // Nested-generic call site (`invokeIpc<AutoUpdateResponse<UpdateState>>`,
     // auto-update.client.ts). A `<[^>]*>` matcher stops at the first `>` and
     // drops such call sites entirely — settings:getAll escaped to a runtime
@@ -301,9 +301,7 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
   });
 
   it('DYNAMIC_INVOKE_CALL_SITES holds no entries the scanner now resolves statically', () => {
-    const covered = [...DYNAMIC_INVOKE_CALL_SITES.keys()].filter((channel) =>
-      invoked.has(channel),
-    );
+    const covered = [...DYNAMIC_INVOKE_CALL_SITES.keys()].filter((channel) => invoked.has(channel));
     expect(
       covered,
       'Statically-resolved channels must be removed from DYNAMIC_INVOKE_CALL_SITES',
@@ -417,30 +415,16 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'file:write',
   'get_current_workspace',
   'get_workspace',
-  'git-tracking:get-pull-request',
-  'git-tracking:get-remote-url',
-  // 4C-3: git:status/stage/unstage/commit/pull/history/log/file-history were
-  // retired here — those reads/mutations now reach the daemon directly via
-  // backendRequest('git.*') (PROTOCOL §5.6). D2 retired git:show-file (→
-  // git.showFile) and the diff batcher's plain/staged group (→ git.diffs +
-  // git.showFile/file.read content composition). git:diff remains only for
-  // the branch-base committed diff (baseRef/baseCommitSha) and the
-  // walkthrough's staged read; git:numstat still has no daemon arm.
-  'git:diff',
-  'git:fetch',
-  'git:get-auto-commit-status',
-  'git:getRemotes',
-  'git:isRepository',
-  'git:numstat',
-  'git:push',
-  'git:removeLock',
-  'git:rename-branch',
-  'git:stage-hunk',
-  'git:unstage-hunk',
-  'github-auth:cancel',
-  'github-auth:logout',
-  'github-auth:poll',
-  'github-auth:start',
+  // 4C-3/D2 moved the git reads onto backendRequest('git.*') (PROTOCOL §5.6);
+  // IPC batch 5 dispositioned the remaining git:* debt: push/fetch/hunk
+  // staging, numstat, and the branch-base git:diff are bridged through the
+  // daemon host.exec (git-bridge-seeder), git:isRepository rides
+  // host.directoryStatus, the git-tracking PR/remote lookups and the
+  // github-auth OAuth triggers ride github.* / host.exec
+  // (integrations-bridge-seeder / git-bridge-seeder), and
+  // git:get-auto-commit-status is allowlisted (no daemon status read).
+  // git:removeLock / git:rename-branch / git:getRemotes were retired with
+  // their caller-less client methods.
   'line-attribution:load',
   'list_workspaces',
   'mcp:call-tool',
@@ -461,11 +445,10 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'persistence:save-session',
   'reference:resolve',
   'remote-fs:exists',
-  // Surfaced by the alias-aware scan: invokeIpc sites in scripts.client.ts (4A-2 finding).
-  'scripts:detect',
-  'scripts:get-output',
-  'scripts:save-to-repo',
-  'scripts:update',
+  // IPC batch 5: scripts:update moved onto the script.create scriptId upsert
+  // (§5.8), scripts:get-output was retired with its caller-less client method,
+  // and scripts:detect / scripts:save-to-repo are allowlisted shaped failures
+  // (no daemon scanner / repo-config surface).
   'sentry-auth:get-issue',
   'sentry-auth:logout',
   'sentry-auth:save-config',
