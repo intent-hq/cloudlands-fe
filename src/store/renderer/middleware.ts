@@ -21,6 +21,7 @@ import { createChatReadMiddleware } from "$features/agent/chat-read-service";
 import { createChatSendMiddleware } from "$features/agent/chat-send-service";
 import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge";
 import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
+import { createModelSelectionPersistenceMiddleware } from "$features/settings/model-selection-persistence-service";
 import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
 import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
@@ -114,6 +115,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // daemon-events bridge above plugs into. The hydration is fire-and-forget
     // so dispatch stays synchronous and unaffected.
     createSettingsHydrationMiddleware(),
+    // Give the (post-saga) `selectModel` trigger a real handler (map to
+    // `setSelectedModel` for the active provider) and persist model picks to
+    // the daemon settings catalog (`model.providerDefaults` /
+    // `model.workspaceOverrides`, PROTOCOL §5.12) so the selection survives a
+    // reload — the hydration middleware above reads the same paths on boot.
+    createModelSelectionPersistenceMiddleware(),
     // Give the (post-saga) `agentStreamUpdateReceived` action a real consumer
     // so a streaming agent's text/tool blocks grow live in the chat panel
     // (placeholder on first event, in-place block update on subsequent events,

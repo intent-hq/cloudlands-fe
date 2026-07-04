@@ -6,11 +6,14 @@
  * (`UnbridgedMockIpcChannelError`) instead of resolving undefined. This suite
  * keeps that guarantee auditable: it statically scans every renderer source
  * file for `invoke(...)` / `typedInvoke(...)` call sites — including named
- * import aliases such as `import { invoke as invokeIpc }` — resolves the
- * channel names (string literals, `X_CHANNELS.KEY`, `IPC_CHANNELS.GROUP.KEY`),
- * and reconciles them against the channels the seeders register. Channels only
- * ever invoked through a runtime variable are a scanner limitation and must be
- * recorded in `DYNAMIC_INVOKE_CALL_SITES` below.
+ * import aliases such as `import { invoke as invokeIpc }` and locally-declared
+ * passthrough wrappers that forward their first parameter to an invoke (the
+ * per-provider `invokeModelChannel` helpers) — resolves the channel names
+ * (string literals, `X_CHANNELS.KEY`, `IPC_CHANNELS.GROUP.KEY`, and group-alias
+ * locals like `const BACKEND = IPC_CHANNELS.BACKEND`), and reconciles them
+ * against the channels the seeders register. Channels only ever invoked
+ * through a runtime variable are a scanner limitation and must be recorded in
+ * `DYNAMIC_INVOKE_CALL_SITES` below.
  *
  * A NEW invoke call site referencing an unregistered channel fails this suite.
  * To make it pass, either bridge the channel in a seeder (preferred), add it to
@@ -40,18 +43,43 @@ const INCLUDED_FILES = /\.(ts|svelte)$/;
 const IMPORT_CLAUSE_RE = /import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*['"][^'"]+['"]/g;
 const INVOKE_ALIAS_RE = /\b(?:typedInvoke|invoke)\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)/g;
 
+/** Function declarations whose first parameter is a string (wrapper candidates). */
+const WRAPPER_DECL_RE =
+  /(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:<[^(]*?>)?\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*string/g;
+
+/**
+ * Collect locally-declared passthrough wrappers: functions whose string-typed
+ * first parameter is forwarded verbatim as the first argument of an invoke
+ * call (e.g. the per-provider `invokeModelChannel(channel)` helpers, which
+ * prefer `window.electronAPI.invoke(channel)`). The wrapper body's own invoke
+ * is dynamic (a bare parameter), so the concrete channels only exist at the
+ * wrapper's call sites — treating the wrapper name as an invoke head is what
+ * lets the audit see them (the 7 `*:get-models` channels escaped this way).
+ */
+function collectPassthroughWrapperNames(source: string): string[] {
+  const names: string[] = [];
+  for (const decl of source.matchAll(WRAPPER_DECL_RE)) {
+    const [, name, parameter] = decl;
+    if (name === 'invoke' || name === 'typedInvoke') continue;
+    const forwards = new RegExp(`\\binvoke\\s*(?:<[^(]*?>)?\\(\\s*${parameter}\\s*[,)]`);
+    if (forwards.test(source.slice(decl.index))) names.push(name);
+  }
+  return names;
+}
+
 /**
  * Build the invoke( / typedInvoke( call-head regex for one source file,
  * matching up to (but not consuming) the generic argument list or the opening
  * paren. Import aliases declared in the file (e.g. `import { invoke as
- * invokeIpc }`) are matched as call sites too, so aliased invokes cannot
- * escape the audit.
+ * invokeIpc }`) and locally-declared passthrough wrappers are matched as call
+ * sites too, so aliased and wrapped invokes cannot escape the audit.
  */
 function buildCallHeadRegex(source: string): RegExp {
   const names = new Set(['typedInvoke', 'invoke']);
   for (const clause of source.matchAll(IMPORT_CLAUSE_RE)) {
     for (const alias of clause[1].matchAll(INVOKE_ALIAS_RE)) names.add(alias[1]);
   }
+  for (const wrapper of collectPassthroughWrapperNames(source)) names.add(wrapper);
   const alternation = [...names].sort((a, b) => b.length - a.length).join('|');
   return new RegExp(`\\b(?:${alternation})\\s*(?=[<(])`, 'g');
 }
@@ -95,6 +123,18 @@ function extractFirstArgument(source: string, index: number): string | undefined
 const LITERAL_RE = /^['"`]([^'"`$]+)['"`]$/;
 const CHANNELS_CONST_RE = /^([A-Z][A-Z0-9_]*_CHANNELS)\.([A-Z0-9_]+)$/;
 const REGISTRY_REF_RE = /^IPC_CHANNELS\.([A-Z0-9_]+)\.([A-Z0-9_]+)$/;
+/** Group-alias local declarations, e.g. `const BACKEND = IPC_CHANNELS.BACKEND`. */
+const GROUP_ALIAS_DECL_RE =
+  /\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*IPC_CHANNELS\.([A-Z0-9_]+)\b/g;
+/** `ALIAS.KEY` argument shape, resolved through the file's group aliases. */
+const ALIAS_REF_RE = /^([A-Za-z_$][A-Za-z0-9_$]*)\.([A-Z0-9_]+)$/;
+
+/** Map per-file group-alias locals (alias name → IPC_CHANNELS group name). */
+function collectGroupAliases(source: string): Map<string, string> {
+  const aliases = new Map<string, string>();
+  for (const decl of source.matchAll(GROUP_ALIAS_DECL_RE)) aliases.set(decl[1], decl[2]);
+  return aliases;
+}
 
 function* walkRendererSources(dir: string): Generator<string> {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -134,6 +174,7 @@ function scanInvokedChannels(): ScanResult {
   for (const file of walkRendererSources(SRC_ROOT)) {
     const source = fs.readFileSync(file, 'utf8');
     const relative = path.relative(SRC_ROOT, file);
+    const groupAliases = collectGroupAliases(source);
     for (const match of source.matchAll(buildCallHeadRegex(source))) {
       const argument = extractFirstArgument(source, match.index + match[0].length);
       if (!argument) continue;
@@ -148,6 +189,9 @@ function scanInvokedChannels(): ScanResult {
         if (!channel) unresolved.push(`${site} :: ${argument}`);
       } else if ((constMatch = argument.match(REGISTRY_REF_RE))) {
         channel = resolveRegistryChannel(constMatch[1], constMatch[2]);
+        if (!channel) unresolved.push(`${site} :: ${argument}`);
+      } else if ((constMatch = argument.match(ALIAS_REF_RE)) && groupAliases.has(constMatch[1])) {
+        channel = resolveRegistryChannel(groupAliases.get(constMatch[1])!, constMatch[2]);
         if (!channel) unresolved.push(`${site} :: ${argument}`);
       }
       // Anything else (variables, wrapper parameters) is dynamic: the concrete
@@ -181,6 +225,14 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     // drops such call sites entirely — settings:getAll escaped to a runtime
     // UnbridgedMockIpcChannelError that way. Guards the depth-aware parser.
     expect(invoked.has('auto-update:get-state')).toBe(true);
+    // Passthrough-wrapper call site (`invokeModelChannel('droid:get-models')`,
+    // droid-models.client.ts). Guards the wrapper-name detection — the 7
+    // `*:get-models` channels escaped the audit through these wrappers.
+    expect(invoked.has('droid:get-models')).toBe(true);
+    // Group-alias local (`const BACKEND = IPC_CHANNELS.BACKEND` →
+    // `api.invoke(BACKEND.REQUEST, …)`, backend-transport.ts). Guards the
+    // per-file alias resolver.
+    expect(invoked.has('backend:request')).toBe(true);
     expect([...invoked.keys()].some((channel) => registered.has(channel))).toBe(true);
   });
 
@@ -192,12 +244,13 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     ).toEqual([]);
   });
 
-  it('every invoked channel is bridged, allowlisted, or a recorded audit finding', () => {
+  it('every invoked channel is bridged, allowlisted, exempt transport, or a recorded audit finding', () => {
     const uncovered = [...new Set([...invoked.keys(), ...DYNAMIC_INVOKE_CALL_SITES.keys()])]
       .filter(
         (channel) =>
           !registered.has(channel) &&
           !UNBRIDGED_INVOKE_ALLOWLIST.has(channel) &&
+          !LIVE_TRANSPORT_CHANNELS.has(channel) &&
           !KNOWN_UNBRIDGED_CHANNELS.has(channel),
       )
       .sort()
@@ -222,6 +275,18 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     expect(
       stale,
       'Bridged/allowlisted channels must be removed from KNOWN_UNBRIDGED_CHANNELS',
+    ).toEqual([]);
+  });
+
+  it('LIVE_TRANSPORT_CHANNELS entries stay un-mocked and still have call sites', () => {
+    // The exemption is only honest while the transport bypasses the mock
+    // router. A mock-bridged or call-site-less entry must be removed.
+    const dishonest = [...LIVE_TRANSPORT_CHANNELS].filter(
+      (channel) => registered.has(channel) || !invoked.has(channel),
+    );
+    expect(
+      dishonest,
+      'LIVE_TRANSPORT_CHANNELS entries must be invoked somewhere and never mock-bridged',
     ).toEqual([]);
   });
 
@@ -288,6 +353,23 @@ const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
+ * Live daemon transport — the renderer↔intentd JSON-RPC bridge
+ * (`backend-transport.ts`). These channels intentionally BYPASS the mock IPC
+ * router: they are invoked on the real `window.electronAPI` so migrated
+ * domains reach the live main-process JSON-RPC client, and in environments
+ * without a preload bridge `backendRequest()` throws a shaped
+ * `BackendError({ code: 'UNAVAILABLE' })` before any IPC is attempted. They
+ * must never be mock-bridged (a mock would shadow the daemon seam), so they
+ * are exempted explicitly here instead of parked as unbridged debt or hidden
+ * from the scan. (`backend:notification` is an event channel, not an invoke.)
+ */
+const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
+  'backend:request',
+  'backend:subscribe',
+  'backend:unsubscribe',
+]);
+
+/**
  * Audit findings (P3 FE audit): channels invoked by production renderer code
  * with NO mock-router bridge. Every invoke of these channels currently rejects
  * with UnbridgedMockIpcChannelError. Frozen debt — entries may only be REMOVED
@@ -308,6 +390,12 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'app:get-version',
   'archive_workspace',
   'auggie:authenticate',
+  // Surfaced by the passthrough-wrapper scan: the 7 `*:get-models` channels are
+  // invoked through per-provider `invokeModelChannel` helpers that prefer the
+  // real `window.electronAPI` bridge; in a pure-browser build they fall through
+  // to the mock router and reject. Daemon bridge (models.list, PROTOCOL §5.30)
+  // is separate model-catalog migration scope.
+  'auggie:get-models',
   'auggie:get-user-info',
   'auggie:install',
   // Surfaced by the alias-aware scan (4A-2 audit debt): invoked only through the
@@ -328,7 +416,11 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'changes:mark-agent-active',
   'changes:track-agent',
   'claude-code:check-availability',
+  // Passthrough-wrapper scan finding (see auggie:get-models).
+  'claude-code:get-models',
   'codex:check-availability',
+  // Passthrough-wrapper scan finding (see auggie:get-models).
+  'codex:get-models',
   'config:clear-cache',
   'config:get',
   'config:get-stats',
@@ -336,6 +428,8 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   // Surfaced by the alias-aware scan: invokeIpc site in acp-official permission-manager.ts.
   'config:set',
   'cortex:check-availability',
+  // Passthrough-wrapper scan finding (see auggie:get-models).
+  'cortex:get-models',
   'create_workspace',
   'debug:trigger-backend-resume',
   'delete_workspace',
@@ -345,6 +439,8 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'diffs:list',
   'diffs:update',
   'droid:check-availability',
+  // Passthrough-wrapper scan finding (see auggie:get-models).
+  'droid:get-models',
   'external-editors:open-with-other',
   'feature-codes:activate',
   'feature-codes:restart-app',
@@ -395,6 +491,8 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'mcp:remove-server',
   'mcp:transition-workspace',
   'opencode:check-availability',
+  // Passthrough-wrapper scan finding (see auggie:get-models).
+  'opencode:get-models',
   // Surfaced by the alias-aware scan: invokeIpc sites in panel-layout-history.client.ts.
   'panel-layout:load',
   'panel-layout:save',
@@ -406,6 +504,8 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'persistence:load-session',
   'persistence:save',
   'persistence:save-session',
+  // Passthrough-wrapper scan finding (see auggie:get-models).
+  'pi:get-models',
   'pi:install-mcp-adapter',
   'reference:resolve',
   'remote-fs:exists',
@@ -451,7 +551,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'workspace:cleanup',
   'workspace:clear-recent-repositories',
   'workspace:close',
-  'workspace:delete',
   'workspace:discover-repos',
   'workspace:duplicate',
   'workspace:find-repositories',

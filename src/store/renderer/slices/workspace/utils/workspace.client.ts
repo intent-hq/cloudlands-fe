@@ -334,14 +334,17 @@ export class WorkspaceClient {
   }
 
   async delete(id: WorkspaceId): Promise<Result<void, string>> {
-    const result = await this.invoke<void>(WORKSPACE_CHANNELS.DELETE, { id });
+    // Daemon-backed mutation (`workspace.delete`, PROTOCOL §5.1) through the
+    // AppClient seam; the legacy `workspace:delete` IPC path is gone.
+    const result = await appClient.workspaces.delete(id);
     // Clear cache for this workspace after deletion
-    if (result.ok) {
+    if (result.success) {
       this.clearCache(id);
       // Also clear list cache since this operation changes which/how workspaces are returned
       this.clearCache();
+      return { ok: true, data: undefined };
     }
-    return result;
+    return { ok: false, error: result.error || 'Failed to delete workspace' };
   }
 
   async archive(id: WorkspaceId): Promise<Result<void, string>> {
