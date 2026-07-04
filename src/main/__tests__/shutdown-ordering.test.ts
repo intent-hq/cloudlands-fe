@@ -238,6 +238,36 @@ describe('gracefulShutdown call ordering (AST)', () => {
     }
   });
 
+  it('confirmQuitWithRunningAgents consults the daemon, not the removed main-store stream state', () => {
+    // Regression guard for the quit crash: the old prompt read
+    // `agentBackendHandler.getActiveStreams()`, which reached into the removed
+    // main-process messageAccumulator Redux slice and threw
+    // `Cannot read properties of undefined (reading 'accumulators')` on every
+    // quit. The prompt must ask the daemon (listRespondingAgents) instead and
+    // never touch the dead store paths again.
+    const sf = parseIndex();
+    let fn: ts.FunctionLikeDeclaration | undefined;
+    const visit = (n: ts.Node) => {
+      if (fn) return;
+      if (
+        ts.isFunctionDeclaration(n) &&
+        n.name?.text === 'confirmQuitWithRunningAgents' &&
+        n.body
+      ) {
+        fn = n;
+        return;
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    expect(fn, 'confirmQuitWithRunningAgents not found in src/main/index.ts').toBeDefined();
+
+    const calls = callsitesIn(fn!.body!);
+    expect(calls.some((c) => c.text === 'listRespondingAgents')).toBe(true);
+    expect(calls.some((c) => c.text === 'agentBackendHandler.getActiveStreams')).toBe(false);
+    expect(calls.some((c) => c.text.includes('messageAccumulator'))).toBe(false);
+  });
+
   it('main process registers exactly one SIGINT and one SIGTERM handler (single-owner invariant)', () => {
     const sf = parseIndex();
     let sigint = 0;

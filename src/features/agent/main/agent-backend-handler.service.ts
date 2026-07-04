@@ -5556,9 +5556,13 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
   }
 
   /**
-   * Get list of active streaming agent IDs with accumulated content
+   * Get list of active streaming agent IDs
    * Used by frontend to re-register IPC handlers after page refresh/HMR
-   * Includes the accumulated content so the frontend can restore without losing chunks
+   *
+   * NOTE: message accumulation moved daemon-side with the main-process Redux
+   * store removal, so the old messageAccumulator reads here are gone and
+   * `accumulatedContent` is never populated anymore (the optional field is
+   * kept for wire compatibility with existing consumers).
    */
   public getActiveStreams(): {
     agentId: string;
@@ -5577,12 +5581,9 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       accumulatedContent?: { content: string; contentBlocks: ContentBlock[] };
     }[] = [];
 
-    // Log all active session IDs in the messageAccumulator for debugging
-    const accumulatorSessionIds = messageAccumulator.getActiveSessionIds();
-    logger.debug('getActiveStreams: checking messageAccumulator state', {
+    logger.debug('getActiveStreams: checking stream tracking state', {
       streamStartTimesCount: this.streamStartTimes.size,
       streamStartTimesAgentIds: Array.from(this.streamStartTimes.keys()),
-      accumulatorSessionIds,
     });
 
     // Collect stale stream IDs to clean up after iteration
@@ -5593,40 +5594,16 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       const workspaceId = this.streamWorkspaceIds.get(agentId) || '';
       const assistantAppMessageId = this.streamAssistantAppMessageIds.get(agentId);
 
-      // Check if this is a stale stream entry:
-      // - No provider exists (stream not actually running)
-      // - No accumulated content (nothing was received)
-      // These are likely leftover entries from streams that ended but weren't cleaned up properly.
+      // Check if this is a stale stream entry: no provider exists (stream not
+      // actually running). These are likely leftover entries from streams that
+      // ended but weren't cleaned up properly.
       const hasProvider = this.providers.has(agentId);
 
-      // Get accumulated content from messageAccumulator (single source of truth for backend)
-      // This includes all chunks received, even those the frontend missed during reload
-      let accumulatedContent: { content: string; contentBlocks: ContentBlock[] } | undefined;
-      try {
-        const partial = messageAccumulator.getPartialContent(agentId);
-        logger.debug('getActiveStreams: got partial content from accumulator', {
-          agentId,
-          workspaceId,
-          hasContent: !!partial.content,
-          contentLength: partial.content?.length || 0,
-          contentBlocksCount: partial.contentBlocks?.length || 0,
-          hasProvider,
-        });
-        if (partial.content || partial.contentBlocks.length > 0) {
-          accumulatedContent = partial;
-        }
-      } catch (error) {
-        logger.warn('getActiveStreams: could not get accumulated content for agent', {
-          agentId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-
-      // If there's no provider AND no accumulated content, this is a stale stream entry.
+      // If there's no provider, this is a stale stream entry.
       // Don't report it as active - instead mark for cleanup.
-      if (!hasProvider && !accumulatedContent) {
+      if (!hasProvider) {
         logger.warn(
-          'getActiveStreams: detected stale stream entry (no provider, no content), marking for cleanup',
+          'getActiveStreams: detected stale stream entry (no provider), marking for cleanup',
           {
             agentId,
             workspaceId,
@@ -5644,7 +5621,6 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         workspaceId,
         startTime,
         assistantAppMessageId,
-        accumulatedContent,
       });
     }
 

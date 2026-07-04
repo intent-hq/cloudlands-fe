@@ -343,6 +343,7 @@ import { isInstallingUpdate } from '../features/auto-update/main/auto-update.ser
 import {
   registerBackendHandlers,
   disposeBackendClient,
+  getBackendClient,
 } from '../features/backend/main/backend.ipc';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 import { setupSandboxIPC } from '../features/sandbox/main/sandbox.ipc';
@@ -375,6 +376,7 @@ import { setupWorkspaceSummaryIPC } from '../features/workspace/main/workspace-s
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
 import { claimDownloadAttribution } from './download-attribution';
+import { listRespondingAgents } from './running-agents';
 import { prefetchProviderModelCaches } from './utils/model-pool';
 
 import { agentBackendHandler } from '../features/agent/main/agent-backend-handler.service';
@@ -1885,20 +1887,25 @@ app.whenReady().then(async () => {
  * check sees zero and silently skips the prompt.
  */
 async function confirmQuitWithRunningAgents(): Promise<boolean> {
-  const activeStreams = agentBackendHandler.getActiveStreams();
-  if (activeStreams.length === 0) {
+  // Live agent turns run inside the intentd daemon (agent.sendMessage, PROTOCOL
+  // §5.5), so the daemon's per-agent `isResponding` flag is the source of truth
+  // for "still running". The old check read main-process stream/accumulator
+  // state that no longer exists post-port (the main Redux store was removed),
+  // which crashed with an unhandled rejection on every quit.
+  const respondingAgents = await listRespondingAgents(getBackendClient());
+  if (respondingAgents.length === 0) {
     return true;
   }
 
   logger.info('Active agents detected during quit attempt', {
-    count: activeStreams.length,
-    agentIds: activeStreams.map((s) => s.agentId),
+    count: respondingAgents.length,
+    agentIds: respondingAgents.map((s) => s.agentId),
   });
 
   const result = await dialog.showMessageBox({
     type: 'warning',
     title: 'Agents Running',
-    message: `${activeStreams.length} agent${activeStreams.length > 1 ? 's are' : ' is'} still running.`,
+    message: `${respondingAgents.length} agent${respondingAgents.length > 1 ? 's are' : ' is'} still running.`,
     detail:
       'Quitting now will stop all running agents and they may lose progress. Are you sure you want to quit?',
     buttons: ['Cancel', 'Quit Anyway'],

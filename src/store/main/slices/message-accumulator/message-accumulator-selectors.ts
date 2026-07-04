@@ -1,5 +1,11 @@
 /**
  * Message Accumulator Selectors (Main Process)
+ *
+ * The main-process Redux store was removed (see redux-store-bridge.ts), so
+ * `getMainState()` returns an empty snapshot and the `messageAccumulator`
+ * slice is never present. Every selector must tolerate the missing slice —
+ * an unguarded `state.messageAccumulator.accumulators` read crashes any
+ * legacy caller (it took down the quit path via getActiveStreams).
  */
 
 import { createMainSelector } from '../../create-main-selector';
@@ -15,13 +21,13 @@ import { EMPTY_STATS } from './message-accumulator-types';
 export const selectAccumulator = createMainSelector<
   [sessionId: string],
   SerializedAccumulatedMessage | undefined
->((state, sessionId) => state.messageAccumulator.accumulators[sessionId]);
+>((state, sessionId) => state.messageAccumulator?.accumulators[sessionId]);
 
 export const selectPartialContent = createMainSelector<
   [sessionId: string],
   { content: string; contentBlocks: ContentBlock[] }
 >((state, sessionId) => {
-  const acc = state.messageAccumulator.accumulators[sessionId];
+  const acc = state.messageAccumulator?.accumulators[sessionId];
   if (!acc) return { content: '', contentBlocks: [] };
 
   const blocks = buildContentBlocksFromRanges(acc);
@@ -42,15 +48,15 @@ export const selectPartialContent = createMainSelector<
 // ---------------------------------------------------------------------------
 
 export const selectActiveSessionIds = createMainSelector<[], string[]>((state) =>
-  Object.keys(state.messageAccumulator.accumulators),
+  Object.keys(state.messageAccumulator?.accumulators ?? {}),
 );
 
 export const selectAccumulatorStats = createMainSelector<[], AccumulatorStats>(
-  (state) => state.messageAccumulator.stats ?? EMPTY_STATS,
+  (state) => state.messageAccumulator?.stats ?? EMPTY_STATS,
 );
 
 export const selectHasAccumulator = createMainSelector<[sessionId: string], boolean>(
-  (state, sessionId) => sessionId in state.messageAccumulator.accumulators,
+  (state, sessionId) => sessionId in (state.messageAccumulator?.accumulators ?? {}),
 );
 
 function buildContentBlocksFromRanges(acc: SerializedAccumulatedMessage): ContentBlock[] {
