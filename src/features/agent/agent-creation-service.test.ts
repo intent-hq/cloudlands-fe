@@ -180,4 +180,77 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     await flush();
     expect(createAgent).not.toHaveBeenCalled();
   });
+
+  // Post-create bootstrap regression: the workspace page's
+  // activatePendingInitialAgent (fed by the creation dialog's pending config)
+  // must reach the create seam with the prompt as initialMessage and the
+  // selected specialist forwarded, so the initial agent is created and the
+  // prompt is sent (agentFactory.createAgent sends initialMessage itself).
+  it("post-create bootstrap: pending dialog config activates the agent with its prompt", async () => {
+    const { activatePendingInitialAgent } = await import(
+      "../../routes/workspace/[id]/composables/initial-agent-config"
+    );
+    const WS = "ws-bootstrap";
+    const AGENT = "agent-bootstrap";
+    seedWorkspace(WS);
+    createAgent.mockResolvedValueOnce({
+      success: true,
+      agent: makeSession(AGENT, WS, { name: "Coordinator" }),
+      agentId: AGENT,
+    });
+
+    const activated = activatePendingInitialAgent(
+      WS,
+      AGENT,
+      {
+        agentId: AGENT,
+        name: "Coordinator",
+        model: "claude-opus-4-7",
+        specialist: "coordinator",
+        behaviorPrompt: "You are the coordinator.",
+        prompt: "Initialize submodules",
+        agentType: "workspace",
+        provider: "auggie",
+        metadata: { source: "compact-initializer" },
+        isFirstWorkspaceAgent: true,
+      },
+      appStore.dispatch,
+    );
+    expect(activated).toBe(true);
+    await waitFor(
+      () => appStore.state.workspaceAgents.byWorkspaceId[WS]?.activeAgentId === AGENT,
+    );
+
+    expect(createAgent).toHaveBeenCalledTimes(1);
+    const [, config] = createAgent.mock.calls[0];
+    expect(config).toMatchObject({
+      id: AGENT,
+      initialMessage: "Initialize submodules",
+      model: "claude-opus-4-7",
+      provider: "auggie",
+      behaviorPrompt: "You are the coordinator.",
+      source: "workspace-initializer",
+    });
+    expect(config.metadata).toMatchObject({ isInitialAgent: true, specialist: "coordinator" });
+    expect(appStore.state.workspaceAgents.byWorkspaceId[WS]?.activeAgentId).toBe(AGENT);
+  });
+
+  it("post-create bootstrap: empty prompt spawns nothing", async () => {
+    const { activatePendingInitialAgent } = await import(
+      "../../routes/workspace/[id]/composables/initial-agent-config"
+    );
+    const WS = "ws-bootstrap-empty";
+    seedWorkspace(WS);
+
+    const activated = activatePendingInitialAgent(
+      WS,
+      "agent-bootstrap-empty",
+      { agentId: "agent-bootstrap-empty", prompt: undefined },
+      appStore.dispatch,
+    );
+    expect(activated).toBe(false);
+    await flush();
+    await flush();
+    expect(createAgent).not.toHaveBeenCalled();
+  });
 });

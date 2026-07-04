@@ -30,7 +30,10 @@
   dispatchCreateFileRequest,
   handleCommandPaletteCreateFile,
 } from './composables/create-file-command';
-  import { hydrateInitialAgentConfig } from './composables/initial-agent-config';
+  import {
+  activatePendingInitialAgent,
+  hydrateInitialAgentConfig,
+} from './composables/initial-agent-config';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import {
   commandPaletteActionConsumed,
@@ -694,19 +697,32 @@
               );
             }
 
-            // Agent activation is handled by the agent-loading-saga's restoreInitialAgent.
-            // Do NOT activate or create sessions here — it causes duplicate agent creation.
-            // The saga handles this correctly with proper race-condition guards.
+            // Activate the pending initial agent: the daemon ignores `initialAgent`
+            // on workspace.create, and the agent-loading-saga that used to restore
+            // it on mount was removed, so this dispatch is what creates the agent
+            // in the backend and sends the initial prompt. The agent-creation
+            // middleware's per-agent lock dedupes against the stay-on-home-page
+            // dispatch, and an empty prompt spawns nothing.
+            const activated = activatePendingInitialAgent(
+              capturedWorkspaceId,
+              agentId,
+              config,
+              appStore.dispatch,
+            );
+            logger.info('[WorkspacePage] Pending initial agent activation', {
+              workspaceId: capturedWorkspaceId,
+              agentId,
+              activated,
+            });
 
-            // Skip agent panel opening for onboarding-created workspaces — the saga
-            // handles everything. Opening the panel here too causes a duplicate agent.
+            // Skip agent panel opening for onboarding-created workspaces —
+            // opening the panel here too causes a duplicate agent.
             const isOnboardingSource = config?.metadata?.source === 'onboarding';
             if (isOnboardingSource) {
               logger.info(
-                '[WorkspacePage] Skipping agent panel open for onboarding workspace — saga owns this',
+                '[WorkspacePage] Skipping agent panel open for onboarding workspace',
                 { workspaceId: capturedWorkspaceId, agentId },
               );
-              // Clean up pending markers — saga will pick up from Redux
               if (!capturedWorkspaceId.startsWith('optimistic-')) {
                 appStore.dispatch(clearInitialAgentConfig(capturedWorkspaceId));
                 sessionStorage.removeItem(pendingAgentKey);
