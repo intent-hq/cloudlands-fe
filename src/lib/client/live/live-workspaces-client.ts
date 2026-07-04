@@ -14,6 +14,7 @@ import type {
   MutationResult,
   SubscriptionHandler,
   Unsubscribe,
+  WorkspaceCreateResult,
   WorkspacesClient,
   WorkspaceUpdateResult,
 } from "../app-client";
@@ -92,10 +93,29 @@ export class LiveWorkspacesClient implements WorkspacesClient {
 
   // Mutations forward to the daemon (§7.1) and fold the outcome into a
   // MutationResult; daemon `workspace:*` events drive the reactive refresh.
-  async create(request: CreateWorkspaceRequest): Promise<MutationResult> {
-    // create requires an idempotencyKey (§5.6); the daemon ignores unknown
-    // params, so the full request is forwarded for forward-compatibility.
-    return runMutation("workspace.create", { ...request, idempotencyKey: newIdempotencyKey() });
+  /**
+   * `workspace.create` (§5.1): requires an idempotencyKey (§5.6); the daemon
+   * ignores unknown params, so the full request is forwarded for
+   * forward-compatibility. The daemon returns `{ workspace }` — normalized and
+   * surfaced on the result so the creation flow (legacy `workspace:create`
+   * bridge) can hand callers the created entity without a follow-up read.
+   */
+  async create(request: CreateWorkspaceRequest): Promise<WorkspaceCreateResult> {
+    try {
+      const result = await backendRequest<{ workspace?: unknown }>("workspace.create", {
+        ...request,
+        idempotencyKey: newIdempotencyKey(),
+      });
+      const raw = result?.workspace;
+      return raw && typeof raw === "object"
+        ? { success: true, workspace: normalizeWorkspace(raw as Record<string, unknown>) }
+        : { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const conflict = extractConflict(error);
+      if (conflict) return { success: false, error: message, conflict };
+      return { success: false, error: message };
+    }
   }
 
   /**

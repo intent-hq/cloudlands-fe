@@ -36,6 +36,39 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     );
   });
 
+  it("create surfaces the daemon's { workspace } normalized on the result", async () => {
+    // PROTOCOL §5.1: workspace.create → { workspace: Workspace }. The legacy
+    // `workspace:create` bridge hands this to the creation flow as
+    // `result.data` (navigation needs the new id).
+    mockedRequest.mockResolvedValueOnce({
+      workspace: {
+        id: "33333333-3333-4333-8333-333333333333",
+        title: "Fresh",
+        branch: "intent/fresh",
+        status: "Active",
+      },
+    });
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: "Fresh" } as CreateWorkspaceRequest);
+
+    expect(result.success).toBe(true);
+    expect(result.workspace).toMatchObject({
+      id: "33333333-3333-4333-8333-333333333333",
+      title: "Fresh",
+      branch: "intent/fresh",
+    });
+  });
+
+  it("create folds a daemon error into { success: false, error }", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("worktree add failed"));
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: "Broken" } as CreateWorkspaceRequest);
+
+    expect(result).toEqual({ success: false, error: "worktree add failed" });
+  });
+
   it("create generates a distinct idempotencyKey per call", async () => {
     mockedRequest.mockResolvedValue({ id: "ws-x" });
     const client = new LiveWorkspacesClient();

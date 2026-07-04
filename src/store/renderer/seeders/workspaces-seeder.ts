@@ -7,18 +7,21 @@
  * live intentd daemon (the mock workspace fixtures were removed), so this seeder
  * hydrates the store from live data rather than from a mock.
  *
- * Also registers the renderer→main IPC mock handler for `workspace:open` (the
- * route loader entry point in `use-workspace-loader.svelte.ts`). With no real
- * Electron main process driving this build, that channel would otherwise fall
- * through to the mock router's `undefined` default and surface as
- * "No response received" → "Failed to open workspace". The handler resolves
- * the workspace via the live AppClient seam and returns it in the
- * CommandResponse shape the legacy main-process handler produced, so
+ * Also registers the renderer→main IPC mock handlers for the legacy
+ * `workspace:open` / `workspace:list` / `workspace:create` channels that
+ * `workspace.client.ts` still invokes (route loader, RepoSelector, and the
+ * workspace-creation flow in CompactWorkspaceInitializer / OnboardingPage /
+ * AcceptChangesPanel). With no real Electron main process driving this build,
+ * those channels would otherwise reject with UnbridgedMockIpcChannelError.
+ * Each handler resolves through the live AppClient seam (`workspace.list` /
+ * `workspace.create` / `workspace.get`, PROTOCOL §5.1) and returns the
+ * CommandResponse shape the legacy main-process handlers produced, so
  * `workspace.client.ts` `normalizeResponse` folds it into `{ ok: true, data }`.
  */
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import { appClient } from "$lib/client";
+import type { CreateWorkspaceRequest } from "$shared/types";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
   loadRecencyData,
@@ -50,6 +53,35 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.OPEN, async (arg) => {
     return { success: false, error: "Workspace not found" };
   }
   return { success: true, data: workspace };
+});
+
+// `workspace:list` — the RepoSelector recent-repo scan and every
+// `workspaceClient.list()` read. The legacy handler returned the paginated
+// `{ workspaces }` wrapper or a bare array; the bare array is returned here and
+// `WorkspaceClient.list()` already handles both. The legacy `lite` flag is
+// ignored: the daemon's `workspace.list` result is the only shape it serves.
+registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, async () => {
+  const workspaces = await appClient.workspaces.list();
+  return { success: true, data: workspaces };
+});
+
+// `workspace:create` — the workspace-creation flow (CompactWorkspaceInitializer,
+// OnboardingPage, AcceptChangesPanel). Callers need the created Workspace back
+// (`result.data.id` drives navigation), so the seam surfaces the daemon's
+// `{ workspace }` result. A success without a workspace is a wire divergence
+// from PROTOCOL §5.1 and fails loud rather than handing callers `undefined`.
+registerMockIpcHandler(WORKSPACE_CHANNELS.CREATE, async (arg) => {
+  const result = await appClient.workspaces.create(arg as CreateWorkspaceRequest);
+  if (!result.success) {
+    return { success: false, error: result.error || "Failed to create workspace" };
+  }
+  if (!result.workspace) {
+    return {
+      success: false,
+      error: "workspace.create returned no workspace (PROTOCOL §5.1 divergence)",
+    };
+  }
+  return { success: true, data: result.workspace };
 });
 
 registerMockSeeder("workspaces", async ({ store, client }) => {

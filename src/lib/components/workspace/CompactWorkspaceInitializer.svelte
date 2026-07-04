@@ -1796,14 +1796,17 @@
       const workspace = result.data;
 
       // If a PR context mention was used, store the PR number on the workspace
-      // so PR discovery can find the right PR later.
+      // so PR discovery can find the right PR later. Daemon-backed
+      // (`workspace.update`, PROTOCOL §5.1) via workspaceClient — the legacy
+      // `workspace:update` IPC channel is unbridged in this build.
       if (selectedPRNumber && workspace.id) {
-        invoke('workspace:update', {
-          id: workspace.id,
-          prNumber: selectedPRNumber,
-        }).catch((err) => {
-          logger.warn('Failed to store PR number on workspace', { error: err });
-        });
+        void workspaceClient
+          .update({ id: workspace.id, prNumber: selectedPRNumber })
+          .then((updateResult) => {
+            if (!updateResult.ok) {
+              logger.warn('Failed to store PR number on workspace', { error: updateResult.error });
+            }
+          });
       }
 
       // Clear any stale panel layout data for this workspace ID.

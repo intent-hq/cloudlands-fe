@@ -392,7 +392,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'workspace:cleanup',
   'workspace:clear-recent-repositories',
   'workspace:close',
-  'workspace:create',
   'workspace:delete',
   'workspace:discover-repos',
   'workspace:duplicate',
@@ -400,8 +399,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'workspace:get',
   'workspace:get-info',
   'workspace:get-recent-repositories',
-  'workspace:get-root',
-  'workspace:list',
   'workspace:openFile',
   'workspace:openLog',
   'workspace:openMetric',
@@ -415,7 +412,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   // Surfaced by the alias-aware scan: invokeIpc site in workspace.client.ts.
   'workspace:trigger-check',
   'workspace:unarchive',
-  'workspace:update',
   'workspace:update-current-context',
   'workspace:update_git_info',
 ]);

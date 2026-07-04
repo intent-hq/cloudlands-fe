@@ -48,6 +48,13 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // flush. There is no daemon-side log sink yet (P3-1.5 retirement candidate);
   // resolving undefined keeps the logger's in-memory behavior harmless.
   ['log:persist-renderer-logs', undefined],
+  // Legacy notes-on-disk workspace root (`WorkspaceConfig.paths.workspace(id)`,
+  // used to build `.workspace/notes/<id>.md` paths). The daemon owns notes in
+  // SQLite (PROTOCOL §5.2) — this build has no on-disk notes mirror, so there
+  // is no root to return. The only production caller (NoteTabType's
+  // noteFilePath → OpenComboButton) guards `if (rootPath)` and hides the
+  // open-file affordance when absent.
+  ['workspace:get-root', undefined],
 ]);
 
 /** Rejection raised when an invoke hits a channel with no registered handler. */

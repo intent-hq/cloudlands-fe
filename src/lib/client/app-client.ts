@@ -167,6 +167,11 @@ export interface WorkspaceUpdateResult extends MutationResult {
   workspace?: Workspace;
 }
 
+/** `workspace.create` outcome — carries the daemon's created workspace on success. */
+export interface WorkspaceCreateResult extends MutationResult {
+  workspace?: Workspace;
+}
+
 export interface WorkspacesClient {
   list(): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
@@ -178,7 +183,12 @@ export interface WorkspacesClient {
    * monitoring) that the legacy main-process handler used to start.
    */
   open(id: string): Promise<Workspace | null>;
-  create(request: CreateWorkspaceRequest): Promise<MutationResult>;
+  /**
+   * Create a workspace (`workspace.create`, §5.1). The daemon returns
+   * `{ workspace }` — surfaced as `workspace` so the legacy `workspace:create`
+   * bridge can hand callers the created entity without a follow-up read.
+   */
+  create(request: CreateWorkspaceRequest): Promise<WorkspaceCreateResult>;
   /**
    * Update workspace fields (`workspace.update`, §5.1). The FE request `id`
    * maps to the wire `workspaceId`. On success the daemon's authoritative

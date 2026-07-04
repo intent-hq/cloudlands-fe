@@ -736,13 +736,16 @@
         worktreePath: workspace.worktreePath,
       });
 
+      // Daemon-backed (`workspace.update`, PROTOCOL §5.1) via workspaceClient —
+      // the legacy `workspace:update` IPC channel is unbridged in this build.
       if (selectedPRNumber && workspace.id) {
-        invoke('workspace:update', {
-          id: workspace.id,
-          prNumber: selectedPRNumber,
-        }).catch((err) => {
-          logger.warn('Failed to store PR number on workspace', { error: err });
-        });
+        void workspaceClient
+          .update({ id: workspace.id, prNumber: selectedPRNumber })
+          .then((updateResult) => {
+            if (!updateResult.ok) {
+              logger.warn('Failed to store PR number on workspace', { error: updateResult.error });
+            }
+          });
       }
 
       // Clear stale layout/storage
