@@ -1269,21 +1269,8 @@
         appStore.dispatch(setWorkspaceModel({ workspaceId: newWorkspace.id, model: selectedModel }));
       }
 
-      // Store the initial agent configuration for the workspace page to pick up
-      const agentConfigData = {
-        agentId: initialAgent.agentId,
-        config: {
-          ...initialAgent,
-          isInitialAgent: true,
-          isFirstWorkspaceAgent: true,
-        },
-        timestamp: Date.now(),
-      };
-
-      sessionStorage.setItem(
-        `workspace:${newWorkspace.id}:initial-agent-pending`,
-        JSON.stringify(agentConfigData),
-      );
+      // Initial-agent lifecycle (creation + initial-message delivery) is
+      // owned by the daemon on workspace.create; no pending-agent stash here.
 
       toast.success('New space created!');
 

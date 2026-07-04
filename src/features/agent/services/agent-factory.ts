@@ -616,17 +616,6 @@ export class UnifiedAgentFactory {
           messageLength: messageToSend.length,
           contextReferencesCount: normalized.contextReferences?.length || 0,
         });
-        // Notify the caller that we are committing to the initial send so it
-        // can mark sent-state (e.g., sessionStorage messageSent) before the
-        // fire-and-forget send races with the ChatPanel fallback.
-        try {
-          config.onInitialSendCommit?.();
-        } catch (error) {
-          logger.warn('onInitialSendCommit hook failed', {
-            agentId: agent.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
         // Send initial message asynchronously so drawer can open immediately
         // Don't await - let it run in the background
         // The ChatPanel will set up streaming handlers immediately on mount

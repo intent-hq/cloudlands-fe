@@ -24,7 +24,6 @@
   } from './panel-tab-cache';
   import { selectIsDragging } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import {
-    onMount,
     untrack,
     type Snippet,
   } from 'svelte';
@@ -155,20 +154,11 @@
   // Get tabs that should be rendered (exist in panel AND are in cache)
   let tabsToRender = $derived(panel.tabs.filter((tab) => cachedTabIds.has(tab.id)));
 
-  // Detect fresh workspace creation for tab bar slide-down animation
+  // Fresh workspace creation used to trigger a tab-bar slide-down animation via
+  // an `initial-agent-pending` sessionStorage marker. The daemon-owned create
+  // flow doesn't stash that marker, so the animation is disabled here — the
+  // remaining CSS wiring stays inert.
   let animateTabBar = $state(false);
-  onMount(() => {
-    const pendingKey = Object.keys(sessionStorage).find((k) =>
-      k.endsWith(':initial-agent-pending'),
-    );
-    if (pendingKey && sessionStorage.getItem(pendingKey)) {
-      animateTabBar = true;
-      // Clear after animation completes
-      setTimeout(() => {
-        animateTabBar = false;
-      }, 700);
-    }
-  });
 
   // Custom MIME type for tab drag (must match PanelTabBar)
   const TAB_DRAG_MIME = 'application/x-panel-tab';

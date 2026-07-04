@@ -13,7 +13,6 @@
 } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
   import { track } from '$lib/services/analytics';
-  import { WorkspaceId } from '$shared/types/branded-ids';
   import {
   SETUP_SCRIPT_TEMPLATES,
   getTemplateContent,
@@ -49,11 +48,7 @@
   selectAvailableModels,
 } from '$store/renderer/slices/model/model-selectors';
   import { setWorkspaceModel } from '$store/renderer/slices/model/model-slice';
-  import {
-  activateInitialAgentRequested,
-  setInitialAgentConfig,
-  setInitialAgentId,
-} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
   setWorkspaceEntity,
   updateWorkspaceEntity,
@@ -1869,38 +1864,10 @@
         });
       }
 
-      // NOTE: resolvedBehaviorPrompt was resolved earlier and is now in initialAgent.behaviorPrompt
-
-      // Store initial agent configuration for the workspace page to pick up
-      const agentConfigData = {
-        agentId: initialAgent.agentId,
-        config: {
-          ...initialAgent,
-          behaviorPrompt: resolvedBehaviorPrompt, // Include resolved behavior prompt
-          isInitialAgent: true,
-          isFirstWorkspaceAgent: true,
-        },
-        timestamp: Date.now(),
-      };
-
-      // Store pending agent config with timestamp (workspace page checks this)
-      sessionStorage.setItem(
-        `workspace:${workspace.id}:initial-agent-pending`,
-        JSON.stringify(agentConfigData),
-      );
-
-      // Also dispatch into Redux so the workspace page can read it without sessionStorage
-      appStore.dispatch(setInitialAgentConfig(workspace.id, agentConfigData));
+      // Initial-agent delivery (message + sends) is owned by the daemon; the
+      // FE only records which agent is the initial one so the UI can highlight
+      // and focus it.
       appStore.dispatch(setInitialAgentId(workspace.id, initialAgent.agentId));
-
-      // Store agent config for AuggieChatPanel to pick up
-      sessionStorage.setItem(
-        `workspace:${workspace.id}:agent-config`,
-        JSON.stringify(agentConfigData.config),
-      );
-
-      // Store the initial agent ID
-      sessionStorage.setItem(`workspace:${workspace.id}:initial-agent-id`, initialAgent.agentId);
 
       // Pre-store the workspace state with the drawer open. The workspace-navigation
       // saga owns persistence for workspace state.
@@ -1925,34 +1892,6 @@
             },
           }),
         );
-
-        // Request initial agent activation through the workspace-agent saga.
-        // When staying on home page, the workspace page flow that normally does this is bypassed.
-        logger.info('[CompactWorkspaceInitializer] Requesting agent session for home page', {
-          workspaceId: workspace.id,
-          agentId: initialAgent.agentId,
-          hasPrompt: !!initialAgent.prompt,
-          specialist: specialistId,
-          hasBehaviorPrompt: !!resolvedBehaviorPrompt,
-          behaviorPromptLength: resolvedBehaviorPrompt?.length || 0,
-        });
-        appStore.dispatch(activateInitialAgentRequested(workspace.id, initialAgent.agentId, {
-          id: initialAgent.agentId,
-          name: agentName,
-          workspaceId: WorkspaceId(workspace.id),
-          model: initialAgent.model,
-          provider: selectedProvider,
-          agentType: initialAgent.agentType,
-          initialMessage: initialAgent.prompt,
-          contextReferences: initialAgent.contextReferences,
-          imageBlocks: initialAgent.imageBlocks,
-          behaviorPrompt: resolvedBehaviorPrompt,
-          metadata: {
-            ...initialAgent.metadata,
-            isInitialAgent: true,
-            isFirstWorkspaceAgent: true,
-          },
-        }));
       } else {
         await goto(`/workspace/${workspace.id}`);
       }

@@ -63,10 +63,7 @@
   extractLinearIssue,
   extractSentryIssue,
 } from '$features/onboarding/utils/parse-context-references';
-  import {
-  setInitialAgentConfig,
-  setInitialAgentId,
-} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { selectLastUsedScriptForRepo } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
   import {
   SETUP_SCRIPT_TEMPLATES,
@@ -787,41 +784,10 @@
         });
       }
 
-      const agentConfigData = {
-        agentId: String(agentId),
-        config: {
-          agentId: String(agentId),
-          name: 'Agent',
-          model: effectiveModel,
-          prompt,
-          agentType,
-          provider,
-          behaviorPrompt,
-          specialist: specialistId,
-          contextReferences: contextReferences.length > 0 ? contextReferences : undefined,
-          imageBlocks: imageBlocks.length > 0 ? imageBlocks : undefined,
-          isInitialAgent: true,
-          isFirstWorkspaceAgent: true,
-          metadata: {
-            source: 'onboarding',
-            isInitialAgent: true,
-            isFirstWorkspaceAgent: true,
-            specialist: specialistId,
-          },
-        },
-        timestamp: Date.now(),
-      };
-      sessionStorage.setItem(
-        `workspace:${workspace.id}:initial-agent-pending`,
-        JSON.stringify(agentConfigData),
-      );
-      appStore.dispatch(setInitialAgentConfig(workspace.id, agentConfigData));
+      // Initial-agent delivery (message + sends) is owned by the daemon; the
+      // FE only records which agent is the initial one so the UI can highlight
+      // and focus it.
       appStore.dispatch(setInitialAgentId(workspace.id, String(agentId)));
-      sessionStorage.setItem(
-        `workspace:${workspace.id}:agent-config`,
-        JSON.stringify(agentConfigData.config),
-      );
-      sessionStorage.setItem(`workspace:${workspace.id}:initial-agent-id`, String(agentId));
 
       appStore.dispatch(
         hydrateWorkspaceNavigation(workspace.id, {

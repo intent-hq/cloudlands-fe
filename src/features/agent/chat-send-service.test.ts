@@ -42,10 +42,7 @@ import {
   removeQueuedMessageRequested,
   replaceAgentQueue,
 } from "$store/renderer/slices/agent-queue/agent-queue-slice";
-import {
-  sendMessage,
-  sendInitialMessageRequested,
-} from "$store/renderer/slices/chat-state/chat-state-slice";
+import { sendMessage } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { selectChatAgentState } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
 
@@ -265,84 +262,17 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toContain("ws-missing");
   });
 
-  it("sendInitialMessageRequested routes through lifecycle when a message is present", async () => {
-    appStore.dispatch(
-      sendInitialMessageRequested(AGENT, {
-        wsId: WS,
-        message: "kickoff",
-        imageBlocks: null,
-        contextReferences: null,
-      }),
-    );
-    await flush();
-    await flush();
-
-    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
-    expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("kickoff");
-  });
-
-  it("sendInitialMessageRequested with alreadySent=true is a no-op", async () => {
-    appStore.dispatch(
-      sendInitialMessageRequested(AGENT, {
-        wsId: WS,
-        message: "already done",
-        alreadySent: true,
-      }),
-    );
+  it("regression (Bugs 20/14): the FE middleware never sends an initial message on create — the daemon owns initial-message delivery, so no lifecycle send fires without an explicit ChatPanel `sendMessage` dispatch", async () => {
+    // Prior wiring: agent-factory's fire-and-forget send + ChatPanel's
+    // mount-time `sendInitialMessageRequested` dispatch could race and
+    // double-send. Both paths are gone — the daemon harvests
+    // `metadata.initialMessage` on workspace.create and calls
+    // `AgentManager::send_message` itself. The FE must not attempt any
+    // send purely as a side-effect of workspace/agent creation.
     await flush();
     await flush();
 
     expect(lifecycleSendMessage).not.toHaveBeenCalled();
-  });
-
-  it("sendInitialMessageRequested WITHOUT a message fails loudly via chatSendFailed (regression: silent no-op)", async () => {
-    // Regression: ChatPanel's activation fallback used to dispatch
-    // `sendInitialMessageRequested(agentId, { wsId })` with no `message`, and
-    // the middleware silently ignored it — the initial message never reached
-    // agent.sendMessage. The malformed dispatch must now surface as a send
-    // failure instead of vanishing.
-    appStore.dispatch(sendInitialMessageRequested(AGENT, { wsId: WS }));
-    await flush();
-    await flush();
-
-    expect(lifecycleSendMessage).not.toHaveBeenCalled();
-    expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toContain("message");
-  });
-
-  it("sendInitialMessageRequested WITHOUT a wsId fails loudly via chatSendFailed", async () => {
-    appStore.dispatch(
-      sendInitialMessageRequested(AGENT, {
-        message: "kickoff",
-      } as Parameters<typeof sendInitialMessageRequested>[1]),
-    );
-    await flush();
-    await flush();
-
-    expect(lifecycleSendMessage).not.toHaveBeenCalled();
-    expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toContain("wsId");
-  });
-
-  it("sendInitialMessageRequested with imageBlocks but no text still routes through lifecycle", async () => {
-    // Mirrors the activation path: an image-only initial config is sendable.
-    appStore.dispatch(
-      sendInitialMessageRequested(AGENT, {
-        wsId: WS,
-        message: "",
-        imageBlocks: [{ type: "image", data: "abc", mimeType: "image/png" }],
-      }),
-    );
-    await flush();
-    await flush();
-
-    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
-    const [, contentArg, , optionsArg] = lifecycleSendMessage.mock.calls[0] as [
-      string,
-      string,
-      Workspace,
-      { imageBlocks?: unknown },
-    ];
-    expect(contentArg).toBe("");
-    expect(optionsArg.imageBlocks).toEqual([{ type: "image", data: "abc", mimeType: "image/png" }]);
   });
 
   it("removeQueuedMessageRequested optimistically removes the entry and calls appClient.agents.removeQueued", async () => {

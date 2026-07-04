@@ -3,10 +3,7 @@ import type { AgentId, AgentSession, QueuedMessage } from "$shared/types";
 import type { StoreState } from "../../types";
 import { selectAgentSession } from "../agent-session/agent-session-selectors";
 import { selectAgentQueueMessages } from "../agent-queue/agent-queue-selectors";
-import {
-  emptyWorkspaceAgentState,
-  type InitialAgentConfig,
-} from "./workspace-agents-slice";
+import { emptyWorkspaceAgentState } from "./workspace-agents-slice";
 
 function getWorkspaceAgentState(state: StoreState, wsId: string) {
   return state.workspaceAgents.byWorkspaceId[wsId] ?? emptyWorkspaceAgentState;
@@ -72,8 +69,15 @@ export const selectInitialAgentId = store.createSelector((state, wsId: string) =
   return getWorkspaceAgentState(state, wsId).initialAgentId;
 });
 
-export const selectInitialAgentConfigProcessed = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).initialAgentConfigProcessed;
+/**
+ * True while the initial agent of a workspace is still flagged as
+ * recently-created (i.e. the workspace was just spun up). Replaces the
+ * previous initialAgentConfig-based signal now that the daemon owns the
+ * initial-agent + initial-message lifecycle.
+ */
+export const selectIsNewlyCreatedWorkspace = store.createSelector((state, wsId: string) => {
+  const ws = getWorkspaceAgentState(state, wsId);
+  return !!ws.initialAgentId && ws.recentlyCreatedAgents.includes(ws.initialAgentId);
 });
 
 export const selectRecentlyCreatedAgents = store.createSelector((state, wsId: string) => {
@@ -83,21 +87,6 @@ export const selectRecentlyCreatedAgents = store.createSelector((state, wsId: st
 /** Get agent IDs tracked for a workspace. */
 export const selectWorkspaceAgentIds = store.createSelector((state, wsId: string): string[] => {
   return getWorkspaceAgentState(state, wsId).agentIds;
-});
-
-export const selectInitialAgentConfig = store.createSelector(
-  (state, wsId: string): InitialAgentConfig | null => {
-    return getWorkspaceAgentState(state, wsId).initialAgentConfig ?? null;
-  }
-);
-
-/**
- * Returns true when a workspace has a pending initial agent config,
- * meaning it was just created and hasn't sent its first message yet.
- * Replaces the old `isNewlyCreatedWorkspace` Svelte state flag.
- */
-export const selectIsNewlyCreatedWorkspace = store.createSelector((state, wsId: string) => {
-  return getWorkspaceAgentState(state, wsId).initialAgentConfig !== null;
 });
 
 // --------------------------------------------------------------------------
@@ -209,25 +198,4 @@ export const selectRecentAgentCreatedEventsCount = store.createSelector(
   }
 );
 
-// --------------------------------------------------------------------------
-// Chief-specific selectors (stubbed - feature removed in main)
-// --------------------------------------------------------------------------
 
-/**
- * Stub selector for Chief's initial agent activation status.
- * TODO: This feature was removed in main and needs proper refactoring for Chief integration.
- * The activation status field still exists in Chief branch state but was removed in main.
- * This selector reads from the Chief state structure if it exists, otherwise returns default.
- */
-export const selectInitialAgentActivationStatus = store.createSelector(
-  (state, wsId: string, agentId: string): {
-    status: 'idle' | 'activating' | 'active' | 'failed';
-    attempt: number;
-    error?: string;
-    lastErrorKind?: 'timeout' | 'factory' | 'unknown';
-  } => {
-    const wsState = getWorkspaceAgentState(state, wsId) as any;
-    const key = `${wsId}::${agentId}`;
-    return wsState?.activationStatus?.[key] ?? { status: 'idle', attempt: 0 };
-  }
-);

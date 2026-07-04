@@ -1,6 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentStatus } from "$shared/types/agent.types";
-import { AgentActivationState } from "$shared/types/agent-session";
 import type { AgentSession } from "$shared/types/agent-session";
 
 // FAKE seams: the agent factory (create seam) and appClient.agents.get (the open
@@ -21,9 +20,7 @@ import { store as appStore } from "$store/renderer/store";
 import { setWorkspaceEntity } from "$store/renderer/slices/workspace/workspace-slice";
 import { loadWorkspaceNotesSucceeded } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
 import { selectAllTabs } from "$store/renderer/slices/panel-layout/panel-layout-selectors";
-import { selectAgentSession } from "$store/renderer/slices/agent-session/agent-session-selectors";
 import {
-  activateInitialAgentRequested,
   createAgentRequested,
   createAgentWithSpecialistRequested,
   runAgentForNoteRequested,
@@ -150,114 +147,10 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     expect(agentTabs(WS, AGENT)).toHaveLength(1);
   });
 
-  it("activateInitialAgentRequested activates the initial agent, sets it active, and opens the tab", async () => {
-    const WS = "ws-init";
-    const AGENT = "agent-init";
-    seedWorkspace(WS);
-    createAgent.mockResolvedValueOnce({
-      success: true,
-      agent: makeSession(AGENT, WS, { name: "Initial" }),
-      agentId: AGENT,
-    });
-
-    appStore.dispatch(activateInitialAgentRequested(WS, AGENT, { workspaceId: WS } as never));
-    await waitFor(
-      () => appStore.state.workspaceAgents.byWorkspaceId[WS]?.activeAgentId === AGENT,
-    );
-    await waitFor(() => agentTabs(WS, AGENT).length > 0);
-
-    expect(createAgent).toHaveBeenCalledTimes(1);
-    const [, config] = createAgent.mock.calls[0];
-    expect(config).toMatchObject({ id: AGENT, skipInitialPrompt: true });
-    expect(config.metadata).toMatchObject({ isInitialAgent: true });
-    const session = selectAgentSession.select(appStore.state, AGENT);
-    expect(session?.activationState).toBe(AgentActivationState.ACTIVE);
-    expect(appStore.state.workspaceAgents.byWorkspaceId[WS]?.activeAgentId).toBe(AGENT);
-    expect(agentTabs(WS, AGENT)).toHaveLength(1);
-  });
-
   it("ignores the trigger when the workspace is missing (no factory call)", async () => {
     appStore.dispatch(createAgentRequested("ws-missing"));
     await flush();
     await flush();
     expect(createAgent).not.toHaveBeenCalled();
-  });
-
-  // Post-create bootstrap regression: the workspace page's
-  // activatePendingInitialAgent (fed by the creation dialog's pending config)
-  // must reach the create seam with the prompt as initialMessage and the
-  // selected specialist forwarded, so the initial agent is created, the prompt
-  // is sent (agentFactory.createAgent sends initialMessage itself), and the
-  // agent's conversation tab is opened/focused like a manual spawn.
-  it("post-create bootstrap: pending dialog config activates the agent with its prompt and opens the tab", async () => {
-    const { activatePendingInitialAgent } = await import(
-      "../../routes/workspace/[id]/composables/initial-agent-config"
-    );
-    const WS = "ws-bootstrap";
-    const AGENT = "agent-bootstrap";
-    seedWorkspace(WS);
-    createAgent.mockResolvedValueOnce({
-      success: true,
-      agent: makeSession(AGENT, WS, { name: "Coordinator" }),
-      agentId: AGENT,
-    });
-
-    const activated = activatePendingInitialAgent(
-      WS,
-      AGENT,
-      {
-        agentId: AGENT,
-        name: "Coordinator",
-        model: "claude-opus-4-7",
-        specialist: "coordinator",
-        behaviorPrompt: "You are the coordinator.",
-        prompt: "Initialize submodules",
-        agentType: "workspace",
-        provider: "auggie",
-        metadata: { source: "compact-initializer" },
-        isFirstWorkspaceAgent: true,
-      },
-      appStore.dispatch,
-    );
-    expect(activated).toBe(true);
-    await waitFor(
-      () => appStore.state.workspaceAgents.byWorkspaceId[WS]?.activeAgentId === AGENT,
-    );
-
-    expect(createAgent).toHaveBeenCalledTimes(1);
-    const [, config] = createAgent.mock.calls[0];
-    expect(config).toMatchObject({
-      id: AGENT,
-      initialMessage: "Initialize submodules",
-      model: "claude-opus-4-7",
-      provider: "auggie",
-      behaviorPrompt: "You are the coordinator.",
-      source: "workspace-initializer",
-    });
-    expect(config.metadata).toMatchObject({ isInitialAgent: true, specialist: "coordinator" });
-    expect(appStore.state.workspaceAgents.byWorkspaceId[WS]?.activeAgentId).toBe(AGENT);
-    await waitFor(() => agentTabs(WS, AGENT).length > 0);
-    expect(agentTabs(WS, AGENT)).toHaveLength(1);
-  });
-
-  it("post-create bootstrap: empty prompt spawns nothing (no tab churn)", async () => {
-    const { activatePendingInitialAgent } = await import(
-      "../../routes/workspace/[id]/composables/initial-agent-config"
-    );
-    const WS = "ws-bootstrap-empty";
-    const AGENT = "agent-bootstrap-empty";
-    seedWorkspace(WS);
-
-    const activated = activatePendingInitialAgent(
-      WS,
-      AGENT,
-      { agentId: AGENT, prompt: undefined },
-      appStore.dispatch,
-    );
-    expect(activated).toBe(false);
-    await flush();
-    await flush();
-    expect(createAgent).not.toHaveBeenCalled();
-    expect(agentTabs(WS, AGENT)).toHaveLength(0);
   });
 });

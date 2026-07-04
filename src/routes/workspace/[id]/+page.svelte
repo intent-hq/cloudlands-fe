@@ -30,15 +30,8 @@
   dispatchCreateFileRequest,
   handleCommandPaletteCreateFile,
 } from './composables/create-file-command';
-  import {
-  activatePendingInitialAgent,
-  hydrateInitialAgentConfig,
-} from './composables/initial-agent-config';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
-  import {
-  commandPaletteActionConsumed,
-  showAgentRequested,
-} from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { commandPaletteActionConsumed } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { selectPendingCommandPaletteAction } from '$store/renderer/slices/app-layout/app-layout-selectors';
 
 
@@ -67,8 +60,6 @@
   setPanelVisibility,
   type PanelVisibilityState,
 } from '$store/renderer/slices/ui-layout/ui-layout-slice';
-
-  import { workspaceStorageManager } from '$store/renderer/slices/workspace/utils/workspace-storage-manager';
 
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import { workspaceUnmounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
@@ -102,19 +93,10 @@
   import {
   createAgentRequested,
   createAgentWithSpecialistRequested,
-  markAgentRecentlyCreated as markAgentRecentlyCreatedAction,
   setAgents,
   setAgentsLoaded,
-  clearInitialAgentConfig,
   flushPendingAgentDeletionsRequested,
-  setInitialAgentConfigProcessed,
-  setInitialAgentId,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-  import {
-  selectInitialAgentConfig,
-  selectInitialAgentConfigProcessed,
-  selectInitialAgentId,
-} from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import MultiSelectTabbedSidebar from '$lib/components/workspace/MultiSelectTabbedSidebar.svelte';
   import { store as appStore } from '$store/renderer/store';
 
@@ -170,12 +152,6 @@
         workspaceData: cachedWorkspace,
         workspace: { id: wsId, status: 'ready' },
       });
-    }
-
-    // Hydrate initial agent config from Redux / sessionStorage
-    const hasInitialAgent = hydrateInitialAgentConfig(wsId, appStore.dispatch);
-    if (hasInitialAgent) {
-      logger.info('Detected newly created workspace', { workspaceId: wsId });
     }
 
     // Hydrate Redux immediately so the selector-backed $workspace has
@@ -294,12 +270,10 @@
       appStore.dispatch(loadWorkspacesRequested());
     }
 
-    // Detect fresh workspace creation for fade-in transition
-    const pendingKey = `workspace:${workspaceId}:initial-agent-pending`;
-    if (sessionStorage.getItem(pendingKey)) {
-      isFreshCreation = true;
-    }
-
+    // The `initial-agent-pending` sessionStorage marker is no longer stashed
+    // by the daemon-owned create flow, so the fresh-creation fade-in transition
+    // no longer keys off it. Any equivalent signal should come from workspace
+    // creation events / navigation state going forward.
   });
 
   // Create cleanup manager for this component
@@ -392,19 +366,10 @@
           }
         }
 
-        // Hydrate initial agent config from Redux / sessionStorage
-        const hasInitialAgent = hydrateInitialAgentConfig(currentWorkspaceId, appStore.dispatch);
-        if (hasInitialAgent) {
-          logger.info('Detected newly created workspace during transition', {
-            workspaceId: currentWorkspaceId,
-          });
-        }
-
         logger.info('Transitioned to real workspace state', {
           workspaceId: currentWorkspaceId,
           preservedDrawer: preservedData.drawer,
           preservedMainPanel: preservedData.mainPanel,
-          isNewlyCreated: hasInitialAgent,
         });
       } catch (error) {
         logger.error('Failed to create workspace state for real workspace', {
@@ -579,208 +544,30 @@
   // Track if we're in a transition to prevent skeleton loaders
   let isInTransition = $derived(tabManagement.isInTransition);
 
-  // Check for optimistic initial agent on mount and transitions
+  // Surface any workspace creation error captured before navigation.
+  // Initial-agent activation and panel opening are owned by the daemon +
+  // pre-persisted navigation state (drawer stashed by the initializer /
+  // onboarding path), so the FE no longer performs any pending-agent
+  // activation, session-storage sniffing, or drawer heuristics here.
   $effect(() => {
-    // Capture workspace ID and workspace reference at the start to avoid race conditions
-    // during async execution where $workspace could become null or change
     const capturedWorkspaceId = $workspace?.id;
-
-    // Read initialAgentConfigProcessed with untrack to avoid creating a reactive dependency
-    // that would cause the effect to re-run when we set it to true
-    const alreadyProcessed = untrack(() =>
-      capturedWorkspaceId
-        ? selectInitialAgentConfigProcessed.select(appStore.state, capturedWorkspaceId)
-        : false,
-    );
-
-    if (capturedWorkspaceId && !alreadyProcessed) {
-      appStore.dispatch(setInitialAgentConfigProcessed(capturedWorkspaceId, true));
-
-      // First check if there was a creation error
-      const errorKey = `workspace:${capturedWorkspaceId}:creation-error`;
-      const errorData = sessionStorage.getItem(errorKey);
-
-      if (errorData) {
-        try {
-          const { error, timestamp } = JSON.parse(errorData);
-          // Show error if it's recent (within 30 seconds)
-          if (Date.now() - timestamp < 30000) {
-            logger.error('[WorkspacePage] Workspace creation failed', { error });
-            // Show error toast to user
-            toast.error(`Failed to create workspace: ${error}`, {
-              duration: 10000,
-              description: 'Please try again or contact support if the issue persists.',
-            });
-          }
-          sessionStorage.removeItem(errorKey);
-        } catch (e) {
-          logger.error('[WorkspacePage] Failed to parse error data', e);
-          sessionStorage.removeItem(errorKey);
-        }
+    if (!capturedWorkspaceId) return;
+    const errorKey = `workspace:${capturedWorkspaceId}:creation-error`;
+    const errorData = sessionStorage.getItem(errorKey);
+    if (!errorData) return;
+    try {
+      const { error, timestamp } = JSON.parse(errorData);
+      if (Date.now() - timestamp < 30000) {
+        logger.error('[WorkspacePage] Workspace creation failed', { error });
+        toast.error(`Failed to create workspace: ${error}`, {
+          duration: 10000,
+          description: 'Please try again or contact support if the issue persists.',
+        });
       }
-
-      // Check if we have a pending initial agent from workspace creation
-      // Read from Redux first, fall back to sessionStorage for page reloads
-      const reduxConfig = selectInitialAgentConfig.select(
-        appStore.state,
-        capturedWorkspaceId,
-      );
-      const pendingAgentKey = `workspace:${capturedWorkspaceId}:initial-agent-pending`;
-      const pendingAgentData = sessionStorage.getItem(pendingAgentKey);
-
-      // Also check for regular agent config (in case of page reload after migration)
-      const agentConfigKey = `workspace:${capturedWorkspaceId}:agent-config`;
-      const agentConfigData = sessionStorage.getItem(agentConfigKey);
-
-      if (reduxConfig || pendingAgentData || agentConfigData) {
-        try {
-          let agentId: string | undefined, config: any, timestamp: number | undefined;
-
-          if (reduxConfig) {
-            // Prefer Redux state (set during workspace creation, avoids serialization round-trip)
-            agentId = reduxConfig.agentId;
-            config = reduxConfig.config;
-            timestamp = reduxConfig.timestamp;
-          } else if (pendingAgentData) {
-            const parsed = JSON.parse(pendingAgentData);
-            agentId = parsed.agentId;
-            config = parsed.config;
-            timestamp = parsed.timestamp;
-          } else if (agentConfigData) {
-            // Handle case where we only have agent-config (after migration/reload)
-            config = JSON.parse(agentConfigData) as any;
-            agentId =
-              config.agentId ||
-              `agent-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-            // Use the config's timestamp if available, otherwise check if this is a stale config
-            // by looking at the persisted drawer state - if the drawer was open with a different
-            // agent, this is likely a stale config from a previous session
-            timestamp = config.timestamp;
-          }
-
-          // Use if it's recent (within 30 seconds to handle slow systems and transitions)
-          if (!timestamp || Date.now() - timestamp < 30000) {
-            logger.info('[WorkspacePage] Found pending initial agent', {
-              workspaceId: capturedWorkspaceId,
-              agentId,
-              hasPrompt: !!config.prompt,
-              isOptimistic: capturedWorkspaceId.startsWith('optimistic-'),
-              isInitialAgent: config.isInitialAgent,
-              isFirstWorkspaceAgent: config.isFirstWorkspaceAgent,
-              fromPending: !!pendingAgentData,
-              fromConfig: !!agentConfigData,
-            });
-
-            const currentInitialAgentId = selectInitialAgentId.select(
-              appStore.state,
-              capturedWorkspaceId,
-            );
-
-            if (currentInitialAgentId !== (agentId ?? null)) {
-              appStore.dispatch(setInitialAgentId(capturedWorkspaceId, agentId ?? null));
-            }
-
-            // Mark this agent as recently created so the drawer doesn't close
-            if (agentId) {
-              appStore.dispatch(markAgentRecentlyCreatedAction(capturedWorkspaceId, agentId));
-            }
-
-            // Store the config for AuggieChatPanel - it's already set by WorkspaceInitializer migration
-            // but ensure it's there in case of race conditions
-            if (!sessionStorage.getItem(`workspace:${capturedWorkspaceId}:agent-config`)) {
-              sessionStorage.setItem(
-                `workspace:${capturedWorkspaceId}:agent-config`,
-                JSON.stringify({
-                  ...config,
-                  initialAgentId: agentId,
-                }),
-              );
-            }
-
-            // Activate the pending initial agent: the daemon ignores `initialAgent`
-            // on workspace.create, and the agent-loading-saga that used to restore
-            // it on mount was removed, so this dispatch is what creates the agent
-            // in the backend and sends the initial prompt. The agent-creation
-            // middleware's per-agent lock dedupes against the stay-on-home-page
-            // dispatch, and an empty prompt spawns nothing.
-            const activated = activatePendingInitialAgent(
-              capturedWorkspaceId,
-              agentId,
-              config,
-              appStore.dispatch,
-            );
-            logger.info('[WorkspacePage] Pending initial agent activation', {
-              workspaceId: capturedWorkspaceId,
-              agentId,
-              activated,
-            });
-
-            // Skip agent panel opening for onboarding-created workspaces —
-            // opening the panel here too causes a duplicate agent.
-            const isOnboardingSource = config?.metadata?.source === 'onboarding';
-            if (isOnboardingSource) {
-              logger.info(
-                '[WorkspacePage] Skipping agent panel open for onboarding workspace',
-                { workspaceId: capturedWorkspaceId, agentId },
-              );
-              if (!capturedWorkspaceId.startsWith('optimistic-')) {
-                appStore.dispatch(clearInitialAgentConfig(capturedWorkspaceId));
-                sessionStorage.removeItem(pendingAgentKey);
-              }
-              return;
-            }
-
-            // Only open the drawer if it's not already open with different content
-            // This prevents overwriting the persisted drawer state on page refresh
-            // IMPORTANT: Check the persisted drawer state from localStorage, not from workspaceState
-            // because workspaceState might not be created yet during workspace transitions
-            const persistedState = workspaceStorageManager.loadState(capturedWorkspaceId);
-            const persistedDrawerState = persistedState?.drawer;
-            const currentDrawerState = workspaceState?.state?.drawer ?? persistedDrawerState;
-            const drawerAlreadyOpen =
-              currentDrawerState?.open &&
-              currentDrawerState?.itemId &&
-              currentDrawerState?.itemId !== agentId;
-
-            if (drawerAlreadyOpen) {
-              logger.info(
-                '[WorkspacePage] Drawer already open with different content, not overwriting',
-                {
-                  currentType: currentDrawerState?.type,
-                  currentItemId: currentDrawerState?.itemId,
-                  initialAgentId: agentId,
-                  fromPersisted: !workspaceState?.state?.drawer,
-                },
-              );
-              // Clean up the stale agent-config since we're not using it
-              sessionStorage.removeItem(agentConfigKey);
-            } else if (agentId) {
-              // Open the agent in panel layout
-              appStore.dispatch(
-                showAgentRequested(capturedWorkspaceId, { agentId }),
-              );
-
-              // For spec-writer agents in new workspaces, the spec panel will be
-              // opened dynamically (with a slide-in animation) once spec generation
-              // begins. See the specPanelSlideIn effect below.
-            }
-
-            // Cleanup pending marker once handled (non-optimistic only)
-            if (!capturedWorkspaceId.startsWith('optimistic-')) {
-              appStore.dispatch(clearInitialAgentConfig(capturedWorkspaceId));
-              sessionStorage.removeItem(pendingAgentKey);
-            }
-          } else {
-            // Only clean up if it's too old
-            appStore.dispatch(clearInitialAgentConfig(capturedWorkspaceId));
-            sessionStorage.removeItem(pendingAgentKey);
-          }
-        } catch (e) {
-          logger.error('[WorkspacePage] Failed to parse pending agent data', e);
-          appStore.dispatch(clearInitialAgentConfig(capturedWorkspaceId));
-          sessionStorage.removeItem(pendingAgentKey);
-        }
-      }
+    } catch (e) {
+      logger.error('[WorkspacePage] Failed to parse error data', e);
+    } finally {
+      sessionStorage.removeItem(errorKey);
     }
   });
 

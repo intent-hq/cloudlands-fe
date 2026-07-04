@@ -365,15 +365,6 @@ export interface UnifiedAgentConfig {
   initialMessage?: string;
   /** Frontend createSession sends the initial prompt after backend creation. */
   skipInitialPrompt?: boolean;
-  /**
-   * Invoked at the moment createAgent commits to the fire-and-forget initial
-   * message send (Step 11), before the send is dispatched. Lets callers mark
-   * "message sent" state (e.g., sessionStorage agent-config) at the commit
-   * point instead of after the whole creation completes, closing the race
-   * with the ChatPanel mount-time fallback send.
-   * Renderer-only hook — never include it in Redux action payloads.
-   */
-  onInitialSendCommit?: () => void;
   contextReferences?: any[];
   imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
   metadata?: Record<string, any>;

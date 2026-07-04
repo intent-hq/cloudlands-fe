@@ -2,16 +2,15 @@
  * Chat send service — the sanctioned post-saga consumer for ChatPanel send
  * triggers, sibling to `chat-read-service.ts`.
  *
- * ChatPanel dispatches `sendMessage(agentId, { wsId, text, ... })` (and the
- * activation fallback dispatches `sendInitialMessageRequested(agentId, { wsId,
- * message, ... })`) but their sagas were removed when the saga runtime went
- * away — so Send became a no-op and pressing Send produced no user message
- * and no streamed reply. This restores the send path WITHOUT re-adding a saga
- * and WITHOUT changing any dispatch site: `createChatSendMiddleware()`
- * observes dispatched actions and, after the reducer runs, resolves the
- * target `Workspace` via the workspace selector and invokes
- * `agent-stream-lifecycle.sendMessage()` — which already owns the optimistic
- * user message, the streaming flag, and the stream-handler lifecycle.
+ * ChatPanel dispatches `sendMessage(agentId, { wsId, text, ... })` but its
+ * saga was removed when the saga runtime went away — so Send became a no-op
+ * and pressing Send produced no user message and no streamed reply. This
+ * restores the send path WITHOUT re-adding a saga and WITHOUT changing any
+ * dispatch site: `createChatSendMiddleware()` observes dispatched actions
+ * and, after the reducer runs, resolves the target `Workspace` via the
+ * workspace selector and invokes `agent-stream-lifecycle.sendMessage()` —
+ * which already owns the optimistic user message, the streaming flag, and
+ * the stream-handler lifecycle.
  *
  * Re-homed pre-send essentials (ported minimally from the deleted
  * `send-message-saga.ts`): dispatch `chatSendStarted` for immediate loading
@@ -50,7 +49,6 @@ import {
   chatSendStarted,
   chatStopCompleted,
   chatStopInitiated,
-  sendInitialMessageRequested,
   sendMessage,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { agentSessionStopChatRequested } from "$store/renderer/slices/agent-session/agent-session-slice";
@@ -60,10 +58,7 @@ import {
   removeQueuedMessageRequested,
   replaceAgentQueue,
 } from "$store/renderer/slices/agent-queue/agent-queue-slice";
-import type {
-  InitialMessagePayload,
-  SendMessagePayload,
-} from "$store/renderer/slices/chat-state/chat-state-types";
+import type { SendMessagePayload } from "$store/renderer/slices/chat-state/chat-state-types";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("ChatSendService");
@@ -268,9 +263,9 @@ async function dispatchStopChat(
 }
 
 /**
- * Middleware that gives `sendMessage`, `sendInitialMessageRequested`,
- * `removeQueuedMessageRequested`, and `agentSessionStopChatRequested` a real
- * consumer. Fire-and-forget — dispatch stays synchronous and never throws.
+ * Middleware that gives `sendMessage`, `removeQueuedMessageRequested`, and
+ * `agentSessionStopChatRequested` a real consumer. Fire-and-forget — dispatch
+ * stays synchronous and never throws.
  */
 export function createChatSendMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
@@ -296,41 +291,6 @@ export function createChatSendMiddleware(): StoreMiddleware {
           imageBlocks: inner.imageBlocks,
           noteIds: inner.noteIds,
         });
-      }
-    } else if ((action as { type?: unknown }).type === sendInitialMessageRequested.type) {
-      const payload = (action as { payload?: unknown }).payload as
-        | { agentId?: unknown; payload?: InitialMessagePayload }
-        | undefined;
-      const agentId = payload?.agentId;
-      const inner = payload?.payload;
-      if (typeof agentId !== "string" || agentId.length === 0) {
-        // No agent id — chatSendFailed cannot be addressed; log loudly instead.
-        logger.error("sendInitialMessageRequested dropped: missing agentId", { payload });
-      } else if (inner?.alreadySent) {
-        // Intentional no-op: the backend already sent the message before
-        // ChatPanel hydration.
-      } else {
-        const wsId = typeof inner?.wsId === "string" && inner.wsId.length > 0 ? inner.wsId : null;
-        const message = typeof inner?.message === "string" ? inner.message : "";
-        const imageBlocks = inner?.imageBlocks ?? undefined;
-        const hasSendableContent = message.trim().length > 0 || (imageBlocks?.length ?? 0) > 0;
-        if (!wsId || !hasSendableContent) {
-          // Fail LOUDLY (mirrors the agent-send silent-drop guard): a
-          // malformed initial-send trigger must surface as a send failure —
-          // dispatching without the `message` field was exactly how initial
-          // messages silently never reached agent.sendMessage.
-          const reason = !wsId
-            ? "Initial message dispatch is missing its workspace id (wsId)"
-            : "Initial message dispatch has no sendable content (missing `message` text and imageBlocks)";
-          logger.error("sendInitialMessageRequested dropped: malformed payload", {
-            agentId,
-            wsId,
-            reason,
-          });
-          appStore.dispatch(chatSendFailed(agentId, reason));
-        } else {
-          void dispatchToLifecycle(agentId, wsId, message, undefined, { imageBlocks });
-        }
       }
     } else if ((action as { type?: unknown }).type === removeQueuedMessageRequested.type) {
       const payload = (action as { payload?: unknown }).payload as

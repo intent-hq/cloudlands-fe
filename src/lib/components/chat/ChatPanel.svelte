@@ -87,12 +87,10 @@
   import {
   sendMessage,
   initializeChatRequested,
-  sendInitialMessageRequested,
   chatRebindStarted,
   chatRebindEnded,
   chatTrackedWorkspaceSet,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
-  import type { InitialMessagePayload } from '$store/renderer/slices/chat-state/chat-state-types';
   import {
   selectChatError,
   selectChatIsStalled,
@@ -196,7 +194,6 @@
 
   // Constants
   const SCROLL_BOTTOM_THRESHOLD = 30; // pixels from bottom to consider "at bottom"
-  const INITIAL_AGENT_ACTIVATION_MARKER_GRACE_MS = 30_000;
   /** PERF: Number of recent turns to always render (for streaming and smooth UX) */
   const FORCE_VISIBLE_TURN_COUNT = 3;
   /** PERF: Minimum turns before enabling lazy loading (overhead not worth it for small conversations) */
@@ -1189,144 +1186,16 @@
     };
   });
 
-  // Pending initial prompt data - shown immediately as optimistic UI before the message is actually sent
-  // Uses prop first (passed from parent), then falls back to sessionStorage
-  // Returns both prompt text and contextReferences for proper display
-  function hasInitialMessageContent(config: any): boolean {
-    return !!(
-      config?.prompt?.trim?.() ||
-      config?.contextReferences?.length ||
-      config?.imageBlocks?.length
-    );
-  }
-
-  function hasFreshInitialAgentActivationMarker(wsId: string, currentAgentId: string): boolean {
-    const pendingAgentData = sessionStorage.getItem(`workspace:${wsId}:initial-agent-pending`);
-    if (!pendingAgentData) return false;
-
-    try {
-      const parsed = JSON.parse(pendingAgentData);
-      const pendingAgentId = parsed.agentId ?? parsed.config?.agentId;
-      if (pendingAgentId !== currentAgentId) return false;
-
-      const timestamp = typeof parsed.timestamp === 'number' ? parsed.timestamp : null;
-      return timestamp === null || Date.now() - timestamp < INITIAL_AGENT_ACTIVATION_MARKER_GRACE_MS;
-    } catch (err) {
-      logger.warn('Failed to parse initial agent pending marker for fallback send', {
-        agentId: currentAgentId,
-        wsId,
-        error: err,
-      });
-      return false;
-    }
-  }
-
-  // Build the sendInitialMessageRequested payload from the orphaned pending
-  // config, or return null when no fallback send is needed. The payload MUST
-  // carry the message content — dispatching `{ wsId }` alone is silently
-  // rejected by the chat-send middleware and the initial message never
-  // reaches agent.sendMessage.
-  function getInitialMessageFallbackPayload(
-    wsId: string,
-    currentAgentId: string,
-  ): InitialMessagePayload | null {
-    const agentConfigKey = `workspace:${wsId}:agent-config`;
-    const agentConfigData = sessionStorage.getItem(agentConfigKey);
-    if (!agentConfigData) return null;
-
-    try {
-      const config = JSON.parse(agentConfigData);
-      if (config.agentId !== currentAgentId || !hasInitialMessageContent(config)) return null;
-      if (config.messageSent) return null;
-      if (hasFreshInitialAgentActivationMarker(wsId, currentAgentId)) return null;
-      // Mirror the activation path (agent-factory): substitute the placeholder
-      // when the config carries only context references so the payload always
-      // has sendable text.
-      const message =
-        config.prompt?.trim?.() ||
-        (config.contextReferences?.length
-          ? 'I have linked some context above. Please review it and help me with this task.'
-          : '');
-      return {
-        wsId,
-        message,
-        imageBlocks: config.imageBlocks ?? null,
-        contextReferences: config.contextReferences ?? null,
-      };
-    } catch (err) {
-      logger.warn('Failed to parse agent config for fallback send', {
-        agentId: currentAgentId,
-        wsId,
-        error: err,
-      });
-      return null;
-    }
-  }
-
-  // Mark the pending config as sent BEFORE dispatching the fallback send
-  // (mirrors the activation saga's onInitialSendCommit) so a remount cannot
-  // double-send the initial message.
-  function markInitialMessageSent(wsId: string): void {
-    const agentConfigKey = `workspace:${wsId}:agent-config`;
-    try {
-      const raw = sessionStorage.getItem(agentConfigKey);
-      if (!raw) return;
-      sessionStorage.setItem(agentConfigKey, JSON.stringify({ ...JSON.parse(raw), messageSent: true }));
-    } catch (err) {
-      logger.warn('Failed to mark initial message as sent', { wsId, error: err });
-    }
-  }
-
+  // Pending initial prompt data - shown immediately as optimistic UI before the message is actually sent.
+  // Reads from `initialPromptProp` (passed from parent); the sessionStorage-based
+  // FE-side send was removed with the daemon-owned create sequence.
   function getInitialPendingData(): { prompt: string | null; contextReferences: any[] | null } {
-    // First check prop - this is the fastest path
     if (initialPromptProp) {
       logger.info('Using initial prompt from prop for optimistic display', {
         agentId,
         promptLength: initialPromptProp.length,
       });
-      // When using prop, we don't have contextReferences available
-      // They will be in sessionStorage if present
-      if (workspace) {
-        const agentConfigKey = `workspace:${workspace.id}:agent-config`;
-        const agentConfigData = sessionStorage.getItem(agentConfigKey);
-        if (agentConfigData) {
-          try {
-            const config = JSON.parse(agentConfigData);
-            if (config.agentId === agentId && config.contextReferences?.length > 0) {
-              return { prompt: initialPromptProp, contextReferences: config.contextReferences };
-            }
-          } catch {
-            // Ignore parse errors
-          }
-        }
-      }
       return { prompt: initialPromptProp, contextReferences: null };
-    }
-
-    // Fall back to sessionStorage
-    if (!workspace) return { prompt: null, contextReferences: null };
-
-    const agentConfigKey = `workspace:${workspace.id}:agent-config`;
-    const agentConfigData = sessionStorage.getItem(agentConfigKey);
-
-    if (agentConfigData) {
-      try {
-        const config = JSON.parse(agentConfigData);
-        if (config.agentId === agentId && (config.prompt || config.contextReferences?.length > 0)) {
-          logger.info('Found pending initial data from sessionStorage for optimistic display', {
-            agentId,
-            promptLength: config.prompt?.length || 0,
-            hasContextReferences: !!config.contextReferences?.length,
-            contextReferenceCount: config.contextReferences?.length || 0,
-          });
-          return {
-            prompt: config.prompt || null,
-            contextReferences: config.contextReferences || null,
-          };
-        }
-      } catch (err) {
-        logger.warn('Failed to parse agent config for optimistic display', err);
-      }
     }
     return { prompt: null, contextReferences: null };
   }
@@ -1703,17 +1572,10 @@
 
     // Chat values are reactive via Redux selectors.
     // No manual Redux store subscription needed — selectors provide always-current values.
-
-    // Request initial message send only for orphaned pending config.
-    // Fresh workspace creation is owned by the activation saga, which sends the
-    // first prompt and marks messageSent via onInitialSendCommit before sending.
-    if (workspace && agentId && $agentMessages$.length === 0) {
-      const fallbackPayload = getInitialMessageFallbackPayload(workspace.id, agentId);
-      if (fallbackPayload) {
-        markInitialMessageSent(workspace.id);
-        appStore.dispatch(sendInitialMessageRequested(agentId, fallbackPayload));
-      }
-    }
+    // Initial-message delivery is owned by the daemon (harvested from
+    // metadata.initialMessage on workspace create); the ChatPanel no longer
+    // sends anything on mount — chat-history hydration renders the daemon-
+    // delivered message once it arrives.
 
     // Scroll handling on mount
     requestAnimationFrame(() => {

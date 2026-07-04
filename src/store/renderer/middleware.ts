@@ -103,10 +103,10 @@ function buildMiddleware(): StoreMiddleware[] {
     // so opening an agent loads its full retained transcript via
     // `agents.getConversation` instead of showing an empty conversation.
     createChatReadMiddleware(),
-    // Give the (post-saga) `sendMessage` / `sendInitialMessageRequested`
-    // actions a real consumer so pressing Send in ChatPanel routes through
-    // `agent-stream-lifecycle.sendMessage()` again — producing a user message
-    // and a live-streaming assistant response — instead of being a no-op.
+    // Give the (post-saga) `sendMessage` action a real consumer so pressing
+    // Send in ChatPanel routes through `agent-stream-lifecycle.sendMessage()`
+    // again — producing a user message and a live-streaming assistant response
+    // — instead of being a no-op.
     createChatSendMiddleware(),
     // Give the (post-saga) permission triggers (`approvePermission` /
     // `denyPermission` / `cancelPermission` / `selectPermissionOption`) a real

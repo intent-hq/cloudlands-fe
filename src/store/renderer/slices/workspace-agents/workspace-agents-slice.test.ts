@@ -13,14 +13,10 @@ import {
   selectBackgroundWorkspaceAgents,
   selectAgentsLoaded,
   selectForegroundWorkspaceAgents,
-  selectInitialAgentConfig,
-  selectInitialAgentActivationStatus,
-  selectInitialAgentConfigProcessed,
   selectInitialAgentId,
   selectDiskMessageCount,
   selectIsInitialSpecWriteInProgress,
   selectIsLoadingAgents,
-  selectIsNewlyCreatedWorkspace,
   selectRecentlyCreatedAgents,
   selectWorkspaceAgentIsSoftDeleted,
   selectWorkspaceAgentIsStreaming,
@@ -30,16 +26,11 @@ import {
 } from './workspace-agents-selectors';
 import {
   addAgent,
-  activateInitialAgentFailed,
-  activateInitialAgentRequested,
-  activateInitialAgentSucceeded,
   agentsLoaded,
-  clearInitialAgentConfig,
   createAgentRequested,
   createAgentWithSpecialistRequested,
   emptyWorkspaceAgentState,
   initialState,
-  type InitialAgentConfig,
   markAgentRecentlyCreated,
   removeWorkspaceAgentState,
   removeAgent,
@@ -48,8 +39,6 @@ import {
   cleanupAgentCreatedEvents,
   setAgents,
   setAgentsLoaded,
-  setInitialAgentConfig,
-  setInitialAgentConfigProcessed,
   setInitialAgentId,
   setInitialSpecWriteInProgress,
   setIsLoadingAgents,
@@ -197,14 +186,12 @@ describe('workspaceAgentsReducer', () => {
     let state = workspaceAgentsReducer(initialState, setIsLoadingAgents(WS_1, true));
     state = workspaceAgentsReducer(state, setAgentsLoaded(WS_1, true));
     state = workspaceAgentsReducer(state, setInitialAgentId(WS_1, 'agent-1'));
-    state = workspaceAgentsReducer(state, setInitialAgentConfigProcessed(WS_1, true));
 
     expect(state.byWorkspaceId[WS_1]).toEqual({
       ...emptyWorkspaceAgentState,
       isLoadingAgents: true,
       agentsLoaded: true,
       initialAgentId: 'agent-1',
-      initialAgentConfigProcessed: true,
     });
   });
 
@@ -287,93 +274,6 @@ describe('workspaceAgentsReducer', () => {
     expect(state.byWorkspaceId[WS_1].agentIds).toEqual(['agent-1', 'agent-2']);
   });
 
-  it('stores initial agent config for a workspace', () => {
-    const config: InitialAgentConfig = {
-      agentId: 'agent-1',
-      config: { model: 'opus', specialist: 'implementor', isInitialAgent: true },
-      timestamp: 1700000000000,
-    };
-
-    const state = workspaceAgentsReducer(initialState, setInitialAgentConfig(WS_1, config));
-
-    expect(state.byWorkspaceId[WS_1].initialAgentConfig).toEqual(config);
-  });
-
-  it('clears initial agent config', () => {
-    const config: InitialAgentConfig = {
-      agentId: 'agent-1',
-      config: { model: 'opus' },
-      timestamp: 1700000000000,
-    };
-    const previousState = workspaceAgentsReducer(initialState, setInitialAgentConfig(WS_1, config));
-
-    const state = workspaceAgentsReducer(previousState, clearInitialAgentConfig(WS_1));
-
-    expect(state.byWorkspaceId[WS_1].initialAgentConfig).toBeNull();
-  });
-
-  it('returns same state reference when clearing already-null initial agent config', () => {
-    const previousState = workspaceAgentsReducer(
-      initialState,
-      addAgent(WS_1, mockAgent('agent-1')),
-    );
-
-    expect(workspaceAgentsReducer(previousState, clearInitialAgentConfig(WS_1))).toBe(
-      previousState,
-    );
-  });
-
-  // TODO: This test is for Chief-specific activation lifecycle that was removed in main
-  // Skip until Chief feature is properly re-integrated
-  it.skip('tracks initial agent activation lifecycle and retry attempts', () => {
-    let state = workspaceAgentsReducer(
-      initialState,
-      activateInitialAgentRequested(WS_1, 'agent-1', {
-        id: 'agent-1',
-        workspaceId: WS_1 as any,
-      }),
-    );
-
-    expect(state.byWorkspaceId[WS_1].activationStatus[`${WS_1}::agent-1`]).toEqual({
-      status: 'activating',
-      attempt: 1,
-    });
-
-    state = workspaceAgentsReducer(
-      state,
-      activateInitialAgentFailed(WS_1, 'agent-1', {
-        errorKind: 'timeout',
-        error: 'Activation timed out',
-      }),
-    );
-
-    expect(state.byWorkspaceId[WS_1].activationStatus[`${WS_1}::agent-1`]).toEqual({
-      status: 'failed',
-      attempt: 1,
-      error: 'Activation timed out',
-      lastErrorKind: 'timeout',
-    });
-
-    state = workspaceAgentsReducer(
-      state,
-      activateInitialAgentRequested(WS_1, 'agent-1', {
-        id: 'agent-1',
-        workspaceId: WS_1 as any,
-      }),
-    );
-
-    expect(state.byWorkspaceId[WS_1].activationStatus[`${WS_1}::agent-1`]).toEqual({
-      status: 'activating',
-      attempt: 2,
-    });
-
-    state = workspaceAgentsReducer(state, activateInitialAgentSucceeded(WS_1, 'agent-1'));
-
-    expect(state.byWorkspaceId[WS_1].activationStatus[`${WS_1}::agent-1`]).toEqual({
-      status: 'active',
-      attempt: 2,
-    });
-  });
 });
 
 describe('workspace-agents actions', () => {
@@ -410,13 +310,7 @@ describe('workspace-agents selectors', () => {
     expect(selectAgentsLoaded.select(state, WS_1)).toBe(false);
     expect(selectIsLoadingAgents.select(state, WS_1)).toBe(false);
     expect(selectInitialAgentId.select(state, WS_1)).toBeNull();
-    expect(selectInitialAgentConfigProcessed.select(state, WS_1)).toBe(false);
     expect(selectRecentlyCreatedAgents.select(state, WS_1)).toEqual([]);
-    expect(selectInitialAgentConfig.select(state, WS_1)).toBeNull();
-    expect(selectInitialAgentActivationStatus.select(state, WS_1, 'agent-1')).toEqual({
-      status: 'idle',
-      attempt: 0,
-    });
   });
 
   it('returns per-workspace agent values (sessions from agent-session slice)', () => {
@@ -432,22 +326,8 @@ describe('workspace-agents selectors', () => {
       agentsLoaded: true,
       isLoadingAgents: true,
       initialAgentId: 'agent-1',
-      initialAgentConfigProcessed: true,
       recentlyCreatedAgents: ['agent-1'],
       isWaitingForFirstMessage: { 'agent-1': true },
-      initialAgentConfig: {
-        agentId: 'agent-1',
-        config: { model: 'opus' },
-        timestamp: 1700000000000,
-      },
-      activationStatus: {
-        [`${WS_1}::agent-1`]: {
-          status: 'failed',
-          attempt: 1,
-          error: 'boom',
-          lastErrorKind: 'factory',
-        },
-      },
     };
     const state = mockState({ byWorkspaceId: { [WS_1]: workspaceState as any } }, [
       foregroundAgent,
@@ -464,15 +344,7 @@ describe('workspace-agents selectors', () => {
     expect(selectAgentsLoaded.select(state, WS_1)).toBe(true);
     expect(selectIsLoadingAgents.select(state, WS_1)).toBe(true);
     expect(selectInitialAgentId.select(state, WS_1)).toBe('agent-1');
-    expect(selectInitialAgentConfigProcessed.select(state, WS_1)).toBe(true);
     expect(selectRecentlyCreatedAgents.select(state, WS_1)).toEqual(['agent-1']);
-    expect(selectInitialAgentConfig.select(state, WS_1)).toEqual(workspaceState.initialAgentConfig);
-    expect(selectInitialAgentActivationStatus.select(state, WS_1, 'agent-1')).toEqual({
-      status: 'failed',
-      attempt: 1,
-      error: 'boom',
-      lastErrorKind: 'factory',
-    });
   });
 
   it('keeps raw selectors inclusive while foreground selectors hide reducer-maintained background agents', () => {
@@ -531,37 +403,6 @@ describe('workspace-agents selectors', () => {
       foregroundAgent,
       flagOnlyAgent,
     ]);
-  });
-
-  describe('selectIsNewlyCreatedWorkspace', () => {
-    it('returns false when no initialAgentConfig is set', () => {
-      const state = mockState();
-      expect(selectIsNewlyCreatedWorkspace.select(state, WS_1)).toBe(false);
-    });
-
-    it('returns true after setInitialAgentConfig is dispatched', () => {
-      const config: InitialAgentConfig = {
-        agentId: 'agent-1',
-        config: { model: 'opus' },
-      };
-      const reducedState = workspaceAgentsReducer(
-        initialState,
-        setInitialAgentConfig(WS_1, config),
-      );
-      const state = mockState(reducedState);
-      expect(selectIsNewlyCreatedWorkspace.select(state, WS_1)).toBe(true);
-    });
-
-    it('returns false after clearInitialAgentConfig is dispatched', () => {
-      const config: InitialAgentConfig = {
-        agentId: 'agent-1',
-        config: { model: 'opus' },
-      };
-      const withConfig = workspaceAgentsReducer(initialState, setInitialAgentConfig(WS_1, config));
-      const cleared = workspaceAgentsReducer(withConfig, clearInitialAgentConfig(WS_1));
-      const state = mockState(cleared);
-      expect(selectIsNewlyCreatedWorkspace.select(state, WS_1)).toBe(false);
-    });
   });
 
   // -----------------------------------------------------------------------
