@@ -335,8 +335,39 @@ describe("host-bridge-seeder", () => {
     });
   });
 
-  describe("shell:openExternal → window.open (FE-served, PROTOCOL §5.14 reverse-RPC locus)", () => {
-    it("opens the URL in a new browsing context and severs the opener", async () => {
+  describe("shell:openExternal → openExternalUrl (FE-served, PROTOCOL §5.14 reverse-RPC locus)", () => {
+    // src/test-setup.ts installs a global window.electronAPI mock whose
+    // invoke() resolves { success: true } for any channel; stash it so the
+    // no-preload fallback paths (window.open / anchor click) are reachable.
+    let stashedElectronApi: unknown;
+
+    const removeElectronApi = () => {
+      stashedElectronApi = (window as any).electronAPI;
+      delete (window as any).electronAPI;
+    };
+    const restoreElectronApi = () => {
+      (window as any).electronAPI = stashedElectronApi;
+    };
+
+    it("prefers the real Electron preload bridge when window.electronAPI exists", async () => {
+      const bridgeInvoke = vi.fn().mockResolvedValue({ success: true });
+      stashedElectronApi = (window as any).electronAPI;
+      (window as any).electronAPI = { invoke: bridgeInvoke };
+      const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+
+      const response = await mockInvoke("shell:openExternal", { url: "https://example.com" });
+
+      expect(bridgeInvoke).toHaveBeenCalledWith("shell:openExternal", {
+        url: "https://example.com",
+      });
+      expect(openSpy).not.toHaveBeenCalled();
+      expect(response).toEqual({ success: true });
+      openSpy.mockRestore();
+      restoreElectronApi();
+    });
+
+    it("opens the URL via window.open and severs the opener when no preload bridge exists", async () => {
+      removeElectronApi();
       const fakeWindow = { opener: {} } as unknown as Window;
       const openSpy = vi.spyOn(window, "open").mockReturnValue(fakeWindow);
 
@@ -346,18 +377,46 @@ describe("host-bridge-seeder", () => {
       expect(fakeWindow.opener).toBeNull();
       expect(response).toEqual({ success: true });
       openSpy.mockRestore();
+      restoreElectronApi();
     });
 
-    it("rejects when the open is blocked or the url is missing (caller catch surfaces it)", async () => {
+    it("falls back to an anchor click instead of throwing when window.open is refused (regression: 'Unable to open external URL in this build')", async () => {
+      // Electron hosts deny window.open from their window-open handler after
+      // routing the URL to the system browser themselves — a null handle must
+      // not reject, or every docs link in the packaged build shows an error.
+      removeElectronApi();
+      const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+      const response = await mockInvoke("shell:openExternal", { url: "https://example.com/docs" });
+
+      expect(openSpy).toHaveBeenCalledWith("https://example.com/docs", "_blank");
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+      expect(response).toEqual({ success: true });
+      clickSpy.mockRestore();
+      openSpy.mockRestore();
+      restoreElectronApi();
+    });
+
+    it("rejects a missing url or a non-http(s) scheme without opening anything", async () => {
+      removeElectronApi();
       const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
 
-      await expect(mockInvoke("shell:openExternal", { url: "https://example.com" })).rejects.toThrow(
-        "Unable to open external URL in this build",
-      );
       await expect(mockInvoke("shell:openExternal", {})).rejects.toThrow(
         "Missing required parameter: url",
       );
+      await expect(
+        mockInvoke("shell:openExternal", { url: "javascript:alert(1)" }),
+      ).rejects.toThrow("Refusing to open non-http(s) URL externally: javascript:");
+      await expect(
+        mockInvoke("shell:openExternal", { url: "file:///etc/passwd" }),
+      ).rejects.toThrow("Refusing to open non-http(s) URL externally: file:");
+      await expect(mockInvoke("shell:openExternal", { url: "not a url" })).rejects.toThrow(
+        "Invalid external URL: not a url",
+      );
+      expect(openSpy).not.toHaveBeenCalled();
       openSpy.mockRestore();
+      restoreElectronApi();
     });
   });
 });

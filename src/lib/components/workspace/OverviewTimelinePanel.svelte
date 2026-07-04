@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { WorkspacePhaseInfo, WorkspacePhaseStats } from './workspace-phase';
   import { cn } from '$lib/utils';
+  import { shell } from '$lib/electron-bridge';
   import type { Note, Workspace } from '$shared/types';
   import { isSpecNote } from './sidebar';
   import {
@@ -654,7 +655,7 @@
               class="flex items-center gap-2 w-full text-left py-0.5 cursor-pointer hover:bg-muted/30 rounded transition-colors"
               onclick={() => {
                 if (stats.pr.url) {
-                  window.open(stats.pr.url, '_blank');
+                  void shell.open(stats.pr.url);
                 } else {
                   onSwitchTab?.('changes');
                 }

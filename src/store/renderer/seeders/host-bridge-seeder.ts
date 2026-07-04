@@ -26,6 +26,7 @@
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { backendRequest } from "$lib/client/live/backend-transport";
+import { openExternalUrl } from "$lib/utils/open-external";
 import { EDITOR_REGISTRY } from "$shared/editors/editor-registry";
 import type { InstalledEditor } from "$store/renderer/slices/external-editors/external-editors-slice";
 
@@ -251,17 +252,18 @@ registerMockIpcHandler("vscode:openFile", async (arg) => {
 /**
  * `shell:openExternal` — open a URL on the user's machine. PROTOCOL §5.14
  * defines `host.openExternal` as a daemon→client reverse RPC ("FE-served"):
- * the CLIENT owns opening URLs, so the legacy channel bridges to
- * `window.open` here rather than to a daemon call. A blocked/refused open
- * throws so each invoking component's catch path surfaces the failure
- * instead of a silent no-op.
+ * the CLIENT owns opening URLs, so the legacy channel bridges to the shared
+ * `openExternalUrl` opener rather than to a daemon call. The opener validates
+ * the scheme (http/https only — a bad URL still rejects loudly), prefers the
+ * real Electron preload bridge when one exists, and falls back to
+ * `window.open` + an anchor click. A refused `window.open` no longer throws:
+ * Electron hosts deny it from their window-open handler after opening the
+ * URL externally themselves, so treating a null handle as fatal broke every
+ * docs link in the packaged build.
  */
 registerMockIpcHandler("shell:openExternal", async (arg) => {
   const url = typeof arg === "string" ? arg : String(asRecord(arg).url ?? "");
-  if (!url) throw new Error("Missing required parameter: url");
-  const opened = typeof window !== "undefined" ? window.open(url, "_blank") : null;
-  if (!opened) throw new Error("Unable to open external URL in this build");
-  opened.opener = null;
+  await openExternalUrl(url);
   return { success: true };
 });
 
