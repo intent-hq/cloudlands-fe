@@ -19,6 +19,7 @@ import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
 import { createChatReadMiddleware } from "$features/agent/chat-read-service";
 import { createChatSendMiddleware } from "$features/agent/chat-send-service";
+import { createPermissionResponseMiddleware } from "$features/permission/permission-response-service";
 import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge";
 import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
 import { createModelSelectionPersistenceMiddleware } from "$features/settings/model-selection-persistence-service";
@@ -107,6 +108,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // `agent-stream-lifecycle.sendMessage()` again — producing a user message
     // and a live-streaming assistant response — instead of being a no-op.
     createChatSendMiddleware(),
+    // Give the (post-saga) permission triggers (`approvePermission` /
+    // `denyPermission` / `cancelPermission` / `selectPermissionOption`) a real
+    // consumer so `InlinePermissionRequest` clicks route to `agent.respondPermission`
+    // (PROTOCOL §8) and the chosen outcome unblocks the agent instead of
+    // waiting out the 5-minute timeout.
+    createPermissionResponseMiddleware(),
     // Wire daemon `events.event` notifications (PROTOCOL §7) into the
     // `workspaceEvents/eventReceived` action so the `agentSession` reducer
     // can faithfully clear optimistic `isStreaming`/`isProcessing`/

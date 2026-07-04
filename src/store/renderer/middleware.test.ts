@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => {
   const filesReadMiddleware = createPassthroughMiddleware();
   const chatReadMiddleware = createPassthroughMiddleware();
   const chatSendMiddleware = createPassthroughMiddleware();
+  const permissionResponseMiddleware = createPassthroughMiddleware();
   const daemonEventsBridgeMiddleware = createPassthroughMiddleware();
   const settingsHydrationMiddleware = createPassthroughMiddleware();
   const modelSelectionPersistenceMiddleware = createPassthroughMiddleware();
@@ -58,6 +59,7 @@ const mocks = vi.hoisted(() => {
     createFilesReadMiddleware: vi.fn(() => filesReadMiddleware),
     createChatReadMiddleware: vi.fn(() => chatReadMiddleware),
     createChatSendMiddleware: vi.fn(() => chatSendMiddleware),
+    createPermissionResponseMiddleware: vi.fn(() => permissionResponseMiddleware),
     createDaemonEventsBridgeMiddleware: vi.fn(() => daemonEventsBridgeMiddleware),
     createSettingsHydrationMiddleware: vi.fn(() => settingsHydrationMiddleware),
     createModelSelectionPersistenceMiddleware: vi.fn(() => modelSelectionPersistenceMiddleware),
@@ -94,6 +96,7 @@ const mocks = vi.hoisted(() => {
     filesReadMiddleware,
     chatReadMiddleware,
     chatSendMiddleware,
+    permissionResponseMiddleware,
     daemonEventsBridgeMiddleware,
     settingsHydrationMiddleware,
     modelSelectionPersistenceMiddleware,
@@ -130,6 +133,9 @@ vi.mock("$features/agent/agent-read-service", () => ({ createAgentReadMiddleware
 vi.mock("$features/files/files-read-service", () => ({ createFilesReadMiddleware: mocks.createFilesReadMiddleware }));
 vi.mock("$features/agent/chat-read-service", () => ({ createChatReadMiddleware: mocks.createChatReadMiddleware }));
 vi.mock("$features/agent/chat-send-service", () => ({ createChatSendMiddleware: mocks.createChatSendMiddleware }));
+vi.mock("$features/permission/permission-response-service", () => ({
+  createPermissionResponseMiddleware: mocks.createPermissionResponseMiddleware,
+}));
 vi.mock("$features/events/daemon-events-bridge", () => ({
   createDaemonEventsBridgeMiddleware: mocks.createDaemonEventsBridgeMiddleware,
 }));
@@ -267,6 +273,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
+      mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
@@ -312,6 +319,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
+      mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
@@ -357,6 +365,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
+      mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
@@ -403,6 +412,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
+      mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
@@ -466,6 +476,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
+      mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,

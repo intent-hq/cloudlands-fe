@@ -1213,3 +1213,122 @@ describe("daemonEventsBridge (script wire contract — script:output/state → s
     );
   });
 });
+
+describe("daemonEventsBridge (permission flow — PROTOCOL §8 request/resolved events)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  const REQUEST_ID = "perm_1718600000000_1";
+
+  function readPermissionRequests(): unknown[] {
+    const state = appStore.state as {
+      permission?: { requests?: { ids: string[]; map: Record<string, unknown> } };
+    };
+    const requests = state.permission?.requests;
+    if (!requests) return [];
+    return requests.ids.map((id) => requests.map[id]);
+  }
+
+  it("dispatches permissionRequestReceived with the normalized wire payload from agent:permission:request", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §8 normalized `PermissionRequestData` — the exact shape the
+    // Electron reference and intentd emit on `agent:permission:request`.
+    handler(
+      notification("agent:permission:request", {
+        requestId: REQUEST_ID,
+        sessionId: AGENT,
+        title: "Run command",
+        description: "Tool input: { \"command\": \"npm test\" }",
+        options: [
+          { id: "allow_once", label: "Allow", destructive: false },
+          { id: "reject_once", label: "Deny", destructive: true },
+        ],
+        agentName: "auggie",
+        riskLevel: "high",
+        timestamp: 1718600000000,
+      }),
+    );
+
+    const requests = readPermissionRequests();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      requestId: REQUEST_ID,
+      sessionId: AGENT,
+      title: "Run command",
+      agentName: "auggie",
+      riskLevel: "high",
+      timestamp: 1718600000000,
+      options: [
+        { id: "allow_once", label: "Allow", destructive: false },
+        { id: "reject_once", label: "Deny", destructive: true },
+      ],
+    });
+  });
+
+  it("clears the request via removePermissionRequest on agent:permission:resolved", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:permission:request", {
+        requestId: REQUEST_ID,
+        sessionId: AGENT,
+        title: "Run command",
+        options: [{ id: "allow_once", label: "Allow" }],
+        timestamp: 1718600000000,
+      }),
+    );
+    expect(readPermissionRequests()).toHaveLength(1);
+
+    // PROTOCOL §8: `agent:permission:resolved` carries `{ requestId, outcome }`
+    // — the outcome value is preserved on the wire but the FE only needs
+    // `requestId` to clear the inline prompt.
+    handler(
+      notification("agent:permission:resolved", {
+        requestId: REQUEST_ID,
+        outcome: { outcome: "selected", optionId: "allow_once" },
+      }),
+    );
+
+    expect(readPermissionRequests()).toHaveLength(0);
+  });
+
+  it("ignores permission events missing requestId / sessionId / title (schema guard)", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:permission:request", {
+        sessionId: AGENT,
+        title: "No id",
+        options: [],
+      }),
+    );
+    handler(
+      notification("agent:permission:request", {
+        requestId: REQUEST_ID,
+        title: "No session",
+        options: [],
+      }),
+    );
+    handler(
+      notification("agent:permission:resolved", {
+        outcome: { outcome: "cancelled" },
+      }),
+    );
+
+    expect(readPermissionRequests()).toHaveLength(0);
+  });
+});
