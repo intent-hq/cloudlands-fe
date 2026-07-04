@@ -22,6 +22,7 @@ import { createChatSendMiddleware } from "$features/agent/chat-send-service";
 import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge";
 import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
 import { createModelSelectionPersistenceMiddleware } from "$features/settings/model-selection-persistence-service";
+import { createModelReloadMiddleware } from "$features/settings/model-reload-service";
 import { createProviderSettingsPersistenceMiddleware } from "$features/settings/provider-settings-persistence-service";
 import { createProviderAvailabilityCheckMiddleware } from "$features/providers/provider-availability-check-service";
 import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
@@ -129,6 +130,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // in the local slice and every restart reverts to whatever the daemon
     // still had persisted.
     createProviderSettingsPersistenceMiddleware(),
+    // Give the (post-saga) `reloadModelsForProvider` trigger a real handler so
+    // provider switches refetch the daemon catalog (`models.list`, PROTOCOL
+    // §5.30) and drive the loading → success/error transitions in the model
+    // slice. Without this the picker keeps showing the previous provider's
+    // catalog until the next full reload.
+    createModelReloadMiddleware(),
     // Give the (post-saga) agent-availability triggers (`ensureProvidersChecked`,
     // `checkAllProvidersRequested`, `checkSingleProviderRequested`) a real
     // handler so onboarding/settings provider cards resolve to a terminal
