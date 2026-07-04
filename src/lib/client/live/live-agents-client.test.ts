@@ -351,4 +351,54 @@ describe("LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)",
     expect(agent?.isWaitingForOtherAgents).toBeUndefined();
     expect(agent?.waitingForAgentIds).toBeUndefined();
   });
+
+  // ---- §5.5 agent.getConversation pagination -----------------------------
+
+  it("getConversation forwards limit only when no pageToken is given (first page)", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      messages: [{ id: "m1" }],
+      truncated: true,
+      totalMessages: 3,
+      nextToken: "tok-2",
+    });
+    const client = new LiveAgentsClient();
+
+    const page = await client.getConversation("agent-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("agent.getConversation", {
+      agentId: "agent-1",
+      limit: 200,
+    });
+    expect(page.nextToken).toBe("tok-2");
+    expect(page.truncated).toBe(true);
+    expect(page.totalMessages).toBe(3);
+    expect(page.messages).toHaveLength(1);
+  });
+
+  it("getConversation forwards nextToken as the pagination cursor", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      messages: [],
+      truncated: false,
+      totalMessages: 3,
+      nextToken: null,
+    });
+    const client = new LiveAgentsClient();
+
+    const page = await client.getConversation("agent-1", 100, "tok-2");
+
+    expect(mockedRequest).toHaveBeenCalledWith("agent.getConversation", {
+      agentId: "agent-1",
+      limit: 100,
+      nextToken: "tok-2",
+    });
+    expect(page.nextToken).toBeNull();
+  });
+
+  it("getConversation normalizes a missing nextToken to null", async () => {
+    mockedRequest.mockResolvedValueOnce({ messages: [], truncated: false, totalMessages: 0 });
+    const client = new LiveAgentsClient();
+
+    const page = await client.getConversation("agent-1");
+    expect(page.nextToken).toBeNull();
+  });
 });

@@ -87,27 +87,39 @@ export class LiveAgentsClient implements AgentsClient {
   }
 
   // The list/get payloads carry message COUNTS only; the real transcript comes
-  // from `agent.getConversation` (§5.5), which returns most-recent-N messages
-  // (no continuation token — older history beyond `limit` is a documented daemon
-  // gap). `messages` is returned raw; the agent-session reducer normalizes/sorts/
-  // dedups/prunes on ingest.
+  // from `agent.getConversation` (§5.5), which returns one page of messages
+  // (oldest→newest within the page). The daemon clamps `limit` to `[1,200]` —
+  // `pageToken` walks backward to older pages, and `nextToken` is `null` once
+  // the oldest message has been returned. The chat-read-service loops on
+  // `nextToken` to assemble the full transcript. `messages` is returned raw;
+  // the agent-session reducer normalizes/sorts/dedups/prunes on ingest.
   async getConversation(
     agentId: string,
-    limit = 500,
-  ): Promise<{ messages: AgentMessage[]; truncated: boolean; totalMessages: number }> {
+    limit = 200,
+    pageToken?: string,
+  ): Promise<{
+    messages: AgentMessage[];
+    truncated: boolean;
+    totalMessages: number;
+    nextToken: string | null;
+  }> {
+    const params: Record<string, unknown> = { agentId, limit };
+    if (pageToken !== undefined) params.nextToken = pageToken;
     const result = await backendRequest<{
       messages?: unknown[];
       truncated?: boolean;
       totalMessages?: number;
-    }>("agent.getConversation", { agentId, limit });
+      nextToken?: unknown;
+    }>("agent.getConversation", params);
     if (!result || typeof result !== "object") {
-      return { messages: [], truncated: false, totalMessages: 0 };
+      return { messages: [], truncated: false, totalMessages: 0, nextToken: null };
     }
     const messages = Array.isArray(result.messages) ? (result.messages as AgentMessage[]) : [];
     return {
       messages,
       truncated: Boolean(result.truncated),
       totalMessages: typeof result.totalMessages === "number" ? result.totalMessages : 0,
+      nextToken: typeof result.nextToken === "string" ? result.nextToken : null,
     };
   }
 

@@ -15,6 +15,7 @@ vi.mock("$lib/client", () => ({
           messages: [] as AgentMessage[],
           truncated: false,
           totalMessages: 0,
+          nextToken: null as string | null,
         }),
       ),
     },
@@ -60,10 +61,14 @@ function makeMessage(id: string, text: string): AgentMessage {
   };
 }
 
-const conversation = (messages: AgentMessage[]) => ({
+const conversation = (
+  messages: AgentMessage[],
+  nextToken: string | null = null,
+) => ({
   messages,
-  truncated: false,
+  truncated: nextToken !== null,
   totalMessages: messages.length,
+  nextToken,
 });
 
 describe("chatReadService (fake seam, real store)", () => {
@@ -81,8 +86,42 @@ describe("chatReadService (fake seam, real store)", () => {
     await loadChatTranscript(AGENT);
 
     expect(agentsApi.get).toHaveBeenCalledWith(AGENT);
-    expect(agentsApi.getConversation).toHaveBeenCalledWith(AGENT);
+    expect(agentsApi.getConversation).toHaveBeenCalledWith(AGENT, undefined, undefined);
     expect(selectAgentMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual(["m1"]);
+  });
+
+  it("pages through nextToken until exhausted and assembles the full transcript", async () => {
+    const agentId = "agent-chat-paged";
+    agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
+    // Daemon walks backward: first page = newest, then older pages via nextToken.
+    agentsApi.getConversation
+      .mockResolvedValueOnce(conversation([makeMessage("m3", "c")], "tok-2") as never)
+      .mockResolvedValueOnce(conversation([makeMessage("m2", "b")], "tok-1") as never)
+      .mockResolvedValueOnce(conversation([makeMessage("m1", "a")], null) as never);
+
+    await loadChatTranscript(agentId);
+
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(1, agentId, undefined, undefined);
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(2, agentId, undefined, "tok-2");
+    expect(agentsApi.getConversation).toHaveBeenNthCalledWith(3, agentId, undefined, "tok-1");
+    const ids = selectAgentMessages.select(appStore.state, agentId).map((m) => m.id);
+    expect(ids).toEqual(expect.arrayContaining(["m1", "m2", "m3"]));
+    expect(ids).toHaveLength(3);
+  });
+
+  it("stops pagination when the daemon repeats a nextToken (pathological loop guard)", async () => {
+    const agentId = "agent-chat-loop";
+    agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
+    agentsApi.getConversation
+      .mockResolvedValueOnce(conversation([makeMessage("m2", "b")], "tok-x") as never)
+      .mockResolvedValueOnce(conversation([makeMessage("m1", "a")], "tok-x") as never);
+
+    await loadChatTranscript(agentId);
+
+    // First fetch (no token) + one paged fetch (tok-x) — the repeat aborts the loop.
+    expect(agentsApi.getConversation).toHaveBeenCalledTimes(2);
+    const ids = selectAgentMessages.select(appStore.state, agentId).map((m) => m.id);
+    expect(ids).toEqual(expect.arrayContaining(["m1", "m2"]));
   });
 
   it("skips hydration when the session read returns null (no fabricated session)", async () => {
@@ -128,7 +167,7 @@ describe("chatReadService (fake seam, real store)", () => {
     appStore.dispatch(initializeChatRequested(AGENT, { wsId: WS }));
     await flush();
 
-    expect(agentsApi.getConversation).toHaveBeenCalledWith(AGENT);
+    expect(agentsApi.getConversation).toHaveBeenCalledWith(AGENT, undefined, undefined);
     expect(selectAgentMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual(["via-action"]);
   });
 

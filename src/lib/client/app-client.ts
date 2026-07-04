@@ -218,16 +218,24 @@ export interface AgentsClient {
   list(workspaceId: string): Promise<AgentSession[]>;
   get(agentId: string): Promise<AgentSession | null>;
   /**
-   * Full retained transcript for an agent (`agent.getConversation`, §5.5). Returns
-   * AgentMessage-granular messages (role/turn structure preserved) — the source
-   * the conversation UI hydrates from, unlike `chat.history` (flattened blocks).
-   * `limit` caps the most-recent-N returned; `truncated`/`totalMessages` report
-   * whether older history was dropped beyond the cap.
+   * One page of an agent's retained transcript (`agent.getConversation`, §5.5).
+   * Returns AgentMessage-granular messages (role/turn structure preserved) — the
+   * source the conversation UI hydrates from, unlike `chat.history` (flattened
+   * blocks). `limit` clamps to `[1,200]` (daemon default 50); the first page is
+   * the newest slice. `nextToken` is opaque and walks backward to older pages
+   * (`null` once the oldest message has been returned). Callers that want the
+   * full transcript must page until `nextToken` is null.
    */
   getConversation(
     agentId: string,
     limit?: number,
-  ): Promise<{ messages: AgentMessage[]; truncated: boolean; totalMessages: number }>;
+    pageToken?: string,
+  ): Promise<{
+    messages: AgentMessage[];
+    truncated: boolean;
+    totalMessages: number;
+    nextToken: string | null;
+  }>;
   /**
    * Create an agent session (`agent.create`, §5.5). The daemon returns the
    * full `AgentLite` projection of the newly persisted session (widened in
