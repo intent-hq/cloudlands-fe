@@ -79,17 +79,6 @@ import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("DaemonEventsBridge");
 
-/** Event types the agent-session reducer reacts to via `eventReceived`. */
-const AGENT_LIFECYCLE_TYPES = new Set([
-  "agent:idle",
-  "agent:failed",
-  "agent:session-completed",
-  "agent:status-changed",
-  "agent:session-updated",
-  "agent:user-message:sent",
-  "agent:message",
-]);
-
 /**
  * Per-agent in-flight stream accumulator. The BE assigns each block a
  * monotonic `blockIndex` (see `crates/intent-services/src/agent_session.rs`
@@ -503,7 +492,13 @@ function handleNotification(method: string, params: unknown): void {
     // fall through to the lifecycle dispatch below
   }
 
-  if (!AGENT_LIFECYCLE_TYPES.has(type)) return;
+  // Storage + fan-out: every workspace-scoped event flows into
+  // `workspaceEvents` (activity timeline) and, for the agent-lifecycle subset
+  // (`agent:idle`, `agent:failed`, `agent:session-completed`,
+  // `agent:status-changed`, `agent:session-updated`, `agent:user-message:sent`,
+  // `agent:message`), through the `agentSession` reducer's
+  // `canonicalFieldsFromWorkspaceEvent` path wired to the same `eventReceived`
+  // action.
   appStore.dispatch(eventReceived(workspaceId, event));
 }
 

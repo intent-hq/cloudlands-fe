@@ -199,7 +199,7 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
-  it("ignores notifications that are not events.event or not agent-lifecycle", async () => {
+  it("ignores non-events.event methods, and forwards non-lifecycle events.event notifications into workspaceEvents without changing agent-session flags", async () => {
     seedSession({ isStreaming: true, status: AgentStatus.Active });
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -208,7 +208,9 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
     handler({ method: "agent.stream:chunk", params: { agentId: AGENT } });
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
 
-    // events.event but not a lifecycle type — no-op.
+    // events.event carrying a non-lifecycle domain event — still stored in the
+    // workspaceEvents buffer (activity timeline) but never flips the
+    // agent-session isResponding flag, which is owned by the lifecycle subset.
     handler({
       method: "events.event",
       params: {
@@ -223,6 +225,12 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
       },
     });
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+    const state = appStore.state as {
+      workspaceEvents: { byWorkspaceId: Record<string, { events: Array<{ id: string }> }> };
+    };
+    expect(state.workspaceEvents.byWorkspaceId[WS]?.events.map((event) => event.id)).toContain(
+      "evt-2",
+    );
   });
 
   it("drops events without a workspaceId rather than guessing", async () => {
