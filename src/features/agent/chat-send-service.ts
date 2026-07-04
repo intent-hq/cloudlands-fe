@@ -25,6 +25,16 @@
  * agent-queue slice so the queued-UI surfaces immediately. The BE remains the
  * single source of truth — the FE never second-guesses the streaming flags.
  *
+ * Stop: ChatPanel's Stop button dispatches `agentSessionStopChatRequested`
+ * (another orphaned `*Requested` trigger — its saga consumer was removed with
+ * the saga runtime, so Stop was a dead button). The handler mirrors the
+ * reference saga minimally: flag `chatStopInitiated` (isInterrupting UI),
+ * call `agent.stop` via the seam (`appClient.agents.stop`, §5.5 — the daemon
+ * cancels the in-flight stream and emits the terminal `agent:stream:end`,
+ * which is the real convergence signal), then `chatStopCompleted` and settle
+ * the action's promise. A non-success stop is logged but still completes —
+ * matching the reference, the UI must not stay stuck in "interrupting".
+ *
  * Dependency-light per src/store AGENTS.md: top-level imports are limited to
  * the configured store, slice actions, store-free types, and the logger.
  * Selectors and the lifecycle module (which evaluate `store.createSelector`
@@ -38,9 +48,12 @@ import { store as appStore } from "$store/renderer/store";
 import {
   chatSendFailed,
   chatSendStarted,
+  chatStopCompleted,
+  chatStopInitiated,
   sendInitialMessageRequested,
   sendMessage,
 } from "$store/renderer/slices/chat-state/chat-state-slice";
+import { agentSessionStopChatRequested } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { clearChatDraft } from "$store/renderer/slices/transient-ui/transient-ui-slice";
 import {
   removeQueuedMessageFromAgentQueue,
@@ -213,9 +226,51 @@ async function dispatchQueueRemoval(agentId: string, messageId: string): Promise
 }
 
 /**
- * Middleware that gives `sendMessage`, `sendInitialMessageRequested`, and
- * `removeQueuedMessageRequested` a real consumer. Fire-and-forget — dispatch
- * stays synchronous and never throws.
+ * Service the Stop button: cancel the agent's in-flight stream via
+ * `agent.stop` (§5.5) and settle the async action's promise. A missing
+ * session resolves immediately (nothing to stop). A non-success stop result
+ * is a transport-level failure (the seam folds RPC throws into
+ * MutationResult); it is logged but the stop flow still completes — the
+ * daemon's terminal `agent:stream:end` is the authoritative convergence
+ * signal, and the UI must not stay stuck in the "interrupting" state.
+ */
+async function dispatchStopChat(
+  action: ReturnType<typeof agentSessionStopChatRequested>,
+): Promise<void> {
+  const [agentId] = action.payload;
+  // Direct one-time session-existence read, dependency-light (no selector
+  // import) — mirrors agent-mutation-service's readSession.
+  const state = appStore.state as { agentSessions?: { byAgentId: Record<string, unknown> } };
+  if (!state.agentSessions?.byAgentId[agentId]) {
+    appStore.dispatch(action.success(undefined as void));
+    return;
+  }
+  appStore.dispatch(chatStopInitiated(agentId));
+  try {
+    const result = await appClient.agents.stop(agentId);
+    if (!result.success) {
+      logger.warn("agent.stop reported a non-success result", {
+        agentId,
+        error: result.error,
+      });
+    }
+    appStore.dispatch(chatStopCompleted(agentId));
+    appStore.dispatch(action.success(undefined as void));
+  } catch (error) {
+    // The seam should not throw; if it does, still clear the interrupting
+    // flag so the Stop button doesn't wedge, then reject the promise.
+    logger.error("agent.stop threw", error);
+    appStore.dispatch(chatStopCompleted(agentId));
+    appStore.dispatch(
+      action.failure(error instanceof Error ? error : new Error(String(error))),
+    );
+  }
+}
+
+/**
+ * Middleware that gives `sendMessage`, `sendInitialMessageRequested`,
+ * `removeQueuedMessageRequested`, and `agentSessionStopChatRequested` a real
+ * consumer. Fire-and-forget — dispatch stays synchronous and never throws.
  */
 export function createChatSendMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
@@ -290,6 +345,12 @@ export function createChatSendMiddleware(): StoreMiddleware {
         messageId.length > 0
       ) {
         void dispatchQueueRemoval(agentId, messageId);
+      }
+    } else if ((action as { type?: unknown }).type === agentSessionStopChatRequested.type) {
+      const stopAction = action as ReturnType<typeof agentSessionStopChatRequested>;
+      const [agentId] = stopAction.payload ?? [];
+      if (typeof agentId === "string" && agentId.length > 0) {
+        void dispatchStopChat(stopAction);
       }
     }
 

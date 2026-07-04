@@ -234,6 +234,26 @@ describe("LiveAgentsClient mutations (fake transport)", () => {
     expect(mockedRequest).toHaveBeenCalledWith("agent.lock", { agentId: "agent-1", locked: true });
   });
 
+  it("stop forwards agent.stop with §5.5 params and folds the ack into success", async () => {
+    // PROTOCOL §5.5: agent.stop takes `{ agentId }` and acks `{ success: true }`
+    // — the daemon cancels the in-flight stream and emits the terminal
+    // `agent:stream:end` (§7), so the ack body carries nothing else.
+    mockedRequest.mockResolvedValueOnce({ success: true });
+    const client = new LiveAgentsClient();
+
+    expect(await client.stop("agent-1")).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith("agent.stop", { agentId: "agent-1" });
+  });
+
+  it("stop surfaces a transport failure as a non-success MutationResult (no throw)", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("stop boom"));
+    const client = new LiveAgentsClient();
+
+    const result = await client.stop("agent-1");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("stop boom");
+  });
+
   it("delete forwards agent.delete with §5.5 params and folds the idempotent BE body into success", async () => {
     // PROTOCOL §5.5: agent.delete takes `{ agentId }` (workspaceId optional, the
     // daemon resolves it) and returns `{ success: true }` — idempotently, even

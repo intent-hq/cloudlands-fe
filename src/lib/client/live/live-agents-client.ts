@@ -199,6 +199,12 @@ export class LiveAgentsClient implements AgentsClient {
   async lock(agentId: string, locked: boolean): Promise<MutationResult> {
     return runMutation("agent.lock", { agentId, locked });
   }
+  async stop(agentId: string): Promise<MutationResult> {
+    // `agent.stop` (§5.5) takes `{ agentId }` and acks `{ success: true }`.
+    // The daemon cancels the in-flight stream and emits the terminal
+    // `agent:stream:end` (§7), which converges the FE streaming state.
+    return runMutation("agent.stop", { agentId });
+  }
   async delete(agentId: string): Promise<MutationResult> {
     // `agent.delete` (§5.5) takes `agentId` (req) and an optional `workspaceId`;
     // the daemon resolves the workspace itself (agent_delete_op only consumes

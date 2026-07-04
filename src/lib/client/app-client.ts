@@ -251,6 +251,13 @@ export interface AgentsClient {
   follow(agentId: string, follow: boolean): Promise<MutationResult>;
   lock(agentId: string, locked: boolean): Promise<MutationResult>;
   /**
+   * Cancel the agent's in-flight stream (`agent.stop`, §5.5). The response is
+   * just an ack (`{ success: true }`); the daemon cancels the current turn
+   * and emits the terminal `agent:stream:end` (§7), which is the signal that
+   * converges the FE streaming state.
+   */
+  stop(agentId: string): Promise<MutationResult>;
+  /**
    * Permanently delete an agent session (`agent.delete`, §5.5). The daemon is
    * **idempotent** — it returns `{ success: true }` even when the agent is
    * already gone — and emits `agent:deleted` (in `AGENT_LIFECYCLE_EVENTS`), so
