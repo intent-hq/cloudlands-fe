@@ -293,28 +293,12 @@ export class WorkspaceClient {
     return result;
   }
 
-  async preflightCloneCheck(githubUrl: string): Promise<Result<null, string>> {
-    return this.invoke<null>(WORKSPACE_CHANNELS.PREFLIGHT_CLONE_CHECK, { githubUrl });
-  }
-
-  async get(id: WorkspaceId): Promise<Result<Workspace, string>> {
-    const result = await this.invoke<Workspace>(WORKSPACE_CHANNELS.GET, { id });
-    if (result.ok) {
-      return { ok: true, data: normalizeWorkspacePaths(result.data) };
-    }
-    return result;
-  }
-
   async open(id: WorkspaceId): Promise<Result<Workspace, string>> {
     const result = await this.invoke<Workspace>(WORKSPACE_CHANNELS.OPEN, { id });
     if (result.ok) {
       return { ok: true, data: normalizeWorkspacePaths(result.data) };
     }
     return result;
-  }
-
-  async close(id: WorkspaceId): Promise<Result<void, string>> {
-    return this.invoke<void>(WORKSPACE_CHANNELS.CLOSE, { id });
   }
 
   async update(request: UpdateWorkspaceRequest): Promise<Result<Workspace, string>> {
@@ -372,29 +356,6 @@ export class WorkspaceClient {
       return { ok: true, data: undefined };
     }
     return { ok: false, error: result.error || 'Failed to unarchive workspace' };
-  }
-
-  async duplicate(id: WorkspaceId, newTitle?: string): Promise<Result<Workspace, string>> {
-    const result = await this.invoke<Workspace>(WORKSPACE_CHANNELS.DUPLICATE, { id, newTitle });
-    if (result.ok) {
-      return { ok: true, data: normalizeWorkspacePaths(result.data) };
-    }
-    return result;
-  }
-
-  async renameBranch(id: WorkspaceId, newBranchName: string): Promise<Result<Workspace, string>> {
-    const result = await this.invoke<Workspace>(WORKSPACE_CHANNELS.RENAME_BRANCH, {
-      id,
-      newBranchName,
-    });
-    // Clear cache for this workspace after rename
-    if (result.ok) {
-      this.clearCache(id);
-      // Also clear list cache since this operation changes which/how workspaces are returned
-      this.clearCache();
-      return { ok: true, data: normalizeWorkspacePaths(result.data) };
-    }
-    return result;
   }
 
   /**
