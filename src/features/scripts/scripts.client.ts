@@ -9,7 +9,10 @@
  * (`detect`, `saveToRepo`) stay on their legacy channels, which resolve to
  * the allowlisted "not available in this build" failure envelope
  * (UNBRIDGED_INVOKE_ALLOWLIST) until the daemon grows a script-detection /
- * repo-config surface.
+ * repo-config surface. `saveToRepo` sources its payload from the live daemon
+ * `script.list` — the legacy local store is empty in daemon builds, and
+ * letting the main handler read it is what silently clobbered
+ * `.intent/config.json` with `scripts: []`.
  */
 
 import type {
@@ -190,8 +193,26 @@ export const scriptsClient = {
     return { success: false, error: 'Electron IPC not available' };
   },
 
-  /** Save workspace scripts to the repo-level shared file. */
+  /**
+   * Save workspace scripts to the repo-level `.intent/config.json`.
+   *
+   * The payload is sourced from the live daemon `script.list` (§5.8) and
+   * shipped to the main handler, which merges it into the existing repo
+   * config (preserving non-script keys). An empty live list is a no-op on
+   * the main side (`written: false`) — it never clobbers a populated repo
+   * config with `[]`.
+   */
   async saveToRepo(workspaceId: string): Promise<CommandResponse<void>> {
-    return invoke<void>(IPC_CHANNELS.SCRIPTS.SAVE_TO_REPO, { workspaceId });
+    const scripts = await appClient.scripts.list(workspaceId);
+    const payload = scripts.map(({ name, command, mode, category, cwd, env, autoStart }) => ({
+      name,
+      command,
+      mode,
+      ...(category !== undefined ? { category } : {}),
+      ...(cwd !== undefined ? { cwd } : {}),
+      ...(env !== undefined ? { env } : {}),
+      ...(autoStart !== undefined ? { autoStart } : {}),
+    }));
+    return invoke<void>(IPC_CHANNELS.SCRIPTS.SAVE_TO_REPO, { workspaceId, scripts: payload });
   },
 };

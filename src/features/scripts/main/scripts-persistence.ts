@@ -14,6 +14,11 @@ import { writeJsonWithSync } from '../../../shared/main/file-sync-utils';
 import { ScriptsFileFormatSchema } from '../schemas';
 import type { WorkspaceScript, ScriptsFileFormat } from '../types';
 import { REPO_INTENT_DIR } from '../../../shared/types/repo-config.types';
+import type { RepoScript } from '../../../shared/types/repo-config.types';
+import {
+  readRepoConfig,
+  writeRepoConfig,
+} from '../../workspace/main/repo-config.service';
 
 const logger = new Logger('ScriptsPersistence');
 
@@ -196,5 +201,28 @@ export async function readRepoScripts(repoPath: string): Promise<WorkspaceScript
     });
     return [];
   }
+}
+
+/**
+ * Persist script definitions into the repo-level `.intent/config.json`,
+ * preserving every non-script key (branchPrefix, setupScript, …).
+ *
+ * An empty `scripts` array is treated as "nothing to save": the existing
+ * config is left untouched (`written: false`) so a caller whose live source
+ * came back empty can never clobber a populated repo config with `[]`.
+ *
+ * Throws on write failure — callers must surface the error, never report
+ * success on a write that dropped data.
+ */
+export async function saveScriptsToRepoConfig(
+  repoPath: string,
+  scripts: RepoScript[],
+): Promise<{ written: boolean }> {
+  if (scripts.length === 0) {
+    return { written: false };
+  }
+  const existingConfig = await readRepoConfig(repoPath);
+  await writeRepoConfig(repoPath, { ...existingConfig, scripts });
+  return { written: true };
 }
 

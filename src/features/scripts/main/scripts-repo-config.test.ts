@@ -13,7 +13,7 @@ import {
   readRepoConfig,
   writeRepoConfig,
 } from '../../workspace/main/repo-config.service';
-import { readRepoScripts } from './scripts-persistence';
+import { readRepoScripts, saveScriptsToRepoConfig } from './scripts-persistence';
 import type { RepoScript, RepoConfig } from '../../../shared/types/repo-config.types';
 import type { WorkspaceScript } from '../types';
 
@@ -155,6 +155,52 @@ describe('RepoConfig scripts', () => {
     expect(repoScript).not.toHaveProperty('createdAt');
     expect(repoScript).not.toHaveProperty('updatedAt');
     expect(repoScript).not.toHaveProperty('source');
+  });
+});
+
+describe('saveScriptsToRepoConfig (save-to-repo regression)', () => {
+  it('merges scripts into config.json preserving non-script keys', async () => {
+    await writeRepoConfig(repoPath, {
+      branchPrefix: 'feat/',
+      setupScript: './setup.sh',
+      scripts: [{ name: 'old', command: 'echo old', mode: 'command' }],
+    });
+
+    const next: RepoScript[] = [
+      { name: 'dev', command: 'pnpm dev', mode: 'service', autoStart: true },
+      { name: 'test', command: 'pnpm test', mode: 'command' },
+    ];
+    const result = await saveScriptsToRepoConfig(repoPath, next);
+
+    expect(result).toEqual({ written: true });
+    const config = await readRepoConfig(repoPath);
+    expect(config.branchPrefix).toBe('feat/');
+    expect(config.setupScript).toBe('./setup.sh');
+    expect(config.scripts).toEqual(next);
+  });
+
+  it('treats an empty scripts array as a no-op and never clobbers a populated config', async () => {
+    const existing: RepoConfig = {
+      branchPrefix: 'feat/',
+      scripts: [{ name: 'dev', command: 'pnpm dev', mode: 'service' }],
+    };
+    await writeRepoConfig(repoPath, existing);
+
+    const result = await saveScriptsToRepoConfig(repoPath, []);
+
+    expect(result).toEqual({ written: false });
+    const config = await readRepoConfig(repoPath);
+    expect(config).toEqual(existing);
+  });
+
+  it('creates config.json when none exists', async () => {
+    const scripts: RepoScript[] = [{ name: 'dev', command: 'pnpm dev', mode: 'service' }];
+
+    const result = await saveScriptsToRepoConfig(repoPath, scripts);
+
+    expect(result).toEqual({ written: true });
+    const config = await readRepoConfig(repoPath);
+    expect(config.scripts).toEqual(scripts);
   });
 });
 

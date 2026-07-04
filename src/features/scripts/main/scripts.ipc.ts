@@ -35,6 +35,7 @@ import {
   upsertScript,
   removeScript,
   readRepoScripts,
+  saveScriptsToRepoConfig,
 } from './scripts-persistence';
 import {
   getScriptProcessManager,
@@ -48,6 +49,8 @@ import { WorkspaceConfig } from '$shared/main/config';
 import {
   CreateScriptSchema,
   UpdateScriptSchema,
+  ScriptModeSchema,
+  ScriptCategorySchema,
 } from '../schemas';
 import type { WorkspaceScript, ScriptRuntimeState, ScriptWithState } from '../types';
 import { createDefaultRuntimeState } from '../types';
@@ -118,8 +121,27 @@ const ScriptsDetectSchema = z.object({
   workspaceId: WorkspaceIdField,
 });
 
+/**
+ * Repo-level script definition shipped by the renderer. The renderer sources
+ * these from the live daemon `script.list` (§5.8) — the legacy local store is
+ * NOT consulted (it is empty in daemon builds, and reading it here is what
+ * silently clobbered `.intent/config.json` with `scripts: []`). `scripts` is
+ * REQUIRED: a payload without it fails validation loudly instead of writing
+ * an empty array and reporting success.
+ */
+const RepoScriptPayloadSchema = z.object({
+  name: z.string().min(1),
+  command: z.string().min(1),
+  mode: ScriptModeSchema,
+  category: ScriptCategorySchema.optional(),
+  cwd: z.string().optional(),
+  env: z.record(z.string()).optional(),
+  autoStart: z.boolean().optional(),
+});
+
 const ScriptsSaveToRepoSchema = z.object({
   workspaceId: WorkspaceIdField,
+  scripts: z.array(RepoScriptPayloadSchema),
 });
 
 // ============================================================================
@@ -755,33 +777,29 @@ export function registerScriptsHandlers(): void {
     SCRIPTS_CHANNELS.SAVE_TO_REPO,
     createSafeValidatedHandler(
       ScriptsSaveToRepoSchema,
-      async (_event, { workspaceId }) => {
+      async (_event, { workspaceId, scripts }) => {
         try {
           const { repositoryPath } = await resolveWorkspacePaths(workspaceId);
-          const existingConfig = await readRepoConfig(repositoryPath);
-          const workspaceScripts = await readScripts(workspaceId);
-          const repoScripts: RepoScript[] = workspaceScripts.map(
+          const repoScripts: RepoScript[] = scripts.map(
             ({ name, command, mode, category, cwd, env, autoStart }) => ({
               name,
               command,
               mode,
-              category,
-              cwd,
-              env,
-              autoStart,
+              ...(category !== undefined ? { category } : {}),
+              ...(cwd !== undefined ? { cwd } : {}),
+              ...(env !== undefined ? { env } : {}),
+              ...(autoStart !== undefined ? { autoStart } : {}),
             }),
           );
-          await writeRepoConfig(repositoryPath, {
-            ...existingConfig,
-            scripts: repoScripts,
-          });
+          const { written } = await saveScriptsToRepoConfig(repositoryPath, repoScripts);
 
           logger.info('[Scripts] Saved workspace scripts to repo', {
             workspaceId,
             count: repoScripts.length,
+            written,
           });
 
-          return { success: true };
+          return { success: true, written, count: repoScripts.length };
         } catch (error) {
           logger.error('[Scripts] Error saving scripts to repo:', error as Error);
           return {
