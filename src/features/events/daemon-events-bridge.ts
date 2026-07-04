@@ -70,6 +70,14 @@ import { tokenUsageReceived } from "$store/renderer/slices/token-usage/token-usa
 import type { TokenUsage } from "$features/token-usage/token-usage-types";
 import { applySettingsChanges } from "$features/settings/settings-hydration-service";
 import {
+  appendScriptOutput,
+  updateRuntimeState,
+} from "$store/renderer/slices/scripts/scripts-slice";
+import type {
+  ScriptOutputLine,
+  ScriptRuntimeState,
+} from "$store/renderer/slices/scripts/scripts-types";
+import {
   backendRequest,
   onBackendNotification,
 } from "$lib/client/live/backend-transport";
@@ -368,6 +376,69 @@ function handleSettingsChangedEvent(event: WorkspaceEvent): void {
 }
 
 /**
+ * Decode a base64 `chunk` (PROTOCOL §6.5 `script:output` payload) into a
+ * UTF-8 string. Runs in the renderer, so `atob` is available; the two-step
+ * conversion via `Uint8Array` preserves multibyte characters that a naive
+ * `atob(...).split('')` would corrupt.
+ */
+function decodeBase64Chunk(chunk: string): string | null {
+  try {
+    const binary = atob(chunk);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new TextDecoder("utf-8").decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `script:output` (§6.5) carries `{ scriptId, chunk }` where `chunk` is the
+ * base64 of raw PTY bytes. Split on `\r?\n` into `ScriptOutputLine[]` and
+ * feed the scripts slice's `appendScriptOutput`; the trailing empty string
+ * from a chunk that ends on a newline is dropped so the reference viewer's
+ * `.join('\n')` reconstruction stays lossless. Streams are collapsed to
+ * `stdout` because the daemon PTY is a single unified stream (§5.8).
+ */
+function handleScriptOutputEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const scriptId = data.scriptId;
+  const chunk = data.chunk;
+  if (typeof scriptId !== "string" || typeof chunk !== "string") return;
+  const text = decodeBase64Chunk(chunk);
+  if (text === null) return;
+  const parts = text.split(/\r?\n/);
+  const timestamp = new Date().toISOString();
+  const lines: ScriptOutputLine[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (i === parts.length - 1 && parts[i] === "") continue;
+    lines.push({ text: parts[i], stream: "stdout", timestamp });
+  }
+  if (lines.length === 0) return;
+  appStore.dispatch(appendScriptOutput(workspaceId, scriptId, lines));
+}
+
+/**
+ * `script:state` (§6.5) carries the recomputed `ScriptRuntimeState` plus a
+ * `scriptId` — self-sufficient per §6.7 — so the renderer mirrors it into
+ * the scripts slice via `updateRuntimeState` without a follow-up
+ * `script.status` read. The reducer no-ops if the script hasn't been
+ * hydrated yet by `initializeScripts` (matches the reference saga).
+ */
+function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const { scriptId, ...rest } = data as { scriptId?: unknown } & Record<string, unknown>;
+  if (typeof scriptId !== "string") return;
+  appStore.dispatch(
+    updateRuntimeState(workspaceId, scriptId, rest as Partial<ScriptRuntimeState>),
+  );
+}
+
+/**
  * Re-emit daemon events onto the legacy mock-IPC event channels components
  * still `listenSync`/`on` (see file header). Channel names are string
  * literals on purpose: the reconciliation suite statically scans
@@ -486,6 +557,21 @@ function handleNotification(method: string, params: unknown): void {
   if (type === "agent:queue:updated") {
     handleQueueUpdatedEvent(event);
     return;
+  }
+  // Script output/state (§6.5) — script:output feeds the live buffer the
+  // `ScriptOutputViewer` xterm reads from, script:state mirrors the
+  // recomputed `ScriptRuntimeState` into the scripts slice. Both fall
+  // through to the storage dispatch below so the activity timeline still
+  // records that they happened.
+  if (type === "script:output") {
+    handleScriptOutputEvent(event, workspaceId);
+    // Chunks are noise for the activity timeline (one per PTY read); skip
+    // the storage dispatch so we do not fill the 100-event cap with them.
+    return;
+  }
+  if (type === "script:state") {
+    handleScriptStateEvent(event, workspaceId);
+    // fall through to the lifecycle dispatch below
   }
   if (type === "agent:failed") {
     handleAgentFailedStream(event);

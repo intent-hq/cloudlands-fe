@@ -42,6 +42,11 @@ import {
 import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
 import type { QueuedMessage } from "$shared/types";
 import { addMockIpcListener, resetMockIpcRouter } from "$shared/ipc-mock-router";
+import {
+  disposeScripts,
+  upsertScript,
+} from "$store/renderer/slices/scripts/scripts-slice";
+import type { ScriptOutputLine } from "$store/renderer/slices/scripts/scripts-types";
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -1070,5 +1075,141 @@ describe("daemonEventsBridge (legacy mock-IPC relay — daemon events → listen
     });
 
     expect(seen).toEqual([]);
+  });
+});
+
+describe("daemonEventsBridge (script wire contract — script:output/state → scripts slice)", () => {
+  const SCRIPT_ID = "script-bridge-1";
+
+  function seedScript(): void {
+    appStore.dispatch(
+      upsertScript(WS, {
+        id: SCRIPT_ID,
+        workspaceId: WS,
+        name: "Dev Server",
+        command: "pnpm dev",
+        mode: "service",
+        source: "user",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+  }
+
+  function readScriptsState(): {
+    scripts: Record<string, { runtime: { status: string; pid?: number; detectedUrl?: string } }>;
+    outputBuffers: Record<string, ScriptOutputLine[]>;
+  } {
+    const state = appStore.state as {
+      scripts: {
+        byWorkspaceId: Record<
+          string,
+          {
+            scripts: Record<
+              string,
+              { runtime: { status: string; pid?: number; detectedUrl?: string } }
+            >;
+            outputBuffers: Record<string, ScriptOutputLine[]>;
+          }
+        >;
+      };
+    };
+    return (
+      state.scripts.byWorkspaceId[WS] ?? {
+        scripts: {},
+        outputBuffers: {},
+      }
+    );
+  }
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    appStore.dispatch(disposeScripts(WS));
+    seedScript();
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("decodes script:output base64 chunk and appends split lines to the output buffer", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §6.5 payload: { scriptId, chunk } — chunk is base64 of raw PTY bytes.
+    const raw = "hello\nworld\n";
+    const chunk = Buffer.from(raw, "utf-8").toString("base64");
+    handler(notification("script:output", { scriptId: SCRIPT_ID, chunk }));
+
+    const buffer = readScriptsState().outputBuffers[SCRIPT_ID] ?? [];
+    expect(buffer.map((line) => line.text)).toEqual(["hello", "world"]);
+    for (const line of buffer) expect(line.stream).toBe("stdout");
+  });
+
+  it("keeps a trailing partial line as its own output line (no newline at end of chunk)", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const chunk = Buffer.from("first\nsecond", "utf-8").toString("base64");
+    handler(notification("script:output", { scriptId: SCRIPT_ID, chunk }));
+
+    expect(readScriptsState().outputBuffers[SCRIPT_ID].map((line) => line.text)).toEqual([
+      "first",
+      "second",
+    ]);
+  });
+
+  it("ignores script:output payloads without a scriptId or chunk", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification("script:output", { scriptId: SCRIPT_ID }));
+    handler(notification("script:output", { chunk: "aGk=" }));
+
+    expect(readScriptsState().outputBuffers[SCRIPT_ID]).toBeUndefined();
+  });
+
+  it("mirrors script:state into the scripts slice's runtime", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §6.5 payload: ScriptRuntimeState + scriptId (self-sufficient §6.7).
+    handler(
+      notification("script:state", {
+        scriptId: SCRIPT_ID,
+        status: "running",
+        pid: 4242,
+        restartCount: 0,
+        startedAt: "2026-01-02T00:00:00.000Z",
+      }),
+    );
+
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime).toMatchObject({
+      status: "running",
+      pid: 4242,
+      startedAt: "2026-01-02T00:00:00.000Z",
+    });
+  });
+
+  it("mirrors detectedUrl from script:state into the runtime state", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("script:state", {
+        scriptId: SCRIPT_ID,
+        status: "running",
+        restartCount: 0,
+        detectedUrl: "http://localhost:5173",
+      }),
+    );
+
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime.detectedUrl).toBe(
+      "http://localhost:5173",
+    );
   });
 });
