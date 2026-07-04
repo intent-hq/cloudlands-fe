@@ -22,6 +22,7 @@ import { createChatSendMiddleware } from "$features/agent/chat-send-service";
 import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge";
 import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
 import { createModelSelectionPersistenceMiddleware } from "$features/settings/model-selection-persistence-service";
+import { createProviderSettingsPersistenceMiddleware } from "$features/settings/provider-settings-persistence-service";
 import { createProviderAvailabilityCheckMiddleware } from "$features/providers/provider-availability-check-service";
 import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
@@ -122,6 +123,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // `model.workspaceOverrides`, PROTOCOL §5.12) so the selection survives a
     // reload — the hydration middleware above reads the same paths on boot.
     createModelSelectionPersistenceMiddleware(),
+    // Give the (post-saga) `setActiveProvider` trigger a real handler so
+    // switching providers writes `providers.active` (PROTOCOL §5.12) back
+    // through the `appClient.settings` seam. Without this the pick lives only
+    // in the local slice and every restart reverts to whatever the daemon
+    // still had persisted.
+    createProviderSettingsPersistenceMiddleware(),
     // Give the (post-saga) agent-availability triggers (`ensureProvidersChecked`,
     // `checkAllProvidersRequested`, `checkSingleProviderRequested`) a real
     // handler so onboarding/settings provider cards resolve to a terminal
