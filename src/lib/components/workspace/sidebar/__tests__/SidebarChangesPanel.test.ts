@@ -358,7 +358,6 @@ vi.mock('$features/accept-changes/accept-changes.client', () => ({
   AcceptChangesClient: {
     execute: vi.fn().mockResolvedValue({ success: true }),
     getStatus: vi.fn().mockResolvedValue({ aheadOfTrunk: 0, hasRemote: true, isContentMergedToTrunk: false }),
-    checkPathHasChanges: vi.fn().mockResolvedValue({ hasChanges: false, isGitRepo: false }),
     resetToTrunk: vi.fn().mockResolvedValue({ success: true, result: { newHeadSha: 'abc123' } }),
   },
 }));

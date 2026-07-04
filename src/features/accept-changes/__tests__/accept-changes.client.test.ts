@@ -5,7 +5,7 @@
  * (`accept-changes.*`, PROTOCOL.md §5.18). These tests assert the exact
  * JSON-RPC method + params each client call sends, feed PROTOCOL.md-shaped
  * mock responses back, and cover the in-band failure conversion for
- * execute/mergePR/resetToTrunk. `checkPathHasChanges` stays on local IPC.
+ * execute/mergePR/resetToTrunk.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -14,15 +14,10 @@ import type { WorkspaceId } from '$shared/types/branded-ids';
 
 const mocks = vi.hoisted(() => ({
   backendRequest: vi.fn(),
-  invokeIpc: vi.fn(),
 }));
 
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: mocks.backendRequest,
-}));
-
-vi.mock('$shared/generated/ipc-client', () => ({
-  invoke: mocks.invokeIpc,
 }));
 
 const WS = 'ws-abc' as WorkspaceId;
@@ -42,7 +37,6 @@ const gitStatus = {
 describe('AcceptChangesClient (accept-changes.* over backendRequest)', () => {
   beforeEach(() => {
     mocks.backendRequest.mockReset();
-    mocks.invokeIpc.mockReset();
   });
 
   it('getStatus sends accept-changes.getStatus with workspaceId and returns the status', async () => {
@@ -161,16 +155,5 @@ describe('AcceptChangesClient (accept-changes.* over backendRequest)', () => {
     expect(failed).toEqual({ success: false, steps: [], error: 'daemon unavailable' });
   });
 
-  it('checkPathHasChanges stays on local IPC (accept-changes:check-path-has-changes)', async () => {
-    mocks.invokeIpc.mockResolvedValue({
-      success: true,
-      data: { hasChanges: true, isGitRepo: true },
-    });
-    const result = await AcceptChangesClient.checkPathHasChanges('/some/path');
-    expect(mocks.invokeIpc).toHaveBeenCalledWith('accept-changes:check-path-has-changes', {
-      targetPath: '/some/path',
-    });
-    expect(mocks.backendRequest).not.toHaveBeenCalled();
-    expect(result).toEqual({ hasChanges: true, isGitRepo: true });
-  });
+
 });

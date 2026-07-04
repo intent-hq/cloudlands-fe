@@ -202,40 +202,8 @@ class ApiClient {
 
   // Agent operations removed - use direct renderer agent APIs
 
-  // Diff operations
-  async createDiff(workspaceId: string, diff: DiffChunk): Promise<void> {
-    const response = await invoke<CommandResponse<void>>('diffs:create', {
-      workspaceId,
-      diff,
-    });
-
-    if (!response.success) {
-      throw new Error(response.error || 'Failed to create diff');
-    }
-  }
-
-  async listDiffs(workspaceId: string): Promise<DiffChunk[]> {
-    const response = await invoke<DiffChunk[]>('diffs:list', {
-      workspaceId,
-    });
-
-    if (!response.success) {
-      throw new Error(response.error || 'Failed to list diffs');
-    }
-
-    return response.data || [];
-  }
-
-  async updateDiff(workspaceId: string, diff: DiffChunk): Promise<void> {
-    const response = await invoke<void>('diffs:update', {
-      workspaceId,
-      diff,
-    });
-
-    if (!response.success) {
-      throw new Error(response.error || 'Failed to update diff');
-    }
-  }
+  // Legacy diff-chunk tracking (diffs:create/list/update) retired — no
+  // callers remained; diffs render via the daemon git.diffs (PROTOCOL §5.6).
 
   // Change tracking operations
   async trackAgentChanges(

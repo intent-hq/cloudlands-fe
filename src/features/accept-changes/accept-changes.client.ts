@@ -4,13 +4,11 @@
  * Client-side wrapper for the accept-changes workflow. Git/forge orchestration
  * (commit → push → create-PR → merge) lives in the intentd daemon and is
  * reached via `backendRequest('accept-changes.*')` (PROTOCOL.md §5.18).
- * Only `checkPathHasChanges` stays on local Electron IPC — it probes an
- * arbitrary local filesystem path, which the daemon does not manage.
+ * The legacy local-IPC `checkPathHasChanges` probe was retired with its last
+ * caller (nothing consumed the export-destination check in this build).
  */
 
 import { backendRequest } from '$lib/client/live/backend-transport';
-import { IPC_CHANNELS } from '../../shared/ipc-registry';
-import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 import type { WorkspaceId } from '../../shared/types/branded-ids';
 import type {
   WorkspaceGitStatus,
@@ -22,12 +20,6 @@ import type {
   UndoCommitMetadata,
 } from './types';
 
-interface IPCResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-}
-
 /** Convert a thrown transport/daemon error into a failed AcceptChangesResult. */
 function toFailureResult(error: unknown, fallbackMessage: string): AcceptChangesResult {
   return {
@@ -38,13 +30,6 @@ function toFailureResult(error: unknown, fallbackMessage: string): AcceptChanges
 }
 
 export class AcceptChangesClient {
-  private static async invoke<T>(channel: string, data?: unknown): Promise<IPCResponse<T>> {
-    if (typeof window === 'undefined' || !window.electronAPI) {
-      throw new Error('IPC not available');
-    }
-    return invokeIpc<IPCResponse<T>>(channel, data);
-  }
-
   /**
    * Get the current git status for accept changes workflow
    */
@@ -154,29 +139,6 @@ export class AcceptChangesClient {
       workspaceId,
       remoteUrl,
     });
-  }
-
-  /**
-   * Check if a path has uncommitted git changes.
-   *
-   * Stays on local Electron IPC (not the daemon): it inspects an arbitrary
-   * local filesystem path (e.g. an export destination) that is not a
-   * daemon-managed workspace.
-   */
-  static async checkPathHasChanges(
-    targetPath: string,
-  ): Promise<{ hasChanges: boolean; isGitRepo: boolean }> {
-    const response = await this.invoke<{ hasChanges: boolean; isGitRepo: boolean }>(
-      IPC_CHANNELS.ACCEPT_CHANGES.CHECK_PATH_HAS_CHANGES,
-      { targetPath },
-    );
-
-    if (!response.success || !response.data) {
-      // Default to no changes if check fails
-      return { hasChanges: false, isGitRepo: false };
-    }
-
-    return response.data;
   }
 
   /**

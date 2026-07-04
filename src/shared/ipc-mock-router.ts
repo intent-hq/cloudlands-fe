@@ -193,9 +193,15 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
         'Legacy config store is not bridged to the daemon (renderer persistence uses localStorage)',
     },
   ],
-  // Legacy diff-chunk tracking write (apiClient.createDiff) — no production
-  // renderer callers remain; diffs render via git.diffs (PROTOCOL §5.6).
-  ['diffs:create', { success: false, error: 'Legacy diff tracking is not bridged to the daemon' }],
+  // Note-editor line-attribution gutter (LineAttributionGutter
+  // loadAttributions, fired on note mount). Line attribution was computed by
+  // the legacy main process; the daemon has no per-line attribution read
+  // (§5.19 file-tracking is file-level). The caller requires `success && data`
+  // and folds this shaped failure to an empty gutter (debug log only).
+  [
+    'line-attribution:load',
+    { success: false, error: 'Line attribution is not bridged to the daemon' },
+  ],
   // Chat-input context gathering probes the (unported) editor selection
   // tracker; the caller folds a missing/empty selection to null.
   ['editor:get-selection', undefined],

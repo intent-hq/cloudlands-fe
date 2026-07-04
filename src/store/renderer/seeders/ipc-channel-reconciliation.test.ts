@@ -375,15 +375,18 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
  * never add to this list for new work.
  */
 const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
-  'accept-changes:check-path-has-changes',
-  'agent:activate',
-  'agent:backend:list',
-  'agent:delete-session',
-  'agent:lifecycle:start',
-  'agent:lifecycle:stop',
-  'agent:messaging:receive',
-  'agent:messaging:send',
-  'agent:persistence:list',
+  // IPC batch 6 dispositioned the notes/files + agents/chat debt: the file:*
+  // CRUD (read/write/open/save/exists/delete/move/copy) is bridged onto the
+  // daemon file.* / host.directoryStatus surface (file-bridge-seeder),
+  // line-attribution:load is an allowlisted shaped failure (no daemon
+  // surface), and the rest were retired with their caller-less code:
+  // AgentIpcProxy/lifecycle/messaging proxies (agent:activate,
+  // agent:delete-session, agent:lifecycle:*, agent:messaging:*), agent-loader
+  // (agent:persistence:list + the last system:home-directory demand), the
+  // renderer listAgents proxy (agent:backend:list), the diff-chunk API
+  // methods (diffs:list/update), AcceptChangesClient.checkPathHasChanges
+  // (accept-changes:check-path-has-changes), and the unimported
+  // repo-visualizer component (file:getTreeWithSizes).
   'analytics:get-config',
   'archive_workspace',
   // Surfaced by the alias-aware scan: invokeIpc site in auto-update.client.ts.
@@ -401,18 +404,7 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'dialog:message',
   'dialog:open',
   'dialog:save',
-  'diffs:list',
-  'diffs:update',
   'external-editors:open-with-other',
-  'file:copy',
-  'file:delete',
-  'file:exists',
-  'file:getTreeWithSizes',
-  'file:move',
-  'file:open',
-  'file:read',
-  'file:save',
-  'file:write',
   'get_current_workspace',
   'get_workspace',
   // 4C-3/D2 moved the git reads onto backendRequest('git.*') (PROTOCOL §5.6);
@@ -425,7 +417,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   // git:get-auto-commit-status is allowlisted (no daemon status read).
   // git:removeLock / git:rename-branch / git:getRemotes were retired with
   // their caller-less client methods.
-  'line-attribution:load',
   'list_workspaces',
   'mcp:call-tool',
   'mcp:create-server',
@@ -469,7 +460,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'ssh:test-connection',
   'ssh:uploadFile',
   'system:execute-command',
-  'system:home-directory',
   'system:write-clipboard',
   'update_workspace',
   'user-mcp:initiate-oauth',
