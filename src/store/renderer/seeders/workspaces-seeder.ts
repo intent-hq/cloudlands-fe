@@ -8,23 +8,24 @@
  * hydrates the store from live data rather than from a mock.
  *
  * Also registers the renderer→main IPC mock handlers for the legacy
- * `workspace:open` / `workspace:list` / `workspace:create` /
- * `workspace:get-recent-repositories` channels that `workspace.client.ts` and
- * LifecycleIpcReadService still invoke (route loader, RepoSelector, the
- * workspace-creation flow in CompactWorkspaceInitializer / OnboardingPage /
- * AcceptChangesPanel, and the known-repos hydration on app load). With no real
- * Electron main process driving this build, those channels would otherwise
- * reject with UnbridgedMockIpcChannelError. Each handler resolves through the
- * live daemon (AppClient seam `workspace.list` / `workspace.create` /
- * `workspace.get` per PROTOCOL §5.1, and `repo.list` per §5.6) and returns the
- * CommandResponse shape the legacy main-process handlers produced, so
- * `workspace.client.ts` `normalizeResponse` folds it into `{ ok: true, data }`.
+ * `workspace:open` / `workspace:list` / `workspace:get-recent-repositories`
+ * channels that `workspace.client.ts` and LifecycleIpcReadService still invoke
+ * (route loader, RepoSelector, and the known-repos hydration on app load).
+ * With no real Electron main process driving this build, those channels would
+ * otherwise reject with UnbridgedMockIpcChannelError. Each handler resolves
+ * through the live daemon (AppClient seam `workspace.list` / `workspace.get`
+ * per PROTOCOL §5.1, and `repo.list` per §5.6) and returns the CommandResponse
+ * shape the legacy main-process handlers produced, so `workspace.client.ts`
+ * `normalizeResponse` folds it into `{ ok: true, data }`.
+ *
+ * Workspace creation is NOT bridged here: `WorkspaceClient.create` calls
+ * `appClient.workspaces.create` directly (PROTOCOL §5.1), so the legacy
+ * `workspace:create` IPC channel has no consumer.
  */
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import { appClient } from "$lib/client";
 import { backendRequest } from "$lib/client/live/backend-transport";
-import type { CreateWorkspaceRequest } from "$shared/types";
 import type { KnownRepo } from "$shared/types/known-repo";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
@@ -92,25 +93,6 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.GET, async (arg) => {
 registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, async () => {
   const workspaces = await appClient.workspaces.list();
   return { success: true, data: workspaces };
-});
-
-// `workspace:create` — the workspace-creation flow (CompactWorkspaceInitializer,
-// OnboardingPage, AcceptChangesPanel). Callers need the created Workspace back
-// (`result.data.id` drives navigation), so the seam surfaces the daemon's
-// `{ workspace }` result. A success without a workspace is a wire divergence
-// from PROTOCOL §5.1 and fails loud rather than handing callers `undefined`.
-registerMockIpcHandler(WORKSPACE_CHANNELS.CREATE, async (arg) => {
-  const result = await appClient.workspaces.create(arg as CreateWorkspaceRequest);
-  if (!result.success) {
-    return { success: false, error: result.error || "Failed to create workspace" };
-  }
-  if (!result.workspace) {
-    return {
-      success: false,
-      error: "workspace.create returned no workspace (PROTOCOL §5.1 divergence)",
-    };
-  }
-  return { success: true, data: result.workspace };
 });
 
 // `workspace:get-recent-repositories` — LifecycleIpcReadService's known-repos

@@ -1,12 +1,13 @@
 /**
  * Wire-contract tests for the workspaces seeder's legacy IPC bridges.
  *
- * Asserts the `workspace:list` / `workspace:create` mock IPC handlers forward
- * to the canonical daemon JSON-RPC methods (`workspace.list` /
- * `workspace.create`, PROTOCOL §5.1) and wrap the daemon result in the
- * `{ success, data }` CommandResponse envelope `workspace.client.ts`
- * `normalizeResponse` folds into `{ ok, data }` for the creation-flow callers
- * (RepoSelector, CompactWorkspaceInitializer, OnboardingPage).
+ * Asserts the `workspace:list` mock IPC handler forwards to the canonical
+ * daemon JSON-RPC method (`workspace.list`, PROTOCOL §5.1) and wraps the
+ * daemon result in the `{ success, data }` CommandResponse envelope
+ * `workspace.client.ts` `normalizeResponse` folds into `{ ok, data }` for
+ * the RepoSelector recent-repo scan. `workspace:create` was retired with the
+ * daemon-direct cut-over — `WorkspaceClient.create` now calls
+ * `appClient.workspaces.create` directly (see workspace.client.test.ts).
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -83,63 +84,6 @@ describe("workspaces-seeder legacy IPC bridges", () => {
       await expect(mockInvoke(WORKSPACE_CHANNELS.LIST, {})).rejects.toThrow(
         "daemon unreachable",
       );
-    });
-  });
-
-  describe("workspace:create → daemon workspace.create", () => {
-    it("forwards the request (+ idempotencyKey) and returns the created workspace", async () => {
-      // PROTOCOL §5.1: workspace.create → { workspace: Workspace }.
-      mockedRequest.mockResolvedValueOnce({
-        workspace: {
-          id: "22222222-2222-4222-8222-222222222222",
-          title: "Fresh",
-          branch: "intent/fresh",
-          status: "Active",
-          path: "/tmp/worktrees/fresh",
-          repositoryPath: "/tmp/repo-a",
-        },
-      });
-
-      const response = await mockInvoke<CommandResponse<Record<string, unknown>>>(
-        WORKSPACE_CHANNELS.CREATE,
-        { title: "Fresh", repositoryPath: "/tmp/repo-a", baseRef: "main" },
-      );
-
-      expect(mockedRequest).toHaveBeenCalledWith(
-        "workspace.create",
-        expect.objectContaining({
-          title: "Fresh",
-          repositoryPath: "/tmp/repo-a",
-          baseRef: "main",
-          idempotencyKey: expect.any(String),
-        }),
-      );
-      expect(response.success).toBe(true);
-      expect(response.data).toMatchObject({
-        id: "22222222-2222-4222-8222-222222222222",
-        branch: "intent/fresh",
-      });
-    });
-
-    it("folds a daemon failure into {success:false, error} for the PullConflict-style dialogs", async () => {
-      mockedRequest.mockRejectedValueOnce(new Error("worktree add failed"));
-
-      const response = await mockInvoke<CommandResponse<never>>(WORKSPACE_CHANNELS.CREATE, {
-        title: "Broken",
-      });
-
-      expect(response).toEqual({ success: false, error: "worktree add failed" });
-    });
-
-    it("fails loud when the daemon returns success without a workspace (§5.1 divergence)", async () => {
-      mockedRequest.mockResolvedValueOnce({});
-
-      const response = await mockInvoke<CommandResponse<never>>(WORKSPACE_CHANNELS.CREATE, {
-        title: "NoBody",
-      });
-
-      expect(response.success).toBe(false);
-      expect(response.error).toContain("PROTOCOL §5.1 divergence");
     });
   });
 

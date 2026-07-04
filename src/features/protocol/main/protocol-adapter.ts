@@ -76,37 +76,10 @@ export class ProtocolAdapter {
   // Workspace Methods
   // ============================================================================
 
-  async createWorkspace(params: {
-    title?: string;
-    statusMessage?: string;
-    repositoryPath?: string;
-    branch?: string;
-    baseRef?: string;
-    setupScript?: string;
-    environmentConfig?: {
-      type: 'local' | 'remote';
-      ssh?: {
-        host: string;
-        port?: number;
-        user: string;
-        password?: string;
-        key_path?: string;
-        use_agent?: boolean;
-        transport?: 'ssh' | 'websocket';
-        ws_url?: string;
-      };
-      workspace_path?: string;
-    };
-    skipWorktree?: boolean;
-    initialAgent?: any;
-    githubUrl?: string;
-  }): Promise<Result<any, string>> {
-    logger.info('Protocol: createWorkspace', {
-      title: params.title,
-      isRemote: params.environmentConfig?.type === 'remote',
-    });
-    return await this.workspaceService.createWorkspace(params);
-  }
+  // Workspace creation is owned by the daemon: the FE routes `workspace.create`
+  // through `appClient.workspaces.create` (PROTOCOL §5.1); the legacy
+  // protocol-adapter `createWorkspace` arm was retired with the daemon-direct
+  // cut-over.
 
   async preflightCloneCheck(params: { githubUrl: string }): Promise<Result<null, string>> {
     logger.info('Protocol: preflightCloneCheck', { githubUrl: params.githubUrl });
@@ -675,7 +648,6 @@ export class ProtocolAdapter {
     // Map method names to adapter methods
     const methodMap: Record<string, (params: any) => Promise<Result<any, string>>> = {
       // Workspace methods
-      createWorkspace: (p) => this.createWorkspace(p),
       listWorkspaces: () => this.listWorkspaces(),
       getWorkspace: (p) => this.getWorkspace(p?.id || (p?.workspaceId as WorkspaceId)),
       updateWorkspace: (p) => this.updateWorkspace(p),

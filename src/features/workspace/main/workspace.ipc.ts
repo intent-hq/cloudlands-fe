@@ -93,7 +93,6 @@ import {
   WorkspaceGetSchema,
   WorkspaceGetCurrentSchema,
   WorkspaceGetByIdSchema,
-  WorkspaceCreateSchema,
   WorkspaceUpdateSchema,
   WorkspaceDeleteSchema,
   WorkspaceCloseSchema,
@@ -339,7 +338,6 @@ export function setupWorkspaceIPC(): void {
   // Register validation schemas for all workspace channels
   registerValidationSchema(WORKSPACE_CHANNELS.GET, WorkspaceGetSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.GET_CURRENT, WorkspaceGetCurrentSchema);
-  registerValidationSchema(WORKSPACE_CHANNELS.CREATE, WorkspaceCreateSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.UPDATE, WorkspaceUpdateSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.DELETE, WorkspaceDeleteSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.CLOSE, WorkspaceCloseSchema);
@@ -455,18 +453,9 @@ export function setupWorkspaceIPC(): void {
     ),
   );
 
-  // Create workspace
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.CREATE,
-    createSafeValidatedHandler(
-      WorkspaceCreateSchema,
-      async (_, validated) => {
-        const result = await protocolAdapter.createWorkspace(validated);
-        return resultToCommandResponse(result);
-      },
-      WORKSPACE_CHANNELS.CREATE,
-    ),
-  );
+  // Workspace creation is owned by the daemon: the FE routes `workspace.create`
+  // through `appClient.workspaces.create` (PROTOCOL §5.1); the legacy
+  // `workspace:create` IPC arm was retired with the daemon-direct cut-over.
 
   // Preflight: verify a GitHub URL is reachable and authenticated before clone
   ipcMain.handle(
