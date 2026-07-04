@@ -12,6 +12,7 @@
   invoke,
   shell,
 } from '$lib/electron-bridge';
+  import { appClient } from '$lib/client';
   import {
   selectActiveProviderId,
   selectEnabledProviders,
@@ -265,18 +266,20 @@
   /** Load configured and resolved paths for all providers */
   async function loadProviderPaths() {
     try {
-      // Load configured paths from settings
-      const settingsResult = await invoke<{ success: boolean; data?: Record<string, any> }>(
-        'settings:getAll',
-      );
-      if (settingsResult?.data) {
-        const settings = settingsResult.data;
-        providerPaths = {
-          auggie: settings.auggiePath || '',
-          'claude-code': settings['claude-codePath'] || '',
-          codex: settings['codexPath'] || '',
-        };
-      }
+      // Load configured path overrides from the daemon settings catalog
+      // (providers.paths, PROTOCOL §5.12) — the same seam ProviderPathConfig
+      // writes to. The legacy settings:getAll bulk read is not bridged.
+      const entry = await appClient.settings.get('providers.paths');
+      const configured =
+        entry?.value && typeof entry.value === 'object' && !Array.isArray(entry.value)
+          ? (entry.value as Record<string, unknown>)
+          : {};
+      providerPaths = {
+        auggie: typeof configured.auggie === 'string' ? configured.auggie : '',
+        'claude-code':
+          typeof configured['claude-code'] === 'string' ? configured['claude-code'] : '',
+        codex: typeof configured.codex === 'string' ? configured.codex : '',
+      };
 
       // Load resolved paths for all providers
       const pathsResult = await invoke<{

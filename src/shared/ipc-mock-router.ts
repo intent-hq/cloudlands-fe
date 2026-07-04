@@ -55,6 +55,55 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // noteFilePath → OpenComboButton) guards `if (rootPath)` and hides the
   // open-file affordance when absent.
   ['workspace:get-root', undefined],
+  // MCP "is the Context Engine configured in <CLI>?" probes (ProviderSelector
+  // loadMcpStatus, fired on settings-page load). The MCP setup/uninstall flows
+  // are deferred (no daemon arm); the caller folds absence to not-configured
+  // (`result?.configured ?? false`), so the buttons render as "Setup" and the
+  // interaction-gated auggie:setup-mcp-* channels stay loud audit debt.
+  ['auggie:check-mcp-claude-code', undefined],
+  ['auggie:check-mcp-codex', undefined],
+  ['auggie:check-mcp-cortex', undefined],
+  ['auggie:check-mcp-droid', undefined],
+  ['auggie:check-mcp-opencode', undefined],
+  ['auggie:check-mcp-pi', undefined],
+  // Same settings-page probe for the pi-mcp-adapter (bare-boolean channel).
+  // `false` renders the install affordance; the interaction-gated
+  // pi:install-mcp-adapter channel stays loud audit debt.
+  ['pi:check-mcp-adapter', false],
+  // Electron main-process auto-updater — not a daemon surface. +layout.svelte
+  // reads the state on startup with `.catch(() => null)`, and the settings
+  // affordances surface the folded error message; a shaped failure keeps both
+  // paths clean instead of a startup UnbridgedMockIpcChannelError.
+  ['auto-update:check', { success: false, error: { message: 'Auto-update is not available in this build' } }],
+  ['auto-update:check-manual', { success: false, error: { message: 'Auto-update is not available in this build' } }],
+  ['auto-update:download', { success: false, error: { message: 'Auto-update is not available in this build' } }],
+  ['auto-update:get-state', { success: false, error: { message: 'Auto-update is not available in this build' } }],
+  ['auto-update:set-channel', { success: false, error: { message: 'Auto-update is not available in this build' } }],
+  // Legacy main-process model-config cache (ConfigCacheProxyService). The
+  // service is exported but has no production callers — models load through
+  // the provider seam. Callers fold `success: false` to null / [].
+  ['config:get-model', { success: false, error: 'Model config cache is not bridged to the daemon' }],
+  ['config:get-all-models', { success: false, error: 'Model config cache is not bridged to the daemon' }],
+  // Legacy diff-chunk tracking write (apiClient.createDiff) — no production
+  // renderer callers remain; diffs render via git.diffs (PROTOCOL §5.6).
+  ['diffs:create', { success: false, error: 'Legacy diff tracking is not bridged to the daemon' }],
+  // Chat-input context gathering probes the (unported) editor selection
+  // tracker; the caller folds a missing/empty selection to null.
+  ['editor:get-selection', undefined],
+  // Third-party sources (NotesPanel embeds / drag-drop). Not ported to the
+  // daemon; every client method folds failure into { success: false, error }
+  // and the UI surfaces the message on the triggering interaction.
+  ['sources:create', { success: false, error: 'Third-party sources are not ported to the daemon' }],
+  ['sources:delete', { success: false, error: 'Third-party sources are not ported to the daemon' }],
+  ['sources:extract-metadata', { success: false, error: 'Third-party sources are not ported to the daemon' }],
+  ['sources:get', { success: false, error: 'Third-party sources are not ported to the daemon' }],
+  ['sources:list', { success: false, error: 'Third-party sources are not ported to the daemon' }],
+  ['sources:refresh', { success: false, error: 'Third-party sources are not ported to the daemon' }],
+  ['sources:update', { success: false, error: 'Third-party sources are not ported to the daemon' }],
+  // Workspace-card hover status (SpaceStatusClient.fetchStatus, fired on
+  // hover). No daemon composite-status surface; the caller returns null for
+  // `ok: false` and the hover popover simply shows nothing.
+  ['workspace:get-hover-status', { ok: false }],
 ]);
 
 /** Rejection raised when an invoke hits a channel with no registered handler. */

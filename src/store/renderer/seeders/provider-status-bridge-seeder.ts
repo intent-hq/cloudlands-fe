@@ -311,6 +311,34 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.GET_AVAILABILITY, async () => {
   }
 });
 
+/**
+ * providers:get-paths — resolved CLI paths for the settings path-config rows
+ * (ProviderSelector only consumes auggie / claude-code / codex). Composed from
+ * the daemon host surface: `host.checkAuggie` resolves auggie (providers.paths
+ * override, then PATH) and `host.findBinary` resolves the other CLIs.
+ * Preserves the legacy main handler's CommandResponse envelope.
+ */
+registerMockIpcHandler(PROVIDERS_CHANNELS.GET_PATHS, async () => {
+  const findPath = async (name: string): Promise<string | null> => {
+    const found = await backendRequest<HostCheckResult>("host.findBinary", { name }).catch(
+      () => undefined,
+    );
+    return found?.path ?? null;
+  };
+  try {
+    const [auggie, claudeCode, codex] = await Promise.all([
+      checkAuggie()
+        .then((check) => check.path ?? null)
+        .catch(() => null),
+      findPath(PROVIDER_BINARIES["claude-code"]),
+      findPath(PROVIDER_BINARIES.codex),
+    ]);
+    return { success: true, data: { auggie, "claude-code": claudeCode, codex } };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
 registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
   const providerId =
     typeof arg === "string"

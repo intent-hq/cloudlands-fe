@@ -41,18 +41,56 @@ const IMPORT_CLAUSE_RE = /import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*['"][^'"]+['
 const INVOKE_ALIAS_RE = /\b(?:typedInvoke|invoke)\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)/g;
 
 /**
- * Build the invoke( / typedInvoke( call-site regex for one source file,
- * capturing the first argument expression. Import aliases declared in the file
- * (e.g. `import { invoke as invokeIpc }`) are matched as call sites too, so
- * aliased invokes cannot escape the audit.
+ * Build the invoke( / typedInvoke( call-head regex for one source file,
+ * matching up to (but not consuming) the generic argument list or the opening
+ * paren. Import aliases declared in the file (e.g. `import { invoke as
+ * invokeIpc }`) are matched as call sites too, so aliased invokes cannot
+ * escape the audit.
  */
-function buildCallSiteRegex(source: string): RegExp {
+function buildCallHeadRegex(source: string): RegExp {
   const names = new Set(['typedInvoke', 'invoke']);
   for (const clause of source.matchAll(IMPORT_CLAUSE_RE)) {
     for (const alias of clause[1].matchAll(INVOKE_ALIAS_RE)) names.add(alias[1]);
   }
   const alternation = [...names].sort((a, b) => b.length - a.length).join('|');
-  return new RegExp(`\\b(?:${alternation})\\s*(?:<[^>]*>)?\\s*\\(\\s*([^,)\\n]+)`, 'g');
+  return new RegExp(`\\b(?:${alternation})\\s*(?=[<(])`, 'g');
+}
+
+/**
+ * Extract the first-argument expression of a call whose name ends at `index`,
+ * skipping an optional generic argument list with a bracket-depth counter.
+ * A regex like `<[^>]*>` stops at the FIRST `>`, so any call site with a
+ * nested generic — `invoke<{ data?: Record<string, any> }>('settings:getAll')`
+ * — failed to match at all and silently escaped the audit (settings:getAll
+ * reached the runtime UnbridgedMockIpcChannelError exactly this way).
+ */
+function extractFirstArgument(source: string, index: number): string | undefined {
+  let i = index;
+  if (source[i] === '<') {
+    let depth = 0;
+    while (i < source.length) {
+      const char = source[i];
+      // `=>` inside a function-type generic is not a closing bracket.
+      if (char === '<') depth += 1;
+      else if (char === '>' && source[i - 1] !== '=') {
+        depth -= 1;
+        if (depth === 0) {
+          i += 1;
+          break;
+        }
+      }
+      i += 1;
+    }
+    while (i < source.length && /\s/.test(source[i])) i += 1;
+  }
+  if (source[i] !== '(') return undefined;
+  i += 1;
+  while (i < source.length && /\s/.test(source[i])) i += 1;
+  const start = i;
+  while (i < source.length && source[i] !== ',' && source[i] !== ')' && source[i] !== '\n') {
+    i += 1;
+  }
+  return source.slice(start, i).trim() || undefined;
 }
 const LITERAL_RE = /^['"`]([^'"`$]+)['"`]$/;
 const CHANNELS_CONST_RE = /^([A-Z][A-Z0-9_]*_CHANNELS)\.([A-Z0-9_]+)$/;
@@ -96,8 +134,9 @@ function scanInvokedChannels(): ScanResult {
   for (const file of walkRendererSources(SRC_ROOT)) {
     const source = fs.readFileSync(file, 'utf8');
     const relative = path.relative(SRC_ROOT, file);
-    for (const match of source.matchAll(buildCallSiteRegex(source))) {
-      const argument = match[1].trim();
+    for (const match of source.matchAll(buildCallHeadRegex(source))) {
+      const argument = extractFirstArgument(source, match.index + match[0].length);
+      if (!argument) continue;
       const line = source.slice(0, match.index).split('\n').length;
       const site = `${relative}:${line}`;
       let channel: string | undefined;
@@ -137,6 +176,11 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     expect(invoked.has('dialog:open')).toBe(true);
     // Aliased import call site (`import { invoke as invokeIpc }`, scripts.client.ts).
     expect(invoked.has('scripts:get-output')).toBe(true);
+    // Nested-generic call site (`invokeIpc<AutoUpdateResponse<UpdateState>>`,
+    // auto-update.client.ts). A `<[^>]*>` matcher stops at the first `>` and
+    // drops such call sites entirely — settings:getAll escaped to a runtime
+    // UnbridgedMockIpcChannelError that way. Guards the depth-aware parser.
+    expect(invoked.has('auto-update:get-state')).toBe(true);
     expect([...invoked.keys()].some((channel) => registered.has(channel))).toBe(true);
   });
 
@@ -264,12 +308,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'app:get-version',
   'archive_workspace',
   'auggie:authenticate',
-  'auggie:check-mcp-claude-code',
-  'auggie:check-mcp-codex',
-  'auggie:check-mcp-cortex',
-  'auggie:check-mcp-droid',
-  'auggie:check-mcp-opencode',
-  'auggie:check-mcp-pi',
   'auggie:get-user-info',
   'auggie:install',
   // Surfaced by the alias-aware scan (4A-2 audit debt): invoked only through the
@@ -368,9 +406,7 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'persistence:load-session',
   'persistence:save',
   'persistence:save-session',
-  'pi:check-mcp-adapter',
   'pi:install-mcp-adapter',
-  'providers:get-paths',
   'reference:resolve',
   'remote-fs:exists',
   // Surfaced by the alias-aware scan: invokeIpc sites in scripts.client.ts (4A-2 finding).

@@ -222,6 +222,47 @@ describe("provider-status-bridge-seeder", () => {
     });
   });
 
+  describe("providers:get-paths → host.checkAuggie + host.findBinary", () => {
+    it("resolves auggie via host.checkAuggie and the other CLIs via host.findBinary", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
+        "host.findBinary": (params) => {
+          const { name } = params as { name: string };
+          return name === "claude"
+            ? { available: true, path: "/opt/homebrew/bin/claude" }
+            : { available: false };
+        },
+      });
+
+      const response = await mockInvoke<
+        Envelope<{ auggie: string | null; "claude-code": string | null; codex: string | null }>
+      >(PROVIDERS_CHANNELS.GET_PATHS);
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.checkAuggie");
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "claude" });
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex-acp" });
+      expect(response).toEqual({
+        success: true,
+        data: {
+          auggie: "/usr/local/bin/auggie",
+          "claude-code": "/opt/homebrew/bin/claude",
+          codex: null,
+        },
+      });
+    });
+
+    it("folds per-binary daemon failures to null instead of failing the read", async () => {
+      mockedRequest.mockRejectedValue(new Error("transport down"));
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.GET_PATHS);
+
+      expect(response).toEqual({
+        success: true,
+        data: { auggie: null, "claude-code": null, codex: null },
+      });
+    });
+  });
+
   describe("auggie:status → host.checkAuggie + host.findBinary(node) + host.checkGit + host.exec", () => {
     type AuggieStatus = {
       installed: boolean;

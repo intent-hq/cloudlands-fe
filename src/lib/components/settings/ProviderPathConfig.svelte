@@ -71,23 +71,19 @@
 
   async function savePath() {
     try {
-      // For auggie, use the existing settings:set IPC
-      // For other providers, we'll need per-provider path storage
-      const settingsKey = providerId === 'auggie' ? 'auggiePath' : `${providerId}Path`;
-      await invoke('settings:set', { key: settingsKey, value: inputValue });
-      if (providerId === 'auggie') {
-        // The daemon owns auggie discovery (host.checkAuggie reads
-        // context.auggiePath → providers.paths.auggie), so mirror the
-        // configured path into the daemon's providers.paths setting.
-        const entry = await appClient.settings.get('providers.paths');
-        const existing =
-          entry?.value && typeof entry.value === 'object' && !Array.isArray(entry.value)
-            ? (entry.value as Record<string, unknown>)
-            : {};
-        await appClient.settings.update([
-          { path: 'providers.paths', value: { ...existing, auggie: inputValue } },
-        ]);
-      }
+      // The daemon owns provider path overrides (providers.paths, PROTOCOL
+      // §5.12), keyed by provider id: host.checkAuggie reads
+      // providers.paths.auggie, and ProviderSelector reads the same object
+      // for its configured-path fields. The legacy settings:set IPC is not
+      // bridged in this build.
+      const entry = await appClient.settings.get('providers.paths');
+      const existing =
+        entry?.value && typeof entry.value === 'object' && !Array.isArray(entry.value)
+          ? (entry.value as Record<string, unknown>)
+          : {};
+      await appClient.settings.update([
+        { path: 'providers.paths', value: { ...existing, [providerId]: inputValue } },
+      ]);
       onPathChange?.(inputValue);
       toast.success('Path saved');
       logger.info(`[ProviderPathConfig] Saved ${providerId} path:`, inputValue);
