@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => {
   const chatSendMiddleware = createPassthroughMiddleware();
   const daemonEventsBridgeMiddleware = createPassthroughMiddleware();
   const settingsHydrationMiddleware = createPassthroughMiddleware();
+  const modelSelectionPersistenceMiddleware = createPassthroughMiddleware();
+  const providerAvailabilityCheckMiddleware = createPassthroughMiddleware();
   const agentStreamMiddleware = createPassthroughMiddleware();
   const agentCreationMiddleware = createPassthroughMiddleware();
   const agentMutationMiddleware = createPassthroughMiddleware();
@@ -55,6 +57,8 @@ const mocks = vi.hoisted(() => {
     createChatSendMiddleware: vi.fn(() => chatSendMiddleware),
     createDaemonEventsBridgeMiddleware: vi.fn(() => daemonEventsBridgeMiddleware),
     createSettingsHydrationMiddleware: vi.fn(() => settingsHydrationMiddleware),
+    createModelSelectionPersistenceMiddleware: vi.fn(() => modelSelectionPersistenceMiddleware),
+    createProviderAvailabilityCheckMiddleware: vi.fn(() => providerAvailabilityCheckMiddleware),
     createAgentStreamMiddleware: vi.fn(() => agentStreamMiddleware),
     createAgentCreationMiddleware: vi.fn(() => agentCreationMiddleware),
     createAgentMutationMiddleware: vi.fn(() => agentMutationMiddleware),
@@ -86,6 +90,8 @@ const mocks = vi.hoisted(() => {
     chatSendMiddleware,
     daemonEventsBridgeMiddleware,
     settingsHydrationMiddleware,
+    modelSelectionPersistenceMiddleware,
+    providerAvailabilityCheckMiddleware,
     agentStreamMiddleware,
     agentCreationMiddleware,
     agentMutationMiddleware,
@@ -120,6 +126,12 @@ vi.mock("$features/events/daemon-events-bridge", () => ({
 }));
 vi.mock("$features/settings/settings-hydration-service", () => ({
   createSettingsHydrationMiddleware: mocks.createSettingsHydrationMiddleware,
+}));
+vi.mock("$features/settings/model-selection-persistence-service", () => ({
+  createModelSelectionPersistenceMiddleware: mocks.createModelSelectionPersistenceMiddleware,
+}));
+vi.mock("$features/providers/provider-availability-check-service", () => ({
+  createProviderAvailabilityCheckMiddleware: mocks.createProviderAvailabilityCheckMiddleware,
 }));
 vi.mock("$features/agent/agent-stream-service", () => ({
   createAgentStreamMiddleware: mocks.createAgentStreamMiddleware,
@@ -239,6 +251,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
+      mocks.modelSelectionPersistenceMiddleware,
+      mocks.providerAvailabilityCheckMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
@@ -279,6 +293,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
+      mocks.modelSelectionPersistenceMiddleware,
+      mocks.providerAvailabilityCheckMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
@@ -319,6 +335,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
+      mocks.modelSelectionPersistenceMiddleware,
+      mocks.providerAvailabilityCheckMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
@@ -360,6 +378,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
+      mocks.modelSelectionPersistenceMiddleware,
+      mocks.providerAvailabilityCheckMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
@@ -418,6 +438,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.daemonEventsBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
+      mocks.modelSelectionPersistenceMiddleware,
+      mocks.providerAvailabilityCheckMiddleware,
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
