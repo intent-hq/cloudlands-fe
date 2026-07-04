@@ -264,6 +264,81 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   ],
 ]);
 
+/**
+ * Event channels a production emitter actually delivers. Every entry names its
+ * emit site. `addMockIpcListener()` reports loudly when a listener subscribes
+ * to a channel that is neither listed here (or under a prefix below) nor
+ * justified in `UNEMITTED_LISTENER_ALLOWLIST` — such a listener NEVER fires
+ * (the silent-gap / transcript-loss class: stale git status, lost ready-task
+ * transitions). The reconciliation suite
+ * (`src/store/renderer/seeders/ipc-channel-reconciliation.test.ts`) keeps both
+ * lists honest against the scanned listener and emit call sites.
+ */
+export const EMITTED_MOCK_IPC_EVENT_CHANNELS: ReadonlySet<string> = new Set([
+  // terminals-scripts-seeder.ts — emitted when a CLI-block run creates a
+  // daemon-backed terminal session.
+  'terminal:created',
+  // daemon-events-bridge.ts relayLegacyIpcEvent — daemon `events.subscribe`
+  // firehose re-emitted onto the legacy channels components still listen on.
+  'agent:status-changed',
+  'agent:idle',
+  'workspace:updated',
+  'git:status-changed',
+  'file-tracking:changes-updated',
+  'task:ready-tasks-changed',
+]);
+
+/**
+ * Dynamic event-channel families (listened/emitted with a runtime suffix).
+ * A listener on `prefix + suffix` counts as emitted when the prefix is listed.
+ */
+export const EMITTED_MOCK_IPC_EVENT_CHANNEL_PREFIXES: readonly string[] = [
+  // terminals-scripts-seeder.ts — per-terminal exit notification for CLI blocks.
+  'terminal:professional:exit:',
+];
+
+/**
+ * Channels with production listeners but legitimately NO emitter in this
+ * build. Every entry must justify why the listener staying silent is correct;
+ * an unemitted listened channel is a bug unless proven otherwise.
+ */
+export const UNEMITTED_LISTENER_ALLOWLIST: ReadonlyMap<string, string> = new Map<string, string>([
+  // ChatPanel auto-commit badges. The daemon auto-commits internally on
+  // agent:idle (intent-services auto_commit.rs) but emits no per-commit
+  // git:auto-commit-* events (PROTOCOL §6.5 lists git:* as reserved-but-
+  // unused), and the refresh these listeners would trigger reads
+  // git:get-auto-commit-status — itself an allowlisted absent surface above.
+  // The badges stay hidden until a daemon status surface exists.
+  ['git:auto-commit-started', 'no daemon auto-commit events (PROTOCOL §6.5 git:* reserved)'],
+  ['git:auto-commit-succeeded', 'no daemon auto-commit events (PROTOCOL §6.5 git:* reserved)'],
+  ['git:auto-commit-hook-failure', 'no daemon auto-commit events (PROTOCOL §6.5 git:* reserved)'],
+  // PanelLayout ↔ Electron-main CDP agent plumbing (focus a browser tab / list
+  // open tabs). The CDP agent lives in the unported Electron main process;
+  // nothing in the daemon build issues these requests. The paired
+  // browser:list-tabs-response invoke is already frozen audit debt.
+  ['browser:focus-tab', 'Electron-main CDP agent request — no emitter in the daemon build'],
+  ['browser:list-tabs-request', 'Electron-main CDP agent request — no emitter in the daemon build'],
+  // Note-editor line-attribution gutter refresh. Per-line attribution was
+  // computed by the legacy main process; the daemon has no per-line
+  // attribution surface (§5.19 file-tracking is file-level) — the paired
+  // line-attribution:load invoke is allowlisted to a shaped failure above, so
+  // the gutter renders empty and a refresh event would change nothing.
+  ['line-attribution:updated', 'no daemon per-line attribution surface (§5.19 is file-level)'],
+  // Tiptap editor agent-suggestion marks (editor-listeners.ts). The legacy
+  // agent note-suggestion flow was never ported — no producer exists on the
+  // daemon; the editor simply never renders suggestion marks.
+  ['note-suggestion', 'legacy agent note-suggestion flow not ported — no producer'],
+]);
+
+/** Whether some production emitter delivers events on `channel`. */
+export function isEmittedMockIpcEventChannel(channel: string): boolean {
+  if (EMITTED_MOCK_IPC_EVENT_CHANNELS.has(channel)) return true;
+  return EMITTED_MOCK_IPC_EVENT_CHANNEL_PREFIXES.some((prefix) => channel.startsWith(prefix));
+}
+
+/** Channels already reported by the unemitted-listener guard (once each). */
+const reportedUnemittedListenerChannels = new Set<string>();
+
 /** Rejection raised when an invoke hits a channel with no registered handler. */
 export class UnbridgedMockIpcChannelError extends Error {
   readonly channel: string;
@@ -335,11 +410,36 @@ export async function mockInvoke<T = unknown>(channel: string, ...args: unknown[
   throw new UnbridgedMockIpcChannelError(channel);
 }
 
-/** Subscribe to mock events on a channel. Returns a disposer. */
+/**
+ * Subscribe to mock events on a channel. Returns a disposer.
+ *
+ * Loud-failure guard: subscribing to a channel no production emitter delivers
+ * (not in `EMITTED_MOCK_IPC_EVENT_CHANNELS`/prefixes and not justified in
+ * `UNEMITTED_LISTENER_ALLOWLIST`) reports a console error once per channel.
+ * Unlike `mockInvoke()` this does not throw — listeners register during
+ * component mount, so throwing would break the whole component for a missing
+ * event instead of surfacing the gap; the reconciliation suite is the
+ * CI-blocking arm of the same guard.
+ */
 export function addMockIpcListener(
   channel: string,
   handler: MockIpcEventHandler,
 ): MockIpcUnsubscribe {
+  if (
+    !isEmittedMockIpcEventChannel(channel) &&
+    !UNEMITTED_LISTENER_ALLOWLIST.has(channel) &&
+    !reportedUnemittedListenerChannels.has(channel)
+  ) {
+    reportedUnemittedListenerChannels.add(channel);
+    console.error(
+      `[ipc-mock-router] Listener registered on event channel '${channel}' that NO production ` +
+        `emitter delivers — it will never fire (silent-gap class). Wire an emitter (a seeder ` +
+        `under src/store/renderer/seeders/ or the daemon-events-bridge legacy relay) and declare ` +
+        `it in EMITTED_MOCK_IPC_EVENT_CHANNELS, or — only if the listener legitimately stays ` +
+        `silent in this build — justify an UNEMITTED_LISTENER_ALLOWLIST entry in ` +
+        `src/shared/ipc-mock-router.ts.`,
+    );
+  }
   let handlers = eventHandlers.get(channel);
   if (!handlers) {
     handlers = new Set();
@@ -377,4 +477,5 @@ export function resetMockIpcRouter(): void {
   eventHandlers.clear();
   fallbackInvokeValue = undefined;
   fallbackInvokeConfigured = false;
+  reportedUnemittedListenerChannels.clear();
 }

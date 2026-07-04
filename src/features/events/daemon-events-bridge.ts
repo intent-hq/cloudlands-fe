@@ -36,6 +36,16 @@
  * disposes. The `appClient.events.subscribe(["agent:*"])` call piggybacks on
  * the existing live transport.
  *
+ * Besides the Redux dispatches, the bridge re-emits a small set of daemon
+ * events onto the LEGACY mock-IPC event channels (`relayLegacyIpcEvent`) that
+ * components still subscribe to via `listenSync`/`on` — `workspace:updated`,
+ * `git:status-changed`, `file-tracking:changes-updated`,
+ * `task:ready-tasks-changed`, `agent:status-changed`, `agent:idle`. Without
+ * the relay those listeners never fire (the silent-gap class: stale git
+ * status, lost ready-task transitions). The emitted channel set is declared in
+ * `EMITTED_MOCK_IPC_EVENT_CHANNELS` (ipc-mock-router.ts) and reconciled
+ * against listener call sites by ipc-channel-reconciliation.test.ts.
+ *
  * Fan-out scoping: the daemon emits one `events.event` notification per
  * matching subscription on the socket (PROTOCOL §6.3 / intent-transport
  * `build_event_notification`), each tagged with `params.subscriptionId`. If any
@@ -63,6 +73,7 @@ import {
   backendRequest,
   onBackendNotification,
 } from "$lib/client/live/backend-transport";
+import { emitMockIpcEvent } from "$shared/ipc-mock-router";
 import type { WorkspaceEvent } from "$features/events/types";
 import { createLogger } from "$lib/utils/client-logger";
 
@@ -367,6 +378,67 @@ function handleSettingsChangedEvent(event: WorkspaceEvent): void {
   if (changes.length > 0) applySettingsChanges(changes);
 }
 
+/**
+ * Re-emit daemon events onto the legacy mock-IPC event channels components
+ * still `listenSync`/`on` (see file header). Channel names are string
+ * literals on purpose: the reconciliation suite statically scans
+ * `emitMockIpcEvent` call sites to keep `EMITTED_MOCK_IPC_EVENT_CHANNELS`
+ * honest. Payload shapes mirror what the legacy Electron main process sent:
+ *
+ * - `agent:status-changed` / `agent:idle` → active-streams-tracker refetches
+ *   on any delivery (payload unused) — the full event is forwarded.
+ * - `task:ready-tasks-changed` → WorkspaceProgressCard reads
+ *   `payload.workspaceId` + `payload.data.readyTaskIds`; the daemon event
+ *   envelope (§5.4 TS-parity payload) already has exactly that shape.
+ * - `changes:git-status` (§5.18) → `git:status-changed { workspaceId }` —
+ *   the listener only gates on workspaceId before a debounced reload.
+ * - `changes:tracked` (§5.18) → `file-tracking:changes-updated
+ *   { workspaceId }` — same debounced-reload gate.
+ * - `workspace:updated` → forwarded as `{ workspaceId, changes: data }`.
+ * - `pr:linked`/`pr:updated`/`pr:unlinked` (§6.5) → `workspace:updated` with
+ *   the PR fields as `changes`, because the legacy emitter surfaced PR
+ *   discovery as a workspace update carrying `activePullRequest`/`prNumber`/
+ *   `prStatus` — exactly the keys the WorkspaceProgressCard listener checks.
+ */
+function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: string): void {
+  const data = ((event as { data?: Record<string, unknown> }).data ?? {}) as Record<
+    string,
+    unknown
+  >;
+  switch (type) {
+    case "agent:status-changed":
+      emitMockIpcEvent("agent:status-changed", event);
+      return;
+    case "agent:idle":
+      emitMockIpcEvent("agent:idle", event);
+      return;
+    case "task:ready-tasks-changed":
+      emitMockIpcEvent("task:ready-tasks-changed", event);
+      return;
+    case "changes:git-status":
+      emitMockIpcEvent("git:status-changed", { workspaceId });
+      return;
+    case "changes:tracked":
+      emitMockIpcEvent("file-tracking:changes-updated", { workspaceId });
+      return;
+    case "workspace:updated":
+      emitMockIpcEvent("workspace:updated", { workspaceId, changes: data });
+      return;
+    case "pr:linked":
+    case "pr:updated":
+    case "pr:unlinked":
+      emitMockIpcEvent("workspace:updated", {
+        workspaceId,
+        changes: {
+          activePullRequest: data.activePullRequest ?? null,
+          prNumber: data.prNumber ?? null,
+          prStatus: data.prStatus ?? null,
+        },
+      });
+      return;
+  }
+}
+
 function handleNotification(method: string, params: unknown): void {
   if (method !== "events.event") return;
   // Fan-out scope gate (see file header): drop notifications delivered through
@@ -401,6 +473,10 @@ function handleNotification(method: string, params: unknown): void {
 
   const workspaceId = workspaceIdOf(event);
   if (!workspaceId) return;
+
+  // Legacy mock-IPC re-emit (side effect, never an early return) — components
+  // still listening on the legacy channels get the daemon event too.
+  relayLegacyIpcEvent(type, event, workspaceId);
 
   // Live stream family — accumulate per-agent and grow the in-flight assistant
   // message. `agent:failed` flows through both paths: it finalizes any
@@ -444,12 +520,24 @@ async function installSubscriptionOnce(): Promise<void> {
   });
 
   // Ask the daemon to firehose `agent:*` events, `settings:changed`
-  // (§5.12 / §6.5), and `workspace:tokenUsage-changed` (§5.23) to this socket.
-  // The subscription id is owned by the bridge (no consumer needs it); refetch
-  // delta-subscriptions in `live-agents-client` register their own.
+  // (§5.12 / §6.5), `workspace:tokenUsage-changed` (§5.23), and the
+  // legacy-relay families (`workspace:updated`, `task:ready-tasks-changed`,
+  // `changes:git-status`/`changes:tracked` §5.18, `pr:*` §6.5 — see
+  // relayLegacyIpcEvent) to this socket. The subscription id is owned by the
+  // bridge (no consumer needs it); refetch delta-subscriptions in
+  // `live-agents-client` register their own.
   try {
     const result = (await backendRequest("events.subscribe", {
-      eventTypes: ["agent:*", "settings:changed", "workspace:tokenUsage-changed"],
+      eventTypes: [
+        "agent:*",
+        "settings:changed",
+        "workspace:tokenUsage-changed",
+        "workspace:updated",
+        "task:ready-tasks-changed",
+        "changes:git-status",
+        "changes:tracked",
+        "pr:*",
+      ],
     })) as { subscriptionId?: string } | undefined;
     if (typeof result?.subscriptionId === "string" && result.subscriptionId.length > 0) {
       ownSubscriptionId = result.subscriptionId;
@@ -457,7 +545,7 @@ async function installSubscriptionOnce(): Promise<void> {
       logger.warn("events.subscribe returned no subscriptionId", result);
     }
   } catch (error) {
-    logger.error("events.subscribe(agent:*, settings:changed, tokenUsage-changed) failed", error);
+    logger.error("events.subscribe (bridge firehose + legacy relay families) failed", error);
   }
 
   cleanup = () => {

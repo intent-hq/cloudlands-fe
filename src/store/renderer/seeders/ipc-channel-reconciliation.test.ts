@@ -28,7 +28,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import './index';
-import { getRegisteredMockIpcChannels, UNBRIDGED_INVOKE_ALLOWLIST } from '$shared/ipc-mock-router';
+import {
+  EMITTED_MOCK_IPC_EVENT_CHANNEL_PREFIXES,
+  EMITTED_MOCK_IPC_EVENT_CHANNELS,
+  getRegisteredMockIpcChannels,
+  isEmittedMockIpcEventChannel,
+  UNBRIDGED_INVOKE_ALLOWLIST,
+  UNEMITTED_LISTENER_ALLOWLIST,
+} from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const SRC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -485,3 +492,234 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'workspace:preflight-clone-check',
   'workspace:rename-branch',
 ]);
+
+// ───────────────────────────────────────────────────────────────────────────
+// Event-channel reconciliation (silent-gap class)
+//
+// The invoke audit above catches requests that REJECT; event listeners fail
+// the other way — a listener on a channel no emitter delivers simply never
+// fires (stale git status, lost ready-task transitions: the transcript-loss
+// class). This scan reconciles every renderer event-listener call site
+// (`listenSync`/`listen`/`on` from $lib/electron-bridge, plus direct
+// `addMockIpcListener`) against the channels production emitters deliver
+// (`EMITTED_MOCK_IPC_EVENT_CHANNELS`, kept honest against the scanned
+// `emitMockIpcEvent` call sites) and the justified silent listeners
+// (`UNEMITTED_LISTENER_ALLOWLIST`). Listeners registered on the REAL preload
+// bridge (`window.electronAPI.on` — the backend transport and auto-update
+// client) bypass the mock router and are intentionally out of scope.
+// ───────────────────────────────────────────────────────────────────────────
+
+/** electron-bridge listener heads (with `as` aliases) named in an import clause. */
+const BRIDGE_IMPORT_CLAUSE_RE = /import\s*\{([^}]*)\}\s*from\s*['"]\$lib\/electron-bridge['"]/g;
+const BRIDGE_LISTENER_NAME_RE =
+  /\b(?:listenSync|listen|on)\b(?:\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*))?/g;
+/** mock-router listener/emitter heads named in an import clause. */
+const ROUTER_IMPORT_CLAUSE_RE = /import\s*\{([^}]*)\}\s*from\s*['"][^'"]*ipc-mock-router['"]/g;
+const ROUTER_LISTENER_NAME_RE = /\baddMockIpcListener\b(?:\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*))?/g;
+const ROUTER_EMITTER_NAME_RE = /\bemitMockIpcEvent\b(?:\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*))?/g;
+
+/** Dynamic-family channel template, e.g. `terminal:professional:exit:${id}`. */
+const TEMPLATE_PREFIX_RE = /^`([^`$]+)\$\{/;
+
+/**
+ * Transport/router internals whose own listener/emit calls forward a caller's
+ * channel variable — they ARE the plumbing, not a call site with a concrete
+ * channel, so they are excluded from the event scan (their callers are not).
+ */
+const EVENT_SCAN_EXCLUDED_FILES = new Set([
+  path.join('lib', 'electron-bridge.ts'),
+  path.join('shared', 'ipc-mock-router.ts'),
+]);
+
+interface EventScanResult {
+  /** Exact listened channel → call sites. */
+  listened: Map<string, string[]>;
+  /** Listened dynamic-family prefix (template literal) → call sites. */
+  listenedPrefixes: Map<string, string[]>;
+  /** Exact emitted channel → emit sites. */
+  emitted: Map<string, string[]>;
+  /** Emitted dynamic-family prefix (template literal) → emit sites. */
+  emittedPrefixes: Map<string, string[]>;
+  /** Listener call sites whose channel argument the scan could not resolve. */
+  dynamicListenerSites: string[];
+}
+
+function collectAliases(source: string, clauseRe: RegExp, nameRe: RegExp): Set<string> {
+  const names = new Set<string>();
+  for (const clause of source.matchAll(new RegExp(clauseRe.source, clauseRe.flags))) {
+    for (const m of clause[1].matchAll(new RegExp(nameRe.source, nameRe.flags))) {
+      names.add(m[1] ?? m[0]);
+    }
+  }
+  return names;
+}
+
+/** Scan renderer sources for event-listener and mock-emit call sites. */
+function scanEventChannels(): EventScanResult {
+  const result: EventScanResult = {
+    listened: new Map(),
+    listenedPrefixes: new Map(),
+    emitted: new Map(),
+    emittedPrefixes: new Map(),
+    dynamicListenerSites: [],
+  };
+  const record = (map: Map<string, string[]>, key: string, site: string) => {
+    const sites = map.get(key) ?? [];
+    sites.push(site);
+    map.set(key, sites);
+  };
+  for (const file of walkRendererSources(SRC_ROOT)) {
+    const relative = path.relative(SRC_ROOT, file);
+    if (EVENT_SCAN_EXCLUDED_FILES.has(relative)) continue;
+    const source = fs.readFileSync(file, 'utf8');
+    const listenerNames = collectAliases(source, BRIDGE_IMPORT_CLAUSE_RE, BRIDGE_LISTENER_NAME_RE);
+    for (const name of collectAliases(source, ROUTER_IMPORT_CLAUSE_RE, ROUTER_LISTENER_NAME_RE)) {
+      listenerNames.add(name);
+    }
+    const emitterNames = collectAliases(source, ROUTER_IMPORT_CLAUSE_RE, ROUTER_EMITTER_NAME_RE);
+    const heads: Array<{ names: Set<string>; kind: 'listen' | 'emit' }> = [
+      { names: listenerNames, kind: 'listen' },
+      { names: emitterNames, kind: 'emit' },
+    ];
+    for (const { names, kind } of heads) {
+      if (names.size === 0) continue;
+      const alternation = [...names].sort((a, b) => b.length - a.length).join('|');
+      // The lookbehind keeps member calls (`emitter.on(...)`) out of the scan.
+      const headRe = new RegExp(`(?<![.\\w$])(?:${alternation})\\s*(?=[<(])`, 'g');
+      for (const match of source.matchAll(headRe)) {
+        const argument = extractFirstArgument(source, match.index + match[0].length);
+        if (!argument) continue;
+        const line = source.slice(0, match.index).split('\n').length;
+        const site = `${relative}:${line}`;
+        let constMatch: RegExpMatchArray | null;
+        if ((constMatch = argument.match(LITERAL_RE))) {
+          record(kind === 'listen' ? result.listened : result.emitted, constMatch[1], site);
+        } else if ((constMatch = argument.match(TEMPLATE_PREFIX_RE))) {
+          record(
+            kind === 'listen' ? result.listenedPrefixes : result.emittedPrefixes,
+            constMatch[1],
+            site,
+          );
+        } else if (kind === 'listen') {
+          result.dynamicListenerSites.push(`${site} :: ${argument}`);
+        }
+      }
+    }
+  }
+  return result;
+}
+
+describe('IPC event-channel reconciliation (renderer listener surface vs emitters)', () => {
+  const { listened, listenedPrefixes, emitted, emittedPrefixes, dynamicListenerSites } =
+    scanEventChannels();
+
+  it('scanner sanity: detects the known listener surface', () => {
+    // Simple literal listenSync call sites (WorkspaceProgressCard).
+    expect(listened.has('git:status-changed')).toBe(true);
+    // Multiline nested-generic call sites (`listenSync<{ workspaceId: string;
+    // … }>(\n 'workspace:updated', …)`) — guards the depth-aware argument
+    // parser; a naive single-line matcher drops these entirely.
+    expect(listened.has('workspace:updated')).toBe(true);
+    expect(listened.has('task:ready-tasks-changed')).toBe(true);
+    // Bare `on()` import call site (active-streams-tracker.ts).
+    expect(listened.has('agent:status-changed')).toBe(true);
+    // Template-literal dynamic family (CliBlock.svelte).
+    expect(listenedPrefixes.has('terminal:professional:exit:')).toBe(true);
+    // Emit sites: seeder literal + template family + daemon-events-bridge relay.
+    expect(emitted.has('terminal:created')).toBe(true);
+    expect(emitted.has('git:status-changed')).toBe(true);
+    expect(emittedPrefixes.has('terminal:professional:exit:')).toBe(true);
+  });
+
+  it('resolves every listener channel argument (no unaudited dynamic listeners)', () => {
+    expect(
+      dynamicListenerSites,
+      'Listener call sites with runtime channel arguments escape this audit — rewrite them ' +
+        'as statically-resolvable literals/templates or extend the scanner.',
+    ).toEqual([]);
+  });
+
+  it('every listened channel has a production emitter or a justified allowlist entry', () => {
+    const uncovered = [...listened.keys()]
+      .filter(
+        (channel) =>
+          !isEmittedMockIpcEventChannel(channel) && !UNEMITTED_LISTENER_ALLOWLIST.has(channel),
+      )
+      .sort()
+      .map((channel) => `${channel}\n    ${listened.get(channel)!.join('\n    ')}`);
+    expect(
+      uncovered,
+      'New listener call sites reference event channels NO production emitter delivers — the ' +
+        'listener never fires (silent-gap class). Wire an emitter (seeder or daemon-events-bridge ' +
+        'legacy relay) and declare it in EMITTED_MOCK_IPC_EVENT_CHANNELS, or justify an ' +
+        'UNEMITTED_LISTENER_ALLOWLIST entry in src/shared/ipc-mock-router.ts.',
+    ).toEqual([]);
+  });
+
+  it('every listened dynamic family is covered by a declared emitted prefix', () => {
+    const uncovered = [...listenedPrefixes.keys()]
+      .filter(
+        (prefix) => !EMITTED_MOCK_IPC_EVENT_CHANNEL_PREFIXES.some((p) => prefix.startsWith(p)),
+      )
+      .sort()
+      .map((prefix) => `${prefix}\n    ${listenedPrefixes.get(prefix)!.join('\n    ')}`);
+    expect(
+      uncovered,
+      'Dynamic-family listeners must be covered by EMITTED_MOCK_IPC_EVENT_CHANNEL_PREFIXES.',
+    ).toEqual([]);
+  });
+
+  it('EMITTED_MOCK_IPC_EVENT_CHANNELS entries are backed by a static emit call site', () => {
+    const unbacked = [...EMITTED_MOCK_IPC_EVENT_CHANNELS].filter(
+      (channel) => !emitted.has(channel),
+    );
+    expect(
+      unbacked,
+      'Declared emitted channels with no emitMockIpcEvent call site overstate the emitter ' +
+        'surface — remove the entry or wire the emitter.',
+    ).toEqual([]);
+    const unbackedPrefixes = EMITTED_MOCK_IPC_EVENT_CHANNEL_PREFIXES.filter(
+      (declared) => ![...emittedPrefixes.keys()].some((p) => p.startsWith(declared)),
+    );
+    expect(unbackedPrefixes, 'Declared emitted prefixes must match an emit template site').toEqual(
+      [],
+    );
+  });
+
+  it('every static emit call site is declared (new emitters must register)', () => {
+    const undeclared = [...emitted.keys()]
+      .filter((channel) => !isEmittedMockIpcEventChannel(channel))
+      .sort()
+      .map((channel) => `${channel}\n    ${emitted.get(channel)!.join('\n    ')}`);
+    expect(
+      undeclared,
+      'emitMockIpcEvent call sites must declare their channel in ' +
+        'EMITTED_MOCK_IPC_EVENT_CHANNELS (ipc-mock-router.ts) so the listener audit stays honest.',
+    ).toEqual([]);
+    const undeclaredPrefixes = [...emittedPrefixes.keys()].filter(
+      (prefix) => !EMITTED_MOCK_IPC_EVENT_CHANNEL_PREFIXES.some((p) => prefix.startsWith(p)),
+    );
+    expect(
+      undeclaredPrefixes,
+      'Template emit sites must declare their family in EMITTED_MOCK_IPC_EVENT_CHANNEL_PREFIXES.',
+    ).toEqual([]);
+  });
+
+  it('UNEMITTED_LISTENER_ALLOWLIST holds no stale entries', () => {
+    const nowEmitted = [...UNEMITTED_LISTENER_ALLOWLIST.keys()].filter((channel) =>
+      isEmittedMockIpcEventChannel(channel),
+    );
+    expect(
+      nowEmitted,
+      'Channels with a production emitter must be removed from UNEMITTED_LISTENER_ALLOWLIST',
+    ).toEqual([]);
+    const dead = [...UNEMITTED_LISTENER_ALLOWLIST.keys()].filter(
+      (channel) => !listened.has(channel),
+    );
+    expect(
+      dead,
+      'Channels with no remaining listener call sites must be removed from ' +
+        'UNEMITTED_LISTENER_ALLOWLIST',
+    ).toEqual([]);
+  });
+});

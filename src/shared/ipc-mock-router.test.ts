@@ -5,6 +5,7 @@ import {
   emitMockIpcEvent,
   getRegisteredMockIpcChannels,
   hasMockIpcHandler,
+  isEmittedMockIpcEventChannel,
   mockInvoke,
   mockIpcListenerCount,
   registerMockIpcHandler,
@@ -91,7 +92,56 @@ describe('ipc-mock-router', () => {
     });
   });
 
+  describe('unemitted-listener guard', () => {
+    it('reports loudly (once per channel) when a listener subscribes to a channel no emitter delivers', () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      addMockIpcListener('evt:never-emitted', () => {});
+      addMockIpcListener('evt:never-emitted', () => {});
+
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy.mock.calls[0][0]).toMatch(/'evt:never-emitted'/);
+      expect(errorSpy.mock.calls[0][0]).toMatch(/EMITTED_MOCK_IPC_EVENT_CHANNELS/);
+      expect(errorSpy.mock.calls[0][0]).toMatch(/UNEMITTED_LISTENER_ALLOWLIST/);
+      errorSpy.mockRestore();
+    });
+
+    it('stays quiet for emitted, prefix-emitted, and allowlisted channels', () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      addMockIpcListener('terminal:created', () => {});
+      addMockIpcListener('terminal:professional:exit:term-1', () => {});
+      addMockIpcListener('note-suggestion', () => {});
+
+      expect(errorSpy).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
+
+    it('recognizes emitted channels through isEmittedMockIpcEventChannel', () => {
+      expect(isEmittedMockIpcEventChannel('git:status-changed')).toBe(true);
+      expect(isEmittedMockIpcEventChannel('terminal:professional:exit:abc')).toBe(true);
+      expect(isEmittedMockIpcEventChannel('evt:unknown')).toBe(false);
+    });
+
+    it('reports again for the same channel after resetMockIpcRouter', () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      addMockIpcListener('evt:reset-guard', () => {});
+      resetMockIpcRouter();
+      addMockIpcListener('evt:reset-guard', () => {});
+
+      expect(errorSpy).toHaveBeenCalledTimes(2);
+      errorSpy.mockRestore();
+    });
+  });
+
   describe('event listeners', () => {
+    beforeEach(() => {
+      // These tests use synthetic channels; silence the unemitted-listener
+      // guard (covered by its own describe above) to keep output clean.
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
     it('delivers emitted payloads to registered listeners', () => {
       const seen: unknown[] = [];
       addMockIpcListener('evt:ping', (payload) => seen.push(payload));
@@ -123,6 +173,7 @@ describe('ipc-mock-router', () => {
 
   describe('resetMockIpcRouter', () => {
     it('clears handlers, listeners, and the fallback (loud failure restored)', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
       registerMockIpcHandler('demo:reset', () => 'value');
       addMockIpcListener('evt:reset', () => {});
       setMockIpcInvokeFallback('fallback');

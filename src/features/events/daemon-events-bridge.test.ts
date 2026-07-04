@@ -41,6 +41,7 @@ import {
 } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
 import type { QueuedMessage } from "$shared/types";
+import { addMockIpcListener, resetMockIpcRouter } from "$shared/ipc-mock-router";
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -145,7 +146,7 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
 
   afterEach(() => vi.clearAllMocks());
 
-  it("registers a notification listener and subscribes to agent:* + settings:changed + tokenUsage-changed on first dispatch", async () => {
+  it("registers a notification listener and subscribes to agent:* + settings/usage + legacy-relay families on first dispatch", async () => {
     await primeBridge();
 
     expect(onBackendNotificationSpy).toHaveBeenCalledTimes(1);
@@ -153,7 +154,16 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
     // we assert the bridge's events.subscribe call explicitly instead of the
     // total spy count.
     expect(backendRequestSpy).toHaveBeenCalledWith("events.subscribe", {
-      eventTypes: ["agent:*", "settings:changed", "workspace:tokenUsage-changed"],
+      eventTypes: [
+        "agent:*",
+        "settings:changed",
+        "workspace:tokenUsage-changed",
+        "workspace:updated",
+        "task:ready-tasks-changed",
+        "changes:git-status",
+        "changes:tracked",
+        "pr:*",
+      ],
     });
   });
 
@@ -833,7 +843,16 @@ describe("daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
     );
     expect(subscribeCalls).toHaveLength(1);
     expect(subscribeCalls[0][1]).toEqual({
-      eventTypes: ["agent:*", "settings:changed", "workspace:tokenUsage-changed"],
+      eventTypes: [
+        "agent:*",
+        "settings:changed",
+        "workspace:tokenUsage-changed",
+        "workspace:updated",
+        "task:ready-tasks-changed",
+        "changes:git-status",
+        "changes:tracked",
+        "pr:*",
+      ],
     });
   });
 });
@@ -891,5 +910,149 @@ describe("daemonEventsBridge (usage wire contract — workspace:tokenUsage-chang
       tokenUsage: { byWorkspaceId: Record<string, unknown> };
     };
     expect(state.tokenUsage.byWorkspaceId["ws-token-empty"]).toBeUndefined();
+  });
+});
+
+describe("daemonEventsBridge (legacy mock-IPC relay — daemon events → listenSync channels)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    resetMockIpcRouter();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => {
+    resetMockIpcRouter();
+    vi.clearAllMocks();
+  });
+
+  /** Register a mock-IPC listener and return the payloads it receives. */
+  function listenOn(channel: string): unknown[] {
+    const seen: unknown[] = [];
+    addMockIpcListener(channel, (payload) => seen.push(payload));
+    return seen;
+  }
+
+  it("re-emits task:ready-tasks-changed with the §5.4 TS-parity envelope (workspaceId + data.readyTaskIds)", async () => {
+    await primeBridge();
+    const seen = listenOn("task:ready-tasks-changed");
+
+    const data = {
+      readyTaskIds: ["note-1", "note-2"],
+      triggeredBy: { noteId: "note-3", previousStatus: "in_progress", newStatus: "complete" },
+      computedAt: "2026-01-02T00:00:00.000Z",
+    };
+    capturedHandlers[0]!(notification("task:ready-tasks-changed", data));
+
+    expect(seen).toHaveLength(1);
+    // The listener (WorkspaceProgressCard) reads payload.workspaceId and
+    // payload.data.readyTaskIds — the daemon event envelope carries both.
+    expect(seen[0]).toMatchObject({ workspaceId: WS, data });
+  });
+
+  it("re-emits changes:git-status as git:status-changed { workspaceId }", async () => {
+    await primeBridge();
+    const seen = listenOn("git:status-changed");
+
+    capturedHandlers[0]!(
+      notification("changes:git-status", { workspaceId: WS, status: { files: [] } }),
+    );
+
+    expect(seen).toEqual([{ workspaceId: WS }]);
+  });
+
+  it("re-emits changes:tracked as file-tracking:changes-updated { workspaceId }", async () => {
+    await primeBridge();
+    const seen = listenOn("file-tracking:changes-updated");
+
+    capturedHandlers[0]!(notification("changes:tracked", { workspaceId: WS, changes: [] }));
+
+    expect(seen).toEqual([{ workspaceId: WS }]);
+  });
+
+  it("re-emits workspace:updated with the event data as changes", async () => {
+    await primeBridge();
+    const seen = listenOn("workspace:updated");
+
+    capturedHandlers[0]!(notification("workspace:updated", { title: "Renamed" }));
+
+    expect(seen).toEqual([{ workspaceId: WS, changes: { title: "Renamed" } }]);
+  });
+
+  it("re-emits pr:updated as workspace:updated carrying the PR fields as changes", async () => {
+    await primeBridge();
+    const seen = listenOn("workspace:updated");
+
+    // PROTOCOL §6.5 pr:updated → { workspaceId, prNumber, prStatus, activePullRequest }.
+    capturedHandlers[0]!(
+      notification("pr:updated", {
+        workspaceId: WS,
+        prNumber: 42,
+        prStatus: "open",
+        activePullRequest: { number: 42, url: "https://github.com/x/y/pull/42" },
+      }),
+    );
+
+    expect(seen).toEqual([
+      {
+        workspaceId: WS,
+        changes: {
+          activePullRequest: { number: 42, url: "https://github.com/x/y/pull/42" },
+          prNumber: 42,
+          prStatus: "open",
+        },
+      },
+    ]);
+  });
+
+  it("re-emits pr:unlinked as workspace:updated with a nulled activePullRequest", async () => {
+    await primeBridge();
+    const seen = listenOn("workspace:updated");
+
+    capturedHandlers[0]!(notification("pr:unlinked", { workspaceId: WS }));
+
+    expect(seen).toEqual([
+      { workspaceId: WS, changes: { activePullRequest: null, prNumber: null, prStatus: null } },
+    ]);
+  });
+
+  it("re-emits agent:status-changed and agent:idle onto their legacy channels (and still dispatches the lifecycle)", async () => {
+    appStore.dispatch(clearAllSessions());
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    await primeBridge();
+    const statusSeen = listenOn("agent:status-changed");
+    const idleSeen = listenOn("agent:idle");
+
+    capturedHandlers[0]!(
+      notification("agent:status-changed", { agentId: AGENT, status: "active" }),
+    );
+    capturedHandlers[0]!(notification("agent:idle", { agentId: AGENT }));
+
+    // active-streams-tracker refetches on any delivery — payload is the event.
+    expect(statusSeen).toHaveLength(1);
+    expect(statusSeen[0]).toMatchObject({ type: "agent:status-changed", workspaceId: WS });
+    expect(idleSeen).toHaveLength(1);
+    expect(idleSeen[0]).toMatchObject({ type: "agent:idle", workspaceId: WS });
+    // The relay is a side effect, not an early return: agent:idle still clears
+    // the optimistic responding flag through the lifecycle dispatch.
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it("does not relay events dropped by the fan-out scope gate", async () => {
+    await primeBridge();
+    const seen = listenOn("git:status-changed");
+
+    const base = notification("changes:git-status", { workspaceId: WS, status: {} });
+    capturedHandlers[0]!({
+      method: base.method,
+      params: { ...base.params, subscriptionId: "sub-foreign" },
+    });
+
+    expect(seen).toEqual([]);
   });
 });
