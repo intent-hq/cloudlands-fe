@@ -147,6 +147,21 @@ registerMockIpcHandler(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, async (arg) => {
   const messageId = readString(request, "messageId");
   if (messageId) params.messageId = messageId;
   if (Array.isArray(request.imageBlocks)) params.imageBlocks = request.imageBlocks;
+  // Forward the context-carrying fields the FE `agent-stream-lifecycle`
+  // stream-message call assembles from user input (context references,
+  // attached notes, and the stdin-context blob). The current daemon
+  // `agent.sendMessage` router (packages/intentd/crates/intent-transport/
+  // src/router.rs) only extracts `messageId` / `imageBlocks` on top of
+  // the required trio, so these forwarded fields land in the JSON-RPC
+  // params but are silently dropped by the BE today -- a documented
+  // daemon-side gap. Forwarding them here removes the FE-side loss and
+  // makes the BE the single fix site when the router is widened.
+  if (Array.isArray(request.contextReferences)) {
+    params.contextReferences = request.contextReferences;
+  }
+  if (Array.isArray(request.noteIds)) params.noteIds = request.noteIds;
+  const stdinContext = readString(request, "stdinContext");
+  if (stdinContext) params.stdinContext = stdinContext;
   try {
     return await backendRequest("agent.sendMessage", params);
   } catch (error) {

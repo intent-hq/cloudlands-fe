@@ -201,6 +201,67 @@ describe("agent-ipc-bridge-seeder", () => {
       expect(mockedRequest).not.toHaveBeenCalled();
       expect(response.success).toBe(false);
     });
+
+    it("forwards the FE-side context payload (contextReferences / noteIds / stdinContext) to agent.sendMessage", async () => {
+      // The FE `agent-stream-lifecycle` sendMessage assembles these three
+      // context fields from user input (attached notes, workspace-context
+      // blob, workspace/file references) and hands them to STREAM_MESSAGE.
+      // Prior to this fix the bridge stripped them before calling
+      // `agent.sendMessage`, so even a BE that grew support could not see
+      // them. Assert every forwarded field lands verbatim in the JSON-RPC
+      // params.
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-ctx" });
+
+      const contextReferences = [
+        { kind: "file", path: "src/index.ts" },
+        { kind: "workspace", workspaceId: WORKSPACE_ID },
+      ];
+      const noteIds = ["note-1", "note-2"];
+      const stdinContext = "Selected lines:\nfoo\nbar";
+      const request = {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+        messageId: "msg-ctx",
+        contextReferences,
+        noteIds,
+        stdinContext,
+      };
+
+      await mockInvoke(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, request);
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.sendMessage", {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+        messageId: "msg-ctx",
+        contextReferences,
+        noteIds,
+        stdinContext,
+      });
+    });
+
+    it("omits context fields when the caller does not supply them (schema-clean payload)", async () => {
+      // Regression guard: unset context fields must NOT surface as `undefined`
+      // in the JSON-RPC params, so the daemon router's `opt_value` lookups
+      // continue to treat them as absent rather than seeing a `null` and
+      // rejecting the call.
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-plain" });
+      await mockInvoke(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+      });
+      const call = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(call).toEqual({
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+      });
+      expect(Object.keys(call)).not.toContain("contextReferences");
+      expect(Object.keys(call)).not.toContain("noteIds");
+      expect(Object.keys(call)).not.toContain("stdinContext");
+    });
   });
 
   describe("agent:backend:queue-message → daemon agent.queueMessage", () => {
