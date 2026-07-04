@@ -200,6 +200,29 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
       'Statically-resolved channels must be removed from DYNAMIC_INVOKE_CALL_SITES',
     ).toEqual([]);
   });
+
+  it('KNOWN_UNBRIDGED_CHANNELS tolerates no startup-critical (store middleware) call sites', () => {
+    // Frozen audit debt is only tolerable for interaction-gated call sites
+    // (a click on an unported affordance failing loud is acceptable debt).
+    // Store middlewares run unconditionally on app/workspace load, so a debt
+    // channel invoked there rejects on EVERY load — that is a live bug, not
+    // debt (workspace:get-recent-repositories reached runtime exactly this
+    // way despite this suite passing). Such channels must be bridged or
+    // allowlisted, never parked in KNOWN_UNBRIDGED_CHANNELS.
+    const middlewarePrefix = path.join('store', 'renderer', 'middlewares') + path.sep;
+    const startupDebt = [...KNOWN_UNBRIDGED_CHANNELS]
+      .map((channel) => ({
+        channel,
+        sites: (invoked.get(channel) ?? []).filter((site) => site.startsWith(middlewarePrefix)),
+      }))
+      .filter(({ sites }) => sites.length > 0)
+      .map(({ channel, sites }) => `${channel}\n    ${sites.join('\n    ')}`);
+    expect(
+      startupDebt,
+      'KNOWN_UNBRIDGED_CHANNELS entries invoked from store middlewares reject on every app ' +
+        'load. Bridge the channel in a seeder or justify an UNBRIDGED_INVOKE_ALLOWLIST entry.',
+    ).toEqual([]);
+  });
 });
 
 /**
@@ -398,7 +421,6 @@ const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([
   'workspace:find-repositories',
   'workspace:get',
   'workspace:get-info',
-  'workspace:get-recent-repositories',
   'workspace:openFile',
   'workspace:openLog',
   'workspace:openMetric',

@@ -8,20 +8,24 @@
  * hydrates the store from live data rather than from a mock.
  *
  * Also registers the renderer→main IPC mock handlers for the legacy
- * `workspace:open` / `workspace:list` / `workspace:create` channels that
- * `workspace.client.ts` still invokes (route loader, RepoSelector, and the
+ * `workspace:open` / `workspace:list` / `workspace:create` /
+ * `workspace:get-recent-repositories` channels that `workspace.client.ts` and
+ * LifecycleIpcReadService still invoke (route loader, RepoSelector, the
  * workspace-creation flow in CompactWorkspaceInitializer / OnboardingPage /
- * AcceptChangesPanel). With no real Electron main process driving this build,
- * those channels would otherwise reject with UnbridgedMockIpcChannelError.
- * Each handler resolves through the live AppClient seam (`workspace.list` /
- * `workspace.create` / `workspace.get`, PROTOCOL §5.1) and returns the
+ * AcceptChangesPanel, and the known-repos hydration on app load). With no real
+ * Electron main process driving this build, those channels would otherwise
+ * reject with UnbridgedMockIpcChannelError. Each handler resolves through the
+ * live daemon (AppClient seam `workspace.list` / `workspace.create` /
+ * `workspace.get` per PROTOCOL §5.1, and `repo.list` per §5.6) and returns the
  * CommandResponse shape the legacy main-process handlers produced, so
  * `workspace.client.ts` `normalizeResponse` folds it into `{ ok: true, data }`.
  */
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import { appClient } from "$lib/client";
+import { backendRequest } from "$lib/client/live/backend-transport";
 import type { CreateWorkspaceRequest } from "$shared/types";
+import type { KnownRepo } from "$shared/types/known-repo";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
   loadRecencyData,
@@ -82,6 +86,17 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.CREATE, async (arg) => {
     };
   }
   return { success: true, data: result.workspace };
+});
+
+// `workspace:get-recent-repositories` — LifecycleIpcReadService's known-repos
+// hydration, fired unconditionally on every app load. Bridges to the daemon's
+// `repo.list` (PROTOCOL §5.6): the persistent known-repo registry, MRU-first,
+// with the legacy handler's one-time workspace→registry sync performed
+// daemon-side. Failures propagate as rejections — the caller keeps the prior
+// known-repos list on error (mirrors the legacy safe-handler contract).
+registerMockIpcHandler(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, async () => {
+  const result = await backendRequest<{ repos: KnownRepo[] }>("repo.list");
+  return { success: true, data: result.repos ?? [] };
 });
 
 registerMockSeeder("workspaces", async ({ store, client }) => {

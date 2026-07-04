@@ -143,6 +143,48 @@ describe("workspaces-seeder legacy IPC bridges", () => {
     });
   });
 
+  describe("workspace:get-recent-repositories → daemon repo.list", () => {
+    it("forwards to repo.list and wraps the KnownRepo[] in {success, data}", async () => {
+      // PROTOCOL §5.6: repo.list → { repos: KnownRepo[] } (MRU-first, camelCase).
+      mockedRequest.mockResolvedValueOnce({
+        repos: [
+          {
+            path: "/Users/me/src/intent",
+            name: "intent",
+            owner: "cloudlands-ai",
+            addedAt: "2026-01-01T00:00:00Z",
+            lastUsedAt: "2026-01-02T00:00:00Z",
+          },
+        ],
+      });
+
+      const response = await mockInvoke<CommandResponse<Array<Record<string, unknown>>>>(
+        WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES,
+        {},
+      );
+
+      expect(mockedRequest).toHaveBeenCalledWith("repo.list");
+      expect(response.success).toBe(true);
+      expect(response.data).toEqual([
+        {
+          path: "/Users/me/src/intent",
+          name: "intent",
+          owner: "cloudlands-ai",
+          addedAt: "2026-01-01T00:00:00Z",
+          lastUsedAt: "2026-01-02T00:00:00Z",
+        },
+      ]);
+    });
+
+    it("rejects on daemon failure — LifecycleIpcReadService keeps the prior known repos", async () => {
+      mockedRequest.mockRejectedValueOnce(new Error("daemon unreachable"));
+
+      await expect(
+        mockInvoke(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, {}),
+      ).rejects.toThrow("daemon unreachable");
+    });
+  });
+
   describe("workspace:get-root (allowlisted absence)", () => {
     it("resolves undefined instead of rejecting — NoteTabType hides the open-file button", async () => {
       expect(UNBRIDGED_INVOKE_ALLOWLIST.has("workspace:get-root")).toBe(true);
