@@ -14,7 +14,7 @@
  * `linear.*` / `sentry.*`, PROTOCOL §5.27–5.29); `scripts` (`script.*`,
  * PROTOCOL §5.8); `setupScripts` (`workspace.*SetupScript` /
  * `detectProjectType`, PROTOCOL §5.25); `events` (`event.query`,
- * PROTOCOL §5.10).
+ * PROTOCOL §5.10); `models` (`models.list`, PROTOCOL §5.30).
  */
 import type { AppClient } from "../app-client";
 import { MockAppClient } from "../mock/mock-app-client";
@@ -24,6 +24,7 @@ import { LiveEventsClient } from "./live-events-client";
 import { LiveFilesClient } from "./live-files-client";
 import { LiveGitClient } from "./live-git-client";
 import { LiveIntegrationsClient } from "./live-integrations-client";
+import { LiveModelsClient } from "./live-models-client";
 import { LiveNotesClient } from "./live-notes-client";
 import { LiveScriptsClient } from "./live-scripts-client";
 import { LiveSettingsClient } from "./live-settings-client";
@@ -52,11 +53,11 @@ export class LiveAppClient implements AppClient {
   readonly scripts = new LiveScriptsClient();
   readonly setupScripts = new LiveSetupScriptsClient();
   readonly events = new LiveEventsClient();
+  readonly models = new LiveModelsClient();
 
   // Delegated to the mock until their own migration wave.
   readonly chat = this.mock.chat;
   readonly skills = this.mock.skills;
-  readonly models = this.mock.models;
   readonly browser = this.mock.browser;
   readonly system = this.mock.system;
 }
