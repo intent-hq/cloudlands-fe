@@ -515,8 +515,10 @@ async function installSubscriptionOnce(): Promise<void> {
   });
 
   // Ask the daemon to firehose `agent:*` events, `settings:changed`
-  // (§5.12 / §6.5), `workspace:tokenUsage-changed` (§5.23), and the
-  // legacy-relay families (`workspace:updated`, `task:ready-tasks-changed`,
+  // (§5.12 / §6.5), `workspace:tokenUsage-changed` (§5.23), the
+  // activity-timeline families (`file:*`, `note:*`, `comment:*`, `script:*`
+  // — §6.5) that populate `selectWorkspaceEvents`, and the legacy-relay
+  // families (`workspace:updated`, `task:ready-tasks-changed`,
   // `changes:git-status`/`changes:tracked` §5.18, `pr:*` §6.5 — see
   // relayLegacyIpcEvent) to this socket. The subscription id is owned by the
   // bridge (no consumer needs it); refetch delta-subscriptions in
@@ -525,6 +527,10 @@ async function installSubscriptionOnce(): Promise<void> {
     const result = (await backendRequest("events.subscribe", {
       eventTypes: [
         "agent:*",
+        "file:*",
+        "note:*",
+        "comment:*",
+        "script:*",
         "settings:changed",
         "workspace:tokenUsage-changed",
         "workspace:updated",

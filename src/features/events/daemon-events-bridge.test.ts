@@ -146,7 +146,7 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
 
   afterEach(() => vi.clearAllMocks());
 
-  it("registers a notification listener and subscribes to agent:* + settings/usage + legacy-relay families on first dispatch", async () => {
+  it("registers a notification listener and subscribes to agent:* + activity-timeline + settings/usage + legacy-relay families on first dispatch", async () => {
     await primeBridge();
 
     expect(onBackendNotificationSpy).toHaveBeenCalledTimes(1);
@@ -156,6 +156,10 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
     expect(backendRequestSpy).toHaveBeenCalledWith("events.subscribe", {
       eventTypes: [
         "agent:*",
+        "file:*",
+        "note:*",
+        "comment:*",
+        "script:*",
         "settings:changed",
         "workspace:tokenUsage-changed",
         "workspace:updated",
@@ -853,6 +857,10 @@ describe("daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
     expect(subscribeCalls[0][1]).toEqual({
       eventTypes: [
         "agent:*",
+        "file:*",
+        "note:*",
+        "comment:*",
+        "script:*",
         "settings:changed",
         "workspace:tokenUsage-changed",
         "workspace:updated",
