@@ -1,6 +1,8 @@
 /**
  * Provider status bridge — routes `providers:get-availability`,
- * `providers:check-single`, and `auggie:status` to real daemon probes
+ * `providers:check-single`, `providers:get-paths`, `auggie:status`, the
+ * per-provider `*:check-availability` probes, and the `auggie:install` /
+ * `auggie:authenticate` guidance flows to real daemon probes
  * (`host.checkAuggie` / `host.toolAvailability` / `host.findBinary` /
  * `host.checkGit` / `host.exec`, PROTOCOL §5.14) instead of the retired
  * "installed + authenticated mock@example.com" seeding.
@@ -36,7 +38,15 @@
  * first render.
  */
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from "$shared/ipc/channels";
+import {
+  AUGGIE_CHANNELS,
+  CLAUDE_CODE_CHANNELS,
+  CODEX_CHANNELS,
+  CORTEX_CHANNELS,
+  DROID_CHANNELS,
+  OPENCODE_CHANNELS,
+  PROVIDERS_CHANNELS,
+} from "$shared/ipc/channels";
 import { ACP_PROVIDERS } from "$shared/config/provider-config";
 import { MINIMUM_AUGGIE_VERSION, MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
 import { backendRequest } from "$lib/client/live/backend-transport";
@@ -446,4 +456,92 @@ registerMockIpcHandler(AUGGIE_CHANNELS.STATUS, async () => {
     status.authenticated = true;
   }
   return { success: true, data: status };
+});
+
+/**
+ * Per-provider `*:check-availability` (the `check<Provider>Availability`
+ * model clients) — presence-only probes against the daemon host, mirroring
+ * the main handlers' binary resolution. Callers read `available` and fold a
+ * rejection to `false` with a warning log, so daemon RPC failures propagate
+ * instead of being masked as "not installed".
+ */
+const CHECK_AVAILABILITY_CHANNELS: Record<string, string> = {
+  "claude-code": CLAUDE_CODE_CHANNELS.CHECK_AVAILABILITY,
+  codex: CODEX_CHANNELS.CHECK_AVAILABILITY,
+  opencode: OPENCODE_CHANNELS.CHECK_AVAILABILITY,
+  droid: DROID_CHANNELS.CHECK_AVAILABILITY,
+};
+
+for (const [providerId, channel] of Object.entries(CHECK_AVAILABILITY_CHANNELS)) {
+  registerMockIpcHandler(channel, async () => {
+    const found = await backendRequest<HostCheckResult>("host.findBinary", {
+      name: PROVIDER_BINARIES[providerId],
+    });
+    return { success: true, available: found?.available === true };
+  });
+}
+
+// Cortex is feature-code gated (renderer cannot verify the gate) — default
+// deny, matching the status probes above.
+registerMockIpcHandler(CORTEX_CHANNELS.CHECK_AVAILABILITY, async () => ({
+  success: true,
+  available: false,
+}));
+
+/** Manual install step surfaced by the INSTALL / AUTHENTICATE instructions. */
+const AUGGIE_INSTALL_COMMAND = "npm install -g @augmentcode/auggie";
+
+/**
+ * `auggie:install` — the reference main handler ran an npm/binary install on
+ * the local host; the daemon has no interactive install surface, so the
+ * bridge returns the manual instructions the callers (ProviderSelector /
+ * AgentGrid `applyInstructionResponse`) render, and the user re-probes with
+ * "Check again" (`providers:check-single` / `auggie:status`).
+ */
+registerMockIpcHandler(AUGGIE_CHANNELS.INSTALL, async () => ({
+  success: true,
+  data: {
+    instructions: [
+      `Install the Auggie CLI on the daemon host (requires Node.js ${MINIMUM_NODE_VERSION}+), then click "Check again":`,
+    ],
+    command: AUGGIE_INSTALL_COMMAND,
+  },
+}));
+
+/**
+ * `auggie:authenticate` — probes the real auth state on the daemon host
+ * (`host.checkAuggie` + the `auggie model list` probe). Already-logged-in
+ * resolves `authenticated: true` (callers toast + refresh); otherwise the
+ * manual `auggie login` instructions render. There is no interactive login
+ * arm on the daemon, so no login flow is fabricated.
+ */
+registerMockIpcHandler(AUGGIE_CHANNELS.AUTHENTICATE, async () => {
+  try {
+    const check = await checkAuggie();
+    if (check.available && check.path && (await probeAuggieAuth(check.path)) === true) {
+      return { success: true, data: { authenticated: true } };
+    }
+    if (!check.available) {
+      return {
+        success: true,
+        data: {
+          instructions: [
+            'Auggie CLI is not installed on the daemon host — install it first, then click "Check again":',
+          ],
+          command: AUGGIE_INSTALL_COMMAND,
+        },
+      };
+    }
+    return {
+      success: true,
+      data: {
+        instructions: [
+          'Log in by running this command in a terminal on the daemon host, then click "Check again":',
+        ],
+        command: "auggie login",
+      },
+    };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
 });

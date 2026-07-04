@@ -369,4 +369,107 @@ describe("provider-status-bridge-seeder", () => {
       expect(response.data).toMatchObject({ installed: false, nodeVersionOk: true });
     });
   });
+
+  describe("*:check-availability → host.findBinary", () => {
+    it("resolves each provider's binary and reports presence honestly", async () => {
+      routeDaemon({
+        "host.findBinary": (params: unknown) => ({
+          available: (params as { name: string }).name === "codex-acp",
+          path: "/usr/local/bin/codex-acp",
+        }),
+      });
+
+      await expect(mockInvoke("codex:check-availability")).resolves.toEqual({
+        success: true,
+        available: true,
+      });
+      await expect(mockInvoke("claude-code:check-availability")).resolves.toEqual({
+        success: true,
+        available: false,
+      });
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "codex-acp" });
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "claude" });
+    });
+
+    it("default-denies cortex (feature-code gated) without touching the daemon", async () => {
+      await expect(mockInvoke("cortex:check-availability")).resolves.toEqual({
+        success: true,
+        available: false,
+      });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it("propagates daemon RPC failures (callers fold the rejection to false + warn)", async () => {
+      routeDaemon({
+        "host.findBinary": () => {
+          throw new Error("transport down");
+        },
+      });
+      await expect(mockInvoke("droid:check-availability")).rejects.toThrow("transport down");
+    });
+  });
+
+  describe("auggie:install / auggie:authenticate → manual guidance + real auth probe", () => {
+    it("returns the manual npm install instructions (no fabricated install flow)", async () => {
+      const response = await mockInvoke<
+        Envelope<{ instructions?: string[]; command?: string }>
+      >(AUGGIE_CHANNELS.INSTALL);
+      expect(response.success).toBe(true);
+      expect(response.data?.instructions?.[0]).toContain("Install the Auggie CLI");
+      expect(response.data?.command).toBe("npm install -g @augmentcode/auggie");
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it("resolves authenticated:true when the daemon-host auth probe passes", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
+        "host.exec": { stdout: "model-a\nmodel-b", stderr: "", exitCode: 0 },
+      });
+      const response = await mockInvoke<Envelope<{ authenticated?: boolean }>>(
+        AUGGIE_CHANNELS.AUTHENTICATE,
+        { action: "start" },
+      );
+      expect(response).toEqual({ success: true, data: { authenticated: true } });
+      expect(mockedRequest).toHaveBeenCalledWith("host.exec", {
+        command: "/usr/local/bin/auggie",
+        args: ["model", "list"],
+        timeoutMs: 5000,
+      });
+    });
+
+    it("returns `auggie login` instructions when installed but logged out", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: true, path: "/usr/local/bin/auggie", version: "0.14.0" },
+        "host.exec": { stdout: "Not logged in", stderr: "", exitCode: 1 },
+      });
+      const response = await mockInvoke<
+        Envelope<{ instructions?: string[]; command?: string; authenticated?: boolean }>
+      >(AUGGIE_CHANNELS.AUTHENTICATE, { action: "start" });
+      expect(response.success).toBe(true);
+      expect(response.data?.authenticated).toBeUndefined();
+      expect(response.data?.command).toBe("auggie login");
+    });
+
+    it("points at the install step when the CLI is missing entirely", async () => {
+      routeDaemon({ "host.checkAuggie": { available: false } });
+      const response = await mockInvoke<
+        Envelope<{ instructions?: string[]; command?: string }>
+      >(AUGGIE_CHANNELS.AUTHENTICATE, { action: "start" });
+      expect(response.success).toBe(true);
+      expect(response.data?.instructions?.[0]).toContain("not installed");
+      expect(response.data?.command).toBe("npm install -g @augmentcode/auggie");
+    });
+
+    it("folds a checkAuggie RPC failure into a failure envelope (renders as guidance)", async () => {
+      routeDaemon({
+        "host.checkAuggie": () => {
+          throw new Error("transport down");
+        },
+      });
+      const response = await mockInvoke<Envelope<never>>(AUGGIE_CHANNELS.AUTHENTICATE, {
+        action: "start",
+      });
+      expect(response).toEqual({ success: false, error: "transport down" });
+    });
+  });
 });
