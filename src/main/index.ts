@@ -1902,18 +1902,21 @@ async function confirmQuitWithRunningAgents(): Promise<boolean> {
     agentIds: respondingAgents.map((s) => s.agentId),
   });
 
+  // Daemon agents SURVIVE app quit: gracefulShutdown only closes the daemon
+  // socket, the agents keep working inside intentd. So this dialog informs
+  // rather than blocks — quitting loses no progress, and Quit is the default.
   const result = await dialog.showMessageBox({
-    type: 'warning',
-    title: 'Agents Running',
-    message: `${respondingAgents.length} agent${respondingAgents.length > 1 ? 's are' : ' is'} still running.`,
+    type: 'info',
+    title: 'Agents Still Working',
+    message: `${respondingAgents.length} agent${respondingAgents.length > 1 ? 's are' : ' is'} still working.`,
     detail:
-      'Quitting now will stop all running agents and they may lose progress. Are you sure you want to quit?',
-    buttons: ['Cancel', 'Quit Anyway'],
+      'Agents keep running in the background after the app closes. Their results will be waiting when you reopen. Quit now?',
+    buttons: ['Quit', 'Cancel'],
     defaultId: 0,
-    cancelId: 0,
+    cancelId: 1,
   });
 
-  if (result.response === 0) {
+  if (result.response === 1) {
     logger.info('User cancelled quit due to running agents');
     return false;
   }
