@@ -138,26 +138,6 @@ class ApiClient {
     }
   }
 
-  async unarchiveWorkspace(workspaceId: string): Promise<void> {
-    const response = await invoke<void>('workspace:unarchive', {
-      workspaceId,
-    });
-
-    if (!response.success) {
-      throw new Error(response.error || 'Failed to unarchive workspace');
-    }
-  }
-
-  async updateWorkspaceGitInfo(workspaceId: string): Promise<any> {
-    const response = await invoke<any>('workspace:update_git_info', workspaceId);
-
-    if (!response.success) {
-      throw new Error(response.error || 'Failed to update git info');
-    }
-
-    return response.data;
-  }
-
   async findGitRepositories(searchPath: string): Promise<string[]> {
     const response = await invoke<string[]>('workspace:find-repositories', {
       searchPath,

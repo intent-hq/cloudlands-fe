@@ -100,10 +100,23 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   ['sources:list', { success: false, error: 'Third-party sources are not ported to the daemon' }],
   ['sources:refresh', { success: false, error: 'Third-party sources are not ported to the daemon' }],
   ['sources:update', { success: false, error: 'Third-party sources are not ported to the daemon' }],
-  // Workspace-card hover status (SpaceStatusClient.fetchStatus, fired on
-  // hover). No daemon composite-status surface; the caller returns null for
-  // `ok: false` and the hover popover simply shows nothing.
-  ['workspace:get-hover-status', { ok: false }],
+  // Electron app version read for analytics common properties
+  // (buildStaticCommonProperties, fired on startup via hooks.client.ts). The
+  // browser build has no packaged app version and no daemon surface for one;
+  // the caller wraps the invoke in try/catch and folds absence to 'unknown'.
+  ['app:get-version', undefined],
+  // Electron native window-chrome state pushed by boot-path $effects: the
+  // Window-menu tab list (+layout SET_OPEN_WORKSPACE_TABS), menu enablement
+  // (+layout SET_IN_WORKSPACE), the native window title (WindowTitleBar
+  // SET_TITLE), and browser-panel focus tracking for menu shortcuts
+  // (PanelLayout SET_BROWSER_FOCUSED). There is no window chrome in this
+  // build and no daemon surface for it; every caller is fire-and-forget with
+  // `.catch(() => {})`, so resolving undefined keeps startup quiet. The
+  // interaction-gated window:open-new stays loud audit debt.
+  ['window:set-browser-focused', undefined],
+  ['window:set-in-workspace', undefined],
+  ['window:set-open-workspace-tabs', undefined],
+  ['window:set-title', undefined],
 ]);
 
 /** Rejection raised when an invoke hits a channel with no registered handler. */

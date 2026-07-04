@@ -11,7 +11,6 @@ import type {
   CreateWorkspaceRequest,
   UpdateWorkspaceRequest,
   Result,
-  WorkspaceUIContext,
   WorkspaceDiffSummary,
   WorkspaceGitSummary,
   WorkspaceTask,
@@ -398,23 +397,6 @@ export class WorkspaceClient {
     return result;
   }
 
-  async updateCurrentContext(
-    workspaceId: WorkspaceId,
-    context: WorkspaceUIContext,
-  ): Promise<Result<void, string>> {
-    if (process.env.DEBUG_WORKSPACE) {
-      logger.info('[WorkspaceClient] updateCurrentContext called:', { workspaceId, context });
-    }
-    const result = await this.invoke<void>(WORKSPACE_CHANNELS.UPDATE_CURRENT_CONTEXT, {
-      workspaceId,
-      context,
-    });
-    if (process.env.DEBUG_WORKSPACE) {
-      logger.info('[WorkspaceClient] updateCurrentContext result:', result);
-    }
-    return result;
-  }
-
   /**
    * Invoke an IPC call bypassing the client cache and deduplication.
    * Used for on-demand summary endpoints whose freshness is event-driven
@@ -459,29 +441,6 @@ export class WorkspaceClient {
     return this.invokeFresh<WorkspaceTask[]>(WORKSPACE_CHANNELS.GET_TASKS, { workspaceId });
   }
 
-  async triggerCheck(workspaceId: string, reason?: string): Promise<Result<void, string>> {
-    logger.info('[WorkspaceClient] Triggering check:', { workspaceId, reason });
-
-    // Bypass cache and deduplication for trigger-check since we always want it to execute
-    try {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        const response = await invokeIpc(WORKSPACE_CHANNELS.TRIGGER_CHECK, {
-          workspaceId,
-          reason,
-        });
-        const result = this.normalizeResponse<void>(response);
-        logger.info('[WorkspaceClient] Trigger check result:', result);
-        return result;
-      }
-      return { ok: false, error: 'IPC not available' };
-    } catch (error) {
-      logger.error('[WorkspaceClient] Failed to trigger check:', error);
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : 'Failed to trigger check',
-      };
-    }
-  }
 }
 
 export const workspaceClient = new WorkspaceClient();
