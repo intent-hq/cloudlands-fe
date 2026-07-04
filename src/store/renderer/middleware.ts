@@ -34,6 +34,7 @@ import { createFileExplorerReadMiddleware } from "$features/file-explorer/file-e
 import { createFilesReadMiddleware } from "$features/files/files-read-service";
 import { createFilesWriteMiddleware } from "$features/files/files-write-service";
 import { createNotesWriteMiddleware } from "$features/notes/notes-write-service";
+import { createNotesVersionsMiddleware } from "$features/notes/notes-versions-service";
 import { createGitHubAuthMiddleware } from "$features/github-auth/github-auth-store-service";
 import { createSentryAuthMiddleware } from "$features/sentry-auth/sentry-auth-store-service";
 import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-store-service";
@@ -182,6 +183,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // command create a note via `appClient.notes.create` and open it in the
     // main panel again instead of being a no-op.
     createNotesWriteMiddleware(),
+    // Give the (post-saga) `fetchNoteVersions` / `restoreNoteVersion` triggers
+    // real handlers so the note-history panel loads the version list via
+    // `notes.listVersions` (+ per-version `note.getVersion`) and the Restore
+    // button forwards to `notes.restoreVersion` + refreshes the editor and
+    // versions list. Without this the panel stays empty and Restore is a no-op.
+    createNotesVersionsMiddleware(),
     // Give the (post-saga) GitHub / Sentry / Linear OAuth connect/status/logout
     // triggers real handlers so the settings buttons run their auth flows again.
     createGitHubAuthMiddleware(),

@@ -21,6 +21,7 @@ import type {
   FileNode,
   GitStatus,
   Note,
+  NoteVersion,
   QueuedMessage,
   TaskStatus,
   UpdateWorkspaceRequest,
@@ -543,6 +544,15 @@ export interface NoteMetadataPatch {
   tags?: string[];
 }
 
+/**
+ * `note.restoreVersion` outcome — carries the daemon's restored note on
+ * success so callers can refresh the editor without a follow-up `note.get`.
+ * The daemon appends a new version capturing the restored state.
+ */
+export interface NoteRestoreResult extends MutationResult {
+  note?: Note;
+}
+
 export interface NotesClient {
   list(workspaceId: string): Promise<Note[]>;
   get(noteId: string): Promise<Note | null>;
@@ -585,6 +595,24 @@ export interface NotesClient {
     metadata: NoteMetadataPatch,
     expectedVersion?: number,
   ): Promise<MutationResult>;
+  /**
+   * Full version history for a note (`note.listVersions` + per-version
+   * `note.getVersion`, PROTOCOL §5.2). Returns the ordered `NoteVersion[]` the
+   * version-history UI renders (each entry carries the full content the diff
+   * viewer needs). Errors propagate so callers can surface them.
+   */
+  listVersions(workspaceId: string, noteId: string): Promise<NoteVersion[]>;
+  /**
+   * Restore a note to a specific version (`note.restoreVersion`, PROTOCOL §5.2).
+   * The daemon resets the note's content to version `versionId` and appends a
+   * NEW version capturing the restored state; the response carries the updated
+   * note so the editor can refresh without a follow-up `note.get`.
+   */
+  restoreVersion(
+    workspaceId: string,
+    noteId: string,
+    versionId: string,
+  ): Promise<NoteRestoreResult>;
 }
 
 /** Inline checkbox status vocabulary (`task.updateStatus` / `task.update`). */

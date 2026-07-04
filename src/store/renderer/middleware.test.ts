@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => {
   const fileExplorerReadMiddleware = createPassthroughMiddleware();
   const filesWriteMiddleware = createPassthroughMiddleware();
   const notesWriteMiddleware = createPassthroughMiddleware();
+  const notesVersionsMiddleware = createPassthroughMiddleware();
   const githubAuthMiddleware = createPassthroughMiddleware();
   const sentryAuthMiddleware = createPassthroughMiddleware();
   const linearAuthMiddleware = createPassthroughMiddleware();
@@ -71,6 +72,7 @@ const mocks = vi.hoisted(() => {
     createFileExplorerReadMiddleware: vi.fn(() => fileExplorerReadMiddleware),
     createFilesWriteMiddleware: vi.fn(() => filesWriteMiddleware),
     createNotesWriteMiddleware: vi.fn(() => notesWriteMiddleware),
+    createNotesVersionsMiddleware: vi.fn(() => notesVersionsMiddleware),
     createGitHubAuthMiddleware: vi.fn(() => githubAuthMiddleware),
     createSentryAuthMiddleware: vi.fn(() => sentryAuthMiddleware),
     createLinearAuthMiddleware: vi.fn(() => linearAuthMiddleware),
@@ -106,6 +108,7 @@ const mocks = vi.hoisted(() => {
     fileExplorerReadMiddleware,
     filesWriteMiddleware,
     notesWriteMiddleware,
+    notesVersionsMiddleware,
     githubAuthMiddleware,
     sentryAuthMiddleware,
     linearAuthMiddleware,
@@ -168,6 +171,9 @@ vi.mock("$features/files/files-write-service", () => ({
 }));
 vi.mock("$features/notes/notes-write-service", () => ({
   createNotesWriteMiddleware: mocks.createNotesWriteMiddleware,
+}));
+vi.mock("$features/notes/notes-versions-service", () => ({
+  createNotesVersionsMiddleware: mocks.createNotesVersionsMiddleware,
 }));
 vi.mock("$features/github-auth/github-auth-store-service", () => ({
   createGitHubAuthMiddleware: mocks.createGitHubAuthMiddleware,
@@ -275,6 +281,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.fileExplorerReadMiddleware,
       mocks.filesWriteMiddleware,
       mocks.notesWriteMiddleware,
+      mocks.notesVersionsMiddleware,
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
@@ -319,6 +326,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.fileExplorerReadMiddleware,
       mocks.filesWriteMiddleware,
       mocks.notesWriteMiddleware,
+      mocks.notesVersionsMiddleware,
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
@@ -363,6 +371,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.fileExplorerReadMiddleware,
       mocks.filesWriteMiddleware,
       mocks.notesWriteMiddleware,
+      mocks.notesVersionsMiddleware,
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
@@ -408,6 +417,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.fileExplorerReadMiddleware,
       mocks.filesWriteMiddleware,
       mocks.notesWriteMiddleware,
+      mocks.notesVersionsMiddleware,
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
@@ -470,6 +480,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.fileExplorerReadMiddleware,
       mocks.filesWriteMiddleware,
       mocks.notesWriteMiddleware,
+      mocks.notesVersionsMiddleware,
       mocks.githubAuthMiddleware,
       mocks.sentryAuthMiddleware,
       mocks.linearAuthMiddleware,
