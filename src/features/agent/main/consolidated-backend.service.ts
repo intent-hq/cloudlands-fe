@@ -94,11 +94,13 @@ async function getNodeModules() {
       // Electron may not be available in all contexts
     }
 
-    // Load agent persistence if in main process
+    // Route agent-session CRUD through the daemon; keep the metadata-fs
+    // resolver wired via the legacy unifiedPersistence hook until C1g retires
+    // agent-persistence.ts entirely.
     try {
+      const bridgeModule = await import('../main/daemon-agent-bridge');
+      agentPersistence = bridgeModule.daemonAgentBridge;
       const persistenceModule = await import('../main/agent-persistence');
-      agentPersistence = persistenceModule.agentPersistence;
-      // Wire up IMetadataFS resolver for remote workspace support
       const { getMetadataFS } = await import('../../metadata-fs/main/metadata-fs-factory');
       metadataFSFactory = getMetadataFS;
       persistenceModule.unifiedPersistence.setMetadataFSResolver(getMetadataFS);
