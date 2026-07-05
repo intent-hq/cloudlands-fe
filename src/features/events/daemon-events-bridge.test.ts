@@ -43,6 +43,13 @@ import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/age
 import type { QueuedMessage } from "$shared/types";
 import { addMockIpcListener, resetMockIpcRouter } from "$shared/ipc-mock-router";
 import {
+  bulkSetServerStatus,
+  clearAllErrorMessages,
+  setServerErrorMessage,
+  setServers,
+} from "$store/renderer/slices/mcp-settings/mcp-settings-slice";
+import type { McpServerStatus } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
+import {
   disposeScripts,
   upsertScript,
 } from "$store/renderer/slices/scripts/scripts-slice";
@@ -172,6 +179,7 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
         "changes:git-status",
         "changes:tracked",
         "pr:*",
+        "mcp.servers:status-changed",
       ],
     });
   });
@@ -949,6 +957,7 @@ describe("daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
         "changes:git-status",
         "changes:tracked",
         "pr:*",
+        "mcp.servers:status-changed",
       ],
     });
   });
@@ -1406,5 +1415,129 @@ describe("daemonEventsBridge (permission flow — PROTOCOL §8 request/resolved 
     );
 
     expect(readPermissionRequests()).toHaveLength(0);
+  });
+});
+
+describe("daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    // Reset the mcpSettings slice via a fresh server list so `id`s resolve.
+    appStore.dispatch(setServers([]));
+    appStore.dispatch(bulkSetServerStatus({}));
+    appStore.dispatch(clearAllErrorMessages());
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  function seedMcpServer(id: string, name: string): void {
+    appStore.dispatch(
+      setServers([{ id, name, type: "stdio", command: "npx" }]),
+    );
+  }
+
+  function mcpNotification(data: Record<string, unknown>) {
+    return {
+      method: "events.event" as const,
+      params: {
+        event: {
+          id: `evt-mcp-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "mcp.servers:status-changed",
+          actor: { type: "system", id: "daemon" },
+          data,
+        },
+      },
+    };
+  }
+
+  function readStatus(name: string): McpServerStatus | undefined {
+    return appStore.state.mcpSettings.statusMap[name];
+  }
+
+  it("running → sets statusMap[name] = 'connected' and clears any prior error", async () => {
+    seedMcpServer("srv-fs", "filesystem");
+    // Prime a prior error to prove the handler clears it on recovery.
+    appStore.dispatch(setServerErrorMessage("filesystem", "boot failed"));
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      mcpNotification({
+        serverId: "srv-fs",
+        status: { serverId: "srv-fs", state: "running", pid: 1234, toolCount: 7 },
+      }),
+    );
+
+    expect(readStatus("filesystem")).toBe("connected");
+    expect(appStore.state.mcpSettings.errorMessages.filesystem).toBeUndefined();
+  });
+
+  it("error → sets 'error' status and surfaces lastError via setServerErrorMessage", async () => {
+    seedMcpServer("srv-gh", "github");
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      mcpNotification({
+        serverId: "srv-gh",
+        status: { serverId: "srv-gh", state: "error", lastError: "connect ECONNREFUSED" },
+      }),
+    );
+
+    expect(readStatus("github")).toBe("error");
+    expect(appStore.state.mcpSettings.errorMessages.github).toBe("connect ECONNREFUSED");
+  });
+
+  it("starting/stopped map to configured/stopped respectively", async () => {
+    seedMcpServer("srv-a", "alpha");
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      mcpNotification({ serverId: "srv-a", status: { serverId: "srv-a", state: "starting" } }),
+    );
+    expect(readStatus("alpha")).toBe("configured");
+
+    handler(
+      mcpNotification({ serverId: "srv-a", status: { serverId: "srv-a", state: "stopped" } }),
+    );
+    expect(readStatus("alpha")).toBe("stopped");
+  });
+
+  it("drops events for an unknown serverId (no FE state mutation)", async () => {
+    seedMcpServer("srv-known", "known");
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const before = appStore.state.mcpSettings.statusMap;
+
+    handler(
+      mcpNotification({
+        serverId: "srv-ghost",
+        status: { serverId: "srv-ghost", state: "running" },
+      }),
+    );
+
+    expect(appStore.state.mcpSettings.statusMap).toEqual(before);
+  });
+
+  it("ignores payloads missing serverId or a mappable state", async () => {
+    seedMcpServer("srv-x", "x");
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const before = appStore.state.mcpSettings.statusMap;
+
+    handler(mcpNotification({ status: { state: "running" } }));
+    handler(mcpNotification({ serverId: "srv-x", status: { state: "unknown" } }));
+    handler(mcpNotification({ serverId: "srv-x" }));
+
+    expect(appStore.state.mcpSettings.statusMap).toEqual(before);
   });
 });

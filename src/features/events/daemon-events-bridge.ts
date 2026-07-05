@@ -83,6 +83,12 @@ import type {
   ScriptRuntimeState,
 } from "$store/renderer/slices/scripts/scripts-types";
 import {
+  clearServerErrorMessage,
+  setServerErrorMessage,
+  setServerStatus,
+} from "$store/renderer/slices/mcp-settings/mcp-settings-slice";
+import type { McpServerStatus } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
+import {
   backendRequest,
   onBackendNotification,
 } from "$lib/client/live/backend-transport";
@@ -623,6 +629,61 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
   }
 }
 
+
+/**
+ * `mcp.servers:status-changed` (§6.5) — self-sufficient payload
+ * `{ serverId, status: McpServerStatus }` where `status.state` is one of
+ * `"stopped" | "starting" | "running" | "error"` (PROTOCOL §5.22). No
+ * `workspaceId` envelope: the MCP-servers surface is global, so this handler
+ * runs before the workspace-id gate in `handleNotification`. Resolve the
+ * daemon-assigned `serverId` back to a server `name` via the current
+ * `mcpSettings.servers` list (`fromWireMcpConfig` carries `id` through), then
+ * dispatch `setServerStatus` plus `setServerErrorMessage` /
+ * `clearServerErrorMessage` keyed by name — the slice keys everything by name.
+ */
+function mapDaemonMcpState(state: unknown): McpServerStatus | null {
+  switch (state) {
+    case "running":
+      return "connected";
+    case "starting":
+      return "configured";
+    case "stopped":
+      return "stopped";
+    case "error":
+      return "error";
+    default:
+      return null;
+  }
+}
+
+function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const serverId = data.serverId;
+  const status = data.status as { state?: unknown; lastError?: unknown } | undefined;
+  if (typeof serverId !== "string" || !serverId || !status || typeof status !== "object") {
+    return;
+  }
+  const mapped = mapDaemonMcpState(status.state);
+  if (mapped === null) return;
+
+  // Resolve serverId → name via the local server list. When the FE has not
+  // yet loaded `mcp.servers.list` (e.g. the settings panel was never opened)
+  // or when the daemon emits for an id the FE never mirrored, drop the
+  // update — the next `refreshMcpServers` will pick up the current state.
+  const servers = appStore.state.mcpSettings.servers;
+  const match = servers.find((s) => s.id === serverId);
+  if (!match) return;
+
+  appStore.dispatch(setServerStatus(match.name, mapped));
+  const lastError = status.lastError;
+  if (mapped === "error" && typeof lastError === "string" && lastError.length > 0) {
+    appStore.dispatch(setServerErrorMessage(match.name, lastError));
+  } else {
+    appStore.dispatch(clearServerErrorMessage(match.name));
+  }
+}
+
 function handleNotification(method: string, params: unknown): void {
   if (method !== "events.event") return;
   // Fan-out scope gate (see file header): drop notifications delivered through
@@ -652,6 +713,13 @@ function handleNotification(method: string, params: unknown): void {
   // `data`, so it is routed before the envelope workspace-id gate too.
   if (type === "workspace:tokenUsage-changed") {
     handleTokenUsageChangedEvent(event);
+    return;
+  }
+
+  // `mcp.servers:status-changed` (§6.5) is global — no `workspaceId` envelope
+  // — so it must also run before the workspace-id gate below.
+  if (type === "mcp.servers:status-changed") {
+    handleMcpServerStatusChangedEvent(event);
     return;
   }
 
@@ -758,6 +826,7 @@ async function installSubscriptionOnce(): Promise<void> {
         "changes:git-status",
         "changes:tracked",
         "pr:*",
+        "mcp.servers:status-changed",
       ],
     })) as { subscriptionId?: string } | undefined;
     if (typeof result?.subscriptionId === "string" && result.subscriptionId.length > 0) {
