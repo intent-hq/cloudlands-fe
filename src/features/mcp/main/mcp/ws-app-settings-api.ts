@@ -9,7 +9,6 @@ import {
 import { Logger } from '$shared/logger';
 import { getBackendClient } from '../../../backend/main/backend.ipc';
 import { getLocalPref } from '../../../../main/local-prefs';
-import { readUserMcpServers } from '../user-mcp-settings';
 import type { ToolCall } from './protocol';
 import { emitProposalToChat, proposalToolResult } from './ws-app-proposal-content';
 
@@ -234,6 +233,47 @@ function valueForResult(definition: AppSettingDefinition, value: unknown): unkno
   return redactValue(value);
 }
 
+
+/**
+ * Read `mcp.servers` through the daemon's §5.22 `mcp.servers.list` surface
+ * instead of `~/.augment/settings.json` — the daemon is the single source of
+ * truth for the external MCP-server catalog (§5.12 marks the setting sensitive
+ * and the on-disk file is owned by the deferred acp-provider spawn path).
+ *
+ * The legacy `source: 'augment-settings'` shape was `Record<name, config>` keyed
+ * by server name (mirroring the on-disk `mcpServers` object), so we shape the
+ * wire array back into that record before returning. The whole entry is
+ * `sensitive: true`, so `valueForResult` will redact `env`/`headers` and any
+ * other secret-ish keys before the value reaches the caller.
+ */
+async function readDaemonMcpServersRecord(): Promise<Record<string, unknown>> {
+  try {
+    const result = (await getBackendClient().request('mcp.servers.list')) as
+      | { servers?: Array<Record<string, unknown>> }
+      | undefined;
+    const servers = Array.isArray(result?.servers) ? result.servers : [];
+    const record: Record<string, unknown> = {};
+    for (const server of servers) {
+      const name = (server as { name?: unknown }).name;
+      if (typeof name !== 'string' || !name) continue;
+      // Strip `id`/`name` from the value body — the record is keyed by name and
+      // the daemon-assigned id is not part of the settings-catalog shape.
+      const rest: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(server)) {
+        if (key === 'name' || key === 'id') continue;
+        rest[key] = value;
+      }
+      record[name] = rest;
+    }
+    return record;
+  } catch (error) {
+    logger.debug('mcp.servers.list failed; falling back to empty catalog', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {};
+  }
+}
+
 async function readDefinitionValue(definition: AppSettingDefinition): Promise<unknown> {
   // Path-based P3-4 owner routing takes precedence over the (post-B7 legacy)
   // `source` label — schema entries may now carry `daemon-settings` or
@@ -253,7 +293,7 @@ async function readDefinitionValue(definition: AppSettingDefinition): Promise<un
   if (definition.source === 'static') {
     rawValue = definition.defaultValue;
   } else if (definition.source === 'augment-settings') {
-    rawValue = await readUserMcpServers();
+    rawValue = await readDaemonMcpServersRecord();
   } else if (definition.source === 'electron-store') {
     rawValue = await readElectronStoreOwner(definition);
   } else if (definition.source === 'local-storage') {

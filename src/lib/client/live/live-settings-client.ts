@@ -331,6 +331,10 @@ function fromWireMcpConfig(wire: WireMcpServerConfig): McpServerConfig | null {
   if (typeof wire?.name !== "string" || !wire.name) return null;
   const type = wire.transport === "http" || wire.transport === "sse" ? wire.transport : "stdio";
   const config: McpServerConfig = { name: wire.name, type };
+  // Carry the daemon-assigned `id` (§5.22) so the events bridge can resolve
+  // `mcp.servers:status-changed` payloads back to a server name; opaque to
+  // the UI and never authored by callers.
+  if (typeof wire.id === "string" && wire.id) config.id = wire.id;
   if (typeof wire.command === "string" && wire.command) config.command = wire.command;
   if (Array.isArray(wire.args)) config.args = wire.args;
   if (wire.env && typeof wire.env === "object") config.env = wire.env;

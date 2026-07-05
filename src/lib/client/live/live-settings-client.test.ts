@@ -145,13 +145,14 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
     expect(mockedRequest).toHaveBeenCalledWith("mcp.servers.list");
     expect(result).toEqual([
       {
+        id: "srv-fs",
         name: "filesystem",
         type: "stdio",
         command: "npx",
         args: ["-y", "@modelcontextprotocol/server-filesystem"],
         env: { API_KEY: "********" },
       },
-      { name: "github", type: "http", url: "https://mcp.github.com/mcp", disabled: true },
+      { id: "srv-gh", name: "github", type: "http", url: "https://mcp.github.com/mcp", disabled: true },
     ]);
   });
 
@@ -267,6 +268,30 @@ describe("LiveSettingsClient domain accessors map FE shapes ↔ BE paths", () =>
     expect(mockedRequest).toHaveBeenCalledWith("settings.update", {
       changes: [{ path: "providers.active", value: "codex" }],
     });
+  });
+
+
+  it("getMcpServers preserves the daemon-assigned id so status events can resolve name", async () => {
+    // The `mcp.servers:status-changed` bridge (§6.5) receives `{ serverId, status }`
+    // and looks the config up by id in the slice. `fromWireMcpConfig` must
+    // therefore carry the id through — this pins that shape.
+    mockedRequest.mockResolvedValueOnce({
+      servers: [
+        {
+          id: "srv-fs",
+          name: "filesystem",
+          transport: "stdio",
+          command: "npx",
+          enabled: true,
+        },
+      ],
+    });
+    const client = new LiveSettingsClient();
+
+    const result = await client.getMcpServers();
+    expect(result).toEqual([
+      { id: "srv-fs", name: "filesystem", type: "stdio", command: "npx" },
+    ]);
   });
 
   it("getWorkspaceSettings reads git.autoCommit and maps to { autoCommitEnabled }", async () => {

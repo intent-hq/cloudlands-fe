@@ -173,6 +173,63 @@ describe('buildWsAppSettingsApi', () => {
     });
   });
 
+
+  it("mcp.servers reads through daemon mcp.servers.list and reshapes to a name-keyed record", async () => {
+    // PROTOCOL §5.22 — the on-disk `~/.augment/settings.json` shape was
+    // `Record<name, config>`; the daemon exposes an array. The API must
+    // reshape it back to a record so callers see a stable contract.
+    // Sensitive `env`/`headers` are redacted by `valueForResult` before
+    // reaching the caller (schema entry has `sensitive: true`).
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method === "mcp.servers.list") {
+        return {
+          servers: [
+            {
+              id: "srv-fs",
+              name: "filesystem",
+              transport: "stdio",
+              command: "npx",
+              args: ["-y", "@modelcontextprotocol/server-filesystem"],
+              env: { API_KEY: "supersecret" },
+              enabled: true,
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected request ${method}`);
+    });
+
+    const api = buildWsAppSettingsApi("__chief__", call);
+    const result = await api.get("mcp.servers");
+
+    expect(backendRequestSpy).toHaveBeenCalledWith("mcp.servers.list");
+    expect(result).toMatchObject({
+      path: "mcp.servers",
+      valueRedacted: true,
+    });
+    // The record is keyed by server name; the daemon id + name are stripped
+    // from the value body. Secret-ish keys are redacted by `valueForResult`.
+    expect(result?.value).toEqual({
+      filesystem: {
+        transport: "stdio",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem"],
+        env: "[redacted]",
+        enabled: true,
+      },
+    });
+  });
+
+  it("mcp.servers folds a daemon failure to the schema defaultValue ({})", async () => {
+    backendRequestSpy.mockRejectedValue(new Error("daemon offline"));
+
+    const api = buildWsAppSettingsApi("__chief__", call);
+    const result = await api.get("mcp.servers");
+
+    expect(backendRequestSpy).toHaveBeenCalledWith("mcp.servers.list");
+    expect(result).toMatchObject({ path: "mcp.servers", value: {} });
+  });
+
   it('folds daemon settings.get failures into the schema defaultValue', async () => {
     backendRequestSpy.mockRejectedValue(new Error('daemon offline'));
 
