@@ -4,7 +4,7 @@
  * Main backend service for agent operations. Handles:
  * - Agent lifecycle (create, stop, resume)
  * - Message streaming and accumulation
- * - Session persistence via agentPersistence
+ * - Session persistence via daemonAgentBridge
  *
  * Handler methods are used by AgentBackendAdapter which is called
  * by unified-agent-handlers.ts for IPC routing.
@@ -53,7 +53,7 @@ import { isAutoCommitEnabled } from '../../workspace/main/workspace-settings.ser
 import { agentValidator } from './agent-validator';
 import * as messageAccumulator from '../../../store/main/slices/message-accumulator/message-accumulator-api';
 import { resolveStreamingConfig, DEFAULT_PROFILE } from '../../../shared/streaming-config';
-import { agentPersistence, UnifiedPersistence } from './agent-persistence';
+import { daemonAgentBridge } from './daemon-agent-bridge';
 import { checkAndUpdateNoteStatus } from './note-status-checker';
 import { getAgentContextRegistry } from '../agent-context-registry';
 import { notesService } from '../../notes/main/notes.service';
@@ -163,7 +163,7 @@ interface AgentResumabilityResult {
  * - Agent lifecycle (create, stop, resume)
  * - Message streaming and accumulation
  * - Message queueing and interruption
- * - Session persistence via agentPersistence
+ * - Session persistence via daemonAgentBridge
  *
  * ARCHITECTURE:
  * - IPC handlers are registered in unified-agent-handlers.ts
@@ -1611,7 +1611,7 @@ export class AgentBackendHandler {
         // but agents are stored in the metadata path. Passing workspacePath causes
         // loadAgent to look in the wrong directory (worktree instead of metadata).
         // Let loadAgent use WorkspaceConfig.paths.agents(workspaceId) internally.
-        loadResult = await agentPersistence.loadAgent(
+        loadResult = await daemonAgentBridge.loadAgent(
           request.agentId as AgentId,
           request.workspaceId as WorkspaceId,
           // DO NOT pass workspacePath here - it causes path mismatch!
@@ -2050,7 +2050,7 @@ export class AgentBackendHandler {
               session.backendSessionId = event.sessionId as AgentId;
               session.acpSessionId = event.sessionId;
               // Persist to disk so it survives Intent restart
-              await agentPersistence.saveAgent(session);
+              await daemonAgentBridge.saveAgent(session);
               logger.info('Persisted backendSessionId from session:created event', {
                 agentId: event.agentId,
                 backendSessionId: event.sessionId,
@@ -2154,7 +2154,7 @@ export class AgentBackendHandler {
                 if (session) {
                   session.acpSessionId = initialSessionId;
                   // Persist to disk so it survives Intent restart
-                  await agentPersistence.saveAgent(session);
+                  await daemonAgentBridge.saveAgent(session);
                   logger.info('Captured initial acpSessionId from provider', {
                     agentId: request.agentId,
                     acpSessionId: initialSessionId,
@@ -2266,7 +2266,7 @@ export class AgentBackendHandler {
             if (!loadedFromMemory) {
               // Load messages from persistence
               // DON'T pass workspacePath - let loadAgent use the correct metadata path internally
-              loadResult = await agentPersistence.loadAgent(
+              loadResult = await daemonAgentBridge.loadAgent(
                 request.agentId as AgentId,
                 request.workspaceId as WorkspaceId,
               );
@@ -2459,7 +2459,7 @@ export class AgentBackendHandler {
 
             // Also persist to disk immediately so refresh doesn't lose the edit
             // This is fire-and-forget since we don't want to block the message send
-            agentPersistence.saveAgent(backendSession).then((saveResult) => {
+            daemonAgentBridge.replaceMessages(backendSession.id, backendSession.workspaceId, backendSession.messages).then((saveResult) => {
               if (saveResult.success) {
                 logger.info('Persisted truncated messages to disk (edit/regenerate flow)', {
                   agentId: request.agentId,
@@ -2828,7 +2828,7 @@ export class AgentBackendHandler {
           // CRITICAL: Persist user message to disk immediately so it survives page refresh.
           // Without this, the user message only exists in memory until the stream completes
           // (or 50 streaming chunks), meaning a refresh during streaming loses the message.
-          agentPersistence.saveAgent(backendSession).then((saveResult) => {
+          daemonAgentBridge.replaceMessages(backendSession.id, backendSession.workspaceId, backendSession.messages).then((saveResult) => {
             if (saveResult.success) {
               logger.debug('Backend: Persisted user message to disk immediately', {
                 agentId: request.agentId,
@@ -3628,11 +3628,10 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
               backendSession.isStreaming = false;
 
               // Persist the session to disk
-              const saveResult = await agentPersistence.saveAgent(backendSession);
+              const saveResult = await daemonAgentBridge.saveAgent(backendSession);
               if (saveResult.success) {
                 logger.debug('Backend: Session persisted after stream complete', {
                   agentId: request.agentId,
-                  path: saveResult.path,
                 });
               } else {
                 logger.error('Backend: Failed to persist session', {
@@ -4103,7 +4102,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
 
         // First, try to load the agent from persistence
         // DON'T pass workspacePath - let loadAgent use the correct metadata path internally
-        const loadResult = await agentPersistence.loadAgent(
+        const loadResult = await daemonAgentBridge.loadAgent(
           request.agentId as AgentId,
           request.workspaceId as WorkspaceId,
         );
@@ -4335,7 +4334,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         let repaired = false;
         if (repairWorkspaceId) {
           try {
-            const loadResult = await agentPersistence.loadAgent(
+            const loadResult = await daemonAgentBridge.loadAgent(
               agentId as AgentId,
               repairWorkspaceId as WorkspaceId,
             );
@@ -4508,7 +4507,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       let restoreSnapshot: AgentSession | null = null;
       if (workspaceId) {
         try {
-          const loadResult = await agentPersistence.loadAgent(
+          const loadResult = await daemonAgentBridge.loadAgent(
             agentId as AgentId,
             workspaceId as WorkspaceId,
           );
@@ -4682,7 +4681,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     try {
       const { agent } = validated;
       // Do NOT pass workspacePath - let it use the correct metadata directory
-      const result = await agentPersistence.saveAgent(agent);
+      const result = await daemonAgentBridge.saveAgent(agent);
       return result;
     } catch (error) {
       logger.error('Failed to save agent', error as Error);
@@ -4699,7 +4698,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
   ): Promise<{ success: boolean; data?: AgentSession; error?: string }> {
     try {
       const { agentId, workspaceId, workspacePath } = validated;
-      const result = await agentPersistence.loadAgent(
+      const result = await daemonAgentBridge.loadAgent(
         agentId as AgentId,
         workspaceId as WorkspaceId,
         workspacePath,
@@ -4720,7 +4719,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const { agentId, workspaceId } = validated;
-      await agentPersistence.deleteAgent(agentId, workspaceId);
+      await daemonAgentBridge.deleteAgent(agentId, workspaceId);
       // Invalidate the persistence list cache since we deleted an agent
       if (workspaceId) {
         this.invalidatePersistenceListCache(workspaceId);
@@ -4873,14 +4872,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       const loadPromise = (async (): Promise<any[]> => {
         // Get list of agent IDs
         // Do NOT pass workspacePath - let it use the correct metadata directory
-        const agentIds = await agentPersistence.listAgents(workspaceId);
+        const agentIds = await daemonAgentBridge.listAgents(workspaceId);
 
         const hydrateFullAgents = this.shouldHydrateFullPersistenceList(workspaceId, agentIds);
         hydratedMessagesForList = hydrateFullAgents;
-        const loadAgentSummary = agentPersistence.loadAgentSummary?.bind(agentPersistence);
+        const loadAgentSummary = daemonAgentBridge.loadAgentSummary?.bind(daemonAgentBridge);
         const loadAgentForList = hydrateFullAgents
-          ? agentPersistence.loadAgent.bind(agentPersistence)
-          : (loadAgentSummary ?? agentPersistence.loadAgent.bind(agentPersistence));
+          ? daemonAgentBridge.loadAgent.bind(daemonAgentBridge)
+          : (loadAgentSummary ?? daemonAgentBridge.loadAgent.bind(daemonAgentBridge));
 
         // Load agent data for each ID in parallel. Closed/inactive workspaces use
         // summaries so list/status surfaces don't retain full message history.
@@ -4946,7 +4945,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const { agentId, workspaceId, message } = validated;
-      await agentPersistence.saveMessage(agentId, workspaceId, message);
+      await daemonAgentBridge.saveMessage(agentId, workspaceId, message);
       return { success: true };
     } catch (error) {
       logger.error('Failed to save message', error as Error);
@@ -4967,14 +4966,14 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       for (const op of operations) {
         switch (op.type) {
           case 'save':
-            const saveResult = await agentPersistence.saveAgent(
+            const saveResult = await daemonAgentBridge.saveAgent(
               op.params.session,
               op.params.workspacePath,
             );
             results.push(saveResult);
             break;
           case 'load':
-            const loadResult = await agentPersistence.loadAgent(
+            const loadResult = await daemonAgentBridge.loadAgent(
               op.params.agentId,
               op.params.workspaceId,
               op.params.workspacePath,
@@ -4982,7 +4981,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
             results.push(loadResult);
             break;
           case 'delete':
-            const deleteResult = await agentPersistence.deleteAgent(
+            const deleteResult = await daemonAgentBridge.deleteAgent(
               op.params.agentId,
               op.params.workspaceId,
               op.params.workspacePath,
@@ -5268,7 +5267,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     try {
       const { agentId } = validated;
       // Get the latest message or messages for the agent
-      const messages = await agentPersistence.getMessages(agentId);
+      const messages = await daemonAgentBridge.getMessages(agentId);
       return { success: true, data: messages };
     } catch (error) {
       logger.error('Failed to receive messages', error as Error);
@@ -6511,7 +6510,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         // flipping the guard AFTER this callback started but BEFORE we
         // reach here. Placing the guard before the mutation prevents two
         // overwrite paths:
-        //   (a) our own `agentPersistence.saveAgent` overwriting the
+        //   (a) our own `daemonAgentBridge.saveAgent` overwriting the
         //       just-committed repair state on disk, AND
         //   (b) dirtying the in-memory backend session (shared by
         //       reference with ConsolidatedBackendService's sessions Map)
@@ -6562,7 +6561,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         backendSession.updatedAt = new Date();
 
         // Persist to disk
-        const saveResult = await agentPersistence.saveAgent(backendSession);
+        const saveResult = await daemonAgentBridge.saveAgent(backendSession);
         if (saveResult.success) {
           logger.debug('Backend: Streaming state persisted', {
             agentId,
@@ -6707,7 +6706,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       (backendSession as any).isProcessing = false;
       backendSession.updatedAt = new Date();
 
-      const saveResult = await agentPersistence.saveAgent(backendSession);
+      const saveResult = await daemonAgentBridge.saveAgent(backendSession);
       if (saveResult.success) {
         logger.info('Backend: Interrupted streaming state persisted', {
           agentId,
@@ -6782,7 +6781,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         (backendSession as any).isProcessing = false;
         backendSession.updatedAt = new Date();
 
-        const saveResult = await agentPersistence.saveAgent(backendSession);
+        const saveResult = await daemonAgentBridge.saveAgent(backendSession);
         if (!saveResult.success) {
           logger.warn('Backend: Failed to persist timed-out streaming state', {
             agentId,
@@ -6813,7 +6812,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
    * the provider/bridge was torn down mid-stream. Clears isStreaming /
    * isProcessing, forces status to Idle, optionally appends a final assistant
    * message explaining what happened, and re-persists via the canonical
-   * agentPersistence.saveAgent path (which handles the .json.checksum SHA-256
+   * daemonAgentBridge.saveAgent path (which handles the .json.checksum SHA-256
    * sidecar). Returns the mutated session AND whether the save succeeded so
    * callers only mark it "repaired" when on-disk state actually changed.
    */
@@ -6860,7 +6859,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
 
     let persisted = false;
     try {
-      const saveResult = await agentPersistence.saveAgent(agent);
+      const saveResult = await daemonAgentBridge.saveAgent(agent);
       if (!saveResult.success) {
         logger.warn('repairOrphanedStreamingState: repair attempted but not persisted', {
           agentId: agent.id,
@@ -6940,7 +6939,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       this.acquireTerminatingGuard(agentId);
       try {
         if (workspaceId) {
-          const loadResult = await agentPersistence.loadAgent(
+          const loadResult = await daemonAgentBridge.loadAgent(
             agentId as AgentId,
             workspaceId as WorkspaceId,
           );
@@ -7034,7 +7033,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
   /**
    * Cleanly persist in-flight streaming agents during graceful shutdown.
    * Iterates currently-streaming agents, flips `isStreaming` / `isProcessing`
-   * to false and status to Idle, and persists via `agentPersistence.saveAgent`.
+   * to false and status to Idle, and persists via `daemonAgentBridge.saveAgent`.
    * Unlike the orphan-recovery and bridge-unrecoverable paths, this does NOT
    * append any assistant message — a user-initiated clean quit is not a
    * failure mode. Safe to call from shutdown handlers: per-agent errors are
@@ -7088,7 +7087,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         if (!workspaceId) {
           return 'skipped';
         }
-        const loadResult = await agentPersistence.loadAgent(
+        const loadResult = await daemonAgentBridge.loadAgent(
           agentId as AgentId,
           workspaceId as WorkspaceId,
         );
@@ -7215,7 +7214,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
 
       // DON'T pass workspacePath - let loadAgent use the correct metadata path internally
       // Using WorkspaceConfig.paths.agents(workspaceId) is the canonical way to get the agents directory
-      const loadResult = await agentPersistence.loadAgent(
+      const loadResult = await daemonAgentBridge.loadAgent(
         agentId as AgentId,
         workspaceId as WorkspaceId,
       );
@@ -7994,7 +7993,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         // No provider exists - we need to do the frontend handshake before streaming
         // Load agent from persistence to get agent info for the handshake
         // DON'T pass workspacePath - let loadAgent use the correct metadata path internally
-        const loadResult = await agentPersistence.loadAgent(
+        const loadResult = await daemonAgentBridge.loadAgent(
           sessionId as AgentId,
           workspaceId as WorkspaceId,
         );
@@ -8172,8 +8171,8 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
               // CRITICAL FIX: Persist the wake message to disk IMMEDIATELY so it survives
               // page refresh. Without this, the wake message only exists in memory until
               // onComplete runs, and can be lost if the frontend saves a stale session.
-              agentPersistence
-                .saveAgent(agentSession)
+              daemonAgentBridge
+                .replaceMessages(agentSession.id, agentSession.workspaceId, agentSession.messages)
                 .then((saveResult) => {
                   if (saveResult.success) {
                     logger.info(
@@ -8283,7 +8282,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
             },
           );
 
-          const loadResult = await agentPersistence.loadAgent(
+          const loadResult = await daemonAgentBridge.loadAgent(
             sessionId as AgentId,
             workspaceId as WorkspaceId,
           );
@@ -8441,8 +8440,8 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
             );
 
             if (truncationResult.droppedCount > 0) {
-              agentPersistence
-                .saveAgent(existingSession)
+              daemonAgentBridge
+                .replaceMessages(existingSession.id, existingSession.workspaceId, existingSession.messages)
                 .then((saveResult) => {
                   if (saveResult.success) {
                     logger.info(
@@ -8488,8 +8487,8 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
             // Without this, the wake message only exists in memory until onComplete runs,
             // and frontend saves during streaming can overwrite it via the merge logic
             // in persistence.ipc.ts (which sees the frontend's stale message set as authoritative).
-            agentPersistence
-              .saveAgent(existingSession)
+            daemonAgentBridge
+              .replaceMessages(existingSession.id, existingSession.workspaceId, existingSession.messages)
               .then((saveResult) => {
                 if (saveResult.success) {
                   logger.info(
@@ -8642,7 +8641,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       const agent = backend ? await backend.getAgent(agentId) : undefined;
       const runtimeProvider = this.providers.get(agentId);
       const currentModel = (runtimeProvider as any)?.config?.model as string | undefined;
-      const persistence = UnifiedPersistence.getInstance();
+      const persistence = daemonAgentBridge;
       const persistedAgentResult =
         agent || !workspaceId
           ? undefined
@@ -9825,7 +9824,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
       }
 
       try {
-        const loadResult = await agentPersistence.loadAgent(
+        const loadResult = await daemonAgentBridge.loadAgent(
           agentId as AgentId,
           workspaceId as WorkspaceId,
         );
@@ -10335,7 +10334,7 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
     let isBackground: boolean | undefined;
     let parentAgentId: string | undefined;
     try {
-      const loadResult = await agentPersistence.loadAgent(
+      const loadResult = await daemonAgentBridge.loadAgent(
         agentId as AgentId,
         workspaceId as WorkspaceId,
       );

@@ -10,6 +10,8 @@ import {
 const mockPersistence = {
   loadAgent: vi.fn(),
   saveAgent: vi.fn(),
+  replaceMessages: vi.fn().mockResolvedValue({ success: true }),
+  appendMessage: vi.fn().mockResolvedValue({ success: true }),
 };
 
 vi.mock('electron', () => ({
@@ -39,6 +41,9 @@ vi.mock('../../../workspace/main/workspace.service', () => ({
 vi.mock('../agent-persistence', () => ({
   agentPersistence: mockPersistence,
   UnifiedPersistence: { getInstance: () => mockPersistence },
+}));
+vi.mock('../daemon-agent-bridge', () => ({
+  daemonAgentBridge: mockPersistence,
 }));
 
 vi.mock('../../../../store/main/redux-store-bridge', () => ({
@@ -212,8 +217,12 @@ describe('AgentBackendHandler event notification idempotency', () => {
       'msg_existing_wake',
     ]);
     expect(lastStreamMessage).toMatchObject({ id: 'msg_existing_wake', role: 'user' });
-    expect(mockPersistence.saveAgent).toHaveBeenCalledTimes(1);
-    expect(mockPersistence.saveAgent).toHaveBeenCalledWith(backendSession);
+    expect(mockPersistence.replaceMessages).toHaveBeenCalledTimes(1);
+    expect(mockPersistence.replaceMessages).toHaveBeenCalledWith(
+      backendSession.id,
+      backendSession.workspaceId,
+      backendSession.messages,
+    );
   });
 
   it('skips a duplicate event-notification wake that already has a completed assistant response', async () => {
@@ -349,7 +358,11 @@ describe('AgentBackendHandler event notification idempotency', () => {
     expect(backendSession.messages.map((message: any) => message.id)).toEqual([
       'msg_existing_wake',
     ]);
-    expect(mockPersistence.saveAgent).toHaveBeenCalledWith(backendSession);
+    expect(mockPersistence.replaceMessages).toHaveBeenCalledWith(
+      backendSession.id,
+      backendSession.workspaceId,
+      backendSession.messages,
+    );
   });
 
   it('still delivers a later lifecycle event with a different source event id', async () => {

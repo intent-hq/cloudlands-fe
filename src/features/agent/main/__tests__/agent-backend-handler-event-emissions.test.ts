@@ -21,11 +21,13 @@ import { beforeAll, beforeEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'fs';
 import path from 'path';
 
-const { mainDispatchMock, loadAgentMock, saveAgentMock, getWindowIdsForWorkspaceMock } = vi.hoisted(
+const { mainDispatchMock, loadAgentMock, saveAgentMock, replaceMessagesMock, appendMessageMock, getWindowIdsForWorkspaceMock } = vi.hoisted(
   () => ({
     mainDispatchMock: vi.fn(),
     loadAgentMock: vi.fn(),
     saveAgentMock: vi.fn(),
+    replaceMessagesMock: vi.fn().mockResolvedValue({ success: true }),
+    appendMessageMock: vi.fn().mockResolvedValue({ success: true }),
     getWindowIdsForWorkspaceMock: vi.fn(),
   }),
 );
@@ -61,6 +63,15 @@ vi.mock('../agent-persistence', () => ({
   },
   UnifiedPersistence: {
     getInstance: () => ({ saveAgent: saveAgentMock }),
+  },
+}));
+
+vi.mock('../daemon-agent-bridge', () => ({
+  daemonAgentBridge: {
+    loadAgent: loadAgentMock,
+    saveAgent: saveAgentMock,
+    replaceMessages: replaceMessagesMock,
+    appendMessage: appendMessageMock,
   },
 }));
 

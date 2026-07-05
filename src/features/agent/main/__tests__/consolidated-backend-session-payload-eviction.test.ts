@@ -57,6 +57,13 @@ vi.mock('../agent-persistence', () => ({
   },
   unifiedPersistence: { setMetadataFSResolver: setMetadataFSResolverMock },
 }));
+
+vi.mock('../daemon-agent-bridge', () => ({
+  daemonAgentBridge: {
+    loadAgent: agentPersistenceLoadAgentMock,
+    saveAgent: agentPersistenceSaveAgentMock,
+  },
+}));
 vi.mock('../../metadata-fs/main/metadata-fs-factory', () => ({ getMetadataFS: vi.fn() }));
 vi.mock('$store/main/redux-store-bridge', () => ({ getMainState: vi.fn(() => ({})) }));
 vi.mock('$store/main/slices/agent-subscriptions/agent-subscriptions-selectors', () => ({

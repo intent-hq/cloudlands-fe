@@ -61,6 +61,10 @@ vi.mock('../agent-persistence', () => ({
   },
 }));
 
+vi.mock('../daemon-agent-bridge', () => ({
+  daemonAgentBridge: { renameAgent, invalidateLoadCache },
+}));
+
 const getSession = vi.fn();
 vi.mock('../consolidated-backend.service', () => ({
   ConsolidatedBackendService: {

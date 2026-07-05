@@ -23,6 +23,9 @@ vi.mock('../agent-persistence', () => ({
   agentPersistence: mockPersistence,
   UnifiedPersistence: { getInstance: () => mockPersistence },
 }));
+vi.mock('../daemon-agent-bridge', () => ({
+  daemonAgentBridge: mockPersistence,
+}));
 vi.mock('../../../workspace/main/workspace.service', () => ({ workspaceService: {} }));
 
 let AgentBackendHandlerClass: typeof import('../agent-backend-handler.service').AgentBackendHandler;

@@ -41,6 +41,10 @@ vi.mock('../agent-persistence', () => ({
     markAgentPending: vi.fn(),
   },
 }));
+
+vi.mock('../daemon-agent-bridge', () => ({
+  daemonAgentBridge: { saveAgent: agentPersistenceSaveAgentMock },
+}));
 vi.mock('../../metadata-fs/main/metadata-fs-factory', () => ({
   getMetadataFS: vi.fn(),
 }));

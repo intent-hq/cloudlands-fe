@@ -37,6 +37,10 @@ vi.mock('../agent-persistence', () => ({
   },
 }));
 
+vi.mock('../daemon-agent-bridge', () => ({
+  daemonAgentBridge: mocks.unifiedPersistence,
+}));
+
 vi.mock('../../../../shared/main/config.js', () => ({
   WorkspaceConfig: {
     paths: {

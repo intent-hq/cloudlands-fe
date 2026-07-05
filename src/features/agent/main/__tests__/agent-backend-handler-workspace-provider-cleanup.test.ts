@@ -31,6 +31,10 @@ vi.mock('../agent-persistence', () => ({
   agentPersistence: {},
 }));
 
+vi.mock('../daemon-agent-bridge', () => ({
+  daemonAgentBridge: {},
+}));
+
 // Mock the Redux store bridge so hasActiveAgentsInWorkspace can check subscriptions
 vi.mock('../../../../store/main/redux-store-bridge', () => ({
   getMainState: vi.fn(() => ({

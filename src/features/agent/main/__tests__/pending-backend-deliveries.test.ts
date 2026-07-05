@@ -45,6 +45,10 @@ vi.mock('../agent-persistence', () => ({
   agentPersistence: {},
 }));
 
+vi.mock('../daemon-agent-bridge', () => ({
+  daemonAgentBridge: {},
+}));
+
 vi.mock('../../../system/main/system.ipc', () => ({
   getWindowIdForWorkspace: vi.fn(),
   getWindowIdsForWorkspace: getWindowIdsForWorkspaceMock,

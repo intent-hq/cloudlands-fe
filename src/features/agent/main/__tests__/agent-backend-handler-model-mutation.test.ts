@@ -45,6 +45,10 @@ vi.mock('../agent-persistence', () => ({
   },
 }));
 
+vi.mock('../daemon-agent-bridge', () => ({
+  daemonAgentBridge: mockPersistence,
+}));
+
 let AgentBackendHandlerClass: typeof import('../agent-backend-handler.service').AgentBackendHandler;
 
 describe('AgentBackendHandler handleSetModel provider guard', () => {

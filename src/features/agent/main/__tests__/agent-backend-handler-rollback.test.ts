@@ -63,6 +63,9 @@ vi.mock('../agent-persistence', () => ({
   agentPersistence: mockPersistence,
   UnifiedPersistence: { getInstance: () => mockPersistence },
 }));
+vi.mock('../daemon-agent-bridge', () => ({
+  daemonAgentBridge: mockPersistence,
+}));
 
 vi.mock('../../../../store/main/redux-store-bridge', () => ({
   getMainState: vi.fn(() => ({ agentSubscriptions: { byWorkspaceId: {} } })),

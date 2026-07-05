@@ -45,6 +45,10 @@ vi.mock('../agent-persistence', () => ({
   agentPersistence: {},
 }));
 
+vi.mock('../daemon-agent-bridge', () => ({
+  daemonAgentBridge: {},
+}));
+
 let HandlerClass: any;
 
 describe('stream generation-aware cleanup', () => {

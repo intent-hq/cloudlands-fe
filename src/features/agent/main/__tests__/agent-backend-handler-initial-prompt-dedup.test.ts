@@ -60,6 +60,9 @@ vi.mock('../agent-persistence', () => ({
   agentPersistence: mockPersistence,
   UnifiedPersistence: { getInstance: () => mockPersistence },
 }));
+vi.mock('../daemon-agent-bridge', () => ({
+  daemonAgentBridge: mockPersistence,
+}));
 
 vi.mock('../../../system/main/system.ipc', () => ({
   getWindowIdForWorkspace: vi.fn(() => undefined),
