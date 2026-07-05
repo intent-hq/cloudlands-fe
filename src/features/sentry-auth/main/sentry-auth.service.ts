@@ -31,12 +31,10 @@ async function persistSentryConfigOnDaemon(config: SentryConfig): Promise<void> 
     const { getBackendClient } = await import('../../backend/main/backend.ipc');
     const client = getBackendClient();
     await client.request('settings.update', {
-      path: 'accounts.sentry.token',
-      value: config.apiToken,
+      changes: [{ path: 'accounts.sentry.token', value: config.apiToken }],
     });
     await client.request('settings.update', {
-      path: 'accounts.sentry.organization',
-      value: config.organization,
+      changes: [{ path: 'accounts.sentry.organization', value: config.organization }],
     });
   } catch (error) {
     logger.error('Failed to persist Sentry config on daemon', error as Error);
