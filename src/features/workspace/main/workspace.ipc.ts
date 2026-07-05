@@ -57,6 +57,7 @@ import {
   syncRepos,
   clearRepos,
 } from './repo-registry';
+import { initChangeHistory } from './change-history-persistence';
 import {
   sshManager,
   type SSHConnectionConfig,
@@ -334,6 +335,11 @@ function registerEditorRefreshSubscriber(
 export function setupWorkspaceIPC(): void {
   // Initialize the persistent repo registry
   initRepoRegistry().catch((err) => logger.error('Failed to init repo registry', err as Error));
+
+  // Initialize the persistent change history cache
+  initChangeHistory().catch((err) =>
+    logger.error('Failed to init change history', err as Error),
+  );
 
   // Register validation schemas for all workspace channels
   registerValidationSchema(WORKSPACE_CHANNELS.GET, WorkspaceGetSchema);

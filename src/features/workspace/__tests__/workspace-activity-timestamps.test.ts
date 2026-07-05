@@ -118,7 +118,6 @@ describe('workspace activity timestamps', () => {
     repository = new InMemoryWorkspaceRepository();
     notesRepository = new InMemoryNotesRepository();
     service = new WorkspaceService(repository, notesRepository);
-    (service as any).store.get.mockReturnValue({});
     githubServiceMocks.getPullRequest.mockReset();
     githubServiceMocks.getCheckRuns.mockReset();
     githubServiceMocks.getReviews.mockReset();

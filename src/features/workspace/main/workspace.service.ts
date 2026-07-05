@@ -5,7 +5,6 @@
  * Uses repository pattern for data access and event bus for notifications.
  */
 
-import ElectronStore from 'electron-store';
 import { BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
 import * as fsSync from 'fs';
@@ -30,6 +29,7 @@ import { findParentGitDir } from '../../../shared/git/git-utils';
 import { Logger } from '../../../shared/logger';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import { addRepo } from './repo-registry';
+import { getChangeHistoryForWorkspace } from './change-history-persistence';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
@@ -164,7 +164,6 @@ function stableStringify(value: unknown): string {
 }
 
 export class WorkspaceService {
-  private readonly store: any;
   // Metadata/UI-only cache: current-context snapshots are not Workspace JSON and are bounded by LRU.
   private lastContextCache: Map<string, WorkspaceUIContext> = new Map();
   private contextCacheOrder: string[] = []; // Track access order for LRU
@@ -216,8 +215,6 @@ export class WorkspaceService {
     private readonly notesRepository: NotesRepository = new FolderBasedNotesRepository(),
     private readonly idService: UnifiedIdService = unifiedIdService,
   ) {
-    this.store = new ElectronStore();
-
     // Domain event listeners (including task:status-changed) are now handled
     // by sagas in domain-event-listener-sagas.ts.
 
@@ -230,27 +227,7 @@ export class WorkspaceService {
    */
   private getWorkspaceDiffs(workspaceId: string): DiffChunk[] {
     try {
-      const changeHistory = this.store.get('changeHistory', {});
-
-      // Validate that changeHistory is an object
-      if (!changeHistory || typeof changeHistory !== 'object') {
-        logger.warn('Invalid changeHistory format', { workspaceId, type: typeof changeHistory });
-        return [];
-      }
-
-      // Type guard to ensure it's a Record<string, DiffChunk[]>
-      const validatedHistory = changeHistory as Record<string, unknown>;
-      const diffs = validatedHistory[workspaceId];
-
-      // Validate diffs is an array
-      if (!Array.isArray(diffs)) {
-        if (diffs !== undefined) {
-          logger.warn('Invalid diffs format for workspace', { workspaceId, type: typeof diffs });
-        }
-        return [];
-      }
-
-      return diffs as DiffChunk[];
+      return getChangeHistoryForWorkspace(workspaceId) as unknown as DiffChunk[];
     } catch (error) {
       logger.error('Error loading diffs', error as Error, { workspaceId });
       return [];

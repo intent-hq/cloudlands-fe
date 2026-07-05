@@ -75,7 +75,6 @@ describe('WorkspaceService retention cleanup', () => {
   beforeEach(() => {
     repository = new InMemoryWorkspaceRepository();
     service = new WorkspaceService(repository, new InMemoryNotesRepository());
-    (service as any).store.get = vi.fn().mockReturnValue({});
   });
 
   afterEach(() => {
