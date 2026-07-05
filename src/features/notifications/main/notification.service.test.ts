@@ -25,12 +25,12 @@ vi.mock('../../../shared/logger', () => ({
   },
 }));
 
-vi.mock('electron-store', () => ({
-  default: class {
+const requestMock = vi.hoisted(() =>
+  vi.fn(async () => ({ path: 'notifications.enabled', value: true })),
+);
 
-    constructor(_options?: unknown) {}
-    get = vi.fn(() => ({ enabled: true, showWhenFocused: false }));
-  },
+vi.mock('../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: requestMock }),
 }));
 
 const { mockNotificationIsSupported, mockNotificationInstances, mockShowShouldThrow } = vi.hoisted(() => ({

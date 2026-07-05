@@ -3,6 +3,12 @@
  *
  * Main process service that shows desktop notifications when agents complete.
  * Subscribes to workspace event bus for agent:idle events and displays native OS notifications.
+ *
+ * Persisted notification preferences live on the daemon under `notifications.*`
+ * (PROTOCOL.md §5.12); the legacy `notificationSettings` electron-store bag is
+ * retired. The renderer already syncs `notifications.enabled` to Redux from the
+ * daemon-backed settings catalog; here we hydrate a small cache at process
+ * start and refresh on demand.
  */
 
 import {
@@ -10,7 +16,6 @@ import {
   BrowserWindow,
   Notification,
 } from 'electron';
-import ElectronStore from 'electron-store';
 import { Logger } from '../../../shared/logger';
 import type { AgentIdleEvent } from '../../events/types';
 import { AgentBackendHandler } from '../../agent/main/agent-backend-handler.service';
@@ -21,9 +26,40 @@ import {
 
 const logger = new Logger('NotificationService');
 
-interface NotificationSettings {
-  enabled?: boolean;
-  showWhenFocused?: boolean;
+/** Daemon setting path for the notifications-enabled toggle (§5.12). */
+const SETTING_PATH_ENABLED = 'notifications.enabled';
+
+/** Cached notification-enabled preference, hydrated lazily from the daemon. */
+let cachedEnabled: boolean | null = null;
+let hydrationPromise: Promise<void> | null = null;
+
+async function fetchEnabled(): Promise<boolean> {
+  const { getBackendClient } = await import('../../backend/main/backend.ipc');
+  const result = (await getBackendClient().request('settings.get', {
+    path: SETTING_PATH_ENABLED,
+  })) as { value?: unknown } | null;
+  const value = result?.value;
+  // Default to enabled when the setting is unset or malformed (matches the
+  // daemon catalog default and the legacy electron-store default).
+  return value === false ? false : true;
+}
+
+/** Hydrate `cachedEnabled` once from the daemon; safe to call repeatedly. */
+async function hydrate(): Promise<void> {
+  if (cachedEnabled !== null) return;
+  if (hydrationPromise) return hydrationPromise;
+  hydrationPromise = (async () => {
+    try {
+      cachedEnabled = await fetchEnabled();
+    } catch (error) {
+      logger.warn('Failed to hydrate notifications.enabled from daemon', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Default open — same as the daemon catalog default.
+      cachedEnabled = true;
+    }
+  })();
+  return hydrationPromise;
 }
 
 /**
@@ -54,18 +90,13 @@ interface NotificationContent {
 export class NotificationService {
   private workspaceId: string;
 
-  private settingsStore: any;
   private unsubscribe?: () => void;
   private activeNotifications = new Set<Notification>();
 
   constructor(workspaceId: string) {
     this.workspaceId = workspaceId;
-    try {
-      this.settingsStore = new ElectronStore({ name: 'settings' });
-    } catch (error) {
-      logger.error('Failed to initialize electron-store', error as Error);
-      this.settingsStore = null;
-    }
+    // Kick off hydration eagerly; the first `handleAgentIdle` awaits it.
+    void hydrate();
   }
 
   /**
@@ -88,10 +119,10 @@ export class NotificationService {
    */
   async handleAgentIdle(event: AgentIdleEvent): Promise<void> {
     try {
-      const settings = this.getSettings();
+      // Ensure the enabled flag is hydrated before we consult it.
+      await hydrate();
 
-      // Check if notifications are enabled
-      if (settings.enabled === false) {
+      if (cachedEnabled === false) {
         logger.debug('Notifications disabled', { workspaceId: this.workspaceId });
         return;
       }
@@ -105,13 +136,16 @@ export class NotificationService {
         return;
       }
 
-      // Check if any workspace window is focused
+      // Check if any workspace window is focused. The legacy
+      // `showWhenFocused` electron-store field had no writer and no daemon
+      // peer, so its effective value was always `false` — preserve that
+      // behavior: skip notifications when a workspace window is focused.
       const workspaceWindowIds = getWindowIdsForWorkspace(this.workspaceId);
       const workspaceWindows = workspaceWindowIds
         .map((id) => BrowserWindow.fromId(id))
         .filter((w): w is BrowserWindow => w !== null && !w.isDestroyed());
       const anyFocused = workspaceWindows.some((w) => w.isFocused());
-      if (anyFocused && settings.showWhenFocused !== true) {
+      if (anyFocused) {
         logger.debug('Workspace window is focused, skipping notification', {
           workspaceId: this.workspaceId,
           agentName: event.data.agentName,
@@ -276,22 +310,6 @@ export class NotificationService {
   }
 
   /**
-   * Get notification settings from electron-store
-   */
-  private getSettings(): NotificationSettings {
-    try {
-      if (!this.settingsStore) {
-        return { enabled: true, showWhenFocused: false };
-      }
-      const settings = this.settingsStore.get('notificationSettings') as NotificationSettings;
-      return settings || { enabled: true, showWhenFocused: false };
-    } catch (error) {
-      logger.error('Failed to load notification settings', error as Error);
-      return { enabled: true, showWhenFocused: false };
-    }
-  }
-
-  /**
    * Show a test notification
    * @returns Object with success status and any error message
    */
@@ -345,4 +363,14 @@ export function disposeNotificationService(workspaceId: string): void {
     service.stop();
     instances.delete(workspaceId);
   }
+}
+
+/**
+ * Test-only: reset the cached daemon-hydrated preference so tests can
+ * re-hydrate against a fresh mock. Not exported for production use.
+ * @internal
+ */
+export function __resetNotificationCacheForTesting(): void {
+  cachedEnabled = null;
+  hydrationPromise = null;
 }
