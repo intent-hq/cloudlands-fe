@@ -1,9 +1,11 @@
 /**
  * Repo Registry
  *
- * Persistent registry of known repositories.
- * Repos survive workspace deletion so they can be re-used later.
- * Uses electron-store for persistence across app restarts.
+ * Persistent registry of known repositories, backed by the daemon-owned
+ * `repos.known` setting (PROTOCOL.md §5.12). Reads are served from an
+ * in-memory cache hydrated by `initRepoRegistry` at startup; writes update
+ * the cache synchronously and push the new value to the daemon
+ * asynchronously. The legacy `repo-registry` electron-store is retired.
  */
 
 import type { KnownRepo } from '$shared/types/known-repo';
@@ -13,24 +15,46 @@ const logger = new Logger({ category: 'RepoRegistry' });
 
 export type { KnownRepo };
 
-const STORE_KEY = 'knownRepos';
+const SETTING_PATH = 'repos.known';
 
- 
-let store: any = null;
+let cache: KnownRepo[] = [];
 let initPromise: Promise<void> | null = null;
+let initialized = false;
+
+async function fetchRepos(): Promise<KnownRepo[]> {
+  const { getBackendClient } = await import('../../backend/main/backend.ipc');
+  const result = (await getBackendClient().request('settings.get', {
+    path: SETTING_PATH,
+  })) as { value?: unknown } | null;
+  const raw = result?.value;
+  return Array.isArray(raw) ? (raw as KnownRepo[]) : [];
+}
+
+async function pushRepos(repos: KnownRepo[]): Promise<void> {
+  try {
+    const { getBackendClient } = await import('../../backend/main/backend.ipc');
+    await getBackendClient().request('settings.update', {
+      path: SETTING_PATH,
+      value: repos,
+    });
+  } catch (error) {
+    logger.error('Failed to persist repos on daemon', error as Error);
+  }
+}
 
 /**
- * Initialize the repo registry store (call once during app startup)
+ * Initialize the repo registry cache from daemon-owned `repos.known`
+ * (call once during app startup).
  */
 export async function initRepoRegistry(): Promise<void> {
-  if (store) return;
+  if (initialized) return;
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
     try {
-      const ElectronStore = (await import('electron-store')).default;
-      store = new ElectronStore({ name: 'repo-registry' });
-      logger.info('Repo registry initialized');
+      cache = await fetchRepos();
+      initialized = true;
+      logger.info('Repo registry initialized', { count: cache.length });
     } catch (error) {
       logger.error('Failed to initialize repo registry', error as Error);
     }
@@ -38,16 +62,20 @@ export async function initRepoRegistry(): Promise<void> {
   return initPromise;
 }
 
+function warnIfUninitialized(action: string): boolean {
+  if (!initialized) {
+    logger.warn(`Repo registry not initialized, ${action}`);
+    return false;
+  }
+  return true;
+}
+
 /**
- * Get all known repos, sorted by lastUsedAt descending
+ * Get all known repos, sorted by lastUsedAt descending.
  */
 export function getAllRepos(): KnownRepo[] {
-  if (!store) {
-    logger.warn('Repo registry not initialized');
-    return [];
-  }
-  const repos: KnownRepo[] = store.get(STORE_KEY, []);
-  return [...repos].sort(
+  if (!warnIfUninitialized('returning empty list')) return [];
+  return [...cache].sort(
     (a, b) => new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime(),
   );
 }
@@ -57,27 +85,21 @@ export function getAllRepos(): KnownRepo[] {
  * If a repo with the same path already exists, updates its lastUsedAt and metadata.
  */
 export function addRepo(repo: { path: string; name: string; owner?: string }): void {
-  if (!store) {
-    logger.warn('Repo registry not initialized, cannot add repo', { path: repo.path });
-    return;
-  }
+  if (!warnIfUninitialized(`cannot add repo path=${repo.path}`)) return;
 
-  const repos: KnownRepo[] = store.get(STORE_KEY, []);
   const now = new Date().toISOString();
-  const existingIndex = repos.findIndex((r) => r.path === repo.path);
+  const existingIndex = cache.findIndex((r) => r.path === repo.path);
 
   if (existingIndex >= 0) {
-    // Update existing entry
-    repos[existingIndex] = {
-      ...repos[existingIndex],
-      name: repo.name || repos[existingIndex].name,
-      owner: repo.owner ?? repos[existingIndex].owner,
+    cache[existingIndex] = {
+      ...cache[existingIndex],
+      name: repo.name || cache[existingIndex].name,
+      owner: repo.owner ?? cache[existingIndex].owner,
       lastUsedAt: now,
     };
     logger.debug('Updated existing repo in registry', { path: repo.path });
   } else {
-    // Add new entry
-    repos.push({
+    cache.push({
       path: repo.path,
       name: repo.name,
       owner: repo.owner,
@@ -87,49 +109,38 @@ export function addRepo(repo: { path: string; name: string; owner?: string }): v
     logger.info('Added new repo to registry', { path: repo.path, name: repo.name });
   }
 
-  store.set(STORE_KEY, repos);
+  void pushRepos(cache);
 }
 
 /**
- * Remove a repo from the registry by path
+ * Remove a repo from the registry by path.
  */
 export function removeRepo(repoPath: string): boolean {
-  if (!store) {
-    logger.warn('Repo registry not initialized');
-    return false;
-  }
+  if (!warnIfUninitialized('cannot remove repo')) return false;
 
-  const repos: KnownRepo[] = store.get(STORE_KEY, []);
-  const filtered = repos.filter((r) => r.path !== repoPath);
+  const filtered = cache.filter((r) => r.path !== repoPath);
+  if (filtered.length === cache.length) return false;
 
-  if (filtered.length === repos.length) {
-    return false; // Nothing removed
-  }
-
-  store.set(STORE_KEY, filtered);
+  cache = filtered;
+  void pushRepos(cache);
   logger.info('Removed repo from registry', { path: repoPath });
   return true;
 }
 
 /**
- * Sync multiple repos into the registry in a single read/write cycle.
- * Much more efficient than calling addRepo() in a loop (avoids N disk writes).
- * Only adds repos that don't already exist — does NOT update lastUsedAt for existing entries.
+ * Sync multiple repos into the registry in a single push. Only adds repos
+ * that don't already exist — does NOT update lastUsedAt for existing entries.
  */
 export function syncRepos(repos: { path: string; name: string; owner?: string }[]): void {
-  if (!store) {
-    logger.warn('Repo registry not initialized, cannot sync repos');
-    return;
-  }
+  if (!warnIfUninitialized('cannot sync repos')) return;
 
-  const existing: KnownRepo[] = store.get(STORE_KEY, []);
-  const existingPaths = new Set(existing.map((r) => r.path));
+  const existingPaths = new Set(cache.map((r) => r.path));
   const now = new Date().toISOString();
   let added = 0;
 
   for (const repo of repos) {
     if (!existingPaths.has(repo.path)) {
-      existing.push({
+      cache.push({
         path: repo.path,
         name: repo.name,
         owner: repo.owner,
@@ -142,19 +153,24 @@ export function syncRepos(repos: { path: string; name: string; owner?: string }[
   }
 
   if (added > 0) {
-    store.set(STORE_KEY, existing);
-    logger.info('Synced repos to registry', { added, total: existing.length });
+    void pushRepos(cache);
+    logger.info('Synced repos to registry', { added, total: cache.length });
   }
 }
 
 /**
- * Clear all repos from the registry
+ * Clear all repos from the registry.
  */
 export function clearRepos(): void {
-  if (!store) {
-    logger.warn('Repo registry not initialized');
-    return;
-  }
-  store.set(STORE_KEY, []);
+  if (!warnIfUninitialized('cannot clear repos')) return;
+  cache = [];
+  void pushRepos(cache);
   logger.info('Cleared all repos from registry');
+}
+
+/** Test-only: reset internal state so init can run again in isolated tests. */
+export function __resetRepoRegistryForTesting(): void {
+  cache = [];
+  initialized = false;
+  initPromise = null;
 }
