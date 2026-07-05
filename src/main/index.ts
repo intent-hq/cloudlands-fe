@@ -293,7 +293,6 @@ import {
   initializeUnifiedBackend,
   shutdownUnifiedBackend,
 } from '../features/agent/main/init-unified-backend';
-import { setupPersistenceIPC } from '../features/agent/main/persistence.ipc';
 import { setupAuggieIPC } from '../features/auggie/main/auggie.ipc';
 import { setupOpencodeIPC } from '../features/opencode/main/opencode.ipc';
 import { setupClaudeCodeIPC } from '../features/claude-code/main/claude-code.ipc';
@@ -380,7 +379,6 @@ import { listRespondingAgents } from './running-agents';
 import { prefetchProviderModelCaches } from './utils/model-pool';
 
 import { agentBackendHandler } from '../features/agent/main/agent-backend-handler.service';
-import { agentPersistence } from '../features/agent/main/agent-persistence';
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { agentPoolService } from '../features/agent/main/agent-pool.service';
 import { cleanupStaleTempFiles } from '../features/agent/main/agent-providers/acp-provider';
@@ -1333,7 +1331,6 @@ app.whenReady().then(async () => {
     const openWorkspaceIds = getAllOpenWorkspaceIds();
     try {
       workspaceService.trimCachesToOpenWorkspaces(openWorkspaceIds);
-      agentPersistence.trimLoadCachesToOpenWorkspaces(openWorkspaceIds);
       agentBackendHandler.trimPersistenceListCacheToOpenWorkspaces(openWorkspaceIds);
       crdtDocumentManager.trimCachesToOpenWorkspaces(openWorkspaceIds);
     } catch (error) {
@@ -1405,7 +1402,6 @@ app.whenReady().then(async () => {
   setupGitHubAuthIPC(); // Needed for GitHub device flow auth
   setupLinearAuthIPC(); // Needed for Linear auth via Augment
   setupSentryAuthIPC(); // Needed for Sentry auth via API token
-  setupPersistenceIPC(); // Needed for agent persistence
   setupAgentConfigIPC(); // Needed for agent config
 
   // Initialize unified agent handlers with the backend adapter

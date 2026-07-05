@@ -639,20 +639,6 @@ export const IPC_CHANNELS = {
     AGENT_FILE_CHANGED: 'file-tracking:agent-file-changed',
   },
 
-  // Persistence
-  PERSISTENCE: {
-    SAVE: 'persistence:save',
-    LOAD: 'persistence:load',
-    DELETE: 'persistence:delete',
-    EXISTS: 'persistence:exists',
-    LOAD_AGENT_CONFIG: 'persistence:load-agent-config',
-    SAVE_AGENT_CONFIG: 'persistence:save-agent-config',
-    LOAD_SESSION: 'persistence:load-session',
-    SAVE_SESSION: 'persistence:save-session',
-    SAVE_REGISTRY: 'persistence:save-registry',
-    LOAD_REGISTRY: 'persistence:load-registry',
-  },
-
   // Streaming
   STREAMING: {
     START: 'streaming:start',

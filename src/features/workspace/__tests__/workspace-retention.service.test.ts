@@ -33,13 +33,6 @@ vi.mock('child_process', () => {
   };
 });
 
-vi.mock('../../agent/main/agent-persistence', () => ({
-  agentPersistence: {
-    listAgents: vi.fn(),
-    loadAgent: vi.fn(),
-  },
-}));
-
 vi.mock('../../git-tracking/main/github.service', () => ({
   GitHubService: class {},
   githubService: {

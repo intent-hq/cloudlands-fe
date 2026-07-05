@@ -36,11 +36,6 @@ vi.mock('../../../workspace/main/workspace.service', () => ({
   workspaceService: {},
 }));
 
-vi.mock('../agent-persistence', () => ({
-  agentPersistence: {},
-  UnifiedPersistence: { getInstance: () => ({}) },
-}));
-
 vi.mock('../daemon-agent-bridge', () => ({
   daemonAgentBridge: {},
 }));

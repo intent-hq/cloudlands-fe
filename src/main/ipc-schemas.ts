@@ -825,67 +825,11 @@ export const AgentGetSpecializationRulesSchema = z.object({
 });
 
 // ============================================================================
-// Persistence Schemas
+// Workspace agent-cleanup schema (surviving daemon-backed callers)
 // ============================================================================
-
-export const PersistenceLoadSchema = z.object({
-  key: z.string().min(1, 'Key is required'),
-});
-
-export const PersistenceLoadAgentConfigSchema = z.object({
-  agentId: AgentIdSchema.optional(),
-  workspaceId: WorkspaceIdSchema,
-});
-
-export const PersistenceLoadSessionSchema = z.object({
-  agentId: AgentIdSchema.optional(),
-  workspaceId: WorkspaceIdSchema,
-});
-
-export const PersistenceSaveSchema = z.object({
-  key: z.string().min(1, 'Key is required'),
-  data: z.any(),
-});
-
-export const PersistenceSaveAgentConfigSchema = z.object({
-  agentId: AgentIdSchema,
-  workspaceId: WorkspaceIdSchema,
-  config: z.any(),
-});
-
-export const PersistenceSaveSessionSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  session: z.any(),
-  options: z
-    .object({
-      immediate: z.boolean().optional(),
-      /** When true, allows the save to overwrite disk messages even if the frontend has fewer.
-       *  Used by edit/regenerate flows that intentionally truncate message history. */
-      allowTruncation: z.boolean().optional(),
-    })
-    .optional(),
-});
-
-export const PersistenceDeleteSchema = z.object({
-  key: z.string().min(1, 'Key is required'),
-});
-
-export const PersistenceDeleteAgentSchema = z.object({
-  agentId: AgentIdSchema,
-  workspaceId: WorkspaceIdSchema,
-});
 
 export const WorkspaceCleanupAgentsSchema = z.object({
   workspaceId: WorkspaceIdSchema,
-});
-
-export const PersistenceLoadRegistrySchema = z.object({
-  filename: z.string().min(1, 'Filename is required'),
-});
-
-export const PersistenceSaveRegistrySchema = z.object({
-  filename: z.string().min(1, 'Filename is required'),
-  data: z.any(),
 });
 
 // ============================================================================

@@ -7,7 +7,6 @@ const {
   agentPersistenceLoadAgentMock,
   agentPersistenceSaveAgentMock,
   selectAgentSubscriptionsSelectMock,
-  setMetadataFSResolverMock,
   streamManagerMock,
 } = vi.hoisted(() => {
   const streamManager = {
@@ -21,7 +20,6 @@ const {
     agentPersistenceLoadAgentMock: vi.fn(),
     agentPersistenceSaveAgentMock: vi.fn(async () => ({ success: true })),
     selectAgentSubscriptionsSelectMock: vi.fn(() => []),
-    setMetadataFSResolverMock: vi.fn(),
     streamManagerMock: streamManager,
   };
 });
@@ -50,14 +48,6 @@ vi.mock('$shared/ipc/channels', () => ({ AGENT_BACKEND_CHANNELS: {}, PERSISTENCE
 vi.mock('../utils/memory-manager', () => ({
   memoryManager: { registerTimer: vi.fn(), cleanup: vi.fn(), unregister: vi.fn() },
 }));
-vi.mock('../agent-persistence', () => ({
-  agentPersistence: {
-    loadAgent: agentPersistenceLoadAgentMock,
-    saveAgent: agentPersistenceSaveAgentMock,
-  },
-  unifiedPersistence: { setMetadataFSResolver: setMetadataFSResolverMock },
-}));
-
 vi.mock('../daemon-agent-bridge', () => ({
   daemonAgentBridge: {
     loadAgent: agentPersistenceLoadAgentMock,

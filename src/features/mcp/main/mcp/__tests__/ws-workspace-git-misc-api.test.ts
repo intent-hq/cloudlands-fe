@@ -248,13 +248,14 @@ describe('buildWorkspaceApi – setAgentName', () => {
     });
   }
 
-  it('delegates to UnifiedPersistence.renameAgent and emits a workspace event', async () => {
-    const renameAgent = vi.fn().mockResolvedValue({ ok: true, name: 'My Custom Name' });
-    const invalidateLoadCache = vi.fn();
-    vi.doMock('$features/agent/main/agent-persistence', () => ({
-      UnifiedPersistence: {
-        getInstance: () => ({ renameAgent, invalidateLoadCache }),
-      },
+  it('delegates to daemonAgentBridge.saveAgent and emits a workspace event', async () => {
+    const saveAgent = vi.fn().mockResolvedValue({ success: true });
+    const loadAgentSummary = vi.fn().mockResolvedValue({
+      success: true,
+      data: { name: 'Original Name', nameExplicitlySet: false },
+    });
+    vi.doMock('$features/agent/main/daemon-agent-bridge', () => ({
+      daemonAgentBridge: { saveAgent, loadAgentSummary },
     }));
 
     const { buildWorkspaceApi: freshBuildApi } = await import('../ws-workspace-api');
@@ -270,9 +271,13 @@ describe('buildWorkspaceApi – setAgentName', () => {
     expect(result.ok).toBe(true);
     expect(result.name).toBe('My Custom Name');
 
-    // Delegation to UnifiedPersistence.renameAgent
-    expect(renameAgent).toHaveBeenCalledWith(agentId, workspaceId, 'My Custom Name', {
-      skipIfExplicitlySet: true,
+    // Delegation to daemonAgentBridge.saveAgent with the agent.update whitelist
+    expect(loadAgentSummary).toHaveBeenCalledWith(agentId, workspaceId);
+    expect(saveAgent).toHaveBeenCalledWith({
+      id: agentId,
+      workspaceId,
+      name: 'My Custom Name',
+      nameExplicitlySet: true,
     });
 
     // Verify workspace event is emitted (replaced direct IPC call)
@@ -292,19 +297,20 @@ describe('buildWorkspaceApi – setAgentName', () => {
     expect(mockEmit).toHaveBeenCalled();
     expect(mockDispatch).toHaveBeenCalled();
 
-    vi.doUnmock('$features/agent/main/agent-persistence');
+    vi.doUnmock('$features/agent/main/daemon-agent-bridge');
   });
 
   it('updates in-memory backend session (regression)', async () => {
     // Mock ConsolidatedBackendService to track in-memory update
     const mockSession = { name: 'Old Name', id: agentId };
 
-    const renameAgent = vi.fn().mockResolvedValue({ ok: true, name: 'Updated Name' });
-    const invalidateLoadCache = vi.fn();
-    vi.doMock('$features/agent/main/agent-persistence', () => ({
-      UnifiedPersistence: {
-        getInstance: () => ({ renameAgent, invalidateLoadCache }),
-      },
+    const saveAgent = vi.fn().mockResolvedValue({ success: true });
+    const loadAgentSummary = vi.fn().mockResolvedValue({
+      success: true,
+      data: { name: 'Old Name', nameExplicitlySet: false },
+    });
+    vi.doMock('$features/agent/main/daemon-agent-bridge', () => ({
+      daemonAgentBridge: { saveAgent, loadAgentSummary },
     }));
     vi.doMock('$features/agent/main/consolidated-backend.service', () => ({
       ConsolidatedBackendService: {
@@ -328,7 +334,7 @@ describe('buildWorkspaceApi – setAgentName', () => {
     // The in-memory session should have been updated
     expect(mockSession.name).toBe('Updated Name');
 
-    vi.doUnmock('$features/agent/main/agent-persistence');
+    vi.doUnmock('$features/agent/main/daemon-agent-bridge');
     vi.doUnmock('$features/agent/main/consolidated-backend.service');
   });
 

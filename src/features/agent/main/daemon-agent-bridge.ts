@@ -1,12 +1,11 @@
 /**
- * Daemon Agent Bridge — daemon-backed replacement for `agentPersistence`
- * (`agent-persistence.ts`) in the persistence-retirement flow.
+ * Daemon Agent Bridge — the sole persistence surface for agent sessions
+ * after the legacy `agent-persistence.ts` / `persistence.ipc.ts` layer was
+ * retired.
  *
- * Preserves the `LoadResult` / `SaveResult` return shapes so the ~40 legacy
- * call sites across `agent-backend-handler.service.ts` /
- * `consolidated-backend.service.ts` / the renderer `PersistenceService`
- * proxy can migrate with an import swap plus a name-only rewrite. Behaviour
- * changes are limited to:
+ * Preserves the `LoadResult` / `SaveResult` return shapes used by
+ * `agent-backend-handler.service.ts` and `consolidated-backend.service.ts`.
+ * Behaviour notes:
  *
  * - Transcript writes are rejected mid-turn by the daemon with `-32602`;
  *   we downgrade that to a soft `SaveResult` failure with a `debug` log so

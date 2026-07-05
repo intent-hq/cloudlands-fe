@@ -49,7 +49,6 @@ vi.mock('$features/agent/services/performance-optimizer', () => ({
 }));
 vi.mock('../browser', () => ({
   errorBoundary: { wrap: vi.fn((fn: any) => fn()) },
-  persistenceService: { saveSession: vi.fn() },
 }));
 vi.mock('$store/renderer/slices/chat-state/chat-state-slice', () => ({
   streamStatusReceived: vi.fn((...payload: any[]) => ({

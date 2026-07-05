@@ -18,12 +18,6 @@ import { AgentStatus } from '../../../shared/types/agent.types';
 import type { AgentSession } from '../../../shared/types/agent-session';
 
 // Mock the persistence module
-vi.mock('../agent-persistence', () => ({
-  UnifiedPersistence: {
-    getInstance: vi.fn(),
-  },
-}));
-
 vi.mock('../daemon-agent-bridge', () => ({
   daemonAgentBridge: {},
 }));

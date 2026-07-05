@@ -28,13 +28,6 @@ vi.mock('../../terminal/main/terminal.ipc', () => ({
   createTerminalFromBackend: vi.fn(),
 }));
 
-vi.mock('../../agent/main/agent-persistence', () => ({
-  agentPersistence: {
-    listAgents: vi.fn().mockResolvedValue([]),
-    loadAgent: vi.fn(),
-  },
-}));
-
 vi.mock('../../git-tracking/main/github.service', () => ({
   GitHubService: class {},
   githubService: {

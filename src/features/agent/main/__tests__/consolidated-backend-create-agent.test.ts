@@ -34,14 +34,6 @@ vi.mock('$shared/ipc/channels', () => ({ AGENT_BACKEND_CHANNELS: {}, PERSISTENCE
 vi.mock('../utils/memory-manager', () => ({
   memoryManager: { register: vi.fn(), cleanup: vi.fn(), unregister: vi.fn() },
 }));
-vi.mock('../agent-persistence', () => ({
-  agentPersistence: { saveAgent: agentPersistenceSaveAgentMock },
-  unifiedPersistence: {
-    setMetadataFSResolver: setMetadataFSResolverMock,
-    markAgentPending: vi.fn(),
-  },
-}));
-
 vi.mock('../daemon-agent-bridge', () => ({
   daemonAgentBridge: { saveAgent: agentPersistenceSaveAgentMock },
 }));

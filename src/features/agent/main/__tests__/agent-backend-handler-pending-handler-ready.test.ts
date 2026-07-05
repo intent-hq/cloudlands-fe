@@ -19,10 +19,6 @@ vi.mock('electron', () => ({
 }));
 
 const mockPersistence = { loadAgent: vi.fn(), saveAgent: vi.fn() };
-vi.mock('../agent-persistence', () => ({
-  agentPersistence: mockPersistence,
-  UnifiedPersistence: { getInstance: () => mockPersistence },
-}));
 vi.mock('../daemon-agent-bridge', () => ({
   daemonAgentBridge: mockPersistence,
 }));

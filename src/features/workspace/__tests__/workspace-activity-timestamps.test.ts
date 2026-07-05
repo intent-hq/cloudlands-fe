@@ -51,13 +51,6 @@ const agentPersistenceMocks = vi.hoisted(() => ({
   loadAgent: vi.fn(),
 }));
 
-vi.mock('../../agent/main/agent-persistence', () => ({
-  agentPersistence: {
-    listAgents: agentPersistenceMocks.listAgents,
-    loadAgent: agentPersistenceMocks.loadAgent,
-  },
-}));
-
 vi.mock('../../git-tracking/main/github.service', () => ({
   GitHubService: class {},
   githubService: {
