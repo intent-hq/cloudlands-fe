@@ -29,64 +29,53 @@ const pendingAuthStates = new Map<
   }
 >();
 
-// Store OAuth tokens per MCP server (in-memory cache)
+// Store OAuth tokens per MCP server (in-memory cache). Raw bags are held in
+// memory only for the current process lifetime so `getMcpAuthHeaderAsync`
+// can build Authorization headers; persistence is delegated to the daemon
+// (PROTOCOL.md §5.22, `mcp.oauth.*`). Per §5.22.1 the daemon never echoes the
+// raw bag back over the wire, so a restart drops the cache and the user must
+// re-run the OAuth flow — matching the P3 canonical-persistence posture where
+// electron-store is retired.
 const tokenStore = new Map<string, OAuthTokens>();
 
-// Persistent storage for OAuth tokens
-let oauthTokenStore: InstanceType<typeof import('electron-store').default> | null = null;
-
-async function getOAuthTokenStore() {
-  if (!oauthTokenStore) {
-    const ElectronStore = (await import('electron-store')).default;
-    oauthTokenStore = new ElectronStore({ name: 'mcp-oauth-tokens' });
-  }
-  return oauthTokenStore;
-}
-
 /**
- * Load tokens from persistent storage into memory cache
+ * Persist a token bag on the daemon via `mcp.oauth.set`. Best-effort: a
+ * failure is logged but does not abort the OAuth flow because the in-memory
+ * cache still lets the current process build auth headers.
  */
-async function loadTokensFromStorage(mcpName: string): Promise<OAuthTokens | null> {
+async function persistTokensOnDaemon(mcpName: string, tokens: OAuthTokens): Promise<void> {
   try {
-    const store = await getOAuthTokenStore();
-    const tokens = store.get(`tokens.${mcpName}`) as OAuthTokens | undefined;
-    if (tokens) {
-      tokenStore.set(mcpName, tokens);
-      return tokens;
-    }
+    const { getBackendClient } = await import('../../backend/main/backend.ipc');
+    await getBackendClient().request('mcp.oauth.set', {
+      serverId: mcpName,
+      tokenBag: tokens,
+    });
   } catch (error) {
-    logger.debug('Failed to load OAuth tokens from storage:', error);
+    logger.error('Failed to persist OAuth tokens on daemon:', error);
   }
-  return null;
 }
 
 /**
- * Save tokens to persistent storage
+ * Drop a persisted bag on the daemon via `mcp.oauth.delete`. Idempotent on
+ * the daemon side, so unknown servers succeed silently.
  */
-async function saveTokensToStorage(mcpName: string, tokens: OAuthTokens): Promise<void> {
+async function deleteTokensOnDaemon(mcpName: string): Promise<void> {
   try {
-    const store = await getOAuthTokenStore();
-    store.set(`tokens.${mcpName}`, tokens);
-    logger.debug('Saved OAuth tokens to storage for:', mcpName);
+    const { getBackendClient } = await import('../../backend/main/backend.ipc');
+    await getBackendClient().request('mcp.oauth.delete', { serverId: mcpName });
   } catch (error) {
-    logger.error('Failed to save OAuth tokens to storage:', error);
+    logger.error('Failed to delete OAuth tokens on daemon:', error);
   }
 }
 
 /**
- * Clear OAuth tokens for an MCP server (both in-memory and persistent storage).
+ * Clear OAuth tokens for an MCP server (in-memory cache + daemon store).
  * Used when the user disconnects an integration.
  */
 export async function clearMcpOAuthTokens(mcpName: string): Promise<void> {
   logger.info('Clearing OAuth tokens for:', mcpName);
   tokenStore.delete(mcpName);
-  try {
-    const store = await getOAuthTokenStore();
-    store.delete(`tokens.${mcpName}`);
-    logger.debug('Cleared OAuth tokens from storage for:', mcpName);
-  } catch (error) {
-    logger.error('Failed to clear OAuth tokens from storage:', error);
-  }
+  await deleteTokensOnDaemon(mcpName);
 }
 
 interface OAuthServerMetadata {
@@ -477,7 +466,7 @@ export async function initiateMcpOAuth(
 
     // 7. Store tokens (in memory and persistent storage)
     tokenStore.set(mcpName, tokens);
-    await saveTokensToStorage(mcpName, tokens);
+    await persistTokensOnDaemon(mcpName, tokens);
     logger.info('OAuth completed successfully for:', mcpName);
 
     return { success: true };
@@ -492,16 +481,14 @@ export async function initiateMcpOAuth(
 }
 
 /**
- * Get stored OAuth tokens for an MCP server (async version that checks persistent storage)
+ * Get stored OAuth tokens for an MCP server. The daemon persists bags via
+ * `mcp.oauth.*` but never echoes raw contents back (PROTOCOL.md §5.22.1), so
+ * this only inspects the in-process memory cache populated by
+ * `initiateMcpOAuth`. After a main-process restart callers must re-run the
+ * OAuth flow. Kept `async` for call-site compat.
  */
 export async function getMcpOAuthTokensAsync(mcpName: string): Promise<OAuthTokens | null> {
-  // First check in-memory cache
-  const cachedTokens = tokenStore.get(mcpName);
-  if (cachedTokens) return cachedTokens;
-
-  // Try to load from persistent storage
-  const storedTokens = await loadTokensFromStorage(mcpName);
-  return storedTokens;
+  return tokenStore.get(mcpName) ?? null;
 }
 
 /**
