@@ -11,21 +11,21 @@
  * - locale: system locale
  * - os_version: parsed from Electron's UA string (matches browser's frozen "10.15.7")
  *
- * Persistence uses the existing electron-store 'settings' store:
+ * Persistence uses the FE-local main-process prefs file (main/local-prefs):
  * - On success/no_match: stores result → no retry
  * - On network error/rate limit/5xx: stores nothing → natural retry next launch
  */
 
 import { cpus } from 'os';
-import ElectronStore from 'electron-store';
 import { Logger } from '../shared/logger';
+import { hasLocalPref, setLocalPref } from './local-prefs';
 
 const logger = new Logger('DownloadAttribution');
 
 const CLAIM_ENDPOINT = 'https://augmentcode.com/api/intent/claim-attribution';
 const SETTINGS_KEY = 'downloadAttribution';
 
-/** Stored attribution data in electron-store */
+/** Stored attribution data in FE-local prefs */
 export interface DownloadAttributionData {
   ajs_aid: string | null;
   utm_source?: string | null;
@@ -59,10 +59,8 @@ interface ClaimResponse {
  */
 export async function claimDownloadAttribution(): Promise<void> {
   try {
-    const settingsStore = new ElectronStore({ name: 'settings' });
-
     // Already claimed or definitively no match — skip
-    if (settingsStore.has(SETTINGS_KEY)) {
+    if (await hasLocalPref(SETTINGS_KEY)) {
       logger.debug('Attribution already claimed or no match — skipping');
       return;
     }
@@ -105,7 +103,7 @@ export async function claimDownloadAttribution(): Promise<void> {
           ajs_aid: null,
           eventTracked: true,
         };
-        settingsStore.set(SETTINGS_KEY, attribution);
+        await setLocalPref(SETTINGS_KEY, attribution);
         logger.warn('Claim endpoint returned client error — will not retry', { status: response.status });
       } else {
         // 5xx or unexpected — transient, retry next launch
@@ -129,7 +127,7 @@ export async function claimDownloadAttribution(): Promise<void> {
         download_location: data.download_location,
         eventTracked: false,
       };
-      settingsStore.set(SETTINGS_KEY, attribution);
+      await setLocalPref(SETTINGS_KEY, attribution);
       logger.info('Attribution claimed successfully', {
         has_ajs_aid: !!data.ajs_aid,
         confidence: data.confidence,
@@ -140,7 +138,7 @@ export async function claimDownloadAttribution(): Promise<void> {
         ajs_aid: null,
         eventTracked: true, // Nothing to track
       };
-      settingsStore.set(SETTINGS_KEY, attribution);
+      await setLocalPref(SETTINGS_KEY, attribution);
       logger.info('No attribution match found', { reason: data.reason });
     } else if (data.reason === 'rate_limited') {
       // Transient — don't persist, retry next launch

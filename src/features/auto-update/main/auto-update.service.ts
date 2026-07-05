@@ -141,14 +141,14 @@ class AutoUpdateService {
    */
   private async loadChannelFromSettings(): Promise<void> {
     try {
-      // Dynamic import to avoid ESM issues at module load time
-      const ElectronStore = (await import('electron-store')).default;
-      const settingsStore = new ElectronStore({ name: 'settings' });
-      const betaEnabled = settingsStore.get(BETA_UPDATES_STORAGE_KEY, false);
+      // FE-local pref (PROTOCOL.md §5.12 "Not exposed (FE-only)"). The
+      // legacy `settings` electron-store is retired.
+      const { getLocalPref } = await import('../../../main/local-prefs');
+      const betaEnabled = await getLocalPref<boolean>(BETA_UPDATES_STORAGE_KEY);
 
       if (typeof betaEnabled === 'boolean' && betaEnabled) {
         this.state.channel = 'beta';
-        logger.info('Beta updates enabled from settings');
+        logger.info('Beta updates enabled from local-prefs');
       } else {
         this.state.channel = 'stable';
       }

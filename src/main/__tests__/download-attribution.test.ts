@@ -66,24 +66,16 @@ describe('claimDownloadAttribution', () => {
       BrowserWindow: { getAllWindows: () => [] },
     }));
 
-    // Override test-setup's electron-store mock with controllable store
-    vi.doMock('electron-store', () => ({
-      default: class MockElectronStore {
-        has(key: string) {
-          return key in storeData;
-        }
-        get(key: string) {
-          return storeData[key];
-        }
-        set(key: string, value: unknown) {
-          storeData[key] = value;
-        }
-        delete(key: string) {
-          delete storeData[key];
-        }
-        clear() {
-          for (const k of Object.keys(storeData)) delete storeData[k];
-        }
+    // Mock FE-local prefs helper (replaces the electron-store 'settings'
+    // store retired by P3-4). Preserves the `storeData`-backed test shape.
+    vi.doMock('../local-prefs', () => ({
+      hasLocalPref: async (key: string) => key in storeData,
+      getLocalPref: async (key: string) => storeData[key],
+      setLocalPref: async (key: string, value: unknown) => {
+        storeData[key] = value;
+      },
+      deleteLocalPref: async (key: string) => {
+        delete storeData[key];
       },
     }));
 
