@@ -1,7 +1,7 @@
 import type { AppSettingApplyPlan, AppSettingDefinition } from '$shared/app-settings-schema';
 import { findAppSettingDefinition } from '$shared/app-settings-schema';
 import type { ProposalActionDetail, SettingsChangeProposal } from '$shared/types/proposal';
-import { invoke } from '$lib/electron-bridge';
+import { appClient } from '$lib/client';
 import { store as appStore } from "$store/renderer/store";
 import type { ThemePreference } from '$store/renderer/slices/theme/theme-types';
 import { selectProposalAppliedState } from '$store/renderer/slices/settings-proposal-history/settings-proposal-history-selectors';
@@ -193,12 +193,10 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error || 'Unknown settings error');
 }
 
-async function readElectronStoreValue(definition: AppSettingDefinition): Promise<unknown> {
+async function readDaemonSettingValue(definition: AppSettingDefinition): Promise<unknown> {
   if (!definition.storageKey) return definition.defaultValue;
-  const result = await invoke<{ success?: boolean; data?: unknown }>('settings:get', {
-    key: definition.storageKey,
-  });
-  return deepGet(result?.data, definition.valuePath) ?? definition.defaultValue;
+  const entry = await appClient.settings.get(definition.storageKey);
+  return deepGet(entry?.value, definition.valuePath) ?? definition.defaultValue;
 }
 
 function readLocalStorageValue(definition: AppSettingDefinition): unknown {
@@ -208,6 +206,30 @@ function readLocalStorageValue(definition: AppSettingDefinition): unknown {
     definition,
   );
   return deepGet(parsed, definition.valuePath) ?? definition.defaultValue;
+}
+
+async function writeDaemonSetting(
+  path: string,
+  valuePath: string | undefined,
+  value: unknown,
+): Promise<void> {
+  if (!valuePath) {
+    await appClient.settings.update([{ path, value }]);
+    return;
+  }
+  const entry = await appClient.settings.get(path);
+  const current = objectValue(entry?.value);
+  const merged: Record<string, unknown> = { ...current, [valuePath]: value };
+  await appClient.settings.update([{ path, value: merged }]);
+}
+
+function writeLocalStorageValue(key: string, value: unknown): void {
+  if (typeof window === 'undefined') return;
+  if (value === null || value === undefined) {
+    window.localStorage.removeItem(key);
+    return;
+  }
+  window.localStorage.setItem(key, JSON.stringify(value));
 }
 
 async function readCurrentSettingValue(definition: AppSettingDefinition): Promise<unknown> {
@@ -276,7 +298,7 @@ async function readCurrentSettingValue(definition: AppSettingDefinition): Promis
     case 'mcp.disabledServers':
       return Object.keys(selectMcpDisabledServers.select(state));
     default:
-      if (definition.source === 'electron-store') return readElectronStoreValue(definition);
+      if (definition.source === 'daemon-settings') return readDaemonSettingValue(definition);
       if (definition.source === 'local-storage') return readLocalStorageValue(definition);
       return definition.defaultValue;
   }
@@ -408,21 +430,21 @@ async function applyPersistedSetting(
 ): Promise<void> {
   if (!apply || apply.kind === 'read-only') return;
   if (dispatchReduxAction(path, value)) return;
-  if (apply.kind === 'settings-ipc') {
-    await invoke('settings:set', { key: apply.key, value });
+  if (apply.kind === 'daemon-settings-update') {
+    await writeDaemonSetting(apply.path, apply.valuePath, value);
     if (path === 'mcp.enableUserServers') appStore.dispatch(setEnabled(Boolean(value)));
     if (path === 'mcp.disabledServers' && Array.isArray(value)) {
       appStore.dispatch(
         setDisabledServers(Object.fromEntries(value.map((name) => [String(name), true]))),
       );
     }
+    return;
+  }
+  if (apply.kind === 'local-storage-set') {
+    writeLocalStorageValue(apply.key, value);
     if (path === 'openIn.hiddenEditors' && Array.isArray(value)) {
       appStore.dispatch(setHiddenEditorIds(value.map(String)));
     }
-    return;
-  }
-  if (apply.kind === 'settings-update-ipc') {
-    await invoke('settings:update', { settings: { [apply.key]: value } });
   }
 }
 

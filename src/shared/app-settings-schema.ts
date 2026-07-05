@@ -11,16 +11,31 @@ export type AppSettingValueType =
   | 'readonly';
 
 export type AppSettingSource =
+  /**
+   * Deprecated tombstone. No APP_SETTING_DEFINITIONS entry uses this any more;
+   * the union member is retained only so the audit-only facade in
+   * `features/mcp/main/mcp/ws-app-settings-api.ts` still type-checks its dead
+   * `definition.source === 'electron-store'` branch. Retire the tombstone
+   * together with that facade (B6).
+   */
   | 'electron-store'
   | 'local-storage'
+  /** Daemon settings catalog (PROTOCOL §5.12) — read via `appClient.settings.get`. */
+  | 'daemon-settings'
   | 'augment-settings'
   | 'redux'
   | 'static';
 
 export type AppSettingApplyPlan =
   | { kind: 'redux-action'; action: string }
-  | { kind: 'settings-ipc'; key: string }
-  | { kind: 'settings-update-ipc'; key: string }
+  /**
+   * Write through the daemon settings catalog (PROTOCOL §5.12). `path` is the
+   * daemon setting path; when `valuePath` is set the write is a read-merge-
+   * write on the object at `path` (used for sub-keys of `providers.paths`).
+   */
+  | { kind: 'daemon-settings-update'; path: string; valuePath?: string }
+  /** Write to renderer `localStorage` under `key` (FE-only prefs). */
+  | { kind: 'local-storage-set'; key: string }
   | { kind: 'user-mcp-settings'; key: 'mcpServers' }
   | { kind: 'read-only' };
 
@@ -87,10 +102,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Whether beta update notifications are enabled.',
     category: 'preferences',
     type: 'boolean',
-    source: 'electron-store',
-    storageKey: 'betaUpdatesEnabled',
+    source: 'local-storage',
+    storageKey: 'legacy-settings:betaUpdatesEnabled',
     defaultValue: false,
-    apply: { kind: 'settings-ipc', key: 'betaUpdatesEnabled' },
+    apply: { kind: 'redux-action', action: 'userPreferences/setBetaUpdatesEnabled' },
   },
   {
     path: 'preferences.spellcheckEnabled',
@@ -248,10 +263,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Override path for the Auggie provider executable.',
     category: 'accounts',
     type: 'string',
-    source: 'electron-store',
-    storageKey: 'auggiePath',
+    source: 'daemon-settings',
+    storageKey: 'context.auggiePath',
     defaultValue: '',
-    apply: { kind: 'settings-ipc', key: 'auggiePath' },
+    apply: { kind: 'daemon-settings-update', path: 'context.auggiePath' },
   },
   {
     path: 'providers.paths.claude-code',
@@ -259,10 +274,11 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Override path for the Claude Code provider executable.',
     category: 'accounts',
     type: 'string',
-    source: 'electron-store',
-    storageKey: 'claude-codePath',
+    source: 'daemon-settings',
+    storageKey: 'providers.paths',
+    valuePath: 'claude-code',
     defaultValue: '',
-    apply: { kind: 'settings-ipc', key: 'claude-codePath' },
+    apply: { kind: 'daemon-settings-update', path: 'providers.paths', valuePath: 'claude-code' },
   },
   {
     path: 'providers.paths.codex',
@@ -270,10 +286,11 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Override path for the Codex provider executable.',
     category: 'accounts',
     type: 'string',
-    source: 'electron-store',
-    storageKey: 'codexPath',
+    source: 'daemon-settings',
+    storageKey: 'providers.paths',
+    valuePath: 'codex',
     defaultValue: '',
-    apply: { kind: 'settings-ipc', key: 'codexPath' },
+    apply: { kind: 'daemon-settings-update', path: 'providers.paths', valuePath: 'codex' },
   },
   {
     path: 'workspace.branchPrefix',
@@ -281,10 +298,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Prefix added to newly-created workspace branches.',
     category: 'workspace',
     type: 'string',
-    source: 'electron-store',
-    storageKey: 'branchPrefix',
+    source: 'daemon-settings',
+    storageKey: 'workspace.branchPrefix',
     defaultValue: '',
-    apply: { kind: 'settings-update-ipc', key: 'branchPrefix' },
+    apply: { kind: 'daemon-settings-update', path: 'workspace.branchPrefix' },
   },
   {
     path: 'workspace.worktreesLocation',
@@ -292,10 +309,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Custom parent directory for workspace worktrees.',
     category: 'workspace',
     type: 'string',
-    source: 'electron-store',
-    storageKey: 'worktreesLocation',
+    source: 'daemon-settings',
+    storageKey: 'workspace.worktreesLocation',
     defaultValue: '',
-    apply: { kind: 'settings-update-ipc', key: 'worktreesLocation' },
+    apply: { kind: 'daemon-settings-update', path: 'workspace.worktreesLocation' },
   },
   {
     path: 'workspace.sshKeyPath',
@@ -303,11 +320,11 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Optional SSH private key path used by Git operations.',
     category: 'workspace',
     type: 'string',
-    source: 'electron-store',
-    storageKey: 'sshKeyPath',
+    source: 'daemon-settings',
+    storageKey: 'workspace.sshKeyPath',
     defaultValue: '',
     sensitive: true,
-    apply: { kind: 'settings-update-ipc', key: 'sshKeyPath' },
+    apply: { kind: 'daemon-settings-update', path: 'workspace.sshKeyPath' },
   },
   {
     path: 'workspace.defaultShell',
@@ -315,10 +332,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Default shell used for terminals.',
     category: 'workspace',
     type: 'string',
-    source: 'electron-store',
-    storageKey: 'defaultShell',
+    source: 'daemon-settings',
+    storageKey: 'workspace.defaultShell',
     defaultValue: 'auto',
-    apply: { kind: 'settings-update-ipc', key: 'defaultShell' },
+    apply: { kind: 'daemon-settings-update', path: 'workspace.defaultShell' },
   },
   {
     path: 'workspace.autoFetch',
@@ -326,10 +343,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Whether workspace Git operations should fetch automatically.',
     category: 'workspace',
     type: 'boolean',
-    source: 'electron-store',
-    storageKey: 'autoFetch',
+    source: 'daemon-settings',
+    storageKey: 'workspace.autoFetch',
     defaultValue: true,
-    apply: { kind: 'settings-update-ipc', key: 'autoFetch' },
+    apply: { kind: 'daemon-settings-update', path: 'workspace.autoFetch' },
   },
   {
     path: 'workspace.autoCommit',
@@ -337,10 +354,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Global default for workspace auto-commit behavior.',
     category: 'workspace',
     type: 'boolean',
-    source: 'electron-store',
-    storageKey: 'autoCommit',
+    source: 'daemon-settings',
+    storageKey: 'git.autoCommit',
     defaultValue: true,
-    apply: { kind: 'settings-update-ipc', key: 'autoCommit' },
+    apply: { kind: 'daemon-settings-update', path: 'git.autoCommit' },
   },
   {
     path: 'notifications.enabled',
@@ -348,9 +365,8 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Whether app notifications are enabled.',
     category: 'notifications',
     type: 'boolean',
-    source: 'electron-store',
-    storageKey: 'notificationSettings',
-    valuePath: 'enabled',
+    source: 'daemon-settings',
+    storageKey: 'notifications.enabled',
     defaultValue: true,
     apply: { kind: 'redux-action', action: 'notificationSettings/setNotificationEnabled' },
   },
@@ -360,9 +376,8 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Whether notification sounds are enabled.',
     category: 'notifications',
     type: 'boolean',
-    source: 'electron-store',
-    storageKey: 'notificationSettings',
-    valuePath: 'soundEnabled',
+    source: 'daemon-settings',
+    storageKey: 'notifications.soundEnabled',
     defaultValue: true,
     apply: { kind: 'redux-action', action: 'notificationSettings/setSoundEnabled' },
   },
@@ -372,9 +387,8 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Only play notification sounds when the app is unfocused.',
     category: 'notifications',
     type: 'boolean',
-    source: 'electron-store',
-    storageKey: 'notificationSettings',
-    valuePath: 'soundOnlyWhenUnfocused',
+    source: 'daemon-settings',
+    storageKey: 'notifications.soundOnlyWhenUnfocused',
     defaultValue: true,
     apply: { kind: 'redux-action', action: 'notificationSettings/setSoundOnlyWhenUnfocused' },
   },
@@ -386,9 +400,8 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     type: 'number',
     min: 0,
     max: 1,
-    source: 'electron-store',
-    storageKey: 'notificationSettings',
-    valuePath: 'volume',
+    source: 'daemon-settings',
+    storageKey: 'notifications.volume',
     defaultValue: 0.5,
     apply: { kind: 'redux-action', action: 'notificationSettings/setVolume' },
   },
@@ -398,10 +411,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Whether custom user MCP servers from ~/.augment/settings.json are enabled.',
     category: 'mcp',
     type: 'boolean',
-    source: 'electron-store',
-    storageKey: 'enableUserMcpServers',
+    source: 'daemon-settings',
+    storageKey: 'mcp.enableUserServers',
     defaultValue: true,
-    apply: { kind: 'settings-ipc', key: 'enableUserMcpServers' },
+    apply: { kind: 'daemon-settings-update', path: 'mcp.enableUserServers' },
   },
   {
     path: 'mcp.disabledServers',
@@ -409,10 +422,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Global list of disabled MCP server names.',
     category: 'mcp',
     type: 'array',
-    source: 'electron-store',
-    storageKey: 'disabledMcpServers',
+    source: 'daemon-settings',
+    storageKey: 'mcp.disabledServers',
     defaultValue: [],
-    apply: { kind: 'settings-ipc', key: 'disabledMcpServers' },
+    apply: { kind: 'daemon-settings-update', path: 'mcp.disabledServers' },
   },
   {
     path: 'mcp.servers',
@@ -603,10 +616,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Editor IDs hidden from Open In menus.',
     category: 'per-feature',
     type: 'array',
-    source: 'electron-store',
-    storageKey: 'hiddenOpenInEditors',
+    source: 'local-storage',
+    storageKey: 'legacy-settings:hiddenOpenInEditors',
     defaultValue: [],
-    apply: { kind: 'settings-ipc', key: 'hiddenOpenInEditors' },
+    apply: { kind: 'local-storage-set', key: 'legacy-settings:hiddenOpenInEditors' },
   },
   {
     path: 'rtk.enabled',
@@ -614,10 +627,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Whether RTK helper behavior is enabled.',
     category: 'per-feature',
     type: 'boolean',
-    source: 'electron-store',
-    storageKey: 'rtkEnabled',
+    source: 'local-storage',
+    storageKey: 'legacy-settings:rtkEnabled',
     defaultValue: false,
-    apply: { kind: 'settings-ipc', key: 'rtkEnabled' },
+    apply: { kind: 'local-storage-set', key: 'legacy-settings:rtkEnabled' },
   },
   {
     path: 'linear.issueFilter',
@@ -625,10 +638,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Saved Linear issue filter used by integrations.',
     category: 'accounts',
     type: 'object',
-    source: 'electron-store',
-    storageKey: 'linearIssueFilter',
+    source: 'local-storage',
+    storageKey: 'legacy-settings:linearIssueFilter',
     defaultValue: null,
-    apply: { kind: 'settings-update-ipc', key: 'linearIssueFilter' },
+    apply: { kind: 'local-storage-set', key: 'legacy-settings:linearIssueFilter' },
   },
   {
     path: 'accounts.sentry',
@@ -636,9 +649,8 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Persisted Sentry account status. API tokens are never exposed.',
     category: 'accounts',
     type: 'status',
-    source: 'electron-store',
-    storeName: 'sentry-auth',
-    storageKey: 'sentry-config',
+    source: 'daemon-settings',
+    storageKey: 'accounts.sentry',
     defaultValue: null,
     sensitive: true,
     apply: { kind: 'read-only' },
