@@ -10,8 +10,8 @@
 
 import { Logger } from '$shared/logger';
 import { makeBackgroundRequest } from './background-request.service';
-import { agentPersistence } from './agent-persistence';
-import type { AgentId, WorkspaceId, NoteId } from '$shared/types/branded-ids';
+import { getBackendClient } from '../../backend/main/backend.ipc';
+import type { WorkspaceId, NoteId } from '$shared/types/branded-ids';
 import type { TaskStatus } from '$shared/types';
 
 const logger = new Logger('NoteStatusChecker');
@@ -41,6 +41,7 @@ export async function checkAndUpdateNoteStatus(
   workspacePath?: string,
   context?: NoteStatusCheckContext,
 ): Promise<void> {
+  void workspacePath;
   try {
     const finishReason = context?.finishReason;
     logger.info('Starting note status check', { agentId, workspaceId, finishReason });
@@ -60,19 +61,27 @@ export async function checkAndUpdateNoteStatus(
     }
     recentlyChecked.set(key, Date.now());
 
-    // Load agent session to get metadata
-    const loadResult = await agentPersistence.loadAgent(
-      agentId as AgentId,
-      workspaceId as WorkspaceId,
-      workspacePath,
-    );
-
-    if (!loadResult.success || !loadResult.data) {
-      logger.info('Could not load agent for status check', { agentId, error: loadResult.error });
+    // Load the AgentLite projection from the daemon (PROTOCOL.md §5.5 agent.get).
+    // AgentLite strips `messages`, so we lazily fetch the transcript via
+    // `agent.getConversation` below only if the caller did not supply
+    // `context.lastMessageText`.
+    let agent: {
+      name?: string;
+      metadata?: { taskNoteId?: string } & Record<string, unknown>;
+    };
+    try {
+      const getResult = (await getBackendClient().request('agent.get', {
+        agentId,
+        workspaceId,
+      })) as { agent: typeof agent };
+      agent = getResult.agent;
+    } catch (error) {
+      logger.info('Could not load agent for status check', {
+        agentId,
+        error: (error as Error).message,
+      });
       return;
     }
-
-    const agent = loadResult.data;
     const taskNoteId = agent.metadata?.taskNoteId;
 
     logger.info('Agent metadata check', {
@@ -110,10 +119,27 @@ export async function checkAndUpdateNoteStatus(
       return;
     }
 
-    // Use pre-extracted message text from context, or fall back to loading from persistence
+    // Use pre-extracted message text from context, or fall back to loading from
+    // persistence via `agent.getConversation` (PROTOCOL.md §5.5).
     let messageText = context?.lastMessageText;
+    let recentAssistantMessages: any[] | undefined;
     if (!messageText) {
-      const lastMessage = agent.messages?.filter((m) => m.role === 'assistant')?.pop();
+      try {
+        const convo = (await getBackendClient().request('agent.getConversation', {
+          agentId,
+          workspaceId,
+        })) as { messages?: any[] };
+        recentAssistantMessages = convo.messages;
+      } catch (error) {
+        logger.debug('Could not load conversation for status check', {
+          agentId,
+          error: (error as Error).message,
+        });
+        return;
+      }
+      const lastMessage = recentAssistantMessages
+        ?.filter((m) => m.role === 'assistant')
+        ?.pop();
       if (!lastMessage) {
         logger.debug('No assistant messages to analyze', { agentId });
         return;
@@ -126,8 +152,21 @@ export async function checkAndUpdateNoteStatus(
       return;
     }
 
-    // Gather recent message context (last few assistant messages for better classification)
-    const recentMessages = gatherRecentMessages(agent.messages, 3);
+    // Gather recent message context (last few assistant messages for better
+    // classification). If we already fetched the conversation for the fallback
+    // above, reuse it; otherwise fetch it now (best-effort).
+    if (!recentAssistantMessages) {
+      try {
+        const convo = (await getBackendClient().request('agent.getConversation', {
+          agentId,
+          workspaceId,
+        })) as { messages?: any[] };
+        recentAssistantMessages = convo.messages;
+      } catch {
+        recentAssistantMessages = undefined;
+      }
+    }
+    const recentMessages = gatherRecentMessages(recentAssistantMessages, 3);
 
     // Extract the note body for task context
     const noteContent = note.content || '';

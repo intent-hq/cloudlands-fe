@@ -9,8 +9,7 @@ import { ipcMain } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { AgentBackendHandler } from '../../agent/main/agent-backend-handler.service';
-import { agentPersistence } from '../../agent/main/agent-persistence';
-import type { AgentId, WorkspaceId } from '../../../shared/types/branded-ids';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 
 const logger = new Logger('DebugIPC');
 
@@ -33,24 +32,25 @@ export function setupDebugIPC(): void {
       logger.info('Debug: Listing agents for workspace', { workspaceId });
 
       try {
-        const agentIds = await agentPersistence.listAgents(workspaceId);
-        const agents = [];
-
-        for (const agentId of agentIds) {
-          const result = await agentPersistence.loadAgent(
-            agentId as AgentId,
-            workspaceId as WorkspaceId,
-          );
-          if (result.success && result.data) {
-            agents.push({
-              id: agentId,
-              name: result.data.name,
-              status: result.data.status,
-              messageCount: result.data.messages?.length || 0,
-              createdAt: result.data.createdAt,
-            });
-          }
-        }
+        // Route through the daemon (PROTOCOL.md 5.5): agent.list returns the
+        // AgentLite projection with messageCount already, so we no longer need
+        // to list ids and load each session individually.
+        const result = (await getBackendClient().request('agent.list', { workspaceId })) as {
+          agents?: Array<{
+            id: string;
+            name?: string;
+            status?: string;
+            messageCount?: number;
+            createdAt?: string;
+          }>;
+        };
+        const agents = (result?.agents ?? []).map((a) => ({
+          id: a.id,
+          name: a.name,
+          status: a.status,
+          messageCount: a.messageCount ?? 0,
+          createdAt: a.createdAt,
+        }));
 
         return { success: true, agents };
       } catch (error) {
