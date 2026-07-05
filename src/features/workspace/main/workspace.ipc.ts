@@ -58,6 +58,7 @@ import {
   clearRepos,
 } from './repo-registry';
 import { initChangeHistory } from './change-history-persistence';
+import { initWorkspaceSettings } from './workspace-settings.service';
 import {
   sshManager,
   type SSHConnectionConfig,
@@ -335,6 +336,12 @@ function registerEditorRefreshSubscriber(
 export function setupWorkspaceIPC(): void {
   // Initialize the persistent repo registry
   initRepoRegistry().catch((err) => logger.error('Failed to init repo registry', err as Error));
+
+  // Hydrate the daemon-owned git.autoCommit into the workspace-settings cache
+  // (the sync API falls back to the default until this resolves).
+  initWorkspaceSettings().catch((err) =>
+    logger.error('Failed to init workspace settings', err as Error),
+  );
 
   // Initialize the persistent change history cache
   initChangeHistory().catch((err) =>
