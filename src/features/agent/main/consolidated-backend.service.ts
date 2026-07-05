@@ -38,7 +38,7 @@ import { type UnifiedAgentConfig } from '$shared/types/agent.types';
 import { StreamManager } from './stream-manager';
 import { agentValidator } from './agent-validator';
 import { errorHandler } from '../services/error-handler';
-import { AGENT_BACKEND_CHANNELS, PERSISTENCE_CHANNELS } from '$shared/ipc/channels';
+import { AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 import { memoryManager } from './utils/memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
@@ -94,16 +94,13 @@ async function getNodeModules() {
       // Electron may not be available in all contexts
     }
 
-    // Route agent-session CRUD through the daemon; keep the metadata-fs
-    // resolver wired via the legacy unifiedPersistence hook until C1g retires
-    // agent-persistence.ts entirely.
+    // Route agent-session CRUD through the daemon and load the metadata-fs
+    // factory directly for the surviving remote-workspace read path.
     try {
       const bridgeModule = await import('../main/daemon-agent-bridge');
       agentPersistence = bridgeModule.daemonAgentBridge;
-      const persistenceModule = await import('../main/agent-persistence');
       const { getMetadataFS } = await import('../../metadata-fs/main/metadata-fs-factory');
       metadataFSFactory = getMetadataFS;
-      persistenceModule.unifiedPersistence.setMetadataFSResolver(getMetadataFS);
     } catch (error) {
       logger.warn('Could not load agent persistence module', error);
     }
@@ -559,26 +556,16 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
 
       // Persist deletion if enabled
       if (this.config.persistenceEnabled && effectiveWorkspaceId) {
-        // Check if we're in the main process
-        if (isMainProcess()) {
-          logger.info('[deleteAgent] Running in main process, using direct persistence call');
-          // Direct call to persistence service in main process
-          const { agentPersistence } = await getNodeModules();
-          if (agentPersistence) {
-            logger.info('[deleteAgent] Calling agentPersistence.deleteAgent', {
-              agentId,
-              workspaceId: effectiveWorkspaceId,
-            });
-            const result = await agentPersistence.deleteAgent(agentId, effectiveWorkspaceId);
-            logger.info('[deleteAgent] Persistence deletion result', { result });
-          } else {
-            logger.error('[deleteAgent] agentPersistence not available in main process');
-          }
+        const { agentPersistence } = await getNodeModules();
+        if (agentPersistence) {
+          logger.info('[deleteAgent] Calling agentPersistence.deleteAgent', {
+            agentId,
+            workspaceId: effectiveWorkspaceId,
+          });
+          const result = await agentPersistence.deleteAgent(agentId, effectiveWorkspaceId);
+          logger.info('[deleteAgent] Persistence deletion result', { result });
         } else {
-          logger.info('[deleteAgent] Running in renderer process, using IPC');
-          // Use IPC from renderer process
-          const invoke = await getInvoke();
-          await invoke(PERSISTENCE_CHANNELS.DELETE, { agentId });
+          logger.error('[deleteAgent] agentPersistence not available');
         }
       }
 
@@ -732,16 +719,12 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         systemPromptLength: agent.systemPrompt?.length || 0,
       });
 
-      // Save agent to disk immediately after creation to persist systemPrompt
+      // Save agent to disk immediately after creation to persist systemPrompt.
+      // The daemon owns canonical state and returns it synchronously from
+      // agent.get / agent.getSession, so the former markAgentPending guard
+      // (needed only for the file-backed loadAgent race) is no longer required.
       if (this.config.persistenceEnabled) {
         logger.info('[createAgent] Saving agent to disk', { agentId: agent.id });
-
-        // Mark agent as pending before save to avoid ENOENT errors from concurrent loadAgent calls
-        // This is important during bulk task delegation when multiple agents are created in parallel
-        if (isMainProcess() && agentPersistence) {
-          const { unifiedPersistence } = await import('../main/agent-persistence');
-          unifiedPersistence.markAgentPending(agent.id, agent);
-        }
 
         const saveResult = await this.saveAgent(agent.id);
         if (!saveResult.success) {
@@ -926,26 +909,10 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
           return { success: true };
         }
 
-        let result: { success: boolean; error?: string };
-
-        // Check if we're in the main process
-        if (isMainProcess()) {
-          // Direct call to persistence service in main process
-          const { agentPersistence } = await getNodeModules();
-          if (agentPersistence) {
-            const saveResult = await agentPersistence.saveAgent(record.session);
-            result = saveResult;
-          } else {
-            result = { success: false, error: 'Persistence service not available' };
-          }
-        } else {
-          // Use IPC from renderer process
-          const invoke = await getInvoke();
-          result = (await invoke(PERSISTENCE_CHANNELS.SAVE, {
-            agentId,
-            session: record.session,
-          })) as { success: boolean; error?: string };
-        }
+        const { agentPersistence } = await getNodeModules();
+        const result: { success: boolean; error?: string } = agentPersistence
+          ? await agentPersistence.saveAgent(record.session)
+          : { success: false, error: 'Persistence service not available' };
 
         if (!result?.success) {
           return { success: false, error: result?.error || 'Failed to save agent' };
@@ -978,33 +945,21 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
 
       let result: { success: boolean; data?: AgentSession; error?: string };
 
-      // Check if we're in the main process
-      if (isMainProcess()) {
-        // Main process - use direct persistence call
-        const { agentPersistence } = await getNodeModules();
-        if (agentPersistence) {
-          // Do NOT pass workspace.path - let it use the correct metadata directory
-          const loadResult = await agentPersistence.loadAgent(
-            createAgentId(agentId),
-            createWorkspaceId(workspace.id),
-          );
+      const { agentPersistence } = await getNodeModules();
+      if (agentPersistence) {
+        // Do NOT pass workspace.path - let it use the correct metadata directory
+        const loadResult = await agentPersistence.loadAgent(
+          createAgentId(agentId),
+          createWorkspaceId(workspace.id),
+        );
 
-          if (loadResult.success && loadResult.data) {
-            result = { success: true, data: loadResult.data };
-          } else {
-            result = { success: false, error: loadResult.error || 'Failed to load agent' };
-          }
+        if (loadResult.success && loadResult.data) {
+          result = { success: true, data: loadResult.data };
         } else {
-          result = { success: false, error: 'Persistence service not available' };
+          result = { success: false, error: loadResult.error || 'Failed to load agent' };
         }
       } else {
-        // Renderer process - use IPC
-        const invoke = await getInvoke();
-        result = (await invoke(PERSISTENCE_CHANNELS.LOAD, { agentId })) as {
-          success: boolean;
-          data?: AgentSession;
-          error?: string;
-        };
+        result = { success: false, error: 'Persistence service not available' };
       }
 
       if (!result?.success || !result?.data) {
@@ -1291,19 +1246,12 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     if (!record.messagesEvicted) return record.session;
 
     try {
-      let result: { success: boolean; data?: AgentSession; error?: string };
-      if (isMainProcess()) {
-        const { agentPersistence } = await getNodeModules();
-        if (!agentPersistence) {
-          return record.session;
-        }
-        result = await agentPersistence.loadAgent(record.agentId, record.workspaceId);
-      } else {
-        const invoke = await getInvoke();
-        result = (await invoke(PERSISTENCE_CHANNELS.LOAD, {
-          agentId: record.agentId.toString(),
-        })) as { success: boolean; data?: AgentSession; error?: string };
+      const { agentPersistence } = await getNodeModules();
+      if (!agentPersistence) {
+        return record.session;
       }
+      const result: { success: boolean; data?: AgentSession; error?: string } =
+        await agentPersistence.loadAgent(record.agentId, record.workspaceId);
 
       if (!result.success || !result.data) {
         logger.warn('[session-payload-eviction] Failed to restore evicted payload', {
@@ -1645,10 +1593,6 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     // NOTE: Agent operation handlers are registered in unified-agent-handlers.ts
     // Do NOT register duplicate handlers here as it causes issues with agent ID and systemPrompt passing
     // The handlers in unified-agent-handlers.ts properly extract agentId from the request object
-
-    // NOTE: Persistence handlers (PERSISTENCE_CHANNELS.SAVE and PERSISTENCE_CHANNELS.LOAD)
-    // are registered in persistence.ipc.ts with proper validation and error handling.
-    // Do NOT register duplicate handlers here as it causes "Attempted to register a second handler" errors.
 
     // Setup event forwarding
     this.setupEventForwarding();
