@@ -45,7 +45,6 @@ const isBackend = typeof window === 'undefined';
 
 // Lazy-loaded frontend modules
 let invokeFunction: any = null;
-let persistenceServiceModule: any = null;
 
 async function getInvoke() {
   if (!invokeFunction && !isBackend) {
@@ -53,14 +52,6 @@ async function getInvoke() {
     invokeFunction = module.invoke;
   }
   return invokeFunction;
-}
-
-async function getPersistenceService() {
-  if (!persistenceServiceModule && !isBackend) {
-    const module = await import('../browser');
-    persistenceServiceModule = module.persistenceService;
-  }
-  return persistenceServiceModule;
 }
 
 async function getActiveProviderId(): Promise<string | null> {
@@ -576,29 +567,9 @@ export class UnifiedAgentFactory {
             hasContextReferences,
           });
 
-          // Save the session immediately after adding the user message
-          // This ensures the message persists even if the app crashes or refreshes
-          try {
-            const session = selectAgentSession.select(store.state, agent.id);
-            if (session) {
-              const persistenceService = await getPersistenceService();
-              if (persistenceService) {
-                await persistenceService.saveSession(session, agent.workspaceId, {
-                  immediate: true,
-                });
-                logger.info('Saved initial user message to disk', {
-                  agentId: agent.id,
-                  messageId: userMessage.id,
-                });
-              }
-            }
-          } catch (error) {
-            logger.warn('Failed to save initial user message to disk', {
-              agentId: agent.id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            // Don't fail the whole operation if persistence fails
-          }
+          // Persistence of the initial user message is owned by the daemon;
+          // the follow-up sendInitialMessage(...) call (STREAM_MESSAGE →
+          // agent.sendMessage / chat.request) drives the daemon-side record.
         }
       }
 
