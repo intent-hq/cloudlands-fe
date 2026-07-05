@@ -8,6 +8,7 @@ import { McpHub } from './hub/mcp-hub';
 import type { BrowserWindow } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { WorkspaceConfig } from '../../../shared/main/config.js';
+import { initGlobalDisabledMcpServers } from './user-mcp-settings';
 const logger = new Logger('MCP');
 
 // Singleton instance
@@ -51,6 +52,14 @@ export async function setupMcpHub(mainWindow?: BrowserWindow): Promise<McpHub> {
   });
 
   logger.info('MCP Hub setup complete');
+
+  // Hydrate daemon-owned MCP settings so sync consumers (per-workspace
+  // disabled-list merge) see the correct global default.
+  initGlobalDisabledMcpServers().catch((err) =>
+    logger.warn('Failed to init mcp.disabledServers hydration', {
+      error: err instanceof Error ? err.message : String(err),
+    }),
+  );
 
   return mcpHub;
 }

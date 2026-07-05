@@ -13,6 +13,7 @@ import { Logger } from '../../../shared/logger';
 import { injectMcpAuth } from './mcp-auth-providers';
 import { RESERVED_MCP_SERVER_NAMES } from '../../../shared/config/mcp-constants';
 import { WorkspaceConfig } from '$shared/main/config';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 
 const logger = new Logger('UserMcpSettings');
 
@@ -374,21 +375,67 @@ async function getWorkspaceDisabledMcpServersPath(workspaceId: string): Promise<
 }
 
 /**
- * Read the global disabled MCP servers setting from electron-store.
+ * Cached daemon-owned `mcp.disabledServers` (PROTOCOL.md §5.12).
+ *
+ * The legacy `settings` electron-store held this list under
+ * `disabledMcpServers`; the daemon is now the source of truth. The value
+ * is hydrated lazily by `initGlobalDisabledMcpServers` and consulted
+ * synchronously by `getGlobalDisabledMcpServers` — the sync surface is
+ * preserved so mixed sync/async call sites (per-workspace disabled-list
+ * merges) do not need to be reshaped in this pass.
+ */
+let cachedDisabledServers: string[] | null = null;
+let disabledHydrationPromise: Promise<void> | null = null;
+
+async function fetchDisabledMcpServers(): Promise<string[]> {
+  const result = (await getBackendClient().request('settings.get', {
+    path: 'mcp.disabledServers',
+  })) as { value?: unknown } | null;
+  const raw = result?.value;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is string => typeof item === 'string');
+}
+
+/**
+ * Hydrate `cachedDisabledServers` from the daemon (call once during app
+ * startup). Safe to call repeatedly; the sync API falls back to `[]`
+ * until this resolves.
+ */
+export async function initGlobalDisabledMcpServers(): Promise<void> {
+  if (cachedDisabledServers !== null) return;
+  if (disabledHydrationPromise) return disabledHydrationPromise;
+  disabledHydrationPromise = (async () => {
+    try {
+      cachedDisabledServers = await fetchDisabledMcpServers();
+      logger.info('mcp.disabledServers hydrated', {
+        count: cachedDisabledServers.length,
+      });
+    } catch (error) {
+      logger.warn('Failed to hydrate mcp.disabledServers from daemon', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      cachedDisabledServers = [];
+    }
+  })();
+  return disabledHydrationPromise;
+}
+
+/**
+ * Read the daemon-hydrated global disabled MCP servers list synchronously.
+ * Returns the cache (or `null` if hydration has not run yet); the public
+ * `getGlobalDisabledMcpServers` folds `null` into an empty list.
+ *
  * Extracted for testability — callers can override via dependency injection.
  */
 export function readGlobalDisabledSetting(): unknown {
-   
-  const ElectronStore = require('electron-store');
-  const settingsStore = new ElectronStore({ name: 'settings' });
-  return settingsStore.get('disabledMcpServers');
+  return cachedDisabledServers;
 }
 
 /**
  * Get the list of globally disabled MCP servers from app settings.
  * These are the servers disabled in Settings → Workspace Setup.
  *
- * @param readSetting - Optional reader function (defaults to electron-store).
+ * @param readSetting - Optional reader function (defaults to the daemon-hydrated cache).
  *                      Useful for testing.
  * @returns Array of globally disabled server names, empty array if none
  */
@@ -398,7 +445,7 @@ export function getGlobalDisabledMcpServers(
   try {
     const disabled = readSetting();
     if (Array.isArray(disabled)) {
-      // Filter out non-string entries to guard against corrupted store data
+      // Filter out non-string entries to guard against corrupted data.
       return disabled.filter((item): item is string => typeof item === 'string');
     }
     return [];
@@ -408,6 +455,15 @@ export function getGlobalDisabledMcpServers(
     });
     return [];
   }
+}
+
+/**
+ * Test-only: reset the hydration cache so a fresh init can run in isolation.
+ * @internal
+ */
+export function __resetGlobalDisabledMcpServersForTesting(): void {
+  cachedDisabledServers = null;
+  disabledHydrationPromise = null;
 }
 
 /**
