@@ -2157,16 +2157,12 @@ export function setupSystemIPC() {
     ),
   );
 
-  // Settings (using electron-store)
+  // Settings (using electron-store) — legacy facade retained here for
+  // compatibility with the mock IPC router §5.12 shim; the daemon-owned
+  // catalog is the source of truth. The former one-time
+  // `migrations.betaUpdatesResetV1` reset is retired — `betaUpdatesEnabled`
+  // now lives in `main/local-prefs.ts` and defaults to `false` there.
   const settingsStore: any = new ElectronStore({ name: 'settings' });
-
-  // One-time migration: reset betaUpdatesEnabled to false for all users
-  // This migration runs when the flag has not been reset yet
-  const BETA_UPDATES_RESET_MIGRATION = 'migrations.betaUpdatesResetV1';
-  if (!settingsStore.get(BETA_UPDATES_RESET_MIGRATION)) {
-    settingsStore.set('betaUpdatesEnabled', false);
-    settingsStore.set(BETA_UPDATES_RESET_MIGRATION, true);
-  }
 
   ipcMain.handle(
     SETTINGS_CHANNELS.GET,
