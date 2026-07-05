@@ -1,143 +1,135 @@
 /**
  * App Settings Service (Main Process)
  *
- * Provides access to app-level settings stored in electron-store.
- * This is a thin wrapper around electron-store for use by main process services.
+ * Sync accessors for the three workspace-scoped app settings consumed on
+ * synchronous main-process paths (branch-prefix injection, worktree layout,
+ * git-env SSH key). The source of truth is the daemon settings catalog
+ * (PROTOCOL.md §5.12):
+ *
+ *   - `workspace.branchPrefix`      → `getBranchPrefix()`
+ *   - `workspace.worktreesLocation` → `getWorktreesLocation()`
+ *   - `workspace.sshKeyPath`        → `getSshKeyPath()`  (plain string,
+ *                                     see intent-services/settings.rs A9)
+ *
+ * `initAppSettingsService()` hydrates each value into a module-level cache
+ * via `settings.get` at process start; the sync getters serve the cached
+ * value and fall back to `''` while unhydrated (matches the pre-P3-4
+ * behaviour when the electron-store key was absent). This mirrors the
+ * hydration-cache pattern used by workspace-settings.service.ts and
+ * notification.service.ts.
+ *
+ * The legacy `settings` electron-store, its `getSetting`/`setSetting`
+ * facade, and the dead `websocketApi-*` helpers are retired here — no
+ * remaining consumers in main.
  */
 
 import { Logger } from '../../../shared/logger';
-import ElectronStore from 'electron-store';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 
 const logger = new Logger({ category: 'AppSettingsService' });
 
-let settingsStore: any = null;
-let initPromise: Promise<void> | null = null;
+/** Daemon setting paths hydrated by this service (§5.12). */
+const SETTING_PATH_BRANCH_PREFIX = 'workspace.branchPrefix';
+const SETTING_PATH_WORKTREES_LOCATION = 'workspace.worktreesLocation';
+const SETTING_PATH_SSH_KEY_PATH = 'workspace.sshKeyPath';
 
-const WEBSOCKET_API_TOKEN_KEY = 'websocketApiToken';
-const WEBSOCKET_API_ENABLED_KEY = 'websocketApiEnabled';
-const WEBSOCKET_API_DISCOVERY_ENABLED_KEY = 'websocketApiDiscoveryEnabled';
+/**
+ * Hydrated caches. `null` while unhydrated; the sync getters fall back to
+ * `''` in that window (identical to the pre-P3-4 default).
+ */
+let cachedBranchPrefix: string | null = null;
+let cachedWorktreesLocation: string | null = null;
+let cachedSshKeyPath: string | null = null;
+let hydrationPromise: Promise<void> | null = null;
 
-function getStore(): any {
-  if (!settingsStore) {
-    try {
-      settingsStore = new ElectronStore({ name: 'settings' });
-      logger.info('App settings service initialized');
-    } catch (error) {
-      logger.error('Failed to initialize app settings service', error as Error);
-    }
-  }
-  return settingsStore;
+async function fetchStringSetting(path: string): Promise<string> {
+  const result = (await getBackendClient().request('settings.get', {
+    path,
+  })) as { value?: unknown } | null;
+  const value = result?.value;
+  return typeof value === 'string' ? value : '';
 }
 
 /**
- * Initialize the settings store (call once during app startup)
+ * Hydrate the branchPrefix / worktreesLocation / sshKeyPath caches once
+ * from the daemon. Safe to call repeatedly; sync getters keep returning
+ * the empty-string default until this resolves.
  */
 export async function initAppSettingsService(): Promise<void> {
-  if (settingsStore) {
-    return; // Already initialized
-  }
-  if (initPromise) {
-    return initPromise;
-  }
-  initPromise = (async () => {
-    getStore();
-  })();
-  return initPromise;
-}
-
-/**
- * Get a setting value by key
- */
-export function getSetting<T>(key: string, defaultValue?: T): T | undefined {
-  const store = getStore();
-  if (!store) {
-    logger.warn('Settings store not initialized, returning default', { key });
-    return defaultValue;
-  }
-  const value = store.get(key);
-  return value !== undefined ? value : defaultValue;
-}
-
-/**
- * Set a setting value
- */
-export function setSetting<T>(key: string, value: T): void {
-  const store = getStore();
-  if (!store) {
-    logger.warn('Settings store not initialized, cannot set', { key });
+  if (
+    cachedBranchPrefix !== null &&
+    cachedWorktreesLocation !== null &&
+    cachedSshKeyPath !== null
+  ) {
     return;
   }
-  store.set(key, value);
+  if (hydrationPromise) return hydrationPromise;
+  hydrationPromise = (async () => {
+    const [prefix, worktrees, ssh] = await Promise.all([
+      fetchStringSetting(SETTING_PATH_BRANCH_PREFIX).catch((error) => {
+        logger.warn('Failed to hydrate workspace.branchPrefix from daemon', {
+          error: (error as Error).message,
+        });
+        return '';
+      }),
+      fetchStringSetting(SETTING_PATH_WORKTREES_LOCATION).catch((error) => {
+        logger.warn('Failed to hydrate workspace.worktreesLocation from daemon', {
+          error: (error as Error).message,
+        });
+        return '';
+      }),
+      fetchStringSetting(SETTING_PATH_SSH_KEY_PATH).catch((error) => {
+        logger.warn('Failed to hydrate workspace.sshKeyPath from daemon', {
+          error: (error as Error).message,
+        });
+        return '';
+      }),
+    ]);
+    cachedBranchPrefix = prefix;
+    cachedWorktreesLocation = worktrees;
+    cachedSshKeyPath = ssh;
+    logger.info('App settings hydrated', {
+      hasBranchPrefix: prefix.length > 0,
+      hasWorktreesLocation: worktrees.length > 0,
+      hasSshKeyPath: ssh.length > 0,
+    });
+  })();
+  return hydrationPromise;
 }
 
 /**
- * Get the branch prefix setting
- * Returns empty string if not set (no prefix)
+ * Get the branch prefix setting.
+ * Returns empty string if not set (no prefix) or before hydration completes.
  */
 export function getBranchPrefix(): string {
-  return getSetting<string>('branchPrefix', '') || '';
+  return cachedBranchPrefix ?? '';
 }
 
 /**
  * Get the custom worktrees location setting.
- * Returns empty string if not set (use default ~/intent/workspaces).
+ * Returns empty string if not set (use default ~/intent/workspaces) or
+ * before hydration completes.
  */
 export function getWorktreesLocation(): string {
-  return getSetting<string>('worktreesLocation', '') || '';
+  return cachedWorktreesLocation ?? '';
 }
 
 /**
  * Get the SSH key path setting.
- * Returns empty string if not set (use default SSH behavior).
+ * Returns empty string if not set (use default SSH behavior) or before
+ * hydration completes.
  */
 export function getSshKeyPath(): string {
-  return getSetting<string>('sshKeyPath', '') || '';
+  return cachedSshKeyPath ?? '';
 }
 
 /**
- * Whether the WebSocket API is enabled.
- * Defaults to false (opt-in).
+ * Test-only: reset internal caches so a fresh hydration can run in isolation.
+ * @internal
  */
-export function isWebSocketApiEnabled(): boolean {
-  return getSetting<boolean>(WEBSOCKET_API_ENABLED_KEY, false) === true;
-}
-
-export function setWebSocketApiEnabled(enabled: boolean): void {
-  setSetting(WEBSOCKET_API_ENABLED_KEY, enabled);
-  logger.info('WebSocket API enabled state changed', { enabled });
-}
-
-/**
- * Get the WebSocket API token.
- * Returns undefined if not set. Call ensureWebSocketApiToken() for the explicit
- * create-on-missing path.
- */
-export function getWebSocketApiToken(): string | undefined {
-  return getSetting<string>(WEBSOCKET_API_TOKEN_KEY);
-}
-
-export function setWebSocketApiToken(token: string): void {
-  setSetting(WEBSOCKET_API_TOKEN_KEY, token);
-}
-
-/**
- * Return the persisted WebSocket API token, creating one only when explicitly requested.
- */
-export function ensureWebSocketApiToken(createToken: () => string): string {
-  const existing = getWebSocketApiToken();
-  if (existing && typeof existing === 'string' && existing.length > 0) {
-    return existing;
-  }
-  const token = createToken();
-  setWebSocketApiToken(token);
-  return token;
-}
-
-export function isWebSocketApiDiscoveryEnabled(): boolean {
-  return getSetting<boolean>(WEBSOCKET_API_DISCOVERY_ENABLED_KEY, false) === true;
-}
-
-export function setWebSocketApiDiscoveryEnabled(enabled: boolean): void {
-  setSetting(WEBSOCKET_API_DISCOVERY_ENABLED_KEY, enabled);
-  logger.info('Network discovery enabled state changed', { enabled });
+export function __resetAppSettingsForTesting(): void {
+  cachedBranchPrefix = null;
+  cachedWorktreesLocation = null;
+  cachedSshKeyPath = null;
+  hydrationPromise = null;
 }
