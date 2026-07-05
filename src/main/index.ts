@@ -384,7 +384,6 @@ import { agentPersistence } from '../features/agent/main/agent-persistence';
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { agentPoolService } from '../features/agent/main/agent-pool.service';
 import { cleanupStaleTempFiles } from '../features/agent/main/agent-providers/acp-provider';
-import { cleanupBlankAgentSessions } from '../features/agent/main/cleanup-blank-agent-sessions';
 import { initializeUnifiedAgentHandlers } from '../features/agent/main/init-unified-handlers';
 import { initSpecialistsService } from '../features/agent/main/specialists.service';
 import { initAppSettingsService } from '../features/workspace/main/app-settings.service';
@@ -1570,13 +1569,6 @@ app.whenReady().then(async () => {
       }
     } catch (error) {
       logger.debug('Error cleaning up stale temp files', { error });
-    }
-
-    // Clean up historical blank agent session files from workspace metadata
-    try {
-      await cleanupBlankAgentSessions();
-    } catch (error) {
-      logger.debug('Error cleaning up blank agent session files', { error });
     }
 
     // Auto-repair CLI symlink on startup (production only, silent)
