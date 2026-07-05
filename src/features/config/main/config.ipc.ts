@@ -3,6 +3,14 @@
  *
  * Exposes read/write access to the application configuration from the renderer.
  * Kept minimal and read-mostly for safety.
+ *
+ * P3-4: the legacy `workspace-config` electron-store is retired. Daemon-owned
+ * sub-keys of `AppConfig` (ai.*, permissions.rules, userRules, workspaceRules)
+ * are hydrated from and pushed to the daemon settings catalog via
+ * `settings.get` / `settings.update` (PROTOCOL.md §5.12). FE-local sub-keys
+ * (`appearance`, `editor`, `shortcuts`, `experimental`, `workspace.*`) are
+ * held in `ConfigManager` memory only for the session, per the P3-4 audit —
+ * they no longer have their own on-disk store.
  */
 
 import { ipcMain } from 'electron';
@@ -15,12 +23,16 @@ import {
   ConfigSetSchema,
   ConfigGetAllSchema,
 } from '../../../main/ipc-schemas';
+import {
+  hydrateFromDaemon,
+  isDaemonOwnedKey,
+  pushDaemonKey,
+  pushAllDaemonKeys,
+} from './config-daemon-sync';
 
 const logger = new Logger('ConfigIPC');
 
 let configManager: ConfigManager | null = null;
-// We'll use dynamic import for electron-store to avoid ESM issues
-let configStore: any = null;
 
 /**
  * Get the shared ConfigManager instance
@@ -30,57 +42,32 @@ export function getConfigManager(): ConfigManager | null {
 }
 
 /**
- * Persist the current config to electron-store
+ * Persist the daemon-owned subset of the current config to the daemon.
+ * Kept as an async function for backward compatibility with existing
+ * callers (e.g. `user-rules.ipc.ts`) that awaited a filesystem flush.
  */
 export async function persistConfig(): Promise<void> {
-  if (configManager && configStore) {
-    try {
-      const allConfig = configManager.getAll();
-      configStore.set('config', allConfig);
-      logger.debug('Persisted configuration to electron-store');
-    } catch (err) {
-      logger.error('Failed to persist config', err as Error);
-      throw err;
-    }
+  if (!configManager) return;
+  try {
+    await pushAllDaemonKeys(configManager);
+    logger.debug('Persisted daemon-owned config sub-keys to daemon');
+  } catch (err) {
+    logger.error('Failed to persist config to daemon', err as Error);
+    throw err;
   }
 }
 
 export async function setupConfigIPC() {
   logger.info('Setting up config IPC handlers');
 
-  // Use dynamic import to avoid ESM issues
-  if (!configStore) {
-    try {
-      const ElectronStore = (await import('electron-store')).default;
-      configStore = new ElectronStore({ name: 'workspace-config' });
-      logger.info('Initialized electron-store for config persistence');
-    } catch (err) {
-      logger.error('Failed to initialize electron-store', err as Error);
-      // Continue without persistence
-    }
-  }
-
   if (!configManager) {
     configManager = new ConfigManager();
 
-    // Load persisted config and apply to ConfigManager if store is available
+    // Hydrate the daemon-owned sub-keys of AppConfig from the daemon so the
+    // renderer sees canonical values. FE-local sub-keys stay at their in-memory
+    // defaults for the session.
     try {
-      if (configStore) {
-        const persistedConfig = configStore.get('config');
-        if (persistedConfig) {
-          // Apply persisted values to ConfigManager
-          for (const [key, value] of Object.entries(persistedConfig)) {
-            configManager.set(key as any, value);
-          }
-          logger.info('Loaded persisted configuration', {
-            hasWorkspaceRules: !!persistedConfig.workspaceRules,
-            workspaceRulesContent: persistedConfig.workspaceRules?.content?.substring(0, 100),
-          });
-        } else {
-          logger.info('No persisted configuration found, using defaults');
-        }
-      }
-
+      await hydrateFromDaemon(configManager);
       await configManager.initialize();
     } catch (err) {
       logger.error('Failed to initialize ConfigManager', err as Error);
@@ -95,12 +82,9 @@ export async function setupConfigIPC() {
       async (_evt, validated) => {
         try {
           if (!configManager) throw new Error('ConfigManager not initialized');
-
-          // If key is provided, use it; otherwise return all config
           if (validated.key) {
             return configManager.get(validated.key as any);
           }
-
           return configManager.getAll();
         } catch (err) {
           logger.error('config:get error', err as Error, { key: validated.key });
@@ -120,22 +104,20 @@ export async function setupConfigIPC() {
         try {
           if (!configManager) throw new Error('ConfigManager not initialized');
 
-          // Basic validation for value - ensure it's not undefined when not intended
           if (validated.value === undefined) {
             return { success: false, error: 'Config value cannot be undefined' };
           }
 
           configManager.set(validated.key, validated.value);
 
-          // Persist the entire config to electron-store if available
-          if (configStore) {
+          // Daemon-owned sub-keys are pushed to the daemon; FE-local sub-keys
+          // stay in-memory for the session.
+          if (isDaemonOwnedKey(validated.key)) {
             try {
-              const allConfig = configManager.getAll();
-              configStore.set('config', allConfig);
-              logger.debug('Persisted configuration change', { key: validated.key });
+              await pushDaemonKey(validated.key, validated.value);
+              logger.debug('Pushed daemon-owned config change', { key: validated.key });
             } catch (err) {
-              logger.warn('Failed to persist config change', err as Error);
-              // Continue - the change is still in memory
+              logger.warn('Failed to push config change to daemon', err as Error);
             }
           }
 
