@@ -30,8 +30,6 @@ import {
   loadSpecialistFiles,
   loadProjectSpecialistFiles,
   loadBundledSpecialistFiles,
-  migrateCustomSpecialistsFromStore,
-  migrateOverridesFromStore,
 } from '../../specialists/main/specialist-file-loader';
 import {
   mergeSpecialistsByPriority,
@@ -84,12 +82,6 @@ export interface EffectiveSpecialist {
   roleReminder?: string;
 }
 
-// ElectronStore instance for reading custom specialists (deprecated, migrated to files)
-// Using interface to avoid coupling to electron-store module at type level
-interface SettingsStoreInterface {
-  get(key: string): unknown;
-}
-let settingsStore: SettingsStoreInterface | null = null;
 let initPromise: Promise<void> | null = null;
 
 // Cache for file-based specialists (refreshed on demand)
@@ -130,12 +122,14 @@ function getCachedFileSpecialists(workspacePath?: string): SpecialistFile[] {
   );
 }
 
+let specialistsServiceInitialized = false;
+
 /**
- * Initialize the settings store (call once during app startup)
+ * Initialize the specialists service (call once during app startup).
  * This MUST be awaited before getEffectiveSpecialist is called.
  */
 export async function initSpecialistsService(): Promise<void> {
-  if (settingsStore) {
+  if (specialistsServiceInitialized) {
     return; // Already initialized
   }
   if (initPromise) {
@@ -143,29 +137,19 @@ export async function initSpecialistsService(): Promise<void> {
   }
   initPromise = (async () => {
     try {
-      const ElectronStore = (await import('electron-store')).default;
-      settingsStore = new ElectronStore({ name: 'settings' });
-      logger.info('Specialists service initialized with electron-store');
-
-      // Migrate any custom specialists from electron-store to file-based system
-      const migrationResult = await migrateCustomSpecialistsFromStore();
-      if (migrationResult.migrated > 0) {
-        logger.info(`Migrated ${migrationResult.migrated} custom specialists to file-based system`);
-      }
-
-      // Migrate any user overrides from electron-store to file-based system
-      const overridesResult = await migrateOverridesFromStore();
-      if (overridesResult.migrated > 0) {
-        logger.info(
-          `Migrated overrides for ${overridesResult.migrated} specialists to file-based system`,
-        );
-      }
+      // The one-time electron-store 'settings' → file-based specialist
+      // migrations (custom-specialists / specialists-overrides) are retired
+      // with the legacy `settings` store (PROTOCOL.md §5.12). Fresh-start
+      // posture: any user data still in the legacy store is not carried
+      // forward; users author specialists directly in ~/.augment/specialists.
+      logger.info('Specialists service initialized (file-based)');
 
       // Pre-load file-based specialists (includes bundled + user files)
       await refreshFileSpecialistsCache();
 
       // Cache GitHub auth status for synchronous specialist filtering
       await refreshGitHubAuthStatus();
+      specialistsServiceInitialized = true;
     } catch (error) {
       logger.error('Failed to initialize specialists service', error as Error);
     }
