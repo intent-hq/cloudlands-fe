@@ -235,6 +235,20 @@ function valueForResult(definition: AppSettingDefinition, value: unknown): unkno
 }
 
 async function readDefinitionValue(definition: AppSettingDefinition): Promise<unknown> {
+  // Path-based P3-4 owner routing takes precedence over the (post-B7 legacy)
+  // `source` label — schema entries may now carry `daemon-settings` or
+  // `local-storage` while still belonging to a daemon-settings / providers-
+  // paths / local-prefs owner in `readElectronStoreOwner`. `valuePath` is
+  // handled inside that helper for `providers.paths.*` sub-keys.
+  if (
+    definition.path in DAEMON_SETTING_PATHS ||
+    definition.path in PROVIDER_PATH_KEYS ||
+    definition.path in LOCAL_PREF_KEYS
+  ) {
+    const rawValue = await readElectronStoreOwner(definition);
+    return rawValue === undefined ? definition.defaultValue : rawValue;
+  }
+
   let rawValue: unknown;
   if (definition.source === 'static') {
     rawValue = definition.defaultValue;

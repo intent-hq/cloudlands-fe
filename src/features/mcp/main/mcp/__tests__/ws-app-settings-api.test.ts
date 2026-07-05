@@ -107,7 +107,7 @@ describe('buildWsAppSettingsApi', () => {
     });
     expect(result).toMatchObject({
       path: 'workspace.branchPrefix',
-      source: 'electron-store',
+      source: 'daemon-settings',
       value: 'feature/',
     });
     expect(localPrefSpy).not.toHaveBeenCalled();
