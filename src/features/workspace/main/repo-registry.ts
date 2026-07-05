@@ -34,8 +34,7 @@ async function pushRepos(repos: KnownRepo[]): Promise<void> {
   try {
     const { getBackendClient } = await import('../../backend/main/backend.ipc');
     await getBackendClient().request('settings.update', {
-      path: SETTING_PATH,
-      value: repos,
+      changes: [{ path: SETTING_PATH, value: repos }],
     });
   } catch (error) {
     logger.error('Failed to persist repos on daemon', error as Error);

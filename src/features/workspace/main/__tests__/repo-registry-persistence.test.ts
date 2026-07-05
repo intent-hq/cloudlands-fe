@@ -47,19 +47,19 @@ describe('repo-registry ↔ daemon settings.* (PROTOCOL.md §5.12)', () => {
     expect(getAllRepos()[0].path).toBe('/a');
   });
 
-  it('addRepo pushes the updated list via settings.update', async () => {
+  it('addRepo pushes the updated list via settings.update { changes: [...] }', async () => {
     const { initRepoRegistry, addRepo } = await import('../repo-registry');
     await initRepoRegistry();
     requestMock.mockClear();
     addRepo({ path: '/b', name: 'b' });
     await flush();
-    expect(requestMock).toHaveBeenCalledWith(
-      'settings.update',
-      expect.objectContaining({ path: 'repos.known' }),
-    );
-    const [, body] = requestMock.mock.calls[0];
-    const payload = body as { value: unknown[] };
-    expect(payload.value).toHaveLength(1);
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    const [method, params] = requestMock.mock.calls[0];
+    expect(method).toBe('settings.update');
+    const body = params as { changes: { path: string; value: unknown[] }[] };
+    expect(body.changes).toHaveLength(1);
+    expect(body.changes[0].path).toBe('repos.known');
+    expect(body.changes[0].value).toHaveLength(1);
   });
 
   it('removeRepo pushes the updated list when a repo is removed', async () => {
@@ -72,10 +72,9 @@ describe('repo-registry ↔ daemon settings.* (PROTOCOL.md §5.12)', () => {
     requestMock.mockClear();
     expect(removeRepo('/a')).toBe(true);
     await flush();
-    expect(requestMock).toHaveBeenCalledWith(
-      'settings.update',
-      expect.objectContaining({ path: 'repos.known' }),
-    );
+    expect(requestMock).toHaveBeenCalledWith('settings.update', {
+      changes: [{ path: 'repos.known', value: [] }],
+    });
   });
 
   it('clearRepos pushes an empty list', async () => {
@@ -90,8 +89,55 @@ describe('repo-registry ↔ daemon settings.* (PROTOCOL.md §5.12)', () => {
     await flush();
     expect(getAllRepos()).toHaveLength(0);
     expect(requestMock).toHaveBeenCalledWith('settings.update', {
-      path: 'repos.known',
-      value: [],
+      changes: [{ path: 'repos.known', value: [] }],
     });
+  });
+
+  it('pushes exactly the { changes: [{ path, value }] } wire shape (regression for B1)', async () => {
+    const { initRepoRegistry, addRepo } = await import('../repo-registry');
+    await initRepoRegistry();
+    requestMock.mockClear();
+    addRepo({ path: '/c', name: 'c', owner: 'me' });
+    await flush();
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    const [method, params] = requestMock.mock.calls[0];
+    expect(method).toBe('settings.update');
+    // Top-level params MUST be { changes: [...] } — never { path, value }.
+    expect(params).toHaveProperty('changes');
+    expect(params).not.toHaveProperty('path');
+    expect(params).not.toHaveProperty('value');
+    const body = params as { changes: { path: string; value: unknown }[] };
+    expect(Array.isArray(body.changes)).toBe(true);
+    expect(body.changes[0]).toMatchObject({ path: 'repos.known' });
+    expect(Array.isArray(body.changes[0].value)).toBe(true);
+  });
+
+  it('logs push failures so daemon RPC errors (e.g. -32602) are visible', async () => {
+    const errorSpy = vi.fn();
+    vi.doMock('../../../../shared/logger', () => ({
+      Logger: class {
+        info() {}
+        warn() {}
+        debug() {}
+        error = errorSpy;
+      },
+    }));
+    vi.resetModules();
+    const { initRepoRegistry, addRepo, __resetRepoRegistryForTesting } = await import(
+      '../repo-registry'
+    );
+    __resetRepoRegistryForTesting();
+    await initRepoRegistry();
+    requestMock.mockClear();
+    const rpcError = Object.assign(new Error('invalid params'), { code: -32602 });
+    requestMock.mockRejectedValueOnce(rpcError);
+    addRepo({ path: '/d', name: 'd' });
+    await flush();
+    await flush();
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to persist repos on daemon'),
+      rpcError,
+    );
+    vi.doUnmock('../../../../shared/logger');
   });
 });
