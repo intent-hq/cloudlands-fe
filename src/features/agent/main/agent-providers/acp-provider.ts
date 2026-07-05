@@ -2746,11 +2746,32 @@ export class ACPProvider extends BaseAgentProvider {
             if (this.config.simpleRequest) {
               logger.info('Skipping user MCP servers for simple/background request');
             } else {
-              // Check if user MCP servers feature is enabled in settings
-              // Use dynamic import since we're in ESM context
-              const ElectronStore = (await import('electron-store')).default;
-              const settingsStore = new ElectronStore({ name: 'settings' });
-              const enableUserMcpServers = settingsStore.get('enableUserMcpServers', true);
+              // Read the feature flag through the daemon (PROTOCOL.md §5.12
+              // `settings.get`) — the legacy `settings` electron-store is
+              // retired in the daemon-backed build. Schema default (true)
+              // covers the "value unset" path.
+              const { getBackendClient } = await import(
+                '../../../backend/main/backend.ipc'
+              );
+              let enableUserMcpServers = true;
+              try {
+                const result = (await getBackendClient().request('settings.get', {
+                  path: 'mcp.enableUserServers',
+                })) as { value?: unknown } | null;
+                if (typeof result?.value === 'boolean') {
+                  enableUserMcpServers = result.value;
+                }
+              } catch (settingsError) {
+                logger.warn(
+                  'Failed to read mcp.enableUserServers from daemon; defaulting to true',
+                  {
+                    error:
+                      settingsError instanceof Error
+                        ? settingsError.message
+                        : String(settingsError),
+                  },
+                );
+              }
 
               logger.info('User MCP servers feature flag value', { enableUserMcpServers });
 
@@ -3094,9 +3115,32 @@ export class ACPProvider extends BaseAgentProvider {
         // Skip user MCP servers for simple/background requests
         if (!this.config.simpleRequest) {
           try {
-            const ElectronStore = (await import('electron-store')).default;
-            const settingsStore = new ElectronStore({ name: 'settings' });
-            const enableUserMcpServers = settingsStore.get('enableUserMcpServers', true);
+            // Read the feature flag through the daemon (PROTOCOL.md §5.12
+            // `settings.get`) — the legacy `settings` electron-store is
+            // retired in the daemon-backed build. Schema default (true)
+            // covers the "value unset" path.
+            const { getBackendClient } = await import(
+              '../../../backend/main/backend.ipc'
+            );
+            let enableUserMcpServers = true;
+            try {
+              const result = (await getBackendClient().request('settings.get', {
+                path: 'mcp.enableUserServers',
+              })) as { value?: unknown } | null;
+              if (typeof result?.value === 'boolean') {
+                enableUserMcpServers = result.value;
+              }
+            } catch (settingsError) {
+              logger.warn(
+                'Failed to read mcp.enableUserServers from daemon; defaulting to true',
+                {
+                  error:
+                    settingsError instanceof Error
+                      ? settingsError.message
+                      : String(settingsError),
+                },
+              );
+            }
 
             if (enableUserMcpServers) {
               const userServers = await readUserMcpServers();
