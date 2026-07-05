@@ -3,10 +3,9 @@
  *
  * Covers both the user-driven rename path (no skipIfExplicitlySet) and the
  * MCP agent-driven path (skipIfExplicitlySet=true). Disk I/O is delegated to
- * `UnifiedPersistence.renameAgent`; these tests mock that method so they
- * assert only the helper's orchestration (validation, delegation, in-memory
- * sync, broadcast). Actual write-queue / checksum behaviour is covered by
- * `unified-persistence-rename.test.ts`.
+ * `daemonAgentBridge.saveAgent` (which maps to `agent.update`, PROTOCOL.md
+ * §5.5); these tests mock that method so they assert only the helper's
+ * orchestration (validation, delegation, in-memory sync, broadcast).
  */
 
 import {
@@ -46,23 +45,19 @@ vi.mock('$features/events/types', () => ({
   WorkspaceEventType: { AgentRenamed: 'agent:renamed' },
 }));
 
-const renameAgent = vi.fn<
-  (
-    agentId: string,
-    workspaceId: string,
-    name: string,
-    options?: { skipIfExplicitlySet?: boolean; workspacePath?: string },
-  ) => Promise<{ ok: boolean; name: string; skipped?: boolean; error?: string }>
+const saveAgent = vi.fn<
+  (agent: { id: string; workspaceId: string; name?: string; nameExplicitlySet?: boolean }) =>
+    Promise<{ success: boolean; error?: string }>
 >();
-const invalidateLoadCache = vi.fn();
-vi.mock('../agent-persistence', () => ({
-  UnifiedPersistence: {
-    getInstance: () => ({ renameAgent, invalidateLoadCache }),
-  },
-}));
-
+const loadAgentSummary = vi.fn<
+  (agentId: string, workspaceId: string) => Promise<{
+    success: boolean;
+    data?: { name?: string; nameExplicitlySet?: boolean };
+    error?: string;
+  }>
+>();
 vi.mock('../daemon-agent-bridge', () => ({
-  daemonAgentBridge: { renameAgent, invalidateLoadCache },
+  daemonAgentBridge: { saveAgent, loadAgentSummary },
 }));
 
 const getSession = vi.fn();
@@ -78,13 +73,13 @@ describe('renameAgentOnDisk', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    renameAgent.mockReset();
-    invalidateLoadCache.mockReset();
+    saveAgent.mockReset();
+    loadAgentSummary.mockReset();
     getSession.mockReset();
   });
 
-  it('delegates to UnifiedPersistence.renameAgent, invalidates cache, and broadcasts', async () => {
-    renameAgent.mockResolvedValue({ ok: true, name: 'New Name' });
+  it('delegates to daemonAgentBridge.saveAgent and broadcasts', async () => {
+    saveAgent.mockResolvedValue({ success: true });
     const session: { name?: string; nameExplicitlySet?: boolean } = { name: 'Old Name' };
     getSession.mockReturnValue(session);
 
@@ -93,10 +88,13 @@ describe('renameAgentOnDisk', () => {
     const result = await renameAgentOnDisk({ workspaceId, agentId, name: 'New Name' });
 
     expect(result).toEqual({ ok: true, name: 'New Name' });
-    expect(renameAgent).toHaveBeenCalledWith(agentId, workspaceId, 'New Name', {
-      skipIfExplicitlySet: false,
+    expect(loadAgentSummary).not.toHaveBeenCalled();
+    expect(saveAgent).toHaveBeenCalledWith({
+      id: agentId,
+      workspaceId,
+      name: 'New Name',
+      nameExplicitlySet: true,
     });
-    expect(invalidateLoadCache).toHaveBeenCalledTimes(1);
     expect(session.name).toBe('New Name');
     expect(session.nameExplicitlySet).toBe(true);
     expect(createWorkspaceEvent).toHaveBeenCalledWith('agent:renamed', workspaceId, {
@@ -106,12 +104,6 @@ describe('renameAgentOnDisk', () => {
       agentId,
       workspaceId,
       name: 'New Name',
-    });
-    expect(emitWorkspaceEvent).toHaveBeenCalledWith({
-      eventType: 'agent:renamed',
-      workspaceId,
-      actor: { type: 'user', id: 'user' },
-      data: { agentId, workspaceId, name: 'New Name' },
     });
     expect(mainDispatch).toHaveBeenCalledWith({
       type: 'workspaceEvents/emitWorkspaceEvent',
@@ -124,8 +116,11 @@ describe('renameAgentOnDisk', () => {
     });
   });
 
-  it('passes skipIfExplicitlySet through for the MCP path and honours skipped results', async () => {
-    renameAgent.mockResolvedValue({ ok: true, name: 'User Chosen', skipped: true });
+  it('honours skipIfExplicitlySet by consulting the daemon summary first', async () => {
+    loadAgentSummary.mockResolvedValue({
+      success: true,
+      data: { name: 'User Chosen', nameExplicitlySet: true },
+    });
     const session: { name?: string; nameExplicitlySet?: boolean } = { name: 'Old' };
     getSession.mockReturnValue(session);
 
@@ -139,30 +134,25 @@ describe('renameAgentOnDisk', () => {
     });
 
     expect(result).toEqual({ ok: true, name: 'User Chosen', skipped: true });
-    expect(renameAgent).toHaveBeenCalledWith(agentId, workspaceId, 'Agent Suggested', {
-      skipIfExplicitlySet: true,
-    });
-    // Skipped path still syncs the in-memory session with the disk name.
+    expect(loadAgentSummary).toHaveBeenCalledWith(agentId, workspaceId);
+    expect(saveAgent).not.toHaveBeenCalled();
     expect(session.name).toBe('User Chosen');
     expect(session.nameExplicitlySet).toBe(true);
-    // No broadcast on skip — other windows already have the correct name.
     expect(mainDispatch).not.toHaveBeenCalled();
-    // Skipped path must not invalidate the cache (nothing changed on disk).
-    expect(invalidateLoadCache).not.toHaveBeenCalled();
   });
 
-  it('throws when the persistence layer reports failure', async () => {
-    renameAgent.mockResolvedValue({ ok: false, name: 'New', error: 'disk full' });
+  it('throws when the daemon reports a save failure', async () => {
+    saveAgent.mockResolvedValue({ success: false, error: 'daemon offline' });
 
     const { renameAgentOnDisk } = await import('../agent-rename');
 
     await expect(
       renameAgentOnDisk({ workspaceId, agentId, name: 'New' }),
-    ).rejects.toThrow('disk full');
+    ).rejects.toThrow('daemon offline');
     expect(mainDispatch).not.toHaveBeenCalled();
   });
 
-  it('rejects empty and whitespace-only names before touching persistence', async () => {
+  it('rejects empty and whitespace-only names before touching the daemon', async () => {
     const { renameAgentOnDisk } = await import('../agent-rename');
 
     await expect(renameAgentOnDisk({ workspaceId, agentId, name: '' })).rejects.toThrow(
@@ -171,6 +161,7 @@ describe('renameAgentOnDisk', () => {
     await expect(renameAgentOnDisk({ workspaceId, agentId, name: '   ' })).rejects.toThrow(
       'name must not be empty or whitespace-only',
     );
-    expect(renameAgent).not.toHaveBeenCalled();
+    expect(saveAgent).not.toHaveBeenCalled();
+    expect(loadAgentSummary).not.toHaveBeenCalled();
   });
 });
