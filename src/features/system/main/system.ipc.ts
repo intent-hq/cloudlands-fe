@@ -17,7 +17,6 @@ import {
   collectOpenWorkspaceIds,
   collectWindowIdsForWorkspace,
 } from './window-workspace-tracking';
-import ElectronStore from 'electron-store';
 import { createRequire } from 'module';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -30,9 +29,6 @@ import {
   DialogSaveSchema,
   EmptySchema,
   JetbrainsOpenSchema,
-  SettingsGetSchema,
-  SettingsSetSchema,
-  SettingsUpdateSchema,
   ShellOpenExternalSchema,
   ShellShowItemInFolderSchema,
   ShellInstallCliSchema,
@@ -73,7 +69,6 @@ import {
   DIALOG_CHANNELS,
   JETBRAINS_CHANNELS,
   LEGACY_CHANNELS,
-  SETTINGS_CHANNELS,
   SHELL_CHANNELS,
   SYSTEM_CHANNELS,
   USER_MCP_CHANNELS,
@@ -2157,64 +2152,13 @@ export function setupSystemIPC() {
     ),
   );
 
-  // Settings (using electron-store) — legacy facade retained here for
-  // compatibility with the mock IPC router §5.12 shim; the daemon-owned
-  // catalog is the source of truth. The former one-time
-  // `migrations.betaUpdatesResetV1` reset is retired — `betaUpdatesEnabled`
-  // now lives in `main/local-prefs.ts` and defaults to `false` there.
-  const settingsStore: any = new ElectronStore({ name: 'settings' });
-
-  ipcMain.handle(
-    SETTINGS_CHANNELS.GET,
-    createSafeValidatedHandler(
-      SettingsGetSchema,
-      async (_event, validated) => ({
-        success: true,
-        data: settingsStore.get(validated.key),
-      }),
-      SETTINGS_CHANNELS.GET,
-    ),
-  );
-
-  ipcMain.handle(
-    SETTINGS_CHANNELS.SET,
-    createSafeValidatedHandler(
-      SettingsSetSchema,
-      async (_event, validated) => {
-        settingsStore.set(validated.key, validated.value);
-        return { success: true };
-      },
-      SETTINGS_CHANNELS.SET,
-    ),
-  );
-
-  ipcMain.handle(
-    SETTINGS_CHANNELS.GET_ALL,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async () => ({
-        success: true,
-        data: settingsStore.store,
-      }),
-      SETTINGS_CHANNELS.GET_ALL,
-    ),
-  );
-
-  ipcMain.handle(
-    SETTINGS_CHANNELS.UPDATE,
-    createSafeValidatedHandler(
-      SettingsUpdateSchema,
-      async (_event, validated) => {
-        if (validated.settings && typeof validated.settings === 'object') {
-          for (const [key, value] of Object.entries(validated.settings)) {
-            settingsStore.set(key, value);
-          }
-        }
-        return { success: true };
-      },
-      SETTINGS_CHANNELS.UPDATE,
-    ),
-  );
+  // Settings (`settings:get/set/update/getAll`) — the main-side
+  // electron-store facade is retired (PROTOCOL.md §5.12). The
+  // renderer-side mock-IPC bridge (`settings-legacy-bridge-seeder.ts`)
+  // routes every legacy `settings:*` call to the daemon settings catalog
+  // (or to namespaced localStorage for the FE-only keys); no main-side
+  // handler is needed in the daemon-backed build. The `SETTINGS_CHANNELS`
+  // constants remain exported for the bridge seeder + its tests.
 
   // User MCP Settings (~/.augment/settings.json)
   ipcMain.handle(
