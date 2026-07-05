@@ -1578,9 +1578,11 @@ app.whenReady().then(async () => {
       logger.debug('Error auto-repairing CLI symlink on startup', { error });
     }
 
-    // Warm rtk detection cache (non-blocking, non-critical)
-    const { detectRtk } = await import('../features/agent/main/rtk-detector');
+    // Warm rtk detection cache and hydrate the FE-local rtkEnabled flag
+    // (non-blocking, non-critical).
+    const { detectRtk, initRtkEnabled } = await import('../features/agent/main/rtk-detector');
     detectRtk().catch(() => {});
+    initRtkEnabled().catch(() => {});
 
     startupMetrics.end('secondaryIPC');
     logger.info('All secondary IPC handlers registered successfully');
