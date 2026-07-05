@@ -262,6 +262,89 @@ describe("agent-ipc-bridge-seeder", () => {
       expect(Object.keys(call)).not.toContain("noteIds");
       expect(Object.keys(call)).not.toContain("stdinContext");
     });
+
+    it("forwards the remaining stream payload (fileBlocks / model / messageMetadata + app-ID trio) to agent.sendMessage", async () => {
+      // The FE `agent-stream-lifecycle` threads these fields into
+      // STREAM_MESSAGE alongside the previously-covered context payload:
+      // `fileBlocks` (attached files, L1468), `model` (per-turn model
+      // override, L1465), and the pre-assigned app-ID trio (userAppMessageId
+      // L1484, assistantMessageId L1483, assistantAppMessageId L1485). The
+      // daemon router does not consume them today — Fidelity A widened it to
+      // accept `fileBlocks`, the rest remain a documented daemon-gap — but
+      // forwarding here keeps the BE as the single fix site when the router
+      // is widened. `messageMetadata` is future-proofed for the widened
+      // wire (only main-process backend-initiated flows emit it today, per
+      // `src/features/agent/main/auto-commit.service.ts:193`).
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-x" });
+
+      const fileBlocks = [
+        { type: "file", data: "abc", mimeType: "text/plain", fileName: "notes.txt" },
+      ];
+      const messageMetadata = { type: "auto_commit_hook_failure", retryCount: 1 };
+      await mockInvoke(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+        fileBlocks,
+        model: "claude-opus",
+        messageMetadata,
+        assistantMessageId: "msg_00000000-0000-0000-0000-000000000001",
+        assistantAppMessageId: "app-asst-1",
+        userAppMessageId: "app-user-1",
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.sendMessage", {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+        fileBlocks,
+        model: "claude-opus",
+        messageMetadata,
+        assistantMessageId: "msg_00000000-0000-0000-0000-000000000001",
+        assistantAppMessageId: "app-asst-1",
+        userAppMessageId: "app-user-1",
+      });
+    });
+
+    it("audit: personality / queuedMessageId / queuedMessageAppMessageId are documented dead surface and NOT forwarded to agent.sendMessage", async () => {
+      // These three fields have no live renderer producer at HEAD (see the
+      // bridge doc-comment for file:line evidence). Assert the bridge strips
+      // them from the JSON-RPC params so a future accidental producer
+      // surfaces the audit gap explicitly rather than silently piggy-backing
+      // on the bridge's forwarding.
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-audit" });
+      await mockInvoke(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+        personality: "auggie-personality-agent-default",
+        queuedMessageId: "q-1",
+        queuedMessageAppMessageId: "app-q-1",
+      });
+      const call = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(Object.keys(call)).not.toContain("personality");
+      expect(Object.keys(call)).not.toContain("queuedMessageId");
+      expect(Object.keys(call)).not.toContain("queuedMessageAppMessageId");
+    });
+
+    it("omits fileBlocks / model / messageMetadata / app-ID trio when the caller does not supply them", async () => {
+      // Regression guard mirroring the context-fields omission test above:
+      // when the caller supplies only the required trio, none of the newly
+      // forwarded fields must surface in the JSON-RPC params.
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-p" });
+      await mockInvoke(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+      });
+      const call = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(Object.keys(call)).not.toContain("fileBlocks");
+      expect(Object.keys(call)).not.toContain("model");
+      expect(Object.keys(call)).not.toContain("messageMetadata");
+      expect(Object.keys(call)).not.toContain("assistantMessageId");
+      expect(Object.keys(call)).not.toContain("assistantAppMessageId");
+      expect(Object.keys(call)).not.toContain("userAppMessageId");
+    });
   });
 
   describe("agent:backend:queue-message → daemon agent.queueMessage", () => {

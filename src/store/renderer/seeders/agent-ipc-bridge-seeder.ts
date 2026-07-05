@@ -41,6 +41,21 @@ function readString(record: Record<string, unknown>, key: string): string | unde
 }
 
 /**
+ * Best-effort plain-object read for an optional record field. Rejects
+ * `null`, arrays, and non-object values so we never smuggle a primitive
+ * into a JSON-RPC param slot that the daemon expects to be an object.
+ */
+function readRecord(
+  record: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | undefined {
+  const value = record[key];
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/**
  * Forward a request to the daemon and wrap the response in the
  * `{success:true, data: <daemonBody>}` envelope `unifiedOrchestrator`'s
  * `unwrapIpcResponse` expects (returns `result.data` only when both
@@ -134,6 +149,43 @@ registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
  * forwarded directly without an outer envelope. Auto-queue (when the daemon
  * reports the turn in-flight) surfaces via `queued: true` and is honored by
  * the FE without any further intervention here.
+ *
+ * Forwarded fields (on top of the required agentId/workspaceId/content):
+ *   messageId, imageBlocks, fileBlocks, model, messageMetadata,
+ *   contextReferences, noteIds, stdinContext,
+ *   assistantMessageId, assistantAppMessageId, userAppMessageId.
+ *
+ * The current daemon `agent.sendMessage` router (packages/intentd/crates/
+ * intent-transport/src/router.rs) extracts only the required trio plus
+ * `messageId` / `imageBlocks` / `fileBlocks`, so the remaining forwarded
+ * fields land in the JSON-RPC params but are silently dropped by the BE
+ * today -- a documented daemon-side gap. Forwarding them here removes the
+ * FE-side loss and keeps the BE as the single fix site when the router is
+ * widened. Producers for the app-ID trio live in
+ * `src/features/agent/agent-stream-lifecycle.ts` (userAppMessageId L834,
+ * assistantMessageId L863, assistantAppMessageId L864; threaded into the
+ * invoke at L1483–1485).
+ *
+ * Audit-only fields intentionally NOT forwarded (dead surface at the
+ * FE→bridge boundary at HEAD; documented so a future producer surfaces
+ * the gap explicitly instead of being silently accepted):
+ *  - `personality`: declared on `sendMessage`'s option type
+ *    (`src/features/agent/agent-stream-lifecycle.ts` L681) and threaded to
+ *    the invoke at L1470, but no producer populates it — chat-send-service
+ *    (`src/features/agent/chat-send-service.ts` L169–172) only forwards
+ *    `imageBlocks` / `noteIds`, and `CodeReviewPanel.svelte:242` only
+ *    sets `stdinContext`. `SendMessagePayload`
+ *    (`src/store/renderer/slices/chat-state/chat-state-types.ts` L80–100)
+ *    has no `personality` field. `@personality` mentions inline their
+ *    promptToken into message text via the mentions provider
+ *    (`src/lib/services/mentions/providers/index.ts` L351).
+ *  - `queuedMessageId`: captured on the Redux `sendMessage` action at
+ *    `src/lib/components/chat/ChatPanel.svelte:2248`, but chat-send-service
+ *    (`src/features/agent/chat-send-service.ts` L169–172) drops it before
+ *    calling the lifecycle send, so it never reaches STREAM_MESSAGE from
+ *    the renderer.
+ *  - `queuedMessageAppMessageId`: no renderer producer (only main-process
+ *    `agent-backend-handler.service.ts` L9503 mints it on the wake path).
  */
 registerMockIpcHandler(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, async (arg) => {
   const request = asRecord(arg);
@@ -147,21 +199,23 @@ registerMockIpcHandler(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, async (arg) => {
   const messageId = readString(request, "messageId");
   if (messageId) params.messageId = messageId;
   if (Array.isArray(request.imageBlocks)) params.imageBlocks = request.imageBlocks;
-  // Forward the context-carrying fields the FE `agent-stream-lifecycle`
-  // stream-message call assembles from user input (context references,
-  // attached notes, and the stdin-context blob). The current daemon
-  // `agent.sendMessage` router (packages/intentd/crates/intent-transport/
-  // src/router.rs) only extracts `messageId` / `imageBlocks` on top of
-  // the required trio, so these forwarded fields land in the JSON-RPC
-  // params but are silently dropped by the BE today -- a documented
-  // daemon-side gap. Forwarding them here removes the FE-side loss and
-  // makes the BE the single fix site when the router is widened.
+  if (Array.isArray(request.fileBlocks)) params.fileBlocks = request.fileBlocks;
+  const model = readString(request, "model");
+  if (model) params.model = model;
+  const messageMetadata = readRecord(request, "messageMetadata");
+  if (messageMetadata) params.messageMetadata = messageMetadata;
   if (Array.isArray(request.contextReferences)) {
     params.contextReferences = request.contextReferences;
   }
   if (Array.isArray(request.noteIds)) params.noteIds = request.noteIds;
   const stdinContext = readString(request, "stdinContext");
   if (stdinContext) params.stdinContext = stdinContext;
+  const assistantMessageId = readString(request, "assistantMessageId");
+  if (assistantMessageId) params.assistantMessageId = assistantMessageId;
+  const assistantAppMessageId = readString(request, "assistantAppMessageId");
+  if (assistantAppMessageId) params.assistantAppMessageId = assistantAppMessageId;
+  const userAppMessageId = readString(request, "userAppMessageId");
+  if (userAppMessageId) params.userAppMessageId = userAppMessageId;
   try {
     return await backendRequest("agent.sendMessage", params);
   } catch (error) {
