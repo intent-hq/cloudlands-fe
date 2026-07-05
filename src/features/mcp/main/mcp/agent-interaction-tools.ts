@@ -71,7 +71,7 @@ import {
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
 import { getCachedModelsForProvider } from '../../../../main/utils/model-pool';
-import { agentPersistence } from '$features/agent/main/agent-persistence';
+import { getBackendClient } from '$features/backend/main/backend.ipc';
 import { protocolAdapter } from '$features/protocol/main/protocol-adapter';
 import { notesService } from '$features/notes/main/notes.service';
 import { isAutoCommitEnabled } from '$features/workspace/main/workspace-settings.service';
@@ -104,14 +104,13 @@ const MAX_DELEGATION_DEPTH = 2;
  */
 async function getDelegationDepth(workspaceId: string, agentId: string): Promise<number> {
   try {
-    const loadResult = await agentPersistence.loadAgent(
-      createAgentId(agentId),
-      createWorkspaceId(workspaceId),
-    );
-    if (loadResult.success && loadResult.data) {
-      return (loadResult.data.metadata?.delegationDepth as number) ?? 0;
-    }
-    return 0;
+    // PROTOCOL.md §5.5: agent.get returns the AgentLite projection whose
+    // metadata carries the persisted delegationDepth (P3-1.2b gap field).
+    const result = (await getBackendClient().request('agent.get', {
+      agentId,
+      workspaceId,
+    })) as { agent?: { metadata?: { delegationDepth?: number } } };
+    return (result.agent?.metadata?.delegationDepth as number) ?? 0;
   } catch (error) {
     logger.warn('Failed to get delegation depth, defaulting to 0', { agentId, error });
     return 0;
@@ -201,11 +200,11 @@ async function shouldSkipPassiveCompletionSubscription(
   if (!callerId || callerId === 'unknown-agent') return true;
 
   try {
-    const loadResult = await agentPersistence.loadAgent(
-      createAgentId(callerId),
-      createWorkspaceId(workspaceId),
-    );
-    return loadResult?.success === true && isDelegatedBackgroundTaskSession(loadResult.data);
+    const result = (await getBackendClient().request('agent.get', {
+      agentId: callerId,
+      workspaceId,
+    })) as { agent?: Parameters<typeof isDelegatedBackgroundTaskSession>[0] };
+    return isDelegatedBackgroundTaskSession(result.agent ?? null);
   } catch (error) {
     logger.debug('Could not inspect caller before passive completion subscription', {
       workspaceId,
@@ -2355,10 +2354,16 @@ export class GetAgentStatusTool extends BaseMCPTool {
       let presentInBackend = true;
 
       if (!agent) {
-        const loadResult = await agentPersistence.loadAgent(AgentId(agentId), WorkspaceId(this.workspaceId));
-        if (loadResult.success && loadResult.data) {
-          agent = loadResult.data;
-        } else {
+        try {
+          const result = (await getBackendClient().request('agent.get', {
+            agentId,
+            workspaceId: this.workspaceId,
+          })) as { agent?: any };
+          agent = result.agent ?? null;
+        } catch (_error) {
+          agent = null;
+        }
+        if (!agent) {
           const agents = await handler.listAllAgents(this.workspaceId);
           agent = agents.find((candidate: any) => candidate.id === agentId) ?? null;
         }
@@ -2461,12 +2466,16 @@ The snapshot includes agent statuses, subscriptions, queues, delegation groups, 
         agents.map(async (agent: any) => {
           let diagnosticAgent = agent;
           if (agentId && agent.id === agentId && !activeAgentIds.has(agent.id)) {
-            const loadResult = await agentPersistence.loadAgent(
-              AgentId(agent.id),
-              WorkspaceId(this.workspaceId),
-            );
-            if (loadResult?.success && loadResult.data) {
-              diagnosticAgent = loadResult.data;
+            try {
+              const result = (await getBackendClient().request('agent.get', {
+                agentId: agent.id,
+                workspaceId: this.workspaceId,
+              })) as { agent?: any };
+              if (result.agent) {
+                diagnosticAgent = result.agent;
+              }
+            } catch (_error) {
+              // Fall through; keep the listAllAgents snapshot as the default.
             }
           }
           return {
@@ -3015,18 +3024,32 @@ This is useful when:
         endTurn,
       });
 
-      // Load the agent's conversation from persistence
-      const loadResult = await agentPersistence.loadAgent(
-        AgentId(agentId),
-        WorkspaceId(this.workspaceId),
-      );
-
-      if (!loadResult.success || !loadResult.data) {
+      // Fetch metadata + conversation from the daemon (PROTOCOL.md §5.5).
+      // agent.get returns the AgentLite projection; agent.getConversation
+      // returns the transcript page (capped daemon-side to the newest limit).
+      let agent: any;
+      let allMessages: any[];
+      try {
+        const [agentResult, convResult] = await Promise.all([
+          getBackendClient().request('agent.get', {
+            agentId,
+            workspaceId: this.workspaceId,
+          }) as Promise<{ agent?: any }>,
+          getBackendClient().request('agent.getConversation', {
+            agentId,
+            workspaceId: this.workspaceId,
+          }) as Promise<{ messages?: any[] }>,
+        ]);
+        if (!agentResult.agent) {
+          return this.error(`Agent "${agentId}" not found or could not be loaded`);
+        }
+        agent = agentResult.agent;
+        allMessages = convResult.messages ?? [];
+      } catch (_error) {
         return this.error(`Agent "${agentId}" not found or could not be loaded`);
       }
 
-      const agent = loadResult.data;
-      let messages = agent.messages || [];
+      let messages = allMessages;
 
       // Apply filtering
       if (startTurn !== undefined || endTurn !== undefined) {
@@ -3041,7 +3064,7 @@ This is useful when:
       const lines: string[] = [
         `## Conversation History for Agent "${agent.name}"`,
         `Agent ID: ${agentId}`,
-        `Total messages: ${agent.messages?.length || 0}`,
+        `Total messages: ${allMessages.length}`,
         `Showing: ${messages.length} messages`,
         '',
       ];
@@ -3094,7 +3117,7 @@ This is useful when:
       return this.success(lines.join('\n'), {
         agentId,
         agentName: agent.name,
-        totalMessages: agent.messages?.length || 0,
+        totalMessages: allMessages.length,
         returnedMessages: messages.length,
         taskNoteId: agent.metadata?.taskNoteId,
       });
@@ -3145,18 +3168,28 @@ Use this for a quick overview before deciding whether to read the full conversat
         requestedBy: ctx.agentId,
       });
 
-      // Load the agent from persistence
-      const loadResult = await agentPersistence.loadAgent(
-        AgentId(agentId),
-        WorkspaceId(this.workspaceId),
-      );
-
-      if (!loadResult.success || !loadResult.data) {
+      // Fetch metadata + conversation from the daemon (PROTOCOL.md §5.5).
+      let agent: any;
+      let messages: any[];
+      try {
+        const [agentResult, convResult] = await Promise.all([
+          getBackendClient().request('agent.get', {
+            agentId,
+            workspaceId: this.workspaceId,
+          }) as Promise<{ agent?: any }>,
+          getBackendClient().request('agent.getConversation', {
+            agentId,
+            workspaceId: this.workspaceId,
+          }) as Promise<{ messages?: any[] }>,
+        ]);
+        if (!agentResult.agent) {
+          return this.error(`Agent "${agentId}" not found or could not be loaded`);
+        }
+        agent = agentResult.agent;
+        messages = convResult.messages ?? [];
+      } catch (_error) {
         return this.error(`Agent "${agentId}" not found or could not be loaded`);
       }
-
-      const agent = loadResult.data;
-      const messages = agent.messages || [];
 
       // Find last assistant message
       let lastResponse = '';
@@ -3303,17 +3336,22 @@ If you were created directly by a user, this tool will return an error.`,
         reportLength: report.length,
       });
 
-      // Load the agent from persistence to check if it's a delegated agent
-      const loadResult = await agentPersistence.loadAgent(
-        AgentId(ctx.agentId),
-        WorkspaceId(this.workspaceId),
-      );
-
-      if (!loadResult.success || !loadResult.data) {
+      // Fetch the AgentLite projection from the daemon (PROTOCOL.md §5.5
+      // agent.get) so we can gate the tool on delegated-agent status before
+      // asking the daemon to persist the completion report.
+      let agent: any;
+      try {
+        const result = (await getBackendClient().request('agent.get', {
+          agentId: ctx.agentId,
+          workspaceId: this.workspaceId,
+        })) as { agent?: any };
+        if (!result.agent) {
+          return this.error('Could not load agent data. Please try again.');
+        }
+        agent = result.agent;
+      } catch (_error) {
         return this.error('Could not load agent data. Please try again.');
       }
-
-      const agent = loadResult.data;
 
       // Check if this agent was created by another agent
       const parentAgentId = agent.metadata?.createdByAgentId as string | undefined;
@@ -3324,31 +3362,28 @@ If you were created directly by a user, this tool will return an error.`,
         );
       }
 
-      // Update the agent's metadata with the completion report
-      const updatedAgent = {
-        ...agent,
-        metadata: {
-          ...agent.metadata,
-          completionReport: report.trim(),
-          completionReportTimestamp: new Date().toISOString(),
-        },
-        updatedAt: new Date().toISOString(),
-      };
-
-      // Save the updated agent
-      const saveResult = await agentPersistence.saveAgent(updatedAgent);
-      if (!saveResult.success) {
-        logger.error('Failed to save completion report', {
+      // Persist the completion report through the daemon (PROTOCOL.md §5.5
+      // agent.reportToParent). The daemon writes
+      // metadata.completionReport / completionReportTimestamp on the child
+      // session and emits `agent:updated` before delivering to the parent.
+      const trimmedReport = report.trim();
+      const savedAt = new Date().toISOString();
+      try {
+        await getBackendClient().request('agent.reportToParent', {
+          report: trimmedReport,
+        });
+      } catch (error) {
+        logger.error('Failed to save completion report via agent.reportToParent', {
           agentId: ctx.agentId,
-          error: saveResult.error,
+          error: (error as Error)?.message,
         });
         return this.error('Failed to save completion report. Please try again.');
       }
 
       // Defense-in-depth: also push the completion report into the in-memory
-      // backend session so anything reading from the live session (not just
-      // disk) sees it immediately. Disk is the source of truth; this is a
-      // belt-and-suspenders sync.
+      // backend session so anything reading from the live session sees it
+      // immediately. The daemon is the source of truth; this is a
+      // belt-and-suspenders sync for the still-in-process FE session cache.
       let inMemorySyncAttempted = false;
       let inMemorySyncSucceeded = false;
       try {
@@ -3360,8 +3395,8 @@ If you were created directly by a user, this tool will return an error.`,
         if (session) {
           session.metadata = {
             ...(session.metadata ?? {}),
-            completionReport: updatedAgent.metadata.completionReport,
-            completionReportTimestamp: updatedAgent.metadata.completionReportTimestamp,
+            completionReport: trimmedReport,
+            completionReportTimestamp: savedAt,
           };
           inMemorySyncSucceeded = true;
         }
@@ -3376,7 +3411,7 @@ If you were created directly by a user, this tool will return an error.`,
         agentId: ctx.agentId,
         parentAgentId,
         reportLength: report.length,
-        savedAt: updatedAgent.metadata.completionReportTimestamp,
+        savedAt,
         inMemorySyncAttempted,
         inMemorySyncSucceeded,
       });
@@ -3386,7 +3421,7 @@ If you were created directly by a user, this tool will return an error.`,
         {
           parentAgentId,
           reportLength: report.length,
-          savedAt: updatedAgent.metadata.completionReportTimestamp,
+          savedAt,
         },
       );
     } catch (error) {

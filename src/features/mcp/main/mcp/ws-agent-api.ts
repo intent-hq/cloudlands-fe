@@ -13,11 +13,7 @@ import {
   ReportToParentTool,
   GetAgentDiagnosticsTool,
 } from './agent-interaction-tools';
-import { agentPersistence } from '$features/agent/main/agent-persistence';
-import {
-  AgentId,
-  WorkspaceId,
-} from '$shared/types/branded-ids';
+import { getBackendClient } from '$features/backend/main/backend.ipc';
 import { getMainState } from '../../../../store/main/redux-store-bridge';
 import { selectAgentStatus } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
 
@@ -269,10 +265,16 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
       let presentInBackend = true;
 
       if (!agent) {
-        const loadResult = await agentPersistence.loadAgent(AgentId(agentId), WorkspaceId(workspaceId));
-        if (loadResult.success && loadResult.data) {
-          agent = loadResult.data;
-        } else {
+        try {
+          const result = (await getBackendClient().request('agent.get', {
+            agentId,
+            workspaceId,
+          })) as { agent?: any };
+          agent = result.agent ?? null;
+        } catch (_error) {
+          agent = null;
+        }
+        if (!agent) {
           const agents = await handler.listAllAgents(workspaceId);
           agent = agents.find((candidate: any) => candidate.id === agentId) ?? null;
         }
@@ -319,14 +321,30 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
     async readConversation(agentId: string, opts: ReadConversationOptions = {}) {
       logger.info('ws.agent.readConversation', { workspaceId, agentId, ...opts });
 
-      const loadResult = await agentPersistence.loadAgent(AgentId(agentId), WorkspaceId(workspaceId));
-      if (!loadResult.success || !loadResult.data) {
+      let agent: any;
+      let allMessages: any[];
+      try {
+        const [agentResult, convResult] = await Promise.all([
+          getBackendClient().request('agent.get', { agentId, workspaceId }) as Promise<{
+            agent?: any;
+          }>,
+          getBackendClient().request('agent.getConversation', {
+            agentId,
+            workspaceId,
+          }) as Promise<{ messages?: any[] }>,
+        ]);
+        if (!agentResult.agent) {
+          throw new Error(`Agent "${agentId}" not found or could not be loaded`);
+        }
+        agent = agentResult.agent;
+        allMessages = convResult.messages ?? [];
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('Agent ')) throw error;
         throw new Error(`Agent "${agentId}" not found or could not be loaded`);
       }
 
-      const agent = loadResult.data;
       const includeToolCalls = opts.includeToolCalls !== false;
-      let messages = agent.messages || [];
+      let messages = allMessages;
 
       if (opts.startTurn !== undefined || opts.endTurn !== undefined) {
         const start = (opts.startTurn || 1) - 1;
@@ -343,7 +361,7 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
       return {
         agentId,
         agentName: agent.name,
-        totalMessages: agent.messages?.length || 0,
+        totalMessages: allMessages.length,
         returnedMessages: filteredMessages.length,
         taskNoteId: agent.metadata?.taskNoteId,
         messages: filteredMessages,
@@ -353,13 +371,27 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
     async summary(agentId: string) {
       logger.info('ws.agent.summary', { workspaceId, agentId });
 
-      const loadResult = await agentPersistence.loadAgent(AgentId(agentId), WorkspaceId(workspaceId));
-      if (!loadResult.success || !loadResult.data) {
+      let agent: any;
+      let messages: any[];
+      try {
+        const [agentResult, convResult] = await Promise.all([
+          getBackendClient().request('agent.get', { agentId, workspaceId }) as Promise<{
+            agent?: any;
+          }>,
+          getBackendClient().request('agent.getConversation', {
+            agentId,
+            workspaceId,
+          }) as Promise<{ messages?: any[] }>,
+        ]);
+        if (!agentResult.agent) {
+          throw new Error(`Agent "${agentId}" not found or could not be loaded`);
+        }
+        agent = agentResult.agent;
+        messages = convResult.messages ?? [];
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('Agent ')) throw error;
         throw new Error(`Agent "${agentId}" not found or could not be loaded`);
       }
-
-      const agent = loadResult.data;
-      const messages = agent.messages || [];
 
       let lastResponse = '';
       for (let i = messages.length - 1; i >= 0; i--) {

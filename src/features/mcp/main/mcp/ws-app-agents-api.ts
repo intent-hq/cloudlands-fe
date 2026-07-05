@@ -1,10 +1,10 @@
 import { Logger } from '$shared/logger';
 import type { AgentMessage, AgentSession, Workspace } from '$shared/types';
-import { AgentId, CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
+import { getBackendClient } from '../../../backend/main/backend.ipc';
 import { getMainState } from '../../../../store/main/redux-store-bridge';
 import { selectAgentStatus } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
-import { agentPersistence } from '../../../agent/main/agent-persistence';
 
 const logger = new Logger('WsAppAgentsApi');
 const DEFAULT_LIST_LIMIT = 50;
@@ -183,8 +183,25 @@ async function loadAgentSession(workspaceId: string, agentId: string): Promise<A
     return activeAgent;
   }
 
-  const loadResult = await agentPersistence.loadAgent(AgentId(agentId), WorkspaceId(workspaceId));
-  if (loadResult.success && loadResult.data) return loadResult.data;
+  // Fall back to the daemon (PROTOCOL.md §5.5). agent.get returns the
+  // AgentLite projection (no messages); we hydrate messages separately via
+  // agent.getConversation so downstream slicing keeps working.
+  try {
+    const [agentResult, convResult] = await Promise.all([
+      getBackendClient().request('agent.get', { agentId, workspaceId }) as Promise<{
+        agent?: AgentSession;
+      }>,
+      getBackendClient().request('agent.getConversation', {
+        agentId,
+        workspaceId,
+      }) as Promise<{ messages?: AgentMessage[] }>,
+    ]);
+    if (agentResult.agent) {
+      return { ...agentResult.agent, messages: convResult.messages ?? [] } as AgentSession;
+    }
+  } catch (_error) {
+    // Fall through to the not-found error below.
+  }
   throw new Error(`Agent "${agentId}" not found in workspace "${workspaceId}"`);
 }
 

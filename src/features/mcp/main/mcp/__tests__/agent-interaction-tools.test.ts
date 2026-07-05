@@ -32,10 +32,10 @@ const mockNotesService = vi.hoisted(() => ({
 
 const mockIsAutoCommitEnabled = vi.fn();
 
-const mockAgentPersistence = vi.hoisted(() => ({
-  loadAgent: vi.fn(),
-  saveAgent: vi.fn(),
-}));
+// P3-1: the mcp agent-session tools call the daemon via getBackendClient()
+// (PROTOCOL.md §5.5) instead of agentPersistence.*. `mockRequest` is the
+// wire-contract seam every test asserts against below.
+const mockRequest = vi.hoisted(() => vi.fn());
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const mockEventBus = {
@@ -185,8 +185,8 @@ vi.mock('$features/protocol/main/protocol-adapter', () => ({
   },
 }));
 
-vi.mock('$features/agent/main/agent-persistence', () => ({
-  agentPersistence: mockAgentPersistence,
+vi.mock('$features/backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockRequest }),
 }));
 
 vi.mock('$features/notes/main/notes.service', () => ({
@@ -272,12 +272,42 @@ import {
 } from '../agent-interaction-tools';
 import { protocolAdapter } from '$features/protocol/main/protocol-adapter';
 
+// Translate the pre-rewire { success, data } shape into wire responses for
+// `agent.get` / `agent.getConversation` so the individual test bodies stay
+// legible. Tests that need to assert the exact JSON-RPC method + params
+// still inspect `mockRequest` directly.
+function stubDaemonAgentLoad(response: {
+  success: boolean;
+  data?: any;
+  error?: string;
+}) {
+  mockRequest.mockImplementation(async (method: string) => {
+    if (method === 'agent.get') {
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'agent not found');
+      }
+      return { agent: response.data };
+    }
+    if (method === 'agent.getConversation') {
+      const messages = response.success ? response.data?.messages ?? [] : [];
+      return { messages };
+    }
+    if (method === 'agent.reportToParent') {
+      // Daemon persists the child completion report and emits `agent:updated`;
+      // the stub just acknowledges (PROTOCOL.md §5.5).
+      return { success: true };
+    }
+    throw new Error(`unhandled RPC in stubDaemonAgentLoad: ${method}`);
+  });
+}
+
 describe('Agent Interaction Tools', () => {
   const workspaceId = 'test-workspace-id';
   const workspacePath = '/test/workspace/path';
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRequest.mockReset();
     // Reset protocol adapter mocks after clearAllMocks
     vi.mocked(protocolAdapter.createNote).mockResolvedValue({
       ok: true,
@@ -1009,7 +1039,7 @@ describe('Agent Interaction Tools', () => {
       const tool = new GetAgentStatusTool(workspaceId);
 
       mockBackendHandler.getAgent.mockResolvedValue(null);
-      mockAgentPersistence.loadAgent.mockResolvedValue({ success: false, data: null });
+      stubDaemonAgentLoad({ success: false, data: null });
       mockBackendHandler.listAllAgents.mockResolvedValue([]);
 
       const call: ToolCall = {
@@ -1034,7 +1064,7 @@ describe('Agent Interaction Tools', () => {
       const tool = new GetAgentStatusTool(workspaceId);
 
       mockBackendHandler.getAgent.mockResolvedValue(null);
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'persisted-agent',
@@ -1069,7 +1099,7 @@ describe('Agent Interaction Tools', () => {
       const tool = new GetAgentStatusTool(workspaceId);
 
       mockBackendHandler.getAgent.mockResolvedValue(null);
-      mockAgentPersistence.loadAgent.mockResolvedValue({ success: false, data: null });
+      stubDaemonAgentLoad({ success: false, data: null });
       mockBackendHandler.listAllAgents.mockResolvedValue([
         {
           id: 'summary-only-agent',
@@ -1105,7 +1135,7 @@ describe('Agent Interaction Tools', () => {
     it('should read full conversation history', async () => {
       const tool = new ReadAgentConversationTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'target-agent',
@@ -1153,7 +1183,7 @@ describe('Agent Interaction Tools', () => {
     it('should read last N messages', async () => {
       const tool = new ReadAgentConversationTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'target-agent',
@@ -1205,7 +1235,7 @@ describe('Agent Interaction Tools', () => {
     it('should handle non-existent agent', async () => {
       const tool = new ReadAgentConversationTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: false,
         data: null,
       });
@@ -1234,7 +1264,7 @@ describe('Agent Interaction Tools', () => {
     it('should get agent summary with tool calls', async () => {
       const tool = new GetAgentSummaryTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'target-agent',
@@ -1291,7 +1321,7 @@ describe('Agent Interaction Tools', () => {
     it('should handle agent with no messages', async () => {
       const tool = new GetAgentSummaryTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'target-agent',
@@ -1325,7 +1355,7 @@ describe('Agent Interaction Tools', () => {
     it('should handle non-existent agent', async () => {
       const tool = new GetAgentSummaryTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: false,
         data: null,
       });
@@ -1572,7 +1602,7 @@ describe('Agent Interaction Tools', () => {
 
     beforeEach(() => {
       mockIsAutoCommitEnabled.mockReturnValue(true);
-      mockAgentPersistence.loadAgent.mockResolvedValue({ success: false });
+      stubDaemonAgentLoad({ success: false });
       vi.mocked(protocolAdapter.getNote).mockResolvedValue({
         ok: true,
         data: { id: 'existing-task-note', title: 'Existing Task', content: 'x' },
@@ -1930,7 +1960,7 @@ describe('Agent Interaction Tools', () => {
       const tool = new ReportToParentTool(workspaceId);
 
       // Mock agent with parent (delegated agent)
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'child-agent-id',
@@ -1942,9 +1972,6 @@ describe('Agent Interaction Tools', () => {
           messages: [],
         },
       });
-
-      // Mock successful save
-      mockAgentPersistence.saveAgent = vi.fn().mockResolvedValue({ success: true });
 
       const call: ToolCall = {
         name: 'report_to_parent',
@@ -1970,7 +1997,7 @@ describe('Agent Interaction Tools', () => {
     it('should persist to disk AND sync the in-memory backend session', async () => {
       const tool = new ReportToParentTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'child-agent-id',
@@ -1982,9 +2009,6 @@ describe('Agent Interaction Tools', () => {
           messages: [],
         },
       });
-
-      const saveAgentMock = vi.fn().mockResolvedValue({ success: true });
-      mockAgentPersistence.saveAgent = saveAgentMock;
 
       // Seed an in-memory session so the tool's sync path has something to update.
       mockBackendSessions.clear();
@@ -2011,18 +2035,20 @@ describe('Agent Interaction Tools', () => {
 
       expect(result.isError).toBe(false);
 
-      // (a) disk save happened with trimmed report + timestamp
-      expect(saveAgentMock).toHaveBeenCalledTimes(1);
-      const savedAgent = saveAgentMock.mock.calls[0][0];
-      expect(savedAgent.metadata.completionReport).toBe('Finished the work. Tests pass.');
-      expect(typeof savedAgent.metadata.completionReportTimestamp).toBe('string');
+      // (a) The daemon persist happened via agent.reportToParent with the
+      // trimmed report (PROTOCOL.md §5.5). The daemon owns the timestamp.
+      const rtpCall = mockRequest.mock.calls.find(
+        (call) => call[0] === 'agent.reportToParent',
+      );
+      expect(rtpCall).toBeDefined();
+      expect(rtpCall?.[1]).toEqual({ report: 'Finished the work. Tests pass.' });
 
       // (b) in-memory session now has both fields (and preserves prior metadata)
       expect(mockConsolidatedBackend.getSession).toHaveBeenCalledWith('child-agent-id');
       expect(fakeSession.metadata).toMatchObject({
         specialist: 'implementor',
         completionReport: 'Finished the work. Tests pass.',
-        completionReportTimestamp: savedAgent.metadata.completionReportTimestamp,
+        completionReportTimestamp: expect.any(String),
       });
     });
 
@@ -2030,7 +2056,7 @@ describe('Agent Interaction Tools', () => {
       const tool = new ReportToParentTool(workspaceId);
 
       // Mock agent without parent (not delegated)
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'standalone-agent-id',
@@ -2352,7 +2378,7 @@ describe('Agent Interaction Tools', () => {
         },
       ]);
       mockBackendHandler.listAgents.mockResolvedValue([]);
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'stuck-created-agent',
@@ -2446,7 +2472,7 @@ describe('Agent Interaction Tools', () => {
         },
       ]);
       mockBackendHandler.listAgents.mockResolvedValue([]);
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'answered-persisted-agent',
@@ -3822,6 +3848,147 @@ describe('Agent Interaction Tools', () => {
       expect(warning.message).toContain('Unknown provider: coded');
       expect(warning.message).not.toContain('auggie');
       expect(warning.message).not.toContain('codex');
+    });
+  });
+});
+
+// P3-1: focused wire-contract tests that assert the exact JSON-RPC method +
+// params the mcp agent-session tools emit per PROTOCOL.md §5.5. These live
+// alongside the behavioural coverage above but mock `getBackendClient()` at
+// the transport seam instead of the persistence layer.
+describe('mcp agent-session tools — daemon wire contract (PROTOCOL.md §5.5)', () => {
+  const workspaceId = 'ws-wire';
+
+  beforeEach(() => {
+    mockRequest.mockReset();
+    mockBackendHandler.getAgent.mockResolvedValue(null);
+    mockBackendHandler.listAllAgents.mockResolvedValue([]);
+    mockBackendHandler.listAgents.mockResolvedValue([]);
+  });
+
+  it('GetAgentStatusTool falls back through agent.get on backend miss', async () => {
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') {
+        return {
+          agent: { id: 'a-1', name: 'A', status: 'idle', messages: [] },
+        };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { GetAgentStatusTool } = await import('../agent-interaction-tools');
+    const tool = new GetAgentStatusTool(workspaceId);
+    await tool.execute({
+      name: 'get_agent_status',
+      arguments: { agentId: 'a-1' },
+      context: { workspaceId, agentId: 'requester', agentName: 'Requester' },
+    } as any);
+    expect(mockRequest).toHaveBeenCalledWith('agent.get', {
+      agentId: 'a-1',
+      workspaceId,
+    });
+  });
+
+  it('ReadAgentConversationTool calls agent.get + agent.getConversation', async () => {
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') {
+        return { agent: { id: 'a-1', name: 'A', metadata: {} } };
+      }
+      if (method === 'agent.getConversation') {
+        return { messages: [] };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { ReadAgentConversationTool } = await import('../agent-interaction-tools');
+    const tool = new ReadAgentConversationTool(workspaceId);
+    await tool.execute({
+      name: 'read_agent_conversation',
+      arguments: { agentId: 'a-1' },
+      context: { workspaceId, agentId: 'requester', agentName: 'Requester' },
+    } as any);
+    const methods = mockRequest.mock.calls.map((c) => c[0]);
+    expect(methods).toContain('agent.get');
+    expect(methods).toContain('agent.getConversation');
+    for (const call of mockRequest.mock.calls) {
+      expect(call[1]).toEqual({ agentId: 'a-1', workspaceId });
+    }
+  });
+
+  it('GetAgentSummaryTool calls agent.get + agent.getConversation', async () => {
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') {
+        return { agent: { id: 'a-1', name: 'A', status: 'idle', metadata: {} } };
+      }
+      if (method === 'agent.getConversation') {
+        return { messages: [] };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { GetAgentSummaryTool } = await import('../agent-interaction-tools');
+    const tool = new GetAgentSummaryTool(workspaceId);
+    await tool.execute({
+      name: 'get_agent_summary',
+      arguments: { agentId: 'a-1' },
+      context: { workspaceId, agentId: 'requester', agentName: 'Requester' },
+    } as any);
+    const methods = mockRequest.mock.calls.map((c) => c[0]);
+    expect(methods).toEqual(
+      expect.arrayContaining(['agent.get', 'agent.getConversation']),
+    );
+  });
+
+  it('ReportToParentTool persists via agent.reportToParent with only { report }', async () => {
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') {
+        return {
+          agent: { id: 'child', name: 'Child', metadata: { createdByAgentId: 'parent' } },
+        };
+      }
+      if (method === 'agent.reportToParent') {
+        return { success: true };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { ReportToParentTool } = await import('../agent-interaction-tools');
+    const tool = new ReportToParentTool(workspaceId);
+    const result = await tool.execute({
+      name: 'report_to_parent',
+      arguments: { report: '  All green.  ' },
+      context: { workspaceId, agentId: 'child', agentName: 'Child' },
+    } as any);
+    expect(result.isError).toBe(false);
+    const rtp = mockRequest.mock.calls.find((c) => c[0] === 'agent.reportToParent');
+    expect(rtp).toBeDefined();
+    // PROTOCOL.md §5.5 declares only `report` on the wire; the daemon derives
+    // the caller (delegated child) from the JSON-RPC connection context.
+    expect(rtp?.[1]).toEqual({ report: 'All green.' });
+  });
+
+  it('getDelegationDepth reads metadata.delegationDepth via agent.get', async () => {
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') {
+        return { agent: { metadata: { delegationDepth: 1 } } };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    // The helper is not exported directly; exercise it via CreateAgentTool's
+    // depth check by attempting to spawn a child from a depth-1 caller. We
+    // do NOT complete the create — the assertion below only cares that
+    // getDelegationDepth called `agent.get` first.
+    const { CreateAgentTool } = await import('../agent-interaction-tools');
+    const tool = new CreateAgentTool(workspaceId, '/tmp');
+    await tool.execute({
+      name: 'create_agent',
+      arguments: {
+        name: 'Child',
+        initialMessage: 'do',
+        specialist: 'implementor',
+        taskNoteId: 'existing-task-note',
+      },
+      context: { workspaceId, agentId: 'parent', agentName: 'Parent' },
+    } as any);
+    expect(mockRequest).toHaveBeenCalledWith('agent.get', {
+      agentId: 'parent',
+      workspaceId,
     });
   });
 });

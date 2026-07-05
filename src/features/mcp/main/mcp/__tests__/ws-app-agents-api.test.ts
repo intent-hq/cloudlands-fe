@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockAgentHandler, mockAgentPersistence, mockWorkspaceSubscriptionState } = vi.hoisted(
+const { mockAgentHandler, mockRequest, mockWorkspaceSubscriptionState } = vi.hoisted(
   () => ({
     mockAgentHandler: {
       listAllAgents: vi.fn(),
       getAgent: vi.fn(),
     },
-    mockAgentPersistence: {
-      loadAgent: vi.fn(),
-    },
+    // P3-1: `loadAgentSession` now falls back to the daemon
+    // (PROTOCOL.md §5.5 agent.get + agent.getConversation) instead of
+    // agentPersistence.loadAgent.
+    mockRequest: vi.fn(),
     mockWorkspaceSubscriptionState: {
       agentStatuses: {} as Record<string, string>,
     },
@@ -27,12 +28,12 @@ vi.mock('../../../../agent/main/agent-backend-handler.service', () => ({
   },
 }));
 
-vi.mock('$features/agent/main/agent-persistence', () => ({
-  agentPersistence: mockAgentPersistence,
+vi.mock('$features/backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockRequest }),
 }));
 
-vi.mock('../../../../agent/main/agent-persistence', () => ({
-  agentPersistence: mockAgentPersistence,
+vi.mock('../../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockRequest }),
 }));
 
 vi.mock('../../../../../store/main/redux-store-bridge', () => ({
@@ -50,6 +51,23 @@ vi.mock(
 );
 
 import { buildWsAppAgentsApi } from '../ws-app-agents-api';
+
+function stubDaemonAgentLoad(response: { success: boolean; data?: any; error?: string }) {
+  mockRequest.mockImplementation(async (method: string) => {
+    if (method === 'agent.get') {
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'agent not found');
+      }
+      const { messages: _msgs, ...rest } = response.data;
+      return { agent: rest };
+    }
+    if (method === 'agent.getConversation') {
+      const messages = response.success ? response.data?.messages ?? [] : [];
+      return { messages };
+    }
+    throw new Error(`unhandled RPC: ${method}`);
+  });
+}
 
 const workspaces = [
   { id: 'workspace-1', title: 'Alpha', status: 'Active', updatedAt: '2026-06-01T00:00:00.000Z' },
@@ -78,6 +96,7 @@ function message(index: number, blocks: any[] = [{ type: 'text', text: `message-
 describe('buildWsAppAgentsApi', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRequest.mockReset();
     mockWorkspaceSubscriptionState.agentStatuses = {};
     mockAgentHandler.getAgent.mockResolvedValue(null);
   });
@@ -155,7 +174,7 @@ describe('buildWsAppAgentsApi', () => {
           ])
         : message(index + 1),
     );
-    mockAgentPersistence.loadAgent.mockResolvedValue({
+    stubDaemonAgentLoad({
       success: true,
       data: {
         id: 'agent-1',
@@ -188,7 +207,7 @@ describe('buildWsAppAgentsApi', () => {
   });
 
   it('supports explicit ranges and includeToolCalls for conversation reads', async () => {
-    mockAgentPersistence.loadAgent.mockResolvedValue({
+    stubDaemonAgentLoad({
       success: true,
       data: {
         id: 'agent-1',
@@ -226,7 +245,7 @@ describe('buildWsAppAgentsApi', () => {
   });
 
   it('omits tool-only messages when tool calls are excluded', async () => {
-    mockAgentPersistence.loadAgent.mockResolvedValue({
+    stubDaemonAgentLoad({
       success: true,
       data: {
         id: 'agent-1',
@@ -270,5 +289,43 @@ describe('buildWsAppAgentsApi', () => {
       { type: 'tool_use', name: 'secret_tool', input: { token: 'SECRET_TOOL_INPUT' } },
       { type: 'tool_result', output: 'SECRET_TOOL_OUTPUT' },
     ]);
+  });
+});
+
+
+describe('buildWsAppAgentsApi — daemon wire contract (PROTOCOL.md §5.5)', () => {
+  beforeEach(() => {
+    mockRequest.mockReset();
+    mockAgentHandler.getAgent.mockResolvedValue(null);
+    mockAgentHandler.listAllAgents.mockResolvedValue([]);
+  });
+
+  it('readConversation loads via agent.get + agent.getConversation on cache miss', async () => {
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') {
+        return {
+          agent: {
+            id: 'agent-1',
+            name: 'Alpha Agent',
+            status: 'idle',
+            metadata: { taskNoteId: 'task-1' },
+          },
+        };
+      }
+      if (method === 'agent.getConversation') {
+        return { messages: [] };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+
+    await buildWsAppAgentsApi(makeManager()).readConversation('workspace-1', 'agent-1');
+
+    const methods = mockRequest.mock.calls.map((c) => c[0]);
+    expect(methods).toEqual(
+      expect.arrayContaining(['agent.get', 'agent.getConversation']),
+    );
+    for (const call of mockRequest.mock.calls) {
+      expect(call[1]).toEqual({ agentId: 'agent-1', workspaceId: 'workspace-1' });
+    }
   });
 });
