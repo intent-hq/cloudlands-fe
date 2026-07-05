@@ -288,7 +288,6 @@
     "dompurify": "^3.3.0",
     "dotenv": "^17.2.3",
     "electron-log": "^5.4.3",
-    "electron-store": "^10.1.0",
     "electron-updater": "^6.7.3",
     "entities": "7.0.0",
     "express": "^5.1.0",
