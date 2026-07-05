@@ -52,7 +52,10 @@ export interface McpAuthProvider {
 /**
  * Sentry MCP authentication provider
  * First checks for OAuth tokens from the MCP OAuth flow,
- * then falls back to the API token stored in our sentry-auth electron-store
+ * then falls back to the in-process API token held by `sentryAuthService`
+ * (persisted daemon-side via `accounts.sentry.token`; per PROTOCOL.md §5.12
+ * the raw secret never round-trips from the daemon so the fallback only works
+ * for the current process lifetime).
  */
 const sentryProvider: McpAuthProvider = {
   name: 'sentry',
@@ -88,15 +91,16 @@ const sentryProvider: McpAuthProvider = {
       }
     }
 
-    // 2. Fall back to Sentry API token from integrations settings
+    // 2. Fall back to Sentry API token from the sentry-auth service's
+    //    in-process config. Persistence is daemon-owned (`accounts.sentry.*`)
+    //    but the raw secret is never echoed back, so this fallback only
+    //    resolves when the user has entered credentials this session.
     try {
-      const ElectronStore = (await import('electron-store')).default;
-      const configStore = new ElectronStore({ name: 'sentry-auth' });
-      const config = configStore.get('sentry-config') as { apiToken?: string } | undefined;
-
-      if (config?.apiToken) {
+      const { sentryAuthService } = await import('../../sentry-auth/main/sentry-auth.service');
+      const apiToken = sentryAuthService.getApiToken();
+      if (apiToken) {
         logger.debug('Using Sentry API token (fallback)', { serverName });
-        return { Authorization: `Bearer ${config.apiToken}` };
+        return { Authorization: `Bearer ${apiToken}` };
       }
     } catch (error) {
       logger.debug('Failed to read Sentry auth', {
