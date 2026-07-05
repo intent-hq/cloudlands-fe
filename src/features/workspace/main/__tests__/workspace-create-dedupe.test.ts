@@ -9,6 +9,13 @@ vi.mock('../../../../store/main/redux-store-bridge', () => ({
   mainDispatch: vi.fn((action: unknown) => action),
 }));
 
+// The initial-agent save now routes through the daemon
+// (PROTOCOL.md §5.5 `agent.create`); stub the JSON-RPC seam so the test does
+// not open a real UDS socket.
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: vi.fn(async () => ({ agent: { id: 'agent-first' } })) }),
+}));
+
 const mockedMainDispatch = vi.mocked(mainDispatch);
 
 describe('WorkspaceService workspace creation dedupe', () => {

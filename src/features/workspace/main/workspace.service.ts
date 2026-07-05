@@ -54,10 +54,8 @@ import {
 } from '../../../shared/types';
 import {
   CHIEF_WORKSPACE_ID,
-  type AgentId,
   type WorkspaceId,
 } from '../../../shared/types/branded-ids';
-import { agentPersistence } from '../../agent/main/agent-persistence';
 import {
   refreshSpecialistsFromFiles,
   resolveSpecialistForAgent,
@@ -1742,9 +1740,8 @@ task:
           };
         }
 
-        // Note: agentPersistence.saveAgent() handles directory creation and atomic writes
-        // (including remote workspace support via IMetadataFS), so we don't need to
-        // manually create the agents directory here.
+        // Note: the daemon (PROTOCOL.md §5.5 `agent.create`) owns the session
+        // record, so we no longer manage the on-disk agents directory here.
 
         // Resolve specialist configuration if a specialist is specified
         // This allows the initial agent to inherit model and behavior from the specialist
@@ -1877,21 +1874,33 @@ task:
           imageBlocks: (request.initialAgent as any).imageBlocks,
         };
 
-        // Use agentPersistence for consistent save path (atomic writes, cache invalidation,
-        // deduplication, and remote workspace support via IMetadataFS). Previously used raw
-        // metadataFS.writeFile which bypassed agentPersistence's load cache, causing stale
-        // reads if the cache was populated before this write.
-        const saveResult = await agentPersistence.saveAgent(agentSession as any);
-        if (!saveResult.success) {
-          logger.warn('Failed to save initial agent config via agentPersistence', {
+        // Persist the initial-agent session on the daemon (PROTOCOL.md §5.5
+        // `agent.create`). The daemon adopts the FE-supplied `agentId` verbatim
+        // and harvests the persisted gap fields from `metadata`
+        // (`contextReferences` / `imageBlocks` also passed top-level so they
+        // win over the metadata copies).
+        try {
+          await getBackendClient().request('agent.create', {
             workspaceId: id,
-            agentId: request.initialAgent.agentId,
-            error: saveResult.error,
+            workspacePath: specialistPath,
+            agentId,
+            name: agentSession.name,
+            model: effectiveModel,
+            provider,
+            agentType: (request.initialAgent as any).agentType || 'workspace',
+            metadata: agentSession.metadata,
+            contextReferences: (request.initialAgent as any).contextReferences,
+            imageBlocks: (request.initialAgent as any).imageBlocks,
           });
-        } else {
           logger.info('Saved initial agent config', {
             workspaceId: id,
             agentId: request.initialAgent.agentId,
+          });
+        } catch (error) {
+          logger.warn('Failed to save initial agent config via daemon agent.create', {
+            workspaceId: id,
+            agentId: request.initialAgent.agentId,
+            error: (error as Error).message,
           });
         }
       }
@@ -2098,19 +2107,20 @@ task:
     candidates: string[],
   ): Promise<void> {
     try {
-      const agentIds = await agentPersistence.listAgents(workspaceId);
-      const agents = await Promise.all(
-        agentIds.map(async (agentId) => {
-          try {
-            const result = await agentPersistence.loadAgent(agentId as AgentId, workspaceId);
-            return result.success ? result.data : undefined;
-          } catch {
-            return undefined;
-          }
-        }),
-      );
+      // Route through the daemon (PROTOCOL.md §5.5 `agent.list`): the AgentLite
+      // projection already carries `lastActivity`, `updatedAt`, and `createdAt`,
+      // so we no longer list ids and load each session individually.
+      const result = (await getBackendClient().request('agent.list', {
+        workspaceId,
+      })) as {
+        agents?: Array<{
+          lastActivity?: string;
+          updatedAt?: string;
+          createdAt?: string;
+        }>;
+      };
 
-      for (const agent of agents) {
+      for (const agent of result?.agents ?? []) {
         this.addActivityCandidate(candidates, agent?.lastActivity);
         this.addActivityCandidate(candidates, agent?.updatedAt);
         this.addActivityCandidate(candidates, agent?.createdAt);
@@ -2323,7 +2333,12 @@ task:
    */
   private async getWorkspaceAgentIds(workspaceId: WorkspaceId): Promise<string[]> {
     try {
-      return await agentPersistence.listAgents(workspaceId);
+      // Route through the daemon (PROTOCOL.md §5.5 `agent.list`) and project
+      // to the ids the workspace payload carries.
+      const result = (await getBackendClient().request('agent.list', {
+        workspaceId,
+      })) as { agents?: Array<{ id: string }> };
+      return (result?.agents ?? []).map((a) => a.id);
     } catch (error) {
       logger.warn('Failed to list agent IDs for workspace', {
         workspaceId,
