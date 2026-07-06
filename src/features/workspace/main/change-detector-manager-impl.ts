@@ -198,7 +198,7 @@ export class ChangeDetectorManager extends EventEmitter {
       });
     } else {
       // Use ChangeDetectorRefactored for local workspaces
-      // FSEvents-based file watching with adaptive polling fallback (intervals from TRACKING_CONFIG)
+      // FSEvents-based file watching with adaptive polling fallback (intervals from CHANGE_DETECTION_CONFIG)
       detector = new ChangeDetector({
         workspaceId: workspace.id,
         workspacePath: workspace.worktreePath,

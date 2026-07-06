@@ -7,7 +7,7 @@
 
 import { EventEmitter } from '$shared/utils/event-emitter';
 import { Logger } from '../../shared/logger';
-import { TRACKING_CONFIG } from '../file-tracking/tracking.config';
+import { MEMORY_MONITOR_CONFIG } from '../workspace/main/change-detection/detection.config';
 
 const logger = new Logger('MemoryMonitor');
 
@@ -34,9 +34,9 @@ export class MemoryMonitor extends EventEmitter {
   private isMonitoring = false;
 
   constructor(
-    private readonly warningThreshold = TRACKING_CONFIG.performance.memoryWarningThreshold,
-    private readonly criticalThreshold = TRACKING_CONFIG.performance.memoryCriticalThreshold,
-    private readonly checkIntervalMs = TRACKING_CONFIG.performance.memoryCheckInterval,
+    private readonly warningThreshold = MEMORY_MONITOR_CONFIG.memoryWarningThreshold,
+    private readonly criticalThreshold = MEMORY_MONITOR_CONFIG.memoryCriticalThreshold,
+    private readonly checkIntervalMs = MEMORY_MONITOR_CONFIG.memoryCheckInterval,
   ) {
     super();
   }

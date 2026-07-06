@@ -13,7 +13,7 @@ import {
   type WorkspaceEvent,
 } from '../../../events/types';
 import type { ProcessedChange } from './change-processor';
-import { TRACKING_CONFIG } from '../../../file-tracking/tracking.config';
+import { EVENT_BUS_CONFIG } from './detection.config';
 
 const logger = new Logger('EventCoordinator');
 
@@ -27,7 +27,7 @@ export interface EventStats {
 
 export class EventCoordinator extends EventEmitter {
   private workspaceId: string;
-  private config = TRACKING_CONFIG.events;
+  private config = EVENT_BUS_CONFIG;
   private stats: EventStats;
   private eventQueue: WorkspaceEvent[] = [];
   private emissionTimer: NodeJS.Timeout | null = null;

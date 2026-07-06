@@ -9,7 +9,7 @@
 import { EventEmitter } from '../../../../shared/event-emitter';
 import { GitignoreManager } from '../../../../lib/utils/main/gitignore-manager';
 import { Logger } from '../../../../shared/logger';
-import { TRACKING_CONFIG } from '../../../file-tracking/tracking.config';
+import { CHANGE_DETECTION_CONFIG } from './detection.config';
 import {
   getUnifiedWatcher,
   isWatcherStartDeferredError,
@@ -30,7 +30,7 @@ export class FileWatcher extends EventEmitter {
   private workspaceId: string;
   private workspacePath: string;
   private gitignoreManager: GitignoreManager;
-  private config = TRACKING_CONFIG.changeDetection;
+  private config = CHANGE_DETECTION_CONFIG;
   private isWatching: boolean = false;
   private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
 

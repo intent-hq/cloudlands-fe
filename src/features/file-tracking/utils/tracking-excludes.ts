@@ -1,10 +1,23 @@
-import { TRACKING_CONFIG } from '../tracking.config';
+// App-level tracking suppression for untracked generated/dependency paths.
+// Matching is exact by path segment; this does not mutate gitignore or hide
+// tracked changes. Values inlined here from the retiring
+// `features/file-tracking/tracking.config.ts` to keep this survivor
+// self-contained.
+export const DEFAULT_FILE_TRACKING_EXCLUDED_PATH_SEGMENTS = [
+  'venv',
+  '.venv',
+  'virtualenv',
+  'node_modules',
+  'google-cloud-sdk',
+  '__pycache__',
+  '.pytest_cache',
+  '.mypy_cache',
+  '.ruff_cache',
+  '.tox',
+  '.nox',
+] as const;
 
-export const DEFAULT_FILE_TRACKING_EXCLUDED_PATH_SEGMENTS =
-  TRACKING_CONFIG.fileTracking.defaultExcludedPathSegments;
-
-export const DEFAULT_FILE_TRACKING_EXCLUDE_SAMPLE_LIMIT =
-  TRACKING_CONFIG.fileTracking.defaultExcludeSampleLimit;
+export const DEFAULT_FILE_TRACKING_EXCLUDE_SAMPLE_LIMIT = 5;
 
 export interface FileTrackingExcludeCandidate {
   path?: string;

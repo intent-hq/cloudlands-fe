@@ -7,7 +7,7 @@
 
 import { EventEmitter } from '$shared/utils/event-emitter';
 import { Logger } from '../../shared/logger';
-import { TRACKING_CONFIG } from '../file-tracking/tracking.config';
+import { RECOVERY_CONFIG } from '../workspace/main/change-detection/detection.config';
 
 const logger = new Logger('RecoveryManager');
 
@@ -39,7 +39,7 @@ export class RecoveryManager extends EventEmitter {
   private isRecovering: Map<string, boolean> = new Map();
   private checkInterval: NodeJS.Timeout | null = null;
 
-  constructor(private readonly config = TRACKING_CONFIG.errorHandling) {
+  constructor(private readonly config = RECOVERY_CONFIG) {
     super();
     this.registerDefaultStrategies();
   }

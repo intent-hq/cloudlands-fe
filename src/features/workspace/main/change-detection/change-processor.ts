@@ -18,7 +18,7 @@ import { GitignoreManager } from '../../../../lib/utils/main/gitignore-manager';
 import { getAttributionEngine } from '../provenance/attribution-engine';
 import { Logger } from '../../../../shared/logger';
 import type { WorkspaceEventType, WorkspaceEvent } from '../../../../features/events/types';
-import { TRACKING_CONFIG } from '../../../file-tracking/tracking.config';
+import { CHANGE_DETECTION_CONFIG } from './detection.config';
 import type { GitDiffResult } from './git-types';
 // Import FileChange from the shared types instead of defining locally
 import type { FileChange } from '$shared/types/change-detector.types';
@@ -65,7 +65,7 @@ export class ChangeProcessor extends EventEmitter {
   private workspacePath: string;
   private workspaceId: string;
   private gitignoreManager: GitignoreManager;
-  private config = TRACKING_CONFIG.changeDetection;
+  private config = CHANGE_DETECTION_CONFIG;
   private processedChanges: Set<string> = new Set();
   private trackedChanges: Map<string, TrackedChange> = new Map();
   private batchQueue: ProcessedChange[] = [];
