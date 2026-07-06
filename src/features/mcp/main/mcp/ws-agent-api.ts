@@ -239,52 +239,44 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
     async list(includeCompleted: boolean = false): Promise<AgentInfo[]> {
       logger.info('ws.agent.list', { workspaceId, includeCompleted });
 
-      const { AgentBackendHandler } = await import('../../../agent/main/agent-backend-handler.service');
-      const handler = AgentBackendHandler.getInstance();
-      const [agents, activeAgentsResult] = await Promise.all([
-        handler.listAllAgents(workspaceId),
-        typeof handler.listAgents === 'function'
-          ? Promise.resolve(handler.listAgents(workspaceId)).catch(() => [])
-          : Promise.resolve([]),
-      ]);
-      const activeAgentIds = new Set(
-        (Array.isArray(activeAgentsResult) ? activeAgentsResult : []).map((agent: any) => agent.id),
-      );
+      // Daemon-primary listing (PROTOCOL.md §5.5 `agent.list`): AgentLite entries
+      // carry the persisted `isStreaming`/`isResponding` flags that stand in for
+      // the retired in-memory active-set from the FE handler.
+      const result = (await getBackendClient().request('agent.list', {
+        workspaceId,
+      })) as { agents?: any[] };
+      const agents = Array.isArray(result?.agents) ? result.agents : [];
 
       return agents
-        .map((agent: any) => toAgentInfo(agent, workspaceId, activeAgentIds.has(agent.id)))
+        .map((agent: any) => {
+          const presentInBackend = agent.isStreaming === true || agent.isResponding === true;
+          return toAgentInfo(agent, workspaceId, presentInBackend);
+        })
         .filter((agent: AgentInfo) => includeCompleted || !['completed', 'failed'].includes(agent.status));
     },
 
     async status(agentId: string): Promise<AgentInfo> {
       logger.info('ws.agent.status', { workspaceId, agentId });
 
-      const { AgentBackendHandler } = await import('../../../agent/main/agent-backend-handler.service');
-      const handler = AgentBackendHandler.getInstance();
-      let agent = await handler.getAgent(agentId);
-      let presentInBackend = true;
-
-      if (!agent) {
-        try {
-          const result = (await getBackendClient().request('agent.get', {
-            agentId,
-            workspaceId,
-          })) as { agent?: any };
-          agent = result.agent ?? null;
-        } catch (_error) {
-          agent = null;
-        }
-        if (!agent) {
-          const agents = await handler.listAllAgents(workspaceId);
-          agent = agents.find((candidate: any) => candidate.id === agentId) ?? null;
-        }
-        presentInBackend = false;
+      // Daemon-primary read (PROTOCOL.md §5.5 `agent.getSession`): full
+      // AgentSession projection; `presentInBackend` derives from the persisted
+      // `isStreaming`/`isResponding` flags.
+      let agent: any;
+      try {
+        const result = (await getBackendClient().request('agent.getSession', {
+          agentId,
+          workspaceId,
+        })) as { session?: any };
+        agent = result.session ?? null;
+      } catch (_error) {
+        agent = null;
       }
 
       if (!agent) {
         throw new Error(`Agent ${agentId} not found`);
       }
 
+      const presentInBackend = agent.isStreaming === true || agent.isResponding === true;
       return toAgentInfo(agent, workspaceId, presentInBackend);
     },
 
@@ -321,23 +313,20 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
     async readConversation(agentId: string, opts: ReadConversationOptions = {}) {
       logger.info('ws.agent.readConversation', { workspaceId, agentId, ...opts });
 
+      // Daemon-primary read (PROTOCOL.md §5.5 `agent.getSession`): full
+      // AgentSession projection carries the chronological `messages` log.
       let agent: any;
       let allMessages: any[];
       try {
-        const [agentResult, convResult] = await Promise.all([
-          getBackendClient().request('agent.get', { agentId, workspaceId }) as Promise<{
-            agent?: any;
-          }>,
-          getBackendClient().request('agent.getConversation', {
-            agentId,
-            workspaceId,
-          }) as Promise<{ messages?: any[] }>,
-        ]);
-        if (!agentResult.agent) {
+        const result = (await getBackendClient().request('agent.getSession', {
+          agentId,
+          workspaceId,
+        })) as { session?: any };
+        if (!result.session) {
           throw new Error(`Agent "${agentId}" not found or could not be loaded`);
         }
-        agent = agentResult.agent;
-        allMessages = convResult.messages ?? [];
+        agent = result.session;
+        allMessages = Array.isArray(agent.messages) ? agent.messages : [];
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('Agent ')) throw error;
         throw new Error(`Agent "${agentId}" not found or could not be loaded`);
@@ -371,23 +360,20 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
     async summary(agentId: string) {
       logger.info('ws.agent.summary', { workspaceId, agentId });
 
+      // Daemon-primary read (PROTOCOL.md §5.5 `agent.getSession`): full
+      // AgentSession projection carries the chronological `messages` log.
       let agent: any;
       let messages: any[];
       try {
-        const [agentResult, convResult] = await Promise.all([
-          getBackendClient().request('agent.get', { agentId, workspaceId }) as Promise<{
-            agent?: any;
-          }>,
-          getBackendClient().request('agent.getConversation', {
-            agentId,
-            workspaceId,
-          }) as Promise<{ messages?: any[] }>,
-        ]);
-        if (!agentResult.agent) {
+        const result = (await getBackendClient().request('agent.getSession', {
+          agentId,
+          workspaceId,
+        })) as { session?: any };
+        if (!result.session) {
           throw new Error(`Agent "${agentId}" not found or could not be loaded`);
         }
-        agent = agentResult.agent;
-        messages = convResult.messages ?? [];
+        agent = result.session;
+        messages = Array.isArray(agent.messages) ? agent.messages : [];
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('Agent ')) throw error;
         throw new Error(`Agent "${agentId}" not found or could not be loaded`);

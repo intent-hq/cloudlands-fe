@@ -173,32 +173,15 @@ function selectMessages(messages: AgentMessage[], opts: AgentThreadReadOptions) 
 }
 
 async function loadAgentSession(workspaceId: string, agentId: string): Promise<AgentSession> {
-  const { AgentBackendHandler } = await import('../../../agent/main/agent-backend-handler.service');
-  const handler = AgentBackendHandler.getInstance();
-  const activeAgent = await handler.getAgent(agentId);
-  if (
-    activeAgent &&
-    (!activeAgent.workspaceId || String(activeAgent.workspaceId) === workspaceId)
-  ) {
-    return activeAgent;
-  }
-
-  // Fall back to the daemon (PROTOCOL.md §5.5). agent.get returns the
-  // AgentLite projection (no messages); we hydrate messages separately via
-  // agent.getConversation so downstream slicing keeps working.
+  // Daemon-primary read (PROTOCOL.md §5.5 `agent.getSession`): full AgentSession
+  // projection including the chronological `messages` log, so downstream
+  // slicing/filtering keeps working from a single wire call.
   try {
-    const [agentResult, convResult] = await Promise.all([
-      getBackendClient().request('agent.get', { agentId, workspaceId }) as Promise<{
-        agent?: AgentSession;
-      }>,
-      getBackendClient().request('agent.getConversation', {
-        agentId,
-        workspaceId,
-      }) as Promise<{ messages?: AgentMessage[] }>,
-    ]);
-    if (agentResult.agent) {
-      return { ...agentResult.agent, messages: convResult.messages ?? [] } as AgentSession;
-    }
+    const result = (await getBackendClient().request('agent.getSession', {
+      agentId,
+      workspaceId,
+    })) as { session?: AgentSession };
+    if (result.session) return result.session;
   } catch (_error) {
     // Fall through to the not-found error below.
   }
@@ -211,15 +194,18 @@ export function buildWsAppAgentsApi(workspaceManager: WorkspaceManagerLike | und
       logger.debug('ws.app.agents.list', { workspaceId: options.workspaceId });
       const manager = requireWorkspaceManager(workspaceManager);
       const workspaces = await listReadableWorkspaces(manager, options.workspaceId);
-      const { AgentBackendHandler } =
-        await import('../../../agent/main/agent-backend-handler.service');
-      const handler = AgentBackendHandler.getInstance();
 
+      // Daemon-primary listing (PROTOCOL.md §5.5 `agent.list`): AgentLite entries
+      // already carry `messageCount`, `lastActivity`, `updatedAt`, `createdAt`,
+      // plus the persisted `metadata.taskNoteId` used downstream.
       const perWorkspace = await Promise.all(
         workspaces.map(async (workspace) => {
-          const agents = await handler.listAllAgents(String(workspace.id));
+          const result = (await getBackendClient().request('agent.list', {
+            workspaceId: String(workspace.id),
+          })) as { agents?: AgentSession[] };
+          const agents = Array.isArray(result?.agents) ? result.agents : [];
           return agents
-            .map((agent: AgentSession) => toThreadInfo(agent, workspace))
+            .map((agent) => toThreadInfo(agent, workspace))
             .filter(
               (thread) => options.includeCompleted !== false || !isTerminalStatus(thread.status),
             );
