@@ -318,8 +318,6 @@ import { setupLinearAuthIPC } from '../features/linear-auth/main/linear-auth.ipc
 import { setupLogIPC } from '../features/log/main/log.ipc';
 import { setupBannerIPC } from '../features/banner/main/banner.ipc';
 import { setupMemoriesIPC } from '../features/memories/main/memories.ipc';
-import { setupLineAttributionIPC } from '../features/notes/main/line-attribution.ipc';
-import { lineAttributionService } from '../features/notes/main/line-attribution.service';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
 import { setupRemoteFileSystemIPC } from '../features/remote-fs/main/remote-fs.ipc';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
@@ -1416,12 +1414,8 @@ app.whenReady().then(async () => {
     setupFirstVisitStateIPC();
     setupPanelLayoutHistoryIPC();
     setupUserActivityIPC();
-    setupLineAttributionIPC();
     setupFileAttributionIPC();
 
-    // Start line attribution service to listen for note updates
-    lineAttributionService.start();
-    logger.info('Line attribution service started');
     // MINIMAL REFACTOR: Commenting out duplicate IPC handler
     registerAgentContextHandlers();
 
@@ -1970,10 +1964,6 @@ app.on('window-all-closed', async () => {
   // before-quit → gracefulShutdown() which already calls cleanupTerminals()
   // with a proper settling delay. Calling it here too caused a double-cleanup
   // race that could crash conpty's native thread (AUGMENT-INTENT-8).
-
-  // Stop line attribution service
-  lineAttributionService.stop();
-  logger.info('Line attribution service stopped');
 
   // Cleanup IPC debug tracker
   ipcDebugTracker.dispose();

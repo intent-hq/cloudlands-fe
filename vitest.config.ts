@@ -43,7 +43,6 @@ export default defineConfig(async () => {
         '**/features/notes/__tests__/get-task-notes.test.ts',
         '**/features/notes/__tests__/mark-as-task.test.ts',
         '**/features/notes/__tests__/mark-as-task-edge-cases.test.ts',
-        '**/features/notes/__tests__/notes.repository.test.ts',
         '**/features/notes/__tests__/notes-service-comment-id-validation.test.ts',
         '**/features/notes/__tests__/remove-dependency.test.ts',
         '**/features/notes/__tests__/remove-task-metadata.test.ts',

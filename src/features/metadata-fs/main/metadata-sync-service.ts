@@ -34,14 +34,13 @@ const SYNCED_DIRECTORIES = new Set([
 ]);
 
 // ── Local-only session files ────────────────────────────────────────────
-// These files are written locally by EditEventsStore and
-// LineAttributionService using direct `fs` (not IMetadataFS) and are
-// never uploaded to the remote.  They must be excluded from stale-file
-// deletion during full sync so they are not wiped out.
+// These files are written locally by EditEventsStore using direct `fs`
+// (not IMetadataFS) and are never uploaded to the remote.  They must be
+// excluded from stale-file deletion during full sync so they are not
+// wiped out.
 const LOCAL_SESSION_FILE_PATTERNS = [
   '.edits.jsonl',
   '.edits.meta.json',
-  '.line-attribution.json',
 ];
 
 export interface MetadataSyncConfig {
@@ -489,7 +488,7 @@ export class MetadataSyncService extends EventEmitter {
 
   /**
    * Check if a file is a local-only session file that should never be
-   * deleted during sync (e.g. `.edits.jsonl`, `.line-attribution.json`).
+   * deleted during sync (e.g. `.edits.jsonl`).
    */
   private static isLocalSessionFile(relativePath: string): boolean {
     return LOCAL_SESSION_FILE_PATTERNS.some((pattern) => relativePath.endsWith(pattern));
