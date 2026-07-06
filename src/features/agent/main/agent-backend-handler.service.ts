@@ -53,7 +53,6 @@ import { daemonAgentBridge } from './daemon-agent-bridge';
 import { checkAndUpdateNoteStatus } from './note-status-checker';
 import { getAgentContextRegistry } from '../agent-context-registry';
 import { getBackendClient } from '../../backend/main/backend.ipc';
-import { assetsService } from '../../notes/main/assets.service';
 import { DelegateTaskTool } from '../../mcp/main/mcp/agent-interaction-tools';
 import { markAgentAsDeleted, updateAgentStatus } from '../../events/main/agent-subscription-ops';
 import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcast-adapter';
@@ -2644,16 +2643,18 @@ export class AgentBackendHandler {
                     const urlMatch = url.match(/workspace-asset:\/\/([^/]+)\/(.+)/);
                     if (urlMatch) {
                       const assetId = urlMatch[2];
-                      const dataUrl = await assetsService.readAssetAsDataUrl(
-                        request.workspaceId,
-                        assetId,
-                      );
+                      // PROTOCOL.md §5.2 `note.readAsset` returns base64 `data` + `mimeType`.
+                      const asset = await getBackendClient().request<{
+                        data?: string;
+                        mimeType?: string;
+                      }>('note.readAsset', {
+                        workspaceId: request.workspaceId,
+                        asset: assetId,
+                      });
 
-                      // Parse data URL to extract base64 and mimeType
-                      const dataMatch = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-                      if (dataMatch) {
+                      if (asset?.data && asset?.mimeType) {
                         // Resize image for token efficiency before sending to agent
-                        const resized = await resizeImageForAgent(dataMatch[2], dataMatch[1]);
+                        const resized = await resizeImageForAgent(asset.data, asset.mimeType);
                         // Only add to agent blocks, not display blocks
                         agentContentBlocks.push({
                           type: 'image',

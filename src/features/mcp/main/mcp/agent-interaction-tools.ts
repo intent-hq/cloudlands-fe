@@ -73,7 +73,6 @@ import {
 import { getCachedModelsForProvider } from '../../../../main/utils/model-pool';
 import { getBackendClient } from '$features/backend/main/backend.ipc';
 import { protocolAdapter } from '$features/protocol/main/protocol-adapter';
-import { notesService } from '$features/notes/main/notes.service';
 import { isAutoCommitEnabled } from '$features/workspace/main/workspace-settings.service';
 import { createWorkspaceEvent } from '$features/events/types';
 import { getMainState, mainDispatch } from '../../../../store/main/redux-store-bridge';
@@ -82,13 +81,7 @@ import {
   selectAgentStatus,
   selectWorkspaceSubscriptionState,
 } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
-import {
-  AgentId,
-  NoteId,
-  WorkspaceId,
-  createAgentId,
-  createWorkspaceId,
-} from '$shared/types/branded-ids';
+
 
 const logger = new Logger('AgentInteractionTools');
 
@@ -2593,17 +2586,25 @@ an agent is working on the task.`,
         autoCommitEnabled,
       });
 
-      // Get the task note to find assigned agents
-      const noteResult = await notesService.getNote(
-        WorkspaceId(this.workspaceId),
-        NoteId(taskNoteId),
-      );
-
-      if (!noteResult.ok || !noteResult.data) {
-        return this.error(`Task note "${taskNoteId}" not found`);
+      // Get the task note to find assigned agents (PROTOCOL.md §5.2 note.get).
+      let note: any;
+      try {
+        const getResult = await getBackendClient().request<{ note?: any }>('note.get', {
+          workspaceId: this.workspaceId,
+          noteId: taskNoteId,
+        });
+        note = getResult?.note ?? null;
+      } catch (error) {
+        logger.warn('Failed to fetch task note for wake_or_create', {
+          taskNoteId,
+          error: (error as Error).message,
+        });
+        note = null;
       }
 
-      const note = noteResult.data;
+      if (!note) {
+        return this.error(`Task note "${taskNoteId}" not found`);
+      }
 
       // Verify it's a task
       if (!note.metadata?.task) {
@@ -2628,10 +2629,10 @@ an agent is working on the task.`,
           if (cleanedStaleAssignedAgentIds.has(staleAgentId)) continue;
           cleanedStaleAssignedAgentIds.add(staleAgentId);
           try {
-            await notesService.removeAgentFromAllTasks(
-              createWorkspaceId(this.workspaceId),
-              createAgentId(staleAgentId),
-            );
+            await getBackendClient().request('task.removeAgentFromAllTasks', {
+              workspaceId: this.workspaceId,
+              agentId: staleAgentId,
+            });
           } catch (cleanupError) {
             logger.warn('Failed to remove stale task agent assignment before replacement', {
               staleAgentId,
@@ -2930,18 +2931,18 @@ an agent is working on the task.`,
         return this.error('Failed to create new agent for task');
       }
 
-      // Assign the new agent to the task
-      const assignResult = await notesService.assignAgentToTask(
-        WorkspaceId(this.workspaceId),
-        NoteId(taskNoteId),
-        AgentId(newAgent.id),
-      );
-
-      if (!assignResult.ok) {
+      // Assign the new agent to the task (PROTOCOL.md §5.4 task.assignAgent).
+      try {
+        await getBackendClient().request('task.assignAgent', {
+          workspaceId: this.workspaceId,
+          noteId: taskNoteId,
+          agentId: newAgent.id,
+        });
+      } catch (assignError) {
         logger.warn('Failed to assign agent to task', {
           agentId: newAgent.id,
           taskNoteId,
-          error: assignResult.error,
+          error: (assignError as Error).message,
         });
         // Don't fail - agent is created and working, assignment is just metadata
       }

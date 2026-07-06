@@ -2802,6 +2802,43 @@ describe('Agent Interaction Tools', () => {
       installSubscriptionScenarioMocks();
       mockIsAutoCommitEnabled.mockReturnValue(true);
       DelegateTaskTool.clearDelegationGroup(workspaceId, parentAgentId);
+      // P3-D4: MCP tools now hit the daemon directly for note.get/task.*
+      // (PROTOCOL.md §5.2, §5.4). Delegate to the legacy mockNotesService so
+      // existing per-test expectations keep working.
+      mockRequest.mockImplementation(async (method: string, params: any) => {
+        if (method === 'note.get') {
+          const res = await mockNotesService.getNote(params?.workspaceId, params?.noteId);
+          if (!res || !res.ok) {
+            throw new Error(res?.error || 'note.get failed');
+          }
+          return { note: res.data };
+        }
+        if (method === 'task.assignAgent') {
+          const res = await mockNotesService.assignAgentToTask(
+            params?.workspaceId,
+            params?.noteId,
+            params?.agentId,
+          );
+          if (!res || !res.ok) {
+            throw new Error(res?.error || 'task.assignAgent failed');
+          }
+          return { ok: true, noteId: params?.noteId, agentId: params?.agentId };
+        }
+        if (method === 'task.removeAgentFromAllTasks') {
+          const res = await mockNotesService.removeAgentFromAllTasks(
+            params?.workspaceId,
+            params?.agentId,
+          );
+          if (!res || !res.ok) {
+            throw new Error(res?.error || 'task.removeAgentFromAllTasks failed');
+          }
+          return { ok: true, updatedCount: res.data ?? 0 };
+        }
+        if (method === 'agent.get') {
+          return { agent: null };
+        }
+        return {};
+      });
     });
 
     afterEach(() => {
@@ -3603,6 +3640,41 @@ describe('Agent Interaction Tools', () => {
       mockBackendHandler.createAgent.mockResolvedValue({
         id: 'new-task-agent-id',
         name: 'Task: Do the thing',
+      });
+      // P3-D4: route daemon note.get / task.* through the legacy mock.
+      mockRequest.mockImplementation(async (method: string, params: any) => {
+        if (method === 'note.get') {
+          const res = await mockNotesService.getNote(params?.workspaceId, params?.noteId);
+          if (!res || !res.ok) {
+            throw new Error(res?.error || 'note.get failed');
+          }
+          return { note: res.data };
+        }
+        if (method === 'task.assignAgent') {
+          const res = await mockNotesService.assignAgentToTask(
+            params?.workspaceId,
+            params?.noteId,
+            params?.agentId,
+          );
+          if (!res || !res.ok) {
+            throw new Error(res?.error || 'task.assignAgent failed');
+          }
+          return { ok: true, noteId: params?.noteId, agentId: params?.agentId };
+        }
+        if (method === 'task.removeAgentFromAllTasks') {
+          const res = await mockNotesService.removeAgentFromAllTasks(
+            params?.workspaceId,
+            params?.agentId,
+          );
+          if (!res || !res.ok) {
+            throw new Error(res?.error || 'task.removeAgentFromAllTasks failed');
+          }
+          return { ok: true, updatedCount: res.data ?? 0 };
+        }
+        if (method === 'agent.get') {
+          return { agent: null };
+        }
+        return {};
       });
     });
 
