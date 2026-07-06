@@ -192,9 +192,8 @@ export function setupWorkspaceAssetProtocolHandler() {
       return new Response('Invalid asset URL', { status: 400 });
     }
 
-    // Daemon-first: assets saved via `note.saveAsset` live under the daemon's
-    // data dir, so resolve through `note.readAsset` (PROTOCOL §5.2) and fall
-    // back to the legacy local assets dir for pre-daemon assets.
+    // Assets are served by the daemon via `note.readAsset` (PROTOCOL §5.2).
+    // The legacy local-assets fallback was retired in D6.
     try {
       const { getBackendClient } = await import('../features/backend/main/backend.ipc');
       const result = (await getBackendClient().request('note.readAsset', {
@@ -209,33 +208,12 @@ export function setupWorkspaceAssetProtocolHandler() {
         },
       });
     } catch (error) {
-      logger.warn('Daemon note.readAsset failed; trying legacy local assets', {
+      logger.warn('Daemon note.readAsset failed', {
         workspaceId,
         assetId,
         error: error instanceof Error ? error.message : String(error),
       });
-    }
-
-    try {
-      const { assetsService } = await import('../features/notes/main/assets.service');
-      const assetPath = assetsService.getAssetPath(workspaceId, assetId);
-
-      if (!fs.existsSync(assetPath)) {
-        logger.warn('Asset not found:', { workspaceId, assetId, assetPath });
-        return new Response('Asset not found', { status: 404 });
-      }
-
-      return serveFile(assetPath, {
-        'Cache-Control': 'max-age=31536000', // 1 year — assets are content-addressed
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      if (message.startsWith('Invalid asset')) {
-        logger.warn('Rejected workspace-asset request', { workspaceId, assetId, message });
-        return new Response('Invalid asset URL', { status: 400 });
-      }
-      logger.error('Failed to serve asset:', error);
-      return new Response('Failed to serve asset', { status: 500 });
+      return new Response('Asset not found', { status: 404 });
     }
   });
 }

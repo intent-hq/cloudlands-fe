@@ -322,15 +322,8 @@ import {
 } from '../features/mcp/mcp.ipc';
 import { setupBannerIPC } from '../features/banner/main/banner.ipc';
 import { setupMemoriesIPC } from '../features/memories/main/memories.ipc';
-import { setupAssetsIPC } from '../features/notes/main/assets.ipc';
 import { setupLineAttributionIPC } from '../features/notes/main/line-attribution.ipc';
 import { lineAttributionService } from '../features/notes/main/line-attribution.service';
-import {
-  setupNotesPrimitivesIPC,
-  cleanupNoteTerminals,
-} from '../features/notes/main/notes-primitives.ipc';
-import { setupNotesIPC } from '../features/notes/main/notes.ipc';
-import { crdtDocumentManager } from '../features/notes/main/storage';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
 import { setupRemoteFileSystemIPC } from '../features/remote-fs/main/remote-fs.ipc';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
@@ -470,18 +463,6 @@ async function gracefulShutdown() {
     // if the environment is torn down too quickly, the assertion at conpty.cc:110
     // fires. This delay gives those threads time to finish. (AUGMENT-INTENT-9)
     await new Promise((resolve) => setTimeout(resolve, 300));
-
-    // Kill any active note terminal processes (exec() spawns via shell,
-    // so these need tree-kill to avoid orphaning the child command)
-    try {
-      await cleanupNoteTerminals();
-      logger.info('Note terminals cleaned up');
-    } catch (error) {
-      logger.error(
-        'Error cleaning up note terminals:',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
 
     // Stop all running workspace scripts (spawned via child_process.spawn)
     try {
@@ -1332,7 +1313,6 @@ app.whenReady().then(async () => {
     try {
       workspaceService.trimCachesToOpenWorkspaces(openWorkspaceIds);
       agentBackendHandler.trimPersistenceListCacheToOpenWorkspaces(openWorkspaceIds);
-      crdtDocumentManager.trimCachesToOpenWorkspaces(openWorkspaceIds);
     } catch (error) {
       logger.warn('Failed to trim inactive workspace caches', {
         error: error instanceof Error ? error.message : String(error),
@@ -1392,8 +1372,6 @@ app.whenReady().then(async () => {
 
   setupWorkspaceIPC();
   setupWorkspaceSummaryIPC();
-  setupNotesIPC();
-  setupNotesPrimitivesIPC();
   setupFileIPC();
   setupSystemIPC();
   await setupConfigIPC();
@@ -1459,7 +1437,6 @@ app.whenReady().then(async () => {
     setupUserActivityIPC();
     setupLineAttributionIPC();
     setupFileAttributionIPC();
-    setupAssetsIPC();
 
     // Start line attribution service to listen for note updates
     lineAttributionService.start();
@@ -1999,7 +1976,7 @@ app.on('window-all-closed', async () => {
     // same path before-quit (Cmd+Q) uses. gracefulShutdown() sets
     // isShuttingDown=true internally (so any subsequent before-quit is a
     // no-op), runs the full cleanup ordering — including the items only it
-    // performs (cleanupTerminals + settling delay, cleanupNoteTerminals,
+    // performs (cleanupTerminals + settling delay,
     // disposeAllScriptProcessManagers, cleanupMCP, cleanupAutoUpdater) — and
     // then calls app.exit(0). Delegating here (instead of running a bespoke
     // partial teardown and calling app.quit()) prevents before-quit re-entry

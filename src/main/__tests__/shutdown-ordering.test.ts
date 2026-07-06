@@ -216,15 +216,15 @@ describe('gracefulShutdown call ordering (AST)', () => {
     // cleanups that previously ran inline on that path MUST remain reachable
     // inside gracefulShutdown. If any of these are removed, the non-macOS
     // last-window-close path silently stops cleaning up those resources
-    // (PTY terminals, note terminals, workspace scripts, MCP Hub child
-    // processes, auto-updater periodic checks) and the process no longer
-    // force-exits via app.exit() after teardown.
+    // (PTY terminals, workspace scripts, MCP Hub child processes,
+    // auto-updater periodic checks) and the process no longer force-exits
+    // via app.exit() after teardown. `cleanupNoteTerminals` was retired in
+    // D6 alongside `notes-primitives.ipc.ts`.
     const sf = parseIndex();
     const gs = findGracefulShutdown(sf);
     const calls = callsitesIn(gs.body!);
     const required = [
       'cleanupTerminals',
-      'cleanupNoteTerminals',
       'disposeAllScriptProcessManagers',
       'cleanupMCP',
       'cleanupAutoUpdater',

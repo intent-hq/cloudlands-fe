@@ -331,51 +331,6 @@ export const IPC_CHANNELS = {
     GET_DIRECTORY_STATUS: 'file:getDirectoryStatus',
   },
 
-  // Notes
-  NOTES: {
-    LIST: 'notes:list',
-    CREATE: 'notes:create',
-    GET: 'notes:get',
-    UPDATE: 'notes:update',
-    DELETE: 'notes:delete',
-    SEARCH: 'notes:search',
-    EXPORT: 'notes:export',
-    IMPORT: 'notes:import',
-    RESTORE_SPEC: 'notes:restore-spec',
-    RESTORE_VERSION: 'notes:restore-version',
-    SUGGESTION: 'note:suggestion',
-    // Task metadata operations (Phase 1A)
-    MARK_AS_TASK: 'notes:mark-as-task',
-    UPDATE_TASK_STATUS: 'notes:update-task-status',
-    UPDATE_TASK_PEER_ORDER: 'notes:update-task-peer-order',
-    REMOVE_TASK_METADATA: 'notes:remove-task-metadata',
-    GET_TASK_NOTES: 'notes:get-task-notes',
-    // Task orchestration now uses parentId (sidebar hierarchy) as the dependency graph
-    // ADD_DEPENDENCY, REMOVE_DEPENDENCY, GET_DEPENDENCIES channels removed
-    GET_DEPENDENTS: 'notes:get-dependents', // Returns child notes (notes with this note as parentId)
-    CREATE_PREREQUISITE_NOTE: 'notes:create-prerequisite-note',
-    // Agent assignment operations (Phase 1C)
-    ASSIGN_AGENT_TO_TASK: 'notes:assign-agent-to-task',
-    // Task navigation
-    FIND_NEXT_TASK: 'notes:find-next-task',
-    FIND_READY_TASKS: 'notes:find-ready-tasks',
-    // Task block conversion
-    CONVERT_TASK_BLOCKS: 'notes:convert-task-blocks',
-    // Version management
-    FLUSH_PENDING_VERSION: 'notes:flush-pending-version',
-    // Batch operations (for homepage progress cards)
-    BATCH_LIST: 'notes:batch-list',
-  },
-
-  // Assets (images and files for notes)
-  // Asset writes go to the daemon via `note.saveAsset` (PROTOCOL §5.2).
-  ASSETS: {
-    GET: 'assets:get',
-    GET_DATA_URL: 'assets:get-data-url',
-    DELETE: 'assets:delete',
-    LIST: 'assets:list',
-  },
-
   // Notes Primitives (ws-block rendering)
   PRIMITIVES: {
     REFERENCE_RESOLVE: 'reference:resolve',
