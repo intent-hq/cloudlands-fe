@@ -1,11 +1,12 @@
-import {
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+/**
+ * AgentBackendAdapter — daemon-forwarding tests.
+ *
+ * The adapter is a thin `IAgentBackendService` binding over the intentd
+ * JSON-RPC daemon (PROTOCOL.md §5.5). Each method forwards to `agent.*` via
+ * `getBackendClient().request()`; these tests assert the request shape and
+ * response mapping against a mocked backend client — no live daemon.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({
   app: {
@@ -22,14 +23,9 @@ vi.mock('electron', () => ({
   ipcMain: { on: vi.fn(), handle: vi.fn(), removeHandler: vi.fn() },
 }));
 
-vi.mock('node-pty', () => ({ spawn: vi.fn() }));
-
-const handlerState = vi.hoisted(() => ({ current: undefined as any }));
-
-vi.mock('../agent-backend-handler.service', () => ({
-  AgentBackendHandler: {
-    getInstance: vi.fn(() => handlerState.current),
-  },
+const requestMock = vi.fn();
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: requestMock }),
 }));
 
 vi.mock('$shared/logger', () => ({
@@ -43,217 +39,150 @@ vi.mock('$shared/logger', () => ({
   }),
 }));
 
-vi.mock('../../../workspace/main/workspace.service', () => ({
-  workspaceService: {
-    getWorkspace: vi.fn(async () => ({ ok: true, data: { title: 'Named Workspace' } })),
-  },
-}));
-
-vi.mock('../instruction-service', () => ({
-  InstructionService: {
-    getInstance: () => ({
-      buildSystemPrompt: vi.fn(async () => 'test system prompt'),
-    }),
-  },
-}));
-
-vi.mock('../../../workspace/main/workspace-settings.service', () => ({
-  isAutoCommitEnabled: vi.fn(() => true),
-}));
-
-const mockPersistence = { loadAgent: vi.fn(), saveAgent: vi.fn() };
-vi.mock('../daemon-agent-bridge', () => ({
-  daemonAgentBridge: mockPersistence,
-}));
-
-vi.mock('../../../system/main/system.ipc', () => ({
-  getWindowIdForWorkspace: vi.fn(() => undefined),
-  getWindowIdsForWorkspace: vi.fn(() => []),
-}));
-
-vi.mock('$shared/main/memory-event-logger', () => ({
-  memEvents: {
-    agentTurnStart: vi.fn(),
-    agentTurnComplete: vi.fn(),
-    cleanupStart: vi.fn(),
-    cleanupComplete: vi.fn(),
-    custom: vi.fn(),
-  },
-}));
-
-vi.mock('$lib/services/analytics/main', () => ({ trackMain: vi.fn() }));
-
-vi.mock('../../../events/main/agent-subscription-ops', () => ({
-  updateAgentStatus: vi.fn(),
-}));
-
-vi.mock('$shared/main/config.js', () => ({
-  WorkspaceConfig: {
-    paths: {
-      workspace: vi.fn((workspaceId: string) => `/tmp/${workspaceId}`),
-    },
-  },
-}));
-
-let AgentBackendHandlerClass: typeof import('../agent-backend-handler.service').AgentBackendHandler;
-
-async function getAdapterWithHandler(handler: any) {
-  handlerState.current = handler;
+async function getAdapter() {
   vi.resetModules();
   const { getAgentBackendAdapter } = await import('../agent-backend-adapter');
   return getAgentBackendAdapter();
 }
 
-function createHandler(backendSession: any): any {
-  const handler = Object.create(AgentBackendHandlerClass.prototype) as any;
-  handler.providers = new Map();
-  handler.providerLastUsed = new Map();
-  handler.streamStartTimes = new Map();
-  handler.streamSessionIds = new Map();
-  handler.streamWorkspaceIds = new Map();
-  handler.streamWindowIds = new Map();
-  handler.streamGenerations = new Map();
-  handler.streamHealthChecks = new Map();
-  handler.completedStreams = new Map();
-  handler.lastPongTimes = new Map();
-  handler.lastPingSentTimes = new Map();
-  handler.interruptedAgents = new Set();
-  handler.interruptedAgentTimeouts = new Map();
-  handler.pendingStopAgents = new Set();
-  handler.pendingStopAgentTimeouts = new Map();
-  handler.activeSessions = new Map();
-  handler.emptyResponseRetries = new Map();
-  handler.messageQueues = new Map();
-  handler.processingQueue = new Set();
-  handler.pendingQueueProcessing = new Set();
-  handler.queueAgentWorkspaceIds = new Map();
-  handler.pendingBackendDeliveries = new Set();
-  handler.pendingBackendDeliveryTimeouts = new Map();
-  handler.pendingHandlerReady = new Map();
-  handler.inFlightSessionPrompts = new Set();
-  handler.inFlightSessionPromptKeysByAgent = new Map();
-  handler.inFlightSessionPromptStreamIds = new Map();
-  handler.sendToRenderer = vi.fn(() => true);
-  handler.sendStreamToRenderer = vi.fn(() => true);
-  handler.startStreamHealthCheck = vi.fn();
-  handler.emitAgentStartedEvent = vi.fn();
-  handler.emitAgentIdleEvent = vi.fn();
-  handler.emitAgentFailedEvent = vi.fn();
-  handler.emitAgentCreatedEvent = vi.fn();
-  handler.finalizeStream = vi.fn();
-  handler.invalidatePersistenceListCache = vi.fn();
-  const backend = {
-    createAgent: vi.fn(async () => ({ success: true, agent: backendSession })),
-    emit: vi.fn(),
-    getSession: vi.fn(() => backendSession),
-    resumeSession: vi.fn(async () => ({ success: true })),
-  };
-  handler.getBackend = vi.fn(async () => backend);
-  handler.unifiedBackend = backend;
-  return handler;
-}
-
-describe('AgentBackendAdapter createAgent forwarding', () => {
-  beforeAll(async () => {
-    ({ AgentBackendHandler: AgentBackendHandlerClass } = await vi.importActual(
-      '../agent-backend-handler.service',
-    ));
-  });
-
+describe('AgentBackendAdapter daemon forwarding', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockPersistence.saveAgent.mockResolvedValue({ success: true });
+    requestMock.mockReset();
   });
 
-  it('preserves skipInitialPrompt through the real handler so frontend sessions do not auto-send', async () => {
+  it('forwards createAgent to agent.create with the full IPC field set', async () => {
     const backendSession = {
-      id: 'agent-adapter-skip',
-      workspaceId: 'ws-adapter-skip',
-      name: 'Adapter Skip Agent',
-      backendSessionId: 'backend-session-adapter-skip',
+      id: 'agent-create-1',
+      workspaceId: 'ws-create-1',
+      name: 'Adapter Create',
+      backendSessionId: 'backend-session-create-1',
       messages: [],
     };
-    const handler = createHandler(backendSession);
-    const sendMessageSpy = vi.spyOn(handler, 'handleSendMessage');
-    const adapter = await getAdapterWithHandler(handler);
+    requestMock.mockResolvedValueOnce({ agent: backendSession });
+    const adapter = await getAdapter();
 
-    const result = await adapter.createAgent({
-      workspaceId: 'ws-adapter-skip' as any,
-      workspacePath: '/tmp/workspace',
-      name: 'Adapter Skip Agent',
-      initialMessage: 'Start adapter work',
-      skipInitialPrompt: true,
-    });
-
-    expect(result).toEqual({ agent: backendSession, sessionId: backendSession.backendSessionId });
-    expect(sendMessageSpy).not.toHaveBeenCalled();
-  });
-
-  it('forwards image blocks and workspace context fields from the IPC contract', async () => {
-    const backendSession = {
-      id: 'agent-adapter-images',
-      workspaceId: 'ws-adapter-images',
-      name: 'Adapter Image Agent',
-      backendSessionId: 'backend-session-adapter-images',
-      messages: [],
-    };
-    const mockHandler = {
-      handleCreateAgent: vi.fn().mockResolvedValue({ success: true, agent: backendSession }),
-    };
-    const adapter = await getAdapterWithHandler(mockHandler);
     const imageBlocks = [{ type: 'image' as const, data: 'base64-image', mimeType: 'image/png' }];
     const workspaceContext = {
       openPanels: [{ type: 'file', title: 'adapter.ts', path: 'src/adapter.ts' }],
       linkedReferences: [{ type: 'note', title: 'Spec', identifier: 'spec' }],
     };
 
-    await adapter.createAgent({
-      workspaceId: 'ws-adapter-images' as any,
+    const result = await adapter.createAgent({
+      workspaceId: 'ws-create-1' as any,
       workspacePath: '/tmp/workspace',
-      name: 'Adapter Image Agent',
+      name: 'Adapter Create',
       initialMessage: 'Describe this image',
+      skipInitialPrompt: true,
       imageBlocks,
       workspaceContext,
     });
 
-    expect(mockHandler.handleCreateAgent).toHaveBeenCalledWith(
-      null,
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    expect(requestMock).toHaveBeenCalledWith(
+      'agent.create',
       expect.objectContaining({
+        workspaceId: 'ws-create-1',
+        workspacePath: '/tmp/workspace',
+        name: 'Adapter Create',
+        initialMessage: 'Describe this image',
+        skipInitialPrompt: true,
         imageBlocks,
         workspaceContext,
       }),
     );
-    const forwardedRequest = mockHandler.handleCreateAgent.mock.calls[0][1];
-    expect(forwardedRequest).not.toHaveProperty('specialistName');
-    expect(forwardedRequest).not.toHaveProperty('roleReminder');
+    const forwardedParams = requestMock.mock.calls[0][1];
+    expect(forwardedParams).not.toHaveProperty('specialistName');
+    expect(forwardedParams).not.toHaveProperty('roleReminder');
+
+    expect(result).toEqual({
+      agent: backendSession,
+      sessionId: 'backend-session-create-1',
+    });
   });
 
-  it('returns benign duplicate in-flight prompt results from streamMessage', async () => {
-    const duplicateResult = {
-      success: false,
-      error: 'Agent already has an in-flight prompt. Message was not delivered.',
-    };
-    const mockHandler = {
-      handleBackendStreamMessage: vi.fn().mockResolvedValue(duplicateResult),
-    };
-    const adapter = await getAdapterWithHandler(mockHandler);
+  it('throws when the daemon returns no agent', async () => {
+    requestMock.mockResolvedValueOnce({});
+    const adapter = await getAdapter();
 
-    await expect(adapter.streamMessage({ agentId: 'agent-duplicate' })).resolves.toBe(
-      duplicateResult,
-    );
-  });
-
-  it('still throws genuine streamMessage failures', async () => {
-    const mockHandler = {
-      handleBackendStreamMessage: vi.fn().mockResolvedValue({
-        success: false,
-        error: 'Provider stream failed',
+    await expect(
+      adapter.createAgent({
+        workspaceId: 'ws-empty' as any,
+        workspacePath: '/tmp/ws',
+        name: 'Empty',
       }),
-    };
-    const adapter = await getAdapterWithHandler(mockHandler);
+    ).rejects.toThrow('Failed to create agent');
+  });
 
-    await expect(adapter.streamMessage({ agentId: 'agent-failed' })).rejects.toThrow(
-      'Provider stream failed',
+  it('forwards streamMessage to agent.sendMessage with the extended field set', async () => {
+    requestMock.mockResolvedValueOnce({ success: true, messageId: 'msg-1' });
+    const adapter = await getAdapter();
+
+    const result = await adapter.streamMessage({
+      agentId: 'agent-stream',
+      workspaceId: 'ws-stream',
+      content: 'Hello',
+      imageBlocks: [{ type: 'image', data: 'b64', mimeType: 'image/png' }],
+      fileBlocks: [{ type: 'file', fileName: 'x.txt', data: 'aGk=', mimeType: 'text/plain' }],
+      model: 'sonnet-4.5',
+      messageMetadata: { pinned: true },
+      contextReferences: [{ path: 'src/x.ts' }],
+      noteIds: ['note-1'],
+      stdinContext: 'stdin-data',
+      assistantMessageId: 'assist-1',
+      assistantAppMessageId: 'assist-app-1',
+      userAppMessageId: 'user-app-1',
+    });
+
+    expect(requestMock).toHaveBeenCalledWith(
+      'agent.sendMessage',
+      expect.objectContaining({
+        agentId: 'agent-stream',
+        workspaceId: 'ws-stream',
+        content: 'Hello',
+        imageBlocks: expect.any(Array),
+        fileBlocks: expect.any(Array),
+        model: 'sonnet-4.5',
+        messageMetadata: { pinned: true },
+        contextReferences: expect.any(Array),
+        noteIds: ['note-1'],
+        stdinContext: 'stdin-data',
+        assistantMessageId: 'assist-1',
+        assistantAppMessageId: 'assist-app-1',
+        userAppMessageId: 'user-app-1',
+      }),
     );
+    expect(result).toEqual({ success: true, messageId: 'msg-1' });
+  });
+
+  it('passes through auto-queue responses from agent.sendMessage', async () => {
+    // PROTOCOL.md §5.5: when the target is mid-turn, the daemon returns
+    // `{ success: true, queued: true, messageId? }` instead of the retired
+    // FE `IN_FLIGHT_PROMPT_DROPPED` error string.
+    const queuedResponse = { success: true, queued: true, messageId: 'msg-queued' };
+    requestMock.mockResolvedValueOnce(queuedResponse);
+    const adapter = await getAdapter();
+
+    await expect(
+      adapter.streamMessage({ agentId: 'agent-mid-turn', workspaceId: 'ws', content: 'q' }),
+    ).resolves.toEqual(queuedResponse);
+  });
+
+  it('throws genuine streamMessage failures', async () => {
+    requestMock.mockResolvedValueOnce({ success: false, error: 'Provider stream failed' });
+    const adapter = await getAdapter();
+
+    await expect(
+      adapter.streamMessage({ agentId: 'agent-failed', workspaceId: 'ws', content: 'x' }),
+    ).rejects.toThrow('Provider stream failed');
+  });
+
+  it('forwards backendStop to agent.stop', async () => {
+    requestMock.mockResolvedValueOnce({});
+    const adapter = await getAdapter();
+
+    await expect(adapter.backendStop({ agentId: 'agent-stop' })).resolves.toEqual({
+      success: true,
+    });
+    expect(requestMock).toHaveBeenCalledWith('agent.stop', { agentId: 'agent-stop' });
   });
 });

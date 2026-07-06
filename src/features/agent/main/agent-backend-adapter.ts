@@ -1,41 +1,38 @@
 /**
  * Agent Backend Adapter
  *
- * Adapts the existing AgentBackendHandler to the new IAgentBackendService interface.
- * Enables gradual migration to unified handlers while maintaining backward compatibility.
+ * Thin `IAgentBackendService` binding over the intentd JSON-RPC daemon. Each
+ * method forwards to the canonical `agent.*` RPC (PROTOCOL.md §5.5) via
+ * `getBackendClient().request(...)` and shapes the response to the
+ * `unified-agent-handlers` contract; the IPC handler layer then wraps with
+ * `formatIpcSuccess`.
  *
- * This adapter provides a complete implementation of all agent operations,
- * bridging the old handler methods to the new unified interface.
+ * Replaces the retired `AgentBackendHandler` seam — no local session or
+ * provider state is held here.
  */
 
 import type { IAgentBackendService } from './unified-agent-handlers';
 import type { AgentIpc } from '$shared/ipc/contracts';
-import { AgentBackendHandler } from './agent-backend-handler.service';
+import type { AgentSession } from '$shared/types';
 import { Logger } from '$shared/logger';
 import * as BrandedIds from '$shared/types/branded-ids';
-import { WorkspaceConfig } from '$shared/main/config.js';
-import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 
 const logger = new Logger('AgentBackendAdapter');
 
-function isInFlightPromptDedupResult(result: any): boolean {
-  return (
-    result?.success === false &&
-    typeof result.error === 'string' &&
-    result.error.includes(IN_FLIGHT_PROMPT_DROPPED_ERROR)
-  );
+/** Daemon `agent.sendMessage` response envelope (PROTOCOL.md §5.5). */
+interface DaemonSendMessageResult {
+  success?: boolean;
+  queued?: boolean;
+  messageId?: string;
+  error?: string;
 }
 
-/**
- * Adapter that implements IAgentBackendService using existing AgentBackendHandler
- */
+function generateMessageId(): string {
+  return `msg_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+}
+
 class AgentBackendAdapter implements IAgentBackendService {
-  private handler: AgentBackendHandler;
-
-  constructor() {
-    this.handler = AgentBackendHandler.getInstance();
-  }
-
   async createAgent(request: AgentIpc.CreateRequest): Promise<AgentIpc.CreateResponse> {
     logger.info('Adapter: createAgent', {
       workspaceId: request.workspaceId,
@@ -47,21 +44,22 @@ class AgentBackendAdapter implements IAgentBackendService {
       hasSystemPrompt: !!request.systemPrompt,
     });
 
-    // Validate workspace ID
     if (!request.workspaceId || typeof request.workspaceId !== 'string') {
       throw new Error('Invalid workspace ID');
     }
 
-    // Call existing handler method
-    const result = await (this.handler as any).handleCreateAgent(null, {
+    // PROTOCOL.md §5.5 `agent.create` — daemon adopts the FE-supplied agentId
+    // verbatim and persists the session; forward the full field set so any
+    // widening of the daemon router lands transparently.
+    const result = (await getBackendClient().request('agent.create', {
       workspaceId: request.workspaceId,
       workspacePath: request.workspacePath,
       name: request.name,
-      agentId: request.agentId, // Pass the frontend-generated agent ID if provided
+      agentId: request.agentId,
       model: request.model,
-      provider: request.provider, // Pass provider so backend uses the correct ACP provider
-      agentType: request.agentType, // Pass agentType so backend can build system prompt
-      behaviorPrompt: request.behaviorPrompt, // Pass custom behavior instructions from specialist
+      provider: request.provider,
+      agentType: request.agentType,
+      behaviorPrompt: request.behaviorPrompt,
       systemPrompt: request.systemPrompt,
       initialMessage: request.initialMessage,
       skipInitialPrompt: request.skipInitialPrompt,
@@ -69,95 +67,69 @@ class AgentBackendAdapter implements IAgentBackendService {
       imageBlocks: request.imageBlocks,
       metadata: request.metadata,
       workspaceContext: request.workspaceContext,
-    });
+    })) as { agent?: AgentSession };
 
-    if (!result.success || !result.agent) {
-      throw new Error(result.error || 'Failed to create agent');
+    const agent = result?.agent;
+    if (!agent) {
+      throw new Error('Failed to create agent');
     }
 
     return {
-      agent: result.agent,
-      sessionId: (result.agent as any).backendSessionId,
+      agent,
+      sessionId: ((agent as any).backendSessionId ??
+        agent.id) as AgentIpc.CreateResponse['sessionId'],
     };
   }
 
   async getAgent(request: AgentIpc.GetRequest): Promise<AgentIpc.GetResponse> {
     logger.debug('Adapter: getAgent', { agentId: request.agentId });
 
-    // Call existing handler method
-    const result = await (this.handler as any).handleGetAgent(null, {
+    const result = (await getBackendClient().request('agent.get', {
       agentId: request.agentId,
       workspaceId: request.workspaceId,
-    });
+    })) as { agent?: AgentSession | null };
 
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to get agent');
-    }
-
-    return {
-      agent: result.agent || null,
-    };
+    return { agent: result?.agent ?? null };
   }
 
   async sendMessage(request: AgentIpc.SendMessageRequest): Promise<AgentIpc.SendMessageResponse> {
     logger.debug('Adapter: sendMessage', { agentId: request.agentId });
 
-    // Generate IDs for the message
-    const messageId = this.generateMessageId();
-    const streamId = this.generateStreamId();
-
-    // Call existing handler method
-    const result = await (this.handler as any).handleSendMessage(null, {
+    const result = (await getBackendClient().request('agent.sendMessage', {
       agentId: request.agentId,
       content: request.content,
       contextReferences: request.contextReferences,
       metadata: request.metadata,
-    });
+    })) as DaemonSendMessageResult;
 
-    if (!result.success) {
+    if (result?.success === false) {
       throw new Error(result.error || 'Failed to send message');
     }
 
-    // NOTE: The adapter intentionally does NOT emit `agent:user-message:sent` itself —
-    // `handleSendMessage` (the canonical site) is responsible for both the workspace
-    // event dispatch and the cross-client renderer IPC broadcast. See Audit 4 /
-    // Track F Bundle 3 (single-emit invariant).
-
     return {
-      messageId: BrandedIds.MessageId(messageId),
-      streamId: BrandedIds.AgentId(streamId),
+      messageId: BrandedIds.MessageId(result?.messageId ?? generateMessageId()),
+      streamId: request.agentId,
     };
   }
 
   async listAgents(request: AgentIpc.ListRequest): Promise<AgentIpc.ListResponse> {
     logger.debug('Adapter: listAgents', { workspaceId: request.workspaceId });
 
-    // Call existing handler method
-    const result = await (this.handler as any).handleListAgents(null, {
+    const result = (await getBackendClient().request('agent.list', {
       workspaceId: request.workspaceId,
       includeDeleted: request.includeDeleted,
-    });
+    })) as { agents?: AgentSession[] };
 
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to list agents');
-    }
-
-    return {
-      agents: result.agents || [],
-    };
+    return { agents: result?.agents || [] };
   }
 
   async deleteAgent(request: AgentIpc.DeleteRequest): Promise<AgentIpc.DeleteResponse> {
     logger.debug('Adapter: deleteAgent', { agentId: request.agentId });
 
-    const result = await (this.handler as any).handleDeleteAgent(null, {
+    await getBackendClient().request('agent.delete', {
       agentId: request.agentId,
       workspaceId: request.workspaceId,
     });
-
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to delete agent');
-    }
 
     return { success: true };
   }
@@ -165,25 +137,8 @@ class AgentBackendAdapter implements IAgentBackendService {
   async stopSession(request: AgentIpc.StopRequest): Promise<AgentIpc.StopResponse> {
     logger.debug('Adapter: stopSession', { agentId: request.agentId });
 
-    const result = await (this.handler as any).handleStopSession(null, {
-      agentId: request.agentId,
-      _stopTrigger: 'user_action',
-      _stopReason: 'adapter_stopSession',
-    });
-
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to stop session');
-    }
-
+    await getBackendClient().request('agent.stop', { agentId: request.agentId });
     return { success: true };
-  }
-
-  private generateMessageId(): string {
-    return `msg_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-  }
-
-  private generateStreamId(): string {
-    return `stream_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
   }
 
   async setModel(request: {
@@ -193,46 +148,82 @@ class AgentBackendAdapter implements IAgentBackendService {
   }): Promise<{ success: boolean; modelId?: string; error?: string }> {
     logger.debug('Adapter: setModel', request);
 
-    const result = await this.handler.handleSetModel(null, request);
-    return result;
+    try {
+      const result = (await getBackendClient().request('agent.setModel', {
+        agentId: request.agentId,
+        modelId: request.modelId,
+        workspaceId: request.workspaceId,
+      })) as { success?: boolean; modelId?: string; error?: string };
+
+      return {
+        success: result?.success !== false,
+        modelId: result?.modelId ?? request.modelId,
+        error: result?.error,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
-  // Backend channel methods (for streaming)
+  // Backend channel methods (AGENT_BACKEND_CHANNELS.STREAM_MESSAGE / STOP)
   async streamMessage(request: any): Promise<any> {
-    logger.debug('Adapter: streamMessage', { agentId: request.agentId });
+    logger.debug('Adapter: streamMessage', { agentId: request?.agentId });
 
-    // Call the existing backend stream message handler
-    const result = await (this.handler as any).handleBackendStreamMessage(null, request);
-
-    if (!result.success) {
-      if (isInFlightPromptDedupResult(result)) {
-        return result;
-      }
-      throw new Error(result.error || 'Failed to stream message');
+    // PROTOCOL.md §5.5 `agent.sendMessage` — auto-queues when the target is
+    // mid-turn, returning `{ success, queued, messageId? }`. Forward the full
+    // extended field set the daemon router accepts (matches the browser-side
+    // `agent-ipc-bridge-seeder.ts` STREAM_MESSAGE bridge).
+    const params: Record<string, unknown> = {
+      agentId: request?.agentId,
+      workspaceId: request?.workspaceId,
+      content: request?.content,
+    };
+    if (typeof request?.messageId === 'string') params.messageId = request.messageId;
+    if (Array.isArray(request?.imageBlocks)) params.imageBlocks = request.imageBlocks;
+    if (Array.isArray(request?.fileBlocks)) params.fileBlocks = request.fileBlocks;
+    if (typeof request?.model === 'string') params.model = request.model;
+    if (request?.messageMetadata && typeof request.messageMetadata === 'object') {
+      params.messageMetadata = request.messageMetadata;
+    }
+    if (Array.isArray(request?.contextReferences)) {
+      params.contextReferences = request.contextReferences;
+    }
+    if (Array.isArray(request?.noteIds)) params.noteIds = request.noteIds;
+    if (typeof request?.stdinContext === 'string') params.stdinContext = request.stdinContext;
+    if (typeof request?.assistantMessageId === 'string') {
+      params.assistantMessageId = request.assistantMessageId;
+    }
+    if (typeof request?.assistantAppMessageId === 'string') {
+      params.assistantAppMessageId = request.assistantAppMessageId;
+    }
+    if (typeof request?.userAppMessageId === 'string') {
+      params.userAppMessageId = request.userAppMessageId;
     }
 
+    const result = (await getBackendClient().request(
+      'agent.sendMessage',
+      params,
+    )) as DaemonSendMessageResult;
+
+    if (result?.success === false) {
+      throw new Error(result.error || 'Failed to stream message');
+    }
     return result;
   }
 
   async backendStop(request: any): Promise<any> {
-    logger.debug('Adapter: backendStop', { agentId: request.agentId });
+    logger.debug('Adapter: backendStop', { agentId: request?.agentId });
 
-    // Call the existing stop session handler
-    // Preserve any _stopTrigger from the request, default to user_action (renderer IPC)
-    const result = await (this.handler as any).handleStopSession(null, {
-      ...request,
-      _stopTrigger: request._stopTrigger || 'user_action',
-      _stopReason: request._stopReason || 'adapter_backendStop',
-    });
-
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to stop session');
-    }
-
-    return result;
+    await getBackendClient().request('agent.stop', { agentId: request?.agentId });
+    return { success: true };
   }
 
-  // Message queue operations
+  // Message queue operations (PROTOCOL.md §5.5 `agent.queueMessage` /
+  // `agent.editQueuedMessage` / `agent.removeQueuedMessage` /
+  // `agent.forceMessage` / `agent.getQueue`).
   async queueMessage(request: {
     agentId: string;
     content: string;
@@ -245,7 +236,28 @@ class AgentBackendAdapter implements IAgentBackendService {
       workspaceId: request.workspaceId,
       hasImages: !!request.imageBlocks?.length,
     });
-    return await (this.handler as any).handleQueueMessage(null, request);
+    const params: Record<string, unknown> = {
+      agentId: request.agentId,
+      content: request.content,
+    };
+    if (Array.isArray(request.imageBlocks)) params.imageBlocks = request.imageBlocks;
+    try {
+      const result = (await getBackendClient().request('agent.queueMessage', params)) as {
+        success?: boolean;
+        queuedMessage?: any;
+        error?: string;
+      };
+      return {
+        success: result?.success !== false,
+        queuedMessage: result?.queuedMessage,
+        error: result?.error,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   async editQueuedMessage(request: {
@@ -257,7 +269,19 @@ class AgentBackendAdapter implements IAgentBackendService {
       agentId: request.agentId,
       messageId: request.messageId,
     });
-    return await (this.handler as any).handleEditQueuedMessage(null, request);
+    try {
+      const result = (await getBackendClient().request('agent.editQueuedMessage', {
+        agentId: request.agentId,
+        messageId: request.messageId,
+        content: request.content,
+      })) as { success?: boolean; error?: string };
+      return { success: result?.success !== false, error: result?.error };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   async removeQueuedMessage(request: {
@@ -268,7 +292,18 @@ class AgentBackendAdapter implements IAgentBackendService {
       agentId: request.agentId,
       messageId: request.messageId,
     });
-    return await (this.handler as any).handleRemoveQueuedMessage(null, request);
+    try {
+      const result = (await getBackendClient().request('agent.removeQueuedMessage', {
+        agentId: request.agentId,
+        messageId: request.messageId,
+      })) as { success?: boolean; error?: string };
+      return { success: result?.success !== false, error: result?.error };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   async forceMessage(request: {
@@ -283,23 +318,47 @@ class AgentBackendAdapter implements IAgentBackendService {
       agentId: request.agentId,
       messageId: request.messageId,
     });
-    // Stop the current stream, then send the new message
-    await this.handler.stopAgent(request.agentId, 'force_message');
-    return await this.handler.sendMessage(null as any, {
-      sessionId: request.agentId,
-      message: request.content,
+    const params: Record<string, unknown> = {
+      agentId: request.agentId,
+      messageId: request.messageId,
+      content: request.content,
       workspaceId: request.workspaceId,
-      imageBlocks: request.imageBlocks,
-      noteIds: request.noteIds,
-      queuedMessageId: request.messageId,
-    });
+    };
+    if (Array.isArray(request.imageBlocks)) params.imageBlocks = request.imageBlocks;
+    if (Array.isArray(request.noteIds)) params.noteIds = request.noteIds;
+    try {
+      const result = (await getBackendClient().request('agent.forceMessage', params)) as {
+        success?: boolean;
+        error?: string;
+      };
+      return { success: result?.success !== false, error: result?.error };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   async getQueue(request: {
     agentId: string;
   }): Promise<{ success: boolean; queue?: any[]; error?: string }> {
     logger.debug('Adapter: getQueue', { agentId: request.agentId });
-    return await (this.handler as any).handleGetQueue(null, request);
+    try {
+      const result = (await getBackendClient().request('agent.getQueue', {
+        agentId: request.agentId,
+      })) as { success?: boolean; queue?: any[]; error?: string };
+      return {
+        success: result?.success !== false,
+        queue: result?.queue,
+        error: result?.error,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 }
 
@@ -310,9 +369,4 @@ export function getAgentBackendAdapter(): IAgentBackendService {
   return agentBackendAdapter;
 }
 
-// AgentBackendAdapter is already exported at the class declaration
-
-/**
- * Export a singleton instance
- */
 const agentBackendAdapter = new AgentBackendAdapter();
