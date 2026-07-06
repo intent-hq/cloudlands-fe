@@ -73,7 +73,6 @@ import {
   type MetadataSyncUiBridge,
 } from './utils/metadata-sync-ui-bridge';
 import { clearMetadataFSCache } from '../../metadata-fs/main/metadata-fs-factory';
-import { notesService } from '../../notes/main/notes.service';
 import { deleteEventStoreForWorkspace } from '../../../store/main/slices/workspace-events/sagas/persistence-saga';
 
 const require = createRequire(import.meta.url);
@@ -1215,17 +1214,9 @@ export function setupWorkspaceIPC(): void {
             }
           })();
 
-          // Ensure spec note exists and is valid (recovers from corrupt/empty spec files)
-          const ensureSpecPromise = (async () => {
-            try {
-              await notesService.ensureSpecExists(id as WorkspaceId);
-              logger.info('Ensured spec note exists for workspace', { workspaceId: id });
-            } catch (error) {
-              logger.error('Failed to ensure spec note exists', error as Error, {
-                workspaceId: id,
-              });
-            }
-          })();
+          // Spec-note seeding is owned by the daemon (`workspace.create` runs
+          // `ensure_spec_note`); the FE no longer performs FS-level orphan
+          // recovery on open.
 
           // Only wait for metadata watcher (fast) - let monitoring run in background
           await metadataWatcherPromise;
@@ -1233,7 +1224,6 @@ export function setupWorkspaceIPC(): void {
           // Fire and forget the background initialization
           // Use void to explicitly indicate we're not awaiting this
           void monitoringAndGitPromise;
-          void ensureSpecPromise;
 
           logger.info('[WorkspaceIPC] Workspace open returning immediately', {
             workspaceId: id,

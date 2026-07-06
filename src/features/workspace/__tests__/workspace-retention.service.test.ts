@@ -8,7 +8,6 @@ import {
 } from 'vitest';
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
-import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
 import type { Workspace, WorkspaceId, WorkspaceUIContext } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
 
@@ -67,7 +66,7 @@ describe('WorkspaceService retention cleanup', () => {
 
   beforeEach(() => {
     repository = new InMemoryWorkspaceRepository();
-    service = new WorkspaceService(repository, new InMemoryNotesRepository());
+    service = new WorkspaceService(repository);
   });
 
   afterEach(() => {

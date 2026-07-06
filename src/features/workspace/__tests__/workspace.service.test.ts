@@ -12,7 +12,7 @@ import {
 } from 'vitest';
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
-import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
+
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import {
   workspaceCreated,
@@ -128,7 +128,6 @@ vi.mock('util', async () => {
 describe('WorkspaceService', () => {
   let service: WorkspaceService;
   let workspaceRepository: InMemoryWorkspaceRepository;
-  let notesRepository: InMemoryNotesRepository;
 
   async function saveBackingWorkspace(
     workspaceId: Workspace['id'],
@@ -147,7 +146,6 @@ describe('WorkspaceService', () => {
 
   beforeEach(() => {
     workspaceRepository = new InMemoryWorkspaceRepository();
-    notesRepository = new InMemoryNotesRepository();
 
     // Mock readGitConfig to return a sample git config
     vi.spyOn(workspaceRepository, 'readGitConfig').mockResolvedValue(`
@@ -158,7 +156,7 @@ describe('WorkspaceService', () => {
     fetch = +refs/heads/*:refs/remotes/origin/*
 `);
 
-    service = new WorkspaceService(workspaceRepository, notesRepository);
+    service = new WorkspaceService(workspaceRepository);
   });
 
   afterEach(() => {

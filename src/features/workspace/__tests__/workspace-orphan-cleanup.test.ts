@@ -13,7 +13,6 @@ import { randomUUID } from 'crypto';
 import { FileSystemWorkspaceRepository } from '../main/workspace.repository';
 import type { WorkspaceRepository } from '../main/workspace.repository';
 import { WorkspaceService } from '../main/workspace.service';
-import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import type { Workspace } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
@@ -161,7 +160,7 @@ describe('workspace orphan cleanup', () => {
   describe('purgeDeletedWorkspaces grace period', () => {
     it('directory modified less than 5 minutes ago — NOT deleted', async () => {
       const repository = createMockRepository();
-      const service = new WorkspaceService(repository, new InMemoryNotesRepository());
+      const service = new WorkspaceService(repository);
       const workspaceId = 'fresh-ember' as WorkspaceId;
       const workspacePath = path.join(WorkspaceConfig.WORKSPACES_BASE, workspaceId);
       // Recent timestamp — within grace period
@@ -182,7 +181,7 @@ describe('workspace orphan cleanup', () => {
 
     it('directory modified more than 5 minutes ago with no valid metadata — deleted', async () => {
       const repository = createMockRepository();
-      const service = new WorkspaceService(repository, new InMemoryNotesRepository());
+      const service = new WorkspaceService(repository);
       const workspaceId = 'stale-ridge' as WorkspaceId;
       const workspacePath = path.join(WorkspaceConfig.WORKSPACES_BASE, workspaceId);
       const staleTime = new Date(Date.now() - 600_000); // 10 minutes ago
@@ -202,7 +201,7 @@ describe('workspace orphan cleanup', () => {
 
     it('directory exactly at the 5-minute boundary — NOT deleted (safe side)', async () => {
       const repository = createMockRepository();
-      const service = new WorkspaceService(repository, new InMemoryNotesRepository());
+      const service = new WorkspaceService(repository);
       const workspaceId = 'edge-cliff' as WorkspaceId;
       const workspacePath = path.join(WorkspaceConfig.WORKSPACES_BASE, workspaceId);
       // Exactly at the boundary (ageMs === 300_000, which is NOT < 300_000, so it proceeds)
@@ -235,7 +234,7 @@ describe('workspace orphan cleanup', () => {
       const repository = createMockRepository({
         findById: vi.fn().mockResolvedValue(createWorkspaceFixture(workspaceId)),
       });
-      const service = new WorkspaceService(repository, new InMemoryNotesRepository());
+      const service = new WorkspaceService(repository);
 
       try {
         await fs.mkdir(workspacePath, { recursive: true });
@@ -259,7 +258,7 @@ describe('workspace orphan cleanup', () => {
       const repository = createMockRepository({
         findById: vi.fn().mockResolvedValue(null),
       });
-      const service = new WorkspaceService(repository, new InMemoryNotesRepository());
+      const service = new WorkspaceService(repository);
 
       try {
         await fs.mkdir(workspacePath, { recursive: true });
@@ -282,7 +281,7 @@ describe('workspace orphan cleanup', () => {
       const repository = createMockRepository({
         findById: vi.fn().mockRejectedValue(new Error('corrupt data')),
       });
-      const service = new WorkspaceService(repository, new InMemoryNotesRepository());
+      const service = new WorkspaceService(repository);
 
       try {
         await fs.mkdir(workspacePath, { recursive: true });
@@ -321,7 +320,7 @@ describe('workspace orphan cleanup', () => {
 
       // purgeDeletedWorkspaces should also leave it intact (status is Active)
       const mockRepo = createMockRepository();
-      const service = new WorkspaceService(mockRepo, new InMemoryNotesRepository());
+      const service = new WorkspaceService(mockRepo);
       try {
         const purgeResult = await service.purgeDeletedWorkspaces();
         expect(purgeResult.ok).toBe(true);
@@ -348,7 +347,7 @@ describe('workspace orphan cleanup', () => {
 
       // purgeDeletedWorkspaces should also skip it — grace period protects fresh directories
       const mockRepo = createMockRepository();
-      const service = new WorkspaceService(mockRepo, new InMemoryNotesRepository());
+      const service = new WorkspaceService(mockRepo);
       try {
         const purgeResult = await service.purgeDeletedWorkspaces();
         expect(purgeResult.ok).toBe(true);
@@ -383,7 +382,7 @@ describe('workspace orphan cleanup', () => {
       scanDirectory: vi.fn(),
       cleanCache: vi.fn(),
     } as unknown as WorkspaceRepository;
-    const service = new WorkspaceService(repository, new InMemoryNotesRepository());
+    const service = new WorkspaceService(repository);
 
     await fs.mkdir(metadataDir, { recursive: true });
     await fs.writeFile(metadataPath, JSON.stringify(workspaceFixture));

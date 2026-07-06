@@ -9,7 +9,6 @@ import {
 import { BrowserWindow } from 'electron';
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
-import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
 import type { PullRequestInfo, Workspace } from '../../../shared/types';
 import { PullRequestStatus, WorkspaceStatus } from '../../../shared/types';
 import type { WorkspaceId } from '../../../shared/types/branded-ids';
@@ -54,7 +53,7 @@ describe('WorkspaceService PR refresh enrichment', () => {
 
   beforeEach(() => {
     repository = new InMemoryWorkspaceRepository();
-    service = new WorkspaceService(repository, new InMemoryNotesRepository());
+    service = new WorkspaceService(repository);
     send = vi.fn();
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([
       {

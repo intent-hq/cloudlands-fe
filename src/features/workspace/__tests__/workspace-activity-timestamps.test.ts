@@ -8,11 +8,8 @@ import {
 } from 'vitest';
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
-import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
-import type { Note, NoteId, Workspace, WorkspaceId } from '../../../shared/types';
+import type { Workspace, WorkspaceId } from '../../../shared/types';
 import {
-  ContentType,
-  NoteVisibility,
   PullRequestStatus,
   TimelineEventType,
   WorkspaceStatus,
@@ -46,9 +43,37 @@ const githubServiceMocks = vi.hoisted(() => ({
   getReviews: vi.fn(),
 }));
 
-const agentPersistenceMocks = vi.hoisted(() => ({
-  listAgents: vi.fn(),
-  loadAgent: vi.fn(),
+// Notes and agents now come from the daemon (PROTOCOL.md §5.4 `note.list`,
+// §5.5 `agent.list`). Each test seeds `notesByWorkspace` / `agentsByWorkspace`
+// (or a rejection map) instead of writing through in-memory repositories.
+const backendMocks = vi.hoisted(() => {
+  const notesByWorkspace = new Map<string, Array<{ createdAt?: string; updatedAt?: string }>>();
+  const agentsByWorkspace = new Map<
+    string,
+    Array<{ lastActivity?: string; updatedAt?: string; createdAt?: string }>
+  >();
+  const rejectMethods = new Set<string>();
+  const request = vi.fn(async (method: string, params: unknown) => {
+    if (rejectMethods.has(method)) {
+      throw new Error(`${method} unavailable`);
+    }
+    const workspaceId =
+      params && typeof params === 'object' && 'workspaceId' in params
+        ? String((params as { workspaceId?: unknown }).workspaceId ?? '')
+        : '';
+    if (method === 'note.list') {
+      return { notes: notesByWorkspace.get(workspaceId) ?? [] };
+    }
+    if (method === 'agent.list') {
+      return { agents: agentsByWorkspace.get(workspaceId) ?? [] };
+    }
+    return {};
+  });
+  return { notesByWorkspace, agentsByWorkspace, rejectMethods, request };
+});
+
+vi.mock('../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: backendMocks.request }),
 }));
 
 vi.mock('../../git-tracking/main/github.service', () => ({
@@ -63,7 +88,6 @@ vi.mock('../../git-tracking/main/github.service', () => ({
 describe('workspace activity timestamps', () => {
   let service: WorkspaceService;
   let repository: InMemoryWorkspaceRepository;
-  let notesRepository: InMemoryNotesRepository;
 
   const createWorkspace = (overrides: Partial<Workspace> = {}): Workspace => {
     const timestamp = '2023-06-01T10:00:00.000Z';
@@ -92,31 +116,31 @@ describe('workspace activity timestamps', () => {
     updatedAt: timestamp,
   });
 
-  const createNote = (workspaceId: WorkspaceId, overrides: Partial<Note> = {}): Note => ({
-    id: '11111111-1111-4111-8111-111111111111' as NoteId,
-    workspaceId,
-    title: 'Old Note',
-    content: 'Durable activity',
-    contentType: ContentType.Markdown,
-    tags: [],
-    isPinned: false,
-    isArchived: false,
-    visibility: NoteVisibility.Workspace,
-    createdAt: '2023-02-01T10:00:00.000Z',
-    updatedAt: '2023-02-01T10:00:00.000Z',
-    ...overrides,
-  });
+  const seedNoteActivity = (workspaceId: WorkspaceId, updatedAt: string): void => {
+    const existing = backendMocks.notesByWorkspace.get(workspaceId) ?? [];
+    existing.push({ createdAt: '2023-02-01T10:00:00.000Z', updatedAt });
+    backendMocks.notesByWorkspace.set(workspaceId, existing);
+  };
+
+  const seedAgentActivity = (
+    workspaceId: WorkspaceId,
+    agent: { lastActivity?: string; updatedAt?: string; createdAt?: string },
+  ): void => {
+    const existing = backendMocks.agentsByWorkspace.get(workspaceId) ?? [];
+    existing.push(agent);
+    backendMocks.agentsByWorkspace.set(workspaceId, existing);
+  };
 
   beforeEach(() => {
     repository = new InMemoryWorkspaceRepository();
-    notesRepository = new InMemoryNotesRepository();
-    service = new WorkspaceService(repository, notesRepository);
+    service = new WorkspaceService(repository);
     githubServiceMocks.getPullRequest.mockReset();
     githubServiceMocks.getCheckRuns.mockReset();
     githubServiceMocks.getReviews.mockReset();
-    agentPersistenceMocks.listAgents.mockReset();
-    agentPersistenceMocks.loadAgent.mockReset();
-    agentPersistenceMocks.listAgents.mockResolvedValue([]);
+    backendMocks.notesByWorkspace.clear();
+    backendMocks.agentsByWorkspace.clear();
+    backendMocks.rejectMethods.clear();
+    backendMocks.request.mockClear();
   });
 
   afterEach(() => {
@@ -213,17 +237,11 @@ describe('workspace activity timestamps', () => {
       ],
     });
     await repository.save(workspace);
-    await notesRepository.save(createNote(workspace.id, { updatedAt: noteActivity }));
-    agentPersistenceMocks.listAgents.mockResolvedValue(['agent-1']);
-    agentPersistenceMocks.loadAgent.mockResolvedValue({
-      success: true,
-      data: {
-        id: 'agent-1',
-        workspaceId: workspace.id,
-        lastActivity: agentActivity,
-        updatedAt: '2023-04-15T10:00:00.000Z',
-        createdAt: '2023-02-10T10:00:00.000Z',
-      },
+    seedNoteActivity(workspace.id, noteActivity);
+    seedAgentActivity(workspace.id, {
+      lastActivity: agentActivity,
+      updatedAt: '2023-04-15T10:00:00.000Z',
+      createdAt: '2023-02-10T10:00:00.000Z',
     });
     vi.spyOn(service as any, 'scheduleBackgroundEnrichment').mockImplementation(() => {});
 
@@ -249,7 +267,7 @@ describe('workspace activity timestamps', () => {
       updatedAt: '2026-05-07T15:00:00.000Z',
     });
     await repository.save(workspace);
-    await notesRepository.save(createNote(workspace.id, { updatedAt: '2023-04-01T10:00:00.000Z' }));
+    seedNoteActivity(workspace.id, '2023-04-01T10:00:00.000Z');
     const saveSpy = vi.spyOn(repository, 'save');
     vi.spyOn(service as any, 'scheduleBackgroundEnrichment').mockImplementation(() => {});
 
@@ -311,8 +329,8 @@ describe('workspace activity timestamps', () => {
       updatedAt: '2026-05-07T15:00:00.000Z',
     });
     await repository.save(workspace);
-    vi.spyOn(notesRepository, 'findByWorkspace').mockRejectedValue(new Error('notes unavailable'));
-    agentPersistenceMocks.listAgents.mockRejectedValue(new Error('agents unavailable'));
+    backendMocks.rejectMethods.add('note.list');
+    backendMocks.rejectMethods.add('agent.list');
     vi.spyOn(service as any, 'scheduleBackgroundEnrichment').mockImplementation(() => {});
 
     const result = await service.listWorkspaces();
@@ -320,7 +338,6 @@ describe('workspace activity timestamps', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.workspaces[0]?.lastActivity).toBe(createdAt);
-    expect(agentPersistenceMocks.loadAgent).not.toHaveBeenCalled();
   });
 
   it('repairs activity only for workspaces returned by list status filters', async () => {

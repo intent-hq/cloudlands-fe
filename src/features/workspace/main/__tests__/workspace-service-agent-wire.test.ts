@@ -30,7 +30,6 @@ vi.mock('../../../../store/main/redux-store-bridge', () => ({
 
 import { WorkspaceService } from '../workspace.service';
 import { InMemoryWorkspaceRepository } from '../workspace.repository';
-import { InMemoryNotesRepository } from '../../../notes/main/notes.repository';
 
 const GIT_CONFIG_FIXTURE = `
 [core]
@@ -55,7 +54,7 @@ describe('workspace.service ↔ daemon agent.* (PROTOCOL.md §5.5)', () => {
     repository = new InMemoryWorkspaceRepository();
     vi.spyOn(repository, 'readGitConfig').mockResolvedValue(GIT_CONFIG_FIXTURE);
 
-    service = new WorkspaceService(repository, new InMemoryNotesRepository());
+    service = new WorkspaceService(repository);
   });
 
   afterEach(() => {

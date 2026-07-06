@@ -73,9 +73,6 @@ import {
   getIntentServerPath,
   escapeShellArg,
 } from '../../agent/main/agent-providers/acp-provider';
-import type { NotesRepository } from '../../notes/main/notes.repository';
-import { notesService } from '../../notes/main/notes.service';
-import { FolderBasedNotesRepository } from '../../notes/main/storage';
 import { createTerminalFromBackend } from '../../terminal/main/terminal.ipc';
 import {
   appendSlugSuffix,
@@ -210,7 +207,6 @@ export class WorkspaceService {
 
   constructor(
     private readonly repository: WorkspaceRepository = new FileSystemWorkspaceRepository(),
-    private readonly notesRepository: NotesRepository = new FolderBasedNotesRepository(),
     private readonly idService: UnifiedIdService = unifiedIdService,
   ) {
     // Domain event listeners (including task:status-changed) are now handled
@@ -1725,8 +1721,9 @@ task:
         }
       }
 
-      // Save workspace metadata and create default spec note IN PARALLEL for speed
-      await Promise.all([this.saveWorkspace(workspace), notesService.ensureSpecExists(id)]);
+      // Save workspace metadata. Default spec-note seeding is owned by the
+      // daemon (`workspace.create` runs `ensure_spec_note`).
+      await this.saveWorkspace(workspace);
 
       // Save initial agent config if provided
       if (request.initialAgent) {
@@ -2087,12 +2084,15 @@ task:
     candidates: string[],
   ): Promise<void> {
     try {
-      const notes = await this.notesRepository.findByWorkspace(workspaceId);
+      // Route through the daemon (PROTOCOL.md §5.4 `note.list`); the daemon
+      // returns camelCase `createdAt`/`updatedAt` per intent-core `Note`.
+      const result = (await getBackendClient().request('note.list', {
+        workspaceId,
+      })) as { notes?: Array<{ createdAt?: string; updatedAt?: string }> } | undefined;
+      const notes = Array.isArray(result?.notes) ? result.notes : [];
       for (const note of notes) {
         this.addActivityCandidate(candidates, note.updatedAt);
-        this.addActivityCandidate(candidates, note.updated_at);
         this.addActivityCandidate(candidates, note.createdAt);
-        this.addActivityCandidate(candidates, note.created_at);
       }
     } catch (error) {
       logger.warn('Failed to derive workspace activity from notes', {
@@ -3352,30 +3352,38 @@ task:
         }
       }
 
-      // Save new workspace metadata via repository
+      // Save new workspace metadata via repository. Default spec-note seeding
+      // for the duplicated workspace is owned by the daemon (`workspace.create`
+      // runs `ensure_spec_note`); the FE no longer bootstraps the spec here.
       await this.saveWorkspace(newWorkspace);
 
-      // Create default spec note for the new workspace (delegated to NotesService)
-      await notesService.ensureSpecExists(newId);
-
-      // Copy notes from source workspace using NotesService
-      // This will be handled by a separate service method to maintain separation of concerns
-      // For now, we'll use the repository directly
+      // Copy non-spec notes from the source workspace through the daemon
+      // (PROTOCOL.md §5.4 `note.list` + `note.create`). The daemon assigns
+      // fresh note IDs; the source `spec` is skipped because the daemon seeds
+      // the new workspace's spec itself.
       try {
-        const sourceNotes = await this.notesRepository.findByWorkspace(id);
+        const client = getBackendClient();
+        const listResult = (await client.request('note.list', {
+          workspaceId: id,
+        })) as { notes?: Array<{
+          id: string;
+          title: string;
+          content?: string;
+          tags?: string[];
+          parentId?: string | null;
+        }> } | undefined;
+        const sourceNotes = Array.isArray(listResult?.notes) ? listResult.notes : [];
         for (const sourceNote of sourceNotes) {
-          if (sourceNote.id !== 'spec') {
-            // Skip spec as we already created a new one
-            const newNote = {
-              ...sourceNote,
-              workspaceId: newId,
-              createdAt: now,
-              updatedAt: now,
-              created_at: now,
-              updated_at: now,
-            };
-            await this.notesRepository.save(newNote);
-          }
+          if (sourceNote.id === 'spec') continue;
+          await client.request('note.create', {
+            workspaceId: newId,
+            title: sourceNote.title,
+            ...(sourceNote.content !== undefined ? { content: sourceNote.content } : {}),
+            ...(Array.isArray(sourceNote.tags) && sourceNote.tags.length > 0
+              ? { tags: sourceNote.tags }
+              : {}),
+            ...(sourceNote.parentId ? { parentId: sourceNote.parentId } : {}),
+          });
         }
       } catch (notesError) {
         logger.warn('Failed to copy notes for duplicated workspace', notesError as Error);

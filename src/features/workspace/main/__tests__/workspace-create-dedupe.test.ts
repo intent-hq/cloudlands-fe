@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceService } from '../workspace.service';
 import { InMemoryWorkspaceRepository } from '../workspace.repository';
-import { InMemoryNotesRepository } from '../../../notes/main/notes.repository';
 import { mainDispatch } from '../../../../store/main/redux-store-bridge';
 import { workspaceCreated } from '../../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 
@@ -32,7 +31,7 @@ describe('WorkspaceService workspace creation dedupe', () => {
     fetch = +refs/heads/*:refs/remotes/origin/*
 `);
 
-    service = new WorkspaceService(repository, new InMemoryNotesRepository());
+    service = new WorkspaceService(repository);
     mockedMainDispatch.mockClear();
   });
 

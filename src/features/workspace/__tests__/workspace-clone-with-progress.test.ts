@@ -95,7 +95,6 @@ vi.mock('../../../store/main/redux-store-bridge', () => ({
 
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
-import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
 
 type Broadcast = { phase: string; percent: number; message: string };
 
@@ -131,10 +130,7 @@ describe('WorkspaceService.cloneWithProgress (git.clone streaming wire)', () => 
   beforeEach(() => {
     mockRequest.mockReset();
     mockNotificationHandlers.clear();
-    service = new WorkspaceService(
-      new InMemoryWorkspaceRepository(),
-      new InMemoryNotesRepository(),
-    );
+    service = new WorkspaceService(new InMemoryWorkspaceRepository());
     broadcasts = [];
     // Capture renderer-facing frames without needing a fake BrowserWindow.
     const wire = service as unknown as CloneWireAccess;
