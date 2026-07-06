@@ -233,6 +233,126 @@ function normalizeAssignedAgentIds(value: unknown): string[] {
 }
 
 /**
+ * Daemon-primary agent creation (PROTOCOL.md §5.5 `agent.create`).
+ *
+ * Replaces the retired `AgentBackendHandler.createAgent` seam. Wire params
+ * (`workspaceId/name/model/provider/agentType/workspacePath`) go directly on
+ * the RPC; the specialist trio (`behaviorPrompt` / `specialistName` /
+ * `roleReminder`) and the pre-first-turn `initialMessage` fold into
+ * `metadata` — accepted by the widened seam per the P2-12a audit and
+ * consumed by system-prompt / initial-turn logic on the daemon side.
+ *
+ * Callers that previously relied on `onBeforeStart` should register their
+ * subscription synchronously after this call returns and BEFORE any
+ * follow-up `agent.sendMessage` so the caller can never miss a
+ * fast-completing child's `agent:idle`.
+ */
+async function daemonCreateAgent(params: {
+  workspaceId: string;
+  workspacePath: string;
+  name: string;
+  model?: string;
+  provider?: string;
+  agentType?: string;
+  initialMessage?: string;
+  behaviorPrompt?: string;
+  specialistName?: string;
+  roleReminder?: string;
+  contextReferences?: any[];
+  imageBlocks?: any[];
+  metadata?: Record<string, any>;
+}): Promise<{ id: string; name: string; [key: string]: any } | null> {
+  const metadata: Record<string, any> = { ...(params.metadata ?? {}) };
+  if (params.behaviorPrompt) metadata.behaviorPrompt = params.behaviorPrompt;
+  if (params.specialistName) metadata.specialistName = params.specialistName;
+  if (params.roleReminder) metadata.roleReminder = params.roleReminder;
+  if (params.initialMessage) metadata.initialMessage = params.initialMessage;
+  if (params.contextReferences) metadata.contextReferences = params.contextReferences;
+  if (params.imageBlocks) metadata.imageBlocks = params.imageBlocks;
+
+  try {
+    const result = (await getBackendClient().request('agent.create', {
+      workspaceId: params.workspaceId,
+      name: params.name,
+      workspacePath: params.workspacePath,
+      model: params.model,
+      provider: params.provider,
+      agentType: params.agentType,
+      metadata,
+    })) as { agent?: { id: string; name: string; [key: string]: any } };
+    return result?.agent ?? null;
+  } catch (error) {
+    logger.error('agent.create failed', { name: params.name, error });
+    return null;
+  }
+}
+
+/**
+ * Dispatch the pre-first-turn initial prompt via `agent.sendMessage` after
+ * the caller has registered its completion subscription. Fire-and-log; the
+ * agent lifecycle continues even if the send races.
+ */
+async function daemonSendInitialMessage(
+  workspaceId: string,
+  agentId: string,
+  content: string | undefined,
+  extras?: { imageBlocks?: any[]; contextReferences?: any[] },
+): Promise<void> {
+  const hasContent = !!content?.trim();
+  const hasImages = !!extras?.imageBlocks?.length;
+  if (!hasContent && !hasImages) return;
+  try {
+    await getBackendClient().request('agent.sendMessage', {
+      workspaceId,
+      agentId,
+      content: content?.trim() ?? '',
+      imageBlocks: extras?.imageBlocks,
+      contextReferences: extras?.contextReferences,
+    });
+  } catch (error) {
+    logger.warn('agent.sendMessage (initial prompt) failed', { agentId, error });
+  }
+}
+
+type AgentResumability = {
+  canWake: boolean;
+  status: 'running' | 'resumable' | 'not_found';
+  agentData?: any;
+};
+
+/**
+ * Derive an agent's resumability from `agent.getSession` (PROTOCOL.md §5.5).
+ * Replaces the retired `AgentBackendHandler.getAgentResumability` seam:
+ *
+ * - session present + `isStreaming` / `isResponding` → `running`
+ * - session present + idle flags                    → `resumable`
+ * - `agent.getSession` throws / returns no session  → `not_found`
+ *
+ * Orphan-recovery of stale on-disk streaming state now lives daemon-side; the
+ * FE consumes whatever the daemon reports.
+ */
+async function daemonGetResumability(
+  agentId: string,
+  workspaceId: string,
+): Promise<AgentResumability> {
+  try {
+    const result = (await getBackendClient().request('agent.getSession', {
+      agentId,
+      workspaceId,
+    })) as { session?: any };
+    const session = result?.session ?? null;
+    if (!session) {
+      return { canWake: false, status: 'not_found' };
+    }
+    const isActive = session.isStreaming === true || session.isResponding === true;
+    const status: 'running' | 'resumable' = isActive ? 'running' : 'resumable';
+    return { canWake: true, status, agentData: session };
+  } catch (_error) {
+    return { canWake: false, status: 'not_found' };
+  }
+}
+
+/**
  * Auto-commit instruction snippets injected based on workspace settings.
  * These are appended to the specialist's behavior prompt when auto-commit is enabled.
  *
@@ -879,10 +999,6 @@ This allows you to create multiple agents in parallel and be notified as each fi
         hasBehaviorPrompt: !!config.behaviorPrompt,
       });
 
-      const { AgentBackendHandler } =
-        await import('../../../agent/main/agent-backend-handler.service');
-      const handler = AgentBackendHandler.getInstance();
-
       let linkedNoteId = taskNoteId;
       let linkedNoteTitle: string | undefined;
 
@@ -932,15 +1048,19 @@ This allows you to create multiple agents in parallel and be notified as each fi
       // Truncate agent name to 100 characters to pass validation
       const agentName = name.length > 100 ? `${name.substring(0, 97)}...` : name;
 
-      // Pre-register subscription via onBeforeStart to prevent the race condition
-      // where a fast-completing child agent emits agent:idle before the parent subscribes.
+      // Daemon-primary create (PROTOCOL.md §5.5 `agent.create`). The pre-first-turn
+      // completion subscription is registered synchronously after create returns but
+      // BEFORE the initial `agent.sendMessage` — same race guarantee the retired
+      // `onBeforeStart` hook provided.
       let subscriptionId = '';
-      const agent = await handler.createAgent(this.workspaceId, agentName, {
+      const agent = await daemonCreateAgent({
+        workspaceId: this.workspaceId,
         workspacePath: this.workspacePath,
+        name: agentName,
         model: config.model,
         provider: config.provider,
-        initialMessage: enhancedInitialMessage,
         agentType: config.defaultAgentType || 'task-loop',
+        initialMessage: enhancedInitialMessage,
         behaviorPrompt: config.behaviorPrompt,
         specialistName: config.specialistName,
         roleReminder: config.roleReminder,
@@ -952,19 +1072,20 @@ This allows you to create multiple agents in parallel and be notified as each fi
           isBackground: isBackground !== false, // Default to true for delegated agents
           ...(!autoCommitEnabled && { skipAutoCommit: true }),
         },
-        onBeforeStart: async (agentId: string) => {
-          subscriptionId = await subscribeCallerToAgentCompletion(
-            this.workspaceId,
-            ctx.agentId,
-            ctx.agentName,
-            agentId,
-          );
-        },
       });
 
       if (!agent) {
         return this.error('Failed to create agent');
       }
+
+      subscriptionId = await subscribeCallerToAgentCompletion(
+        this.workspaceId,
+        ctx.agentId,
+        ctx.agentName,
+        agent.id,
+      );
+
+      await daemonSendInitialMessage(this.workspaceId, agent.id, enhancedInitialMessage);
 
       // Assign the agent to the task note
       // This handles both newly created notes and existing task notes (via taskNoteId)
@@ -1014,11 +1135,8 @@ This allows you to create multiple agents in parallel and be notified as each fi
         }
       }
 
-      // NOTE: agent:created event is emitted by agent-backend-handler.service.ts during agent creation.
-      // We don't emit it here to avoid duplicate events in the Activity panel.
-      // The event from the backend includes the agentId and agentName which is sufficient for display.
-
-      // Subscription was already registered via onBeforeStart callback above.
+      // NOTE: `agent:created` is emitted by the daemon in response to `agent.create`
+      // (PROTOCOL.md §5.5 + §6); we don't emit it here to avoid duplicate events.
 
       let successMessage = `Agent "${name}" created and started.\nAgent ID: ${agent.id}`;
       if (linkedNoteId) {
@@ -1498,11 +1616,6 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
         logger.info('Marked note as task', { taskNoteId: resolvedTaskNoteId });
       }
 
-      // Create the agent
-      const { AgentBackendHandler } =
-        await import('../../../agent/main/agent-backend-handler.service');
-      const handler = AgentBackendHandler.getInstance();
-
       // Build enhanced initial message that tells the agent about their linked note
       const commitInstruction = skipAutoCommit
         ? '\n\n**Auto-commit is OFF.** Do not commit unless the user explicitly asks. If asked, use `agent_commit_changes` with `userRequested: true`.'
@@ -1515,64 +1628,61 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
       // Truncate agent name to 100 characters to pass validation
       const agentName = taskText.length > 100 ? `${taskText.substring(0, 97)}...` : taskText;
 
-      // Pre-register subscription via onBeforeStart to prevent the race condition
-      // where a fast-completing child agent emits agent:idle before the parent subscribes.
+      // Daemon-primary create (PROTOCOL.md §5.5 `agent.create`). Subscription
+      // registration follows the same pre-first-turn discipline as the retired
+      // `onBeforeStart` hook: create → subscribe → send initial prompt.
       let subscriptionId = '';
       let groupId: string | undefined;
-      const agent = await handler.createAgent(
-        this.workspaceId,
-        agentName, // Use truncated task text as agent name
-        {
-          workspacePath: this.workspacePath,
-          model: config.model,
-          provider: config.provider,
-          initialMessage: enhancedInitialMessage,
-          agentType: config.defaultAgentType || 'task-loop',
-          behaviorPrompt: config.behaviorPrompt,
-          specialistName: config.specialistName,
-          roleReminder: config.roleReminder,
-          metadata: {
-            createdByAgentId: ctx.agentId,
-            delegationDepth: parentDepth + 1,
-            taskNoteId: resolvedTaskNoteId,
-            ...(config.effectiveSpecialistId && { specialist: config.effectiveSpecialistId }),
-            isBackground: true, // Delegated agents are background agents
-            ...(skipAutoCommit && { skipAutoCommit: true }),
-          },
-          onBeforeStart: async (agentId: string) => {
-            if (waitMode === 'after_all') {
-              // Use group subscription - only wake when ALL agents in the group complete
-              groupId = DelegateTaskTool.getOrCreateGroupId(this.workspaceId, ctx.agentId);
-              subscriptionId = agentSubscribeToGroup(
-                this.workspaceId,
-                ctx.agentId,
-                ctx.agentName,
-                groupId,
-                agentId,
-              );
-
-              logger.info('Added delegated agent to wait-for-all group (via onBeforeStart)', {
-                parentAgentId: ctx.agentId,
-                delegatedAgentId: agentId,
-                groupId,
-                subscriptionId,
-              });
-            } else {
-              // Immediate mode - wake when this agent completes, fails, or is deleted
-              subscriptionId = await subscribeCallerToAgentCompletion(
-                this.workspaceId,
-                ctx.agentId,
-                ctx.agentName,
-                agentId,
-              );
-            }
-          },
+      const agent = await daemonCreateAgent({
+        workspaceId: this.workspaceId,
+        workspacePath: this.workspacePath,
+        name: agentName,
+        model: config.model,
+        provider: config.provider,
+        agentType: config.defaultAgentType || 'task-loop',
+        initialMessage: enhancedInitialMessage,
+        behaviorPrompt: config.behaviorPrompt,
+        specialistName: config.specialistName,
+        roleReminder: config.roleReminder,
+        metadata: {
+          createdByAgentId: ctx.agentId,
+          delegationDepth: parentDepth + 1,
+          taskNoteId: resolvedTaskNoteId,
+          ...(config.effectiveSpecialistId && { specialist: config.effectiveSpecialistId }),
+          isBackground: true, // Delegated agents are background agents
+          ...(skipAutoCommit && { skipAutoCommit: true }),
         },
-      );
+      });
 
       if (!agent) {
         return this.error('Failed to create agent');
       }
+
+      if (waitMode === 'after_all') {
+        groupId = DelegateTaskTool.getOrCreateGroupId(this.workspaceId, ctx.agentId);
+        subscriptionId = agentSubscribeToGroup(
+          this.workspaceId,
+          ctx.agentId,
+          ctx.agentName,
+          groupId,
+          agent.id,
+        );
+        logger.info('Added delegated agent to wait-for-all group', {
+          parentAgentId: ctx.agentId,
+          delegatedAgentId: agent.id,
+          groupId,
+          subscriptionId,
+        });
+      } else {
+        subscriptionId = await subscribeCallerToAgentCompletion(
+          this.workspaceId,
+          ctx.agentId,
+          ctx.agentName,
+          agent.id,
+        );
+      }
+
+      await daemonSendInitialMessage(this.workspaceId, agent.id, enhancedInitialMessage);
 
       // Assign the agent to the task note
       const assignResult = await protocolAdapter.assignAgentToTask({
@@ -1626,11 +1736,8 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
         originalNoteId: noteId,
       });
 
-      // NOTE: agent:created event is emitted by agent-backend-handler.service.ts during agent creation.
-      // We don't emit it here to avoid duplicate events in the Activity panel.
-      // The event from the backend includes the agentId and agentName which is sufficient for display.
-
-      // Subscription was already registered via onBeforeStart callback above.
+      // NOTE: `agent:created` is emitted by the daemon in response to `agent.create`
+      // (PROTOCOL.md §5.5 + §6); we don't emit it here to avoid duplicate events.
 
       const waitModeMessage =
         waitMode === 'after_all'
@@ -1681,11 +1788,6 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
     defaultAgentType?: string,
     modelOverrideWarning?: ModelOverrideWarning,
   ): Promise<ToolResult> {
-    // Create the agent
-    const { AgentBackendHandler } =
-      await import('../../../agent/main/agent-backend-handler.service');
-    const handler = AgentBackendHandler.getInstance();
-
     // Build enhanced initial message that tells the agent about their linked note
     const commitInstruction = skipAutoCommit
       ? '\n\n**Auto-commit is OFF.** Do not commit unless the user explicitly asks. If asked, use `agent_commit_changes` with `userRequested: true`.'
@@ -1697,17 +1799,20 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
     // Mark as background agent since it was delegated by another agent
     const agentName = taskTitle.length > 100 ? `${taskTitle.substring(0, 97)}...` : taskTitle;
 
-    // Pre-register subscription via onBeforeStart to prevent the race condition
-    // where a fast-completing child agent emits agent:idle before the parent subscribes.
+    // Daemon-primary create (PROTOCOL.md §5.5 `agent.create`). Subscription
+    // registration follows the same pre-first-turn discipline as the retired
+    // `onBeforeStart` hook: create → subscribe → send initial prompt.
     let subscriptionId = '';
     let groupId: string | undefined;
 
-    const agent = await handler.createAgent(this.workspaceId, agentName, {
+    const agent = await daemonCreateAgent({
+      workspaceId: this.workspaceId,
       workspacePath: this.workspacePath,
+      name: agentName,
       model,
       provider: provider || ctx.provider,
-      initialMessage: enhancedInitialMessage,
       agentType: defaultAgentType || 'task-loop',
+      initialMessage: enhancedInitialMessage,
       behaviorPrompt,
       specialistName,
       roleReminder,
@@ -1719,37 +1824,37 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
         ...(skipAutoCommit && { skipAutoCommit: true }),
         ...(specialist && { specialist }),
       },
-      onBeforeStart: async (agentId: string) => {
-        if (waitMode === 'after_all') {
-          groupId = DelegateTaskTool.getOrCreateGroupId(this.workspaceId, ctx.agentId);
-          subscriptionId = agentSubscribeToGroup(
-            this.workspaceId,
-            ctx.agentId,
-            ctx.agentName,
-            groupId,
-            agentId,
-          );
-
-          logger.info('Added delegated agent to wait-for-all group (via onBeforeStart)', {
-            parentAgentId: ctx.agentId,
-            delegatedAgentId: agentId,
-            groupId,
-            subscriptionId,
-          });
-        } else {
-          subscriptionId = await subscribeCallerToAgentCompletion(
-            this.workspaceId,
-            ctx.agentId,
-            ctx.agentName,
-            agentId,
-          );
-        }
-      },
     });
 
     if (!agent) {
       return this.error('Failed to create agent');
     }
+
+    if (waitMode === 'after_all') {
+      groupId = DelegateTaskTool.getOrCreateGroupId(this.workspaceId, ctx.agentId);
+      subscriptionId = agentSubscribeToGroup(
+        this.workspaceId,
+        ctx.agentId,
+        ctx.agentName,
+        groupId,
+        agent.id,
+      );
+      logger.info('Added delegated agent to wait-for-all group', {
+        parentAgentId: ctx.agentId,
+        delegatedAgentId: agent.id,
+        groupId,
+        subscriptionId,
+      });
+    } else {
+      subscriptionId = await subscribeCallerToAgentCompletion(
+        this.workspaceId,
+        ctx.agentId,
+        ctx.agentName,
+        agent.id,
+      );
+    }
+
+    await daemonSendInitialMessage(this.workspaceId, agent.id, enhancedInitialMessage);
 
     // Assign the agent to the task note
     const assignResult = await protocolAdapter.assignAgentToTask({
@@ -1778,11 +1883,8 @@ Example with taskText: If you see "- [ ] Create login page" in the spec, use not
       agentId: agent.id,
     });
 
-    // NOTE: agent:created event is emitted by agent-backend-handler.service.ts during agent creation.
-    // We don't emit it here to avoid duplicate events in the Activity panel.
-    // The event from the backend includes the agentId and agentName which is sufficient for display.
-
-    // Subscription was already registered via onBeforeStart callback above.
+    // NOTE: `agent:created` is emitted by the daemon in response to `agent.create`
+    // (PROTOCOL.md §5.5 + §6); we don't emit it here to avoid duplicate events.
 
     const waitModeMessage =
       waitMode === 'after_all'
@@ -2611,11 +2713,8 @@ an agent is working on the task.`,
       const rawAssignedAgentIds: unknown = note.metadata.task.assignedAgentIds;
       const assignedAgentIds = normalizeAssignedAgentIds(rawAssignedAgentIds);
 
-      // Try to find a resumable agent (check most recent first)
-      const { AgentBackendHandler } =
-        await import('../../../agent/main/agent-backend-handler.service');
-      const handler = AgentBackendHandler.getInstance();
-
+      // Resumability now derives from daemon-primary `agent.getSession` (PROTOCOL.md §5.5)
+      // — see `daemonGetResumability`. The pre-C1d-6 `AgentBackendHandler` seam is retired.
       let agentToWake: { id: string; status: string } | null = null;
       let previousSpecialist: string | undefined;
       const staleAssignedAgentIds = new Set<string>();
@@ -2642,7 +2741,7 @@ an agent is working on the task.`,
 
       for (let i = assignedAgentIds.length - 1; i >= 0; i--) {
         const agentId = assignedAgentIds[i];
-        const resumability = await handler.getAgentResumability(agentId, this.workspaceId);
+        const resumability = await daemonGetResumability(agentId, this.workspaceId);
 
         logger.debug('Checking agent resumability', {
           agentId,
@@ -2675,56 +2774,48 @@ an agent is working on the task.`,
           status: agentToWake.status,
         });
 
-        const wakeResult = await handler.sendBackendInitiatedMessage({
-          sessionId: agentToWake.id,
-          workspaceId: this.workspaceId,
-          message: contextMessage,
-          messageMetadata: {
-            type: 'task_wake',
-            source: 'wake_or_create_task_agent',
-            taskNoteId,
-            callerAgentId: ctx.agentId,
-          },
-        });
+        // Daemon-primary wake via `agent.sendMessage` (PROTOCOL.md §5.5). The daemon
+        // auto-queues when the target is mid-turn and surfaces `{ queued: true,
+        // messageId }` — that replaces the FE-only `ALREADY_STREAMING` errorCode
+        // branch the retired `sendBackendInitiatedMessage` produced. `agent.deleted`
+        // / not-found still surface as JSON-RPC errors; we sniff the message text
+        // so the fall-back-to-create branch keeps working.
+        let wakeResult: { success: boolean; queued?: boolean; messageId?: string } | null = null;
+        let wakeError: Error | null = null;
+        try {
+          wakeResult = (await getBackendClient().request('agent.sendMessage', {
+            workspaceId: this.workspaceId,
+            agentId: agentToWake.id,
+            content: contextMessage,
+            messageMetadata: {
+              type: 'task_wake',
+              source: 'wake_or_create_task_agent',
+              taskNoteId,
+              callerAgentId: ctx.agentId,
+            },
+          })) as { success: boolean; queued?: boolean; messageId?: string };
+        } catch (error) {
+          wakeError = error as Error;
+        }
 
-        if (!wakeResult.success) {
-          // Check if the failure is because the agent is already streaming/responding.
-          // This happens when another tool (e.g., send_message_to_task_agent) already
-          // woke the agent. In this case, DON'T create a new agent — queue the message.
-          const isAlreadyStreaming = wakeResult.errorCode === 'ALREADY_STREAMING';
-
-          if (isAlreadyStreaming) {
-            logger.info(
-              'Agent is already actively streaming, queueing context message instead of creating duplicate',
-              {
-                agentId: agentToWake.id,
-                taskNoteId,
-                error: wakeResult.error,
-              },
-            );
-
-            // Queue the context message for delivery when agent finishes its current turn
-            const queueResult = await handler.handleQueueMessage(null, {
+        if (wakeResult?.queued === true) {
+          logger.info(
+            'Agent is already actively streaming, message auto-queued by daemon instead of creating duplicate',
+            {
               agentId: agentToWake.id,
-              content: contextMessage,
-              workspaceId: this.workspaceId,
-            });
+              taskNoteId,
+              messageId: wakeResult.messageId,
+            },
+          );
 
-            if (!queueResult.success) {
-              logger.error('Failed to queue context message for streaming agent', {
-                agentId: agentToWake.id,
-                taskNoteId,
-                error: queueResult.error,
-              });
-              return this.error(
-                `Agent is already streaming but failed to queue context message: ${queueResult.error}`,
-              );
-            }
+          // `agent.sendMessage` already enqueued the message when the agent was
+          // mid-turn; the returned `messageId` is the queued message's id.
+          const queuedMessageId = wakeResult.messageId;
 
-            // For queued messages, DON'T use oneShot since agent:idle will fire
-            // for the current turn before our queued message is processed.
-            // The subscription needs to survive the current turn's completion.
-            const queuedMessageId = queueResult.queuedMessage?.id;
+          // For queued messages, DON'T use oneShot since agent:idle will fire
+          // for the current turn before our queued message is processed.
+          // The subscription needs to survive the current turn's completion.
+          {
             const queuedCompletionFilter: AgentEventFilter = {
               eventTypes: [...AGENT_COMPLETION_EVENT_TYPES],
               actorIds: [agentToWake.id],
@@ -2788,25 +2879,9 @@ an agent is working on the task.`,
               ...(modelOverrideWarning && { modelOverrideWarning }),
             });
           }
-
-          if (wakeResult.errorCode === 'AGENT_DELETED') {
-            staleAssignedAgentIds.add(agentToWake.id);
-          } else if (
-            wakeResult.errorCode !== 'AGENT_NOT_FOUND' &&
-            !wakeResult.error?.toLowerCase().includes('not found')
-          ) {
-            return this.error(
-              `Failed to wake assigned agent "${agentToWake.id}": ${wakeResult.error || 'Unknown error'}`,
-            );
-          }
-
-          logger.warn('Failed to wake agent, falling back to create', {
-            agentId: agentToWake.id,
-            error: wakeResult.error,
-          });
-          // Fall through to create a new agent
-        } else {
-          // Subscribe the caller to receive a notification when the woken agent responds
+        } else if (wakeResult?.success) {
+          // Daemon accepted the wake and dispatched it (not queued behind a live turn);
+          // subscribe the caller so it gets notified when the target responds.
           const subscriptionId = await subscribeCallerToAgentCompletion(
             this.workspaceId,
             ctx.agentId,
@@ -2830,6 +2905,26 @@ an agent is working on the task.`,
             subscriptionId,
             ...(modelOverrideWarning && { modelOverrideWarning }),
           });
+        } else {
+          // wakeError was thrown, or the daemon returned `success: false` without
+          // queueing. Sniff the error message text to map onto the pre-C1d-6
+          // AGENT_DELETED / AGENT_NOT_FOUND branches: deleted → clean assignment
+          // + create; not-found → fall through to create; anything else → error.
+          const errMsg = wakeError?.message ?? '';
+          const lowerErr = errMsg.toLowerCase();
+          if (lowerErr.includes('deleted')) {
+            staleAssignedAgentIds.add(agentToWake.id);
+          } else if (!lowerErr.includes('not found')) {
+            return this.error(
+              `Failed to wake assigned agent "${agentToWake.id}": ${errMsg || 'Unknown error'}`,
+            );
+          }
+
+          logger.warn('Failed to wake agent, falling back to create', {
+            agentId: agentToWake.id,
+            error: errMsg,
+          });
+          // Fall through to create a new agent
         }
       }
 
@@ -2893,12 +2988,14 @@ an agent is working on the task.`,
         }
       }
 
-      const newAgent = await handler.createAgent(this.workspaceId, agentName, {
+      const newAgent = await daemonCreateAgent({
+        workspaceId: this.workspaceId,
         workspacePath: this.workspacePath,
+        name: agentName,
         model: wakeModel,
         provider: wakeProvider,
-        initialMessage: contextMessage,
         agentType: previousSpecialistConfig?.defaultAgentType || 'task-loop',
+        initialMessage: contextMessage,
         contextReferences: [
           {
             type: 'note',
@@ -2914,19 +3011,22 @@ an agent is working on the task.`,
           source: 'wake_or_create_task_agent',
           ...(!autoCommitEnabled && { skipAutoCommit: true }),
         },
-        onBeforeStart: async (agentId: string) => {
-          subscriptionId = await subscribeCallerToAgentCompletion(
-            this.workspaceId,
-            ctx.agentId,
-            ctx.agentName,
-            agentId,
-          );
-        },
       });
 
       if (!newAgent) {
         return this.error('Failed to create new agent for task');
       }
+
+      subscriptionId = await subscribeCallerToAgentCompletion(
+        this.workspaceId,
+        ctx.agentId,
+        ctx.agentName,
+        newAgent.id,
+      );
+
+      await daemonSendInitialMessage(this.workspaceId, newAgent.id, contextMessage, {
+        contextReferences: [{ type: 'note', id: taskNoteId, name: note.title || taskNoteId }],
+      });
 
       // Assign the new agent to the task (PROTOCOL.md §5.4 task.assignAgent).
       try {

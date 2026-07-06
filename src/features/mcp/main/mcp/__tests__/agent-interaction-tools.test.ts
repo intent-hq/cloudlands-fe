@@ -13,7 +13,16 @@ import {
 } from 'vitest';
 import type { ToolCall } from '../protocol';
 
-// Mock instances - need to be hoisted
+// Mock instances - need to be hoisted.
+//
+// C1d-6: `agent-interaction-tools.ts` no longer imports the FE
+// `AgentBackendHandler`; its write/wake paths hit the daemon directly via
+// `agent.create` / `agent.sendMessage` / `agent.getSession` (PROTOCOL.md
+// §5.5). These per-method spies remain the seam every test asserts against —
+// the `installWriteWakeWireCompat()` helper below wires them into
+// `mockRequest` so existing `mockBackendHandler.createAgent.mockResolvedValue`
+// style fixtures keep describing the same behaviour without hand-editing 80+
+// legacy assertions.
 const mockBackendHandler = {
   createAgent: vi.fn(),
   sendBackendInitiatedMessage: vi.fn(),
@@ -92,12 +101,12 @@ const mockSelectorState = vi.hoisted(() => ({
   } as any,
 }));
 
-// Mock the dependencies before importing the tools
-vi.mock('$features/agent/main/agent-backend-handler.service', () => ({
-  AgentBackendHandler: {
-    getInstance: () => mockBackendHandler,
-  },
-}));
+// C1d-6: `agent-interaction-tools.ts` no longer imports the FE
+// `AgentBackendHandler`, so the previous `vi.mock('$features/agent/main/
+// agent-backend-handler.service', ...)` binding is gone. The write/wake seam
+// is now the daemon wire (`getBackendClient().request`), which
+// `installWriteWakeWireCompat()` below wires onto the `mockBackendHandler.*`
+// spies.
 
 // workspace-event-bus and unified-event-bus were deleted; events now dispatched via Redux
 
@@ -281,7 +290,7 @@ function stubDaemonAgentLoad(response: {
   data?: any;
   error?: string;
 }) {
-  mockRequest.mockImplementation(async (method: string) => {
+  mockRequest.mockImplementation(async (method: string, params: any) => {
     if (method === 'agent.get') {
       if (!response.success || !response.data) {
         throw new Error(response.error || 'agent not found');
@@ -297,6 +306,11 @@ function stubDaemonAgentLoad(response: {
       // the stub just acknowledges (PROTOCOL.md §5.5).
       return { success: true };
     }
+    // C1d-6: write/wake methods (`agent.create` / `agent.sendMessage` /
+    // `agent.getSession`) fall through to the mockBackendHandler-bridged
+    // compat so tests that use this stub still exercise create/wake paths.
+    const compat = await invokeWriteWakeWireCompat(method, params);
+    if (compat !== undefined) return compat;
     throw new Error(`unhandled RPC in stubDaemonAgentLoad: ${method}`);
   });
 }
@@ -317,8 +331,112 @@ function stubDaemonAgentList(agents: any[], agentDetails: Record<string, any> = 
       }
       return { agent };
     }
+    // C1d-6: same write/wake fall-through as `stubDaemonAgentLoad`.
+    const compat = await invokeWriteWakeWireCompat(method, params);
+    if (compat !== undefined) return compat;
     throw new Error(`unhandled RPC in stubDaemonAgentList: ${method}`);
   });
+}
+
+// C1d-6: bridge the `mockBackendHandler.*` spies onto the daemon wire seam
+// (`getBackendClient().request`). Each translation mirrors the request/response
+// contract in PROTOCOL.md §5.5 so the pre-C1d-6 test bodies keep asserting
+// their original request shapes and configuring their original response
+// fixtures — the write/wake seam simply moves from an FE handler singleton to
+// the JSON-RPC transport.
+//
+// - `agent.create`: unwraps the wire params, invokes `mockBackendHandler.
+//   createAgent(workspaceId, name, legacyOptions)` (hoisting metadata fields
+//   the retired handler used to accept at the top level), and wraps the
+//   `{ id, name }` return in `{ agent }`.
+// - `agent.sendMessage`: routes through `mockBackendHandler.
+//   sendBackendInitiatedMessage`. `ALREADY_STREAMING` collapses onto the new
+//   `{ queued: true, messageId }` wire response (the daemon auto-queues), so
+//   the queued-branch scenario also invokes `mockBackendHandler.
+//   handleQueueMessage` for its `queuedMessage.id`. `AGENT_DELETED` /
+//   `AGENT_NOT_FOUND` / other legacy errorCodes surface as JSON-RPC errors
+//   with matching text.
+// - `agent.getSession`: routes through `mockBackendHandler.
+//   getAgentResumability`. `status: 'not_found'` throws; `running` returns a
+//   session with `isStreaming: true`, `resumable` returns a session with idle
+//   flags — matching `daemonGetResumability`'s derivation in
+//   `agent-interaction-tools.ts`.
+async function invokeWriteWakeWireCompat(
+  method: string,
+  params: any,
+): Promise<any | undefined> {
+  if (method === 'agent.create') {
+    const md = params?.metadata ?? {};
+    const legacyOptions = {
+      workspacePath: params?.workspacePath,
+      model: params?.model,
+      provider: params?.provider,
+      agentType: params?.agentType,
+      initialMessage: md.initialMessage,
+      behaviorPrompt: md.behaviorPrompt,
+      specialistName: md.specialistName,
+      roleReminder: md.roleReminder,
+      contextReferences: md.contextReferences,
+      imageBlocks: md.imageBlocks,
+      metadata: md,
+    };
+    const agent = await mockBackendHandler.createAgent(
+      params?.workspaceId,
+      params?.name,
+      legacyOptions,
+    );
+    return { agent: agent ?? null };
+  }
+  if (method === 'agent.sendMessage') {
+    const legacyRes = await mockBackendHandler.sendBackendInitiatedMessage({
+      sessionId: params?.agentId,
+      workspaceId: params?.workspaceId,
+      message: params?.content,
+      messageMetadata: params?.messageMetadata,
+    });
+    if (legacyRes?.success) {
+      return { success: true, queued: false };
+    }
+    if (legacyRes?.errorCode === 'ALREADY_STREAMING') {
+      const queueRes = await mockBackendHandler.handleQueueMessage(null, {
+        agentId: params?.agentId,
+        content: params?.content,
+        workspaceId: params?.workspaceId,
+      });
+      if (queueRes?.success) {
+        return {
+          success: true,
+          queued: true,
+          messageId: queueRes.queuedMessage?.id,
+        };
+      }
+      throw new Error(queueRes?.error || 'queue unavailable');
+    }
+    if (legacyRes?.errorCode === 'AGENT_DELETED') {
+      throw new Error(legacyRes.error || 'agent has been deleted');
+    }
+    if (legacyRes?.errorCode === 'AGENT_NOT_FOUND') {
+      throw new Error(legacyRes.error || 'agent not found');
+    }
+    throw new Error(legacyRes?.error || 'send failed');
+  }
+  if (method === 'agent.getSession') {
+    const res = await mockBackendHandler.getAgentResumability(
+      params?.agentId,
+      params?.workspaceId,
+    );
+    if (!res || res.status === 'not_found') {
+      throw new Error('agent not found');
+    }
+    return {
+      session: {
+        ...(res.agentData || {}),
+        isStreaming: res.status === 'running',
+        isResponding: false,
+      },
+    };
+  }
+  return undefined;
 }
 
 describe('Agent Interaction Tools', () => {
@@ -328,6 +446,17 @@ describe('Agent Interaction Tools', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequest.mockReset();
+    // Default wire routing: forward daemon write/wake calls through the
+    // `mockBackendHandler.*` spies (see `invokeWriteWakeWireCompat`). Reads
+    // like `agent.get` / `agent.getConversation` / `agent.reportToParent` are
+    // still resolved through individual test helpers (e.g. `stubDaemonAgentLoad`)
+    // or the per-describe-block `mockRequest.mockImplementation` overrides.
+    mockRequest.mockImplementation(async (method: string, params: any) => {
+      const compat = await invokeWriteWakeWireCompat(method, params);
+      if (compat !== undefined) return compat;
+      if (method === 'agent.get') return { agent: null };
+      return {};
+    });
     // Reset protocol adapter mocks after clearAllMocks
     vi.mocked(protocolAdapter.createNote).mockResolvedValue({
       ok: true,
@@ -2941,7 +3070,10 @@ describe('Agent Interaction Tools', () => {
       DelegateTaskTool.clearDelegationGroup(workspaceId, parentAgentId);
       // P3-D4: MCP tools now hit the daemon directly for note.get/task.*
       // (PROTOCOL.md §5.2, §5.4). Delegate to the legacy mockNotesService so
-      // existing per-test expectations keep working.
+      // existing per-test expectations keep working. C1d-6: write/wake
+      // (`agent.create` / `agent.sendMessage` / `agent.getSession`) fall
+      // through to `invokeWriteWakeWireCompat` so the same
+      // `mockBackendHandler.*` spies keep configuring behaviour.
       mockRequest.mockImplementation(async (method: string, params: any) => {
         if (method === 'note.get') {
           const res = await mockNotesService.getNote(params?.workspaceId, params?.noteId);
@@ -2971,6 +3103,8 @@ describe('Agent Interaction Tools', () => {
           }
           return { ok: true, updatedCount: res.data ?? 0 };
         }
+        const compat = await invokeWriteWakeWireCompat(method, params);
+        if (compat !== undefined) return compat;
         if (method === 'agent.get') {
           return { agent: null };
         }
@@ -3126,15 +3260,10 @@ describe('Agent Interaction Tools', () => {
         arguments: { taskNoteId, wait_mode: 'after_all' },
         context: makeContext(),
       });
-      const [aliasBackend, relativeBackend] = await Promise.all([
-        import('$features/agent/main/agent-backend-handler.service'),
-        import('../../../../agent/main/agent-backend-handler.service'),
-      ]);
-      vi.spyOn(relativeBackend.AgentBackendHandler, 'getInstance').mockReturnValue(
-        mockBackendHandler as any,
-      );
-      expect(aliasBackend.AgentBackendHandler.getInstance()).toBe(mockBackendHandler);
-      expect(relativeBackend.AgentBackendHandler.getInstance()).toBe(mockBackendHandler);
+      // C1d-6: `agent-interaction-tools.ts` no longer imports the FE
+      // `AgentBackendHandler`, so the alias/relative-path resolution spy that
+      // used to guard against dual-instance drift is retired. The daemon wire
+      // seam (`getBackendClient().request`) is the single seam under test now.
 
       const [first, second, duplicate] = await Promise.all([
         tool.execute(makeDelegateCall('task-concurrent-after-all-a')),
@@ -3531,8 +3660,14 @@ describe('Agent Interaction Tools', () => {
         context: makeContext(),
       } as ToolCall);
 
+      // C1d-6: post-migration the wake and its daemon-auto-queue are a single
+      // `agent.sendMessage` call (PROTOCOL.md §5.5), so a queue-side failure
+      // surfaces through the generic wake-failure path with the daemon's
+      // error string ("queue unavailable" here) preserved verbatim. The
+      // no-duplicate-creation invariant is unchanged.
       expect(result.isError).toBe(true);
-      expect((result.content[0] as any).text).toContain('failed to queue context message');
+      expect((result.content[0] as any).text).toContain('Failed to wake assigned agent');
+      expect((result.content[0] as any).text).toContain('queue unavailable');
       expect(mockBackendHandler.createAgent).not.toHaveBeenCalled();
       expect(mockSubscriptionService.subscribe).not.toHaveBeenCalled();
     });
@@ -3767,18 +3902,31 @@ describe('Agent Interaction Tools', () => {
         },
       });
       mockNotesService.assignAgentToTask.mockResolvedValue({ ok: true });
+      // C1d-6: daemon-primary `agent.getSession` cannot return metadata for a
+      // truly missing session, so the pre-migration `{status: 'not_found',
+      // agentData: {metadata: {specialist}}}` fixture is now a resumable
+      // session (so previousSpecialist is recovered) paired with a wake that
+      // resolves as agent-not-found — the wake falls through to create and
+      // the model-resolution assertions below still exercise the specialist
+      // codingAgent path.
       mockBackendHandler.getAgentResumability.mockResolvedValue({
-        status: 'not_found',
-        canWake: false,
+        status: 'resumable',
+        canWake: true,
         agentData: {
           metadata: { specialist: 'implementor' },
         },
+      });
+      mockBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({
+        success: false,
+        errorCode: 'AGENT_NOT_FOUND',
+        error: 'agent not found',
       });
       mockBackendHandler.createAgent.mockResolvedValue({
         id: 'new-task-agent-id',
         name: 'Task: Do the thing',
       });
-      // P3-D4: route daemon note.get / task.* through the legacy mock.
+      // P3-D4: route daemon note.get / task.* through the legacy mock. C1d-6:
+      // fall through to `invokeWriteWakeWireCompat` for write/wake methods.
       mockRequest.mockImplementation(async (method: string, params: any) => {
         if (method === 'note.get') {
           const res = await mockNotesService.getNote(params?.workspaceId, params?.noteId);
@@ -3808,6 +3956,8 @@ describe('Agent Interaction Tools', () => {
           }
           return { ok: true, updatedCount: res.data ?? 0 };
         }
+        const compat = await invokeWriteWakeWireCompat(method, params);
+        if (compat !== undefined) return compat;
         if (method === 'agent.get') {
           return { agent: null };
         }
@@ -4248,5 +4398,142 @@ describe('mcp agent-session tools — daemon wire contract (PROTOCOL.md §5.5)',
       agentId: 'parent',
       workspaceId,
     });
+  });
+
+  // C1d-6 wire contracts for the write/wake paths that used to route through
+  // the retired `AgentBackendHandler`. Each asserts the exact JSON-RPC
+  // method + params the tools emit per PROTOCOL.md §5.5.
+
+  it('CreateAgentTool writes via agent.create with metadata-hoisted specialist fields', async () => {
+    mockRequest.mockImplementation(async (method: string, params: any) => {
+      if (method === 'agent.get') return { agent: { metadata: { delegationDepth: 0 } } };
+      if (method === 'agent.create') {
+        return { agent: { id: 'wire-create-1', name: params?.name ?? 'Child' } };
+      }
+      if (method === 'agent.sendMessage') return { success: true, queued: false };
+      throw new Error(`unexpected ${method}`);
+    });
+    const { CreateAgentTool } = await import('../agent-interaction-tools');
+    const tool = new CreateAgentTool(workspaceId, '/tmp');
+    const result = await tool.execute({
+      name: 'create_agent',
+      arguments: { name: 'Wire Child', initialMessage: 'hello', specialist: 'implementor' },
+      context: { workspaceId, agentId: 'wire-parent', agentName: 'Wire Parent' },
+    } as any);
+    expect(result.isError).toBe(false);
+    const createCall = mockRequest.mock.calls.find((c) => c[0] === 'agent.create');
+    expect(createCall).toBeDefined();
+    // Specialist trio (`behaviorPrompt` / `specialistName` / `roleReminder`)
+    // and the pre-first-turn `initialMessage` fold into `metadata` per the
+    // widened `agent.create` seam. Top-level wire params carry the daemon-owned
+    // fields (`workspaceId` / `name` / `workspacePath` / `model` / `provider` /
+    // `agentType` / `metadata`).
+    expect(createCall?.[1]).toEqual(
+      expect.objectContaining({
+        workspaceId,
+        name: 'Wire Child',
+        workspacePath: '/tmp',
+        metadata: expect.objectContaining({
+          createdByAgentId: 'wire-parent',
+          isBackground: true,
+          behaviorPrompt: expect.stringContaining('implementor'),
+          specialistName: 'Implementor',
+          initialMessage: 'hello',
+        }),
+      }),
+    );
+    // Post-create initial send follows immediately on the same session.
+    const sendCall = mockRequest.mock.calls.find((c) => c[0] === 'agent.sendMessage');
+    expect(sendCall?.[1]).toEqual(
+      expect.objectContaining({ workspaceId, agentId: 'wire-create-1', content: 'hello' }),
+    );
+  });
+
+  it('WakeOrCreateTaskAgentTool wakes via agent.sendMessage on the assigned agent', async () => {
+    mockRequest.mockImplementation(async (method: string, params: any) => {
+      if (method === 'note.get') {
+        return {
+          note: {
+            id: 'wire-task',
+            title: 'Wire task',
+            metadata: { task: { assignedAgentIds: ['wire-target'] } },
+          },
+        };
+      }
+      if (method === 'agent.getSession') {
+        return { session: { id: 'wire-target', isStreaming: false, isResponding: false } };
+      }
+      if (method === 'agent.sendMessage') return { success: true, queued: false };
+      if (method === 'task.assignAgent') {
+        return { ok: true, noteId: params?.noteId, agentId: params?.agentId };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { WakeOrCreateTaskAgentTool } = await import('../agent-interaction-tools');
+    const tool = new WakeOrCreateTaskAgentTool(workspaceId, '/tmp');
+    const result = await tool.execute({
+      name: 'wake_or_create_task_agent',
+      arguments: { taskNoteId: 'wire-task', contextMessage: 'Please continue.' },
+      context: { workspaceId, agentId: 'wire-caller', agentName: 'Wire Caller' },
+    } as any);
+    expect(result.isError).toBe(false);
+    expect(result.metadata).toMatchObject({ action: 'woke_existing', agentId: 'wire-target' });
+    const sendCall = mockRequest.mock.calls.find((c) => c[0] === 'agent.sendMessage');
+    expect(sendCall?.[1]).toEqual(
+      expect.objectContaining({
+        workspaceId,
+        agentId: 'wire-target',
+        content: 'Please continue.',
+        messageMetadata: expect.objectContaining({
+          taskNoteId: 'wire-task',
+          source: 'wake_or_create_task_agent',
+        }),
+      }),
+    );
+  });
+
+  it('WakeOrCreateTaskAgentTool queued branch flips on { queued: true } from agent.sendMessage', async () => {
+    // Post-C1d-6 the daemon auto-queues when the target is mid-turn and
+    // reports `{ success: true, queued: true, messageId }`. The tool must
+    // take the "message queued to active agent" path without falling back to
+    // a duplicate `agent.create` (regression guard for the flipped
+    // ALREADY_STREAMING branch).
+    mockRequest.mockImplementation(async (method: string, params: any) => {
+      if (method === 'note.get') {
+        return {
+          note: {
+            id: 'wire-queued',
+            title: 'Wire queued task',
+            metadata: { task: { assignedAgentIds: ['wire-active'] } },
+          },
+        };
+      }
+      if (method === 'agent.getSession') {
+        return { session: { id: 'wire-active', isStreaming: true, isResponding: false } };
+      }
+      if (method === 'agent.sendMessage') {
+        return { success: true, queued: true, messageId: 'msg-wire-queued' };
+      }
+      if (method === 'task.assignAgent') {
+        return { ok: true, noteId: params?.noteId, agentId: params?.agentId };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { WakeOrCreateTaskAgentTool } = await import('../agent-interaction-tools');
+    const tool = new WakeOrCreateTaskAgentTool(workspaceId, '/tmp');
+    const result = await tool.execute({
+      name: 'wake_or_create_task_agent',
+      arguments: { taskNoteId: 'wire-queued', contextMessage: 'Queue me.' },
+      context: { workspaceId, agentId: 'wire-caller', agentName: 'Wire Caller' },
+    } as any);
+    expect(result.isError).toBe(false);
+    expect(result.metadata).toMatchObject({
+      action: 'message_queued_to_active_agent',
+      agentId: 'wire-active',
+      taskNoteId: 'wire-queued',
+      queuedMessageId: 'msg-wire-queued',
+    });
+    // No duplicate agent creation — `agent.create` must not appear on the wire.
+    expect(mockRequest.mock.calls.some((c) => c[0] === 'agent.create')).toBe(false);
   });
 });
