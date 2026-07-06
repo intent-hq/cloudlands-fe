@@ -637,6 +637,109 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
 });
 
 // ───────────────────────────────────────────────────────────────────────────
+// Retired channel stay-retired guard (file-tracking / line-attribution /
+// file-attribution surface removed in the P3 FE regression cleanup)
+//
+// The file-tracking service, line-attribution service, and file-attribution
+// helpers were removed alongside their handlers, seeder bridges, and preload
+// allowlist entries. Only three channels survive: two live event relays
+// (`file-tracking:changes-updated`, `line-attribution:updated`) delivered by
+// the daemon-events bridge, and one agent-driven event
+// (`file-tracking:agent-file-changed`) emitted by workspace-file-tools. Any
+// invoke, listener, or mock-bridge that resurrects a retired name would
+// silently reintroduce the class we just drained — pin the ban here so a
+// regression fails loud in this suite instead of at runtime.
+// ───────────────────────────────────────────────────────────────────────────
+
+const RETIRED_IPC_CHANNELS: ReadonlySet<string> = new Set([
+  // Retired FILE_TRACKING request channels (E2/E3 removed the service).
+  'file-tracking:init',
+  'file-tracking:load',
+  'file-tracking:load-commits',
+  'file-tracking:load-older-commits',
+  'file-tracking:sync',
+  'file-tracking:clear',
+  'file-tracking:get-changes',
+  'file-tracking:get-status',
+  'file-tracking:get-line-stats',
+  'file-tracking:refresh',
+  'file-tracking:track-change',
+  'file-tracking:stage-changes',
+  'file-tracking:unstage-changes',
+  'file-tracking:load-transitions',
+  // Retired FILE_TRACKING event channel (listener-ready handshake).
+  'file-tracking:listener-ready',
+  // Retired LINE_ATTRIBUTION request channels (kept: `line-attribution:updated`).
+  'line-attribution:load',
+  'line-attribution:compute-now',
+  // Retired FILE_ATTRIBUTION namespace (agent-write attribution moved off IPC).
+  'file-attribution:record-agent-write',
+  'file-attribution:read-file-and-record',
+]);
+
+describe('Retired file-tracking / line-attribution / file-attribution channels stay retired', () => {
+  const { invoked } = scanInvokedChannels();
+  const { listened, emitted } = scanEventChannels();
+  const registered = new Set(getRegisteredMockIpcChannels());
+
+  it('none of the retired channels appear in renderer invoke call sites', () => {
+    const resurrected = [...RETIRED_IPC_CHANNELS]
+      .filter((channel) => invoked.has(channel))
+      .map((channel) => `${channel}\n    ${invoked.get(channel)!.join('\n    ')}`);
+    expect(
+      resurrected,
+      'A retired file-tracking/line-attribution/file-attribution channel has a new invoke call ' +
+        'site. The service, handlers, and seeder bridge were removed — re-adding the invoke ' +
+        'would reject with UnbridgedMockIpcChannelError. Route the request through the daemon ' +
+        'seam instead of resurrecting the retired IPC channel.',
+    ).toEqual([]);
+  });
+
+  it('none of the retired channels appear in renderer listener or emit call sites', () => {
+    const resurrectedListeners = [...RETIRED_IPC_CHANNELS]
+      .filter((channel) => listened.has(channel))
+      .map((channel) => `${channel}\n    ${listened.get(channel)!.join('\n    ')}`);
+    expect(
+      resurrectedListeners,
+      'A retired file-tracking/line-attribution/file-attribution channel has a new listener ' +
+        'call site — no production emitter delivers it (silent-gap regression).',
+    ).toEqual([]);
+    const resurrectedEmitters = [...RETIRED_IPC_CHANNELS]
+      .filter((channel) => emitted.has(channel))
+      .map((channel) => `${channel}\n    ${emitted.get(channel)!.join('\n    ')}`);
+    expect(
+      resurrectedEmitters,
+      'A retired file-tracking/line-attribution/file-attribution channel has a new mock emit ' +
+        'call site — the surface was drained, not re-bridged.',
+    ).toEqual([]);
+  });
+
+  it('none of the retired channels are registered by any seeder', () => {
+    const rebridged = [...RETIRED_IPC_CHANNELS].filter((channel) => registered.has(channel));
+    expect(
+      rebridged,
+      'A retired channel was bridged again by a mock-router seeder — remove the bridge and ' +
+        'reroute through the daemon seam.',
+    ).toEqual([]);
+  });
+
+  it('IPC_CHANNELS registry no longer exposes retired names', () => {
+    const flatten = (obj: unknown, out: string[] = []): string[] => {
+      if (typeof obj === 'string') out.push(obj);
+      else if (obj && typeof obj === 'object')
+        for (const value of Object.values(obj as Record<string, unknown>)) flatten(value, out);
+      return out;
+    };
+    const registryValues = new Set(flatten(IPC_CHANNELS));
+    const leaked = [...RETIRED_IPC_CHANNELS].filter((channel) => registryValues.has(channel));
+    expect(
+      leaked,
+      'Retired channel constants must not be re-added to IPC_CHANNELS in src/shared/ipc-registry.ts.',
+    ).toEqual([]);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 // Workspace MCP server boundary (dynamic invoke(toolName) blind spot)
 //
 // `src/features/mcp/servers/{workspace,notes,git}` are the workspace-MCP

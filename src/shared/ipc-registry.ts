@@ -549,20 +549,6 @@ export const IPC_CHANNELS = {
 
   // File Tracking
   FILE_TRACKING: {
-    INIT: 'file-tracking:init',
-    LOAD: 'file-tracking:load',
-    LOAD_COMMITS: 'file-tracking:load-commits',
-    LOAD_OLDER_COMMITS: 'file-tracking:load-older-commits',
-    SYNC: 'file-tracking:sync',
-    CLEAR: 'file-tracking:clear',
-    GET_CHANGES: 'file-tracking:get-changes',
-    GET_STATUS: 'file-tracking:get-status',
-    GET_LINE_STATS: 'file-tracking:get-line-stats',
-    REFRESH: 'file-tracking:refresh',
-    TRACK_CHANGE: 'file-tracking:track-change',
-    STAGE_CHANGES: 'file-tracking:stage-changes',
-    UNSTAGE_CHANGES: 'file-tracking:unstage-changes',
-    LOAD_TRANSITIONS: 'file-tracking:load-transitions',
     // Event emitted by agent file operations to trigger immediate UI update
     AGENT_FILE_CHANGED: 'file-tracking:agent-file-changed',
   },
@@ -737,15 +723,7 @@ export const IPC_CHANNELS = {
 
   // Line Attribution
   LINE_ATTRIBUTION: {
-    LOAD: 'line-attribution:load',
     UPDATED: 'line-attribution:updated',
-    COMPUTE_NOW: 'line-attribution:compute-now',
-  },
-
-  // File Attribution (for agent file writes)
-  FILE_ATTRIBUTION: {
-    RECORD_AGENT_WRITE: 'file-attribution:record-agent-write',
-    READ_FILE_AND_RECORD: 'file-attribution:read-file-and-record',
   },
 
   // Git Tracking
@@ -1140,7 +1118,6 @@ export const EVENT_CHANNELS = [
   'window:zoom-changed',
   'navigate-to-settings', // Navigation to settings from menu
   'git:status-changed',
-  'file-tracking:listener-ready',
   'file-tracking:changes-updated',
   'file-tracking:agent-file-changed',
   'line-attribution:updated',
