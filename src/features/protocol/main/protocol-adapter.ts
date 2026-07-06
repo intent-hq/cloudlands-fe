@@ -1,8 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import {
-  NoteId as createNoteId,
   WorkspaceId as createWorkspaceId,
-  AgentId as createAgentId,
 } from '$shared/types/branded-ids';
 import type { WorkspaceId } from '$shared/types/branded-ids';
 /**
@@ -15,10 +13,10 @@ import type { WorkspaceId } from '$shared/types/branded-ids';
  */
 
 import { WorkspaceService } from '../../workspace/main/workspace.service';
-import { NotesService } from '../../notes/main/notes.service';
 import { ToolService } from '../../tools/main/tool.service';
 import { ACPServer } from '../../acp-official/main/server/acp-server';
 import type { ACPServerConfig } from '../../acp-official/main/server/acp-server';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 import { Logger } from '$shared/logger';
 import type { Result, PullRequestInfo } from '$shared/types';
 import type { UserContext, ToolPermissions } from '../../tools/types';
@@ -38,10 +36,9 @@ export class ProtocolAdapter {
 
   constructor(
     private readonly workspaceService: WorkspaceService = new WorkspaceService(),
-    private readonly notesService: NotesService = new NotesService(),
     toolService?: ToolService,
   ) {
-    this.toolService = toolService || new ToolService(workspaceService, notesService);
+    this.toolService = toolService || new ToolService(workspaceService);
   }
 
   /**
@@ -233,65 +230,65 @@ export class ProtocolAdapter {
         },
     noteData?: any,
   ): Promise<any> {
-    // Handle both call signatures for compatibility
-    if (typeof workspaceIdOrParams === 'string') {
-      // Called with (workspaceId, noteData) - MCP tools style
-      const workspaceId = workspaceIdOrParams;
-      logger.info('Protocol: createNote (MCP style)', {
-        workspaceId,
-        title: noteData?.title,
-      });
+    const isMcpStyle = typeof workspaceIdOrParams === 'string';
+    const workspaceId = isMcpStyle ? (workspaceIdOrParams as string) : workspaceIdOrParams.workspaceId;
+    const payload = isMcpStyle ? { workspaceId, ...noteData } : workspaceIdOrParams;
+    logger.info(`Protocol: createNote (${isMcpStyle ? 'MCP' : 'IPC'} style)`, {
+      workspaceId,
+      title: payload?.title,
+    });
 
-      const result = await this.notesService.createNote({
+    try {
+      const { title, content, tags, parentId } = payload as any;
+      const result = await getBackendClient().request<{ note: any }>('note.create', {
         workspaceId,
-        ...noteData,
+        title,
+        ...(content !== undefined ? { content } : {}),
+        ...(tags !== undefined ? { tags } : {}),
+        ...(parentId !== undefined ? { parentId } : {}),
       });
-
-      // For MCP tools, return the data directly or null
-      return result.ok ? result.data : null;
-    } else {
-      // Called with (params) - IPC style
-      logger.info('Protocol: createNote (IPC style)', {
-        workspaceId: workspaceIdOrParams.workspaceId,
-        title: workspaceIdOrParams.title,
-      });
-      return await this.notesService.createNote(workspaceIdOrParams as any);
+      const note = result?.note ?? null;
+      return isMcpStyle ? note : { ok: true, data: note };
+    } catch (error) {
+      logger.error('Failed to create note', error as Error);
+      return isMcpStyle
+        ? null
+        : { ok: false, error: (error as Error).message };
     }
   }
 
-  async listNotes(workspaceId: string, options?: { summariesOnly?: boolean }): Promise<any> {
-    // Validate workspaceId
+  async listNotes(workspaceId: string, _options?: { summariesOnly?: boolean }): Promise<any> {
     if (!workspaceId) {
       logger.error('[ProtocolAdapter] listNotes called without workspaceId');
       return [];
     }
 
-    const result = await this.notesService.listNotes(createWorkspaceId(workspaceId), options);
-
-    // Check if this is being called from MCP (based on call stack or return type expectation)
-    // For now, we'll return the data directly for MCP compatibility
-    // IPC calls will still work as they check the result structure
-    // Return just the notes array, not the full paginated response object
-    return result.ok ? result.data.notes : [];
+    try {
+      const result = await getBackendClient().request<{ notes: any[] }>('note.list', {
+        workspaceId,
+      });
+      return Array.isArray(result?.notes) ? result.notes : [];
+    } catch (error) {
+      logger.error('Failed to list notes', error as Error);
+      return [];
+    }
   }
 
   async getNote(
     workspaceIdOrParams: string | { workspaceId: string; noteId: string; initializeCRDT?: boolean },
     noteId?: string,
   ): Promise<any> {
-    // Handle both call signatures for compatibility
+    const isMcpStyle = typeof workspaceIdOrParams === 'string';
     let actualWorkspaceId: string;
     let actualNoteId: string;
 
-    if (typeof workspaceIdOrParams === 'string') {
-      // Called with (workspaceId, noteId) - MCP tools style
+    if (isMcpStyle) {
       if (noteId === undefined) {
         throw new Error('noteId is required when calling getNote with a workspaceId string');
       }
-      actualWorkspaceId = workspaceIdOrParams;
+      actualWorkspaceId = workspaceIdOrParams as string;
       actualNoteId = noteId;
     } else {
-      // Called with ({ workspaceId, noteId }) - IPC style
       actualWorkspaceId = workspaceIdOrParams.workspaceId;
       actualNoteId = workspaceIdOrParams.noteId;
     }
@@ -301,22 +298,22 @@ export class ProtocolAdapter {
       noteId: actualNoteId,
     });
 
-    const result = await this.notesService.getNote(
-      createWorkspaceId(actualWorkspaceId),
-      createNoteId(actualNoteId),
-      {
-        initializeCRDT:
-          typeof workspaceIdOrParams === 'string' ? false : workspaceIdOrParams.initializeCRDT === true,
-      },
-    );
-
-    // For MCP tools, return the data directly or null
-    if (typeof workspaceIdOrParams === 'string') {
-      return result.ok ? result.data : null;
+    try {
+      const result = await getBackendClient().request<{ note: any }>('note.get', {
+        workspaceId: actualWorkspaceId,
+        noteId: actualNoteId,
+      });
+      const note = result?.note ?? null;
+      return isMcpStyle ? note : { ok: true, data: note };
+    } catch (error) {
+      logger.error('Failed to get note', error as Error, {
+        workspaceId: actualWorkspaceId,
+        noteId: actualNoteId,
+      });
+      return isMcpStyle
+        ? null
+        : { ok: false, error: (error as Error).message };
     }
-
-    // For IPC, return the Result object
-    return result;
   }
 
   async updateNote(
@@ -335,33 +332,42 @@ export class ProtocolAdapter {
     noteId?: string,
     updates?: any,
   ): Promise<any> {
-    // Handle both call signatures for compatibility
-    if (typeof workspaceIdOrParams === 'string') {
-      // Called with (workspaceId, noteId, updates) - MCP tools style
-      const workspaceId = workspaceIdOrParams;
-      logger.info('Protocol: updateNote (MCP style)', {
-        workspaceId,
-        noteId,
-      });
+    const isMcpStyle = typeof workspaceIdOrParams === 'string';
+    let workspaceId: string;
+    let actualNoteId: string;
+    let patch: any;
 
+    if (isMcpStyle) {
       if (noteId === undefined) {
         throw new Error('noteId is required when calling updateNote with a workspaceId string');
       }
-      const result = await this.notesService.updateNote({
-        workspaceId,
-        id: noteId,
-        ...updates,
-      });
-
-      // For MCP tools, return the data directly or false
-      return result.ok ? result.data : false;
+      workspaceId = workspaceIdOrParams as string;
+      actualNoteId = noteId;
+      patch = updates ?? {};
     } else {
-      // Called with (params) - IPC style
-      logger.info('Protocol: updateNote (IPC style)', {
-        workspaceId: workspaceIdOrParams.workspaceId,
-        noteId: workspaceIdOrParams.id,
-      });
-      return await this.notesService.updateNote(workspaceIdOrParams as any);
+      workspaceId = workspaceIdOrParams.workspaceId;
+      actualNoteId = workspaceIdOrParams.id;
+      patch = workspaceIdOrParams;
+    }
+
+    logger.info(`Protocol: updateNote (${isMcpStyle ? 'MCP' : 'IPC'} style)`, {
+      workspaceId,
+      noteId: actualNoteId,
+    });
+
+    const { title, content, tags } = patch;
+    const daemonParams: Record<string, unknown> = { workspaceId, noteId: actualNoteId };
+    if (content !== undefined) daemonParams.content = content;
+    if (title !== undefined) daemonParams.title = title;
+    if (tags !== undefined) daemonParams.tags = tags;
+
+    try {
+      const result = await getBackendClient().request<{ note: any }>('note.update', daemonParams);
+      const note = result?.note ?? null;
+      return isMcpStyle ? (note ?? true) : { ok: true, data: note };
+    } catch (error) {
+      logger.error('Failed to update note', error as Error, { workspaceId, noteId: actualNoteId });
+      return isMcpStyle ? false : { ok: false, error: (error as Error).message };
     }
   }
 
@@ -369,35 +375,35 @@ export class ProtocolAdapter {
     workspaceIdOrParams: string | { noteId: string; workspaceId: string },
     noteId?: string,
   ): Promise<any> {
-    // Handle both call signatures for compatibility
-    if (typeof workspaceIdOrParams === 'string') {
-      // Called with (workspaceId, noteId) - MCP tools style
-      const workspaceId = workspaceIdOrParams;
-      logger.info('Protocol: deleteNote (MCP style)', {
-        workspaceId,
-        noteId,
-      });
+    const isMcpStyle = typeof workspaceIdOrParams === 'string';
+    let workspaceId: string;
+    let actualNoteId: string;
 
+    if (isMcpStyle) {
       if (noteId === undefined) {
         throw new Error('noteId is required when calling deleteNote with a workspaceId string');
       }
-      const result = await this.notesService.deleteNote(
-        createNoteId(noteId),
-        createWorkspaceId(workspaceId),
-      );
-
-      // For MCP tools, return true/false
-      return result.ok;
+      workspaceId = workspaceIdOrParams as string;
+      actualNoteId = noteId;
     } else {
-      // Called with (params) - IPC style
-      logger.info('Protocol: deleteNote (IPC style)', {
-        workspaceId: workspaceIdOrParams.workspaceId,
-        noteId: workspaceIdOrParams.noteId,
-      });
-      return await this.notesService.deleteNote(
-        createNoteId(workspaceIdOrParams.noteId),
-        createWorkspaceId(workspaceIdOrParams.workspaceId),
+      workspaceId = workspaceIdOrParams.workspaceId;
+      actualNoteId = workspaceIdOrParams.noteId;
+    }
+
+    logger.info(`Protocol: deleteNote (${isMcpStyle ? 'MCP' : 'IPC'} style)`, {
+      workspaceId,
+      noteId: actualNoteId,
+    });
+
+    try {
+      await getBackendClient().request<{ ok: boolean; noteId: string; deleted: boolean }>(
+        'note.delete',
+        { workspaceId, noteId: actualNoteId },
       );
+      return isMcpStyle ? true : { ok: true, data: undefined };
+    } catch (error) {
+      logger.error('Failed to delete note', error as Error, { workspaceId, noteId: actualNoteId });
+      return isMcpStyle ? false : { ok: false, error: (error as Error).message };
     }
   }
 
@@ -423,13 +429,34 @@ export class ProtocolAdapter {
     to?: number;
     markId?: string;
     agentId?: string;
+    searchContext?: string;
+    commentTarget?: string;
   }): Promise<Result<any, string>> {
     logger.info('Protocol: addComment', {
       workspaceId: params.workspaceId,
       noteId: params.noteId,
       type: params.type,
     });
-    return await this.notesService.addComment(params.workspaceId, params.noteId, params);
+    try {
+      const daemonParams: Record<string, unknown> = {
+        workspaceId: params.workspaceId,
+        noteId: params.noteId,
+        comment: params.content,
+      };
+      if (params.searchContext !== undefined) daemonParams.searchContext = params.searchContext;
+      if (params.commentTarget !== undefined) daemonParams.commentTarget = params.commentTarget;
+      if (params.type !== undefined) daemonParams.type = params.type;
+      if (params.author !== undefined) daemonParams.author = params.author;
+      if (params.authorType !== undefined) daemonParams.authorType = params.authorType;
+      if (params.threadId !== undefined) daemonParams.threadId = params.threadId;
+      if (params.parentId !== undefined) daemonParams.parentId = params.parentId;
+      if (params.tags !== undefined) daemonParams.tags = params.tags;
+      const result = await getBackendClient().request<any>('comment.add', daemonParams);
+      return { ok: true, data: result };
+    } catch (error) {
+      logger.error('Failed to add comment', error as Error);
+      return { ok: false, error: (error as Error).message };
+    }
   }
 
   async listComments(params: {
@@ -441,8 +468,31 @@ export class ProtocolAdapter {
       author?: string;
     };
   }): Promise<Result<any[], string>> {
-    // Removed debug log - too frequent
-    return await this.notesService.listComments(params.workspaceId, params.noteId, params.filters);
+    try {
+      const daemonParams: Record<string, unknown> = {
+        workspaceId: params.workspaceId,
+        noteId: params.noteId,
+        includeComments: true,
+      };
+      if (params.filters?.status !== undefined) daemonParams.status = params.filters.status;
+      if (params.filters?.author !== undefined) daemonParams.author = params.filters.author;
+      const result = await getBackendClient().request<{ threads: any[] }>(
+        'comment.list',
+        daemonParams,
+      );
+      const threads = Array.isArray(result?.threads) ? result.threads : [];
+      const comments: any[] = [];
+      for (const thread of threads) {
+        const threadComments = Array.isArray(thread?.comments) ? thread.comments : [];
+        for (const comment of threadComments) {
+          comments.push(comment);
+        }
+      }
+      return { ok: true, data: comments };
+    } catch (error) {
+      logger.error('Failed to list comments', error as Error);
+      return { ok: false, error: (error as Error).message };
+    }
   }
 
   async updateCommentStatus(params: {
@@ -457,12 +507,18 @@ export class ProtocolAdapter {
       commentId: params.commentId,
       status: params.status,
     });
-    return await this.notesService.updateCommentStatus(
-      params.workspaceId,
-      params.noteId,
-      params.commentId,
-      params.status,
-    );
+    try {
+      const result = await getBackendClient().request<any>('comment.resolveThread', {
+        workspaceId: params.workspaceId,
+        noteId: params.noteId,
+        commentId: params.commentId,
+        resolved: params.status === 'resolved',
+      });
+      return { ok: true, data: result };
+    } catch (error) {
+      logger.error('Failed to update comment status', error as Error);
+      return { ok: false, error: (error as Error).message };
+    }
   }
 
   async deleteComment(params: {
@@ -475,11 +531,17 @@ export class ProtocolAdapter {
       noteId: params.noteId,
       commentId: params.commentId,
     });
-    return await this.notesService.deleteComment(
-      params.workspaceId,
-      params.noteId,
-      params.commentId,
-    );
+    try {
+      const result = await getBackendClient().request<any>('comment.delete', {
+        workspaceId: params.workspaceId,
+        noteId: params.noteId,
+        commentId: params.commentId,
+      });
+      return { ok: true, data: result };
+    } catch (error) {
+      logger.error('Failed to delete comment', error as Error);
+      return { ok: false, error: (error as Error).message };
+    }
   }
 
   async suggestChange(params: {
@@ -495,12 +557,32 @@ export class ProtocolAdapter {
     section?: string;
     reason?: string;
     tags?: string;
+    searchContext?: string;
+    commentTarget?: string;
   }): Promise<Result<any, string>> {
     logger.info('Protocol: suggestChange', {
       workspaceId: params.workspaceId,
       noteId: params.noteId,
     });
-    return await this.notesService.suggestChange(params.workspaceId, params.noteId, params);
+    try {
+      const daemonParams: Record<string, unknown> = {
+        workspaceId: params.workspaceId,
+        noteId: params.noteId,
+        comment: params.description,
+        type: 'suggestion',
+        author: params.author,
+        authorType: params.authorType,
+        suggestionOriginal: params.original,
+        suggestionProposed: params.proposed,
+      };
+      if (params.searchContext !== undefined) daemonParams.searchContext = params.searchContext;
+      if (params.commentTarget !== undefined) daemonParams.commentTarget = params.commentTarget;
+      const result = await getBackendClient().request<any>('comment.add', daemonParams);
+      return { ok: true, data: result };
+    } catch (error) {
+      logger.error('Failed to suggest change', error as Error);
+      return { ok: false, error: (error as Error).message };
+    }
   }
 
   // ============================================================================
@@ -512,11 +594,21 @@ export class ProtocolAdapter {
     noteId: string;
     taskMetadata: any;
   }): Promise<Result<any, string>> {
-    return this.notesService.markAsTask(
-      createWorkspaceId(params.workspaceId),
-      createNoteId(params.noteId),
-      params.taskMetadata,
-    );
+    const meta = params.taskMetadata ?? {};
+    const daemonParams: Record<string, unknown> = {
+      workspaceId: params.workspaceId,
+      noteId: params.noteId,
+      status: meta.status ?? 'not_started',
+    };
+    if (meta.acceptanceCriteria !== undefined) daemonParams.acceptanceCriteria = meta.acceptanceCriteria;
+    if (meta.effort !== undefined) daemonParams.effort = meta.effort;
+    try {
+      const result = await getBackendClient().request<any>('task.markAsTask', daemonParams);
+      return { ok: true, data: result };
+    } catch (error) {
+      logger.error('Failed to mark as task', error as Error);
+      return { ok: false, error: (error as Error).message };
+    }
   }
 
   async createPrerequisiteNote(params: {
@@ -538,28 +630,27 @@ export class ProtocolAdapter {
       dependentNoteId: params.dependentNoteId,
       withAgent: !!params.prerequisite.agentConfig,
     });
-    const result = await this.notesService.createPrerequisiteNote(
-      createWorkspaceId(params.workspaceId),
-      createNoteId(params.dependentNoteId),
-      {
-        title: params.prerequisite.title,
-        content: params.prerequisite.content,
-        taskStatus: params.prerequisite.taskMetadata?.status,
-        agentConfig: params.prerequisite.agentConfig,
-      },
-    );
-
-    // Wrap the result to match expected format
-    if (result.ok) {
+    const daemonParams: Record<string, unknown> = {
+      workspaceId: params.workspaceId,
+      dependentNoteId: params.dependentNoteId,
+      title: params.prerequisite.title,
+    };
+    if (params.prerequisite.content !== undefined) daemonParams.content = params.prerequisite.content;
+    if (params.prerequisite.taskMetadata?.status !== undefined)
+      daemonParams.status = params.prerequisite.taskMetadata.status;
+    try {
+      const result = await getBackendClient().request<any>('task.createPrerequisite', daemonParams);
       return {
         ok: true,
         data: {
-          prerequisiteNote: result.data.note,
-          agent: result.data.agent,
+          prerequisiteNote: result?.note ?? result?.prerequisiteNote ?? result,
+          agent: result?.agent,
         },
       };
+    } catch (error) {
+      logger.error('Failed to create prerequisite note', error as Error);
+      return { ok: false, error: (error as Error).message };
     }
-    return result;
   }
 
   async assignAgentToTask(params: {
@@ -572,11 +663,17 @@ export class ProtocolAdapter {
       noteId: params.noteId,
       agentId: params.agentId,
     });
-    return await this.notesService.assignAgentToTask(
-      createWorkspaceId(params.workspaceId),
-      createNoteId(params.noteId),
-      createAgentId(params.agentId),
-    );
+    try {
+      const result = await getBackendClient().request<any>('task.assignAgent', {
+        workspaceId: params.workspaceId,
+        noteId: params.noteId,
+        agentId: params.agentId,
+      });
+      return { ok: true, data: result };
+    } catch (error) {
+      logger.error('Failed to assign agent to task', error as Error);
+      return { ok: false, error: (error as Error).message };
+    }
   }
 
   /**
@@ -593,15 +690,16 @@ export class ProtocolAdapter {
       noteId,
       status,
     });
-    const result = await this.notesService.updateTaskStatus(
-      createWorkspaceId(workspaceId),
-      createNoteId(noteId),
-      status as any, // TaskStatus type
-    );
-    if (result.ok) {
-      return { success: true, data: result.data };
-    } else {
-      return { success: false, error: result.error };
+    try {
+      const result = await getBackendClient().request<any>('task.updateNoteStatus', {
+        workspaceId,
+        noteId,
+        status,
+      });
+      return { success: true, data: result };
+    } catch (error) {
+      logger.error('Failed to update task status', error as Error);
+      return { success: false, error: (error as Error).message };
     }
   }
 
@@ -618,20 +716,25 @@ export class ProtocolAdapter {
       workspaceId: params.workspaceId,
       noteId: params.noteId,
     });
-    const result = await this.notesService.convertTaskBlocks(
-      createWorkspaceId(params.workspaceId),
-      params.noteId,
-    );
-    if (result.ok) {
+    try {
+      const result = await getBackendClient().request<{
+        convertedCount: number;
+        createdNoteIds: string[];
+      }>('task.convertBlocks', {
+        workspaceId: params.workspaceId,
+        noteId: params.noteId,
+      });
       return {
         ok: true,
         data: {
-          convertedCount: result.data.convertedCount,
-          createdNoteIds: result.data.createdNoteIds,
+          convertedCount: result?.convertedCount ?? 0,
+          createdNoteIds: result?.createdNoteIds ?? [],
         },
       };
+    } catch (error) {
+      logger.error('Failed to convert task blocks', error as Error);
+      return { ok: false, error: (error as Error).message };
     }
-    return result;
   }
 
   // ============================================================================
