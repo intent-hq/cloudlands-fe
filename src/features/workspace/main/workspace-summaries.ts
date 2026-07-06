@@ -10,6 +10,7 @@
 import { execAsync, execFileAsync } from '../../../shared/git/git-env';
 import { Logger } from '../../../shared/logger';
 import type {
+  Note,
   Workspace,
   WorkspaceDiffSummary,
   WorkspaceGitSummary,
@@ -17,7 +18,7 @@ import type {
   WorkspaceTask,
 } from '../../../shared/types';
 import { getSpecTaskNotes } from '../../../shared/utils/task-stats';
-import { notesService } from '../../notes/main/notes.service';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 import { DiffSummaryRepository } from './diff-summary.repository';
 
 const logger = new Logger('WorkspaceSummaries');
@@ -187,12 +188,14 @@ export async function computeWorkspaceGitSummary(
  * derive counts and groupings.
  */
 export async function getWorkspaceTasks(workspaceId: WorkspaceId): Promise<WorkspaceTask[]> {
-  const result = await notesService.listNotes(workspaceId);
-  if (!result.ok) {
-    throw new Error(result.error);
-  }
+  // Route through the daemon (PROTOCOL.md §5.4 `note.list`); the FE presenter
+  // still runs `getSpecTaskNotes` locally to derive the spec-linked task facts.
+  const result = (await getBackendClient().request('note.list', {
+    workspaceId,
+  })) as { notes?: Note[] } | undefined;
+  const notes = Array.isArray(result?.notes) ? result.notes : [];
 
-  const taskNotes = getSpecTaskNotes(result.data.notes);
+  const taskNotes = getSpecTaskNotes(notes);
   return taskNotes.map((note) => ({
     id: note.id as string,
     title: note.title || 'Untitled task',

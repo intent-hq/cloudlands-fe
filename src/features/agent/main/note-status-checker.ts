@@ -11,7 +11,6 @@
 import { Logger } from '$shared/logger';
 import { makeBackgroundRequest } from './background-request.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
-import type { WorkspaceId, NoteId } from '$shared/types/branded-ids';
 import type { TaskStatus } from '$shared/types';
 
 const logger = new Logger('NoteStatusChecker');
@@ -96,21 +95,28 @@ export async function checkAndUpdateNoteStatus(
       return;
     }
 
-    // Get the note to check current status and content
-    const { notesService } = await import('../../notes/main/notes.service');
-    const noteResult = await notesService.getNote(workspaceId as WorkspaceId, taskNoteId as NoteId);
-
-    if (!noteResult.ok) {
-      logger.debug('Could not load task note', { agentId, taskNoteId, error: noteResult.error });
+    // Fetch the task note via the daemon (PROTOCOL.md §5.4 `note.get`) to check
+    // current status and content.
+    let note: any;
+    try {
+      const noteResp = (await getBackendClient().request('note.get', {
+        workspaceId,
+        noteId: taskNoteId,
+      })) as { note?: any } | undefined;
+      note = noteResp?.note;
+    } catch (err) {
+      logger.debug('Could not load task note', {
+        agentId,
+        taskNoteId,
+        error: (err as Error).message,
+      });
       return;
     }
 
-    if (!noteResult.data) {
+    if (!note) {
       logger.debug('Task note not found', { agentId, taskNoteId });
       return;
     }
-
-    const note = noteResult.data;
     const currentStatus = note.metadata?.task?.status;
 
     // Skip if already complete or cancelled
@@ -442,8 +448,6 @@ async function updateTaskStatus(
   agentName: string,
 ): Promise<void> {
   try {
-    const { notesService } = await import('../../notes/main/notes.service');
-    const { NoteId, WorkspaceId } = await import('$shared/types/branded-ids');
     const { getProvenanceContextManager } = await import(
       '../../workspace/main/provenance/provenance-context-manager'
     );
@@ -465,27 +469,26 @@ async function updateTaskStatus(
     });
 
     try {
-      const result = await notesService.updateTaskStatus(
-        WorkspaceId(workspaceId),
-        NoteId(taskNoteId),
+      // Route through the daemon (PROTOCOL.md §5.4 `task.updateNoteStatus`).
+      await getBackendClient().request('task.updateNoteStatus', {
+        workspaceId,
+        noteId: taskNoteId,
         status,
-      );
+      });
 
-      if (result.ok) {
-        logger.info('Background check: task status updated', {
-          workspaceId,
-          taskNoteId,
-          status,
-          agentId,
-        });
-      } else {
-        logger.warn('Background check: failed to update task status', {
-          workspaceId,
-          taskNoteId,
-          status,
-          error: result.error,
-        });
-      }
+      logger.info('Background check: task status updated', {
+        workspaceId,
+        taskNoteId,
+        status,
+        agentId,
+      });
+    } catch (rpcError) {
+      logger.warn('Background check: failed to update task status', {
+        workspaceId,
+        taskNoteId,
+        status,
+        error: (rpcError as Error).message,
+      });
     } finally {
       // Always clean up the provenance context
       provenanceManager.popContext();

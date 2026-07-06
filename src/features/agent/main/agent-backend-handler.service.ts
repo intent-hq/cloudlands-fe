@@ -36,10 +36,6 @@ import { AgentStatus } from '$shared/types';
 import type { AgentMessage, AgentSession, ContentBlock } from '$shared/types';
 import type { QueuedMessage } from '$shared/types/agent-session';
 import type { AgentId, NoteId, WorkspaceId } from '$shared/types/branded-ids';
-import {
-  AgentId as createAgentId,
-  WorkspaceId as createWorkspaceId,
-} from '$shared/types/branded-ids';
 import { createWorkspaceEvent, type CanonicalAgentStatusFields } from '../../events/types';
 import type { IpcMainInvokeEvent } from 'electron';
 import { BrowserWindow, ipcMain } from 'electron';
@@ -56,7 +52,7 @@ import { resolveStreamingConfig, DEFAULT_PROFILE } from '../../../shared/streami
 import { daemonAgentBridge } from './daemon-agent-bridge';
 import { checkAndUpdateNoteStatus } from './note-status-checker';
 import { getAgentContextRegistry } from '../agent-context-registry';
-import { notesService } from '../../notes/main/notes.service';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 import { assetsService } from '../../notes/main/assets.service';
 import { DelegateTaskTool } from '../../mcp/main/mcp/agent-interaction-tools';
 import { markAgentAsDeleted, updateAgentStatus } from '../../events/main/agent-subscription-ops';
@@ -2629,16 +2625,18 @@ export class AgentBackendHandler {
       if (request.noteIds && request.noteIds.length > 0 && request.workspaceId) {
         try {
           for (const noteId of request.noteIds) {
-            const noteResult = await notesService.getNote(
-              request.workspaceId as WorkspaceId,
-              noteId as NoteId,
-            );
-            if (noteResult.ok && noteResult.data?.content) {
+            // Fetch via the daemon (PROTOCOL.md §5.4 `note.get`).
+            const noteResp = (await getBackendClient().request('note.get', {
+              workspaceId: request.workspaceId,
+              noteId,
+            })) as { note?: { content?: string } } | undefined;
+            const noteContent = noteResp?.note?.content;
+            if (noteContent) {
               // Extract all image URLs from note content (both workspace-asset:// and http(s)://)
               const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
               let match;
 
-              while ((match = imageRegex.exec(noteResult.data.content)) !== null) {
+              while ((match = imageRegex.exec(noteContent)) !== null) {
                 const url = match[2];
                 try {
                   if (url.startsWith('workspace-asset://')) {
@@ -4586,23 +4584,17 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
         // Clean up agent references from task notes
         if (workspaceId) {
           try {
-            const cleanupResult = await notesService.removeAgentFromAllTasks(
-              createWorkspaceId(workspaceId),
-              createAgentId(agentId),
-            );
-            if (cleanupResult.ok) {
-              logger.info('[AgentBackendHandler] Cleaned up agent references from tasks', {
-                agentId,
-                workspaceId,
-                tasksUpdated: cleanupResult.data,
-              });
-            } else {
-              logger.warn('[AgentBackendHandler] Failed to clean up agent references', {
-                agentId,
-                workspaceId,
-                error: cleanupResult.error,
-              });
-            }
+            // Route through the daemon
+            // (PROTOCOL.md §5.4 `task.removeAgentFromAllTasks`).
+            const cleanupResult = (await getBackendClient().request(
+              'task.removeAgentFromAllTasks',
+              { workspaceId, agentId },
+            )) as { ok?: boolean; updatedCount?: number } | undefined;
+            logger.info('[AgentBackendHandler] Cleaned up agent references from tasks', {
+              agentId,
+              workspaceId,
+              tasksUpdated: cleanupResult?.updatedCount ?? 0,
+            });
           } catch (cleanupError) {
             // Don't fail the deletion if cleanup fails
             logger.warn('[AgentBackendHandler] Error during agent reference cleanup', {
@@ -9867,15 +9859,15 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
             });
           }
 
-          // Get task title if agent has a task note
+          // Get task title if agent has a task note (PROTOCOL.md §5.4 `note.get`).
           if (taskNoteId) {
             try {
-              const noteResult = await notesService.getNote(
-                workspaceId as WorkspaceId,
-                taskNoteId as any,
-              );
-              if (noteResult.ok && noteResult.data) {
-                taskTitle = noteResult.data.title;
+              const noteResp = (await getBackendClient().request('note.get', {
+                workspaceId,
+                noteId: taskNoteId,
+              })) as { note?: { title?: string } } | undefined;
+              if (noteResp?.note?.title) {
+                taskTitle = noteResp.note.title;
               }
             } catch (noteErr) {
               logger.debug('Could not fetch task note title', { taskNoteId, error: noteErr });

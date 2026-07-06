@@ -1,24 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock the daemon JSON-RPC seam so `agent.get` / `agent.getConversation` are
-// observable without a real socket.
+// Mock the daemon JSON-RPC seam so `agent.get` / `agent.getConversation` /
+// `note.get` / `task.updateNoteStatus` are observable without a real socket.
 const request = vi.fn();
 vi.mock('../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request }),
 }));
 
-// The status checker also invokes an LLM classifier and notes-service update;
-// neither is exercised by these wire-contract tests (we short-circuit on
-// non-taskNoteId / cooldown paths where possible), so mock them out.
+// The status checker also invokes an LLM classifier; not exercised by these
+// wire-contract tests (we short-circuit on non-taskNoteId / cooldown paths
+// where possible), so mock it out.
 vi.mock('../background-request.service', () => ({
   makeBackgroundRequest: vi.fn(async () => ({ success: false, error: 'unused' })),
-}));
-
-// The notes-service is imported lazily inside the module.
-const getNote = vi.fn();
-const updateTaskStatus = vi.fn(async () => ({ ok: true }));
-vi.mock('../../../notes/main/notes.service', () => ({
-  notesService: { getNote, updateTaskStatus },
 }));
 
 vi.mock('../../../workspace/main/provenance/provenance-context-manager', () => ({
@@ -31,13 +24,12 @@ vi.mock('../../../workspace/main/provenance/provenance-context-manager', () => (
 import { checkAndUpdateNoteStatus } from '../note-status-checker';
 
 // P3-1: note-status-checker reads agent metadata / conversation via the daemon
-// (PROTOCOL.md §5.5 `agent.get` + `agent.getConversation`) rather than
-// the retired agent-{uuid}.json store.
+// (PROTOCOL.md §5.5 `agent.get` + `agent.getConversation`) and now also fetches
+// the linked task note via `note.get` (PROTOCOL.md §5.4) rather than the
+// retired FE notes service.
 describe('note-status-checker wire contract', () => {
   beforeEach(() => {
     request.mockReset();
-    getNote.mockReset();
-    updateTaskStatus.mockReset();
   });
 
   it('calls agent.get with { agentId, workspaceId } and short-circuits when no taskNoteId', async () => {
@@ -55,8 +47,6 @@ describe('note-status-checker wire contract', () => {
       agentId,
       workspaceId: 'ws-1',
     });
-    // No taskNoteId => notesService is never consulted.
-    expect(getNote).not.toHaveBeenCalled();
   });
 
   it('falls back to agent.getConversation when lastMessageText is missing', async () => {
@@ -68,10 +58,9 @@ describe('note-status-checker wire contract', () => {
         metadata: { taskNoteId: 'note-1' },
       },
     });
-    // 2: getNote resolves an in-progress task so we do not short-circuit.
-    getNote.mockResolvedValueOnce({
-      ok: true,
-      data: {
+    // 2: note.get resolves an in-progress task so we do not short-circuit.
+    request.mockResolvedValueOnce({
+      note: {
         content: 'task body',
         title: 'the task',
         metadata: { task: { status: 'in_progress' } },
@@ -95,12 +84,16 @@ describe('note-status-checker wire contract', () => {
       // NOTE: lastMessageText intentionally omitted so we hit the fallback.
     });
 
-    // First wire call: agent.get. Second wire call: agent.getConversation.
+    // Wire calls: agent.get, note.get, agent.getConversation.
     expect(request.mock.calls[0]).toEqual([
       'agent.get',
       { agentId, workspaceId: 'ws-1' },
     ]);
     expect(request.mock.calls[1]).toEqual([
+      'note.get',
+      { workspaceId: 'ws-1', noteId: 'note-1' },
+    ]);
+    expect(request.mock.calls[2]).toEqual([
       'agent.getConversation',
       { agentId, workspaceId: 'ws-1' },
     ]);

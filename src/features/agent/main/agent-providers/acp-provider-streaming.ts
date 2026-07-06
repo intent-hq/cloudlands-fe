@@ -26,6 +26,7 @@ import { consumeMcpToolParams } from '../../../../shared/services/mcp-tool-param
 import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
 import type { Proposal } from '$shared/types/proposal';
 import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
+import { getBackendClient } from '../../../backend/main/backend.ipc';
 
 const logger = new Logger('ACPProviderStreaming');
 
@@ -335,13 +336,13 @@ async function attachNoteTitle(
   if (!lookupNoteId || !workspaceId) return;
 
   try {
-    const { notesService } = await import('../../../notes/main/notes.service');
-    const noteResult = await notesService.getNote(
-      workspaceId as any,
-      String(lookupNoteId) as any,
-    );
-    if (noteResult.ok && noteResult.data?.title) {
-      toolInput._noteTitle = noteResult.data.title;
+    // Route through the daemon (PROTOCOL.md §5.4 `note.get`).
+    const noteResp = (await getBackendClient().request('note.get', {
+      workspaceId: String(workspaceId),
+      noteId: String(lookupNoteId),
+    })) as { note?: { title?: string } } | undefined;
+    if (noteResp?.note?.title) {
+      toolInput._noteTitle = noteResp.note.title;
     }
   } catch {
     // Silently skip — noteId will be used as fallback in classifier
@@ -1821,7 +1822,7 @@ export class ACPProviderStreaming {
       (toolInput as Record<string, any>)._acpTitle = toolTitle;
     }
 
-    // Look up note title from notesService so the UI can show human-readable names
+    // Look up note title from the daemon so the UI can show human-readable names
     // instead of UUIDs like "#bef103b5".
     // Supports both noteId (most workspace tools) and taskNoteId (delegate_task, get_my_task).
     const lookupNoteId = input.noteId || input.taskNoteId;
@@ -2031,10 +2032,11 @@ export class ACPProviderStreaming {
         this.onStatus?.('tool-waiting', 'Awaiting tool response');
       }
 
-      // For Codex workspace-mcp read-only tools, proactively fetch the result from notesService.
-      // Codex never sends tool_call_update events, so without this the auto-complete mechanism
-      // would create a synthetic empty tool_result and the UI would show "Completed" instead of
-      // the actual note content / note list / task data.
+      // For Codex workspace-mcp read-only tools, proactively fetch the result via the daemon
+      // (PROTOCOL.md §5.4 `note.get` / `note.list`). Codex never sends tool_call_update
+      // events, so without this the auto-complete mechanism would create a synthetic empty
+      // tool_result and the UI would show "Completed" instead of the actual note content
+      // / note list / task data.
       const CODEX_READABLE_TOOLS = new Set([
         'read_note',
         'list_notes',
@@ -2049,16 +2051,16 @@ export class ACPProviderStreaming {
         CODEX_READABLE_TOOLS.has(codexResolvedToolName)
       ) {
         try {
-          const { notesService } = await import('../../../notes/main/notes.service');
+          const backend = getBackendClient();
           let resultContent = '';
 
           if (codexResolvedToolName === 'read_note' && input.noteId) {
-            const noteResult = await notesService.getNote(
-              session.workspaceId as any,
-              String(input.noteId) as any,
-            );
-            if (noteResult.ok && noteResult.data) {
-              const note = noteResult.data;
+            const noteResp = (await backend.request('note.get', {
+              workspaceId: session.workspaceId,
+              noteId: String(input.noteId),
+            })) as { note?: any } | undefined;
+            if (noteResp?.note) {
+              const note = noteResp.note;
               const contentWithLineNumbers = (note.content || '')
                 .split('\n')
                 .map((line: string, i: number) => `${String(i + 1).padStart(4, ' ')} | ${line}`)
@@ -2069,9 +2071,11 @@ export class ACPProviderStreaming {
               }
             }
           } else if (codexResolvedToolName === 'list_notes') {
-            const listResult = await notesService.listNotes(session.workspaceId as any);
-            if (listResult.ok && listResult.data) {
-              const notesList = listResult.data.notes.map((n: any) => ({
+            const listResp = (await backend.request('note.list', {
+              workspaceId: session.workspaceId,
+            })) as { notes?: any[] } | undefined;
+            if (Array.isArray(listResp?.notes)) {
+              const notesList = listResp!.notes.map((n: any) => ({
                 id: n.id,
                 title: n.title || 'Untitled',
                 tags: n.tags || [],
@@ -2081,12 +2085,12 @@ export class ACPProviderStreaming {
               resultContent = JSON.stringify(notesList, null, 2);
             }
           } else if (codexResolvedToolName === 'list_note_tasks' && input.noteId) {
-            const noteResult = await notesService.getNote(
-              session.workspaceId as any,
-              String(input.noteId) as any,
-            );
-            if (noteResult.ok && noteResult.data) {
-              const note = noteResult.data;
+            const noteResp = (await backend.request('note.get', {
+              workspaceId: session.workspaceId,
+              noteId: String(input.noteId),
+            })) as { note?: any } | undefined;
+            if (noteResp?.note) {
+              const note = noteResp.note;
               const content = note.content || '';
               const lines = content.split('\n');
               const TASK_LINE_REGEX = /^(\s*[-*]\s*)\[([ xX\/])\]\s*(.+)$/;
@@ -2126,12 +2130,12 @@ export class ACPProviderStreaming {
               resultContent = textParts.join('');
             }
           } else if (codexResolvedToolName === 'get_my_task' && input.taskNoteId) {
-            const taskResult = await notesService.getNote(
-              session.workspaceId as any,
-              String(input.taskNoteId) as any,
-            );
-            if (taskResult.ok && taskResult.data) {
-              const note = taskResult.data;
+            const taskResp = (await backend.request('note.get', {
+              workspaceId: session.workspaceId,
+              noteId: String(input.taskNoteId),
+            })) as { note?: any } | undefined;
+            if (taskResp?.note) {
+              const note = taskResp.note;
               resultContent = JSON.stringify({
                 title: note.title,
                 status: note.metadata?.task?.status || 'unknown',

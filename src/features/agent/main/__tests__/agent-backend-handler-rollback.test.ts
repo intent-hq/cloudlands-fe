@@ -19,7 +19,7 @@ const {
   mockPersistence,
   mainDispatchMock,
   markAgentAsDeletedOpMock,
-  removeAgentFromAllTasksMock,
+  backendRequestMock,
 } = vi.hoisted(() => ({
   mockPersistence: {
     loadAgent: vi.fn(),
@@ -28,7 +28,9 @@ const {
   },
   mainDispatchMock: vi.fn(),
   markAgentAsDeletedOpMock: vi.fn(),
-  removeAgentFromAllTasksMock: vi.fn(async () => ({ ok: true, data: 0 })),
+  // Stubs `getBackendClient().request(...)` so `task.removeAgentFromAllTasks`
+  // (PROTOCOL.md §5.4) resolves without opening a real UDS socket.
+  backendRequestMock: vi.fn(async () => ({ ok: true, updatedCount: 0 })),
 }));
 
 vi.mock('electron', () => ({
@@ -99,10 +101,8 @@ vi.mock('../../events/main/agent-subscription-ops', () => ({
   updateAgentStatus: vi.fn(),
 }));
 
-vi.mock('../../notes/main/notes.service', () => ({
-  notesService: {
-    removeAgentFromAllTasks: removeAgentFromAllTasksMock,
-  },
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: backendRequestMock }),
 }));
 
 vi.mock('$shared/main/memory-event-logger', () => ({
