@@ -23,14 +23,6 @@ import {
   AgentSendMessageSchema,
   AgentListSessionsSchema,
   AgentDeleteSessionSchema,
-  AgentActivateSchema,
-  AgentLifecycleStartSchema,
-  AgentLifecycleStopSchema,
-  AgentMessagingSendSchema,
-  AgentMessagingReceiveSchema,
-  AgentContextUpdateSchema,
-  AgentContextGetByWorkspaceSchema,
-  AgentContextGetBySessionSchema,
   AgentBackendStreamMessageSchema,
   AgentBackendStopSchema,
   EmptySchema,
@@ -51,41 +43,7 @@ function registerAgentValidationSchemas(): void {
   registerValidationSchema(AGENT_CHANNELS.LIST_SESSIONS, AgentListSessionsSchema);
   registerValidationSchema(AGENT_CHANNELS.DELETE_SESSION, AgentDeleteSessionSchema);
 
-  // Many channels use EmptySchema or don't have schemas defined yet
-  // We'll register them with EmptySchema for now to prevent validation errors
   registerValidationSchema(AGENT_CHANNELS.STOP, EmptySchema);
-  registerValidationSchema(AGENT_CHANNELS.CLEAR, EmptySchema);
-  registerValidationSchema(AGENT_CHANNELS.PAUSE, EmptySchema);
-  registerValidationSchema(AGENT_CHANNELS.GET_STATUS, EmptySchema);
-
-  // Session management channels - most don't have schemas yet
-  registerValidationSchema(AGENT_CHANNELS.UPDATE_SESSION, EmptySchema);
-  registerValidationSchema(AGENT_CHANNELS.EXPORT_SESSION, EmptySchema);
-  registerValidationSchema(AGENT_CHANNELS.IMPORT_SESSION, EmptySchema);
-  registerValidationSchema(AGENT_CHANNELS.GET_HISTORY, EmptySchema);
-  registerValidationSchema(AGENT_CHANNELS.UPDATE_METADATA, EmptySchema);
-  registerValidationSchema(AGENT_CHANNELS.FORK_SESSION, EmptySchema);
-  registerValidationSchema(AGENT_CHANNELS.MERGE_SESSIONS, EmptySchema);
-  registerValidationSchema(AGENT_CHANNELS.GET_STATS, EmptySchema);
-  registerValidationSchema(AGENT_CHANNELS.VALIDATE_SESSION, EmptySchema);
-  registerValidationSchema(AGENT_CHANNELS.REPAIR_SESSION, EmptySchema);
-
-  // Lifecycle channels
-  registerValidationSchema(AGENT_CHANNELS.ACTIVATE, AgentActivateSchema);
-  registerValidationSchema(AGENT_CHANNELS.LIFECYCLE_START, AgentLifecycleStartSchema);
-  registerValidationSchema(AGENT_CHANNELS.LIFECYCLE_STOP, AgentLifecycleStopSchema);
-
-  // Messaging channels
-  registerValidationSchema(AGENT_CHANNELS.MESSAGING_SEND, AgentMessagingSendSchema);
-  registerValidationSchema(AGENT_CHANNELS.MESSAGING_RECEIVE, AgentMessagingReceiveSchema);
-
-  // Context channels
-  registerValidationSchema(AGENT_CHANNELS.CONTEXT_UPDATE, AgentContextUpdateSchema);
-  registerValidationSchema(
-    AGENT_CHANNELS.CONTEXT_GET_BY_WORKSPACE,
-    AgentContextGetByWorkspaceSchema,
-  );
-  registerValidationSchema(AGENT_CHANNELS.CONTEXT_GET_BY_SESSION, AgentContextGetBySessionSchema);
 
   // Backend channels for streaming operations
   registerValidationSchema(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, AgentBackendStreamMessageSchema);

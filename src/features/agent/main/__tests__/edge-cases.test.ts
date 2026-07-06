@@ -155,7 +155,6 @@ describe('Edge Cases and Error Scenarios', () => {
       handleListAgents: vi.fn(),
       handleDeleteAgent: vi.fn(),
       handleStopSession: vi.fn(),
-      handleActivateAgent: vi.fn(),
     };
 
     // Mock getInstance to return our mock
@@ -196,7 +195,6 @@ describe('Edge Cases and Error Scenarios', () => {
         AGENT_CHANNELS.LIST_SESSIONS,
         AGENT_CHANNELS.DELETE_SESSION,
         AGENT_CHANNELS.STOP,
-        AGENT_CHANNELS.ACTIVATE,
       ];
 
       expectedChannels.forEach((channel) => {

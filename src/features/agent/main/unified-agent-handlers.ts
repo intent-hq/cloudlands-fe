@@ -35,23 +35,14 @@ import {
   AgentSendMessageSchema,
   AgentListSessionsSchema,
   AgentDeleteSessionSchema,
-  AgentActivateSchema,
-  AgentLifecycleStartSchema,
-  AgentLifecycleStopSchema,
-  AgentMessagingSendSchema,
-  AgentMessagingReceiveSchema,
   AgentSetModelSchema,
   AgentRenameSchema,
   AgentGetSpecializationRulesSchema,
-  AgentContextUpdateSchema,
-  AgentContextGetByWorkspaceSchema,
-  AgentContextGetBySessionSchema,
   AgentQueueMessageSchema,
   AgentEditQueuedMessageSchema,
   AgentRemoveQueuedMessageSchema,
   AgentForceMessageSchema,
   AgentGetQueueSchema,
-  EmptySchema,
 } from '../../../main/ipc-schemas';
 
 const logger = new Logger('UnifiedAgentHandlers');
@@ -67,32 +58,9 @@ export interface IAgentBackendService {
   sendMessage(request: AgentIpc.SendMessageRequest): Promise<AgentIpc.SendMessageResponse>;
   listAgents(request: AgentIpc.ListRequest): Promise<AgentIpc.ListResponse>;
   deleteAgent(request: AgentIpc.DeleteRequest): Promise<AgentIpc.DeleteResponse>;
-  updateSession(request: any): Promise<any>;
-  exportSession(request: any): Promise<any>;
-  importSession(request: any): Promise<any>;
-  getHistory(request: any): Promise<any>;
-  updateMetadata(request: any): Promise<any>;
-  forkSession(request: any): Promise<any>;
-  mergeSession(request: any): Promise<any>;
-  getStats(request: any): Promise<any>;
-  validateSession(request: any): Promise<any>;
-  repairSession(request: any): Promise<any>;
 
   // Session management
   stopSession(request: AgentIpc.StopRequest): Promise<AgentIpc.StopResponse>;
-  clearSession(request: any): Promise<any>;
-  pauseSession(request: any): Promise<any>;
-  getStatus(request: any): Promise<any>;
-
-
-  // Lifecycle operations
-  activateAgent(request: AgentIpc.ActivateRequest): Promise<AgentIpc.ActivateResponse>;
-  lifecycleStart(request: any): Promise<any>;
-  lifecycleStop(request: any): Promise<any>;
-
-  // Messaging operations
-  messagingSend(request: any): Promise<any>;
-  messagingReceive(request: any): Promise<any>;
 
   // Model operations
   setModel(request: {
@@ -133,22 +101,6 @@ export interface IAgentBackendService {
   // Backend streaming operations (for AGENT_BACKEND_CHANNELS)
   streamMessage(request: any): Promise<any>;
   backendStop(request: any): Promise<any>;
-
-  // Context operations
-  getContext(request: any): Promise<any>;
-  updateContext(request: any): Promise<any>;
-  getContextByWorkspace(request: any): Promise<any>;
-  getContextBySession(request: any): Promise<any>;
-
-  // Capabilities operations
-  getCapabilities(request: any): Promise<any>;
-  setCapabilities(request: any): Promise<any>;
-
-  // Metrics and logging
-  getMetrics(request: any): Promise<any>;
-  resetMetrics(request: any): Promise<any>;
-  getLogs(request: any): Promise<any>;
-  clearLogs(request: any): Promise<any>;
 }
 
 // Note: createHandler function removed - all handlers now use createSafeValidatedHandler
@@ -164,12 +116,8 @@ export function registerAgentHandlers(backend: IAgentBackendService): void {
   // Register all handler groups
   registerCoreHandlers(backend);
   registerSessionHandlers(backend);
-  registerLifecycleHandlers(backend);
   registerMessagingHandlers(backend);
   registerRulesHandlers();
-  registerContextHandlers(backend);
-  registerCapabilitiesHandlers(backend);
-  registerMetricsHandlers(backend);
   registerBackendChannelHandlers(backend);
   registerQueueHandlers(backend);
 
@@ -364,71 +312,6 @@ function registerCoreHandlers(backend: IAgentBackendService): void {
     ),
   );
 
-  // Update session
-  ipcMain.handle(
-    AGENT_CHANNELS.UPDATE_SESSION,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.updateSession(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.UPDATE_SESSION,
-    ),
-  );
-
-  // Export session
-  ipcMain.handle(
-    AGENT_CHANNELS.EXPORT_SESSION,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.exportSession(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.EXPORT_SESSION,
-    ),
-  );
-
-  // Import session
-  ipcMain.handle(
-    AGENT_CHANNELS.IMPORT_SESSION,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.importSession(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.IMPORT_SESSION,
-    ),
-  );
-
-  // Get history
-  ipcMain.handle(
-    AGENT_CHANNELS.GET_HISTORY,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.getHistory(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.GET_HISTORY,
-    ),
-  );
-
-  // Update metadata
-  ipcMain.handle(
-    AGENT_CHANNELS.UPDATE_METADATA,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.updateMetadata(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.UPDATE_METADATA,
-    ),
-  );
-
   // Rename — lightweight: patches only name fields in the session file,
   // invalidates the persistence cache, syncs the in-memory session, and
   // broadcasts `agent:renamed` to all windows. Avoids the full saveSession
@@ -447,71 +330,6 @@ function registerCoreHandlers(backend: IAgentBackendService): void {
         return formatIpcSuccess(response);
       },
       AGENT_CHANNELS.RENAME,
-    ),
-  );
-
-  // Fork session
-  ipcMain.handle(
-    AGENT_CHANNELS.FORK_SESSION,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.forkSession(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.FORK_SESSION,
-    ),
-  );
-
-  // Merge sessions
-  ipcMain.handle(
-    AGENT_CHANNELS.MERGE_SESSIONS,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.mergeSession(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.MERGE_SESSIONS,
-    ),
-  );
-
-  // Get stats
-  ipcMain.handle(
-    AGENT_CHANNELS.GET_STATS,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.getStats(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.GET_STATS,
-    ),
-  );
-
-  // Validate session
-  ipcMain.handle(
-    AGENT_CHANNELS.VALIDATE_SESSION,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.validateSession(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.VALIDATE_SESSION,
-    ),
-  );
-
-  // Repair session
-  ipcMain.handle(
-    AGENT_CHANNELS.REPAIR_SESSION,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.repairSession(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.REPAIR_SESSION,
     ),
   );
 
@@ -585,127 +403,12 @@ function registerSessionHandlers(backend: IAgentBackendService): void {
       AGENT_CHANNELS.STOP,
     ),
   );
-
-  // Clear session
-  ipcMain.handle(
-    AGENT_CHANNELS.CLEAR,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.clearSession(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.CLEAR,
-    ),
-  );
-
-  // Pause session
-  ipcMain.handle(
-    AGENT_CHANNELS.PAUSE,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.pauseSession(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.PAUSE,
-    ),
-  );
-
-  // Get status
-  ipcMain.handle(
-    AGENT_CHANNELS.GET_STATUS,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.getStatus(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.GET_STATUS,
-    ),
-  );
-}
-
-/**
- * Register lifecycle handlers
- */
-function registerLifecycleHandlers(backend: IAgentBackendService): void {
-  // Activate agent
-  ipcMain.handle(
-    AGENT_CHANNELS.ACTIVATE,
-    createSafeValidatedHandler(
-      AgentActivateSchema,
-      async (_event, validated) => {
-        // Convert to branded type
-        const request = {
-          agentId: String(validated.agentId),
-          workspaceId: validated.workspaceId ? String(validated.workspaceId) : undefined,
-          sessionId: validated.sessionId ? String(validated.sessionId) : undefined,
-        };
-        const response = await backend.activateAgent(request as any);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.ACTIVATE,
-    ),
-  );
-
-  // Lifecycle start
-  ipcMain.handle(
-    AGENT_CHANNELS.LIFECYCLE_START,
-    createSafeValidatedHandler(
-      AgentLifecycleStartSchema,
-      async (_event, validated) => {
-        const response = await backend.lifecycleStart(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.LIFECYCLE_START,
-    ),
-  );
-
-  // Lifecycle stop
-  ipcMain.handle(
-    AGENT_CHANNELS.LIFECYCLE_STOP,
-    createSafeValidatedHandler(
-      AgentLifecycleStopSchema,
-      async (_event, validated) => {
-        const response = await backend.lifecycleStop(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.LIFECYCLE_STOP,
-    ),
-  );
 }
 
 /**
  * Register messaging handlers
  */
 function registerMessagingHandlers(backend: IAgentBackendService): void {
-  // Messaging send
-  ipcMain.handle(
-    AGENT_CHANNELS.MESSAGING_SEND,
-    createSafeValidatedHandler(
-      AgentMessagingSendSchema,
-      async (_event, validated) => {
-        const response = await backend.messagingSend(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.MESSAGING_SEND,
-    ),
-  );
-
-  // Messaging receive
-  ipcMain.handle(
-    AGENT_CHANNELS.MESSAGING_RECEIVE,
-    createSafeValidatedHandler(
-      AgentMessagingReceiveSchema,
-      async (_event, validated) => {
-        const response = await backend.messagingReceive(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.MESSAGING_RECEIVE,
-    ),
-  );
-
   // Set agent model
   ipcMain.handle(
     AGENT_CHANNELS.SET_MODEL,
@@ -797,155 +500,6 @@ function registerRulesHandlers(): void {
         }
       },
       AGENT_CHANNELS.GET_SPECIALIZATION_RULES,
-    ),
-  );
-}
-
-/**
- * Register context handlers
- */
-function registerContextHandlers(backend: IAgentBackendService): void {
-  // Get context
-  ipcMain.handle(
-    AGENT_CHANNELS.GET_CONTEXT,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.getContext(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.GET_CONTEXT,
-    ),
-  );
-
-  // Update context
-  ipcMain.handle(
-    AGENT_CHANNELS.UPDATE_CONTEXT,
-    createSafeValidatedHandler(
-      AgentContextUpdateSchema,
-      async (_event, validated) => {
-        const response = await backend.updateContext(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.UPDATE_CONTEXT,
-    ),
-  );
-
-  // Get context by workspace
-  ipcMain.handle(
-    AGENT_CHANNELS.CONTEXT_GET_BY_WORKSPACE,
-    createSafeValidatedHandler(
-      AgentContextGetByWorkspaceSchema,
-      async (_event, validated) => {
-        // AgentContextGetByWorkspaceSchema is just a string (workspaceId)
-        const workspaceId = validated;
-        const response = await backend.getContextByWorkspace({ workspaceId } as any);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.CONTEXT_GET_BY_WORKSPACE,
-    ),
-  );
-
-  // Get context by session
-  ipcMain.handle(
-    AGENT_CHANNELS.CONTEXT_GET_BY_SESSION,
-    createSafeValidatedHandler(
-      AgentContextGetBySessionSchema,
-      async (_event, validated) => {
-        // AgentContextGetBySessionSchema is just a string (sessionId)
-        const sessionId = validated;
-        const response = await backend.getContextBySession({ sessionId } as any);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.CONTEXT_GET_BY_SESSION,
-    ),
-  );
-}
-
-/**
- * Register capabilities handlers
- */
-function registerCapabilitiesHandlers(backend: IAgentBackendService): void {
-  // Get capabilities
-  ipcMain.handle(
-    AGENT_CHANNELS.GET_CAPABILITIES,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.getCapabilities(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.GET_CAPABILITIES,
-    ),
-  );
-
-  // Set capabilities
-  ipcMain.handle(
-    AGENT_CHANNELS.SET_CAPABILITIES,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.setCapabilities(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.SET_CAPABILITIES,
-    ),
-  );
-}
-
-/**
- * Register metrics and logging handlers
- */
-function registerMetricsHandlers(backend: IAgentBackendService): void {
-  // Get metrics
-  ipcMain.handle(
-    AGENT_CHANNELS.GET_METRICS,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.getMetrics(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.GET_METRICS,
-    ),
-  );
-
-  // Reset metrics
-  ipcMain.handle(
-    AGENT_CHANNELS.RESET_METRICS,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.resetMetrics(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.RESET_METRICS,
-    ),
-  );
-
-  // Get logs
-  ipcMain.handle(
-    AGENT_CHANNELS.GET_LOGS,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.getLogs(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.GET_LOGS,
-    ),
-  );
-
-  // Clear logs
-  ipcMain.handle(
-    AGENT_CHANNELS.CLEAR_LOGS,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async (_event, validated) => {
-        const response = await backend.clearLogs(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.CLEAR_LOGS,
     ),
   );
 }

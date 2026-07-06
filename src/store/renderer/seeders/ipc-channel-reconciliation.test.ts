@@ -675,6 +675,38 @@ const RETIRED_IPC_CHANNELS: ReadonlySet<string> = new Set([
   // Retired FILE_ATTRIBUTION namespace (agent-write attribution moved off IPC).
   'file-attribution:record-agent-write',
   'file-attribution:read-file-and-record',
+  // Retired zero-caller AGENT adapter surface (C1d-1 removed the adapter methods,
+  // their AGENT_CHANNELS entries, the preload allowlist entries, and the schema/
+  // handler registrations in init-unified-handlers.ts + unified-agent-handlers.ts).
+  'agent:activate',
+  'agent:lifecycle:start',
+  'agent:lifecycle:stop',
+  'agent:messaging:send',
+  'agent:messaging:receive',
+  'agent:update-session',
+  'agent:export-session',
+  'agent:import-session',
+  'agent:get-history',
+  'agent:update-metadata',
+  'agent:fork-session',
+  'agent:merge-sessions',
+  'agent:get-stats',
+  'agent:validate-session',
+  'agent:repair-session',
+  'agent:clear',
+  'agent:pause',
+  'agent:get-status',
+  'agent:get-context',
+  'agent:update-context',
+  'agent:context:update',
+  'agent:context:getByWorkspace',
+  'agent:context:getBySession',
+  'agent:get-capabilities',
+  'agent:set-capabilities',
+  'agent:get-metrics',
+  'agent:reset-metrics',
+  'agent:get-logs',
+  'agent:clear-logs',
 ]);
 
 describe('Retired file-tracking / line-attribution / file-attribution channels stay retired', () => {

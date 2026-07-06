@@ -166,7 +166,6 @@ describe('Agent Migration Integration Tests', () => {
       handleListAgents: vi.fn(),
       handleDeleteAgent: vi.fn(),
       handleStopSession: vi.fn(),
-      handleActivateAgent: vi.fn(),
     };
 
     // Mock getInstance to return our mock
@@ -463,40 +462,4 @@ describe('Agent Migration Integration Tests', () => {
   });
 
 
-  describe('Lifecycle Operations', () => {
-    describe('Activate Agent', () => {
-      it('should successfully activate an agent', async () => {
-        mockBackendHandler.handleActivateAgent.mockResolvedValue({
-          success: true,
-        });
-
-        const request: AgentIpc.ActivateRequest = {
-          agentId: BrandedIds.AgentId('agent-123'),
-        };
-
-        const response = await adapter.activateAgent(request);
-
-        expect(response.success).toBe(true);
-        expect(mockBackendHandler.handleActivateAgent).toHaveBeenCalledWith(
-          null,
-          expect.objectContaining({
-            agentId: request.agentId,
-          }),
-        );
-      });
-
-      it('should handle activation errors', async () => {
-        mockBackendHandler.handleActivateAgent.mockResolvedValue({
-          success: false,
-          error: 'Agent not found',
-        });
-
-        const request: AgentIpc.ActivateRequest = {
-          agentId: BrandedIds.AgentId('non-existent'),
-        };
-
-        await expect(adapter.activateAgent(request)).rejects.toThrow('Agent not found');
-      });
-    });
-  });
 });

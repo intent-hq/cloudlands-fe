@@ -122,7 +122,6 @@ vi.mock('../agent-backend-handler.service', () => ({
       handleListAgents: vi.fn(),
       handleDeleteAgent: vi.fn(),
       handleStopSession: vi.fn(),
-      handleActivateAgent: vi.fn(),
     })),
   },
 }));
@@ -157,7 +156,6 @@ describe('Handler Registration Tests', () => {
         AGENT_CHANNELS.LIST_SESSIONS,
         AGENT_CHANNELS.DELETE_SESSION,
         AGENT_CHANNELS.STOP,
-        AGENT_CHANNELS.ACTIVATE,
       ];
 
       expectedChannels.forEach((channel) => {
@@ -340,7 +338,6 @@ describe('Handler Registration Tests', () => {
         AGENT_CHANNELS.TAG_WORKFLOW_VERSION,
         AGENT_CHANNELS.GET_WORKFLOW_TAGS,
         AGENT_CHANNELS.REMOVE_WORKFLOW_TAG,
-        AGENT_CHANNELS.CONTEXT_UPDATE,
       ]);
 
       // Get all channel values from AGENT_CHANNELS
@@ -365,7 +362,7 @@ describe('Handler Registration Tests', () => {
       }
 
       // Verify we have a reasonable number of handlers registered
-      expect(registeredHandlers.size).toBeGreaterThanOrEqual(40);
+      expect(registeredHandlers.size).toBeGreaterThanOrEqual(15);
     });
 
     it('should not register non-agent channels', () => {
