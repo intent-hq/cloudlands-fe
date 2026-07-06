@@ -172,7 +172,7 @@ export { configCache, ConfigCacheProxyService } from './config-cache-proxy.servi
 // IPC surface: none had production callers (agent creation goes through
 // UnifiedAgentFactory, deletion through the agent-mutation middleware's
 // soft-hide-then-commit → daemon agent.delete, and persistence is owned by
-// the daemon-agent-bridge on the main side).
+// the daemon on the main side via direct agent.* RPCs, PROTOCOL.md §5.5).
 
 // ============================================================================
 // Stream store-shaper registration

@@ -2,21 +2,18 @@
  * Lightweight agent-rename helper.
  *
  * Patches only the `name` and `nameExplicitlySet` fields of an agent session
- * through the daemon (`agent.update`, PROTOCOL.md §5.5) via
- * `daemonAgentBridge.saveAgent`, then syncs the in-memory backend session and
- * emits `agent:renamed` through Redux workspace events. It is the
- * implementation used by both the MCP `setAgentName` tool and the
- * user-triggered rename IPC handler.
+ * through the daemon (`agent.update`, PROTOCOL.md §5.5), then syncs the
+ * in-memory backend session and emits `agent:renamed` through Redux workspace
+ * events. It is the implementation used by both the MCP `setAgentName` tool
+ * and the user-triggered rename IPC handler.
  */
 
 import { Logger } from '$shared/logger';
-import type { AgentId, WorkspaceId } from '$shared/types/branded-ids';
-import type { AgentSession } from '$shared/types';
 
 import { createWorkspaceEvent, WorkspaceEventType } from '../../events/types';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
-import { daemonAgentBridge } from './daemon-agent-bridge';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 
 const logger = new Logger('AgentRename');
 
@@ -57,16 +54,21 @@ export async function renameAgentOnDisk(
   }
 
   if (skipIfExplicitlySet) {
-    const existing = await daemonAgentBridge.loadAgentSummary(
-      agentId as unknown as AgentId,
-      workspaceId as unknown as WorkspaceId,
-    );
-    const existingName =
-      existing.success && existing.data?.name ? existing.data.name : trimmedName;
-    const existingExplicit =
-      existing.success &&
-      (existing.data as unknown as { nameExplicitlySet?: boolean } | undefined)
-        ?.nameExplicitlySet === true;
+    let existingName = trimmedName;
+    let existingExplicit = false;
+    try {
+      const res = (await getBackendClient().request('agent.get', {
+        agentId,
+        workspaceId,
+      })) as { agent?: { name?: string; nameExplicitlySet?: boolean } };
+      if (res.agent?.name) existingName = res.agent.name;
+      if (res.agent?.nameExplicitlySet === true) existingExplicit = true;
+    } catch (err) {
+      logger.warn('renameAgentOnDisk: agent.get failed; proceeding as if unset', {
+        agentId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
     if (existingExplicit) {
       logger.info('renameAgentOnDisk: skipping — name already explicitly set', {
         agentId,
@@ -78,15 +80,16 @@ export async function renameAgentOnDisk(
     }
   }
 
-  const patch = {
-    id: agentId,
-    workspaceId,
-    name: trimmedName,
-    nameExplicitlySet: true,
-  } as unknown as AgentSession;
-  const saveResult = await daemonAgentBridge.saveAgent(patch);
-  if (!saveResult.success) {
-    throw new Error(saveResult.error || 'Failed to rename agent session');
+  try {
+    await getBackendClient().request('agent.update', {
+      agentId,
+      workspaceId,
+      changes: { name: trimmedName, nameExplicitlySet: true },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn('agent.update failed', { agentId, error: msg });
+    throw new Error(msg || 'Failed to rename agent session');
   }
 
   await syncInMemorySession(agentId, trimmedName, true);

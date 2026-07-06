@@ -52,10 +52,44 @@ let WorkspaceConfig: typeof import('$shared/main/config').WorkspaceConfig | unde
 
 // Lazy-loaded invoke function for frontend context
 let invokeFunction: (typeof import('$lib/electron-bridge'))['invoke'] | undefined;
-let agentPersistence: any;
+let getBackendClientFn:
+  | (typeof import('../../backend/main/backend.ipc'))['getBackendClient']
+  | undefined;
 let metadataFSFactory:
   | ((workspaceId: string) => import('../../metadata-fs/main/metadata-fs').IMetadataFS)
   | undefined;
+
+/** PROTOCOL.md §5.5 `agent.update` — whitelisted mutable fields. */
+const UPDATABLE_FIELDS = [
+  'status',
+  'isActive',
+  'acpSessionId',
+  'backendSessionId',
+  'name',
+  'nameExplicitlySet',
+  'model',
+  'provider',
+  'systemPrompt',
+  'specialist',
+  'taskNoteId',
+  'skipAutoCommit',
+  'completionReport',
+  'completionReportTimestamp',
+  'delegationDepth',
+  'initialMessage',
+  'contextReferences',
+  'imageBlocks',
+  'isBackground',
+] as const;
+
+function pickAgentUpdateChanges(agent: AgentSession): Record<string, unknown> {
+  const changes: Record<string, unknown> = {};
+  const src = agent as unknown as Record<string, unknown>;
+  for (const key of UPDATABLE_FIELDS) {
+    if (src[key] !== undefined) changes[key] = src[key];
+  }
+  return changes;
+}
 
 // Check if we're in the main process
 function isMainProcess(): boolean {
@@ -94,18 +128,27 @@ async function getNodeModules() {
       // Electron may not be available in all contexts
     }
 
-    // Route agent-session CRUD through the daemon and load the metadata-fs
-    // factory directly for the surviving remote-workspace read path.
+    // Route agent-session CRUD through the daemon (PROTOCOL.md §5.5) and load
+    // the metadata-fs factory directly for the surviving remote-workspace read
+    // path.
     try {
-      const bridgeModule = await import('../main/daemon-agent-bridge');
-      agentPersistence = bridgeModule.daemonAgentBridge;
+      const backendModule = await import('../../backend/main/backend.ipc');
+      getBackendClientFn = backendModule.getBackendClient;
       const { getMetadataFS } = await import('../../metadata-fs/main/metadata-fs-factory');
       metadataFSFactory = getMetadataFS;
     } catch (error) {
-      logger.warn('Could not load agent persistence module', error);
+      logger.warn('Could not load backend client module', error);
     }
   }
-  return { fs, path, ipcMain, BrowserWindow, agentPersistence, WorkspaceConfig, metadataFSFactory };
+  return {
+    fs,
+    path,
+    ipcMain,
+    BrowserWindow,
+    getBackendClient: getBackendClientFn,
+    WorkspaceConfig,
+    metadataFSFactory,
+  };
 }
 
 const logger = new Logger('ConsolidatedBackend');
@@ -554,18 +597,30 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         this.sessions.delete(id);
       }
 
-      // Persist deletion if enabled
+      // Persist deletion if enabled (PROTOCOL.md §5.5 `agent.delete`).
       if (this.config.persistenceEnabled && effectiveWorkspaceId) {
-        const { agentPersistence } = await getNodeModules();
-        if (agentPersistence) {
-          logger.info('[deleteAgent] Calling agentPersistence.deleteAgent', {
+        const { getBackendClient } = await getNodeModules();
+        if (getBackendClient) {
+          logger.info('[deleteAgent] Calling agent.delete', {
             agentId,
             workspaceId: effectiveWorkspaceId,
           });
-          const result = await agentPersistence.deleteAgent(agentId, effectiveWorkspaceId);
-          logger.info('[deleteAgent] Persistence deletion result', { result });
+          try {
+            await getBackendClient().request('agent.delete', {
+              agentId,
+              workspaceId: effectiveWorkspaceId,
+            });
+            logger.info('[deleteAgent] Persistence deletion result', {
+              result: { success: true },
+            });
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            logger.info('[deleteAgent] Persistence deletion result', {
+              result: { success: false, error: errorMsg },
+            });
+          }
         } else {
-          logger.error('[deleteAgent] agentPersistence not available');
+          logger.error('[deleteAgent] backend client not available');
         }
       }
 
@@ -841,15 +896,14 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         },
       });
 
-      // This service should only be used in the renderer process
-      // In the main process, the agent-backend-handler should directly use providers
+      // This service should only be used in the renderer process; streaming
+      // is driven from the renderer via IPC on AGENT_BACKEND_CHANNELS.
       if (typeof window === 'undefined') {
         // We're in the main process - this shouldn't happen
         logger.error('[sendMessage] ConsolidatedBackendService should not be used in main process');
         return {
           success: false,
-          error:
-            'ConsolidatedBackendService should not be used in main process. Use agent-backend-handler directly.',
+          error: 'ConsolidatedBackendService.sendMessage must not be called from the main process.',
         };
       }
 
@@ -909,10 +963,29 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
           return { success: true };
         }
 
-        const { agentPersistence } = await getNodeModules();
-        const result: { success: boolean; error?: string } = agentPersistence
-          ? await agentPersistence.saveAgent(record.session)
-          : { success: false, error: 'Persistence service not available' };
+        const { getBackendClient } = await getNodeModules();
+        let result: { success: boolean; error?: string };
+        if (!getBackendClient) {
+          result = { success: false, error: 'Persistence service not available' };
+        } else {
+          const changes = pickAgentUpdateChanges(record.session);
+          if (Object.keys(changes).length === 0) {
+            result = { success: true };
+          } else {
+            try {
+              await getBackendClient().request('agent.update', {
+                agentId: record.session.id,
+                workspaceId: record.session.workspaceId,
+                changes,
+              });
+              result = { success: true };
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              logger.warn('agent.update failed', { agentId: record.session.id, error: msg });
+              result = { success: false, error: msg };
+            }
+          }
+        }
 
         if (!result?.success) {
           return { success: false, error: result?.error || 'Failed to save agent' };
@@ -945,18 +1018,20 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
 
       let result: { success: boolean; data?: AgentSession; error?: string };
 
-      const { agentPersistence } = await getNodeModules();
-      if (agentPersistence) {
-        // Do NOT pass workspace.path - let it use the correct metadata directory
-        const loadResult = await agentPersistence.loadAgent(
-          createAgentId(agentId),
-          createWorkspaceId(workspace.id),
-        );
-
-        if (loadResult.success && loadResult.data) {
-          result = { success: true, data: loadResult.data };
-        } else {
-          result = { success: false, error: loadResult.error || 'Failed to load agent' };
+      const { getBackendClient } = await getNodeModules();
+      if (getBackendClient) {
+        try {
+          const res = (await getBackendClient().request('agent.getSession', {
+            agentId: createAgentId(agentId),
+            workspaceId: createWorkspaceId(workspace.id),
+          })) as { session?: AgentSession };
+          if (res?.session) {
+            result = { success: true, data: res.session };
+          } else {
+            result = { success: false, error: 'Failed to load agent' };
+          }
+        } catch (err) {
+          result = { success: false, error: err instanceof Error ? err.message : String(err) };
         }
       } else {
         result = { success: false, error: 'Persistence service not available' };
@@ -1014,11 +1089,21 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
 
       // Check if we're in the main process
       if (isMainProcess()) {
-        // Direct call to persistence service in main process
-        const { agentPersistence } = await getNodeModules();
-        if (agentPersistence) {
-          const agents = await agentPersistence.listAgents(workspaceId);
-          return agents || [];
+        // Direct call to the daemon in main process (PROTOCOL.md §5.5 `agent.list`).
+        const { getBackendClient } = await getNodeModules();
+        if (getBackendClient) {
+          try {
+            const res = (await getBackendClient().request('agent.list', { workspaceId })) as {
+              agents?: Array<{ id: string }>;
+            };
+            return (res?.agents ?? []).map((a) => a.id);
+          } catch (err) {
+            logger.warn('agent.list failed', {
+              workspaceId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return [];
+          }
         } else {
           return [];
         }
@@ -1246,12 +1331,22 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     if (!record.messagesEvicted) return record.session;
 
     try {
-      const { agentPersistence } = await getNodeModules();
-      if (!agentPersistence) {
+      const { getBackendClient } = await getNodeModules();
+      if (!getBackendClient) {
         return record.session;
       }
-      const result: { success: boolean; data?: AgentSession; error?: string } =
-        await agentPersistence.loadAgent(record.agentId, record.workspaceId);
+      let result: { success: boolean; data?: AgentSession; error?: string };
+      try {
+        const res = (await getBackendClient().request('agent.getSession', {
+          agentId: record.agentId,
+          workspaceId: record.workspaceId,
+        })) as { session?: AgentSession };
+        result = res?.session
+          ? { success: true, data: res.session }
+          : { success: false, error: 'Failed to load agent' };
+      } catch (err) {
+        result = { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
 
       if (!result.success || !result.data) {
         logger.warn('[session-payload-eviction] Failed to restore evicted payload', {

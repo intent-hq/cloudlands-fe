@@ -2,10 +2,10 @@
  * Tests for the lightweight agent-rename helper.
  *
  * Covers both the user-driven rename path (no skipIfExplicitlySet) and the
- * MCP agent-driven path (skipIfExplicitlySet=true). Disk I/O is delegated to
- * `daemonAgentBridge.saveAgent` (which maps to `agent.update`, PROTOCOL.md
- * §5.5); these tests mock that method so they assert only the helper's
- * orchestration (validation, delegation, in-memory sync, broadcast).
+ * MCP agent-driven path (skipIfExplicitlySet=true). Disk I/O is issued as
+ * direct daemon RPCs (`agent.get` for the existence check, `agent.update`
+ * for the whitelisted patch — PROTOCOL.md §5.5). These tests mock
+ * `getBackendClient().request` and assert the exact request-on-wire.
  */
 
 import {
@@ -45,19 +45,9 @@ vi.mock('$features/events/types', () => ({
   WorkspaceEventType: { AgentRenamed: 'agent:renamed' },
 }));
 
-const saveAgent = vi.fn<
-  (agent: { id: string; workspaceId: string; name?: string; nameExplicitlySet?: boolean }) =>
-    Promise<{ success: boolean; error?: string }>
->();
-const loadAgentSummary = vi.fn<
-  (agentId: string, workspaceId: string) => Promise<{
-    success: boolean;
-    data?: { name?: string; nameExplicitlySet?: boolean };
-    error?: string;
-  }>
->();
-vi.mock('../daemon-agent-bridge', () => ({
-  daemonAgentBridge: { saveAgent, loadAgentSummary },
+const mockRequest = vi.fn();
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockRequest }),
 }));
 
 const getSession = vi.fn();
@@ -73,13 +63,12 @@ describe('renameAgentOnDisk', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    saveAgent.mockReset();
-    loadAgentSummary.mockReset();
+    mockRequest.mockReset();
     getSession.mockReset();
   });
 
-  it('delegates to daemonAgentBridge.saveAgent and broadcasts', async () => {
-    saveAgent.mockResolvedValue({ success: true });
+  it('sends agent.update with the whitelisted patch and broadcasts', async () => {
+    mockRequest.mockResolvedValueOnce({ success: true });
     const session: { name?: string; nameExplicitlySet?: boolean } = { name: 'Old Name' };
     getSession.mockReturnValue(session);
 
@@ -88,12 +77,11 @@ describe('renameAgentOnDisk', () => {
     const result = await renameAgentOnDisk({ workspaceId, agentId, name: 'New Name' });
 
     expect(result).toEqual({ ok: true, name: 'New Name' });
-    expect(loadAgentSummary).not.toHaveBeenCalled();
-    expect(saveAgent).toHaveBeenCalledWith({
-      id: agentId,
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(mockRequest).toHaveBeenCalledWith('agent.update', {
+      agentId,
       workspaceId,
-      name: 'New Name',
-      nameExplicitlySet: true,
+      changes: { name: 'New Name', nameExplicitlySet: true },
     });
     expect(session.name).toBe('New Name');
     expect(session.nameExplicitlySet).toBe(true);
@@ -116,10 +104,9 @@ describe('renameAgentOnDisk', () => {
     });
   });
 
-  it('honours skipIfExplicitlySet by consulting the daemon summary first', async () => {
-    loadAgentSummary.mockResolvedValue({
-      success: true,
-      data: { name: 'User Chosen', nameExplicitlySet: true },
+  it('honours skipIfExplicitlySet by consulting agent.get first', async () => {
+    mockRequest.mockResolvedValueOnce({
+      agent: { name: 'User Chosen', nameExplicitlySet: true },
     });
     const session: { name?: string; nameExplicitlySet?: boolean } = { name: 'Old' };
     getSession.mockReturnValue(session);
@@ -134,15 +121,39 @@ describe('renameAgentOnDisk', () => {
     });
 
     expect(result).toEqual({ ok: true, name: 'User Chosen', skipped: true });
-    expect(loadAgentSummary).toHaveBeenCalledWith(agentId, workspaceId);
-    expect(saveAgent).not.toHaveBeenCalled();
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(mockRequest).toHaveBeenCalledWith('agent.get', { agentId, workspaceId });
     expect(session.name).toBe('User Chosen');
     expect(session.nameExplicitlySet).toBe(true);
     expect(mainDispatch).not.toHaveBeenCalled();
   });
 
-  it('throws when the daemon reports a save failure', async () => {
-    saveAgent.mockResolvedValue({ success: false, error: 'daemon offline' });
+  it('proceeds with agent.update when skipIfExplicitlySet and existing name is not locked', async () => {
+    mockRequest
+      .mockResolvedValueOnce({ agent: { name: 'Auto Name', nameExplicitlySet: false } })
+      .mockResolvedValueOnce({ success: true });
+    getSession.mockReturnValue({ name: 'Auto Name' });
+
+    const { renameAgentOnDisk } = await import('../agent-rename');
+
+    const result = await renameAgentOnDisk({
+      workspaceId,
+      agentId,
+      name: 'Agent Suggested',
+      skipIfExplicitlySet: true,
+    });
+
+    expect(result).toEqual({ ok: true, name: 'Agent Suggested' });
+    expect(mockRequest).toHaveBeenNthCalledWith(1, 'agent.get', { agentId, workspaceId });
+    expect(mockRequest).toHaveBeenNthCalledWith(2, 'agent.update', {
+      agentId,
+      workspaceId,
+      changes: { name: 'Agent Suggested', nameExplicitlySet: true },
+    });
+  });
+
+  it('throws when the daemon rejects agent.update', async () => {
+    mockRequest.mockRejectedValueOnce(new Error('daemon offline'));
 
     const { renameAgentOnDisk } = await import('../agent-rename');
 
@@ -161,7 +172,6 @@ describe('renameAgentOnDisk', () => {
     await expect(renameAgentOnDisk({ workspaceId, agentId, name: '   ' })).rejects.toThrow(
       'name must not be empty or whitespace-only',
     );
-    expect(saveAgent).not.toHaveBeenCalled();
-    expect(loadAgentSummary).not.toHaveBeenCalled();
+    expect(mockRequest).not.toHaveBeenCalled();
   });
 });

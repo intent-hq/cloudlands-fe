@@ -244,14 +244,10 @@ describe('buildWorkspaceApi – setAgentName', () => {
     });
   }
 
-  it('delegates to daemonAgentBridge.saveAgent and emits a workspace event', async () => {
-    const saveAgent = vi.fn().mockResolvedValue({ success: true });
-    const loadAgentSummary = vi.fn().mockResolvedValue({
-      success: true,
-      data: { name: 'Original Name', nameExplicitlySet: false },
-    });
-    vi.doMock('$features/agent/main/daemon-agent-bridge', () => ({
-      daemonAgentBridge: { saveAgent, loadAgentSummary },
+  it('sends agent.update to the daemon and emits a workspace event', async () => {
+    const mockRequest = vi.fn().mockResolvedValue({ success: true });
+    vi.doMock('$features/backend/main/backend.ipc', () => ({
+      getBackendClient: () => ({ request: mockRequest }),
     }));
 
     const { buildWorkspaceApi: freshBuildApi } = await import('../ws-workspace-api');
@@ -267,13 +263,11 @@ describe('buildWorkspaceApi – setAgentName', () => {
     expect(result.ok).toBe(true);
     expect(result.name).toBe('My Custom Name');
 
-    // Delegation to daemonAgentBridge.saveAgent with the agent.update whitelist
-    expect(loadAgentSummary).toHaveBeenCalledWith(agentId, workspaceId);
-    expect(saveAgent).toHaveBeenCalledWith({
-      id: agentId,
+    // Direct daemon RPC: whitelisted agent.update patch (PROTOCOL.md §5.5)
+    expect(mockRequest).toHaveBeenCalledWith('agent.update', {
+      agentId,
       workspaceId,
-      name: 'My Custom Name',
-      nameExplicitlySet: true,
+      changes: { name: 'My Custom Name', nameExplicitlySet: true },
     });
 
     // Verify workspace event is emitted (replaced direct IPC call)
@@ -293,20 +287,16 @@ describe('buildWorkspaceApi – setAgentName', () => {
     expect(mockEmit).toHaveBeenCalled();
     expect(mockDispatch).toHaveBeenCalled();
 
-    vi.doUnmock('$features/agent/main/daemon-agent-bridge');
+    vi.doUnmock('$features/backend/main/backend.ipc');
   });
 
   it('updates in-memory backend session (regression)', async () => {
     // Mock ConsolidatedBackendService to track in-memory update
     const mockSession = { name: 'Old Name', id: agentId };
 
-    const saveAgent = vi.fn().mockResolvedValue({ success: true });
-    const loadAgentSummary = vi.fn().mockResolvedValue({
-      success: true,
-      data: { name: 'Old Name', nameExplicitlySet: false },
-    });
-    vi.doMock('$features/agent/main/daemon-agent-bridge', () => ({
-      daemonAgentBridge: { saveAgent, loadAgentSummary },
+    const mockRequest = vi.fn().mockResolvedValue({ success: true });
+    vi.doMock('$features/backend/main/backend.ipc', () => ({
+      getBackendClient: () => ({ request: mockRequest }),
     }));
     vi.doMock('$features/agent/main/consolidated-backend.service', () => ({
       ConsolidatedBackendService: {
@@ -330,7 +320,7 @@ describe('buildWorkspaceApi – setAgentName', () => {
     // The in-memory session should have been updated
     expect(mockSession.name).toBe('Updated Name');
 
-    vi.doUnmock('$features/agent/main/daemon-agent-bridge');
+    vi.doUnmock('$features/backend/main/backend.ipc');
     vi.doUnmock('$features/agent/main/consolidated-backend.service');
   });
 

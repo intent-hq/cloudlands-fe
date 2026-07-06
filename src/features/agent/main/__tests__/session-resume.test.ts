@@ -17,9 +17,9 @@ import {
 import { AgentStatus } from '../../../shared/types/agent.types';
 import type { AgentSession } from '../../../shared/types/agent-session';
 
-// Mock the persistence module
-vi.mock('../daemon-agent-bridge', () => ({
-  daemonAgentBridge: {},
+// Mock the daemon RPC seam
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: vi.fn() }),
 }));
 
 // Mock the workspace config
