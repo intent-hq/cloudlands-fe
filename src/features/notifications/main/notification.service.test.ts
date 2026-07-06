@@ -10,9 +10,10 @@ import {
   app,
   BrowserWindow,
 } from 'electron';
-import { NotificationService } from './notification.service';
+import { NotificationService, __resetNotificationCacheForTesting } from './notification.service';
 // workspace-event-bus was deleted; notifications are now driven by Redux sagas
 import { getWindowIdsForWorkspace } from '../../system/main/system.ipc';
+import type { AgentIdleEvent } from '../../events/types';
 
 vi.mock('../../../shared/logger', () => ({
   Logger: class {
@@ -25,9 +26,24 @@ vi.mock('../../../shared/logger', () => ({
   },
 }));
 
-const requestMock = vi.hoisted(() =>
-  vi.fn(async () => ({ path: 'notifications.enabled', value: true })),
-);
+// Method-aware daemon-client stub: routes `settings.get` to a hydrated
+// notifications-enabled response and `agent.list` to a configurable
+// PROTOCOL.md §5.5-shaped AgentLite[] fixture (defaults to empty).
+const { requestMock, agentListResponse } = vi.hoisted(() => {
+  const agentListResponse: {
+    agents: Array<{ id?: string; isStreaming?: boolean; isResponding?: boolean }>;
+  } = { agents: [] };
+  const requestMock = vi.fn(async (method: string) => {
+    if (method === 'settings.get') {
+      return { path: 'notifications.enabled', value: true };
+    }
+    if (method === 'agent.list') {
+      return agentListResponse;
+    }
+    return {};
+  });
+  return { requestMock, agentListResponse };
+});
 
 vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: requestMock }),
@@ -75,14 +91,6 @@ vi.mock('electron', () => ({
     on(event: string, handler: Function) {
       this.handlers[event] = handler;
     }
-  },
-}));
-
-vi.mock('../../agent/main/agent-backend-handler.service', () => ({
-  AgentBackendHandler: {
-    getInstance: vi.fn(() => ({
-      getActiveStreams: vi.fn(() => []),
-    })),
   },
 }));
 
@@ -361,3 +369,72 @@ describe('NotificationService showNotification click behavior', () => {
     }
   });
 });
+
+describe('NotificationService handleAgentIdle suppression via agent.list', () => {
+  function buildIdleEvent(overrides: Partial<AgentIdleEvent['data']> = {}): AgentIdleEvent {
+    return {
+      type: 'agent:idle',
+      workspaceId: 'workspace-1',
+      timestamp: new Date().toISOString(),
+      data: {
+        agentId: 'agent-self',
+        agentName: 'Self Agent',
+        isBackground: false,
+        ...overrides,
+      } as AgentIdleEvent['data'],
+    } as AgentIdleEvent;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetNotificationCacheForTesting();
+    mockNotificationIsSupported.value = true;
+    mockNotificationInstances.length = 0;
+    agentListResponse.agents = [];
+  });
+
+  afterEach(() => {
+    mockNotificationIsSupported.value = false;
+    agentListResponse.agents = [];
+  });
+
+  it('suppresses notification when another agent in the workspace is streaming', async () => {
+    agentListResponse.agents = [
+      { id: 'agent-self', isStreaming: false, isResponding: false },
+      { id: 'agent-other', isStreaming: true, isResponding: false },
+    ];
+
+    const service = new NotificationService('workspace-1');
+    await service.handleAgentIdle(buildIdleEvent());
+
+    // Assert exact on-wire request shape (PROTOCOL.md §5.5).
+    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    // No notification constructed because suppression fired.
+    expect(mockNotificationInstances.length).toBe(0);
+  });
+
+  it('does not suppress when the only active agent in the list is the idling agent itself', async () => {
+    agentListResponse.agents = [
+      { id: 'agent-self', isStreaming: true, isResponding: false },
+    ];
+
+    const service = new NotificationService('workspace-1');
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    // Notification proceeds — the idling agent's own residual flag is not a
+    // suppression trigger.
+    expect(mockNotificationInstances.length).toBe(1);
+  });
+
+  it('does not suppress when agent.list returns an empty list', async () => {
+    agentListResponse.agents = [];
+
+    const service = new NotificationService('workspace-1');
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
+    expect(mockNotificationInstances.length).toBe(1);
+  });
+});
+

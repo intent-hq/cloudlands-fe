@@ -18,7 +18,6 @@ import {
 } from 'electron';
 import { Logger } from '../../../shared/logger';
 import type { AgentIdleEvent } from '../../events/types';
-import { AgentBackendHandler } from '../../agent/main/agent-backend-handler.service';
 import {
   getWindowIdsForWorkspace,
   sendToWorkspaceWindows,
@@ -153,19 +152,27 @@ export class NotificationService {
         return;
       }
 
-      // Check if any other agents are still streaming in this workspace
-      const handler = AgentBackendHandler.getInstance();
-      const activeStreams = handler.getActiveStreams();
-      const otherActiveStreams = activeStreams.filter(
-        (stream) =>
-          stream.workspaceId === this.workspaceId && stream.agentId !== event.data.agentId,
+      // Check if any other agents are still streaming in this workspace.
+      // Routed through the daemon (PROTOCOL.md §5.5 `agent.list`): AgentLite
+      // carries `isStreaming`/`isResponding` verbatim, and only `id` feeds the
+      // suppression gate below.
+      const { getBackendClient } = await import('../../backend/main/backend.ipc');
+      const agentList = (await getBackendClient().request('agent.list', {
+        workspaceId: this.workspaceId,
+      })) as {
+        agents?: Array<{ id?: string; isStreaming?: boolean; isResponding?: boolean }>;
+      } | undefined;
+      const otherActiveAgents = (agentList?.agents ?? []).filter(
+        (agent) =>
+          (agent.isStreaming === true || agent.isResponding === true) &&
+          agent.id !== event.data.agentId,
       );
 
-      if (otherActiveStreams.length > 0) {
+      if (otherActiveAgents.length > 0) {
         logger.debug('Other agents still active, skipping notification', {
           workspaceId: this.workspaceId,
           agentName: event.data.agentName,
-          otherActiveCount: otherActiveStreams.length,
+          otherActiveCount: otherActiveAgents.length,
         });
         return;
       }
