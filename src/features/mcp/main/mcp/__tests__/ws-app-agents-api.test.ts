@@ -1,30 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockAgentHandler, mockRequest, mockWorkspaceSubscriptionState } = vi.hoisted(
-  () => ({
-    mockAgentHandler: {
-      listAllAgents: vi.fn(),
-      getAgent: vi.fn(),
-    },
-    // P3-1: `loadAgentSession` now falls back to the daemon
-    // (PROTOCOL.md §5.5 agent.get + agent.getConversation) instead of
-    // agentPersistence.loadAgent.
-    mockRequest: vi.fn(),
-    mockWorkspaceSubscriptionState: {
-      agentStatuses: {} as Record<string, string>,
-    },
-  }),
-);
-
-vi.mock('$features/agent/main/agent-backend-handler.service', () => ({
-  AgentBackendHandler: {
-    getInstance: () => mockAgentHandler,
-  },
-}));
-
-vi.mock('../../../../agent/main/agent-backend-handler.service', () => ({
-  AgentBackendHandler: {
-    getInstance: () => mockAgentHandler,
+const { mockRequest, mockWorkspaceSubscriptionState } = vi.hoisted(() => ({
+  // C1d-4: ws-app-agents-api now reads daemon-primary (PROTOCOL.md §5.5):
+  // `list` → `agent.list`, `loadAgentSession` → `agent.getSession` (single
+  // full-session call — no agent.get + agent.getConversation fallback).
+  mockRequest: vi.fn(),
+  mockWorkspaceSubscriptionState: {
+    agentStatuses: {} as Record<string, string>,
   },
 }));
 
@@ -52,18 +34,23 @@ vi.mock(
 
 import { buildWsAppAgentsApi } from '../ws-app-agents-api';
 
+function stubAgentListPerWorkspace(agentsByWorkspace: Record<string, any[]>) {
+  mockRequest.mockImplementation(async (method: string, params: any) => {
+    if (method === 'agent.list') {
+      const workspaceId = String(params?.workspaceId ?? '');
+      return { agents: agentsByWorkspace[workspaceId] ?? [] };
+    }
+    throw new Error(`unhandled RPC: ${method}`);
+  });
+}
+
 function stubDaemonAgentLoad(response: { success: boolean; data?: any; error?: string }) {
   mockRequest.mockImplementation(async (method: string) => {
-    if (method === 'agent.get') {
+    if (method === 'agent.getSession') {
       if (!response.success || !response.data) {
         throw new Error(response.error || 'agent not found');
       }
-      const { messages: _msgs, ...rest } = response.data;
-      return { agent: rest };
-    }
-    if (method === 'agent.getConversation') {
-      const messages = response.success ? response.data?.messages ?? [] : [];
-      return { messages };
+      return { session: response.data };
     }
     throw new Error(`unhandled RPC: ${method}`);
   });
@@ -98,37 +85,35 @@ describe('buildWsAppAgentsApi', () => {
     vi.clearAllMocks();
     mockRequest.mockReset();
     mockWorkspaceSubscriptionState.agentStatuses = {};
-    mockAgentHandler.getAgent.mockResolvedValue(null);
   });
 
   it('lists cross-workspace agent thread metadata without transcript content', async () => {
     const manager = makeManager();
-    mockAgentHandler.listAllAgents.mockImplementation((workspaceId: string) =>
-      Promise.resolve(
-        workspaceId === 'workspace-1'
-          ? [
-              {
-                id: 'agent-1',
-                name: 'Alpha Agent',
-                status: 'completed',
-                metadata: { taskNoteId: 'task-1', messageCount: 7 },
-                messages: [{ content: 'SECRET_TRANSCRIPT' }],
-                createdAt: '2026-06-01T00:00:00.000Z',
-                updatedAt: '2026-06-01T00:05:00.000Z',
-                lastActivity: '2026-06-01T00:10:00.000Z',
-              },
-            ]
-          : [
-              {
-                id: 'agent-2',
-                name: 'Beta Agent',
-                status: 'responding',
-                metadata: { taskNoteId: 'task-2', messageCount: 3 },
-                lastActivity: '2026-06-02T00:10:00.000Z',
-              },
-            ],
-      ),
-    );
+    // Daemon returns AgentLite-shaped entries per PROTOCOL.md §5.5 `agent.list`.
+    stubAgentListPerWorkspace({
+      'workspace-1': [
+        {
+          id: 'agent-1',
+          name: 'Alpha Agent',
+          status: 'completed',
+          messageCount: 7,
+          metadata: { taskNoteId: 'task-1' },
+          createdAt: '2026-06-01T00:00:00.000Z',
+          updatedAt: '2026-06-01T00:05:00.000Z',
+          lastActivity: '2026-06-01T00:10:00.000Z',
+        },
+      ],
+      'workspace-2': [
+        {
+          id: 'agent-2',
+          name: 'Beta Agent',
+          status: 'responding',
+          messageCount: 3,
+          metadata: { taskNoteId: 'task-2' },
+          lastActivity: '2026-06-02T00:10:00.000Z',
+        },
+      ],
+    });
 
     const result = await buildWsAppAgentsApi(manager).list({ limit: 1 });
 
@@ -141,18 +126,23 @@ describe('buildWsAppAgentsApi', () => {
       messageCount: 3,
       taskNoteId: 'task-2',
     });
-    expect(JSON.stringify(result)).not.toContain('SECRET_TRANSCRIPT');
     expect(manager.listAllWorkspaces).toHaveBeenCalledWith({ lite: true });
-    expect(mockAgentHandler.listAllAgents).toHaveBeenCalledWith('workspace-1');
-    expect(mockAgentHandler.listAllAgents).toHaveBeenCalledWith('workspace-2');
+    const listCalls = mockRequest.mock.calls.filter((c) => c[0] === 'agent.list');
+    expect(listCalls.map((c) => c[1])).toEqual([
+      { workspaceId: 'workspace-1' },
+      { workspaceId: 'workspace-2' },
+    ]);
   });
 
   it('filters completed threads when includeCompleted is false', async () => {
     const manager = makeManager();
-    mockAgentHandler.listAllAgents.mockResolvedValue([
-      { id: 'agent-complete', name: 'Done', status: 'completed' },
-      { id: 'agent-live', name: 'Live', status: 'idle' },
-    ]);
+    // PROTOCOL.md §5.5 `agent.list` — AgentLite entries only.
+    stubAgentListPerWorkspace({
+      'workspace-1': [
+        { id: 'agent-complete', name: 'Done', status: 'completed' },
+        { id: 'agent-live', name: 'Live', status: 'idle' },
+      ],
+    });
 
     const result = await buildWsAppAgentsApi(manager).list({
       workspaceId: 'workspace-1',
@@ -161,7 +151,8 @@ describe('buildWsAppAgentsApi', () => {
 
     expect(result.threads.map((thread) => thread.agentId)).toEqual(['agent-live']);
     expect(manager.getWorkspace).toHaveBeenCalledWith('workspace-1');
-    expect(mockAgentHandler.listAllAgents).toHaveBeenCalledTimes(1);
+    const listCalls = mockRequest.mock.calls.filter((c) => c[0] === 'agent.list');
+    expect(listCalls).toEqual([['agent.list', { workspaceId: 'workspace-1' }]]);
   });
 
   it('reads a bounded conversation and excludes tool calls by default', async () => {
@@ -296,24 +287,20 @@ describe('buildWsAppAgentsApi', () => {
 describe('buildWsAppAgentsApi — daemon wire contract (PROTOCOL.md §5.5)', () => {
   beforeEach(() => {
     mockRequest.mockReset();
-    mockAgentHandler.getAgent.mockResolvedValue(null);
-    mockAgentHandler.listAllAgents.mockResolvedValue([]);
   });
 
-  it('readConversation loads via agent.get + agent.getConversation on cache miss', async () => {
+  it('readConversation loads via a single agent.getSession call (PROTOCOL.md §5.5)', async () => {
     mockRequest.mockImplementation(async (method: string) => {
-      if (method === 'agent.get') {
+      if (method === 'agent.getSession') {
         return {
-          agent: {
+          session: {
             id: 'agent-1',
             name: 'Alpha Agent',
             status: 'idle',
             metadata: { taskNoteId: 'task-1' },
+            messages: [],
           },
         };
-      }
-      if (method === 'agent.getConversation') {
-        return { messages: [] };
       }
       throw new Error(`unexpected ${method}`);
     });
@@ -321,11 +308,34 @@ describe('buildWsAppAgentsApi — daemon wire contract (PROTOCOL.md §5.5)', () 
     await buildWsAppAgentsApi(makeManager()).readConversation('workspace-1', 'agent-1');
 
     const methods = mockRequest.mock.calls.map((c) => c[0]);
-    expect(methods).toEqual(
-      expect.arrayContaining(['agent.get', 'agent.getConversation']),
-    );
-    for (const call of mockRequest.mock.calls) {
-      expect(call[1]).toEqual({ agentId: 'agent-1', workspaceId: 'workspace-1' });
-    }
+    expect(methods).toEqual(['agent.getSession']);
+    expect(mockRequest.mock.calls[0][1]).toEqual({
+      agentId: 'agent-1',
+      workspaceId: 'workspace-1',
+    });
+  });
+
+  it('list issues one agent.list per readable workspace (PROTOCOL.md §5.5)', async () => {
+    stubAgentListPerWorkspace({
+      'workspace-1': [
+        {
+          id: 'agent-1',
+          name: 'Alpha Agent',
+          status: 'idle',
+          messageCount: 2,
+          lastActivity: '2026-06-01T00:10:00.000Z',
+        },
+      ],
+      'workspace-2': [],
+    });
+
+    const result = await buildWsAppAgentsApi(makeManager()).list();
+
+    const listCalls = mockRequest.mock.calls.filter((c) => c[0] === 'agent.list');
+    expect(listCalls.map((c) => c[1])).toEqual([
+      { workspaceId: 'workspace-1' },
+      { workspaceId: 'workspace-2' },
+    ]);
+    expect(result.threads.map((t) => t.agentId)).toEqual(['agent-1']);
   });
 });
