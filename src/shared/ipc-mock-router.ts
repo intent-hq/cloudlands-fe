@@ -197,15 +197,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
         'Legacy config store is not bridged to the daemon (renderer persistence uses localStorage)',
     },
   ],
-  // Note-editor line-attribution gutter (LineAttributionGutter
-  // loadAttributions, fired on note mount). Line attribution was computed by
-  // the legacy main process; the daemon has no per-line attribution read
-  // (§5.19 file-tracking is file-level). The caller requires `success && data`
-  // and folds this shaped failure to an empty gutter (debug log only).
-  [
-    'line-attribution:load',
-    { success: false, error: 'Line attribution is not bridged to the daemon' },
-  ],
   // Chat-input context gathering probes the (unported) editor selection
   // tracker; the caller folds a missing/empty selection to null.
   ['editor:get-selection', undefined],
@@ -465,6 +456,7 @@ export const EMITTED_MOCK_IPC_EVENT_CHANNELS: ReadonlySet<string> = new Set([
   'git:status-changed',
   'file-tracking:changes-updated',
   'task:ready-tasks-changed',
+  'line-attribution:updated',
 ]);
 
 /**
@@ -497,12 +489,6 @@ export const UNEMITTED_LISTENER_ALLOWLIST: ReadonlyMap<string, string> = new Map
   // browser:list-tabs-response invoke is an allowlisted absent surface above.
   ['browser:focus-tab', 'Electron-main CDP agent request — no emitter in the daemon build'],
   ['browser:list-tabs-request', 'Electron-main CDP agent request — no emitter in the daemon build'],
-  // Note-editor line-attribution gutter refresh. Per-line attribution was
-  // computed by the legacy main process; the daemon has no per-line
-  // attribution surface (§5.19 file-tracking is file-level) — the paired
-  // line-attribution:load invoke is allowlisted to a shaped failure above, so
-  // the gutter renders empty and a refresh event would change nothing.
-  ['line-attribution:updated', 'no daemon per-line attribution surface (§5.19 is file-level)'],
   // Tiptap editor agent-suggestion marks (editor-listeners.ts). The legacy
   // agent note-suggestion flow was never ported — no producer exists on the
   // daemon; the editor simply never renders suggestion marks.

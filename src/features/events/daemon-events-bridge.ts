@@ -584,6 +584,10 @@ function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): voi
  *   the listener only gates on workspaceId before a debounced reload.
  * - `changes:tracked` (§5.18) → `file-tracking:changes-updated
  *   { workspaceId }` — same debounced-reload gate.
+ * - `line-attribution:updated` (§5.2.1 / §6.5) → forwarded as
+ *   `{ workspaceId, noteId, attributions }` so the tiptap
+ *   `LineAttributionGutter.svelte` `listenSync('line-attribution:updated')`
+ *   reload path fires without touching the daemon transport directly.
  * - `workspace:updated` → forwarded as `{ workspaceId, changes: data }`.
  * - `pr:linked`/`pr:updated`/`pr:unlinked` (§6.5) → `workspace:updated` with
  *   the PR fields as `changes`, because the legacy emitter surfaced PR
@@ -610,6 +614,13 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
       return;
     case "changes:tracked":
       emitMockIpcEvent("file-tracking:changes-updated", { workspaceId });
+      return;
+    case "line-attribution:updated":
+      emitMockIpcEvent("line-attribution:updated", {
+        workspaceId,
+        noteId: data.noteId,
+        attributions: data.attributions,
+      });
       return;
     case "workspace:updated":
       emitMockIpcEvent("workspace:updated", { workspaceId, changes: data });
@@ -807,10 +818,10 @@ async function installSubscriptionOnce(): Promise<void> {
   // activity-timeline families (`file:*`, `note:*`, `comment:*`, `script:*`
   // — §6.5) that populate `selectWorkspaceEvents`, and the legacy-relay
   // families (`workspace:updated`, `task:ready-tasks-changed`,
-  // `changes:git-status`/`changes:tracked` §5.18, `pr:*` §6.5 — see
-  // relayLegacyIpcEvent) to this socket. The subscription id is owned by the
-  // bridge (no consumer needs it); refetch delta-subscriptions in
-  // `live-agents-client` register their own.
+  // `changes:git-status`/`changes:tracked` §5.18, `line-attribution:updated`
+  // §5.2.1 / §6.5, `pr:*` §6.5 — see relayLegacyIpcEvent) to this socket.
+  // The subscription id is owned by the bridge (no consumer needs it);
+  // refetch delta-subscriptions in `live-agents-client` register their own.
   try {
     const result = (await backendRequest("events.subscribe", {
       eventTypes: [
@@ -825,6 +836,7 @@ async function installSubscriptionOnce(): Promise<void> {
         "task:ready-tasks-changed",
         "changes:git-status",
         "changes:tracked",
+        "line-attribution:updated",
         "pr:*",
         "mcp.servers:status-changed",
       ],

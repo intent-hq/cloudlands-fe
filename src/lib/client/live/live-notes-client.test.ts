@@ -405,4 +405,53 @@ describe("LiveNotesClient mutations (fake transport)", () => {
     const result = await client.restoreVersion("ws-1", "note-1", "3");
     expect(result).toEqual({ success: false, error: "nope" });
   });
+
+  // ---- Line attribution (PROTOCOL §5.2.1) -------------------------------
+  // `note.lineAttribution.load` returns the bare `LineAttributionData | null`
+  // payload; the client passes `workspaceId` + `noteId` through directly
+  // (no `resolveNoteWorkspaceId`, the gutter carries the workspaceId as a prop).
+
+  it("lineAttribution.load forwards note.lineAttribution.load and returns the payload", async () => {
+    const payload = {
+      noteId: "note-1",
+      workspaceId: "ws-1",
+      computedAt: "2026-07-05T12:34:56.000Z",
+      attributions: {
+        "1": {
+          timestamp: 1720193696000,
+          author: { id: "system", name: "intentd", type: "system" as const },
+        },
+      },
+    };
+    mockedRequest.mockResolvedValueOnce(payload);
+    const client = new LiveNotesClient();
+
+    const result = await client.lineAttribution.load("ws-1", "note-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("note.lineAttribution.load", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+    });
+    expect(result).toEqual(payload);
+  });
+
+  it("lineAttribution.load returns null when the daemon has no attributions yet", async () => {
+    mockedRequest.mockResolvedValueOnce(null);
+    const client = new LiveNotesClient();
+
+    expect(await client.lineAttribution.load("ws-1", "note-1")).toBeNull();
+  });
+
+  it("lineAttribution.computeNow forwards note.lineAttribution.computeNow and returns { ok }", async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true });
+    const client = new LiveNotesClient();
+
+    const result = await client.lineAttribution.computeNow("ws-1", "note-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("note.lineAttribution.computeNow", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+    });
+    expect(result).toEqual({ ok: true });
+  });
 });

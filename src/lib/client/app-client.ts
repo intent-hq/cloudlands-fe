@@ -594,6 +594,58 @@ export interface NoteRestoreResult extends MutationResult {
   note?: Note;
 }
 
+/**
+ * Author stamped on an attributed line (PROTOCOL §5.2.1). Mirrors the FE
+ * `LineAuthor` shape the tiptap gutter consumes (`line-to-block-mapper.ts`).
+ */
+export interface LineAttributionAuthor {
+  id: string;
+  name: string;
+  type: "user" | "agent" | "system";
+  turnNumber?: number;
+}
+
+/**
+ * Per-line attribution info (PROTOCOL §5.2.1). `timestamp` is milliseconds
+ * since the Unix epoch (JS `Date.now()`-compatible) so the gutter's age math
+ * works unchanged.
+ */
+export interface LineAttributionInfo {
+  timestamp: number;
+  author?: LineAttributionAuthor;
+}
+
+/**
+ * `note.lineAttribution.load` payload (PROTOCOL §5.2.1). Keys of
+ * `attributions` are stringified 1-based line numbers so the JSON shape
+ * matches what the FE `Record<number, LineAttributionInfo>` decoder in the
+ * gutter accepts. `null` when the daemon has not computed attributions yet.
+ */
+export interface LineAttributionData {
+  noteId: string;
+  workspaceId: string;
+  computedAt: string;
+  attributions: Record<string, LineAttributionInfo>;
+}
+
+/**
+ * `note.lineAttribution.*` seam (PROTOCOL §5.2.1). Attached to `NotesClient`
+ * so tiptap components resolve it as `appClient.notes.lineAttribution.*`.
+ */
+export interface LineAttributionClient {
+  /**
+   * Load the persisted attribution payload for a note, or `null` when the
+   * daemon has not computed one yet. The `line-attribution:updated` event
+   * (§6.5, relayed via daemon-events-bridge) drives live refreshes.
+   */
+  load(workspaceId: string, noteId: string): Promise<LineAttributionData | null>;
+  /**
+   * Force an immediate recompute + persist + `line-attribution:updated` emit,
+   * bypassing the daemon's 5 s debounce. Returns `{ ok: true }` on success.
+   */
+  computeNow(workspaceId: string, noteId: string): Promise<{ ok: boolean }>;
+}
+
 export interface NotesClient {
   list(workspaceId: string): Promise<Note[]>;
   get(noteId: string): Promise<Note | null>;
@@ -654,6 +706,13 @@ export interface NotesClient {
     noteId: string,
     versionId: string,
   ): Promise<NoteRestoreResult>;
+  /**
+   * `note.lineAttribution.*` sub-domain (PROTOCOL §5.2.1). Consumed by the
+   * tiptap gutter to render "who last touched each line" over the daemon's
+   * version history; live refreshes flow through the `line-attribution:updated`
+   * event (§6.5) relayed by daemon-events-bridge.
+   */
+  lineAttribution: LineAttributionClient;
 }
 
 /** Inline checkbox status vocabulary (`task.updateStatus` / `task.update`). */
