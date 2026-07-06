@@ -316,10 +316,6 @@ import { registerIDEHandlers } from '../features/ide/main/ide.ipc';
 import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout-history.ipc';
 import { setupLinearAuthIPC } from '../features/linear-auth/main/linear-auth.ipc';
 import { setupLogIPC } from '../features/log/main/log.ipc';
-import {
-  setupMCPIPC,
-  cleanupMCP,
-} from '../features/mcp/mcp.ipc';
 import { setupBannerIPC } from '../features/banner/main/banner.ipc';
 import { setupMemoriesIPC } from '../features/memories/main/memories.ipc';
 import { setupLineAttributionIPC } from '../features/notes/main/line-attribution.ipc';
@@ -329,7 +325,6 @@ import { setupRemoteFileSystemIPC } from '../features/remote-fs/main/remote-fs.i
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSkillsIPC } from '../features/agent/main/skills.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
-import { setupPermissionIPC } from '../features/acp-official/main/permission.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import {
@@ -470,18 +465,6 @@ async function gracefulShutdown() {
     } catch (error) {
       logger.error(
         'Error disposing script process managers:',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-
-    // Stop all MCP Hub child processes (workspace, notes, git servers per workspace)
-    // These are spawned by ServerManager and will persist as orphaned processes if not killed
-    try {
-      await cleanupMCP();
-      logger.info('MCP Hub servers stopped');
-    } catch (error) {
-      logger.error(
-        'Error stopping MCP Hub servers:',
         error instanceof Error ? error : new Error(String(error)),
       );
     }
@@ -1418,7 +1401,6 @@ app.whenReady().then(async () => {
   setupGitTrackingIPC(); // Needed for renderer git tracking on startup
   setupBannerIPC(); // Needed for promotional banner CDN fetch
   setupSpecialistsIPC(); // Needed for specialist selection on startup
-  setupPermissionIPC(); // Needed for ACP agent tool approvals
   setupAutoUpdateIPC(); // Needed for auto-update IPC on startup
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   startupMetrics.end('criticalIPC');
@@ -1477,8 +1459,6 @@ app.whenReady().then(async () => {
 
     // Setup notification IPC handlers
     setupNotificationIPC();
-
-    // setupPermissionIPC(); // Already called in critical IPC setup
 
     // Setup keychain consent IPC handlers for git network operations
     const { setupKeychainIPC } = await import('../features/git/main/keychain.ipc');
@@ -1807,7 +1787,7 @@ app.whenReady().then(async () => {
       logger.error('Main window unavailable during post-window setup; skipping');
       return;
     }
-    await Promise.all([initializeUnifiedBackend(mainWindow), setupMCPIPC(mainWindow)]);
+    await initializeUnifiedBackend(mainWindow);
 
     try {
       startupMetrics.end('postWindowIPC');
@@ -1976,7 +1956,7 @@ app.on('window-all-closed', async () => {
     // isShuttingDown=true internally (so any subsequent before-quit is a
     // no-op), runs the full cleanup ordering — including the items only it
     // performs (cleanupTerminals + settling delay,
-    // disposeAllScriptProcessManagers, cleanupMCP, cleanupAutoUpdater) — and
+    // disposeAllScriptProcessManagers, cleanupAutoUpdater) — and
     // then calls app.exit(0). Delegating here (instead of running a bespoke
     // partial teardown and calling app.quit()) prevents before-quit re-entry
     // that otherwise showed a second running-agent prompt and ran a duplicate

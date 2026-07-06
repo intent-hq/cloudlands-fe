@@ -470,21 +470,11 @@ export const IPC_CHANNELS = {
     RESTART_APP: 'feature-codes:restart-app',
   },
 
-  // User MCP Settings (~/.augment/settings.json)
+  // User MCP Settings — HTTP/SSE server auth checks and OAuth flow.
   USER_MCP: {
-    GET_SETTINGS_FILE: 'user-mcp:get-settings-file',
-    WRITE_SETTINGS_FILE: 'user-mcp:write-settings-file',
-    GET_SETTINGS_PATH: 'user-mcp:get-settings-path',
-    GET_SERVERS: 'user-mcp:get-servers', // Get parsed MCP servers
-    GET_WORKSPACE_DISABLED: 'user-mcp:get-workspace-disabled', // Get disabled servers for a workspace
-    SET_WORKSPACE_DISABLED: 'user-mcp:set-workspace-disabled', // Set disabled servers for a workspace
     CHECK_AUTH: 'user-mcp:check-auth', // Check if URL requires auth and if we have credentials
     TEST_CONNECTION: 'user-mcp:test-connection', // Test connection to HTTP/SSE server, returns status
     INITIATE_OAUTH: 'user-mcp:initiate-oauth', // Start OAuth flow for MCP server
-    // MCP CLI commands
-    MCP_LIST: 'user-mcp:mcp-list', // List MCP servers via CLI
-    MCP_ADD: 'user-mcp:mcp-add', // Add MCP server via CLI
-    MCP_REMOVE: 'user-mcp:mcp-remove', // Remove MCP server via CLI
   },
 
   // Notifications
@@ -492,14 +482,6 @@ export const IPC_CHANNELS = {
     TEST: 'notification:test',
     REQUEST_PERMISSION: 'notification:requestPermission',
     SHOW: 'notification:show',
-  },
-
-  // ACP Permissions (for agent tool approval)
-  PERMISSION: {
-    REQUEST: 'permission:request',
-    RESPOND: 'permission:respond',
-    EVENT: 'permission:event', // For main -> renderer push
-    GET_PENDING: 'permission:get-pending', // Get all pending permission requests (for page refresh recovery)
   },
 
   // Dialog
@@ -835,16 +817,6 @@ export const IPC_CHANNELS = {
   // Observability Extended
   OBSERVABILITY_EXT: {},
 
-  // MCP (Model Context Protocol)
-  MCP: {
-    EVENT: 'mcp:event',
-    TRANSITION_WORKSPACE: 'mcp:transition-workspace',
-    CALL_TOOL: 'mcp:call-tool',
-    LIST_TOOLS: 'mcp:list-tools',
-    CREATE_SERVER: 'mcp:create-server',
-    GET_STATUS: 'mcp:get-status',
-  },
-
   // Agent Testing
   AGENT_TESTING: {
     RUN: 'agent-testing:run',
@@ -1167,7 +1139,6 @@ export const EVENT_CHANNELS = [
   'terminal:disposed', // Terminal disposed event (from workspace cleanup)
   'events:new',
   'events:cleared',
-  'permission:event',
   'app:ready',
   'app:ui:navigate',
   'app:ui:highlight',

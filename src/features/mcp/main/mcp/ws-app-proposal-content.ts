@@ -1,102 +1,28 @@
 import type { Proposal } from '$shared/types/proposal';
 import { createProposalResource } from '$shared/types/proposal-resource';
-import type { ContentBlock } from '$shared/types';
 import { Logger } from '$shared/logger';
-import { testStreamManager as streamSessionManager } from './stream-session-registry';
-import * as messageAccumulator from '../../../../store/main/slices/message-accumulator/message-accumulator-api';
 import type { ContentItem } from './protocol';
 
 const logger = new Logger('WsAppProposalContent');
 
-type StreamSession = {
-  agentId?: string;
-  workspaceId?: string;
-  sessionId?: string;
-  frontendSessionId?: string;
-};
-
-type StreamCallbacks = {
-  onContentBlocks?: (blocks: ContentBlock[]) => void;
-};
-
-type StreamSessionManager = {
-  getSession(id: string): StreamSession | undefined;
-  callbacks?: Map<string, StreamCallbacks>;
-};
-
-function createProposalBlock(proposal: Proposal): ContentBlock {
-  const applyToolCallId = proposal.applyToolCallId;
-
-  return {
-    type: 'proposal',
-    kind: proposal.kind,
-    payload: proposal.payload,
-    preview: proposal.preview,
-    applyToolCallId,
-    proposal,
-  };
-}
-
 export type ProposalEmitResult = { ok: true } | { ok: false; error: string };
 
+/**
+ * Legacy pre-emit hook. The FE-side MCP hub and its per-agent stream registry
+ * were retired alongside the ACP providers; the daemon owns proposal delivery
+ * to the chat now (streamed via `chat.subscribe`, PROTOCOL §7). Callers still
+ * invoke this so their tool-result path is unchanged, but there is nothing for
+ * the renderer to pre-emit — the daemon fan-out is the sole source of truth.
+ */
 export function emitProposalToChat(
   workspaceId: string,
   agentId: string | undefined,
-  proposal: Proposal,
+  _proposal: Proposal,
 ): ProposalEmitResult {
-  const manager = streamSessionManager as unknown as StreamSessionManager;
-  const session = agentId ? manager.getSession(agentId) : undefined;
-
-  if (!agentId || !session || session.workspaceId !== workspaceId) {
-    logger.debug('No active stream session for proposal pre-emit', {
-      workspaceId,
-      agentId,
-      hasSession: !!session,
-      sessionWorkspaceId: session?.workspaceId,
-    });
-    return { ok: true };
-  }
-
-  const block = createProposalBlock(proposal);
-  const errors: string[] = [];
-
-  try {
-    if (!messageAccumulator.getAccumulated(agentId)) {
-      messageAccumulator.startAccumulation(agentId, {
-        sessionId: session.sessionId,
-        agentId: session.agentId ?? agentId,
-        frontendSessionId: session.frontendSessionId,
-      });
-    }
-    messageAccumulator.addContentBlock(agentId, block);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error('Failed to pre-emit proposal block to accumulator', {
-      workspaceId,
-      agentId,
-      error: message,
-    });
-    errors.push(`accumulator: ${message}`);
-  }
-
-  const callbacks = manager.callbacks?.get(session.agentId ?? agentId);
-  if (callbacks?.onContentBlocks) {
-    try {
-      callbacks.onContentBlocks([block]);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error('Failed to pre-emit proposal block to stream callback', {
-        workspaceId,
-        agentId,
-        error: message,
-      });
-      errors.push(`stream callback: ${message}`);
-    }
-  }
-
-  if (errors.length > 0) {
-    return { ok: false, error: errors.join('; ') };
-  }
+  logger.debug('emitProposalToChat is a no-op after MCP hub retirement', {
+    workspaceId,
+    agentId,
+  });
   return { ok: true };
 }
 

@@ -1662,40 +1662,6 @@ export const WebSocketApiSetEnabledSchema = z.object({
 });
 
 // USER_MCP_CHANNELS schemas
-export const UserMcpWriteSettingsFileSchema = z.object({
-  content: z.string().min(1, 'Content is required'),
-});
-
-export const UserMcpGetWorkspaceDisabledSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const UserMcpSetWorkspaceDisabledSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  disabledServers: z.array(z.string()),
-});
-
-// MCP CLI command schemas
-export const UserMcpAddSchema = z.object({
-  name: z.string().min(1, 'Server name is required'),
-  transport: z.enum(['stdio', 'http', 'sse']),
-  // For stdio transport
-  command: z.string().optional(),
-  args: z.string().optional(),
-  env: z.record(z.string()).optional(),
-  // For http/sse transport
-  url: z.string().optional(),
-  headers: z.record(z.string()).optional(),
-  // Auth type (oauth, header, none) — persisted directly to settings.json
-  authType: z.enum(['oauth', 'header', 'none']).optional(),
-  // Options
-  replace: z.boolean().optional(),
-});
-
-export const UserMcpRemoveSchema = z.object({
-  name: z.string().min(1, 'Server name is required'),
-});
-
 export const UserMcpCheckAuthSchema = z.object({
   url: z.string().min(1, 'URL is required'),
 });

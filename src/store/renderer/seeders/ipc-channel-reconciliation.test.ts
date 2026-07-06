@@ -637,18 +637,17 @@ describe('IPC event-channel reconciliation (renderer listener surface vs emitter
 });
 
 // ───────────────────────────────────────────────────────────────────────────
-// MCP hub server boundary (dynamic invoke(toolName) blind spot)
+// Workspace MCP server boundary (dynamic invoke(toolName) blind spot)
 //
-// `src/features/mcp/servers/{workspace,notes,git}` are Node child processes
-// spawned by the MAIN-process MCP hub (features/mcp/main/hub/server-manager.ts
-// launches them from dist/features/mcp/servers). Their dynamic
-// `this.bridge.invoke(toolName, …)` calls dispatch through the main-side
-// McpBridge (features/mcp/main/bridge/mcp-bridge.ts) IN-PROCESS — they are
-// NOT renderer→main electron IPC, so the invoke scan above rightly resolves
-// none of them and they need no mock-router bridge or allowlist entry.
+// `src/features/mcp/servers/{workspace,notes,git}` are the workspace-MCP
+// server sources; their dynamic `this.bridge.invoke(toolName, …)` calls
+// dispatch through the main-side McpBridge (features/mcp/main/bridge/
+// mcp-bridge.ts) IN-PROCESS — they are NOT renderer→main electron IPC, so
+// the invoke scan above rightly resolves none of them and they need no
+// mock-router bridge or allowlist entry.
 // ───────────────────────────────────────────────────────────────────────────
 
-describe('MCP hub server sources stay off the renderer IPC surface', () => {
+describe('Workspace MCP server sources stay off the renderer IPC surface', () => {
   it('features/mcp/servers/** never import the renderer invoke seam', () => {
     // If one of these files ever imported the renderer invoke seam, its
     // dynamic `invoke(toolName)` dispatch would enter the mock router with
@@ -674,9 +673,9 @@ describe('MCP hub server sources stay off the renderer IPC surface', () => {
     walk(serversRoot);
     expect(
       offenders,
-      'MCP hub server processes must keep dispatching tools through the main-side McpBridge — ' +
-        'importing the renderer invoke seam would route dynamic toolName channels through the ' +
-        'mock router unaudited.',
+      'Workspace MCP server processes must keep dispatching tools through the main-side ' +
+        'McpBridge — importing the renderer invoke seam would route dynamic toolName channels ' +
+        'through the mock router unaudited.',
     ).toEqual([]);
   });
 });

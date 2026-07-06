@@ -774,19 +774,6 @@ export function setupWorkspaceIPC(): void {
           });
         }
 
-        // Stop MCP servers for previously-active workspaces that have no running
-        // agents.  They will be lazily restarted on next CALL_TOOL / LIST_TOOLS.
-        try {
-          const { stopInactiveWorkspaceServers } = await import(
-            '../../mcp/mcp.ipc'
-          );
-          await stopInactiveWorkspaceServers(id);
-        } catch (error) {
-          logger.warn('[WorkspaceIPC] Failed to stop inactive MCP servers', error as Error, {
-            workspaceId: id,
-          });
-        }
-
         // Get workspace - protocol adapter now returns data directly for MCP compatibility
         const getWorkspaceStart = Date.now();
         const workspace = await protocolAdapter.getWorkspace(id);

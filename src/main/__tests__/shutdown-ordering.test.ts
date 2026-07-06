@@ -157,7 +157,7 @@ describe('gracefulShutdown call ordering (AST)', () => {
     // teardown" bug. On the non-macOS last-window-close path, after the user
     // confirms the running-agent prompt, the handler must delegate teardown to
     // gracefulShutdown() (which runs cleanupTerminals/cleanupNoteTerminals/
-    // disposeAllScriptProcessManagers/cleanupMCP/cleanupAutoUpdater, sets
+    // disposeAllScriptProcessManagers/cleanupAutoUpdater, sets
     // isShuttingDown=true, and calls app.exit(0)) — and then return before the
     // inline teardown block runs. Without this, app.quit() at the end of the
     // handler fires before-quit → gracefulShutdown for a duplicate teardown and a
@@ -216,17 +216,17 @@ describe('gracefulShutdown call ordering (AST)', () => {
     // cleanups that previously ran inline on that path MUST remain reachable
     // inside gracefulShutdown. If any of these are removed, the non-macOS
     // last-window-close path silently stops cleaning up those resources
-    // (PTY terminals, workspace scripts, MCP Hub child processes,
-    // auto-updater periodic checks) and the process no longer force-exits
-    // via app.exit() after teardown. `cleanupNoteTerminals` was retired in
-    // D6 alongside `notes-primitives.ipc.ts`.
+    // (PTY terminals, workspace scripts, auto-updater periodic checks) and the
+    // process no longer force-exits via app.exit() after teardown.
+    // `cleanupNoteTerminals` was retired in D6 alongside `notes-primitives.ipc.ts`;
+    // the MCP hub `cleanupMCP` step was retired in G3 alongside the FE MCP hub
+    // (the daemon owns MCP process lifecycle now).
     const sf = parseIndex();
     const gs = findGracefulShutdown(sf);
     const calls = callsitesIn(gs.body!);
     const required = [
       'cleanupTerminals',
       'disposeAllScriptProcessManagers',
-      'cleanupMCP',
       'cleanupAutoUpdater',
       'app.exit',
     ];
