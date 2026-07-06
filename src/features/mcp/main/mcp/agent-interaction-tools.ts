@@ -314,44 +314,6 @@ async function daemonSendInitialMessage(
   }
 }
 
-type AgentResumability = {
-  canWake: boolean;
-  status: 'running' | 'resumable' | 'not_found';
-  agentData?: any;
-};
-
-/**
- * Derive an agent's resumability from `agent.getSession` (PROTOCOL.md §5.5).
- * Replaces the retired `AgentBackendHandler.getAgentResumability` seam:
- *
- * - session present + `isStreaming` / `isResponding` → `running`
- * - session present + idle flags                    → `resumable`
- * - `agent.getSession` throws / returns no session  → `not_found`
- *
- * Orphan-recovery of stale on-disk streaming state now lives daemon-side; the
- * FE consumes whatever the daemon reports.
- */
-async function daemonGetResumability(
-  agentId: string,
-  workspaceId: string,
-): Promise<AgentResumability> {
-  try {
-    const result = (await getBackendClient().request('agent.getSession', {
-      agentId,
-      workspaceId,
-    })) as { session?: any };
-    const session = result?.session ?? null;
-    if (!session) {
-      return { canWake: false, status: 'not_found' };
-    }
-    const isActive = session.isStreaming === true || session.isResponding === true;
-    const status: 'running' | 'resumable' = isActive ? 'running' : 'resumable';
-    return { canWake: true, status, agentData: session };
-  } catch (_error) {
-    return { canWake: false, status: 'not_found' };
-  }
-}
-
 /**
  * Auto-commit instruction snippets injected based on workspace settings.
  * These are appended to the specialist's behavior prompt when auto-commit is enabled.
@@ -2657,26 +2619,25 @@ an agent is working on the task.`,
   async execute(call: ToolCall): Promise<ToolResult> {
     try {
       const ctx = getRequiredContext(call);
-
-      // Check delegation depth limit to prevent unbounded recursive agent creation
-      const parentDepth = await getDelegationDepth(this.workspaceId, ctx.agentId);
-      if (parentDepth >= MAX_DELEGATION_DEPTH) {
-        return this.error(
-          `Cannot create task agent: maximum delegation depth (${MAX_DELEGATION_DEPTH}) reached. ` +
-            `You are at depth ${parentDepth}. Please complete this task directly instead of delegating further.`,
-        );
-      }
-
       const { taskNoteId, contextMessage, model: rawModel } = call.arguments;
-
-      // Model validation is deferred until after wakeProvider is computed
-      // below, because the new agent may be created on the previous
-      // specialist's codingAgent provider rather than ctx.provider.
-      let model = rawModel;
-      let modelOverrideWarning: ModelOverrideWarning | undefined;
-
-      // Check workspace auto-commit setting
       const autoCommitEnabled = isAutoCommitEnabled(this.workspaceId);
+
+      // FE-side best-effort model validation against the caller's provider (or
+      // an explicit registered provider prefix). Specialist inheritance is now
+      // daemon-side (PROTOCOL.md §5.5), so this only catches obvious mismatches
+      // the caller can fix without daemon feedback (unknown-provider,
+      // unknown_model, provider_mismatch for ctx.provider).
+      let model: string | undefined = rawModel;
+      let modelOverrideWarning: ModelOverrideWarning | undefined;
+      const explicitWakeProvider = getExplicitRegisteredProvider(model);
+      const validationProvider = explicitWakeProvider || ctx.provider;
+      if (model && validationProvider) {
+        const result = await validateModelOverride(model, validationProvider);
+        if (result.warning) {
+          modelOverrideWarning = result.warning;
+        }
+        model = result.model;
+      }
 
       logger.info('Wake or create task agent', {
         taskNoteId,
@@ -2685,379 +2646,177 @@ an agent is working on the task.`,
         autoCommitEnabled,
       });
 
-      // Get the task note to find assigned agents (PROTOCOL.md §5.2 note.get).
-      let note: any;
-      try {
-        const getResult = await getBackendClient().request<{ note?: any }>('note.get', {
-          workspaceId: this.workspaceId,
-          noteId: taskNoteId,
-        });
-        note = getResult?.note ?? null;
-      } catch (error) {
-        logger.warn('Failed to fetch task note for wake_or_create', {
-          taskNoteId,
-          error: (error as Error).message,
-        });
-        note = null;
-      }
-
-      if (!note) {
-        return this.error(`Task note "${taskNoteId}" not found`);
-      }
-
-      // Verify it's a task
-      if (!note.metadata?.task) {
-        return this.error(`Note "${taskNoteId}" is not a task`);
-      }
-
-      const rawAssignedAgentIds: unknown = note.metadata.task.assignedAgentIds;
-      const assignedAgentIds = normalizeAssignedAgentIds(rawAssignedAgentIds);
-
-      // Resumability now derives from daemon-primary `agent.getSession` (PROTOCOL.md §5.5)
-      // — see `daemonGetResumability`. The pre-C1d-6 `AgentBackendHandler` seam is retired.
-      let agentToWake: { id: string; status: string } | null = null;
-      let previousSpecialist: string | undefined;
-      const staleAssignedAgentIds = new Set<string>();
-      const cleanedStaleAssignedAgentIds = new Set<string>();
-
-      const cleanupStaleAssignments = async () => {
-        for (const staleAgentId of staleAssignedAgentIds) {
-          if (cleanedStaleAssignedAgentIds.has(staleAgentId)) continue;
-          cleanedStaleAssignedAgentIds.add(staleAgentId);
-          try {
-            await getBackendClient().request('task.removeAgentFromAllTasks', {
-              workspaceId: this.workspaceId,
-              agentId: staleAgentId,
-            });
-          } catch (cleanupError) {
-            logger.warn('Failed to remove stale task agent assignment before replacement', {
-              staleAgentId,
-              taskNoteId,
-              error: cleanupError,
-            });
-          }
-        }
+      // Single daemon-composite call (PROTOCOL.md §5.5 `agent.wakeOrCreate`,
+      // widened by C1d-10a): the daemon handles depth guard, newest-first
+      // resumability probing, specialist/model inheritance, stale-assignment
+      // cleanup, rich create payload, and message delivery. The FE only
+      // supplies the wake-level `model` override, its own `callerAgentId` for
+      // the depth guard, the `messageMetadata` tag, and the `create.*` bag
+      // for the create branch.
+      const wakeCreateProvider = explicitWakeProvider || ctx.provider;
+      type WakeSendResult = { success?: boolean; queued?: boolean; messageId?: string };
+      type WakeOrCreateResponse = {
+        ok: boolean;
+        agentId: string;
+        agentName?: string;
+        created: boolean;
+        action: 'message_queued_to_active_agent' | 'woke_existing' | 'created_new';
+        taskTitle?: string;
+        result: WakeSendResult;
+        cleanedUpAgentIds?: string[];
       };
-
-      for (let i = assignedAgentIds.length - 1; i >= 0; i--) {
-        const agentId = assignedAgentIds[i];
-        const resumability = await daemonGetResumability(agentId, this.workspaceId);
-
-        logger.debug('Checking agent resumability', {
-          agentId,
-          status: resumability.status,
-          canWake: resumability.canWake,
-        });
-
-        // Extract specialist from the most recent agent's metadata for new agent creation
-        if (!previousSpecialist && resumability.agentData?.metadata?.specialist) {
-          previousSpecialist = resumability.agentData.metadata.specialist as string;
-        }
-
-        if (resumability.status === 'not_found') {
-          staleAssignedAgentIds.add(agentId);
-        }
-
-        if (resumability.canWake) {
-          agentToWake = { id: agentId, status: resumability.status };
-          break;
-        }
-      }
-
-      if (agentToWake) {
-        await cleanupStaleAssignments();
-
-        // Wake the existing agent
-        logger.info('Waking existing agent for task', {
-          agentId: agentToWake.id,
+      let response: WakeOrCreateResponse;
+      try {
+        response = (await getBackendClient().request('agent.wakeOrCreate', {
+          workspaceId: this.workspaceId,
           taskNoteId,
-          status: agentToWake.status,
-        });
-
-        // Daemon-primary wake via `agent.sendMessage` (PROTOCOL.md §5.5). The daemon
-        // auto-queues when the target is mid-turn and surfaces `{ queued: true,
-        // messageId }` — that replaces the FE-only `ALREADY_STREAMING` errorCode
-        // branch the retired `sendBackendInitiatedMessage` produced. `agent.deleted`
-        // / not-found still surface as JSON-RPC errors; we sniff the message text
-        // so the fall-back-to-create branch keeps working.
-        let wakeResult: { success: boolean; queued?: boolean; messageId?: string } | null = null;
-        let wakeError: Error | null = null;
-        try {
-          wakeResult = (await getBackendClient().request('agent.sendMessage', {
-            workspaceId: this.workspaceId,
-            agentId: agentToWake.id,
-            content: contextMessage,
-            messageMetadata: {
-              type: 'task_wake',
-              source: 'wake_or_create_task_agent',
-              taskNoteId,
-              callerAgentId: ctx.agentId,
-            },
-          })) as { success: boolean; queued?: boolean; messageId?: string };
-        } catch (error) {
-          wakeError = error as Error;
-        }
-
-        if (wakeResult?.queued === true) {
-          logger.info(
-            'Agent is already actively streaming, message auto-queued by daemon instead of creating duplicate',
-            {
-              agentId: agentToWake.id,
-              taskNoteId,
-              messageId: wakeResult.messageId,
-            },
-          );
-
-          // `agent.sendMessage` already enqueued the message when the agent was
-          // mid-turn; the returned `messageId` is the queued message's id.
-          const queuedMessageId = wakeResult.messageId;
-
-          // For queued messages, DON'T use oneShot since agent:idle will fire
-          // for the current turn before our queued message is processed.
-          // The subscription needs to survive the current turn's completion.
-          {
-            const queuedCompletionFilter: AgentEventFilter = {
-              eventTypes: [...AGENT_COMPLETION_EVENT_TYPES],
-              actorIds: [agentToWake.id],
-              priority: 'high',
-              oneShot: false, // NOT oneShot — needs to survive current turn's agent:idle
-              ...(queuedMessageId && {
-                dataMatchers: [
-                  {
-                    field: 'data.respondingToMessageId',
-                    operator: 'equals',
-                    value: queuedMessageId,
-                  },
-                ],
-              }),
-            };
-            const subscriptionId = agentSubscribe(
-              this.workspaceId,
-              ctx.agentId,
-              ctx.agentName,
-              queuedCompletionFilter,
-            );
-
-            // Auto-cleanup: unsubscribe after 5 minutes to prevent notification leak.
-            // The queued message should be processed well within this window.
-            setTimeout(
-              () => {
-                const didUnsubscribe = agentUnsubscribe(this.workspaceId, subscriptionId);
-                if (didUnsubscribe) {
-                  logger.info('Auto-cleaned up queued message subscription after timeout', {
-                    subscriptionId,
-                    callerId: ctx.agentId,
-                    targetAgentId: agentToWake.id,
-                  });
-                }
-              },
-              5 * 60 * 1000,
-            );
-
-            logger.info('Subscribed caller to agent completion (non-oneShot for queued message)', {
-              callerId: ctx.agentId,
-              callerName: ctx.agentName,
-              targetAgentId: agentToWake.id,
-              subscriptionId,
-            });
-
-            let queuedMessageText =
-              `Agent "${agentToWake.id}" is already actively working on task "${note.title || taskNoteId}".\n` +
-              'Context message has been queued and will be delivered when the agent finishes its current response.\n' +
-              'You will be notified when the agent responds.';
-            if (modelOverrideWarning) {
-              queuedMessageText += `\n\n⚠️ Model override warning: ${modelOverrideWarning.message}`;
-            }
-
-            return this.success(queuedMessageText, {
-              action: 'message_queued_to_active_agent',
-              agentId: agentToWake.id,
-              taskNoteId,
-              taskTitle: note.title,
-              subscriptionId,
-              queuedMessageId,
-              ...(modelOverrideWarning && { modelOverrideWarning }),
-            });
-          }
-        } else if (wakeResult?.success) {
-          // Daemon accepted the wake and dispatched it (not queued behind a live turn);
-          // subscribe the caller so it gets notified when the target responds.
-          const subscriptionId = await subscribeCallerToAgentCompletion(
-            this.workspaceId,
-            ctx.agentId,
-            ctx.agentName,
-            agentToWake.id,
-          );
-
-          let wokeExistingText =
-            `Woke existing agent "${agentToWake.id}" for task "${note.title || taskNoteId}".\n` +
-            `Agent status: ${agentToWake.status}\n` +
-            'Context message delivered.\nYou will be notified when the agent responds.';
-          if (modelOverrideWarning) {
-            wokeExistingText += `\n\n⚠️ Model override warning: ${modelOverrideWarning.message}`;
-          }
-
-          return this.success(wokeExistingText, {
-            action: 'woke_existing',
-            agentId: agentToWake.id,
+          contextMessage,
+          ...(model !== undefined && { model }),
+          callerAgentId: ctx.agentId,
+          messageMetadata: {
+            type: 'task_wake',
+            source: 'wake_or_create_task_agent',
             taskNoteId,
-            taskTitle: note.title,
-            subscriptionId,
-            ...(modelOverrideWarning && { modelOverrideWarning }),
-          });
-        } else {
-          // wakeError was thrown, or the daemon returned `success: false` without
-          // queueing. Sniff the error message text to map onto the pre-C1d-6
-          // AGENT_DELETED / AGENT_NOT_FOUND branches: deleted → clean assignment
-          // + create; not-found → fall through to create; anything else → error.
-          const errMsg = wakeError?.message ?? '';
-          const lowerErr = errMsg.toLowerCase();
-          if (lowerErr.includes('deleted')) {
-            staleAssignedAgentIds.add(agentToWake.id);
-          } else if (!lowerErr.includes('not found')) {
-            return this.error(
-              `Failed to wake assigned agent "${agentToWake.id}": ${errMsg || 'Unknown error'}`,
-            );
-          }
-
-          logger.warn('Failed to wake agent, falling back to create', {
-            agentId: agentToWake.id,
-            error: errMsg,
-          });
-          // Fall through to create a new agent
-        }
-      }
-
-      // No resumable agent found (or wake failed), create a new one
-      await cleanupStaleAssignments();
-
-      logger.info('Creating new agent for task', {
-        taskNoteId,
-        noteTitle: note.title,
-        previousAgentCount: assignedAgentIds.length,
-      });
-
-      // Pre-register subscription via onBeforeStart to prevent the race condition
-      // where a fast-completing child agent emits agent:idle before the parent subscribes.
-      const agentName = `Task: ${note.title || taskNoteId}`.substring(0, 100);
-      let subscriptionId = '';
-      // Extract parent provider so child agents inherit the correct provider
-      const parentProvider = ctx.model ? parseCompoundModelId(ctx.model).providerId : undefined;
-
-      // Resolve defaultAgentType from previous agent's specialist (if any)
-      const previousSpecialistConfig = previousSpecialist
-        ? resolveSpecialistForAgent(previousSpecialist, parentProvider)
-        : null;
-
-      // An explicit registered provider prefix in the `model` argument wins
-      // over the previous specialist's codingAgent and the parent context's
-      // provider.
-      const explicitWakeProvider = getExplicitRegisteredProvider(model);
-      const wakeProvider =
-        explicitWakeProvider || previousSpecialistConfig?.codingAgent || ctx.provider;
-
-      // Validate the model argument against the actual wake provider (which
-      // may differ from ctx.provider when the previous specialist's
-      // codingAgent overrides it). Runs the same live-list + tier-table
-      // validation used by delegate_task / create_agent so both paths produce
-      // the same structured warning (provider_mismatch / unknown_model).
-      if (model && wakeProvider) {
-        const result = await validateModelOverride(model, wakeProvider);
-        if (result.warning) {
-          modelOverrideWarning = result.warning;
-        }
-        model = result.model;
-      }
-
-      // `previousSpecialistConfig?.model` is bound to that specialist's coding
-      // agent (or its own compound prefix). Use it as the wake-path fallback
-      // only when that provider matches `wakeProvider`; otherwise we'd spawn
-      // the new agent on `wakeProvider` with another provider's model ID.
-      let wakeModel: string | undefined = model;
-      if (!wakeModel) {
-        const defaultProviderId = getDefaultProviderId();
-        const fallbackProvider = wakeProvider || defaultProviderId;
-        const prevModel = previousSpecialistConfig?.model;
-        const previousModelProvider = prevModel?.includes(':')
-          ? parseCompoundModelId(prevModel).providerId
-          : previousSpecialistConfig?.codingAgent;
-        if (prevModel && previousModelProvider === fallbackProvider) {
-          wakeModel = prevModel;
-        } else {
-          wakeModel = getProviderFallbackModel(fallbackProvider, defaultProviderId);
-        }
-      }
-
-      const newAgent = await daemonCreateAgent({
-        workspaceId: this.workspaceId,
-        workspacePath: this.workspacePath,
-        name: agentName,
-        model: wakeModel,
-        provider: wakeProvider,
-        agentType: previousSpecialistConfig?.defaultAgentType || 'task-loop',
-        initialMessage: contextMessage,
-        contextReferences: [
-          {
-            type: 'note',
-            id: taskNoteId,
-            name: note.title || taskNoteId,
+            callerAgentId: ctx.agentId,
           },
-        ],
-        metadata: {
-          createdByAgentId: ctx.agentId,
-          delegationDepth: parentDepth + 1,
-          taskNoteId,
-          isBackground: true, // Task agents run in background
-          source: 'wake_or_create_task_agent',
-          ...(!autoCommitEnabled && { skipAutoCommit: true }),
-        },
-      });
-
-      if (!newAgent) {
-        return this.error('Failed to create new agent for task');
+          create: {
+            ...(wakeCreateProvider && { provider: wakeCreateProvider }),
+            agentType: 'task-loop',
+            contextReferences: [{ type: 'note', id: taskNoteId, name: taskNoteId }],
+            skipAutoCommit: !autoCommitEnabled,
+          },
+        })) as WakeOrCreateResponse;
+      } catch (error) {
+        const err = error as Error & { code?: string; rpcCode?: number };
+        // Depth-guard rejection surfaces as JSON-RPC `-32602` (INVALID_PARAMS)
+        // per PROTOCOL.md §5.5; match by rpcCode or by message pattern so the
+        // regression stays covered even if the transport strips the code.
+        const message = err?.message ?? '';
+        const isDepthGuard =
+          err?.rpcCode === -32602 || err?.code === 'INVALID_PARAMS' || /delegation depth/i.test(message);
+        if (isDepthGuard) {
+          return this.error(
+            `Cannot create task agent: maximum delegation depth (${MAX_DELEGATION_DEPTH}) reached. ` +
+              'Please complete this task directly instead of delegating further.',
+          );
+        }
+        logger.error('agent.wakeOrCreate failed', error);
+        return this.error(`Failed to wake or create agent: ${message || 'Unknown error'}`);
       }
 
-      subscriptionId = await subscribeCallerToAgentCompletion(
+      const targetAgentId = response.agentId;
+      const targetAgentName = response.agentName;
+      const targetTaskTitle = response.taskTitle || taskNoteId;
+      const action = response.action;
+      const sendResult = response.result ?? {};
+      const queuedMessageId = sendResult.messageId;
+
+      if (action === 'message_queued_to_active_agent') {
+        logger.info(
+          'Agent is already actively streaming, message auto-queued by daemon instead of creating duplicate',
+          { agentId: targetAgentId, taskNoteId, messageId: queuedMessageId },
+        );
+
+        // For queued messages, DON'T use oneShot since agent:idle will fire
+        // for the current turn before our queued message is processed. The
+        // subscription needs to survive the current turn's completion.
+        const queuedCompletionFilter: AgentEventFilter = {
+          eventTypes: [...AGENT_COMPLETION_EVENT_TYPES],
+          actorIds: [targetAgentId],
+          priority: 'high',
+          oneShot: false,
+          ...(queuedMessageId && {
+            dataMatchers: [
+              {
+                field: 'data.respondingToMessageId',
+                operator: 'equals',
+                value: queuedMessageId,
+              },
+            ],
+          }),
+        };
+        const subscriptionId = agentSubscribe(
+          this.workspaceId,
+          ctx.agentId,
+          ctx.agentName,
+          queuedCompletionFilter,
+        );
+
+        // Auto-cleanup: unsubscribe after 5 minutes to prevent notification leak.
+        // The queued message should be processed well within this window.
+        setTimeout(
+          () => {
+            const didUnsubscribe = agentUnsubscribe(this.workspaceId, subscriptionId);
+            if (didUnsubscribe) {
+              logger.info('Auto-cleaned up queued message subscription after timeout', {
+                subscriptionId,
+                callerId: ctx.agentId,
+                targetAgentId,
+              });
+            }
+          },
+          5 * 60 * 1000,
+        );
+
+        let queuedMessageText =
+          `Agent "${targetAgentId}" is already actively working on task "${targetTaskTitle}".\n` +
+          'Context message has been queued and will be delivered when the agent finishes its current response.\n' +
+          'You will be notified when the agent responds.';
+        if (modelOverrideWarning) {
+          queuedMessageText += `\n\n⚠️ Model override warning: ${modelOverrideWarning.message}`;
+        }
+
+        return this.success(queuedMessageText, {
+          action,
+          agentId: targetAgentId,
+          taskNoteId,
+          taskTitle: targetTaskTitle,
+          subscriptionId,
+          ...(queuedMessageId && { queuedMessageId }),
+          ...(modelOverrideWarning && { modelOverrideWarning }),
+        });
+      }
+
+      const subscriptionId = await subscribeCallerToAgentCompletion(
         this.workspaceId,
         ctx.agentId,
         ctx.agentName,
-        newAgent.id,
+        targetAgentId,
       );
 
-      await daemonSendInitialMessage(this.workspaceId, newAgent.id, contextMessage, {
-        contextReferences: [{ type: 'note', id: taskNoteId, name: note.title || taskNoteId }],
-      });
-
-      // Assign the new agent to the task (PROTOCOL.md §5.4 task.assignAgent).
-      try {
-        await getBackendClient().request('task.assignAgent', {
-          workspaceId: this.workspaceId,
-          noteId: taskNoteId,
-          agentId: newAgent.id,
-        });
-      } catch (assignError) {
-        logger.warn('Failed to assign agent to task', {
-          agentId: newAgent.id,
+      if (action === 'woke_existing') {
+        let wokeExistingText =
+          `Woke existing agent "${targetAgentId}" for task "${targetTaskTitle}".\n` +
+          'Context message delivered.\nYou will be notified when the agent responds.';
+        if (modelOverrideWarning) {
+          wokeExistingText += `\n\n⚠️ Model override warning: ${modelOverrideWarning.message}`;
+        }
+        return this.success(wokeExistingText, {
+          action,
+          agentId: targetAgentId,
           taskNoteId,
-          error: (assignError as Error).message,
+          taskTitle: targetTaskTitle,
+          subscriptionId,
+          ...(modelOverrideWarning && { modelOverrideWarning }),
         });
-        // Don't fail - agent is created and working, assignment is just metadata
       }
 
+      // action === 'created_new'
+      const displayName = targetAgentName || targetAgentId;
       let createdNewText =
-        `Created new agent "${newAgent.name}" for task "${note.title || taskNoteId}".\n` +
-        `Agent ID: ${newAgent.id}\n` +
+        `Created new agent "${displayName}" for task "${targetTaskTitle}".\n` +
+        `Agent ID: ${targetAgentId}\n` +
         'Agent is now working on the task with provided context.\nYou will be notified when the agent completes.';
       if (modelOverrideWarning) {
         createdNewText += `\n\n⚠️ Model override warning: ${modelOverrideWarning.message}`;
       }
 
       return this.success(createdNewText, {
-        action: 'created_new',
-        agentId: newAgent.id,
-        agentName: newAgent.name,
+        action,
+        agentId: targetAgentId,
+        ...(targetAgentName && { agentName: targetAgentName }),
         taskNoteId,
-        taskTitle: note.title,
+        taskTitle: targetTaskTitle,
         subscriptionId,
         ...(modelOverrideWarning && { modelOverrideWarning }),
       });
