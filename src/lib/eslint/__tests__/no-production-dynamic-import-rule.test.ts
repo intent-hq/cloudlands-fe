@@ -17,7 +17,6 @@ const productionModuleIgnores = [
   '**/*.spec.{js,jsx,ts,tsx,svelte}',
   '**/*.generated.{js,jsx,ts,tsx,svelte}',
   '**/generated/**',
-  'src/preload/generated-channels.ts',
 ];
 
 async function lintCode(code: string, filePath = 'src/features/example/example.ts') {
