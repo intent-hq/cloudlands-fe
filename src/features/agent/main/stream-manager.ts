@@ -1012,13 +1012,6 @@ export class StreamManager extends EventEmitter implements IDisposable {
   }
 
   /**
-   * Get all active streams
-   */
-  getActiveStreams(): StreamSession[] {
-    return Array.from(this.sessions.values()).filter((s) => !s.isComplete);
-  }
-
-  /**
    * Cancel a stream
    */
   cancelStream(streamId: string): void {

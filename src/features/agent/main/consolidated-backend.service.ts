@@ -1451,12 +1451,12 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
    *
    * NOTE: When running inside the Electron main process, `src/main/index.ts`
    * is the single owner of SIGINT/SIGTERM — it routes those signals through
-   * `gracefulShutdown()` so that `agentBackendHandler.persistShutdownState()`
-   * runs BEFORE backend provider teardown. Registering our own listeners here
-   * would race with that ordering (Node invokes signal listeners in
-   * registration order and these are registered first, during module init).
-   * Detect the Electron runtime and skip registration in that context; other
-   * callers can force-skip via INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS=1.
+   * `gracefulShutdown()` and tears the app down in a fixed order. Registering
+   * our own listeners here would race with that ordering (Node invokes signal
+   * listeners in registration order and these are registered first, during
+   * module init). Detect the Electron runtime and skip registration in that
+   * context; other callers can force-skip via
+   * INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS=1.
    */
   private setupShutdownHandlers(): void {
     if (!(isMainProcess() && typeof process !== 'undefined' && typeof process.on === 'function')) {
@@ -1909,13 +1909,9 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     // Save all active sessions first.
     //
     // IMPORTANT: Skip sessions whose in-memory state still looks like an
-    // in-flight stream. The clean-quit path calls
-    // `agentBackendHandler.persistShutdownState()` BEFORE this shutdown — that
-    // flush loads a fresh copy from disk, repairs the stale streaming flags to
-    // idle, and writes the repaired copy back. Our in-memory `record.session`
-    // is a SEPARATE object reference that still carries the stale streaming
-    // snapshot; calling `saveAgent()` here would overwrite the repaired idle
-    // on-disk state with that stale snapshot.
+    // in-flight stream. Writing that snapshot back would persist stale
+    // streaming flags to disk, so any later `loadAgent` would resurrect a
+    // session that looks mid-stream when it is not.
     //
     // Detection must cover BOTH forms of stale streaming state:
     //  1. Session-level flags — `record.session.isStreaming/isProcessing`.
@@ -1924,9 +1920,9 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     //     in-memory backend session without setting session-level flags, so
     //     a session can be mid-stream with only the per-message flag set.
     //
-    // Skipping is safe when `persistShutdownState()` did not run (e.g.
-    // hard-kill or test environments): the disk state is left untouched and
-    // the next `loadAgent` path triggers orphan-recovery which repairs it.
+    // Skipping is safe: the on-disk copy is left untouched, and the next
+    // `loadAgent` path triggers orphan-recovery which repairs any residual
+    // stale streaming flags there.
     const hasStreamingMessage = (session: AgentSession | undefined): boolean => {
       if (!session?.messages) return false;
       for (const m of session.messages) {

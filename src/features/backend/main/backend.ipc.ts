@@ -15,12 +15,12 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { JsonRpcError } from './json-rpc-errors';
 import {
   JsonRpcClient,
   type ConnectionStatus,
   type JsonRpcNotification,
 } from './json-rpc-client';
+import { JsonRpcError } from './json-rpc-errors';
 
 const logger = new Logger('Backend-IPC');
 const BACKEND = IPC_CHANNELS.BACKEND;
@@ -36,16 +36,11 @@ export function getBackendClient(): JsonRpcClient {
   if (client) return client;
   const instance = new JsonRpcClient({
     // Enable a liveness heartbeat: reconnect-on-close alone misses a silently
-    // half-open socket. A daemon-level JSON-RPC error still proves the socket
-    // round-trips, so only a transport timeout/failure trips a reconnect.
+    // half-open socket. `system.status` is the documented daemon liveness RPC
+    // (PROTOCOL.md §5.7); a transport timeout/failure trips a reconnect.
     heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
     healthCheck: async () => {
-      try {
-        await instance.request('system.health');
-      } catch (error) {
-        if (error instanceof JsonRpcError) return;
-        throw error;
-      }
+      await instance.request('system.status');
     },
   });
   instance.on('notification', (notification: JsonRpcNotification) =>
