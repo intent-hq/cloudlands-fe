@@ -57,11 +57,6 @@ vi.mock('$features/workspace/main/workspace.service', () => ({
   },
 }));
 
-vi.mock('$features/agent/main/agent-backend-handler.service', () => ({
-  agentBackendHandler: { createAgentSession: vi.fn() },
-  AgentBackendHandler: { getInstance: () => ({ createAgent: vi.fn() }) },
-}));
-
 import { WorkspaceJsApiTool } from '../workspace-js-api-tool';
 import { hasTaskBlocks } from '$features/notes/utils/task-block-parser';
 import { sendToWorkspaceWindows } from '$features/system/main/system.ipc';

@@ -115,18 +115,6 @@ vi.mock('$features/agent/main/specialists.service', () => ({
   ),
 }));
 
-vi.mock('$features/agent/main/agent-backend-handler.service', () => ({
-  AgentBackendHandler: {
-    getInstance: () => mockAgentHandler,
-  },
-}));
-
-vi.mock('../../../../agent/main/agent-backend-handler.service', () => ({
-  AgentBackendHandler: {
-    getInstance: () => mockAgentHandler,
-  },
-}));
-
 vi.mock('$features/backend/main/backend.ipc', () => ({
   getBackendClient: () => ({ request: mockBackendRequest }),
 }));

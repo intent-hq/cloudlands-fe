@@ -40,12 +40,6 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('../../agent/main/agent-backend-handler.service', () => ({
-  AgentBackendHandler: {
-    getInstance: () => ({ getActiveStreams: () => [] }),
-  },
-}));
-
 vi.mock('../../system/main/system.ipc', () => ({
   getWindowIdsForWorkspace: () => [],
   sendToWorkspaceWindows: vi.fn(),

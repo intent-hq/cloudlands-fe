@@ -362,7 +362,6 @@ import { claimDownloadAttribution } from './download-attribution';
 import { listRespondingAgents } from './running-agents';
 import { prefetchProviderModelCaches } from './utils/model-pool';
 
-import { agentBackendHandler } from '../features/agent/main/agent-backend-handler.service';
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { cleanupStaleTempFiles } from '../shared/main/temp-files';
 import { initializeUnifiedAgentHandlers } from '../features/agent/main/init-unified-handlers';
@@ -472,25 +471,6 @@ async function gracefulShutdown() {
     } catch (error) {
       logger.error(
         'Error disposing backend client:',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-
-    // Persist in-flight streaming agents BEFORE shutting down the backend so
-    // our clean-quit flush runs against live state (ConsolidatedBackendService
-    // .shutdown() saves sessions + kills providers, which would either clear
-    // state or overwrite it). Bounded by an internal 3s timeout and swallows
-    // its own errors; ignore the per-agent result here (logged internally).
-    try {
-      const result = await agentBackendHandler.persistShutdownState();
-      logger.info('Agent shutdown state persisted', {
-        persisted: result.persisted.length,
-        skipped: result.skipped.length,
-        failed: result.failed.length,
-      });
-    } catch (error) {
-      logger.error(
-        'Error persisting agent shutdown state:',
         error instanceof Error ? error : new Error(String(error)),
       );
     }
@@ -1290,7 +1270,6 @@ app.whenReady().then(async () => {
     const openWorkspaceIds = getAllOpenWorkspaceIds();
     try {
       workspaceService.trimCachesToOpenWorkspaces(openWorkspaceIds);
-      agentBackendHandler.trimPersistenceListCacheToOpenWorkspaces(openWorkspaceIds);
     } catch (error) {
       logger.warn('Failed to trim inactive workspace caches', {
         error: error instanceof Error ? error.message : String(error),
@@ -1415,16 +1394,6 @@ app.whenReady().then(async () => {
     // MINIMAL REFACTOR: Commenting out duplicate IPC handler
     registerAgentContextHandlers();
 
-    // Initialize the agent backend handler
-    // WAVE 1 REFACTOR: The backend handler now has all handlers commented out
-    // to avoid duplication. The handlers are implemented in the service itself.
-    void agentBackendHandler; // Initialize the backend service
-
-    // Note: Unified handlers would need an adapter to work with agentBackendHandler
-    // For now, we'll uncomment the handlers in agentBackendHandler until we can
-    // properly migrate to the unified handler pattern
-
-    logger.info('Agent backend handler initialized');
     // setupTerminalIPC(); // Already called in critical IPC setup
     // setupEditorIPC(); // Already called in critical IPC setup
     setupDiffsIPC();
@@ -1578,57 +1547,8 @@ app.whenReady().then(async () => {
         })
         .catch(() => {});
 
-      // Stop agent providers for workspaces that have no open windows.
-      // These agents are streaming into the void (producing "no windows found"
-      // warnings) and accumulating memory with no user benefit. Their session
-      // data is persisted to disk, so they can be resumed when the user returns.
-      // IMPORTANT: Skip workspaces with active agents (streaming or pending requests)
-      // to avoid killing agents that are doing real background work.
-      Promise.all([
-        import('../features/agent/main/agent-backend-handler.service'),
-        import('../features/agent/main/orphaned-provider-cleanup'),
-        import('../features/system/main/system.ipc'),
-      ])
-        .then(
-          ([
-            { agentBackendHandler },
-            { getOrphanedProviderCleanupPlan },
-            { getAllOpenWorkspaceIds },
-          ]) => {
-            const openWorkspaceIds = new Set(getAllOpenWorkspaceIds());
-            const { safeToCleanup, skippedWithActiveAgents } = getOrphanedProviderCleanupPlan(
-              agentBackendHandler,
-              openWorkspaceIds,
-            );
-
-            for (const wsId of skippedWithActiveAgents) {
-              logger.info('Skipping orphaned workspace cleanup — has active agents', {
-                workspaceId: wsId,
-              });
-            }
-
-            if (safeToCleanup.length > 0) {
-              logger.info('Stopping orphaned agent providers (no open window, no active work)', {
-                safeToCleanup,
-                skippedWithActiveAgents: skippedWithActiveAgents.length,
-                openWorkspaceIds: [...openWorkspaceIds],
-              });
-              for (const wsId of safeToCleanup) {
-                agentBackendHandler.stopProvidersForWorkspace(wsId).catch((err: Error) => {
-                  logger.warn('Failed to stop orphaned providers', {
-                    workspaceId: wsId,
-                    error: err.message,
-                  });
-                });
-              }
-            }
-          },
-        )
-        .catch((err: unknown) => {
-          logger.warn('Failed to run orphaned agent provider cleanup', {
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
+      // Orphaned-provider cleanup retired with the FE `AgentBackendHandler`;
+      // provider lifecycle is now owned by intentd (PROTOCOL.md §5.5).
 
       // On critical pressure, drop unified main-process caches.
       // Entries are lazily re-populated from disk on next access.
@@ -1966,25 +1886,6 @@ app.on('window-all-closed', async () => {
 
   // Cleanup all IPC handlers
   ipcCleanupManager.cleanupAll();
-
-  // Persist in-flight streaming agents BEFORE backend shutdown so the
-  // clean-quit flush runs against live state. On Windows/Linux this is the
-  // common quit path (closing the last window), so we mirror the ordering
-  // from gracefulShutdown() — otherwise shutdownUnifiedBackend() would save
-  // sessions + kill providers and overwrite/clear the flush target.
-  try {
-    const result = await agentBackendHandler.persistShutdownState();
-    logger.info('Agent shutdown state persisted (window-all-closed)', {
-      persisted: result.persisted.length,
-      skipped: result.skipped.length,
-      failed: result.failed.length,
-    });
-  } catch (error) {
-    logger.error(
-      'Error persisting agent shutdown state (window-all-closed):',
-      error instanceof Error ? error : new Error(String(error)),
-    );
-  }
 
   // Cleanup agent backend
   try {

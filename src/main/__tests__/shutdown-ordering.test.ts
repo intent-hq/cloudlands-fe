@@ -2,10 +2,12 @@
  * Graceful-shutdown ordering regression guard (AST-based).
  *
  * `ConsolidatedBackendService.shutdown()` (invoked by `shutdownUnifiedBackend`)
- * already saves sessions and kills providers, so our clean-quit flush from
- * `agentBackendHandler.persistShutdownState()` MUST run BEFORE
- * `shutdownUnifiedBackend()` — otherwise the flush either races against
- * cleared state or is overwritten by the backend's own shutdown.
+ * kills providers and saves sessions during teardown. The persist-in-flight
+ * hook (`agentBackendHandler.persistShutdownState()`) was retired alongside
+ * the FE `AgentBackendHandler` (C1d-7) — the daemon now owns in-flight session
+ * persistence via `agent.completeOnce` (PROTOCOL.md §5.32). What remains is
+ * the non-teardown ordering (running-agent prompt BEFORE any teardown, single
+ * SIGINT/SIGTERM owner, non-macOS delegate-to-gracefulShutdown path).
  *
  * Importing `src/main/index.ts` has heavy top-level side effects (Sentry,
  * electron app, IPC registration), so we parse the source with the
@@ -98,31 +100,22 @@ function findWindowAllClosedHandler(sf: ts.SourceFile): ts.FunctionLikeDeclarati
 }
 
 describe('gracefulShutdown call ordering (AST)', () => {
-  it('calls persistShutdownState() BEFORE shutdownUnifiedBackend() inside gracefulShutdown', () => {
+  it('does not re-introduce the retired persistShutdownState hook in gracefulShutdown', () => {
+    // Sentinel: `agentBackendHandler.persistShutdownState()` was retired in
+    // C1d-7 (daemon owns in-flight persistence via `agent.completeOnce`,
+    // PROTOCOL.md §5.32). Adding it back would resurrect the FE handler.
     const sf = parseIndex();
     const gs = findGracefulShutdown(sf);
     const calls = callsitesIn(gs.body!);
-    const persistIdx = calls.findIndex((c) => c.text === 'agentBackendHandler.persistShutdownState');
-    const unifiedIdx = calls.findIndex((c) => c.text === 'shutdownUnifiedBackend');
-    expect(persistIdx).toBeGreaterThan(-1);
-    expect(unifiedIdx).toBeGreaterThan(-1);
-    expect(persistIdx).toBeLessThan(unifiedIdx);
+    expect(calls.some((c) => c.text === 'agentBackendHandler.persistShutdownState')).toBe(false);
+    expect(calls.some((c) => c.text === 'shutdownUnifiedBackend')).toBe(true);
   });
 
-  it('window-all-closed either delegates to gracefulShutdown or calls persistShutdownState before shutdownUnifiedBackend', () => {
+  it('window-all-closed does not re-introduce the retired persistShutdownState hook', () => {
     const sf = parseIndex();
     const handler = findWindowAllClosedHandler(sf);
     const calls = callsitesIn(handler.body!);
-    const delegates = calls.some((c) => c.text === 'gracefulShutdown');
-    if (delegates) {
-      expect(delegates).toBe(true);
-      return;
-    }
-    const persistIdx = calls.findIndex((c) => c.text === 'agentBackendHandler.persistShutdownState');
-    const unifiedIdx = calls.findIndex((c) => c.text === 'shutdownUnifiedBackend');
-    expect(persistIdx).toBeGreaterThan(-1);
-    expect(unifiedIdx).toBeGreaterThan(-1);
-    expect(persistIdx).toBeLessThan(unifiedIdx);
+    expect(calls.some((c) => c.text === 'agentBackendHandler.persistShutdownState')).toBe(false);
   });
 
   it('window-all-closed invokes the running-agent prompt BEFORE any backend teardown (or delegates to gracefulShutdown)', () => {
@@ -141,14 +134,11 @@ describe('gracefulShutdown call ordering (AST)', () => {
         c.text === 'dialog.showMessageBox' ||
         c.text.endsWith('.showMessageBox'),
     );
-    const persistIdx = calls.findIndex((c) => c.text === 'agentBackendHandler.persistShutdownState');
     const unifiedIdx = calls.findIndex((c) => c.text === 'shutdownUnifiedBackend');
     expect(promptIdx).toBeGreaterThan(-1);
-    expect(persistIdx).toBeGreaterThan(-1);
     expect(unifiedIdx).toBeGreaterThan(-1);
     // Prompt must run before any teardown, otherwise providers are already dead
     // by the time before-quit fires and the check silently sees zero streams.
-    expect(promptIdx).toBeLessThan(persistIdx);
     expect(promptIdx).toBeLessThan(unifiedIdx);
   });
 
