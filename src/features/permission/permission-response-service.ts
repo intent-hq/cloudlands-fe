@@ -15,8 +15,8 @@
  * This restores the resolution path over the daemon-first transport WITHOUT
  * re-adding a saga: after the reducer runs the middleware picks the request
  * out of the permission collection (needed to derive `optionId` for
- * approve/deny), calls the canonical `agent.respondPermission` JSON-RPC
- * method (PROTOCOL §8: `{ requestId, outcome }` → `{ resolved: bool }`), and
+ * approve/deny), calls the canonical `agents.respondPermission` seam
+ * (PROTOCOL §8: `{ requestId, outcome }` → `{ resolved: bool }`), and
  * dispatches `removePermissionRequest` on success so the inline prompt
  * disappears immediately even before the daemon's `agent:permission:resolved`
  * fan-out lands. The BE's own event is the authoritative convergence signal
@@ -25,12 +25,12 @@
  * so the user can retry.
  *
  * Dependency-light per src/store/renderer/AGENTS.md: imports only the
- * backend-transport seam, the configured store, permission-slice actions,
- * the collection helper for the request lookup, and the logger.
+ * AppClient seam, the configured store, permission-slice actions, the
+ * collection helper for the request lookup, and the logger.
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
-import { backendRequest } from "$lib/client/live/backend-transport";
+import { appClient, type PermissionOutcome } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { createLogger } from "$lib/utils/client-logger";
 import {
@@ -44,10 +44,6 @@ import {
 
 const logger = createLogger("PermissionResponseService");
 
-type PermissionOutcome =
-  | { outcome: "selected"; optionId: string }
-  | { outcome: "cancelled" };
-
 /** Look up a pending permission request straight off the current store state. */
 function findRequest(requestId: string): PermissionRequest | undefined {
   return getItem(appStore.state.permission.requests, requestId);
@@ -57,19 +53,16 @@ function findRequest(requestId: string): PermissionRequest | undefined {
  * Forward one PROTOCOL §8 outcome to the daemon and optimistically clear the
  * request. A `{ resolved: false }` response means the prompt is already gone
  * (timed out or answered elsewhere); we still remove the local entry so the
- * inline UI does not stay stuck. Only a transport-level throw keeps the entry
- * around -- the prompt remains actionable and the daemon's own
+ * inline UI does not stay stuck. Only a transport-level failure keeps the
+ * entry around -- the prompt remains actionable and the daemon's own
  * `agent:permission:resolved` fan-out will reconcile if it eventually lands.
  */
 async function dispatchOutcome(requestId: string, outcome: PermissionOutcome): Promise<void> {
-  try {
-    await backendRequest<{ resolved?: boolean }>("agent.respondPermission", {
-      requestId,
-      outcome,
-    });
+  const result = await appClient.agents.respondPermission(requestId, outcome);
+  if (result.success) {
     appStore.dispatch(removePermissionRequest(requestId));
-  } catch (error) {
-    logger.error("agent.respondPermission threw", { requestId, outcome, error });
+  } else {
+    logger.error("agent.respondPermission failed", { requestId, outcome, error: result.error });
   }
 }
 

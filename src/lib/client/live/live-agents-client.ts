@@ -15,6 +15,8 @@ import type {
   AgentCreateRequest,
   AgentsClient,
   MutationResult,
+  PermissionOutcome,
+  RespondPermissionResult,
   SubscriptionHandler,
   Unsubscribe,
 } from "../app-client";
@@ -223,6 +225,27 @@ export class LiveAgentsClient implements AgentsClient {
     // agent_id) and is idempotent, so we forward just `{ agentId }` and rely on
     // the emitted `agent:deleted` event to reconcile the list.
     return runMutation("agent.delete", { agentId });
+  }
+  async respondPermission(
+    requestId: string,
+    outcome: PermissionOutcome,
+  ): Promise<RespondPermissionResult> {
+    // `agent.respondPermission` (PROTOCOL §8) forwards the caller's outcome to
+    // the blocked provider and emits `agent:permission:resolved` so any other
+    // client can clear its inline prompt. The daemon returns `{ resolved }` —
+    // `false` when the pending prompt is already gone (5-min timeout or an
+    // earlier response) — which we surface on top of MutationResult so callers
+    // decide whether to keep the local slice entry visible for a retry.
+    try {
+      const result = await backendRequest<{ resolved?: unknown } | undefined>(
+        "agent.respondPermission",
+        { requestId, outcome },
+      );
+      const resolved = typeof result?.resolved === "boolean" ? result.resolved : undefined;
+      return resolved !== undefined ? { success: true, resolved } : { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   /**

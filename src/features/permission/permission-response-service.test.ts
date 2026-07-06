@@ -6,19 +6,36 @@
  * PROTOCOL §8 `agent.respondPermission` JSON-RPC call with the right
  * `{ requestId, outcome }` shape, and that the local slice entry is cleared
  * on success so the inline prompt disappears immediately.
+ *
+ * The middleware talks to the daemon via the `appClient.agents` seam, so we
+ * stub the seam method (not the raw transport) to observe the exact
+ * `(requestId, outcome)` pair the middleware forwards and control the
+ * `MutationResult` it sees back.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { respondSpy } = vi.hoisted(() => ({ respondSpy: vi.fn() }));
 vi.mock("$lib/client/live/backend-transport", () => ({
-  backendRequest: (method: string, params?: unknown) => {
-    if (method === "agent.respondPermission") return respondSpy(params);
-    // Every other transport call resolves so the bridge / hydration
-    // middleware do not perturb these tests.
-    return Promise.resolve({ subscriptionId: "sub-perm-1" });
-  },
+  // Bridge / hydration middleware call `backendRequest` on startup; resolve
+  // everything with a benign shape so those code paths do not perturb the
+  // permission-flow assertions below.
+  backendRequest: () => Promise.resolve({ subscriptionId: "sub-perm-1" }),
   onBackendNotification: () => () => {},
 }));
+vi.mock("$lib/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/client")>();
+  return {
+    ...actual,
+    appClient: {
+      ...actual.appClient,
+      agents: {
+        ...actual.appClient.agents,
+        respondPermission: (requestId: string, outcome: unknown) =>
+          respondSpy({ requestId, outcome }),
+      },
+    },
+  };
+});
 
 import { store as appStore } from "$store/renderer/store";
 import {
@@ -59,7 +76,7 @@ describe("permission-response-service (PROTOCOL §8 agent.respondPermission)", (
 
   beforeEach(() => {
     respondSpy.mockReset();
-    respondSpy.mockResolvedValue({ resolved: true });
+    respondSpy.mockResolvedValue({ success: true, resolved: true });
     // Reset the slice between tests by re-seeding a fresh request.
   });
 
@@ -113,8 +130,8 @@ describe("permission-response-service (PROTOCOL §8 agent.respondPermission)", (
     expect(selectPermissionRequests.select(appStore.state)).toHaveLength(0);
   });
 
-  it("keeps the entry in place when agent.respondPermission throws (transport failure)", async () => {
-    respondSpy.mockRejectedValueOnce(new Error("boom"));
+  it("keeps the entry in place when agent.respondPermission fails (transport failure)", async () => {
+    respondSpy.mockResolvedValueOnce({ success: false, error: "boom" });
     appStore.dispatch(permissionRequestReceived(buildRequest()));
     appStore.dispatch(approvePermission(REQUEST_ID));
     await flush();
