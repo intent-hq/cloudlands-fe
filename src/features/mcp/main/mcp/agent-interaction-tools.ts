@@ -2244,23 +2244,25 @@ export class ListAgentsTool extends BaseMCPTool {
     try {
       const { status, includeCompleted } = call.arguments;
 
-      const { AgentBackendHandler } =
-        await import('../../../agent/main/agent-backend-handler.service');
-      const handler = AgentBackendHandler.getInstance();
-
-      // Get all agents for the workspace (in-memory + disk-persisted)
-      // This ensures agents are visible across app restarts even if not loaded into memory
-      const agents = await handler.listAllAgents(this.workspaceId);
+      // Daemon-primary listing (PROTOCOL.md §5.5 `agent.list`): AgentLite
+      // entries carry the persisted `isStreaming`/`isResponding` flags that
+      // stand in for the retired in-memory active-set from the FE handler.
+      const listResult = (await getBackendClient().request('agent.list', {
+        workspaceId: this.workspaceId,
+      })) as { agents?: any[] };
+      const agents = Array.isArray(listResult?.agents) ? listResult.agents : [];
 
       // Enhance agents with real-time status from Redux store
       const enhancedAgents = agents.map((a: any) => {
         // Get real-time status from Redux store
         const realtimeStatus = selectAgentStatus.select(getMainState(), this.workspaceId, a.id);
+        const presentInBackend = a.isStreaming === true || a.isResponding === true;
         return {
           ...a,
           // Use real-time status if available, otherwise fall back to session status
           status: realtimeStatus || a.status,
           sessionStatus: a.status, // Keep original session status for reference
+          presentInBackend,
         };
       });
 
@@ -2339,33 +2341,27 @@ export class GetAgentStatusTool extends BaseMCPTool {
     try {
       const { agentId } = call.arguments;
 
-      const { AgentBackendHandler } =
-        await import('../../../agent/main/agent-backend-handler.service');
-      const handler = AgentBackendHandler.getInstance();
-
-      let agent = await handler.getAgent(agentId);
-      let presentInBackend = true;
-
-      if (!agent) {
-        try {
-          const result = (await getBackendClient().request('agent.get', {
-            agentId,
-            workspaceId: this.workspaceId,
-          })) as { agent?: any };
-          agent = result.agent ?? null;
-        } catch (_error) {
-          agent = null;
-        }
-        if (!agent) {
-          const agents = await handler.listAllAgents(this.workspaceId);
-          agent = agents.find((candidate: any) => candidate.id === agentId) ?? null;
-        }
-        presentInBackend = false;
+      // Daemon-primary read (PROTOCOL.md §5.5 `agent.getSession`): a single
+      // full-AgentSession call replaces the pre-C1d-5 handler-first chain
+      // (`handler.getAgent` → `agent.get` → `handler.listAllAgents`).
+      // `presentInBackend` derives from the persisted `isStreaming`/
+      // `isResponding` flags on the returned session.
+      let agent: any;
+      try {
+        const result = (await getBackendClient().request('agent.getSession', {
+          agentId,
+          workspaceId: this.workspaceId,
+        })) as { session?: any };
+        agent = result.session ?? null;
+      } catch (_error) {
+        agent = null;
       }
 
       if (!agent) {
         return this.error(`Agent ${agentId} not found`);
       }
+
+      const presentInBackend = agent.isStreaming === true || agent.isResponding === true;
 
       // Get real-time status from Redux store
       const realtimeStatus = selectAgentStatus.select(getMainState(), this.workspaceId, agentId);
@@ -2443,17 +2439,18 @@ The snapshot includes agent statuses, subscriptions, queues, delegation groups, 
   async execute(call: ToolCall): Promise<ToolResult> {
     try {
       const { agentId, taskNoteId, staleRespondingAfterMs } = call.arguments;
-      const { AgentBackendHandler } =
-        await import('../../../agent/main/agent-backend-handler.service');
-      const handler = AgentBackendHandler.getInstance();
-      const [agents, activeAgentsResult] = await Promise.all([
-        handler.listAllAgents(this.workspaceId),
-        typeof handler.listAgents === 'function'
-          ? Promise.resolve(handler.listAgents(this.workspaceId)).catch(() => [])
-          : Promise.resolve([]),
-      ]);
+      // Daemon-primary listing (PROTOCOL.md §5.5 `agent.list`): AgentLite
+      // entries; the active-set hint collapses onto the persisted
+      // `isStreaming`/`isResponding` flags per entry (previously served by the
+      // FE handler's in-memory `listAgents` map).
+      const listResult = (await getBackendClient().request('agent.list', {
+        workspaceId: this.workspaceId,
+      })) as { agents?: any[] };
+      const agents = Array.isArray(listResult?.agents) ? listResult.agents : [];
       const activeAgentIds = new Set(
-        (Array.isArray(activeAgentsResult) ? activeAgentsResult : []).map((agent: any) => agent.id),
+        agents
+          .filter((a: any) => a.isStreaming === true || a.isResponding === true)
+          .map((a: any) => a.id),
       );
       const diagnosticAgents = await Promise.all(
         agents.map(async (agent: any) => {
@@ -2468,7 +2465,7 @@ The snapshot includes agent statuses, subscriptions, queues, delegation groups, 
                 diagnosticAgent = result.agent;
               }
             } catch (_error) {
-              // Fall through; keep the listAllAgents snapshot as the default.
+              // Fall through; keep the agent.list snapshot as the default.
             }
           }
           return {

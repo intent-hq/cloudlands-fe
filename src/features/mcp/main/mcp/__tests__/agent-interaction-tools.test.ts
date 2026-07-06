@@ -301,6 +301,26 @@ function stubDaemonAgentLoad(response: {
   });
 }
 
+// C1d-5: `list_agents` / `get_agent_diagnostics` read via daemon-primary
+// `agent.list` (PROTOCOL.md §5.5); the diagnostics tool additionally falls back
+// to `agent.get` for a focused non-active agent. This helper stubs both in one
+// mockImplementation so tests describe the daemon wire contract directly.
+function stubDaemonAgentList(agents: any[], agentDetails: Record<string, any> = {}) {
+  mockRequest.mockImplementation(async (method: string, params: any) => {
+    if (method === 'agent.list') {
+      return { agents };
+    }
+    if (method === 'agent.get') {
+      const agent = agentDetails[params?.agentId as string];
+      if (!agent) {
+        throw new Error('agent not found');
+      }
+      return { agent };
+    }
+    throw new Error(`unhandled RPC in stubDaemonAgentList: ${method}`);
+  });
+}
+
 describe('Agent Interaction Tools', () => {
   const workspaceId = 'test-workspace-id';
   const workspacePath = '/test/workspace/path';
@@ -956,26 +976,39 @@ describe('Agent Interaction Tools', () => {
   });
 
   describe('ListAgentsTool', () => {
-    it('should list all agents in workspace (in-memory + persisted)', async () => {
+    it('issues agent.list({ workspaceId }) and projects AgentLite entries', async () => {
       const tool = new ListAgentsTool(workspaceId);
 
-      mockBackendHandler.listAllAgents.mockResolvedValue([
-        {
-          id: 'agent-1',
-          name: 'Agent One',
-          status: 'idle',
-          messages: [{ role: 'user' }, { role: 'assistant' }],
-          createdAt: new Date('2025-01-01'),
-          lastActivity: new Date('2025-01-02'),
-        },
-        {
-          id: 'agent-2',
-          name: 'Agent Two',
-          status: 'responding',
-          messages: [],
-          createdAt: new Date('2025-01-01'),
-        },
-      ]);
+      // C1d-5: `list_agents` reads daemon-primary (PROTOCOL.md §5.5
+      // `agent.list`); AgentLite entries carry messageCount + activity flags.
+      mockRequest.mockImplementation(async (method: string) => {
+        if (method === 'agent.list') {
+          return {
+            agents: [
+              {
+                id: 'agent-1',
+                name: 'Agent One',
+                status: 'idle',
+                messageCount: 2,
+                isStreaming: false,
+                isResponding: false,
+                createdAt: '2025-01-01T00:00:00.000Z',
+                lastActivity: '2025-01-02T00:00:00.000Z',
+              },
+              {
+                id: 'agent-2',
+                name: 'Agent Two',
+                status: 'responding',
+                messageCount: 0,
+                isStreaming: false,
+                isResponding: true,
+                createdAt: '2025-01-01T00:00:00.000Z',
+              },
+            ],
+          };
+        }
+        throw new Error(`unexpected ${method}`);
+      });
 
       const call: ToolCall = {
         name: 'list_agents',
@@ -994,21 +1027,44 @@ describe('Agent Interaction Tools', () => {
       const text = (result.content[0] as any).text;
       expect(text).toContain('Agent One');
       expect(text).toContain('Agent Two');
-      expect(mockBackendHandler.listAllAgents).toHaveBeenCalledWith(workspaceId);
+      expect(mockRequest).toHaveBeenCalledWith('agent.list', { workspaceId });
+      const infos = result.metadata?.agents as any[];
+      expect(infos.find((a) => a.id === 'agent-1')).toMatchObject({
+        messageCount: 2,
+        presentInBackend: false,
+      });
+      expect(infos.find((a) => a.id === 'agent-2')).toMatchObject({
+        messageCount: 0,
+        presentInBackend: true,
+      });
     });
   });
 
   describe('GetAgentStatusTool', () => {
-    it('should get status of a specific agent', async () => {
+    // C1d-5: `get_agent_status` reads daemon-primary (PROTOCOL.md §5.5
+    // `agent.getSession`); a single full-AgentSession call replaces the
+    // handler-first fallback chain and derives `presentInBackend` from the
+    // persisted `isStreaming`/`isResponding` flags.
+    it('issues agent.getSession({ agentId, workspaceId }) and returns active session details', async () => {
       const tool = new GetAgentStatusTool(workspaceId);
 
-      mockBackendHandler.getAgent.mockResolvedValue({
-        id: 'target-agent',
-        name: 'Target Agent',
-        status: 'idle',
-        messages: [{ role: 'user' }, { role: 'assistant' }, { role: 'user' }],
-        createdAt: new Date('2025-01-01'),
-        lastActivity: new Date('2025-01-02'),
+      mockRequest.mockImplementation(async (method: string, params: any) => {
+        if (method === 'agent.getSession') {
+          expect(params).toEqual({ agentId: 'target-agent', workspaceId });
+          return {
+            session: {
+              id: 'target-agent',
+              name: 'Target Agent',
+              status: 'idle',
+              messages: [{ role: 'user' }, { role: 'assistant' }, { role: 'user' }],
+              isStreaming: false,
+              isResponding: true,
+              createdAt: '2025-01-01T00:00:00.000Z',
+              lastActivity: '2025-01-02T00:00:00.000Z',
+            },
+          };
+        }
+        throw new Error(`unexpected ${method}`);
       });
 
       mockSubscriptionService.hasPendingEvents.mockReturnValue(true);
@@ -1033,14 +1089,27 @@ describe('Agent Interaction Tools', () => {
       const text = (result.content[0] as any).text;
       expect(text).toContain('Target Agent');
       expect(text).toContain('idle');
+      expect(text).toContain('Backend session: active');
+      expect(result.metadata?.agent).toMatchObject({
+        id: 'target-agent',
+        presentInBackend: true,
+        messageCount: 3,
+      });
+      expect(mockRequest).toHaveBeenCalledWith('agent.getSession', {
+        agentId: 'target-agent',
+        workspaceId,
+      });
     });
 
-    it('should handle non-existent agent', async () => {
+    it('returns an error when agent.getSession yields no session', async () => {
       const tool = new GetAgentStatusTool(workspaceId);
 
-      mockBackendHandler.getAgent.mockResolvedValue(null);
-      stubDaemonAgentLoad({ success: false, data: null });
-      mockBackendHandler.listAllAgents.mockResolvedValue([]);
+      mockRequest.mockImplementation(async (method: string) => {
+        if (method === 'agent.getSession') {
+          throw new Error('agent not found');
+        }
+        throw new Error(`unexpected ${method}`);
+      });
 
       const call: ToolCall = {
         name: 'get_agent_status',
@@ -1058,21 +1127,27 @@ describe('Agent Interaction Tools', () => {
       const result = await tool.execute(call);
 
       expect(result.isError).toBe(true);
+      expect((result.content[0] as any).text).toContain('non-existent-agent');
     });
 
-    it('falls back to persisted agents when no active backend session exists', async () => {
+    it('reports persisted-only when session flags are false', async () => {
       const tool = new GetAgentStatusTool(workspaceId);
 
-      mockBackendHandler.getAgent.mockResolvedValue(null);
-      stubDaemonAgentLoad({
-        success: true,
-        data: {
-          id: 'persisted-agent',
-          name: 'Persisted Agent',
-          status: 'idle',
-          messages: [{ role: 'user' }],
-          createdAt: '2026-06-19T04:00:00.000Z',
-        },
+      mockRequest.mockImplementation(async (method: string) => {
+        if (method === 'agent.getSession') {
+          return {
+            session: {
+              id: 'persisted-agent',
+              name: 'Persisted Agent',
+              status: 'idle',
+              messages: [{ role: 'user' }],
+              isStreaming: false,
+              isResponding: false,
+              createdAt: '2026-06-19T04:00:00.000Z',
+            },
+          };
+        }
+        throw new Error(`unexpected ${method}`);
       });
 
       const result = await tool.execute({
@@ -1095,20 +1170,25 @@ describe('Agent Interaction Tools', () => {
       });
     });
 
-    it('falls back to listAllAgents summaries when persisted load misses', async () => {
+    it('derives messageCount from metadata when messages array is absent', async () => {
       const tool = new GetAgentStatusTool(workspaceId);
 
-      mockBackendHandler.getAgent.mockResolvedValue(null);
-      stubDaemonAgentLoad({ success: false, data: null });
-      mockBackendHandler.listAllAgents.mockResolvedValue([
-        {
-          id: 'summary-only-agent',
-          name: 'Summary Only Agent',
-          status: 'idle',
-          metadata: { messageCount: 1 },
-          createdAt: '2026-06-19T04:00:00.000Z',
-        },
-      ]);
+      mockRequest.mockImplementation(async (method: string) => {
+        if (method === 'agent.getSession') {
+          return {
+            session: {
+              id: 'summary-only-agent',
+              name: 'Summary Only Agent',
+              status: 'idle',
+              metadata: { messageCount: 1 },
+              isStreaming: false,
+              isResponding: false,
+              createdAt: '2026-06-19T04:00:00.000Z',
+            },
+          };
+        }
+        throw new Error(`unexpected ${method}`);
+      });
 
       const result = await tool.execute({
         name: 'get_agent_status',
@@ -2123,8 +2203,12 @@ describe('Agent Interaction Tools', () => {
       data: { ignoredSecret: 'SHOULD_NOT_LEAK' },
     });
 
+    // C1d-5: `get_agent_diagnostics` reads daemon-primary (PROTOCOL.md §5.5
+    // `agent.list`); the active-set previously served by `handler.listAgents`
+    // collapses onto AgentLite's `isStreaming`/`isResponding` flags, and the
+    // per-agent detail lookup routes through `agent.get`.
     it('returns an empty sanitized snapshot', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([]);
+      stubDaemonAgentList([]);
       const tool = new GetAgentDiagnosticsTool(workspaceId);
 
       const result = await tool.execute({
@@ -2143,16 +2227,25 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('reports normal agent, subscription, queue, delegation, and delivery counts', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
+      stubDaemonAgentList([
         {
           id: 'parent-agent',
           name: 'Parent',
           status: 'idle',
           metadata: { taskNoteId: 'task-1' },
-          messages: [{ role: 'user' }],
+          messageCount: 1,
+          isStreaming: false,
+          isResponding: false,
           lastActivity: '2026-06-19T04:00:00.000Z',
         },
-        { id: 'child-agent', name: 'Child', status: 'completed', metadata: { taskNoteId: 'task-2' } },
+        {
+          id: 'child-agent',
+          name: 'Child',
+          status: 'completed',
+          metadata: { taskNoteId: 'task-2' },
+          isStreaming: false,
+          isResponding: false,
+        },
       ]);
       mockSelectorState.workspaceSubscriptionState = {
         ...makeEmptyWorkspaceSubscriptionState(),
@@ -2222,13 +2315,15 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('surfaces stuck-risk signals and keeps output sanitized', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
+      stubDaemonAgentList([
         {
           id: 'parent-agent',
           name: 'Parent',
           status: 'responding',
           metadata: { taskNoteId: 'task-1', env: 'SECRET_ENV_VALUE' },
           messages: [{ content: 'SECRET_MESSAGE_VALUE' }],
+          isStreaming: false,
+          isResponding: false,
           lastActivity: '2026-06-19T03:00:00.000Z',
         },
       ]);
@@ -2301,8 +2396,15 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('keeps historical delivery timeout counters out of active stuck risks when queues are clear', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
-        { id: 'parent-agent', name: 'Parent', status: 'idle', lastActivity: '2026-06-19T04:00:00.000Z' },
+      stubDaemonAgentList([
+        {
+          id: 'parent-agent',
+          name: 'Parent',
+          status: 'idle',
+          isStreaming: false,
+          isResponding: false,
+          lastActivity: '2026-06-19T04:00:00.000Z',
+        },
       ]);
       mockSelectorState.workspaceSubscriptionState = {
         ...makeEmptyWorkspaceSubscriptionState(),
@@ -2337,8 +2439,15 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('surfaces recent delivery timeout counters while they are still operationally relevant', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
-        { id: 'parent-agent', name: 'Parent', status: 'idle', lastActivity: '2026-06-19T04:00:00.000Z' },
+      stubDaemonAgentList([
+        {
+          id: 'parent-agent',
+          name: 'Parent',
+          status: 'idle',
+          isStreaming: false,
+          isResponding: false,
+          lastActivity: '2026-06-19T04:00:00.000Z',
+        },
       ]);
       mockSelectorState.workspaceSubscriptionState = {
         ...makeEmptyWorkspaceSubscriptionState(),
@@ -2367,28 +2476,21 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('flags persisted-only agents that have an initial prompt but no response', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
+      // No `agentId` filter, so `agent.get` fallback is not triggered; the
+      // AgentLite entry from `agent.list` carries `metadata.messageCount: 1`
+      // and no `messages`, which drives `pendingInitialResponse: true`.
+      stubDaemonAgentList([
         {
           id: 'stuck-created-agent',
           name: 'Stuck Created Agent',
           status: 'idle',
           metadata: { messageCount: 1 },
+          isStreaming: false,
+          isResponding: false,
           createdAt: '2026-06-19T04:00:00.000Z',
           updatedAt: '2026-06-19T04:00:00.000Z',
         },
       ]);
-      mockBackendHandler.listAgents.mockResolvedValue([]);
-      stubDaemonAgentLoad({
-        success: true,
-        data: {
-          id: 'stuck-created-agent',
-          name: 'Stuck Created Agent',
-          status: 'idle',
-          messages: [{ role: 'user' }],
-          createdAt: '2026-06-19T04:00:00.000Z',
-          updatedAt: '2026-06-19T04:00:00.000Z',
-        },
-      });
       const tool = new GetAgentDiagnosticsTool(workspaceId);
 
       const result = await tool.execute({
@@ -2418,18 +2520,21 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('flags active idle agents that have an initial prompt but no response', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
+      // `isResponding: true` on the AgentLite marks the agent as active, so
+      // `presentInBackend` is true and the stuck-risk message omits the
+      // "no active backend session" clause.
+      stubDaemonAgentList([
         {
           id: 'active-never-started-agent',
           name: 'Active Never Started Agent',
           status: 'idle',
           messages: [{ role: 'user' }],
+          messageCount: 1,
+          isStreaming: false,
+          isResponding: true,
           createdAt: '2026-06-19T04:00:00.000Z',
           updatedAt: '2026-06-19T04:00:00.000Z',
         },
-      ]);
-      mockBackendHandler.listAgents.mockResolvedValue([
-        { id: 'active-never-started-agent', name: 'Active Never Started Agent', status: 'idle' },
       ]);
       const tool = new GetAgentDiagnosticsTool(workspaceId);
 
@@ -2461,28 +2566,33 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('does not flag persisted-only agents that already have an assistant response', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
+      // `agentId` filter is set and the AgentLite entry is not active, so the
+      // tool falls back to `agent.get` per PROTOCOL.md §5.5 for the fuller
+      // messages payload; the composite mock returns both shapes.
+      stubDaemonAgentList(
+        [
+          {
+            id: 'answered-persisted-agent',
+            name: 'Answered Persisted Agent',
+            status: 'idle',
+            metadata: { messageCount: 2 },
+            isStreaming: false,
+            isResponding: false,
+            createdAt: '2026-06-19T04:00:00.000Z',
+            updatedAt: '2026-06-19T04:01:00.000Z',
+          },
+        ],
         {
-          id: 'answered-persisted-agent',
-          name: 'Answered Persisted Agent',
-          status: 'idle',
-          metadata: { messageCount: 2 },
-          createdAt: '2026-06-19T04:00:00.000Z',
-          updatedAt: '2026-06-19T04:01:00.000Z',
+          'answered-persisted-agent': {
+            id: 'answered-persisted-agent',
+            name: 'Answered Persisted Agent',
+            status: 'idle',
+            messages: [{ role: 'user' }, { role: 'assistant' }],
+            createdAt: '2026-06-19T04:00:00.000Z',
+            updatedAt: '2026-06-19T04:01:00.000Z',
+          },
         },
-      ]);
-      mockBackendHandler.listAgents.mockResolvedValue([]);
-      stubDaemonAgentLoad({
-        success: true,
-        data: {
-          id: 'answered-persisted-agent',
-          name: 'Answered Persisted Agent',
-          status: 'idle',
-          messages: [{ role: 'user' }, { role: 'assistant' }],
-          createdAt: '2026-06-19T04:00:00.000Z',
-          updatedAt: '2026-06-19T04:01:00.000Z',
-        },
-      });
+      );
       const tool = new GetAgentDiagnosticsTool(workspaceId);
 
       const result = await tool.execute({
@@ -2507,10 +2617,10 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('uses canonical delegation completion for any-mode terminal ids', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
-        { id: 'parent-agent', name: 'Parent', status: 'idle' },
-        { id: 'expected-a', name: 'Expected A', status: 'idle' },
-        { id: 'expected-b', name: 'Expected B', status: 'idle' },
+      stubDaemonAgentList([
+        { id: 'parent-agent', name: 'Parent', status: 'idle', isStreaming: false, isResponding: false },
+        { id: 'expected-a', name: 'Expected A', status: 'idle', isStreaming: false, isResponding: false },
+        { id: 'expected-b', name: 'Expected B', status: 'idle', isStreaming: false, isResponding: false },
       ]);
       mockSelectorState.workspaceSubscriptionState = {
         ...makeEmptyWorkspaceSubscriptionState(),
@@ -2605,7 +2715,7 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('reports deleted-agent references', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([]);
+      stubDaemonAgentList([]);
       mockSelectorState.workspaceSubscriptionState = {
         ...makeEmptyWorkspaceSubscriptionState(),
         subscriptions: {
@@ -2647,10 +2757,37 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('focuses diagnostics by task note or agent id', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
-        { id: 'agent-a', name: 'A', status: 'idle', metadata: { taskNoteId: 'task-a' } },
-        { id: 'agent-b', name: 'B', status: 'idle', metadata: { taskNoteId: 'task-b' } },
-      ]);
+      // The `byAgent` call passes `agentId: 'agent-b'`, so the tool falls
+      // back to `agent.get`; the composite mock returns the same agent shape
+      // so the focused diagnostic is stable.
+      stubDaemonAgentList(
+        [
+          {
+            id: 'agent-a',
+            name: 'A',
+            status: 'idle',
+            metadata: { taskNoteId: 'task-a' },
+            isStreaming: false,
+            isResponding: false,
+          },
+          {
+            id: 'agent-b',
+            name: 'B',
+            status: 'idle',
+            metadata: { taskNoteId: 'task-b' },
+            isStreaming: false,
+            isResponding: false,
+          },
+        ],
+        {
+          'agent-b': {
+            id: 'agent-b',
+            name: 'B',
+            status: 'idle',
+            metadata: { taskNoteId: 'task-b' },
+          },
+        },
+      );
       mockSelectorState.workspaceSubscriptionState = {
         ...makeEmptyWorkspaceSubscriptionState(),
         subscriptions: {
@@ -3933,16 +4070,25 @@ describe('mcp agent-session tools — daemon wire contract (PROTOCOL.md §5.5)',
 
   beforeEach(() => {
     mockRequest.mockReset();
-    mockBackendHandler.getAgent.mockResolvedValue(null);
-    mockBackendHandler.listAllAgents.mockResolvedValue([]);
-    mockBackendHandler.listAgents.mockResolvedValue([]);
+    // C1d-5: reads route entirely through the wire mock; handler stubs for
+    // retired read paths (`listAllAgents`/`listAgents`/`getAgent`) are no
+    // longer needed at this seam.
   });
 
-  it('GetAgentStatusTool falls back through agent.get on backend miss', async () => {
+  it('GetAgentStatusTool reads via agent.getSession (PROTOCOL.md §5.5)', async () => {
+    // C1d-5: `get_agent_status` collapses onto a single `agent.getSession`
+    // call — the pre-C1d-5 handler-first fallback chain is retired.
     mockRequest.mockImplementation(async (method: string) => {
-      if (method === 'agent.get') {
+      if (method === 'agent.getSession') {
         return {
-          agent: { id: 'a-1', name: 'A', status: 'idle', messages: [] },
+          session: {
+            id: 'a-1',
+            name: 'A',
+            status: 'idle',
+            messages: [],
+            isStreaming: false,
+            isResponding: false,
+          },
         };
       }
       throw new Error(`unexpected ${method}`);
@@ -3954,10 +4100,50 @@ describe('mcp agent-session tools — daemon wire contract (PROTOCOL.md §5.5)',
       arguments: { agentId: 'a-1' },
       context: { workspaceId, agentId: 'requester', agentName: 'Requester' },
     } as any);
-    expect(mockRequest).toHaveBeenCalledWith('agent.get', {
+    expect(mockRequest).toHaveBeenCalledWith('agent.getSession', {
       agentId: 'a-1',
       workspaceId,
     });
+  });
+
+  it('ListAgentsTool reads via agent.list (PROTOCOL.md §5.5)', async () => {
+    // C1d-5: `list_agents` reads daemon-primary; the request must carry
+    // `{ workspaceId }` and no other params, and the AgentLite response
+    // shape drives the tool's projection.
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.list') {
+        return { agents: [] };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { ListAgentsTool } = await import('../agent-interaction-tools');
+    const tool = new ListAgentsTool(workspaceId);
+    await tool.execute({
+      name: 'list_agents',
+      arguments: {},
+      context: { workspaceId, agentId: 'requester', agentName: 'Requester' },
+    } as any);
+    expect(mockRequest).toHaveBeenCalledWith('agent.list', { workspaceId });
+  });
+
+  it('GetAgentDiagnosticsTool reads via agent.list (PROTOCOL.md §5.5)', async () => {
+    // C1d-5: `get_agent_diagnostics` collapses the pre-C1d-5 dual read
+    // (`handler.listAllAgents` + `handler.listAgents`) onto a single
+    // `agent.list` call; per-agent detail still routes through `agent.get`.
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.list') {
+        return { agents: [] };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { GetAgentDiagnosticsTool } = await import('../agent-interaction-tools');
+    const tool = new GetAgentDiagnosticsTool(workspaceId);
+    await tool.execute({
+      name: 'get_agent_diagnostics',
+      arguments: {},
+      context: { workspaceId, agentId: 'requester', agentName: 'Requester' },
+    } as any);
+    expect(mockRequest).toHaveBeenCalledWith('agent.list', { workspaceId });
   });
 
   it('ReadAgentConversationTool calls agent.get + agent.getConversation', async () => {
