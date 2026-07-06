@@ -151,11 +151,6 @@ export const CHANNEL_METADATA: Record<
     rateLimit: 10,
     category: 'agent',
   },
-  [AGENT_CHANNELS.PERSISTENCE_SAVE]: {
-    description: 'Save agent state to persistence',
-    requiresAuth: true,
-    category: 'agent',
-  },
 
   // Workspace channels
   [WORKSPACE_CHANNELS.CREATE]: {

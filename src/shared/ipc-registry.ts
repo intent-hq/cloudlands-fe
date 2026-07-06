@@ -191,15 +191,6 @@ export const IPC_CHANNELS = {
     REMOVE_WORKFLOW_TAG: 'agent:remove-workflow-tag',
     // Agent model operations
     SET_MODEL: 'agent:set-model',
-    // Agent persistence operations
-    PERSISTENCE_SAVE: 'agent:persistence:save',
-    PERSISTENCE_LOAD: 'agent:persistence:load',
-    PERSISTENCE_DELETE: 'agent:persistence:delete',
-    PERSISTENCE_LIST: 'agent:persistence:list',
-    PERSISTENCE_SAVE_MESSAGE: 'agent:persistence:saveMessage',
-    PERSISTENCE_BATCH: 'agent:persistence:batch',
-    PERSISTENCE_METRICS: 'agent:persistence:metrics',
-    PERSISTENCE_CLEAR: 'agent:persistence:clear',
   },
 
   // Events System

@@ -35,14 +35,6 @@ import {
   AgentSendMessageSchema,
   AgentListSessionsSchema,
   AgentDeleteSessionSchema,
-  AgentPersistenceSaveSchema,
-  AgentPersistenceLoadSchema,
-  AgentPersistenceDeleteSchema,
-  AgentPersistenceListSchema,
-  AgentPersistenceSaveMessageSchema,
-  AgentPersistenceBatchSchema,
-  AgentPersistenceMetricsSchema,
-  AgentPersistenceClearSchema,
   AgentActivateSchema,
   AgentLifecycleStartSchema,
   AgentLifecycleStopSchema,
@@ -92,15 +84,6 @@ export interface IAgentBackendService {
   pauseSession(request: any): Promise<any>;
   getStatus(request: any): Promise<any>;
 
-  // Persistence operations
-  saveAgent(request: AgentIpc.SaveRequest): Promise<AgentIpc.SaveResponse>;
-  loadAgent(request: AgentIpc.LoadRequest): Promise<AgentIpc.LoadResponse>;
-  listSavedAgents(request: AgentIpc.ListSavedRequest): Promise<AgentIpc.ListSavedResponse>;
-  deletePersistedAgent(request: any): Promise<any>;
-  saveMessage(request: any): Promise<any>;
-  batchPersistence(request: any): Promise<any>;
-  getPersistenceMetrics(request: any): Promise<any>;
-  clearPersistence(request: any): Promise<any>;
 
   // Lifecycle operations
   activateAgent(request: AgentIpc.ActivateRequest): Promise<AgentIpc.ActivateResponse>;
@@ -181,7 +164,6 @@ export function registerAgentHandlers(backend: IAgentBackendService): void {
   // Register all handler groups
   registerCoreHandlers(backend);
   registerSessionHandlers(backend);
-  registerPersistenceHandlers(backend);
   registerLifecycleHandlers(backend);
   registerMessagingHandlers(backend);
   registerRulesHandlers();
@@ -640,134 +622,6 @@ function registerSessionHandlers(backend: IAgentBackendService): void {
         return formatIpcSuccess(response);
       },
       AGENT_CHANNELS.GET_STATUS,
-    ),
-  );
-}
-
-/**
- * Register persistence handlers
- */
-function registerPersistenceHandlers(backend: IAgentBackendService): void {
-  // Save agent
-  ipcMain.handle(
-    AGENT_CHANNELS.PERSISTENCE_SAVE,
-    createSafeValidatedHandler(
-      AgentPersistenceSaveSchema,
-      async (_event, validated) => {
-        // Extract agentId and workspaceId from the agent object
-        const request = {
-          agentId: String(validated.agent?.id || ''),
-          workspaceId: String(validated.agent?.workspaceId || ''),
-        };
-        const response = await backend.saveAgent(request as any);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.PERSISTENCE_SAVE,
-    ),
-  );
-
-  // Load agent
-  ipcMain.handle(
-    AGENT_CHANNELS.PERSISTENCE_LOAD,
-    createSafeValidatedHandler(
-      AgentPersistenceLoadSchema,
-      async (_event, validated) => {
-        // Restore branded types
-        const agentId = restoreAgentId(validated.agentId);
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        const request = {
-          ...validated,
-          agentId,
-          workspaceId,
-        };
-        const response = await backend.loadAgent(request as any);
-        return formatIpcSuccess(response.agent);
-      },
-      AGENT_CHANNELS.PERSISTENCE_LOAD,
-    ),
-  );
-
-  // List saved agents
-  ipcMain.handle(
-    AGENT_CHANNELS.PERSISTENCE_LIST,
-    createSafeValidatedHandler(
-      AgentPersistenceListSchema,
-      async (_event, validated) => {
-        // Restore branded WorkspaceId
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        const request = {
-          ...validated,
-          workspaceId,
-        };
-        const response = await backend.listSavedAgents(request as any);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.PERSISTENCE_LIST,
-    ),
-  );
-
-  // Delete persisted agent
-  ipcMain.handle(
-    AGENT_CHANNELS.PERSISTENCE_DELETE,
-    createSafeValidatedHandler(
-      AgentPersistenceDeleteSchema,
-      async (_event, validated) => {
-        const response = await backend.deletePersistedAgent(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.PERSISTENCE_DELETE,
-    ),
-  );
-
-  // Save message
-  ipcMain.handle(
-    AGENT_CHANNELS.PERSISTENCE_SAVE_MESSAGE,
-    createSafeValidatedHandler(
-      AgentPersistenceSaveMessageSchema,
-      async (_event, validated) => {
-        const response = await backend.saveMessage(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.PERSISTENCE_SAVE_MESSAGE,
-    ),
-  );
-
-  // Batch persistence
-  ipcMain.handle(
-    AGENT_CHANNELS.PERSISTENCE_BATCH,
-    createSafeValidatedHandler(
-      AgentPersistenceBatchSchema,
-      async (_event, validated) => {
-        const response = await backend.batchPersistence(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.PERSISTENCE_BATCH,
-    ),
-  );
-
-  // Get persistence metrics
-  ipcMain.handle(
-    AGENT_CHANNELS.PERSISTENCE_METRICS,
-    createSafeValidatedHandler(
-      AgentPersistenceMetricsSchema,
-      async (_event, validated) => {
-        const response = await backend.getPersistenceMetrics(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.PERSISTENCE_METRICS,
-    ),
-  );
-
-  // Clear persistence
-  ipcMain.handle(
-    AGENT_CHANNELS.PERSISTENCE_CLEAR,
-    createSafeValidatedHandler(
-      AgentPersistenceClearSchema,
-      async (_event, validated) => {
-        const response = await backend.clearPersistence(validated);
-        return formatIpcSuccess(response);
-      },
-      AGENT_CHANNELS.PERSISTENCE_CLEAR,
     ),
   );
 }

@@ -697,47 +697,6 @@ export const AgentDeleteSessionSchema = z.union([
   }),
 ]);
 
-export const AgentPersistenceSaveSchema = z.object({
-  agent: z.any(), // AgentSession type
-  workspacePath: z.string().min(1, 'Workspace path is required'),
-});
-
-export const AgentPersistenceLoadSchema = z.object({
-  agentId: z.string().min(1, 'Agent ID is required'),
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  workspacePath: z.string().optional(),
-});
-
-export const AgentPersistenceDeleteSchema = z.object({
-  agentId: z.string().min(1, 'Agent ID is required'),
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const AgentPersistenceListSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  workspacePath: z.string().optional(),
-});
-
-export const AgentPersistenceSaveMessageSchema = z.object({
-  agentId: z.string().min(1, 'Agent ID is required'),
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  message: z.any(), // AgentMessage type
-});
-
-export const AgentPersistenceBatchSchema = z.object({
-  operations: z.array(
-    z.object({
-      type: z.enum(['save', 'load', 'delete']),
-      params: z.any(),
-    }),
-  ),
-});
-
-export const AgentPersistenceMetricsSchema = z.any(); // No params
-
-export const AgentPersistenceClearSchema = z.object({
-  workspaceId: z.string().optional(),
-});
 
 export const AgentActivateSchema = z.object({
   agentId: z.string().min(1, 'Agent ID is required'),

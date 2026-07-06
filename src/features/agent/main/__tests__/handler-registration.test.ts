@@ -122,9 +122,6 @@ vi.mock('../agent-backend-handler.service', () => ({
       handleListAgents: vi.fn(),
       handleDeleteAgent: vi.fn(),
       handleStopSession: vi.fn(),
-      handlePersistenceSave: vi.fn(),
-      handlePersistenceLoad: vi.fn(),
-      handlePersistenceList: vi.fn(),
       handleActivateAgent: vi.fn(),
     })),
   },
@@ -160,9 +157,6 @@ describe('Handler Registration Tests', () => {
         AGENT_CHANNELS.LIST_SESSIONS,
         AGENT_CHANNELS.DELETE_SESSION,
         AGENT_CHANNELS.STOP,
-        AGENT_CHANNELS.PERSISTENCE_SAVE,
-        AGENT_CHANNELS.PERSISTENCE_LOAD,
-        AGENT_CHANNELS.PERSISTENCE_LIST,
         AGENT_CHANNELS.ACTIVATE,
       ];
 

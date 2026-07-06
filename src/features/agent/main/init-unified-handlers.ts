@@ -23,14 +23,6 @@ import {
   AgentSendMessageSchema,
   AgentListSessionsSchema,
   AgentDeleteSessionSchema,
-  AgentPersistenceSaveSchema,
-  AgentPersistenceLoadSchema,
-  AgentPersistenceDeleteSchema,
-  AgentPersistenceListSchema,
-  AgentPersistenceSaveMessageSchema,
-  AgentPersistenceBatchSchema,
-  AgentPersistenceMetricsSchema,
-  AgentPersistenceClearSchema,
   AgentActivateSchema,
   AgentLifecycleStartSchema,
   AgentLifecycleStopSchema,
@@ -77,19 +69,6 @@ function registerAgentValidationSchemas(): void {
   registerValidationSchema(AGENT_CHANNELS.GET_STATS, EmptySchema);
   registerValidationSchema(AGENT_CHANNELS.VALIDATE_SESSION, EmptySchema);
   registerValidationSchema(AGENT_CHANNELS.REPAIR_SESSION, EmptySchema);
-
-  // Persistence channels
-  registerValidationSchema(AGENT_CHANNELS.PERSISTENCE_SAVE, AgentPersistenceSaveSchema);
-  registerValidationSchema(AGENT_CHANNELS.PERSISTENCE_LOAD, AgentPersistenceLoadSchema);
-  registerValidationSchema(AGENT_CHANNELS.PERSISTENCE_DELETE, AgentPersistenceDeleteSchema);
-  registerValidationSchema(AGENT_CHANNELS.PERSISTENCE_LIST, AgentPersistenceListSchema);
-  registerValidationSchema(
-    AGENT_CHANNELS.PERSISTENCE_SAVE_MESSAGE,
-    AgentPersistenceSaveMessageSchema,
-  );
-  registerValidationSchema(AGENT_CHANNELS.PERSISTENCE_BATCH, AgentPersistenceBatchSchema);
-  registerValidationSchema(AGENT_CHANNELS.PERSISTENCE_METRICS, AgentPersistenceMetricsSchema);
-  registerValidationSchema(AGENT_CHANNELS.PERSISTENCE_CLEAR, AgentPersistenceClearSchema);
 
   // Lifecycle channels
   registerValidationSchema(AGENT_CHANNELS.ACTIVATE, AgentActivateSchema);
