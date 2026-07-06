@@ -307,7 +307,6 @@ import { setupDiffsIPC } from '../features/diffs/main/diffs.ipc';
 import { setupEditorIPC } from '../features/editor/main/editor.ipc';
 import { setupEventsIPC } from '../features/events/main/events.ipc';
 import { registerExternalEditorsHandlers } from '../features/external-editors/main/external-editors.ipc';
-import { setupFileTrackingIPC } from '../features/file-tracking/main/file-tracking.ipc';
 import { setupFileIPC } from '../features/file/main/file.ipc';
 import { setupGitTrackingIPC } from '../features/git-tracking/main/git-tracking.ipc';
 import { setupGitIPC } from '../features/git/main/git.ipc';
@@ -351,7 +350,6 @@ import { setupTestingIPC } from '../features/testing/main/testing.ipc';
 import { setupThirdPartySourcesIPC } from '../features/third-party-sources/main/third-party-sources.ipc';
 import { setupUserActivityIPC } from '../features/user-activity/main/user-activity.ipc';
 import { setupFirstVisitStateIPC } from '../features/workspace/main/first-visit-state.ipc';
-import { setupFileAttributionIPC } from '../features/workspace/main/provenance/file-attribution.ipc';
 import { setupRepoConfigIPC } from '../features/workspace/main/repo-config.ipc';
 import {
   initializeChangeDetectorManager,
@@ -1355,7 +1353,6 @@ app.whenReady().then(async () => {
   setupFileIPC();
   setupSystemIPC();
   await setupConfigIPC();
-  setupFileTrackingIPC(); // Needed for agent components
   setupGitIPC(); // Needed for git operations
   setupGitHubAuthIPC(); // Needed for GitHub device flow auth
   setupLinearAuthIPC(); // Needed for Linear auth via Augment
@@ -1414,7 +1411,6 @@ app.whenReady().then(async () => {
     setupFirstVisitStateIPC();
     setupPanelLayoutHistoryIPC();
     setupUserActivityIPC();
-    setupFileAttributionIPC();
 
     // MINIMAL REFACTOR: Commenting out duplicate IPC handler
     registerAgentContextHandlers();

@@ -11,7 +11,6 @@ import {
   FileSystemWorkspaceRepository,
   type WorkspaceRepository,
 } from '../../../workspace/main/workspace.repository';
-import { getAttributionEngine } from '$features/workspace/main/provenance/attribution-engine';
 import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
 import { createWorkspaceEvent } from '$features/events/types';
 import { mainDispatch } from '../../../../store/main/redux-store-bridge';
@@ -335,19 +334,6 @@ export function buildFileApi({ workspaceId, workspacePath, call, fsAdapter }: Fi
 
       await adapter.writeFile(path, content);
       const agentInfo = getAgentInfo(call);
-      getAttributionEngine().recordAgentWrite(
-        {
-          agentId: agentInfo.id,
-          agentName: agentInfo.name,
-          sessionId: call.context?.sessionId,
-          turnNumber: call.context?.metadata?.turnNumber as number | undefined,
-          messageId: `msg-${Date.now()}`,
-        },
-        path,
-        content,
-        workspacePath,
-        workspaceId,
-      );
 
       trackFileOperation(workspaceId, path, 'write');
       sendToWorkspaceWindows(workspaceId, 'file:content-changed', {

@@ -80,10 +80,6 @@ vi.mock('$features/browser/main/browser.ipc', () => ({
   executeBrowserActions: vi.fn(),
 }));
 
-vi.mock('$features/workspace/main/provenance/attribution-engine', () => ({
-  getAttributionEngine: vi.fn(),
-}));
-
 vi.mock('diff', () => ({ default: {} }));
 
 import { buildWorkspaceApi } from '../ws-workspace-api';

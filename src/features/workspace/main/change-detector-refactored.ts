@@ -621,9 +621,8 @@ export class ChangeDetectorRefactored extends EventEmitter {
             await this.eventCoordinator.handleChangesBatch(processed);
             this.performanceMonitor.recordEvent();
 
-            // Also emit 'changes' event for GitIntegrationService to track file changes
-            // This was missing - processFileChanges doesn't queue to batch, so 'changes-batch'
-            // event was never fired and handleChangesBatch (which emits 'changes') was never called
+            // Emit 'changes' event so downstream listeners (e.g. daemon-events bridge) can react.
+            // processFileChanges doesn't queue to batch, so 'changes-batch' would never fire otherwise.
             await this.handleChangesBatch(processed);
 
             // Emit file:content-changed for modified/created files so file viewers update

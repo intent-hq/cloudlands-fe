@@ -225,11 +225,6 @@ export function setupGitIPC() {
           validated.hunkPatch,
         );
         if (result.ok) {
-          // Invalidate the ChangeDetector's git status cache so the next poll gets fresh status
-          const gitIntegration = global.gitIntegrations?.get(workspaceId);
-          if (gitIntegration) {
-            gitIntegration.invalidateGitStatusCache();
-          }
           return { success: true, data: result.data };
         } else {
           return { success: false, error: result.error };
@@ -280,11 +275,6 @@ export function setupGitIPC() {
           validated.hunkPatch,
         );
         if (result.ok) {
-          // Invalidate the ChangeDetector's git status cache so the next poll gets fresh status
-          const gitIntegration = global.gitIntegrations?.get(workspaceId);
-          if (gitIntegration) {
-            gitIntegration.invalidateGitStatusCache();
-          }
           return { success: true, data: result.data };
         } else {
           return { success: false, error: result.error };

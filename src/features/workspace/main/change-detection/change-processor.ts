@@ -15,7 +15,6 @@ import {
   extractChangesFromContents,
 } from '../../../diffs/main/extract-change-hunks';
 import { GitignoreManager } from '../../../../lib/utils/main/gitignore-manager';
-import { getAttributionEngine } from '../provenance/attribution-engine';
 import { Logger } from '../../../../shared/logger';
 import type { WorkspaceEventType, WorkspaceEvent } from '../../../../features/events/types';
 import { CHANGE_DETECTION_CONFIG } from './detection.config';
@@ -23,10 +22,6 @@ import type { GitDiffResult } from './git-types';
 // Import FileChange from the shared types instead of defining locally
 import type { FileChange } from '$shared/types/change-detector.types';
 export type { FileChange } from '$shared/types/change-detector.types';
-import {
-  isGitRepository,
-  storeBlob,
-} from '../../../../shared/git/git-blob-storage';
 import { isBinaryExtension } from '../../../../shared/binary-file-extensions';
 import {
   partitionDefaultFileTrackingExcludes,
@@ -71,13 +66,11 @@ export class ChangeProcessor extends EventEmitter {
   private batchQueue: ProcessedChange[] = [];
   private batchTimer: NodeJS.Timeout | null = null;
   private cleanupTimer: NodeJS.Timeout | null = null;
-  private attributionEngine = getAttributionEngine();
   private stats: ProcessorStats = {
     totalProcessed: 0,
     totalEmitted: 0,
     duplicatesFiltered: 0,
   };
-  private isGitRepo: boolean | null = null; // Cached git repo check
 
   constructor(workspacePath: string, workspaceId: string) {
     super();
@@ -94,7 +87,6 @@ export class ChangeProcessor extends EventEmitter {
    */
   async initialize(): Promise<void> {
     try {
-      this.isGitRepo = await isGitRepository(this.workspacePath);
       await this.gitignoreManager.initialize();
       logger.info('Change processor initialized', { workspaceId: this.workspaceId });
     } catch (error) {
@@ -210,46 +202,6 @@ export class ChangeProcessor extends EventEmitter {
         diff: diff?.diff,
         content,
       };
-
-      // Get attribution - pass newContent for content-based matching and workspaceId
-      const provenance = await this.attributionEngine.attributeChange(
-        {
-          filePath,
-          action: change.action.toLowerCase() as any,
-          additions: change.additions,
-          deletions: change.deletions,
-          diff: change.diff,
-          newContent: change.content, // Used for content-based agent attribution
-        },
-        this.workspaceId,
-      );
-
-      // Convert provenance to actor, including sessionId and turnNumber for agent attribution
-      if (provenance.source === 'agent' && provenance.agent) {
-        change.actor = {
-          type: 'agent' as const,
-          id: provenance.agent.id || uuidv4(),
-          name: provenance.agent.name || 'Agent',
-          // Include session and turn info for linking changes to specific agent turns
-          sessionId: provenance.agent.sessionId,
-          turnNumber: provenance.chat?.turnNumber,
-          messageId: provenance.chat?.messageId,
-        };
-      } else if (provenance.source === 'system') {
-        change.actor = {
-          type: 'user' as const,
-          id: 'system',
-          name: 'System',
-          email: 'system@workspace',
-        };
-      } else {
-        change.actor = {
-          type: 'user' as const,
-          id: 'user',
-          name: 'User',
-          email: 'user@workspace',
-        };
-      }
 
       // Create event
       const event = await this.createEvent(change);
@@ -408,29 +360,6 @@ export class ChangeProcessor extends EventEmitter {
       name: 'System',
     };
 
-    // Store content as git blobs when in a git repo
-    let content = change.content;
-    let oldContent = change.oldContent;
-    let contentSha: string | undefined;
-    let oldContentSha: string | undefined;
-
-    if (this.isGitRepo) {
-      if (change.content) {
-        const sha = await storeBlob(change.content, this.workspacePath);
-        if (sha) {
-          contentSha = sha;
-          content = undefined; // Don't store inline if blob succeeded
-        }
-      }
-      if (change.oldContent) {
-        const sha = await storeBlob(change.oldContent, this.workspacePath);
-        if (sha) {
-          oldContentSha = sha;
-          oldContent = undefined; // Don't store inline if blob succeeded
-        }
-      }
-    }
-
     return {
       id: uuidv4(),
       workspaceId: this.workspaceId,
@@ -450,10 +379,10 @@ export class ChangeProcessor extends EventEmitter {
         deletions: change.deletions,
         stage: change.stage,
         diff: change.diff,
-        newContent: content,
-        oldContent,
-        newContentSha: contentSha,
-        oldContentSha,
+        newContent: change.content,
+        oldContent: change.oldContent,
+        newContentSha: undefined,
+        oldContentSha: undefined,
       },
       metadata: {
         filePath: change.path,

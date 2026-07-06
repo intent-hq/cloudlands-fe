@@ -184,12 +184,6 @@ async function stopMetadataSyncServiceForWorkspace(
   return true;
 }
 
-// Global storage for git integrations
-declare global {
-  var gitIntegrations: Map<string, any> | undefined;
-  var gitIntegrationLocks: Map<string, Promise<void>> | undefined;
-}
-
 // Use the singleton change detector manager instance
 const changeDetectorManager = singletonChangeDetectorManager;
 
@@ -575,53 +569,6 @@ export function setupWorkspaceIPC(): void {
         logger.info('[WorkspaceIPC] Closing workspace', { workspaceId: id });
 
         try {
-          // Clean up git integration first
-          if (global.gitIntegrations?.has(id)) {
-            try {
-              const gitIntegration = global.gitIntegrations.get(id);
-              if (gitIntegration) {
-                gitIntegration.stopListening();
-                gitIntegration.removeAllListeners();
-                global.gitIntegrations.delete(id);
-                logger.info('[WorkspaceIPC] Cleaned up git integration', { workspaceId: id });
-              }
-            } catch (error) {
-              logger.warn('[WorkspaceIPC] Failed to cleanup git integration', error as Error, {
-                workspaceId: id,
-              });
-            }
-          }
-
-          // Clean up any pending initialization locks
-          if (global.gitIntegrationLocks?.has(id)) {
-            global.gitIntegrationLocks.delete(id);
-          }
-
-          // Stop file tracking storage cleanup timer
-          try {
-            const { FileTrackingStorage } =
-              await import('../../file-tracking/main/file-tracking-storage');
-            // Cleanup the specific workspace instance to stop cleanup timers
-            FileTrackingStorage.cleanupWorkspace(id);
-            logger.debug('[WorkspaceIPC] File tracking storage cleanup', { workspaceId: id });
-          } catch (error) {
-            logger.warn('[WorkspaceIPC] Failed to cleanup file tracking storage', error as Error, {
-              workspaceId: id,
-            });
-          }
-
-          // Clean up file tracking service (force-save pending changes, stop timers, remove from cache)
-          try {
-            const { cleanupGitIntegration } =
-              await import('../../file-tracking/main/file-tracking.ipc');
-            await cleanupGitIntegration(id);
-            logger.debug('[WorkspaceIPC] File tracking service cleanup', { workspaceId: id });
-          } catch (error) {
-            logger.warn('[WorkspaceIPC] Failed to cleanup file tracking service', error as Error, {
-              workspaceId: id,
-            });
-          }
-
           // Stop change detector monitoring
           if (changeDetectorManager) {
             try {
@@ -738,8 +685,7 @@ export function setupWorkspaceIPC(): void {
   //
   // ⚠️  IMPORTANT: This handler has critical side effects beyond just "opening" the workspace:
   //    1. Starts ChangeDetectorManager monitoring (git polling for file changes)
-  //    2. Initializes GitIntegrationService (emits file-tracking:changes-updated events)
-  //    3. Sets up activity log event service integration
+  //    2. Warms caches / starts notification and scripts services
   //
   // Without these side effects, the UI will NOT receive file change updates,
   // causing the activity log and changed files list to appear empty.
@@ -977,86 +923,6 @@ export function setupWorkspaceIPC(): void {
                 durationMs: Date.now() - monitoringStart,
               });
 
-              // Get the detector once for both git integration and activity log
-              const detector = manager.getChangeDetector(id);
-
-              // Start BOTH git integration and activity log in PARALLEL
-              // They both only need the detector and don't depend on each other
-              const gitIntegrationStart = Date.now();
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              const activityLogStart = Date.now();
-
-              // Git integration promise
-              const gitIntegrationPromise = (async () => {
-                try {
-                  if (detector) {
-                    // Initialize global gitIntegrations map if needed
-                    if (!global.gitIntegrations) {
-                      global.gitIntegrations = new Map();
-                    }
-                    if (!global.gitIntegrationLocks) {
-                      global.gitIntegrationLocks = new Map();
-                    }
-
-                    // Use a lock to prevent concurrent initialization
-                    const initLock = global.gitIntegrationLocks.get(id);
-                    if (initLock) {
-                      logger.debug('Waiting for existing git integration initialization', {
-                        workspaceId: id,
-                      });
-                      await initLock;
-                      // Check if it was successfully initialized
-                      if (global.gitIntegrations.has(id)) {
-                        logger.debug('Git integration already initialized', { workspaceId: id });
-                        return;
-                      }
-                    }
-
-                    // Create initialization promise
-                    const initPromise = initializeGitIntegration(
-                      id,
-                      workspace.worktreePath,
-                      detector,
-                      {
-                        baseRef: workspace.baseRef,
-                        baseCommitSha: workspace.baseCommitSha,
-                        createdAt: workspace.createdAt,
-                      },
-                      !!workspace.environmentConfig?.ssh,
-                    );
-                    global.gitIntegrationLocks.set(id, initPromise);
-
-                    try {
-                      await initPromise;
-                      logger.info('Git integration initialized successfully', { workspaceId: id });
-                    } catch (error) {
-                      logger.error('Failed to initialize git integration', error as Error, {
-                        workspaceId: id,
-                      });
-                    } finally {
-                      global.gitIntegrationLocks.delete(id);
-                    }
-
-                    // Send an initial event to notify the frontend that the listener is ready
-                    sendToWorkspaceWindows(id, 'file-tracking:listener-ready', { workspaceId: id });
-                  } else {
-                    logger.warn('No change detector available for git integration', {
-                      workspaceId: id,
-                    });
-                  }
-
-                  logger.info('Initialized file tracking system', {
-                    workspaceId: id,
-                    durationMs: Date.now() - gitIntegrationStart,
-                  });
-                } catch (error) {
-                  logger.error('Failed to initialize file tracking', error as Error, {
-                    workspaceId: id,
-                    durationMs: Date.now() - gitIntegrationStart,
-                  });
-                }
-              })();
-
               // Activity log promise (event service removed — Redux handles events now)
               const activityLogPromise = (async () => {
                 try {
@@ -1160,7 +1026,6 @@ export function setupWorkspaceIPC(): void {
 
               // Wait for ALL to complete in parallel
               await Promise.all([
-                gitIntegrationPromise,
                 activityLogPromise,
                 cacheWarmingPromise,
                 notificationServicePromise,
@@ -1220,36 +1085,6 @@ export function setupWorkspaceIPC(): void {
       async (_, validated) => {
         const result = await protocolAdapter.updateWorkspace(validated);
 
-        // If baseCommitSha or baseRef changed, update the GitIntegrationService's metadata
-        // so that loadCommittedChanges() uses the new boundary on next sync.
-        // Wrapped in try-catch: this is a side-effect — it must not break the update response.
-        if (
-          result.ok &&
-          validated.id &&
-          (validated.baseCommitSha !== undefined || validated.baseRef !== undefined)
-        ) {
-          try {
-            const gitIntegration = global.gitIntegrations?.get(validated.id);
-            if (gitIntegration && typeof gitIntegration.updateWorkspaceMetadata === 'function') {
-              // Fetch fresh workspace data to get the complete metadata
-              const wsResult = await protocolAdapter.getWorkspace(validated.id);
-              if (wsResult) {
-                gitIntegration.updateWorkspaceMetadata({
-                  baseRef: wsResult.baseRef,
-                  baseCommitSha: wsResult.baseCommitSha,
-                  createdAt: wsResult.createdAt,
-                });
-              }
-            }
-          } catch (metadataError) {
-            // Non-fatal: the update succeeded, metadata sync can retry on next sync cycle
-            logger.warn('Failed to sync GitIntegration metadata after workspace update', {
-              workspaceId: validated.id,
-              error: (metadataError as Error).message,
-            });
-          }
-        }
-
         return resultToCommandResponse(result);
       },
       WORKSPACE_CHANNELS.UPDATE,
@@ -1308,40 +1143,6 @@ export function setupWorkspaceIPC(): void {
             workspaceId: validatedId,
           });
         }
-
-        // Clean up git integration locks
-        if (global.gitIntegrationLocks?.has(validatedId)) {
-          global.gitIntegrationLocks.delete(validatedId);
-        }
-
-        // Stop file tracking storage cleanup timer
-        try {
-          const { FileTrackingStorage } =
-            await import('../../file-tracking/main/file-tracking-storage');
-          FileTrackingStorage.cleanupWorkspace(validatedId);
-          logger.debug('File tracking storage cleanup before delete', {
-            workspaceId: validatedId,
-          });
-        } catch (error) {
-          logger.warn('Failed to cleanup file tracking storage before delete', error as Error, {
-            workspaceId: validatedId,
-          });
-        }
-
-        // Clean up file tracking service (force-save, stop timers, remove from cache)
-        try {
-          const { cleanupGitIntegration } =
-            await import('../../file-tracking/main/file-tracking.ipc');
-          await cleanupGitIntegration(validatedId);
-          logger.debug('File tracking service cleanup before delete', {
-            workspaceId: validatedId,
-          });
-        } catch (error) {
-          logger.warn('Failed to cleanup file tracking service before delete', error as Error, {
-            workspaceId: validatedId,
-          });
-        }
-
 
         // Clean up notification service
         try {
@@ -2818,84 +2619,4 @@ export function setupWorkspaceIPC(): void {
   );
 
   logger.info('Workspace IPC handlers setup complete');
-}
-
-/**
- * Initialize git integration for a workspace
- */
-async function initializeGitIntegration(
-  workspaceId: string,
-  worktreePath: string,
-  detector: any,
-  workspaceMetadata?: { baseRef?: string; baseCommitSha?: string; createdAt?: string },
-  isRemote?: boolean,
-): Promise<void> {
-  // Ensure global maps are initialized
-  if (!global.gitIntegrations) {
-    global.gitIntegrations = new Map();
-  }
-
-  // Check if we already have a git integration for this workspace
-  let gitIntegration = global.gitIntegrations.get(workspaceId);
-
-  if (gitIntegration) {
-    // Stop the existing listener before setting up a new one
-    logger.info('Stopping existing git integration before reinitializing', { workspaceId });
-    gitIntegration.stopListening();
-    gitIntegration.removeAllListeners();
-  }
-
-  // Create new git integration
-  const { GitIntegrationService } =
-    await import('../../file-tracking/main/git-integration.service');
-  const { FileTrackingService } = await import('../../file-tracking/main/file-tracking.service');
-  const { gitService } = await import('../../git/main/git.service');
-
-  const fileTrackingService = new FileTrackingService(workspaceId, worktreePath, isRemote);
-  gitIntegration = new GitIntegrationService(
-    workspaceId,
-    worktreePath,
-    fileTrackingService,
-    isRemote ? undefined : gitService,
-    workspaceMetadata,
-    isRemote,
-  );
-
-  // Listen for changes tracked event and notify frontend
-  const changeHandler = (data: any) => {
-    // PERF: Changed from INFO to DEBUG - called for every file tracking change
-    logger.debug('[WorkspaceIPC] Forwarding changes-tracked event to frontend', {
-      workspaceId: data.workspaceId,
-      changeCount: data.changeCount,
-      source: data.source,
-    });
-    // Send to windows viewing this workspace
-    sendToWorkspaceWindows(data.workspaceId, 'file-tracking:changes-updated', {
-      workspaceId: data.workspaceId,
-      changeCount: data.changeCount,
-      source: data.source,
-    });
-  };
-
-  // NOTE: We only listen for 'changes-tracked' here.
-  // File change events for the activity log are emitted via EventCoordinator -> activity-log-event -> Redux (emitWorkspaceEvent)
-  // Adding a 'file-changed' listener here was causing duplicate events in the activity log.
-  gitIntegration.on('changes-tracked', changeHandler);
-
-  // Skip the expensive initial sync for freshly created workspaces.
-  // A brand-new worktree has zero uncommitted changes and zero commits ahead,
-  // so syncCurrentState() would do ~3s of git operations returning empty results.
-  // We detect "fresh" by checking if createdAt is within the last 30 seconds.
-  const isFreshWorkspace =
-    workspaceMetadata?.createdAt &&
-    Date.now() - new Date(workspaceMetadata.createdAt).getTime() < 30_000;
-
-  await gitIntegration.startListening(detector, {
-    skipInitialSync: !!isFreshWorkspace,
-  });
-
-  // Store the git integration for cleanup later
-  global.gitIntegrations.set(workspaceId, gitIntegration);
-
-  logger.info('Set up git integration', { workspaceId, skippedInitialSync: !!isFreshWorkspace });
 }
