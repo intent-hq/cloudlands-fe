@@ -16,6 +16,7 @@ import {
   type CircuitStatus,
 } from '$shared/services/agent-circuit-breaker';
 import { getWindowIdsForWorkspace } from '../../system/main/system.ipc';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 
 const logger = new Logger('AgentMissing-IPC');
 
@@ -96,19 +97,69 @@ export function registerMissingAgentHandlers(): void {
     }
   }
 
-  // Get active streams - used by frontend to re-register IPC handlers after page refresh/HMR
-  // Now includes accumulated content so frontend can restore without losing chunks
+  // Cross-workspace active-streams probe used by the renderer
+  // `active-streams-tracker` to know which agents are mid-turn across ALL
+  // workspaces (workspace switcher, sidebar cards, delete guards). The
+  // authoritative signal now lives in the daemon (PROTOCOL.md §5.5): iterate
+  // `workspace.list` → `agent.list` per workspace and filter on the AgentLite
+  // `isStreaming || isResponding` flags. Response shape stays
+  // { agentId, sessionId, workspaceId, startTime } per the tracker's
+  // `ActiveStream` interface; `agentId = sessionId = AgentLite.id`, `startTime`
+  // is best-effort from `updatedAt` (parsed to epoch ms, 0 on parse failure).
   ipcMain.handle('agent:get-active-streams', async () => {
     try {
-      // Import AgentBackendHandler dynamically to avoid circular dependencies
-      const { AgentBackendHandler } = await import('./agent-backend-handler.service');
-      const handler = AgentBackendHandler.getInstance();
-      const activeStreams = handler.getActiveStreams();
+      const client = getBackendClient();
+      const workspaceListResult = (await client.request('workspace.list')) as
+        | { workspaces?: Array<Record<string, unknown>> }
+        | undefined;
+      const workspaces = Array.isArray(workspaceListResult?.workspaces)
+        ? workspaceListResult!.workspaces!
+        : [];
+
+      const perWorkspace = await Promise.all(
+        workspaces.map(async (ws) => {
+          const workspaceId = String(ws.id ?? ws.workspaceId ?? '');
+          if (!workspaceId) return [];
+          try {
+            const agentListResult = (await client.request('agent.list', { workspaceId })) as
+              | {
+                  agents?: Array<{
+                    id?: string;
+                    isStreaming?: boolean;
+                    isResponding?: boolean;
+                    updatedAt?: string;
+                  }>;
+                }
+              | undefined;
+            const agents = Array.isArray(agentListResult?.agents)
+              ? agentListResult!.agents!
+              : [];
+            return agents
+              .filter(
+                (agent) => agent.isStreaming === true || agent.isResponding === true,
+              )
+              .map((agent) => {
+                const agentId = String(agent.id ?? '');
+                const parsed = agent.updatedAt ? Date.parse(agent.updatedAt) : NaN;
+                const startTime = Number.isFinite(parsed) ? parsed : 0;
+                return { agentId, sessionId: agentId, workspaceId, startTime };
+              })
+              .filter((entry) => entry.agentId.length > 0);
+          } catch (error) {
+            logger.warn('agent.list failed during active-streams probe; skipping workspace', {
+              workspaceId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return [];
+          }
+        }),
+      );
+
+      const activeStreams = perWorkspace.flat();
 
       logger.debug('agent:get-active-streams called', {
         count: activeStreams.length,
         agentIds: activeStreams.map((s) => s.agentId),
-        withAccumulatedContent: activeStreams.filter((s) => s.accumulatedContent).length,
       });
 
       return {

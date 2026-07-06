@@ -8,7 +8,6 @@
 import { ipcMain } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
-import { AgentBackendHandler } from '../../agent/main/agent-backend-handler.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 
 const logger = new Logger('DebugIPC');
@@ -81,33 +80,52 @@ export function setupDebugIPC(): void {
         hasMessage: !!message,
       });
 
-      try {
-        const handler = AgentBackendHandler.getInstance();
+      // messageMetadata was FE-only bookkeeping on the retired
+      // sendBackendInitiatedMessage path; the daemon `agent.sendMessage`
+      // (PROTOCOL.md §5.5) has no such param, so it stays log-only here.
+      const messageMetadata = {
+        type: 'debug_test',
+        source: 'debug:trigger-backend-resume',
+        timestamp: new Date().toISOString(),
+      };
+      logger.debug('Debug: wake messageMetadata (log-only, not sent on the wire)', {
+        agentId,
+        workspaceId,
+        messageMetadata,
+      });
 
-        // Use the sendBackendInitiatedMessage flow
-        const result = await handler.sendBackendInitiatedMessage({
-          sessionId: agentId,
+      const content =
+        message ||
+        `[DEBUG] Backend-initiated wake test at ${new Date().toISOString()}. ` +
+          'This message was sent to test the frontend handshake flow. ' +
+          'Please acknowledge receipt.';
+
+      try {
+        // Route through the daemon (PROTOCOL.md §5.5 `agent.sendMessage`): the
+        // daemon auto-queues when the target is mid-turn, returning
+        // `{ success, queued, messageId? }`. Per the §5.5 migration note,
+        // `queued: true` replaces the FE-only `errorCode: "ALREADY_STREAMING"`
+        // signal — treat it as the "already streaming" case for the debug flow
+        // (still a successful delivery, just queued behind the in-flight turn).
+        const result = (await getBackendClient().request('agent.sendMessage', {
+          agentId,
+          content,
           workspaceId,
-          message:
-            message ||
-            `[DEBUG] Backend-initiated wake test at ${new Date().toISOString()}. ` +
-              'This message was sent to test the frontend handshake flow. ' +
-              'Please acknowledge receipt.',
-          messageMetadata: {
-            type: 'debug_test',
-            source: 'debug:trigger-backend-resume',
-            timestamp: new Date().toISOString(),
-          },
-        });
+        })) as { success?: boolean; queued?: boolean; messageId?: string };
 
         logger.info('Debug: Backend-initiated resume result', {
           agentId,
           workspaceId,
-          success: result.success,
-          error: result.error,
+          success: result?.success ?? false,
+          queued: result?.queued ?? false,
+          messageId: result?.messageId,
         });
 
-        return result;
+        return {
+          success: result?.success ?? false,
+          queued: result?.queued ?? false,
+          messageId: result?.messageId,
+        };
       } catch (error) {
         logger.error('Debug: Backend-initiated resume failed', {
           agentId,

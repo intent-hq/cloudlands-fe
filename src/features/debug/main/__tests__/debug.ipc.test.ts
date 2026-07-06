@@ -93,3 +93,99 @@ describe('debug IPC LIST_AGENTS wire contract', () => {
     expect(String(result.error)).toContain('boom');
   });
 });
+
+// C1d-3: TRIGGER_BACKEND_RESUME routes through the daemon `agent.sendMessage`
+// (PROTOCOL.md §5.5) instead of the retired FE `sendBackendInitiatedMessage`
+// path. `messageMetadata` becomes log-only (no daemon param); `queued: true`
+// replaces the removed `errorCode: "ALREADY_STREAMING"` signal.
+describe('debug IPC TRIGGER_BACKEND_RESUME wire contract', () => {
+  it('forwards { agentId, content, workspaceId } to agent.sendMessage and returns the daemon result', async () => {
+    const { setupDebugIPC } = await import('../debug.ipc');
+    setupDebugIPC();
+
+    const calls = (ipcMain.handle as any).mock.calls as Array<[string, Function]>;
+    const entry = calls.find(([channel]) => channel === IPC_CHANNELS.DEBUG.TRIGGER_BACKEND_RESUME);
+    expect(entry, 'TRIGGER_BACKEND_RESUME handler must be registered in dev').toBeDefined();
+    const handler = entry![1];
+
+    request.mockResolvedValueOnce({ success: true, queued: false, messageId: 'user-msg-1' });
+
+    const result = await handler({} as any, {
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      message: 'wake up',
+    });
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith('agent.sendMessage', {
+      agentId: 'agent-1',
+      content: 'wake up',
+      workspaceId: 'ws-1',
+    });
+    expect(result).toEqual({ success: true, queued: false, messageId: 'user-msg-1' });
+  });
+
+  it('surfaces the daemon `queued: true` result verbatim (the "already streaming" signal per PROTOCOL §5.5 migration note)', async () => {
+    const { setupDebugIPC } = await import('../debug.ipc');
+    setupDebugIPC();
+
+    const calls = (ipcMain.handle as any).mock.calls as Array<[string, Function]>;
+    const handler = calls.find(([channel]) => channel === IPC_CHANNELS.DEBUG.TRIGGER_BACKEND_RESUME)![1];
+
+    request.mockResolvedValueOnce({ success: true, queued: true, messageId: 'user-msg-2' });
+
+    const result = await handler({} as any, {
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      message: 'wake again',
+    });
+
+    expect(request).toHaveBeenCalledWith('agent.sendMessage', {
+      agentId: 'agent-1',
+      content: 'wake again',
+      workspaceId: 'ws-1',
+    });
+    expect(result).toEqual({ success: true, queued: true, messageId: 'user-msg-2' });
+  });
+
+  it('falls back to a synthesised debug message when no `message` is supplied', async () => {
+    const { setupDebugIPC } = await import('../debug.ipc');
+    setupDebugIPC();
+
+    const calls = (ipcMain.handle as any).mock.calls as Array<[string, Function]>;
+    const handler = calls.find(([channel]) => channel === IPC_CHANNELS.DEBUG.TRIGGER_BACKEND_RESUME)![1];
+
+    request.mockResolvedValueOnce({ success: true, queued: false });
+
+    await handler({} as any, { workspaceId: 'ws-1', agentId: 'agent-1' });
+
+    expect(request).toHaveBeenCalledTimes(1);
+    const [method, params] = request.mock.calls[0] as [string, Record<string, unknown>];
+    expect(method).toBe('agent.sendMessage');
+    expect(params.agentId).toBe('agent-1');
+    expect(params.workspaceId).toBe('ws-1');
+    expect(typeof params.content).toBe('string');
+    expect(String(params.content)).toContain('[DEBUG] Backend-initiated wake test');
+    // messageMetadata is FE-log-only per PROTOCOL §5.5; it must NOT appear on the wire.
+    expect(params).not.toHaveProperty('messageMetadata');
+  });
+
+  it('returns { success: false, error } when the daemon rejects', async () => {
+    const { setupDebugIPC } = await import('../debug.ipc');
+    setupDebugIPC();
+
+    const calls = (ipcMain.handle as any).mock.calls as Array<[string, Function]>;
+    const handler = calls.find(([channel]) => channel === IPC_CHANNELS.DEBUG.TRIGGER_BACKEND_RESUME)![1];
+
+    request.mockRejectedValueOnce(new Error('rpc boom'));
+
+    const result = await handler({} as any, {
+      workspaceId: 'ws-1',
+      agentId: 'agent-1',
+      message: 'x',
+    });
+
+    expect(result.success).toBe(false);
+    expect(String(result.error)).toContain('rpc boom');
+  });
+});
