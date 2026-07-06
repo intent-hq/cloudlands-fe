@@ -7,7 +7,7 @@ import { backgroundGitOpsService } from '../../../git/main/background-git-ops.se
 import { gitService } from '$features/git/main/git.service';
 import { getWorkspaceGitInfo } from '$features/git/main/git-router';
 import { assertAgentCommitAllowed } from '$features/workspace/main/workspace-settings.service';
-import { commitAgentChanges } from '$features/agent/main/agent-commit.service';
+import { getBackendClient } from '$features/backend/main/backend.ipc';
 import { execFileAsync } from '$shared/git/git-env';
 
 type ExecFileFn = (
@@ -149,27 +149,35 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
           message,
         });
 
-        const result = await commitAgentChanges({
+        // Compose the Agent-Id trailer here: the daemon's `git.agentCommit`
+        // wire arm has no agent context (router.rs:1325) so attribution
+        // trailers are the MCP layer's responsibility.
+        const fullMessage = buildAgentCommitMessage(message, agentId);
+
+        const result = await getBackendClient().request<{
+          hash?: string;
+          files?: string[];
+          fileCount?: number;
+        }>('git.agentCommit', {
           workspaceId,
-          agentId,
-          message,
+          message: fullMessage,
           files: opts.files,
+          userRequested: opts.userRequested ?? false,
         });
 
-        if (!result.ok) {
-          backgroundGitOpsService.failOperation(operationId, result.error);
-          throw new Error(result.error);
-        }
+        const hash = result?.hash ?? '';
+        const files = Array.isArray(result?.files) ? result.files : [];
+        const fileCount = typeof result?.fileCount === 'number' ? result.fileCount : files.length;
 
         backgroundGitOpsService.completeOperation(operationId, {
-          commitHash: result.data.hash,
+          commitHash: hash,
         });
 
         return {
           ok: true as const,
-          hash: result.data.hash,
-          files: result.data.files,
-          fileCount: result.data.fileCount,
+          hash,
+          files,
+          fileCount,
         };
       } catch (error) {
         if (operationId) {
@@ -219,6 +227,11 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
       return { ...result, targetBranch, currentBranch };
     },
   };
+}
+
+function buildAgentCommitMessage(message: string, agentId: string): string {
+  const clean = message.trim().replace(/\n{3,}/g, '\n\n');
+  return `${clean}\n\nAgent-Id: ${agentId}`;
 }
 
 async function detectDefaultBranch(worktreePath: string, execFile: ExecFileFn): Promise<string | null> {
