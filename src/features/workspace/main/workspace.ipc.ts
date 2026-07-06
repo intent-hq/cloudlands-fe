@@ -29,7 +29,6 @@ import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/
 import { WorkspaceConfig } from '../../../shared/main/config.js';
 import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import { RemoteRPCError } from '../../../shared/main/remote-rpc-client';
-import { getAttributionEngine } from './provenance/attribution-engine';
 import { InstructionService } from '../../agent/main/instruction-service';
 import { execAsync } from '../../../shared/git/git-env';
 import { getNotificationService } from '../../notifications/main/notification.service';
@@ -47,7 +46,7 @@ import {
   shutdownOtherWatchers,
   type UnifiedWorkspaceWatcher,
 } from './unified-workspace-watcher';
-import { TRACKING_CONFIG } from '../../file-tracking/tracking.config';
+import { CHANGE_DETECTION_CONFIG } from './change-detection/detection.config';
 import { isBinaryExtension } from '../../../shared/binary-file-extensions';
 import {
   initRepoRegistry,
@@ -787,11 +786,8 @@ export function setupWorkspaceIPC(): void {
 
         // Check if workspace exists (not null)
         if (workspace) {
-          // Load agent writes for this workspace (for content-based attribution)
-          const attributionEngine = getAttributionEngine();
-          await attributionEngine.ensureWorkspaceLoaded(id);
-          logger.info('[WorkspaceIPC] Loaded agent writes for workspace', { workspaceId: id });
-
+          // Attribution is owned by the daemon (§17.4 / §5.19); no FE-side
+          // agent-writes cache to warm here.
           const manager = initializeChangeDetectorManager();
           logger.info('[WorkspaceIPC] Got change detector manager', { workspaceId: id });
 
@@ -812,8 +808,8 @@ export function setupWorkspaceIPC(): void {
           const worktreePath = workspace.worktreePath || workspace.repositoryPath;
           if (worktreePath && !isRemote) {
             if (
-              TRACKING_CONFIG.changeDetection.gitPollingOnly ||
-              TRACKING_CONFIG.changeDetection.disableFileWatcher
+              CHANGE_DETECTION_CONFIG.gitPollingOnly ||
+              CHANGE_DETECTION_CONFIG.disableFileWatcher
             ) {
               logger.info('[WorkspaceIPC] Skipping native file watcher (git polling mode)', {
                 workspaceId: id,

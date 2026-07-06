@@ -89,16 +89,13 @@ vi.mock('../unified-workspace-watcher', () => ({
   shutdownUnifiedWatcher: vi.fn(),
   shutdownOtherWatchers: vi.fn(),
 }));
-vi.mock('../../../file-tracking/tracking.config', () => ({
-  TRACKING_CONFIG: { changeDetection: { gitPollingOnly: false, disableFileWatcher: false } },
+vi.mock('../change-detection/detection.config', () => ({
+  CHANGE_DETECTION_CONFIG: { gitPollingOnly: false, disableFileWatcher: false },
 }));
 vi.mock('../../../../shared/binary-file-extensions', () => ({ isBinaryExtension: vi.fn(() => false) }));
 vi.mock('../../../../shared/main/remote-rpc-manager', () => ({ remoteRPCManager: {} }));
 vi.mock('../../../agent/main/instruction-service', () => ({
   InstructionService: { getInstance: vi.fn(() => ({ warmCache: vi.fn() })) },
-}));
-vi.mock('../../../workspace/main/provenance/attribution-engine', () => ({
-  getAttributionEngine: vi.fn(() => ({ ensureWorkspaceLoaded: vi.fn() })),
 }));
 vi.mock('../../../../shared/git/git-env', () => ({ execAsync: vi.fn() }));
 vi.mock('../../../notifications/main/notification.service', () => ({
