@@ -2,7 +2,7 @@ import type { Proposal } from '$shared/types/proposal';
 import { createProposalResource } from '$shared/types/proposal-resource';
 import type { ContentBlock } from '$shared/types';
 import { Logger } from '$shared/logger';
-import { testStreamManager as streamSessionManager } from '$features/agent/main/agent-providers/acp-provider-streaming';
+import { testStreamManager as streamSessionManager } from './stream-session-registry';
 import * as messageAccumulator from '../../../../store/main/slices/message-accumulator/message-accumulator-api';
 import type { ContentItem } from './protocol';
 

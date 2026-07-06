@@ -373,8 +373,7 @@ import { prefetchProviderModelCaches } from './utils/model-pool';
 
 import { agentBackendHandler } from '../features/agent/main/agent-backend-handler.service';
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
-import { agentPoolService } from '../features/agent/main/agent-pool.service';
-import { cleanupStaleTempFiles } from '../features/agent/main/agent-providers/acp-provider';
+import { cleanupStaleTempFiles } from '../shared/main/temp-files';
 import { initializeUnifiedAgentHandlers } from '../features/agent/main/init-unified-handlers';
 import { initSpecialistsService } from '../features/agent/main/specialists.service';
 import { initAppSettingsService } from '../features/workspace/main/app-settings.service';
@@ -2001,14 +2000,6 @@ app.on('window-all-closed', async () => {
 
   // Cleanup all IPC handlers
   ipcCleanupManager.cleanupAll();
-
-  // Cleanup agent pool (warm providers)
-  try {
-    await agentPoolService.disposeAll();
-    logger.info('Agent pool disposed');
-  } catch (error) {
-    logger.error('Failed to dispose agent pool', error as Error);
-  }
 
   // Persist in-flight streaming agents BEFORE backend shutdown so the
   // clean-quit flush runs against live state. On Windows/Linux this is the

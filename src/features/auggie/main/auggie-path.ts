@@ -35,7 +35,7 @@ export function getEnhancedPath(): string {
  * then a scan of the enhanced PATH including nvm/fnm/volta/asdf/homebrew).
  *
  * Return contract is unchanged (`string | null`) so existing consumers in
- * `provider-availability.service.ts`, `acp-provider.ts`, and the spawn
+ * `provider-availability.service.ts` and the spawn
  * helpers in `execute-auggie-command.ts` keep working without changes.
  */
 export async function findAuggiePathAsync(): Promise<string | null> {

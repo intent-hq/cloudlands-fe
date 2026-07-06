@@ -238,7 +238,7 @@ function valueForResult(definition: AppSettingDefinition, value: unknown): unkno
  * Read `mcp.servers` through the daemon's §5.22 `mcp.servers.list` surface
  * instead of `~/.augment/settings.json` — the daemon is the single source of
  * truth for the external MCP-server catalog (§5.12 marks the setting sensitive
- * and the on-disk file is owned by the deferred acp-provider spawn path).
+ * and the on-disk file is owned by the deferred agent-provider spawn path).
  *
  * The legacy `source: 'augment-settings'` shape was `Record<name, config>` keyed
  * by server name (mirroring the on-disk `mcpServers` object), so we shape the

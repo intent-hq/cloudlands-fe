@@ -174,7 +174,7 @@ export class ChangeDetectorManager extends EventEmitter {
       // Use RemoteChangeDetector for remote workspaces
       logger.debug(`[ChangeDetectorManager] Using remote detector for workspace ${workspace.id}`);
       // Prefer environmentConfig.workspace_path (the source of truth for remote workspaces,
-      // also used by ACPProvider for agent CWD) over worktreePath which may have been cleared
+      // also used by agent providers for CWD) over worktreePath which may have been cleared
       const remotePath = workspace.environmentConfig.workspace_path || workspace.worktreePath || workspace.repositoryPath;
       detector = new RemoteChangeDetector({
         workspaceId: workspace.id,

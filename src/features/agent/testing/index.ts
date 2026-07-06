@@ -104,19 +104,6 @@ export {
   type StuckDetectorConfig,
   type StuckDetectionResult,
 } from './stuck-detector';
-
-// Programmatic provider for deterministic agent simulations
-export {
-  ProgrammaticTestAgentProvider,
-  PROGRAMMATIC_TEST_PROVIDER_ID,
-  assertProgrammaticTestProviderEnabled,
-  createProgrammaticTestScript,
-  isProgrammaticTestProviderEnabled,
-  type ProgrammaticTestProviderConfig,
-  type ProgrammaticTestScript,
-  type ProgrammaticTestStep,
-} from './programmatic-test-agent-provider';
-
 // E2E test scenarios
 export {
   specWriterDelegationScenario,

@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   addContentBlock: vi.fn(),
 }));
 
-vi.mock('$features/agent/main/agent-providers/acp-provider-streaming', () => ({
+vi.mock('$features/mcp/main/mcp/stream-session-registry', () => ({
   testStreamManager: {
     getSession: mocks.getSession,
     callbacks: mocks.callbacks,

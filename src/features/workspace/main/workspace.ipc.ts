@@ -63,10 +63,7 @@ import {
   sshManager,
   type SSHConnectionConfig,
 } from '../../../shared/main/ssh-manager';
-import {
-  getIntentServerPath,
-  escapeShellArg,
-} from '../../agent/main/agent-providers/acp-provider';
+import { getIntentServerPath, escapeShellArg } from '../../../shared/main/intent-server-utils';
 import { MetadataSyncService } from '../../metadata-fs/main/metadata-sync-service';
 import {
   createMetadataSyncUiBridge,
@@ -680,15 +677,6 @@ export function setupWorkspaceIPC(): void {
             });
           }
 
-          // Clean up any pre-warmed agent providers (no-op if none exist)
-          // NOTE: Agent pre-warming is currently disabled, but we keep cleanup for safety
-          try {
-            const { agentPoolService } = await import('../../agent/main/agent-pool.service');
-            await agentPoolService.disposeWorkspace(id);
-            logger.debug('[WorkspaceIPC] Agent pool cleanup', { workspaceId: id });
-          } catch (error) {
-            logger.debug('[WorkspaceIPC] Agent pool cleanup not available', { error });
-          }
 
           // Clean up notification service
           try {
@@ -1371,14 +1359,6 @@ export function setupWorkspaceIPC(): void {
           });
         }
 
-        // Clean up agent pool
-        try {
-          const { agentPoolService } = await import('../../agent/main/agent-pool.service');
-          await agentPoolService.disposeWorkspace(validatedId);
-          logger.debug('Agent pool cleanup before delete', { workspaceId: validatedId });
-        } catch (error) {
-          logger.debug('Agent pool cleanup not available before delete', { error });
-        }
 
         // Clean up notification service
         try {

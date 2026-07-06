@@ -110,7 +110,7 @@ vi.mock('../../../git/main/git-router', () => ({
   getRemoteGitManager: vi.fn(),
 }));
 vi.mock('../../../../shared/main/ssh-manager', () => ({ sshManager: {} }));
-vi.mock('../../../agent/main/agent-providers/acp-provider', () => ({
+vi.mock('../../../../shared/main/intent-server-utils', () => ({
   getIntentServerPath: vi.fn(() => '/tmp/intent-server'),
   escapeShellArg: vi.fn((value: string) => value),
 }));

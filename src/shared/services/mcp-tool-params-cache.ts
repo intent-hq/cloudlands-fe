@@ -9,7 +9,7 @@
  *
  * Flow:
  * 1. http-mcp-bridge.ts stores params when a tools/call request arrives
- * 2. acp-provider-streaming.ts consumes params in emitDeferredSkeleton()
+ * 2. the daemon streaming path consumes params when emitting deferred tool-call skeletons
  * 3. Entries auto-expire after 5 seconds to prevent memory leaks
  *
  * Design: Stores a FIFO queue per agentId (not a single entry) because agents can
@@ -69,7 +69,7 @@ export function storeMcpToolParams(
 
 /**
  * Consume (retrieve and remove) cached MCP tool parameters for a given agent.
- * Called by acp-provider-streaming.ts in emitDeferredSkeleton().
+ * Called by the daemon streaming path when emitting deferred tool-call skeletons.
  * Returns the arguments if found and not expired, otherwise undefined.
  * Uses FIFO order when multiple entries match the same tool name.
  *

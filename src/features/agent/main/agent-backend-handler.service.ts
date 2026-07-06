@@ -20,11 +20,9 @@ import {
   parseCompoundModelId,
   PROVIDER_MODEL_TIERS,
 } from '$shared/config/provider-config';
-import { isKnownProviderId, ProviderRegistry, upsertCodexConfigArgs } from './provider-registry';
 import { unifiedAgentBackend } from './consolidated-backend.service';
 import { InstructionService } from './instruction-service';
 import { refreshSpecialistsFromFiles, resolveSpecialistForAgent } from './specialists.service';
-import { parseCodexReasoningEffort } from '$shared/config/open-ai-codex-models';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
 import { isBinaryExtension } from '$shared/binary-file-extensions';
@@ -1554,7 +1552,16 @@ export class AgentBackendHandler {
         // - System prompt is baked in at provider creation time (written to rules file)
         // - Warm providers were created without knowing the agent type or model
         // - Different agent types need different system prompts
-        const registry = ProviderRegistry.createDefault();
+        // G2: ProviderRegistry deleted. This branch is unreachable in the live
+        // build (see G0 audit — no ipcMain.handle registers handleSendMessage).
+        // The stub keeps the code shape until G4 deletes this whole file.
+        const registry = {
+          async create(_id: string, _config: unknown): Promise<never> {
+            throw new Error(
+              'agent-backend-handler.handleSendMessage: provider-registry was removed in G2; this path is unreachable in the live build (scheduled for G4 deletion).',
+            );
+          },
+        };
 
         // Cast request to any to access extended properties
         const extendedRequest = request as any;
@@ -1889,17 +1896,7 @@ export class AgentBackendHandler {
         // If model is still the default but we have an explicit NON-default provider,
         // re-resolve the model for that provider. When the provider IS the default (auggie),
         // DEFAULT_AGENT_MODEL is already correct — don't downgrade it.
-        const testOverride =
-          process.env.TESTING === 'true' ? process.env.DEFAULT_PROVIDER_OVERRIDE : undefined;
-        if (testOverride) {
-          if (!isKnownProviderId(testOverride)) {
-            logger.warn(
-              `DEFAULT_PROVIDER_OVERRIDE '${testOverride}' is not a known provider, ignoring`,
-            );
-          }
-        }
         const explicitProvider =
-          (testOverride && isKnownProviderId(testOverride) ? testOverride : undefined) ||
           agentConfig?.provider ||
           agentMetadata?.provider ||
           (request as any).provider;
@@ -8836,27 +8833,6 @@ Call the \`workspace_api\` tool with \`ws.workspace.setAgentName("...")\` to nam
           }
         }
 
-        // codex-acp uses `-c model="<slug>"` instead of `--model`.
-        // Keep it aligned with ProviderRegistry so restarts honor the selected model.
-        if (providerId === 'codex' && (provider as any).config?.args) {
-          let args = (provider as any).config.args as string[];
-
-          const { baseModel, effort } = parseCodexReasoningEffort(rawModelId);
-          if (baseModel && baseModel !== 'default') {
-            args = upsertCodexConfigArgs(args, 'model', baseModel);
-          }
-          if (effort) {
-            args = upsertCodexConfigArgs(args, 'model_reasoning_effort', effort);
-          } else {
-            const envEffort =
-              process.env.CODEX_REASONING_EFFORT || process.env.CODEX_MODEL_REASONING_EFFORT;
-            if (envEffort) {
-              args = upsertCodexConfigArgs(args, 'model_reasoning_effort', envEffort);
-            }
-          }
-
-          (provider as any).config.args = args;
-        }
 
         // Re-initialize the provider (launches auggie with new model)
         if (typeof provider.initialize === 'function') {

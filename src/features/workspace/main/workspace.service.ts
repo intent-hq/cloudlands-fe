@@ -69,10 +69,7 @@ import {
   workspaceArchived,
 } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { RemoteGitManager } from '../../git/main/remote-git-manager';
-import {
-  getIntentServerPath,
-  escapeShellArg,
-} from '../../agent/main/agent-providers/acp-provider';
+import { getIntentServerPath, escapeShellArg } from '../../../shared/main/intent-server-utils';
 import { createTerminalFromBackend } from '../../terminal/main/terminal.ipc';
 import {
   appendSlugSuffix,
