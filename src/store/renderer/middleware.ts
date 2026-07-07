@@ -31,6 +31,7 @@ import { createAgentCreationMiddleware } from "$features/agent/agent-creation-se
 import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
 import { createAppLayoutNavigationMiddleware } from "$features/layout/app-layout-navigation-service";
 import { createWorkspaceNavigationTabMiddleware } from "$features/layout/workspace-navigation-tab-service";
+import { createWorkspaceNavigationLayoutMiddleware } from "$features/layout/workspace-navigation-layout-service";
 import { createFileExplorerReadMiddleware } from "$features/file-explorer/file-explorer-read-service";
 import { createFilesReadMiddleware } from "$features/files/files-read-service";
 import { createFilesWriteMiddleware } from "$features/files/files-write-service";
@@ -177,6 +178,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // opens (or focuses) a `changes` tab keyed by `commitHash` instead of just
     // updating the navigation slice's `mainPanel.type`.
     createWorkspaceNavigationTabMiddleware(),
+    // Give the (post-saga) `hydrateWorkspaceNavigation` action a real handler
+    // so the workspace-creation flow (CompactWorkspaceInitializer / OnboardingPage)
+    // actually renders the pre-navigation intent (spec note in the main panel +
+    // initial-agent conversation in the adjacent drawer panel) instead of
+    // mounting the workspace page with an empty panel-layout.
+    createWorkspaceNavigationLayoutMiddleware(),
     // Give the (post-saga) file-explorer toggle/expand/refresh triggers a real
     // read handler so directories list their children via `files.list` again.
     createFileExplorerReadMiddleware(),

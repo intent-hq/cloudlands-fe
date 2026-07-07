@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => {
   const agentMutationMiddleware = createPassthroughMiddleware();
   const appLayoutNavigationMiddleware = createPassthroughMiddleware();
   const workspaceNavigationTabMiddleware = createPassthroughMiddleware();
+  const workspaceNavigationLayoutMiddleware = createPassthroughMiddleware();
   const fileExplorerReadMiddleware = createPassthroughMiddleware();
   const filesWriteMiddleware = createPassthroughMiddleware();
   const notesWriteMiddleware = createPassthroughMiddleware();
@@ -71,6 +72,7 @@ const mocks = vi.hoisted(() => {
     createAgentMutationMiddleware: vi.fn(() => agentMutationMiddleware),
     createAppLayoutNavigationMiddleware: vi.fn(() => appLayoutNavigationMiddleware),
     createWorkspaceNavigationTabMiddleware: vi.fn(() => workspaceNavigationTabMiddleware),
+    createWorkspaceNavigationLayoutMiddleware: vi.fn(() => workspaceNavigationLayoutMiddleware),
     createFileExplorerReadMiddleware: vi.fn(() => fileExplorerReadMiddleware),
     createFilesWriteMiddleware: vi.fn(() => filesWriteMiddleware),
     createNotesWriteMiddleware: vi.fn(() => notesWriteMiddleware),
@@ -108,6 +110,7 @@ const mocks = vi.hoisted(() => {
     agentMutationMiddleware,
     appLayoutNavigationMiddleware,
     workspaceNavigationTabMiddleware,
+    workspaceNavigationLayoutMiddleware,
     fileExplorerReadMiddleware,
     filesWriteMiddleware,
     notesWriteMiddleware,
@@ -168,6 +171,9 @@ vi.mock("$features/layout/app-layout-navigation-service", () => ({
 }));
 vi.mock("$features/layout/workspace-navigation-tab-service", () => ({
   createWorkspaceNavigationTabMiddleware: mocks.createWorkspaceNavigationTabMiddleware,
+}));
+vi.mock("$features/layout/workspace-navigation-layout-service", () => ({
+  createWorkspaceNavigationLayoutMiddleware: mocks.createWorkspaceNavigationLayoutMiddleware,
 }));
 vi.mock("$features/file-explorer/file-explorer-read-service", () => ({
   createFileExplorerReadMiddleware: mocks.createFileExplorerReadMiddleware,
@@ -285,6 +291,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.workspaceNavigationTabMiddleware,
+      mocks.workspaceNavigationLayoutMiddleware,
       mocks.fileExplorerReadMiddleware,
       mocks.filesWriteMiddleware,
       mocks.notesWriteMiddleware,
@@ -331,6 +338,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.workspaceNavigationTabMiddleware,
+      mocks.workspaceNavigationLayoutMiddleware,
       mocks.fileExplorerReadMiddleware,
       mocks.filesWriteMiddleware,
       mocks.notesWriteMiddleware,
@@ -377,6 +385,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.workspaceNavigationTabMiddleware,
+      mocks.workspaceNavigationLayoutMiddleware,
       mocks.fileExplorerReadMiddleware,
       mocks.filesWriteMiddleware,
       mocks.notesWriteMiddleware,
@@ -424,6 +433,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.workspaceNavigationTabMiddleware,
+      mocks.workspaceNavigationLayoutMiddleware,
       mocks.fileExplorerReadMiddleware,
       mocks.filesWriteMiddleware,
       mocks.notesWriteMiddleware,
@@ -488,6 +498,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.workspaceNavigationTabMiddleware,
+      mocks.workspaceNavigationLayoutMiddleware,
       mocks.fileExplorerReadMiddleware,
       mocks.filesWriteMiddleware,
       mocks.notesWriteMiddleware,
