@@ -90,6 +90,38 @@ describe("chatReadService (fake seam, real store)", () => {
     expect(selectAgentMessages.select(appStore.state, AGENT).map((m) => m.id)).toEqual(["m1"]);
   });
 
+  it("preserves the seq-0 user message when hydrating a real transcript", async () => {
+    // Wire shape mirrors what `agent.getConversation` returns for an existing
+    // agent whose initial user message was persisted by the daemon (PROTOCOL
+    // §5.5, `AgentMessage` at seq 0, role='user'). The FE must NOT drop it.
+    const agentId = "agent-seq0-user";
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
+    const initialUser: AgentMessage = {
+      id: "019f3d27-user-seq0",
+      role: "user",
+      timestamp: "2026-07-07T15:17:03.908Z",
+      contentBlocks: [{ type: "text", text: "describe the repo" }],
+    };
+    const firstAssistant: AgentMessage = {
+      id: "019f3d27-asst-seq1",
+      role: "assistant",
+      timestamp: "2026-07-07T15:17:04.100Z",
+      contentBlocks: [{ type: "text", text: "here is the repo description" }],
+    };
+    agentsApi.getConversation.mockResolvedValueOnce(
+      conversation([initialUser, firstAssistant]) as never,
+    );
+
+    await loadChatTranscript(agentId);
+
+    const stored = selectAgentMessages.select(appStore.state, agentId);
+    expect(stored.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(stored.map((m) => m.id)).toEqual([
+      "019f3d27-user-seq0",
+      "019f3d27-asst-seq1",
+    ]);
+  });
+
   it("pages through nextToken until exhausted and assembles the full transcript", async () => {
     const agentId = "agent-chat-paged";
     agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);

@@ -60,8 +60,20 @@ export async function ensureAgentSession(agentId: string): Promise<void> {
     try {
       const session = await appClient.agents.get(agentId);
       if (session) {
-        appStore.dispatch(bulkUpsertSessions([session]));
-        appStore.dispatch(upsertSession(session));
+        // `agent.get` returns AgentLite (PROTOCOL §5.5) — session metadata and
+        // message COUNTS only, not the retained transcript. `normalizeAgent`
+        // fills the missing `messages` field with `[]`, so dispatching this
+        // session as-is would clobber a transcript that `chat-read-service`
+        // already hydrated via `agent.getConversation`. Preserve any existing
+        // messages so this metadata-only refresh never erases the seq-0 user
+        // message (nor any subsequent history).
+        const existing = appStore.state.agentSessions?.byAgentId[agentId];
+        const merged =
+          existing && existing.messages.length > 0
+            ? { ...session, messages: existing.messages }
+            : session;
+        appStore.dispatch(bulkUpsertSessions([merged]));
+        appStore.dispatch(upsertSession(merged));
       }
     } catch (error) {
       logger.error("Failed to load agent session", error);
