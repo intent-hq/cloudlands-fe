@@ -614,7 +614,7 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
-  it("emits status hint transitions: 'Streaming response…' on first chunk → 'Calling tool' on tool:call → cleared on stream:end/idle", async () => {
+  it("emits status hint transitions: 'Streaming response…' on first chunk → 'Calling tool' on tool:call started → 'Awaiting tool response' on tool:call completed → 'Streaming response…' on next chunk → cleared on stream:end/idle", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -659,8 +659,9 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
       { phase: "tool-call", message: "Calling tool" },
     ]);
 
-    // tool:call (completed) does NOT append a second status entry — the hint
-    // returns to "Streaming response…" when the next text chunk arrives.
+    // tool:call (completed) → "Awaiting tool response" entry closes off the
+    // "Calling tool" entry at the tool's terminal event so its duration in
+    // computeCompletedEvents reflects the actual tool-execution window.
     handler(
       notification("agent:tool:call", {
         agentId: AGENT,
@@ -675,7 +676,13 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
         blockId: `${MESSAGE_ID}:1`,
       }),
     );
-    expect(readStatusEvents()).toHaveLength(2);
+
+    events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message, level: e.level }))).toEqual([
+      { phase: "streaming", message: "Streaming response…", level: "info" },
+      { phase: "tool-call", message: "Calling tool", level: "info" },
+      { phase: "tool-waiting", message: "Awaiting tool response", level: "info" },
+    ]);
 
     handler(
       notification("agent:stream:chunk", {
@@ -693,6 +700,7 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual([
       { phase: "streaming", message: "Streaming response…" },
       { phase: "tool-call", message: "Calling tool" },
+      { phase: "tool-waiting", message: "Awaiting tool response" },
       { phase: "streaming", message: "Streaming response…" },
     ]);
 
@@ -712,6 +720,215 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
       }),
     );
     expect(readStatusEvents()).toEqual([]);
+  });
+
+  it("tool started → completed short window: tool-call entry's duration ends at the completed event's timestamp", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const startedAt = 1_700_000_000_000;
+    const completedAt = startedAt + 250;
+    vi.useFakeTimers();
+    vi.setSystemTime(startedAt);
+
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t-short",
+        input: { path: "a" },
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+    vi.setSystemTime(completedAt);
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t-short",
+        input: { path: "a" },
+        status: "completed",
+        output: "ok",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+
+    const events = readStatusEvents();
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ phase: "tool-call", timestamp: startedAt });
+    expect(events[1]).toMatchObject({ phase: "tool-waiting", timestamp: completedAt });
+    // computeCompletedEvents: duration of tool-call = timestamp(tool-waiting) − timestamp(tool-call).
+    expect(events[1].timestamp - events[0].timestamp).toBe(250);
+
+    vi.useRealTimers();
+  });
+
+  it("tool completed with error: appends a tool-waiting close entry at error level (still closes the hint)", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t-err",
+        input: { path: "a" },
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t-err",
+        input: { path: "a" },
+        status: "error",
+        output: "boom",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+
+    const events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message, level: e.level }))).toEqual([
+      { phase: "tool-call", message: "Calling tool", level: "info" },
+      { phase: "tool-waiting", message: "Tool call failed", level: "error" },
+    ]);
+  });
+
+  it("repeated completed updates for the same toolCallId do not append a second tool-waiting entry", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t-dup",
+        input: { path: "a" },
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+    for (let i = 0; i < 3; i++) {
+      handler(
+        notification("agent:tool:call", {
+          agentId: AGENT,
+          toolName: "Read",
+          toolKind: "file",
+          toolCallId: "t-dup",
+          input: { path: "a" },
+          status: "completed",
+          output: "ok",
+          messageId: MESSAGE_ID,
+          blockIndex: 0,
+          blockId: `${MESSAGE_ID}:0`,
+        }),
+      );
+    }
+
+    const events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual([
+      { phase: "tool-call", message: "Calling tool" },
+      { phase: "tool-waiting", message: "Awaiting tool response" },
+    ]);
+  });
+
+  it("repeated started ticks for the same toolCallId (progress-only) do not append duplicate Calling tool entries", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t-prog",
+        input: { path: "a" },
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+    // Progress-only tick: empty toolName, same toolCallId, still started.
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "",
+        toolCallId: "t-prog",
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+
+    const events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual([
+      { phase: "tool-call", message: "Calling tool" },
+    ]);
+  });
+
+  it("multiple sequential tool calls each append their own tool-call → tool-waiting pair with accurate short durations", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const t0 = 1_700_000_000_000;
+    const timeline: Array<{ at: number; toolCallId: string; status: "started" | "completed"; idx: number }> = [
+      { at: t0,       toolCallId: "t-a", status: "started",   idx: 0 },
+      { at: t0 + 100, toolCallId: "t-a", status: "completed", idx: 0 },
+      { at: t0 + 300, toolCallId: "t-b", status: "started",   idx: 1 },
+      { at: t0 + 450, toolCallId: "t-b", status: "completed", idx: 1 },
+    ];
+    vi.useFakeTimers();
+
+    for (const step of timeline) {
+      vi.setSystemTime(step.at);
+      handler(
+        notification("agent:tool:call", {
+          agentId: AGENT,
+          toolName: "Read",
+          toolKind: "file",
+          toolCallId: step.toolCallId,
+          input: { path: `p${step.idx}` },
+          status: step.status,
+          ...(step.status === "completed" ? { output: "ok" } : {}),
+          messageId: MESSAGE_ID,
+          blockIndex: step.idx,
+          blockId: `${MESSAGE_ID}:${step.idx}`,
+        }),
+      );
+    }
+
+    const events = readStatusEvents();
+    expect(events.map((e) => e.phase)).toEqual([
+      "tool-call",
+      "tool-waiting",
+      "tool-call",
+      "tool-waiting",
+    ]);
+    // Each tool's duration = timestamp(next entry) − timestamp(this entry).
+    expect(events[1].timestamp - events[0].timestamp).toBe(100);
+    expect(events[3].timestamp - events[2].timestamp).toBe(150);
+
+    vi.useRealTimers();
   });
 });
 

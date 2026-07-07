@@ -15,12 +15,19 @@
  *      in-flight assistant message live and finalizes it in place. Without
  *      this wire the assistant reply only appears after a manual refresh
  *      (the chat-read-service hydration via `agents.getConversation`).
- *   3. `chatState/streamStatusReceived` on `agent:tool:call` (status=started)
- *      to surface the "Calling tool" hint next to the Thinking spinner. The
- *      chunk reducer auto-emits the "Streaming response…" hint on the first
- *      text chunk, and the `'complete'` / `'error'` paths clear `statusEvents`
- *      on `agent:stream:end` / `agent:failed`, so this is the only extra
- *      status dispatch needed.
+ *   3. `chatState/streamStatusReceived` on `agent:tool:call` — surfaces the
+ *      "Calling tool" hint next to the Thinking spinner on `status=started`
+ *      and appends a follow-up "Awaiting tool response" entry on
+ *      `status=completed`/`error`, so `computeCompletedEvents` measures the
+ *      tool-call entry from its start to the tool's terminal event instead of
+ *      to the next text chunk (a gap that inflates the reported duration when
+ *      the model pauses before streaming again). Repeated ticks for the same
+ *      `toolCallId` are deduped against the prior recorded status so progress
+ *      updates never spam duplicate status entries. The chunk reducer still
+ *      auto-emits "Streaming response…" on the first text chunk after the tool
+ *      (both dispatches carry `resetFirstChunk: true`), and the
+ *      `'complete'` / `'error'` paths clear `statusEvents` on
+ *      `agent:stream:end` / `agent:failed`.
  *
  * The stream family is accumulated per agent (one in-flight assistant per
  * agent) using the BE's monotonic `blockIndex` so the candidate transcript
@@ -328,12 +335,28 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
 
   dispatchStreamUpdate(agentId, state, "content-blocks");
 
-  // Status hint: when the tool *starts*, surface "Calling tool" next to the
-  // Thinking spinner. `resetFirstChunk: true` re-arms the chunk reducer so the
-  // next text chunk after the tool completes appends a fresh "Streaming
-  // response…" entry. Mirrors the reference acp-provider-streaming.ts
-  // `onStatus('tool-call', 'Calling tool')` behaviour.
-  if (status === "started") {
+  // Status hint: track the actual tool-execution window so the "Calling tool"
+  // entry's duration in `computeCompletedEvents` ends at the tool's terminal
+  // event rather than at the next text chunk (which can arrive much later if
+  // the model pauses before streaming again).
+  //
+  // - On `status=started` (first time for this toolCallId): append the
+  //   "Calling tool" entry and re-arm the chunk reducer so the next text
+  //   chunk after the tool completes appends a fresh "Streaming response…"
+  //   entry. Mirrors the reference acp-provider-streaming.ts
+  //   `onStatus('tool-call', 'Calling tool')` behaviour.
+  // - On `status=completed`/`error` (following a `started` for the same tool):
+  //   append a follow-up "Awaiting tool response" entry so the "Calling tool"
+  //   entry closes at this moment. `resetFirstChunk: true` keeps the streaming
+  //   re-arm intact if interleaved text already flipped the flag.
+  //
+  // Repeated ticks for the same `toolCallId` are deduped against the prior
+  // recorded metadata status so progress-only updates (daemon emits one
+  // `agent:tool:call` per ACP `tool_call_update`) never spam duplicates.
+  const priorStatus = priorIsSameToolUse
+    ? ((priorMetadata as { status?: unknown }).status as string | undefined)
+    : undefined;
+  if (status === "started" && priorStatus !== "started") {
     appStore.dispatch(
       streamStatusReceived(
         agentId,
@@ -341,6 +364,23 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
           phase: "tool-call",
           message: "Calling tool",
           level: "info",
+          timestamp: Date.now(),
+        },
+        true,
+      ),
+    );
+  } else if (
+    (status === "completed" || status === "error") &&
+    priorStatus === "started"
+  ) {
+    appStore.dispatch(
+      streamStatusReceived(
+        agentId,
+        {
+          phase: "tool-waiting",
+          message:
+            status === "error" ? "Tool call failed" : "Awaiting tool response",
+          level: status === "error" ? "error" : "info",
           timestamp: Date.now(),
         },
         true,
