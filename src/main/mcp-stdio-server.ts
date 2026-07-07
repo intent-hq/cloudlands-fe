@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { isRealBridgeHealth, type BridgeHealthInfo } from './mcp-bridge-health';
 
 // Note: Logger not used here since stdout is reserved for JSON-RPC
 // All logging goes to stderr via custom logToStderr function
@@ -113,17 +114,6 @@ function getCandidatePorts(): number[] {
     candidates.push(port);
   }
   return Array.from(new Set(candidates));
-}
-
-interface BridgeHealthInfo {
-  status?: string;
-  service?: string;
-  bridgeApiVersion?: number;
-  port?: number;
-  pid?: number;
-  appPath?: string;
-  processCwd?: string;
-  isPackaged?: boolean;
 }
 
 function normalizePathForCompare(value: string | undefined): string | undefined {
@@ -470,11 +460,19 @@ async function waitForHttpServer(
           });
           if (response.ok) {
             const health = (await response.json().catch(() => ({}))) as BridgeHealthInfo;
-            healthyCandidates.push({
-              port,
-              health,
-              score: scoreBridgeHealth(port, health, workspacePath, preferredPorts),
-            });
+            if (isRealBridgeHealth(health)) {
+              healthyCandidates.push({
+                port,
+                health,
+                score: scoreBridgeHealth(port, health, workspacePath, preferredPorts),
+              });
+            } else {
+              logToStderr('DEBUG', 'Ignoring non-bridge /health responder', {
+                port,
+                service: health.service,
+                bridgeApiVersion: health.bridgeApiVersion,
+              });
+            }
           }
         } finally {
           clearTimeout(timeoutId);
@@ -545,11 +543,19 @@ async function tryReconnect(): Promise<number | null> {
       clearTimeout(timeoutId);
       if (response.ok) {
         const health = (await response.json().catch(() => ({}))) as BridgeHealthInfo;
-        healthyCandidates.push({
-          port,
-          health,
-          score: scoreBridgeHealth(port, health, workspacePath, preferredPorts),
-        });
+        if (isRealBridgeHealth(health)) {
+          healthyCandidates.push({
+            port,
+            health,
+            score: scoreBridgeHealth(port, health, workspacePath, preferredPorts),
+          });
+        } else {
+          logToStderr('DEBUG', 'Ignoring non-bridge /health responder (reconnect)', {
+            port,
+            service: health.service,
+            bridgeApiVersion: health.bridgeApiVersion,
+          });
+        }
       }
     } catch {
       // Not available on this port
