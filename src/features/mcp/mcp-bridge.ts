@@ -56,20 +56,16 @@ export class MCPBridge {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const workspace = workspaceResult.data;
 
-      // Create/reuse executor via ExecutionManager (caching + retries)
-      const remote =
-        environmentConfig?.type === 'remote'
-          ? {
-              host: environmentConfig.host,
-              port: environmentConfig.port || 22,
-              username: environmentConfig.username,
-              privateKey: environmentConfig.privateKey,
-              password: environmentConfig.password,
-              workspacePath,
-            }
-          : null;
+      // Create/reuse executor via ExecutionManager (caching + retries). The
+      // remote branch retires in P3-5.1 — MCP tool calls always run against
+      // LocalExecutor now, so `remote` is fixed to null regardless of
+      // environmentConfig.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const executor = executorManager.getExecutor({ workspaceId, workspacePath, remote });
+      const executor = executorManager.getExecutor({
+        workspaceId,
+        workspacePath,
+        remote: null,
+      });
 
       // Map MCP arguments to tool arguments
       const args = this.mapMCPArguments(call.name, call.arguments);

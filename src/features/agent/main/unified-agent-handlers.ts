@@ -341,9 +341,11 @@ function registerCoreHandlers(backend: IAgentBackendService): void {
       }
 
       const path = await import('path');
-      // Use IMetadataFS for remote workspace support
-      const { getMetadataFS } = await import('../../metadata-fs/main/metadata-fs-factory');
-      const metadataFS = getMetadataFS(workspaceId);
+      // Local-only after the remote-backend retirement (P3-5.1): the remote
+      // MetadataFS path is retiring wave-by-wave, so agent-config reads go
+      // straight to LocalMetadataFS.
+      const { LocalMetadataFS } = await import('../../metadata-fs/main/local-metadata-fs');
+      const metadataFS = new LocalMetadataFS();
 
       const agentConfigDir = WorkspaceConfig.paths.agents(workspaceId);
 

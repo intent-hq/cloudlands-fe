@@ -21,20 +21,16 @@ import {
   restoreWorkspaceId,
   type WorkspaceId,
 } from '../../../shared/types/index.js';
-import { LineType } from '../../../shared/types';
-import type { DiffChunk } from '../../../shared/types';
 import {
   GitGetBranchesSchema,
   GitRenameBranchSchema,
 } from '../../../main/ipc-schemas.js';
 import {
   getWorkspaceGitInfo,
-  getRemoteGitManager,
   validatePathsInScope,
 } from './git-router.js';
 import { execAsync } from '../../../shared/git/git-env';
 import { getAutoCommitStatuses } from '../../agent/main/auto-commit.service';
-import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import { trackMain } from '$lib/services/analytics/main';
 
 const logger = new Logger('GitIPC');
@@ -77,100 +73,6 @@ const StageHunkSchema = z.object({
   filePath: z.string(),
   hunkPatch: z.string(),
 });
-
-/**
- * Parse raw git diff output into DiffChunk[] structure.
- * Mirrors the parseDiff logic from GitService.
- */
-function parseDiffOutput(diffOutput: string): DiffChunk[] {
-  const chunks: DiffChunk[] = [];
-
-  if (!diffOutput.trim()) {
-    return chunks;
-  }
-
-  // Split by file headers (lines starting with "diff --git")
-  const fileSections = diffOutput.split(/^diff --git/m).slice(1);
-
-  for (const section of fileSections) {
-    const lines = section.split('\n');
-
-    // Parse file header to get file path
-    // Format: " a/path/to/file b/path/to/file"
-    const headerMatch = lines[0]?.match(/a\/(.+?)\s+b\/(.+?)$/);
-    if (!headerMatch) continue;
-
-    const filePath = headerMatch[1];
-    const chunk: DiffChunk = {
-      file: filePath,
-      chunks: [],
-    };
-
-    // Parse hunks (sections starting with @@)
-    let currentHunk: {
-      oldStart: number;
-      oldLines: number;
-      newStart: number;
-      newLines: number;
-      lines: Array<{ type: LineType; content: string }>;
-    } | null = null;
-
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i];
-
-      // Check for hunk header
-      const hunkMatch = line.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/);
-      if (hunkMatch) {
-        // Save previous hunk if exists
-        if (currentHunk) {
-          chunk.chunks.push(currentHunk);
-        }
-
-        // Start new hunk
-        currentHunk = {
-          oldStart: parseInt(hunkMatch[1], 10),
-          oldLines: parseInt(hunkMatch[2] || '1', 10),
-          newStart: parseInt(hunkMatch[3], 10),
-          newLines: parseInt(hunkMatch[4] || '1', 10),
-          lines: [],
-        };
-        continue;
-      }
-
-      // Skip file metadata lines
-      if (line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) {
-        continue;
-      }
-
-      // Parse diff lines
-      if (currentHunk && (line.startsWith('+') || line.startsWith('-') || line.startsWith(' '))) {
-        let type: LineType;
-        const content = line.substring(1);
-
-        if (line.startsWith('+')) {
-          type = LineType.Addition;
-        } else if (line.startsWith('-')) {
-          type = LineType.Deletion;
-        } else {
-          type = LineType.Context;
-        }
-
-        currentHunk.lines.push({ type, content });
-      }
-    }
-
-    // Don't forget the last hunk
-    if (currentHunk) {
-      chunk.chunks.push(currentHunk);
-    }
-
-    if (chunk.chunks.length > 0) {
-      chunks.push(chunk);
-    }
-  }
-
-  return chunks;
-}
 
 /**
  * Setup git IPC handlers
@@ -295,20 +197,15 @@ export function setupGitIPC() {
           return { success: false, error: 'Invalid workspace ID' };
         }
 
-        // Check if this is a remote workspace
+        // Remote discard-changes retired in P3-5.1; return an error for
+        // remote-configured workspaces instead of routing through the legacy
+        // RemoteGitManager.
         const gitInfo = await getWorkspaceGitInfo(workspaceId);
         if (gitInfo?.isRemote) {
-          try {
-            const remoteGit = getRemoteGitManager(
-              workspaceId,
-              gitInfo.repositoryPath || gitInfo.worktreePath,
-            );
-            await remoteGit.discardChanges(validated.paths, gitInfo.worktreePath);
-            return { success: true, data: undefined };
-          } catch (error) {
-            logger.error('Failed to discard changes on remote', error as Error, { workspaceId });
-            return { success: false, error: (error as Error).message };
-          }
+          return {
+            success: false,
+            error: 'Discard changes is not supported for remote workspaces',
+          };
         }
 
         const result = await gitService.discardChanges(workspaceId as WorkspaceId, validated.paths);
@@ -335,25 +232,11 @@ export function setupGitIPC() {
 
         const force = validated.force ?? false;
 
-        // Check if this is a remote workspace
+        // Remote push retired in P3-5.1; return an error for remote-configured
+        // workspaces instead of routing through the legacy RemoteGitManager.
         const gitInfo = await getWorkspaceGitInfo(workspaceId);
         if (gitInfo?.isRemote) {
-          try {
-            const remoteGit = getRemoteGitManager(
-              workspaceId,
-              gitInfo.repositoryPath || gitInfo.worktreePath,
-            );
-            await remoteGit.push(gitInfo.worktreePath, { setUpstream: true, force });
-            // Track push event for remote workspace
-            trackMain('Pushed Changes', {
-              workspace_id: workspaceId,
-              success: true,
-            });
-            return { success: true, data: undefined };
-          } catch (error) {
-            logger.error('Failed to push on remote', error as Error, { workspaceId });
-            return { success: false, error: (error as Error).message };
-          }
+          return { success: false, error: 'Push is not supported for remote workspaces' };
         }
 
         const result = await gitService.push(workspaceId as WorkspaceId, force);
@@ -383,20 +266,12 @@ export function setupGitIPC() {
           return { success: false, error: 'Invalid workspace ID' };
         }
 
-        // Check if this is a remote workspace
+        // Remote fetch retired in P3-5.1; return an error for
+        // remote-configured workspaces instead of routing through the legacy
+        // RemoteGitManager.
         const gitInfo = await getWorkspaceGitInfo(workspaceId);
         if (gitInfo?.isRemote) {
-          try {
-            const remoteGit = getRemoteGitManager(
-              workspaceId,
-              gitInfo.repositoryPath || gitInfo.worktreePath,
-            );
-            await remoteGit.fetch(gitInfo.worktreePath);
-            return { success: true, data: undefined };
-          } catch (error) {
-            logger.error('Failed to fetch on remote', error as Error, { workspaceId });
-            return { success: false, error: (error as Error).message };
-          }
+          return { success: false, error: 'Fetch is not supported for remote workspaces' };
         }
 
         const result = await gitService.fetch(workspaceId as WorkspaceId);
@@ -443,72 +318,11 @@ export function setupGitIPC() {
           return { success: false, error: result.error };
         }
 
-        // Check if this is a remote workspace
+        // Remote diff retired in P3-5.1; return an error for
+        // remote-configured workspaces instead of routing through the legacy
+        // RemoteGitManager / RemoteRPCClient.
         if (gitInfo?.isRemote) {
-          try {
-            const remoteGit = getRemoteGitManager(
-              workspaceId,
-              gitInfo.repositoryPath || gitInfo.worktreePath,
-            );
-            const rawDiff = await remoteGit.getDiff(
-              validated.paths || [],
-              validated.staged || false,
-              gitInfo.worktreePath,
-            );
-
-            // Parse raw diff into DiffChunk[] structure
-            const chunks = parseDiffOutput(rawDiff);
-
-            // For each file in the diff, fetch oldContent and newContent
-            const staged = validated.staged;
-            const worktreePath = gitInfo.worktreePath;
-            const rpcClient = await remoteRPCManager.getClient(workspaceId);
-
-            for (const chunk of chunks) {
-              try {
-                let oldFileContent = '';
-                let newFileContent = '';
-
-                if (staged === true) {
-                  // Staged: old = HEAD version, new = index (staged) version
-                  const oldResult = await remoteGit.showFile(chunk.file, 'HEAD', worktreePath);
-                  oldFileContent = oldResult.ok ? oldResult.data : '';
-
-                  const newResult = await remoteGit.showFile(chunk.file, ':0', worktreePath);
-                  newFileContent = newResult.ok ? newResult.data : '';
-                } else {
-                  // Unstaged: old = index version, new = working tree file
-                  const oldResult = await remoteGit.showFile(chunk.file, ':0', worktreePath);
-                  oldFileContent = oldResult.ok ? oldResult.data : '';
-
-                  // Read working tree file via RPC
-                  try {
-                    const filePath = worktreePath
-                      ? `${worktreePath}/${chunk.file}`
-                      : chunk.file;
-                    const readResult = await rpcClient.readFile({ path: filePath });
-                    newFileContent = readResult.content;
-                  } catch {
-                    // File might be deleted
-                    newFileContent = '';
-                  }
-                }
-
-                chunk.oldContent = oldFileContent;
-                chunk.newContent = newFileContent;
-              } catch (err) {
-                logger.warn('Could not get full file content for remote diff', {
-                  file: chunk.file,
-                  error: err,
-                });
-              }
-            }
-
-            return { success: true, data: chunks };
-          } catch (error) {
-            logger.error('Failed to get diff on remote', error as Error, { workspaceId });
-            return { success: false, error: (error as Error).message };
-          }
+          return { success: false, error: 'Diff is not supported for remote workspaces' };
         }
 
         const result = await gitService.getDiff(
@@ -701,20 +515,12 @@ export function setupGitIPC() {
             return { success: false, error: 'Invalid workspace ID' };
           }
 
-          // Check if this is a remote workspace
+          // Remote listBranches retired in P3-5.1; return an error for
+          // remote-configured workspaces instead of routing through the
+          // legacy RemoteGitManager.
           const gitInfo = await getWorkspaceGitInfo(workspaceId);
           if (gitInfo?.isRemote) {
-            try {
-              const remoteGit = getRemoteGitManager(
-                workspaceId,
-                gitInfo.repositoryPath || gitInfo.worktreePath,
-              );
-              const branches = await remoteGit.listBranches();
-              return { success: true, data: branches };
-            } catch (error) {
-              logger.error('Failed to get branches on remote', error as Error, { workspaceId });
-              return { success: false, error: (error as Error).message };
-            }
+            return { success: false, error: 'List branches is not supported for remote workspaces' };
           }
 
           const result = await gitService.listBranches(

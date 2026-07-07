@@ -55,9 +55,6 @@ let invokeFunction: (typeof import('$lib/electron-bridge'))['invoke'] | undefine
 let getBackendClientFn:
   | (typeof import('../../backend/main/backend.ipc'))['getBackendClient']
   | undefined;
-let metadataFSFactory:
-  | ((workspaceId: string) => import('../../metadata-fs/main/metadata-fs').IMetadataFS)
-  | undefined;
 
 /** PROTOCOL.md §5.5 `agent.update` — whitelisted mutable fields. */
 const UPDATABLE_FIELDS = [
@@ -128,14 +125,12 @@ async function getNodeModules() {
       // Electron may not be available in all contexts
     }
 
-    // Route agent-session CRUD through the daemon (PROTOCOL.md §5.5) and load
-    // the metadata-fs factory directly for the surviving remote-workspace read
-    // path.
+    // Route agent-session CRUD through the daemon (PROTOCOL.md §5.5). The
+    // remote-workspace metadata read path retired in P3-5.1; callers now use
+    // LocalMetadataFS directly.
     try {
       const backendModule = await import('../../backend/main/backend.ipc');
       getBackendClientFn = backendModule.getBackendClient;
-      const { getMetadataFS } = await import('../../metadata-fs/main/metadata-fs-factory');
-      metadataFSFactory = getMetadataFS;
     } catch (error) {
       logger.warn('Could not load backend client module', error);
     }
@@ -147,7 +142,6 @@ async function getNodeModules() {
     BrowserWindow,
     getBackendClient: getBackendClientFn,
     WorkspaceConfig,
-    metadataFSFactory,
   };
 }
 
@@ -1131,17 +1125,17 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
   async loadPersistedSessions(workspaceId: string): Promise<number> {
     if (!this.config.persistenceEnabled) return 0;
 
-    const { path, WorkspaceConfig, metadataFSFactory } = await getNodeModules();
+    const { path, WorkspaceConfig } = await getNodeModules();
     if (!path || !WorkspaceConfig) {
       logger.warn('[loadPersistedSessions] path or WorkspaceConfig not available');
       return 0;
     }
 
     try {
-      // Use IMetadataFS for remote workspace support.
-      // Falls back to LocalMetadataFS (pass-through to fs/promises) for local workspaces.
+      // Local-only after P3-5.1: the remote MetadataFS surface is retiring in
+      // Phase B, so persisted agent sessions load through LocalMetadataFS.
       const { LocalMetadataFS } = await import('../../metadata-fs/main/local-metadata-fs');
-      const metadataFS = metadataFSFactory ? metadataFSFactory(workspaceId) : new LocalMetadataFS();
+      const metadataFS = new LocalMetadataFS();
 
       // Use the correct workspace metadata directory, NOT process.cwd()
       const agentsDir = WorkspaceConfig.paths.agents(workspaceId);

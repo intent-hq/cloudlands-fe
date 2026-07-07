@@ -19,9 +19,6 @@ import {
   suppressKeychainAccess,
 } from '../../../shared/git/keychain-suppression';
 import { Logger } from '../../../shared/logger';
-import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
-import { RemoteRPCError } from '../../../shared/main/remote-rpc-client';
-import type { RemoteRPCClient } from '../../../shared/main/remote-rpc-client';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import { gitAuthRequired } from '../../../store/main/slices/git-events/git-events-slice';
 import {
@@ -41,7 +38,10 @@ import { githubService } from './github.service';
 const logger = new Logger('GitStateManager');
 
 /**
- * Configuration for remote workspace RPC connection
+ * Legacy configuration slot that remote-workspace call sites still pass. The
+ * remote-git RPC path retired in P3-5.1, so the field is now ignored — kept
+ * only so consumers can pass the option without breaking until the type is
+ * dropped alongside the RemoteRPCClient deletion.
  */
 export interface RemoteGitConfig {
   workspaceId: string;
@@ -52,7 +52,7 @@ export interface GitStateManagerConfig {
   syncInterval?: number; // milliseconds
   fetchInterval?: number; // milliseconds
   trackRemote?: boolean;
-  /** Remote workspace configuration - when provided, uses RPC for git commands */
+  /** Ignored — remote git RPC retired in P3-5.1. */
   remoteConfig?: RemoteGitConfig;
 }
 
@@ -62,12 +62,8 @@ export class GitStateManager extends EventEmitter {
   private fetchTimer: NodeJS.Timeout | null = null;
   private syncing = false;
   private pendingSync = false;
-  private rpcClient: RemoteRPCClient | null = null;
-  private isRemote: boolean = false;
 
-  private readonly config: Required<Omit<GitStateManagerConfig, 'remoteConfig'>> & {
-    remoteConfig?: RemoteGitConfig;
-  } = {
+  private readonly config: Required<Omit<GitStateManagerConfig, 'remoteConfig'>> = {
     autoSync: true,
     syncInterval: 60000, // 60 seconds - fallback only, FSEvents handles instant detection
     fetchInterval: 60000, // 1 minute
@@ -80,17 +76,15 @@ export class GitStateManager extends EventEmitter {
     config?: GitStateManagerConfig,
   ) {
     super();
-    this.isRemote = !!config?.remoteConfig;
-
-    // Remote workspaces don't have local FSEvents, so they need fast polling.
-    // Use 5s interval for remote workspaces unless explicitly overridden by caller.
-    const remoteSyncInterval =
-      this.isRemote && config?.syncInterval === undefined ? 5000 : undefined;
+    // Note: config.remoteConfig is intentionally ignored — remote-git RPC
+    // retired in P3-5.1 (see executeGitCommand). The scaffolding around it
+    // has been removed from this class.
+    const { remoteConfig: _remoteConfig, ...localConfig } = config ?? {};
+    void _remoteConfig;
 
     this.config = {
       ...this.config,
-      ...config,
-      ...(remoteSyncInterval !== undefined && { syncInterval: remoteSyncInterval }),
+      ...localConfig,
     };
     this.initialize();
   }
@@ -112,7 +106,6 @@ export class GitStateManager extends EventEmitter {
 
       logger.info('Git state manager initialized', {
         workspaceId: this.workspaceId,
-        isRemote: this.isRemote,
       });
     } catch (error) {
       logger.error('Failed to initialize git state manager', error as Error);
@@ -120,21 +113,15 @@ export class GitStateManager extends EventEmitter {
   }
 
   /**
-   * Get or create the RPC client for remote workspaces
-   */
-  private async getRPCClient(): Promise<RemoteRPCClient> {
-    if (!this.rpcClient) {
-      if (!this.config.remoteConfig) {
-        throw new Error('Remote config required for RPC connection');
-      }
-      this.rpcClient = await remoteRPCManager.getClient(this.config.remoteConfig.workspaceId);
-    }
-    return this.rpcClient;
-  }
-
-  /**
-   * Execute a git command - works for both local and remote workspaces
-   * Detects authentication errors and emits domain events for user notification
+   * Execute a git command locally.
+   *
+   * Remote-workspace routing retired in P3-5.1; commands always run through
+   * the local `execAsync` path. The `isRemote`/`rpcClient` scaffolding is
+   * kept for one wave so B6 can drop it alongside the RemoteRPCClient
+   * deletion.
+   *
+   * Detects authentication errors and emits domain events for user
+   * notification.
    */
   private async executeGitCommand(
     command: string,
@@ -148,67 +135,12 @@ export class GitStateManager extends EventEmitter {
     }
 
     try {
-      if (this.isRemote && this.config.remoteConfig) {
-        // Execute via RPC for remote workspaces
-        const client = await this.getRPCClient();
-        const fullCommand = `cd "${workingDir}" && ${command}`;
-        const result = await client.exec({ command: fullCommand, timeout: 30000 });
-        return { stdout: result.stdout, stderr: result.stderr };
-      } else {
-        // Execute locally for local workspaces
-        const result = await execAsync(command, { cwd: workingDir, maxBuffer: 10 * 1024 * 1024 });
-        if (isNetworkOp) {
-          clearKeychainSuppression(this.workspaceId);
-        }
-        return result;
+      const result = await execAsync(command, { cwd: workingDir, maxBuffer: 10 * 1024 * 1024 });
+      if (isNetworkOp) {
+        clearKeychainSuppression(this.workspaceId);
       }
+      return result;
     } catch (error) {
-      // Handle RPC errors for non-zero exit codes
-      if (error instanceof RemoteRPCError && error.data) {
-        const data = error.data as { exitCode?: number; stdout?: string; stderr?: string };
-        if (data.stdout !== undefined || data.stderr !== undefined) {
-          const errorMessage = data.stderr || data.stdout || (error as Error).message;
-          const stderr = data.stderr || errorMessage;
-
-          // Return empty result for non-fatal errors (like no upstream branch)
-          if (errorMessage?.includes('no upstream')) {
-            return { stdout: '', stderr: errorMessage };
-          }
-
-          if (
-            isNetworkOp &&
-            (isKeychainAccessCancelled(stderr) || isKeychainAccessCancelled(errorMessage))
-          ) {
-            suppressKeychainAccess(this.workspaceId);
-            throw new Error('Keychain access was cancelled. Unlock your keychain and retry.');
-          }
-
-          // Check if this is an authentication error for remote operations
-          if (isNetworkOp && (isGitAuthError(stderr) || isGitAuthError(errorMessage))) {
-            const operation =
-              command.match(/\b(push|fetch|pull|clone)\b/)?.[0] || 'remote operation';
-            suppressKeychainAccess(this.workspaceId);
-            const userMessage = getGitAuthErrorMessage(stderr || errorMessage, operation);
-            logger.warn('Git remote operation requires authentication', {
-              workspaceId: this.workspaceId,
-              command,
-              error: errorMessage,
-            });
-            mainDispatch(gitAuthRequired({
-              workspaceId: this.workspaceId as any,
-              operation,
-              message: userMessage,
-              rawError: stderr || errorMessage,
-              command,
-              cwd: workingDir,
-            }));
-            throw new Error(userMessage);
-          }
-
-          throw new Error(`Git command failed (exit ${data.exitCode}): ${stderr}`);
-        }
-      }
-
       const errorMessage = (error as Error).message;
       const stderr = (error as any)?.stderr || errorMessage;
 
@@ -948,9 +880,6 @@ export class GitStateManager extends EventEmitter {
       clearInterval(this.fetchTimer);
       this.fetchTimer = null;
     }
-
-    // Clear RPC client reference (managed by remoteRPCManager)
-    this.rpcClient = null;
 
     this.removeAllListeners();
   }

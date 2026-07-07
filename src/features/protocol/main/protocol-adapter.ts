@@ -1002,25 +1002,15 @@ export class ProtocolAdapter {
       }
       const workspace = workspaceResult.data;
 
-      // Create/reuse executor via ExecutionManager (caching + retries)
+      // Create/reuse executor via ExecutionManager (caching + retries). The
+      // remote branch retires in P3-5.1 — ACP tool bridge always runs against
+      // LocalExecutor now, so `remote` is fixed to null regardless of
+      // workspace.environmentConfig.
       const workspacePath = workspace.worktreePath || workspace.repositoryPath || process.cwd();
-      const remote =
-        workspace.environmentConfig?.type === 'remote' && workspace.environmentConfig.ssh
-          ? {
-              host: workspace.environmentConfig.ssh.host,
-              port: workspace.environmentConfig.ssh.port || 22,
-              username: workspace.environmentConfig.ssh.user,
-              privateKey: workspace.environmentConfig.ssh.key_path,
-              password: workspace.environmentConfig.ssh.password,
-              workspacePath,
-              transport: workspace.environmentConfig.ssh.transport,
-              wsUrl: workspace.environmentConfig.ssh.ws_url,
-            }
-          : null;
       executorManager.getExecutor({
         workspaceId: params.workspaceId,
         workspacePath,
-        remote,
+        remote: null,
       });
 
       // Build context

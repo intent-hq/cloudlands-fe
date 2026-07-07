@@ -13,11 +13,7 @@ import { diffsService } from '../diffs.service';
 import { Logger } from '../../../shared/logger';
 import { DIFFS_CHANNELS } from '../../../shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
-import {
-  getWorkspaceGitInfo,
-  getRemoteGitManager,
-} from '../../git/main/git-router';
-import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
+import { getWorkspaceGitInfo } from '../../git/main/git-router';
 import {
   DiffsListSchema,
   DiffsCreateSchema,
@@ -107,83 +103,15 @@ export function setupDiffsIPC() {
         const { workspaceId, filePath, staged } = validated;
 
         try {
-          // Check if this is a remote workspace
+          // Remote diff retired in P3-5.1; return an error for
+          // remote-configured workspaces instead of routing through the
+          // legacy RemoteGitManager / RemoteRPCClient.
           const gitInfo = await getWorkspaceGitInfo(workspaceId);
           if (gitInfo?.isRemote) {
-            try {
-              const remoteGit = getRemoteGitManager(
-                workspaceId,
-                gitInfo.repositoryPath || gitInfo.worktreePath,
-              );
-              const worktreePath = gitInfo.worktreePath;
-
-              // Fetch full file contents (same approach as git:diff handler)
-              let oldContent = '';
-              let newContent = '';
-              const rpcClient = await remoteRPCManager.getClient(workspaceId);
-
-              if (staged === true) {
-                // Staged: old = HEAD version, new = index (staged) version
-                const oldResult = await remoteGit.showFile(filePath, 'HEAD', worktreePath);
-                oldContent = oldResult.ok ? oldResult.data : '';
-
-                const newResult = await remoteGit.showFile(filePath, ':0', worktreePath);
-                newContent = newResult.ok ? newResult.data : '';
-              } else {
-                // Unstaged: old = index version, new = working tree file
-                const oldResult = await remoteGit.showFile(filePath, ':0', worktreePath);
-                oldContent = oldResult.ok ? oldResult.data : '';
-
-                // Read working tree file via RPC
-                try {
-                  const fullPath = worktreePath ? `${worktreePath}/${filePath}` : filePath;
-                  const readResult = await rpcClient.readFile({ path: fullPath });
-                  newContent = readResult.content;
-                } catch {
-                  // File might be deleted
-                  newContent = '';
-                }
-              }
-
-              // Count additions and deletions from the diff
-              let additions = 0;
-              let deletions = 0;
-              const rawDiff = await remoteGit.getDiff(
-                [filePath],
-                staged || false,
-                worktreePath,
-              );
-              if (rawDiff) {
-                for (const line of rawDiff.split('\n')) {
-                  if (line.startsWith('+') && !line.startsWith('+++')) {
-                    additions++;
-                  } else if (line.startsWith('-') && !line.startsWith('---')) {
-                    deletions++;
-                  }
-                }
-              }
-
-              return {
-                success: true,
-                data: {
-                  fileName: filePath.split('/').pop() || filePath,
-                  filePath,
-                  oldContent,
-                  newContent,
-                  additions,
-                  deletions,
-                },
-              };
-            } catch (error) {
-              logger.error('Failed to get diff on remote', error instanceof Error ? error : new Error(String(error)), {
-                workspaceId,
-                filePath,
-              });
-              return {
-                success: false,
-                error: (error as Error).message || 'Failed to get remote diff',
-              };
-            }
+            return {
+              success: false,
+              error: 'Diff is not supported for remote workspaces',
+            };
           }
 
           // Import git service to get the diff (local workspace)

@@ -5,7 +5,6 @@ import {
   FileChange,
 } from '$shared/types/change-detector.types';
 import { DiffSummaryRepository } from './diff-summary.repository';
-import { RemoteChangeDetector } from './remote-change-detector';
 import { EventEmitter } from 'events';
 import { gitService } from '../../git/main/git.service';
 import {
@@ -160,56 +159,36 @@ export class ChangeDetectorManager extends EventEmitter {
 
     const isRemote = workspace.environmentConfig?.type === 'remote';
 
+    // Remote-workspace monitoring retires in P3-5.1 — the RemoteChangeDetector
+    // path is off; remote-configured workspaces skip monitoring instead of
+    // throwing so open flows continue to work.
+    if (isRemote) {
+      logger.info(
+        `[ChangeDetectorManager] Skipping monitoring for remote-configured workspace ${workspace.id} (remote change detection retired)`,
+      );
+      return;
+    }
+
     logger.debug(
-      `[ChangeDetectorManager] Starting monitoring for workspace ${workspace.id} (${isRemote ? 'remote' : 'local'})`,
+      `[ChangeDetectorManager] Starting monitoring for workspace ${workspace.id} (local)`,
     );
 
     // Get debug mode setting from store or environment variable
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const debugMode = process.env.VERBOSE_CHANGE_DETECTOR === 'true';
 
-    let detector: any;
+    // Use ChangeDetectorRefactored for local workspaces
+    // FSEvents-based file watching with adaptive polling fallback (intervals from CHANGE_DETECTION_CONFIG)
+    const detector: any = new ChangeDetector({
+      workspaceId: workspace.id,
+      workspacePath: workspace.worktreePath,
+      disableFileWatcher: false,
+      gitPollingOnly: false,
+    });
 
-    if (isRemote && workspace.environmentConfig?.ssh) {
-      // Use RemoteChangeDetector for remote workspaces
-      logger.debug(`[ChangeDetectorManager] Using remote detector for workspace ${workspace.id}`);
-      // Prefer environmentConfig.workspace_path (the source of truth for remote workspaces,
-      // also used by agent providers for CWD) over worktreePath which may have been cleared
-      const remotePath = workspace.environmentConfig.workspace_path || workspace.worktreePath || workspace.repositoryPath;
-      detector = new RemoteChangeDetector({
-        workspaceId: workspace.id,
-        sshConfig: {
-          host: workspace.environmentConfig.ssh.host,
-          port: workspace.environmentConfig.ssh.port || 22,
-          username: workspace.environmentConfig.ssh.user,
-          password: workspace.environmentConfig.ssh.password,
-          privateKeyPath: workspace.environmentConfig.ssh.key_path,
-          useAgent: workspace.environmentConfig.ssh.use_agent,
-          transport: workspace.environmentConfig.ssh.transport,
-          wsUrl: workspace.environmentConfig.ssh.ws_url,
-        },
-        basePath: remotePath,
-        pollInterval: 1000, // OPTIMIZED: Start with 1 second polling for snappy response
-        adaptivePolling: true, // Enable adaptive polling
-        maxPollInterval: 5000, // OPTIMIZED: Max 5 seconds when idle (was 10s)
-        minPollInterval: 500, // OPTIMIZED: Min 500ms when active (was 1s)
-        debounceDelay: 100, // OPTIMIZED: 100ms debounce (was 500ms)
-        excludePatterns: ['*.log', '*.tmp', '.DS_Store'],
-      });
-    } else {
-      // Use ChangeDetectorRefactored for local workspaces
-      // FSEvents-based file watching with adaptive polling fallback (intervals from CHANGE_DETECTION_CONFIG)
-      detector = new ChangeDetector({
-        workspaceId: workspace.id,
-        workspacePath: workspace.worktreePath,
-        disableFileWatcher: false,
-        gitPollingOnly: false,
-      });
-
-      logger.debug(
-        `[ChangeDetectorManager] Using FSEvents-based file watching with polling fallback for workspace ${workspace.id}`,
-      );
-    }
+    logger.debug(
+      `[ChangeDetectorManager] Using FSEvents-based file watching with polling fallback for workspace ${workspace.id}`,
+    );
 
     // Listen for changes
     detector.on('changes', (diffChunk: DiffChunk) => {
@@ -261,7 +240,7 @@ export class ChangeDetectorManager extends EventEmitter {
       await detector.start();
 
       logger.info(
-        `[ChangeDetectorManager] Monitoring started for workspace ${workspace.id} using ${isRemote ? 'RemoteChangeDetector' : 'ChangeDetector'}`,
+        `[ChangeDetectorManager] Monitoring started for workspace ${workspace.id} using ChangeDetector`,
         {
           detectorCount: this.detectors.size,
           detectorKeys: Array.from(this.detectors.keys()),
@@ -288,13 +267,6 @@ export class ChangeDetectorManager extends EventEmitter {
 
       // Emit error but don't crash the app
       this.emit('detector-error', { workspaceId: workspace.id, error });
-
-      // For remote workspaces, log a helpful message
-      if (isRemote) {
-        logger.info(
-          `[ChangeDetectorManager] Remote workspace ${workspace.id} monitoring failed. This is normal if the SSH server is not running.`,
-        );
-      }
     }
   }
 
