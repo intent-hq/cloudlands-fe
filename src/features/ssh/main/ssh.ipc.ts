@@ -677,9 +677,9 @@ export function registerSSHHandlers(): void {
     ),
   );
 
-  // List directory over SSH. Legacy RPC listDir has retired with the
-  // intent-server bundle; the workspaceId branch now reuses the warmed
-  // `rpc-${workspaceId}` SSH connection, and the pre-workspace path
+  // List directory over SSH. Legacy RPC listDir has retired; the
+  // workspaceId branch now reuses the warmed `rpc-${workspaceId}` SSH
+  // connection, and the pre-workspace path
   // establishes an ephemeral connection using the provided credentials.
   // TODO(P3-5): route via daemon `fs.listDir` over WSS transport.
   ipcMain.handle(
@@ -989,7 +989,7 @@ export function registerSSHHandlers(): void {
                 result.checks.node.version = nodeResult.stdout.trim();
                 const majorVersion = parseInt(versionMatch[1], 10);
                 if (majorVersion < 18) {
-                  result.warnings.nodeVersion = `Node.js ${nodeResult.stdout.trim()} is below v18; intent-server requires Node 18+`;
+                  result.warnings.nodeVersion = `Node.js ${nodeResult.stdout.trim()} is below v18; the remote runtime requires Node 18+`;
                 }
               } else {
                 result.checks.node.error = 'Could not parse Node.js version';
@@ -1001,7 +1001,7 @@ export function registerSSHHandlers(): void {
             result.checks.node.error = error instanceof Error ? error.message : String(error);
           }
 
-          // 6. Auggie Check - use same discovery strategy as intent-server
+          // 6. Auggie Check - use a login-shell + hardcoded-path discovery strategy
           // Non-interactive SSH shells don't have the user's PATH, so we need to:
           // 1. Try login shell with command -v
           // 2. Check common npm global paths
@@ -1025,7 +1025,7 @@ export function registerSSHHandlers(): void {
               }
             }
 
-            // Strategy 2: Check common hardcoded paths (same as intent-server)
+            // Strategy 2: Check common hardcoded paths (matches the legacy remote strategy)
             if (!auggiePath) {
               const commonPaths = [
                 '/usr/local/bin/auggie',

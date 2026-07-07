@@ -760,8 +760,8 @@ export function setupWorkspaceIPC(): void {
           const monitoringAndGitPromise = (async () => {
             try {
               // For remote workspaces, keep the SSH connection warmed so later
-              // remote operations reuse it. The intent-server deploy+serve step
-              // has retired; the daemon's WSS transport will attach here later.
+              // remote operations reuse it. The legacy deploy+serve step has
+              // retired; the daemon's WSS transport will attach here later.
               // TODO(P3-5): attach daemon WSS transport via `rpc-${workspace.id}`.
               if (workspace.environmentConfig?.ssh) {
                 try {
@@ -2070,8 +2070,8 @@ export function setupWorkspaceIPC(): void {
 
           // ──── Remote workspace: legacy RPC retired ────
           // Directory listing and pattern search over the legacy remote RPC has
-          // retired with the intent-server bundle. Return an empty result until
-          // the daemon's WSS transport lands and can serve `fs.listDir`/`fs.find`.
+          // retired. Return an empty result until the daemon's WSS transport
+          // lands and can serve `fs.listDir`/`fs.find`.
           // TODO(P3-5): route via daemon `fs.listDir`/`fs.find` over WSS transport.
           if (isRemote) {
             void listingPath;
@@ -2267,9 +2267,9 @@ export function setupWorkspaceIPC(): void {
 
           let stdout = '';
 
-          // Remote in-files search over the legacy RPC has retired with the
-          // intent-server bundle. Skip the remote branch and return an empty
-          // result until the daemon's WSS transport lands.
+          // Remote in-files search over the legacy RPC has retired. Skip the
+          // remote branch and return an empty result until the daemon's WSS
+          // transport lands.
           // TODO(P3-5): route via daemon `fs.grep` over WSS transport.
           if (isRemote && workspaceId) {
             logger.info(

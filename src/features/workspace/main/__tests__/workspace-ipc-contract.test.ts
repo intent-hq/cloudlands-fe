@@ -105,10 +105,6 @@ vi.mock('../../../git/main/git-router', () => ({
   getWorkspaceGitInfo: vi.fn(),
 }));
 vi.mock('../../../../shared/main/ssh-manager', () => ({ sshManager: {} }));
-vi.mock('../../../../shared/main/intent-server-utils', () => ({
-  getIntentServerPath: vi.fn(() => '/tmp/intent-server'),
-  escapeShellArg: vi.fn((value: string) => value),
-}));
 vi.mock('../../../metadata-fs/main/metadata-fs-factory', () => ({ clearMetadataFSCache: vi.fn() }));
 vi.mock('../../../notes/main/notes.service', () => ({ notesService: {} }));
 

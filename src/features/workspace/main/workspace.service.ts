@@ -67,7 +67,6 @@ import {
   workspaceDeleted,
   workspaceArchived,
 } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
-import { escapeShellArg } from '../../../shared/main/intent-server-utils';
 import { createTerminalFromBackend } from '../../terminal/main/terminal.ipc';
 import {
   appendSlugSuffix,
@@ -102,6 +101,14 @@ import {
 } from '../../../shared/main/ssh-manager';
 import { trackMain } from '$lib/services/analytics/main';
 import { githubService } from '../../git-tracking/main/github.service';
+
+/**
+ * Escape a value for safe inclusion in a POSIX shell command.
+ * Uses single quotes and escapes any embedded single quotes.
+ */
+function escapeShellArg(arg: string): string {
+  return "'" + arg.replace(/'/g, "'\\''") + "'";
+}
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const { WorkspaceNotFoundError, WorkspaceValidationError, GitWorktreeError } = Errors;
@@ -275,8 +282,8 @@ export class WorkspaceService {
 
       if (remoteContext?.isRemote && remoteContext.workspaceId) {
         // Remote workspace: git-config read over the legacy remote RPC has
-        // retired with the intent-server bundle. Return no repo info until
-        // the daemon's WSS transport lands and can serve `file.read` here.
+        // retired. Return no repo info until the daemon's WSS transport
+        // lands and can serve `file.read` here.
         // TODO(P3-5): route via daemon `file.read` over WSS transport.
         logger.info('Skipping remote git config read; legacy RPC retired', {
           repoPath,
