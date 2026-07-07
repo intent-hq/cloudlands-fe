@@ -1869,12 +1869,15 @@
       // and focus it.
       appStore.dispatch(setInitialAgentId(workspace.id, initialAgent.agentId));
 
-      // Pre-store the workspace state with the drawer open. The workspace-navigation
-      // saga owns persistence for workspace state.
+      // Pre-store the workspace state so the workspace page mounts on the
+      // initial-agent conversation as its only tab (full-width, no spec split).
+      // The spec note stays reachable manually from the sidebar; leaving the
+      // main panel empty here keeps the hydration payload consistent with the
+      // agent-only intent instead of asking the middleware to special-case it.
       const initialState: WorkspaceNavigationWorkspaceState = {
         version: 2,
         workspace: { id: workspace.id, status: 'loading' },
-        mainPanel: { type: 'notes', selectedNoteId: 'spec' },
+        mainPanel: { type: 'empty' },
         drawer: { open: true, type: 'agent' as const, itemId: initialAgent.agentId },
         navigation: { history: [], currentIndex: -1 },
         ui: { hasInitialized: false },

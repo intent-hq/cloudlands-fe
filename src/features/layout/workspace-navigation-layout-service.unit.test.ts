@@ -1,14 +1,15 @@
 /**
  * Unit-level wire-contract test for the workspace-navigation-layout middleware.
  *
- * Regression coverage for "Workspace page opens the initial agent conversation
- * after creation": `CompactWorkspaceInitializer` / `OnboardingPage` dispatch
- * `hydrateWorkspaceNavigation` with `mainPanel: notes/spec` + `drawer: agent/{id}`
- * as the pre-navigation intent, and the middleware must translate that intent
- * into the equivalent `panelLayout/openTab` (for the spec note) and
- * `appLayout/openAgentTabRequested` (for the drawer agent). Without the
- * middleware, the workspace page mounts with an empty panel-layout — the exact
- * regression this task is fixing.
+ * Regression coverage for two related shapes of the workspace-creation intent:
+ * `CompactWorkspaceInitializer` / `OnboardingPage` dispatch
+ * `hydrateWorkspaceNavigation({ mainPanel: empty, drawer: agent/{id} })` so
+ * the workspace page mounts with the initial-agent conversation as its only
+ * tab (full-width, no split). The middleware still supports the legacy
+ * spec+agent split shape (`mainPanel: notes/spec, drawer: agent/{id}` →
+ * spec tab in the main panel + adjacent agent tab) for any hydration source
+ * that opts in. Without the middleware, the workspace page mounts with an
+ * empty panel-layout — the underlying regression this file guards against.
  *
  * Same shape as the sibling `workspace-navigation-tab-service.unit.test.ts`:
  * stubs `$store/renderer/store` via `vi.mock` so the middleware doesn't drag
@@ -57,7 +58,20 @@ function findAction(type: string): { type: string; payload: unknown } | undefine
 
 function buildInitialCreationState(agentId: string): WorkspaceNavigationWorkspaceState {
   // Matches the exact shape CompactWorkspaceInitializer / OnboardingPage dispatch
-  // after workspace creation (see CompactWorkspaceInitializer.svelte:~1874-1882).
+  // after workspace creation: agent-only landing, no spec tab in the main panel.
+  return {
+    version: 2,
+    workspace: { id: "ws-1", status: "loading" },
+    mainPanel: { type: "empty" },
+    drawer: { open: true, type: "agent", itemId: agentId },
+    navigation: { history: [], currentIndex: -1 },
+    ui: { hasInitialized: false },
+  };
+}
+
+function buildSpecPlusAgentState(agentId: string): WorkspaceNavigationWorkspaceState {
+  // Legacy spec + agent split intent — still supported by the middleware for
+  // any hydration source that opts in, though no first-party caller does today.
   return {
     version: 2,
     workspace: { id: "ws-1", status: "loading" },
@@ -73,7 +87,7 @@ describe("workspaceNavigationLayoutMiddleware (unit)", () => {
     dispatchedActions.length = 0;
   });
 
-  it("opens the spec note tab AND the adjacent agent tab from the initializer's hydration payload", () => {
+  it("opens only the initial agent tab full-width from the initializer's agent-only hydration payload", () => {
     const { dispatch, next } = makeMiddlewareRunner();
     const WS = "ws-1";
     const AGENT = "agent-e8a6f466";
@@ -82,6 +96,24 @@ describe("workspaceNavigationLayoutMiddleware (unit)", () => {
 
     // Middleware passes the action to the reducer chain (post-reducer handler).
     expect(next).toHaveBeenCalledTimes(1);
+
+    // No spec (or other) note tab is opened — the workspace lands on the agent.
+    expect(findAction("panelLayout/openTab")).toBeUndefined();
+
+    const openAgentAction = findAction("appLayout/openAgentTabRequested");
+    expect(openAgentAction).toBeDefined();
+    expect(openAgentAction!.payload).toEqual([
+      WS,
+      { agentId: AGENT, openInAdjacentPanel: false },
+    ]);
+  });
+
+  it("opens the spec note tab AND the adjacent agent tab from a legacy spec+agent hydration payload", () => {
+    const { dispatch } = makeMiddlewareRunner();
+    const WS = "ws-legacy";
+    const AGENT = "agent-legacy";
+
+    dispatch(hydrateWorkspaceNavigation(WS, buildSpecPlusAgentState(AGENT)));
 
     const openTabAction = findAction("panelLayout/openTab");
     expect(openTabAction).toBeDefined();
@@ -111,7 +143,7 @@ describe("workspaceNavigationLayoutMiddleware (unit)", () => {
     const WS = "ws-2";
     dispatch(
       hydrateWorkspaceNavigation(WS, {
-        ...buildInitialCreationState("agent-x"),
+        ...buildSpecPlusAgentState("agent-x"),
         drawer: { open: false, type: null, itemId: null },
       }),
     );
@@ -120,24 +152,11 @@ describe("workspaceNavigationLayoutMiddleware (unit)", () => {
     expect(findAction("appLayout/openAgentTabRequested")).toBeUndefined();
   });
 
-  it("only opens the agent tab when the main panel is not a notes panel", () => {
-    const { dispatch } = makeMiddlewareRunner();
-    dispatch(
-      hydrateWorkspaceNavigation("ws-3", {
-        ...buildInitialCreationState("agent-y"),
-        mainPanel: { type: "empty" },
-      }),
-    );
-
-    expect(findAction("panelLayout/openTab")).toBeUndefined();
-    expect(findAction("appLayout/openAgentTabRequested")).toBeDefined();
-  });
-
   it("skips both openings when there is no note id AND no drawer agent", () => {
     const { dispatch } = makeMiddlewareRunner();
     dispatch(
       hydrateWorkspaceNavigation("ws-4", {
-        ...buildInitialCreationState("agent-z"),
+        ...buildSpecPlusAgentState("agent-z"),
         mainPanel: { type: "notes" },
         drawer: { open: false, type: null, itemId: null },
       }),
@@ -154,9 +173,14 @@ describe("workspaceNavigationLayoutMiddleware (unit)", () => {
     expect(dispatchedActions).toHaveLength(0);
   });
 
-  it("exposes applyHydratedLayout for direct callers", () => {
+  it("exposes applyHydratedLayout for direct callers (agent-only intent)", () => {
     applyHydratedLayout("ws-5", buildInitialCreationState("agent-direct"));
-    expect(findAction("panelLayout/openTab")).toBeDefined();
-    expect(findAction("appLayout/openAgentTabRequested")).toBeDefined();
+    expect(findAction("panelLayout/openTab")).toBeUndefined();
+    const openAgentAction = findAction("appLayout/openAgentTabRequested");
+    expect(openAgentAction).toBeDefined();
+    expect(openAgentAction!.payload).toEqual([
+      "ws-5",
+      { agentId: "agent-direct", openInAdjacentPanel: false },
+    ]);
   });
 });

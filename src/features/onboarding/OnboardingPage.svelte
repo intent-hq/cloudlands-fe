@@ -789,11 +789,15 @@
       // and focus it.
       appStore.dispatch(setInitialAgentId(workspace.id, String(agentId)));
 
+      // Same intent as CompactWorkspaceInitializer: land on the initial-agent
+      // conversation as the only tab, full-width. The spec note remains
+      // reachable from the sidebar; the main panel stays empty here so the
+      // middleware doesn't need to special-case an agent-only screen.
       appStore.dispatch(
         hydrateWorkspaceNavigation(workspace.id, {
           version: 2,
           workspace: { id: workspace.id, status: 'loading' },
-          mainPanel: { type: 'notes', selectedNoteId: 'spec' },
+          mainPanel: { type: 'empty' },
           drawer: { open: true, type: 'agent' as const, itemId: String(agentId) },
           navigation: { history: [], currentIndex: -1 },
           ui: { hasInitialized: false },
