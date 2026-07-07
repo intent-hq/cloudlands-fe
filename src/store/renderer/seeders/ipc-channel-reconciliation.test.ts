@@ -229,8 +229,8 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     // git:numstat remains a local-IPC invoke (bridged via git-bridge-seeder).
     expect(invoked.has('git:numstat')).toBe(true);
     expect(invoked.has('dialog:open')).toBe(true);
-    // Aliased import call site (`import { invoke as invokeIpc }`, scripts.client.ts).
-    expect(invoked.has('scripts:detect')).toBe(true);
+    // Aliased import call site (`import { invoke as invokeIpc }`, link-handler.ts).
+    expect(invoked.has('shell:openExternal')).toBe(true);
     // Nested-generic call site (`invokeIpc<AutoUpdateResponse<UpdateState>>`,
     // auto-update.client.ts). A `<[^>]*>` matcher stops at the first `>` and
     // drops such call sites entirely — settings:getAll escaped to a runtime

@@ -56,6 +56,7 @@
 } from '@fortawesome/free-solid-svg-icons';
   import { scriptsClient } from '$features/scripts/scripts.client';
   import type { ScriptWithState } from '$features/scripts/types';
+  import { toast } from '$lib/components/ui/toast';
 
   import {
   selectScriptEntries,
@@ -141,8 +142,27 @@
     if (!workspaceId) return;
     isDetectingScripts = true;
     try {
-      await scriptsClient.detect(workspaceId);
+      const result = await scriptsClient.detect(workspaceId);
       appStore.dispatch(refreshScripts(workspaceId));
+      if (!result.success) {
+        toast.error(result.error || 'Script detection failed');
+        return;
+      }
+      const detected = result.detected ?? 0;
+      const added = result.added ?? 0;
+      const removed = result.removed ?? 0;
+      const changeParts: string[] = [];
+      if (added > 0) changeParts.push(`+${added} added`);
+      if (removed > 0) changeParts.push(`-${removed} removed`);
+      const summary =
+        changeParts.length > 0
+          ? `Detected ${detected} script${detected === 1 ? '' : 's'} (${changeParts.join(', ')})`
+          : `Detected ${detected} script${detected === 1 ? '' : 's'} (0 new)`;
+      if (detected === 0) {
+        toast.info('No scripts detected in workspace manifests');
+      } else {
+        toast.success(summary);
+      }
     } finally {
       isDetectingScripts = false;
     }

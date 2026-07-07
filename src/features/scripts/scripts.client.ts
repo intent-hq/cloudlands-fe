@@ -4,15 +4,20 @@
  * The daemon-backed operations (`script.list/create/remove/start/stop/restart/
  * status`, PROTOCOL §5.8) route through the `AppClient` seam
  * (`appClient.scripts`), which reaches the intentd daemon over the JSON-RPC
- * bridge. `update` rides `script.create`'s `scriptId` upsert (§5.8: an
- * existing id replaces the definition). Operations with no daemon counterpart
- * (`detect`, `saveToRepo`) stay on their legacy channels, which resolve to
- * the allowlisted "not available in this build" failure envelope
- * (UNBRIDGED_INVOKE_ALLOWLIST) until the daemon grows a script-detection /
- * repo-config surface. `saveToRepo` sources its payload from the live daemon
- * `script.list` — the legacy local store is empty in daemon builds, and
+ * bridge. `update` and `detect` both ride `script.create`'s `scriptId` upsert
+ * (§5.8: an existing id replaces the definition).
+ *
+ * `detect` runs the heuristic manifest scan renderer-side against the
+ * daemon-owned `file.read` seam (`./detect-scripts.ts`), diffs candidates
+ * against the live `script.list`, and only upserts genuinely new or changed
+ * auto-detected scripts — so repeat clicks are no-ops and user scripts are
+ * never overwritten. The legacy `scripts:detect` IPC channel is retired.
+ *
+ * `saveToRepo` is the only remaining IPC surface — it stays on
+ * `scripts:save-to-repo`, sourcing its payload from the live daemon
+ * `script.list` (the legacy local store is empty in daemon builds, and
  * letting the main handler read it is what silently clobbered
- * `.intent/config.json` with `scripts: []`.
+ * `.intent/config.json` with `scripts: []`).
  */
 
 import type {
@@ -28,6 +33,7 @@ import { createLogger } from '$lib/utils/client-logger';
 import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 import { appClient } from '$lib/client';
 import type { MutationResult } from '$lib/client';
+import { detectScriptCandidates, type PackageManager } from './detect-scripts';
 
 const logger = createLogger('ScriptsClient');
 
@@ -170,7 +176,25 @@ export const scriptsClient = {
       : { success: false, error: 'Failed to read script status' };
   },
 
-  /** Auto-detect scripts from package.json and other config files. */
+  /**
+   * Auto-detect scripts from repo manifests and upsert them into the daemon.
+   *
+   * Reads `package.json` / `Makefile` / `Cargo.toml` / `pyproject.toml` through
+   * the daemon's `file.read` seam (`detect-scripts.ts`), diffs the candidates
+   * against the live `script.list`, and:
+   *  - creates any candidate whose name isn't already registered,
+   *  - upserts the existing auto-detected row (reusing its id via
+   *    `script.create({ scriptId })`, §5.8) when its command / mode / category
+   *    changed,
+   *  - removes auto-detected rows whose name is no longer produced by any
+   *    manifest,
+   *  - never touches user-created scripts, even when a manifest exposes the
+   *    same name.
+   *
+   * Result counts the daemon-side outcome (`added` = newly created,
+   * `removed` = auto-detected rows removed), so repeat clicks resolve to
+   * `{ added: 0, removed: 0 }` when nothing changed.
+   */
   async detect(
     workspaceId: string,
   ): Promise<{
@@ -178,19 +202,104 @@ export const scriptsClient = {
     detected?: number;
     added?: number;
     removed?: number;
-    packageManager?: string;
+    packageManager?: PackageManager;
     error?: string;
   }> {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      try {
-        return await invokeIpc(IPC_CHANNELS.SCRIPTS.DETECT, { workspaceId });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'IPC call failed';
-        logger.error(`IPC call to ${IPC_CHANNELS.SCRIPTS.DETECT} failed`, { error: message });
-        return { success: false, error: message };
+    try {
+      const { candidates, packageManager } = await detectScriptCandidates(
+        appClient.files,
+        workspaceId,
+      );
+      const existing = await appClient.scripts.list(workspaceId);
+
+      const existingUserNames = new Set<string>();
+      const existingAutoByName = new Map<string, ScriptWithState>();
+      for (const s of existing) {
+        if (s.source === 'auto-detected') {
+          existingAutoByName.set(s.name, s);
+        } else {
+          existingUserNames.add(s.name);
+        }
       }
+
+      const detectedNames = new Set<string>();
+      let added = 0;
+
+      for (const candidate of candidates) {
+        detectedNames.add(candidate.name);
+        if (existingUserNames.has(candidate.name)) continue;
+
+        const existingAuto = existingAutoByName.get(candidate.name);
+        if (!existingAuto) {
+          const createResult = await appClient.scripts.create(workspaceId, {
+            name: candidate.name,
+            command: candidate.command,
+            mode: candidate.mode,
+            category: candidate.category,
+          });
+          if (createResult.success) {
+            added += 1;
+          } else {
+            logger.warn('script.create failed for detected candidate', {
+              name: candidate.name,
+              error: createResult.error,
+            });
+          }
+        } else if (
+          existingAuto.command !== candidate.command ||
+          existingAuto.category !== candidate.category ||
+          existingAuto.mode !== candidate.mode
+        ) {
+          const upsertResult = await appClient.scripts.create(workspaceId, {
+            scriptId: existingAuto.id,
+            name: candidate.name,
+            command: candidate.command,
+            mode: candidate.mode,
+            category: candidate.category,
+            ...(existingAuto.cwd !== undefined ? { cwd: existingAuto.cwd } : {}),
+            ...(existingAuto.env !== undefined ? { env: existingAuto.env } : {}),
+            ...(existingAuto.autoStart !== undefined
+              ? { autoStart: existingAuto.autoStart }
+              : {}),
+          });
+          if (!upsertResult.success) {
+            logger.warn('script.create upsert failed for detected candidate', {
+              name: candidate.name,
+              scriptId: existingAuto.id,
+              error: upsertResult.error,
+            });
+          }
+        }
+      }
+
+      let removed = 0;
+      for (const [name, s] of existingAutoByName) {
+        if (!detectedNames.has(name)) {
+          const removeResult = await appClient.scripts.remove(s.id);
+          if (removeResult.success) {
+            removed += 1;
+          } else {
+            logger.warn('script.remove failed for stale auto-detected script', {
+              name,
+              scriptId: s.id,
+              error: removeResult.error,
+            });
+          }
+        }
+      }
+
+      return {
+        success: true,
+        detected: candidates.length,
+        added,
+        removed,
+        packageManager,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Script detection failed', { error: message });
+      return { success: false, error: message };
     }
-    return { success: false, error: 'Electron IPC not available' };
   },
 
   /**

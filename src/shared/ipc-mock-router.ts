@@ -239,20 +239,14 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // `response?.success && response.data` and `.catch`es, so the badges simply
   // stay hidden until a daemon surface exists.
   ['git:get-auto-commit-status', undefined],
-  // Interaction-gated script detection + repo-config write (TerminalSidebar /
-  // QuakeTerminalOverlay). The legacy handlers ran the main-process script
-  // scanner and wrote the repo-level scripts file — neither has a daemon arm
-  // (§5.8 covers lifecycle only; §5.25 setup-script detection is a different
-  // surface). Both callers fold `success: false` into their toast/agent-assist
-  // fallback paths.
-  [
-    'scripts:detect',
-    {
-      success: false,
-      error:
-        'Script detection is not available in this build — add scripts manually or ask an agent to register them',
-    },
-  ],
+  // Interaction-gated repo-config write (TerminalSidebar / QuakeTerminalOverlay
+  // "Save to repo"). The legacy handler wrote the repo-level scripts file with
+  // no daemon arm (§5.8 covers lifecycle only; there's no scripts:save-to-repo
+  // RPC). The caller folds `success: false` into its toast. `scripts:detect`
+  // used to live here too — it now runs renderer-side against the daemon
+  // `file.read` + `script.list/create/remove` surface (see
+  // `features/scripts/detect-scripts.ts` and `scripts.client.ts`), so the
+  // channel is retired.
   [
     'scripts:save-to-repo',
     { success: false, error: 'Saving scripts to the repo config is not available in this build' },
