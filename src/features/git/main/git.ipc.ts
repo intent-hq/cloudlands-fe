@@ -84,7 +84,7 @@ export function setupGitIPC() {
   // git:history / git:log / git:commit-details / git:pullBranch /
   // git:getBranchStatus have been retired: the renderer now reaches the
   // daemon directly via backendRequest('git.*') (PROTOCOL §5.6), which also
-  // retires their local execFileAsync and RemoteGitManager routing.
+  // retires their local execFileAsync and remote routing.
 
   // Stage a specific hunk (partial staging)
   ipcMain.handle(
@@ -199,7 +199,7 @@ export function setupGitIPC() {
 
         // Remote discard-changes retired in P3-5.1; return an error for
         // remote-configured workspaces instead of routing through the legacy
-        // RemoteGitManager.
+        // remote stack.
         const gitInfo = await getWorkspaceGitInfo(workspaceId);
         if (gitInfo?.isRemote) {
           return {
@@ -233,7 +233,7 @@ export function setupGitIPC() {
         const force = validated.force ?? false;
 
         // Remote push retired in P3-5.1; return an error for remote-configured
-        // workspaces instead of routing through the legacy RemoteGitManager.
+        // workspaces instead of routing through the legacy remote stack.
         const gitInfo = await getWorkspaceGitInfo(workspaceId);
         if (gitInfo?.isRemote) {
           return { success: false, error: 'Push is not supported for remote workspaces' };
@@ -268,7 +268,7 @@ export function setupGitIPC() {
 
         // Remote fetch retired in P3-5.1; return an error for
         // remote-configured workspaces instead of routing through the legacy
-        // RemoteGitManager.
+        // remote stack.
         const gitInfo = await getWorkspaceGitInfo(workspaceId);
         if (gitInfo?.isRemote) {
           return { success: false, error: 'Fetch is not supported for remote workspaces' };
@@ -320,7 +320,7 @@ export function setupGitIPC() {
 
         // Remote diff retired in P3-5.1; return an error for
         // remote-configured workspaces instead of routing through the legacy
-        // RemoteGitManager / RemoteRPCClient.
+        // remote stack.
         if (gitInfo?.isRemote) {
           return { success: false, error: 'Diff is not supported for remote workspaces' };
         }
@@ -517,7 +517,7 @@ export function setupGitIPC() {
 
           // Remote listBranches retired in P3-5.1; return an error for
           // remote-configured workspaces instead of routing through the
-          // legacy RemoteGitManager.
+          // legacy remote stack.
           const gitInfo = await getWorkspaceGitInfo(workspaceId);
           if (gitInfo?.isRemote) {
             return { success: false, error: 'List branches is not supported for remote workspaces' };

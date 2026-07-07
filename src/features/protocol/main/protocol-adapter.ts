@@ -1002,15 +1002,11 @@ export class ProtocolAdapter {
       }
       const workspace = workspaceResult.data;
 
-      // Create/reuse executor via ExecutionManager (caching + retries). The
-      // remote branch retires in P3-5.1 — ACP tool bridge always runs against
-      // LocalExecutor now, so `remote` is fixed to null regardless of
-      // workspace.environmentConfig.
+      // Create/reuse executor via ExecutionManager (caching + retries).
       const workspacePath = workspace.worktreePath || workspace.repositoryPath || process.cwd();
       executorManager.getExecutor({
         workspaceId: params.workspaceId,
         workspacePath,
-        remote: null,
       });
 
       // Build context

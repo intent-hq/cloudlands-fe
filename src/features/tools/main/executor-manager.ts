@@ -1,15 +1,13 @@
 /**
  * Executor Manager
  *
- * Manages cached executors (local/remote) for workspace operations.
- * Provides retry semantics and automatic cleanup of idle executors.
+ * Manages cached local executors for workspace operations. Provides retry
+ * semantics and automatic cleanup of idle executors.
  */
 
 import { LocalExecutor } from './executors/local-executor';
-import { RemoteExecutor } from './executors/remote-executor';
 import type {
   IExecutor,
-  RemoteExecutorConfig,
   CommandResult,
   ExecuteOptions,
   FileInfo,
@@ -18,15 +16,12 @@ import type {
 import { Logger } from '../../../shared/logger';
 
 class RetryingExecutor implements IExecutor {
-  type: 'local' | 'remote';
+  type: 'local';
   constructor(
     private inner: IExecutor,
     private manager: ExecutorManager,
   ) {
     this.type = inner.type;
-  }
-  get config(): RemoteExecutorConfig | undefined {
-    return this.inner.config;
   }
   readFile(path: string): Promise<string> {
     return this.manager.executeWithRetry(() => this.inner.readFile(path));
@@ -70,27 +65,16 @@ export class ExecutorManager {
     this.setupCleanup();
   }
 
-  private keyFor(workspaceId: string, type: 'local' | 'remote'): string {
-    return `${type}:${workspaceId}`;
-  }
-
-  getExecutor(params: {
-    workspaceId: string;
-    workspacePath: string;
-    remote?: RemoteExecutorConfig | null;
-  }): IExecutor {
-    const { workspaceId, workspacePath, remote } = params;
-    const type = remote ? 'remote' : 'local';
-    const key = this.keyFor(workspaceId, type);
+  getExecutor(params: { workspaceId: string; workspacePath: string }): IExecutor {
+    const { workspaceId, workspacePath } = params;
+    const key = `local:${workspaceId}`;
 
     let cached = this.executors.get(key);
     if (!cached) {
-      const executor = remote
-        ? new RemoteExecutor(remote, workspaceId)
-        : new LocalExecutor(workspacePath, workspaceId);
+      const executor = new LocalExecutor(workspacePath, workspaceId);
       cached = { executor, lastUsed: Date.now() };
       this.executors.set(key, cached);
-      this.logger.debug('Created executor', { workspaceId, type });
+      this.logger.debug('Created executor', { workspaceId });
     } else {
       cached.lastUsed = Date.now();
     }

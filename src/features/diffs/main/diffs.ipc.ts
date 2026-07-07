@@ -105,7 +105,7 @@ export function setupDiffsIPC() {
         try {
           // Remote diff retired in P3-5.1; return an error for
           // remote-configured workspaces instead of routing through the
-          // legacy RemoteGitManager / RemoteRPCClient.
+          // legacy remote stack.
           const gitInfo = await getWorkspaceGitInfo(workspaceId);
           if (gitInfo?.isRemote) {
             return {

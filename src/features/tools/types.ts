@@ -53,8 +53,7 @@ export interface ToolPermissions {
  * Executor interface for local/remote operations
  */
 export interface IExecutor {
-  type: 'local' | 'remote';
-  config?: RemoteExecutorConfig;
+  type: 'local';
 
   // File operations
   readFile(path: string): Promise<string>;
@@ -73,20 +72,6 @@ export interface IExecutor {
 
   // Cleanup
   dispose(): Promise<void>;
-}
-
-/**
- * Remote executor configuration
- */
-export interface RemoteExecutorConfig {
-  host: string;
-  port: number;
-  username: string;
-  privateKey?: string;
-  password?: string;
-  workspacePath: string;
-  transport?: 'ssh' | 'websocket';
-  wsUrl?: string;
 }
 
 /**

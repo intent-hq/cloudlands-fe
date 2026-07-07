@@ -3,7 +3,6 @@
  *
  * Manages and tracks the complete git state for a workspace,
  * including working directory, staging area, commits, and PRs.
- * Supports both local and remote workspaces via SSH.
  */
 
 import { EventEmitter } from '$shared/utils/event-emitter';
@@ -37,23 +36,11 @@ import { githubService } from './github.service';
 
 const logger = new Logger('GitStateManager');
 
-/**
- * Legacy configuration slot that remote-workspace call sites still pass. The
- * remote-git RPC path retired in P3-5.1, so the field is now ignored — kept
- * only so consumers can pass the option without breaking until the type is
- * dropped alongside the RemoteRPCClient deletion.
- */
-export interface RemoteGitConfig {
-  workspaceId: string;
-}
-
 export interface GitStateManagerConfig {
   autoSync?: boolean;
   syncInterval?: number; // milliseconds
   fetchInterval?: number; // milliseconds
   trackRemote?: boolean;
-  /** Ignored — remote git RPC retired in P3-5.1. */
-  remoteConfig?: RemoteGitConfig;
 }
 
 export class GitStateManager extends EventEmitter {
@@ -63,7 +50,7 @@ export class GitStateManager extends EventEmitter {
   private syncing = false;
   private pendingSync = false;
 
-  private readonly config: Required<Omit<GitStateManagerConfig, 'remoteConfig'>> = {
+  private readonly config: Required<GitStateManagerConfig> = {
     autoSync: true,
     syncInterval: 60000, // 60 seconds - fallback only, FSEvents handles instant detection
     fetchInterval: 60000, // 1 minute
@@ -76,15 +63,9 @@ export class GitStateManager extends EventEmitter {
     config?: GitStateManagerConfig,
   ) {
     super();
-    // Note: config.remoteConfig is intentionally ignored — remote-git RPC
-    // retired in P3-5.1 (see executeGitCommand). The scaffolding around it
-    // has been removed from this class.
-    const { remoteConfig: _remoteConfig, ...localConfig } = config ?? {};
-    void _remoteConfig;
-
     this.config = {
       ...this.config,
-      ...localConfig,
+      ...(config ?? {}),
     };
     this.initialize();
   }
@@ -114,11 +95,6 @@ export class GitStateManager extends EventEmitter {
 
   /**
    * Execute a git command locally.
-   *
-   * Remote-workspace routing retired in P3-5.1; commands always run through
-   * the local `execAsync` path. The `isRemote`/`rpcClient` scaffolding is
-   * kept for one wave so B6 can drop it alongside the RemoteRPCClient
-   * deletion.
    *
    * Detects authentication errors and emits domain events for user
    * notification.

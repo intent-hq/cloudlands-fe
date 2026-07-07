@@ -369,9 +369,6 @@ export function buildFileApi({ workspaceId, workspacePath, call, fsAdapter }: Fi
     async list(path: string = '.') {
       logger.debug('ws.file.list', { path });
       if (!adapter.isWithinWorkspace(path)) throw new Error('Access denied: path outside workspace');
-      if (adapter.isRemote) {
-        return (await adapter.listFiles(path)).map((name) => ({ name, type: 'unknown' }));
-      }
 
       return (await fs.readdir(adapter.resolvePath(path), { withFileTypes: true })).map((entry) => ({
         name: entry.name,

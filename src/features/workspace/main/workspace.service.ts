@@ -67,7 +67,6 @@ import {
   workspaceDeleted,
   workspaceArchived,
 } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
-import { RemoteGitManager } from '../../git/main/remote-git-manager';
 import { escapeShellArg } from '../../../shared/main/intent-server-utils';
 import { createTerminalFromBackend } from '../../terminal/main/terminal.ipc';
 import {
@@ -1326,185 +1325,14 @@ export class WorkspaceService {
 
       if (effectiveRepositoryPath) {
         if (isRemote && request.environmentConfig?.ssh) {
-          // Remote workspace: use RemoteGitManager
-          logger.info('Creating remote workspace', {
-            host: request.environmentConfig.ssh.host,
-            repositoryPath: effectiveRepositoryPath,
-          });
-
-          // Transform request SSH config (snake_case) to SSHConnectionConfig (camelCase)
-          // so RemoteGitManager can pass it directly to RemoteRPCManager, bypassing
-          // the workspace metadata file lookup that hasn't been saved yet.
-          const sshConfig: SSHConnectionConfig = {
-            host: request.environmentConfig.ssh.host,
-            port: request.environmentConfig.ssh.port || 22,
-            username: request.environmentConfig.ssh.user,
-            password: request.environmentConfig.ssh.password,
-            privateKeyPath: request.environmentConfig.ssh.key_path,
-            useAgent: request.environmentConfig.ssh.use_agent,
-            transport: request.environmentConfig.ssh.transport,
-            wsUrl: request.environmentConfig.ssh.ws_url,
+          // Remote workspace creation retired in P3-5. The remote RPC / git
+          // stack has been removed, so remote-configured workspaces can no
+          // longer be created from this daemon.
+          await this.repository.cleanup(id);
+          return {
+            ok: false,
+            error: 'Remote workspaces are no longer supported',
           };
-
-          // Check if skipWorktree mode is enabled for remote
-          if (request.skipWorktree) {
-            // Skip worktree creation - use repository path directly (mirrors local skipWorktree)
-            logger.info('Creating remote workspace in skipWorktree mode', {
-              repositoryPath: effectiveRepositoryPath,
-            });
-            worktreePath = effectiveRepositoryPath;
-
-            // Get the current HEAD commit SHA from the remote repository via SSH.
-            // The intent-server deploy+serve step has retired; the SSH connection
-            // is kept so the daemon's WSS transport can attach here later.
-            // TODO(P3-5): attach daemon WSS transport via `rpc-${id}` connection.
-            const rpcConnectionId = `rpc-${id}`;
-            try {
-              await sshManager.connect(rpcConnectionId, sshConfig);
-
-              const result = await sshManager.executeCommand(
-                rpcConnectionId,
-                `git -C ${escapeShellArg(effectiveRepositoryPath)} rev-parse HEAD`,
-                { timeout: 10000 },
-              );
-              if (result.exitCode === 0 && result.stdout.trim()) {
-                baseCommitSha = result.stdout.trim();
-                logger.debug('Base commit SHA from remote repository', { baseCommitSha });
-              }
-            } catch (error) {
-              logger.warn('Could not get remote base commit SHA', {
-                error: error instanceof Error ? error.message : String(error),
-              });
-            }
-          } else {
-            const remoteGitManager = new RemoteGitManager({
-              repositoryPath: effectiveRepositoryPath,
-              workspaceId: id,
-              sshConfig,
-            });
-
-            // Establish the SSH connection for later remote operations. The
-            // intent-server deploy+serve step has retired; the daemon's WSS
-            // transport will attach via this connection once wired.
-            // TODO(P3-5): attach daemon WSS transport via `rpc-${id}` connection.
-            const rpcConnectionId = `rpc-${id}`;
-            try {
-              await sshManager.connect(rpcConnectionId, sshConfig);
-            } catch (err) {
-              logger.warn('Failed to establish SSH connection during workspace creation', {
-                workspaceId: id,
-                error: err instanceof Error ? err.message : String(err),
-              });
-            }
-
-            try {
-              // Create worktree on remote
-              worktreePath = await remoteGitManager.createWorktree(branch, request.baseRef);
-
-              // Update workspace_path to use the worktree (not the repository root)
-              // This ensures the agent, MCP tools, and all remote operations use the correct path
-              if (request.environmentConfig) {
-                request.environmentConfig.workspace_path = worktreePath;
-              }
-
-              // Get base commit SHA from remote
-              try {
-                const status = await remoteGitManager.getStatus(worktreePath);
-                // The status doesn't include commit SHA, so we'll get it separately
-                // For now, we'll skip this for remote workspaces
-                logger.debug('Remote worktree created', { worktreePath, branch: status.branch });
-              } catch (error) {
-                logger.warn('Could not get remote git status', error as Error);
-              }
-            } catch (error) {
-              logger.error('Failed to create remote worktree', error as Error);
-              await this.repository.cleanup(id);
-              return {
-                ok: false,
-                error: `Failed to create remote worktree: ${(error as Error).message}`,
-              };
-            }
-          }
-
-          // Create .workspace metadata directory on the remote machine
-          // This mirrors the local workspace setup where .workspace/ is created by the repository layer
-          const remoteWorkspaceDir = `~/intent/workspaces/${escapeShellArg(id)}/.workspace`;
-          const mkdirConnectionId = `mkdir-${id}`;
-          try {
-            await sshManager.connect(mkdirConnectionId, sshConfig);
-            const mkdirResult = await sshManager.executeCommand(
-              mkdirConnectionId,
-              `mkdir -p ${remoteWorkspaceDir}`,
-              { timeout: 10000 },
-            );
-            if (mkdirResult.exitCode !== 0) {
-              logger.warn('Failed to create .workspace directory on remote', {
-                workspaceId: id,
-                exitCode: mkdirResult.exitCode,
-                stderr: mkdirResult.stderr,
-              });
-            } else {
-              logger.info('Created .workspace directory on remote', { workspaceId: id });
-            }
-
-            // Create default spec note on remote so MetadataSyncService has content to sync
-            try {
-              const specTimestamp = new Date().toISOString();
-              const notesDir = `${remoteWorkspaceDir}/notes`;
-              // Build the spec.md content matching serializeFrontmatter() output
-              // Use heredoc to write multi-line content safely (same pattern as terminal.ipc.ts)
-              const specFileContent = `---
-id: spec
-title: Spec
-tags: [spec]
-pinned: true
-created: ${specTimestamp}
-task:
-  status: not_started
----
-
-`;
-              const heredocDelimiter = `INTENT_SPEC_EOF_${Date.now().toString(36)}`;
-              const writeSpecResult = await sshManager.executeCommand(
-                mkdirConnectionId,
-                `mkdir -p ${notesDir} && cat > ${notesDir}/spec.md << '${heredocDelimiter}'\n${specFileContent}${heredocDelimiter}`,
-                { timeout: 10000 },
-              );
-              if (writeSpecResult.exitCode !== 0) {
-                logger.warn('Failed to create spec note on remote', {
-                  workspaceId: id,
-                  exitCode: writeSpecResult.exitCode,
-                  stderr: writeSpecResult.stderr,
-                });
-              } else {
-                logger.info('Created default spec note on remote', { workspaceId: id });
-              }
-            } catch (specError) {
-              logger.warn('Could not create spec note on remote', {
-                workspaceId: id,
-                error: specError instanceof Error ? specError.message : String(specError),
-              });
-            }
-          } catch (error) {
-            logger.warn('Could not create .workspace directory on remote', {
-              workspaceId: id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          } finally {
-            try {
-              await sshManager.disconnect(mkdirConnectionId);
-            } catch {
-              /* ignore */
-            }
-          }
-
-          // Extract git repository info from remote git config
-          if (!gitRepoInfo.owner && !gitRepoInfo.name) {
-            gitRepoInfo = await this.getGitRepoInfo(effectiveRepositoryPath, {
-              isRemote: true,
-              workspaceId: id as string,
-            });
-          }
         } else {
           // Local workspace: use local git commands
 

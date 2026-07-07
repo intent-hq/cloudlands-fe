@@ -31,10 +31,7 @@ import { InstructionService } from '../../agent/main/instruction-service';
 import { execAsync } from '../../../shared/git/git-env';
 import { getNotificationService } from '../../notifications/main/notification.service';
 import { GitService } from '../../git/main/git.service';
-import {
-  getWorkspaceGitInfo,
-  getRemoteGitManager,
-} from '../../git/main/git-router';
+import { getWorkspaceGitInfo } from '../../git/main/git-router';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
 import { disposeScriptProcessManager } from '../../scripts/main/script-process-manager';
 import { readScripts } from '../../scripts/main/scripts-persistence';
@@ -61,11 +58,6 @@ import {
   type SSHConnectionConfig,
 } from '../../../shared/main/ssh-manager';
 
-import { MetadataSyncService } from '../../metadata-fs/main/metadata-sync-service';
-import {
-  createMetadataSyncUiBridge,
-  type MetadataSyncUiBridge,
-} from './utils/metadata-sync-ui-bridge';
 import { clearMetadataFSCache } from '../../metadata-fs/main/metadata-fs-factory';
 import { deleteEventStoreForWorkspace } from '../../../store/main/slices/workspace-events/sagas/persistence-saga';
 
@@ -138,49 +130,7 @@ import {
 
 const logger = new Logger('WorkspaceIPC');
 
-// Storage for MetadataSyncService instances per workspace
-const metadataSyncServices = new Map<string, MetadataSyncService>();
-const metadataSyncUiBridges = new Map<string, MetadataSyncUiBridge>();
-
 const editorRefreshUnsubscribers = new Map<string, () => void>();
-
-function disposeMetadataSyncUiBridge(workspaceId: string): void {
-  const bridge = metadataSyncUiBridges.get(workspaceId);
-  if (!bridge) return;
-
-  metadataSyncUiBridges.delete(workspaceId);
-  try {
-    bridge.dispose();
-  } catch (error) {
-    logger.warn('[WorkspaceIPC] Failed to dispose MetadataSyncService UI bridge', error as Error, {
-      workspaceId,
-    });
-  }
-}
-
-async function stopMetadataSyncServiceForWorkspace(
-  workspaceId: string,
-  reason: string,
-): Promise<boolean> {
-  disposeMetadataSyncUiBridge(workspaceId);
-
-  const syncService = metadataSyncServices.get(workspaceId);
-  if (!syncService) return false;
-
-  try {
-    await syncService.stop();
-    logger.info('[WorkspaceIPC] Stopped MetadataSyncService', { workspaceId, reason });
-  } catch (error) {
-    logger.warn('[WorkspaceIPC] Failed to stop MetadataSyncService', error as Error, {
-      workspaceId,
-      reason,
-    });
-  } finally {
-    metadataSyncServices.delete(workspaceId);
-  }
-
-  return true;
-}
 
 // Use the singleton change detector manager instance
 const changeDetectorManager = singletonChangeDetectorManager;
@@ -592,8 +542,6 @@ export function setupWorkspaceIPC(): void {
             }
           }
 
-          // Stop MetadataSyncService for remote workspaces
-          await stopMetadataSyncServiceForWorkspace(id, 'workspace close');
           // Clear MetadataFS cache so it's re-created on next open
           clearMetadataFSCache();
 
@@ -746,8 +694,7 @@ export function setupWorkspaceIPC(): void {
 
           // Initialize the unified workspace watcher early, before other watchers that
           // depend on it. This creates a single @parcel/watcher instance for the entire workspace.
-          // Skip for remote workspaces — the worktree path doesn't exist locally and
-          // RemoteChangeDetector handles file watching instead.
+          // Skip for remote workspaces — the worktree path doesn't exist locally.
           const isRemote = !!workspace.isRemote && !!workspace.environmentConfig?.ssh;
           const worktreePath = workspace.worktreePath || workspace.repositoryPath;
           if (worktreePath && !isRemote) {
@@ -770,7 +717,7 @@ export function setupWorkspaceIPC(): void {
             }
           } else if (isRemote) {
             logger.info(
-              '[WorkspaceIPC] Skipping UnifiedWorkspaceWatcher for remote workspace (RemoteChangeDetector handles file watching)',
+              '[WorkspaceIPC] Skipping UnifiedWorkspaceWatcher for remote workspace',
               {
                 workspaceId: id,
               },
@@ -837,54 +784,6 @@ export function setupWorkspaceIPC(): void {
                   logger.warn('Failed to establish SSH connection during workspace open', {
                     workspaceId: workspace.id,
                     error: err instanceof Error ? err.message : String(err),
-                  });
-                }
-              }
-
-              // Start MetadataSyncService to sync remote .workspace/ → local cache
-              if (workspace.environmentConfig?.ssh) {
-                try {
-                  await stopMetadataSyncServiceForWorkspace(workspace.id, 'workspace open replacement');
-                  const remoteWorkspacePath = `~/intent/workspaces/${workspace.id}/.workspace`;
-                  const localCachePath = WorkspaceConfig.paths.metadata(workspace.id);
-                  const syncService = new MetadataSyncService({
-                    workspaceId: workspace.id,
-                    remoteWorkspacePath,
-                    localCachePath,
-                  });
-                  await syncService.start();
-                  metadataSyncServices.set(workspace.id, syncService);
-                  logger.info('[WorkspaceIPC] MetadataSyncService started for remote workspace', {
-                    workspaceId: workspace.id,
-                  });
-
-                  const bridge = createMetadataSyncUiBridge({
-                    syncService,
-                    workspaceId: workspace.id,
-                    localCachePath,
-                    sendToWorkspaceWindows,
-                    logger,
-                    refreshAgents: () => {
-                      mainDispatch(
-                        agentSessionUpdated({
-                          workspaceId: workspace.id,
-                          sessionId: '',
-                          status: null,
-                          activationState: null,
-                          isActive: null,
-                          isStreaming: null,
-                          isProcessing: null,
-                          isResponding: null,
-                          stopReason: null,
-                        }),
-                      );
-                    },
-                  });
-                  metadataSyncUiBridges.set(workspace.id, bridge);
-                } catch (syncError) {
-                  logger.warn('[WorkspaceIPC] Failed to start MetadataSyncService', {
-                    workspaceId: workspace.id,
-                    error: syncError instanceof Error ? syncError.message : String(syncError),
                   });
                 }
               }
@@ -1106,8 +1005,6 @@ export function setupWorkspaceIPC(): void {
           });
         }
 
-        // Stop MetadataSyncService for remote workspaces
-        await stopMetadataSyncServiceForWorkspace(validatedId, 'workspace delete');
         // Clear MetadataFS cache for deleted workspace
         clearMetadataFSCache();
 
@@ -1594,28 +1491,9 @@ export function setupWorkspaceIPC(): void {
 
           const gitInfo = await getWorkspaceGitInfo(workspaceId);
           if (gitInfo?.isRemote) {
-            // Remote workspace: use RemoteGitManager
-            try {
-              const remoteGit = getRemoteGitManager(
-                workspaceId,
-                gitInfo.repositoryPath || gitInfo.worktreePath,
-              );
-              const remoteStatus = await remoteGit.getStatus(gitInfo.worktreePath);
-              const stagedCount = remoteStatus.staged.length;
-              const unstagedCount =
-                remoteStatus.modified.length +
-                remoteStatus.untracked.length +
-                remoteStatus.deleted.length;
-              changesStats = {
-                uncommitted: stagedCount + unstagedCount,
-                staged: stagedCount,
-                unstaged: unstagedCount,
-              };
-            } catch (error) {
-              logger.error('Failed to get remote git status for hover', error as Error, {
-                workspaceId,
-              });
-            }
+            // Remote hover git status retired in P3-5; leave the default zero
+            // counts so remote-configured workspaces don't attempt to route
+            // through the deleted remote stack.
           } else {
             // Local workspace: use GitService
             const gitService = new GitService();

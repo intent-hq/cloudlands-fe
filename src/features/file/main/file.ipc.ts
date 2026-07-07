@@ -72,7 +72,7 @@ function expandPath(filePath: string): string {
 // Remote-workspace file IPC branches retired in P3-5.1; handlers below run
 // against the local filesystem only. Remote-configured workspaces surface
 // underlying fs errors through the existing try/catch → { success: false }
-// contract rather than routing through the legacy RemoteRPCClient.
+// contract rather than routing through the legacy remote stack.
 
 export function setupFileIPC() {
   // Read file

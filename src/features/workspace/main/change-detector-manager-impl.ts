@@ -159,9 +159,9 @@ export class ChangeDetectorManager extends EventEmitter {
 
     const isRemote = workspace.environmentConfig?.type === 'remote';
 
-    // Remote-workspace monitoring retires in P3-5.1 — the RemoteChangeDetector
-    // path is off; remote-configured workspaces skip monitoring instead of
-    // throwing so open flows continue to work.
+    // Remote-workspace monitoring retires in P3-5.1 — the remote change
+    // detection path is off; remote-configured workspaces skip monitoring
+    // instead of throwing so open flows continue to work.
     if (isRemote) {
       logger.info(
         `[ChangeDetectorManager] Skipping monitoring for remote-configured workspace ${workspace.id} (remote change detection retired)`,

@@ -318,7 +318,6 @@ import { setupLogIPC } from '../features/log/main/log.ipc';
 import { setupBannerIPC } from '../features/banner/main/banner.ipc';
 import { setupMemoriesIPC } from '../features/memories/main/memories.ipc';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
-import { setupRemoteFileSystemIPC } from '../features/remote-fs/main/remote-fs.ipc';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSkillsIPC } from '../features/agent/main/skills.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
@@ -1400,7 +1399,6 @@ app.whenReady().then(async () => {
     setupLogIPC();
     setupTestingIPC();
     // setupAuggieIPC(); // Already called in critical IPC setup
-    setupRemoteFileSystemIPC();
     // setupEventsIPC(); // Already called in critical IPC setup
     // setupGitTrackingIPC(); // Already called in critical IPC setup
     // registerAcceptChangesHandlers(); // Already called in critical IPC setup

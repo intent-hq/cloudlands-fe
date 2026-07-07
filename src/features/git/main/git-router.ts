@@ -1,11 +1,10 @@
 /**
  * Git Router
  *
- * Routes git operations to the appropriate handler based on workspace type.
- * Uses GitService for local workspaces and RemoteGitManager for remote workspaces.
+ * Loads workspace git metadata and validates scope-restricted paths for local
+ * workspaces. Remote-workspace routing retired in P3-5.
  */
 
-import { RemoteGitManager } from './remote-git-manager';
 import type { SSHConnectionConfig } from '../../../shared/main/ssh-manager';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import { Logger } from '../../../shared/logger';
@@ -13,9 +12,6 @@ import fs from 'fs';
 import path from 'path';
 
 const logger = new Logger('GitRouter');
-
-// Cache of RemoteGitManager instances per workspace
-const remoteGitManagers = new Map<string, RemoteGitManager>();
 
 /**
  * Validate that file paths are within the workspace scope
@@ -128,40 +124,4 @@ export async function getWorkspaceGitInfo(workspaceId: string): Promise<Workspac
     logger.error('Failed to read workspace metadata', error as Error, { workspaceId });
     return null;
   }
-}
-
-/**
- * Get or create a RemoteGitManager for a workspace
- */
-export function getRemoteGitManager(
-  workspaceId: string,
-  repositoryPath: string,
-): RemoteGitManager {
-  let manager = remoteGitManagers.get(workspaceId);
-  if (!manager) {
-    manager = new RemoteGitManager({
-      repositoryPath,
-      workspaceId,
-    });
-    remoteGitManagers.set(workspaceId, manager);
-  }
-  return manager;
-}
-
-/**
- * Cleanup a RemoteGitManager for a workspace
- */
-export async function cleanupRemoteGitManager(workspaceId: string): Promise<void> {
-  const manager = remoteGitManagers.get(workspaceId);
-  if (manager) {
-    remoteGitManagers.delete(workspaceId);
-  }
-}
-
-/**
- * Cleanup all RemoteGitManagers
- */
-export async function cleanupAllRemoteGitManagers(): Promise<void> {
-  const workspaceIds = Array.from(remoteGitManagers.keys());
-  await Promise.all(workspaceIds.map((id) => cleanupRemoteGitManager(id)));
 }
