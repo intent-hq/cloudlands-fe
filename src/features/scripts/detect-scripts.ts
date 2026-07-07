@@ -1,12 +1,9 @@
 /**
  * Renderer-side script detection.
  *
- * Runs the same heuristic scan the FE-main scanner used to run
- * (`main/script-scanner.ts`), but reads manifests through the daemon-owned
- * filesystem seam (`appClient.files.read`) so it works in daemon builds where
- * the renderer has no direct disk access. The LLM classifier that the main
- * scanner exposes behind `skipLLM: false` is not ported — the interactive
- * detect flow has always defaulted to the local heuristics path.
+ * Runs a heuristic scan across common root manifests but reads them through
+ * the daemon-owned filesystem seam (`appClient.files.read`) so it works in
+ * daemon builds where the renderer has no direct disk access.
  *
  * The detector only produces candidates; upsert-into-daemon and the diff
  * against the live `script.list` live in `scripts.client.ts` so the wire
@@ -264,8 +261,7 @@ async function readManifest(
 
 /**
  * Detect the package manager by probing lockfiles at the workspace root via
- * the daemon `file.read` seam (parallels `main/script-scanner.ts` which reads
- * the directory listing). Falls back to `npm` when no lockfile is present.
+ * the daemon `file.read` seam. Falls back to `npm` when no lockfile is present.
  */
 export async function detectPackageManager(
   files: FilesClient,
@@ -283,11 +279,9 @@ export async function detectPackageManager(
 /**
  * Scan a workspace for scripts across common root manifests.
  *
- * Mirrors the heuristic path of `main/script-scanner.ts` (which the FE-main
- * scanner exposed as `scanScripts(..., { skipLLM: true })`) but reads every
- * manifest through the daemon-owned `file.read` seam so it works in daemon
- * builds. Emits pure candidates — persistence + diff-against-daemon-list
- * happens in `scripts.client.ts`.
+ * Reads every manifest through the daemon-owned `file.read` seam so it works
+ * in daemon builds. Emits pure candidates — persistence + diff-against-
+ * daemon-list happens in `scripts.client.ts`.
  */
 export async function detectScriptCandidates(
   files: FilesClient,

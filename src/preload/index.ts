@@ -626,7 +626,6 @@ const ALLOWED_CHANNELS = [
   "scripts:restart",
   "scripts:get-status",
   "scripts:get-output",
-  "scripts:detect",
   "scripts:save-to-repo",
   "token-usage:get",
   "token-usage:changed",

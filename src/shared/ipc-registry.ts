@@ -964,7 +964,6 @@ export const IPC_CHANNELS = {
     RESTART: 'scripts:restart',
     GET_STATUS: 'scripts:get-status',
     GET_OUTPUT: 'scripts:get-output',
-    DETECT: 'scripts:detect',
     SAVE_TO_REPO: 'scripts:save-to-repo',
   },
 

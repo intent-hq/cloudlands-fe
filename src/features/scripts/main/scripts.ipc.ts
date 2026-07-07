@@ -41,10 +41,6 @@ import {
   getScriptProcessManager,
   disposeScriptProcessManager,
 } from './script-process-manager';
-import {
-  scanScripts,
-  mergeDetectedScripts,
-} from './script-scanner';
 import { WorkspaceConfig } from '$shared/main/config';
 import {
   CreateScriptSchema,
@@ -61,9 +57,6 @@ const logger = new Logger('ScriptsIPC');
 
 /** Track workspaces that have already triggered auto-start to avoid duplicates */
 const autoStartTriggered = new Set<string>();
-
-/** Track workspaces that have already triggered auto-detect to avoid re-running on every list call */
-const autoDetectTriggered = new Set<string>();
 
 // ============================================================================
 // Validation Schemas
@@ -115,10 +108,6 @@ const ScriptsGetOutputSchema = z.object({
   workspaceId: WorkspaceIdField,
   scriptId: z.string().min(1, 'Script ID is required'),
   lastN: z.number().int().positive().optional(),
-});
-
-const ScriptsDetectSchema = z.object({
-  workspaceId: WorkspaceIdField,
 });
 
 /**
@@ -347,44 +336,6 @@ export function registerScriptsHandlers(): void {
               logger.info('[Scripts] Bootstrapped workspace scripts from repo', {
                 workspaceId,
                 count: bootstrapped.length,
-              });
-            }
-          }
-
-          // Auto-detect from package.json/Makefile/etc. if still no scripts (once per session)
-          if (scripts.length === 0 && !autoDetectTriggered.has(workspaceId)) {
-            autoDetectTriggered.add(workspaceId);
-            try {
-              const { workspacePath, repositoryPath } = await resolveWorkspacePaths(workspaceId);
-              const scanResult = await scanScripts(workspaceId, workspacePath, { skipLLM: true });
-              if (scanResult.scripts.length > 0) {
-                for (const script of scanResult.scripts) {
-                  await upsertScript(workspaceId, script);
-                }
-                scripts = await readScripts(workspaceId);
-                logger.info('[Scripts] Auto-detected scripts on first load', {
-                  workspaceId,
-                  count: scanResult.scripts.length,
-                });
-
-                // Seed repo-level scripts if none exist yet
-                const repoConfig = await readRepoConfig(repositoryPath);
-                if (!Array.isArray(repoConfig.scripts) && scripts.length > 0) {
-                  const repoScripts: RepoScript[] = scripts.map((s) => ({
-                    name: s.name,
-                    command: s.command,
-                    mode: s.mode,
-                    category: s.category,
-                    cwd: s.cwd,
-                    env: s.env,
-                    autoStart: s.autoStart,
-                  }));
-                  await writeRepoConfig(repositoryPath, { ...repoConfig, scripts: repoScripts });
-                }
-              }
-            } catch (error) {
-              logger.warn('[Scripts] Auto-detection failed, continuing without scripts', {
-                error: String(error),
               });
             }
           }
@@ -692,83 +643,6 @@ export function registerScriptsHandlers(): void {
         }
       },
       SCRIPTS_CHANNELS.GET_OUTPUT,
-    ),
-  );
-
-  // ---- scripts:detect ----
-  ipcMain.handle(
-    SCRIPTS_CHANNELS.DETECT,
-    createSafeValidatedHandler(
-      ScriptsDetectSchema,
-      async (_event, { workspaceId }) => {
-        try {
-          const { workspacePath, repositoryPath } = await resolveWorkspacePaths(workspaceId);
-
-          // Use the script scanner with local heuristics only (no LLM) for fast interactive detection
-          const scanResult = await scanScripts(workspaceId, workspacePath, { skipLLM: true });
-
-          // Merge with existing scripts (user scripts are sacred)
-          const existing = await readScripts(workspaceId);
-          const { toAdd, toRemove } = mergeDetectedScripts(existing, scanResult.scripts);
-
-          // Persist additions/updates
-          for (const script of toAdd) {
-            await upsertScript(workspaceId, script);
-          }
-
-          // Remove stale auto-detected scripts (stop running processes first)
-          const manager = await getOrCreateManager(workspaceId);
-          for (const scriptId of toRemove) {
-            try {
-              await manager.remove(scriptId);
-            } catch { /* manager may not have this script */ }
-            await removeScript(workspaceId, scriptId);
-          }
-
-          logger.info(`[Scripts] Detection complete`, {
-            workspaceId,
-            detected: scanResult.scripts.length,
-            added: toAdd.length,
-            removed: toRemove.length,
-            fromCache: scanResult.fromCache,
-            packageManager: scanResult.packageManager,
-          });
-
-          // Seed repo-level scripts if none exist yet
-          const repoConfig = await readRepoConfig(repositoryPath);
-          if (!Array.isArray(repoConfig.scripts)) {
-            const allScripts = await readScripts(workspaceId);
-            if (allScripts.length > 0) {
-              const repoScripts: RepoScript[] = allScripts.map((s) => ({
-                name: s.name,
-                command: s.command,
-                mode: s.mode,
-                category: s.category,
-                cwd: s.cwd,
-                env: s.env,
-                autoStart: s.autoStart,
-              }));
-              await writeRepoConfig(repositoryPath, { ...repoConfig, scripts: repoScripts });
-              logger.info('Seeded repo-level scripts from first detection', { workspaceId });
-            }
-          }
-
-          return {
-            success: true,
-            detected: scanResult.scripts.length,
-            added: toAdd.length,
-            removed: toRemove.length,
-            packageManager: scanResult.packageManager,
-          };
-        } catch (error) {
-          logger.error('[Scripts] Error detecting scripts:', error as Error);
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          };
-        }
-      },
-      SCRIPTS_CHANNELS.DETECT,
     ),
   );
 
