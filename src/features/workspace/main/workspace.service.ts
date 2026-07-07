@@ -32,7 +32,6 @@ import { addRepo } from './repo-registry';
 import { getChangeHistoryForWorkspace } from './change-history-persistence';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
-import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import {
   unifiedIdService,
   type UnifiedIdService,
@@ -69,7 +68,7 @@ import {
   workspaceArchived,
 } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { RemoteGitManager } from '../../git/main/remote-git-manager';
-import { getIntentServerPath, escapeShellArg } from '../../../shared/main/intent-server-utils';
+import { escapeShellArg } from '../../../shared/main/intent-server-utils';
 import { createTerminalFromBackend } from '../../terminal/main/terminal.ipc';
 import {
   appendSlugSuffix,
@@ -276,21 +275,15 @@ export class WorkspaceService {
       let configContent: string;
 
       if (remoteContext?.isRemote && remoteContext.workspaceId) {
-        // Remote workspace: read git config via RPC
-        try {
-          const rpcClient = await remoteRPCManager.getClient(remoteContext.workspaceId);
-          const result = await rpcClient.readFile({
-            path: `${repoPath}/.git/config`,
-          });
-          configContent = result.content;
-        } catch (error) {
-          logger.warn('Failed to read remote git config via RPC', {
-            repoPath,
-            workspaceId: remoteContext.workspaceId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return {};
-        }
+        // Remote workspace: git-config read over the legacy remote RPC has
+        // retired with the intent-server bundle. Return no repo info until
+        // the daemon's WSS transport lands and can serve `file.read` here.
+        // TODO(P3-5): route via daemon `file.read` over WSS transport.
+        logger.info('Skipping remote git config read; legacy RPC retired', {
+          repoPath,
+          workspaceId: remoteContext.workspaceId,
+        });
+        return {};
       } else {
         // Local workspace: read git config from filesystem
         configContent = await this.repository.readGitConfig(repoPath);
@@ -1361,33 +1354,13 @@ export class WorkspaceService {
             });
             worktreePath = effectiveRepositoryPath;
 
-            // Get the current HEAD commit SHA from the remote repository via SSH
+            // Get the current HEAD commit SHA from the remote repository via SSH.
+            // The intent-server deploy+serve step has retired; the SSH connection
+            // is kept so the daemon's WSS transport can attach here later.
+            // TODO(P3-5): attach daemon WSS transport via `rpc-${id}` connection.
             const rpcConnectionId = `rpc-${id}`;
             try {
               await sshManager.connect(rpcConnectionId, sshConfig);
-
-              // Deploy intent-server and start RPC daemon (mirrors non-skipWorktree path)
-              const localBundlePath = getIntentServerPath();
-              await sshManager.deployIntentServer(rpcConnectionId, localBundlePath);
-              const serveResult = await sshManager.executeCommand(
-                rpcConnectionId,
-                `node ~/.intent-server/server.js serve --workspace ${escapeShellArg(id)}`,
-                { timeout: 15000 },
-              );
-              if (serveResult.exitCode !== 0) {
-                logger.warn(
-                  'Failed to start RPC serve daemon during skipWorktree workspace creation',
-                  {
-                    workspaceId: id,
-                    exitCode: serveResult.exitCode,
-                    stderr: serveResult.stderr,
-                  },
-                );
-              } else {
-                logger.info('RPC serve daemon ready for skipWorktree workspace creation', {
-                  workspaceId: id,
-                });
-              }
 
               const result = await sshManager.executeCommand(
                 rpcConnectionId,
@@ -1399,7 +1372,7 @@ export class WorkspaceService {
                 logger.debug('Base commit SHA from remote repository', { baseCommitSha });
               }
             } catch (error) {
-              logger.warn('Could not get remote base commit SHA or start RPC daemon', {
+              logger.warn('Could not get remote base commit SHA', {
                 error: error instanceof Error ? error.message : String(error),
               });
             }
@@ -1410,29 +1383,15 @@ export class WorkspaceService {
               sshConfig,
             });
 
-            // Start RPC serve daemon so rpc.sock exists for createWorktree()
+            // Establish the SSH connection for later remote operations. The
+            // intent-server deploy+serve step has retired; the daemon's WSS
+            // transport will attach via this connection once wired.
+            // TODO(P3-5): attach daemon WSS transport via `rpc-${id}` connection.
             const rpcConnectionId = `rpc-${id}`;
             try {
               await sshManager.connect(rpcConnectionId, sshConfig);
-              const localBundlePath = getIntentServerPath();
-              await sshManager.deployIntentServer(rpcConnectionId, localBundlePath);
-              const serveResult = await sshManager.executeCommand(
-                rpcConnectionId,
-                `node ~/.intent-server/server.js serve --workspace ${escapeShellArg(id)}`,
-                { timeout: 15000 },
-              );
-              if (serveResult.exitCode !== 0) {
-                logger.warn('Failed to start RPC serve daemon during workspace creation', {
-                  workspaceId: id,
-                  exitCode: serveResult.exitCode,
-                  stderr: serveResult.stderr,
-                });
-              } else {
-                logger.info('RPC serve daemon ready for workspace creation', { workspaceId: id });
-              }
             } catch (err) {
-              // Non-fatal — createWorktree() might still work if a daemon was already running
-              logger.warn('Failed to start RPC daemon during workspace creation', {
+              logger.warn('Failed to establish SSH connection during workspace creation', {
                 workspaceId: id,
                 error: err instanceof Error ? err.message : String(err),
               });
@@ -3486,13 +3445,6 @@ task:
             try {
               await sshManager.connect(deleteConnectionId, sshConfig);
 
-              // Kill intent-server process for this workspace before cleanup
-              await sshManager.executeCommand(
-                deleteConnectionId,
-                `pkill -f "server.js.*--workspace ${id}" || true`,
-                { timeout: 5000 },
-              );
-
               // Remove the git worktree via direct SSH command (avoids RPC dependency)
               const worktreePath = escapeShellArg(worktreeWorkspaceResult.data.worktreePath);
               const repoPath = escapeShellArg(worktreeWorkspaceResult.data.repositoryPath);
@@ -3507,12 +3459,6 @@ task:
               await sshManager.executeCommand(
                 deleteConnectionId,
                 `rmdir ${escapeShellArg(workspaceFolder)} 2>/dev/null || true`,
-                { timeout: 5000 },
-              );
-              // Also clean up ~/.intent-server/workspaces/{id}/ directory
-              await sshManager.executeCommand(
-                deleteConnectionId,
-                `rm -rf ~/.intent-server/workspaces/${escapeShellArg(id)}`,
                 { timeout: 5000 },
               );
               // Clean up remote .workspace/ metadata directory
@@ -3545,50 +3491,6 @@ task:
         logger.info('Skipping git worktree removal for direct-branch mode workspace', {
           workspaceId: id,
         });
-
-        // Skip-worktree workspaces still start the RPC daemon, so we need to
-        // clean up ~/.intent-server/workspaces/{id}/ on the remote host.
-        const workspace = worktreeWorkspaceResult.data;
-        if (workspace.isRemote && workspace.environmentConfig?.ssh) {
-          const ssh = workspace.environmentConfig.ssh;
-          const sshConfig: SSHConnectionConfig = {
-            host: ssh.host,
-            port: ssh.port || 22,
-            username: ssh.user,
-            password: ssh.password,
-            privateKeyPath: ssh.key_path,
-            useAgent: ssh.use_agent,
-            transport: ssh.transport,
-            wsUrl: ssh.ws_url,
-          };
-          const deleteConnectionId = `delete-${id}`;
-          try {
-            await sshManager.connect(deleteConnectionId, sshConfig);
-
-            // Kill intent-server process for this workspace before cleanup
-            await sshManager.executeCommand(
-              deleteConnectionId,
-              `pkill -f "server.js.*--workspace ${id}" || true`,
-              { timeout: 5000 },
-            );
-
-            await sshManager.executeCommand(
-              deleteConnectionId,
-              `rm -rf ~/.intent-server/workspaces/${escapeShellArg(id)}`,
-              { timeout: 5000 },
-            );
-          } catch (cleanupErr) {
-            logger.warn(
-              'Failed to clean up remote intent-server directory for skip-worktree workspace',
-              {
-                workspaceId: id,
-                error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-              },
-            );
-          } finally {
-            await sshManager.disconnect(deleteConnectionId).catch(() => {});
-          }
-        }
       }
 
       // Remove workspace directory via repository

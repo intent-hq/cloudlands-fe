@@ -27,8 +27,6 @@ import { agentSessionUpdated } from '../../../store/main/slices/agent-events/age
 import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 
 import { WorkspaceConfig } from '../../../shared/main/config.js';
-import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
-import { RemoteRPCError } from '../../../shared/main/remote-rpc-client';
 import { InstructionService } from '../../agent/main/instruction-service';
 import { execAsync } from '../../../shared/git/git-env';
 import { getNotificationService } from '../../notifications/main/notification.service';
@@ -62,7 +60,7 @@ import {
   sshManager,
   type SSHConnectionConfig,
 } from '../../../shared/main/ssh-manager';
-import { getIntentServerPath, escapeShellArg } from '../../../shared/main/intent-server-utils';
+
 import { MetadataSyncService } from '../../metadata-fs/main/metadata-sync-service';
 import {
   createMetadataSyncUiBridge,
@@ -814,8 +812,10 @@ export function setupWorkspaceIPC(): void {
           // but the workspace should be usable immediately
           const monitoringAndGitPromise = (async () => {
             try {
-              // For remote workspaces, ensure RPC daemon is running BEFORE monitoring starts.
-              // Monitoring, file explorer, and git state checks all need the RPC socket.
+              // For remote workspaces, keep the SSH connection warmed so later
+              // remote operations reuse it. The intent-server deploy+serve step
+              // has retired; the daemon's WSS transport will attach here later.
+              // TODO(P3-5): attach daemon WSS transport via `rpc-${workspace.id}`.
               if (workspace.environmentConfig?.ssh) {
                 try {
                   const ssh = workspace.environmentConfig.ssh;
@@ -830,33 +830,11 @@ export function setupWorkspaceIPC(): void {
                     wsUrl: ssh.ws_url,
                   };
 
-                  // Establish SSH connection for RPC (reuse existing connection if available)
                   const rpcConnectionId = `rpc-${workspace.id}`;
                   await sshManager.connect(rpcConnectionId, sshConfig);
-
-                  // Deploy intent-server if needed
-                  const localBundlePath = getIntentServerPath();
-                  await sshManager.deployIntentServer(rpcConnectionId, localBundlePath);
-
-                  // Start RPC-only daemon (idempotent — exits with success if already running)
-                  const serveResult = await sshManager.executeCommand(
-                    rpcConnectionId,
-                    `node ~/.intent-server/server.js serve --workspace ${escapeShellArg(workspace.id)}`,
-                    { timeout: 15000 },
-                  );
-
-                  if (serveResult.exitCode !== 0) {
-                    logger.warn('Failed to start RPC serve daemon', {
-                      workspaceId: workspace.id,
-                      exitCode: serveResult.exitCode,
-                      stderr: serveResult.stderr,
-                    });
-                  } else {
-                    logger.info('RPC serve daemon ready', { workspaceId: workspace.id });
-                  }
                 } catch (err) {
                   // Non-fatal — monitoring will still start; git integration will retry via auto-sync timer
-                  logger.warn('Failed to start RPC daemon during workspace open', {
+                  logger.warn('Failed to establish SSH connection during workspace open', {
                     workspaceId: workspace.id,
                     error: err instanceof Error ? err.message : String(err),
                   });
@@ -2212,64 +2190,20 @@ export function setupWorkspaceIPC(): void {
 
           const maxResults = typeof limit === 'number' && limit > 0 ? limit : 50;
 
-          // ──── Remote workspace: route through RPC ────
+          // ──── Remote workspace: legacy RPC retired ────
+          // Directory listing and pattern search over the legacy remote RPC has
+          // retired with the intent-server bundle. Return an empty result until
+          // the daemon's WSS transport lands and can serve `fs.listDir`/`fs.find`.
+          // TODO(P3-5): route via daemon `fs.listDir`/`fs.find` over WSS transport.
           if (isRemote) {
-            const rpcClient = await remoteRPCManager.getClient(workspaceId);
-
-            if (pattern && String(pattern).trim().length > 0) {
-              // Pattern search: use exec with find command on remote
-              const needle = String(pattern).toLowerCase();
-              const result = await rpcClient.exec({
-                command: `find ${escapeShellArg(listingPath)} -maxdepth 5 -type f -not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/dist/*' -not -path '*/build/*' -not -path '*/bazel-*/*' | head -${maxResults}`,
-                timeout: 30000,
-              });
-              // Parse find output into file objects
-              const files = (result.stdout || '')
-                .split('\n')
-                .filter(Boolean)
-                .filter((f) => {
-                  const name = path.basename(f).toLowerCase();
-                  const rel = f.startsWith(listingPath + '/')
-                    ? f.slice(listingPath.length + 1)
-                    : path.basename(f);
-                  return name.includes(needle) || rel.toLowerCase().includes(needle);
-                })
-                .slice(0, maxResults)
-                .map((f) => ({
-                  name: path.basename(f),
-                  path: f,
-                  relativePath: f.startsWith(listingPath + '/')
-                    ? f.slice(listingPath.length + 1)
-                    : path.basename(f),
-                  type: 'file' as const,
-                }));
-              return { files, folders: [] };
-            } else {
-              // Shallow listing: use RPC listDir
-              const result = await rpcClient.listDir({
-                path: listingPath,
-                includeHidden: false,
-              });
-              const files = result.entries
-                .filter((e) => e.type === 'file')
-                .slice(0, maxResults)
-                .map((e) => ({
-                  name: e.name,
-                  path: path.join(listingPath, e.name),
-                  relativePath: e.name,
-                  type: 'file' as const,
-                }));
-              const folders = result.entries
-                .filter((e) => e.type === 'directory' && !e.name.startsWith('.'))
-                .slice(0, maxResults)
-                .map((e) => ({
-                  name: e.name,
-                  path: path.join(listingPath, e.name),
-                  relativePath: e.name,
-                  type: 'directory' as const,
-                }));
-              return { files, folders };
-            }
+            void listingPath;
+            void maxResults;
+            void pattern;
+            logger.info(
+              'workspace:list-files: skipping remote listing; legacy RPC retired',
+              { workspaceId },
+            );
+            return { files: [], folders: [] };
           }
 
           // ──── Local workspace: use local fs ────
@@ -2455,22 +2389,19 @@ export function setupWorkspaceIPC(): void {
 
           let stdout = '';
 
-          // Helper to execute search command (local or remote)
+          // Remote in-files search over the legacy RPC has retired with the
+          // intent-server bundle. Skip the remote branch and return an empty
+          // result until the daemon's WSS transport lands.
+          // TODO(P3-5): route via daemon `fs.grep` over WSS transport.
+          if (isRemote && workspaceId) {
+            logger.info(
+              'workspace:search-in-files: skipping remote search; legacy RPC retired',
+              { workspaceId },
+            );
+            return [];
+          }
+
           const execSearchCommand = async (cmd: string): Promise<string> => {
-            if (isRemote && workspaceId) {
-              const rpcClient = await remoteRPCManager.getClient(workspaceId);
-              const fullCommand = `cd "${workspacePath}" && ${cmd}`;
-              try {
-                const result = await rpcClient.exec({ command: fullCommand, timeout: 30000 });
-                return result.stdout || '';
-              } catch (error) {
-                if (error instanceof RemoteRPCError && error.code === -32000) {
-                  const data = error.data as { stdout?: string } | undefined;
-                  return data?.stdout || '';
-                }
-                throw error;
-              }
-            }
             const result = await execAsync(cmd, {
               cwd: workspacePath,
               maxBuffer: 20 * 1024 * 1024,
