@@ -10,22 +10,30 @@
  * flipped, so every card's `statusLoading` stayed true and onboarding step 1
  * could not be completed.
  *
- * The middleware routes the triggers through the existing
- * `getProviderAvailability()` client (`providers:get-availability` →
- * provider-status-bridge-seeder → daemon `host.*` probes, PROTOCOL §5.14) and
- * dispatches per-provider success/failure plus — ALWAYS, even on error —
- * `checkAllProvidersComplete`, so the UI lands on installed / not-installed /
- * error and never hangs.
+ * The middleware fans out one `providers:check-single` IPC per provider in
+ * parallel (each probe → provider-status-bridge-seeder → daemon `host.*`
+ * calls, PROTOCOL §5.14) so every card flips as ITS probe settles rather
+ * than all cards updating together when the slowest probe finishes. Once
+ * every per-provider probe settles the middleware ALWAYS dispatches
+ * `checkAllProvidersComplete`, so the UI lands on installed / not-installed
+ * / error and never hangs.
+ *
+ * The aggregated `getProviderAvailability()` client stays available for
+ * non-onboarding callers (ProviderSelector, InitialAgentPicker,
+ * resolve-onboarding-model, AuggieSetupGate). After each bulk fan-out we
+ * invalidate its 30s cache so a subsequent aggregated caller sees the fresh
+ * per-provider results instead of a pre-refresh snapshot.
  *
  * Dependency-light per src/store/renderer/AGENTS.md: imports the availability
- * client, the configured store, slice actions, and the logger (no selectors).
+ * client (cache-invalidation only), the configured store, slice actions, and
+ * the logger (no selectors).
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import { invoke } from "$lib/electron-bridge";
 import { createLogger } from "$lib/utils/client-logger";
 import { PROVIDERS_CHANNELS } from "$shared/ipc/channels";
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/config/provider-config";
-import { getProviderAvailability } from "$features/providers/provider-availability.client";
+import { clearProviderAvailabilityCache } from "$features/providers/provider-availability.client";
 import { store as appStore } from "$store/renderer/store";
 import {
   checkAllProvidersComplete,
@@ -43,39 +51,6 @@ const logger = createLogger("ProviderAvailabilityCheckService");
 export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
   /** Coalesce overlapping bulk checks (focus + visibility can fire together). */
   let inFlight: Promise<void> | null = null;
-
-  const runBulkCheck = (forceRefresh: boolean): Promise<void> => {
-    if (inFlight) return inFlight;
-
-    const loadingMap: Record<string, boolean> = {};
-    for (const providerId of Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID)) {
-      loadingMap[providerId] = true;
-    }
-    appStore.dispatch(setAllProvidersLoading(loadingMap));
-
-    inFlight = (async () => {
-      try {
-        const result = await getProviderAvailability(forceRefresh);
-        const providers = result.providers as Record<string, ProviderStatus | undefined>;
-        for (const [key, providerId] of Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID)) {
-          appStore.dispatch(
-            checkSingleProviderSuccess(providerId, providers[key] ?? { available: false }),
-          );
-        }
-      } catch (error) {
-        // getProviderAvailability degrades internally, but stay terminal even
-        // if it ever throws: every card lands on not-available, never spins.
-        logger.error("Bulk provider availability check failed", { error });
-        for (const providerId of Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID)) {
-          appStore.dispatch(checkSingleProviderFailure(providerId));
-        }
-      } finally {
-        appStore.dispatch(checkAllProvidersComplete());
-        inFlight = null;
-      }
-    })();
-    return inFlight;
-  };
 
   const runSingleCheck = async (providerId: string): Promise<void> => {
     try {
@@ -96,6 +71,37 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
     }
   };
 
+  const runBulkCheck = (): Promise<void> => {
+    if (inFlight) return inFlight;
+
+    const providerIds = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID);
+    const loadingMap: Record<string, boolean> = {};
+    for (const providerId of providerIds) {
+      loadingMap[providerId] = true;
+    }
+    appStore.dispatch(setAllProvidersLoading(loadingMap));
+
+    inFlight = (async () => {
+      try {
+        // Fan out one probe per provider in parallel and let each dispatch
+        // its own success/failure as soon as it settles — fast probes must
+        // not wait on slow ones. `allSettled` prevents a single rejection
+        // from short-circuiting the group; runSingleCheck already handles
+        // its own thrown errors and dispatches `checkSingleProviderFailure`.
+        await Promise.allSettled(providerIds.map((id) => runSingleCheck(id)));
+      } finally {
+        // The onboarding path just probed every provider fresh; drop the
+        // aggregated client cache so the next non-onboarding caller
+        // (settings, resolve-onboarding-model, …) picks up the same fresh
+        // state instead of returning a pre-refresh snapshot.
+        clearProviderAvailabilityCache();
+        appStore.dispatch(checkAllProvidersComplete());
+        inFlight = null;
+      }
+    })();
+    return inFlight;
+  };
+
   return () => (next) => (action) => {
     const result = next(action);
     if (action && typeof action.type === "string") {
@@ -103,13 +109,14 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
         case ensureProvidersChecked.type:
           // First-mount trigger: only fetch when nothing has been checked yet.
           if (!appStore.state.agentAvailability.hasCheckedOnce) {
-            void runBulkCheck(false);
+            void runBulkCheck();
           }
           break;
         case checkAllProvidersRequested.type:
-          // Focus/visibility recheck: bypass the 30s client cache so a manual
+          // Focus/visibility recheck: per-provider CHECK_SINGLE bypasses the
+          // aggregated 30s client cache by construction, so a manual
           // install/login in the user's terminal is picked up immediately.
-          void runBulkCheck(true);
+          void runBulkCheck();
           break;
         case checkSingleProviderRequested.type: {
           const payload = Array.isArray(action.payload) ? action.payload : [];

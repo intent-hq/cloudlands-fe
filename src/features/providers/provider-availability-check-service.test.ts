@@ -1,11 +1,13 @@
 /**
  * Tests for the provider-availability check middleware (bug: onboarding
- * provider cards stuck on "Checking…" forever).
+ * provider cards stuck on "Checking…" forever, then: cards must settle
+ * INDIVIDUALLY as their own probe resolves).
  *
- * Asserts the agent-availability triggers route through
- * `providers:get-availability` / `providers:check-single` and ALWAYS land the
- * slice in a terminal state: per-provider statuses set, `hasCheckedOnce`
- * flipped — even when the availability envelope reports failure.
+ * Asserts the agent-availability triggers fan out per-provider
+ * `providers:check-single` IPC calls in parallel and ALWAYS land the slice
+ * in a terminal state: per-provider statuses set as each probe settles,
+ * `hasCheckedOnce` flipped once every probe settles — even when every
+ * per-provider envelope reports failure.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,6 +22,7 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 
 import { invoke } from "$lib/electron-bridge";
 import { PROVIDERS_CHANNELS } from "$shared/ipc/channels";
+import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/config/provider-config";
 import { store as appStore } from "$store/renderer/store";
 import {
   checkAllProvidersRequested,
@@ -27,42 +30,43 @@ import {
   ensureProvidersChecked,
 } from "$store/renderer/slices/agent-availability/agent-availability-slice";
 import { clearProviderAvailabilityCache } from "$features/providers/provider-availability.client";
-import type { ProviderAvailabilityResult } from "$features/providers/provider-availability.client";
+import type { ProviderStatus } from "$store/renderer/slices/agent-availability/agent-availability-types";
+
+const ALL_PROVIDER_IDS = Object.values(PROVIDER_AVAILABILITY_KEY_TO_ID);
 
 const flush = async () => {
-  // The bulk check chains invoke → dispatch loops → dynamic import; drain a
-  // few microtask/macrotask rounds so every dispatch has landed.
-  for (let i = 0; i < 4; i++) {
+  // The bulk fan-out chains invoke → dispatch loops; drain a few
+  // microtask/macrotask rounds so every dispatch has landed.
+  for (let i = 0; i < 8; i++) {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 };
 
-// `$lib/electron-bridge` is globally mocked in test-setup.ts; route the two
-// provider channels through per-test spies and keep the setup default
-// (`{ success: true, data: null }`) for everything else.
-const availabilitySpy = vi.fn();
+// `$lib/electron-bridge` is globally mocked in test-setup.ts; route the
+// provider channels through a per-provider dispatcher.
 const checkSingleSpy = vi.fn();
 const mockedInvoke = vi.mocked(invoke);
 
-function availabilityResult(
-  overrides: Partial<ProviderAvailabilityResult["providers"]> = {},
-): ProviderAvailabilityResult {
-  const off = { available: false };
-  return {
-    hasAnyProvider: true,
-    providers: {
-      auggie: { available: true, authenticated: true },
-      claudeCode: off,
-      codex: off,
-      cortex: off,
-      mock: off,
-      opencode: off,
-      pi: off,
-      droid: off,
-      ...overrides,
-    },
-    hiddenProviders: [],
-  };
+type CheckSingleResponse = {
+  success: boolean;
+  providerId: string;
+  data?: ProviderStatus;
+  error?: string;
+};
+
+/** Route every CHECK_SINGLE call through the provided per-provider map. */
+function routeCheckSingle(
+  responses: Partial<Record<string, () => Promise<CheckSingleResponse>>>,
+): void {
+  checkSingleSpy.mockImplementation(async (providerId: string) => {
+    const responder = responses[providerId];
+    if (responder) return responder();
+    return {
+      success: true,
+      providerId,
+      data: { available: false } satisfies ProviderStatus,
+    };
+  });
 }
 
 describe("provider-availability-check-service", () => {
@@ -73,53 +77,129 @@ describe("provider-availability-check-service", () => {
   beforeEach(async () => {
     await flush();
     clearProviderAvailabilityCache();
-    availabilitySpy.mockReset();
     checkSingleSpy.mockReset();
     mockedInvoke.mockImplementation(async (channel: string, data?: unknown) => {
-      if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) return availabilitySpy(data);
       if (channel === PROVIDERS_CHANNELS.CHECK_SINGLE) return checkSingleSpy(data);
       return { success: true, data: null };
     });
   });
 
-  it("ensureProvidersChecked resolves every provider to a terminal status and flips hasCheckedOnce", async () => {
-    availabilitySpy.mockResolvedValue({ success: true, data: availabilityResult() });
+  it("ensureProvidersChecked fans out one providers:check-single per provider and flips hasCheckedOnce", async () => {
+    routeCheckSingle({
+      auggie: async () => ({
+        success: true,
+        providerId: "auggie",
+        data: { available: true, authenticated: true },
+      }),
+    });
 
     appStore.dispatch(ensureProvidersChecked());
     await flush();
 
     const state = appStore.state.agentAvailability;
-    expect(availabilitySpy).toHaveBeenCalledTimes(1);
+    expect(checkSingleSpy).toHaveBeenCalledTimes(ALL_PROVIDER_IDS.length);
+    for (const providerId of ALL_PROVIDER_IDS) {
+      expect(checkSingleSpy).toHaveBeenCalledWith(providerId);
+    }
     expect(state.hasCheckedOnce).toBe(true);
     expect(state.providerStatusMap.auggie).toEqual({ available: true, authenticated: true });
     expect(state.providerStatusMap["claude-code"]).toEqual({ available: false });
-    for (const id of ["auggie", "claude-code", "codex", "opencode", "pi", "droid"]) {
+    for (const id of ALL_PROVIDER_IDS) {
       expect(state.providerLoadingMap[id]).toBe(false);
     }
   });
 
   it("ensureProvidersChecked does not refetch once hasCheckedOnce is set", async () => {
-    availabilitySpy.mockResolvedValue({ success: true, data: availabilityResult() });
+    routeCheckSingle({});
 
     appStore.dispatch(ensureProvidersChecked());
     await flush();
 
     expect(appStore.state.agentAvailability.hasCheckedOnce).toBe(true);
-    expect(availabilitySpy).not.toHaveBeenCalled();
+    expect(checkSingleSpy).not.toHaveBeenCalled();
   });
 
-  it("checkAllProvidersRequested still terminates when the availability envelope fails", async () => {
-    availabilitySpy.mockResolvedValue({ success: false, error: "daemon unreachable" });
+  it("fast probes render their terminal status before slow probes complete", async () => {
+    // Gate the "slow" providers behind a deferred that the test controls; the
+    // "fast" auggie probe resolves immediately. Between the two sync points
+    // the store must already show auggie's terminal status while the slow
+    // providers are still in-flight. Uses `checkAllProvidersRequested`
+    // because `ensureProvidersChecked` short-circuits after the first test.
+    let releaseSlow: () => void = () => {};
+    const slowGate = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+
+    const slowResponders: Record<string, () => Promise<CheckSingleResponse>> = {};
+    for (const providerId of ALL_PROVIDER_IDS) {
+      if (providerId === "auggie") continue;
+      slowResponders[providerId] = async () => {
+        await slowGate;
+        return {
+          success: true,
+          providerId,
+          data: { available: false } satisfies ProviderStatus,
+        };
+      };
+    }
+
+    routeCheckSingle({
+      auggie: async () => ({
+        success: true,
+        providerId: "auggie",
+        data: { available: true, authenticated: true },
+      }),
+      ...slowResponders,
+    });
+
+    appStore.dispatch(checkAllProvidersRequested());
+    await flush();
+
+    // Auggie has already settled; every other provider is still loading and
+    // no status has been written for them yet. The bulk completion has NOT
+    // fired because slow probes are still pending.
+    const midState = appStore.state.agentAvailability;
+    expect(midState.providerStatusMap.auggie).toEqual({ available: true, authenticated: true });
+    expect(midState.providerLoadingMap.auggie).toBe(false);
+    for (const providerId of ALL_PROVIDER_IDS) {
+      if (providerId === "auggie") continue;
+      expect(midState.providerLoadingMap[providerId]).toBe(true);
+    }
+
+    // Release the slow probes and the group settles → every card terminal.
+    releaseSlow();
+    await flush();
+
+    const finalState = appStore.state.agentAvailability;
+    expect(finalState.hasCheckedOnce).toBe(true);
+    for (const providerId of ALL_PROVIDER_IDS) {
+      expect(finalState.providerLoadingMap[providerId]).toBe(false);
+    }
+  });
+
+  it("checkAllProvidersRequested still terminates when every per-provider probe fails", async () => {
+    const failing: Record<string, () => Promise<CheckSingleResponse>> = {};
+    for (const providerId of ALL_PROVIDER_IDS) {
+      failing[providerId] = async () => ({
+        success: false,
+        providerId,
+        error: "daemon unreachable",
+      });
+    }
+    routeCheckSingle(failing);
 
     appStore.dispatch(checkAllProvidersRequested());
     await flush();
 
     const state = appStore.state.agentAvailability;
-    // The client folds failure to the all-unavailable default result — every
-    // card lands on not-available instead of spinning.
+    // Every card lands terminal — loading cleared and hasCheckedOnce true —
+    // so onboarding is never stuck on "Checking…" even when the daemon is
+    // unreachable. Status stays undefined on probe failure, which the UI
+    // renders as `available: false` via `status?.available ?? false`.
     expect(state.hasCheckedOnce).toBe(true);
-    expect(state.providerStatusMap.auggie).toEqual({ available: false });
-    expect(state.providerLoadingMap.auggie).toBe(false);
+    for (const providerId of ALL_PROVIDER_IDS) {
+      expect(state.providerLoadingMap[providerId]).toBe(false);
+    }
   });
 
   it("checkSingleProviderRequested routes through providers:check-single", async () => {
