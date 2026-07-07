@@ -42,11 +42,14 @@ export function getBackendClient(): JsonRpcClient {
   const instance = new JsonRpcClient({
     config: resolveBackendConfig(process.env, { isDev }),
     // Enable a liveness heartbeat: reconnect-on-close alone misses a silently
-    // half-open socket. `system.status` is the documented daemon liveness RPC
-    // (PROTOCOL.md §5.7); a transport timeout/failure trips a reconnect.
+    // half-open socket. `host.status` is the transport-agnostic capability
+    // probe (PROTOCOL.md §5.14) — answered on BOTH UDS and WSS — so it works
+    // as a heartbeat regardless of which transport `resolveBackendConfig`
+    // picked. `system.status` (PROTOCOL.md §5.7) is intentionally UDS-only.
+    // A transport timeout/failure trips a reconnect.
     heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
     healthCheck: async () => {
-      await instance.request('system.status');
+      await instance.request('host.status');
     },
   });
   instance.on('notification', (notification: JsonRpcNotification) =>
