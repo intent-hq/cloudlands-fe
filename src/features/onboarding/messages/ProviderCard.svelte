@@ -10,6 +10,7 @@
   import {
   faArrowUpRightFromSquare,
   faArrowsRotate,
+  faCheck,
   faPlug,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -47,6 +48,10 @@
   interface Props {
     provider: ProviderCardData;
     brand: ProviderBrandColors;
+    /** Whether this card is the currently selected onboarding provider.
+     *  Only meaningful when the card is ready (installed + authenticated).
+     *  Renders a ring outline and a check badge in the top-right corner. */
+    selected?: boolean;
     /** Whether auggie needs a version update */
     auggieNeedsUpdate: boolean;
     /** Whether an auggie action (install/login) is in progress */
@@ -74,6 +79,7 @@
   let {
     provider,
     brand,
+    selected = false,
     auggieNeedsUpdate,
     auggieActionInProgress,
     auggieInstructions,
@@ -137,9 +143,11 @@
       !ready && needsAction && 'border-border',
       installed && brand.isLight && 'text-slate-800',
       installed && !brand.isLight && 'text-white',
+      ready && selected && 'ring-2 ring-primary ring-offset-2 ring-offset-background border-transparent',
     )}
     role={cardClickable ? 'button' : undefined}
     tabindex={cardClickable ? 0 : undefined}
+    aria-pressed={ready ? selected : undefined}
     onclick={handleCardClick}
     onkeydown={handleKeydown}
     aria-label={provider.statusLoading
@@ -147,7 +155,9 @@
       : needsUpdate
         ? `${provider.name} (update needed)`
         : provider.available && !needsLogin
-          ? `Use ${provider.name}`
+          ? selected
+            ? `${provider.name} (selected)`
+            : `Use ${provider.name}`
           : needsLogin
             ? `${provider.name} (not logged in)`
             : `${provider.name} (not installed)`}
@@ -176,6 +186,16 @@
         size={32}
       />
     </span>
+
+    <!-- Selected check badge in top-right; visible only for the picked ready card -->
+    {#if ready && selected}
+      <span
+        class="absolute top-3 right-3 z-10 flex items-center justify-center h-6 w-6 rounded-full bg-primary text-primary-foreground shadow"
+        aria-hidden="true"
+      >
+        <Fa icon={faCheck} size="xs" />
+      </span>
+    {/if}
 
     <!-- Bottom area: name + status row -->
     <div class="relative z-10 flex flex-col">

@@ -11,15 +11,17 @@
    */
   import { onMount } from 'svelte';
   import { invoke } from '$lib/electron-bridge';
-  import { ACP_PROVIDERS } from '$shared/config/provider-config';
+  import { ACP_PROVIDERS, getDefaultProviderId } from '$shared/config/provider-config';
   import {
   AUGGIE_CHANNELS,
   PROVIDERS_CHANNELS,
 } from '$shared/ipc/channels';
   import ProviderCard from './ProviderCard.svelte';
   import type { ProviderBrandColors } from './ProviderCard.svelte';
+  import { resolveOnboardingSelectedProvider } from '../utils/resolve-onboarding-selected-provider';
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
   setActiveProvider,
   setProviderEnabled,
@@ -75,6 +77,7 @@
   const providerStatusMap$ = selectProviderStatusMap();
   const providerLoadingMap$ = selectProviderLoadingMap();
   const hasCheckedOnce$ = selectHasCheckedOnce();
+  const activeProviderId$ = selectActiveProviderId();
 
   /**
    * Check a single provider via IPC and dispatch the result to Redux.
@@ -210,12 +213,29 @@
       });
   });
 
-  const hasAnyProvider = $derived(
-    visibleProviders.some((p) => {
-      if (!p.available || p.statusLoading) return false;
-      const isAuggieNeedsUpdate = p.id === 'auggie' && auggieNeedsUpdate;
-      const isNotAuthenticated = p.authenticated !== true;
-      return !isAuggieNeedsUpdate && !isNotAuthenticated;
+  /** A provider is ready when installed, authenticated, and (for Auggie) on
+   *  a supported version. Matches ProviderCard's own `ready` derivation and
+   *  is the gate for both "clickable to select" and "counts as available". */
+  function isProviderReady(p: (typeof visibleProviders)[number]): boolean {
+    if (!p.available || p.statusLoading) return false;
+    if (p.id === 'auggie' && auggieNeedsUpdate) return false;
+    return p.authenticated === true;
+  }
+
+  const readyProviderIds = $derived(
+    visibleProviders.filter(isProviderReady).map((p) => p.id),
+  );
+
+  const hasAnyProvider = $derived(readyProviderIds.length > 0);
+
+  /** Which card should render as "selected" — mirrors the provider
+   *  resolveOnboardingModel would pick for the common no-override case
+   *  (active provider if ready, else Auggie, else first ready). */
+  const selectedProviderId = $derived(
+    resolveOnboardingSelectedProvider({
+      activeProviderId: $activeProviderId$,
+      defaultProviderId: getDefaultProviderId(),
+      readyProviderIds,
     }),
   );
 
@@ -410,6 +430,7 @@
       <ProviderCard
         {provider}
         brand={PROVIDER_BRAND_COLORS[provider.id] ?? DEFAULT_BRAND}
+        selected={provider.id === selectedProviderId}
         {auggieNeedsUpdate}
         {auggieActionInProgress}
         {auggieInstructions}
