@@ -25,6 +25,19 @@ vi.mock("$lib/client/live/backend-transport", () => ({
   },
 }));
 
+// The bridge routes `agent:created`/`agent:updated` through the shared
+// read-service so the transcript-preserving merge is exercised in one place.
+// Fake it here so the tests can assert the bridge hits the correct seam and
+// simulate its store-hydration side effect without a real `agent.get` fetch.
+const { ensureAgentSessionSpy } = vi.hoisted(() => ({
+  ensureAgentSessionSpy: vi.fn(() => Promise.resolve()),
+}));
+vi.mock("$features/agent/agent-read-service", () => ({
+  ensureAgentSession: ensureAgentSessionSpy,
+  createAgentReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) =>
+    next(a),
+}));
+
 import { store as appStore } from "$store/renderer/store";
 import {
   bulkUpsertSessions,
@@ -1781,5 +1794,194 @@ describe("daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5
     handler(mcpNotification({ serverId: "srv-x" }));
 
     expect(appStore.state.mcpSettings.statusMap).toEqual(before);
+  });
+});
+
+describe("daemonEventsBridge (session lifecycle — agent:created/renamed/updated §5.5)", () => {
+  const CREATED_AGENT = "agent-created-1";
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    ensureAgentSessionSpy.mockReset();
+    ensureAgentSessionSpy.mockImplementation(() => Promise.resolve());
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    // Prime the bridge without seeding a session (agent:created runs against an
+    // empty store to prove it surfaces a brand-new sidebar entry).
+    appStore.dispatch(setAgentStreaming("prime-noop", false));
+    await flush();
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("agent:created hydrates the sidebar entry via the transcript-preserving read-service seam", async () => {
+    const handler = capturedHandlers[0]!;
+    // Simulate what the real ensureAgentSession does on a successful fetch:
+    // dispatch bulkUpsertSessions so the new session lands in the store.
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      appStore.dispatch(
+        bulkUpsertSessions([
+          {
+            id: CREATED_AGENT,
+            backendSessionId: null,
+            workspaceId: WS,
+            name: "Delegated Child",
+            status: AgentStatus.Pending,
+            messages: [],
+            createdAt: "2026-01-02T00:00:00.000Z",
+            updatedAt: "2026-01-02T00:00:00.000Z",
+          } as AgentSession,
+        ]),
+      );
+    });
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-created-1",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "agent:created",
+          actor: { type: "system", id: "daemon" },
+          data: { agentId: CREATED_AGENT, name: "Delegated Child" },
+        },
+      },
+    });
+    await flush();
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(CREATED_AGENT);
+    const state = appStore.state as {
+      agentSessions: {
+        byAgentId: Record<string, AgentSession>;
+        agentIdsByWorkspace: Record<string, string[]>;
+      };
+    };
+    expect(state.agentSessions.byAgentId[CREATED_AGENT]?.name).toBe("Delegated Child");
+    expect(state.agentSessions.agentIdsByWorkspace[WS] ?? []).toContain(CREATED_AGENT);
+  });
+
+  it("agent:renamed updates the sidebar entry's name without clobbering the transcript", async () => {
+    const message: AgentMessage = {
+      id: "asst-1",
+      role: "assistant",
+      contentBlocks: [{ type: "text", text: "hello" }],
+      timestamp: "2026-01-02T00:00:00.000Z",
+    };
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: AGENT,
+          backendSessionId: "backend-1",
+          workspaceId: WS,
+          name: "Original",
+          status: AgentStatus.Active,
+          messages: [message],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        } as AgentSession,
+      ]),
+    );
+
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-renamed-1",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "agent:renamed",
+          actor: { type: "system", id: "daemon" },
+          data: { agentId: AGENT, name: "Renamed" },
+        },
+      },
+    });
+
+    const state = appStore.state as {
+      agentSessions: { byAgentId: Record<string, AgentSession> };
+    };
+    expect(state.agentSessions.byAgentId[AGENT]?.name).toBe("Renamed");
+    // Transcript must survive the metadata mutation.
+    expect(state.agentSessions.byAgentId[AGENT]?.messages).toHaveLength(1);
+    expect(state.agentSessions.byAgentId[AGENT]?.messages[0].id).toBe("asst-1");
+  });
+
+  it("agent:updated re-reads through the seam and does not clobber the local transcript", async () => {
+    const message: AgentMessage = {
+      id: "asst-keep",
+      role: "assistant",
+      contentBlocks: [{ type: "text", text: "keep me" }],
+      timestamp: "2026-01-02T00:00:00.000Z",
+    };
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: AGENT,
+          backendSessionId: "backend-1",
+          workspaceId: WS,
+          name: "A",
+          status: AgentStatus.Active,
+          messages: [message],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        } as AgentSession,
+      ]),
+    );
+
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-updated-1",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "agent:updated",
+          actor: { type: "system", id: "daemon" },
+          data: { agentId: AGENT, modelId: "claude-opus-4.7" },
+        },
+      },
+    });
+    await flush();
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    const state = appStore.state as {
+      agentSessions: { byAgentId: Record<string, AgentSession> };
+    };
+    // The bridge itself must not dispatch anything that clears the messages;
+    // any refresh goes through ensureAgentSession, which preserves the
+    // transcript on metadata-only reads (see FE 69f8c74c).
+    expect(state.agentSessions.byAgentId[AGENT]?.messages).toHaveLength(1);
+    expect(state.agentSessions.byAgentId[AGENT]?.messages[0].id).toBe("asst-keep");
+  });
+
+  it("ignores agent:created/renamed/updated payloads missing agentId (schema guard)", async () => {
+    const handler = capturedHandlers[0]!;
+
+    for (const type of ["agent:created", "agent:renamed", "agent:updated"] as const) {
+      handler({
+        method: "events.event",
+        params: {
+          event: {
+            id: `evt-${type}-guard`,
+            workspaceId: WS,
+            timestamp: "2026-01-02T00:00:00.000Z",
+            type,
+            actor: { type: "system", id: "daemon" },
+            data: { name: "no agent id" },
+          },
+        },
+      });
+    }
+    await flush();
+
+    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
   });
 });

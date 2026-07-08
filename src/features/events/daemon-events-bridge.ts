@@ -73,6 +73,8 @@ import { eventReceived } from "$store/renderer/slices/workspace-events/workspace
 import { agentStreamUpdateReceived } from "$store/renderer/slices/workspace-agents/workspace-agents-stream-slice";
 import { streamStatusReceived } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { replaceAgentQueue } from "$store/renderer/slices/agent-queue/agent-queue-slice";
+import { renameSession } from "$store/renderer/slices/agent-session/agent-session-slice";
+import { ensureAgentSession } from "$features/agent/agent-read-service";
 import {
   permissionRequestReceived,
   removePermissionRequest,
@@ -407,6 +409,57 @@ function handleAgentFailedStream(event: WorkspaceEvent): void {
   if (!state) return;
   dispatchStreamUpdate(agentId, state, "error");
   streamsByAgent.delete(agentId);
+}
+
+/**
+ * `agent:created` (§5.5 / §6.5) fires after `agent.create` persists a new
+ * session — including the mid-session case where `agent.delegate` or any
+ * `agent.create` from a running turn spawns a sibling. The payload is lite
+ * (`{ agentId, name }`), so the bridge hydrates the sidebar via the
+ * transcript-preserving `ensureAgentSession` read-service path (which fetches
+ * `agent.get` and dispatches `bulkUpsertSessions` + `upsertSession`), the same
+ * mechanism the AgentCard mount effect uses. Without this handler the
+ * Delegated agent card only appears after a reload.
+ */
+function handleAgentCreatedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  if (typeof agentId !== "string" || agentId.length === 0) return;
+  void ensureAgentSession(agentId);
+}
+
+/**
+ * `agent:renamed` (§5.5 / §6.5) carries `{ agentId, name }` — the daemon's
+ * `agent.rename` emits it after persisting the new name. Dispatching
+ * `renameSession` mutates only the session's `name` field so the sidebar entry
+ * updates without touching the transcript.
+ */
+function handleAgentRenamedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  const name = data.name;
+  if (typeof agentId !== "string" || agentId.length === 0) return;
+  if (typeof name !== "string") return;
+  appStore.dispatch(renameSession(agentId, name));
+}
+
+/**
+ * `agent:updated` (§5.5 / §6.5) is emitted after non-name session-metadata
+ * mutations (`agent.setModel`, `agent.reportToParent`, …). Payload shapes vary
+ * per mutation (`{ agentId, modelId }`, `{ agentId, completionReportLength }`,
+ * …), so instead of decoding each variant the bridge re-fetches the
+ * projection via `ensureAgentSession` — which preserves the local transcript
+ * on a metadata-only refresh (see FE 69f8c74c) so re-hydration cannot clobber
+ * messages the live stream already appended.
+ */
+function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  if (typeof agentId !== "string" || agentId.length === 0) return;
+  void ensureAgentSession(agentId);
 }
 
 /**
@@ -829,6 +882,19 @@ function handleNotification(method: string, params: unknown): void {
   if (type === "agent:failed") {
     handleAgentFailedStream(event);
     // fall through to the lifecycle dispatch below
+  }
+  // Session-mutation lifecycle (§5.5): keep the sidebar/agents index in sync
+  // as new agents are created and existing ones renamed/updated mid-session.
+  // Each handler falls through so `eventReceived` still records the event in
+  // the activity timeline.
+  if (type === "agent:created") {
+    handleAgentCreatedEvent(event);
+  }
+  if (type === "agent:renamed") {
+    handleAgentRenamedEvent(event);
+  }
+  if (type === "agent:updated") {
+    handleAgentUpdatedEvent(event);
   }
 
   // Storage + fan-out: every workspace-scoped event flows into
