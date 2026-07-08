@@ -10,7 +10,6 @@
   import {
   faArrowUpRightFromSquare,
   faArrowsRotate,
-  faCheck,
   faPlug,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -50,7 +49,7 @@
     brand: ProviderBrandColors;
     /** Whether this card is the currently selected onboarding provider.
      *  Only meaningful when the card is ready (installed + authenticated).
-     *  Renders a ring outline and a check badge in the top-right corner. */
+     *  Renders a full-card-width "SELECTED" banner across the top of the card. */
     selected?: boolean;
     /** Whether auggie needs a version update */
     auggieNeedsUpdate: boolean;
@@ -143,7 +142,6 @@
       !ready && needsAction && 'border-border',
       installed && brand.isLight && 'text-slate-800',
       installed && !brand.isLight && 'text-white',
-      ready && selected && 'ring-2 ring-primary ring-offset-2 ring-offset-background border-transparent',
     )}
     role={cardClickable ? 'button' : undefined}
     tabindex={cardClickable ? 0 : undefined}
@@ -187,14 +185,16 @@
       />
     </span>
 
-    <!-- Selected check badge in top-right; visible only for the picked ready card -->
+    <!-- Full-card-width "SELECTED" banner across the top edge; the card's
+         overflow-hidden + rounded-xl clip its outer corners to match. Sits
+         above the gradient/brand overlay via z-20. -->
     {#if ready && selected}
-      <span
-        class="absolute top-3 right-3 z-10 flex items-center justify-center h-6 w-6 rounded-full bg-primary text-primary-foreground shadow"
-        aria-hidden="true"
+      <div
+        data-testid="provider-card-selected-banner"
+        class="absolute top-0 inset-x-0 z-20 flex items-center justify-center bg-primary text-primary-foreground py-1 text-[11px] font-semibold uppercase tracking-widest"
       >
-        <Fa icon={faCheck} size="xs" />
-      </span>
+        Selected
+      </div>
     {/if}
 
     <!-- Bottom area: name + status row -->
