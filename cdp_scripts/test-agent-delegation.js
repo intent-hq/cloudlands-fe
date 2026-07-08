@@ -92,7 +92,7 @@ console.log('[Test] Starting Agent Delegation Test');
 
 // Step 1: Navigate to home and create new workspace
 console.log('[Test] Step 1: Creating new workspace...');
-const homeUrl = 'http://localhost:5177/';
+const homeUrl = 'http://localhost:5190/';
 window.location.href = homeUrl;
 await new Promise((resolve) => setTimeout(resolve, 2000));
 

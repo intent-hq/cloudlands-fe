@@ -849,7 +849,7 @@ export function setupSystemIPC() {
     const isDev = process.env.NODE_ENV === 'development';
 
     if (isDev) {
-      const devPort = process.env.DEV_PORT || '5177';
+      const devPort = process.env.DEV_PORT || '5190';
       const baseUrl = `http://127.0.0.1:${devPort}`;
       const url = route ? `${baseUrl}${route}` : baseUrl;
       await newWindow.loadURL(url);

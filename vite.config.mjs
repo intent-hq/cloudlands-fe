@@ -303,7 +303,11 @@ export default defineConfig({
     // Support running multiple dev servers concurrently via DEV_PORT env var
     // strictPort: true ensures we fail fast if port is taken, rather than silently using another port
     // which causes Electron to connect to the wrong server
-    port: parseInt(process.env.DEV_PORT || '5177', 10),
+    //
+    // Default 5190 is deliberately outside the MCP bridge scan range (5179–5188) so
+    // the Vite dev server never collides with the HTTP MCP bridge or the reference
+    // Intent app's WSS API server (which listens on 5180).
+    port: parseInt(process.env.DEV_PORT || '5190', 10),
     strictPort: true,
     // Use explicit IPv4 address to avoid issues on Linux where 'localhost' may
     // resolve to ::1 (IPv6 only), causing wait-on and Electron to fail to connect.

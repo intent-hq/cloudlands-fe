@@ -18,7 +18,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Port configuration with defaults
 const PORT_CONFIG = {
-  devPort: { start: 5177, name: 'Vite Dev Server' },
+  // Start at 5190 so successive instances stay above the MCP bridge scan
+  // range (5179–5188) and the reference Intent app's WSS port (5180).
+  devPort: { start: 5190, name: 'Vite Dev Server' },
   inspectPort: { start: 9229, name: 'Node Inspector' },
   cdpPort: { start: 9223, name: 'CDP Debug' },
 };

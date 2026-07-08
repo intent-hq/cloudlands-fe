@@ -731,7 +731,7 @@ const path = controller.getCurrentPath();
 
 The mention system includes a standalone test page for development and QA:
 
-**URL**: `http://localhost:5177/test-mentions`
+**URL**: `http://localhost:5190/test-mentions`
 
 **Features**:
 
@@ -745,7 +745,7 @@ The mention system includes a standalone test page for development and QA:
 
 ```bash
 pnpm dev:renderer
-# Navigate to http://localhost:5177/test-mentions
+# Navigate to http://localhost:5190/test-mentions
 ```
 
 ### Test Controls
@@ -765,7 +765,7 @@ The test page provides:
 
 Test compact rich-text mention behavior:
 
-**URL**: `http://localhost:5177/test-mentions/compact`
+**URL**: `http://localhost:5190/test-mentions/compact`
 
 **Features**:
 

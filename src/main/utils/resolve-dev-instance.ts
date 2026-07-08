@@ -2,7 +2,7 @@
 // to avoid leaking non-interactive settings into user terminals.
 
 // Base dev port used for deriving instance numbers (keeps menu/window titles unique)
-const DEV_PORT_BASE = 5177;
+const DEV_PORT_BASE = 5190;
 
 export function resolveDevInstance(): string {
   const envInstance = (process.env.DEV_INSTANCE || '').trim();

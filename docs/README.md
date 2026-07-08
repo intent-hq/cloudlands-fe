@@ -145,10 +145,10 @@ This index lists active documentation in `docs/`; obsolete proposal, spike, and 
 
 ### Common Issues
 
-**Port 5177 already in use**
+**Port 5190 already in use**
 
 - Another instance may be running
-- Check with `lsof -i :5177` and kill if needed
+- Check with `lsof -i :5190` and kill if needed
 
 **Agent not responding**
 

@@ -127,7 +127,7 @@ function buildWindowOptions(opts: {
  */
 function buildLoadUrl(route: string = '/'): string {
   if (process.env.NODE_ENV === 'development') {
-    const devPort = process.env.DEV_PORT || '5177';
+    const devPort = process.env.DEV_PORT || '5190';
     return `http://127.0.0.1:${devPort}${route}`;
   }
   return `app://workspaces${route}`;
