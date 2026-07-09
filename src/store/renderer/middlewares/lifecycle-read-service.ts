@@ -107,8 +107,8 @@ function coalesce(key: string, fn: () => Promise<void>): void {
   if (pending) return;
   // `let` + late assign: the finally closure references `run` before the
   // initializer completes, which TS rejects as a self-referencing `const`.
-  // eslint-disable-next-line prefer-const
   let run: Promise<void> | undefined;
+  // eslint-disable-next-line prefer-const
   run = (async () => {
     try {
       await fn();
