@@ -220,7 +220,7 @@ export async function saveWindowSessions(): Promise<void> {
     const sessionsPath = getWindowSessionsPath();
     if (sessions.length > 0) {
       await fsAsync.writeFile(sessionsPath, JSON.stringify(sessions), 'utf-8');
-      logger.info('Saved window sessions', {
+      logger.debug('Saved window sessions', {
         count: sessions.length,
         routes: sessions.map((s) => s.route),
       });
