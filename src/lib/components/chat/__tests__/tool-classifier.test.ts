@@ -830,4 +830,82 @@ describe('tool-classifier', () => {
       expect(result.verb).toBe('Return hello world');
     });
   });
+
+  describe('prose ACP titles rendered verbatim', () => {
+    it('renders a sub-agent prose title verbatim, never bare "Workspace"/"Agent"', () => {
+      const title =
+        'sub-agent-explore: Explore the services/ directory of the Augment monorepo and summarize each service';
+      const result = classifyTool(title, {
+        action: 'run',
+        instruction: 'Explore the services/ directory',
+        name: 'explore-1',
+      });
+
+      expect(result.category).toBe('agent');
+      expect(result.verb).toBe(title);
+      expect(result.verb).not.toBe('Workspace');
+      expect(result.verb).not.toBe('Agent');
+      expect(result.subject).toBeNull();
+    });
+
+    it('renders "Deep workspace exploration" verbatim instead of bare "Workspace"', () => {
+      const result = classifyTool('Deep workspace exploration', {});
+
+      expect(result.category).toBe('workspace');
+      expect(result.verb).toBe('Deep workspace exploration');
+      expect(result.subject).toBeNull();
+    });
+
+    it('truncates very long prose titles', () => {
+      const longTitle = `sub-agent-explore: ${'Explore the services/ directory of the monorepo and '.repeat(5)}report back`;
+      const result = classifyTool(longTitle, {});
+
+      expect(result.verb.length).toBeLessThanOrEqual(123);
+      expect(result.verb.endsWith('...')).toBe(true);
+      expect(result.verb.startsWith('sub-agent-explore: Explore')).toBe(true);
+    });
+
+    it('classifies doubled-suffix get_workspace_details_workspace-mcp_workspace-mcp without collapsing to bare "Workspace"', () => {
+      const result = classifyTool('get_workspace_details_workspace-mcp_workspace-mcp', {});
+
+      expect(result.category).toBe('workspace');
+      expect(result.verb).toBe('Get');
+      expect(result.subject).toBe('workspace info');
+      expect(result.mcpSource).toBe('workspace-mcp');
+    });
+
+    it('classifies doubled-suffix add_to_note_workspace-mcp_workspace-mcp as note op', () => {
+      const result = classifyTool('add_to_note_workspace-mcp_workspace-mcp', { noteId: 'spec' });
+
+      expect(result.category).toBe('note');
+      expect(result.verb).toBe('Add to note');
+      expect(result.subject).toBe('Spec');
+    });
+
+    it('uses prose _acpTitle verbatim for unrecognized tool names', () => {
+      const result = classifyTool('zz_unrecognized_tool', {
+        _acpTitle: 'Summarize recent activity for the user',
+      });
+
+      expect(result.verb).toBe('Summarize recent activity for the user');
+      expect(result.subject).toBeNull();
+    });
+
+    it('prefers structured input-shape routing over prose title (github-api ACP title)', () => {
+      const result = classifyTool('Get recent failed CI runs', {
+        summary: 'Get recent failed CI runs',
+        path: '/repos/cloudlands-ai/intentd/actions/runs',
+      });
+
+      expect(result.category).toBe('api');
+    });
+
+    it('keeps two-word ACP titles on category matching (regression)', () => {
+      const result = classifyTool('List processes', {});
+
+      expect(result.category).toBe('terminal');
+      expect(result.verb).toBe('List');
+      expect(result.subject).toBe('processes');
+    });
+  });
 });
