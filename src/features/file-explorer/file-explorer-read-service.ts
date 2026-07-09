@@ -41,6 +41,7 @@ import {
   emptyFileExplorerWorkspaceState,
   expandAllRequested,
   expandToPathRequested,
+  hydrateFileExplorerRequested,
   incrementTreeVersion,
   initializeFileExplorer,
   refreshAgentFileEditsRequested,
@@ -51,9 +52,11 @@ import {
   removeLoadingPath,
   setBulkOperation,
   setChildrenAtPathAction,
+  setFileExplorerFileCount,
   setFileExplorerInitialized,
   setFileExplorerLoading,
   setFileExplorerWorkspacePath,
+  setGitStatusMap,
   setRootNode,
   syncGitStatusFromStoresRequested,
   toggleDirectoryRequested,
@@ -383,6 +386,59 @@ export async function initializeFileExplorerTree(
   await refreshAgentFileEditsForWorkspace(wsId);
 }
 
+/** Count file (non-directory) nodes in a file tree, mirroring the seeder. */
+function countFiles(node: FileNode): number {
+  if (node.type === "file") return 1;
+  let count = 0;
+  for (const child of node.children ?? []) {
+    count += countFiles(child);
+  }
+  return count;
+}
+
+/** Collect every directory node path so the seeded tree renders fully expanded. */
+function collectDirectoryPaths(node: FileNode, result: string[] = []): string[] {
+  if (node.type !== "directory") return result;
+  result.push(node.path);
+  for (const child of node.children ?? []) {
+    collectDirectoryPaths(child, result);
+  }
+  return result;
+}
+
+/**
+ * Hydrate the file explorer for a workspace first-opened after boot, mirroring
+ * the boot `files-git-seeder` file-explorer section: fetch the root tree via
+ * `appClient.files.explorerTree`, dispatch the tree's own path as
+ * `workspacePath`, seed git status, expand every directory, and mark the
+ * workspace initialized. Guarded by the per-workspace `isInitialized` flag so a
+ * re-mount of a boot-seeded workspace is a no-op. Errors leave the tree in
+ * whatever state was already there.
+ */
+export async function hydrateFileExplorerFromWorkspace(wsId: string): Promise<void> {
+  const existing = appStore.state.fileExplorer.byWorkspaceId[wsId] ?? emptyFileExplorerWorkspaceState;
+  if (existing.isInitialized || existing.isLoading) return;
+  appStore.dispatch(setFileExplorerLoading(wsId, true));
+  try {
+    const tree = await appClient.files.explorerTree(wsId);
+    if (tree) {
+      appStore.dispatch(setFileExplorerWorkspacePath(wsId, tree.path));
+      appStore.dispatch(setRootNode(wsId, tree));
+      const gitStatusMap = await appClient.files.gitStatusMap(wsId);
+      appStore.dispatch(setGitStatusMap(wsId, gitStatusMap));
+      for (const dirPath of collectDirectoryPaths(tree)) {
+        appStore.dispatch(addExpandedPath(wsId, dirPath));
+      }
+      appStore.dispatch(setFileExplorerFileCount(wsId, countFiles(tree)));
+    }
+  } catch (error) {
+    logger.error("Failed to hydrate file explorer for workspace", error);
+  } finally {
+    appStore.dispatch(setFileExplorerLoading(wsId, false));
+    appStore.dispatch(setFileExplorerInitialized(wsId, true));
+  }
+}
+
 /**
  * Middleware that gives the file-explorer directory-listing triggers a real
  * handler: after each action passes through the (no-op) reducer, it kicks off the
@@ -427,6 +483,10 @@ export function createFileExplorerReadMiddleware(): StoreMiddleware {
           }
           case refreshFileExplorer.type: {
             void refreshFileExplorerTree(wsId);
+            break;
+          }
+          case hydrateFileExplorerRequested.type: {
+            void hydrateFileExplorerFromWorkspace(wsId);
             break;
           }
           case refreshDirectoryRequested.type: {

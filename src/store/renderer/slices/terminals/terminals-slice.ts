@@ -153,6 +153,17 @@ export const createTerminalRequested = createAction<[wsId: string]>(
   "terminals/createTerminalRequested"
 );
 
+/**
+ * Fan-out trigger dispatched by the workspaceMounted fan-out
+ * (`lifecycle-ipc-read-service`) so a workspace first-opened after boot
+ * hydrates its terminal list via `appClient.terminals.list` — mirroring the
+ * boot `terminals-scripts-seeder`. Saga-only trigger with no reducer entry
+ * (see AGENTS.md §8); the handler lives in `lifecycle-read-service`.
+ */
+export const hydrateTerminalsRequested = createAction<[wsId: string]>(
+  "terminals/hydrateTerminalsRequested"
+);
+
 export const closeActiveTerminalRequested = createAction<[wsId: string]>(
   "terminals/closeActiveTerminalRequested"
 );

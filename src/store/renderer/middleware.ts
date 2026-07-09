@@ -37,6 +37,7 @@ import { createFilesReadMiddleware } from "$features/files/files-read-service";
 import { createFilesWriteMiddleware } from "$features/files/files-write-service";
 import { createNotesWriteMiddleware } from "$features/notes/notes-write-service";
 import { createNotesVersionsMiddleware } from "$features/notes/notes-versions-service";
+import { createNotesReadMiddleware } from "$features/notes/notes-read-service";
 import { createGitHubAuthMiddleware } from "$features/github-auth/github-auth-store-service";
 import { createSentryAuthMiddleware } from "$features/sentry-auth/sentry-auth-store-service";
 import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-store-service";
@@ -203,6 +204,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // button forwards to `notes.restoreVersion` + refreshes the editor and
     // versions list. Without this the panel stays empty and Restore is a no-op.
     createNotesVersionsMiddleware(),
+    // Give `workspaceMounted` a notes hydration handler so a workspace
+    // created/first-opened after boot fetches its notes (Spec included) via
+    // `appClient.notes.list` and renders instead of showing an empty panel
+    // until an app restart. Boot-seeded workspaces are unaffected — the
+    // service skips when the workspace-notes slice is already initialized.
+    createNotesReadMiddleware(),
     // Give the (post-saga) GitHub / Sentry / Linear OAuth connect/status/logout
     // triggers real handlers so the settings buttons run their auth flows again.
     createGitHubAuthMiddleware(),

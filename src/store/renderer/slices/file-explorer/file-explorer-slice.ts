@@ -79,6 +79,19 @@ export const refreshFileExplorer = createAction<[wsId: string]>(
 );
 
 /**
+ * Fan-out trigger dispatched by the workspaceMounted fan-out
+ * (`lifecycle-ipc-read-service`) so a workspace first-opened after boot
+ * hydrates its file tree via `appClient.files.explorerTree` — mirroring the
+ * boot `files-git-seeder` file-explorer section. Saga-only trigger with no
+ * reducer entry (see AGENTS.md §8); the handler lives in
+ * `file-explorer-read-service` and is guarded by the per-workspace
+ * `isInitialized` flag so boot-seeded workspaces are unaffected.
+ */
+export const hydrateFileExplorerRequested = createAction<[wsId: string]>(
+  "fileExplorer/hydrateFileExplorerRequested",
+);
+
+/**
  * Trigger a targeted reload of a single directory's children in response to a
  * file create/delete event. The caller passes the PATH of the file that was
  * created or deleted; the saga computes the parent directory itself.

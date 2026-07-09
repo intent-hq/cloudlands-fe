@@ -25,7 +25,8 @@
  *   fan-out are NOT AppClient-seam backed (localStorage / raw IPC), so they live
  *   in the companion `lifecycle-ipc-read-service` instead. `workspaceMounted`
  *   re-dispatches the per-workspace triggers a fresh mount needs (tasks/events/
- *   accept-changes), reusing the same handlers — no fetch logic of its own.
+ *   accept-changes/scripts/skills/PR status/agents/terminals/file-explorer),
+ *   reusing the same handlers — no fetch logic of its own.
  *
  *   `refreshRequested` / `loadWorkspaceDataRequested` (changes) are restored
  *   here now that the live client reads the daemon file-tracking surface
@@ -79,6 +80,19 @@ import {
   updateAgentStats,
 } from "../slices/changes/changes-slice";
 import { getAgentLineStats } from "$features/line-changes/line-changes.client";
+import {
+  bulkUpsertSessions,
+  upsertSession,
+} from "../slices/agent-session/agent-session-slice";
+import {
+  hydrateAgentsRequested,
+  setActiveAgentId,
+  setAgentsLoaded,
+} from "../slices/workspace-agents/workspace-agents-slice";
+import {
+  hydrateTerminalsRequested,
+  loadWorkspaceTerminals,
+} from "../slices/terminals/terminals-slice";
 
 const logger = createLogger("LifecycleReadService");
 
@@ -247,6 +261,42 @@ function refreshAgentLineStats(agentId: string, forceRefresh: boolean): void {
   });
 }
 
+/**
+ * Hydrate a workspace's agent list on mount, mirroring the boot `agents-seeder`
+ * for this workspace only. Guarded by the per-workspace `agentsLoaded` flag so
+ * a re-mount of a boot-seeded workspace is a no-op (leaving user-driven state
+ * like the active agent intact). Selects the first foreground agent when found
+ * so the chat panel renders content on first paint, matching the seeder.
+ */
+function hydrateWorkspaceAgents(wsId: string): void {
+  const already = appStore.state.workspaceAgents.byWorkspaceId[wsId]?.agentsLoaded;
+  if (already) return;
+  coalesce(`agents:${wsId}`, async () => {
+    const agents = await appClient.agents.list(wsId);
+    appStore.dispatch(setAgentsLoaded(wsId, true));
+    if (agents.length === 0) return;
+    appStore.dispatch(bulkUpsertSessions(agents));
+    for (const agent of agents) {
+      appStore.dispatch(upsertSession(agent));
+    }
+    const firstForeground = agents.find((agent) => !agent.isBackground) ?? agents[0];
+    appStore.dispatch(setActiveAgentId(wsId, String(firstForeground.id)));
+  });
+}
+
+/**
+ * Hydrate a workspace's terminals on mount, mirroring the boot
+ * `terminals-scripts-seeder` terminal section. Fire-and-forget; the reducer's
+ * `loadWorkspaceTerminals` handles the empty-list case idempotently, so no
+ * external guard is needed.
+ */
+function hydrateWorkspaceTerminals(wsId: string): void {
+  coalesce(`terminals:${wsId}`, async () => {
+    const terminals = await appClient.terminals.list(wsId);
+    appStore.dispatch(loadWorkspaceTerminals(wsId, terminals));
+  });
+}
+
 /** First array-payload element as a non-empty workspace id, else undefined. */
 function wsIdOf(action: { payload?: unknown }): string | undefined {
   const id = Array.isArray(action.payload) ? action.payload[0] : undefined;
@@ -311,6 +361,16 @@ export function createLifecycleReadMiddleware(): StoreMiddleware {
               ? payload.agentId
               : undefined;
           if (agentId) refreshAgentLineStats(agentId, payload?.forceRefresh === true);
+          break;
+        }
+        case hydrateAgentsRequested.type: {
+          const wsId = wsIdOf(action);
+          if (wsId) hydrateWorkspaceAgents(wsId);
+          break;
+        }
+        case hydrateTerminalsRequested.type: {
+          const wsId = wsIdOf(action);
+          if (wsId) hydrateWorkspaceTerminals(wsId);
           break;
         }
       }
