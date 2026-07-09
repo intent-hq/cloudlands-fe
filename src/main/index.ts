@@ -24,14 +24,16 @@ const { ipcMain, app, BrowserWindow } = require('electron');
 // See memoryMonitor.onPressure handler below for usage
 app.commandLine.appendSwitch('js-flags', '--expose-gc');
 
-// EARLY: Support multiple dev instances by using unique userData paths
-// This must run before setupConsoleLogCapture() so logs go to the correct userData directory
+// EARLY: Support multiple dev instances by using unique userData paths.
+// Namespaced by absolute DEV_PORT so cloudlands-fe cannot collide with other Electron
+// dev apps (e.g. the reference Intent build's "dev-instance-N" scheme) on the
+// SingletonLock. This must run before setupConsoleLogCapture() so logs go to the
+// correct userData directory.
 import * as path from 'path';
-if (process.env.NODE_ENV === 'development' && process.env.DEV_INSTANCE) {
-  const uniqueUserData = path.join(
-    app.getPath('userData'),
-    `dev-instance-${process.env.DEV_INSTANCE}`,
-  );
+import { resolveDevUserDataDirName } from './utils/resolve-dev-instance.js';
+const devUserDataSegment = resolveDevUserDataDirName();
+if (devUserDataSegment) {
+  const uniqueUserData = path.join(app.getPath('userData'), devUserDataSegment);
   app.setPath('userData', uniqueUserData);
 }
 
@@ -1934,7 +1936,17 @@ let isSecondInstance = false;
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
-  // Another instance is already running, quit this one
+  // Another instance already holds the SingletonLock in this userData directory.
+  // Log which path is contended before quitting so this isn't a silent no-op — a
+  // common failure mode when a foreign Electron dev app shares the same userData dir.
+  const contendedUserData = app.getPath('userData');
+  const message = `Another instance is already running; SingletonLock in userData=${contendedUserData} is held. Exiting.`;
+  console.error(`[Main] ${message}`);
+  try {
+    logger.error(message, { userData: contendedUserData });
+  } catch {
+    // logger may not have a transport wired up this early on some platforms
+  }
   isSecondInstance = true;
   app.quit();
 } else {

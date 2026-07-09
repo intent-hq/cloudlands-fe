@@ -276,7 +276,7 @@ function getCurrentGitBranch() {
 }
 
 /**
- * Get the Electron userData parent directory (where dev-instance-N dirs are created).
+ * Get the Electron userData parent directory (where cloudlands-dev-<port> dirs are created).
  * Mirrors Electron's default app.getPath('userData') for an app named "Electron" in dev.
  */
 function getElectronUserDataDir() {
@@ -291,26 +291,32 @@ function getElectronUserDataDir() {
   }
 }
 
+// Prefix used for cloudlands-fe's per-port dev userData dirs. Must match the naming
+// scheme in src/main/utils/resolve-dev-instance.ts (resolveDevUserDataDirName).
+const DEV_USERDATA_PREFIX = 'cloudlands-dev-';
+
 /**
- * Remove stale dev-instance-N directories that haven't been accessed recently.
+ * Remove stale cloudlands-dev-<port> directories that haven't been accessed recently.
  * Runs at dev startup to prevent unbounded disk growth from Electron userData
- * (caches, databases, GPU cache, etc.) accumulating across dev sessions.
+ * (caches, databases, GPU cache, etc.) accumulating across dev sessions. Scoped to
+ * the cloudlands-dev-* prefix so we never touch other Electron dev apps' userData.
  */
-function pruneStaleDevInstances(currentInstanceNum, maxAgeDays = 7) {
+function pruneStaleDevInstances(currentDevPort, maxAgeDays = 7) {
   const userDataDir = getElectronUserDataDir();
   if (!existsSync(userDataDir)) return;
 
   const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
   const now = Date.now();
+  const currentName = `${DEV_USERDATA_PREFIX}${currentDevPort}`;
   let pruned = 0;
 
   try {
     const entries = readdirSync(userDataDir, { withFileTypes: true });
     for (const entry of entries) {
-      if (!entry.isDirectory() || !entry.name.startsWith('dev-instance-')) continue;
+      if (!entry.isDirectory() || !entry.name.startsWith(DEV_USERDATA_PREFIX)) continue;
 
       // Never prune the instance we are about to launch
-      if (entry.name === `dev-instance-${currentInstanceNum}`) continue;
+      if (entry.name === currentName) continue;
 
       const dirPath = join(userDataDir, entry.name);
       try {
@@ -342,7 +348,7 @@ const devName = parseNameArg(args) || getCurrentGitBranch();
 
 findAvailablePorts(cdpMode)
   .then((ports) => {
-    pruneStaleDevInstances(ports.instanceNum);
+    pruneStaleDevInstances(ports.devPort);
     runDev(ports, cdpMode, devName);
   })
   .catch((err) => {
