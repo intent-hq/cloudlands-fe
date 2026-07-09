@@ -89,16 +89,12 @@ vi.mock('../unified-workspace-watcher', () => ({
   shutdownUnifiedWatcher: vi.fn(),
   shutdownOtherWatchers: vi.fn(),
 }));
-vi.mock('../../../file-tracking/tracking.config', () => ({
-  TRACKING_CONFIG: { changeDetection: { gitPollingOnly: false, disableFileWatcher: false } },
+vi.mock('../change-detection/detection.config', () => ({
+  CHANGE_DETECTION_CONFIG: { gitPollingOnly: false, disableFileWatcher: false },
 }));
 vi.mock('../../../../shared/binary-file-extensions', () => ({ isBinaryExtension: vi.fn(() => false) }));
-vi.mock('../../../../shared/main/remote-rpc-manager', () => ({ remoteRPCManager: {} }));
 vi.mock('../../../agent/main/instruction-service', () => ({
   InstructionService: { getInstance: vi.fn(() => ({ warmCache: vi.fn() })) },
-}));
-vi.mock('../../../workspace/main/provenance/attribution-engine', () => ({
-  getAttributionEngine: vi.fn(() => ({ ensureWorkspaceLoaded: vi.fn() })),
 }));
 vi.mock('../../../../shared/git/git-env', () => ({ execAsync: vi.fn() }));
 vi.mock('../../../notifications/main/notification.service', () => ({
@@ -107,15 +103,8 @@ vi.mock('../../../notifications/main/notification.service', () => ({
 vi.mock('../../../git/main/git.service', () => ({ GitService: vi.fn() }));
 vi.mock('../../../git/main/git-router', () => ({
   getWorkspaceGitInfo: vi.fn(),
-  getRemoteGitManager: vi.fn(),
 }));
 vi.mock('../../../../shared/main/ssh-manager', () => ({ sshManager: {} }));
-vi.mock('../../../agent/main/agent-providers/acp-provider', () => ({
-  getIntentServerPath: vi.fn(() => '/tmp/intent-server'),
-  escapeShellArg: vi.fn((value: string) => value),
-}));
-vi.mock('../../../metadata-fs/main/metadata-sync-service', () => ({ MetadataSyncService: vi.fn() }));
-vi.mock('../utils/metadata-sync-ui-bridge', () => ({ createMetadataSyncUiBridge: vi.fn() }));
 vi.mock('../../../metadata-fs/main/metadata-fs-factory', () => ({ clearMetadataFSCache: vi.fn() }));
 vi.mock('../../../notes/main/notes.service', () => ({ notesService: {} }));
 

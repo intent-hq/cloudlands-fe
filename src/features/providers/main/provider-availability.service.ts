@@ -7,8 +7,6 @@
 
 import { ipcMain } from 'electron';
 import * as fs from 'fs/promises';
-import * as os from 'os';
-import * as path from 'path';
 import { PROVIDERS_CHANNELS } from '../../../shared/ipc/channels';
 import { ACP_PROVIDERS } from '../../../shared/config/provider-config';
 import { Logger } from '../../../shared/logger';
@@ -56,104 +54,14 @@ export type { ProviderAvailabilityResult, ProviderStatus };
 const logger = new Logger('ProviderAvailability');
 
 /**
- * Check if auggie is available by checking for saved path or session
- * This is a lightweight check that doesn't spawn processes
+ * Check if auggie is available by asking the daemon (`host.checkAuggie` via
+ * `findAuggiePathAsync`). The BE owns the settings precedence and binary
+ * discovery — no local file probing or install-path scans here.
  */
 async function checkAuggieAvailability(): Promise<ProviderStatus> {
-  // Helper to check if a path exists without throwing
-  const pathExists = async (p: string): Promise<boolean> => {
-    try {
-      await fs.access(p);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
   try {
-    const homeDir = os.homedir();
-
-    // Check for saved auggie path (fastest check)
-    const savedPathFile = path.join(homeDir, '.augment', 'auggie-path');
-    try {
-      const savedPath = (await fs.readFile(savedPathFile, 'utf8')).trim();
-      if (savedPath && (await pathExists(savedPath))) {
-        return { available: true };
-      }
-    } catch {
-      // File doesn't exist or can't be read
-    }
-
-    // Check for auggie session file (indicates auggie was used before)
-    const sessionPath = path.join(homeDir, '.augment', 'session.json');
-    if (await pathExists(sessionPath)) {
-      // Session exists, auggie was likely installed and used
-      return { available: true };
-    }
-
-    // Check common auggie installation paths (comprehensive list matching async-utils.ts)
-    const commonPaths =
-      process.platform === 'win32'
-        ? [
-          path.join(process.env.APPDATA || '', 'npm', 'auggie.cmd'),
-          path.join(process.env.APPDATA || '', 'npm', 'auggie'),
-          path.join(process.env.LOCALAPPDATA || '', 'npm', 'auggie.cmd'),
-          path.join(process.env.LOCALAPPDATA || '', 'npm', 'auggie'),
-          path.join(process.env.APPDATA || '', 'nvm', 'auggie.cmd'),
-          path.join(process.env.LOCALAPPDATA || '', 'Volta', 'bin', 'auggie.exe'),
-        ]
-        : [
-          '/usr/local/bin/auggie',
-          '/usr/bin/auggie',
-          '/opt/homebrew/bin/auggie',
-          path.join(homeDir, '.npm-global', 'bin', 'auggie'),
-          path.join(homeDir, '.npm-packages', 'bin', 'auggie'),
-          path.join(homeDir, '.local', 'bin', 'auggie'),
-          path.join(homeDir, 'npm', 'bin', 'auggie'),
-          path.join(homeDir, '.volta', 'bin', 'auggie'),
-          path.join(homeDir, '.fnm', 'aliases', 'default', 'bin', 'auggie'),
-          path.join(homeDir, '.asdf', 'shims', 'auggie'),
-          path.join(homeDir, 'n', 'bin', 'auggie'),
-          '/usr/local/n/bin/auggie',
-          '/usr/local/opt/node/bin/auggie',
-          '/opt/homebrew/opt/node/bin/auggie',
-        ];
-
-    for (const p of commonPaths) {
-      if (p && (await pathExists(p))) {
-        return { available: true };
-      }
-    }
-
-    // Dynamically scan nvm directories (file system only, no process spawning)
-    try {
-      const nvmDir = path.join(homeDir, '.nvm', 'versions', 'node');
-      const nodeDirs = (await fs.readdir(nvmDir)).filter((d) => d.startsWith('v'));
-      for (const dir of nodeDirs) {
-        const auggiePath = path.join(nvmDir, dir, 'bin', 'auggie');
-        if (await pathExists(auggiePath)) {
-          return { available: true };
-        }
-      }
-    } catch {
-      // nvm directory doesn't exist or can't be read
-    }
-
-    // Dynamically scan fnm directories
-    try {
-      const fnmDir = path.join(homeDir, '.fnm', 'node-versions');
-      const nodeDirs = await fs.readdir(fnmDir);
-      for (const dir of nodeDirs) {
-        const auggiePath = path.join(fnmDir, dir, 'installation', 'bin', 'auggie');
-        if (await pathExists(auggiePath)) {
-          return { available: true };
-        }
-      }
-    } catch {
-      // fnm directory doesn't exist or can't be read
-    }
-
-    return { available: false };
+    const auggiePath = await findAuggiePathAsync();
+    return { available: auggiePath !== null };
   } catch (error) {
     return { available: false, error: (error as Error).message };
   }

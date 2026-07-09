@@ -47,6 +47,12 @@ export type DirectoryPickerState = {
    * the success/error action so stale responses can be discarded.
    */
   requestedPath: string | null;
+  /**
+   * Inline failure hint for a typed-path navigation (`navigateToPathRequested`)
+   * that could not be listed. Unlike `error`, this keeps the current `listing`
+   * intact so the user can correct the typed path without losing context.
+   */
+  pathError: string | null;
 };
 
 export const initialState: DirectoryPickerState = {
@@ -54,6 +60,7 @@ export const initialState: DirectoryPickerState = {
   loading: false,
   error: null,
   requestedPath: null,
+  pathError: null,
 };
 
 /**
@@ -75,6 +82,28 @@ export const directoryListingFailed = createAction<
   [requestedPath: string | null, error: string]
 >("directoryPicker/listingFailed");
 
+/**
+ * Trigger: navigate to a user-typed path. The read service lists `path` and,
+ * on success, dispatches `directoryListingLoaded`; on failure it dispatches
+ * `pathNavigationFailed` so the current listing survives as an inline hint.
+ */
+export const navigateToPathRequested = createAction<[path: string]>(
+  "directoryPicker/navigateToPathRequested",
+);
+
+/**
+ * Service → reducer: a typed-path navigation failed. Keeps the current
+ * `listing` and records `pathError` as the inline hint.
+ */
+export const pathNavigationFailed = createAction<
+  [requestedPath: string, error: string]
+>("directoryPicker/pathNavigationFailed");
+
+/** Clear the typed-path hint — dispatched when the user cancels the edit. */
+export const clearPathNavigationError = createAction(
+  "directoryPicker/clearPathNavigationError",
+);
+
 /** Reset back to the initial state — dispatched when the modal closes. */
 export const resetDirectoryPicker = createAction("directoryPicker/reset");
 
@@ -85,7 +114,15 @@ export const directoryPickerReducer = createReducer<DirectoryPickerState>(
     ...state,
     loading: true,
     error: null,
+    pathError: null,
     requestedPath: path ?? null,
+  }))
+  .with(navigateToPathRequested, (state, { payload: [path] }) => ({
+    ...state,
+    loading: true,
+    error: null,
+    pathError: null,
+    requestedPath: path,
   }))
   .with(directoryListingLoaded, (state, { payload: [requestedPath, listing] }) => {
     // Discard stale responses: only apply when the response matches the most
@@ -95,6 +132,7 @@ export const directoryPickerReducer = createReducer<DirectoryPickerState>(
       ...state,
       loading: false,
       error: null,
+      pathError: null,
       listing,
     };
   })
@@ -107,4 +145,16 @@ export const directoryPickerReducer = createReducer<DirectoryPickerState>(
       listing: null,
     };
   })
+  .with(pathNavigationFailed, (state, { payload: [requestedPath, error] }) => {
+    if (state.requestedPath !== requestedPath) return state;
+    return {
+      ...state,
+      loading: false,
+      pathError: error,
+    };
+  })
+  .with(clearPathNavigationError, (state) => ({
+    ...state,
+    pathError: null,
+  }))
   .with(resetDirectoryPicker, () => initialState);

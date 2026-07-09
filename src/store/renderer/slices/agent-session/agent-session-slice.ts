@@ -1,5 +1,5 @@
 import { shallowEqual } from 'fast-equals';
-import type { AgentSession, AgentMessage } from '$shared/types';
+import type { AgentSession, AgentMessage, SessionStats } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
 import type { CanonicalAgentStatusFields, WorkspaceEvent } from '$features/events/types';
 import {
@@ -23,6 +23,7 @@ import {
   replaceAgentMessageByIdWithDedup,
 } from '$shared/utils/message-dedup';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
+import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   chatSendStarted,
   chatSendFailed,
@@ -396,6 +397,30 @@ function userMessageFromWorkspaceEvent(event: WorkspaceEvent): [string, AgentMes
       timestamp: event.timestamp,
     },
   ];
+}
+
+/**
+ * Extract the `(agentId, stats)` pair from an `agent:session-stats-changed`
+ * event (PROTOCOL §5.24). The payload prefers `agentId` and falls back to
+ * `sessionId` since the daemon keys the FE session by agent id.
+ */
+function statsFromWorkspaceEvent(event: WorkspaceEvent): [string, SessionStats] | null {
+  if (event.type !== 'agent:session-stats-changed') return null;
+  const data = event.data;
+  if (!data || typeof data !== 'object') return null;
+  const agentId = data.agentId ?? data.sessionId;
+  if (typeof agentId !== 'string' || agentId.length === 0) return null;
+  const stats = data.stats;
+  if (!stats || typeof stats !== 'object') return null;
+  const { creditsUsed, messageCount, toolCount } = stats;
+  if (
+    (creditsUsed !== null && typeof creditsUsed !== 'number') ||
+    typeof messageCount !== 'number' ||
+    typeof toolCount !== 'number'
+  ) {
+    return null;
+  }
+  return [agentId, { creditsUsed, messageCount, toolCount }];
 }
 
 function registerInWorkspaceIndex(
@@ -793,6 +818,15 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       return addMessageToSession(state, userMessage[0], userMessage[1]);
     }
 
+    const statsUpdate = statsFromWorkspaceEvent(event);
+    if (statsUpdate) {
+      const [agentId, stats] = statsUpdate;
+      const existing = getSession(state, agentId);
+      if (!existing) return state;
+      if (existing.stats && shallowEqual(existing.stats, stats)) return state;
+      return updateSessionFields(state, agentId, { stats });
+    }
+
     const canonical = canonicalFieldsFromWorkspaceEvent(event);
     if (!canonical) return state;
     const [agentId, fields] = canonical;
@@ -828,6 +862,22 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       delete byAgentId[id];
     }
 
+    const { [wsId]: _, ...restWorkspaces } = state.agentIdsByWorkspace;
+    return { byAgentId, agentIdsByWorkspace: restWorkspaces };
+  })
+  .with(workspaceDeleted, (state, { payload: [wsId, agentIds] }) => {
+    const indexedAgentIds = state.agentIdsByWorkspace[wsId] ?? [];
+    const doomed = new Set<string>([...indexedAgentIds, ...agentIds]);
+    if (doomed.size === 0 && !state.agentIdsByWorkspace[wsId]) return state;
+    const byAgentId = { ...state.byAgentId };
+    let byAgentIdChanged = false;
+    for (const id of doomed) {
+      if (id in byAgentId) {
+        delete byAgentId[id];
+        byAgentIdChanged = true;
+      }
+    }
+    if (!byAgentIdChanged && !(wsId in state.agentIdsByWorkspace)) return state;
     const { [wsId]: _, ...restWorkspaces } = state.agentIdsByWorkspace;
     return { byAgentId, agentIdsByWorkspace: restWorkspaces };
   })

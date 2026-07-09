@@ -8,7 +8,6 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import { debugConfig } from '$lib/config/debug';
   import { createLogger } from '$lib/utils/client-logger';
-  import { invoke } from '$shared/generated/ipc-client';
   import { appClient } from '$lib/client';
   import { performanceMonitor } from '$lib/utils/performance';
 
@@ -453,191 +452,89 @@
       }
 
       if (effectiveRepoType === 'local') {
-        // Fetch branches from local git repo via the daemon (`git.getBranches`).
-        // The live seam returns null on transport/gate errors so we surface the
-        // friendly "enter manually" fallback rather than crashing on undefined.
-        if (typeof window !== 'undefined' && window.electronAPI) {
-          const result = await appClient.git.getBranches(repoPath, true);
-          if (result) {
-            branches = result.branches;
-            remoteBranches = result.remoteBranches;
-            defaultBranch = result.defaultBranch || 'main';
-            currentBranch = result.currentBranch || '';
+        // Fetch branches from the local git repo via the daemon
+        // (`git.getBranches`, PROTOCOL §5.6). The live seam folds
+        // transport/gate errors to null; we surface an explicit error state —
+        // never a fabricated branch list.
+        const result = await appClient.git.getBranches(repoPath, true);
+        if (result) {
+          branches = result.branches;
+          remoteBranches = result.remoteBranches;
+          defaultBranch = result.defaultBranch || '';
+          currentBranch = result.currentBranch || '';
 
-            // Set internal state - always ensure a valid branch is selected
-            // If value prop is provided, trust it (e.g., for remote branches like origin/...)
-            if (value) {
-              // Value prop is the source of truth - don't override it
-              setInternalBranch(value);
-            } else {
-              // Check if there's a saved branch for this repo
-              const savedBranch = getSavedBranchForRepo(repoPath);
-              if (
-                savedBranch &&
-                (branches.includes(savedBranch) || remoteBranches.includes(savedBranch))
-              ) {
-                // Saved branch exists in local or remote branches, use it
-                setInternalBranch(savedBranch);
-              } else if (currentBranch && branches.includes(currentBranch)) {
-                // Fall back to current branch
-                setInternalBranch(currentBranch);
-              } else if (defaultBranch && branches.includes(defaultBranch)) {
-                // Fall back to default branch
-                setInternalBranch(defaultBranch);
-              } else if (branches.length > 0) {
-                // Last resort: use first available branch
-                setInternalBranch(branches[0]);
-              }
-            }
+          // Set internal state - always ensure a valid branch is selected
+          // If value prop is provided, trust it (e.g., for remote branches like origin/...)
+          if (value) {
+            // Value prop is the source of truth - don't override it
+            setInternalBranch(value);
           } else {
-            throw new Error('Failed to fetch branches');
+            // Check if there's a saved branch for this repo
+            const savedBranch = getSavedBranchForRepo(repoPath);
+            if (
+              savedBranch &&
+              (branches.includes(savedBranch) || remoteBranches.includes(savedBranch))
+            ) {
+              // Saved branch exists in local or remote branches, use it
+              setInternalBranch(savedBranch);
+            } else if (currentBranch && branches.includes(currentBranch)) {
+              // Fall back to current branch
+              setInternalBranch(currentBranch);
+            } else if (defaultBranch && branches.includes(defaultBranch)) {
+              // Fall back to default branch
+              setInternalBranch(defaultBranch);
+            } else if (branches.length > 0) {
+              // Last resort: use first available branch
+              setInternalBranch(branches[0]);
+            }
           }
         } else {
-          // Fallback for browser environment - provide common branches
-          branches = ['main', 'master', 'develop', 'staging', 'production'];
-          defaultBranch = 'main';
-          // Always ensure a branch is selected in browser fallback
-          const savedBranch = getSavedBranchForRepo(repoPath);
-          if (savedBranch && branches.includes(savedBranch)) {
-            setInternalBranch(savedBranch);
-          } else {
-            setInternalBranch('main');
-          }
+          throw new Error('Failed to fetch branches');
         }
       } else if (effectiveRepoType === 'github' && effectiveGithubUrl) {
         // Parse GitHub URL to get owner and repo
         const match = effectiveGithubUrl.match(/github\.com\/([^\/]+)\/([^\/\.]+)/);
-        if (match) {
-          const [, owner, repo] = match;
-
-          // First, try using the main process's GitHub service (which has authenticated access via Augment API)
-          let usedMainProcess = false;
-          let ipcNotAuthenticated = false;
-          if (typeof window !== 'undefined' && window.electronAPI) {
-            try {
-              const ipcResult = await invoke<any>(
-                'git-tracking:get-github-branches',
-                { owner, repo },
-              );
-              if (ipcResult?.success && ipcResult.data) {
-                branches = ipcResult.data.branches;
-                defaultBranch = ipcResult.data.defaultBranch || 'main';
-                usedMainProcess = true;
-                githubAuthNeeded = 'none'; // Successfully authenticated
-                logger.debug('Fetched branches via main process (authenticated)', {
-                  owner,
-                  repo,
-                  count: branches.length,
-                });
-              } else if (ipcResult && !ipcResult.success) {
-                // Check if the error is due to not being authenticated
-                const errorMsg = ipcResult.error?.toLowerCase() || '';
-                if (errorMsg.includes('not authenticated')) {
-                  ipcNotAuthenticated = true;
-                  logger.debug('User not authenticated with GitHub');
-                } else {
-                  // Some other error (likely no access to this specific repo)
-                  logger.debug('IPC branch fetch returned error', {
-                    error: ipcResult.error,
-                  });
-                }
-              }
-            } catch (ipcError) {
-              // IPC failed, will fall back to direct API call
-              logger.debug('IPC branch fetch failed, falling back to direct API', {
-                error: ipcError,
-              });
-            }
-          }
-
-          // Fallback to direct GitHub API call (unauthenticated or with localStorage token)
-          if (!usedMainProcess) {
-            // If IPC indicated not authenticated, set the auth needed state
-            if (ipcNotAuthenticated) {
-              githubAuthNeeded = 'not-authenticated';
-              // Still try unauthenticated fetch - might be a public repo
-            }
-
-            const githubToken = localStorage.getItem('github-token');
-
-            const headers: HeadersInit = {
-              Accept: 'application/vnd.github.v3+json',
-              'User-Agent': 'Workspaces-App',
-            };
-
-            if (githubToken) {
-              headers['Authorization'] = `token ${githubToken}`;
-            }
-
-            // Fetch branches from GitHub API (limit to 100 for performance)
-            // Use the abort controller signal so we can cancel if a new fetch is triggered
-            let response;
-            try {
-              response = await fetch(
-                `https://api.github.com/repos/${owner}/${repo}/branches?per_page=100`,
-                {
-                  headers,
-                  signal: abortController.signal,
-                },
-              );
-            } catch (fetchError) {
-              // Handle abort errors silently - they're expected when a new fetch starts
-              if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-                logger.debug('Branch fetch aborted (superseded by newer request)');
-                return; // Exit silently - a newer fetch is in progress
-              }
-              // Handle other fetch errors (network issues, timeouts, etc.)
-              if (fetchError instanceof Error) {
-                throw fetchError;
-              } else {
-                throw new Error(`Failed to fetch branches: ${String(fetchError)}`);
-              }
-            }
-
-            // Check if we were aborted while waiting for the response
-            if (abortController.signal.aborted) {
-              logger.debug('Branch fetch aborted after response');
-              return;
-            }
-
-            if (response.ok) {
-              const data = await response.json();
-              branches = data.map((b: any) => b.name);
-              githubAuthNeeded = 'none'; // Public repo - no auth needed
-
-              // Get default branch (also use abort signal)
-              const repoResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
-                headers,
-                signal: abortController.signal,
-              });
-              if (repoResponse.ok) {
-                const repoData = await repoResponse.json();
-                defaultBranch = repoData.default_branch || 'main';
-              }
-            } else if (response.status === 404) {
-              // 404 means repo is private OR doesn't exist
-              // If user is not authenticated, prompt them to connect
-              if (ipcNotAuthenticated) {
-                githubAuthNeeded = 'not-authenticated';
-                throw new Error('GITHUB_AUTH_REQUIRED');
-              } else {
-                // User IS authenticated but still got 404 - they don't have access
-                githubAuthNeeded = 'no-access';
-                throw new Error('GITHUB_NO_ACCESS');
-              }
-            } else {
-              // Handle other GitHub API errors
-              let errorMessage = `GitHub API error: ${response.status} ${response.statusText}`;
-              if (response.status === 403) {
-                errorMessage = 'GitHub API rate limit exceeded or authentication required.';
-              } else if (response.status === 401) {
-                errorMessage = 'GitHub authentication failed. Please check your token.';
-              }
-              throw new Error(errorMessage);
-            }
-          }
-        } else {
+        if (!match) {
           throw new Error('Invalid GitHub URL format');
+        }
+        const [, owner, repo] = match;
+
+        // URL-only GitHub repo (no local clone to ask git): the daemon lists
+        // remote branch names via `github.branches.list` and the default
+        // branch via `github.repos.get` (PROTOCOL §5.27). There is no direct
+        // GitHub API fallback — failures surface as an explicit error/auth
+        // state, never fabricated branches.
+        try {
+          const listing = await appClient.integrations.githubBranches(owner, repo);
+          // Check if we were aborted while waiting for the response
+          if (abortController.signal.aborted) {
+            logger.debug('Branch fetch aborted after response');
+            return;
+          }
+          branches = listing.branches;
+          defaultBranch = listing.defaultBranch || '';
+          githubAuthNeeded = 'none';
+          logger.debug('Fetched branches via daemon github.branches.list', {
+            owner,
+            repo,
+            count: branches.length,
+          });
+        } catch (githubError) {
+          const message =
+            githubError instanceof Error ? githubError.message : String(githubError);
+          // The daemon reports a missing/failed GitHub token as
+          // "GitHub is not configured." (§5.27 error conventions).
+          if (/not configured|not authenticated/i.test(message)) {
+            githubAuthNeeded = 'not-authenticated';
+            throw new Error('GITHUB_AUTH_REQUIRED');
+          }
+          // A 404 lookup (private repo without access, or a repo that does
+          // not exist) maps to a -32602 "not found" error.
+          if (/404|not found/i.test(message)) {
+            githubAuthNeeded = 'no-access';
+            throw new Error('GITHUB_NO_ACCESS');
+          }
+          throw githubError;
         }
       }
 
@@ -747,29 +644,9 @@
         error = 'Failed to fetch branches. You can enter a branch name manually.';
       }
 
-      // Provide common branch names as fallback
-      if (effectiveRepoType === 'github') {
-        branches = ['main', 'master', 'develop', 'staging', 'production'];
-        // Always ensure a branch is selected in error fallback
-        // If value prop is provided, trust it (e.g., for remote branches like origin/...)
-        if (value) {
-          setInternalBranch(value);
-        } else {
-          // Check if there's a saved branch for this repo
-          const savedBranch = getSavedBranchForRepo(repoPath);
-          if (
-            savedBranch &&
-            (branches.includes(savedBranch) || remoteBranches.includes(savedBranch))
-          ) {
-            setInternalBranch(savedBranch);
-          } else {
-            setInternalBranch('main');
-          }
-        }
-      } else {
-        // For local repos, we can't provide good defaults
-        branches = [];
-      }
+      // Never fabricate branch names on failure — the error state renders and
+      // the user can still type a branch name manually.
+      branches = [];
     } finally {
       isLoading = false;
       performanceMonitor.end(`fetchBranches-${repoPath}`);
@@ -793,29 +670,26 @@
     logger.debug('Fetching remote branches for', { repoPath });
 
     try {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        const result = await invoke<any>('git:getBranches', {
-          repoPath,
-          includeRemote: true,
-        });
+      // Daemon-backed read (`git.getBranches`, PROTOCOL §5.6) with
+      // includeRemote; the live seam folds errors to null. Remote branches are
+      // optional, so a failed fetch stays silent (no error state).
+      const result = await appClient.git.getBranches(repoPath, true);
+      if (result) {
+        // Use the separate remoteBranches field from the response (already filtered & sorted)
+        remoteBranches = result.remoteBranches || [];
 
-        if (result.success && result.data) {
-          // Use the separate remoteBranches field from the response (already filtered & sorted)
-          remoteBranches = (result.data.remoteBranches as string[]) || [];
-
-          // Update cache with remote branches
-          if (debugConfig.get('enableBranchCaching')) {
-            const cached = branchCache.get(repoPath);
-            if (cached) {
-              branchCache.set(repoPath, {
-                ...cached,
-                remoteBranches,
-              });
-            }
+        // Update cache with remote branches
+        if (debugConfig.get('enableBranchCaching')) {
+          const cached = branchCache.get(repoPath);
+          if (cached) {
+            branchCache.set(repoPath, {
+              ...cached,
+              remoteBranches,
+            });
           }
-
-          logger.debug('Fetched remote branches', { count: remoteBranches.length });
         }
+
+        logger.debug('Fetched remote branches', { count: remoteBranches.length });
       }
     } catch (err) {
       logger.error('Failed to fetch remote branches', err);

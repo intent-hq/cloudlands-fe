@@ -9,8 +9,7 @@ import { EventEmitter } from '$shared/utils/event-emitter';
 import { v4 as uuidv4 } from 'uuid';
 import { Logger } from '../../../shared/logger';
 import { type WorkspaceEvent } from '../../events/types';
-import { getAttributionEngine } from './provenance/attribution-engine';
-import { TRACKING_CONFIG } from '../../file-tracking/tracking.config';
+import { CHANGE_DETECTION_CONFIG } from './change-detection/detection.config';
 import type { Actor } from '../../../shared/types';
 import type {
   FileChange,
@@ -84,14 +83,13 @@ export class ChangeDetectorRefactored extends EventEmitter {
   private snapshotManager: SnapshotManager;
 
   // Services
-  private attributionEngine = getAttributionEngine();
   private performanceMonitor: PerformanceMonitor;
   private adaptivePolling: AdaptivePollingManager;
   private thresholdExceededHandler: ((alerts: string[]) => void) | null = null;
   private resourcesCleanedUp = false;
 
   // Configuration
-  private config = TRACKING_CONFIG.changeDetection;
+  private config = CHANGE_DETECTION_CONFIG;
   private gitPollingOnly: boolean;
   private disableFileWatcher: boolean;
 
@@ -281,7 +279,7 @@ export class ChangeDetectorRefactored extends EventEmitter {
       }
 
       // Fall back to periodic git polling if file watcher is not active.
-      // FileWatcher.start() may silently decline to start (e.g., if TRACKING_CONFIG
+      // FileWatcher.start() may silently decline to start (e.g., if CHANGE_DETECTION_CONFIG
       // disables watching independently of the constructor options).
       // This ensures we always have at least one change detection mechanism.
       const fileWatcherActive = this.fileWatcher.getStats().isWatching;
@@ -623,9 +621,8 @@ export class ChangeDetectorRefactored extends EventEmitter {
             await this.eventCoordinator.handleChangesBatch(processed);
             this.performanceMonitor.recordEvent();
 
-            // Also emit 'changes' event for GitIntegrationService to track file changes
-            // This was missing - processFileChanges doesn't queue to batch, so 'changes-batch'
-            // event was never fired and handleChangesBatch (which emits 'changes') was never called
+            // Emit 'changes' event so downstream listeners (e.g. daemon-events bridge) can react.
+            // processFileChanges doesn't queue to batch, so 'changes-batch' would never fire otherwise.
             await this.handleChangesBatch(processed);
 
             // Emit file:content-changed for modified/created files so file viewers update
@@ -1172,25 +1169,9 @@ export class ChangeDetectorRefactored extends EventEmitter {
       lastGitPoll: this.lastGitPoll,
       totalChangesDetected: this.stats.totalChangesDetected,
       totalEventsEmitted: eventStats.totalEvents,
-      currentActor: (() => {
-        const provenance = this.attributionEngine.getCurrentProvenance();
-        if (!provenance) return null;
-        if (provenance.source === 'agent' && provenance.agent) {
-          return {
-            type: 'agent' as const,
-            id: provenance.agent.id,
-            name: provenance.agent.name,
-          } as Actor;
-        } else if (provenance.source === 'user') {
-          return {
-            type: 'user' as const,
-            id: 'user',
-            name: 'User',
-            email: 'user@workspace',
-          } as Actor;
-        }
-        return null;
-      })(),
+      // Attribution is owned by the daemon (§17.4 / §5.19); the FE-side
+      // detector no longer resolves a current actor. Field shape preserved.
+      currentActor: null,
     };
   }
 
@@ -1308,76 +1289,34 @@ export class ChangeDetectorRefactored extends EventEmitter {
         });
       }
 
-      // Calculate totals and determine provenance per file
+      // Attribution is owned by the daemon (§17.4 tracked_changes + §6.5
+      // file-tracking events); FE-side polling no longer enriches per-file
+      // actors. `actor` is left undefined so downstream consumers (event
+      // coordinator, gutter) fall back to the daemon-sourced attribution.
       let totalAdditions = 0;
       let totalDeletions = 0;
-      const attributionEngine = getAttributionEngine();
-      let foundAgentId: string | null = null;
-      let foundAgentName: string | null = null;
 
-      const files: FileChange[] = await Promise.all(
-        changes.map(async (change) => {
-          totalAdditions += change.additions;
-          totalDeletions += change.deletions;
+      const files: FileChange[] = changes.map((change) => {
+        totalAdditions += change.additions;
+        totalDeletions += change.deletions;
 
-          // Attribute each file individually with its content
-          const attribution = await attributionEngine.attributeChange(
-            {
-              filePath: change.path,
-              action: change.action.toLowerCase() as any,
-              additions: change.additions,
-              deletions: change.deletions,
-              diff: change.diff,
-              newContent: change.content,
-            },
-            this.workspaceId,
-          );
+        const actor: Actor | undefined = undefined;
 
-          // Build per-file actor from attribution
-          let actor: Actor | undefined;
-          if (attribution.source === 'agent' && attribution.agent) {
-            foundAgentId = attribution.agent.id || 'unknown';
-            foundAgentName = attribution.agent.name || 'Agent';
-            actor = {
-              type: 'agent' as const,
-              id: attribution.agent.id || 'unknown',
-              name: attribution.agent.name || 'Agent',
-            };
-          } else if (attribution.source === 'user') {
-            actor = {
-              type: 'user' as const,
-              id: 'user',
-              name: 'User',
-              email: 'user@workspace',
-            };
-          }
+        return {
+          path: change.path,
+          action: change.action as 'Create' | 'Modify' | 'Delete' | 'Rename',
+          stage: change.stage,
+          oldPath: change.oldPath, // For rename operations
+          additions: change.additions,
+          deletions: change.deletions,
+          diff: change.diff,
+          content: change.content,
+          timestamp: new Date().toISOString(),
+          actor,
+        };
+      });
 
-          return {
-            path: change.path,
-            action: change.action as 'Create' | 'Modify' | 'Delete' | 'Rename',
-            stage: change.stage,
-            oldPath: change.oldPath, // For rename operations
-            additions: change.additions,
-            deletions: change.deletions,
-            diff: change.diff,
-            content: change.content,
-            timestamp: new Date().toISOString(),
-            actor,
-          };
-        }),
-      );
-
-      // Use agent provenance if any file was attributed to an agent
-      const provenance: DiffChunk['provenance'] =
-        foundAgentId !== null
-          ? {
-              source: 'agent',
-              agentId: foundAgentId,
-              agentName: foundAgentName || 'Agent',
-            }
-          : {
-              source: 'git',
-            };
+      const provenance: DiffChunk['provenance'] = { source: 'git' };
 
       return {
         id: uuidv4(),

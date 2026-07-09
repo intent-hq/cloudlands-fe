@@ -55,7 +55,7 @@ type PiSessionUpdate = {
 /**
  * Extract the raw availableModels array from any ACP session-update shape.
  *
- * Mirrors acp-provider.ts (~5715-5720): the payload may be the bare update,
+ * Mirrors the historical ACP session-update parsing: the payload may be the bare update,
  * or wrapped under `params.update` / `params.sessionUpdate`, and the model
  * list may live under `models.availableModels`, `availableModels`, or
  * `models.available`. This single helper normalizes all of those.

@@ -10,6 +10,14 @@
  * directories via the `appClient.files` seam (`file.tree` for the root,
  * `file.list` per directory) and dispatches `setRootNode` / `setChildrenAtPathAction`.
  *
+ * It also restores the agent file-edit badge pipeline (the old saga's
+ * `loadAgentFileEditsSaga`): on init / refresh / `refreshAgentFileEditsRequested`
+ * / `syncGitStatusFromStoresRequested` it pulls agent-authored `file:changed` /
+ * `file:created` events from the daemon via `getAgentFileEdits` (which reads
+ * `appClient.events.query` — `event.query`, PROTOCOL §5.10), propagates them to
+ * parent directories, and dispatches `updateAgentFileEditsEntries` /
+ * `removeAgentFileEditsEntries` so file-tree badges render.
+ *
  * READ-ONLY: this module never invokes a file mutation (no write/delete/mkdir).
  *
  * Dependency-light per src/store AGENTS.md: imports only the AppClient seam, the
@@ -24,24 +32,35 @@ import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { stripWorkspacePrefix } from "$lib/utils/file-utils";
 import {
+  getAgentFileEdits,
+  propagateAgentEditsToParents,
+} from "$lib/utils/agent-file-edits";
+import {
   addExpandedPath,
   addLoadingPath,
   emptyFileExplorerWorkspaceState,
   expandAllRequested,
   expandToPathRequested,
+  hydrateFileExplorerRequested,
   incrementTreeVersion,
   initializeFileExplorer,
+  refreshAgentFileEditsRequested,
   refreshDirectoryRequested,
   refreshFileExplorer,
+  removeAgentFileEditsEntries,
   removeExpandedPath,
   removeLoadingPath,
   setBulkOperation,
   setChildrenAtPathAction,
+  setFileExplorerFileCount,
   setFileExplorerInitialized,
   setFileExplorerLoading,
   setFileExplorerWorkspacePath,
+  setGitStatusMap,
   setRootNode,
+  syncGitStatusFromStoresRequested,
   toggleDirectoryRequested,
+  updateAgentFileEditsEntries,
 } from "$store/renderer/slices/file-explorer/file-explorer-slice";
 import type { FileExplorerWorkspaceState } from "$store/renderer/slices/file-explorer/file-explorer-types";
 import { createLogger } from "$lib/utils/client-logger";
@@ -57,6 +76,90 @@ function getWs(wsId: string): FileExplorerWorkspaceState {
 function onlyDirectoryChild(children: readonly FileNode[]): FileNode | null {
   if (children.length !== 1) return null;
   return children[0].type === "directory" ? children[0] : null;
+}
+
+// ---------------------------------------------------------------------------
+// Agent file-edit badges (ports the old saga's loadAgentFileEditsSaga /
+// refreshAgentFileEditsForWorkspace)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-workspace coalescing for in-flight badge refreshes: a refresh requested
+ * while one is running marks it dirty, and exactly one replay runs afterwards
+ * so the final state always reflects the latest daemon events.
+ */
+const agentFileEditsRefreshByWorkspace = new Map<
+  string,
+  { inProgress: boolean; dirty: boolean }
+>();
+
+/** Test-only — clear the coalescing state between suites. */
+export function __resetAgentFileEditsRefreshStateForTests(): void {
+  agentFileEditsRefreshByWorkspace.clear();
+}
+
+/**
+ * Pull agent-authored file events from the daemon (`getAgentFileEdits` →
+ * `appClient.events.query`, PROTOCOL §5.10), propagate them to parent
+ * directories, and merge them into `ws.agentFileEdits`. Stale entries are
+ * removed first so badges clear when the daemon no longer reports a file;
+ * unchanged entries keep their array identity via the reducer's merge
+ * semantics (per-row selector memoization depends on it).
+ */
+async function loadAgentFileEdits(wsId: string): Promise<void> {
+  try {
+    const editsMap = await getAgentFileEdits(wsId);
+    const editsRecord: Record<string, string[]> = {};
+    for (const [file, agents] of editsMap.entries()) {
+      editsRecord[file] = agents;
+    }
+    const { workspacePath } = getWs(wsId);
+    if (workspacePath) {
+      const propagated = propagateAgentEditsToParents(editsMap, workspacePath, workspacePath);
+      for (const [file, agents] of propagated.entries()) {
+        if (!editsRecord[file]) {
+          editsRecord[file] = agents;
+        }
+      }
+    }
+    const previous = getWs(wsId).agentFileEdits;
+    const stalePaths = Object.keys(previous).filter((key) => !(key in editsRecord));
+    if (stalePaths.length > 0) {
+      appStore.dispatch(removeAgentFileEditsEntries(wsId, stalePaths));
+    }
+    if (Object.keys(editsRecord).length > 0) {
+      appStore.dispatch(updateAgentFileEditsEntries(wsId, editsRecord));
+    }
+  } catch (error) {
+    logger.error("Failed to load agent file edits", error);
+  }
+}
+
+/** Refresh agent file-edit badges for a workspace, coalescing concurrent calls. */
+export async function refreshAgentFileEditsForWorkspace(wsId: string): Promise<void> {
+  if (!wsId) return;
+  let refreshState = agentFileEditsRefreshByWorkspace.get(wsId);
+  if (!refreshState) {
+    refreshState = { inProgress: false, dirty: false };
+    agentFileEditsRefreshByWorkspace.set(wsId, refreshState);
+  }
+  if (refreshState.inProgress) {
+    refreshState.dirty = true;
+    return;
+  }
+  refreshState.inProgress = true;
+  try {
+    await loadAgentFileEdits(wsId);
+  } finally {
+    const shouldReplay = refreshState.dirty;
+    refreshState.inProgress = false;
+    refreshState.dirty = false;
+    if (shouldReplay) {
+      await refreshAgentFileEditsForWorkspace(wsId);
+    } else {
+      agentFileEditsRefreshByWorkspace.delete(wsId);
+    }
+  }
 }
 
 /**
@@ -191,6 +294,7 @@ export async function refreshFileExplorerTree(wsId: string): Promise<void> {
   } finally {
     appStore.dispatch(setFileExplorerLoading(wsId, false));
   }
+  await refreshAgentFileEditsForWorkspace(wsId);
 }
 
 /**
@@ -279,6 +383,60 @@ export async function initializeFileExplorerTree(
     appStore.dispatch(setFileExplorerLoading(wsId, false));
     appStore.dispatch(setFileExplorerInitialized(wsId, true));
   }
+  await refreshAgentFileEditsForWorkspace(wsId);
+}
+
+/** Count file (non-directory) nodes in a file tree, mirroring the seeder. */
+function countFiles(node: FileNode): number {
+  if (node.type === "file") return 1;
+  let count = 0;
+  for (const child of node.children ?? []) {
+    count += countFiles(child);
+  }
+  return count;
+}
+
+/** Collect every directory node path so the seeded tree renders fully expanded. */
+function collectDirectoryPaths(node: FileNode, result: string[] = []): string[] {
+  if (node.type !== "directory") return result;
+  result.push(node.path);
+  for (const child of node.children ?? []) {
+    collectDirectoryPaths(child, result);
+  }
+  return result;
+}
+
+/**
+ * Hydrate the file explorer for a workspace first-opened after boot, mirroring
+ * the boot `files-git-seeder` file-explorer section: fetch the root tree via
+ * `appClient.files.explorerTree`, dispatch the tree's own path as
+ * `workspacePath`, seed git status, expand every directory, and mark the
+ * workspace initialized. Guarded by the per-workspace `isInitialized` flag so a
+ * re-mount of a boot-seeded workspace is a no-op. Errors leave the tree in
+ * whatever state was already there.
+ */
+export async function hydrateFileExplorerFromWorkspace(wsId: string): Promise<void> {
+  const existing = appStore.state.fileExplorer.byWorkspaceId[wsId] ?? emptyFileExplorerWorkspaceState;
+  if (existing.isInitialized || existing.isLoading) return;
+  appStore.dispatch(setFileExplorerLoading(wsId, true));
+  try {
+    const tree = await appClient.files.explorerTree(wsId);
+    if (tree) {
+      appStore.dispatch(setFileExplorerWorkspacePath(wsId, tree.path));
+      appStore.dispatch(setRootNode(wsId, tree));
+      const gitStatusMap = await appClient.files.gitStatusMap(wsId);
+      appStore.dispatch(setGitStatusMap(wsId, gitStatusMap));
+      for (const dirPath of collectDirectoryPaths(tree)) {
+        appStore.dispatch(addExpandedPath(wsId, dirPath));
+      }
+      appStore.dispatch(setFileExplorerFileCount(wsId, countFiles(tree)));
+    }
+  } catch (error) {
+    logger.error("Failed to hydrate file explorer for workspace", error);
+  } finally {
+    appStore.dispatch(setFileExplorerLoading(wsId, false));
+    appStore.dispatch(setFileExplorerInitialized(wsId, true));
+  }
 }
 
 /**
@@ -327,11 +485,20 @@ export function createFileExplorerReadMiddleware(): StoreMiddleware {
             void refreshFileExplorerTree(wsId);
             break;
           }
+          case hydrateFileExplorerRequested.type: {
+            void hydrateFileExplorerFromWorkspace(wsId);
+            break;
+          }
           case refreshDirectoryRequested.type: {
             const filePath = action.payload[1];
             if (typeof filePath === "string" && filePath.length > 0) {
               void handleRefreshDirectory(wsId, filePath);
             }
+            break;
+          }
+          case refreshAgentFileEditsRequested.type:
+          case syncGitStatusFromStoresRequested.type: {
+            void refreshAgentFileEditsForWorkspace(wsId);
             break;
           }
         }

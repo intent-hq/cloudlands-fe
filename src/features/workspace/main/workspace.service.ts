@@ -5,7 +5,6 @@
  * Uses repository pattern for data access and event bus for notifications.
  */
 
-import ElectronStore from 'electron-store';
 import { BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
 import * as fsSync from 'fs';
@@ -30,9 +29,9 @@ import { findParentGitDir } from '../../../shared/git/git-utils';
 import { Logger } from '../../../shared/logger';
 import { WorkspaceConfig } from '../../../shared/main/config';
 import { addRepo } from './repo-registry';
+import { getChangeHistoryForWorkspace } from './change-history-persistence';
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
-import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import {
   unifiedIdService,
   type UnifiedIdService,
@@ -54,10 +53,8 @@ import {
 } from '../../../shared/types';
 import {
   CHIEF_WORKSPACE_ID,
-  type AgentId,
   type WorkspaceId,
 } from '../../../shared/types/branded-ids';
-import { agentPersistence } from '../../agent/main/agent-persistence';
 import {
   refreshSpecialistsFromFiles,
   resolveSpecialistForAgent,
@@ -70,14 +67,6 @@ import {
   workspaceDeleted,
   workspaceArchived,
 } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
-import { RemoteGitManager } from '../../git/main/remote-git-manager';
-import {
-  getIntentServerPath,
-  escapeShellArg,
-} from '../../agent/main/agent-providers/acp-provider';
-import type { NotesRepository } from '../../notes/main/notes.repository';
-import { notesService } from '../../notes/main/notes.service';
-import { FolderBasedNotesRepository } from '../../notes/main/storage';
 import { createTerminalFromBackend } from '../../terminal/main/terminal.ipc';
 import {
   appendSlugSuffix,
@@ -112,6 +101,14 @@ import {
 } from '../../../shared/main/ssh-manager';
 import { trackMain } from '$lib/services/analytics/main';
 import { githubService } from '../../git-tracking/main/github.service';
+
+/**
+ * Escape a value for safe inclusion in a POSIX shell command.
+ * Uses single quotes and escapes any embedded single quotes.
+ */
+function escapeShellArg(arg: string): string {
+  return "'" + arg.replace(/'/g, "'\\''") + "'";
+}
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const { WorkspaceNotFoundError, WorkspaceValidationError, GitWorktreeError } = Errors;
@@ -164,7 +161,6 @@ function stableStringify(value: unknown): string {
 }
 
 export class WorkspaceService {
-  private readonly store: any;
   // Metadata/UI-only cache: current-context snapshots are not Workspace JSON and are bounded by LRU.
   private lastContextCache: Map<string, WorkspaceUIContext> = new Map();
   private contextCacheOrder: string[] = []; // Track access order for LRU
@@ -213,11 +209,8 @@ export class WorkspaceService {
 
   constructor(
     private readonly repository: WorkspaceRepository = new FileSystemWorkspaceRepository(),
-    private readonly notesRepository: NotesRepository = new FolderBasedNotesRepository(),
     private readonly idService: UnifiedIdService = unifiedIdService,
   ) {
-    this.store = new ElectronStore();
-
     // Domain event listeners (including task:status-changed) are now handled
     // by sagas in domain-event-listener-sagas.ts.
 
@@ -230,27 +223,7 @@ export class WorkspaceService {
    */
   private getWorkspaceDiffs(workspaceId: string): DiffChunk[] {
     try {
-      const changeHistory = this.store.get('changeHistory', {});
-
-      // Validate that changeHistory is an object
-      if (!changeHistory || typeof changeHistory !== 'object') {
-        logger.warn('Invalid changeHistory format', { workspaceId, type: typeof changeHistory });
-        return [];
-      }
-
-      // Type guard to ensure it's a Record<string, DiffChunk[]>
-      const validatedHistory = changeHistory as Record<string, unknown>;
-      const diffs = validatedHistory[workspaceId];
-
-      // Validate diffs is an array
-      if (!Array.isArray(diffs)) {
-        if (diffs !== undefined) {
-          logger.warn('Invalid diffs format for workspace', { workspaceId, type: typeof diffs });
-        }
-        return [];
-      }
-
-      return diffs as DiffChunk[];
+      return getChangeHistoryForWorkspace(workspaceId) as unknown as DiffChunk[];
     } catch (error) {
       logger.error('Error loading diffs', error as Error, { workspaceId });
       return [];
@@ -308,21 +281,15 @@ export class WorkspaceService {
       let configContent: string;
 
       if (remoteContext?.isRemote && remoteContext.workspaceId) {
-        // Remote workspace: read git config via RPC
-        try {
-          const rpcClient = await remoteRPCManager.getClient(remoteContext.workspaceId);
-          const result = await rpcClient.readFile({
-            path: `${repoPath}/.git/config`,
-          });
-          configContent = result.content;
-        } catch (error) {
-          logger.warn('Failed to read remote git config via RPC', {
-            repoPath,
-            workspaceId: remoteContext.workspaceId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return {};
-        }
+        // Remote workspace: git-config read over the legacy remote RPC has
+        // retired. Return no repo info until the daemon's WSS transport
+        // lands and can serve `file.read` here.
+        // TODO(P3-5): route via daemon `file.read` over WSS transport.
+        logger.info('Skipping remote git config read; legacy RPC retired', {
+          repoPath,
+          workspaceId: remoteContext.workspaceId,
+        });
+        return {};
       } else {
         // Local workspace: read git config from filesystem
         configContent = await this.repository.readGitConfig(repoPath);
@@ -1365,219 +1332,14 @@ export class WorkspaceService {
 
       if (effectiveRepositoryPath) {
         if (isRemote && request.environmentConfig?.ssh) {
-          // Remote workspace: use RemoteGitManager
-          logger.info('Creating remote workspace', {
-            host: request.environmentConfig.ssh.host,
-            repositoryPath: effectiveRepositoryPath,
-          });
-
-          // Transform request SSH config (snake_case) to SSHConnectionConfig (camelCase)
-          // so RemoteGitManager can pass it directly to RemoteRPCManager, bypassing
-          // the workspace metadata file lookup that hasn't been saved yet.
-          const sshConfig: SSHConnectionConfig = {
-            host: request.environmentConfig.ssh.host,
-            port: request.environmentConfig.ssh.port || 22,
-            username: request.environmentConfig.ssh.user,
-            password: request.environmentConfig.ssh.password,
-            privateKeyPath: request.environmentConfig.ssh.key_path,
-            useAgent: request.environmentConfig.ssh.use_agent,
-            transport: request.environmentConfig.ssh.transport,
-            wsUrl: request.environmentConfig.ssh.ws_url,
+          // Remote workspace creation retired in P3-5. The remote RPC / git
+          // stack has been removed, so remote-configured workspaces can no
+          // longer be created from this daemon.
+          await this.repository.cleanup(id);
+          return {
+            ok: false,
+            error: 'Remote workspaces are no longer supported',
           };
-
-          // Check if skipWorktree mode is enabled for remote
-          if (request.skipWorktree) {
-            // Skip worktree creation - use repository path directly (mirrors local skipWorktree)
-            logger.info('Creating remote workspace in skipWorktree mode', {
-              repositoryPath: effectiveRepositoryPath,
-            });
-            worktreePath = effectiveRepositoryPath;
-
-            // Get the current HEAD commit SHA from the remote repository via SSH
-            const rpcConnectionId = `rpc-${id}`;
-            try {
-              await sshManager.connect(rpcConnectionId, sshConfig);
-
-              // Deploy intent-server and start RPC daemon (mirrors non-skipWorktree path)
-              const localBundlePath = getIntentServerPath();
-              await sshManager.deployIntentServer(rpcConnectionId, localBundlePath);
-              const serveResult = await sshManager.executeCommand(
-                rpcConnectionId,
-                `node ~/.intent-server/server.js serve --workspace ${escapeShellArg(id)}`,
-                { timeout: 15000 },
-              );
-              if (serveResult.exitCode !== 0) {
-                logger.warn(
-                  'Failed to start RPC serve daemon during skipWorktree workspace creation',
-                  {
-                    workspaceId: id,
-                    exitCode: serveResult.exitCode,
-                    stderr: serveResult.stderr,
-                  },
-                );
-              } else {
-                logger.info('RPC serve daemon ready for skipWorktree workspace creation', {
-                  workspaceId: id,
-                });
-              }
-
-              const result = await sshManager.executeCommand(
-                rpcConnectionId,
-                `git -C ${escapeShellArg(effectiveRepositoryPath)} rev-parse HEAD`,
-                { timeout: 10000 },
-              );
-              if (result.exitCode === 0 && result.stdout.trim()) {
-                baseCommitSha = result.stdout.trim();
-                logger.debug('Base commit SHA from remote repository', { baseCommitSha });
-              }
-            } catch (error) {
-              logger.warn('Could not get remote base commit SHA or start RPC daemon', {
-                error: error instanceof Error ? error.message : String(error),
-              });
-            }
-          } else {
-            const remoteGitManager = new RemoteGitManager({
-              repositoryPath: effectiveRepositoryPath,
-              workspaceId: id,
-              sshConfig,
-            });
-
-            // Start RPC serve daemon so rpc.sock exists for createWorktree()
-            const rpcConnectionId = `rpc-${id}`;
-            try {
-              await sshManager.connect(rpcConnectionId, sshConfig);
-              const localBundlePath = getIntentServerPath();
-              await sshManager.deployIntentServer(rpcConnectionId, localBundlePath);
-              const serveResult = await sshManager.executeCommand(
-                rpcConnectionId,
-                `node ~/.intent-server/server.js serve --workspace ${escapeShellArg(id)}`,
-                { timeout: 15000 },
-              );
-              if (serveResult.exitCode !== 0) {
-                logger.warn('Failed to start RPC serve daemon during workspace creation', {
-                  workspaceId: id,
-                  exitCode: serveResult.exitCode,
-                  stderr: serveResult.stderr,
-                });
-              } else {
-                logger.info('RPC serve daemon ready for workspace creation', { workspaceId: id });
-              }
-            } catch (err) {
-              // Non-fatal — createWorktree() might still work if a daemon was already running
-              logger.warn('Failed to start RPC daemon during workspace creation', {
-                workspaceId: id,
-                error: err instanceof Error ? err.message : String(err),
-              });
-            }
-
-            try {
-              // Create worktree on remote
-              worktreePath = await remoteGitManager.createWorktree(branch, request.baseRef);
-
-              // Update workspace_path to use the worktree (not the repository root)
-              // This ensures the agent, MCP tools, and all remote operations use the correct path
-              if (request.environmentConfig) {
-                request.environmentConfig.workspace_path = worktreePath;
-              }
-
-              // Get base commit SHA from remote
-              try {
-                const status = await remoteGitManager.getStatus(worktreePath);
-                // The status doesn't include commit SHA, so we'll get it separately
-                // For now, we'll skip this for remote workspaces
-                logger.debug('Remote worktree created', { worktreePath, branch: status.branch });
-              } catch (error) {
-                logger.warn('Could not get remote git status', error as Error);
-              }
-            } catch (error) {
-              logger.error('Failed to create remote worktree', error as Error);
-              await this.repository.cleanup(id);
-              return {
-                ok: false,
-                error: `Failed to create remote worktree: ${(error as Error).message}`,
-              };
-            }
-          }
-
-          // Create .workspace metadata directory on the remote machine
-          // This mirrors the local workspace setup where .workspace/ is created by the repository layer
-          const remoteWorkspaceDir = `~/intent/workspaces/${escapeShellArg(id)}/.workspace`;
-          const mkdirConnectionId = `mkdir-${id}`;
-          try {
-            await sshManager.connect(mkdirConnectionId, sshConfig);
-            const mkdirResult = await sshManager.executeCommand(
-              mkdirConnectionId,
-              `mkdir -p ${remoteWorkspaceDir}`,
-              { timeout: 10000 },
-            );
-            if (mkdirResult.exitCode !== 0) {
-              logger.warn('Failed to create .workspace directory on remote', {
-                workspaceId: id,
-                exitCode: mkdirResult.exitCode,
-                stderr: mkdirResult.stderr,
-              });
-            } else {
-              logger.info('Created .workspace directory on remote', { workspaceId: id });
-            }
-
-            // Create default spec note on remote so MetadataSyncService has content to sync
-            try {
-              const specTimestamp = new Date().toISOString();
-              const notesDir = `${remoteWorkspaceDir}/notes`;
-              // Build the spec.md content matching serializeFrontmatter() output
-              // Use heredoc to write multi-line content safely (same pattern as terminal.ipc.ts)
-              const specFileContent = `---
-id: spec
-title: Spec
-tags: [spec]
-pinned: true
-created: ${specTimestamp}
-task:
-  status: not_started
----
-
-`;
-              const heredocDelimiter = `INTENT_SPEC_EOF_${Date.now().toString(36)}`;
-              const writeSpecResult = await sshManager.executeCommand(
-                mkdirConnectionId,
-                `mkdir -p ${notesDir} && cat > ${notesDir}/spec.md << '${heredocDelimiter}'\n${specFileContent}${heredocDelimiter}`,
-                { timeout: 10000 },
-              );
-              if (writeSpecResult.exitCode !== 0) {
-                logger.warn('Failed to create spec note on remote', {
-                  workspaceId: id,
-                  exitCode: writeSpecResult.exitCode,
-                  stderr: writeSpecResult.stderr,
-                });
-              } else {
-                logger.info('Created default spec note on remote', { workspaceId: id });
-              }
-            } catch (specError) {
-              logger.warn('Could not create spec note on remote', {
-                workspaceId: id,
-                error: specError instanceof Error ? specError.message : String(specError),
-              });
-            }
-          } catch (error) {
-            logger.warn('Could not create .workspace directory on remote', {
-              workspaceId: id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          } finally {
-            try {
-              await sshManager.disconnect(mkdirConnectionId);
-            } catch {
-              /* ignore */
-            }
-          }
-
-          // Extract git repository info from remote git config
-          if (!gitRepoInfo.owner && !gitRepoInfo.name) {
-            gitRepoInfo = await this.getGitRepoInfo(effectiveRepositoryPath, {
-              isRemote: true,
-              workspaceId: id as string,
-            });
-          }
         } else {
           // Local workspace: use local git commands
 
@@ -1750,8 +1512,9 @@ task:
         }
       }
 
-      // Save workspace metadata and create default spec note IN PARALLEL for speed
-      await Promise.all([this.saveWorkspace(workspace), notesService.ensureSpecExists(id)]);
+      // Save workspace metadata. Default spec-note seeding is owned by the
+      // daemon (`workspace.create` runs `ensure_spec_note`).
+      await this.saveWorkspace(workspace);
 
       // Save initial agent config if provided
       if (request.initialAgent) {
@@ -1765,9 +1528,8 @@ task:
           };
         }
 
-        // Note: agentPersistence.saveAgent() handles directory creation and atomic writes
-        // (including remote workspace support via IMetadataFS), so we don't need to
-        // manually create the agents directory here.
+        // Note: the daemon (PROTOCOL.md §5.5 `agent.create`) owns the session
+        // record, so we no longer manage the on-disk agents directory here.
 
         // Resolve specialist configuration if a specialist is specified
         // This allows the initial agent to inherit model and behavior from the specialist
@@ -1900,21 +1662,33 @@ task:
           imageBlocks: (request.initialAgent as any).imageBlocks,
         };
 
-        // Use agentPersistence for consistent save path (atomic writes, cache invalidation,
-        // deduplication, and remote workspace support via IMetadataFS). Previously used raw
-        // metadataFS.writeFile which bypassed agentPersistence's load cache, causing stale
-        // reads if the cache was populated before this write.
-        const saveResult = await agentPersistence.saveAgent(agentSession as any);
-        if (!saveResult.success) {
-          logger.warn('Failed to save initial agent config via agentPersistence', {
+        // Persist the initial-agent session on the daemon (PROTOCOL.md §5.5
+        // `agent.create`). The daemon adopts the FE-supplied `agentId` verbatim
+        // and harvests the persisted gap fields from `metadata`
+        // (`contextReferences` / `imageBlocks` also passed top-level so they
+        // win over the metadata copies).
+        try {
+          await getBackendClient().request('agent.create', {
             workspaceId: id,
-            agentId: request.initialAgent.agentId,
-            error: saveResult.error,
+            workspacePath: specialistPath,
+            agentId,
+            name: agentSession.name,
+            model: effectiveModel,
+            provider,
+            agentType: (request.initialAgent as any).agentType || 'workspace',
+            metadata: agentSession.metadata,
+            contextReferences: (request.initialAgent as any).contextReferences,
+            imageBlocks: (request.initialAgent as any).imageBlocks,
           });
-        } else {
           logger.info('Saved initial agent config', {
             workspaceId: id,
             agentId: request.initialAgent.agentId,
+          });
+        } catch (error) {
+          logger.warn('Failed to save initial agent config via daemon agent.create', {
+            workspaceId: id,
+            agentId: request.initialAgent.agentId,
+            error: (error as Error).message,
           });
         }
       }
@@ -2101,12 +1875,15 @@ task:
     candidates: string[],
   ): Promise<void> {
     try {
-      const notes = await this.notesRepository.findByWorkspace(workspaceId);
+      // Route through the daemon (PROTOCOL.md §5.4 `note.list`); the daemon
+      // returns camelCase `createdAt`/`updatedAt` per intent-core `Note`.
+      const result = (await getBackendClient().request('note.list', {
+        workspaceId,
+      })) as { notes?: Array<{ createdAt?: string; updatedAt?: string }> } | undefined;
+      const notes = Array.isArray(result?.notes) ? result.notes : [];
       for (const note of notes) {
         this.addActivityCandidate(candidates, note.updatedAt);
-        this.addActivityCandidate(candidates, note.updated_at);
         this.addActivityCandidate(candidates, note.createdAt);
-        this.addActivityCandidate(candidates, note.created_at);
       }
     } catch (error) {
       logger.warn('Failed to derive workspace activity from notes', {
@@ -2121,19 +1898,20 @@ task:
     candidates: string[],
   ): Promise<void> {
     try {
-      const agentIds = await agentPersistence.listAgents(workspaceId);
-      const agents = await Promise.all(
-        agentIds.map(async (agentId) => {
-          try {
-            const result = await agentPersistence.loadAgent(agentId as AgentId, workspaceId);
-            return result.success ? result.data : undefined;
-          } catch {
-            return undefined;
-          }
-        }),
-      );
+      // Route through the daemon (PROTOCOL.md §5.5 `agent.list`): the AgentLite
+      // projection already carries `lastActivity`, `updatedAt`, and `createdAt`,
+      // so we no longer list ids and load each session individually.
+      const result = (await getBackendClient().request('agent.list', {
+        workspaceId,
+      })) as {
+        agents?: Array<{
+          lastActivity?: string;
+          updatedAt?: string;
+          createdAt?: string;
+        }>;
+      };
 
-      for (const agent of agents) {
+      for (const agent of result?.agents ?? []) {
         this.addActivityCandidate(candidates, agent?.lastActivity);
         this.addActivityCandidate(candidates, agent?.updatedAt);
         this.addActivityCandidate(candidates, agent?.createdAt);
@@ -2346,7 +2124,12 @@ task:
    */
   private async getWorkspaceAgentIds(workspaceId: WorkspaceId): Promise<string[]> {
     try {
-      return await agentPersistence.listAgents(workspaceId);
+      // Route through the daemon (PROTOCOL.md §5.5 `agent.list`) and project
+      // to the ids the workspace payload carries.
+      const result = (await getBackendClient().request('agent.list', {
+        workspaceId,
+      })) as { agents?: Array<{ id: string }> };
+      return (result?.agents ?? []).map((a) => a.id);
     } catch (error) {
       logger.warn('Failed to list agent IDs for workspace', {
         workspaceId,
@@ -3360,30 +3143,38 @@ task:
         }
       }
 
-      // Save new workspace metadata via repository
+      // Save new workspace metadata via repository. Default spec-note seeding
+      // for the duplicated workspace is owned by the daemon (`workspace.create`
+      // runs `ensure_spec_note`); the FE no longer bootstraps the spec here.
       await this.saveWorkspace(newWorkspace);
 
-      // Create default spec note for the new workspace (delegated to NotesService)
-      await notesService.ensureSpecExists(newId);
-
-      // Copy notes from source workspace using NotesService
-      // This will be handled by a separate service method to maintain separation of concerns
-      // For now, we'll use the repository directly
+      // Copy non-spec notes from the source workspace through the daemon
+      // (PROTOCOL.md §5.4 `note.list` + `note.create`). The daemon assigns
+      // fresh note IDs; the source `spec` is skipped because the daemon seeds
+      // the new workspace's spec itself.
       try {
-        const sourceNotes = await this.notesRepository.findByWorkspace(id);
+        const client = getBackendClient();
+        const listResult = (await client.request('note.list', {
+          workspaceId: id,
+        })) as { notes?: Array<{
+          id: string;
+          title: string;
+          content?: string;
+          tags?: string[];
+          parentId?: string | null;
+        }> } | undefined;
+        const sourceNotes = Array.isArray(listResult?.notes) ? listResult.notes : [];
         for (const sourceNote of sourceNotes) {
-          if (sourceNote.id !== 'spec') {
-            // Skip spec as we already created a new one
-            const newNote = {
-              ...sourceNote,
-              workspaceId: newId,
-              createdAt: now,
-              updatedAt: now,
-              created_at: now,
-              updated_at: now,
-            };
-            await this.notesRepository.save(newNote);
-          }
+          if (sourceNote.id === 'spec') continue;
+          await client.request('note.create', {
+            workspaceId: newId,
+            title: sourceNote.title,
+            ...(sourceNote.content !== undefined ? { content: sourceNote.content } : {}),
+            ...(Array.isArray(sourceNote.tags) && sourceNote.tags.length > 0
+              ? { tags: sourceNote.tags }
+              : {}),
+            ...(sourceNote.parentId ? { parentId: sourceNote.parentId } : {}),
+          });
         }
       } catch (notesError) {
         logger.warn('Failed to copy notes for duplicated workspace', notesError as Error);
@@ -3489,13 +3280,6 @@ task:
             try {
               await sshManager.connect(deleteConnectionId, sshConfig);
 
-              // Kill intent-server process for this workspace before cleanup
-              await sshManager.executeCommand(
-                deleteConnectionId,
-                `pkill -f "server.js.*--workspace ${id}" || true`,
-                { timeout: 5000 },
-              );
-
               // Remove the git worktree via direct SSH command (avoids RPC dependency)
               const worktreePath = escapeShellArg(worktreeWorkspaceResult.data.worktreePath);
               const repoPath = escapeShellArg(worktreeWorkspaceResult.data.repositoryPath);
@@ -3510,12 +3294,6 @@ task:
               await sshManager.executeCommand(
                 deleteConnectionId,
                 `rmdir ${escapeShellArg(workspaceFolder)} 2>/dev/null || true`,
-                { timeout: 5000 },
-              );
-              // Also clean up ~/.intent-server/workspaces/{id}/ directory
-              await sshManager.executeCommand(
-                deleteConnectionId,
-                `rm -rf ~/.intent-server/workspaces/${escapeShellArg(id)}`,
                 { timeout: 5000 },
               );
               // Clean up remote .workspace/ metadata directory
@@ -3548,50 +3326,6 @@ task:
         logger.info('Skipping git worktree removal for direct-branch mode workspace', {
           workspaceId: id,
         });
-
-        // Skip-worktree workspaces still start the RPC daemon, so we need to
-        // clean up ~/.intent-server/workspaces/{id}/ on the remote host.
-        const workspace = worktreeWorkspaceResult.data;
-        if (workspace.isRemote && workspace.environmentConfig?.ssh) {
-          const ssh = workspace.environmentConfig.ssh;
-          const sshConfig: SSHConnectionConfig = {
-            host: ssh.host,
-            port: ssh.port || 22,
-            username: ssh.user,
-            password: ssh.password,
-            privateKeyPath: ssh.key_path,
-            useAgent: ssh.use_agent,
-            transport: ssh.transport,
-            wsUrl: ssh.ws_url,
-          };
-          const deleteConnectionId = `delete-${id}`;
-          try {
-            await sshManager.connect(deleteConnectionId, sshConfig);
-
-            // Kill intent-server process for this workspace before cleanup
-            await sshManager.executeCommand(
-              deleteConnectionId,
-              `pkill -f "server.js.*--workspace ${id}" || true`,
-              { timeout: 5000 },
-            );
-
-            await sshManager.executeCommand(
-              deleteConnectionId,
-              `rm -rf ~/.intent-server/workspaces/${escapeShellArg(id)}`,
-              { timeout: 5000 },
-            );
-          } catch (cleanupErr) {
-            logger.warn(
-              'Failed to clean up remote intent-server directory for skip-worktree workspace',
-              {
-                workspaceId: id,
-                error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-              },
-            );
-          } finally {
-            await sshManager.disconnect(deleteConnectionId).catch(() => {});
-          }
-        }
       }
 
       // Remove workspace directory via repository

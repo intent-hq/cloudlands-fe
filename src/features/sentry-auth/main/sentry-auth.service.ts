@@ -19,22 +19,36 @@ import type {
 
 const logger = new Logger('SentryAuthService');
 
-// Config store for Sentry credentials
-let configStore: any = null;
-const STORE_KEY = 'sentry-config';
+// Sentry credentials are held in memory only for the current process
+// lifetime. Persistence is delegated to the daemon (`settings.update`
+// against `accounts.sentry.token` + `accounts.sentry.organization`); per
+// PROTOCOL.md §5.12 secrets are redacted on the wire so a restart drops the
+// cache and the user must re-enter the token — matching the P3
+// canonical-persistence posture (electron-store `sentry-auth` retired).
 
-/**
- * Initialize electron-store for config persistence
- */
-async function initStore(): Promise<void> {
-  if (!configStore) {
-    try {
-      const ElectronStore = (await import('electron-store')).default;
-      configStore = new ElectronStore({ name: 'sentry-auth' });
-      logger.info('Initialized electron-store for Sentry config');
-    } catch (err) {
-      logger.error('Failed to initialize electron-store for Sentry', err as Error);
-    }
+async function persistSentryConfigOnDaemon(config: SentryConfig): Promise<void> {
+  try {
+    const { getBackendClient } = await import('../../backend/main/backend.ipc');
+    const client = getBackendClient();
+    await client.request('settings.update', {
+      changes: [{ path: 'accounts.sentry.token', value: config.apiToken }],
+    });
+    await client.request('settings.update', {
+      changes: [{ path: 'accounts.sentry.organization', value: config.organization }],
+    });
+  } catch (error) {
+    logger.error('Failed to persist Sentry config on daemon', error as Error);
+  }
+}
+
+async function clearSentryConfigOnDaemon(): Promise<void> {
+  try {
+    const { getBackendClient } = await import('../../backend/main/backend.ipc');
+    const client = getBackendClient();
+    await client.request('settings.reset', { path: 'accounts.sentry.token' });
+    await client.request('settings.reset', { path: 'accounts.sentry.organization' });
+  } catch (error) {
+    logger.error('Failed to clear Sentry config on daemon', error as Error);
   }
 }
 
@@ -44,20 +58,10 @@ export class SentryAuthService {
   private projectsCacheTime: number = 0;
   private readonly CACHE_TTL = 60000; // 1 minute
 
-  constructor() {
-    // Load config on initialization
-    this.loadConfig();
-  }
-
   private async loadConfig(): Promise<void> {
-    await initStore();
-    if (configStore) {
-      const saved = configStore.get(STORE_KEY);
-      if (saved && saved.organization && saved.apiToken) {
-        this.config = saved;
-        logger.debug('Loaded Sentry config from store', { organization: saved.organization });
-      }
-    }
+    // No-op: raw secrets never round-trip from the daemon (§5.12). The
+    // in-memory `config` is populated by `saveConfig` and cleared by
+    // `logout`; a restart requires the user to re-enter the token.
   }
 
   /**
@@ -66,6 +70,16 @@ export class SentryAuthService {
   async isAuthenticated(): Promise<boolean> {
     await this.loadConfig();
     return this.config !== null && !!this.config.organization && !!this.config.apiToken;
+  }
+
+  /**
+   * Raw API token for the current process (or `null` when not entered this
+   * session). Used by `mcp-auth-providers.ts` to build a Sentry MCP fallback
+   * Authorization header — the daemon-owned secret is never echoed back so
+   * this only reflects in-memory state.
+   */
+  getApiToken(): string | null {
+    return this.config?.apiToken ?? null;
   }
 
   /**
@@ -105,12 +119,9 @@ export class SentryAuthService {
 
       const orgData = await response.json();
 
-      // Save config
+      // Save config in-memory and push to daemon-owned settings.
       this.config = { organization, apiToken };
-      await initStore();
-      if (configStore) {
-        configStore.set(STORE_KEY, this.config);
-      }
+      await persistSentryConfigOnDaemon(this.config);
 
       logger.info('Sentry configuration saved successfully', {
         organization,
@@ -147,10 +158,7 @@ export class SentryAuthService {
     logger.info('Clearing Sentry configuration');
     this.config = null;
     this.cachedProjects = [];
-    await initStore();
-    if (configStore) {
-      configStore.delete(STORE_KEY);
-    }
+    await clearSentryConfigOnDaemon();
   }
 
   /**

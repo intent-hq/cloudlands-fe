@@ -66,20 +66,8 @@ describe('Import Fixes Verification', () => {
     });
   });
 
-  describe('agent-backend-handler.service.ts', () => {
-    it('should have complete import statement', () => {
-      const filePath = join(
-        projectRoot,
-        'src/features/agent/main/agent-backend-handler.service.ts',
-      );
-      const content = readFileSync(filePath, 'utf-8');
-
-      // Check for proper import syntax - has type imports from $shared/types
-      expect(content).toMatch(/^import\s+type\s+{[^}]+}\s+from\s+['"]\$shared\/types['"]/m);
-      // Check that there are no malformed imports (missing import keyword)
-      expect(content).not.toMatch(/^{[^}]+}\s+from\s+['"]\$shared/m);
-    });
-  });
+  // `agent-backend-handler.service.ts` import-shape guard was retired in
+  // C1d-7 alongside the handler file itself (adapter now goes daemon-direct).
 
   describe('line-to-block-mapper.ts', () => {
     it('should have proper imports and structure', () => {
@@ -124,7 +112,6 @@ describe('Import Fixes Verification', () => {
     it('should not have syntax errors in TypeScript files', () => {
       const tsFiles = [
         'src/features/comments/comment-manager-v2.ts',
-        'src/features/agent/main/agent-backend-handler.service.ts',
         'src/lib/components/tiptap/line-to-block-mapper.ts',
       ];
 

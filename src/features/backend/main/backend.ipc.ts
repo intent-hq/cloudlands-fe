@@ -12,15 +12,16 @@
  * Daemon JSON-RPC notifications are broadcast to every window on
  * `backend:notification`; connection-status changes on `backend:status`.
  */
-import { BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { JsonRpcError } from './json-rpc-errors';
+import { resolveBackendConfig } from './backend-connection';
 import {
   JsonRpcClient,
   type ConnectionStatus,
   type JsonRpcNotification,
 } from './json-rpc-client';
+import { JsonRpcError } from './json-rpc-errors';
 
 const logger = new Logger('Backend-IPC');
 const BACKEND = IPC_CHANNELS.BACKEND;
@@ -34,18 +35,21 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 /** Lazily create, wire, and start the shared main-process JSON-RPC client. */
 export function getBackendClient(): JsonRpcClient {
   if (client) return client;
+  // Dev (unpackaged) builds default to the loopback WebSocket transport; the
+  // packaged app stays on UDS. Env overrides (`INTENTD_SOCKET`, `INTENTD_WS_URL`)
+  // win either way — see `resolveBackendConfig`.
+  const isDev = !app.isPackaged;
   const instance = new JsonRpcClient({
+    config: resolveBackendConfig(process.env, { isDev }),
     // Enable a liveness heartbeat: reconnect-on-close alone misses a silently
-    // half-open socket. A daemon-level JSON-RPC error still proves the socket
-    // round-trips, so only a transport timeout/failure trips a reconnect.
+    // half-open socket. `host.status` is the transport-agnostic capability
+    // probe (PROTOCOL.md §5.14) — answered on BOTH UDS and WSS — so it works
+    // as a heartbeat regardless of which transport `resolveBackendConfig`
+    // picked. `system.status` (PROTOCOL.md §5.7) is intentionally UDS-only.
+    // A transport timeout/failure trips a reconnect.
     heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
     healthCheck: async () => {
-      try {
-        await instance.request('system.health');
-      } catch (error) {
-        if (error instanceof JsonRpcError) return;
-        throw error;
-      }
+      await instance.request('host.status');
     },
   });
   instance.on('notification', (notification: JsonRpcNotification) =>

@@ -5,9 +5,17 @@ import type { AgentMessage, AgentSession } from "$shared/types";
 // Fake the live backend transport so the bridge installs against in-memory
 // fakes (no Electron). `vi.hoisted` keeps the spies visible to the hoisted
 // vi.mock factory.
-const { onBackendNotificationSpy, backendRequestSpy, capturedHandlers } = vi.hoisted(() => ({
+const {
+  onBackendNotificationSpy,
+  backendRequestSpy,
+  applyNoteFromEventSpy,
+  applyCommentFromEventSpy,
+  capturedHandlers,
+} = vi.hoisted(() => ({
   onBackendNotificationSpy: vi.fn(),
   backendRequestSpy: vi.fn(),
+  applyNoteFromEventSpy: vi.fn(),
+  applyCommentFromEventSpy: vi.fn(),
   capturedHandlers: [] as Array<(n: { method: string; params?: unknown }) => void>,
 }));
 vi.mock("$lib/client/live/backend-transport", () => ({
@@ -24,16 +32,43 @@ vi.mock("$lib/client/live/backend-transport", () => ({
     return Promise.resolve({ subscriptionId: "sub-1" });
   },
 }));
+// Mock the notes-read-service so the bridge's note:* routing is observable
+// without touching the real appClient.notes.list seam.
+vi.mock("$features/notes/notes-read-service", () => ({
+  applyNoteFromEvent: applyNoteFromEventSpy,
+  createNotesReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
+  __resetNotesReadServiceForTests: () => {},
+}));
+// Mock the comments-read-service so the bridge's comment:* routing is
+// observable without touching the real appClient.comments.list seam.
+vi.mock("$features/comments/comments-read-service", () => ({
+  applyCommentFromEvent: applyCommentFromEventSpy,
+  __resetCommentsReadServiceForTests: () => {},
+}));
+
+// The bridge routes `agent:created`/`agent:updated` through the shared
+// read-service so the transcript-preserving merge is exercised in one place.
+// Fake it here so the tests can assert the bridge hits the correct seam and
+// simulate its store-hydration side effect without a real `agent.get` fetch.
+const { ensureAgentSessionSpy } = vi.hoisted(() => ({
+  ensureAgentSessionSpy: vi.fn(() => Promise.resolve()),
+}));
+vi.mock("$features/agent/agent-read-service", () => ({
+  ensureAgentSession: ensureAgentSessionSpy,
+  createAgentReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) =>
+    next(a),
+}));
 
 import { store as appStore } from "$store/renderer/store";
 import {
   bulkUpsertSessions,
   clearAllSessions,
   setAgentStreaming,
+  upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { selectAgentIsResponding } from "$store/renderer/slices/agent-session/agent-session-selectors";
 import { __resetDaemonEventsBridgeForTests } from "$features/events/daemon-events-bridge";
-import { chatReset } from "$store/renderer/slices/chat-state/chat-state-slice";
+import { chatReset, chatSendStarted } from "$store/renderer/slices/chat-state/chat-state-slice";
 import type { StatusEvent } from "$store/renderer/slices/chat-state/chat-state-types";
 import {
   clearAgentQueue,
@@ -41,6 +76,19 @@ import {
 } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
 import type { QueuedMessage } from "$shared/types";
+import { addMockIpcListener, resetMockIpcRouter } from "$shared/ipc-mock-router";
+import {
+  bulkSetServerStatus,
+  clearAllErrorMessages,
+  setServerErrorMessage,
+  setServers,
+} from "$store/renderer/slices/mcp-settings/mcp-settings-slice";
+import type { McpServerStatus } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
+import {
+  disposeScripts,
+  upsertScript,
+} from "$store/renderer/slices/scripts/scripts-slice";
+import type { ScriptOutputLine } from "$store/renderer/slices/scripts/scripts-types";
 
 function readStatusEvents(): StatusEvent[] {
   const state = appStore.state as {
@@ -145,7 +193,7 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
 
   afterEach(() => vi.clearAllMocks());
 
-  it("registers a notification listener and subscribes to agent:* + settings:changed on first dispatch", async () => {
+  it("registers a notification listener and subscribes to agent:* + activity-timeline + settings/usage + legacy-relay families on first dispatch", async () => {
     await primeBridge();
 
     expect(onBackendNotificationSpy).toHaveBeenCalledTimes(1);
@@ -153,7 +201,22 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
     // we assert the bridge's events.subscribe call explicitly instead of the
     // total spy count.
     expect(backendRequestSpy).toHaveBeenCalledWith("events.subscribe", {
-      eventTypes: ["agent:*", "settings:changed"],
+      eventTypes: [
+        "agent:*",
+        "file:*",
+        "note:*",
+        "comment:*",
+        "script:*",
+        "settings:changed",
+        "workspace:tokenUsage-changed",
+        "workspace:updated",
+        "task:ready-tasks-changed",
+        "changes:git-status",
+        "changes:tracked",
+        "line-attribution:updated",
+        "pr:*",
+        "mcp.servers:status-changed",
+      ],
     });
   });
 
@@ -189,7 +252,27 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
-  it("ignores notifications that are not events.event or not agent-lifecycle", async () => {
+  it("routes agent:session-stats-changed (PROTOCOL §5.24) into agent-session.stats", async () => {
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:session-stats-changed", {
+        sessionId: AGENT,
+        agentId: AGENT,
+        stats: { creditsUsed: 1.54, messageCount: 18, toolCount: 42 },
+      }),
+    );
+
+    expect(readSession()?.stats).toEqual({
+      creditsUsed: 1.54,
+      messageCount: 18,
+      toolCount: 42,
+    });
+  });
+
+  it("ignores non-events.event methods, and forwards non-lifecycle events.event notifications into workspaceEvents without changing agent-session flags", async () => {
     seedSession({ isStreaming: true, status: AgentStatus.Active });
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -198,7 +281,12 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
     handler({ method: "agent.stream:chunk", params: { agentId: AGENT } });
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
 
-    // events.event but not a lifecycle type — no-op.
+    // events.event carrying a non-lifecycle domain event — still stored in the
+    // workspaceEvents buffer (activity timeline) but never flips the
+    // agent-session isResponding flag, which is owned by the lifecycle subset.
+    // (`note:*` / `comment:*` / `task:*` / `pr:*` are intercepted with an
+    // early-return route, so pick a domain event that still falls through to
+    // the shared `eventReceived` dispatch.)
     handler({
       method: "events.event",
       params: {
@@ -206,13 +294,19 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
           id: "evt-2",
           workspaceId: WS,
           timestamp: "2026-01-02T00:00:00.000Z",
-          type: "note:updated",
+          type: "file:changed",
           actor: { type: "system" },
           data: { agentId: AGENT },
         },
       },
     });
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(true);
+    const state = appStore.state as {
+      workspaceEvents: { byWorkspaceId: Record<string, { events: Array<{ id: string }> }> };
+    };
+    expect(state.workspaceEvents.byWorkspaceId[WS]?.events.map((event) => event.id)).toContain(
+      "evt-2",
+    );
   });
 
   it("drops events without a workspaceId rather than guessing", async () => {
@@ -419,6 +513,82 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
+  // Regression: the daemon's `map_tool_call_update` (crates/intent-acp) emits
+  // `agent:tool:call` events on every ACP `tool_call_update` where unchanged
+  // fields default to empty (`toolName: ""`, `toolKind: "other"`, `input: null`)
+  // — only `status` (and sometimes `output`) is authoritative on updates.
+  // Mirroring the daemon-side `record_tool` (crates/intent-services/agent_session.rs),
+  // which only patches `metadata.status` on repeated `toolCallId`s, the FE
+  // bridge must preserve the initial name/input/toolKind so the classifier
+  // keeps rendering a rich label instead of falling through to the generic
+  // "Run" row (bug 19).
+  it("preserves the initial name/input/toolKind when a tool_call_update event omits them", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t1",
+        input: { path: "src/lib.rs" },
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+
+    // Mid-flight update the daemon emits from `map_tool_call_update` when the
+    // ACP provider reports a progress-only tick: title/kind/rawInput are None
+    // upstream, so the wire payload defaults them out.
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "",
+        toolKind: "other",
+        toolCallId: "t1",
+        input: null,
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+
+    // Completion update: only `status` (and `output`) are authoritative.
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "",
+        toolKind: "other",
+        toolCallId: "t1",
+        input: null,
+        status: "completed",
+        output: "ok",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+
+    const blocks = readAssistantMessages()[0]?.contentBlocks ?? [];
+    expect(blocks.map((b) => b.type)).toEqual(["tool_use", "tool_result"]);
+    expect(blocks[0]).toMatchObject({
+      type: "tool_use",
+      toolCallId: "t1",
+      name: "Read",
+      input: { path: "src/lib.rs" },
+      metadata: { toolKind: "file", status: "completed" },
+    });
+    expect(blocks[1]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "t1",
+      output: "ok",
+    });
+  });
+
   it("does not duplicate the assistant message when getConversation hydration follows the live stream", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -502,7 +672,7 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
-  it("emits status hint transitions: 'Streaming response…' on first chunk → 'Calling tool' on tool:call → cleared on stream:end/idle", async () => {
+  it("emits status hint transitions: 'Streaming response…' on first chunk → 'Calling tool' on tool:call started → 'Awaiting tool response' on tool:call completed → 'Streaming response…' on next chunk → cleared on stream:end/idle", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
@@ -547,8 +717,9 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
       { phase: "tool-call", message: "Calling tool" },
     ]);
 
-    // tool:call (completed) does NOT append a second status entry — the hint
-    // returns to "Streaming response…" when the next text chunk arrives.
+    // tool:call (completed) → "Awaiting tool response" entry closes off the
+    // "Calling tool" entry at the tool's terminal event so its duration in
+    // computeCompletedEvents reflects the actual tool-execution window.
     handler(
       notification("agent:tool:call", {
         agentId: AGENT,
@@ -563,7 +734,13 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
         blockId: `${MESSAGE_ID}:1`,
       }),
     );
-    expect(readStatusEvents()).toHaveLength(2);
+
+    events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message, level: e.level }))).toEqual([
+      { phase: "streaming", message: "Streaming response…", level: "info" },
+      { phase: "tool-call", message: "Calling tool", level: "info" },
+      { phase: "tool-waiting", message: "Awaiting tool response", level: "info" },
+    ]);
 
     handler(
       notification("agent:stream:chunk", {
@@ -581,6 +758,7 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual([
       { phase: "streaming", message: "Streaming response…" },
       { phase: "tool-call", message: "Calling tool" },
+      { phase: "tool-waiting", message: "Awaiting tool response" },
       { phase: "streaming", message: "Streaming response…" },
     ]);
 
@@ -600,6 +778,215 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
       }),
     );
     expect(readStatusEvents()).toEqual([]);
+  });
+
+  it("tool started → completed short window: tool-call entry's duration ends at the completed event's timestamp", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const startedAt = 1_700_000_000_000;
+    const completedAt = startedAt + 250;
+    vi.useFakeTimers();
+    vi.setSystemTime(startedAt);
+
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t-short",
+        input: { path: "a" },
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+    vi.setSystemTime(completedAt);
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t-short",
+        input: { path: "a" },
+        status: "completed",
+        output: "ok",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+
+    const events = readStatusEvents();
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ phase: "tool-call", timestamp: startedAt });
+    expect(events[1]).toMatchObject({ phase: "tool-waiting", timestamp: completedAt });
+    // computeCompletedEvents: duration of tool-call = timestamp(tool-waiting) − timestamp(tool-call).
+    expect(events[1].timestamp - events[0].timestamp).toBe(250);
+
+    vi.useRealTimers();
+  });
+
+  it("tool completed with error: appends a tool-waiting close entry at error level (still closes the hint)", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t-err",
+        input: { path: "a" },
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t-err",
+        input: { path: "a" },
+        status: "error",
+        output: "boom",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+
+    const events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message, level: e.level }))).toEqual([
+      { phase: "tool-call", message: "Calling tool", level: "info" },
+      { phase: "tool-waiting", message: "Tool call failed", level: "error" },
+    ]);
+  });
+
+  it("repeated completed updates for the same toolCallId do not append a second tool-waiting entry", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t-dup",
+        input: { path: "a" },
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+    for (let i = 0; i < 3; i++) {
+      handler(
+        notification("agent:tool:call", {
+          agentId: AGENT,
+          toolName: "Read",
+          toolKind: "file",
+          toolCallId: "t-dup",
+          input: { path: "a" },
+          status: "completed",
+          output: "ok",
+          messageId: MESSAGE_ID,
+          blockIndex: 0,
+          blockId: `${MESSAGE_ID}:0`,
+        }),
+      );
+    }
+
+    const events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual([
+      { phase: "tool-call", message: "Calling tool" },
+      { phase: "tool-waiting", message: "Awaiting tool response" },
+    ]);
+  });
+
+  it("repeated started ticks for the same toolCallId (progress-only) do not append duplicate Calling tool entries", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "Read",
+        toolKind: "file",
+        toolCallId: "t-prog",
+        input: { path: "a" },
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+    // Progress-only tick: empty toolName, same toolCallId, still started.
+    handler(
+      notification("agent:tool:call", {
+        agentId: AGENT,
+        toolName: "",
+        toolCallId: "t-prog",
+        status: "started",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+      }),
+    );
+
+    const events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual([
+      { phase: "tool-call", message: "Calling tool" },
+    ]);
+  });
+
+  it("multiple sequential tool calls each append their own tool-call → tool-waiting pair with accurate short durations", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const t0 = 1_700_000_000_000;
+    const timeline: Array<{ at: number; toolCallId: string; status: "started" | "completed"; idx: number }> = [
+      { at: t0,       toolCallId: "t-a", status: "started",   idx: 0 },
+      { at: t0 + 100, toolCallId: "t-a", status: "completed", idx: 0 },
+      { at: t0 + 300, toolCallId: "t-b", status: "started",   idx: 1 },
+      { at: t0 + 450, toolCallId: "t-b", status: "completed", idx: 1 },
+    ];
+    vi.useFakeTimers();
+
+    for (const step of timeline) {
+      vi.setSystemTime(step.at);
+      handler(
+        notification("agent:tool:call", {
+          agentId: AGENT,
+          toolName: "Read",
+          toolKind: "file",
+          toolCallId: step.toolCallId,
+          input: { path: `p${step.idx}` },
+          status: step.status,
+          ...(step.status === "completed" ? { output: "ok" } : {}),
+          messageId: MESSAGE_ID,
+          blockIndex: step.idx,
+          blockId: `${MESSAGE_ID}:${step.idx}`,
+        }),
+      );
+    }
+
+    const events = readStatusEvents();
+    expect(events.map((e) => e.phase)).toEqual([
+      "tool-call",
+      "tool-waiting",
+      "tool-call",
+      "tool-waiting",
+    ]);
+    // Each tool's duration = timestamp(next entry) − timestamp(this entry).
+    expect(events[1].timestamp - events[0].timestamp).toBe(100);
+    expect(events[3].timestamp - events[2].timestamp).toBe(150);
+
+    vi.useRealTimers();
   });
 });
 
@@ -832,6 +1219,1337 @@ describe("daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
       ([method]) => method === "events.subscribe",
     );
     expect(subscribeCalls).toHaveLength(1);
-    expect(subscribeCalls[0][1]).toEqual({ eventTypes: ["agent:*", "settings:changed"] });
+    expect(subscribeCalls[0][1]).toEqual({
+      eventTypes: [
+        "agent:*",
+        "file:*",
+        "note:*",
+        "comment:*",
+        "script:*",
+        "settings:changed",
+        "workspace:tokenUsage-changed",
+        "workspace:updated",
+        "task:ready-tasks-changed",
+        "changes:git-status",
+        "changes:tracked",
+        "line-attribution:updated",
+        "pr:*",
+        "mcp.servers:status-changed",
+      ],
+    });
+  });
+});
+
+describe("daemonEventsBridge (usage wire contract — workspace:tokenUsage-changed → tokenUsage slice)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("mirrors the pushed §5.23 TokenUsage rollup into the tokenUsage slice", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+    expect(handler).toBeTypeOf("function");
+
+    // PROTOCOL §6.5: data = { workspaceId, tokenUsage } (self-sufficient §6.7).
+    const tokenUsage = {
+      byAgentId: {
+        "agent-123": { inputTokens: 12000, outputTokens: 3400, cacheReadTokens: 8000, cacheCreationTokens: 1200 },
+      },
+      byModel: {
+        "opus-4.8": { inputTokens: 12000, outputTokens: 3400, cacheReadTokens: 8000, cacheCreationTokens: 1200 },
+      },
+      totals: { inputTokens: 12000, outputTokens: 3400, cacheReadTokens: 8000, cacheCreationTokens: 1200 },
+      lastScanAt: "2026-06-17T12:00:00Z",
+    };
+    handler!(
+      notification("workspace:tokenUsage-changed", { workspaceId: WS, tokenUsage }),
+    );
+
+    const state = appStore.state as {
+      tokenUsage: { byWorkspaceId: Record<string, unknown> };
+    };
+    expect(state.tokenUsage.byWorkspaceId[WS]).toEqual({
+      ...tokenUsage,
+      isStale: false,
+    });
+  });
+
+  it("ignores a push without a tokenUsage object", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(notification("workspace:tokenUsage-changed", { workspaceId: "ws-token-empty" }));
+
+    const state = appStore.state as {
+      tokenUsage: { byWorkspaceId: Record<string, unknown> };
+    };
+    expect(state.tokenUsage.byWorkspaceId["ws-token-empty"]).toBeUndefined();
+  });
+});
+
+describe("daemonEventsBridge (legacy mock-IPC relay — daemon events → listenSync channels)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    resetMockIpcRouter();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => {
+    resetMockIpcRouter();
+    vi.clearAllMocks();
+  });
+
+  /** Register a mock-IPC listener and return the payloads it receives. */
+  function listenOn(channel: string): unknown[] {
+    const seen: unknown[] = [];
+    addMockIpcListener(channel, (payload) => seen.push(payload));
+    return seen;
+  }
+
+  it("re-emits task:ready-tasks-changed with the §5.4 TS-parity envelope (workspaceId + data.readyTaskIds)", async () => {
+    await primeBridge();
+    const seen = listenOn("task:ready-tasks-changed");
+
+    const data = {
+      readyTaskIds: ["note-1", "note-2"],
+      triggeredBy: { noteId: "note-3", previousStatus: "in_progress", newStatus: "complete" },
+      computedAt: "2026-01-02T00:00:00.000Z",
+    };
+    capturedHandlers[0]!(notification("task:ready-tasks-changed", data));
+
+    expect(seen).toHaveLength(1);
+    // The listener (WorkspaceProgressCard) reads payload.workspaceId and
+    // payload.data.readyTaskIds — the daemon event envelope carries both.
+    expect(seen[0]).toMatchObject({ workspaceId: WS, data });
+  });
+
+  it("re-emits changes:git-status as git:status-changed { workspaceId }", async () => {
+    await primeBridge();
+    const seen = listenOn("git:status-changed");
+
+    capturedHandlers[0]!(
+      notification("changes:git-status", { workspaceId: WS, status: { files: [] } }),
+    );
+
+    expect(seen).toEqual([{ workspaceId: WS }]);
+  });
+
+  it("re-emits changes:tracked as file-tracking:changes-updated { workspaceId }", async () => {
+    await primeBridge();
+    const seen = listenOn("file-tracking:changes-updated");
+
+    capturedHandlers[0]!(notification("changes:tracked", { workspaceId: WS, changes: [] }));
+
+    expect(seen).toEqual([{ workspaceId: WS }]);
+  });
+
+  it("re-emits line-attribution:updated with { workspaceId, noteId, attributions } for the gutter", async () => {
+    // PROTOCOL §5.2.1 / §6.5 — daemon emits the self-sufficient payload; the
+    // bridge forwards it so LineAttributionGutter's listenSync path fires.
+    await primeBridge();
+    const seen = listenOn("line-attribution:updated");
+
+    const attributions = {
+      "1": {
+        timestamp: 1720193696000,
+        author: { id: "system", name: "intentd", type: "system" as const },
+      },
+    };
+    capturedHandlers[0]!(
+      notification("line-attribution:updated", {
+        workspaceId: WS,
+        noteId: "note-abc",
+        attributions,
+      }),
+    );
+
+    expect(seen).toEqual([{ workspaceId: WS, noteId: "note-abc", attributions }]);
+  });
+
+  it("re-emits workspace:updated with the event data as changes", async () => {
+    await primeBridge();
+    const seen = listenOn("workspace:updated");
+
+    capturedHandlers[0]!(notification("workspace:updated", { title: "Renamed" }));
+
+    expect(seen).toEqual([{ workspaceId: WS, changes: { title: "Renamed" } }]);
+  });
+
+  // `pr:linked` / `pr:updated` / `pr:unlinked` are no longer re-emitted onto
+  // the legacy `workspace:updated` mock-IPC channel — they are dispatched
+  // directly to the workspace slice via `handlePrEvent`. The Redux path is
+  // covered by the "daemonEventsBridge (pr:linked / pr:updated / pr:unlinked
+  // → workspace slice)" suite below.
+
+  it("re-emits agent:status-changed and agent:idle onto their legacy channels (and still dispatches the lifecycle)", async () => {
+    appStore.dispatch(clearAllSessions());
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    await primeBridge();
+    const statusSeen = listenOn("agent:status-changed");
+    const idleSeen = listenOn("agent:idle");
+
+    capturedHandlers[0]!(
+      notification("agent:status-changed", { agentId: AGENT, status: "active" }),
+    );
+    capturedHandlers[0]!(notification("agent:idle", { agentId: AGENT }));
+
+    // active-streams-tracker refetches on any delivery — payload is the event.
+    expect(statusSeen).toHaveLength(1);
+    expect(statusSeen[0]).toMatchObject({ type: "agent:status-changed", workspaceId: WS });
+    expect(idleSeen).toHaveLength(1);
+    expect(idleSeen[0]).toMatchObject({ type: "agent:idle", workspaceId: WS });
+    // The relay is a side effect, not an early return: agent:idle still clears
+    // the optimistic responding flag through the lifecycle dispatch.
+    expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
+  });
+
+  it("does not relay events dropped by the fan-out scope gate", async () => {
+    await primeBridge();
+    const seen = listenOn("git:status-changed");
+
+    const base = notification("changes:git-status", { workspaceId: WS, status: {} });
+    capturedHandlers[0]!({
+      method: base.method,
+      params: { ...base.params, subscriptionId: "sub-foreign" },
+    });
+
+    expect(seen).toEqual([]);
+  });
+});
+
+describe("daemonEventsBridge (script wire contract — script:output/state → scripts slice)", () => {
+  const SCRIPT_ID = "script-bridge-1";
+
+  function seedScript(): void {
+    appStore.dispatch(
+      upsertScript(WS, {
+        id: SCRIPT_ID,
+        workspaceId: WS,
+        name: "Dev Server",
+        command: "pnpm dev",
+        mode: "service",
+        source: "user",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+  }
+
+  function readScriptsState(): {
+    scripts: Record<string, { runtime: { status: string; pid?: number; detectedUrl?: string } }>;
+    outputBuffers: Record<string, ScriptOutputLine[]>;
+  } {
+    const state = appStore.state as {
+      scripts: {
+        byWorkspaceId: Record<
+          string,
+          {
+            scripts: Record<
+              string,
+              { runtime: { status: string; pid?: number; detectedUrl?: string } }
+            >;
+            outputBuffers: Record<string, ScriptOutputLine[]>;
+          }
+        >;
+      };
+    };
+    return (
+      state.scripts.byWorkspaceId[WS] ?? {
+        scripts: {},
+        outputBuffers: {},
+      }
+    );
+  }
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    appStore.dispatch(disposeScripts(WS));
+    seedScript();
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("decodes script:output base64 chunk and appends split lines to the output buffer", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §6.5 payload: { scriptId, chunk } — chunk is base64 of raw PTY bytes.
+    const raw = "hello\nworld\n";
+    const chunk = Buffer.from(raw, "utf-8").toString("base64");
+    handler(notification("script:output", { scriptId: SCRIPT_ID, chunk }));
+
+    const buffer = readScriptsState().outputBuffers[SCRIPT_ID] ?? [];
+    expect(buffer.map((line) => line.text)).toEqual(["hello", "world"]);
+    for (const line of buffer) expect(line.stream).toBe("stdout");
+  });
+
+  it("keeps a trailing partial line as its own output line (no newline at end of chunk)", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const chunk = Buffer.from("first\nsecond", "utf-8").toString("base64");
+    handler(notification("script:output", { scriptId: SCRIPT_ID, chunk }));
+
+    expect(readScriptsState().outputBuffers[SCRIPT_ID].map((line) => line.text)).toEqual([
+      "first",
+      "second",
+    ]);
+  });
+
+  it("ignores script:output payloads without a scriptId or chunk", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification("script:output", { scriptId: SCRIPT_ID }));
+    handler(notification("script:output", { chunk: "aGk=" }));
+
+    expect(readScriptsState().outputBuffers[SCRIPT_ID]).toBeUndefined();
+  });
+
+  it("mirrors script:state into the scripts slice's runtime", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §6.5 payload: ScriptRuntimeState + scriptId (self-sufficient §6.7).
+    handler(
+      notification("script:state", {
+        scriptId: SCRIPT_ID,
+        status: "running",
+        pid: 4242,
+        restartCount: 0,
+        startedAt: "2026-01-02T00:00:00.000Z",
+      }),
+    );
+
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime).toMatchObject({
+      status: "running",
+      pid: 4242,
+      startedAt: "2026-01-02T00:00:00.000Z",
+    });
+  });
+
+  it("mirrors detectedUrl from script:state into the runtime state", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("script:state", {
+        scriptId: SCRIPT_ID,
+        status: "running",
+        restartCount: 0,
+        detectedUrl: "http://localhost:5173",
+      }),
+    );
+
+    expect(readScriptsState().scripts[SCRIPT_ID].runtime.detectedUrl).toBe(
+      "http://localhost:5173",
+    );
+  });
+});
+
+describe("daemonEventsBridge (permission flow — PROTOCOL §8 request/resolved events)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  const REQUEST_ID = "perm_1718600000000_1";
+
+  function readPermissionRequests(): unknown[] {
+    const state = appStore.state as {
+      permission?: { requests?: { ids: string[]; map: Record<string, unknown> } };
+    };
+    const requests = state.permission?.requests;
+    if (!requests) return [];
+    return requests.ids.map((id) => requests.map[id]);
+  }
+
+  it("dispatches permissionRequestReceived with the normalized wire payload from agent:permission:request", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // PROTOCOL §8 normalized `PermissionRequestData` — the exact shape the
+    // Electron reference and intentd emit on `agent:permission:request`.
+    handler(
+      notification("agent:permission:request", {
+        requestId: REQUEST_ID,
+        sessionId: AGENT,
+        title: "Run command",
+        description: "Tool input: { \"command\": \"npm test\" }",
+        options: [
+          { id: "allow_once", label: "Allow", destructive: false },
+          { id: "reject_once", label: "Deny", destructive: true },
+        ],
+        agentName: "auggie",
+        riskLevel: "high",
+        timestamp: 1718600000000,
+      }),
+    );
+
+    const requests = readPermissionRequests();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      requestId: REQUEST_ID,
+      sessionId: AGENT,
+      title: "Run command",
+      agentName: "auggie",
+      riskLevel: "high",
+      timestamp: 1718600000000,
+      options: [
+        { id: "allow_once", label: "Allow", destructive: false },
+        { id: "reject_once", label: "Deny", destructive: true },
+      ],
+    });
+  });
+
+  it("clears the request via removePermissionRequest on agent:permission:resolved", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:permission:request", {
+        requestId: REQUEST_ID,
+        sessionId: AGENT,
+        title: "Run command",
+        options: [{ id: "allow_once", label: "Allow" }],
+        timestamp: 1718600000000,
+      }),
+    );
+    expect(readPermissionRequests()).toHaveLength(1);
+
+    // PROTOCOL §8: `agent:permission:resolved` carries `{ requestId, outcome }`
+    // — the outcome value is preserved on the wire but the FE only needs
+    // `requestId` to clear the inline prompt.
+    handler(
+      notification("agent:permission:resolved", {
+        requestId: REQUEST_ID,
+        outcome: { outcome: "selected", optionId: "allow_once" },
+      }),
+    );
+
+    expect(readPermissionRequests()).toHaveLength(0);
+  });
+
+  it("ignores permission events missing requestId / sessionId / title (schema guard)", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:permission:request", {
+        sessionId: AGENT,
+        title: "No id",
+        options: [],
+      }),
+    );
+    handler(
+      notification("agent:permission:request", {
+        requestId: REQUEST_ID,
+        title: "No session",
+        options: [],
+      }),
+    );
+    handler(
+      notification("agent:permission:resolved", {
+        outcome: { outcome: "cancelled" },
+      }),
+    );
+
+    expect(readPermissionRequests()).toHaveLength(0);
+  });
+});
+
+describe("daemonEventsBridge (wire contract — mcp.servers:status-changed §6.5)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    // Reset the mcpSettings slice via a fresh server list so `id`s resolve.
+    appStore.dispatch(setServers([]));
+    appStore.dispatch(bulkSetServerStatus({}));
+    appStore.dispatch(clearAllErrorMessages());
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  function seedMcpServer(id: string, name: string): void {
+    appStore.dispatch(
+      setServers([{ id, name, type: "stdio", command: "npx" }]),
+    );
+  }
+
+  function mcpNotification(data: Record<string, unknown>) {
+    return {
+      method: "events.event" as const,
+      params: {
+        event: {
+          id: `evt-mcp-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "mcp.servers:status-changed",
+          actor: { type: "system", id: "daemon" },
+          data,
+        },
+      },
+    };
+  }
+
+  function readStatus(name: string): McpServerStatus | undefined {
+    return appStore.state.mcpSettings.statusMap[name];
+  }
+
+  it("running → sets statusMap[name] = 'connected' and clears any prior error", async () => {
+    seedMcpServer("srv-fs", "filesystem");
+    // Prime a prior error to prove the handler clears it on recovery.
+    appStore.dispatch(setServerErrorMessage("filesystem", "boot failed"));
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      mcpNotification({
+        serverId: "srv-fs",
+        status: { serverId: "srv-fs", state: "running", pid: 1234, toolCount: 7 },
+      }),
+    );
+
+    expect(readStatus("filesystem")).toBe("connected");
+    expect(appStore.state.mcpSettings.errorMessages.filesystem).toBeUndefined();
+  });
+
+  it("error → sets 'error' status and surfaces lastError via setServerErrorMessage", async () => {
+    seedMcpServer("srv-gh", "github");
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      mcpNotification({
+        serverId: "srv-gh",
+        status: { serverId: "srv-gh", state: "error", lastError: "connect ECONNREFUSED" },
+      }),
+    );
+
+    expect(readStatus("github")).toBe("error");
+    expect(appStore.state.mcpSettings.errorMessages.github).toBe("connect ECONNREFUSED");
+  });
+
+  it("starting/stopped map to configured/stopped respectively", async () => {
+    seedMcpServer("srv-a", "alpha");
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      mcpNotification({ serverId: "srv-a", status: { serverId: "srv-a", state: "starting" } }),
+    );
+    expect(readStatus("alpha")).toBe("configured");
+
+    handler(
+      mcpNotification({ serverId: "srv-a", status: { serverId: "srv-a", state: "stopped" } }),
+    );
+    expect(readStatus("alpha")).toBe("stopped");
+  });
+
+  it("drops events for an unknown serverId (no FE state mutation)", async () => {
+    seedMcpServer("srv-known", "known");
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const before = appStore.state.mcpSettings.statusMap;
+
+    handler(
+      mcpNotification({
+        serverId: "srv-ghost",
+        status: { serverId: "srv-ghost", state: "running" },
+      }),
+    );
+
+    expect(appStore.state.mcpSettings.statusMap).toEqual(before);
+  });
+
+  it("ignores payloads missing serverId or a mappable state", async () => {
+    seedMcpServer("srv-x", "x");
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    const before = appStore.state.mcpSettings.statusMap;
+
+    handler(mcpNotification({ status: { state: "running" } }));
+    handler(mcpNotification({ serverId: "srv-x", status: { state: "unknown" } }));
+    handler(mcpNotification({ serverId: "srv-x" }));
+
+    expect(appStore.state.mcpSettings.statusMap).toEqual(before);
+  });
+});
+
+describe("daemonEventsBridge (session lifecycle — agent:created/renamed/updated §5.5)", () => {
+  const CREATED_AGENT = "agent-created-1";
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    ensureAgentSessionSpy.mockReset();
+    ensureAgentSessionSpy.mockImplementation(() => Promise.resolve());
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    // Prime the bridge without seeding a session (agent:created runs against an
+    // empty store to prove it surfaces a brand-new sidebar entry).
+    appStore.dispatch(setAgentStreaming("prime-noop", false));
+    await flush();
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("agent:created hydrates the sidebar entry via the transcript-preserving read-service seam", async () => {
+    const handler = capturedHandlers[0]!;
+    // Simulate what the real ensureAgentSession does on a successful fetch:
+    // dispatch bulkUpsertSessions so the new session lands in the store.
+    ensureAgentSessionSpy.mockImplementationOnce(async () => {
+      appStore.dispatch(
+        bulkUpsertSessions([
+          {
+            id: CREATED_AGENT,
+            backendSessionId: null,
+            workspaceId: WS,
+            name: "Delegated Child",
+            status: AgentStatus.Pending,
+            messages: [],
+            createdAt: "2026-01-02T00:00:00.000Z",
+            updatedAt: "2026-01-02T00:00:00.000Z",
+          } as AgentSession,
+        ]),
+      );
+    });
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-created-1",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "agent:created",
+          actor: { type: "system", id: "daemon" },
+          data: { agentId: CREATED_AGENT, name: "Delegated Child" },
+        },
+      },
+    });
+    await flush();
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(CREATED_AGENT);
+    const state = appStore.state as {
+      agentSessions: {
+        byAgentId: Record<string, AgentSession>;
+        agentIdsByWorkspace: Record<string, string[]>;
+      };
+    };
+    expect(state.agentSessions.byAgentId[CREATED_AGENT]?.name).toBe("Delegated Child");
+    expect(state.agentSessions.agentIdsByWorkspace[WS] ?? []).toContain(CREATED_AGENT);
+  });
+
+  it("agent:renamed updates the sidebar entry's name without clobbering the transcript", async () => {
+    const message: AgentMessage = {
+      id: "asst-1",
+      role: "assistant",
+      contentBlocks: [{ type: "text", text: "hello" }],
+      timestamp: "2026-01-02T00:00:00.000Z",
+    };
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: AGENT,
+          backendSessionId: "backend-1",
+          workspaceId: WS,
+          name: "Original",
+          status: AgentStatus.Active,
+          messages: [message],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        } as AgentSession,
+      ]),
+    );
+
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-renamed-1",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "agent:renamed",
+          actor: { type: "system", id: "daemon" },
+          data: { agentId: AGENT, name: "Renamed" },
+        },
+      },
+    });
+
+    const state = appStore.state as {
+      agentSessions: { byAgentId: Record<string, AgentSession> };
+    };
+    expect(state.agentSessions.byAgentId[AGENT]?.name).toBe("Renamed");
+    // Transcript must survive the metadata mutation.
+    expect(state.agentSessions.byAgentId[AGENT]?.messages).toHaveLength(1);
+    expect(state.agentSessions.byAgentId[AGENT]?.messages[0].id).toBe("asst-1");
+  });
+
+  it("agent:updated re-reads through the seam and does not clobber the local transcript", async () => {
+    const message: AgentMessage = {
+      id: "asst-keep",
+      role: "assistant",
+      contentBlocks: [{ type: "text", text: "keep me" }],
+      timestamp: "2026-01-02T00:00:00.000Z",
+    };
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: AGENT,
+          backendSessionId: "backend-1",
+          workspaceId: WS,
+          name: "A",
+          status: AgentStatus.Active,
+          messages: [message],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        } as AgentSession,
+      ]),
+    );
+
+    const handler = capturedHandlers[0]!;
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-updated-1",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "agent:updated",
+          actor: { type: "system", id: "daemon" },
+          data: { agentId: AGENT, modelId: "claude-opus-4.7" },
+        },
+      },
+    });
+    await flush();
+
+    expect(ensureAgentSessionSpy).toHaveBeenCalledWith(AGENT);
+    const state = appStore.state as {
+      agentSessions: { byAgentId: Record<string, AgentSession> };
+    };
+    // The bridge itself must not dispatch anything that clears the messages;
+    // any refresh goes through ensureAgentSession, which preserves the
+    // transcript on metadata-only reads (see FE 69f8c74c).
+    expect(state.agentSessions.byAgentId[AGENT]?.messages).toHaveLength(1);
+    expect(state.agentSessions.byAgentId[AGENT]?.messages[0].id).toBe("asst-keep");
+  });
+
+  it("ignores agent:created/renamed/updated payloads missing agentId (schema guard)", async () => {
+    const handler = capturedHandlers[0]!;
+
+    for (const type of ["agent:created", "agent:renamed", "agent:updated"] as const) {
+      handler({
+        method: "events.event",
+        params: {
+          event: {
+            id: `evt-${type}-guard`,
+            workspaceId: WS,
+            timestamp: "2026-01-02T00:00:00.000Z",
+            type,
+            actor: { type: "system", id: "daemon" },
+            data: { name: "no agent id" },
+          },
+        },
+      });
+    }
+    await flush();
+
+    expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
+  });
+});
+describe("daemonEventsBridge (note:* wire contract → applyNoteFromEvent)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    applyNoteFromEventSpy.mockClear();
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("routes note:created/updated/deleted envelopes to applyNoteFromEvent with the workspaceId + noteId", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-note-1",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "note:created",
+          actor: { type: "system" },
+          data: { noteId: "note-1", path: "/x", action: "create" },
+        },
+      },
+    });
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-note-2",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "note:updated",
+          actor: { type: "system" },
+          data: { noteId: "note-2", path: "/y", action: "update" },
+        },
+      },
+    });
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-note-3",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "note:deleted",
+          actor: { type: "system" },
+          data: { noteId: "note-3", path: "/z", action: "delete" },
+        },
+      },
+    });
+
+    expect(applyNoteFromEventSpy).toHaveBeenCalledWith(WS, "note-1", "note:created");
+    expect(applyNoteFromEventSpy).toHaveBeenCalledWith(WS, "note-2", "note:updated");
+    expect(applyNoteFromEventSpy).toHaveBeenCalledWith(WS, "note-3", "note:deleted");
+  });
+
+  it("drops note:* events without a workspaceId envelope", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-note-no-ws",
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "note:updated",
+          actor: { type: "system" },
+          data: { noteId: "note-x", path: "/x", action: "update" },
+        },
+      },
+    });
+
+    expect(applyNoteFromEventSpy).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("daemonEventsBridge (workspace:deleted → purge agent/chat state)", () => {
+  const OTHER_WS = "ws-bridge-other";
+  const OTHER_AGENT = "agent-bridge-other";
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    // chat-state persists across tests via appStore; reset the entries this
+    // suite seeds so preconditions/postconditions reflect only this test.
+    appStore.dispatch(chatReset(AGENT));
+    appStore.dispatch(chatReset(OTHER_AGENT));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("purges agent-session, workspace-agents, and chat-state for the deleted workspace", async () => {
+    // Seed two sessions — one in WS and one in a sibling workspace — to prove
+    // scoping. `bulkUpsertSessions` populates the agent-session slice while the
+    // per-item `upsertSession` also registers each agent in the workspace-agents
+    // index (see agent-mutation-service `persistSession`).
+    const sessionA: AgentSession = {
+      id: AGENT,
+      backendSessionId: "backend-1",
+      workspaceId: WS,
+      name: "A",
+      status: AgentStatus.Idle,
+      messages: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    } as AgentSession;
+    const sessionB: AgentSession = {
+      id: OTHER_AGENT,
+      backendSessionId: "backend-2",
+      workspaceId: OTHER_WS,
+      name: "B",
+      status: AgentStatus.Idle,
+      messages: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    } as AgentSession;
+    appStore.dispatch(bulkUpsertSessions([sessionA, sessionB]));
+    appStore.dispatch(upsertSession(sessionA));
+    appStore.dispatch(upsertSession(sessionB));
+
+    // Seed per-agent chat-state so the purge assertion has something to remove.
+    appStore.dispatch(chatSendStarted(AGENT, WS));
+    appStore.dispatch(chatSendStarted(OTHER_AGENT, OTHER_WS));
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Precondition: sessions, workspace-agents index and chat-state entries exist.
+    const before = appStore.state as {
+      agentSessions: {
+        byAgentId: Record<string, unknown>;
+        agentIdsByWorkspace: Record<string, string[]>;
+      };
+      workspaceAgents: { byWorkspaceId: Record<string, unknown> };
+      chatState: { byAgentId: Record<string, unknown> };
+    };
+    expect(before.agentSessions.byAgentId[AGENT]).toBeDefined();
+    expect(before.agentSessions.agentIdsByWorkspace[WS]).toContain(AGENT);
+    expect(before.workspaceAgents.byWorkspaceId[WS]).toBeDefined();
+    expect(before.chatState.byAgentId[AGENT]).toBeDefined();
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-workspace-deleted-1",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "workspace:deleted",
+          actor: { type: "user", id: "u1" },
+          data: { workspaceId: WS },
+        },
+      },
+    });
+
+    const after = appStore.state as typeof before;
+    expect(after.agentSessions.byAgentId[AGENT]).toBeUndefined();
+    expect(after.agentSessions.agentIdsByWorkspace[WS]).toBeUndefined();
+    expect(after.workspaceAgents.byWorkspaceId[WS]).toBeUndefined();
+    expect(after.chatState.byAgentId[AGENT]).toBeUndefined();
+
+    // Sibling workspace is untouched — recreate flow shows only fresh agents.
+    expect(after.agentSessions.byAgentId[OTHER_AGENT]).toBeDefined();
+    expect(after.agentSessions.agentIdsByWorkspace[OTHER_WS]).toContain(OTHER_AGENT);
+    expect(after.chatState.byAgentId[OTHER_AGENT]).toBeDefined();
+  });
+
+  it("drops workspace:deleted events lacking a workspaceId envelope", async () => {
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: AGENT,
+          backendSessionId: "backend-1",
+          workspaceId: WS,
+          name: "A",
+          status: AgentStatus.Idle,
+          messages: [],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        } as AgentSession,
+      ]),
+    );
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-workspace-deleted-no-ws",
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "workspace:deleted",
+          actor: { type: "user", id: "u1" },
+          data: {},
+        },
+      },
+    });
+
+    const state = appStore.state as { agentSessions: { byAgentId: Record<string, unknown> } };
+    expect(state.agentSessions.byAgentId[AGENT]).toBeDefined();
+  });
+});
+
+
+describe("daemonEventsBridge (task:status-changed → applyTaskStatusChanged)", () => {
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("applies task:status-changed onto the workspace-tasks slice for a hydrated workspace", async () => {
+    const TASK_WS = "ws-task-1";
+    // Seed a hydrated workspace-tasks entry so the reducer's `initialized`
+    // guard passes and the status update lands.
+    const { loadWorkspaceTasksSucceeded } = await import(
+      "$store/renderer/slices/workspace-tasks/workspace-tasks-slice"
+    );
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(
+        TASK_WS,
+        [{ id: "note-t1", title: "Task 1", status: "not_started" }],
+        { total: 1, completed: 0, inProgress: 0 },
+      ),
+    );
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-task-1",
+          workspaceId: TASK_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "task:status-changed",
+          actor: { type: "system" },
+          data: {
+            noteId: "note-t1",
+            noteTitle: "Task 1",
+            previousStatus: "not_started",
+            newStatus: "in_progress",
+            changedAt: "2026-01-02T00:00:00.000Z",
+          },
+        },
+      },
+    });
+
+    const { getItem } = await import("@augmentcode/ag-redux-toolkit/utils/collections/collection-utils");
+    const state = appStore.state as {
+      workspaceTasks: {
+        byWorkspaceId: Record<string, { tasks: unknown }>;
+      };
+    };
+    const task = getItem(
+      state.workspaceTasks.byWorkspaceId[TASK_WS].tasks as never,
+      "note-t1",
+    ) as { status: string } | undefined;
+    expect(task?.status).toBe("in_progress");
+  });
+
+  it("drops task:status-changed events lacking a workspaceId envelope", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    // No workspaceId — bridge must ignore the event; verified by absence of a throw.
+    expect(() =>
+      handler({
+        method: "events.event",
+        params: {
+          event: {
+            id: "evt-task-no-ws",
+            timestamp: "2026-01-02T00:00:00.000Z",
+            type: "task:status-changed",
+            actor: { type: "system" },
+            data: { noteId: "note-t1", newStatus: "complete" },
+          },
+        },
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("daemonEventsBridge (comment:added / comment:resolved → applyCommentFromEvent)", () => {
+  const COMMENT_WS = "ws-comment-1";
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    applyCommentFromEventSpy.mockClear();
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("routes comment:added and comment:resolved envelopes to applyCommentFromEvent with (workspaceId, noteId, kind)", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-comment-1",
+          workspaceId: COMMENT_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "comment:added",
+          actor: { type: "agent", id: AGENT },
+          data: { noteId: "note-c1", commentId: "c-1" },
+        },
+      },
+    });
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-comment-2",
+          workspaceId: COMMENT_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "comment:resolved",
+          actor: { type: "user", id: "u1" },
+          data: { noteId: "note-c1", threadId: "t-1", resolved: true },
+        },
+      },
+    });
+
+    expect(applyCommentFromEventSpy).toHaveBeenCalledWith(COMMENT_WS, "note-c1", "added");
+    expect(applyCommentFromEventSpy).toHaveBeenCalledWith(COMMENT_WS, "note-c1", "resolved");
+  });
+
+  it("drops comment:* events without a noteId", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-comment-no-note",
+          workspaceId: COMMENT_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "comment:added",
+          actor: { type: "system" },
+          data: {},
+        },
+      },
+    });
+
+    expect(applyCommentFromEventSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace slice)", () => {
+  const PR_WS = "ws-pr-1";
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import(
+      "$store/renderer/slices/workspace/workspace-slice"
+    );
+    const { WorkspaceStatus } = await import("$shared/types");
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: PR_WS,
+        title: "PR ws",
+        branch: "main",
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{
+    prNumber?: number;
+    prUrl?: string;
+    prStatus?: string;
+    activePullRequest?: unknown;
+  }> {
+    const { getItem } = await import(
+      "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils"
+    );
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, PR_WS) ?? {}) as never;
+  }
+
+  it("pr:linked writes prNumber / prUrl / prStatus / activePullRequest onto the workspace entity", async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-pr-linked-1",
+          workspaceId: PR_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "pr:linked",
+          actor: { type: "system" },
+          data: {
+            workspaceId: PR_WS,
+            prNumber: 42,
+            prUrl: "https://example.com/pr/42",
+            prStatus: "open",
+            activePullRequest: { number: 42, url: "https://example.com/pr/42" },
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.prNumber).toBe(42);
+    expect(ws.prUrl).toBe("https://example.com/pr/42");
+    expect(ws.prStatus).toBe("open");
+    expect(ws.activePullRequest).toMatchObject({ number: 42 });
+  });
+
+  it("pr:updated merges the changed fields without a full replace", async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Prime with pr:linked.
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-pr-linked-2",
+          workspaceId: PR_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "pr:linked",
+          actor: { type: "system" },
+          data: {
+            workspaceId: PR_WS,
+            prNumber: 42,
+            prUrl: "https://example.com/pr/42",
+            prStatus: "open",
+            activePullRequest: { number: 42 },
+          },
+        },
+      },
+    });
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-pr-updated-1",
+          workspaceId: PR_WS,
+          timestamp: "2026-01-02T00:00:01.000Z",
+          type: "pr:updated",
+          actor: { type: "system" },
+          data: {
+            workspaceId: PR_WS,
+            prNumber: 42,
+            prStatus: "merged",
+            activePullRequest: { number: 42, merged: true },
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.prStatus).toBe("merged");
+    // prUrl was not in the pr:updated payload; the merge must retain it.
+    expect(ws.prUrl).toBe("https://example.com/pr/42");
+  });
+
+  it("pr:unlinked clears the workspace's PR fields", async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-pr-linked-3",
+          workspaceId: PR_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "pr:linked",
+          actor: { type: "system" },
+          data: {
+            workspaceId: PR_WS,
+            prNumber: 42,
+            prUrl: "https://example.com/pr/42",
+            prStatus: "open",
+            activePullRequest: { number: 42 },
+          },
+        },
+      },
+    });
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-pr-unlinked-1",
+          workspaceId: PR_WS,
+          timestamp: "2026-01-02T00:00:02.000Z",
+          type: "pr:unlinked",
+          actor: { type: "system" },
+          data: { workspaceId: PR_WS },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.prNumber).toBeUndefined();
+    expect(ws.prUrl).toBeUndefined();
+    expect(ws.prStatus).toBeUndefined();
+    expect(ws.activePullRequest).toBeNull();
   });
 });

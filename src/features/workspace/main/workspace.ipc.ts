@@ -23,21 +23,14 @@ import * as fs from 'fs/promises';
 import { Logger } from '../../../shared/logger';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import { workspaceFileChanges } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
-import { agentSessionUpdated } from '../../../store/main/slices/agent-events/agent-events-slice';
 import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 
 import { WorkspaceConfig } from '../../../shared/main/config.js';
-import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
-import { RemoteRPCError } from '../../../shared/main/remote-rpc-client';
-import { getAttributionEngine } from './provenance/attribution-engine';
 import { InstructionService } from '../../agent/main/instruction-service';
 import { execAsync } from '../../../shared/git/git-env';
 import { getNotificationService } from '../../notifications/main/notification.service';
 import { GitService } from '../../git/main/git.service';
-import {
-  getWorkspaceGitInfo,
-  getRemoteGitManager,
-} from '../../git/main/git-router';
+import { getWorkspaceGitInfo } from '../../git/main/git-router';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
 import { disposeScriptProcessManager } from '../../scripts/main/script-process-manager';
 import { readScripts } from '../../scripts/main/scripts-persistence';
@@ -47,7 +40,7 @@ import {
   shutdownOtherWatchers,
   type UnifiedWorkspaceWatcher,
 } from './unified-workspace-watcher';
-import { TRACKING_CONFIG } from '../../file-tracking/tracking.config';
+import { CHANGE_DETECTION_CONFIG } from './change-detection/detection.config';
 import { isBinaryExtension } from '../../../shared/binary-file-extensions';
 import {
   initRepoRegistry,
@@ -57,21 +50,14 @@ import {
   syncRepos,
   clearRepos,
 } from './repo-registry';
+import { initChangeHistory } from './change-history-persistence';
+import { initWorkspaceSettings } from './workspace-settings.service';
 import {
   sshManager,
   type SSHConnectionConfig,
 } from '../../../shared/main/ssh-manager';
-import {
-  getIntentServerPath,
-  escapeShellArg,
-} from '../../agent/main/agent-providers/acp-provider';
-import { MetadataSyncService } from '../../metadata-fs/main/metadata-sync-service';
-import {
-  createMetadataSyncUiBridge,
-  type MetadataSyncUiBridge,
-} from './utils/metadata-sync-ui-bridge';
+
 import { clearMetadataFSCache } from '../../metadata-fs/main/metadata-fs-factory';
-import { notesService } from '../../notes/main/notes.service';
 import { deleteEventStoreForWorkspace } from '../../../store/main/slices/workspace-events/sagas/persistence-saga';
 
 const require = createRequire(import.meta.url);
@@ -93,7 +79,6 @@ import {
   WorkspaceGetSchema,
   WorkspaceGetCurrentSchema,
   WorkspaceGetByIdSchema,
-  WorkspaceCreateSchema,
   WorkspaceUpdateSchema,
   WorkspaceDeleteSchema,
   WorkspaceCloseSchema,
@@ -144,55 +129,7 @@ import {
 
 const logger = new Logger('WorkspaceIPC');
 
-// Storage for MetadataSyncService instances per workspace
-const metadataSyncServices = new Map<string, MetadataSyncService>();
-const metadataSyncUiBridges = new Map<string, MetadataSyncUiBridge>();
-
 const editorRefreshUnsubscribers = new Map<string, () => void>();
-
-function disposeMetadataSyncUiBridge(workspaceId: string): void {
-  const bridge = metadataSyncUiBridges.get(workspaceId);
-  if (!bridge) return;
-
-  metadataSyncUiBridges.delete(workspaceId);
-  try {
-    bridge.dispose();
-  } catch (error) {
-    logger.warn('[WorkspaceIPC] Failed to dispose MetadataSyncService UI bridge', error as Error, {
-      workspaceId,
-    });
-  }
-}
-
-async function stopMetadataSyncServiceForWorkspace(
-  workspaceId: string,
-  reason: string,
-): Promise<boolean> {
-  disposeMetadataSyncUiBridge(workspaceId);
-
-  const syncService = metadataSyncServices.get(workspaceId);
-  if (!syncService) return false;
-
-  try {
-    await syncService.stop();
-    logger.info('[WorkspaceIPC] Stopped MetadataSyncService', { workspaceId, reason });
-  } catch (error) {
-    logger.warn('[WorkspaceIPC] Failed to stop MetadataSyncService', error as Error, {
-      workspaceId,
-      reason,
-    });
-  } finally {
-    metadataSyncServices.delete(workspaceId);
-  }
-
-  return true;
-}
-
-// Global storage for git integrations
-declare global {
-  var gitIntegrations: Map<string, any> | undefined;
-  var gitIntegrationLocks: Map<string, Promise<void>> | undefined;
-}
 
 // Use the singleton change detector manager instance
 const changeDetectorManager = singletonChangeDetectorManager;
@@ -336,10 +273,20 @@ export function setupWorkspaceIPC(): void {
   // Initialize the persistent repo registry
   initRepoRegistry().catch((err) => logger.error('Failed to init repo registry', err as Error));
 
+  // Hydrate the daemon-owned git.autoCommit into the workspace-settings cache
+  // (the sync API falls back to the default until this resolves).
+  initWorkspaceSettings().catch((err) =>
+    logger.error('Failed to init workspace settings', err as Error),
+  );
+
+  // Initialize the persistent change history cache
+  initChangeHistory().catch((err) =>
+    logger.error('Failed to init change history', err as Error),
+  );
+
   // Register validation schemas for all workspace channels
   registerValidationSchema(WORKSPACE_CHANNELS.GET, WorkspaceGetSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.GET_CURRENT, WorkspaceGetCurrentSchema);
-  registerValidationSchema(WORKSPACE_CHANNELS.CREATE, WorkspaceCreateSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.UPDATE, WorkspaceUpdateSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.DELETE, WorkspaceDeleteSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.CLOSE, WorkspaceCloseSchema);
@@ -455,18 +402,9 @@ export function setupWorkspaceIPC(): void {
     ),
   );
 
-  // Create workspace
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.CREATE,
-    createSafeValidatedHandler(
-      WorkspaceCreateSchema,
-      async (_, validated) => {
-        const result = await protocolAdapter.createWorkspace(validated);
-        return resultToCommandResponse(result);
-      },
-      WORKSPACE_CHANNELS.CREATE,
-    ),
-  );
+  // Workspace creation is owned by the daemon: the FE routes `workspace.create`
+  // through `appClient.workspaces.create` (PROTOCOL §5.1); the legacy
+  // `workspace:create` IPC arm was retired with the daemon-direct cut-over.
 
   // Preflight: verify a GitHub URL is reachable and authenticated before clone
   ipcMain.handle(
@@ -578,53 +516,6 @@ export function setupWorkspaceIPC(): void {
         logger.info('[WorkspaceIPC] Closing workspace', { workspaceId: id });
 
         try {
-          // Clean up git integration first
-          if (global.gitIntegrations?.has(id)) {
-            try {
-              const gitIntegration = global.gitIntegrations.get(id);
-              if (gitIntegration) {
-                gitIntegration.stopListening();
-                gitIntegration.removeAllListeners();
-                global.gitIntegrations.delete(id);
-                logger.info('[WorkspaceIPC] Cleaned up git integration', { workspaceId: id });
-              }
-            } catch (error) {
-              logger.warn('[WorkspaceIPC] Failed to cleanup git integration', error as Error, {
-                workspaceId: id,
-              });
-            }
-          }
-
-          // Clean up any pending initialization locks
-          if (global.gitIntegrationLocks?.has(id)) {
-            global.gitIntegrationLocks.delete(id);
-          }
-
-          // Stop file tracking storage cleanup timer
-          try {
-            const { FileTrackingStorage } =
-              await import('../../file-tracking/main/file-tracking-storage');
-            // Cleanup the specific workspace instance to stop cleanup timers
-            FileTrackingStorage.cleanupWorkspace(id);
-            logger.debug('[WorkspaceIPC] File tracking storage cleanup', { workspaceId: id });
-          } catch (error) {
-            logger.warn('[WorkspaceIPC] Failed to cleanup file tracking storage', error as Error, {
-              workspaceId: id,
-            });
-          }
-
-          // Clean up file tracking service (force-save pending changes, stop timers, remove from cache)
-          try {
-            const { cleanupGitIntegration } =
-              await import('../../file-tracking/main/file-tracking.ipc');
-            await cleanupGitIntegration(id);
-            logger.debug('[WorkspaceIPC] File tracking service cleanup', { workspaceId: id });
-          } catch (error) {
-            logger.warn('[WorkspaceIPC] Failed to cleanup file tracking service', error as Error, {
-              workspaceId: id,
-            });
-          }
-
           // Stop change detector monitoring
           if (changeDetectorManager) {
             try {
@@ -650,8 +541,6 @@ export function setupWorkspaceIPC(): void {
             }
           }
 
-          // Stop MetadataSyncService for remote workspaces
-          await stopMetadataSyncServiceForWorkspace(id, 'workspace close');
           // Clear MetadataFS cache so it's re-created on next open
           clearMetadataFSCache();
 
@@ -679,15 +568,6 @@ export function setupWorkspaceIPC(): void {
             });
           }
 
-          // Clean up any pre-warmed agent providers (no-op if none exist)
-          // NOTE: Agent pre-warming is currently disabled, but we keep cleanup for safety
-          try {
-            const { agentPoolService } = await import('../../agent/main/agent-pool.service');
-            await agentPoolService.disposeWorkspace(id);
-            logger.debug('[WorkspaceIPC] Agent pool cleanup', { workspaceId: id });
-          } catch (error) {
-            logger.debug('[WorkspaceIPC] Agent pool cleanup not available', { error });
-          }
 
           // Clean up notification service
           try {
@@ -750,8 +630,7 @@ export function setupWorkspaceIPC(): void {
   //
   // ⚠️  IMPORTANT: This handler has critical side effects beyond just "opening" the workspace:
   //    1. Starts ChangeDetectorManager monitoring (git polling for file changes)
-  //    2. Initializes GitIntegrationService (emits file-tracking:changes-updated events)
-  //    3. Sets up activity log event service integration
+  //    2. Warms caches / starts notification and scripts services
   //
   // Without these side effects, the UI will NOT receive file change updates,
   // causing the activity log and changed files list to appear empty.
@@ -785,19 +664,6 @@ export function setupWorkspaceIPC(): void {
           });
         }
 
-        // Stop MCP servers for previously-active workspaces that have no running
-        // agents.  They will be lazily restarted on next CALL_TOOL / LIST_TOOLS.
-        try {
-          const { stopInactiveWorkspaceServers } = await import(
-            '../../mcp/mcp.ipc'
-          );
-          await stopInactiveWorkspaceServers(id);
-        } catch (error) {
-          logger.warn('[WorkspaceIPC] Failed to stop inactive MCP servers', error as Error, {
-            workspaceId: id,
-          });
-        }
-
         // Get workspace - protocol adapter now returns data directly for MCP compatibility
         const getWorkspaceStart = Date.now();
         const workspace = await protocolAdapter.getWorkspace(id);
@@ -811,11 +677,8 @@ export function setupWorkspaceIPC(): void {
 
         // Check if workspace exists (not null)
         if (workspace) {
-          // Load agent writes for this workspace (for content-based attribution)
-          const attributionEngine = getAttributionEngine();
-          await attributionEngine.ensureWorkspaceLoaded(id);
-          logger.info('[WorkspaceIPC] Loaded agent writes for workspace', { workspaceId: id });
-
+          // Attribution is owned by the daemon (§17.4 / §5.19); no FE-side
+          // agent-writes cache to warm here.
           const manager = initializeChangeDetectorManager();
           logger.info('[WorkspaceIPC] Got change detector manager', { workspaceId: id });
 
@@ -830,14 +693,13 @@ export function setupWorkspaceIPC(): void {
 
           // Initialize the unified workspace watcher early, before other watchers that
           // depend on it. This creates a single @parcel/watcher instance for the entire workspace.
-          // Skip for remote workspaces — the worktree path doesn't exist locally and
-          // RemoteChangeDetector handles file watching instead.
+          // Skip for remote workspaces — the worktree path doesn't exist locally.
           const isRemote = !!workspace.isRemote && !!workspace.environmentConfig?.ssh;
           const worktreePath = workspace.worktreePath || workspace.repositoryPath;
           if (worktreePath && !isRemote) {
             if (
-              TRACKING_CONFIG.changeDetection.gitPollingOnly ||
-              TRACKING_CONFIG.changeDetection.disableFileWatcher
+              CHANGE_DETECTION_CONFIG.gitPollingOnly ||
+              CHANGE_DETECTION_CONFIG.disableFileWatcher
             ) {
               logger.info('[WorkspaceIPC] Skipping native file watcher (git polling mode)', {
                 workspaceId: id,
@@ -854,7 +716,7 @@ export function setupWorkspaceIPC(): void {
             }
           } else if (isRemote) {
             logger.info(
-              '[WorkspaceIPC] Skipping UnifiedWorkspaceWatcher for remote workspace (RemoteChangeDetector handles file watching)',
+              '[WorkspaceIPC] Skipping UnifiedWorkspaceWatcher for remote workspace',
               {
                 workspaceId: id,
               },
@@ -896,8 +758,10 @@ export function setupWorkspaceIPC(): void {
           // but the workspace should be usable immediately
           const monitoringAndGitPromise = (async () => {
             try {
-              // For remote workspaces, ensure RPC daemon is running BEFORE monitoring starts.
-              // Monitoring, file explorer, and git state checks all need the RPC socket.
+              // For remote workspaces, keep the SSH connection warmed so later
+              // remote operations reuse it. The legacy deploy+serve step has
+              // retired; the daemon's WSS transport will attach here later.
+              // TODO(P3-5): attach daemon WSS transport via `rpc-${workspace.id}`.
               if (workspace.environmentConfig?.ssh) {
                 try {
                   const ssh = workspace.environmentConfig.ssh;
@@ -912,83 +776,13 @@ export function setupWorkspaceIPC(): void {
                     wsUrl: ssh.ws_url,
                   };
 
-                  // Establish SSH connection for RPC (reuse existing connection if available)
                   const rpcConnectionId = `rpc-${workspace.id}`;
                   await sshManager.connect(rpcConnectionId, sshConfig);
-
-                  // Deploy intent-server if needed
-                  const localBundlePath = getIntentServerPath();
-                  await sshManager.deployIntentServer(rpcConnectionId, localBundlePath);
-
-                  // Start RPC-only daemon (idempotent — exits with success if already running)
-                  const serveResult = await sshManager.executeCommand(
-                    rpcConnectionId,
-                    `node ~/.intent-server/server.js serve --workspace ${escapeShellArg(workspace.id)}`,
-                    { timeout: 15000 },
-                  );
-
-                  if (serveResult.exitCode !== 0) {
-                    logger.warn('Failed to start RPC serve daemon', {
-                      workspaceId: workspace.id,
-                      exitCode: serveResult.exitCode,
-                      stderr: serveResult.stderr,
-                    });
-                  } else {
-                    logger.info('RPC serve daemon ready', { workspaceId: workspace.id });
-                  }
                 } catch (err) {
                   // Non-fatal — monitoring will still start; git integration will retry via auto-sync timer
-                  logger.warn('Failed to start RPC daemon during workspace open', {
+                  logger.warn('Failed to establish SSH connection during workspace open', {
                     workspaceId: workspace.id,
                     error: err instanceof Error ? err.message : String(err),
-                  });
-                }
-              }
-
-              // Start MetadataSyncService to sync remote .workspace/ → local cache
-              if (workspace.environmentConfig?.ssh) {
-                try {
-                  await stopMetadataSyncServiceForWorkspace(workspace.id, 'workspace open replacement');
-                  const remoteWorkspacePath = `~/intent/workspaces/${workspace.id}/.workspace`;
-                  const localCachePath = WorkspaceConfig.paths.metadata(workspace.id);
-                  const syncService = new MetadataSyncService({
-                    workspaceId: workspace.id,
-                    remoteWorkspacePath,
-                    localCachePath,
-                  });
-                  await syncService.start();
-                  metadataSyncServices.set(workspace.id, syncService);
-                  logger.info('[WorkspaceIPC] MetadataSyncService started for remote workspace', {
-                    workspaceId: workspace.id,
-                  });
-
-                  const bridge = createMetadataSyncUiBridge({
-                    syncService,
-                    workspaceId: workspace.id,
-                    localCachePath,
-                    sendToWorkspaceWindows,
-                    logger,
-                    refreshAgents: () => {
-                      mainDispatch(
-                        agentSessionUpdated({
-                          workspaceId: workspace.id,
-                          sessionId: '',
-                          status: null,
-                          activationState: null,
-                          isActive: null,
-                          isStreaming: null,
-                          isProcessing: null,
-                          isResponding: null,
-                          stopReason: null,
-                        }),
-                      );
-                    },
-                  });
-                  metadataSyncUiBridges.set(workspace.id, bridge);
-                } catch (syncError) {
-                  logger.warn('[WorkspaceIPC] Failed to start MetadataSyncService', {
-                    workspaceId: workspace.id,
-                    error: syncError instanceof Error ? syncError.message : String(syncError),
                   });
                 }
               }
@@ -1004,86 +798,6 @@ export function setupWorkspaceIPC(): void {
                 workspaceId: id,
                 durationMs: Date.now() - monitoringStart,
               });
-
-              // Get the detector once for both git integration and activity log
-              const detector = manager.getChangeDetector(id);
-
-              // Start BOTH git integration and activity log in PARALLEL
-              // They both only need the detector and don't depend on each other
-              const gitIntegrationStart = Date.now();
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              const activityLogStart = Date.now();
-
-              // Git integration promise
-              const gitIntegrationPromise = (async () => {
-                try {
-                  if (detector) {
-                    // Initialize global gitIntegrations map if needed
-                    if (!global.gitIntegrations) {
-                      global.gitIntegrations = new Map();
-                    }
-                    if (!global.gitIntegrationLocks) {
-                      global.gitIntegrationLocks = new Map();
-                    }
-
-                    // Use a lock to prevent concurrent initialization
-                    const initLock = global.gitIntegrationLocks.get(id);
-                    if (initLock) {
-                      logger.debug('Waiting for existing git integration initialization', {
-                        workspaceId: id,
-                      });
-                      await initLock;
-                      // Check if it was successfully initialized
-                      if (global.gitIntegrations.has(id)) {
-                        logger.debug('Git integration already initialized', { workspaceId: id });
-                        return;
-                      }
-                    }
-
-                    // Create initialization promise
-                    const initPromise = initializeGitIntegration(
-                      id,
-                      workspace.worktreePath,
-                      detector,
-                      {
-                        baseRef: workspace.baseRef,
-                        baseCommitSha: workspace.baseCommitSha,
-                        createdAt: workspace.createdAt,
-                      },
-                      !!workspace.environmentConfig?.ssh,
-                    );
-                    global.gitIntegrationLocks.set(id, initPromise);
-
-                    try {
-                      await initPromise;
-                      logger.info('Git integration initialized successfully', { workspaceId: id });
-                    } catch (error) {
-                      logger.error('Failed to initialize git integration', error as Error, {
-                        workspaceId: id,
-                      });
-                    } finally {
-                      global.gitIntegrationLocks.delete(id);
-                    }
-
-                    // Send an initial event to notify the frontend that the listener is ready
-                    sendToWorkspaceWindows(id, 'file-tracking:listener-ready', { workspaceId: id });
-                  } else {
-                    logger.warn('No change detector available for git integration', {
-                      workspaceId: id,
-                    });
-                  }
-
-                  logger.info('Initialized file tracking system', {
-                    workspaceId: id,
-                    durationMs: Date.now() - gitIntegrationStart,
-                  });
-                } catch (error) {
-                  logger.error('Failed to initialize file tracking', error as Error, {
-                    workspaceId: id,
-                    durationMs: Date.now() - gitIntegrationStart,
-                  });
-                }
-              })();
 
               // Activity log promise (event service removed — Redux handles events now)
               const activityLogPromise = (async () => {
@@ -1188,7 +902,6 @@ export function setupWorkspaceIPC(): void {
 
               // Wait for ALL to complete in parallel
               await Promise.all([
-                gitIntegrationPromise,
                 activityLogPromise,
                 cacheWarmingPromise,
                 notificationServicePromise,
@@ -1213,17 +926,9 @@ export function setupWorkspaceIPC(): void {
             }
           })();
 
-          // Ensure spec note exists and is valid (recovers from corrupt/empty spec files)
-          const ensureSpecPromise = (async () => {
-            try {
-              await notesService.ensureSpecExists(id as WorkspaceId);
-              logger.info('Ensured spec note exists for workspace', { workspaceId: id });
-            } catch (error) {
-              logger.error('Failed to ensure spec note exists', error as Error, {
-                workspaceId: id,
-              });
-            }
-          })();
+          // Spec-note seeding is owned by the daemon (`workspace.create` runs
+          // `ensure_spec_note`); the FE no longer performs FS-level orphan
+          // recovery on open.
 
           // Only wait for metadata watcher (fast) - let monitoring run in background
           await metadataWatcherPromise;
@@ -1231,7 +936,6 @@ export function setupWorkspaceIPC(): void {
           // Fire and forget the background initialization
           // Use void to explicitly indicate we're not awaiting this
           void monitoringAndGitPromise;
-          void ensureSpecPromise;
 
           logger.info('[WorkspaceIPC] Workspace open returning immediately', {
             workspaceId: id,
@@ -1256,36 +960,6 @@ export function setupWorkspaceIPC(): void {
       WorkspaceUpdateSchema,
       async (_, validated) => {
         const result = await protocolAdapter.updateWorkspace(validated);
-
-        // If baseCommitSha or baseRef changed, update the GitIntegrationService's metadata
-        // so that loadCommittedChanges() uses the new boundary on next sync.
-        // Wrapped in try-catch: this is a side-effect — it must not break the update response.
-        if (
-          result.ok &&
-          validated.id &&
-          (validated.baseCommitSha !== undefined || validated.baseRef !== undefined)
-        ) {
-          try {
-            const gitIntegration = global.gitIntegrations?.get(validated.id);
-            if (gitIntegration && typeof gitIntegration.updateWorkspaceMetadata === 'function') {
-              // Fetch fresh workspace data to get the complete metadata
-              const wsResult = await protocolAdapter.getWorkspace(validated.id);
-              if (wsResult) {
-                gitIntegration.updateWorkspaceMetadata({
-                  baseRef: wsResult.baseRef,
-                  baseCommitSha: wsResult.baseCommitSha,
-                  createdAt: wsResult.createdAt,
-                });
-              }
-            }
-          } catch (metadataError) {
-            // Non-fatal: the update succeeded, metadata sync can retry on next sync cycle
-            logger.warn('Failed to sync GitIntegration metadata after workspace update', {
-              workspaceId: validated.id,
-              error: (metadataError as Error).message,
-            });
-          }
-        }
 
         return resultToCommandResponse(result);
       },
@@ -1330,8 +1004,6 @@ export function setupWorkspaceIPC(): void {
           });
         }
 
-        // Stop MetadataSyncService for remote workspaces
-        await stopMetadataSyncServiceForWorkspace(validatedId, 'workspace delete');
         // Clear MetadataFS cache for deleted workspace
         clearMetadataFSCache();
 
@@ -1344,48 +1016,6 @@ export function setupWorkspaceIPC(): void {
           logger.warn('Failed to shut down unified watcher during delete', error as Error, {
             workspaceId: validatedId,
           });
-        }
-
-        // Clean up git integration locks
-        if (global.gitIntegrationLocks?.has(validatedId)) {
-          global.gitIntegrationLocks.delete(validatedId);
-        }
-
-        // Stop file tracking storage cleanup timer
-        try {
-          const { FileTrackingStorage } =
-            await import('../../file-tracking/main/file-tracking-storage');
-          FileTrackingStorage.cleanupWorkspace(validatedId);
-          logger.debug('File tracking storage cleanup before delete', {
-            workspaceId: validatedId,
-          });
-        } catch (error) {
-          logger.warn('Failed to cleanup file tracking storage before delete', error as Error, {
-            workspaceId: validatedId,
-          });
-        }
-
-        // Clean up file tracking service (force-save, stop timers, remove from cache)
-        try {
-          const { cleanupGitIntegration } =
-            await import('../../file-tracking/main/file-tracking.ipc');
-          await cleanupGitIntegration(validatedId);
-          logger.debug('File tracking service cleanup before delete', {
-            workspaceId: validatedId,
-          });
-        } catch (error) {
-          logger.warn('Failed to cleanup file tracking service before delete', error as Error, {
-            workspaceId: validatedId,
-          });
-        }
-
-        // Clean up agent pool
-        try {
-          const { agentPoolService } = await import('../../agent/main/agent-pool.service');
-          await agentPoolService.disposeWorkspace(validatedId);
-          logger.debug('Agent pool cleanup before delete', { workspaceId: validatedId });
-        } catch (error) {
-          logger.debug('Agent pool cleanup not available before delete', { error });
         }
 
         // Clean up notification service
@@ -1860,28 +1490,9 @@ export function setupWorkspaceIPC(): void {
 
           const gitInfo = await getWorkspaceGitInfo(workspaceId);
           if (gitInfo?.isRemote) {
-            // Remote workspace: use RemoteGitManager
-            try {
-              const remoteGit = getRemoteGitManager(
-                workspaceId,
-                gitInfo.repositoryPath || gitInfo.worktreePath,
-              );
-              const remoteStatus = await remoteGit.getStatus(gitInfo.worktreePath);
-              const stagedCount = remoteStatus.staged.length;
-              const unstagedCount =
-                remoteStatus.modified.length +
-                remoteStatus.untracked.length +
-                remoteStatus.deleted.length;
-              changesStats = {
-                uncommitted: stagedCount + unstagedCount,
-                staged: stagedCount,
-                unstaged: unstagedCount,
-              };
-            } catch (error) {
-              logger.error('Failed to get remote git status for hover', error as Error, {
-                workspaceId,
-              });
-            }
+            // Remote hover git status retired in P3-5; leave the default zero
+            // counts so remote-configured workspaces don't attempt to route
+            // through the deleted remote stack.
           } else {
             // Local workspace: use GitService
             const gitService = new GitService();
@@ -2456,64 +2067,20 @@ export function setupWorkspaceIPC(): void {
 
           const maxResults = typeof limit === 'number' && limit > 0 ? limit : 50;
 
-          // ──── Remote workspace: route through RPC ────
+          // ──── Remote workspace: legacy RPC retired ────
+          // Directory listing and pattern search over the legacy remote RPC has
+          // retired. Return an empty result until the daemon's WSS transport
+          // lands and can serve `fs.listDir`/`fs.find`.
+          // TODO(P3-5): route via daemon `fs.listDir`/`fs.find` over WSS transport.
           if (isRemote) {
-            const rpcClient = await remoteRPCManager.getClient(workspaceId);
-
-            if (pattern && String(pattern).trim().length > 0) {
-              // Pattern search: use exec with find command on remote
-              const needle = String(pattern).toLowerCase();
-              const result = await rpcClient.exec({
-                command: `find ${escapeShellArg(listingPath)} -maxdepth 5 -type f -not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/dist/*' -not -path '*/build/*' -not -path '*/bazel-*/*' | head -${maxResults}`,
-                timeout: 30000,
-              });
-              // Parse find output into file objects
-              const files = (result.stdout || '')
-                .split('\n')
-                .filter(Boolean)
-                .filter((f) => {
-                  const name = path.basename(f).toLowerCase();
-                  const rel = f.startsWith(listingPath + '/')
-                    ? f.slice(listingPath.length + 1)
-                    : path.basename(f);
-                  return name.includes(needle) || rel.toLowerCase().includes(needle);
-                })
-                .slice(0, maxResults)
-                .map((f) => ({
-                  name: path.basename(f),
-                  path: f,
-                  relativePath: f.startsWith(listingPath + '/')
-                    ? f.slice(listingPath.length + 1)
-                    : path.basename(f),
-                  type: 'file' as const,
-                }));
-              return { files, folders: [] };
-            } else {
-              // Shallow listing: use RPC listDir
-              const result = await rpcClient.listDir({
-                path: listingPath,
-                includeHidden: false,
-              });
-              const files = result.entries
-                .filter((e) => e.type === 'file')
-                .slice(0, maxResults)
-                .map((e) => ({
-                  name: e.name,
-                  path: path.join(listingPath, e.name),
-                  relativePath: e.name,
-                  type: 'file' as const,
-                }));
-              const folders = result.entries
-                .filter((e) => e.type === 'directory' && !e.name.startsWith('.'))
-                .slice(0, maxResults)
-                .map((e) => ({
-                  name: e.name,
-                  path: path.join(listingPath, e.name),
-                  relativePath: e.name,
-                  type: 'directory' as const,
-                }));
-              return { files, folders };
-            }
+            void listingPath;
+            void maxResults;
+            void pattern;
+            logger.info(
+              'workspace:list-files: skipping remote listing; legacy RPC retired',
+              { workspaceId },
+            );
+            return { files: [], folders: [] };
           }
 
           // ──── Local workspace: use local fs ────
@@ -2699,22 +2266,19 @@ export function setupWorkspaceIPC(): void {
 
           let stdout = '';
 
-          // Helper to execute search command (local or remote)
+          // Remote in-files search over the legacy RPC has retired. Skip the
+          // remote branch and return an empty result until the daemon's WSS
+          // transport lands.
+          // TODO(P3-5): route via daemon `fs.grep` over WSS transport.
+          if (isRemote && workspaceId) {
+            logger.info(
+              'workspace:search-in-files: skipping remote search; legacy RPC retired',
+              { workspaceId },
+            );
+            return [];
+          }
+
           const execSearchCommand = async (cmd: string): Promise<string> => {
-            if (isRemote && workspaceId) {
-              const rpcClient = await remoteRPCManager.getClient(workspaceId);
-              const fullCommand = `cd "${workspacePath}" && ${cmd}`;
-              try {
-                const result = await rpcClient.exec({ command: fullCommand, timeout: 30000 });
-                return result.stdout || '';
-              } catch (error) {
-                if (error instanceof RemoteRPCError && error.code === -32000) {
-                  const data = error.data as { stdout?: string } | undefined;
-                  return data?.stdout || '';
-                }
-                throw error;
-              }
-            }
             const result = await execAsync(cmd, {
               cwd: workspacePath,
               maxBuffer: 20 * 1024 * 1024,
@@ -2863,84 +2427,4 @@ export function setupWorkspaceIPC(): void {
   );
 
   logger.info('Workspace IPC handlers setup complete');
-}
-
-/**
- * Initialize git integration for a workspace
- */
-async function initializeGitIntegration(
-  workspaceId: string,
-  worktreePath: string,
-  detector: any,
-  workspaceMetadata?: { baseRef?: string; baseCommitSha?: string; createdAt?: string },
-  isRemote?: boolean,
-): Promise<void> {
-  // Ensure global maps are initialized
-  if (!global.gitIntegrations) {
-    global.gitIntegrations = new Map();
-  }
-
-  // Check if we already have a git integration for this workspace
-  let gitIntegration = global.gitIntegrations.get(workspaceId);
-
-  if (gitIntegration) {
-    // Stop the existing listener before setting up a new one
-    logger.info('Stopping existing git integration before reinitializing', { workspaceId });
-    gitIntegration.stopListening();
-    gitIntegration.removeAllListeners();
-  }
-
-  // Create new git integration
-  const { GitIntegrationService } =
-    await import('../../file-tracking/main/git-integration.service');
-  const { FileTrackingService } = await import('../../file-tracking/main/file-tracking.service');
-  const { gitService } = await import('../../git/main/git.service');
-
-  const fileTrackingService = new FileTrackingService(workspaceId, worktreePath, isRemote);
-  gitIntegration = new GitIntegrationService(
-    workspaceId,
-    worktreePath,
-    fileTrackingService,
-    isRemote ? undefined : gitService,
-    workspaceMetadata,
-    isRemote,
-  );
-
-  // Listen for changes tracked event and notify frontend
-  const changeHandler = (data: any) => {
-    // PERF: Changed from INFO to DEBUG - called for every file tracking change
-    logger.debug('[WorkspaceIPC] Forwarding changes-tracked event to frontend', {
-      workspaceId: data.workspaceId,
-      changeCount: data.changeCount,
-      source: data.source,
-    });
-    // Send to windows viewing this workspace
-    sendToWorkspaceWindows(data.workspaceId, 'file-tracking:changes-updated', {
-      workspaceId: data.workspaceId,
-      changeCount: data.changeCount,
-      source: data.source,
-    });
-  };
-
-  // NOTE: We only listen for 'changes-tracked' here.
-  // File change events for the activity log are emitted via EventCoordinator -> activity-log-event -> Redux (emitWorkspaceEvent)
-  // Adding a 'file-changed' listener here was causing duplicate events in the activity log.
-  gitIntegration.on('changes-tracked', changeHandler);
-
-  // Skip the expensive initial sync for freshly created workspaces.
-  // A brand-new worktree has zero uncommitted changes and zero commits ahead,
-  // so syncCurrentState() would do ~3s of git operations returning empty results.
-  // We detect "fresh" by checking if createdAt is within the last 30 seconds.
-  const isFreshWorkspace =
-    workspaceMetadata?.createdAt &&
-    Date.now() - new Date(workspaceMetadata.createdAt).getTime() < 30_000;
-
-  await gitIntegration.startListening(detector, {
-    skipInitialSync: !!isFreshWorkspace,
-  });
-
-  // Store the git integration for cleanup later
-  global.gitIntegrations.set(workspaceId, gitIntegration);
-
-  logger.info('Set up git integration', { workspaceId, skippedInitialSync: !!isFreshWorkspace });
 }

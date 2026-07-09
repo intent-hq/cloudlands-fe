@@ -1,10 +1,9 @@
 /**
  * Tests for shared/main/async-utils.ts
  *
- * Tests the auggie CLI path discovery logic including:
- * - Static common paths for different platforms
- * - Dynamic nvm path scanning
- * - Dynamic fnm path scanning
+ * Auggie CLI discovery is daemon-canonical: `findAuggieAsync` must delegate
+ * to the daemon-backed `findAuggiePathAsync` (`host.checkAuggie`) with no
+ * local cache files or hardcoded install-path lists.
  */
 
 import {
@@ -12,9 +11,12 @@ import {
   it,
   expect,
   vi,
+  beforeEach,
 } from 'vitest';
-import * as path from 'path';
-import { homedir } from 'os';
+
+// test-setup.ts globally mocks $shared/main/async-utils; this suite tests the
+// real module, so cancel that mock for this file.
+vi.unmock('$shared/main/async-utils');
 
 // Mock the logger before importing the module
 vi.mock('../logger', () => ({
@@ -26,109 +28,38 @@ vi.mock('../logger', () => ({
   },
 }));
 
+const { mockFindAuggiePathAsync } = vi.hoisted(() => ({
+  mockFindAuggiePathAsync: vi.fn(),
+}));
+
+// Mock the daemon-backed auggie discovery that findAuggieAsync delegates to.
+vi.mock('../../features/auggie/main/auggie-path', () => ({
+  findAuggiePathAsync: mockFindAuggiePathAsync,
+}));
+
 // Import after mocking
 import {
-  AUGGIE_COMMON_PATHS,
   findAuggieAsync,
   existsAsync,
 } from '../main/async-utils';
 
-describe('AUGGIE_COMMON_PATHS', () => {
-  const homeDir = homedir();
-
-  describe('on macOS/Linux', () => {
-    // Skip these tests on Windows
-    const isUnix = process.platform !== 'win32';
-
-    it.skipIf(!isUnix)('should include standard system locations', () => {
-      expect(AUGGIE_COMMON_PATHS).toContain('/usr/local/bin/auggie');
-      expect(AUGGIE_COMMON_PATHS).toContain('/opt/homebrew/bin/auggie');
-    });
-
-    it.skipIf(!isUnix)('should include npm global bin locations', () => {
-      expect(AUGGIE_COMMON_PATHS).toContain(path.join(homeDir, '.npm-global', 'bin', 'auggie'));
-      expect(AUGGIE_COMMON_PATHS).toContain(path.join(homeDir, '.npm-packages', 'bin', 'auggie'));
-      expect(AUGGIE_COMMON_PATHS).toContain(path.join(homeDir, '.local', 'bin', 'auggie'));
-      expect(AUGGIE_COMMON_PATHS).toContain(path.join(homeDir, 'npm', 'bin', 'auggie'));
-    });
-
-    it.skipIf(!isUnix)('should include volta path', () => {
-      expect(AUGGIE_COMMON_PATHS).toContain(path.join(homeDir, '.volta', 'bin', 'auggie'));
-    });
-
-    it.skipIf(!isUnix)('should include fnm default alias path', () => {
-      expect(AUGGIE_COMMON_PATHS).toContain(
-        path.join(homeDir, '.fnm', 'aliases', 'default', 'bin', 'auggie'),
-      );
-    });
-
-    it.skipIf(!isUnix)('should include asdf shims path', () => {
-      expect(AUGGIE_COMMON_PATHS).toContain(path.join(homeDir, '.asdf', 'shims', 'auggie'));
-    });
-
-    it.skipIf(!isUnix)('should include n version manager paths', () => {
-      expect(AUGGIE_COMMON_PATHS).toContain(path.join(homeDir, 'n', 'bin', 'auggie'));
-      expect(AUGGIE_COMMON_PATHS).toContain('/usr/local/n/bin/auggie');
-    });
-
-    it.skipIf(!isUnix)('should include homebrew node paths for Intel Macs', () => {
-      expect(AUGGIE_COMMON_PATHS).toContain('/usr/local/opt/node/bin/auggie');
-      expect(AUGGIE_COMMON_PATHS).toContain('/usr/local/opt/node@18/bin/auggie');
-      expect(AUGGIE_COMMON_PATHS).toContain('/usr/local/opt/node@20/bin/auggie');
-      expect(AUGGIE_COMMON_PATHS).toContain('/usr/local/opt/node@22/bin/auggie');
-    });
-
-    it.skipIf(!isUnix)('should include homebrew node paths for Apple Silicon Macs', () => {
-      expect(AUGGIE_COMMON_PATHS).toContain('/opt/homebrew/opt/node/bin/auggie');
-      expect(AUGGIE_COMMON_PATHS).toContain('/opt/homebrew/opt/node@18/bin/auggie');
-      expect(AUGGIE_COMMON_PATHS).toContain('/opt/homebrew/opt/node@20/bin/auggie');
-      expect(AUGGIE_COMMON_PATHS).toContain('/opt/homebrew/opt/node@22/bin/auggie');
-    });
+describe('findAuggieAsync (daemon-backed delegation)', () => {
+  beforeEach(() => {
+    mockFindAuggiePathAsync.mockReset();
   });
 
-  describe('on Windows', () => {
-    const isWindows = process.platform === 'win32';
-
-    it.skipIf(!isWindows)('should include npm global locations', () => {
-      const appData = process.env.APPDATA || '';
-      const localAppData = process.env.LOCALAPPDATA || '';
-
-      expect(AUGGIE_COMMON_PATHS).toContain(path.join(appData, 'npm', 'auggie.cmd'));
-      expect(AUGGIE_COMMON_PATHS).toContain(path.join(appData, 'npm', 'auggie'));
-      expect(AUGGIE_COMMON_PATHS).toContain(path.join(localAppData, 'npm', 'auggie.cmd'));
-      expect(AUGGIE_COMMON_PATHS).toContain(path.join(localAppData, 'npm', 'auggie'));
-    });
-
-    it.skipIf(!isWindows)('should include nvm-windows path', () => {
-      const appData = process.env.APPDATA || '';
-      expect(AUGGIE_COMMON_PATHS).toContain(path.join(appData, 'nvm', 'auggie.cmd'));
-    });
-
-    it.skipIf(!isWindows)('should include volta on Windows', () => {
-      const localAppData = process.env.LOCALAPPDATA || '';
-      expect(AUGGIE_COMMON_PATHS).toContain(path.join(localAppData, 'Volta', 'bin', 'auggie.exe'));
-    });
-  });
-});
-
-describe('findAuggieAsync', () => {
-  it('should return null when auggie is not found anywhere', async () => {
-    // This test will pass on systems without auggie installed
-    // and may return a path on systems with auggie
+  it('returns the daemon-resolved path from findAuggiePathAsync', async () => {
+    mockFindAuggiePathAsync.mockResolvedValue('/Users/test/.augment/bin/auggie');
     const result = await findAuggieAsync();
-    // We can only assert the type, not the value
-    expect(result === null || typeof result === 'string').toBe(true);
+    expect(result).toBe('/Users/test/.augment/bin/auggie');
+    expect(mockFindAuggiePathAsync).toHaveBeenCalledTimes(1);
   });
 
-  it('should return a string path when auggie exists', async () => {
+  it('returns null when the daemon reports auggie unavailable', async () => {
+    mockFindAuggiePathAsync.mockResolvedValue(null);
     const result = await findAuggieAsync();
-    if (result !== null) {
-      expect(typeof result).toBe('string');
-      expect(result.length).toBeGreaterThan(0);
-      // Path should end with 'auggie' (or 'auggie.cmd' on Windows)
-      const basename = path.basename(result);
-      expect(basename.startsWith('auggie')).toBe(true);
-    }
+    expect(result).toBeNull();
+    expect(mockFindAuggiePathAsync).toHaveBeenCalledTimes(1);
   });
 });
 

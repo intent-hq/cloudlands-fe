@@ -174,13 +174,10 @@ async function openInBrowserPanel(url: string, workspaceId: WorkspaceId): Promis
  */
 async function openInExternalBrowser(url: string): Promise<boolean> {
   try {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      await invokeIpc('shell:openExternal', { url });
-      logger.debug('Opened URL in external browser', { url });
-      return true;
-    }
-    // Fallback for non-Electron environments
-    window.open(url, '_blank');
+    // shell:openExternal converges on the shared openExternalUrl opener
+    // (host-bridge-seeder), which handles preload-bridge/window.open fallback.
+    await invokeIpc('shell:openExternal', { url });
+    logger.debug('Opened URL in external browser', { url });
     return true;
   } catch (error) {
     logger.error('Failed to open URL in external browser', { url, error });

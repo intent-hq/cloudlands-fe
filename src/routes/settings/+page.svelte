@@ -1,6 +1,5 @@
 <script lang="ts">
   import { logger } from '../../shared/logger';
-  import { invoke } from '$shared/generated/ipc-client';
 
   import { page } from '$app/state';
   import {
@@ -218,16 +217,10 @@
     notifications: 'setup',
   };
 
-  onMount(async () => {
-    // Get app version from Electron
-    if (window.electronAPI) {
-      try {
-        const result = await invoke<any>('app:version', undefined);
-        appVersion = result?.data || 'unknown';
-      } catch {
-        appVersion = 'unknown';
-      }
-    }
+  onMount(() => {
+    // Build-time constant — the app version is FE-only (audit row 11), not a
+    // daemon surface.
+    appVersion = __APP_VERSION__;
 
     // Handle hash-based navigation on initial load
     handleHashNavigation();
@@ -710,11 +703,9 @@
       <div class="flex flex-wrap items-center gap-x-1 gap-y-2">
         <a
           href="https://www.intentapp.dev/docs"
+          target="_blank"
+          rel="noopener noreferrer"
           class="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          onclick={(e) => {
-            e.preventDefault();
-            void invoke('shell:openExternal', { url: 'https://www.intentapp.dev/docs' });
-          }}
           >Support</a
         >
       </div>

@@ -1,9 +1,8 @@
 <script lang="ts">
   /**
-   * CommitDrawer - Commit message and Export file drawer
-   * Contains the commit form, auto-fill, and file export panels.
+   * CommitDrawer - Commit message drawer
+   * Contains the commit form and auto-fill panel.
    */
-  import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
   import {
   executeBackgroundAgent,
@@ -14,17 +13,11 @@
 
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
-  import { toast } from '$lib/components/ui/toast';
-  import ExportErrorToast from '$lib/components/ui/toast/ExportErrorToast.svelte';
-  import ExportSuccessToast from '$lib/components/ui/toast/ExportSuccessToast.svelte';
-  import { dialog } from '$lib/electron-bridge';
-  import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { TrackedChange } from '$features/file-tracking/types';
   import {
   faCheck,
   faCodeCommit,
   faEye,
-  faFolderOpen,
   faRobot,
   faSpinner,
   faStop,
@@ -46,13 +39,8 @@
     commitMessage: string;
     isCommitting: boolean;
     commitDrawerOpen: boolean;
-    exportDrawerOpen: boolean;
     hasStaged: boolean;
-    hasUnstaged: boolean;
     stagedChanges: TrackedChange[];
-    unstagedChanges: TrackedChange[];
-    allCommitsCount: number;
-    repoPath: string;
     onCommit: () => void;
   }
 
@@ -61,13 +49,8 @@
     commitMessage = $bindable(''),
     isCommitting = $bindable(false),
     commitDrawerOpen = $bindable(false),
-    exportDrawerOpen = $bindable(false),
     hasStaged,
-    hasUnstaged,
     stagedChanges,
-    unstagedChanges,
-    allCommitsCount,
-    repoPath,
     onCommit,
   }: Props = $props();
 
@@ -82,16 +65,6 @@
 
   const isGenerating = $derived($commitExecState$.status === 'running');
   const commitAgentId = $derived($commitExecState$.agentId);
-
-  // Export state
-  let exportPath = $state('');
-  let isExporting = $state(false);
-
-  // Initialize export path from repo path
-  $effect(() => {
-    const shouldInit = !exportPath && repoPath;
-    if (shouldInit) exportPath = repoPath;
-  });
 
   async function handleAutoFill() {
     if (isGenerating) {
@@ -129,106 +102,20 @@
     }
   }
 
-  async function handlePickExportFolder(): Promise<string | undefined> {
-    try {
-      const result = await dialog.open({
-        directory: true,
-        title: 'Select export destination folder',
-      });
-      if (typeof result === 'string' && result.length > 0) {
-        return result;
-      }
-    } catch (error) {
-      console.error('Failed to open folder dialog:', error);
-    }
-    return undefined;
-  }
-
-  async function handleExport() {
-    if (!exportPath.trim()) {
-      const selectedPath = await handlePickExportFolder();
-      if (selectedPath) {
-        exportPath = selectedPath;
-      } else {
-        return;
-      }
-    }
-
-    const exportedToPath = exportPath;
-
-    // Check for uncommitted changes in the destination
-    try {
-      const { hasChanges, isGitRepo } = await AcceptChangesClient.checkPathHasChanges(exportPath);
-      if (isGitRepo && hasChanges) {
-        const confirmed = await dialog.message(
-          `The destination folder has uncommitted git changes. Exporting will overwrite files in this directory.\n\nPath: ${exportPath}\n\nDo you want to continue?`,
-          {
-            title: 'Uncommitted changes detected',
-            type: 'warning',
-            buttons: ['Cancel', 'Continue'],
-          },
-        );
-        if (confirmed === 0) return;
-      }
-    } catch {
-      // If check fails, continue with export
-    }
-
-    isExporting = true;
-    try {
-      const result = await AcceptChangesClient.exportFiles(workspaceId as WorkspaceId, exportPath, {
-        preserveStructure: true,
-      });
-      if (!result.success) {
-        toast.custom(ExportErrorToast, {
-          componentProps: {
-            message: result.error || 'Failed to export files',
-            exportPath: exportedToPath,
-          },
-          duration: 10000,
-        });
-        return;
-      }
-
-      toast.custom(ExportSuccessToast, {
-        componentProps: { exportPath: exportedToPath },
-        duration: 10000,
-      });
-      exportDrawerOpen = false;
-      exportPath = '';
-    } catch {
-      toast.error('Failed to export files');
-    } finally {
-      isExporting = false;
-    }
-  }
 </script>
 
-<!-- Divider with Commit and Export buttons -->
+<!-- Divider with Commit button -->
 <TimelineDivider>
   <div class="w-full flex gap-1" data-testid="commit-export-divider">
     <DividerButton
       tooltipContents={!hasStaged ? 'No staged changes to commit' : ''}
       onclick={() => {
         commitDrawerOpen = !commitDrawerOpen;
-        if (commitDrawerOpen) exportDrawerOpen = false;
       }}
       expanded={commitDrawerOpen}
       disabled={!hasStaged}
     >
       Commit
-    </DividerButton>
-    <DividerButton
-      tooltipContents={!hasStaged && !hasUnstaged ? 'No changes to export' : ''}
-      onclick={() => {
-        exportDrawerOpen = !exportDrawerOpen;
-        if (exportDrawerOpen) commitDrawerOpen = false;
-      }}
-      expanded={exportDrawerOpen}
-      disabled={!hasStaged && !hasUnstaged}
-      arrowRight
-    >
-      Export
     </DividerButton>
   </div>
   <DividerPanel open={commitDrawerOpen}>
@@ -340,65 +227,6 @@
           {/if}
         </div>
       {/if}
-    </div>
-  </DividerPanel>
-  <!-- Export Panel -->
-  <DividerPanel open={exportDrawerOpen}>
-    {@const unstagedCount = unstagedChanges.length}
-    {@const stagedCount = stagedChanges.length}
-    {@const commitCount = allCommitsCount}
-    {@const unstagedText =
-      unstagedCount > 0
-        ? `${unstagedCount} unstaged file${unstagedCount === 1 ? '' : 's'}`
-        : ''}
-    {@const stagedText =
-      stagedCount > 0 ? `${stagedCount} staged file${stagedCount === 1 ? '' : 's'}` : ''}
-    {@const commitText =
-      commitCount > 0 ? `${commitCount} commit${commitCount === 1 ? '' : 's'}` : ''}
-    {@const parts = [unstagedText, stagedText, commitText].filter(Boolean)}
-    <p class="text-xs text-subtle">
-      Export files to a folder outside this workspace. This copies files while preserving
-      directory structure, allowing you to use them in another project or share
-      externally.
-    </p>
-    {#if parts.length > 0}
-      <p class="text-xs text-subtle mt-1">
-        {parts.join(' and ')} will be exported.
-      </p>
-    {/if}
-    <div class="mt-2">
-      <span class="text-xs text-subtle mb-1 block">Destination Folder</span>
-      <div class="relative">
-        <input
-          type="text"
-          class="w-full px-2.5 py-1.5 pr-8 text-sm bg-muted/30 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
-          placeholder="Select folder..."
-          bind:value={exportPath}
-          readonly
-        />
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          class="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6"
-          onclick={async () => {
-            const path = await handlePickExportFolder();
-            if (path) exportPath = path;
-          }}
-        >
-          <Fa icon={faFolderOpen} size="xs" class="opacity-50" />
-        </Button>
-      </div>
-    </div>
-    <div class="flex items-center gap-2">
-      <Button variant="default" size="xs" onclick={handleExport} disabled={isExporting}>
-        {#if isExporting}
-          <Fa icon={faSpinner} size="xs" class="animate-spin" />
-          <span>Exporting...</span>
-        {:else}
-          <Fa icon={faFolderOpen} size="xs" class="opacity-50" />
-          <span>Export Files</span>
-        {/if}
-      </Button>
     </div>
   </DividerPanel>
 </TimelineDivider>

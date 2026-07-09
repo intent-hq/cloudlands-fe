@@ -60,20 +60,6 @@ vi.mock('$store/renderer/slices/background-agent-executor/background-agent-execu
   cancelExecution: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/cancel', payload: args })),
 }));
 
-vi.mock('$features/accept-changes/accept-changes.client', () => ({
-  AcceptChangesClient: {
-    exportFiles: vi.fn().mockResolvedValue({ success: true, result: { exportedFiles: [] } }),
-    checkPathHasChanges: vi.fn().mockResolvedValue({ hasChanges: false, isGitRepo: false }),
-  },
-}));
-
-vi.mock('$lib/electron-bridge', () => ({
-  dialog: {
-    showOpenDialog: vi.fn().mockResolvedValue({ canceled: true, filePaths: [] }),
-    showMessageBox: vi.fn().mockResolvedValue({ response: 1 }),
-  },
-}));
-
 vi.mock('$lib/services/analytics', () => ({
   track: vi.fn(),
 }));
@@ -116,13 +102,8 @@ async function renderDrawer(overrides: Partial<Record<string, unknown>> = {}) {
     commitMessage: 'chore: test message',
     isCommitting: false,
     commitDrawerOpen: true,
-    exportDrawerOpen: false,
     hasStaged: true,
-    hasUnstaged: false,
     stagedChanges: [makeChange('src/a.ts')],
-    unstagedChanges: [],
-    allCommitsCount: 0,
-    repoPath: '/repo',
     onCommit,
   };
   const result = render(CommitDrawer, { props: { ...defaults, ...overrides } });
@@ -176,21 +157,4 @@ describe('CommitDrawer', () => {
     );
   });
 
-  it('renders an export summary listing staged, unstaged, and commit counts', async () => {
-    const { container } = await renderDrawer({
-      commitDrawerOpen: false,
-      exportDrawerOpen: true,
-      hasStaged: true,
-      hasUnstaged: true,
-      stagedChanges: [makeChange('src/a.ts'), makeChange('src/b.ts')],
-      unstagedChanges: [makeChange('src/c.ts', ChangeStage.Unstaged)],
-      allCommitsCount: 3,
-    });
-    await waitFor(() => {
-      const text = container.textContent ?? '';
-      expect(text).toContain('1 unstaged file');
-      expect(text).toContain('2 staged files');
-      expect(text).toContain('3 commits');
-    });
-  });
 });

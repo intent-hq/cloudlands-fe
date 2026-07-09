@@ -104,15 +104,6 @@ export async function shutdownUnifiedBackend(): Promise<void> {
   } catch (error) {
     logger.error('Error during consolidated backend shutdown', { error });
   }
-
-  // Also cleanup agent pool (kills warm/pre-warmed agent processes)
-  try {
-    const { agentPoolService } = await import('./agent-pool.service');
-    await agentPoolService.disposeAll();
-    logger.info('Agent pool cleanup complete');
-  } catch (error) {
-    logger.error('Error during agent pool cleanup', { error });
-  }
 }
 
 // Export for use in main process

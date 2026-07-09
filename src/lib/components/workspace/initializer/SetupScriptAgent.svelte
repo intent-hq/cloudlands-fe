@@ -6,17 +6,13 @@
   import { createLogger } from '$lib/utils/client-logger';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
-  import StreamingMessageContent from '$lib/components/chat/StreamingMessageContent.svelte';
   import CodeEditor from '$lib/components/editor/CodeEditor.svelte';
-  import { invoke } from '$lib/electron-bridge';
-  import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
+  import { appClient } from '$lib/client';
   import {
-  faStop,
   faTimes,
   faCheck,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import type { ContentBlock } from '$shared/types';
 
   const logger = createLogger('SetupScriptAgent');
 
@@ -29,169 +25,78 @@
   let { repoPath, onScriptGenerated, onClose }: Props = $props();
 
   let agentId = $state(crypto.randomUUID());
-  let isStreaming = $state(false);
-  let streamContent = $state('');
-  let contentBlocks = $state<ContentBlock[]>([]);
+  let isGenerating = $state(false);
   let error = $state<string | null>(null);
   let isComponentMounted = false;
-  let streamCleanup: (() => void) | null = null;
   let generatedScript = $state<{ name: string; description: string; content: string } | null>(null);
 
-  // Start the agent when mounted
+  // Generate the draft when mounted
   onMount(() => {
     isComponentMounted = true;
-    void startAgent();
+    void generate();
   });
 
   onDestroy(() => {
     isComponentMounted = false;
-    cleanup();
   });
 
-  function cleanup() {
-    if (streamCleanup) {
-      streamCleanup();
-      streamCleanup = null;
+  /** Resolve the workspace whose repository/worktree matches this repo path. */
+  async function resolveWorkspaceId(): Promise<string | null> {
+    try {
+      const workspaces = await appClient.workspaces.list();
+      const match = workspaces.find(
+        (w) => w.repositoryPath === repoPath || w.path === repoPath || w.worktreePath === repoPath,
+      );
+      return match ? String(match.id) : null;
+    } catch {
+      return null;
     }
   }
 
-  async function startAgent() {
-    isStreaming = true;
+  /**
+   * `workspace.generateSetupScript` (PROTOCOL §5.25): the daemon analyzes the
+   * workspace repository and returns an AI-assisted draft (not auto-saved).
+   */
+  async function generate() {
+    isGenerating = true;
     error = null;
-    streamContent = '';
-    contentBlocks = [];
+    generatedScript = null;
 
     try {
-      // Start streaming response
-      const result = await invoke<{
-        success: boolean;
-        streamId?: string;
-        error?: string;
-      }>('setup-scripts:generate-with-agent', {
-        repoPath,
-        agentId,
-      });
-
-      if (!isComponentMounted) {
-        if (result.streamId) {
-          try {
-            await invoke('setup-scripts:stop-agent', { agentId });
-          } catch (stopError) {
-            logger.error('Failed to stop setup script agent after unmount', stopError);
-          }
-        }
+      const workspaceId = await resolveWorkspaceId();
+      if (!isComponentMounted) return;
+      if (!workspaceId) {
+        error = 'No workspace found for this repository yet — create the workspace first, then generate a setup script.';
+        isGenerating = false;
         return;
       }
 
-      if (!result.success) {
-        error = result.error || 'Failed to start agent';
-        isStreaming = false;
+      const setupScript = await appClient.setupScripts.generate(workspaceId);
+      if (!isComponentMounted) return;
+      if (!setupScript || !setupScript.script) {
+        error = 'Failed to generate setup script';
+        isGenerating = false;
         return;
       }
 
-      // Listen for stream events
-      const streamId = result.streamId;
-      if (streamId) {
-        setupStreamListener(streamId);
-      }
+      generatedScript = {
+        name: setupScript.projectType ? `${setupScript.projectType} setup` : 'Generated setup',
+        description: setupScript.projectType
+          ? `Setup script generated for a ${setupScript.projectType} project`
+          : 'Setup script generated from repository analysis',
+        content: setupScript.script,
+      };
+      isGenerating = false;
     } catch (err) {
-      logger.error('Failed to start setup script agent', err);
-      if (!isComponentMounted) {
-        return;
-      }
-      error = err instanceof Error ? err.message : 'Failed to start agent';
-      isStreaming = false;
-    }
-  }
-
-  function setupStreamListener(streamId: string) {
-    if (!isComponentMounted) {
-      return;
-    }
-
-    cleanup();
-
-    // Listen for stream chunks - electronAPI.on passes data directly (not as second param)
-    const handleChunk = (data: { streamId: string; chunk: string }) => {
-      if (data.streamId === streamId) {
-        streamContent += data.chunk;
-        updateContentBlocks();
-        checkForSetupScript();
-      }
-    };
-
-    const handleComplete = (data: { streamId: string }) => {
-      if (data.streamId === streamId) {
-        isStreaming = false;
-        checkForSetupScript();
-      }
-    };
-
-    const handleError = (data: { streamId: string; error: string }) => {
-      if (data.streamId === streamId) {
-        error = data.error;
-        isStreaming = false;
-      }
-    };
-
-    // Register listeners via electronAPI - use ID-based removal for reliable cleanup
-    const chunkListenerId = window.electronAPI?.on('setup-scripts:stream-chunk', handleChunk);
-    const completeListenerId = window.electronAPI?.on('setup-scripts:stream-complete', handleComplete);
-    const errorListenerId = window.electronAPI?.on('setup-scripts:stream-error', handleError);
-
-    streamCleanup = () => {
-      if (chunkListenerId) window.electronAPI?.offById('setup-scripts:stream-chunk', chunkListenerId);
-      if (completeListenerId)
-        window.electronAPI?.offById('setup-scripts:stream-complete', completeListenerId);
-      if (errorListenerId) window.electronAPI?.offById('setup-scripts:stream-error', errorListenerId);
-    };
-  }
-
-  function stripAnsi(text: string): string {
-    return text.replace(/\x1B\[\d*;?\d*m/g, '');
-  }
-
-  function cleanStreamContent(raw: string): string {
-    return stripAnsi(raw)
-      .split('\n')
-      .filter((line) => {
-        const trimmed = line.trim();
-        // Filter out thinking lines, system markers, and empty marker lines
-        if (/^>\s*Thinking:/i.test(trimmed)) return false;
-        if (/^🤖/.test(trimmed)) return false;
-        if (/^💻/.test(trimmed)) return false;
-        if (/^⏳/.test(trimmed)) return false;
-        if (/^🤔/.test(trimmed)) return false;
-        return true;
-      })
-      .join('\n');
-  }
-
-  function updateContentBlocks() {
-    const cleaned = cleanStreamContent(streamContent);
-    contentBlocks = cleaned.trim() ? [{ type: 'text', text: cleaned }] : [];
-  }
-
-  function checkForSetupScript() {
-    const script = AuggieTextParser.extractSetupScript(streamContent);
-    if (script) {
-      generatedScript = script;
+      logger.error('Failed to generate setup script', err);
+      if (!isComponentMounted) return;
+      error = err instanceof Error ? err.message : 'Failed to generate setup script';
+      isGenerating = false;
     }
   }
 
   function handleUseScript(script: { name: string; description: string; content: string }) {
     onScriptGenerated?.(script);
-  }
-
-  async function handleStop() {
-    try {
-      await invoke('setup-scripts:stop-agent', { agentId });
-    } catch (err) {
-      logger.error('Failed to stop agent', err);
-    }
-    isStreaming = false;
-    // Close the panel when stopped
-    onClose?.();
   }
 </script>
 
@@ -201,17 +106,11 @@
     <div class="flex items-center gap-2">
       <AuggieAvatar size={20} {agentId} />
       <span class="text-sm font-medium">Setup Script Generator</span>
-      {#if isStreaming}
+      {#if isGenerating}
         <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
       {/if}
     </div>
     <div class="flex items-center gap-1">
-      {#if isStreaming}
-        <Button variant="ghost-light" size="sm" onclick={handleStop} class="h-7 px-2">
-          <Fa icon={faStop} class="mr-1" />
-          Stop
-        </Button>
-      {/if}
       <Button variant="ghost-light" size="sm" onclick={onClose} class="h-7 w-7 p-0">
         <Fa icon={faTimes} />
       </Button>
@@ -224,14 +123,7 @@
       <div class="text-sm text-destructive-foreground bg-destructive/10 rounded-md p-3">
         {error}
       </div>
-    {:else if contentBlocks.length > 0}
-      <StreamingMessageContent
-        content={contentBlocks}
-        {isStreaming}
-        hideSetupScripts={true}
-        onSetupScriptGenerated={handleUseScript}
-      />
-    {:else if isStreaming}
+    {:else if isGenerating}
       <div class="flex items-center gap-2 text-subtle">
         <div
           class="w-4 h-4 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin"
@@ -242,7 +134,7 @@
   </div>
 
   <!-- Generated Script Preview -->
-  {#if generatedScript && !isStreaming}
+  {#if generatedScript && !isGenerating}
     <div class="border-t border-border p-3 bg-muted/30">
       <div class="flex items-center justify-between mb-2">
         <div class="flex items-center gap-2">

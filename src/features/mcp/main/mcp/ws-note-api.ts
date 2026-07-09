@@ -5,10 +5,8 @@ import type { ToolCall } from './protocol';
 import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
 import { getProvenanceContextManager } from '$features/workspace/main/provenance/provenance-context-manager';
 import { hasTaskBlocks } from '../../../notes/utils/task-block-parser';
-import { notesService } from '../../../notes/main/notes.service';
-import { assetsService } from '$features/notes/main/assets.service';
+import { getBackendClient } from '$features/backend/main/backend.ipc';
 import { trackMain } from '$lib/services/analytics/main';
-import { WorkspaceId } from '../../../../shared/types/branded-ids';
 import {
   noteLink,
   noteUrl,
@@ -111,14 +109,17 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
 
   const autoConvertTaskBlocks = async (noteId: string, content: string) => {
     if (!content || !hasTaskBlocks(content)) {
-      return { convertedCount: 0, createdNoteIds: [] as string[], updatedContent: null as string | null };
+      return { convertedCount: 0, createdNoteIds: [] as string[], contentChanged: false };
     }
 
     try {
-      const conversionResult = await notesService.convertTaskBlocks(WorkspaceId(workspaceId), noteId);
-      if (conversionResult.ok) {
-        return conversionResult.data;
-      }
+      const result = await getBackendClient().request<{
+        convertedCount?: number;
+        createdNoteIds?: string[];
+      }>('task.convertBlocks', { workspaceId, noteId });
+      const convertedCount = result?.convertedCount ?? 0;
+      const createdNoteIds = Array.isArray(result?.createdNoteIds) ? result.createdNoteIds : [];
+      return { convertedCount, createdNoteIds, contentChanged: convertedCount > 0 };
     } catch (error) {
       logger.warn('Failed to auto-convert task blocks', {
         noteId,
@@ -126,7 +127,7 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
       });
     }
 
-    return { convertedCount: 0, createdNoteIds: [] as string[], updatedContent: null as string | null };
+    return { convertedCount: 0, createdNoteIds: [] as string[], contentChanged: false };
   };
 
   const emitWithTaskBlockGuard = async (noteId: string, content: string, note: any) => {
@@ -135,9 +136,9 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
       emitContentUpdate(noteId, content, note);
     }
     const conversion = await autoConvertTaskBlocks(noteId, content);
-    // If we skipped the initial emit because of task blocks, but the service
+    // If we skipped the initial emit because of task blocks, but the daemon
     // didn't actually modify the content, emit now as fallback
-    if (contentHasTaskBlocks && conversion.updatedContent == null) {
+    if (contentHasTaskBlocks && !conversion.contentChanged) {
       emitContentUpdate(noteId, content, note);
     }
     return conversion;
@@ -226,13 +227,15 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
           continue;
         }
 
-        const dataUrl = await assetsService.readAssetAsDataUrl(workspaceId, assetId);
-        const dataMatch = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-        if (dataMatch) {
+        const asset = await getBackendClient().request<{
+          data?: string;
+          mimeType?: string;
+        }>('note.readAsset', { workspaceId, asset: assetId });
+        if (asset?.data && asset?.mimeType) {
           images.push({
             url,
-            data: dataMatch[2],
-            mimeType: dataMatch[1],
+            data: asset.data,
+            mimeType: asset.mimeType,
             alt: alt || undefined,
           });
         }
@@ -575,13 +578,17 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
           : asset;
         if (!assetId) throw new Error(`Invalid workspace-asset URL format: ${asset}`);
 
-        const dataUrl = await assetsService.readAssetAsDataUrl(workspaceId, assetId);
-        const dataMatch = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-        if (!dataMatch) throw new Error('Failed to parse asset data');
+        const result = await getBackendClient().request<{
+          assetId?: string;
+          mimeType?: string;
+          data?: string;
+          sizeKb?: number;
+        }>('note.readAsset', { workspaceId, asset: assetId });
+        if (!result?.data || !result?.mimeType) throw new Error('Failed to read asset');
 
-        const mimeType = dataMatch[1];
-        const data = dataMatch[2];
-        const sizeKb = Math.round(data.length / 1024);
+        const mimeType = result.mimeType;
+        const data = result.data;
+        const sizeKb = result.sizeKb ?? Math.round(data.length / 1024);
 
         // For image mime types, return as MCP image content block for efficient vision processing
         // (~2,700 tokens for a screenshot vs ~100k+ tokens as base64 text)

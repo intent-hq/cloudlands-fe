@@ -22,7 +22,8 @@ vi.mock("$features/accept-changes/accept-changes.client", () => ({
   AcceptChangesClient: { getStatus: vi.fn() },
 }));
 // FAKE seam: the AppClient-backed reads the `workspaceMounted` fan-out re-triggers
-// (tasks/events) are stubbed so the fan-out test stays hermetic.
+// (tasks/events/scripts/skills/PR status/agents/terminals/file-explorer) are stubbed
+// so the fan-out test stays hermetic.
 vi.mock("$lib/client", () => ({
   appClient: {
     workspaces: {
@@ -34,6 +35,12 @@ vi.mock("$lib/client", () => ({
     skills: { list: vi.fn(() => Promise.resolve([])) },
     scripts: { list: vi.fn(() => Promise.resolve([])) },
     git: { prStatus: vi.fn(() => Promise.resolve(null)) },
+    agents: { list: vi.fn(() => Promise.resolve([])) },
+    terminals: { list: vi.fn(() => Promise.resolve([])) },
+    files: {
+      explorerTree: vi.fn(() => Promise.resolve(null)),
+      gitStatusMap: vi.fn(() => Promise.resolve({})),
+    },
   },
 }));
 
@@ -309,21 +316,40 @@ describe("lifecycleIpcReadService (fake seams, real store)", () => {
     expect(acceptApi.getStatus).toHaveBeenCalledTimes(1);
   });
 
-  it("workspaceMounted fans out the per-workspace tasks/events/accept-changes triggers", async () => {
+  it("workspaceMounted fans out to every per-workspace hydration trigger", async () => {
     const wsId = "ws-mounted-fanout";
     acceptApi.getStatus.mockResolvedValue(gitStatus() as never);
     const tasksApi = appClient.tasks as unknown as { list: Fn };
     const eventsApi = appClient.events as unknown as { list: Fn };
+    const skillsApi = appClient.skills as unknown as { list: Fn };
+    const scriptsApi = appClient.scripts as unknown as { list: Fn };
+    const gitApi = appClient.git as unknown as { prStatus: Fn };
+    const agentsApi = appClient.agents as unknown as { list: Fn };
+    const terminalsApi = appClient.terminals as unknown as { list: Fn };
+    const filesApi = appClient.files as unknown as {
+      explorerTree: Fn;
+      gitStatusMap: Fn;
+    };
 
     appStore.dispatch(workspaceMounted(wsId));
     await flush();
 
-    // Fresh mount fans out to the restored per-workspace handlers (tasks/events
-    // live in the AppClient-seam read service, accept-changes here) — proven by
-    // each downstream seam being invoked for this workspace.
+    // Fresh mount fans out to every restored per-workspace handler across the
+    // lifecycle read services, the file-explorer read service, and (via the
+    // new hydrate*Requested triggers) the agents / terminals reads — proven by
+    // each downstream seam being invoked for this workspace. `loadWorkspaceData
+    // Requested` has no live handler yet (backend-gated); asserting its
+    // downstream fetch would be premature, so the fan-out test does not gate
+    // on it.
     expect(tasksApi.list).toHaveBeenCalledWith(wsId);
     expect(eventsApi.list).toHaveBeenCalledWith(wsId);
     expect(acceptApi.getStatus).toHaveBeenCalledWith(wsId);
+    expect(scriptsApi.list).toHaveBeenCalledWith(wsId);
+    expect(skillsApi.list).toHaveBeenCalledWith(wsId);
+    expect(gitApi.prStatus).toHaveBeenCalledWith(wsId);
+    expect(agentsApi.list).toHaveBeenCalledWith(wsId);
+    expect(terminalsApi.list).toHaveBeenCalledWith(wsId);
+    expect(filesApi.explorerTree).toHaveBeenCalledWith(wsId);
   });
 
   it("initContextForWorkspace hydrates items persisted in localStorage", async () => {

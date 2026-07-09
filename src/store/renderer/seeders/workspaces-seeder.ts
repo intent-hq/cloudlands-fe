@@ -7,26 +7,26 @@
  * live intentd daemon (the mock workspace fixtures were removed), so this seeder
  * hydrates the store from live data rather than from a mock.
  *
- * Also registers the renderer→main IPC mock handler for `workspace:open` (the
- * route loader entry point in `use-workspace-loader.svelte.ts`). With no real
- * Electron main process driving this build, that channel would otherwise fall
- * through to the mock router's `undefined` default and surface as
- * "No response received" → "Failed to open workspace". The handler resolves
- * the workspace via the live AppClient seam and returns it in the
- * CommandResponse shape the legacy main-process handler produced, so
- * `workspace.client.ts` `normalizeResponse` folds it into `{ ok: true, data }`.
+ * Also registers the renderer→main IPC mock handlers for the legacy
+ * `workspace:open` / `workspace:list` / `workspace:get-recent-repositories`
+ * channels that `workspace.client.ts` and LifecycleIpcReadService still invoke
+ * (route loader, RepoSelector, and the known-repos hydration on app load).
+ * With no real Electron main process driving this build, those channels would
+ * otherwise reject with UnbridgedMockIpcChannelError. Each handler resolves
+ * through the live daemon (AppClient seam `workspace.list` / `workspace.get`
+ * per PROTOCOL §5.1, and `repo.list` per §5.6) and returns the CommandResponse
+ * shape the legacy main-process handlers produced, so `workspace.client.ts`
+ * `normalizeResponse` folds it into `{ ok: true, data }`.
  *
- * The accept-changes status channel is registered alongside for the same
- * unregistered-channel class of bug: `lifecycle-ipc-read-service` fires
- * `AcceptChangesClient.getStatus` on every workspace mount, and the
- * undefined fallback produced a recurring "Failed to fetch accept-changes
- * status" warning. A no-changes default keeps the post-merge slice quiet
- * until the daemon owns this surface.
+ * Workspace creation is NOT bridged here: `WorkspaceClient.create` calls
+ * `appClient.workspaces.create` directly (PROTOCOL §5.1), so the legacy
+ * `workspace:create` IPC channel has no consumer.
  */
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
 import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
-import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { appClient } from "$lib/client";
+import { backendRequest } from "$lib/client/live/backend-transport";
+import type { KnownRepo } from "$shared/types/known-repo";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
   loadRecencyData,
@@ -60,27 +60,76 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.OPEN, async (arg) => {
   return { success: true, data: workspace };
 });
 
-// AcceptChangesClient.getStatus expects { success, data: WorkspaceGitStatus }.
-// A neutral no-changes default mirrors the lifecycle service's own error-path
-// fallback so the post-merge slice lands in the same shape it would have on a
-// failed fetch — without the warning that signals an unregistered channel.
-registerMockIpcHandler(IPC_CHANNELS.ACCEPT_CHANGES.GET_STATUS, async () => ({
-  success: true,
-  data: {
-    branch: "",
-    trunkBranch: "",
-    aheadOfTrunk: 0,
-    behindTrunk: 0,
-    hasRemote: false,
-    isPushed: false,
-    uncommittedCount: 0,
-    stagedCount: 0,
-    localCommits: [],
-    canMergeDirectly: false,
-    hasConflicts: false,
-    hasDivergedFromRemote: false,
-  },
-}));
+// `workspace:get` — WorkspaceActionsMenu's "open in editor / reveal" path
+// resolves worktreePath/repositoryPath through a one-off workspace read.
+// Bridges to the daemon's `workspace.get` (PROTOCOL §5.1) through the
+// AppClient seam; a missing workspace and transport failures both fold to
+// the legacy `{ success:false, error }` envelope the caller's success-check
+// already handles.
+registerMockIpcHandler(WORKSPACE_CHANNELS.GET, async (arg) => {
+  const id = readWorkspaceOpenId(arg);
+  if (!id) {
+    return { success: false, error: "Workspace not found" };
+  }
+  try {
+    const workspace = await appClient.workspaces.get(id);
+    if (!workspace) {
+      return { success: false, error: "Workspace not found" };
+    }
+    return { success: true, data: workspace };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+});
+
+// `workspace:list` — the RepoSelector recent-repo scan and every
+// `workspaceClient.list()` read. The legacy handler returned the paginated
+// `{ workspaces }` wrapper or a bare array; the bare array is returned here and
+// `WorkspaceClient.list()` already handles both. The legacy `lite` flag is
+// ignored: the daemon's `workspace.list` result is the only shape it serves.
+registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, async () => {
+  const workspaces = await appClient.workspaces.list();
+  return { success: true, data: workspaces };
+});
+
+// `workspace:get-recent-repositories` — LifecycleIpcReadService's known-repos
+// hydration, fired unconditionally on every app load. Bridges to the daemon's
+// `repo.list` (PROTOCOL §5.11): the persistent known-repo registry, MRU-first,
+// with the legacy handler's one-time workspace→registry sync performed
+// daemon-side. Failures propagate as rejections — the caller keeps the prior
+// known-repos list on error (mirrors the legacy safe-handler contract).
+registerMockIpcHandler(WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES, async () => {
+  const result = await backendRequest<{ repos: KnownRepo[] }>("repo.list");
+  return { success: true, data: result.repos ?? [] };
+});
+
+// `workspace:remove-recent-repository` — the repositories list's "Remove"
+// affordance for repos with no active spaces (confirmRemoveRepo → the
+// workspace-operations middleware). Bridges to the daemon's `repo.remove`
+// (PROTOCOL §5.11), which deletes the entry from the same persistent
+// known-repo registry `repo.list` serves. Returns the legacy safe-handler
+// envelope `{ success:true, data:{ removed } }`, with failures folded to
+// `{ success:false, error }` so the caller surfaces them loud.
+registerMockIpcHandler(WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY, async (arg) => {
+  const repository = (arg as { repository?: unknown } | undefined)?.repository;
+  if (typeof repository !== "string" || repository.length === 0) {
+    return { success: false, error: "repository is required" };
+  }
+  try {
+    const result = await backendRequest<{ removed: boolean }>("repo.remove", {
+      path: repository,
+    });
+    return { success: true, data: { removed: result.removed === true } };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+});
 
 registerMockSeeder("workspaces", async ({ store, client }) => {
   const workspaces = await client.workspaces.list();

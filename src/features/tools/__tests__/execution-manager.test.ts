@@ -8,10 +8,8 @@ import {
 } from 'vitest';
 import { ExecutorManager } from '../main/executor-manager';
 import { LocalExecutor } from '../main/executors/local-executor';
-import { RemoteExecutor } from '../main/executors/remote-executor';
-import type { RemoteExecutorConfig } from '../types';
 
-// Mock the executors using class-style mocks for proper constructor support
+// Mock the executor using a class-style mock for proper constructor support
 vi.mock('../main/executors/local-executor', () => ({
   LocalExecutor: vi.fn().mockImplementation(function (this: any) {
     this.type = 'local';
@@ -28,31 +26,11 @@ vi.mock('../main/executors/local-executor', () => ({
   }),
 }));
 
-vi.mock('../main/executors/remote-executor', () => ({
-  RemoteExecutor: vi.fn().mockImplementation(function (this: any) {
-    this.type = 'remote';
-    this.readFile = vi.fn().mockResolvedValue('file content');
-    this.writeFile = vi.fn().mockResolvedValue(undefined);
-    this.deleteFile = vi.fn().mockResolvedValue(undefined);
-    this.listFiles = vi.fn().mockResolvedValue([]);
-    this.fileExists = vi.fn().mockResolvedValue(true);
-    this.getFileStats = vi.fn().mockResolvedValue({ size: 100, isFile: true });
-    this.execute = vi.fn().mockResolvedValue({ stdout: 'output', stderr: '', exitCode: 0 });
-    this.createDirectory = vi.fn().mockResolvedValue(undefined);
-    this.deleteDirectory = vi.fn().mockResolvedValue(undefined);
-    this.dispose = vi.fn().mockResolvedValue(undefined);
-    this.lastUsed = Date.now();
-    this.disconnect = vi.fn().mockResolvedValue(undefined);
-  }),
-}));
-
 describe('ExecutorManager', () => {
   let manager: ExecutorManager;
   let mockLocalExecutor: any;
-  let mockRemoteExecutor: any;
 
   beforeEach(() => {
-    // Create mock executors
     mockLocalExecutor = {
       type: 'local',
       readFile: vi.fn().mockResolvedValue('file content'),
@@ -67,20 +45,8 @@ describe('ExecutorManager', () => {
       dispose: vi.fn().mockResolvedValue(undefined),
     };
 
-    mockRemoteExecutor = {
-      ...mockLocalExecutor,
-      type: 'remote',
-      lastUsed: Date.now(),
-      disconnect: vi.fn().mockResolvedValue(undefined),
-    };
-
-    // Update mock implementations for each test. Use regular function expressions
-    // so the mocked constructors remain constructable with `new`.
     (LocalExecutor as any).mockImplementation(function (this: any) {
       Object.assign(this, mockLocalExecutor);
-    });
-    (RemoteExecutor as any).mockImplementation(function (this: any) {
-      Object.assign(this, mockRemoteExecutor);
     });
 
     manager = new ExecutorManager();
@@ -92,7 +58,7 @@ describe('ExecutorManager', () => {
   });
 
   describe('getExecutor', () => {
-    it('should create a local executor for local workspaces', () => {
+    it('should create a local executor for a workspace', () => {
       const executor = manager.getExecutor({
         workspaceId: 'workspace-1',
         workspacePath: '/path/to/workspace',
@@ -101,26 +67,6 @@ describe('ExecutorManager', () => {
       expect(executor).toBeDefined();
       expect(executor.type).toBe('local');
       expect(LocalExecutor).toHaveBeenCalledWith('/path/to/workspace', 'workspace-1');
-    });
-
-    it('should create a remote executor for remote workspaces', () => {
-      const remoteConfig: RemoteExecutorConfig = {
-        host: 'example.com',
-        port: 22,
-        username: 'user',
-        privateKey: '/path/to/key',
-        workspacePath: '/remote/workspace',
-      };
-
-      const executor = manager.getExecutor({
-        workspaceId: 'workspace-1',
-        workspacePath: '/local/workspace',
-        remote: remoteConfig,
-      });
-
-      expect(executor).toBeDefined();
-      expect(executor.type).toBe('remote');
-      expect(RemoteExecutor).toHaveBeenCalledWith(remoteConfig, 'workspace-1');
     });
 
     it('should reuse cached executors', () => {
@@ -132,10 +78,7 @@ describe('ExecutorManager', () => {
       const executor1 = manager.getExecutor(params);
       const executor2 = manager.getExecutor(params);
 
-      // Should only create one executor
       expect(LocalExecutor).toHaveBeenCalledTimes(1);
-
-      // Both should be wrapped in RetryingExecutor, but underlying executor is the same
       expect(executor1).toBeDefined();
       expect(executor2).toBeDefined();
     });
@@ -149,16 +92,10 @@ describe('ExecutorManager', () => {
       };
 
       manager.getExecutor(params);
-
-      // Wait a bit to ensure different timestamp
-      const delay = 10;
-      vi.advanceTimersByTime(delay);
-
+      vi.advanceTimersByTime(10);
       manager.getExecutor(params);
 
-      // Should still only create one executor
       expect(LocalExecutor).toHaveBeenCalledTimes(1);
-
       vi.useRealTimers();
     });
   });
@@ -166,9 +103,7 @@ describe('ExecutorManager', () => {
   describe('executeWithRetry', () => {
     it('should execute operation successfully on first attempt', async () => {
       const operation = vi.fn().mockResolvedValue('success');
-
       const result = await manager.executeWithRetry(operation);
-
       expect(result).toBe('success');
       expect(operation).toHaveBeenCalledTimes(1);
     });
@@ -203,7 +138,6 @@ describe('ExecutorManager', () => {
       const operation = vi.fn().mockRejectedValue(new Error('Persistent error'));
 
       const promise = manager.executeWithRetry(operation, 3);
-      // Attach a catch handler immediately to avoid unhandled rejection warnings
       const captured = promise.catch((err) => err);
       await vi.runAllTimersAsync();
       const error = await captured;
@@ -234,43 +168,14 @@ describe('ExecutorManager', () => {
   });
 
   describe('cleanup', () => {
-    it('should clean up idle executors after timeout', async () => {
-      // This test verifies the cleanup logic indirectly
-      // The actual cleanup runs on an interval which is hard to test reliably
-      const params = {
-        workspaceId: 'workspace-1',
-        workspacePath: '/path/to/workspace',
-        remote: {
-          host: 'example.com',
-          port: 22,
-          username: 'user',
-          privateKey: '/path/to/key',
-          workspacePath: '/remote/workspace',
-        },
-      };
-
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const executor = manager.getExecutor(params);
-
-      // Verify executor is cached
-      const cached = (manager as any).executors.get('remote:workspace-1');
-      expect(cached).toBeDefined();
-      expect(cached.executor).toBeDefined();
-      expect(cached.executor.type).toBe('remote');
-
-      // The cleanup logic is tested implicitly through the dispose test
-    });
-
-    it('should not clean up recently used executors', async () => {
+    it('should keep recently used executors cached', () => {
       const params = {
         workspaceId: 'workspace-1',
         workspacePath: '/path/to/workspace',
       };
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const executor = manager.getExecutor(params);
+      manager.getExecutor(params);
 
-      // Verify executor is cached and has recent lastUsed
       const cached = (manager as any).executors.get('local:workspace-1');
       expect(cached).toBeDefined();
       expect(cached.lastUsed).toBeGreaterThan(Date.now() - 1000);
@@ -279,34 +184,18 @@ describe('ExecutorManager', () => {
 
   describe('dispose', () => {
     it('should dispose all executors and clear cache', async () => {
-      const localParams = {
+      const params = {
         workspaceId: 'workspace-1',
         workspacePath: '/path/to/workspace',
       };
 
-      const remoteParams = {
-        workspaceId: 'workspace-2',
-        workspacePath: '/path/to/workspace',
-        remote: {
-          host: 'example.com',
-          port: 22,
-          username: 'user',
-          privateKey: '/path/to/key',
-          workspacePath: '/remote/workspace',
-        },
-      };
-
-      manager.getExecutor(localParams);
-      manager.getExecutor(remoteParams);
-
+      manager.getExecutor(params);
       await manager.dispose();
 
       expect(mockLocalExecutor.dispose).toHaveBeenCalled();
-      expect(mockRemoteExecutor.dispose).toHaveBeenCalled();
 
-      // Creating new executors after dispose should create fresh instances
       vi.clearAllMocks();
-      manager.getExecutor(localParams);
+      manager.getExecutor(params);
       expect(LocalExecutor).toHaveBeenCalledTimes(1);
     });
   });
@@ -318,7 +207,6 @@ describe('ExecutorManager', () => {
         workspacePath: '/path/to/workspace',
       });
 
-      // Test that methods are wrapped
       await executor.readFile('/test.txt');
       expect(mockLocalExecutor.readFile).toHaveBeenCalledWith('/test.txt');
 
@@ -342,8 +230,6 @@ describe('ExecutorManager', () => {
       });
 
       const promise = executor.readFile('/test.txt');
-
-      // Run through retry
       await vi.runAllTimersAsync();
 
       const result = await promise;

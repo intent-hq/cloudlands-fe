@@ -4,10 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStatus } from '$shared/types';
 
 const {
-  agentPersistenceLoadAgentMock,
-  agentPersistenceSaveAgentMock,
+  mockRequest,
   selectAgentSubscriptionsSelectMock,
-  setMetadataFSResolverMock,
   streamManagerMock,
 } = vi.hoisted(() => {
   const streamManager = {
@@ -18,10 +16,8 @@ const {
     dispose: vi.fn(),
   };
   return {
-    agentPersistenceLoadAgentMock: vi.fn(),
-    agentPersistenceSaveAgentMock: vi.fn(async () => ({ success: true })),
+    mockRequest: vi.fn(async () => ({ success: true })),
     selectAgentSubscriptionsSelectMock: vi.fn(() => []),
-    setMetadataFSResolverMock: vi.fn(),
     streamManagerMock: streamManager,
   };
 });
@@ -50,12 +46,8 @@ vi.mock('$shared/ipc/channels', () => ({ AGENT_BACKEND_CHANNELS: {}, PERSISTENCE
 vi.mock('../utils/memory-manager', () => ({
   memoryManager: { registerTimer: vi.fn(), cleanup: vi.fn(), unregister: vi.fn() },
 }));
-vi.mock('../agent-persistence', () => ({
-  agentPersistence: {
-    loadAgent: agentPersistenceLoadAgentMock,
-    saveAgent: agentPersistenceSaveAgentMock,
-  },
-  unifiedPersistence: { setMetadataFSResolver: setMetadataFSResolverMock },
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockRequest }),
 }));
 vi.mock('../../metadata-fs/main/metadata-fs-factory', () => ({ getMetadataFS: vi.fn() }));
 vi.mock('$store/main/redux-store-bridge', () => ({ getMainState: vi.fn(() => ({})) }));
@@ -66,9 +58,8 @@ vi.mock('$store/main/slices/agent-subscriptions/agent-subscriptions-selectors', 
 describe('ConsolidatedBackendService session payload eviction', () => {
   beforeEach(() => {
     process.env.INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS = '1';
-    agentPersistenceLoadAgentMock.mockReset();
-    agentPersistenceSaveAgentMock.mockClear();
-    agentPersistenceSaveAgentMock.mockResolvedValue({ success: true });
+    mockRequest.mockReset();
+    mockRequest.mockResolvedValue({ success: true });
     selectAgentSubscriptionsSelectMock.mockReset();
     selectAgentSubscriptionsSelectMock.mockReturnValue([]);
     streamManagerMock.isActive.mockReset();
@@ -134,14 +125,23 @@ describe('ConsolidatedBackendService session payload eviction', () => {
 
   it('evicts completed messages after successful persistence and restores them on getAgent', async () => {
     const session = makeSession();
-    agentPersistenceLoadAgentMock.mockResolvedValue({ success: true, data: session });
+    mockRequest.mockImplementation(async (method: string, _params: unknown) => {
+      if (method === 'agent.update') return { success: true };
+      if (method === 'agent.getSession') return { session };
+      return { success: true };
+    });
     const backend = await makeBackendWithSession(session);
 
     await expect(backend.saveAgent(session.id)).resolves.toEqual({ success: true });
 
     const record = backend.sessions.get(session.id);
-    expect(agentPersistenceSaveAgentMock).toHaveBeenCalledWith(
-      expect.objectContaining({ messages: session.messages }),
+    expect(mockRequest).toHaveBeenCalledWith(
+      'agent.update',
+      expect.objectContaining({
+        agentId: session.id,
+        workspaceId: session.workspaceId,
+        changes: expect.objectContaining({ status: session.status }),
+      }),
     );
     expect(record.session.messages).toEqual([]);
     expect(record.messagesEvicted).toBe(true);
@@ -151,7 +151,10 @@ describe('ConsolidatedBackendService session payload eviction', () => {
     await expect(backend.getAgent(session.id)).resolves.toMatchObject({
       messages: session.messages,
     });
-    expect(agentPersistenceLoadAgentMock).toHaveBeenCalledWith(session.id, session.workspaceId);
+    expect(mockRequest).toHaveBeenCalledWith('agent.getSession', {
+      agentId: session.id,
+      workspaceId: session.workspaceId,
+    });
     expect(backend.sessions.get(session.id).messagesEvicted).toBe(false);
   });
 
@@ -217,7 +220,10 @@ describe('ConsolidatedBackendService session payload eviction', () => {
 
   it('returns loaded persisted messages while evicting the in-memory load copy', async () => {
     const session = makeSession({ id: 'agent-loaded' });
-    agentPersistenceLoadAgentMock.mockResolvedValue({ success: true, data: session });
+    mockRequest.mockImplementation(async (method: string, _params: unknown) => {
+      if (method === 'agent.getSession') return { session };
+      return { success: true };
+    });
     const { ConsolidatedBackendService } = await import('../consolidated-backend.service');
     const backend = ConsolidatedBackendService.getInstance({
       healthCheckInterval: 0,

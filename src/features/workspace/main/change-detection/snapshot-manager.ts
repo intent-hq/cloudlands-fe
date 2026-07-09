@@ -12,7 +12,7 @@ import {
 import { join } from 'path';
 import { createHash } from 'crypto';
 import { Logger } from '../../../../shared/logger';
-import { TRACKING_CONFIG } from '../../../file-tracking/tracking.config';
+import { CHANGE_DETECTION_CONFIG } from './detection.config';
 
 const logger = new Logger('SnapshotManager');
 
@@ -38,7 +38,7 @@ export interface SnapshotDiff {
 export class SnapshotManager {
   private workspacePath: string;
   private snapshots: Map<string, FileSnapshot> = new Map();
-  private config = TRACKING_CONFIG.changeDetection;
+  private config = CHANGE_DETECTION_CONFIG;
   private maxSnapshotSize: number = 10 * 1024 * 1024; // 10MB
   private maxSnapshots: number = 1000; // Maximum number of snapshots to keep in memory
   private snapshotAccessOrder: string[] = []; // Track access order for LRU

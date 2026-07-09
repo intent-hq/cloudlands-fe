@@ -10,7 +10,8 @@ const {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   addOptimisticNoteMock,
   createAgentMock,
-  notesIpcMock,
+  createPrerequisiteMock,
+  agentsCreateMock,
   findByIdMock,
   appStoreFactoryMock,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -19,7 +20,8 @@ const {
 } = vi.hoisted(() => ({
   addOptimisticNoteMock: vi.fn(),
   createAgentMock: vi.fn(),
-  notesIpcMock: vi.fn(),
+  createPrerequisiteMock: vi.fn(),
+  agentsCreateMock: vi.fn(),
   findByIdMock: vi.fn(),
   appStoreFactoryMock: vi.fn(),
   removeOptimisticNoteMock: vi.fn(),
@@ -30,8 +32,11 @@ vi.mock('$features/agent/services/agent-factory', () => ({
   agentFactory: { createAgent: createAgentMock },
 }));
 
-vi.mock('$lib/utils/notes-ipc', () => ({
-  notesIpc: notesIpcMock,
+vi.mock('$lib/client', () => ({
+  appClient: {
+    tasks: { createPrerequisite: createPrerequisiteMock },
+    agents: { create: agentsCreateMock },
+  },
 }));
 
 vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () => ({
@@ -147,12 +152,13 @@ describe('task menu actions provider model', () => {
     appStoreFactoryMock.mockReturnValue({ getState: () => legacyState });
     selectWorkspaceDefaultModelMock.mockReturnValue('selector-workspace-model');
     findByIdMock.mockReturnValue({ title: 'Parent note' });
-    notesIpcMock.mockResolvedValue({
-      ok: true,
-      data: {
-        note: { id: 'task-note-1' },
-        agent: { id: 'agent-1', name: 'Task Agent' },
-      },
+    createPrerequisiteMock.mockResolvedValue({
+      success: true,
+      id: 'task-note-1',
+    });
+    agentsCreateMock.mockResolvedValue({
+      id: 'agent-optimistic',
+      name: 'Task Agent',
     });
     createAgentMock.mockResolvedValue({
       success: true,
@@ -175,25 +181,28 @@ describe('task menu actions provider model', () => {
       logger,
     });
 
-    expect(notesIpcMock).toHaveBeenCalledWith(
+    expect(createPrerequisiteMock).toHaveBeenCalledWith(
+      'note-1',
       expect.any(String),
       expect.objectContaining({
-        workspaceId: 'ws-1',
-        dependentNoteId: 'note-1',
-        options: expect.objectContaining({
-          agentConfig: expect.objectContaining({
-            model: 'selector-workspace-model',
-          }),
-        }),
+        content: expect.any(String),
+        status: 'not_started',
       }),
     );
-    expect(notesIpcMock.mock.calls[0][1].options.agentConfig.model).not.toBe(
+    expect(agentsCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'ws-1',
+        agentId: 'agent-optimistic',
+        model: 'selector-workspace-model',
+      }),
+    );
+    expect(agentsCreateMock.mock.calls[0][0].model).not.toBe(
       legacyState.model.workspaceModels['ws-1'],
     );
   });
 
   it('persists menu-assigned duplicate tasks with a stable agent key', async () => {
-    notesIpcMock.mockResolvedValueOnce({ ok: false, error: 'backend unavailable' });
+    createPrerequisiteMock.mockResolvedValueOnce({ success: false, error: 'backend unavailable' });
     const storeDispatch = vi.fn();
 
     await runAssignAgentTaskMenuAction({

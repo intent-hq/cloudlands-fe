@@ -47,6 +47,10 @@
   interface Props {
     provider: ProviderCardData;
     brand: ProviderBrandColors;
+    /** Whether this card is the currently selected onboarding provider.
+     *  Only meaningful when the card is ready (installed + authenticated).
+     *  Renders a full-card-width "SELECTED" banner across the top of the card. */
+    selected?: boolean;
     /** Whether auggie needs a version update */
     auggieNeedsUpdate: boolean;
     /** Whether an auggie action (install/login) is in progress */
@@ -74,6 +78,7 @@
   let {
     provider,
     brand,
+    selected = false,
     auggieNeedsUpdate,
     auggieActionInProgress,
     auggieInstructions,
@@ -140,6 +145,7 @@
     )}
     role={cardClickable ? 'button' : undefined}
     tabindex={cardClickable ? 0 : undefined}
+    aria-pressed={ready ? selected : undefined}
     onclick={handleCardClick}
     onkeydown={handleKeydown}
     aria-label={provider.statusLoading
@@ -147,7 +153,9 @@
       : needsUpdate
         ? `${provider.name} (update needed)`
         : provider.available && !needsLogin
-          ? `Use ${provider.name}`
+          ? selected
+            ? `${provider.name} (selected)`
+            : `Use ${provider.name}`
           : needsLogin
             ? `${provider.name} (not logged in)`
             : `${provider.name} (not installed)`}
@@ -176,6 +184,18 @@
         size={32}
       />
     </span>
+
+    <!-- Full-card-width "SELECTED" banner across the top edge; the card's
+         overflow-hidden + rounded-xl clip its outer corners to match. Sits
+         above the gradient/brand overlay via z-20. -->
+    {#if ready && selected}
+      <div
+        data-testid="provider-card-selected-banner"
+        class="absolute top-0 inset-x-0 z-20 flex items-center justify-center bg-primary text-primary-foreground py-1 text-xs font-semibold uppercase tracking-widest"
+      >
+        Selected
+      </div>
+    {/if}
 
     <!-- Bottom area: name + status row -->
     <div class="relative z-10 flex flex-col">

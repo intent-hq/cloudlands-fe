@@ -80,10 +80,6 @@ vi.mock('$features/browser/main/browser.ipc', () => ({
   executeBrowserActions: vi.fn(),
 }));
 
-vi.mock('$features/workspace/main/provenance/attribution-engine', () => ({
-  getAttributionEngine: vi.fn(),
-}));
-
 vi.mock('diff', () => ({ default: {} }));
 
 import { buildWorkspaceApi } from '../ws-workspace-api';
@@ -248,13 +244,10 @@ describe('buildWorkspaceApi – setAgentName', () => {
     });
   }
 
-  it('delegates to UnifiedPersistence.renameAgent and emits a workspace event', async () => {
-    const renameAgent = vi.fn().mockResolvedValue({ ok: true, name: 'My Custom Name' });
-    const invalidateLoadCache = vi.fn();
-    vi.doMock('$features/agent/main/agent-persistence', () => ({
-      UnifiedPersistence: {
-        getInstance: () => ({ renameAgent, invalidateLoadCache }),
-      },
+  it('sends agent.update to the daemon and emits a workspace event', async () => {
+    const mockRequest = vi.fn().mockResolvedValue({ success: true });
+    vi.doMock('$features/backend/main/backend.ipc', () => ({
+      getBackendClient: () => ({ request: mockRequest }),
     }));
 
     const { buildWorkspaceApi: freshBuildApi } = await import('../ws-workspace-api');
@@ -270,9 +263,11 @@ describe('buildWorkspaceApi – setAgentName', () => {
     expect(result.ok).toBe(true);
     expect(result.name).toBe('My Custom Name');
 
-    // Delegation to UnifiedPersistence.renameAgent
-    expect(renameAgent).toHaveBeenCalledWith(agentId, workspaceId, 'My Custom Name', {
-      skipIfExplicitlySet: true,
+    // Direct daemon RPC: whitelisted agent.update patch (PROTOCOL.md §5.5)
+    expect(mockRequest).toHaveBeenCalledWith('agent.update', {
+      agentId,
+      workspaceId,
+      changes: { name: 'My Custom Name', nameExplicitlySet: true },
     });
 
     // Verify workspace event is emitted (replaced direct IPC call)
@@ -292,19 +287,16 @@ describe('buildWorkspaceApi – setAgentName', () => {
     expect(mockEmit).toHaveBeenCalled();
     expect(mockDispatch).toHaveBeenCalled();
 
-    vi.doUnmock('$features/agent/main/agent-persistence');
+    vi.doUnmock('$features/backend/main/backend.ipc');
   });
 
   it('updates in-memory backend session (regression)', async () => {
     // Mock ConsolidatedBackendService to track in-memory update
     const mockSession = { name: 'Old Name', id: agentId };
 
-    const renameAgent = vi.fn().mockResolvedValue({ ok: true, name: 'Updated Name' });
-    const invalidateLoadCache = vi.fn();
-    vi.doMock('$features/agent/main/agent-persistence', () => ({
-      UnifiedPersistence: {
-        getInstance: () => ({ renameAgent, invalidateLoadCache }),
-      },
+    const mockRequest = vi.fn().mockResolvedValue({ success: true });
+    vi.doMock('$features/backend/main/backend.ipc', () => ({
+      getBackendClient: () => ({ request: mockRequest }),
     }));
     vi.doMock('$features/agent/main/consolidated-backend.service', () => ({
       ConsolidatedBackendService: {
@@ -328,7 +320,7 @@ describe('buildWorkspaceApi – setAgentName', () => {
     // The in-memory session should have been updated
     expect(mockSession.name).toBe('Updated Name');
 
-    vi.doUnmock('$features/agent/main/agent-persistence');
+    vi.doUnmock('$features/backend/main/backend.ipc');
     vi.doUnmock('$features/agent/main/consolidated-backend.service');
   });
 

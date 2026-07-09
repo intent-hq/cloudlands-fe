@@ -85,19 +85,18 @@ function showKeychainNotification(operation: string, targetWindow: BrowserWindow
 }
 
 /**
- * Check stored keychain preference from settings
+ * Check stored keychain preference from the FE-local prefs file
+ * (PROTOCOL.md §5.12 "Not exposed (FE-only)"). The legacy `settings`
+ * electron-store is retired; readers here now go through
+ * `main/local-prefs.ts`.
  */
 async function getStoredKeychainPreference(): Promise<'ask' | 'allow' | 'deny'> {
   try {
-    // Import electron-store dynamically to get the stored preference
-    // IMPORTANT: Must use { name: 'settings' } to match the store used by system.ipc.ts
-    // which is where the renderer saves settings via 'settings:set' IPC channel
-    const { default: Store } = await import('electron-store');
-    const store = new Store({ name: 'settings' });
-    const settings = store.get('keychainSettings') as
-      | { keychainAccessChoice?: 'ask' | 'allow' | 'deny' }
-      | undefined;
-    logger.debug('Read keychain preference from settings store', {
+    const { getLocalPref } = await import('../../../main/local-prefs');
+    const settings = await getLocalPref<{
+      keychainAccessChoice?: 'ask' | 'allow' | 'deny';
+    }>('keychainSettings');
+    logger.debug('Read keychain preference from local-prefs', {
       keychainAccessChoice: settings?.keychainAccessChoice ?? 'ask',
     });
     return settings?.keychainAccessChoice ?? 'ask';

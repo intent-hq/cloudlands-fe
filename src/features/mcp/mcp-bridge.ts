@@ -37,7 +37,7 @@ export class MCPBridge {
     call: ToolCall,
     workspaceId: string,
     workspacePath: string,
-    environmentConfig?: any,
+    _environmentConfig?: any,
   ): Promise<ToolResult> {
     logger.debug('Executing MCP tool call', {
       tool: call.name,
@@ -56,20 +56,12 @@ export class MCPBridge {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const workspace = workspaceResult.data;
 
-      // Create/reuse executor via ExecutionManager (caching + retries)
-      const remote =
-        environmentConfig?.type === 'remote'
-          ? {
-              host: environmentConfig.host,
-              port: environmentConfig.port || 22,
-              username: environmentConfig.username,
-              privateKey: environmentConfig.privateKey,
-              password: environmentConfig.password,
-              workspacePath,
-            }
-          : null;
+      // Create/reuse executor via ExecutionManager (caching + retries).
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const executor = executorManager.getExecutor({ workspaceId, workspacePath, remote });
+      const executor = executorManager.getExecutor({
+        workspaceId,
+        workspacePath,
+      });
 
       // Map MCP arguments to tool arguments
       const args = this.mapMCPArguments(call.name, call.arguments);

@@ -15,7 +15,7 @@
 
 // Navigate to the Test Comment Overlap System workspace
 const workspaceId = '972f43cb-febb-4323-a97b-93c9346bb63e';
-const targetUrl = `http://localhost:5177/workspace/${workspaceId}`;
+const targetUrl = `http://localhost:5190/workspace/${workspaceId}`;
 
 console.log('[Test] Navigating to workspace:', targetUrl);
 window.location.href = targetUrl;

@@ -1,142 +1,120 @@
 /**
- * Linear auth store-service — the sanctioned post-saga OAuth-trigger mechanism.
+ * Linear auth store-service — daemon-backed connect/disconnect (PROTOCOL §5.28).
  *
- * The `initializeLinearAuth` / `refreshLinearAuth` / `startLinearAuth` /
- * `cancelLinearAuth` / `logoutLinear` triggers lost their handler when the saga
- * runtime was removed (they used to live in `sagas/linear-auth-saga.ts`), so the
- * Connect/Reconnect/Disconnect buttons became no-ops. This restores the
- * side-effect path WITHOUT re-adding a saga and WITHOUT changing any dispatch
- * site: `createLinearAuthMiddleware()` observes every dispatched action and
- * routes the auth triggers to `linearAuthClient`, dispatching the same
- * state-setting actions the saga used to. The component's legacy
- * `settings:get/update` issue-filter persistence is independent and untouched.
+ * §5.28 has **no** `linear.connect` / `linear.revoke` wire method by design:
+ * auth is a personal API key the daemon resolves from its OS keyring (keychain
+ * service `intentd`, account `linear.token`) or `LINEAR_API_KEY`. Connect is
+ * therefore a paste-API-key flow: the key is stored through the daemon settings
+ * seam under the `linear.token` path (secret settings persist to the keyring,
+ * §5.12) and the connection is re-probed via `linear.authStatus` (bridged by
+ * `linearAuthClient.getAuthState`). Disconnect resets `linear.token` (deletes
+ * the keyring entry) and re-probes — the env key may still authenticate, so the
+ * probe result, not an assumption, drives the UI.
  *
- * Dependency-light per src/store AGENTS.md: imports only the renderer auth client,
- * the configured store, the slice actions, and the logger (NOT selectors).
+ * KNOWN BE GAP (recorded): the daemon settings catalog does not define the
+ * `linear.token` path yet, so a live-daemon connect surfaces the daemon's
+ * "unknown setting" error in the UI. The keyring account/service names already
+ * match `intent-linear`'s resolver; only the catalog entry is missing.
+ *
+ * The legacy OAuth flow (start/cancel/poll + oauthUrl) is gone with its
+ * unbridged `linear-auth:start-auth`/`cancel-auth`/`logout` channels.
+ *
+ * Dependency-light per src/store AGENTS.md: imports only the renderer auth
+ * client, the AppClient seam, the configured store, the slice actions, and the
+ * logger (NOT selectors).
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import { linearAuthClient } from "$features/linear-auth/renderer/linear-auth.client";
+import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import {
-  cancelLinearAuth,
+  connectLinear,
   initializeLinearAuth,
   logoutLinear,
   refreshLinearAuth,
   setLinearAuthState,
   setLinearError,
   setLinearIsAuthenticating,
-  setLinearOauthUrl,
   startLinearAuth,
 } from "$store/renderer/slices/linear-auth/linear-auth-slice";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("LinearAuthService");
 
-/** Polling interval for checking auth completion (3 seconds). */
-const POLL_INTERVAL = 3000;
-/** Maximum time to poll for auth completion (5 minutes). */
-const POLL_TIMEOUT = 300000;
-
-const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-/** The currently-running OAuth poll, so cancel/logout can interrupt it. */
-let activePoll: { cancelled: boolean } | null = null;
-
-function cancelActivePoll(): void {
-  if (activePoll) activePoll.cancelled = true;
-  activePoll = null;
-}
+/** Daemon settings path whose secret value backs the Linear keyring entry (§5.28). */
+export const LINEAR_TOKEN_SETTING_PATH = "linear.token";
 
 /** Fetch auth state from the seam (force-refresh) and hydrate the store. */
 export async function initializeLinearAuthFlow(): Promise<void> {
   try {
     const authState = await linearAuthClient.getAuthState(true);
     appStore.dispatch(
-      setLinearAuthState(authState.isAuthenticated, authState.requiresAugmentAuth, authState.oauthUrl ?? null),
+      setLinearAuthState(authState.isAuthenticated, authState.requiresAugmentAuth, null),
     );
   } catch (error) {
     logger.error("initialize error", error);
   }
 }
 
-/** Poll for OAuth completion until done, cancelled, or timed out. */
-export async function pollForLinearAuthCompletion(
-  pollIntervalMs = POLL_INTERVAL,
-  timeoutMs = POLL_TIMEOUT,
-): Promise<void> {
-  const token = { cancelled: false };
-  cancelActivePoll();
-  activePoll = token;
-  const startTime = Date.now();
-
-  while (!token.cancelled) {
-    await delay(pollIntervalMs);
-    if (token.cancelled) return;
-    if (Date.now() - startTime > timeoutMs) {
-      appStore.dispatch(setLinearError("Authentication timed out. Please try again."));
-      appStore.dispatch(setLinearIsAuthenticating(false));
-      break;
-    }
-    try {
-      const authState = await linearAuthClient.getAuthState(true);
-      if (authState.isAuthenticated) {
-        appStore.dispatch(setLinearAuthState(true, authState.requiresAugmentAuth, null));
-        appStore.dispatch(setLinearIsAuthenticating(false));
-        break;
-      }
-    } catch (error) {
-      logger.error("poll error", error);
-    }
+/**
+ * Connect with a pasted personal API key: store it via the daemon keyring path,
+ * then re-probe `linear.authStatus`. Errors (including the daemon rejecting the
+ * settings path — see the BE gap above) surface via `setLinearError`.
+ */
+export async function connectLinearFlow(apiKey: string): Promise<void> {
+  const key = apiKey.trim();
+  if (!key) {
+    appStore.dispatch(setLinearError("Enter a Linear API key"));
+    return;
   }
-  if (activePoll === token) activePoll = null;
-}
-
-/** Start the OAuth flow: open the URL, then poll for completion. */
-export async function startLinearAuthFlow(): Promise<void> {
   appStore.dispatch(setLinearError(null));
   appStore.dispatch(setLinearIsAuthenticating(true));
   try {
-    const result = await linearAuthClient.startAuth();
-    if (!result.success) {
-      appStore.dispatch(setLinearError(result.error ?? "Failed to start authentication"));
-      appStore.dispatch(setLinearIsAuthenticating(false));
-      return;
-    }
-    if (result.alreadyAuthenticated) {
+    await appClient.settings.update([{ path: LINEAR_TOKEN_SETTING_PATH, value: key }]);
+    const authState = await linearAuthClient.getAuthState(true);
+    if (authState.isAuthenticated) {
       appStore.dispatch(setLinearAuthState(true, false, null));
-      appStore.dispatch(setLinearIsAuthenticating(false));
-      return;
+    } else {
+      appStore.dispatch(setLinearAuthState(false, false, null));
+      appStore.dispatch(
+        setLinearError("Linear rejected the API key — check the key and try again."),
+      );
     }
-    appStore.dispatch(setLinearOauthUrl(result.oauthUrl ?? null));
-    await pollForLinearAuthCompletion();
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to start authentication";
+    const message = error instanceof Error ? error.message : "Failed to store the API key";
     appStore.dispatch(setLinearError(message));
+    logger.error("connect error", error);
+  } finally {
     appStore.dispatch(setLinearIsAuthenticating(false));
   }
 }
 
-/** Cancel an in-progress auth flow. */
-export async function cancelLinearAuthFlow(): Promise<void> {
-  cancelActivePoll();
-  try {
-    await linearAuthClient.cancelAuth();
-  } catch (error) {
-    logger.error("cancel error", error);
-  }
-  appStore.dispatch(setLinearIsAuthenticating(false));
-  appStore.dispatch(setLinearOauthUrl(null));
-}
-
-/** Log out / revoke Linear access. */
+/**
+ * Disconnect: clear the keyring-held key (settings.reset deletes the secret),
+ * then re-probe — `LINEAR_API_KEY` in the daemon's environment may still
+ * authenticate, and the UI must reflect that truthfully.
+ */
 export async function logoutLinearFlow(): Promise<void> {
-  cancelActivePoll();
   try {
-    await linearAuthClient.logout();
+    await appClient.settings.reset(LINEAR_TOKEN_SETTING_PATH);
   } catch (error) {
     logger.error("logout error", error);
   }
-  appStore.dispatch(setLinearAuthState(false, false, null));
+  try {
+    const authState = await linearAuthClient.getAuthState(true);
+    appStore.dispatch(
+      setLinearAuthState(authState.isAuthenticated, authState.requiresAugmentAuth, null),
+    );
+    if (authState.isAuthenticated) {
+      appStore.dispatch(
+        setLinearError(
+          "Key cleared, but the daemon still authenticates via its LINEAR_API_KEY environment variable.",
+        ),
+      );
+    }
+  } catch {
+    appStore.dispatch(setLinearAuthState(false, false, null));
+  }
 }
 
 /**
@@ -149,14 +127,15 @@ export function createLinearAuthMiddleware(): StoreMiddleware {
     switch (action?.type) {
       case initializeLinearAuth.type:
       case refreshLinearAuth.type:
+      // Legacy one-click "Connect": no OAuth exists (§5.28) — just re-probe.
+      case startLinearAuth.type:
         void initializeLinearAuthFlow();
         break;
-      case startLinearAuth.type:
-        void startLinearAuthFlow();
+      case connectLinear.type: {
+        const payload = Array.isArray(action.payload) ? action.payload : [];
+        if (typeof payload[0] === "string") void connectLinearFlow(payload[0]);
         break;
-      case cancelLinearAuth.type:
-        void cancelLinearAuthFlow();
-        break;
+      }
       case logoutLinear.type:
         void logoutLinearFlow();
         break;

@@ -11,7 +11,13 @@ import {
   clearAllAccumulators,
   cleanupStaleAccumulators,
 } from './message-accumulator-slice';
-import { selectPartialContent } from './message-accumulator-selectors';
+import {
+  selectAccumulator,
+  selectAccumulatorStats,
+  selectActiveSessionIds,
+  selectHasAccumulator,
+  selectPartialContent,
+} from './message-accumulator-selectors';
 import type { MessageAccumulatorState } from './message-accumulator-types';
 import type { ContentBlock } from '../../../../shared/types';
 
@@ -280,6 +286,45 @@ describe('message-accumulator-slice', () => {
       const state = applyActions(initialState, startAccumulation(SID));
       const result = messageAccumulatorReducer(state, cleanupStaleAccumulators([]));
       expect(result).toBe(state);
+    });
+  });
+
+  describe('selectors on the post-port empty main state', () => {
+    // Regression guard for the quit crash: the main-process Redux store was
+    // removed, so getMainState() returns an empty snapshot with NO
+    // messageAccumulator slice. Every selector must tolerate the missing
+    // slice — an unguarded `state.messageAccumulator.accumulators` read threw
+    // `Cannot read properties of undefined (reading 'accumulators')` and took
+    // down the quit path via getActiveStreams().
+    const emptyState = {} as never;
+
+    it('selectAccumulator returns undefined', () => {
+      expect(selectAccumulator.select(emptyState, SID)).toBeUndefined();
+    });
+
+    it('selectPartialContent returns empty content', () => {
+      expect(selectPartialContent.select(emptyState, SID)).toEqual({
+        content: '',
+        contentBlocks: [],
+      });
+    });
+
+    it('selectActiveSessionIds returns []', () => {
+      expect(selectActiveSessionIds.select(emptyState)).toEqual([]);
+    });
+
+    it('selectAccumulatorStats returns empty stats', () => {
+      expect(selectAccumulatorStats.select(emptyState)).toEqual({
+        activeAccumulators: 0,
+        totalBytesAccumulated: 0,
+        totalChunksProcessed: 0,
+        averageMessageSize: 0,
+        largestMessage: 0,
+      });
+    });
+
+    it('selectHasAccumulator returns false', () => {
+      expect(selectHasAccumulator.select(emptyState, SID)).toBe(false);
     });
   });
 });

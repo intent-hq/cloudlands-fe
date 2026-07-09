@@ -15,7 +15,7 @@ import type { TerminalTab } from "$store/renderer/slices/terminals/terminals-sli
 import type { ScriptWithState } from "$store/renderer/slices/scripts/scripts-types";
 import type { SetupScript } from "$store/renderer/slices/setup-scripts/setup-scripts-types";
 import type { SkillInfo } from "$store/renderer/slices/skills/skills-types";
-import type { CustomSpecialist } from "$store/renderer/slices/specialists/specialists-slice";
+import type { SpecialistDef } from "../../app-client";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
 import type { RecentUrl } from "$store/renderer/slices/browser/browser-types";
 import type { ReleaseNotes } from "$store/renderer/slices/release-notes/release-notes-types";
@@ -180,13 +180,20 @@ export const mockModels: AuggieModel[] = [
   },
 ];
 
-export const mockSpecialists: CustomSpecialist[] = [
+// PROTOCOL §5.11 `SpecialistDef` shape: a user-tier file definition, so the
+// mock exercises the seeder's bundled/file split (bundled falls back to the
+// hardcoded SPECIALISTS constant when the list carries no bundled entries).
+export const mockSpecialists: SpecialistDef[] = [
   {
     id: "spec-mock-1",
     name: "Mock Specialist",
     description: "A mock specialist",
     model: "mock-model",
+    prompt: "",
     behaviorPrompt: "",
+    source: "user",
+    isCustomized: true,
+    path: "/home/mock/.augment/specialists/spec-mock-1.md",
   },
 ];
 
@@ -276,24 +283,6 @@ export const mockMcpServers: McpServerConfig[] = [
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/mock/web-app"],
   },
 ];
-
-/** Raw contents of ~/.augment/settings.json for the MCP advanced editor. */
-export const mockUserMcpSettingsContent = JSON.stringify(
-  {
-    mcpServers: {
-      github: { type: "http", url: "https://mcp.github.com/mcp", authType: "oauth" },
-      filesystem: {
-        command: "npx",
-        args: ["-y", "@modelcontextprotocol/server-filesystem", "/mock/web-app"],
-      },
-    },
-  },
-  null,
-  2,
-);
-
-/** Filesystem path shown for the MCP advanced editor. */
-export const mockUserMcpSettingsPath = "/mock/home/.augment/settings.json";
 
 /** Background-agent model assignments for the background-agent settings panel. */
 export const mockBackgroundAgentSettings: BackgroundAgentSettingsState = {

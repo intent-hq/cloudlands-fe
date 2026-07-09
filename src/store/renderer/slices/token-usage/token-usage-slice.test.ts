@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { WorkspaceTokenUsageSnapshot } from "../../../../features/token-usage/token-usage-types";
+import type { TokenUsage } from "../../../../features/token-usage/token-usage-types";
 import {
   clearWorkspaceTokenUsage,
   fetchWorkspaceTokenUsage,
@@ -11,26 +11,15 @@ import {
 
 const WS = "ws-1";
 
-const snapshot: WorkspaceTokenUsageSnapshot = {
-  workspaceId: WS,
+// Wire `TokenUsage` shape per PROTOCOL §5.23 (workspace.getTokenUsage result /
+// workspace:tokenUsage-changed payload).
+const snapshot: TokenUsage = {
   byAgentId: {
     "agent-1": {
-      agentId: "agent-1",
-      sessionId: "sess-1",
-      lastMessageId: "msg-9",
-      computedAt: 1000,
       inputTokens: 10,
       outputTokens: 20,
       cacheReadTokens: 30,
       cacheCreationTokens: 40,
-      byModel: {
-        "model-a": {
-          inputTokens: 10,
-          outputTokens: 20,
-          cacheReadTokens: 30,
-          cacheCreationTokens: 40,
-        },
-      },
     },
   },
   totals: {
@@ -47,8 +36,7 @@ const snapshot: WorkspaceTokenUsageSnapshot = {
       cacheCreationTokens: 40,
     },
   },
-  lastScanAt: 5000,
-  status: "idle",
+  lastScanAt: "2026-06-17T12:00:00Z",
 };
 
 describe("token-usage-slice", () => {
@@ -61,21 +49,15 @@ describe("token-usage-slice", () => {
     expect(next).toBe(initialState);
   });
 
-  it("tokenUsageReceived stores the workspace snapshot as non-stale", () => {
+  it("tokenUsageReceived stores the workspace rollup as non-stale", () => {
     const next = tokenUsageReducer(initialState, tokenUsageReceived(WS, snapshot));
     expect(next.byWorkspaceId[WS]).toEqual({
       byAgentId: snapshot.byAgentId,
       totals: snapshot.totals,
       byModel: snapshot.byModel,
-      lastScanAt: 5000,
+      lastScanAt: "2026-06-17T12:00:00Z",
       isStale: false,
     });
-  });
-
-  it("tokenUsageReceived does not store snapshot status or workspaceId", () => {
-    const next = tokenUsageReducer(initialState, tokenUsageReceived(WS, snapshot));
-    expect(next.byWorkspaceId[WS]).not.toHaveProperty("status");
-    expect(next.byWorkspaceId[WS]).not.toHaveProperty("workspaceId");
   });
 
   it("tokenUsageFetchFailed marks an existing entry stale and keeps numbers", () => {
@@ -85,7 +67,7 @@ describe("token-usage-slice", () => {
       byAgentId: snapshot.byAgentId,
       totals: snapshot.totals,
       byModel: snapshot.byModel,
-      lastScanAt: 5000,
+      lastScanAt: "2026-06-17T12:00:00Z",
       isStale: true,
     });
   });
@@ -109,10 +91,7 @@ describe("token-usage-slice", () => {
   });
 
   it("only touches the targeted workspace entry", () => {
-    const other = tokenUsageReducer(
-      initialState,
-      tokenUsageReceived("ws-other", { ...snapshot, workspaceId: "ws-other" }),
-    );
+    const other = tokenUsageReducer(initialState, tokenUsageReceived("ws-other", snapshot));
     const next = tokenUsageReducer(other, tokenUsageReceived(WS, snapshot));
     expect(next.byWorkspaceId["ws-other"]).toBe(other.byWorkspaceId["ws-other"]);
   });

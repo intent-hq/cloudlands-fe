@@ -35,19 +35,18 @@ import {
   upsertScript,
   removeScript,
   readRepoScripts,
+  saveScriptsToRepoConfig,
 } from './scripts-persistence';
 import {
   getScriptProcessManager,
   disposeScriptProcessManager,
 } from './script-process-manager';
-import {
-  scanScripts,
-  mergeDetectedScripts,
-} from './script-scanner';
 import { WorkspaceConfig } from '$shared/main/config';
 import {
   CreateScriptSchema,
   UpdateScriptSchema,
+  ScriptModeSchema,
+  ScriptCategorySchema,
 } from '../schemas';
 import type { WorkspaceScript, ScriptRuntimeState, ScriptWithState } from '../types';
 import { createDefaultRuntimeState } from '../types';
@@ -58,9 +57,6 @@ const logger = new Logger('ScriptsIPC');
 
 /** Track workspaces that have already triggered auto-start to avoid duplicates */
 const autoStartTriggered = new Set<string>();
-
-/** Track workspaces that have already triggered auto-detect to avoid re-running on every list call */
-const autoDetectTriggered = new Set<string>();
 
 // ============================================================================
 // Validation Schemas
@@ -114,12 +110,27 @@ const ScriptsGetOutputSchema = z.object({
   lastN: z.number().int().positive().optional(),
 });
 
-const ScriptsDetectSchema = z.object({
-  workspaceId: WorkspaceIdField,
+/**
+ * Repo-level script definition shipped by the renderer. The renderer sources
+ * these from the live daemon `script.list` (§5.8) — the legacy local store is
+ * NOT consulted (it is empty in daemon builds, and reading it here is what
+ * silently clobbered `.intent/config.json` with `scripts: []`). `scripts` is
+ * REQUIRED: a payload without it fails validation loudly instead of writing
+ * an empty array and reporting success.
+ */
+const RepoScriptPayloadSchema = z.object({
+  name: z.string().min(1),
+  command: z.string().min(1),
+  mode: ScriptModeSchema,
+  category: ScriptCategorySchema.optional(),
+  cwd: z.string().optional(),
+  env: z.record(z.string()).optional(),
+  autoStart: z.boolean().optional(),
 });
 
 const ScriptsSaveToRepoSchema = z.object({
   workspaceId: WorkspaceIdField,
+  scripts: z.array(RepoScriptPayloadSchema),
 });
 
 // ============================================================================
@@ -325,44 +336,6 @@ export function registerScriptsHandlers(): void {
               logger.info('[Scripts] Bootstrapped workspace scripts from repo', {
                 workspaceId,
                 count: bootstrapped.length,
-              });
-            }
-          }
-
-          // Auto-detect from package.json/Makefile/etc. if still no scripts (once per session)
-          if (scripts.length === 0 && !autoDetectTriggered.has(workspaceId)) {
-            autoDetectTriggered.add(workspaceId);
-            try {
-              const { workspacePath, repositoryPath } = await resolveWorkspacePaths(workspaceId);
-              const scanResult = await scanScripts(workspaceId, workspacePath, { skipLLM: true });
-              if (scanResult.scripts.length > 0) {
-                for (const script of scanResult.scripts) {
-                  await upsertScript(workspaceId, script);
-                }
-                scripts = await readScripts(workspaceId);
-                logger.info('[Scripts] Auto-detected scripts on first load', {
-                  workspaceId,
-                  count: scanResult.scripts.length,
-                });
-
-                // Seed repo-level scripts if none exist yet
-                const repoConfig = await readRepoConfig(repositoryPath);
-                if (!Array.isArray(repoConfig.scripts) && scripts.length > 0) {
-                  const repoScripts: RepoScript[] = scripts.map((s) => ({
-                    name: s.name,
-                    command: s.command,
-                    mode: s.mode,
-                    category: s.category,
-                    cwd: s.cwd,
-                    env: s.env,
-                    autoStart: s.autoStart,
-                  }));
-                  await writeRepoConfig(repositoryPath, { ...repoConfig, scripts: repoScripts });
-                }
-              }
-            } catch (error) {
-              logger.warn('[Scripts] Auto-detection failed, continuing without scripts', {
-                error: String(error),
               });
             }
           }
@@ -673,115 +646,34 @@ export function registerScriptsHandlers(): void {
     ),
   );
 
-  // ---- scripts:detect ----
-  ipcMain.handle(
-    SCRIPTS_CHANNELS.DETECT,
-    createSafeValidatedHandler(
-      ScriptsDetectSchema,
-      async (_event, { workspaceId }) => {
-        try {
-          const { workspacePath, repositoryPath } = await resolveWorkspacePaths(workspaceId);
-
-          // Use the script scanner with local heuristics only (no LLM) for fast interactive detection
-          const scanResult = await scanScripts(workspaceId, workspacePath, { skipLLM: true });
-
-          // Merge with existing scripts (user scripts are sacred)
-          const existing = await readScripts(workspaceId);
-          const { toAdd, toRemove } = mergeDetectedScripts(existing, scanResult.scripts);
-
-          // Persist additions/updates
-          for (const script of toAdd) {
-            await upsertScript(workspaceId, script);
-          }
-
-          // Remove stale auto-detected scripts (stop running processes first)
-          const manager = await getOrCreateManager(workspaceId);
-          for (const scriptId of toRemove) {
-            try {
-              await manager.remove(scriptId);
-            } catch { /* manager may not have this script */ }
-            await removeScript(workspaceId, scriptId);
-          }
-
-          logger.info(`[Scripts] Detection complete`, {
-            workspaceId,
-            detected: scanResult.scripts.length,
-            added: toAdd.length,
-            removed: toRemove.length,
-            fromCache: scanResult.fromCache,
-            packageManager: scanResult.packageManager,
-          });
-
-          // Seed repo-level scripts if none exist yet
-          const repoConfig = await readRepoConfig(repositoryPath);
-          if (!Array.isArray(repoConfig.scripts)) {
-            const allScripts = await readScripts(workspaceId);
-            if (allScripts.length > 0) {
-              const repoScripts: RepoScript[] = allScripts.map((s) => ({
-                name: s.name,
-                command: s.command,
-                mode: s.mode,
-                category: s.category,
-                cwd: s.cwd,
-                env: s.env,
-                autoStart: s.autoStart,
-              }));
-              await writeRepoConfig(repositoryPath, { ...repoConfig, scripts: repoScripts });
-              logger.info('Seeded repo-level scripts from first detection', { workspaceId });
-            }
-          }
-
-          return {
-            success: true,
-            detected: scanResult.scripts.length,
-            added: toAdd.length,
-            removed: toRemove.length,
-            packageManager: scanResult.packageManager,
-          };
-        } catch (error) {
-          logger.error('[Scripts] Error detecting scripts:', error as Error);
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          };
-        }
-      },
-      SCRIPTS_CHANNELS.DETECT,
-    ),
-  );
-
   // ---- scripts:save-to-repo ----
   ipcMain.handle(
     SCRIPTS_CHANNELS.SAVE_TO_REPO,
     createSafeValidatedHandler(
       ScriptsSaveToRepoSchema,
-      async (_event, { workspaceId }) => {
+      async (_event, { workspaceId, scripts }) => {
         try {
           const { repositoryPath } = await resolveWorkspacePaths(workspaceId);
-          const existingConfig = await readRepoConfig(repositoryPath);
-          const workspaceScripts = await readScripts(workspaceId);
-          const repoScripts: RepoScript[] = workspaceScripts.map(
+          const repoScripts: RepoScript[] = scripts.map(
             ({ name, command, mode, category, cwd, env, autoStart }) => ({
               name,
               command,
               mode,
-              category,
-              cwd,
-              env,
-              autoStart,
+              ...(category !== undefined ? { category } : {}),
+              ...(cwd !== undefined ? { cwd } : {}),
+              ...(env !== undefined ? { env } : {}),
+              ...(autoStart !== undefined ? { autoStart } : {}),
             }),
           );
-          await writeRepoConfig(repositoryPath, {
-            ...existingConfig,
-            scripts: repoScripts,
-          });
+          const { written } = await saveScriptsToRepoConfig(repositoryPath, repoScripts);
 
           logger.info('[Scripts] Saved workspace scripts to repo', {
             workspaceId,
             count: repoScripts.length,
+            written,
           });
 
-          return { success: true };
+          return { success: true, written, count: repoScripts.length };
         } catch (error) {
           logger.error('[Scripts] Error saving scripts to repo:', error as Error);
           return {

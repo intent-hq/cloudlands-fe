@@ -32,9 +32,50 @@ describe('workspaceEventsReducer', () => {
     expect(workspaceEventsReducer(undefined, { type: '@@INIT' })).toEqual(initialState);
   });
 
-  it('keeps eventReceived as an individual fan-out action without storing it', () => {
+  it('appends a single eventReceived into the workspace buffer', () => {
     const state = workspaceEventsReducer(initialState, eventReceived(WS_1, mockEvent('evt-1')));
+    expect(state.byWorkspaceId[WS_1].events.map((event) => event.id)).toEqual(['evt-1']);
+  });
+
+  it('dedups eventReceived against the existing buffer by id', () => {
+    let state = workspaceEventsReducer(initialState, eventReceived(WS_1, mockEvent('evt-1')));
+    state = workspaceEventsReducer(state, eventReceived(WS_1, mockEvent('evt-1')));
+    state = workspaceEventsReducer(state, eventReceived(WS_1, mockEvent('evt-2')));
+    expect(state.byWorkspaceId[WS_1].events.map((event) => event.id)).toEqual(['evt-1', 'evt-2']);
+  });
+
+  it('drops eventReceived payloads that fail sanitization', () => {
+    const state = workspaceEventsReducer(
+      initialState,
+      eventReceived(WS_1, { not: 'an event' } as any),
+    );
     expect(state).toBe(initialState);
+  });
+
+  it('caps eventReceived events at 100', () => {
+    let state = initialState;
+    for (let i = 0; i < 110; i++) {
+      state = workspaceEventsReducer(state, eventReceived(WS_1, mockEvent(`evt-${i}`)));
+    }
+    expect(state.byWorkspaceId[WS_1].events).toHaveLength(100);
+    expect(state.byWorkspaceId[WS_1].events[0].id).toBe('evt-10');
+    expect(state.byWorkspaceId[WS_1].events[99].id).toBe('evt-109');
+  });
+
+  it('dedups bulkEventsReceived against the existing buffer by id', () => {
+    let state = workspaceEventsReducer(
+      initialState,
+      bulkEventsReceived(WS_1, [mockEvent('evt-1'), mockEvent('evt-2')]),
+    );
+    state = workspaceEventsReducer(
+      state,
+      bulkEventsReceived(WS_1, [mockEvent('evt-2'), mockEvent('evt-3')]),
+    );
+    expect(state.byWorkspaceId[WS_1].events.map((event) => event.id)).toEqual([
+      'evt-1',
+      'evt-2',
+      'evt-3',
+    ]);
   });
 
   it('appends bulk received events in arrival order', () => {

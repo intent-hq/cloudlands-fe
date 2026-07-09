@@ -29,19 +29,33 @@ vi.mock("$lib/utils/delete-warning-utils", () => ({
   getRunningAgentNames: vi.fn(() => [] as string[]),
 }));
 
+// FAKE raw-IPC bridge: only `invoke` is stubbed (the remove-repo path routes
+// through the legacy `workspace:remove-recent-repository` channel); everything
+// else keeps the real implementation.
+vi.mock("$lib/electron-bridge", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/electron-bridge")>();
+  return { ...actual, invoke: vi.fn() };
+});
+
 import { workspaceClient } from "$store/renderer/slices/workspace/utils/workspace.client";
 import { hasRunningAgents } from "$lib/utils/delete-warning-utils";
+import { invoke } from "$lib/electron-bridge";
+import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
+import type { KnownRepo } from "$shared/types/known-repo";
 import { store as appStore } from "$store/renderer/store";
 import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import {
   resetWorkspaceState,
   setWorkspaceEntity,
 } from "$store/renderer/slices/workspace/workspace-slice";
+import { setRepos } from "$store/renderer/slices/known-repos/known-repos-slice";
 import {
   confirmBulkArchive,
   confirmBulkDeleteArchived,
+  confirmRemoveRepo,
   openBulkArchiveConfirm,
   openBulkDeleteArchivedConfirm,
+  openRemoveRepoConfirm,
   requestArchiveWorkspace,
   requestDeleteWorkspace,
   requestUnarchiveWorkspace,
@@ -49,6 +63,7 @@ import {
 
 const ws = workspaceClient as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const agents = vi.mocked(hasRunningAgents);
+const bridgeInvoke = vi.mocked(invoke);
 const UNDO_MS = 15000;
 // Handlers chain several awaits (dynamic imports of the toast/nav/agent utils)
 // before the optimistic dispatch, so drain the microtask queue a few turns.
@@ -175,5 +190,70 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
     expect(ws.delete).toHaveBeenCalledWith("ws-y");
     expect(ws.delete).not.toHaveBeenCalledWith("ws-active");
     expect(stored("ws-x")).toBeUndefined();
+  });
+
+  describe("remove repo from the known-repos registry", () => {
+    const repo: KnownRepo = {
+      path: "/Users/me/src/app",
+      name: "app",
+      owner: "acme",
+      addedAt: "2026-01-01T00:00:00Z",
+      lastUsedAt: "2026-01-02T00:00:00Z",
+    };
+
+    function knownRepo(path: string): KnownRepo | undefined {
+      return getItem(appStore.state.knownRepos.repos, path);
+    }
+
+    it("removes via the remove-recent-repository channel and converges the slice", async () => {
+      bridgeInvoke.mockResolvedValueOnce({ success: true, data: { removed: true } });
+      appStore.dispatch(setRepos([repo]));
+
+      appStore.dispatch(openRemoveRepoConfirm(repo.path));
+      appStore.dispatch(confirmRemoveRepo());
+      await flush();
+
+      expect(bridgeInvoke).toHaveBeenCalledWith(
+        WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY,
+        { repository: repo.path }
+      );
+      expect(knownRepo(repo.path)).toBeUndefined();
+      expect(appStore.state.workspaceOperations.showRemoveRepoConfirm).toBe(false);
+      expect(appStore.state.workspaceOperations.pendingRemoveRepoPath).toBeNull();
+    });
+
+    it("keeps the repo and toasts loud when the channel reports failure", async () => {
+      bridgeInvoke.mockResolvedValueOnce({ success: false, error: "daemon offline" });
+      appStore.dispatch(setRepos([repo]));
+
+      appStore.dispatch(openRemoveRepoConfirm(repo.path));
+      appStore.dispatch(confirmRemoveRepo());
+      await flush();
+
+      expect(knownRepo(repo.path)).toBeDefined();
+      const { toast } = await import("svelte-sonner");
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Failed to remove repository");
+    });
+
+    it("keeps the repo and toasts loud when the invoke rejects", async () => {
+      bridgeInvoke.mockRejectedValueOnce(new Error("ipc down"));
+      appStore.dispatch(setRepos([repo]));
+
+      appStore.dispatch(openRemoveRepoConfirm(repo.path));
+      appStore.dispatch(confirmRemoveRepo());
+      await flush();
+
+      expect(knownRepo(repo.path)).toBeDefined();
+      const { toast } = await import("svelte-sonner");
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Failed to remove repository");
+    });
+
+    it("closes the confirm and does nothing without a pending repo path", async () => {
+      appStore.dispatch(confirmRemoveRepo());
+      await flush();
+
+      expect(bridgeInvoke).not.toHaveBeenCalled();
+      expect(appStore.state.workspaceOperations.showRemoveRepoConfirm).toBe(false);
+    });
   });
 });

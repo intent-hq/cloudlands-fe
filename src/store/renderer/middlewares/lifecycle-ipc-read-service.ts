@@ -19,10 +19,20 @@
  *     merging the trunk-relative fields into the workspace's `postMergeState` via
  *     `setPostMergeState` (mirrors the old accept-changes-status saga).
  *   `workspaceMounted` → FAN-OUT only: re-dispatches the per-workspace refresh
- *     triggers a fresh mount needs (`ensureWorkspaceTasksLoaded`,
- *     `loadEventsRequested`, `refreshAcceptChangesStatus`), reusing their existing
- *     handlers here and in the AppClient-seam lifecycle read service — no
- *     duplicate fetch logic lives in the fan-out.
+ *     triggers a fresh mount needs so a workspace created (or first-opened)
+ *     mid-session hydrates on the same path as one created at boot. The fan-out
+ *     dispatches — reusing the same handlers that exist here, in the AppClient-
+ *     seam lifecycle read service, the file-explorer read service, and the
+ *     notes read service — no duplicate fetch logic lives in the fan-out:
+ *       • `ensureWorkspaceTasksLoaded`, `loadEventsRequested`,
+ *         `refreshAcceptChangesStatus` (parity with the boot handlers already
+ *         wired here / in `lifecycle-read-service`)
+ *       • `refreshScripts`, `loadSkillsRequested`, `refreshPRStatusRequested`,
+ *         `loadWorkspaceDataRequested` (existing Cluster C triggers)
+ *       • `hydrateAgentsRequested`, `hydrateTerminalsRequested`,
+ *         `hydrateFileExplorerRequested` (new companions for the domains that
+ *         had no existing "requested" trigger; each is guarded on the receiving
+ *         side so boot-seeded workspaces are unaffected)
  *
  * READ-ONLY: this module never invokes a mutation. Refreshes are coalesced per
  * key via an in-flight map so rapid dispatches collapse into a single fetch.
@@ -73,6 +83,13 @@ import type { PostMergeState } from "../slices/git/git-types";
 import { workspaceMounted } from "../slices/workspace-lifecycle/workspace-lifecycle-slice";
 import { ensureWorkspaceTasksLoaded } from "../slices/workspace-tasks/workspace-tasks-slice";
 import { loadEventsRequested } from "../slices/workspace-events/workspace-events-slice";
+import { loadSkillsRequested } from "../slices/skills/skills-slice";
+import { refreshScripts } from "../slices/scripts/scripts-slice";
+import { refreshPRStatusRequested } from "../slices/pr-status/pr-status-slice";
+import { loadWorkspaceDataRequested } from "../slices/changes/changes-slice";
+import { hydrateAgentsRequested } from "../slices/workspace-agents/workspace-agents-slice";
+import { hydrateTerminalsRequested } from "../slices/terminals/terminals-slice";
+import { hydrateFileExplorerRequested } from "../slices/file-explorer/file-explorer-slice";
 
 const logger = createLogger("LifecycleIpcReadService");
 
@@ -257,6 +274,13 @@ function fanOutWorkspaceMounted(workspaceId: string): void {
   appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId));
   appStore.dispatch(loadEventsRequested(workspaceId));
   appStore.dispatch(refreshAcceptChangesStatus(workspaceId));
+  appStore.dispatch(refreshScripts(workspaceId));
+  appStore.dispatch(loadSkillsRequested(workspaceId));
+  appStore.dispatch(refreshPRStatusRequested(workspaceId, false, false));
+  appStore.dispatch(loadWorkspaceDataRequested(workspaceId));
+  appStore.dispatch(hydrateAgentsRequested(workspaceId));
+  appStore.dispatch(hydrateTerminalsRequested(workspaceId));
+  appStore.dispatch(hydrateFileExplorerRequested(workspaceId));
 }
 
 /** First array-payload element coerced to a boolean force-refresh flag. */

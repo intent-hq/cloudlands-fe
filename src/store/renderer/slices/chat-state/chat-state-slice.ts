@@ -7,7 +7,6 @@ import type {
   LastAttemptedMessage,
   ModelUnavailableInfo,
   SendMessagePayload,
-  InitialMessagePayload,
   InitializeChatOptions,
   StreamStatusContext,
 } from './chat-state-types';
@@ -16,6 +15,7 @@ import {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
 } from '../workspace-agents/workspace-agents-stream-slice';
+import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
 // ============================================================================
 // Initial State
@@ -314,12 +314,6 @@ export const initializeChatRequested = createAction(
   }),
 );
 
-/** Trigger the initial-message saga after ChatPanel detects pending workspace config. */
-export const sendInitialMessageRequested = createAction(
-  'chatState/sendInitialMessageRequested',
-  (agentId: string, payload: InitialMessagePayload) => ({ agentId, payload }),
-);
-
 // --- Send message saga trigger (no reducer state change) ---
 
 /** Trigger the send-message saga. Dispatched from ChatPanel after DOM serialization. */
@@ -457,4 +451,16 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   )
   .with(chatTrackedWorkspaceSet, (state, { payload: [agentId, trackedWsId] }) =>
     updateAgent(state, agentId, { trackedWorkspaceId: trackedWsId }),
-  );
+  )
+  .with(workspaceDeleted, (state, { payload: [, agentIds] }) => {
+    if (agentIds.length === 0) return state;
+    let changed = false;
+    const byAgentId: Record<string, ChatAgentState> = { ...state.byAgentId };
+    for (const agentId of agentIds) {
+      if (agentId in byAgentId) {
+        delete byAgentId[agentId];
+        changed = true;
+      }
+    }
+    return changed ? { ...state, byAgentId } : state;
+  });

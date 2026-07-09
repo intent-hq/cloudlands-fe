@@ -36,7 +36,6 @@ const productionModuleIgnores = [
   '**/*.spec.{js,jsx,ts,tsx,svelte}',
   '**/*.generated.{js,jsx,ts,tsx,svelte}',
   '**/generated/**',
-  'src/preload/generated-channels.ts',
 ];
 
 // Staged rollout: existing components with direct async data loads are baselined
@@ -217,7 +216,6 @@ export default [
       '**/test-reports/**',
       '**/logs/**',
       '**/*.log',
-      '**/src/preload/generated-channels.ts',
       '**/src/shared/generated/**',
       '**/.backup-state-migration/**',
       '**/.test-data/**',

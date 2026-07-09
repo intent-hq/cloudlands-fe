@@ -13,7 +13,7 @@ import {
 } from './tool';
 import type { ToolCall, ToolResult } from './protocol';
 import { executeBrowserActions } from '../../../browser/main/browser.ipc';
-import { assetsService } from '../../../notes/main/assets.service';
+import { getBackendClient } from '../../../backend/main/backend.ipc';
 import { Logger } from '../../../../shared/logger';
 
 const logger = new Logger('BrowserTools');
@@ -539,15 +539,17 @@ interface WaitForOptions {
             screenshotData?.base64
           ) {
             try {
-              const saved = await assetsService.saveAsset(
+              const saved = await getBackendClient().request<{
+                url?: string;
+              }>('note.saveAsset', {
                 workspaceId,
-                screenshotData.base64,
-                'image/jpeg',
-                `screenshot-${Date.now()}.jpg`,
-              );
+                data: screenshotData.base64,
+                mimeType: 'image/jpeg',
+                originalName: `screenshot-${Date.now()}.jpg`,
+              });
               // Replace the base64 data with the asset URL so the text result stays small
               actionResult.result = {
-                assetUrl: saved.url,
+                assetUrl: saved?.url,
                 width: screenshotData.width,
                 height: screenshotData.height,
               };

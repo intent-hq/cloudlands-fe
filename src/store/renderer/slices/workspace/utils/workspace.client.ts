@@ -11,7 +11,6 @@ import type {
   CreateWorkspaceRequest,
   UpdateWorkspaceRequest,
   Result,
-  WorkspaceUIContext,
   WorkspaceDiffSummary,
   WorkspaceGitSummary,
   WorkspaceTask,
@@ -19,6 +18,7 @@ import type {
 import { Logger } from '$shared/logger';
 import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { invoke as invokeIpc } from '$shared/generated/ipc-client';
+import { appClient } from '$lib/client';
 
 const logger = new Logger('WorkspaceClient');
 const WORKSPACE_CLIENT_CACHE_MAX_ENTRIES = 100;
@@ -276,33 +276,28 @@ export class WorkspaceClient {
   }
 
   async create(request: CreateWorkspaceRequest): Promise<Result<Workspace, string>> {
-    // Use inline string format to avoid logger truncation
-    const ia = (request as any).initialAgent;
+    // Daemon-backed mutation (`workspace.create`, PROTOCOL §5.1) through the
+    // AppClient seam; the legacy `workspace:create` main-process IPC path is
+    // gone. The daemon owns the full orchestration inside one idempotent op
+    // (clone-if-githubUrl → worktree → spec seed → initial agent → prompt).
+    const ia = request.initialAgent;
     logger.info(
       `[WorkspaceClient] create called: title=${request.title}, hasInitialAgent=${!!ia}, specialist=${ia?.specialist}, model=${ia?.model}, keys=${ia ? Object.keys(ia).join(',') : 'none'}`,
     );
-    const result = await this.invoke<Workspace>(WORKSPACE_CHANNELS.CREATE, request);
+    const result = await appClient.workspaces.create(request);
     logger.info('[WorkspaceClient] create result', {
-      ok: result.ok,
+      success: result.success,
       scope: request.scope,
-      error: result.ok ? undefined : result.error,
+      error: result.success ? undefined : result.error,
     });
-    if (result.ok) {
-      return { ok: true, data: normalizeWorkspacePaths(result.data) };
+    if (result.success && result.workspace) {
+      // Clear list cache so the newly created workspace is visible on the next
+      // read (the daemon also emits `workspace:created`, but callers awaiting
+      // this promise should not observe stale list snapshots).
+      this.clearCache();
+      return { ok: true, data: normalizeWorkspacePaths(result.workspace) };
     }
-    return result;
-  }
-
-  async preflightCloneCheck(githubUrl: string): Promise<Result<null, string>> {
-    return this.invoke<null>(WORKSPACE_CHANNELS.PREFLIGHT_CLONE_CHECK, { githubUrl });
-  }
-
-  async get(id: WorkspaceId): Promise<Result<Workspace, string>> {
-    const result = await this.invoke<Workspace>(WORKSPACE_CHANNELS.GET, { id });
-    if (result.ok) {
-      return { ok: true, data: normalizeWorkspacePaths(result.data) };
-    }
-    return result;
+    return { ok: false, error: result.error || 'Failed to create workspace' };
   }
 
   async open(id: WorkspaceId): Promise<Result<Workspace, string>> {
@@ -313,93 +308,61 @@ export class WorkspaceClient {
     return result;
   }
 
-  async close(id: WorkspaceId): Promise<Result<void, string>> {
-    return this.invoke<void>(WORKSPACE_CHANNELS.CLOSE, { id });
-  }
-
   async update(request: UpdateWorkspaceRequest): Promise<Result<Workspace, string>> {
-    const result = await this.invoke<Workspace>(WORKSPACE_CHANNELS.UPDATE, request);
-    // Clear cache for this workspace after update
-    if (result.ok) {
+    // Daemon-backed mutation (`workspace.update`, PROTOCOL §5.1) through the
+    // AppClient seam; the legacy `workspace:update` IPC path is gone. The
+    // daemon returns the authoritative updated Workspace.
+    const result = await appClient.workspaces.update(request);
+    if (result.success && result.workspace) {
+      // Clear cache for this workspace after update
       this.clearCache(request.id);
       // Also clear list cache since this operation changes which/how workspaces are returned
       this.clearCache();
-      return { ok: true, data: normalizeWorkspacePaths(result.data) };
+      return { ok: true, data: normalizeWorkspacePaths(result.workspace) };
     }
-    return result;
+    return { ok: false, error: result.error || 'Failed to update workspace' };
   }
 
   async delete(id: WorkspaceId): Promise<Result<void, string>> {
-    const result = await this.invoke<void>(WORKSPACE_CHANNELS.DELETE, { id });
+    // Daemon-backed mutation (`workspace.delete`, PROTOCOL §5.1) through the
+    // AppClient seam; the legacy `workspace:delete` IPC path is gone.
+    const result = await appClient.workspaces.delete(id);
     // Clear cache for this workspace after deletion
-    if (result.ok) {
+    if (result.success) {
       this.clearCache(id);
       // Also clear list cache since this operation changes which/how workspaces are returned
       this.clearCache();
+      return { ok: true, data: undefined };
     }
-    return result;
+    return { ok: false, error: result.error || 'Failed to delete workspace' };
   }
 
   async archive(id: WorkspaceId): Promise<Result<void, string>> {
-    const result = await this.invoke<void>(WORKSPACE_CHANNELS.ARCHIVE, { id });
+    // Daemon-backed mutation (`workspace.archive`, PROTOCOL §5.1) through the
+    // AppClient seam; the legacy `workspace:archive` IPC path is gone.
+    const result = await appClient.workspaces.archive(id);
     // Clear cache for this workspace and list cache after archiving
-    if (result.ok) {
+    if (result.success) {
       this.clearCache(id);
       // Also clear list cache since archiving changes which workspaces are returned
       this.clearCache();
+      return { ok: true, data: undefined };
     }
-    return result;
+    return { ok: false, error: result.error || 'Failed to archive workspace' };
   }
 
   async unarchive(id: WorkspaceId): Promise<Result<void, string>> {
-    const result = await this.invoke<void>(WORKSPACE_CHANNELS.UNARCHIVE, { id });
+    // Daemon-backed mutation (`workspace.unarchive`, PROTOCOL §5.1) — the
+    // archive-undo path routes through the same seam as archive.
+    const result = await appClient.workspaces.unarchive(id);
     // Clear cache for this workspace and list cache after unarchiving
-    if (result.ok) {
+    if (result.success) {
       this.clearCache(id);
       // Also clear list cache since unarchiving changes which workspaces are returned
       this.clearCache();
+      return { ok: true, data: undefined };
     }
-    return result;
-  }
-
-  async duplicate(id: WorkspaceId, newTitle?: string): Promise<Result<Workspace, string>> {
-    const result = await this.invoke<Workspace>(WORKSPACE_CHANNELS.DUPLICATE, { id, newTitle });
-    if (result.ok) {
-      return { ok: true, data: normalizeWorkspacePaths(result.data) };
-    }
-    return result;
-  }
-
-  async renameBranch(id: WorkspaceId, newBranchName: string): Promise<Result<Workspace, string>> {
-    const result = await this.invoke<Workspace>(WORKSPACE_CHANNELS.RENAME_BRANCH, {
-      id,
-      newBranchName,
-    });
-    // Clear cache for this workspace after rename
-    if (result.ok) {
-      this.clearCache(id);
-      // Also clear list cache since this operation changes which/how workspaces are returned
-      this.clearCache();
-      return { ok: true, data: normalizeWorkspacePaths(result.data) };
-    }
-    return result;
-  }
-
-  async updateCurrentContext(
-    workspaceId: WorkspaceId,
-    context: WorkspaceUIContext,
-  ): Promise<Result<void, string>> {
-    if (process.env.DEBUG_WORKSPACE) {
-      logger.info('[WorkspaceClient] updateCurrentContext called:', { workspaceId, context });
-    }
-    const result = await this.invoke<void>(WORKSPACE_CHANNELS.UPDATE_CURRENT_CONTEXT, {
-      workspaceId,
-      context,
-    });
-    if (process.env.DEBUG_WORKSPACE) {
-      logger.info('[WorkspaceClient] updateCurrentContext result:', result);
-    }
-    return result;
+    return { ok: false, error: result.error || 'Failed to unarchive workspace' };
   }
 
   /**
@@ -446,29 +409,6 @@ export class WorkspaceClient {
     return this.invokeFresh<WorkspaceTask[]>(WORKSPACE_CHANNELS.GET_TASKS, { workspaceId });
   }
 
-  async triggerCheck(workspaceId: string, reason?: string): Promise<Result<void, string>> {
-    logger.info('[WorkspaceClient] Triggering check:', { workspaceId, reason });
-
-    // Bypass cache and deduplication for trigger-check since we always want it to execute
-    try {
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        const response = await invokeIpc(WORKSPACE_CHANNELS.TRIGGER_CHECK, {
-          workspaceId,
-          reason,
-        });
-        const result = this.normalizeResponse<void>(response);
-        logger.info('[WorkspaceClient] Trigger check result:', result);
-        return result;
-      }
-      return { ok: false, error: 'IPC not available' };
-    } catch (error) {
-      logger.error('[WorkspaceClient] Failed to trigger check:', error);
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : 'Failed to trigger check',
-      };
-    }
-  }
 }
 
 export const workspaceClient = new WorkspaceClient();

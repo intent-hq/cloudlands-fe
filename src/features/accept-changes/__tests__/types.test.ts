@@ -23,7 +23,7 @@ import type {
 describe('accept-changes types', () => {
   describe('AcceptAction', () => {
     it('should accept valid action values', () => {
-      const actions: AcceptAction[] = ['commit', 'push', 'create-pr', 'merge', 'export'];
+      const actions: AcceptAction[] = ['commit', 'push', 'create-pr', 'merge', 'reset-to-trunk'];
       expect(actions).toHaveLength(5);
     });
   });

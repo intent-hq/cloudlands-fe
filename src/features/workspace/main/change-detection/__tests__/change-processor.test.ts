@@ -27,20 +27,6 @@ vi.mock('../../../../lib/utils/main/gitignore-manager', () => {
     GitignoreManager: MockGitignoreManager,
   };
 });
-vi.mock('../../provenance/attribution-engine', () => ({
-  getAttributionEngine: vi.fn(() => ({
-    getCurrentActor: vi.fn(() => ({
-      type: 'user',
-      id: 'test-user',
-      name: 'Test User',
-    })),
-    attributeChange: vi.fn(() =>
-      Promise.resolve({
-        source: 'user',
-      }),
-    ),
-  })),
-}));
 vi.mock('fs/promises', async (importOriginal) => {
   const actual = (await importOriginal()) as any;
   return {

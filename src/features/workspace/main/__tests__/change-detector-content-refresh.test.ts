@@ -146,10 +146,6 @@ vi.mock('../change-detection/adaptive-polling-manager', () => ({
   AdaptivePollingManager: { getInstance: vi.fn(() => mockAdaptivePolling) },
 }));
 
-vi.mock('../provenance/attribution-engine', () => ({
-  getAttributionEngine: vi.fn(() => ({ getCurrentProvenance: vi.fn(() => null) })),
-}));
-
 import { ChangeDetectorRefactored } from '../change-detector-refactored';
 
 function waitForAsyncHandlers(): Promise<void> {

@@ -7,13 +7,16 @@
  * workspace is cached so note-scoped clients (tasks, comments) can resolve it.
  * `subscribe` aggregates notes across workspaces and refetches on `note:*`.
  */
-import { ContentType, NoteVisibility } from "$shared/types";
+import { AuthorType, ContentType, NoteVisibility } from "$shared/types";
 import { NoteId, WorkspaceId } from "$shared/types/branded-ids";
-import type { CreateNoteRequest, Note } from "$shared/types";
+import type { Author, CreateNoteRequest, Note, NoteVersion } from "$shared/types";
 import type {
+  LineAttributionClient,
+  LineAttributionData,
   MutationResult,
   NoteAddOptions,
   NoteMetadataPatch,
+  NoteRestoreResult,
   NotesClient,
   SubscriptionHandler,
   Unsubscribe,
@@ -28,6 +31,51 @@ import {
   resolveNoteWorkspaceId,
   runMutation,
 } from "./live-support";
+
+/**
+ * Parse a daemon version number (`v: i64` on the wire) from a value the FE may
+ * carry as either a string (`NoteVersion.versionId`) or a number. Returns
+ * `null` when the value cannot be resolved to a finite non-negative integer.
+ */
+function normalizeVersionNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return Math.trunc(value);
+  }
+  if (typeof value === "string" && value.length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) return Math.trunc(parsed);
+  }
+  return null;
+}
+
+/**
+ * Adapt a daemon `NoteVersion` (§5.2 `{type, v, date, author, title, content}`)
+ * into the renderer `NoteVersion` shape (`{versionId, versionNumber, createdAt,
+ * ...}`). The daemon's `v: i64` is the version number; `versionId` is the
+ * stringified `v` (opaque to the UI, unwrapped on restore).
+ */
+function normalizeNoteVersion(raw: unknown): NoteVersion | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const v = normalizeVersionNumber(r.v);
+  if (v === null) return null;
+  const authorRaw = r.author && typeof r.author === "object" ? (r.author as Record<string, unknown>) : null;
+  const author: Author | undefined = authorRaw
+    ? {
+        id: String(authorRaw.id ?? ""),
+        name: String(authorRaw.name ?? ""),
+        type: (typeof authorRaw.type === "string" ? authorRaw.type : AuthorType.System) as AuthorType,
+      }
+    : undefined;
+  return {
+    versionId: String(v),
+    versionNumber: v,
+    content: String(r.content ?? ""),
+    title: String(r.title ?? ""),
+    ...(author ? { author } : {}),
+    createdAt: String(r.date ?? ""),
+  };
+}
 
 /** Coerce a raw daemon note object into the renderer `Note` shape. */
 export function normalizeNote(raw: Record<string, unknown>, workspaceId: string): Note {
@@ -57,7 +105,36 @@ export function normalizeNote(raw: Record<string, unknown>, workspaceId: string)
   } as Note;
 }
 
+/**
+ * `note.lineAttribution.*` seam (PROTOCOL §5.2.1). `load` returns the bare
+ * `LineAttributionData | null` the router serializes (`router.rs` §5.2.1) —
+ * no envelope unwrap needed. `computeNow` bypasses the 5 s debounce and
+ * returns `{ ok: true }` on success. Neither method resolves the note's
+ * workspace via `resolveNoteWorkspaceId`: the tiptap gutter already carries
+ * `workspaceId` as a prop, so callers pass it in directly.
+ */
+class LiveLineAttributionClient implements LineAttributionClient {
+  async load(workspaceId: string, noteId: string): Promise<LineAttributionData | null> {
+    const result = await backendRequest<LineAttributionData | null>(
+      "note.lineAttribution.load",
+      { workspaceId, noteId },
+    );
+    if (!result || typeof result !== "object") return null;
+    return result;
+  }
+
+  async computeNow(workspaceId: string, noteId: string): Promise<{ ok: boolean }> {
+    const result = await backendRequest<{ ok?: boolean }>(
+      "note.lineAttribution.computeNow",
+      { workspaceId, noteId },
+    );
+    return { ok: Boolean(result?.ok) };
+  }
+}
+
 export class LiveNotesClient implements NotesClient {
+  readonly lineAttribution: LineAttributionClient = new LiveLineAttributionClient();
+
   async list(workspaceId: string): Promise<Note[]> {
     const result = await backendRequest<{ notes?: unknown[] }>("note.list", { workspaceId });
     const notes = Array.isArray(result?.notes) ? result.notes : [];
@@ -161,6 +238,60 @@ export class LiveNotesClient implements NotesClient {
       },
       expectedVersion,
     );
+  }
+
+  // ---- Version history (PROTOCOL §5.2) ------------------------------------
+  // `note.listVersions` returns summaries (no content). The version-history UI
+  // renders the diff viewer against each version's content, so this method
+  // fetches the summaries then batches `note.getVersion` for each to hydrate
+  // the content — adapting the daemon `{v, date, ...}` shape to the FE
+  // `NoteVersion` shape (`{versionId, versionNumber, createdAt, ...}`). Errors
+  // propagate so callers can surface them; the middleware maps thrown errors
+  // to `applyNoteVersionsError`.
+
+  async listVersions(workspaceId: string, noteId: string): Promise<NoteVersion[]> {
+    const summaries = await backendRequest<unknown[]>("note.listVersions", {
+      workspaceId,
+      noteId,
+    });
+    if (!Array.isArray(summaries) || summaries.length === 0) return [];
+    const full = await Promise.all(
+      summaries.map((s) => {
+        const v = normalizeVersionNumber((s as { v?: unknown }).v);
+        if (v === null) return Promise.resolve(null);
+        return backendRequest<unknown>("note.getVersion", { workspaceId, noteId, v })
+          .then((raw) => normalizeNoteVersion(raw))
+          .catch(() => null);
+      }),
+    );
+    return full.filter((v): v is NoteVersion => v !== null);
+  }
+
+  async restoreVersion(
+    workspaceId: string,
+    noteId: string,
+    versionId: string,
+  ): Promise<NoteRestoreResult> {
+    const v = normalizeVersionNumber(versionId);
+    if (v === null) {
+      return { success: false, error: `Invalid version id: ${versionId}` };
+    }
+    try {
+      const raw = await backendRequest<{ ok?: boolean; note?: unknown }>(
+        "note.restoreVersion",
+        { workspaceId, noteId, v },
+      );
+      const note =
+        raw && typeof raw === "object" && raw.note && typeof raw.note === "object"
+          ? normalizeNote(raw.note as Record<string, unknown>, workspaceId)
+          : undefined;
+      return { success: true, note };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   /**

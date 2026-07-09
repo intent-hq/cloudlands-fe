@@ -63,6 +63,8 @@ import {
   removeServer,
   removeServerFromState,
   restartServer,
+  saveAdvancedJson,
+  setAdvancedSaveStatus,
   setDisabledServers,
   setEnabled,
   setError,
@@ -302,6 +304,79 @@ export function testMcpServerConnection(name: string): void {
   logger.warn("MCP connection test unsupported — no seam method (BE gap)", { name });
 }
 
+/** How long the advanced editor shows "saved" before returning to idle. */
+const ADVANCED_SAVED_RESET_MS = 2000;
+
+/**
+ * Advanced JSON editor save: parse the pasted JSON, validate every server name,
+ * and REPLACE the whole configured set (unlike `importMcpServersFromJson`,
+ * which only appends new names). The daemon is converged through the same
+ * `setMcpServers` seam (backed by the §5.22 `mcp.servers.*` CRUD in live mode),
+ * so removed entries are deleted and `disabled` flags round-trip. Save state is
+ * surfaced via `setAdvancedSaveStatus` for the editor UI.
+ */
+export async function saveAdvancedMcpJson(jsonString: string): Promise<void> {
+  appStore.dispatch(setAdvancedSaveStatus("saving"));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonString);
+  } catch {
+    appStore.dispatch(setAdvancedSaveStatus("error", "Invalid JSON format"));
+    return;
+  }
+  const configs = normalizeMcpServersPayload(parsed);
+  const seen = new Set<string>();
+  for (const config of configs) {
+    try {
+      validateServerName(config.name, []);
+    } catch (error) {
+      appStore.dispatch(
+        setAdvancedSaveStatus("error", toMcpErrorMessage(error, "Invalid server config")),
+      );
+      return;
+    }
+    if (seen.has(config.name)) {
+      appStore.dispatch(
+        setAdvancedSaveStatus("error", `Duplicate server name "${config.name}"`),
+      );
+      return;
+    }
+    seen.add(config.name);
+  }
+
+  appStore.dispatch(setServers(configs));
+  const disabled: Record<string, true> = {};
+  const statusMap: Record<string, McpServerStatus> = {};
+  for (const config of configs) {
+    if (config.disabled) disabled[config.name] = true;
+    statusMap[config.name] = statusFor(config, Boolean(config.disabled));
+  }
+  appStore.dispatch(setDisabledServers(disabled));
+  appStore.dispatch(bulkSetServerStatus(statusMap));
+
+  try {
+    const result = await appClient.settings.setMcpServers(configs);
+    if (!result.success) {
+      appStore.dispatch(
+        setAdvancedSaveStatus("error", toMcpErrorMessage(result.error, "Failed to save")),
+      );
+      return;
+    }
+  } catch (error) {
+    appStore.dispatch(
+      setAdvancedSaveStatus("error", toMcpErrorMessage(error, "Failed to save")),
+    );
+    return;
+  }
+  appStore.dispatch(setAdvancedSaveStatus("saved"));
+  logger.info("Saved MCP servers from advanced editor", { count: configs.length });
+  setTimeout(() => {
+    if (appStore.state.mcpSettings.advancedSaveStatus === "saved") {
+      appStore.dispatch(setAdvancedSaveStatus("idle"));
+    }
+  }, ADVANCED_SAVED_RESET_MS);
+}
+
 /** Narrow an action-payload entry to an `McpServerConfig`. */
 function isServerConfig(value: unknown): value is McpServerConfig {
   return (
@@ -351,6 +426,9 @@ export function createMcpManagementMiddleware(): StoreMiddleware {
           break;
         case restartServer.type:
           if (typeof payload[0] === "string") restartMcpServer(payload[0]);
+          break;
+        case saveAdvancedJson.type:
+          if (typeof payload[0] === "string") void saveAdvancedMcpJson(payload[0]);
           break;
       }
     }

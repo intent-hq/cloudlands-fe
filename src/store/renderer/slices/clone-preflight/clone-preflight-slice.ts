@@ -3,11 +3,12 @@
  * pre-submit GitHub URL check.
  *
  * The onboarding form dispatches `checkClonePreflight(githubUrl)` whenever
- * the user types a GitHub URL. The saga debounces rapid changes, calls
- * `workspaceClient.preflightCloneCheck`, and writes the result back to the
- * slice so the form can render inline guidance (via the same
- * `WorkspaceCreationError` component used on the post-submit error path)
- * BEFORE the user clicks Create.
+ * the user types a GitHub URL. The legacy saga debounced rapid changes,
+ * called the (since retired) `workspace:preflight-clone-check` IPC, and wrote
+ * the result back to the slice so the form could render inline guidance (via
+ * the same `WorkspaceCreationError` component used on the post-submit error
+ * path) BEFORE the user clicks Create. With the saga runtime removed nothing
+ * services the trigger, so the status machine stays at `idle`.
  *
  * The state is intentionally minimal: a status machine plus the URL and
  * error message that produced the current status. Nothing here is

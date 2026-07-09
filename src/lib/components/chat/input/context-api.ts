@@ -1,12 +1,12 @@
 /**
  * Context API for rich input features
- * Provides IPC communication for file search, notes, and editor integration
+ * Provides daemon-backed reads for file search, symbols, and editor integration
  */
 
 import { invoke } from '$lib/electron-bridge';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { createLogger } from '$lib/utils/client-logger';
-import type { Workspace, CommandResponse } from '../../../../shared/types';
-import { NoteId as NoteIdFn } from '../../../../shared/types/branded-ids';
+import type { Workspace } from '../../../../shared/types';
 
 const logger = createLogger('ContextAPI');
 
@@ -62,7 +62,8 @@ export interface SymbolInfo {
 }
 
 /**
- * Search for files in a workspace
+ * Search for files in a workspace via the daemon (`search.fileNames`, PROTOCOL §5.15).
+ * Errors surface as empty results — never fabricated data.
  */
 export async function searchFiles(
   workspaceId: string,
@@ -71,47 +72,21 @@ export async function searchFiles(
 ): Promise<FileSearchResult[]> {
   try {
     logger.debug('Searching files', { workspaceId, query, limit });
-
-    // For now, use a simple file listing approach
-    // In production, this would use a proper file indexing service
-    const response = await invoke<{ files: any[]; folders?: any[] }>('workspace:list-files', {
+    const result = await backendRequest<{ files?: string[] }>('search.fileNames', {
       workspaceId,
       pattern: query,
       limit,
     });
 
-    if (!response || !response.files) {
-      logger.warn('No files returned from search');
-      return [];
-    }
-
-    return response.files.map((file: any) => ({
-      name: file.name || file.path.split('/').pop(),
-      path: file.path,
-      relativePath: file.relativePath || file.path,
-      type: file.type || 'file',
-      size: file.size,
-      modified: file.modified ? new Date(file.modified) : undefined,
+    const files = Array.isArray(result?.files) ? result.files : [];
+    return files.map((path) => ({
+      name: path.split('/').pop() || path,
+      path,
+      relativePath: path,
+      type: 'file' as const,
     }));
   } catch (error) {
     logger.error('Failed to search files', error);
-    // Return mock data for development
-    if (query) {
-      return [
-        {
-          name: `${query}.ts`,
-          path: `/workspace/src/${query}.ts`,
-          relativePath: `src/${query}.ts`,
-          type: 'file',
-        },
-        {
-          name: `${query}.test.ts`,
-          path: `/workspace/tests/${query}.test.ts`,
-          relativePath: `tests/${query}.test.ts`,
-          type: 'file',
-        },
-      ];
-    }
     return [];
   }
 }
@@ -184,129 +159,6 @@ export async function readFile(path: string, options?: ReadFileOptions): Promise
 }
 
 /**
- * Get notes for a workspace
- */
-export async function getNotes(workspaceId: string): Promise<Note[]> {
-  try {
-    logger.debug('Getting notes', { workspaceId });
-    const response = await invoke<CommandResponse<any[]>>('notes:list', { workspaceId });
-
-    if (!response) {
-      return [];
-    }
-
-    if (!response.success || !Array.isArray(response.data)) {
-      logger.warn('Notes response not successful or invalid shape:', response);
-      return [];
-    }
-
-    const notes = response.data;
-
-    return notes.map(
-      (note: any) =>
-        ({
-          id: NoteIdFn(note.id),
-          workspaceId: note.workspaceId,
-          title: note.title || 'Untitled',
-          content: note.content || '',
-          contentType: note.contentType || 'markdown',
-          tags: note.tags || [],
-          isPinned: note.isPinned || false,
-          isArchived: note.isArchived || false,
-          isDefault: note.isDefault,
-          parentId: note.parentId ? NoteIdFn(note.parentId) : undefined,
-          visibility: note.visibility || 'workspace',
-          metadata: note.metadata,
-          references: note.references,
-          versions: note.versions,
-          createdAt: note.createdAt || note.created_at || new Date().toISOString(),
-          updatedAt: note.updatedAt || note.updated_at || new Date().toISOString(),
-          // Legacy compatibility
-          is_pinned: note.is_pinned,
-          created_at: note.created_at,
-          updated_at: note.updated_at,
-          is_archived: note.is_archived,
-        }) as Note,
-    );
-  } catch (error) {
-    logger.error('Failed to get notes', { error });
-    // Return mock data for development
-    return [
-      {
-        id: NoteIdFn('note-1'),
-        workspaceId: workspaceId as any,
-        title: 'Project Overview',
-        content: 'This project implements a rich input system for the chat interface...',
-        contentType: 'markdown' as const,
-        tags: ['documentation', 'overview'],
-        isPinned: false,
-        isArchived: false,
-        visibility: 'workspace' as const,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      } as Note,
-      {
-        id: NoteIdFn('note-2'),
-        workspaceId: workspaceId as any,
-        title: 'TODO List',
-        content: '- Implement file search\n- Add note support\n- Integrate with editor',
-        contentType: 'markdown' as const,
-        tags: ['tasks'],
-        isPinned: false,
-        isArchived: false,
-        visibility: 'workspace' as const,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      } as Note,
-    ];
-  }
-}
-
-/**
- * Get a specific note
- */
-export async function getNote(workspaceId: string, noteId: string): Promise<Note | null> {
-  try {
-    logger.debug('Getting note', { workspaceId, noteId });
-    const response = await invoke<CommandResponse<any>>('notes:get', { workspaceId, noteId });
-
-    if (!response || !response.success || !response.data) {
-      logger.warn('Note not found or invalid response', { workspaceId, noteId, response });
-      return null;
-    }
-
-    const note = response.data;
-
-    return {
-      id: NoteIdFn(note.id),
-      workspaceId: note.workspaceId,
-      title: note.title || 'Untitled',
-      content: note.content || '',
-      contentType: note.contentType || 'markdown',
-      tags: note.tags || [],
-      isPinned: note.isPinned || false,
-      isArchived: note.isArchived || false,
-      isDefault: note.isDefault,
-      parentId: note.parentId ? NoteIdFn(note.parentId) : undefined,
-      visibility: note.visibility || 'workspace',
-      metadata: note.metadata,
-      references: note.references,
-      versions: note.versions,
-      createdAt: note.createdAt || note.created_at || new Date().toISOString(),
-      updatedAt: note.updatedAt || note.updated_at || new Date().toISOString(),
-      // Legacy compatibility
-      is_pinned: note.is_pinned,
-      created_at: note.created_at,
-      updated_at: note.updated_at,
-      is_archived: note.is_archived,
-    } as Note;
-  } catch (error) {
-    logger.error('Failed to get note', { workspaceId, noteId, error });
-    return null;
-  }
-}
-
-/**
  * Get current editor selection
  */
 export async function getEditorSelection(workspaceId?: string): Promise<EditorSelection | null> {
@@ -329,18 +181,13 @@ export async function getEditorSelection(workspaceId?: string): Promise<EditorSe
     };
   } catch (error) {
     logger.debug('No editor selection available', error);
-    // Return mock data for development
-    return {
-      text: "function example() {\n  logger.info('Hello, world!');\n}",
-      file: '/workspace/src/example.ts',
-      range: { start: 10, end: 13 },
-      language: 'typescript',
-    };
+    return null;
   }
 }
 
 /**
- * Search for symbols in the workspace
+ * Search for symbols in the workspace via the daemon (`search.codebase`, PROTOCOL §5.15).
+ * Errors surface as empty results — never fabricated data.
  */
 export async function searchSymbols(
   workspaceId: string,
@@ -349,42 +196,22 @@ export async function searchSymbols(
 ): Promise<SymbolInfo[]> {
   try {
     logger.debug('Searching symbols', { workspaceId, query, limit });
-    const symbols = await invoke<any[]>('workspace:search-symbols', {
+    const result = await backendRequest<{ matches?: any[] }>('search.codebase', {
       workspaceId,
       query,
-      limit,
     });
 
-    if (!symbols) {
-      return [];
-    }
-
-    return symbols.map((symbol: any) => ({
-      name: symbol.name,
-      kind: symbol.kind,
-      file: symbol.file,
-      line: symbol.line,
-      documentation: symbol.documentation,
+    const matches = Array.isArray(result?.matches) ? result.matches : [];
+    return matches.slice(0, limit).map((match: any) => ({
+      name: match.symbol || match.name || '',
+      kind: match.kind || 'symbol',
+      file: match.file || '',
+      line: typeof match.line === 'number' ? match.line : 0,
+      documentation: match.preview,
     }));
   } catch (error) {
     logger.error('Failed to search symbols', error);
-    // Return mock data for development
-    return [
-      {
-        name: 'RichPromptBox',
-        kind: 'class',
-        file: '/workspace/src/components/RichPromptBox.svelte',
-        line: 25,
-        documentation: 'Main rich input component',
-      },
-      {
-        name: 'handleSubmit',
-        kind: 'function',
-        file: '/workspace/src/components/RichPromptBox.svelte',
-        line: 150,
-        documentation: 'Handles form submission',
-      },
-    ];
+    return [];
   }
 }
 
@@ -423,32 +250,6 @@ export async function createFileContext(path: string): Promise<any> {
     };
   } catch (error) {
     logger.error('Failed to create file context', { path, error });
-    throw error;
-  }
-}
-
-/**
- * Create a context item from a note
- */
-export async function createNoteContext(workspaceId: string, noteId: string): Promise<any> {
-  try {
-    const note = await getNote(workspaceId, noteId);
-    if (!note) {
-      throw new Error('Note not found');
-    }
-
-    return {
-      id: `note-${noteId}`,
-      type: 'note',
-      label: note.title,
-      content: note.content,
-      metadata: {
-        noteId: note.id,
-        tags: note.tags,
-      },
-    };
-  } catch (error) {
-    logger.error('Failed to create note context', { workspaceId, noteId, error });
     throw error;
   }
 }

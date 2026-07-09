@@ -215,7 +215,6 @@
   let isPushing = $state(false);
   let isCreatingPR = $state(false);
   let isCommitting = $state(false);
-  let isExporting = $state(false);
   let isMergingToTrunk = $state(false);
   let isMergedToTrunk = $state(false);
 
@@ -899,45 +898,6 @@
     }
   }
 
-  async function handlePickExportFolder(): Promise<string | undefined> {
-    try {
-      if (typeof window === 'undefined' || !window.electronAPI) return undefined;
-
-      const result = await invoke<any>('dialog:open', {
-        directory: true,
-        title: 'Select Export Folder',
-      });
-
-      if (result && typeof result === 'object' && 'data' in result) {
-        if (!result.data?.canceled && result.data?.filePaths?.[0]) {
-          return result.data.filePaths[0];
-        }
-      } else if (result && typeof result === 'string') {
-        return result;
-      }
-      return undefined;
-    } catch (error) {
-      logger.error('Failed to open folder picker', error as Error);
-      toast.error('Failed to open folder picker');
-      return undefined;
-    }
-  }
-
-  async function handleExport(targetPath: string) {
-    isExporting = true;
-    try {
-      await AcceptChangesClient.exportFiles(WorkspaceId(workspaceId), targetPath, {
-        preserveStructure: true,
-      });
-      toast.success('Files exported successfully');
-    } catch (error) {
-      logger.error('Failed to export files', error as Error, { targetPath });
-      toast.error('Failed to export files');
-    } finally {
-      isExporting = false;
-    }
-  }
-
   async function handleGenerateMessage() {
     if (!$workspace) return;
     appStore.dispatch(executeBackgroundAgent(workspaceId, 'commit'));
@@ -1309,21 +1269,8 @@
         appStore.dispatch(setWorkspaceModel({ workspaceId: newWorkspace.id, model: selectedModel }));
       }
 
-      // Store the initial agent configuration for the workspace page to pick up
-      const agentConfigData = {
-        agentId: initialAgent.agentId,
-        config: {
-          ...initialAgent,
-          isInitialAgent: true,
-          isFirstWorkspaceAgent: true,
-        },
-        timestamp: Date.now(),
-      };
-
-      sessionStorage.setItem(
-        `workspace:${newWorkspace.id}:initial-agent-pending`,
-        JSON.stringify(agentConfigData),
-      );
+      // Initial-agent lifecycle (creation + initial-message delivery) is
+      // owned by the daemon on workspace.create; no pending-agent stash here.
 
       toast.success('New space created!');
 
@@ -1913,7 +1860,6 @@
       {isCommitting}
       {isPushing}
       {isCreatingPR}
-      {isExporting}
       onFileClick={handleFileClick}
       onStage={handleStage}
       onUnstage={handleUnstage}
@@ -1940,9 +1886,6 @@
       }}
       onGeneratePR={handleGeneratePR}
       onCreatePR={handleCreatePR}
-      onPickExportFolder={handlePickExportFolder}
-      onExport={handleExport}
-      defaultExportPath={$workspace?.repositoryPath}
       onOpenCommit={handleOpenCommit}
       onOpenPR={handleOpenPR}
       onOpenLocalChanges={() => {

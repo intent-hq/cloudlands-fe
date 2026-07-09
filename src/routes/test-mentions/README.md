@@ -52,7 +52,7 @@ All mention types are represented with realistic mock data:
    pnpm dev:renderer
    ```
 
-2. Navigate to: http://localhost:5177/test-mentions
+2. Navigate to: http://localhost:5190/test-mentions
 
 3. Use the controls panel to test different states
 

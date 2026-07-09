@@ -1,6 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentStatus } from "$shared/types/agent.types";
-import { AgentActivationState } from "$shared/types/agent-session";
 import type { AgentSession } from "$shared/types/agent-session";
 
 // FAKE seams: the agent factory (create seam) and appClient.agents.get (the open
@@ -21,9 +20,7 @@ import { store as appStore } from "$store/renderer/store";
 import { setWorkspaceEntity } from "$store/renderer/slices/workspace/workspace-slice";
 import { loadWorkspaceNotesSucceeded } from "$store/renderer/slices/workspace-notes/workspace-notes-slice";
 import { selectAllTabs } from "$store/renderer/slices/panel-layout/panel-layout-selectors";
-import { selectAgentSession } from "$store/renderer/slices/agent-session/agent-session-selectors";
 import {
-  activateInitialAgentRequested,
   createAgentRequested,
   createAgentWithSpecialistRequested,
   runAgentForNoteRequested,
@@ -148,30 +145,6 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     expect(config.metadata).toMatchObject({ taskNoteId: NOTE, specialist: "implementor" });
     expect(typeof config.initialMessage).toBe("string");
     expect(agentTabs(WS, AGENT)).toHaveLength(1);
-  });
-
-  it("activateInitialAgentRequested activates the initial agent and sets it active", async () => {
-    const WS = "ws-init";
-    const AGENT = "agent-init";
-    seedWorkspace(WS);
-    createAgent.mockResolvedValueOnce({
-      success: true,
-      agent: makeSession(AGENT, WS, { name: "Initial" }),
-      agentId: AGENT,
-    });
-
-    appStore.dispatch(activateInitialAgentRequested(WS, AGENT, { workspaceId: WS } as never));
-    await waitFor(
-      () => appStore.state.workspaceAgents.byWorkspaceId[WS]?.activeAgentId === AGENT,
-    );
-
-    expect(createAgent).toHaveBeenCalledTimes(1);
-    const [, config] = createAgent.mock.calls[0];
-    expect(config).toMatchObject({ id: AGENT, skipInitialPrompt: true });
-    expect(config.metadata).toMatchObject({ isInitialAgent: true });
-    const session = selectAgentSession.select(appStore.state, AGENT);
-    expect(session?.activationState).toBe(AgentActivationState.ACTIVE);
-    expect(appStore.state.workspaceAgents.byWorkspaceId[WS]?.activeAgentId).toBe(AGENT);
   });
 
   it("ignores the trigger when the workspace is missing (no factory call)", async () => {

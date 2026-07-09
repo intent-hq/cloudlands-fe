@@ -1,27 +1,27 @@
 /**
  * Unit Tests for FileProvider
  *
- * Tests file search functionality and fallback behavior
+ * Tests daemon-backed file search (search.fileNames, PROTOCOL §5.15) and the
+ * no-fabricated-fallback guarantee on failure.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { FileProvider, clearWorkspaceRootCache } from '../../src/lib/services/mentions/providers/file-provider';
+import { FileProvider } from '../../src/lib/services/mentions/providers/file-provider';
 import type { SearchContext } from '../../src/lib/services/mentions/types';
 
-// Mock electron-bridge
-vi.mock('$lib/electron-bridge', () => ({
-  invoke: vi.fn(),
+// Mock the daemon transport
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: vi.fn(),
 }));
 
 describe('FileProvider', () => {
   let provider: FileProvider;
-  let mockInvoke: any;
+  let mockBackendRequest: any;
 
   beforeEach(async () => {
-    clearWorkspaceRootCache();
     provider = new FileProvider();
-    const electronBridge = await import('$lib/electron-bridge');
-    mockInvoke = electronBridge.invoke as any;
+    const transport = await import('$lib/client/live/backend-transport');
+    mockBackendRequest = transport.backendRequest as any;
     vi.clearAllMocks();
   });
 
@@ -52,175 +52,88 @@ describe('FileProvider', () => {
       workspaceId: 'test-workspace',
     };
 
-    it('should return files from workspace:list-files', async () => {
-      // Mock workspace:get-by-id call
-      mockInvoke.mockResolvedValueOnce({ success: true, data: { worktreePath: '/workspace/root' } });
-
-      // Mock file:list call with new response format
-      mockInvoke.mockResolvedValueOnce({
-        success: true,
-        data: [
-          {
-            name: 'test.ts',
-            path: '/workspace/root/src/test.ts',
-            isFile: true,
-            extension: 'ts',
-          },
-          {
-            name: 'index.ts',
-            path: '/workspace/root/src/index.ts',
-            isFile: true,
-            extension: 'ts',
-          },
-        ],
+    it('should request search.fileNames and map returned paths', async () => {
+      mockBackendRequest.mockResolvedValueOnce({
+        requestId: 'srch-1',
+        files: ['src/test.ts', 'src/index.ts'],
+        truncated: false,
       });
 
       const results = await provider.search('test', mockContext);
 
-      // Should have called workspace:get-by-id first
-      expect(mockInvoke).toHaveBeenNthCalledWith(1, 'workspace:get-by-id', {
+      expect(mockBackendRequest).toHaveBeenCalledWith('search.fileNames', {
         workspaceId: 'test-workspace',
+        pattern: 'test',
+        limit: 10,
       });
 
-      // Then file:list
-      expect(mockInvoke).toHaveBeenNthCalledWith(2, 'file:list', {
-        path: '/workspace/root',
-        recursive: true,
-      });
-
-      expect(results).toHaveLength(1); // Only test.ts matches 'test' query
+      expect(results).toHaveLength(2);
       expect(results[0]).toMatchObject({
         type: 'file',
         label: 'test.ts',
+        description: 'src/test.ts',
+        meta: {
+          path: 'src/test.ts',
+          relativePath: 'src/test.ts',
+          extension: 'ts',
+          language: 'typescript',
+        },
       });
     });
 
-    it('should handle empty query', async () => {
-      // Mock workspace:get-by-id call
-      mockInvoke.mockResolvedValueOnce({ success: true, data: { worktreePath: '/workspace/root' } });
-
-      // Mock file:list call with empty results
-      mockInvoke.mockResolvedValueOnce({
-        success: true,
-        data: [],
-      });
-
-      await provider.search('', mockContext);
-
-      expect(mockInvoke).toHaveBeenNthCalledWith(1, 'workspace:get-by-id', {
-        workspaceId: 'test-workspace',
-      });
-
-      expect(mockInvoke).toHaveBeenNthCalledWith(2, 'file:list', {
-        path: '/workspace/root',
-        recursive: true,
-      });
-    });
-
-    it('should limit results to 10 files', async () => {
-      // Mock workspace:get-by-id call
-      mockInvoke.mockResolvedValueOnce({ success: true, data: { worktreePath: '/workspace/root' } });
-
-      // Mock file:list call with 20 files
-      const mockFiles = Array.from({ length: 20 }, (_, i) => ({
-        name: `file${i}.ts`,
-        path: `/workspace/root/src/file${i}.ts`,
-        isFile: true,
-        extension: 'ts',
-      }));
-
-      mockInvoke.mockResolvedValueOnce({
-        success: true,
-        data: mockFiles,
-      });
-
-      const results = await provider.search('file', mockContext);
-
-      expect(results).toHaveLength(10);
-    });
-
-    it('should use fallback files when IPC fails', async () => {
-      mockInvoke.mockRejectedValue(new Error('IPC error'));
-
-      const results = await provider.search('README', mockContext);
-
-      expect(results.length).toBeGreaterThan(0);
-      expect(results.some((r) => r.label.includes('README'))).toBe(true);
-    });
-
-    it('should use fallback when result is invalid', async () => {
-      mockInvoke.mockResolvedValue(null);
-
-      const results = await provider.search('README', mockContext);
-
-      // Should return fallback files filtered by query
-      expect(results.length).toBeGreaterThan(0);
-      expect(results.some((r) => r.label.includes('README'))).toBe(true);
-    });
-
-    it('should use fallback when files array is missing', async () => {
-      mockInvoke.mockResolvedValue({ notFiles: [] });
-
-      const results = await provider.search('package', mockContext);
-
-      // Should return fallback files filtered by query
-      expect(results.length).toBeGreaterThan(0);
-      expect(results.some((r) => r.label.includes('package'))).toBe(true);
-    });
-
-    it('should use fallback when files array is empty', async () => {
-      mockInvoke.mockResolvedValue({ files: [] });
+    it('should send an empty pattern for an empty query', async () => {
+      mockBackendRequest.mockResolvedValueOnce({ requestId: 'srch-1', files: [], truncated: false });
 
       const results = await provider.search('', mockContext);
 
-      // Should return all fallback files when query is empty
-      expect(results.length).toBeGreaterThan(0);
+      expect(mockBackendRequest).toHaveBeenCalledWith('search.fileNames', {
+        workspaceId: 'test-workspace',
+        pattern: '',
+        limit: 10,
+      });
+      expect(results).toEqual([]);
     });
 
-    it('should filter invalid file objects', async () => {
-      const mockFiles = [
-        { name: 'valid.ts', path: 'src/valid.ts' },
-        null, // invalid
-        { name: 'also-valid.ts', path: 'src/also-valid.ts' },
-        { name: 'no-path.ts' }, // missing path
-      ];
+    it('should return empty results without a workspaceId (no wire call)', async () => {
+      const results = await provider.search('test', {} as SearchContext);
 
-      mockInvoke.mockResolvedValue({ files: mockFiles });
+      expect(mockBackendRequest).not.toHaveBeenCalled();
+      expect(results).toEqual([]);
+    });
 
-      const results = await provider.search('test', mockContext);
+    it('should return empty results when the daemon request fails — never fabricated data', async () => {
+      mockBackendRequest.mockRejectedValue(new Error('daemon error'));
 
-      // Should only include the 2 valid files
-      expect(results.length).toBeLessThanOrEqual(2);
-      expect(results.every((r) => r.meta?.path)).toBe(true);
+      const results = await provider.search('README', mockContext);
+
+      expect(results).toEqual([]);
+    });
+
+    it('should return empty results when the result is invalid', async () => {
+      mockBackendRequest.mockResolvedValue(null);
+
+      const results = await provider.search('README', mockContext);
+
+      expect(results).toEqual([]);
+    });
+
+    it('should return empty results when the files array is missing', async () => {
+      mockBackendRequest.mockResolvedValue({ requestId: 'srch-1' });
+
+      const results = await provider.search('package', mockContext);
+
+      expect(results).toEqual([]);
     });
 
     it('should show distinguishing paths for duplicate filenames', async () => {
-      // Mock workspace:get-by-id call
-      mockInvoke.mockResolvedValueOnce({ success: true, data: { worktreePath: '/workspace/root' } });
-
-      // Mock file:list call with duplicate filenames
-      mockInvoke.mockResolvedValueOnce({
-        success: true,
-        data: [
-          {
-            name: '+page.svelte',
-            path: '/workspace/root/src/routes/home/+page.svelte',
-            isFile: true,
-            extension: 'svelte',
-          },
-          {
-            name: '+page.svelte',
-            path: '/workspace/root/src/routes/settings/+page.svelte',
-            isFile: true,
-            extension: 'svelte',
-          },
-          {
-            name: '+page.svelte',
-            path: '/workspace/root/src/routes/profile/+page.svelte',
-            isFile: true,
-            extension: 'svelte',
-          },
+      mockBackendRequest.mockResolvedValueOnce({
+        requestId: 'srch-1',
+        files: [
+          'src/routes/home/+page.svelte',
+          'src/routes/settings/+page.svelte',
+          'src/routes/profile/+page.svelte',
         ],
+        truncated: false,
       });
 
       const results = await provider.search('page', mockContext);
@@ -237,26 +150,10 @@ describe('FileProvider', () => {
     });
 
     it('should keep unique filenames without extra path info', async () => {
-      // Mock workspace:get-by-id call
-      mockInvoke.mockResolvedValueOnce({ success: true, data: { worktreePath: '/workspace/root' } });
-
-      // Mock file:list call with unique filenames
-      mockInvoke.mockResolvedValueOnce({
-        success: true,
-        data: [
-          {
-            name: 'unique.ts',
-            path: '/workspace/root/src/unique.ts',
-            isFile: true,
-            extension: 'ts',
-          },
-          {
-            name: 'other.ts',
-            path: '/workspace/root/src/other.ts',
-            isFile: true,
-            extension: 'ts',
-          },
-        ],
+      mockBackendRequest.mockResolvedValueOnce({
+        requestId: 'srch-1',
+        files: ['src/unique.ts', 'src/other.ts'],
+        truncated: false,
       });
 
       const results = await provider.search('', mockContext);

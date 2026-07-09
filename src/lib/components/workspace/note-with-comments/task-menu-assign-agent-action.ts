@@ -9,13 +9,8 @@ import {
   addTaskAgentAssociation,
   removeTaskAgentAssociation,
 } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
-import { notesIpc } from '$lib/utils/notes-ipc';
-import { NOTES_CHANNELS } from '$shared/ipc/channels';
-import type { Workspace, Note, AgentSession } from '$shared/types';
-import {
-  NoteId,
-  WorkspaceId,
-} from '$shared/types/branded-ids';
+import { appClient } from '$lib/client';
+import type { Workspace } from '$shared/types';
 import { unifiedIdService } from '$shared/services/unified-id.service';
 import { stripMarkdownFormatting } from '$shared/utils-client';
 import { taskNoteUrl } from '$shared/constants/intent-links';
@@ -175,42 +170,60 @@ export async function runAssignAgentTaskMenuAction({
       optimisticNoteId,
     });
 
-    // Create the Task Note with agent via createPrerequisiteNote
-    // Pass the pre-generated agent ID so backend uses it
-    const result = await notesIpc<{ note: Note; agent?: AgentSession }>(
-      NOTES_CHANNELS.CREATE_PREREQUISITE_NOTE,
+    // Create the Task Note via the live tasks client (daemon `task.createPrerequisite`).
+    // `peerOrder` is not part of the §7.9 arm and is dropped; the daemon assigns
+    // ordering. The auto-agent behavior (initialMessage + `task.assignAgent`) is
+    // preserved trivially via a follow-up `agents.create` using the pre-generated
+    // id; the initial-message send and explicit assignment are NOT re-issued here
+    // (known gap versus the retired main-process handler).
+    const createResult = await appClient.tasks.createPrerequisite(
+      noteId,
+      sanitizedTitle,
       {
-        workspaceId: WorkspaceId(workspace.id),
-        dependentNoteId: NoteId(noteId),
-        options: {
-          title: sanitizedTitle,
-          content: taskNoteContent,
-          taskStatus: 'not_started',
-          peerOrder,
-          agentConfig: {
-            instruction: taskText,
-            model,
-            autoStart: true,
-            agentId: optimisticAgentId, // Use pre-generated ID
-          },
-        },
+        content: taskNoteContent,
+        status: 'not_started',
       },
     );
 
-    if (!result.ok) {
+    if (!createResult.success || !createResult.id) {
       // Rollback: clear the optimistic agent ID and remove optimistic note
       if (editor) {
         editor.commands.setTaskAgentId(taskPosition, null);
       }
       storeDispatch(removeOptimisticNote(workspace.id, optimisticNoteId));
-      throw new Error(result.error || 'Failed to create Task Note');
+      throw new Error(createResult.error || 'Failed to create Task Note');
     }
 
-    const { note: taskNote } = result.data;
+    const newTaskNoteId = createResult.id;
 
-    // Replace optimistic note with real note from server
+    try {
+      await appClient.agents.create({
+        workspaceId: workspace.id,
+        agentId: optimisticAgentId,
+        name: sanitizedTitle,
+        agentType: 'task-loop',
+        model,
+        metadata: {
+          source: 'task-creation',
+          agentType: 'task-loop',
+          taskNoteId: newTaskNoteId,
+          isBackground: true,
+        },
+      });
+    } catch (agentError) {
+      logger.warn('Failed to create agent for new Task Note', {
+        taskNoteId: newTaskNoteId,
+        agentId: optimisticAgentId,
+        error: agentError instanceof Error ? agentError.message : String(agentError),
+      });
+    }
+
+    // Replace optimistic note with a real-id-bearing copy so the sidebar stays
+    // populated until the notes `subscribe` refetch delivers the authoritative
+    // BE payload (which upserts by id).
+    const taskNote = { ...optimisticNote, id: newTaskNoteId };
     storeDispatch(removeOptimisticNote(workspace.id, optimisticNoteId));
-    storeDispatch(addOptimisticNote(workspace.id, taskNote)); // Add the real note
+    storeDispatch(addOptimisticNote(workspace.id, taskNote as any));
 
     logger.info('Task Note created successfully', {
       taskNoteId: taskNote.id,

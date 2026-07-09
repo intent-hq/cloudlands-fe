@@ -29,11 +29,9 @@ import {
   EventsEmitSchema,
   EventsSubscribeSchema,
   EventsUnsubscribeSchema,
-  EventsQuerySchema,
   EventsGetLastEventSchema,
   EventsGetStatisticsSchema,
 } from '../../../main/ipc-schemas';
-import { getBlob } from '../../../shared/git/git-blob-storage';
 import {
   addRendererSubscription,
   clearRendererSubscriptions,
@@ -188,101 +186,9 @@ export function setupEventsIPC(): void {
     ),
   );
 
-  // Query events — use EventStore (I/O utility) directly
-  ipcMain.handle(
-    EVENTS_CHANNELS.QUERY,
-    createSafeValidatedHandler(
-      EventsQuerySchema,
-      async (_event, validated) => {
-        try {
-          // Use EventStore directly for disk-backed queries
-          const { EventStore } = await import('./event-store');
-          const { WorkspaceConfig } = await import('../../../shared/main/config');
-          const { getOrCreateEventStore } = await import(
-            '../../../store/main/slices/workspace-events/sagas/persistence-saga'
-          );
-
-          const storageDir = WorkspaceConfig.paths.metadata(validated.workspaceId);
-          const store = getOrCreateEventStore(validated.workspaceId, storageDir, EventStore);
-          await store.initialize();
-
-          const allEvents: WorkspaceEvent[] = store.getAll();
-          const filtered = filterEventsForSubscription(allEvents, validated.filters);
-          // Sort most-recent-first (consistent with previous behaviour)
-          filtered.sort((a: WorkspaceEvent, b: WorkspaceEvent) => b.timestamp.localeCompare(a.timestamp));
-          const limitedEvents = validated.limit ? filtered.slice(0, validated.limit) : filtered;
-
-          // Resolve blob SHAs to inline content for file:changed events
-          let repoPath: string | undefined;
-          const resolvedEvents = await Promise.all(
-            limitedEvents.map(async (event) => {
-              if (event.type !== 'file:changed') return event;
-
-              const data = event.data as {
-                oldContentSha?: string;
-                oldContent?: string;
-                newContentSha?: string;
-                newContent?: string;
-              };
-              if (!data) return event;
-
-              // Lazily get repoPath only if we need it
-              if ((data.oldContentSha || data.newContentSha) && repoPath === undefined) {
-                try {
-                  const { workspaceService } = await import(
-                    '../../workspace/main/workspace.service'
-                  );
-                  const result = await workspaceService.getWorkspace(
-                    validated.workspaceId as import('../../../shared/types').WorkspaceId,
-                  );
-                  if (result.ok && result.data) {
-                    const workspace = result.data as {
-                      worktreePath?: string;
-                      repositoryPath?: string;
-                      path?: string;
-                    };
-                    repoPath = workspace.worktreePath || workspace.repositoryPath || workspace.path;
-                  } else {
-                    repoPath = '';
-                  }
-                } catch {
-                  repoPath = '';
-                }
-              }
-
-              if (!repoPath) return event;
-
-              // Resolve oldContentSha
-              if (data.oldContentSha && !data.oldContent) {
-                const content = await getBlob(data.oldContentSha, repoPath);
-                if (content !== null) data.oldContent = content;
-              }
-
-              // Resolve newContentSha
-              if (data.newContentSha && !data.newContent) {
-                const content = await getBlob(data.newContentSha, repoPath);
-                if (content !== null) data.newContent = content;
-              }
-
-              return event;
-            }),
-          );
-
-          logger.debug('Events queried', {
-            workspaceId: validated.workspaceId,
-            filterCount: validated.filters.length,
-            resultCount: resolvedEvents.length,
-          });
-
-          return resolvedEvents;
-        } catch (error) {
-          logger.error('Failed to query events', { error });
-          throw error;
-        }
-      },
-      EVENTS_CHANNELS.QUERY,
-    ),
-  );
+  // NOTE: the `events:query` handler was removed — historical event reads are
+  // daemon-owned (`event.query`, PROTOCOL §5.10) and resolve in the renderer
+  // via `appClient.events.query` over the JSON-RPC bridge.
 
   // Get last event — use Redux selector
   ipcMain.handle(
@@ -425,29 +331,9 @@ export function setupEventsIPC(): void {
     },
   );
 
-  // Unsubscribe all agent event subscriptions for an agent
-  // This is used when stopping all agents to prevent the parent from being woken up
-  ipcMain.handle(
-    EVENTS_CHANNELS.UNSUBSCRIBE_AGENT,
-    async (_event, params: { workspaceId: string; agentId: string }) => {
-      try {
-        const { agentUnsubscribeAll } =
-          await import('./agent-subscription-ops');
-        const count = agentUnsubscribeAll(params.workspaceId, params.agentId);
-
-        logger.info('Unsubscribed all agent event subscriptions', {
-          agentId: params.agentId,
-          workspaceId: params.workspaceId,
-          count,
-        });
-
-        return { success: true, count };
-      } catch (error) {
-        logger.error('Failed to unsubscribe agent', { error, params });
-        return { success: false, error: String(error) };
-      }
-    },
-  );
+  // NOTE: the deprecated `events:unsubscribe-agent` handler was dropped —
+  // agent event subscriptions are daemon-owned (PROTOCOL §5.10) and the last
+  // renderer call sites were removed with it.
 
   logger.info('Events IPC handlers setup complete');
 }
@@ -480,11 +366,9 @@ export function cleanupEventsIPC(): void {
   ipcMain.removeHandler(EVENTS_CHANNELS.EMIT);
   ipcMain.removeHandler(EVENTS_CHANNELS.SUBSCRIBE);
   ipcMain.removeHandler(EVENTS_CHANNELS.UNSUBSCRIBE);
-  ipcMain.removeHandler(EVENTS_CHANNELS.QUERY);
   ipcMain.removeHandler(EVENTS_CHANNELS.GET_LAST_EVENT);
   ipcMain.removeHandler(EVENTS_CHANNELS.GET_STATISTICS);
   ipcMain.removeHandler(EVENTS_CHANNELS.GET_AGENT_SUBSCRIPTIONS);
-  ipcMain.removeHandler(EVENTS_CHANNELS.UNSUBSCRIBE_AGENT);
 
   // Clear all renderer subscriptions (no store.subscribe to tear down —
   // event delivery is handled by the renderer-subscription saga)

@@ -37,7 +37,6 @@ const SRC_ROOT = path.resolve(__dirname, '..', '..');
  * Channels the renderer invokes during startup (init sagas, layout mounts,
  * store initialization). Gathered by auditing:
  * - src/store/renderer/slices/specialists/sagas/init-saga.ts
- * - src/store/renderer/slices/permission/sagas/ipc-saga.ts
  * - src/lib/services/promotional-banner.ts (called from PromotionalBanner.svelte)
  * - src/store/renderer/slices/auto-update/sagas/auto-update-saga.ts
  * - src/store/renderer/slices/workspace-settings/sagas/init-saga.ts
@@ -54,9 +53,6 @@ const RENDERER_STARTUP_CHANNELS = [
   // Auto-update — called after a short delay (2s) but still races
   'auto-update:get-state',
   'auto-update:check',
-
-  // Permission saga — fetches pending on startup for page-refresh recovery
-  'permission:get-pending',
 
   // Git tracking — called by git tracking init
   'git-tracking:get-state',
@@ -112,7 +108,6 @@ describe('IPC Startup Race Condition', () => {
     expect(criticalFunctions.has('setupSpecialistsIPC')).toBe(true);
     expect(criticalFunctions.has('setupBannerIPC')).toBe(true);
     expect(criticalFunctions.has('setupAutoUpdateIPC')).toBe(true);
-    expect(criticalFunctions.has('setupPermissionIPC')).toBe(true);
     expect(criticalFunctions.has('setupGitTrackingIPC')).toBe(true);
   });
 

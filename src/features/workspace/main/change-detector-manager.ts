@@ -5,8 +5,8 @@
  * This is a bridge to the real ChangeDetectorManager implementation
  *
  * PERFORMANCE OPTIMIZATION: Uses lazy initialization to defer expensive
- * operations (ElectronStore, DiffSummaryRepository) until first use,
- * improving startup time significantly.
+ * operations (change-history-persistence, DiffSummaryRepository) until
+ * first use, improving startup time significantly.
  */
 
 import { Logger } from '../../../shared/logger';
@@ -28,7 +28,7 @@ export class ChangeDetectorManager extends EventEmitter {
 
   /**
    * Lazily initialize the real manager on first use
-   * This defers expensive ElectronStore and DiffSummaryRepository creation
+   * This defers expensive change-history-persistence + DiffSummaryRepository creation
    */
   private async ensureInitialized(): Promise<RealChangeDetectorManager> {
     if (this._realManager) {

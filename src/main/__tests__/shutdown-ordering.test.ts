@@ -2,10 +2,12 @@
  * Graceful-shutdown ordering regression guard (AST-based).
  *
  * `ConsolidatedBackendService.shutdown()` (invoked by `shutdownUnifiedBackend`)
- * already saves sessions and kills providers, so our clean-quit flush from
- * `agentBackendHandler.persistShutdownState()` MUST run BEFORE
- * `shutdownUnifiedBackend()` — otherwise the flush either races against
- * cleared state or is overwritten by the backend's own shutdown.
+ * kills providers and saves sessions during teardown. The persist-in-flight
+ * hook (`agentBackendHandler.persistShutdownState()`) was retired alongside
+ * the FE `AgentBackendHandler` (C1d-7) — the daemon now owns in-flight session
+ * persistence via `agent.completeOnce` (PROTOCOL.md §5.32). What remains is
+ * the non-teardown ordering (running-agent prompt BEFORE any teardown, single
+ * SIGINT/SIGTERM owner, non-macOS delegate-to-gracefulShutdown path).
  *
  * Importing `src/main/index.ts` has heavy top-level side effects (Sentry,
  * electron app, IPC registration), so we parse the source with the
@@ -98,31 +100,22 @@ function findWindowAllClosedHandler(sf: ts.SourceFile): ts.FunctionLikeDeclarati
 }
 
 describe('gracefulShutdown call ordering (AST)', () => {
-  it('calls persistShutdownState() BEFORE shutdownUnifiedBackend() inside gracefulShutdown', () => {
+  it('does not re-introduce the retired persistShutdownState hook in gracefulShutdown', () => {
+    // Sentinel: `agentBackendHandler.persistShutdownState()` was retired in
+    // C1d-7 (daemon owns in-flight persistence via `agent.completeOnce`,
+    // PROTOCOL.md §5.32). Adding it back would resurrect the FE handler.
     const sf = parseIndex();
     const gs = findGracefulShutdown(sf);
     const calls = callsitesIn(gs.body!);
-    const persistIdx = calls.findIndex((c) => c.text === 'agentBackendHandler.persistShutdownState');
-    const unifiedIdx = calls.findIndex((c) => c.text === 'shutdownUnifiedBackend');
-    expect(persistIdx).toBeGreaterThan(-1);
-    expect(unifiedIdx).toBeGreaterThan(-1);
-    expect(persistIdx).toBeLessThan(unifiedIdx);
+    expect(calls.some((c) => c.text === 'agentBackendHandler.persistShutdownState')).toBe(false);
+    expect(calls.some((c) => c.text === 'shutdownUnifiedBackend')).toBe(true);
   });
 
-  it('window-all-closed either delegates to gracefulShutdown or calls persistShutdownState before shutdownUnifiedBackend', () => {
+  it('window-all-closed does not re-introduce the retired persistShutdownState hook', () => {
     const sf = parseIndex();
     const handler = findWindowAllClosedHandler(sf);
     const calls = callsitesIn(handler.body!);
-    const delegates = calls.some((c) => c.text === 'gracefulShutdown');
-    if (delegates) {
-      expect(delegates).toBe(true);
-      return;
-    }
-    const persistIdx = calls.findIndex((c) => c.text === 'agentBackendHandler.persistShutdownState');
-    const unifiedIdx = calls.findIndex((c) => c.text === 'shutdownUnifiedBackend');
-    expect(persistIdx).toBeGreaterThan(-1);
-    expect(unifiedIdx).toBeGreaterThan(-1);
-    expect(persistIdx).toBeLessThan(unifiedIdx);
+    expect(calls.some((c) => c.text === 'agentBackendHandler.persistShutdownState')).toBe(false);
   });
 
   it('window-all-closed invokes the running-agent prompt BEFORE any backend teardown (or delegates to gracefulShutdown)', () => {
@@ -141,14 +134,11 @@ describe('gracefulShutdown call ordering (AST)', () => {
         c.text === 'dialog.showMessageBox' ||
         c.text.endsWith('.showMessageBox'),
     );
-    const persistIdx = calls.findIndex((c) => c.text === 'agentBackendHandler.persistShutdownState');
     const unifiedIdx = calls.findIndex((c) => c.text === 'shutdownUnifiedBackend');
     expect(promptIdx).toBeGreaterThan(-1);
-    expect(persistIdx).toBeGreaterThan(-1);
     expect(unifiedIdx).toBeGreaterThan(-1);
     // Prompt must run before any teardown, otherwise providers are already dead
     // by the time before-quit fires and the check silently sees zero streams.
-    expect(promptIdx).toBeLessThan(persistIdx);
     expect(promptIdx).toBeLessThan(unifiedIdx);
   });
 
@@ -157,7 +147,7 @@ describe('gracefulShutdown call ordering (AST)', () => {
     // teardown" bug. On the non-macOS last-window-close path, after the user
     // confirms the running-agent prompt, the handler must delegate teardown to
     // gracefulShutdown() (which runs cleanupTerminals/cleanupNoteTerminals/
-    // disposeAllScriptProcessManagers/cleanupMCP/cleanupAutoUpdater, sets
+    // disposeAllScriptProcessManagers/cleanupAutoUpdater, sets
     // isShuttingDown=true, and calls app.exit(0)) — and then return before the
     // inline teardown block runs. Without this, app.quit() at the end of the
     // handler fires before-quit → gracefulShutdown for a duplicate teardown and a
@@ -216,17 +206,17 @@ describe('gracefulShutdown call ordering (AST)', () => {
     // cleanups that previously ran inline on that path MUST remain reachable
     // inside gracefulShutdown. If any of these are removed, the non-macOS
     // last-window-close path silently stops cleaning up those resources
-    // (PTY terminals, note terminals, workspace scripts, MCP Hub child
-    // processes, auto-updater periodic checks) and the process no longer
-    // force-exits via app.exit() after teardown.
+    // (PTY terminals, workspace scripts, auto-updater periodic checks) and the
+    // process no longer force-exits via app.exit() after teardown.
+    // `cleanupNoteTerminals` was retired in D6 alongside `notes-primitives.ipc.ts`;
+    // the MCP hub `cleanupMCP` step was retired in G3 alongside the FE MCP hub
+    // (the daemon owns MCP process lifecycle now).
     const sf = parseIndex();
     const gs = findGracefulShutdown(sf);
     const calls = callsitesIn(gs.body!);
     const required = [
       'cleanupTerminals',
-      'cleanupNoteTerminals',
       'disposeAllScriptProcessManagers',
-      'cleanupMCP',
       'cleanupAutoUpdater',
       'app.exit',
     ];
@@ -236,6 +226,36 @@ describe('gracefulShutdown call ordering (AST)', () => {
         `gracefulShutdown must still call ${name}() — removing it would regress the non-macOS window-all-closed cleanup path that now delegates here`,
       ).toBe(true);
     }
+  });
+
+  it('confirmQuitWithRunningAgents consults the daemon, not the removed main-store stream state', () => {
+    // Regression guard for the quit crash: the old prompt read
+    // `agentBackendHandler.getActiveStreams()`, which reached into the removed
+    // main-process messageAccumulator Redux slice and threw
+    // `Cannot read properties of undefined (reading 'accumulators')` on every
+    // quit. The prompt must ask the daemon (listRespondingAgents) instead and
+    // never touch the dead store paths again.
+    const sf = parseIndex();
+    let fn: ts.FunctionLikeDeclaration | undefined;
+    const visit = (n: ts.Node) => {
+      if (fn) return;
+      if (
+        ts.isFunctionDeclaration(n) &&
+        n.name?.text === 'confirmQuitWithRunningAgents' &&
+        n.body
+      ) {
+        fn = n;
+        return;
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+    expect(fn, 'confirmQuitWithRunningAgents not found in src/main/index.ts').toBeDefined();
+
+    const calls = callsitesIn(fn!.body!);
+    expect(calls.some((c) => c.text === 'listRespondingAgents')).toBe(true);
+    expect(calls.some((c) => c.text === 'agentBackendHandler.getActiveStreams')).toBe(false);
+    expect(calls.some((c) => c.text.includes('messageAccumulator'))).toBe(false);
   });
 
   it('main process registers exactly one SIGINT and one SIGTERM handler (single-owner invariant)', () => {

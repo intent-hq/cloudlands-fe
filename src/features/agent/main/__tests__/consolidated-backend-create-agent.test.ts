@@ -2,8 +2,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { agentPersistenceSaveAgentMock, setMetadataFSResolverMock } = vi.hoisted(() => ({
-  agentPersistenceSaveAgentMock: vi.fn(async () => ({ success: true })),
+const { mockRequest, setMetadataFSResolverMock } = vi.hoisted(() => ({
+  mockRequest: vi.fn(async () => ({ success: true })),
   setMetadataFSResolverMock: vi.fn(),
 }));
 
@@ -34,12 +34,8 @@ vi.mock('$shared/ipc/channels', () => ({ AGENT_BACKEND_CHANNELS: {}, PERSISTENCE
 vi.mock('../utils/memory-manager', () => ({
   memoryManager: { register: vi.fn(), cleanup: vi.fn(), unregister: vi.fn() },
 }));
-vi.mock('../agent-persistence', () => ({
-  agentPersistence: { saveAgent: agentPersistenceSaveAgentMock },
-  unifiedPersistence: {
-    setMetadataFSResolver: setMetadataFSResolverMock,
-    markAgentPending: vi.fn(),
-  },
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockRequest }),
 }));
 vi.mock('../../metadata-fs/main/metadata-fs-factory', () => ({
   getMetadataFS: vi.fn(),
@@ -50,8 +46,8 @@ import { AgentStatus } from '$shared/types';
 describe('ConsolidatedBackendService.createAgent', () => {
   beforeEach(() => {
     process.env.INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS = '1';
-    agentPersistenceSaveAgentMock.mockClear();
-    agentPersistenceSaveAgentMock.mockResolvedValue({ success: true });
+    mockRequest.mockReset();
+    mockRequest.mockResolvedValue({ success: true });
     setMetadataFSResolverMock.mockClear();
   });
 
@@ -99,10 +95,10 @@ describe('ConsolidatedBackendService.createAgent', () => {
 
     expect(result.success).toBe(true);
     expect(result.agent?.messages).toEqual([]);
-    expect(agentPersistenceSaveAgentMock).not.toHaveBeenCalled();
+    expect(mockRequest).not.toHaveBeenCalled();
   });
 
-  it('persists sessions with at least one message during create flow', async () => {
+  it('persists sessions with at least one message during create flow via agent.update', async () => {
     const { ConsolidatedBackendService } = await import('../consolidated-backend.service');
     const backend = ConsolidatedBackendService.getInstance({
       healthCheckInterval: 0,
@@ -121,9 +117,14 @@ describe('ConsolidatedBackendService.createAgent', () => {
 
     expect(result.success).toBe(true);
     expect(result.agent?.messages).toHaveLength(1);
-    expect(agentPersistenceSaveAgentMock).toHaveBeenCalledTimes(1);
-    expect(agentPersistenceSaveAgentMock).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'agent-with-message', messages: expect.any(Array) }),
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+    expect(mockRequest).toHaveBeenCalledWith(
+      'agent.update',
+      expect.objectContaining({
+        agentId: 'agent-with-message',
+        workspaceId: 'amber-forest',
+        changes: expect.objectContaining({ name: 'Agent With Message' }),
+      }),
     );
   });
 });

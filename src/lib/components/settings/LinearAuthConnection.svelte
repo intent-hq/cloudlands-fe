@@ -5,7 +5,7 @@
 } from '$features/linear-auth/constants';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
   import { Select } from '$lib/components/ui/select';
-  import { invoke } from '$shared/generated/ipc-client';
+  import { safeLocalStorage } from '$lib/utils/safe-storage';
   import { faCheck } from '@fortawesome/free-solid-svg-icons';
   import { onMount } from 'svelte';
   import Fa from 'svelte-fa';
@@ -18,9 +18,10 @@
 } from '$store/renderer/slices/linear-auth/linear-auth-selectors';
   import {
   initializeLinearAuth,
-  startLinearAuth,
+  connectLinear,
   logoutLinear,
 } from '$store/renderer/slices/linear-auth/linear-auth-slice';
+  import Input from '$lib/components/ui/input/input.svelte';
 
   interface Props {
     /** Skip initialization if parent already initialized the store */
@@ -38,25 +39,26 @@
   let issueFilter = $state<LinearIssueFilter>('all');
   let filterLoaded = $state(false);
 
-  onMount(async () => {
+  // Paste-API-key connect flow (PROTOCOL §5.28 — no OAuth; the key is stored
+  // via the daemon keyring path and the connection re-probed).
+  let showKeyInput = $state(false);
+  let apiKeyDraft = $state('');
+
+  // PROTOCOL §5.12 classifies `linear.issueFilter` as FE-only ("Not exposed")
+  // — the filter persists locally, not through daemon settings.*.
+  const LINEAR_ISSUE_FILTER_STORAGE_KEY = 'linearIssueFilter';
+
+  onMount(() => {
     if (!skipInitialize) {
       appStore.dispatch(initializeLinearAuth());
     }
-    await loadFilter();
+    loadFilter();
   });
 
-  async function loadFilter() {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      try {
-        const result = await invoke<any>('settings:get', {
-          key: 'linearIssueFilter',
-        });
-        if (result?.data && typeof result.data === 'string') {
-          issueFilter = result.data as LinearIssueFilter;
-        }
-      } catch {
-        // Use default filter
-      }
+  function loadFilter() {
+    const stored = safeLocalStorage.getItem(LINEAR_ISSUE_FILTER_STORAGE_KEY);
+    if (stored && LINEAR_ISSUE_FILTER_OPTIONS.some((option) => option.value === stored)) {
+      issueFilter = stored as LinearIssueFilter;
     }
     filterLoaded = true;
   }
@@ -64,37 +66,34 @@
   // Save filter when it changes (after initial load)
   $effect(() => {
     if (!filterLoaded) return;
-    const currentFilter = issueFilter;
-    saveFilter(currentFilter);
+    safeLocalStorage.setItem(LINEAR_ISSUE_FILTER_STORAGE_KEY, issueFilter);
   });
 
-  async function saveFilter(filter: LinearIssueFilter) {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      try {
-        await invoke<any>('settings:update', {
-          settings: { linearIssueFilter: filter },
-        });
-      } catch {
-        // Ignore save errors
-      }
-    }
+  function handleShowKeyInput() {
+    apiKeyDraft = '';
+    showKeyInput = true;
   }
 
-  function handleLinearConnect() {
-    appStore.dispatch(startLinearAuth());
+  function handleCancelKeyInput() {
+    showKeyInput = false;
+    apiKeyDraft = '';
+  }
+
+  function handleSubmitApiKey() {
+    const key = apiKeyDraft.trim();
+    if (!key) return;
+    appStore.dispatch(connectLinear(key));
+    showKeyInput = false;
+    apiKeyDraft = '';
   }
 
   function handleLinearDisconnect() {
     isDisconnectingLinear = true;
     appStore.dispatch(logoutLinear());
-    // Reset local flag after a short delay since logout is async via saga
+    // Reset local flag after a short delay since logout is async via the service
     setTimeout(() => {
       isDisconnectingLinear = false;
     }, 500);
-  }
-
-  function handleLinearReconnect() {
-    appStore.dispatch(startLinearAuth());
   }
 </script>
 
@@ -121,14 +120,14 @@
 
     <div class="flex items-center gap-2 text-xs">
       {#if $isAuthenticating$}
-        <span class="text-subtle">Waiting for authorization...</span>
+        <span class="text-subtle">Validating API key...</span>
       {:else if $isAuthenticated$}
         <button
           type="button"
           class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-          onclick={handleLinearReconnect}
+          onclick={handleShowKeyInput}
         >
-          Reconnect
+          Replace key
         </button>
         <span class="text-ghost">·</span>
         <button
@@ -143,7 +142,7 @@
         <button
           type="button"
           class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
-          onclick={handleLinearConnect}
+          onclick={handleShowKeyInput}
         >
           Connect
         </button>
@@ -152,6 +151,43 @@
       {/if}
     </div>
   </div>
+
+  {#if showKeyInput && !$isAuthenticating$}
+    <div class="pl-6 space-y-2">
+      <div class="flex items-center gap-2">
+        <Input
+          type="password"
+          bind:value={apiKeyDraft}
+          placeholder="lin_api_..."
+          class="h-7 text-xs flex-1"
+          aria-label="Linear personal API key"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') handleSubmitApiKey();
+            if (e.key === 'Escape') handleCancelKeyInput();
+          }}
+        />
+        <button
+          type="button"
+          class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium text-xs"
+          onclick={handleSubmitApiKey}
+          disabled={!apiKeyDraft.trim()}
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          class="text-muted-foreground hover:text-foreground cursor-pointer transition-colors text-xs"
+          onclick={handleCancelKeyInput}
+        >
+          Cancel
+        </button>
+      </div>
+      <p class="text-xs text-subtle">
+        Paste a Linear personal API key. It is stored in the daemon's OS keychain — never in
+        plaintext config.
+      </p>
+    </div>
+  {/if}
 
   {#if $isAuthenticated$}
     <div class="pl-6 flex items-center gap-3">

@@ -2,7 +2,10 @@ import type { WorkspaceEvent } from '$features/events/types';
 import { createAction } from '@augmentcode/ag-redux-toolkit/utils/store/create-action';
 import { createReducer } from '@augmentcode/ag-redux-toolkit/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
-import { sanitizeWorkspaceEventsList } from './workspace-events-sanitizer';
+import {
+  sanitizeWorkspaceEvent,
+  sanitizeWorkspaceEventsList,
+} from './workspace-events-sanitizer';
 
 const MAX_EVENTS = 100;
 
@@ -53,11 +56,30 @@ export const setEventsLoading = createAction<[workspaceId: string, loading: bool
 // ---------------------------------------------------------------------------
 
 export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initialState)
+  .with(eventReceived, (state, { payload: [workspaceId, event] }) => {
+    const safeEvent = sanitizeWorkspaceEvent(event, workspaceId);
+    if (!safeEvent) return state;
+    const wsState = getWorkspaceState(state, workspaceId);
+    // Dedup by id against the current buffer: `eventsLoaded` seeds a boot
+    // snapshot from `event.query`, and a subsequent live push carrying the
+    // same id (fan-out gate notwithstanding) must not double-append.
+    if (wsState.events.some((existing) => existing.id === safeEvent.id)) return state;
+    const nextEvents = [...wsState.events, safeEvent].slice(-MAX_EVENTS);
+    return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
+  })
   .with(bulkEventsReceived, (state, { payload: [workspaceId, events] }) => {
     const safeEvents = sanitizeWorkspaceEventsList(events, workspaceId);
     if (safeEvents.length === 0) return state;
     const wsState = getWorkspaceState(state, workspaceId);
-    const nextEvents = [...wsState.events, ...safeEvents].slice(-MAX_EVENTS);
+    const seenIds = new Set(wsState.events.map((existing) => existing.id));
+    const deduped: WorkspaceEvent[] = [];
+    for (const candidate of safeEvents) {
+      if (seenIds.has(candidate.id)) continue;
+      seenIds.add(candidate.id);
+      deduped.push(candidate);
+    }
+    if (deduped.length === 0) return state;
+    const nextEvents = [...wsState.events, ...deduped].slice(-MAX_EVENTS);
     return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
   })
   .with(eventsLoaded, (state, { payload: [workspaceId, events] }) => {

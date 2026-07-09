@@ -39,8 +39,10 @@ vi.mock('$features/notes/utils/task-block-parser', () => ({
   hasTaskBlocks: vi.fn().mockReturnValue(false),
 }));
 
-vi.mock('$features/notes/main/notes.service', () => ({
-  notesService: { convertTaskBlocks: vi.fn() },
+// P3-D4: task.convertBlocks now routes through the daemon (PROTOCOL.md §5.4).
+const mockBackendRequest = vi.hoisted(() => vi.fn());
+vi.mock('$features/backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockBackendRequest }),
 }));
 
 vi.mock('$features/system/main/system.ipc', () => ({
@@ -55,14 +57,8 @@ vi.mock('$features/workspace/main/workspace.service', () => ({
   },
 }));
 
-vi.mock('$features/agent/main/agent-backend-handler.service', () => ({
-  agentBackendHandler: { createAgentSession: vi.fn() },
-  AgentBackendHandler: { getInstance: () => ({ createAgent: vi.fn() }) },
-}));
-
 import { WorkspaceJsApiTool } from '../workspace-js-api-tool';
 import { hasTaskBlocks } from '$features/notes/utils/task-block-parser';
-import { notesService } from '$features/notes/main/notes.service';
 import { sendToWorkspaceWindows } from '$features/system/main/system.ipc';
 
 function makeCall(code: string) {
@@ -164,9 +160,12 @@ describe('ws.note.setContent — task-block auto-conversion', () => {
     const taskContent = '@@@task\n# Task\nDesc\n@@@';
     mockWM.updateNote.mockResolvedValue({ id: 'spec', title: 'Spec', content: taskContent, tags: [] });
     (hasTaskBlocks as any).mockReturnValue(true);
-    (notesService.convertTaskBlocks as any).mockResolvedValue({
-      ok: true,
-      data: { convertedCount: 1, createdNoteIds: ['t1'], updatedContent: '- [ ] [Task](intent://local/task/t1)' },
+    // P3-D4: daemon task.convertBlocks — PROTOCOL.md §5.4 shape (no updatedContent).
+    mockBackendRequest.mockImplementation(async (method: string) => {
+      if (method === 'task.convertBlocks') {
+        return { convertedCount: 1, createdNoteIds: ['t1'] };
+      }
+      return {};
     });
 
     const result = await tool.execute(
@@ -178,8 +177,12 @@ describe('ws.note.setContent — task-block auto-conversion', () => {
     expect(parsed.convertedCount).toBe(1);
     expect(parsed.createdTaskNoteIds).toEqual(['t1']);
     expect(hasTaskBlocks).toHaveBeenCalled();
+    expect(mockBackendRequest).toHaveBeenCalledWith('task.convertBlocks', {
+      workspaceId: 'ws-1',
+      noteId: 'spec',
+    });
     // Pre-conversion emit should NOT have been called when task blocks are present
-    // (autoConvertTaskBlocks handles its own emit with post-conversion content)
+    // (daemon-side conversion emits its own update; fallback only fires on 0 conversions)
     expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
   });
 
@@ -204,9 +207,11 @@ describe('ws.note.setContent — task-block auto-conversion', () => {
     const content = '@@@task\ninvalid block\n@@@';
     mockWM.updateNote.mockResolvedValue({ id: 'spec', title: 'Spec', content, tags: [] });
     (hasTaskBlocks as any).mockReturnValue(true);
-    (notesService.convertTaskBlocks as any).mockResolvedValue({
-      ok: true,
-      data: { convertedCount: 0, createdNoteIds: [], updatedContent: null },
+    mockBackendRequest.mockImplementation(async (method: string) => {
+      if (method === 'task.convertBlocks') {
+        return { convertedCount: 0, createdNoteIds: [] };
+      }
+      return {};
     });
 
     const result = await tool.execute(

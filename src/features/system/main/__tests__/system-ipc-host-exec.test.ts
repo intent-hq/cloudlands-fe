@@ -67,18 +67,13 @@ vi.mock('../../../../shared/main/host-exec-stream', () => ({
   hostExecStream: hostExecStreamMock,
 }));
 
-const findAuggieAsyncMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../../shared/main/async-utils', () => ({
-  findAuggieAsync: findAuggieAsyncMock,
+  findAuggieAsync: vi.fn(),
   findVSCodeAsync: vi.fn(),
 }));
 
-vi.mock('../../../mcp/main/mcp-oauth', () => ({
-  clearMcpOAuthTokens: vi.fn(async () => {}),
-}));
-
 import { setupSystemIPC } from '../system.ipc';
-import { SYSTEM_CHANNELS, USER_MCP_CHANNELS } from '../../../../shared/ipc/channels';
+import { SYSTEM_CHANNELS } from '../../../../shared/ipc/channels';
 
 function handlerFor(channel: string): Handler {
   const call = electronMocks.handle.mock.calls.find((c) => c[0] === channel);
@@ -93,120 +88,7 @@ beforeEach(() => {
   electronMocks.handle.mockReset();
   hostExecMock.mockReset();
   hostExecStreamMock.mockReset();
-  findAuggieAsyncMock.mockReset();
   setupSystemIPC();
-});
-
-describe('MCP handlers → host.exec (PROTOCOL.md §5.14)', () => {
-  it('MCP_LIST forwards `mcp list --json` argv to host.exec and parses the JSON reply', async () => {
-    findAuggieAsyncMock.mockResolvedValue('/usr/local/bin/auggie');
-    const server = { name: 'context7', transport: 'stdio', command: 'context7-mcp' };
-    hostExecMock.mockResolvedValue({
-      stdout: JSON.stringify([server]),
-      stderr: '',
-      exitCode: 0,
-    });
-
-    const handler = handlerFor(USER_MCP_CHANNELS.MCP_LIST);
-    const result = (await handler({}, undefined)) as { success: boolean; data?: unknown };
-
-    expect(hostExecMock).toHaveBeenCalledWith('/usr/local/bin/auggie', {
-      args: ['mcp', 'list', '--json'],
-      timeoutMs: 30_000,
-    });
-    expect(result.success).toBe(true);
-    expect(result.data).toEqual([server]);
-  });
-
-  it('MCP_LIST surfaces stderr when host.exec exits non-zero', async () => {
-    findAuggieAsyncMock.mockResolvedValue('/usr/local/bin/auggie');
-    hostExecMock.mockResolvedValue({ stdout: '', stderr: 'boom', exitCode: 1 });
-
-    const handler = handlerFor(USER_MCP_CHANNELS.MCP_LIST);
-    const result = (await handler({}, undefined)) as { success: boolean; error?: string };
-
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('boom');
-  });
-
-  it('MCP_LIST returns a not-found error without touching host.exec when auggie is missing', async () => {
-    findAuggieAsyncMock.mockResolvedValue(null);
-
-    const handler = handlerFor(USER_MCP_CHANNELS.MCP_LIST);
-    const result = (await handler({}, undefined)) as { success: boolean; error?: string };
-
-    expect(hostExecMock).not.toHaveBeenCalled();
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('Auggie CLI not found');
-  });
-
-  it('MCP_ADD forwards `mcp add <name> --command <cmd> --replace` argv to host.exec', async () => {
-    findAuggieAsyncMock.mockResolvedValue('/usr/local/bin/auggie');
-    hostExecMock.mockResolvedValue({ stdout: 'added: my-server', stderr: '', exitCode: 0 });
-
-    const handler = handlerFor(USER_MCP_CHANNELS.MCP_ADD);
-    const result = (await handler(
-      {},
-      { name: 'my-server', transport: 'stdio', command: '/bin/my-mcp' },
-    )) as { success: boolean; data?: { message?: string } };
-
-    expect(hostExecMock).toHaveBeenCalledWith('/usr/local/bin/auggie', {
-      args: ['mcp', 'add', 'my-server', '--command', '/bin/my-mcp', '--replace'],
-      timeoutMs: 60_000,
-    });
-    expect(result.success).toBe(true);
-    expect(result.data?.message).toBe('added: my-server');
-  });
-
-  it('MCP_ADD forwards HTTP transport flags (`-t http -u <url> --header k:v --replace`) via host.exec', async () => {
-    findAuggieAsyncMock.mockResolvedValue('/usr/local/bin/auggie');
-    hostExecMock.mockResolvedValue({ stdout: 'ok', stderr: '', exitCode: 0 });
-
-    const handler = handlerFor(USER_MCP_CHANNELS.MCP_ADD);
-    await handler(
-      {},
-      {
-        name: 'remote',
-        transport: 'http',
-        url: 'https://example.test/mcp',
-        headers: { Authorization: 'Bearer abc' },
-      },
-    );
-
-    expect(hostExecMock).toHaveBeenCalledWith('/usr/local/bin/auggie', {
-      args: [
-        'mcp',
-        'add',
-        'remote',
-        '-t',
-        'http',
-        '-u',
-        'https://example.test/mcp',
-        '--header',
-        'Authorization:Bearer abc',
-        '--replace',
-      ],
-      timeoutMs: 60_000,
-    });
-  });
-
-  it('MCP_REMOVE forwards `mcp remove <name>` argv to host.exec', async () => {
-    findAuggieAsyncMock.mockResolvedValue('/usr/local/bin/auggie');
-    hostExecMock.mockResolvedValue({ stdout: 'removed', stderr: '', exitCode: 0 });
-
-    const handler = handlerFor(USER_MCP_CHANNELS.MCP_REMOVE);
-    const result = (await handler({}, { name: 'my-server' })) as {
-      success: boolean;
-      data?: { message?: string };
-    };
-
-    expect(hostExecMock).toHaveBeenCalledWith('/usr/local/bin/auggie', {
-      args: ['mcp', 'remove', 'my-server'],
-      timeoutMs: 30_000,
-    });
-    expect(result.success).toBe(true);
-    expect(result.data?.message).toBe('removed');
-  });
 });
 
 describe('SYSTEM_CHANNELS.EXECUTE_COMMAND → host.exec (shell shim, PROTOCOL.md §5.14)', () => {

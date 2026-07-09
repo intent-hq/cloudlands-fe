@@ -8,13 +8,12 @@ import {
 import type { Note, WorkspaceId } from '../../../../shared/types';
 
 const mocks = vi.hoisted(() => ({
-  listNotes: vi.fn(),
+  request: vi.fn(),
 }));
 
-vi.mock('../../../notes/main/notes.service', () => ({
-  notesService: {
-    listNotes: mocks.listNotes,
-  },
+// `getWorkspaceTasks` routes through the daemon (PROTOCOL.md §5.4 `note.list`).
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mocks.request }),
 }));
 
 import { getWorkspaceTasks } from '../workspace-summaries';
@@ -41,7 +40,7 @@ const makeTaskNote = (id: string, overrides: Partial<Note> = {}): Note =>
 
 describe('getWorkspaceTasks', () => {
   beforeEach(() => {
-    mocks.listNotes.mockReset();
+    mocks.request.mockReset();
   });
 
   it('maps spec task notes to WorkspaceTask facts', async () => {
@@ -55,14 +54,11 @@ describe('getWorkspaceTasks', () => {
       // Non-task note is excluded
       makeTaskNote('plain-note', { metadata: {} } as Partial<Note>),
     ];
-    mocks.listNotes.mockResolvedValue({
-      ok: true,
-      data: { notes, total: notes.length, hasMore: false },
-    });
+    mocks.request.mockResolvedValue({ notes });
 
     const tasks = await getWorkspaceTasks(WORKSPACE_ID);
 
-    expect(mocks.listNotes).toHaveBeenCalledWith(WORKSPACE_ID);
+    expect(mocks.request).toHaveBeenCalledWith('note.list', { workspaceId: WORKSPACE_ID });
     expect(tasks).toEqual([
       {
         id: 'task-1',
@@ -89,10 +85,7 @@ describe('getWorkspaceTasks', () => {
         metadata: { task: { status: 'cancelled' } },
       } as Partial<Note>),
     ];
-    mocks.listNotes.mockResolvedValue({
-      ok: true,
-      data: { notes, total: notes.length, hasMore: false },
-    });
+    mocks.request.mockResolvedValue({ notes });
 
     const tasks = await getWorkspaceTasks(WORKSPACE_ID);
 
@@ -112,8 +105,8 @@ describe('getWorkspaceTasks', () => {
     ]);
   });
 
-  it('throws when the notes service fails', async () => {
-    mocks.listNotes.mockResolvedValue({ ok: false, error: 'notes unavailable' });
+  it('propagates daemon errors', async () => {
+    mocks.request.mockRejectedValue(new Error('notes unavailable'));
 
     await expect(getWorkspaceTasks(WORKSPACE_ID)).rejects.toThrow('notes unavailable');
   });

@@ -48,6 +48,11 @@ import { isSuccessResponse } from "$shared/ipc/typed-invoke";
 // fold is part of the assertion (catches envelope-shape regressions that a
 // pure `mockInvoke` test would miss).
 import { unifiedOrchestrator } from "$features/agent/services/consolidated-backend.service";
+// End-to-end consumer for the set-model bridge: ModelPicker calls
+// `agentClient.setModel`, which folds the bridge's CommandResponse envelope
+// into a `Result` — exercising it here catches envelope regressions (the
+// original bug: no bridge → `undefined` → TypeError inside the fold).
+import { agentClient } from "$features/agent/agent.client";
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -196,6 +201,150 @@ describe("agent-ipc-bridge-seeder", () => {
       expect(mockedRequest).not.toHaveBeenCalled();
       expect(response.success).toBe(false);
     });
+
+    it("forwards the FE-side context payload (contextReferences / noteIds / stdinContext) to agent.sendMessage", async () => {
+      // The FE `agent-stream-lifecycle` sendMessage assembles these three
+      // context fields from user input (attached notes, workspace-context
+      // blob, workspace/file references) and hands them to STREAM_MESSAGE.
+      // Prior to this fix the bridge stripped them before calling
+      // `agent.sendMessage`, so even a BE that grew support could not see
+      // them. Assert every forwarded field lands verbatim in the JSON-RPC
+      // params.
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-ctx" });
+
+      const contextReferences = [
+        { kind: "file", path: "src/index.ts" },
+        { kind: "workspace", workspaceId: WORKSPACE_ID },
+      ];
+      const noteIds = ["note-1", "note-2"];
+      const stdinContext = "Selected lines:\nfoo\nbar";
+      const request = {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+        messageId: "msg-ctx",
+        contextReferences,
+        noteIds,
+        stdinContext,
+      };
+
+      await mockInvoke(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, request);
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.sendMessage", {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+        messageId: "msg-ctx",
+        contextReferences,
+        noteIds,
+        stdinContext,
+      });
+    });
+
+    it("omits context fields when the caller does not supply them (schema-clean payload)", async () => {
+      // Regression guard: unset context fields must NOT surface as `undefined`
+      // in the JSON-RPC params, so the daemon router's `opt_value` lookups
+      // continue to treat them as absent rather than seeing a `null` and
+      // rejecting the call.
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-plain" });
+      await mockInvoke(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+      });
+      const call = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(call).toEqual({
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+      });
+      expect(Object.keys(call)).not.toContain("contextReferences");
+      expect(Object.keys(call)).not.toContain("noteIds");
+      expect(Object.keys(call)).not.toContain("stdinContext");
+    });
+
+    it("forwards the remaining stream payload (fileBlocks / model / messageMetadata + app-ID trio) to agent.sendMessage", async () => {
+      // The FE `agent-stream-lifecycle` threads these fields into
+      // STREAM_MESSAGE alongside the previously-covered context payload:
+      // `fileBlocks` (attached files, L1468), `model` (per-turn model
+      // override, L1465), and the pre-assigned app-ID trio (userAppMessageId
+      // L1484, assistantMessageId L1483, assistantAppMessageId L1485). The
+      // daemon router does not consume them today — Fidelity A widened it to
+      // accept `fileBlocks`, the rest remain a documented daemon-gap — but
+      // forwarding here keeps the BE as the single fix site when the router
+      // is widened. `messageMetadata` is future-proofed for the widened
+      // wire (only main-process backend-initiated flows emit it today, per
+      // `src/features/agent/main/auto-commit.service.ts:193`).
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-x" });
+
+      const fileBlocks = [
+        { type: "file", data: "abc", mimeType: "text/plain", fileName: "notes.txt" },
+      ];
+      const messageMetadata = { type: "auto_commit_hook_failure", retryCount: 1 };
+      await mockInvoke(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+        fileBlocks,
+        model: "claude-opus",
+        messageMetadata,
+        assistantMessageId: "msg_00000000-0000-0000-0000-000000000001",
+        assistantAppMessageId: "app-asst-1",
+        userAppMessageId: "app-user-1",
+      });
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.sendMessage", {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+        fileBlocks,
+        model: "claude-opus",
+        messageMetadata,
+        assistantMessageId: "msg_00000000-0000-0000-0000-000000000001",
+        assistantAppMessageId: "app-asst-1",
+        userAppMessageId: "app-user-1",
+      });
+    });
+
+    it("audit: personality / queuedMessageId / queuedMessageAppMessageId are documented dead surface and NOT forwarded to agent.sendMessage", async () => {
+      // These three fields have no live renderer producer at HEAD (see the
+      // bridge doc-comment for file:line evidence). Assert the bridge strips
+      // them from the JSON-RPC params so a future accidental producer
+      // surfaces the audit gap explicitly rather than silently piggy-backing
+      // on the bridge's forwarding.
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-audit" });
+      await mockInvoke(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+        personality: "auggie-personality-agent-default",
+        queuedMessageId: "q-1",
+        queuedMessageAppMessageId: "app-q-1",
+      });
+      const call = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(Object.keys(call)).not.toContain("personality");
+      expect(Object.keys(call)).not.toContain("queuedMessageId");
+      expect(Object.keys(call)).not.toContain("queuedMessageAppMessageId");
+    });
+
+    it("omits fileBlocks / model / messageMetadata / app-ID trio when the caller does not supply them", async () => {
+      // Regression guard mirroring the context-fields omission test above:
+      // when the caller supplies only the required trio, none of the newly
+      // forwarded fields must surface in the JSON-RPC params.
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-p" });
+      await mockInvoke(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+      });
+      const call = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(Object.keys(call)).not.toContain("fileBlocks");
+      expect(Object.keys(call)).not.toContain("model");
+      expect(Object.keys(call)).not.toContain("messageMetadata");
+      expect(Object.keys(call)).not.toContain("assistantMessageId");
+      expect(Object.keys(call)).not.toContain("assistantAppMessageId");
+      expect(Object.keys(call)).not.toContain("userAppMessageId");
+    });
   });
 
   describe("agent:backend:queue-message → daemon agent.queueMessage", () => {
@@ -343,6 +492,41 @@ describe("agent-ipc-bridge-seeder", () => {
       expect(result.queue).toHaveLength(2);
       expect(result.queue?.[0]?.id).toBe("q-1");
       expect(result.queue?.[1]?.position).toBe(1);
+    });
+  });
+
+  describe("agent:set-model → daemon agent.setModel", () => {
+    it("end-to-end: agentClient.setModel sends {agentId,modelId,workspaceId} and folds the PROTOCOL body into an ok Result", async () => {
+      // PROTOCOL §5.5: `agent.setModel` → `{ success, modelId }` (emits
+      // `agent:updated`). The bridge wraps it as CommandResponse
+      // `{success:true, data:<daemonBody>}` so `commandResponseToResult`
+      // yields `ok:true` and ModelPicker reads `result.data.success`.
+      mockedRequest.mockResolvedValueOnce({ success: true, modelId: "fable-5" });
+
+      const result = await agentClient.setModel("agent-7", "fable-5", WORKSPACE_ID);
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.setModel", {
+        agentId: "agent-7",
+        modelId: "fable-5",
+        workspaceId: WORKSPACE_ID,
+      });
+      expect(result).toEqual({ ok: true, data: { success: true, modelId: "fable-5" } });
+    });
+
+    it("daemon failure surfaces as {ok:false,error:<message>} so ModelPicker toasts the daemon error", async () => {
+      mockedRequest.mockRejectedValueOnce(new Error("not found: agent session"));
+      const result = await agentClient.setModel("agent-7", "fable-5", WORKSPACE_ID);
+      expect(result).toEqual({ ok: false, error: "not found: agent session" });
+    });
+
+    it("validates required params at the bridge boundary (no daemon call)", async () => {
+      const response = await mockInvoke<{ success: boolean; error?: string }>(
+        AGENT_CHANNELS.SET_MODEL,
+        { agentId: "agent-7" },
+      );
+      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(response.success).toBe(false);
+      expect(response.error).toContain("modelId");
     });
   });
 

@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { isRealBridgeHealth, type BridgeHealthInfo } from './mcp-bridge-health';
 
 // Note: Logger not used here since stdout is reserved for JSON-RPC
 // All logging goes to stderr via custom logToStderr function
@@ -99,30 +100,11 @@ const envPort = Number.isFinite(Number(process.env.HTTP_MCP_PORT))
   ? Number(process.env.HTTP_MCP_PORT)
   : undefined;
 
-function readPortFromStore(): number | undefined {
-  try {
-     
-    const ElectronStore = require('electron-store') as typeof import('electron-store').default;
-    const storeOpts = ELECTRON_STORE_CWD
-      ? { name: 'settings', cwd: ELECTRON_STORE_CWD }
-      : { name: 'settings' };
-    const settings: any = new ElectronStore(storeOpts);
-    const persisted = settings.get('http-bridge-port');
-    const asNumber = Number(persisted);
-    if (Number.isFinite(asNumber)) {
-      return asNumber;
-    }
-  } catch  {
-    // ignore, will fall back
-  }
-  return undefined;
-}
-
 function getPreferredPorts(): number[] {
-  const storePort = readPortFromStore();
-  const candidates = [cliPort, envPort, storePort, 5179].filter((v) =>
-    Number.isFinite(v),
-  ) as number[];
+  // The legacy `settings` electron-store `http-bridge-port` key is retired
+  // (PROTOCOL.md §5.12): the CLI/env-provided port and the 5179 default
+  // are the only surviving candidates.
+  const candidates = [cliPort, envPort, 5179].filter((v) => Number.isFinite(v)) as number[];
   return Array.from(new Set(candidates));
 }
 
@@ -132,17 +114,6 @@ function getCandidatePorts(): number[] {
     candidates.push(port);
   }
   return Array.from(new Set(candidates));
-}
-
-interface BridgeHealthInfo {
-  status?: string;
-  service?: string;
-  bridgeApiVersion?: number;
-  port?: number;
-  pid?: number;
-  appPath?: string;
-  processCwd?: string;
-  isPackaged?: boolean;
 }
 
 function normalizePathForCompare(value: string | undefined): string | undefined {
@@ -179,7 +150,7 @@ function scoreBridgeHealth(
   return (workspaceMatch ? 10_000 : 0) + preferredScore + versionScore;
 }
 
-let HTTP_MCP_PORT: number = cliPort ?? envPort ?? readPortFromStore() ?? 5179;
+let HTTP_MCP_PORT: number = cliPort ?? envPort ?? 5179;
 
 const HTTP_MCP_ENDPOINT = () => `http://${HTTP_MCP_HOST}:${HTTP_MCP_PORT}/mcp`;
 
@@ -489,11 +460,19 @@ async function waitForHttpServer(
           });
           if (response.ok) {
             const health = (await response.json().catch(() => ({}))) as BridgeHealthInfo;
-            healthyCandidates.push({
-              port,
-              health,
-              score: scoreBridgeHealth(port, health, workspacePath, preferredPorts),
-            });
+            if (isRealBridgeHealth(health)) {
+              healthyCandidates.push({
+                port,
+                health,
+                score: scoreBridgeHealth(port, health, workspacePath, preferredPorts),
+              });
+            } else {
+              logToStderr('DEBUG', 'Ignoring non-bridge /health responder', {
+                port,
+                service: health.service,
+                bridgeApiVersion: health.bridgeApiVersion,
+              });
+            }
           }
         } finally {
           clearTimeout(timeoutId);
@@ -564,11 +543,19 @@ async function tryReconnect(): Promise<number | null> {
       clearTimeout(timeoutId);
       if (response.ok) {
         const health = (await response.json().catch(() => ({}))) as BridgeHealthInfo;
-        healthyCandidates.push({
-          port,
-          health,
-          score: scoreBridgeHealth(port, health, workspacePath, preferredPorts),
-        });
+        if (isRealBridgeHealth(health)) {
+          healthyCandidates.push({
+            port,
+            health,
+            score: scoreBridgeHealth(port, health, workspacePath, preferredPorts),
+          });
+        } else {
+          logToStderr('DEBUG', 'Ignoring non-bridge /health responder (reconnect)', {
+            port,
+            service: health.service,
+            bridgeApiVersion: health.bridgeApiVersion,
+          });
+        }
       }
     } catch {
       // Not available on this port

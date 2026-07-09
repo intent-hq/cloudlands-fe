@@ -46,7 +46,7 @@ vi.mock('../../../github-auth/main/github-auth.service', () => ({
 }));
 
 vi.mock('../../../workspace/main/app-settings.service', () => ({
-  getSetting: vi.fn(() => undefined),
+  initAppSettingsService: vi.fn(async () => {}),
   getBranchPrefix: vi.fn(() => ''),
   getWorktreesLocation: vi.fn(() => ''),
   getSshKeyPath: vi.fn(() => ''),

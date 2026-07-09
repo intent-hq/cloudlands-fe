@@ -12,7 +12,6 @@ import {
   getGitStateManager,
   initializeGitStateManager,
 } from '../git-state-manager-registry';
-import type { RemoteGitConfig } from './git-state-manager';
 import { WorkspaceService } from '../../workspace/main/workspace.service';
 import { GIT_TRACKING_CHANNELS } from '$shared/ipc/channels';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
@@ -60,21 +59,10 @@ export function setupGitTrackingIPC(): void {
               return { success: false, error: 'Workspace not found or has no worktree' };
             }
 
-            // Build config with remote support if needed
-            let remoteConfig: RemoteGitConfig | undefined;
-            if (workspace.data.isRemote) {
-              remoteConfig = {
-                workspaceId,
-              };
-            }
-
             // Initialize git state manager
             gitStateManager = await initializeGitStateManager(
               workspaceId,
               workspace.data.worktreePath,
-              {
-                remoteConfig,
-              },
             );
           }
 

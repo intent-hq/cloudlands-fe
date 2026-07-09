@@ -4,20 +4,23 @@
  * Reads resolve via `workspace.list` / `workspace.get` over the JSON-RPC bridge.
  * `subscribe` emits an initial snapshot, then refetches whenever a `workspace:*`
  * daemon event arrives (delivered as `events.event` notifications). Mutations
- * beyond reads are out of scope for this wave and are accepted as no-ops to
- * preserve existing UI behavior.
+ * (`workspace.create/update/delete/archive/unarchive`, §5.1) forward to the
+ * daemon and fold outcomes into `MutationResult`.
  */
 import { WorkspaceStatus, createWorkspaceId } from "$shared/types";
-import type { CreateWorkspaceRequest, Workspace } from "$shared/types";
+import type { CreateWorkspaceRequest, UpdateWorkspaceRequest, Workspace } from "$shared/types";
+import type { TokenUsage } from "$features/token-usage/token-usage-types";
 import type {
   MutationResult,
   SubscriptionHandler,
   Unsubscribe,
+  WorkspaceCreateResult,
   WorkspacesClient,
+  WorkspaceUpdateResult,
 } from "../app-client";
 import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
-import { newIdempotencyKey, runMutation } from "./live-support";
+import { extractConflict, newIdempotencyKey, runMutation } from "./live-support";
 
 /** Daemon status strings → renderer WorkspaceStatus enum. */
 function toWorkspaceStatus(value: unknown): WorkspaceStatus {
@@ -90,14 +93,66 @@ export class LiveWorkspacesClient implements WorkspacesClient {
 
   // Mutations forward to the daemon (§7.1) and fold the outcome into a
   // MutationResult; daemon `workspace:*` events drive the reactive refresh.
-  async create(request: CreateWorkspaceRequest): Promise<MutationResult> {
-    // create requires an idempotencyKey (§5.6); the daemon ignores unknown
-    // params, so the full request is forwarded for forward-compatibility.
-    return runMutation("workspace.create", { ...request, idempotencyKey: newIdempotencyKey() });
+  /**
+   * `workspace.create` (§5.1): requires an idempotencyKey (§5.6); the daemon
+   * ignores unknown params, so the full request is forwarded for
+   * forward-compatibility. The daemon returns `{ workspace }` — normalized and
+   * surfaced on the result so the creation flow (legacy `workspace:create`
+   * bridge) can hand callers the created entity without a follow-up read.
+   */
+  async create(request: CreateWorkspaceRequest): Promise<WorkspaceCreateResult> {
+    try {
+      const result = await backendRequest<{ workspace?: unknown }>("workspace.create", {
+        ...request,
+        idempotencyKey: newIdempotencyKey(),
+      });
+      const raw = result?.workspace;
+      return raw && typeof raw === "object"
+        ? { success: true, workspace: normalizeWorkspace(raw as Record<string, unknown>) }
+        : { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const conflict = extractConflict(error);
+      if (conflict) return { success: false, error: message, conflict };
+      return { success: false, error: message };
+    }
+  }
+
+  /**
+   * `workspace.update` (§5.1): the FE request `id` maps to the wire
+   * `workspaceId`; the remaining fields are forwarded verbatim. The daemon
+   * returns `{ workspace }` — normalized and surfaced on the result so callers
+   * can upsert the authoritative entity without a follow-up `workspace.get`.
+   */
+  async update(request: UpdateWorkspaceRequest): Promise<WorkspaceUpdateResult> {
+    const { id, ...fields } = request;
+    try {
+      const result = await backendRequest<{ workspace?: unknown }>("workspace.update", {
+        workspaceId: id,
+        ...fields,
+      });
+      const raw = result?.workspace;
+      return raw && typeof raw === "object"
+        ? { success: true, workspace: normalizeWorkspace(raw as Record<string, unknown>) }
+        : { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const conflict = extractConflict(error);
+      if (conflict) return { success: false, error: message, conflict };
+      return { success: false, error: message };
+    }
   }
 
   async delete(id: string): Promise<MutationResult> {
     return runMutation("workspace.delete", { workspaceId: id });
+  }
+
+  async archive(id: string): Promise<MutationResult> {
+    return runMutation("workspace.archive", { workspaceId: id });
+  }
+
+  async unarchive(id: string): Promise<MutationResult> {
+    return runMutation("workspace.unarchive", { workspaceId: id });
   }
 
   async setActive(id: string): Promise<MutationResult> {
@@ -107,6 +162,21 @@ export class LiveWorkspacesClient implements WorkspacesClient {
   // Recency is renderer/daemon state not yet exposed by the daemon; empty for now.
   async recentViews(): Promise<Record<string, number>> {
     return {};
+  }
+
+  /**
+   * `workspace.getTokenUsage` (PROTOCOL §5.23): the daemon-owned usage rollup
+   * written by its internal scan job. `null` when the workspace is unknown or
+   * the result shape is unexpected; updated rollups arrive via the
+   * `workspace:tokenUsage-changed` event handled in `daemon-events-bridge`.
+   */
+  async getTokenUsage(workspaceId: string): Promise<TokenUsage | null> {
+    const result = await backendRequest<{ tokenUsage?: TokenUsage }>(
+      "workspace.getTokenUsage",
+      { workspaceId },
+    );
+    const usage = result?.tokenUsage;
+    return usage && typeof usage === "object" ? usage : null;
   }
 
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe {

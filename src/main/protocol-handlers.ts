@@ -192,26 +192,28 @@ export function setupWorkspaceAssetProtocolHandler() {
       return new Response('Invalid asset URL', { status: 400 });
     }
 
+    // Assets are served by the daemon via `note.readAsset` (PROTOCOL §5.2).
+    // The legacy local-assets fallback was retired in D6.
     try {
-      const { assetsService } = await import('../features/notes/main/assets.service');
-      const assetPath = assetsService.getAssetPath(workspaceId, assetId);
-
-      if (!fs.existsSync(assetPath)) {
-        logger.warn('Asset not found:', { workspaceId, assetId, assetPath });
-        return new Response('Asset not found', { status: 404 });
-      }
-
-      return serveFile(assetPath, {
-        'Cache-Control': 'max-age=31536000', // 1 year — assets are content-addressed
+      const { getBackendClient } = await import('../features/backend/main/backend.ipc');
+      const result = (await getBackendClient().request('note.readAsset', {
+        workspaceId,
+        asset: assetId,
+      })) as { assetId: string; mimeType: string; data: string; sizeKb: number };
+      return new Response(new Uint8Array(Buffer.from(result.data, 'base64')), {
+        status: 200,
+        headers: {
+          'Content-Type': result.mimeType,
+          'Cache-Control': 'max-age=31536000', // 1 year — assets are content-addressed
+        },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      if (message.startsWith('Invalid asset')) {
-        logger.warn('Rejected workspace-asset request', { workspaceId, assetId, message });
-        return new Response('Invalid asset URL', { status: 400 });
-      }
-      logger.error('Failed to serve asset:', error);
-      return new Response('Failed to serve asset', { status: 500 });
+      logger.warn('Daemon note.readAsset failed', {
+        workspaceId,
+        assetId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return new Response('Asset not found', { status: 404 });
     }
   });
 }

@@ -15,12 +15,40 @@
  *      in-flight assistant message live and finalizes it in place. Without
  *      this wire the assistant reply only appears after a manual refresh
  *      (the chat-read-service hydration via `agents.getConversation`).
- *   3. `chatState/streamStatusReceived` on `agent:tool:call` (status=started)
- *      to surface the "Calling tool" hint next to the Thinking spinner. The
- *      chunk reducer auto-emits the "Streaming response…" hint on the first
- *      text chunk, and the `'complete'` / `'error'` paths clear `statusEvents`
- *      on `agent:stream:end` / `agent:failed`, so this is the only extra
- *      status dispatch needed.
+ *   3. `chatState/streamStatusReceived` on `agent:tool:call` — surfaces the
+ *      "Calling tool" hint next to the Thinking spinner on `status=started`
+ *      and appends a follow-up "Awaiting tool response" entry on
+ *      `status=completed`/`error`, so `computeCompletedEvents` measures the
+ *      tool-call entry from its start to the tool's terminal event instead of
+ *      to the next text chunk (a gap that inflates the reported duration when
+ *      the model pauses before streaming again). Repeated ticks for the same
+ *      `toolCallId` are deduped against the prior recorded status so progress
+ *      updates never spam duplicate status entries. The chunk reducer still
+ *      auto-emits "Streaming response…" on the first text chunk after the tool
+ *      (both dispatches carry `resetFirstChunk: true`), and the
+ *      `'complete'` / `'error'` paths clear `statusEvents` on
+ *      `agent:stream:end` / `agent:failed`.
+ *   4. `note:*` (workspace-scoped, §7) → `applyNoteFromEvent` in the
+ *      notes-read-service, which dispatches `applyNoteCreated`/
+ *      `applyNoteUpdated`/`applyNoteDeleted` on the workspace-notes slice so
+ *      agent-side note writes (add_to_note etc.) appear live in the notes
+ *      panel while the workspace is open.
+ *   5. `task:status-changed` (§6.5) → `applyTaskStatusChanged` on the
+ *      workspace-tasks slice so a task ticked complete/in-progress by an agent
+ *      or a sibling client updates the tasks pane / progress card without a
+ *      workspace reload. The event payload is self-sufficient
+ *      (`{ noteId, previousStatus, newStatus, ... }`), so the bridge maps it
+ *      directly without a follow-up fetch.
+ *   6. `comment:added` / `comment:resolved` (§6.5) → `applyCommentFromEvent` in
+ *      the comments-read-service, which refetches the affected note's comments
+ *      and reconciles the global comments slice per-comment (add / update /
+ *      remove) so other notes' comments stay intact. Wired the same way
+ *      `note:*` funnels through the notes-read-service.
+ *   7. `pr:linked` / `pr:updated` / `pr:unlinked` (§7.6) → `updateWorkspaceEntity`
+ *      on the workspace slice with `{ prNumber, prUrl, prStatus, activePullRequest }`
+ *      (or the cleared shape on unlink). This replaces the legacy main→renderer
+ *      relay path so the "View PR" pill / progress card refresh live while the
+ *      app runs.
  *
  * The stream family is accumulated per agent (one in-flight assistant per
  * agent) using the BE's monotonic `blockIndex` so the candidate transcript
@@ -36,6 +64,23 @@
  * disposes. The `appClient.events.subscribe(["agent:*"])` call piggybacks on
  * the existing live transport.
  *
+ * Besides the Redux dispatches, the bridge re-emits a small set of daemon
+ * events onto the LEGACY mock-IPC event channels (`relayLegacyIpcEvent`) that
+ * components still subscribe to via `listenSync`/`on` — `workspace:updated`,
+ * `git:status-changed`, `file-tracking:changes-updated`,
+ * `task:ready-tasks-changed`, `agent:status-changed`, `agent:idle`. Without
+ * the relay those listeners never fire (the silent-gap class: stale git
+ * status, lost ready-task transitions). The emitted channel set is declared in
+ * `EMITTED_MOCK_IPC_EVENT_CHANNELS` (ipc-mock-router.ts) and reconciled
+ * against listener call sites by ipc-channel-reconciliation.test.ts.
+ *
+ * Workspace lifecycle: on `workspace:deleted` (§7) the bridge resolves the
+ * agent-id list for the doomed workspace from the agent-session index and
+ * dispatches `workspace-lifecycle/workspaceDeleted(wsId, agentIds)`, which
+ * purges the agent-session slice, workspace-agents index, and per-agent
+ * chat-state entries — preventing a recreated same-slug workspace from
+ * surfacing ghost agents.
+ *
  * Fan-out scoping: the daemon emits one `events.event` notification per
  * matching subscription on the socket (PROTOCOL §6.3 / intent-transport
  * `build_event_notification`), each tagged with `params.subscriptionId`. If any
@@ -49,33 +94,61 @@
  * `terminal:*` deliveries.
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import type { ContentBlock, QueuedMessage } from "$shared/types";
+import type {
+  ContentBlock,
+  PullRequestInfo,
+  PullRequestStatus,
+  QueuedMessage,
+  TaskStatus,
+  Workspace,
+} from "$shared/types";
 import type { AppliedSettingChange } from "$lib/client/app-client";
 import { store as appStore } from "$store/renderer/store";
 import { eventReceived } from "$store/renderer/slices/workspace-events/workspace-events-slice";
 import { agentStreamUpdateReceived } from "$store/renderer/slices/workspace-agents/workspace-agents-stream-slice";
 import { streamStatusReceived } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { replaceAgentQueue } from "$store/renderer/slices/agent-queue/agent-queue-slice";
+import { renameSession } from "$store/renderer/slices/agent-session/agent-session-slice";
+import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
+import { applyTaskStatusChanged } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
+import {
+  bulkUpdateWorkspaceEntities,
+  updateWorkspaceEntity,
+} from "$store/renderer/slices/workspace/workspace-slice";
+import { applyNoteFromEvent } from "$features/notes/notes-read-service";
+import { applyCommentFromEvent } from "$features/comments/comments-read-service";
+import { ensureAgentSession } from "$features/agent/agent-read-service";
+import {
+  permissionRequestReceived,
+  removePermissionRequest,
+  type PermissionRequest,
+} from "$store/renderer/slices/permission/permission-slice";
+import { tokenUsageReceived } from "$store/renderer/slices/token-usage/token-usage-slice";
+import type { TokenUsage } from "$features/token-usage/token-usage-types";
 import { applySettingsChanges } from "$features/settings/settings-hydration-service";
+import {
+  appendScriptOutput,
+  updateRuntimeState,
+} from "$store/renderer/slices/scripts/scripts-slice";
+import type {
+  ScriptOutputLine,
+  ScriptRuntimeState,
+} from "$store/renderer/slices/scripts/scripts-types";
+import {
+  clearServerErrorMessage,
+  setServerErrorMessage,
+  setServerStatus,
+} from "$store/renderer/slices/mcp-settings/mcp-settings-slice";
+import type { McpServerStatus } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
 import {
   backendRequest,
   onBackendNotification,
 } from "$lib/client/live/backend-transport";
+import { emitMockIpcEvent } from "$shared/ipc-mock-router";
 import type { WorkspaceEvent } from "$features/events/types";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("DaemonEventsBridge");
-
-/** Event types the agent-session reducer reacts to via `eventReceived`. */
-const AGENT_LIFECYCLE_TYPES = new Set([
-  "agent:idle",
-  "agent:failed",
-  "agent:session-completed",
-  "agent:status-changed",
-  "agent:session-updated",
-  "agent:user-message:sent",
-  "agent:message",
-]);
 
 /**
  * Per-agent in-flight stream accumulator. The BE assigns each block a
@@ -240,14 +313,57 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
   }
   const state = ensureStream(agentId, messageId, workspaceId);
 
+  // Merge subsequent `agent:tool:call` events for the same tool_use block
+  // (identified by `blockIndex`, which the daemon holds constant across a
+  // toolCallId's lifetime — see `crates/intent-services/agent_session.rs`
+  // `record_tool`). The daemon's `map_tool_call_update` (crates/intent-acp)
+  // maps a partial ACP `tool_call_update` into `MappedToolCall` by defaulting
+  // any unset field (`title` → "", `kind` → "other", `raw_input` → null); on
+  // the wire only `status` (and sometimes `output`) is authoritative for a
+  // progress-only tick. Mirror the daemon-side `record_tool` merge policy so
+  // the tool_use block retains the initial name/input/toolKind and the
+  // classifier keeps a rich label instead of collapsing to a generic "Run".
+  const prior = state.blocksByIndex.get(blockIndex) as
+    | (ContentBlock & { toolCallId?: string })
+    | undefined;
+  const priorIsSameToolUse =
+    prior?.type === "tool_use" && prior.toolCallId === toolCallId;
+  // A non-empty `toolName` on the wire signals an authoritative update
+  // (the daemon's `map_tool_call_update` only supplies a `title` when the
+  // upstream ACP update carries one); an empty string is the mapper's default
+  // for a status-only tick, in which case we preserve every non-status field
+  // on the prior block. This mirrors the persisted transcript on the daemon
+  // side (`record_tool` only patches `metadata.status` on repeats).
+  const isProgressOnlyUpdate =
+    priorIsSameToolUse && (typeof toolName !== "string" || toolName.length === 0);
+  const priorMetadata =
+    priorIsSameToolUse && typeof (prior as { metadata?: unknown }).metadata === "object"
+      ? ((prior as { metadata?: Record<string, unknown> }).metadata ?? {})
+      : {};
+  const nextName = isProgressOnlyUpdate
+    ? ((prior as { name?: string }).name ?? "")
+    : typeof toolName === "string"
+      ? toolName
+      : "";
+  const nextInput = isProgressOnlyUpdate
+    ? ((prior as { input?: Record<string, unknown> | undefined }).input ?? undefined)
+    : input !== undefined && input !== null
+      ? (input as Record<string, unknown>)
+      : undefined;
+  const nextToolKind = isProgressOnlyUpdate
+    ? (priorMetadata as { toolKind?: string }).toolKind
+    : typeof toolKind === "string" && toolKind.length > 0
+      ? toolKind
+      : undefined;
+
   const toolUseBlock: ContentBlock = {
     type: "tool_use",
     ...(typeof blockId === "string" ? { id: blockId } : {}),
-    name: typeof toolName === "string" ? toolName : "",
-    input: (input as Record<string, unknown> | undefined) ?? undefined,
+    name: nextName,
+    input: nextInput,
     toolCallId,
     metadata: {
-      ...(typeof toolKind === "string" ? { toolKind } : {}),
+      ...(typeof nextToolKind === "string" ? { toolKind: nextToolKind } : {}),
       ...(typeof status === "string" ? { status } : {}),
     },
   } as ContentBlock;
@@ -264,12 +380,28 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
 
   dispatchStreamUpdate(agentId, state, "content-blocks");
 
-  // Status hint: when the tool *starts*, surface "Calling tool" next to the
-  // Thinking spinner. `resetFirstChunk: true` re-arms the chunk reducer so the
-  // next text chunk after the tool completes appends a fresh "Streaming
-  // response…" entry. Mirrors the reference acp-provider-streaming.ts
-  // `onStatus('tool-call', 'Calling tool')` behaviour.
-  if (status === "started") {
+  // Status hint: track the actual tool-execution window so the "Calling tool"
+  // entry's duration in `computeCompletedEvents` ends at the tool's terminal
+  // event rather than at the next text chunk (which can arrive much later if
+  // the model pauses before streaming again).
+  //
+  // - On `status=started` (first time for this toolCallId): append the
+  //   "Calling tool" entry and re-arm the chunk reducer so the next text
+  //   chunk after the tool completes appends a fresh "Streaming response…"
+  //   entry. Mirrors the reference acp-provider-streaming.ts
+  //   `onStatus('tool-call', 'Calling tool')` behaviour.
+  // - On `status=completed`/`error` (following a `started` for the same tool):
+  //   append a follow-up "Awaiting tool response" entry so the "Calling tool"
+  //   entry closes at this moment. `resetFirstChunk: true` keeps the streaming
+  //   re-arm intact if interleaved text already flipped the flag.
+  //
+  // Repeated ticks for the same `toolCallId` are deduped against the prior
+  // recorded metadata status so progress-only updates (daemon emits one
+  // `agent:tool:call` per ACP `tool_call_update`) never spam duplicates.
+  const priorStatus = priorIsSameToolUse
+    ? ((priorMetadata as { status?: unknown }).status as string | undefined)
+    : undefined;
+  if (status === "started" && priorStatus !== "started") {
     appStore.dispatch(
       streamStatusReceived(
         agentId,
@@ -277,6 +409,23 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
           phase: "tool-call",
           message: "Calling tool",
           level: "info",
+          timestamp: Date.now(),
+        },
+        true,
+      ),
+    );
+  } else if (
+    (status === "completed" || status === "error") &&
+    priorStatus === "started"
+  ) {
+    appStore.dispatch(
+      streamStatusReceived(
+        agentId,
+        {
+          phase: "tool-waiting",
+          message:
+            status === "error" ? "Tool call failed" : "Awaiting tool response",
+          level: status === "error" ? "error" : "info",
           timestamp: Date.now(),
         },
         true,
@@ -306,6 +455,57 @@ function handleAgentFailedStream(event: WorkspaceEvent): void {
 }
 
 /**
+ * `agent:created` (§5.5 / §6.5) fires after `agent.create` persists a new
+ * session — including the mid-session case where `agent.delegate` or any
+ * `agent.create` from a running turn spawns a sibling. The payload is lite
+ * (`{ agentId, name }`), so the bridge hydrates the sidebar via the
+ * transcript-preserving `ensureAgentSession` read-service path (which fetches
+ * `agent.get` and dispatches `bulkUpsertSessions` + `upsertSession`), the same
+ * mechanism the AgentCard mount effect uses. Without this handler the
+ * Delegated agent card only appears after a reload.
+ */
+function handleAgentCreatedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  if (typeof agentId !== "string" || agentId.length === 0) return;
+  void ensureAgentSession(agentId);
+}
+
+/**
+ * `agent:renamed` (§5.5 / §6.5) carries `{ agentId, name }` — the daemon's
+ * `agent.rename` emits it after persisting the new name. Dispatching
+ * `renameSession` mutates only the session's `name` field so the sidebar entry
+ * updates without touching the transcript.
+ */
+function handleAgentRenamedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  const name = data.name;
+  if (typeof agentId !== "string" || agentId.length === 0) return;
+  if (typeof name !== "string") return;
+  appStore.dispatch(renameSession(agentId, name));
+}
+
+/**
+ * `agent:updated` (§5.5 / §6.5) is emitted after non-name session-metadata
+ * mutations (`agent.setModel`, `agent.reportToParent`, …). Payload shapes vary
+ * per mutation (`{ agentId, modelId }`, `{ agentId, completionReportLength }`,
+ * …), so instead of decoding each variant the bridge re-fetches the
+ * projection via `ensureAgentSession` — which preserves the local transcript
+ * on a metadata-only refresh (see FE 69f8c74c) so re-hydration cannot clobber
+ * messages the live stream already appended.
+ */
+function handleAgentUpdatedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  if (typeof agentId !== "string" || agentId.length === 0) return;
+  void ensureAgentSession(agentId);
+}
+
+/**
  * `agent:queue:updated` (§5.5 / §6.5) carries the **current** queue snapshot
  * `{ agentId, queue: QueuedMessage[] }` — self-sufficient per the §6.7
  * event-design rule — so the renderer mirrors the BE queue directly without a
@@ -323,6 +523,25 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
 }
 
 /**
+ * `workspace:tokenUsage-changed` (§5.23 / §6.5) carries the full recomputed
+ * `{ workspaceId, tokenUsage }` rollup — self-sufficient per §6.7 — so the
+ * renderer mirrors it straight into the tokenUsage slice without a follow-up
+ * `workspace.getTokenUsage` read.
+ */
+function handleTokenUsageChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === "string" && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : workspaceIdOf(event);
+  const tokenUsage = data.tokenUsage;
+  if (!workspaceId || !tokenUsage || typeof tokenUsage !== "object") return;
+  appStore.dispatch(tokenUsageReceived(workspaceId, tokenUsage as TokenUsage));
+}
+
+/**
  * `settings:changed` (§6.5) carries `{ changes: [{ path, value }] }` — the
  * applied subset of the most recent `settings.update` call (§5.12), with
  * sensitive values pre-redacted by the BE. We hand it straight to the shared
@@ -330,6 +549,191 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
  * routing the boot hydration uses; the helper also emits the typed
  * `settingsChanged` action for any consumer that watches it directly.
  */
+/**
+ * `agent:permission:request` (PROTOCOL §8) carries the normalized
+ * `PermissionRequestData` -- `{ requestId, sessionId, title, description?,
+ * options[], agentName?, riskLevel?, timestamp }` -- exactly the shape the
+ * `PermissionRequest` slice type declares. Coerce the wire payload into the
+ * slice type and dispatch `permissionRequestReceived` so the inline chat
+ * prompt renders. The BE is the source of truth for `requestId` (used by
+ * `agent.respondPermission` to route the answer back).
+ */
+function handlePermissionRequestEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const requestId = data.requestId;
+  const sessionId = data.sessionId;
+  const title = data.title;
+  if (
+    typeof requestId !== "string" ||
+    requestId.length === 0 ||
+    typeof sessionId !== "string" ||
+    sessionId.length === 0 ||
+    typeof title !== "string"
+  ) {
+    return;
+  }
+  const rawOptions = Array.isArray(data.options) ? data.options : [];
+  const options: PermissionRequest["options"] = [];
+  for (const raw of rawOptions) {
+    if (!raw || typeof raw !== "object") continue;
+    const id = (raw as { id?: unknown }).id;
+    const label = (raw as { label?: unknown }).label;
+    if (typeof id !== "string" || typeof label !== "string") continue;
+    const description = (raw as { description?: unknown }).description;
+    const destructive = (raw as { destructive?: unknown }).destructive;
+    options.push({
+      id,
+      label,
+      ...(typeof description === "string" ? { description } : {}),
+      ...(typeof destructive === "boolean" ? { destructive } : {}),
+    });
+  }
+  const description = data.description;
+  const agentName = data.agentName;
+  const riskLevelRaw = data.riskLevel;
+  const timestamp = data.timestamp;
+  const request: PermissionRequest = {
+    requestId,
+    sessionId,
+    title,
+    description:
+      typeof description === "string" || description === null ? description : undefined,
+    options,
+    ...(typeof agentName === "string" ? { agentName } : {}),
+    ...(riskLevelRaw === "low" || riskLevelRaw === "medium" || riskLevelRaw === "high"
+      ? { riskLevel: riskLevelRaw }
+      : {}),
+    timestamp: typeof timestamp === "number" ? timestamp : Date.now(),
+  };
+  appStore.dispatch(permissionRequestReceived(request));
+}
+
+/**
+ * `agent:permission:resolved` (PROTOCOL §8) carries `{ requestId, outcome }`
+ * once the BE has forwarded the chosen outcome to the blocked provider (either
+ * because a client answered via `agent.respondPermission` or because the
+ * 5-minute timeout elapsed and cancelled the prompt). Clear the local entry so
+ * the inline prompt disappears; a reducer no-op is safe if the FE already
+ * removed it optimistically.
+ */
+function handlePermissionResolvedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const requestId = data.requestId;
+  if (typeof requestId !== "string" || requestId.length === 0) return;
+  appStore.dispatch(removePermissionRequest(requestId));
+}
+
+/**
+ * `note:*` (§7 workspace-scoped) carries `{ noteId, path, action, ... }` — the
+ * daemon-authoritative "something changed" ping (PROTOCOL §7 note events do
+ * NOT embed the full note body). The handler routes to `applyNoteFromEvent`,
+ * which fetches the fresh note via `notes.list(workspaceId)` on
+ * `note:created`/`note:updated` and dispatches the matching `applyNote*`
+ * action, or dispatches `applyNoteDeleted` immediately on `note:deleted`.
+ */
+function handleNoteEvent(
+  event: WorkspaceEvent,
+  workspaceId: string,
+  type: "note:created" | "note:updated" | "note:deleted",
+): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  const noteId = data?.noteId;
+  if (typeof noteId !== "string" || noteId.length === 0) return;
+  applyNoteFromEvent(workspaceId, noteId, type);
+}
+
+/**
+ * `task:status-changed` (§6.5) carries the self-sufficient payload
+ * `{ noteId, noteTitle, previousStatus, newStatus, changedAt }` — the daemon
+ * mints the FE-canonical status word (`not_started` | `in_progress` |
+ * `complete` | ...) via `status_word` in `intent-services`, so no mapping is
+ * needed. The workspace-tasks reducer's own guard makes this a no-op if the
+ * workspace is not initialized or the task/status is unknown/unchanged.
+ */
+function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const noteId = data.noteId;
+  const newStatus = data.newStatus;
+  if (typeof noteId !== "string" || typeof newStatus !== "string") return;
+  appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
+}
+
+/**
+ * `comment:added` (§6.5, `{ noteId, commentId }`) and `comment:resolved`
+ * (`{ noteId, threadId, resolved }`) are wire pings — the payload only carries
+ * identifiers, so the actual comment/thread is refetched via
+ * `applyCommentFromEvent`. That helper diffs the affected note's fresh comment
+ * list against the global slice and dispatches per-comment
+ * add/update/remove actions so other notes' comments stay untouched.
+ */
+function handleCommentEvent(
+  event: WorkspaceEvent,
+  workspaceId: string,
+  kind: "added" | "resolved",
+): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  const noteId = data?.noteId;
+  if (typeof noteId !== "string" || noteId.length === 0) return;
+  applyCommentFromEvent(workspaceId, noteId, kind);
+}
+
+/**
+ * `pr:linked` (§7.6) carries `{ workspaceId, prNumber, prUrl, prStatus,
+ * activePullRequest }`; `pr:updated` carries the same shape minus `prUrl`; and
+ * `pr:unlinked` carries only `{ workspaceId }`. All three converge into a
+ * single `updateWorkspaceEntity` dispatch so the sidebar PR pill / progress
+ * card refresh live without waiting for the workspace list to refetch. This
+ * replaces the legacy `relayLegacyIpcEvent` `workspace:updated` re-emit for
+ * PR events — Redux is now the single source of truth for PR pill state.
+ */
+function handlePrEvent(
+  event: WorkspaceEvent,
+  workspaceId: string,
+  type: "pr:linked" | "pr:updated" | "pr:unlinked",
+): void {
+  const data = (event as { data?: Record<string, unknown> }).data ?? {};
+  const changes: Partial<Workspace> =
+    type === "pr:unlinked"
+      ? ({
+          prNumber: undefined,
+          prUrl: undefined,
+          prStatus: undefined,
+          activePullRequest: null,
+        } as Partial<Workspace>)
+      : {};
+  if (type !== "pr:unlinked") {
+    if (typeof data.prNumber === "number") changes.prNumber = data.prNumber;
+    if (typeof data.prUrl === "string") changes.prUrl = data.prUrl;
+    if (typeof data.prStatus === "string") changes.prStatus = data.prStatus as PullRequestStatus;
+    if (data.activePullRequest !== undefined) {
+      changes.activePullRequest = data.activePullRequest as PullRequestInfo | null;
+    }
+    if (Object.keys(changes).length === 0) return;
+  }
+  // `updateWorkspaceEntity` has no standalone reducer case — the workspace
+  // slice folds it through `bulkUpdateWorkspaceEntities`, which is the shared
+  // path for partial merges (see workspace-slice `.with(bulkUpdateWorkspaceEntities, ...)`).
+  appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
+}
+
+/**
+ * `workspace:deleted` (PROTOCOL §7) — purge every trace of the deleted
+ * workspace from Redux so a recreated same-slug workspace does not surface
+ * ghost agents. The chat-state slice is keyed by `agentId`, so we resolve the
+ * agent-id list from the agent-session workspace index *before* dispatching
+ * and pass it in the payload.
+ */
+function handleWorkspaceDeletedEvent(workspaceId: string): void {
+  const state = appStore.state as {
+    agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };
+  };
+  const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
+  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+}
+
 function handleSettingsChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
@@ -344,6 +748,184 @@ function handleSettingsChangedEvent(event: WorkspaceEvent): void {
     changes.push({ path, value });
   }
   if (changes.length > 0) applySettingsChanges(changes);
+}
+
+/**
+ * Decode a base64 `chunk` (PROTOCOL §6.5 `script:output` payload) into a
+ * UTF-8 string. Runs in the renderer, so `atob` is available; the two-step
+ * conversion via `Uint8Array` preserves multibyte characters that a naive
+ * `atob(...).split('')` would corrupt.
+ */
+function decodeBase64Chunk(chunk: string): string | null {
+  try {
+    const binary = atob(chunk);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new TextDecoder("utf-8").decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `script:output` (§6.5) carries `{ scriptId, chunk }` where `chunk` is the
+ * base64 of raw PTY bytes. Split on `\r?\n` into `ScriptOutputLine[]` and
+ * feed the scripts slice's `appendScriptOutput`; the trailing empty string
+ * from a chunk that ends on a newline is dropped so the reference viewer's
+ * `.join('\n')` reconstruction stays lossless. Streams are collapsed to
+ * `stdout` because the daemon PTY is a single unified stream (§5.8).
+ */
+function handleScriptOutputEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const scriptId = data.scriptId;
+  const chunk = data.chunk;
+  if (typeof scriptId !== "string" || typeof chunk !== "string") return;
+  const text = decodeBase64Chunk(chunk);
+  if (text === null) return;
+  const parts = text.split(/\r?\n/);
+  const timestamp = new Date().toISOString();
+  const lines: ScriptOutputLine[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (i === parts.length - 1 && parts[i] === "") continue;
+    lines.push({ text: parts[i], stream: "stdout", timestamp });
+  }
+  if (lines.length === 0) return;
+  appStore.dispatch(appendScriptOutput(workspaceId, scriptId, lines));
+}
+
+/**
+ * `script:state` (§6.5) carries the recomputed `ScriptRuntimeState` plus a
+ * `scriptId` — self-sufficient per §6.7 — so the renderer mirrors it into
+ * the scripts slice via `updateRuntimeState` without a follow-up
+ * `script.status` read. The reducer no-ops if the script hasn't been
+ * hydrated yet by `initializeScripts` (matches the reference saga).
+ */
+function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const { scriptId, ...rest } = data as { scriptId?: unknown } & Record<string, unknown>;
+  if (typeof scriptId !== "string") return;
+  appStore.dispatch(
+    updateRuntimeState(workspaceId, scriptId, rest as Partial<ScriptRuntimeState>),
+  );
+}
+
+/**
+ * Re-emit daemon events onto the legacy mock-IPC event channels components
+ * still `listenSync`/`on` (see file header). Channel names are string
+ * literals on purpose: the reconciliation suite statically scans
+ * `emitMockIpcEvent` call sites to keep `EMITTED_MOCK_IPC_EVENT_CHANNELS`
+ * honest. Payload shapes mirror what the legacy Electron main process sent:
+ *
+ * - `agent:status-changed` / `agent:idle` → active-streams-tracker refetches
+ *   on any delivery (payload unused) — the full event is forwarded.
+ * - `task:ready-tasks-changed` → WorkspaceProgressCard reads
+ *   `payload.workspaceId` + `payload.data.readyTaskIds`; the daemon event
+ *   envelope (§5.4 TS-parity payload) already has exactly that shape.
+ * - `changes:git-status` (§5.18) → `git:status-changed { workspaceId }` —
+ *   the listener only gates on workspaceId before a debounced reload.
+ * - `changes:tracked` (§5.18) → `file-tracking:changes-updated
+ *   { workspaceId }` — same debounced-reload gate.
+ * - `line-attribution:updated` (§5.2.1 / §6.5) → forwarded as
+ *   `{ workspaceId, noteId, attributions }` so the tiptap
+ *   `LineAttributionGutter.svelte` `listenSync('line-attribution:updated')`
+ *   reload path fires without touching the daemon transport directly.
+ * - `workspace:updated` → forwarded as `{ workspaceId, changes: data }`.
+ *
+ * `pr:linked`/`pr:updated`/`pr:unlinked` (§7.6) are no longer relayed here —
+ * they are dispatched directly to the workspace slice via `handlePrEvent` in
+ * `handleNotification`, replacing the legacy `workspace:updated` re-emit.
+ */
+function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: string): void {
+  const data = ((event as { data?: Record<string, unknown> }).data ?? {}) as Record<
+    string,
+    unknown
+  >;
+  switch (type) {
+    case "agent:status-changed":
+      emitMockIpcEvent("agent:status-changed", event);
+      return;
+    case "agent:idle":
+      emitMockIpcEvent("agent:idle", event);
+      return;
+    case "task:ready-tasks-changed":
+      emitMockIpcEvent("task:ready-tasks-changed", event);
+      return;
+    case "changes:git-status":
+      emitMockIpcEvent("git:status-changed", { workspaceId });
+      return;
+    case "changes:tracked":
+      emitMockIpcEvent("file-tracking:changes-updated", { workspaceId });
+      return;
+    case "line-attribution:updated":
+      emitMockIpcEvent("line-attribution:updated", {
+        workspaceId,
+        noteId: data.noteId,
+        attributions: data.attributions,
+      });
+      return;
+    case "workspace:updated":
+      emitMockIpcEvent("workspace:updated", { workspaceId, changes: data });
+      return;
+  }
+}
+
+
+/**
+ * `mcp.servers:status-changed` (§6.5) — self-sufficient payload
+ * `{ serverId, status: McpServerStatus }` where `status.state` is one of
+ * `"stopped" | "starting" | "running" | "error"` (PROTOCOL §5.22). No
+ * `workspaceId` envelope: the MCP-servers surface is global, so this handler
+ * runs before the workspace-id gate in `handleNotification`. Resolve the
+ * daemon-assigned `serverId` back to a server `name` via the current
+ * `mcpSettings.servers` list (`fromWireMcpConfig` carries `id` through), then
+ * dispatch `setServerStatus` plus `setServerErrorMessage` /
+ * `clearServerErrorMessage` keyed by name — the slice keys everything by name.
+ */
+function mapDaemonMcpState(state: unknown): McpServerStatus | null {
+  switch (state) {
+    case "running":
+      return "connected";
+    case "starting":
+      return "configured";
+    case "stopped":
+      return "stopped";
+    case "error":
+      return "error";
+    default:
+      return null;
+  }
+}
+
+function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const serverId = data.serverId;
+  const status = data.status as { state?: unknown; lastError?: unknown } | undefined;
+  if (typeof serverId !== "string" || !serverId || !status || typeof status !== "object") {
+    return;
+  }
+  const mapped = mapDaemonMcpState(status.state);
+  if (mapped === null) return;
+
+  // Resolve serverId → name via the local server list. When the FE has not
+  // yet loaded `mcp.servers.list` (e.g. the settings panel was never opened)
+  // or when the daemon emits for an id the FE never mirrored, drop the
+  // update — the next `refreshMcpServers` will pick up the current state.
+  const servers = appStore.state.mcpSettings.servers;
+  const match = servers.find((s) => s.id === serverId);
+  if (!match) return;
+
+  appStore.dispatch(setServerStatus(match.name, mapped));
+  const lastError = status.lastError;
+  if (mapped === "error" && typeof lastError === "string" && lastError.length > 0) {
+    appStore.dispatch(setServerErrorMessage(match.name, lastError));
+  } else {
+    appStore.dispatch(clearServerErrorMessage(match.name));
+  }
 }
 
 function handleNotification(method: string, params: unknown): void {
@@ -371,8 +953,61 @@ function handleNotification(method: string, params: unknown): void {
     return;
   }
 
+  // `workspace:tokenUsage-changed` (§5.23) carries its workspaceId inside
+  // `data`, so it is routed before the envelope workspace-id gate too.
+  if (type === "workspace:tokenUsage-changed") {
+    handleTokenUsageChangedEvent(event);
+    return;
+  }
+
+  // `mcp.servers:status-changed` (§6.5) is global — no `workspaceId` envelope
+  // — so it must also run before the workspace-id gate below.
+  if (type === "mcp.servers:status-changed") {
+    handleMcpServerStatusChangedEvent(event);
+    return;
+  }
+
   const workspaceId = workspaceIdOf(event);
   if (!workspaceId) return;
+
+  // Workspace lifecycle: purge every Redux trace of the deleted workspace so a
+  // recreated same-slug workspace does not surface ghost agents (§7).
+  if (type === "workspace:deleted") {
+    handleWorkspaceDeletedEvent(workspaceId);
+    return;
+  }
+
+  // Legacy mock-IPC re-emit (side effect, never an early return) — components
+  // still listening on the legacy channels get the daemon event too.
+  relayLegacyIpcEvent(type, event, workspaceId);
+
+  // Note domain events (§7 workspace-scoped) live-apply to the
+  // workspace-notes slice so agent-side note writes (add_to_note etc.) show
+  // up in the notes panel without a manual refresh.
+  if (type === "note:created" || type === "note:updated" || type === "note:deleted") {
+    handleNoteEvent(event, workspaceId, type);
+    return;
+  }
+
+  // Task/comment/PR domain events converge into their owning slices so the
+  // task pane, inline comment thread, and workspace PR pill refresh without a
+  // reload.
+  if (type === "task:status-changed") {
+    handleTaskStatusChangedEvent(event, workspaceId);
+    return;
+  }
+  if (type === "comment:added") {
+    handleCommentEvent(event, workspaceId, "added");
+    return;
+  }
+  if (type === "comment:resolved") {
+    handleCommentEvent(event, workspaceId, "resolved");
+    return;
+  }
+  if (type === "pr:linked" || type === "pr:updated" || type === "pr:unlinked") {
+    handlePrEvent(event, workspaceId, type);
+    return;
+  }
 
   // Live stream family — accumulate per-agent and grow the in-flight assistant
   // message. `agent:failed` flows through both paths: it finalizes any
@@ -394,12 +1029,56 @@ function handleNotification(method: string, params: unknown): void {
     handleQueueUpdatedEvent(event);
     return;
   }
+  if (type === "agent:permission:request") {
+    handlePermissionRequestEvent(event);
+    // fall through to the storage dispatch below so the activity timeline
+    // records the prompt alongside the slice update.
+  }
+  if (type === "agent:permission:resolved") {
+    handlePermissionResolvedEvent(event);
+    // fall through to the storage dispatch below so the activity timeline
+    // records the outcome.
+  }
+  // Script output/state (§6.5) — script:output feeds the live buffer the
+  // `ScriptOutputViewer` xterm reads from, script:state mirrors the
+  // recomputed `ScriptRuntimeState` into the scripts slice. Both fall
+  // through to the storage dispatch below so the activity timeline still
+  // records that they happened.
+  if (type === "script:output") {
+    handleScriptOutputEvent(event, workspaceId);
+    // Chunks are noise for the activity timeline (one per PTY read); skip
+    // the storage dispatch so we do not fill the 100-event cap with them.
+    return;
+  }
+  if (type === "script:state") {
+    handleScriptStateEvent(event, workspaceId);
+    // fall through to the lifecycle dispatch below
+  }
   if (type === "agent:failed") {
     handleAgentFailedStream(event);
     // fall through to the lifecycle dispatch below
   }
+  // Session-mutation lifecycle (§5.5): keep the sidebar/agents index in sync
+  // as new agents are created and existing ones renamed/updated mid-session.
+  // Each handler falls through so `eventReceived` still records the event in
+  // the activity timeline.
+  if (type === "agent:created") {
+    handleAgentCreatedEvent(event);
+  }
+  if (type === "agent:renamed") {
+    handleAgentRenamedEvent(event);
+  }
+  if (type === "agent:updated") {
+    handleAgentUpdatedEvent(event);
+  }
 
-  if (!AGENT_LIFECYCLE_TYPES.has(type)) return;
+  // Storage + fan-out: every workspace-scoped event flows into
+  // `workspaceEvents` (activity timeline) and, for the agent-lifecycle subset
+  // (`agent:idle`, `agent:failed`, `agent:session-completed`,
+  // `agent:status-changed`, `agent:session-updated`, `agent:user-message:sent`,
+  // `agent:message`), through the `agentSession` reducer's
+  // `canonicalFieldsFromWorkspaceEvent` path wired to the same `eventReceived`
+  // action.
   appStore.dispatch(eventReceived(workspaceId, event));
 }
 
@@ -415,13 +1094,33 @@ async function installSubscriptionOnce(): Promise<void> {
     }
   });
 
-  // Ask the daemon to firehose `agent:*` events AND `settings:changed`
-  // (§5.12 / §6.5) to this socket. The subscription id is owned by the bridge
-  // (no consumer needs it); refetch delta-subscriptions in
-  // `live-agents-client` register their own.
+  // Ask the daemon to firehose `agent:*` events, `settings:changed`
+  // (§5.12 / §6.5), `workspace:tokenUsage-changed` (§5.23), the
+  // activity-timeline families (`file:*`, `note:*`, `comment:*`, `script:*`
+  // — §6.5) that populate `selectWorkspaceEvents`, and the legacy-relay
+  // families (`workspace:updated`, `task:ready-tasks-changed`,
+  // `changes:git-status`/`changes:tracked` §5.18, `line-attribution:updated`
+  // §5.2.1 / §6.5, `pr:*` §6.5 — see relayLegacyIpcEvent) to this socket.
+  // The subscription id is owned by the bridge (no consumer needs it);
+  // refetch delta-subscriptions in `live-agents-client` register their own.
   try {
     const result = (await backendRequest("events.subscribe", {
-      eventTypes: ["agent:*", "settings:changed"],
+      eventTypes: [
+        "agent:*",
+        "file:*",
+        "note:*",
+        "comment:*",
+        "script:*",
+        "settings:changed",
+        "workspace:tokenUsage-changed",
+        "workspace:updated",
+        "task:ready-tasks-changed",
+        "changes:git-status",
+        "changes:tracked",
+        "line-attribution:updated",
+        "pr:*",
+        "mcp.servers:status-changed",
+      ],
     })) as { subscriptionId?: string } | undefined;
     if (typeof result?.subscriptionId === "string" && result.subscriptionId.length > 0) {
       ownSubscriptionId = result.subscriptionId;
@@ -429,7 +1128,7 @@ async function installSubscriptionOnce(): Promise<void> {
       logger.warn("events.subscribe returned no subscriptionId", result);
     }
   } catch (error) {
-    logger.error("events.subscribe(agent:*, settings:changed) failed", error);
+    logger.error("events.subscribe (bridge firehose + legacy relay families) failed", error);
   }
 
   cleanup = () => {

@@ -1,12 +1,15 @@
 /**
  * Feature Codes Service (Main Process)
  *
- * Validates hashed feature codes and persists activated features in electron-store.
+ * Validates hashed feature codes and persists activated features in the
+ * FE-local prefs file (PROTOCOL.md §5.12 "Not exposed (FE-only)"). The
+ * legacy `settings` electron-store is retired (P3-4).
  * No plaintext codes appear in this source — only SHA-256 hashes.
  */
 
 import { createHash } from 'crypto';
 import { Logger } from '../../../shared/logger';
+import { getLocalPref, setLocalPref } from '../../../main/local-prefs';
 
 const logger = new Logger('FeatureCodesService');
 
@@ -26,8 +29,7 @@ const CODE_REGISTRY: ReadonlyMap<string, string> = new Map([
 
 const STORE_KEY = 'featureCodes';
 
- 
-let settingsStore: any = null;
+let initialized = false;
 let initPromise: Promise<void> | null = null;
 
 /** Set of currently activated feature IDs */
@@ -35,21 +37,19 @@ let activeFeatures: Set<string> = new Set();
 
 /**
  * Initialize the feature codes service.
- * Loads persisted feature IDs from electron-store.
+ * Loads persisted feature IDs from the FE-local prefs file.
  */
 async function init(): Promise<void> {
-  if (settingsStore) return;
+  if (initialized) return;
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
     try {
-      const ElectronStore = (await import('electron-store')).default;
-      settingsStore = new ElectronStore({ name: 'settings' });
-
-      const stored = settingsStore.get(STORE_KEY) as string[] | undefined;
+      const stored = await getLocalPref<string[]>(STORE_KEY);
       if (Array.isArray(stored)) {
-        activeFeatures = new Set(stored);
+        activeFeatures = new Set(stored.filter((s): s is string => typeof s === 'string'));
       }
+      initialized = true;
       logger.info('Feature codes service initialized', {
         activeFeatures: Array.from(activeFeatures),
       });
@@ -62,14 +62,11 @@ async function init(): Promise<void> {
 }
 
 /**
- * Persist the current set of active features to electron-store.
+ * Persist the current set of active features to the FE-local prefs file.
+ * Fire-and-forget; errors are swallowed by the helper's internal chain.
  */
 function persist(): void {
-  if (!settingsStore) {
-    logger.warn('Settings store not initialized, cannot persist feature codes');
-    return;
-  }
-  settingsStore.set(STORE_KEY, Array.from(activeFeatures));
+  void setLocalPref(STORE_KEY, Array.from(activeFeatures));
 }
 
 /**
@@ -153,4 +150,3 @@ export const featureCodesService = {
   clearAllCodes,
   getActiveFeatures,
 };
-

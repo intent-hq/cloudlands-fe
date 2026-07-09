@@ -42,10 +42,6 @@ import {
 } from '../../../main/ipc-schemas';
 import { execAsync } from '../../../shared/git/git-env';
 import { renameWithRetry } from '../../../shared/main/file-sync-utils';
-import { getWorkspaceGitInfo } from '../../git/main/git-router';
-import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
-import { RemoteRPCError } from '../../../shared/main/remote-rpc-client';
-import type { RemoteRPCClient } from '../../../shared/main/remote-rpc-client';
 import { trackMain } from '$lib/services/analytics/main';
 import { getFileExtension } from '$lib/services/analytics/utils';
 
@@ -73,17 +69,10 @@ function expandPath(filePath: string): string {
   return filePath;
 }
 
-/**
- * Get a RemoteRPCClient for the given workspace, or null if the workspace is local.
- */
-async function getRemoteRPCClient(workspaceId?: string): Promise<RemoteRPCClient | null> {
-  if (!workspaceId) return null;
-
-  const gitInfo = await getWorkspaceGitInfo(workspaceId);
-  if (!gitInfo?.isRemote || !gitInfo.sshConfig) return null;
-
-  return remoteRPCManager.getClient(workspaceId);
-}
+// Remote-workspace file IPC branches retired in P3-5.1; handlers below run
+// against the local filesystem only. Remote-configured workspaces surface
+// underlying fs errors through the existing try/catch → { success: false }
+// contract rather than routing through the legacy remote stack.
 
 export function setupFileIPC() {
   // Read file
@@ -93,61 +82,7 @@ export function setupFileIPC() {
       FileReadSchema,
       async (_, validated): Promise<IpcResponse<FileIpc.ReadResponse>> => {
         try {
-          // Check for remote workspace
-          const rpcClient = await getRemoteRPCClient(validated.workspaceId);
-          if (rpcClient) {
-            const effectiveMaxSize = validated.maxSize ?? MAX_FILE_SIZE;
-
-            // Check if binary by extension
-            const isBinary = isBinaryExtension(validated.path);
-
-            // Get file size via RPC stat
-            const statResult = await rpcClient.stat({ path: validated.path });
-            const fileSize = statResult.size;
-
-            if (fileSize > effectiveMaxSize && !validated.truncateIfLarge) {
-              return {
-                success: false,
-                error: {
-                  code: 'FILE_TOO_LARGE',
-                  message: `File is too large (${Math.round(fileSize / 1024)}KB). Maximum size is ${Math.round(effectiveMaxSize / 1024)}KB.`,
-                },
-                data: {
-                  content: '',
-                  stats: { size: fileSize, modified: statResult.mtime },
-                  isBinary: false,
-                  truncated: false,
-                },
-              };
-            }
-
-            // Read file content via RPC
-            const readResult = await rpcClient.readFile({
-              path: validated.path,
-              encoding: isBinary ? 'base64' : 'utf-8',
-              maxSize: effectiveMaxSize,
-            });
-
-            let content = readResult.content;
-            let truncated = readResult.truncated;
-
-            if (validated.truncateIfLarge && content.length > effectiveMaxSize) {
-              content = content.substring(0, effectiveMaxSize);
-              truncated = true;
-            }
-
-            return {
-              success: true,
-              data: {
-                content,
-                stats: { size: fileSize, modified: statResult.mtime },
-                isBinary,
-                truncated,
-              },
-            };
-          }
-
-          // Local workspace - existing code path
+          // Local-only after P3-5.1; remote reads no longer route through RPC.
           const expandedPath = expandPath(validated.path);
 
           // Check if this is a directory - can't read directories as files
@@ -284,18 +219,10 @@ export function setupFileIPC() {
           // PERF: Changed from INFO to DEBUG - called for every batch read
           logger.debug('Batch reading files', { count: validated.requests.length });
 
-          // Check for remote workspace
-          const rpcClient = await getRemoteRPCClient(validated.workspaceId);
-
+          // Local-only after P3-5.1; remote batch reads no longer route through RPC.
           const results = await Promise.all(
             validated.requests.map(async ({ path: filePath }) => {
               try {
-                if (rpcClient) {
-                  // Remote: read via RPC
-                  const result = await rpcClient.readFile({ path: filePath });
-                  return { success: true, data: result.content, path: filePath };
-                }
-                // Local: read from filesystem
                 const expandedPath = expandPath(filePath);
                 const content = await fs.readFile(expandedPath, 'utf-8');
                 return { success: true, data: content, path: filePath };
@@ -322,73 +249,7 @@ export function setupFileIPC() {
       FileWriteSchema,
       async (_, validated): Promise<IpcResponse<FileIpc.WriteResponse>> => {
         try {
-          // Check for remote workspace
-          const rpcClient = await getRemoteRPCClient(validated.workspaceId);
-          if (rpcClient) {
-            // Check if file exists before writing (to track creation vs modification)
-            let remoteFileExisted = false;
-            try {
-              const existsResult = await rpcClient.fileExists({ path: validated.path });
-              remoteFileExisted = existsResult.exists;
-            } catch {
-              // Assume file doesn't exist if check fails
-              remoteFileExisted = false;
-            }
-
-            // Write file content via RPC (mkdirp handles directory creation)
-            await rpcClient.writeFile({
-              path: validated.path,
-              content: validated.content,
-              encoding: validated.encoding === 'base64' ? 'base64' : 'utf-8',
-              mkdirp: true,
-            });
-
-            logger.debug('Remote file written successfully', { filePath: validated.path });
-
-            // Track file creation if this is a new file
-            if (!remoteFileExisted && validated.workspaceId) {
-              trackMain('Created File', {
-                workspace_id: validated.workspaceId,
-                file_extension: getFileExtension(validated.path),
-              });
-            }
-
-            // Emit file change event for immediate UI update
-            if (validated.workspaceId) {
-              try {
-                sendToWorkspaceWindows(validated.workspaceId, 'file:content-changed', {
-                  workspaceId: validated.workspaceId,
-                  path: validated.path,
-                  relativePath: validated.path,
-                  content: validated.content,
-                  source: 'user',
-                });
-
-                sendToWorkspaceWindows(
-                  validated.workspaceId,
-                  IPC_CHANNELS.FILE_TRACKING.AGENT_FILE_CHANGED,
-                  {
-                    workspaceId: validated.workspaceId,
-                    filePath: validated.path,
-                    source: 'user',
-                  },
-                );
-              } catch (emitError) {
-                logger.warn('Failed to emit file change event', {
-                  error: (emitError as Error).message,
-                });
-              }
-            }
-
-            return {
-              success: true,
-              data: {
-                bytesWritten: validated.content.length,
-              },
-            };
-          }
-
-          // Local workspace - existing code path
+          // Local-only after P3-5.1; remote writes no longer route through RPC.
           const expandedPath = expandPath(validated.path);
 
           // Check if file exists before writing (to track creation vs modification)
@@ -524,14 +385,7 @@ export function setupFileIPC() {
       FileExistsSchema,
       async (_, validated) => {
         try {
-          // Check for remote workspace
-          const rpcClient = await getRemoteRPCClient(validated.workspaceId);
-          if (rpcClient) {
-            const result = await rpcClient.fileExists({ path: validated.path });
-            return { success: true, exists: result.exists, data: result.exists };
-          }
-
-          // Local: existing code path
+          // Local-only after P3-5.1; remote existence checks no longer route through RPC.
           const expandedPath = expandPath(validated.path);
           // ASYNC: Check file existence without blocking
           const exists = await fs
@@ -840,108 +694,7 @@ export function setupFileIPC() {
       FileGetGitStatusSchema,
       async (_, validated) => {
         try {
-          // Check for remote workspace
-          const rpcClient = await getRemoteRPCClient(validated.workspaceId);
-          if (rpcClient) {
-            // Get git status via RPC exec
-            const statusResult = await rpcClient.exec({
-              command: `cd '${validated.workspacePath}' && git status --porcelain -uall`,
-              timeout: 10000,
-            });
-
-            const fileStatuses: Record<string, string> = {};
-            const fileChanges: Record<string, { additions: number; deletions: number }> = {};
-
-            if (statusResult.stdout) {
-              // IMPORTANT: Use trimEnd() not trim() - git porcelain format is "XY filename"
-              // where X can be a space for unstaged changes (e.g., " M README.md").
-              // Using trim() would strip the leading space, corrupting the parsing.
-              const lines = statusResult.stdout.trimEnd().split('\n').filter(Boolean);
-              for (const line of lines) {
-                if (line.length < 3) continue;
-                const status = line.substring(0, 2);
-                const filePath = line.substring(3);
-                fileStatuses[filePath] = status;
-              }
-            }
-
-            // Get diff stats via RPC exec
-            try {
-              const unstagedResult = await rpcClient.exec({
-                command: `cd '${validated.workspacePath}' && git diff --numstat`,
-                timeout: 10000,
-              });
-
-              if (unstagedResult.stdout) {
-                const statLines = unstagedResult.stdout.trim().split('\n').filter(Boolean);
-                for (const statLine of statLines) {
-                  const [additions, deletions, filePath] = statLine.split('\t');
-                  if (filePath) {
-                    fileChanges[filePath] = {
-                      additions: parseInt(additions) || 0,
-                      deletions: parseInt(deletions) || 0,
-                    };
-                  }
-                }
-              }
-
-              const stagedResult = await rpcClient.exec({
-                command: `cd '${validated.workspacePath}' && git diff --cached --numstat`,
-                timeout: 10000,
-              });
-
-              if (stagedResult.stdout) {
-                const statLines = stagedResult.stdout.trim().split('\n').filter(Boolean);
-                for (const statLine of statLines) {
-                  const [additions, deletions, filePath] = statLine.split('\t');
-                  if (filePath && !fileChanges[filePath]) {
-                    fileChanges[filePath] = {
-                      additions: parseInt(additions) || 0,
-                      deletions: parseInt(deletions) || 0,
-                    };
-                  }
-                }
-              }
-
-              // Handle untracked/new files - count lines via RPC exec wc -l
-              for (const [filePath, status] of Object.entries(fileStatuses)) {
-                if ((status === '??' || status.startsWith('A')) && !fileChanges[filePath]) {
-                  try {
-                    const wcResult = await rpcClient.exec({
-                      command: `wc -l < '${validated.workspacePath}/${filePath}'`,
-                      timeout: 5000,
-                    });
-                    const lineCount = parseInt(wcResult.stdout.trim()) || 0;
-                    fileChanges[filePath] = {
-                      additions: lineCount,
-                      deletions: 0,
-                    };
-                  } catch  {
-                    fileChanges[filePath] = {
-                      additions: 0,
-                      deletions: 0,
-                    };
-                  }
-                }
-              }
-            } catch (err) {
-              // For non-zero exit codes from git diff, extract stdout if available
-              if (err instanceof RemoteRPCError && err.data) {
-                logger.debug('Git diff returned non-zero exit code', { error: err.message });
-              }
-              // Otherwise ignore errors from git diff
-            }
-
-            return {
-              success: true,
-              data: {
-                fileStatuses,
-                fileChanges,
-              },
-            };
-          }
-
-          // Local workspace - existing code path
+          // Local-only after P3-5.1; remote git-status no longer routes through RPC.
           // Expand tilde in path for consistency
           const expandedPath = expandPath(validated.workspacePath);
 

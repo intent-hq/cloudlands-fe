@@ -1,17 +1,18 @@
-import {
-  WorkspaceId as WorkspaceIdBrand,
-  createAgentId,
-} from '$shared/types/branded-ids';
+import { WorkspaceId as WorkspaceIdBrand } from '$shared/types/branded-ids';
 import { ChangeDetectorRefactored as ChangeDetector } from './change-detector-refactored';
 import {
   DiffChunk,
   FileChange,
 } from '$shared/types/change-detector.types';
 import { DiffSummaryRepository } from './diff-summary.repository';
-import { RemoteChangeDetector } from './remote-change-detector';
 import { EventEmitter } from 'events';
-import ElectronStore from 'electron-store';
 import { gitService } from '../../git/main/git.service';
+import {
+  getAllChangeHistory,
+  getChangeHistoryForWorkspace,
+  setChangeHistoryForWorkspace,
+  bulkSetChangeHistory,
+} from './change-history-persistence';
 import { Logger } from '../../../shared/logger';
 
 const logger = new Logger('ChangeDetectorManager');
@@ -22,10 +23,6 @@ import {
   type WorkspaceDiffSummary,
   type WorkspaceDiffSummaryFile,
 } from '../../../shared/types';
-import {
-  trackFileChanges,
-  type FileLineChange,
-} from '../../line-changes/line-changes-main-state';
 
 interface WorkspaceInfo {
   id: string;
@@ -44,7 +41,6 @@ interface WorkspaceInfo {
 export class ChangeDetectorManager extends EventEmitter {
   private detectors: Map<string, any> = new Map();
   private pendingDetectors: Map<string, Promise<void>> = new Map(); // Track pending detector creations
-  private store: any;
   private changeHistory: Map<string, DiffChunk[]> = new Map();
   private maxHistoryPerWorkspace: number = 100;
   private readonly diffSummaryRepository: DiffSummaryRepository;
@@ -66,11 +62,9 @@ export class ChangeDetectorManager extends EventEmitter {
   // History is loaded per-workspace on demand, not all at once
 
   constructor(
-    store: any,
     diffSummaryRepository: DiffSummaryRepository = new DiffSummaryRepository(),
   ) {
     super();
-    this.store = store;
     this.diffSummaryRepository = diffSummaryRepository;
     // PERF: DO NOT load change history on startup - it was loading 548 workspaces
     // worth of data (potentially GB of diffs) causing immediate OOM crashes.
@@ -165,58 +159,36 @@ export class ChangeDetectorManager extends EventEmitter {
 
     const isRemote = workspace.environmentConfig?.type === 'remote';
 
+    // Remote-workspace monitoring retires in P3-5.1 — the remote change
+    // detection path is off; remote-configured workspaces skip monitoring
+    // instead of throwing so open flows continue to work.
+    if (isRemote) {
+      logger.info(
+        `[ChangeDetectorManager] Skipping monitoring for remote-configured workspace ${workspace.id} (remote change detection retired)`,
+      );
+      return;
+    }
+
     logger.debug(
-      `[ChangeDetectorManager] Starting monitoring for workspace ${workspace.id} (${isRemote ? 'remote' : 'local'})`,
+      `[ChangeDetectorManager] Starting monitoring for workspace ${workspace.id} (local)`,
     );
 
     // Get debug mode setting from store or environment variable
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const debugMode =
-      process.env.VERBOSE_CHANGE_DETECTOR === 'true' ||
-      (this.store.get('experimental.debugMode', false) as boolean);
+    const debugMode = process.env.VERBOSE_CHANGE_DETECTOR === 'true';
 
-    let detector: any;
+    // Use ChangeDetectorRefactored for local workspaces
+    // FSEvents-based file watching with adaptive polling fallback (intervals from CHANGE_DETECTION_CONFIG)
+    const detector: any = new ChangeDetector({
+      workspaceId: workspace.id,
+      workspacePath: workspace.worktreePath,
+      disableFileWatcher: false,
+      gitPollingOnly: false,
+    });
 
-    if (isRemote && workspace.environmentConfig?.ssh) {
-      // Use RemoteChangeDetector for remote workspaces
-      logger.debug(`[ChangeDetectorManager] Using remote detector for workspace ${workspace.id}`);
-      // Prefer environmentConfig.workspace_path (the source of truth for remote workspaces,
-      // also used by ACPProvider for agent CWD) over worktreePath which may have been cleared
-      const remotePath = workspace.environmentConfig.workspace_path || workspace.worktreePath || workspace.repositoryPath;
-      detector = new RemoteChangeDetector({
-        workspaceId: workspace.id,
-        sshConfig: {
-          host: workspace.environmentConfig.ssh.host,
-          port: workspace.environmentConfig.ssh.port || 22,
-          username: workspace.environmentConfig.ssh.user,
-          password: workspace.environmentConfig.ssh.password,
-          privateKeyPath: workspace.environmentConfig.ssh.key_path,
-          useAgent: workspace.environmentConfig.ssh.use_agent,
-          transport: workspace.environmentConfig.ssh.transport,
-          wsUrl: workspace.environmentConfig.ssh.ws_url,
-        },
-        basePath: remotePath,
-        pollInterval: 1000, // OPTIMIZED: Start with 1 second polling for snappy response
-        adaptivePolling: true, // Enable adaptive polling
-        maxPollInterval: 5000, // OPTIMIZED: Max 5 seconds when idle (was 10s)
-        minPollInterval: 500, // OPTIMIZED: Min 500ms when active (was 1s)
-        debounceDelay: 100, // OPTIMIZED: 100ms debounce (was 500ms)
-        excludePatterns: ['*.log', '*.tmp', '.DS_Store'],
-      });
-    } else {
-      // Use ChangeDetectorRefactored for local workspaces
-      // FSEvents-based file watching with adaptive polling fallback (intervals from TRACKING_CONFIG)
-      detector = new ChangeDetector({
-        workspaceId: workspace.id,
-        workspacePath: workspace.worktreePath,
-        disableFileWatcher: false,
-        gitPollingOnly: false,
-      });
-
-      logger.debug(
-        `[ChangeDetectorManager] Using FSEvents-based file watching with polling fallback for workspace ${workspace.id}`,
-      );
-    }
+    logger.debug(
+      `[ChangeDetectorManager] Using FSEvents-based file watching with polling fallback for workspace ${workspace.id}`,
+    );
 
     // Listen for changes
     detector.on('changes', (diffChunk: DiffChunk) => {
@@ -268,7 +240,7 @@ export class ChangeDetectorManager extends EventEmitter {
       await detector.start();
 
       logger.info(
-        `[ChangeDetectorManager] Monitoring started for workspace ${workspace.id} using ${isRemote ? 'RemoteChangeDetector' : 'ChangeDetector'}`,
+        `[ChangeDetectorManager] Monitoring started for workspace ${workspace.id} using ChangeDetector`,
         {
           detectorCount: this.detectors.size,
           detectorKeys: Array.from(this.detectors.keys()),
@@ -295,13 +267,6 @@ export class ChangeDetectorManager extends EventEmitter {
 
       // Emit error but don't crash the app
       this.emit('detector-error', { workspaceId: workspace.id, error });
-
-      // For remote workspaces, log a helpful message
-      if (isRemote) {
-        logger.info(
-          `[ChangeDetectorManager] Remote workspace ${workspace.id} monitoring failed. This is normal if the SSH server is not running.`,
-        );
-      }
     }
   }
 
@@ -464,20 +429,6 @@ export class ChangeDetectorManager extends EventEmitter {
     // Add to history
     this.addToHistory(workspaceId, diffChunk);
     logger.debug('[ChangeDetectorManager] Added diffChunk to history');
-
-    // Update line changes store with file statistics
-    if (diffChunk.files && Array.isArray(diffChunk.files)) {
-      const fileChanges: FileLineChange[] = diffChunk.files.map((file) => ({
-        path: file.path,
-        additions: file.additions || 0,
-        deletions: file.deletions || 0,
-        action: (file.action?.toLowerCase() || 'modify') as 'create' | 'modify' | 'delete',
-      }));
-      trackFileChanges(WorkspaceIdBrand(workspaceId), fileChanges);
-      logger.debug(
-        `[ChangeDetectorManager] Updated line changes store for workspace ${workspaceId}`,
-      );
-    }
 
     void this.persistDiffSummary(workspaceId, diffChunk);
 
@@ -743,18 +694,6 @@ export class ChangeDetectorManager extends EventEmitter {
       `[ChangeDetectorManager] trackAgentChanges returned diffChunk with id: ${diffChunk?.id}`,
     );
 
-    // Update line changes store for agent if sessionId is provided
-    if (sessionId && diffChunk?.files) {
-      const fileChanges: FileLineChange[] = diffChunk.files.map((file: any) => ({
-        path: file.path,
-        additions: file.additions || 0,
-        deletions: file.deletions || 0,
-        action: (file.action?.toLowerCase() || 'modify') as 'create' | 'modify' | 'delete',
-      }));
-      trackFileChanges(createAgentId(sessionId), fileChanges);
-      logger.debug(`[ChangeDetectorManager] Updated line changes store for agent ${sessionId}`);
-    }
-
     this.addToHistory(workspaceId, diffChunk);
     logger.debug(`[ChangeDetectorManager] Added diffChunk to history for workspace ${workspaceId}`);
 
@@ -981,12 +920,12 @@ export class ChangeDetectorManager extends EventEmitter {
    */
   private loadWorkspaceHistory(workspaceId: string): void {
     try {
-      const stored = this.store.get('changeHistory') as Record<string, DiffChunk[]> | undefined;
-      if (stored && stored[workspaceId]) {
-        this.changeHistory.set(workspaceId, stored[workspaceId]);
+      const stored = getChangeHistoryForWorkspace(workspaceId);
+      if (stored.length > 0) {
+        this.changeHistory.set(workspaceId, stored);
         logger.debug('[ChangeDetectorManager] Loaded history for workspace', {
           workspaceId,
-          chunks: stored[workspaceId].length,
+          chunks: stored.length,
         });
       }
     } catch (error) {
@@ -1001,18 +940,8 @@ export class ChangeDetectorManager extends EventEmitter {
    */
   private saveWorkspaceHistory(workspaceId: string, chunks: DiffChunk[]): void {
     try {
-      const stored =
-        (this.store.get('changeHistory') as Record<string, DiffChunk[]> | undefined) || {};
-
-      if (chunks.length === 0) {
-        // Delete this workspace's history
-        delete stored[workspaceId];
-      } else {
-        // Update this workspace's history (stripped)
-        stored[workspaceId] = this.stripLargeContent(chunks);
-      }
-
-      this.store.set('changeHistory', stored);
+      const stripped = chunks.length === 0 ? [] : this.stripLargeContent(chunks);
+      setChangeHistoryForWorkspace(workspaceId, stripped);
       logger.debug('[ChangeDetectorManager] Saved history for workspace', {
         workspaceId,
         chunks: chunks.length,
@@ -1046,19 +975,16 @@ export class ChangeDetectorManager extends EventEmitter {
    */
   private doSaveChangeHistory(): void {
     try {
-      // Read existing data from disk
-      const stored =
-        (this.store.get('changeHistory') as Record<string, DiffChunk[]> | undefined) || {};
-
-      // Update only the workspaces we have in memory (stripped)
+      // Push only the workspaces we have in memory (stripped) to the daemon;
+      // the persistence layer preserves other workspaces already on disk.
+      const stripped: [string, DiffChunk[]][] = [];
       for (const [workspaceId, chunks] of this.changeHistory.entries()) {
-        stored[workspaceId] = this.stripLargeContent(chunks);
+        stripped.push([workspaceId, this.stripLargeContent(chunks)]);
       }
-
-      this.store.set('changeHistory', stored);
+      bulkSetChangeHistory(stripped);
       logger.debug('[ChangeDetectorManager] Change history saved to disk', {
         inMemory: this.changeHistory.size,
-        onDisk: Object.keys(stored).length,
+        onDisk: Object.keys(getAllChangeHistory()).length,
       });
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -1139,7 +1065,4 @@ export class ChangeDetectorManager extends EventEmitter {
 }
 
 // Export singleton instance
-export const changeDetectorManager = new ChangeDetectorManager(
-  new ElectronStore(),
-  new DiffSummaryRepository(),
-);
+export const changeDetectorManager = new ChangeDetectorManager(new DiffSummaryRepository());

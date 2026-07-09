@@ -13,7 +13,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   getProviderConfig,
   parseCompoundModelId,
 } from '$shared/config/provider-config';
-  import { invoke } from '$lib/electron-bridge';
+  import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
   import { TooltipShortcut } from '$lib/components/ui/tooltip';
   import TooltipRich from '$lib/components/ui/tooltip/TooltipRich.svelte';
 
@@ -540,25 +540,16 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       if (onenhance) {
         await onenhance();
       } else {
-        // If no handler provided, try to enhance directly using the same prompt format as VSCode
-        const result = await invoke<{
-          success: boolean;
-          enhanced?: string;
-          original?: string;
-          error?: string;
-        }>('agent:enhance-prompt', { prompt: value, modelId: selectedModel });
+        // No handler provided: enhance through the daemon (agent.enhancePrompt, PROTOCOL §5.31)
+        const result = await enhancePrompt(value, { model: selectedModel });
 
         // Check if THIS request was cancelled before applying result
         if (currentRequestId === cancelledRequestId) {
           return;
         }
 
-        if (result?.success && result.enhanced) {
-          value = result.enhanced;
-          toast.success('Prompt enhanced');
-        } else {
-          toast.error('Failed to enhance prompt');
-        }
+        value = result.enhanced;
+        toast.success('Prompt enhanced');
       }
     } catch (error) {
       // Don't show error if it was cancelled
@@ -566,7 +557,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         return;
       }
       logger.error('Failed to enhance prompt:', error);
-      toast.error('Failed to enhance prompt');
+      toast.error(
+        error instanceof Error && error.message
+          ? `Failed to enhance prompt: ${error.message}`
+          : 'Failed to enhance prompt',
+      );
     } finally {
       // Only reset isEnhancing if this request wasn't cancelled
       // (cancelled requests already set isEnhancing = false)

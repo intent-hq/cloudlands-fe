@@ -110,7 +110,7 @@ export const AGENT_RETRY_CONFIG = {
   /**
    * Patterns that should NOT trigger retry, checked case-insensitively against error messages.
    * Includes Node.js system error codes, generic fatal indicators,
-   * Intent-specific error strings from acp-provider.ts, and rate-limit errors.
+   * Intent-specific error strings surfaced by agent providers, and rate-limit errors.
    */
   NON_RETRYABLE_ERRORS: [
     'EACCES',

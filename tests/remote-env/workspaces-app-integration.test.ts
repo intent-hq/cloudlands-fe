@@ -15,9 +15,21 @@ import {
   DEVPOD_PROFILE,
 } from './remote-env-config';
 
-// Import from the Intent app
-// Note: These imports work when running via vitest with proper tsconfig
-import type { SSHConnectionConfig } from '../../src/lib/api/ssh-client';
+// Local copy of the connection-config shape the retired renderer SSH client
+// (`src/lib/api/ssh-client.ts`, deleted as caller-less dead code) used to
+// export — these tests exercise profile → config mapping only.
+interface SSHConnectionConfig {
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  privateKey?: string;
+  privateKeyPath?: string;
+  passphrase?: string;
+  useAgent?: boolean;
+  transport?: 'ssh' | 'websocket';
+  wsUrl?: string;
+}
 
 const PROFILE_NAME = process.env.REMOTE_ENV_PROFILE || 'standard';
 const profile = getProfileOrThrow(PROFILE_NAME);

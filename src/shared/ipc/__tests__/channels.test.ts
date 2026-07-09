@@ -34,7 +34,6 @@ describe('IPC Channels', () => {
     it('should have agent channels defined', () => {
       expect(AGENT_CHANNELS.CREATE).toBe('agent:create');
       expect(AGENT_CHANNELS.SEND_MESSAGE).toBe('agent:send-message');
-      expect(AGENT_CHANNELS.PERSISTENCE_SAVE).toBe('agent:persistence:save');
     });
 
     it('should have workspace channels defined', () => {

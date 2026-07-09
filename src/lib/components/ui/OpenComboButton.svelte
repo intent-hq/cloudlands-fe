@@ -257,6 +257,7 @@
       }
     } catch (error) {
       logger.error(`Failed to execute action ${actionId}:`, error);
+      toast.error(error instanceof Error ? error.message : `Failed to open in ${actionId}`);
     }
   }
 

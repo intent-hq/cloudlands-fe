@@ -412,6 +412,67 @@ describe('tool-classifier', () => {
     });
   });
 
+  describe('daemon MCP suffix (_workspace-mcp) stripping', () => {
+    it('classifies delegate_task_workspace-mcp as agent op (Delegate + task subject)', () => {
+      const result = classifyTool('delegate_task_workspace-mcp', {
+        taskText: 'Wire up dark mode',
+      });
+
+      expect(result.category).toBe('agent');
+      expect(result.verb).toBe('Delegate');
+      expect(result.subject).toBe('Wire up dark mode');
+    });
+
+    it('classifies list_agents_workspace-mcp as agent op', () => {
+      const result = classifyTool('list_agents_workspace-mcp', {});
+
+      expect(result.category).toBe('agent');
+      expect(result.verb).not.toBe('Workspace');
+    });
+
+    it('classifies read_agent_conversation_workspace-mcp as agent op', () => {
+      const result = classifyTool('read_agent_conversation_workspace-mcp', {
+        agentId: 'agent-1',
+      });
+
+      expect(result.category).toBe('agent');
+      expect(result.verb).not.toBe('Workspace');
+    });
+
+    it('classifies create_note_workspace-mcp as note op', () => {
+      const result = classifyTool('create_note_workspace-mcp', { title: 'Meeting' });
+
+      expect(result.category).toBe('note');
+      expect(result.verb).toBe('Create note');
+    });
+
+    it('classifies add_to_note_workspace-mcp as note op', () => {
+      const result = classifyTool('add_to_note_workspace-mcp', { noteId: 'spec' });
+
+      expect(result.category).toBe('note');
+      expect(result.verb).not.toBe('Workspace');
+    });
+
+    it('keeps set_workspace_title_workspace-mcp as "Rename workspace"', () => {
+      const result = classifyTool('set_workspace_title_workspace-mcp', {
+        title: 'My Project',
+      });
+
+      expect(result.category).toBe('workspace');
+      expect(result.verb).toBe('Rename workspace');
+      expect(result.subject).toBe('My Project');
+    });
+
+    it('strips -workspace-mcp suffix variant', () => {
+      const result = classifyTool('delegate_task-workspace-mcp', {
+        taskText: 'Do the thing',
+      });
+
+      expect(result.category).toBe('agent');
+      expect(result.verb).toBe('Delegate');
+    });
+  });
+
   describe('bare tool names (no inputs)', () => {
     it('should classify bare "read" with no path as file-read', () => {
       const result = classifyTool('read', {});

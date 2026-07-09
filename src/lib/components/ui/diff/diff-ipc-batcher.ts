@@ -1,18 +1,31 @@
 /**
- * Request coalescer for `git:diff` and `git:show-file`.
+ * Request coalescer / deduper for the diff viewers' git reads.
  *
- * Wave 3 perf work: each TrackedChangeDiffViewer used to issue its own
- * `invoke('git:diff', { paths: [filePath] })` at mount. With N diffs in the
- * "all changes" view that's N main→renderer round-trips.
+ * Perf rationale: each TrackedChangeDiffViewer used to issue its own per-file
+ * diff request at mount. With N diffs in the "all changes" view that's N
+ * round-trips.
  *
  * This batcher groups same-tick requests that share a workspace + `staged`
- * flag into a single `git:diff` IPC. For `git:show-file` it still dedupes
- * concurrent calls for the same `(workspace, ref, path)` into one promise.
+ * flag into a single daemon `git.diffs` read (PROTOCOL §5.6). That read is
+ * hunk-only by design, so the `oldContent`/`newContent` full-file enrichment
+ * the consumers (ChatChangesPanel, TrackedChangeDiffViewer) rely on is
+ * composed here from `git.showFile` (the HEAD / ':0' side) and `file.read`
+ * (the working-tree side). `dedupedShowFile` resolves via `git.showFile` and
+ * dedupes concurrent calls for the same `(workspace, ref, path)` into one
+ * promise.
  *
  * Results are NOT cached across calls — callers are responsible for their own
  * invalidation (the existing file-watcher path already triggers a re-fetch).
+ *
+ * Still on local Electron IPC (no daemon arm yet): the branch-base committed
+ * diff (`git:diff` with baseRef/baseCommitSha) and `git:numstat` (workdir
+ * line stats) — both tracked for a follow-up daemon surface.
  */
 import { invoke } from '$lib/electron-bridge';
+import { backendRequest } from '$lib/client/live/backend-transport';
+import { createLogger } from '$lib/utils/client-logger';
+
+const logger = createLogger('diff-ipc-batcher');
 
 interface DiffChunk {
   file: string;
@@ -85,19 +98,81 @@ function diffGroupKey(workspaceId: string, staged: boolean): string {
   return `${workspaceId}::${staged ? '1' : '0'}`;
 }
 
-async function fetchSingleDiffChunk(
+/** Map the daemon `git.diffs` bare-array result (`[{ path, hunks }]`) into the
+ * batcher's `DiffChunk[]`; hunks pass through verbatim (they already carry the
+ * renderer `DiffHunk` shape). */
+function toDaemonDiffChunks(result: unknown): DiffChunk[] {
+  const entries = Array.isArray(result) ? result : [];
+  const chunks: DiffChunk[] = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as { path?: unknown; hunks?: unknown };
+    if (typeof e.path !== 'string' || !e.path) continue;
+    chunks.push({ file: e.path, chunks: Array.isArray(e.hunks) ? e.hunks : [] });
+  }
+  return chunks;
+}
+
+/** Working-tree side of an unstaged diff via `file.read` (PROTOCOL §5.9). A
+ * read failure folds to empty content (the file was deleted from the workdir),
+ * mirroring the legacy handler's fallback. */
+async function readWorkingTreeContent(
+  workspaceId: string,
+  filePath: string,
+): Promise<ShowFileResponse> {
+  try {
+    const result = await backendRequest<unknown>('file.read', { workspaceId, path: filePath });
+    const content =
+      typeof result === 'string'
+        ? result
+        : typeof (result as { content?: unknown } | null)?.content === 'string'
+          ? (result as { content: string }).content
+          : '';
+    return { success: true, data: content };
+  } catch (error) {
+    logger.debug('file.read failed for working-tree diff side (file deleted?)', {
+      workspaceId,
+      filePath,
+      error,
+    });
+    return { success: true, data: '' };
+  }
+}
+
+/**
+ * Compose the full-file `oldContent`/`newContent` for one diff chunk. The
+ * daemon `git.diffs` read is intentionally hunk-only, so the two sides come
+ * from separate daemon reads:
+ *   staged   → old = `git.showFile` at HEAD, new = `git.showFile` at ':0'
+ *   unstaged → old = `git.showFile` at ':0', new = `file.read` (working tree)
+ * A failed side stays `undefined` so consumers fall back to hunk-only
+ * rendering (never a silently-empty full-file diff); the failure is logged.
+ */
+async function enrichChunkContents(
   workspaceId: string,
   staged: boolean,
-  filePath: string,
-): Promise<DiffChunk | undefined> {
-  const result = (await invoke('git:diff', {
+  chunk: DiffChunk,
+): Promise<void> {
+  const [oldRes, newRes] = await Promise.all([
+    dedupedShowFile(workspaceId, staged ? 'HEAD' : ':0', chunk.file),
+    staged
+      ? dedupedShowFile(workspaceId, ':0', chunk.file)
+      : readWorkingTreeContent(workspaceId, chunk.file),
+  ]);
+  if (oldRes.success) chunk.oldContent = oldRes.data ?? '';
+  else logger.warn('git.showFile failed for old diff side', {
     workspaceId,
+    filePath: chunk.file,
     staged,
-    paths: [filePath],
-  })) as GitDiffResponse;
-
-  const chunks = result?.success && Array.isArray(result.data) ? result.data : [];
-  return findChunkForPath(chunks, filePath);
+    error: oldRes.error,
+  });
+  if (newRes.success) chunk.newContent = newRes.data ?? '';
+  else logger.warn('content read failed for new diff side', {
+    workspaceId,
+    filePath: chunk.file,
+    staged,
+    error: newRes.error,
+  });
 }
 
 async function flushDiffGroup(key: string) {
@@ -107,42 +182,36 @@ async function flushDiffGroup(key: string) {
   if (pending.timer) clearTimeout(pending.timer);
 
   const [wsId, stagedStr] = key.split('::');
-  const paths = Array.from(pending.paths);
+  const staged = stagedStr === '1';
 
   try {
-    const result = (await invoke('git:diff', {
-      workspaceId: wsId,
-      staged: stagedStr === '1',
-      paths,
-    })) as GitDiffResponse;
+    // One hunk read serves the whole group: `git.diffs` without a `path`
+    // filter returns every changed file for the selected staging area
+    // (unstaged includes untracked files), so N same-tick requests collapse
+    // into a single daemon read.
+    const result = await backendRequest<unknown>(
+      'git.diffs',
+      staged ? { workspaceId: wsId, staged: true } : { workspaceId: wsId },
+    );
+    const chunks = toDaemonDiffChunks(result);
 
-    const chunks = result?.success && Array.isArray(result.data) ? result.data : [];
-
-    const missingPaths = new Set<string>();
+    const matches = new Map<string, DiffChunk | undefined>();
+    for (const path of pending.resolvers.keys()) {
+      matches.set(path, findChunkForPath(chunks, path));
+    }
+    const matchedChunks = new Set(
+      [...matches.values()].filter((chunk): chunk is DiffChunk => chunk !== undefined),
+    );
+    await Promise.all(
+      [...matchedChunks].map((chunk) => enrichChunkContents(wsId, staged, chunk)),
+    );
 
     for (const [path, resolvers] of pending.resolvers) {
-      const chunk = findChunkForPath(chunks, path);
-      if (!chunk && paths.length > 1 && chunks.length > 0) {
-        missingPaths.add(path);
-        continue;
-      }
+      const chunk = matches.get(path);
       for (const resolve of resolvers) resolve(chunk);
     }
-
-    if (missingPaths.size > 0) {
-      const retryResults = await Promise.all(
-        Array.from(missingPaths, async (path) => ({
-          path,
-          chunk: await fetchSingleDiffChunk(wsId, stagedStr === '1', path).catch(() => undefined),
-        })),
-      );
-
-      for (const { path, chunk } of retryResults) {
-        const resolvers = pending.resolvers.get(path) ?? [];
-        for (const resolve of resolvers) resolve(chunk);
-      }
-    }
   } catch (err) {
+    logger.warn('git.diffs group fetch failed', { workspaceId: wsId, staged, error: err });
     for (const reject of pending.rejecters) reject(err);
     for (const resolvers of pending.resolvers.values()) {
       for (const resolve of resolvers) resolve(undefined);
@@ -190,9 +259,10 @@ async function flushBranchBaseDiffGroup(key: string) {
 }
 
 /**
- * Request a `git:diff` chunk for one file; same-tick requests for the same
- * `(workspaceId, staged)` are merged into a single IPC call. Returns the
- * matching chunk, or `undefined` if the backend returned no entry for it.
+ * Request a diff chunk for one file; same-tick requests for the same
+ * `(workspaceId, staged)` are merged into a single daemon `git.diffs` read
+ * (plus the per-file content enrichment). Returns the matching chunk, or
+ * `undefined` if the daemon returned no entry for it.
  */
 export function batchedGitDiff(
   workspaceId: string,
@@ -275,8 +345,11 @@ function showKey(workspaceId: string, ref: string, filePath: string): string {
 }
 
 /**
- * Deduped `git:show-file` fetch. Concurrent callers for the same
- * `(workspace, ref, path)` share a single in-flight IPC.
+ * Deduped daemon `git.showFile` fetch (PROTOCOL §5.6: file content at a
+ * revision, index ref ':0' supported; a path missing at the ref folds to ''
+ * on the daemon side). Concurrent callers for the same `(workspace, ref,
+ * path)` share a single in-flight request. Daemon/transport errors fold into
+ * `{ success: false, error }`, preserving the legacy handler's envelope.
  */
 export function dedupedShowFile(
   workspaceId: string,
@@ -287,13 +360,26 @@ export function dedupedShowFile(
   const existing = pendingShows.get(key);
   if (existing) return existing.promise;
 
-  const promise = (invoke('git:show-file', {
+  const promise = backendRequest<{ content?: unknown }>('git.showFile', {
     workspaceId,
-    ref,
     filePath,
-  }) as Promise<ShowFileResponse>).finally(() => {
-    pendingShows.delete(key);
-  });
+    ref,
+  })
+    .then(
+      (result): ShowFileResponse => ({
+        success: true,
+        data: typeof result?.content === 'string' ? result.content : '',
+      }),
+    )
+    .catch(
+      (error): ShowFileResponse => ({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    )
+    .finally(() => {
+      pendingShows.delete(key);
+    });
 
   pendingShows.set(key, { promise });
   return promise;

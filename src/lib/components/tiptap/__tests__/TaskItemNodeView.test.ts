@@ -48,10 +48,6 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-slice', async (i
   ...(await importOriginal<typeof import('$store/renderer/slices/workspace-notes/workspace-notes-slice')>()),
 }));
 
-vi.mock('$lib/utils/notes-ipc', () => ({
-  notesIpc: vi.fn(),
-}));
-
 vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateToNote: vi.fn(),
 }));

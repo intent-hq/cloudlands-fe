@@ -310,4 +310,148 @@ describe("LiveNotesClient mutations (fake transport)", () => {
     expect(result.success).toBe(false);
     expect(result.conflict).toBeUndefined();
   });
+
+  // ---- §5.2 version history: listVersions + restoreVersion ---------------
+
+  it("listVersions calls note.listVersions then batches note.getVersion per entry (FE-shape)", async () => {
+    // First call → summaries; the client then batches getVersion for each `v`.
+    mockedRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+      if (method === "note.listVersions") {
+        return [
+          { type: "snapshot", v: 1, date: "2026-01-01T00:00:00.000Z", author: { id: "u", name: "U", type: "user" }, title: "T1", contentLength: 4 },
+          { type: "snapshot", v: 2, date: "2026-01-02T00:00:00.000Z", author: { id: "a", name: "A", type: "agent" }, title: "T2", contentLength: 6 },
+        ];
+      }
+      if (method === "note.getVersion") {
+        const v = (params.v as number);
+        return { type: "snapshot", v, date: `2026-01-0${v}T00:00:00.000Z`, author: { id: "x", name: "X", type: v === 1 ? "user" : "agent" }, title: `T${v}`, content: v === 1 ? "body" : "body-2" };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const client = new LiveNotesClient();
+
+    const versions = await client.listVersions("ws-1", "note-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("note.listVersions", { workspaceId: "ws-1", noteId: "note-1" });
+    expect(mockedRequest).toHaveBeenCalledWith("note.getVersion", { workspaceId: "ws-1", noteId: "note-1", v: 1 });
+    expect(mockedRequest).toHaveBeenCalledWith("note.getVersion", { workspaceId: "ws-1", noteId: "note-1", v: 2 });
+    expect(versions).toEqual([
+      { versionId: "1", versionNumber: 1, content: "body", title: "T1", author: { id: "x", name: "X", type: "user" }, createdAt: "2026-01-01T00:00:00.000Z" },
+      { versionId: "2", versionNumber: 2, content: "body-2", title: "T2", author: { id: "x", name: "X", type: "agent" }, createdAt: "2026-01-02T00:00:00.000Z" },
+    ]);
+  });
+
+  it("listVersions returns [] when the daemon reports no versions", async () => {
+    mockedRequest.mockResolvedValueOnce([]);
+    const client = new LiveNotesClient();
+
+    const versions = await client.listVersions("ws-1", "note-1");
+    expect(versions).toEqual([]);
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("listVersions drops a per-version getVersion failure but keeps the rest", async () => {
+    mockedRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+      if (method === "note.listVersions") {
+        return [
+          { type: "snapshot", v: 1, date: "2026-01-01T00:00:00.000Z", author: { id: "u", name: "U", type: "user" }, title: "T1", contentLength: 1 },
+          { type: "snapshot", v: 2, date: "2026-01-02T00:00:00.000Z", author: { id: "u", name: "U", type: "user" }, title: "T2", contentLength: 1 },
+        ];
+      }
+      if ((params.v as number) === 1) throw new Error("boom");
+      return { type: "snapshot", v: 2, date: "2026-01-02T00:00:00.000Z", author: { id: "u", name: "U", type: "user" }, title: "T2", content: "b" };
+    });
+    const client = new LiveNotesClient();
+
+    const versions = await client.listVersions("ws-1", "note-1");
+    expect(versions.map((v) => v.versionNumber)).toEqual([2]);
+  });
+
+  it("restoreVersion forwards note.restoreVersion with numeric v and returns the normalized note", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      ok: true,
+      noteId: "note-1",
+      restoredFrom: 2,
+      v: 5,
+      note: { id: "note-1", workspaceId: "ws-1", title: "T", content: "restored", rev: 5 },
+    });
+    const client = new LiveNotesClient();
+
+    const result = await client.restoreVersion("ws-1", "note-1", "2");
+
+    expect(mockedRequest).toHaveBeenCalledWith("note.restoreVersion", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      v: 2,
+    });
+    expect(result.success).toBe(true);
+    expect(result.note?.content).toBe("restored");
+    expect(result.note?.workspaceId).toBe("ws-1");
+    expect(result.note?.rev).toBe(5);
+  });
+
+  it("restoreVersion rejects a non-numeric versionId without a wire call", async () => {
+    const client = new LiveNotesClient();
+
+    const result = await client.restoreVersion("ws-1", "note-1", "not-a-number");
+    expect(result.success).toBe(false);
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it("restoreVersion folds a daemon error into a failed result without throwing", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("nope"));
+    const client = new LiveNotesClient();
+
+    const result = await client.restoreVersion("ws-1", "note-1", "3");
+    expect(result).toEqual({ success: false, error: "nope" });
+  });
+
+  // ---- Line attribution (PROTOCOL §5.2.1) -------------------------------
+  // `note.lineAttribution.load` returns the bare `LineAttributionData | null`
+  // payload; the client passes `workspaceId` + `noteId` through directly
+  // (no `resolveNoteWorkspaceId`, the gutter carries the workspaceId as a prop).
+
+  it("lineAttribution.load forwards note.lineAttribution.load and returns the payload", async () => {
+    const payload = {
+      noteId: "note-1",
+      workspaceId: "ws-1",
+      computedAt: "2026-07-05T12:34:56.000Z",
+      attributions: {
+        "1": {
+          timestamp: 1720193696000,
+          author: { id: "system", name: "intentd", type: "system" as const },
+        },
+      },
+    };
+    mockedRequest.mockResolvedValueOnce(payload);
+    const client = new LiveNotesClient();
+
+    const result = await client.lineAttribution.load("ws-1", "note-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("note.lineAttribution.load", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+    });
+    expect(result).toEqual(payload);
+  });
+
+  it("lineAttribution.load returns null when the daemon has no attributions yet", async () => {
+    mockedRequest.mockResolvedValueOnce(null);
+    const client = new LiveNotesClient();
+
+    expect(await client.lineAttribution.load("ws-1", "note-1")).toBeNull();
+  });
+
+  it("lineAttribution.computeNow forwards note.lineAttribution.computeNow and returns { ok }", async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true });
+    const client = new LiveNotesClient();
+
+    const result = await client.lineAttribution.computeNow("ws-1", "note-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("note.lineAttribution.computeNow", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+    });
+    expect(result).toEqual({ ok: true });
+  });
 });

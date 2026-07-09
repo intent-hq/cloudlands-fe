@@ -5,6 +5,8 @@
  * All event-related types should be imported from this file.
  */
 
+import type { SessionStats } from '../../shared/types/agent-session';
+
 // ============================================================================
 // Actor Types
 // ============================================================================
@@ -110,6 +112,9 @@ export const WorkspaceEventType = {
 
   // Agent user message events (for cross-client sync)
   AgentUserMessageSent: 'agent:user-message:sent',
+
+  // Agent session stats (PROTOCOL §5.24)
+  AgentSessionStatsChanged: 'agent:session-stats-changed',
 
   // Git events
   GitCommit: 'git:commit',
@@ -789,6 +794,20 @@ export interface AgentUserMessageSentEvent extends WorkspaceEventBase {
   };
 }
 
+/**
+ * Emitted when an agent session's cumulative usage counters change
+ * (PROTOCOL §5.24). Payload is self-sufficient (§6.7) — carries the full
+ * current `SessionStats` snapshot, not a delta.
+ */
+export interface AgentSessionStatsChangedEvent extends WorkspaceEventBase {
+  type: 'agent:session-stats-changed';
+  data: {
+    sessionId: string;
+    agentId?: string;
+    stats: SessionStats;
+  };
+}
+
 // Union type for all specific events
 export type SpecificWorkspaceEvent =
   | FileChangedEvent
@@ -833,7 +852,9 @@ export type SpecificWorkspaceEvent =
   | AgentStreamContentBlocksEvent
   | AgentStreamEndEvent
   // Agent user message events (cross-client sync)
-  | AgentUserMessageSentEvent;
+  | AgentUserMessageSentEvent
+  // Agent session stats (PROTOCOL §5.24)
+  | AgentSessionStatsChangedEvent;
 
 // Main WorkspaceEvent type - includes legacy fields for backward compatibility
 export interface WorkspaceEvent extends WorkspaceEventBase {
@@ -1059,6 +1080,12 @@ export function isAgentSubscribedEvent(event: WorkspaceEvent): event is AgentSub
 
 export function isAgentUnsubscribedEvent(event: WorkspaceEvent): event is AgentUnsubscribedEvent {
   return event.type === 'agent:unsubscribed';
+}
+
+export function isAgentSessionStatsChangedEvent(
+  event: WorkspaceEvent,
+): event is AgentSessionStatsChangedEvent {
+  return event.type === 'agent:session-stats-changed';
 }
 
 /**

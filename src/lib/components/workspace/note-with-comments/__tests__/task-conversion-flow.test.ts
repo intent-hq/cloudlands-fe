@@ -341,10 +341,6 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateToNote: vi.fn(),
 }));
 
-vi.mock('$lib/utils/notes-ipc', () => ({
-  notesIpc: vi.fn(),
-}));
-
 vi.mock('$lib/utils/editor-listeners', () => ({
   setupEditorListeners: () => () => {},
 }));

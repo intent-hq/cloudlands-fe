@@ -18,6 +18,19 @@ vi.mock('../../../store/main/redux-store-bridge', () => ({
   mainDispatch: vi.fn((action: unknown) => action),
 }));
 
+// Stub the daemon client so WorkspaceService's activity-repair path
+// (`note.list` / `agent.list` per PROTOCOL.md §5.4/§5.5) resolves to empty
+// PROTOCOL-shaped results instead of reaching the real UDS socket.
+vi.mock('../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({
+    request: vi.fn(async (method: string) => {
+      if (method === 'note.list') return { notes: [] };
+      if (method === 'agent.list') return { agents: [] };
+      return {};
+    }),
+  }),
+}));
+
 function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
   const now = new Date().toISOString();
 

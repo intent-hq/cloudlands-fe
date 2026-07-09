@@ -80,7 +80,6 @@ export function requiresAuth(channel: string): boolean {
   const authRequired = [
     'agent:create',
     'agent:send-message',
-    'agent:persistence:save',
     'workspace:create',
     'workspace:delete',
     'file:write',

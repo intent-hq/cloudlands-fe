@@ -1,8 +1,4 @@
 import type { WorkspaceId } from '$shared/types/branded-ids';
-import {
-  WorkspaceId as WorkspaceIdBrand,
-  NoteId as NoteIdBrand,
-} from '$shared/types/branded-ids';
 /**
  * Tool Service
  *
@@ -29,7 +25,7 @@ import {
 } from './types';
 import type { CommandResult } from '../types';
 import { WorkspaceService } from '../../workspace/main/workspace.service';
-import { NotesService } from '../../notes/main/notes.service';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 import { Logger } from '../../../shared/logger';
 import { executionManager } from './execution-manager';
 import * as path from 'path';
@@ -42,7 +38,6 @@ export class ToolService implements IToolService {
 
   constructor(
     private workspaceService: WorkspaceService = new WorkspaceService(),
-    private notesService: NotesService = new NotesService(),
   ) {
     this.registerBuiltinTools();
   }
@@ -423,20 +418,25 @@ export class ToolService implements IToolService {
       title: noteData.title,
     });
 
-    const result = await this.notesService.createNote({
-      workspaceId: WorkspaceIdBrand(context.workspaceId),
-      title: noteData.title || 'Untitled Note',
-      content: noteData.content,
-    });
-
-    if (!result.ok) {
-      throw new Error(result.error);
+    let created: any;
+    try {
+      const result = await getBackendClient().request<{ note: any }>('note.create', {
+        workspaceId: context.workspaceId,
+        title: noteData.title || 'Untitled Note',
+        ...(noteData.content !== undefined ? { content: noteData.content } : {}),
+      });
+      created = result?.note ?? null;
+    } catch (error) {
+      throw new Error((error as Error).message);
+    }
+    if (!created) {
+      throw new Error('Failed to create note');
     }
 
     return {
-      ...result.data,
-      createdAt: result.data.createdAt,
-      updatedAt: result.data.updatedAt,
+      ...created,
+      createdAt: created.createdAt,
+      updatedAt: created.updatedAt,
     };
   }
   async updateNote(
@@ -455,21 +455,29 @@ export class ToolService implements IToolService {
 
     const { id: _, ...updateFields } = updates;
 
-    const updateRequest = {
-      workspaceId: WorkspaceIdBrand(context.workspaceId),
-      id: NoteIdBrand(noteId),
-      ...updateFields,
+    const daemonParams: Record<string, unknown> = {
+      workspaceId: context.workspaceId,
+      noteId,
     };
-    const result = await this.notesService.updateNote(updateRequest);
+    if ((updateFields as any).title !== undefined) daemonParams.title = (updateFields as any).title;
+    if ((updateFields as any).content !== undefined) daemonParams.content = (updateFields as any).content;
+    if ((updateFields as any).tags !== undefined) daemonParams.tags = (updateFields as any).tags;
 
-    if (!result.ok) {
-      throw new Error(result.error);
+    let updated: any;
+    try {
+      const result = await getBackendClient().request<{ note: any }>('note.update', daemonParams);
+      updated = result?.note ?? null;
+    } catch (error) {
+      throw new Error((error as Error).message);
+    }
+    if (!updated) {
+      throw new Error('Failed to update note');
     }
 
     return {
-      ...result.data,
-      createdAt: result.data.createdAt,
-      updatedAt: result.data.updatedAt,
+      ...updated,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
     };
   }
 
@@ -481,13 +489,13 @@ export class ToolService implements IToolService {
       noteId,
     });
 
-    const result = await this.notesService.deleteNote(
-      NoteIdBrand(noteId),
-      WorkspaceIdBrand(context.workspaceId),
-    );
-
-    if (!result.ok) {
-      throw new Error(result.error);
+    try {
+      await getBackendClient().request('note.delete', {
+        workspaceId: context.workspaceId,
+        noteId,
+      });
+    } catch (error) {
+      throw new Error((error as Error).message);
     }
   }
 
@@ -498,14 +506,17 @@ export class ToolService implements IToolService {
       workspaceId: context.workspaceId,
     });
 
-    const result = await this.notesService.listNotes(WorkspaceIdBrand(context.workspaceId));
-
-    if (!result.ok) {
-      throw new Error(result.error);
+    let notes: any[];
+    try {
+      const result = await getBackendClient().request<{ notes: any[] }>('note.list', {
+        workspaceId: context.workspaceId,
+      });
+      notes = Array.isArray(result?.notes) ? result.notes : [];
+    } catch (error) {
+      throw new Error((error as Error).message);
     }
 
-    // Extract notes array from the paginated result and convert dates
-    return result.data.notes.map((note: any) => ({
+    return notes.map((note: any) => ({
       ...note,
       createdAt: new Date(note.createdAt),
       updatedAt: new Date(note.updatedAt),
@@ -520,19 +531,24 @@ export class ToolService implements IToolService {
       noteId,
     });
 
-    const result = await this.notesService.getNote(
-      WorkspaceIdBrand(context.workspaceId),
-      NoteIdBrand(noteId),
-    );
-
-    if (!result.ok) {
-      throw new Error(result.error);
+    let note: any;
+    try {
+      const result = await getBackendClient().request<{ note: any }>('note.get', {
+        workspaceId: context.workspaceId,
+        noteId,
+      });
+      note = result?.note ?? null;
+    } catch (error) {
+      throw new Error((error as Error).message);
+    }
+    if (!note) {
+      throw new Error('Note not found');
     }
 
     return {
-      ...result.data,
-      createdAt: result.data.createdAt,
-      updatedAt: result.data.updatedAt,
+      ...note,
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
     };
   }
 
@@ -640,11 +656,10 @@ export class ToolService implements IToolService {
     // Get note count
     let noteCount = 0;
     try {
-      const notes = await this.notesService.listNotes(WorkspaceIdBrand(context.workspaceId));
-      if (notes.ok && notes.data) {
-        // Access the notes array from the paginated result
-        noteCount = notes.data.notes.length;
-      }
+      const result = await getBackendClient().request<{ notes: any[] }>('note.list', {
+        workspaceId: context.workspaceId,
+      });
+      noteCount = Array.isArray(result?.notes) ? result.notes.length : 0;
     } catch (error) {
       logger.debug('Error getting note count', { error });
     }

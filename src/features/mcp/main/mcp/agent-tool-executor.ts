@@ -12,7 +12,7 @@ import {
   hasToolCalls,
   ExtractedToolCall,
 } from './tool-call-extractor';
-import { AgentMessage } from '$features/agent/main/agent-providers/base-provider';
+import type { ProviderMessage as AgentMessage } from '$shared/types';
 import {
   getPendingFileOperations,
   clearPendingFileOperations,
@@ -67,7 +67,7 @@ export async function executeToolCalls(
   });
 
   // Note: recordAgentActivity is deprecated. Agent file writes are now tracked
-  // via content-based attribution in acp-provider-streaming.ts when tool_use blocks
+  // via content-based attribution in the daemon streaming path when tool_use blocks
   // are received for file-editing tools (save-file, str_replace_editor, etc.)
 
   logger.debug('Created provenance context for agent', {

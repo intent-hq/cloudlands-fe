@@ -10,6 +10,7 @@ import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { protocolAdapter } from '../../../protocol/main/protocol-adapter';
+import { getBackendClient } from '../../../backend/main/backend.ipc';
 import { GitService } from '../../../git/main/git.service';
 import { Logger } from '../../../../shared/logger';
 import { WorkspaceConfig } from '../../../../shared/main/config.js';
@@ -434,19 +435,16 @@ export class McpBridge extends EventEmitter {
           continue;
         }
 
-        // Keep dynamic: this path historically avoided MCP bridge ↔ notes service circular startup deps.
-        const { assetsService } = await import('../../../notes/main/assets.service');
-
-        // Get the asset as a data URL
-        const dataUrl = await assetsService.readAssetAsDataUrl(workspaceId, assetId);
-
-        // Parse the data URL to extract mime type and base64 data
-        const dataMatch = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-        if (dataMatch) {
+        // Read the asset via the daemon (PROTOCOL.md §5.2 `note.readAsset`).
+        const asset = await getBackendClient().request<{
+          data?: string;
+          mimeType?: string;
+        }>('note.readAsset', { workspaceId, asset: assetId });
+        if (asset?.data && asset?.mimeType) {
           images.push({
             url,
-            data: dataMatch[2],
-            mimeType: dataMatch[1],
+            data: asset.data,
+            mimeType: asset.mimeType,
             alt: alt || undefined,
           });
         }

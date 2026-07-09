@@ -15,6 +15,8 @@ import type {
   AgentCreateRequest,
   AgentsClient,
   MutationResult,
+  PermissionOutcome,
+  RespondPermissionResult,
   SubscriptionHandler,
   Unsubscribe,
 } from "../app-client";
@@ -87,27 +89,39 @@ export class LiveAgentsClient implements AgentsClient {
   }
 
   // The list/get payloads carry message COUNTS only; the real transcript comes
-  // from `agent.getConversation` (§5.5), which returns most-recent-N messages
-  // (no continuation token — older history beyond `limit` is a documented daemon
-  // gap). `messages` is returned raw; the agent-session reducer normalizes/sorts/
-  // dedups/prunes on ingest.
+  // from `agent.getConversation` (§5.5), which returns one page of messages
+  // (oldest→newest within the page). The daemon clamps `limit` to `[1,200]` —
+  // `pageToken` walks backward to older pages, and `nextToken` is `null` once
+  // the oldest message has been returned. The chat-read-service loops on
+  // `nextToken` to assemble the full transcript. `messages` is returned raw;
+  // the agent-session reducer normalizes/sorts/dedups/prunes on ingest.
   async getConversation(
     agentId: string,
-    limit = 500,
-  ): Promise<{ messages: AgentMessage[]; truncated: boolean; totalMessages: number }> {
+    limit = 200,
+    pageToken?: string,
+  ): Promise<{
+    messages: AgentMessage[];
+    truncated: boolean;
+    totalMessages: number;
+    nextToken: string | null;
+  }> {
+    const params: Record<string, unknown> = { agentId, limit };
+    if (pageToken !== undefined) params.nextToken = pageToken;
     const result = await backendRequest<{
       messages?: unknown[];
       truncated?: boolean;
       totalMessages?: number;
-    }>("agent.getConversation", { agentId, limit });
+      nextToken?: unknown;
+    }>("agent.getConversation", params);
     if (!result || typeof result !== "object") {
-      return { messages: [], truncated: false, totalMessages: 0 };
+      return { messages: [], truncated: false, totalMessages: 0, nextToken: null };
     }
     const messages = Array.isArray(result.messages) ? (result.messages as AgentMessage[]) : [];
     return {
       messages,
       truncated: Boolean(result.truncated),
       totalMessages: typeof result.totalMessages === "number" ? result.totalMessages : 0,
+      nextToken: typeof result.nextToken === "string" ? result.nextToken : null,
     };
   }
 
@@ -199,12 +213,39 @@ export class LiveAgentsClient implements AgentsClient {
   async lock(agentId: string, locked: boolean): Promise<MutationResult> {
     return runMutation("agent.lock", { agentId, locked });
   }
+  async stop(agentId: string): Promise<MutationResult> {
+    // `agent.stop` (§5.5) takes `{ agentId }` and acks `{ success: true }`.
+    // The daemon cancels the in-flight stream and emits the terminal
+    // `agent:stream:end` (§7), which converges the FE streaming state.
+    return runMutation("agent.stop", { agentId });
+  }
   async delete(agentId: string): Promise<MutationResult> {
     // `agent.delete` (§5.5) takes `agentId` (req) and an optional `workspaceId`;
     // the daemon resolves the workspace itself (agent_delete_op only consumes
     // agent_id) and is idempotent, so we forward just `{ agentId }` and rely on
     // the emitted `agent:deleted` event to reconcile the list.
     return runMutation("agent.delete", { agentId });
+  }
+  async respondPermission(
+    requestId: string,
+    outcome: PermissionOutcome,
+  ): Promise<RespondPermissionResult> {
+    // `agent.respondPermission` (PROTOCOL §8) forwards the caller's outcome to
+    // the blocked provider and emits `agent:permission:resolved` so any other
+    // client can clear its inline prompt. The daemon returns `{ resolved }` —
+    // `false` when the pending prompt is already gone (5-min timeout or an
+    // earlier response) — which we surface on top of MutationResult so callers
+    // decide whether to keep the local slice entry visible for a retry.
+    try {
+      const result = await backendRequest<{ resolved?: unknown } | undefined>(
+        "agent.respondPermission",
+        { requestId, outcome },
+      );
+      const resolved = typeof result?.resolved === "boolean" ? result.resolved : undefined;
+      return resolved !== undefined ? { success: true, resolved } : { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   /**

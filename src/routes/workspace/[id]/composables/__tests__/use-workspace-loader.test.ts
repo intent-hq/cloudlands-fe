@@ -11,10 +11,7 @@ import {
 } from '@testing-library/svelte';
 import type { Workspace } from '$shared/types';
 import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
-import {
-  emptyWorkspaceAgentState,
-  setInitialAgentId,
-} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+import { emptyWorkspaceAgentState } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
 import TestUseWorkspaceLoader from './TestUseWorkspaceLoader.test.svelte';
 
@@ -145,7 +142,11 @@ describe('useWorkspaceLoader', () => {
     ]);
   });
 
-  it('hydrates a pending initial agent id before dispatching workspaceMounted', async () => {
+  it('dispatches setWorkspaceEntity → workspaceMounted for a cached workspace without touching initial-agent-config state', async () => {
+    // Regression: the loader used to read `initialAgentConfig` and pre-dispatch
+    // `setInitialAgentId` before `workspaceMounted`. Now that the daemon owns
+    // initial-agent creation, the loader must NOT insert any initial-agent
+    // dispatch into that sequence.
     const cachedWorkspace = makeWorkspace({ id: 'loader-initial-agent-1', title: 'New Workspace' });
     selectWorkspaceByIdMock.mockReturnValue(cachedWorkspace);
     openMock.mockResolvedValue({ ok: true, data: cachedWorkspace });
@@ -153,14 +154,7 @@ describe('useWorkspaceLoader', () => {
     storeStateRef.current = {
       workspaceAgents: {
         byWorkspaceId: {
-          [cachedWorkspace.id]: {
-            ...emptyWorkspaceAgentState,
-            initialAgentConfig: {
-              agentId: 'agent-initial-1',
-              config: { prompt: 'bootstrap workspace' },
-              timestamp: 1700000000000,
-            },
-          },
+          [cachedWorkspace.id]: { ...emptyWorkspaceAgentState },
         },
       },
     };
@@ -176,9 +170,8 @@ describe('useWorkspaceLoader', () => {
 
     await waitFor(() => expect(openMock).toHaveBeenCalledTimes(1));
 
-    expect(dispatchMock.mock.calls.slice(0, 3).map(([action]) => action)).toEqual([
+    expect(dispatchMock.mock.calls.slice(0, 2).map(([action]) => action)).toEqual([
       setWorkspaceEntity(cachedWorkspace),
-      setInitialAgentId(cachedWorkspace.id, 'agent-initial-1'),
       workspaceMounted(cachedWorkspace.id),
     ]);
   });

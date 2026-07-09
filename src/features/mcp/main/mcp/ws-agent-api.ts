@@ -13,11 +13,7 @@ import {
   ReportToParentTool,
   GetAgentDiagnosticsTool,
 } from './agent-interaction-tools';
-import { agentPersistence } from '$features/agent/main/agent-persistence';
-import {
-  AgentId,
-  WorkspaceId,
-} from '$shared/types/branded-ids';
+import { getBackendClient } from '$features/backend/main/backend.ipc';
 import { getMainState } from '../../../../store/main/redux-store-bridge';
 import { selectAgentStatus } from '../../../../store/main/slices/agent-subscriptions/agent-subscriptions-selectors';
 
@@ -243,46 +239,44 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
     async list(includeCompleted: boolean = false): Promise<AgentInfo[]> {
       logger.info('ws.agent.list', { workspaceId, includeCompleted });
 
-      const { AgentBackendHandler } = await import('../../../agent/main/agent-backend-handler.service');
-      const handler = AgentBackendHandler.getInstance();
-      const [agents, activeAgentsResult] = await Promise.all([
-        handler.listAllAgents(workspaceId),
-        typeof handler.listAgents === 'function'
-          ? Promise.resolve(handler.listAgents(workspaceId)).catch(() => [])
-          : Promise.resolve([]),
-      ]);
-      const activeAgentIds = new Set(
-        (Array.isArray(activeAgentsResult) ? activeAgentsResult : []).map((agent: any) => agent.id),
-      );
+      // Daemon-primary listing (PROTOCOL.md §5.5 `agent.list`): AgentLite entries
+      // carry the persisted `isStreaming`/`isResponding` flags that stand in for
+      // the retired in-memory active-set from the FE handler.
+      const result = (await getBackendClient().request('agent.list', {
+        workspaceId,
+      })) as { agents?: any[] };
+      const agents = Array.isArray(result?.agents) ? result.agents : [];
 
       return agents
-        .map((agent: any) => toAgentInfo(agent, workspaceId, activeAgentIds.has(agent.id)))
+        .map((agent: any) => {
+          const presentInBackend = agent.isStreaming === true || agent.isResponding === true;
+          return toAgentInfo(agent, workspaceId, presentInBackend);
+        })
         .filter((agent: AgentInfo) => includeCompleted || !['completed', 'failed'].includes(agent.status));
     },
 
     async status(agentId: string): Promise<AgentInfo> {
       logger.info('ws.agent.status', { workspaceId, agentId });
 
-      const { AgentBackendHandler } = await import('../../../agent/main/agent-backend-handler.service');
-      const handler = AgentBackendHandler.getInstance();
-      let agent = await handler.getAgent(agentId);
-      let presentInBackend = true;
-
-      if (!agent) {
-        const loadResult = await agentPersistence.loadAgent(AgentId(agentId), WorkspaceId(workspaceId));
-        if (loadResult.success && loadResult.data) {
-          agent = loadResult.data;
-        } else {
-          const agents = await handler.listAllAgents(workspaceId);
-          agent = agents.find((candidate: any) => candidate.id === agentId) ?? null;
-        }
-        presentInBackend = false;
+      // Daemon-primary read (PROTOCOL.md §5.5 `agent.getSession`): full
+      // AgentSession projection; `presentInBackend` derives from the persisted
+      // `isStreaming`/`isResponding` flags.
+      let agent: any;
+      try {
+        const result = (await getBackendClient().request('agent.getSession', {
+          agentId,
+          workspaceId,
+        })) as { session?: any };
+        agent = result.session ?? null;
+      } catch (_error) {
+        agent = null;
       }
 
       if (!agent) {
         throw new Error(`Agent ${agentId} not found`);
       }
 
+      const presentInBackend = agent.isStreaming === true || agent.isResponding === true;
       return toAgentInfo(agent, workspaceId, presentInBackend);
     },
 
@@ -319,14 +313,27 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
     async readConversation(agentId: string, opts: ReadConversationOptions = {}) {
       logger.info('ws.agent.readConversation', { workspaceId, agentId, ...opts });
 
-      const loadResult = await agentPersistence.loadAgent(AgentId(agentId), WorkspaceId(workspaceId));
-      if (!loadResult.success || !loadResult.data) {
+      // Daemon-primary read (PROTOCOL.md §5.5 `agent.getSession`): full
+      // AgentSession projection carries the chronological `messages` log.
+      let agent: any;
+      let allMessages: any[];
+      try {
+        const result = (await getBackendClient().request('agent.getSession', {
+          agentId,
+          workspaceId,
+        })) as { session?: any };
+        if (!result.session) {
+          throw new Error(`Agent "${agentId}" not found or could not be loaded`);
+        }
+        agent = result.session;
+        allMessages = Array.isArray(agent.messages) ? agent.messages : [];
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('Agent ')) throw error;
         throw new Error(`Agent "${agentId}" not found or could not be loaded`);
       }
 
-      const agent = loadResult.data;
       const includeToolCalls = opts.includeToolCalls !== false;
-      let messages = agent.messages || [];
+      let messages = allMessages;
 
       if (opts.startTurn !== undefined || opts.endTurn !== undefined) {
         const start = (opts.startTurn || 1) - 1;
@@ -343,7 +350,7 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
       return {
         agentId,
         agentName: agent.name,
-        totalMessages: agent.messages?.length || 0,
+        totalMessages: allMessages.length,
         returnedMessages: filteredMessages.length,
         taskNoteId: agent.metadata?.taskNoteId,
         messages: filteredMessages,
@@ -353,13 +360,24 @@ export function buildAgentApi(workspaceId: string, workspacePath: string, call: 
     async summary(agentId: string) {
       logger.info('ws.agent.summary', { workspaceId, agentId });
 
-      const loadResult = await agentPersistence.loadAgent(AgentId(agentId), WorkspaceId(workspaceId));
-      if (!loadResult.success || !loadResult.data) {
+      // Daemon-primary read (PROTOCOL.md §5.5 `agent.getSession`): full
+      // AgentSession projection carries the chronological `messages` log.
+      let agent: any;
+      let messages: any[];
+      try {
+        const result = (await getBackendClient().request('agent.getSession', {
+          agentId,
+          workspaceId,
+        })) as { session?: any };
+        if (!result.session) {
+          throw new Error(`Agent "${agentId}" not found or could not be loaded`);
+        }
+        agent = result.session;
+        messages = Array.isArray(agent.messages) ? agent.messages : [];
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('Agent ')) throw error;
         throw new Error(`Agent "${agentId}" not found or could not be loaded`);
       }
-
-      const agent = loadResult.data;
-      const messages = agent.messages || [];
 
       let lastResponse = '';
       for (let i = messages.length - 1; i >= 0; i--) {

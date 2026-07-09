@@ -66,6 +66,8 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'agent:queue:stale-message',
   // Agent user message events
   'agent:user-message:sent',
+  // Agent session stats (PROTOCOL §5.24)
+  'agent:session-stats-changed',
   // Git events
   'git:commit',
   'git:push',
@@ -124,6 +126,7 @@ const WorkspaceIdSchema = z
     'Invalid workspace ID format (expected slug like "amber-forest" or "amber-forest-2", UUID, or __root__)',
   );
 const AgentIdSchema = z.string().min(1, 'Agent ID is required');
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const SessionIdSchema = z.string().min(1, 'Session ID is required');
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MessageIdSchema = z.string().min(1, 'Message ID is required');
@@ -696,47 +699,6 @@ export const AgentDeleteSessionSchema = z.union([
   }),
 ]);
 
-export const AgentPersistenceSaveSchema = z.object({
-  agent: z.any(), // AgentSession type
-  workspacePath: z.string().min(1, 'Workspace path is required'),
-});
-
-export const AgentPersistenceLoadSchema = z.object({
-  agentId: z.string().min(1, 'Agent ID is required'),
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  workspacePath: z.string().optional(),
-});
-
-export const AgentPersistenceDeleteSchema = z.object({
-  agentId: z.string().min(1, 'Agent ID is required'),
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const AgentPersistenceListSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  workspacePath: z.string().optional(),
-});
-
-export const AgentPersistenceSaveMessageSchema = z.object({
-  agentId: z.string().min(1, 'Agent ID is required'),
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  message: z.any(), // AgentMessage type
-});
-
-export const AgentPersistenceBatchSchema = z.object({
-  operations: z.array(
-    z.object({
-      type: z.enum(['save', 'load', 'delete']),
-      params: z.any(),
-    }),
-  ),
-});
-
-export const AgentPersistenceMetricsSchema = z.any(); // No params
-
-export const AgentPersistenceClearSchema = z.object({
-  workspaceId: z.string().optional(),
-});
 
 export const AgentActivateSchema = z.object({
   agentId: z.string().min(1, 'Agent ID is required'),
@@ -824,67 +786,11 @@ export const AgentGetSpecializationRulesSchema = z.object({
 });
 
 // ============================================================================
-// Persistence Schemas
+// Workspace agent-cleanup schema (surviving daemon-backed callers)
 // ============================================================================
-
-export const PersistenceLoadSchema = z.object({
-  key: z.string().min(1, 'Key is required'),
-});
-
-export const PersistenceLoadAgentConfigSchema = z.object({
-  agentId: AgentIdSchema.optional(),
-  workspaceId: WorkspaceIdSchema,
-});
-
-export const PersistenceLoadSessionSchema = z.object({
-  agentId: AgentIdSchema.optional(),
-  workspaceId: WorkspaceIdSchema,
-});
-
-export const PersistenceSaveSchema = z.object({
-  key: z.string().min(1, 'Key is required'),
-  data: z.any(),
-});
-
-export const PersistenceSaveAgentConfigSchema = z.object({
-  agentId: AgentIdSchema,
-  workspaceId: WorkspaceIdSchema,
-  config: z.any(),
-});
-
-export const PersistenceSaveSessionSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  session: z.any(),
-  options: z
-    .object({
-      immediate: z.boolean().optional(),
-      /** When true, allows the save to overwrite disk messages even if the frontend has fewer.
-       *  Used by edit/regenerate flows that intentionally truncate message history. */
-      allowTruncation: z.boolean().optional(),
-    })
-    .optional(),
-});
-
-export const PersistenceDeleteSchema = z.object({
-  key: z.string().min(1, 'Key is required'),
-});
-
-export const PersistenceDeleteAgentSchema = z.object({
-  agentId: AgentIdSchema,
-  workspaceId: WorkspaceIdSchema,
-});
 
 export const WorkspaceCleanupAgentsSchema = z.object({
   workspaceId: WorkspaceIdSchema,
-});
-
-export const PersistenceLoadRegistrySchema = z.object({
-  filename: z.string().min(1, 'Filename is required'),
-});
-
-export const PersistenceSaveRegistrySchema = z.object({
-  filename: z.string().min(1, 'Filename is required'),
-  data: z.any(),
 });
 
 // ============================================================================
@@ -927,71 +833,6 @@ export const McpGetStatusSchema = z.object({});
 // ============================================================================
 
 export const ConfigGetAllSchema = z.object({});
-
-// ============================================================================
-// Comments Schemas
-// ============================================================================
-
-export const CommentsListSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  noteId: z.string().min(1, 'Note ID is required'),
-  status: z.enum(['open', 'resolved', 'pending']).optional(),
-  type: z.string().optional(),
-  author: z.string().optional(),
-});
-
-export const CommentsGetSchema = z.object({
-  commentId: z.string().min(1, 'Comment ID is required'),
-  workspaceId: WorkspaceIdSchema,
-});
-
-export const CommentsCreateSchema = z.object({
-  id: z.string().optional(),
-  workspaceId: WorkspaceIdSchema,
-  noteId: z.string().min(1, 'Note ID is required'),
-  content: z.string().min(1, 'Content is required'),
-  type: z.enum(['comment', 'suggestion', 'change-request', 'question', 'session']),
-  author: z.string().min(1, 'Author is required'),
-  authorType: z.enum(['user', 'agent']),
-  section: z.string().optional(),
-  lineStart: z.number().optional(),
-  lineEnd: z.number().optional(),
-  parentId: z.string().optional(),
-  threadId: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-  from: z.number().optional(),
-  to: z.number().optional(),
-  markId: z.string().optional(),
-  agentId: z.string().optional(),
-});
-
-export const CommentsSuggestChangeSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  noteId: z.string().min(1, 'Note ID is required'),
-  description: z.string().min(1, 'Description is required'),
-  original: z.string().min(1, 'Original text is required'),
-  proposed: z.string().min(1, 'Proposed text is required'),
-  author: z.string().min(1, 'Author is required'),
-  authorType: z.enum(['user', 'agent']),
-  lineStart: z.number().optional(),
-  lineEnd: z.number().optional(),
-  section: z.string().optional(),
-  reason: z.string().optional(),
-  tags: z.string().optional(),
-});
-
-export const CommentsUpdateSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  noteId: z.string().min(1, 'Note ID is required'),
-  commentId: z.string().min(1, 'Comment ID is required'),
-  status: z.enum(['open', 'resolved', 'pending']),
-});
-
-export const CommentsDeleteSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  noteId: z.string().min(1, 'Note ID is required'),
-  commentId: z.string().min(1, 'Comment ID is required'),
-});
 
 // ============================================================================
 // Events Schemas
@@ -1061,12 +902,6 @@ export const EventsSubscribeSchema = z.object({
 
 export const EventsUnsubscribeSchema = z.object({
   subscriptionId: z.string().min(1, 'Subscription ID is required'),
-});
-
-export const EventsQuerySchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  filters: z.array(z.any()),
-  limit: z.number().optional(),
 });
 
 export const EventsGetLastEventSchema = z.object({
@@ -1251,143 +1086,6 @@ export const AgentTestingCleanupSchema = z.object({
 });
 
 // ============================================================================
-// File Tracking Schemas
-// ============================================================================
-
-export const FileTrackingInitSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const FileTrackingSyncSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  force: z.boolean().optional().default(false),
-});
-
-export const FileTrackingLoadSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const FileTrackingLoadCommitsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  limit: z.number().int().positive().max(200).optional(),
-});
-
-export const FileTrackingLoadOlderCommitsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  beforeSha: z.string().min(1, 'Before SHA is required'),
-  limit: z.number().int().positive().max(50).optional(),
-});
-
-export const FileTrackingLoadTransitionsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const FileTrackingTrackChangeSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  change: z.object({
-    file: z.string().min(1, 'File path is required'),
-    relativePath: z.string().optional(),
-    stage: z.enum(['unstaged', 'staged', 'committed', 'pushed', 'pull_request', 'merged', 'trunk']),
-    type: z.enum(['added', 'modified', 'deleted']).optional(),
-    timestamp: z.union([z.string(), z.number()]).optional(),
-    stats: z
-      .object({
-        additions: z.number().min(0),
-        deletions: z.number().min(0),
-        binary: z.boolean().optional(),
-      })
-      .optional(),
-    attribution: z
-      .object({
-        agent: z
-          .object({
-            agentId: z.string(),
-            agentName: z.string(),
-            sessionId: z.string(),
-            turnNumber: z.number(),
-            messageId: z.string().optional(),
-            toolCallId: z.string().optional(),
-            timestamp: z.number(),
-          })
-          .optional(),
-        manual: z.boolean().optional(),
-        timestamp: z.number(),
-      })
-      .optional(),
-    commitHash: z.string().optional(),
-    prNumber: z.number().optional(),
-    content: z
-      .object({
-        oldContent: z.string().optional(),
-        newContent: z.string().optional(),
-        diff: z.string().optional(),
-      })
-      .optional(),
-  }),
-});
-
-export const FileTrackingStageChangesSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  changeIds: z.array(z.string().min(1)),
-});
-
-export const FileTrackingUnstageChangesSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  changeIds: z.array(z.string().min(1)),
-});
-
-export const FileTrackingGetChangesSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  filter: z
-    .object({
-      stage: z
-        .enum(['unstaged', 'staged', 'committed', 'pushed', 'pull_request', 'merged', 'trunk'])
-        .optional(),
-      agentId: z.string().optional(),
-      sessionId: z.string().optional(),
-      turnNumber: z.number().optional(),
-      filePattern: z.string().optional(),
-      since: z.string().optional(),
-      until: z.string().optional(),
-    })
-    .optional(),
-});
-
-export const FileTrackingGetLineStatsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const FileTrackingListSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-});
-
-export const FileTrackingGetSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  filePath: z.string().min(1, 'File path is required'),
-});
-
-export const FileTrackingUpdateSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  filePath: z.string().min(1, 'File path is required'),
-  status: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
-});
-
-// ============================================================================
-// Line Attribution Schemas
-// ============================================================================
-
-export const LineAttributionLoadSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  noteId: z.string().min(1, 'Note ID is required'),
-});
-
-export const LineAttributionComputeNowSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  noteId: z.string().min(1, 'Note ID is required'),
-});
-
-// ============================================================================
 // System Schemas
 // ============================================================================
 
@@ -1503,36 +1201,6 @@ export const DiffsGetSchema = z.object({
   staged: z.boolean().optional(),
 });
 
-// Line Changes Schemas
-export const LineChangesMarkAgentActiveSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  agentName: z.string().min(1, 'Agent name is required'),
-  durationMs: z.number().int().positive().optional(),
-});
-
-export const LineChangesGetCurrentSchema = z.union([
-  WorkspaceIdSchema,
-  z.object({
-    workspaceId: WorkspaceIdSchema,
-  }),
-]);
-
-export const LineChangesStartAgentExecutionSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  agentName: z.string().min(1, 'Agent name is required'),
-  sessionId: SessionIdSchema.optional(),
-  turnNumber: z.number().int().min(0).optional(),
-});
-
-export const LineChangesStopAgentExecutionSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-});
-
-export const LineChangesMarkAgentModifiedFilesSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  files: z.array(z.string()),
-});
-
 // ============================================================================
 // Agent Context Schemas
 // ============================================================================
@@ -1617,13 +1285,6 @@ export const NotesBatchListSchema = z.object({
 // ============================================================================
 // Assets Schemas
 // ============================================================================
-
-export const AssetsSaveSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  data: z.string().min(1, 'Image data is required'),
-  mimeType: z.string().min(1, 'MIME type is required'),
-  originalName: z.string().optional(),
-});
 
 export const AssetsGetSchema = z.object({
   workspaceId: WorkspaceIdSchema,
@@ -1825,40 +1486,6 @@ export const WebSocketApiSetEnabledSchema = z.object({
 });
 
 // USER_MCP_CHANNELS schemas
-export const UserMcpWriteSettingsFileSchema = z.object({
-  content: z.string().min(1, 'Content is required'),
-});
-
-export const UserMcpGetWorkspaceDisabledSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const UserMcpSetWorkspaceDisabledSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  disabledServers: z.array(z.string()),
-});
-
-// MCP CLI command schemas
-export const UserMcpAddSchema = z.object({
-  name: z.string().min(1, 'Server name is required'),
-  transport: z.enum(['stdio', 'http', 'sse']),
-  // For stdio transport
-  command: z.string().optional(),
-  args: z.string().optional(),
-  env: z.record(z.string()).optional(),
-  // For http/sse transport
-  url: z.string().optional(),
-  headers: z.record(z.string()).optional(),
-  // Auth type (oauth, header, none) — persisted directly to settings.json
-  authType: z.enum(['oauth', 'header', 'none']).optional(),
-  // Options
-  replace: z.boolean().optional(),
-});
-
-export const UserMcpRemoveSchema = z.object({
-  name: z.string().min(1, 'Server name is required'),
-});
-
 export const UserMcpCheckAuthSchema = z.object({
   url: z.string().min(1, 'URL is required'),
 });
@@ -2172,41 +1799,6 @@ export const TestingGetProcessesSchema = z.object({
 });
 
 // ============================================================================
-// Line Changes Schemas (Additional)
-// ============================================================================
-
-export const LineChangesGetWorkspaceStatsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const LineChangesGetAgentStatsSchema = z.object({
-  agentId: z.string().min(1, 'Agent ID is required'),
-});
-
-export const LineChangesCalculateDiffSchema = z.object({
-  oldContent: z.string().optional().default(''),
-  newContent: z.string().optional().default(''),
-});
-
-export const LineChangesUpdateWorkspaceStatsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  stats: z.record(z.any()).optional(),
-});
-
-export const LineChangesUpdateAgentStatsSchema = z.object({
-  agentId: z.string().min(1, 'Agent ID is required'),
-  stats: z.record(z.any()).optional(),
-});
-
-export const LineChangesClearWorkspaceStatsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const LineChangesClearAgentStatsSchema = z.object({
-  agentId: z.string().min(1, 'Agent ID is required'),
-});
-
-// ============================================================================
 // Memories Schemas
 // ============================================================================
 
@@ -2369,10 +1961,3 @@ export const SkillsListSchema = z.object({
   workspaceId: WorkspaceIdSchema,
 });
 
-// ============================================================================
-// Token Usage Schemas
-// ============================================================================
-
-export const TokenUsageGetSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-});

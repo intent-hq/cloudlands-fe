@@ -12,3 +12,7 @@ export const selectDirectoryPickerLoading = store.createSelector(
 export const selectDirectoryPickerError = store.createSelector(
   (state): string | null => state.directoryPicker.error,
 );
+
+export const selectDirectoryPickerPathError = store.createSelector(
+  (state): string | null => state.directoryPicker.pathError,
+);

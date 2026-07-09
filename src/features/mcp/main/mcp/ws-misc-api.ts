@@ -5,13 +5,12 @@ import {
   executeBrowserActions,
   type ExecutionResult,
 } from '../../../browser/main/browser.ipc';
-import { assetsService } from '../../../notes/main/assets.service';
+import { getBackendClient } from '../../../backend/main/backend.ipc';
 import { terminalManager } from '../../../terminal/main/terminal.ipc';
 import {
   FileSystemWorkspaceRepository,
   type WorkspaceRepository,
 } from '../../../workspace/main/workspace.repository';
-import { getAttributionEngine } from '$features/workspace/main/provenance/attribution-engine';
 import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
 import { createWorkspaceEvent } from '$features/events/types';
 import { mainDispatch } from '../../../../store/main/redux-store-bridge';
@@ -100,14 +99,16 @@ async function persistBrowserScreenshots(result: ExecutionResult, workspaceId?: 
     }
 
     try {
-      const saved = await assetsService.saveAsset(
+      const saved = await getBackendClient().request<{
+        url?: string;
+      }>('note.saveAsset', {
         workspaceId,
-        screenshotData.base64,
-        'image/jpeg',
-        `screenshot-${Date.now()}.jpg`,
-      );
+        data: screenshotData.base64,
+        mimeType: 'image/jpeg',
+        originalName: `screenshot-${Date.now()}.jpg`,
+      });
       actionResult.result = {
-        assetUrl: saved.url,
+        assetUrl: saved?.url,
         width: screenshotData.width,
         height: screenshotData.height,
       };
@@ -333,19 +334,6 @@ export function buildFileApi({ workspaceId, workspacePath, call, fsAdapter }: Fi
 
       await adapter.writeFile(path, content);
       const agentInfo = getAgentInfo(call);
-      getAttributionEngine().recordAgentWrite(
-        {
-          agentId: agentInfo.id,
-          agentName: agentInfo.name,
-          sessionId: call.context?.sessionId,
-          turnNumber: call.context?.metadata?.turnNumber as number | undefined,
-          messageId: `msg-${Date.now()}`,
-        },
-        path,
-        content,
-        workspacePath,
-        workspaceId,
-      );
 
       trackFileOperation(workspaceId, path, 'write');
       sendToWorkspaceWindows(workspaceId, 'file:content-changed', {
@@ -381,9 +369,6 @@ export function buildFileApi({ workspaceId, workspacePath, call, fsAdapter }: Fi
     async list(path: string = '.') {
       logger.debug('ws.file.list', { path });
       if (!adapter.isWithinWorkspace(path)) throw new Error('Access denied: path outside workspace');
-      if (adapter.isRemote) {
-        return (await adapter.listFiles(path)).map((name) => ({ name, type: 'unknown' }));
-      }
 
       return (await fs.readdir(adapter.resolvePath(path), { withFileTypes: true })).map((entry) => ({
         name: entry.name,

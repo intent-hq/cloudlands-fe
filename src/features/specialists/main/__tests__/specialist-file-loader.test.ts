@@ -27,9 +27,6 @@ import {
   writeSpecialistFile,
   loadSpecialistFile,
   loadProjectSpecialistFiles,
-  migrateCustomSpecialistsFromStore,
-  migrateOverridesFromStore,
-  getBundledSpecialistsDirectory,
   getProjectSpecialistsDirectory,
   getSpecialistsDirectory,
 } from '../specialist-file-loader';
@@ -37,10 +34,6 @@ import {
   generateUniqueSpecialistId,
   sanitizeSpecialistId,
 } from '../../../../shared/specialist-file-types';
-
-const { mockSettingsData } = vi.hoisted(() => ({
-  mockSettingsData: {} as Record<string, unknown>,
-}));
 
 const { mockWatchers, mockRefreshSpecialistsFromFiles } = vi.hoisted(() => ({
   mockWatchers: [] as Array<{
@@ -59,22 +52,6 @@ vi.mock('electron', () => ({
   app: {
     getPath: () => '/tmp/test-augment',
     isPackaged: false,
-  },
-}));
-
-vi.mock('electron-store', () => ({
-  default: class MockStore {
-    get(key: string) {
-      return mockSettingsData[key];
-    }
-
-    set(key: string, value: unknown) {
-      mockSettingsData[key] = value;
-    }
-
-    delete(key: string) {
-      delete mockSettingsData[key];
-    }
   },
 }));
 
@@ -106,7 +83,6 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  Object.keys(mockSettingsData).forEach((key) => delete mockSettingsData[key]);
   mockWatchers.length = 0;
   mockRefreshSpecialistsFromFiles.mockClear();
   await fs.rm(TEST_HOME, { recursive: true, force: true });
@@ -516,181 +492,6 @@ Body`;
       expect(loaded?.behaviorPrompt).toBe('Project prompt');
       expect(projectList.specialists.map((specialist) => specialist.id)).toContain('repo-specialist');
       expect(projectList.specialists[0]?.filePath).toContain(getProjectSpecialistsDirectory(workspacePath));
-    });
-
-    it('should migrate custom specialists with and without codingAgent', async () => {
-      mockSettingsData['custom-specialists'] = [
-        {
-          id: 'legacy with agent',
-          name: 'Legacy With Agent',
-          description: 'Legacy specialist with coding agent',
-          codingAgent: 'codex',
-          model: 'gpt-5.3-codex/high',
-          behaviorPrompt: 'Prompt A',
-        },
-        {
-          id: 'legacy without agent',
-          name: 'Legacy Without Agent',
-          description: 'Legacy specialist without coding agent',
-          model: 'sonnet4.5',
-          behaviorPrompt: 'Prompt B',
-        },
-      ];
-
-      const result = await migrateCustomSpecialistsFromStore();
-      const specialistsDir = getSpecialistsDirectory();
-      const withAgentContent = await fs.readFile(
-        path.join(specialistsDir, 'legacy-with-agent.md'),
-        'utf-8',
-      );
-      const withoutAgentContent = await fs.readFile(
-        path.join(specialistsDir, 'legacy-without-agent.md'),
-        'utf-8',
-      );
-
-      expect(result.migrated).toBe(2);
-      expect(result.errors).toEqual([]);
-      expect(withAgentContent).toContain('codingAgent: "codex"');
-      expect(withoutAgentContent).not.toContain('codingAgent:');
-    });
-
-    it('should migrate new custom specialists even when migration was already marked complete', async () => {
-      // Simulate: migration already ran and completed
-      mockSettingsData['specialists-migration-complete'] = true;
-
-      // A user added new specialists to electron-store AFTER the migration
-      mockSettingsData['custom-specialists'] = [
-        {
-          id: 'post-migration-specialist',
-          name: 'Post Migration Specialist',
-          description: 'Added after migration',
-          model: 'sonnet4.5',
-          behaviorPrompt: 'I was added after migration',
-        },
-        {
-          id: 'another-late-specialist',
-          name: 'Another Late One',
-          description: 'Also added after migration',
-          codingAgent: 'codex',
-          model: 'opus4.5',
-          behaviorPrompt: 'Me too',
-          roleReminder: 'Stay on task',
-        },
-      ];
-
-      const result = await migrateCustomSpecialistsFromStore();
-
-      // Both should have been migrated
-      expect(result.migrated).toBe(2);
-      expect(result.errors).toEqual([]);
-
-      // Verify files were written to disk
-      const specialistsDir = getSpecialistsDirectory();
-      const file1 = await fs.readFile(
-        path.join(specialistsDir, 'post-migration-specialist.md'),
-        'utf-8',
-      );
-      const file2 = await fs.readFile(
-        path.join(specialistsDir, 'another-late-specialist.md'),
-        'utf-8',
-      );
-
-      expect(file1).toContain('name: "Post Migration Specialist"');
-      expect(file1).toContain('I was added after migration');
-      expect(file2).toContain('codingAgent: "codex"');
-      expect(file2).toContain('roleReminder: "Stay on task"');
-
-      // The custom-specialists array should be cleared from the store
-      expect(mockSettingsData['custom-specialists']).toBeUndefined();
-      // Migration flag should still be true
-      expect(mockSettingsData['specialists-migration-complete']).toBe(true);
-    });
-
-    it('should skip post-migration specialists that already have files on disk', async () => {
-      // Set up: migration complete, one specialist already has a file
-      mockSettingsData['specialists-migration-complete'] = true;
-
-      // Write an existing file for one of them
-      await writeSpecialistFile({
-        id: 'already-on-disk',
-        name: 'Already On Disk',
-        description: 'Pre-existing file',
-        behaviorPrompt: 'Original content',
-      });
-
-      mockSettingsData['custom-specialists'] = [
-        {
-          id: 'already-on-disk',
-          name: 'Already On Disk',
-          description: 'In store too',
-          model: 'sonnet4.5',
-          behaviorPrompt: 'Store content',
-        },
-        {
-          id: 'brand-new',
-          name: 'Brand New',
-          description: 'Not on disk yet',
-          model: 'opus4.5',
-          behaviorPrompt: 'New content',
-        },
-      ];
-
-      const result = await migrateCustomSpecialistsFromStore();
-
-      expect(result.migrated).toBe(1);
-      expect(result.skipped).toBe(1);
-      expect(result.errors).toEqual([]);
-
-      // The existing file should NOT have been overwritten
-      const existingFile = await loadSpecialistFile('already-on-disk');
-      expect(existingFile?.behaviorPrompt).toBe('Original content');
-
-      // The new one should be on disk
-      const newFile = await loadSpecialistFile('brand-new');
-      expect(newFile?.behaviorPrompt).toBe('New content');
-
-      // Store should be cleared since all are accounted for
-      expect(mockSettingsData['custom-specialists']).toBeUndefined();
-    });
-
-    it('should preserve bundled codingAgent when migrating overrides to a user file', async () => {
-      const specialistId = 'override-migration-coding-agent-test';
-      const bundledDir = getBundledSpecialistsDirectory();
-      const bundledPath = path.join(bundledDir, `${specialistId}.md`);
-
-      await fs.mkdir(bundledDir, { recursive: true });
-      await fs.writeFile(
-        bundledPath,
-        `---
-name: "Override Migration Test"
-description: "Bundled specialist for override migration"
-codingAgent: "codex"
-modelTier: "fast"
----
-
-Bundled prompt`,
-        'utf-8',
-      );
-
-      mockSettingsData['specialists-overrides'] = {
-        behaviorPromptOverrides: {
-          [specialistId]: 'Overridden prompt',
-        },
-      };
-
-      try {
-        const result = await migrateOverridesFromStore();
-        const migrated = await loadSpecialistFile(specialistId);
-
-        expect(result.migrated).toBe(1);
-        expect(result.errors).toEqual([]);
-        expect(migrated).not.toBeNull();
-        expect(migrated?.frontmatter.codingAgent).toBe('codex');
-        expect(migrated?.frontmatter.modelTier).toBe('fast');
-        expect(migrated?.behaviorPrompt).toBe('Overridden prompt');
-      } finally {
-        await fs.rm(bundledPath, { force: true });
-      }
     });
   });
 

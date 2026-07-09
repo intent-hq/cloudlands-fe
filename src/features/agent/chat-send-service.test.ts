@@ -9,7 +9,7 @@ import type { AgentSession, QueuedMessage, Workspace } from "$shared/types";
 // BE-state in-flight read, the chatSendStarted dispatch, the queue-on-send
 // branch, and the queue-removal optimistic-delete branch are exercised end to
 // end. vi.hoisted() keeps the spies in scope of the hoisted vi.mock factories.
-const { lifecycleSendMessage, agentsQueue, agentsRemoveQueued } = vi.hoisted(() => ({
+const { lifecycleSendMessage, agentsQueue, agentsRemoveQueued, agentsStop } = vi.hoisted(() => ({
   lifecycleSendMessage: vi.fn(() => Promise.resolve()),
   agentsQueue: vi.fn(() =>
     Promise.resolve({ success: true } as { success: boolean; queuedMessage?: unknown }),
@@ -17,17 +17,23 @@ const { lifecycleSendMessage, agentsQueue, agentsRemoveQueued } = vi.hoisted(() 
   agentsRemoveQueued: vi.fn(() =>
     Promise.resolve({ success: true } as { success: boolean; error?: string }),
   ),
+  agentsStop: vi.fn(() =>
+    Promise.resolve({ success: true } as { success: boolean; error?: string }),
+  ),
 }));
 vi.mock("$features/agent/agent-stream-lifecycle", () => ({
   sendMessage: lifecycleSendMessage,
 }));
 vi.mock("$lib/client", () => ({
-  appClient: { agents: { queue: agentsQueue, removeQueued: agentsRemoveQueued } },
+  appClient: {
+    agents: { queue: agentsQueue, removeQueued: agentsRemoveQueued, stop: agentsStop },
+  },
 }));
 
 import { store as appStore } from "$store/renderer/store";
 import { setWorkspaceEntity } from "$store/renderer/slices/workspace/workspace-slice";
 import {
+  agentSessionStopChatRequested,
   bulkUpsertSessions,
   clearAllSessions,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
@@ -36,10 +42,7 @@ import {
   removeQueuedMessageRequested,
   replaceAgentQueue,
 } from "$store/renderer/slices/agent-queue/agent-queue-slice";
-import {
-  sendMessage,
-  sendInitialMessageRequested,
-} from "$store/renderer/slices/chat-state/chat-state-slice";
+import { sendMessage } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { selectChatAgentState } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
 
@@ -103,6 +106,8 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     agentsQueue.mockImplementation(() => Promise.resolve({ success: true }));
     agentsRemoveQueued.mockReset();
     agentsRemoveQueued.mockImplementation(() => Promise.resolve({ success: true }));
+    agentsStop.mockReset();
+    agentsStop.mockImplementation(() => Promise.resolve({ success: true }));
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(clearAgentQueue(AGENT));
     seedWorkspace();
@@ -257,30 +262,13 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(selectChatAgentState.select(appStore.state, AGENT)?.error).toContain("ws-missing");
   });
 
-  it("sendInitialMessageRequested routes through lifecycle when a message is present", async () => {
-    appStore.dispatch(
-      sendInitialMessageRequested(AGENT, {
-        wsId: WS,
-        message: "kickoff",
-        imageBlocks: null,
-        contextReferences: null,
-      }),
-    );
-    await flush();
-    await flush();
-
-    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
-    expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("kickoff");
-  });
-
-  it("sendInitialMessageRequested with alreadySent=true is a no-op", async () => {
-    appStore.dispatch(
-      sendInitialMessageRequested(AGENT, {
-        wsId: WS,
-        message: "already done",
-        alreadySent: true,
-      }),
-    );
+  it("regression (Bugs 20/14): the FE middleware never sends an initial message on create — the daemon owns initial-message delivery, so no lifecycle send fires without an explicit ChatPanel `sendMessage` dispatch", async () => {
+    // Prior wiring: agent-factory's fire-and-forget send + ChatPanel's
+    // mount-time `sendInitialMessageRequested` dispatch could race and
+    // double-send. Both paths are gone — the daemon harvests
+    // `metadata.initialMessage` on workspace.create and calls
+    // `AgentManager::send_message` itself. The FE must not attempt any
+    // send purely as a side-effect of workspace/agent creation.
     await flush();
     await flush();
 
@@ -368,5 +356,49 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     await flush();
 
     expect(agentsRemoveQueued).not.toHaveBeenCalled();
+  });
+
+  it("agentSessionStopChatRequested calls agent.stop with the agentId and settles the promise", async () => {
+    const action = agentSessionStopChatRequested(AGENT);
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(agentsStop).toHaveBeenCalledTimes(1);
+    expect(agentsStop).toHaveBeenCalledWith(AGENT);
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.isInterrupting).toBe(false);
+  });
+
+  it("agentSessionStopChatRequested resolves without a wire call when the session is unknown", async () => {
+    const action = agentSessionStopChatRequested("agent-does-not-exist");
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(agentsStop).not.toHaveBeenCalled();
+  });
+
+  it("agentSessionStopChatRequested still completes (no wedged interrupting flag) on a non-success stop", async () => {
+    // The seam folds RPC throws into MutationResult, so non-success is a
+    // transport-level failure; the flow must still complete — the daemon's
+    // terminal agent:stream:end is the authoritative convergence signal.
+    agentsStop.mockImplementationOnce(() =>
+      Promise.resolve({ success: false, error: "transport down" }),
+    );
+
+    const action = agentSessionStopChatRequested(AGENT);
+    appStore.dispatch(action);
+    await action.promise;
+
+    expect(agentsStop).toHaveBeenCalledWith(AGENT);
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.isInterrupting).toBe(false);
+  });
+
+  it("agentSessionStopChatRequested clears the interrupting flag and rejects when the seam throws", async () => {
+    agentsStop.mockImplementationOnce(() => Promise.reject(new Error("stop boom")));
+
+    const action = agentSessionStopChatRequested(AGENT);
+    appStore.dispatch(action);
+
+    await expect(action.promise).rejects.toThrow("stop boom");
+    expect(selectChatAgentState.select(appStore.state, AGENT)?.isInterrupting).toBe(false);
   });
 });

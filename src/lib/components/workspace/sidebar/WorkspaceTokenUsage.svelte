@@ -57,11 +57,10 @@
     new Map($workspaceAgents$.map((agent) => [String(agent.id), agent.name])),
   );
   const agentRows = $derived(
-    Object.values($usage$.byAgentId)
-      .slice()
-      .map((entry) => ({
-        agentId: entry.agentId,
-        name: agentNameById.get(entry.agentId) || `Agent ${entry.agentId.substring(0, 8)}`,
+    Object.entries($usage$.byAgentId)
+      .map(([agentId, entry]) => ({
+        agentId,
+        name: agentNameById.get(agentId) || `Agent ${agentId.substring(0, 8)}`,
         inputTokens: entry.inputTokens,
         outputTokens: entry.outputTokens,
         cachedTokens: entry.cacheReadTokens + entry.cacheCreationTokens,

@@ -359,13 +359,10 @@
           // Import dynamically to avoid the formatter removing unused imports
           const { autoUpdateClient } = await import('$features/auto-update/auto-update.client');
 
-          // Get version and channel from main process
-          const [versionResult, updateState] = await Promise.all([
-            invoke<any>('app:version', undefined),
-            autoUpdateClient.getState().catch(() => null),
-          ]);
+          const updateState = await autoUpdateClient.getState().catch(() => null);
 
-          const currentVersion = versionResult?.data || 'unknown';
+          // Build-time constant — the app version is FE-only, not a daemon surface.
+          const currentVersion = __APP_VERSION__;
           const channel = updateState?.channel || 'stable';
 
           logger.info(

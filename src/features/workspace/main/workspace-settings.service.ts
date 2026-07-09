@@ -3,14 +3,15 @@
  *
  * Stores workspace-level settings like auto-commit preferences.
  *
- * Settings are synced from the renderer via IPC, but the source of truth
- * is electron-store (persisted on disk). When no explicit sync has happened
- * yet for a workspace, we read directly from electron-store to avoid a race
- * condition where the main process defaults to autoCommitEnabled=true before
- * the renderer has had a chance to push the user's actual preference.
+ * The source of truth is the daemon-owned `git.autoCommit` setting
+ * (PROTOCOL.md §5.12). At process start we hydrate an in-memory cache from
+ * the daemon via `settings.get` so the sync `getWorkspaceSettings` API can
+ * serve the correct default even before the renderer has pushed the user's
+ * preference. Renderer-driven per-workspace overrides are stored in a
+ * simple in-memory map keyed by workspace id (unchanged from the
+ * pre-P3-4 shape). The legacy `settings` electron-store is retired.
  */
 
-import ElectronStore from 'electron-store';
 import { Logger } from '../../../shared/logger';
 
 const logger = new Logger({ category: 'WorkspaceSettingsService' });
@@ -24,64 +25,65 @@ const defaultSettings: WorkspaceSettings = {
   autoCommitEnabled: true, // Default to enabled
 };
 
+const SETTING_PATH_AUTO_COMMIT = 'git.autoCommit';
+
 // In-memory store for workspace settings (populated by renderer sync)
 const workspaceSettingsStore = new Map<string, WorkspaceSettings>();
 
-// Lazy-initialized electron-store for reading persisted settings
-let _electronSettingsStore: ElectronStore | null = null;
+// Daemon-hydrated global auto-commit preference. `null` while unhydrated;
+// the sync API falls back to the default (true) until hydration completes.
+let cachedAutoCommit: boolean | null = null;
+let hydrationPromise: Promise<void> | null = null;
 
-/**
- * Get the electron-store instance for reading persisted settings.
- * Lazy-initialized so it's only created when needed (avoids import
- * issues in test environments).
- */
-function getElectronSettingsStore(): ElectronStore | null {
-  if (_electronSettingsStore) return _electronSettingsStore;
-  try {
-    _electronSettingsStore = new ElectronStore({ name: 'settings' });
-    return _electronSettingsStore;
-  } catch (error) {
-    logger.warn('Failed to initialize electron-store for settings fallback', {
-      error: (error as Error).message,
-    });
-    return null;
-  }
+async function fetchAutoCommit(): Promise<boolean> {
+  const { getBackendClient } = await import('../../backend/main/backend.ipc');
+  const result = (await getBackendClient().request('settings.get', {
+    path: SETTING_PATH_AUTO_COMMIT,
+  })) as { value?: unknown } | null;
+  const value = result?.value;
+  // Same semantics as the legacy electron-store branch: any value other
+  // than an explicit `false` means "enabled" (matches the catalog default).
+  return value !== false;
 }
 
 /**
- * Read the autoCommit setting directly from electron-store.
- * This is the source of truth — the user's persisted preference.
- * Returns the default (true) only if electron-store can't be read.
+ * Hydrate `cachedAutoCommit` once from the daemon.
+ * Safe to call repeatedly and eagerly; the sync API will simply keep
+ * returning the default until this completes.
  */
-function readAutoCommitFromStore(): boolean {
-  const store = getElectronSettingsStore();
-  if (!store) return defaultSettings.autoCommitEnabled;
-  try {
-    const value = store.get('autoCommit');
-    // If the key has never been set, treat as default (true).
-    // If it was explicitly set to false, respect that.
-    return value !== false;
-  } catch (error) {
-    logger.warn('Failed to read autoCommit from electron-store', {
-      error: (error as Error).message,
-    });
-    return defaultSettings.autoCommitEnabled;
-  }
+export async function initWorkspaceSettings(): Promise<void> {
+  if (cachedAutoCommit !== null) return;
+  if (hydrationPromise) return hydrationPromise;
+  hydrationPromise = (async () => {
+    try {
+      cachedAutoCommit = await fetchAutoCommit();
+      logger.info('Workspace settings hydrated', { autoCommit: cachedAutoCommit });
+    } catch (error) {
+      logger.warn('Failed to hydrate git.autoCommit from daemon', {
+        error: (error as Error).message,
+      });
+      // Keep the default (true) — matches the pre-P3 fallback.
+      cachedAutoCommit = defaultSettings.autoCommitEnabled;
+    }
+  })();
+  return hydrationPromise;
 }
 
 /**
  * Get settings for a workspace.
  *
  * If the renderer has synced settings for this workspace, returns those.
- * Otherwise, reads the autoCommit preference directly from electron-store
- * to avoid the race condition where agents act before the renderer syncs.
+ * Otherwise, returns the daemon-hydrated global default (or the built-in
+ * default if hydration has not completed yet).
  */
 export function getWorkspaceSettings(workspaceId: string): WorkspaceSettings {
   const synced = workspaceSettingsStore.get(workspaceId);
   if (synced) return synced;
 
-  // No renderer sync yet — read from electron-store (source of truth)
-  return { autoCommitEnabled: readAutoCommitFromStore() };
+  // No renderer sync yet — use the hydrated daemon value, or the default
+  // if hydration is still in flight.
+  const autoCommitEnabled = cachedAutoCommit ?? defaultSettings.autoCommitEnabled;
+  return { autoCommitEnabled };
 }
 
 /**
@@ -132,7 +134,7 @@ export function assertAgentCommitAllowed(
       allowed: false,
       reason:
         'Auto-commit is disabled for this workspace. ' +
-        'Use agent_commit_changes with userRequested: true if the user asked you to commit.',
+        'Use agent_commit_changes with userRequested: true if the user asked to commit.',
     };
   }
   return { allowed: true };
@@ -147,9 +149,11 @@ export function clearWorkspaceSettings(workspaceId: string): void {
 }
 
 /**
- * Reset the electron-store instance (for testing only).
+ * Test-only: reset internal state so a fresh hydration can run in isolation.
  * @internal
  */
-export function _resetElectronSettingsStore(): void {
-  _electronSettingsStore = null;
+export function __resetWorkspaceSettingsForTesting(): void {
+  cachedAutoCommit = null;
+  hydrationPromise = null;
+  workspaceSettingsStore.clear();
 }

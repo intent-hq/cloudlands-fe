@@ -130,7 +130,6 @@ vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-slice', () => 
     agentsLoaded: false,
     isLoadingAgents: false,
     initialAgentId: null,
-    initialAgentConfigProcessed: false,
   },
 }));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({

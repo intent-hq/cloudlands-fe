@@ -1,19 +1,24 @@
 /**
  * @vitest-environment jsdom
+ *
+ * SetupScriptAgent now generates drafts through the AppClient seam
+ * (`workspace.generateSetupScript`, PROTOCOL §5.25) instead of the deleted
+ * `setup-scripts:*` streaming IPC flow. These tests cover the seam calls and
+ * the unmount race the old listener-cleanup tests guarded against.
  */
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  invoke: vi.fn(),
+  workspacesList: vi.fn(),
+  generate: vi.fn(),
 }));
 
-vi.mock('$lib/electron-bridge', () => ({
-  invoke: mocks.invoke,
-}));
-
-vi.mock('$lib/components/chat/StreamingMessageContent.svelte', async () => ({
-  default: (await import('./mocks/MockComponent.svelte')).default,
+vi.mock('$lib/client', () => ({
+  appClient: {
+    workspaces: { list: mocks.workspacesList },
+    setupScripts: { generate: mocks.generate },
+  },
 }));
 
 vi.mock('$lib/components/editor/CodeEditor.svelte', async () => ({
@@ -42,60 +47,61 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-describe('SetupScriptAgent IPC listener cleanup', () => {
-  let on: ReturnType<typeof vi.fn>;
-  let offById: ReturnType<typeof vi.fn>;
+/** §5.25 SetupScript record as the daemon returns it. */
+const RUST_DRAFT = {
+  script: '#!/usr/bin/env bash\nset -euo pipefail\ncargo fetch\n',
+  projectType: 'rust',
+  updatedAt: 1750000000000,
+  generatedBy: 'agent' as const,
+};
 
+describe('SetupScriptAgent (workspace.generateSetupScript flow)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    on = vi.fn((channel: string) => `${channel}:listener`);
-    offById = vi.fn();
-    (window as any).electronAPI = { on, offById };
+    mocks.workspacesList.mockResolvedValue([
+      { id: 'ws-1', path: '/repo', repositoryPath: '/repo' },
+    ]);
   });
 
   afterEach(() => {
     cleanup();
-    delete (window as any).electronAPI;
   });
 
-  it('does not register stream listeners if generation resolves after unmount', async () => {
-    const generate = deferred<{ success: boolean; streamId: string }>();
-    mocks.invoke.mockImplementation((channel: string) => {
-      if (channel === 'setup-scripts:generate-with-agent') return generate.promise;
-      if (channel === 'setup-scripts:stop-agent') return Promise.resolve({ success: true });
-      return Promise.resolve({ success: true });
-    });
+  it('resolves the workspace by repo path, requests a draft, and renders it', async () => {
+    mocks.generate.mockResolvedValue(RUST_DRAFT);
 
-    const { unmount } = render(SetupScriptAgent, {
-      props: { repoPath: '/repo' },
+    render(SetupScriptAgent, { props: { repoPath: '/repo' } });
+
+    await waitFor(() => expect(mocks.generate).toHaveBeenCalledWith('ws-1'));
+    await waitFor(() => {
+      expect(screen.getByText('rust setup')).toBeTruthy();
     });
+  });
+
+  it('does not request a draft if the component unmounts before the workspace resolves', async () => {
+    const list = deferred<Array<{ id: string; path: string }>>();
+    mocks.workspacesList.mockReturnValue(list.promise);
+
+    const { unmount } = render(SetupScriptAgent, { props: { repoPath: '/repo' } });
 
     unmount();
-    generate.resolve({ success: true, streamId: 'stream-1' });
+    list.resolve([{ id: 'ws-1', path: '/repo' }]);
+    await list.promise;
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mocks.generate).not.toHaveBeenCalled();
+  });
+
+  it('shows an error when no workspace matches the repo path', async () => {
+    mocks.workspacesList.mockResolvedValue([{ id: 'ws-other', path: '/elsewhere' }]);
+
+    render(SetupScriptAgent, { props: { repoPath: '/repo' } });
 
     await waitFor(() => {
-      expect(mocks.invoke).toHaveBeenCalledWith('setup-scripts:stop-agent', expect.any(Object));
+      expect(
+        screen.getByText(/No workspace found for this repository yet/),
+      ).toBeTruthy();
     });
-
-    expect(on).not.toHaveBeenCalled();
-  });
-
-  it('removes registered stream listeners on unmount', async () => {
-    mocks.invoke.mockResolvedValue({ success: true, streamId: 'stream-1' });
-
-    const { unmount } = render(SetupScriptAgent, {
-      props: { repoPath: '/repo' },
-    });
-
-    await waitFor(() => expect(on).toHaveBeenCalledTimes(3));
-
-    unmount();
-
-    expect(offById).toHaveBeenCalledWith('setup-scripts:stream-chunk', 'setup-scripts:stream-chunk:listener');
-    expect(offById).toHaveBeenCalledWith(
-      'setup-scripts:stream-complete',
-      'setup-scripts:stream-complete:listener',
-    );
-    expect(offById).toHaveBeenCalledWith('setup-scripts:stream-error', 'setup-scripts:stream-error:listener');
+    expect(mocks.generate).not.toHaveBeenCalled();
   });
 });

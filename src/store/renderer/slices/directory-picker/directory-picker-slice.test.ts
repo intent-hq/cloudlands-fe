@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  clearPathNavigationError,
   directoryListingFailed,
   directoryListingLoaded,
   directoryPickerReducer,
   initialState,
   loadDirectoryRequested,
+  navigateToPathRequested,
+  pathNavigationFailed,
   resetDirectoryPicker,
   type DirectoryPickerListing,
 } from "./directory-picker-slice";
@@ -34,6 +37,7 @@ describe("directoryPickerReducer", () => {
       loading: true,
       error: null,
       requestedPath: "/Users/me/code",
+      pathError: null,
     });
   });
 
@@ -133,10 +137,90 @@ describe("directoryPickerReducer", () => {
       loading: false,
       error: null,
       requestedPath: "/some/path",
+      pathError: null,
     };
 
     expect(directoryPickerReducer(populated, resetDirectoryPicker())).toEqual(
       initialState,
     );
+  });
+
+  describe("typed-path navigation", () => {
+    const populated = {
+      ...initialState,
+      listing: listing("/Users/me"),
+      requestedPath: "/Users/me",
+    };
+
+    it("flips to loading and clears a stale hint on navigateToPathRequested", () => {
+      const next = directoryPickerReducer(
+        { ...populated, pathError: "stale hint" },
+        navigateToPathRequested("/typed/path"),
+      );
+
+      expect(next.loading).toBe(true);
+      expect(next.pathError).toBeNull();
+      expect(next.requestedPath).toBe("/typed/path");
+      // The current listing stays visible while the navigation is in flight.
+      expect(next.listing?.path).toBe("/Users/me");
+    });
+
+    it("records the hint and keeps the listing on pathNavigationFailed", () => {
+      const loading = directoryPickerReducer(
+        populated,
+        navigateToPathRequested("/typed/missing"),
+      );
+
+      const next = directoryPickerReducer(
+        loading,
+        pathNavigationFailed("/typed/missing", "Path not found"),
+      );
+
+      expect(next.loading).toBe(false);
+      expect(next.pathError).toBe("Path not found");
+      expect(next.listing?.path).toBe("/Users/me");
+      expect(next.error).toBeNull();
+    });
+
+    it("ignores a stale pathNavigationFailed whose requestedPath does not match", () => {
+      const loading = directoryPickerReducer(
+        populated,
+        navigateToPathRequested("/typed/new"),
+      );
+
+      const next = directoryPickerReducer(
+        loading,
+        pathNavigationFailed("/typed/old", "boom"),
+      );
+
+      expect(next.loading).toBe(true);
+      expect(next.pathError).toBeNull();
+    });
+
+    it("clears the hint when a matching listing loads", () => {
+      const failed = {
+        ...populated,
+        requestedPath: "/typed/path",
+        pathError: "Path not found",
+      };
+
+      const next = directoryPickerReducer(
+        failed,
+        directoryListingLoaded("/typed/path", listing("/typed/path")),
+      );
+
+      expect(next.pathError).toBeNull();
+      expect(next.listing?.path).toBe("/typed/path");
+    });
+
+    it("clears the hint on clearPathNavigationError", () => {
+      const next = directoryPickerReducer(
+        { ...populated, pathError: "Path not found" },
+        clearPathNavigationError(),
+      );
+
+      expect(next.pathError).toBeNull();
+      expect(next.listing?.path).toBe("/Users/me");
+    });
   });
 });

@@ -26,7 +26,6 @@
   import Fa from 'svelte-fa';
   import { createLogger } from '$lib/utils/client-logger';
   import { untrack } from 'svelte';
-  import { invoke } from '$lib/electron-bridge';
   import Button from '$lib/components/ui/button/button.svelte';
   import { writable } from 'svelte/store';
   import AgentCard from './AgentCard.svelte';
@@ -161,13 +160,11 @@
 
   // ── Button handlers ──────────────────────────────────────────────────
 
-  async function cancelSubscriptions() {
+  // NOTE: the legacy `events:unsubscribe-agent` IPC is deprecated (daemon owns
+  // agent subscriptions, PROTOCOL §5.10); both handlers now only reset the
+  // local subscription UI (and stop agents, below).
+  function cancelSubscriptions() {
     if (!workspaceId || !agentId) return;
-    try {
-      await invoke('events:unsubscribe-agent', { workspaceId, agentId });
-    } catch (error) {
-      logger.error('Failed to cancel subscriptions', { error });
-    }
     appStore.dispatch(resetSubscriptionUI(workspaceId, agentId));
   }
 
@@ -175,7 +172,6 @@
     if (!workspaceId || !agentId) return;
     try {
       const agentIdsToStop = [...watchedAgentIds];
-      await invoke('events:unsubscribe-agent', { workspaceId, agentId });
       appStore.dispatch(resetSubscriptionUI(workspaceId, agentId));
       const stopAction = stopAgentSessionRequested(workspaceId, agentId);
       appStore.dispatch(stopAction);

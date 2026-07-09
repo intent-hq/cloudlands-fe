@@ -16,7 +16,7 @@ const args = process.argv.slice(2);
 const cdpMode = args.includes('--cdp');
 
 // Get environment variables with defaults
-const devPort = process.env.DEV_PORT || '5177';
+const devPort = process.env.DEV_PORT || '5190';
 const devInstance = process.env.DEV_INSTANCE || '';
 const devInspectPort = process.env.DEV_INSPECT_PORT || '9229';
 

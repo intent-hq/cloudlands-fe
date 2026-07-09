@@ -1,32 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const { mockSendToWorkspaceWindows, mockAgentHandler, mockWorkspaceSubscriptionState } = vi.hoisted(
-  () => {
-    const queuedEvent = {
-      id: 'event-live',
-      type: 'agent:idle',
-      workspaceId: 'workspace-1',
-      timestamp: '2026-06-19T04:05:00.000Z',
-      actor: { type: 'agent', id: 'child-agent' },
-      data: { secret: 'SHOULD_NOT_LEAK' },
-    };
+const {
+  mockSendToWorkspaceWindows,
+  mockWorkspaceSubscriptionState,
+  mockBackendRequest,
+} = vi.hoisted(() => {
+  const queuedEvent = {
+    id: 'event-live',
+    type: 'agent:idle',
+    workspaceId: 'workspace-1',
+    timestamp: '2026-06-19T04:05:00.000Z',
+    actor: { type: 'agent', id: 'child-agent' },
+    data: { secret: 'SHOULD_NOT_LEAK' },
+  };
 
-    return {
-      mockSendToWorkspaceWindows: vi.fn(),
-      mockAgentHandler: {
-        listAllAgents: vi.fn().mockResolvedValue([
-          {
-            id: 'agent-live',
-            name: 'Live Agent',
-            status: 'responding',
-            metadata: { taskNoteId: 'task-live', secret: 'AGENT_SECRET' },
-            messages: [{ content: 'MESSAGE_SECRET' }],
-            lastActivity: '2026-06-19T04:00:00.000Z',
-          },
-          { id: 'child-agent', name: 'Child Agent', status: 'completed' },
-        ]),
-        getAgent: vi.fn().mockResolvedValue(null),
-      },
+  return {
+    mockSendToWorkspaceWindows: vi.fn(),
+    // C1d-4: ws-app-agents-api routes through daemon RPCs (PROTOCOL.md §5.5
+    // `agent.list` / `agent.getSession`) instead of AgentBackendHandler.
+    mockBackendRequest: vi.fn(async () => ({ agents: [] })),
       mockWorkspaceSubscriptionState: {
         subscriptions: {
           'sub-live': {
@@ -108,16 +100,12 @@ vi.mock('$features/agent/main/specialists.service', () => ({
   ),
 }));
 
-vi.mock('$features/agent/main/agent-backend-handler.service', () => ({
-  AgentBackendHandler: {
-    getInstance: () => mockAgentHandler,
-  },
+vi.mock('$features/backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockBackendRequest }),
 }));
 
-vi.mock('../../../../agent/main/agent-backend-handler.service', () => ({
-  AgentBackendHandler: {
-    getInstance: () => mockAgentHandler,
-  },
+vi.mock('../../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockBackendRequest }),
 }));
 
 vi.mock('../../../../../store/main/redux-store-bridge', () => ({
@@ -361,6 +349,28 @@ describe('WorkspaceJsApiTool integration', () => {
         Promise.resolve(workspaces.find((w) => w.id === id) ?? null),
       ),
     };
+    // PROTOCOL.md §5.5 `agent.list` returns AgentLite (no messages payload);
+    // `messageCount` and `metadata.taskNoteId` come through the wire directly.
+    mockBackendRequest.mockImplementation(async (method: string, params: any) => {
+      if (method === 'agent.list') {
+        const workspaceId = String(params?.workspaceId ?? '');
+        if (workspaceId !== 'workspace-1') return { agents: [] };
+        return {
+          agents: [
+            {
+              id: 'agent-live',
+              name: 'Live Agent',
+              status: 'responding',
+              metadata: { taskNoteId: 'task-live', secret: 'AGENT_SECRET' },
+              messageCount: 1,
+              lastActivity: '2026-06-19T04:00:00.000Z',
+            },
+            { id: 'child-agent', name: 'Child Agent', status: 'completed' },
+          ],
+        };
+      }
+      throw new Error(`unhandled RPC: ${method}`);
+    });
     const chiefTool = new WorkspaceJsApiTool('/tmp/test-workspace', '__chief__', manager);
     const normalTool = new WorkspaceJsApiTool('/tmp/test-workspace', 'workspace-1', manager);
 

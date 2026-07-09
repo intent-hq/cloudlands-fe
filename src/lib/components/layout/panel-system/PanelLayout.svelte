@@ -23,6 +23,11 @@
   unregisterPanelKeyboardShortcuts,
 } from '$features/layout/panel-keyboard-shortcuts.svelte';
   import PanelContainer from './PanelContainer.svelte';
+  import {
+  EMPTY_LAYOUT_LOADING_TIMEOUT_MS,
+  isLayoutSettledNow,
+  shouldRenderPanelContainer as computeShouldRenderPanelContainer,
+} from './panel-render-gate';
   import HandleDropOverlay from './HandleDropOverlay.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
@@ -101,25 +106,27 @@
   const activeTab$ = selectActiveTab(workspaceIdStore);
   const allTabs$ = selectAllTabs(workspaceIdStore);
   const restoreStatus$ = selectRestoreStatus(workspaceIdStore);
-  const EMPTY_LAYOUT_LOADING_TIMEOUT_MS = 3000;
 
-  let emptyLayoutLoadingTimedOut = $state(false);
+  // Per-workspace "settled" latch: once the layout has been considered
+  // resolved for a workspace (backend restored it, tabs appeared, or the
+  // fallback loading window elapsed), keep it settled until workspaceId
+  // changes. Without the latch, closing the last tab re-armed the loading
+  // window and unmounted <PanelContainer> for the fallback duration, causing
+  // a blank content area before the empty state reappeared.
+  let settledForWorkspaceId = $state<string | null>(null);
+  const isSettled = $derived(settledForWorkspaceId === workspaceId);
 
   $effect(() => {
-    const isUnresolved = $restoreStatus$ === 'empty' || $restoreStatus$ === 'idle';
-    if (!isUnresolved || $allTabs$.length > 0) {
-      untrack(() => {
-        emptyLayoutLoadingTimedOut = false;
-      });
+    if (untrack(() => settledForWorkspaceId) === workspaceId) return;
+
+    if (isLayoutSettledNow($restoreStatus$, $allTabs$.length)) {
+      settledForWorkspaceId = workspaceId;
       return;
     }
 
-    untrack(() => {
-      emptyLayoutLoadingTimedOut = false;
-    });
-
+    const currentWorkspaceId = workspaceId;
     const timeoutId = window.setTimeout(() => {
-      emptyLayoutLoadingTimedOut = true;
+      settledForWorkspaceId = currentWorkspaceId;
     }, EMPTY_LAYOUT_LOADING_TIMEOUT_MS);
 
     return () => {
@@ -128,10 +135,11 @@
   });
 
   const shouldRenderPanelContainer = $derived(
-    $restoreStatus$ === 'restored' ||
-      $restoreStatus$ === 'invalid' ||
-      (($restoreStatus$ === 'empty' || $restoreStatus$ === 'idle') &&
-        ($allTabs$.length > 0 || emptyLayoutLoadingTimedOut)),
+    computeShouldRenderPanelContainer({
+      restoreStatus: $restoreStatus$,
+      totalTabs: $allTabs$.length,
+      hasSettled: isSettled,
+    }),
   );
 
   // Get or create the panel layout manager for this workspace (action methods only)

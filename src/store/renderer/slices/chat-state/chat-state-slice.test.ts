@@ -34,6 +34,7 @@ import {
   selectChatLastMessageTime,
 } from './chat-state-selectors';
 import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-slice';
+import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
 const AGENT = 'agent-1';
 
@@ -498,6 +499,32 @@ describe('chatStateReducer', () => {
 
     const state = chatStateReducer(initialState, chatSendStarted(AGENT));
     expect(state.byAgentId[AGENT]).not.toHaveProperty(rejectedField);
+  });
+
+  describe('workspaceDeleted', () => {
+    it('purges byAgentId entries for every agentId in the payload', () => {
+      let state = chatStateReducer(initialState, chatSendStarted('agent-a'));
+      state = chatStateReducer(state, chatSendStarted('agent-b'));
+      state = chatStateReducer(state, chatSendStarted('agent-c'));
+
+      state = chatStateReducer(state, workspaceDeleted('ws-1', ['agent-a', 'agent-b']));
+
+      expect(state.byAgentId['agent-a']).toBeUndefined();
+      expect(state.byAgentId['agent-b']).toBeUndefined();
+      expect(state.byAgentId['agent-c']).toBeDefined();
+    });
+
+    it('is a no-op when the payload is empty', () => {
+      const state = chatStateReducer(initialState, chatSendStarted(AGENT));
+      const next = chatStateReducer(state, workspaceDeleted('ws-1', []));
+      expect(next).toBe(state);
+    });
+
+    it('is a no-op when no chat-state entry exists for the doomed agents', () => {
+      const state = chatStateReducer(initialState, chatSendStarted(AGENT));
+      const next = chatStateReducer(state, workspaceDeleted('ws-1', ['unknown']));
+      expect(next).toBe(state);
+    });
   });
 
 });

@@ -17,7 +17,12 @@ vi.mock("$lib/client", () => ({
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { ensureAgentSessionLoaded } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
-import { selectAgentSession } from "$store/renderer/slices/agent-session/agent-session-selectors";
+import { bulkUpsertSessions } from "$store/renderer/slices/agent-session/agent-session-slice";
+import {
+  selectAgentMessages,
+  selectAgentSession,
+} from "$store/renderer/slices/agent-session/agent-session-selectors";
+import type { AgentMessage } from "$shared/types";
 import { ensureAgentSession } from "./agent-read-service";
 
 const agentsApi = appClient.agents as unknown as Record<string, ReturnType<typeof vi.fn>>;
@@ -97,5 +102,49 @@ describe("agentReadService (fake seam, real store)", () => {
     await flush();
 
     expect(agentsApi.get).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression: `agent.get` returns AgentLite (PROTOCOL §5.5) — session
+  // metadata + message COUNTS, not the retained transcript. Dispatching that
+  // response as-is used to clobber a transcript that `chat-read-service`
+  // hydrated via `agent.getConversation`, so the initial user message
+  // (seq 0) — and any user follow-ups — disappeared the moment any AgentCard
+  // / hover surface dispatched `ensureAgentSessionLoaded`. This service must
+  // now preserve the existing transcript on this metadata-only refresh.
+  it("does not clobber the existing transcript when agent.get returns no messages", async () => {
+    const agentId = "agent-transcript-preserve";
+    const existingMessages: AgentMessage[] = [
+      {
+        id: "019f3d27-user-seq0",
+        role: "user",
+        timestamp: "2026-07-07T15:17:03.908Z",
+        contentBlocks: [{ type: "text", text: "describe the repo" }],
+      },
+      {
+        id: "019f3d27-asst-seq1",
+        role: "assistant",
+        timestamp: "2026-07-07T15:17:04.100Z",
+        contentBlocks: [{ type: "text", text: "here is the repo description" }],
+      },
+    ];
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeSession({ id: agentId, name: "seeded", messages: existingMessages }),
+      ]),
+    );
+    expect(selectAgentMessages.select(appStore.state, agentId).length).toBe(2);
+
+    agentsApi.get.mockResolvedValueOnce(
+      makeSession({ id: agentId, name: "refreshed", messages: [] }) as never,
+    );
+    await ensureAgentSession(agentId);
+
+    expect(selectAgentSession.select(appStore.state, agentId)?.name).toBe("refreshed");
+    const stored = selectAgentMessages.select(appStore.state, agentId);
+    expect(stored.map((m) => m.id)).toEqual([
+      "019f3d27-user-seq0",
+      "019f3d27-asst-seq1",
+    ]);
+    expect(stored[0].role).toBe("user");
   });
 });

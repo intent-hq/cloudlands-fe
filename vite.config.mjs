@@ -139,6 +139,41 @@ const handleUnhandledSvelteKitModules = () => ({
   },
 });
 
+/**
+ * Dev-only middleware that answers `GET /health` with a plain 404 before
+ * SvelteKit's handler runs.
+ *
+ * The MCP bridge scanner probes ports 5179–5188 for a `/health` responder
+ * during startup and reconnect. When the Vite dev server happens to bind
+ * inside (or adjacent to) that range, each probe would otherwise be routed
+ * to SvelteKit's route handler and logged as a red `[404] GET /health`
+ * line. Answering the probe here — as fast, opaque 404s — keeps the dev
+ * console clean regardless of which port the renderer runs on. The scanner
+ * still treats the response as "not a bridge" because the JSON payload
+ * does not identify a bridge (see src/main/mcp-bridge-health.ts).
+ */
+const devHealthProbeSilencer = () => ({
+  name: 'dev-health-probe-silencer',
+  apply: 'serve',
+  configureServer(server) {
+    // Registering here (without returning a post-hook) inserts the middleware
+    // BEFORE Vite's built-in and SvelteKit's handlers, so probes never reach
+    // the SvelteKit router.
+    server.middlewares.use('/health', (req, res) => {
+      if (req.method && req.method !== 'GET' && req.method !== 'HEAD') {
+        res.statusCode = 405;
+        res.setHeader('Allow', 'GET, HEAD');
+        res.end();
+        return;
+      }
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('X-Dev-Health-Silencer', '1');
+      res.end('not-a-bridge\n');
+    });
+  },
+});
+
 // Custom plugin to exclude Node.js-only files from browser bundle
 const excludeNodeModules = () => ({
   name: 'exclude-node-modules',
@@ -204,12 +239,14 @@ const sentryPlugin = process.env.SENTRY_AUTH_TOKEN
 
 export default defineConfig({
   // Plugin order:
-  // 1. preventSvelteKitRegenHMR() - blocks HMR page reloads for .svelte-kit/generated files
-  // 2. sveltekit() - SvelteKit's virtual modules and SSR handling
-  // 3. handleUnhandledSvelteKitModules() - catches any __sveltekit/* modules not handled by SvelteKit
-  // 4. excludeNodeModules() - excludes Node.js-only code from browser bundle
-  // 5. sentryPlugin - uploads source maps to Sentry (production only, when SENTRY_AUTH_TOKEN is set)
+  // 1. devHealthProbeSilencer() - dev-only: absorbs /health probes from the MCP bridge scanner before SvelteKit sees them
+  // 2. preventSvelteKitRegenHMR() - blocks HMR page reloads for .svelte-kit/generated files
+  // 3. sveltekit() - SvelteKit's virtual modules and SSR handling
+  // 4. handleUnhandledSvelteKitModules() - catches any __sveltekit/* modules not handled by SvelteKit
+  // 5. excludeNodeModules() - excludes Node.js-only code from browser bundle
+  // 6. sentryPlugin - uploads source maps to Sentry (production only, when SENTRY_AUTH_TOKEN is set)
   plugins: [
+    devHealthProbeSilencer(),
     preventSvelteKitRegenHMR(),
     sveltekit(),
     handleUnhandledSvelteKitModules(),
@@ -266,7 +303,11 @@ export default defineConfig({
     // Support running multiple dev servers concurrently via DEV_PORT env var
     // strictPort: true ensures we fail fast if port is taken, rather than silently using another port
     // which causes Electron to connect to the wrong server
-    port: parseInt(process.env.DEV_PORT || '5177', 10),
+    //
+    // Default 5190 is deliberately outside the MCP bridge scan range (5179–5188) so
+    // the Vite dev server never collides with the HTTP MCP bridge or the reference
+    // Intent app's WSS API server (which listens on 5180).
+    port: parseInt(process.env.DEV_PORT || '5190', 10),
     strictPort: true,
     // Use explicit IPv4 address to avoid issues on Linux where 'localhost' may
     // resolve to ::1 (IPv6 only), causing wait-on and Electron to fail to connect.
@@ -393,6 +434,7 @@ export default defineConfig({
 
   define: {
     'process.env.IS_ELECTRON': JSON.stringify(true),
+    '__APP_VERSION__': JSON.stringify(packageJson.version),
     '__DEV_GIT_BRANCH__': JSON.stringify(
       process.env.NODE_ENV === 'development'
         ? (() => { try { return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim(); } catch { return ''; } })()

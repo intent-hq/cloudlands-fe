@@ -17,7 +17,6 @@ import {
   collectOpenWorkspaceIds,
   collectWindowIdsForWorkspace,
 } from './window-workspace-tracking';
-import ElectronStore from 'electron-store';
 import { createRequire } from 'module';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -30,23 +29,15 @@ import {
   DialogSaveSchema,
   EmptySchema,
   JetbrainsOpenSchema,
-  SettingsGetSchema,
-  SettingsSetSchema,
-  SettingsUpdateSchema,
   ShellOpenExternalSchema,
   ShellShowItemInFolderSchema,
   ShellInstallCliSchema,
   SystemExecuteCommandSchema,
   SystemExecuteCommandStreamingSchema,
   SystemWriteClipboardSchema,
-  UserMcpAddSchema,
-  UserMcpGetWorkspaceDisabledSchema,
   UserMcpCheckAuthSchema,
   UserMcpTestConnectionSchema,
   UserMcpInitiateOAuthSchema,
-  UserMcpRemoveSchema,
-  UserMcpSetWorkspaceDisabledSchema,
-  UserMcpWriteSettingsFileSchema,
   VscodeOpenDiffSchema,
   VscodeOpenFileSchema,
   VscodeOpenGitDiffSchema,
@@ -61,7 +52,6 @@ import {
 } from '../../../main/ipc-schemas';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { broadcastToBrowserIpcClients } from '../../../main/browser-ipc-broadcast-adapter';
-import type { McpServerConfig } from '../../mcp/main/user-mcp-settings';
 import { execAsync } from '../../../shared/git/git-env';
 import { findBinary } from '../../../shared/main/find-binary';
 import { getBackendClient } from '../../backend/main/backend.ipc';
@@ -73,7 +63,6 @@ import {
   DIALOG_CHANNELS,
   JETBRAINS_CHANNELS,
   LEGACY_CHANNELS,
-  SETTINGS_CHANNELS,
   SHELL_CHANNELS,
   SYSTEM_CHANNELS,
   USER_MCP_CHANNELS,
@@ -83,11 +72,6 @@ import {
 } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { findVSCodeAsync } from '../../../shared/main/async-utils';
-import {
-  getAugmentSettingsPath,
-  readAugmentSettingsFile,
-  writeAugmentSettingsFile,
-} from '../../mcp/main/user-mcp-settings';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -145,35 +129,6 @@ function getPayloadWorkspaceId(data: unknown): string | undefined {
   }
 
   return undefined;
-}
-
-function parseJsonFromCliOutput(output: string): unknown {
-  const trimmedOutput = output.trim();
-  if (!trimmedOutput) {
-    throw new Error('CLI returned empty output');
-  }
-
-  try {
-    return JSON.parse(trimmedOutput);
-  } catch {
-    // Fall through and try to recover JSON from mixed stdout.
-  }
-
-  for (let index = 0; index < trimmedOutput.length; index++) {
-    const char = trimmedOutput[index];
-    if (char !== '{' && char !== '[') {
-      continue;
-    }
-
-    const candidate = trimmedOutput.slice(index);
-    try {
-      return JSON.parse(candidate);
-    } catch {
-      // Keep scanning until we find the actual JSON payload.
-    }
-  }
-
-  throw new Error(`Unable to parse JSON from CLI output: ${trimmedOutput}`);
 }
 
 // ============================================================================
@@ -894,7 +849,7 @@ export function setupSystemIPC() {
     const isDev = process.env.NODE_ENV === 'development';
 
     if (isDev) {
-      const devPort = process.env.DEV_PORT || '5177';
+      const devPort = process.env.DEV_PORT || '5190';
       const baseUrl = `http://127.0.0.1:${devPort}`;
       const url = route ? `${baseUrl}${route}` : baseUrl;
       await newWindow.loadURL(url);
@@ -2157,389 +2112,13 @@ export function setupSystemIPC() {
     ),
   );
 
-  // Settings (using electron-store)
-  const settingsStore: any = new ElectronStore({ name: 'settings' });
-
-  // One-time migration: reset betaUpdatesEnabled to false for all users
-  // This migration runs when the flag has not been reset yet
-  const BETA_UPDATES_RESET_MIGRATION = 'migrations.betaUpdatesResetV1';
-  if (!settingsStore.get(BETA_UPDATES_RESET_MIGRATION)) {
-    settingsStore.set('betaUpdatesEnabled', false);
-    settingsStore.set(BETA_UPDATES_RESET_MIGRATION, true);
-  }
-
-  ipcMain.handle(
-    SETTINGS_CHANNELS.GET,
-    createSafeValidatedHandler(
-      SettingsGetSchema,
-      async (_event, validated) => ({
-        success: true,
-        data: settingsStore.get(validated.key),
-      }),
-      SETTINGS_CHANNELS.GET,
-    ),
-  );
-
-  ipcMain.handle(
-    SETTINGS_CHANNELS.SET,
-    createSafeValidatedHandler(
-      SettingsSetSchema,
-      async (_event, validated) => {
-        settingsStore.set(validated.key, validated.value);
-        return { success: true };
-      },
-      SETTINGS_CHANNELS.SET,
-    ),
-  );
-
-  ipcMain.handle(
-    SETTINGS_CHANNELS.GET_ALL,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async () => ({
-        success: true,
-        data: settingsStore.store,
-      }),
-      SETTINGS_CHANNELS.GET_ALL,
-    ),
-  );
-
-  ipcMain.handle(
-    SETTINGS_CHANNELS.UPDATE,
-    createSafeValidatedHandler(
-      SettingsUpdateSchema,
-      async (_event, validated) => {
-        if (validated.settings && typeof validated.settings === 'object') {
-          for (const [key, value] of Object.entries(validated.settings)) {
-            settingsStore.set(key, value);
-          }
-        }
-        return { success: true };
-      },
-      SETTINGS_CHANNELS.UPDATE,
-    ),
-  );
-
-  // User MCP Settings (~/.augment/settings.json)
-  ipcMain.handle(
-    USER_MCP_CHANNELS.GET_SETTINGS_FILE,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async () => {
-        const result = await readAugmentSettingsFile();
-        return { success: true, data: result };
-      },
-      USER_MCP_CHANNELS.GET_SETTINGS_FILE,
-    ),
-  );
-
-  ipcMain.handle(
-    USER_MCP_CHANNELS.WRITE_SETTINGS_FILE,
-    createSafeValidatedHandler(
-      UserMcpWriteSettingsFileSchema,
-      async (_event, validated) => {
-        const result = await writeAugmentSettingsFile(validated.content);
-        return result;
-      },
-      USER_MCP_CHANNELS.WRITE_SETTINGS_FILE,
-    ),
-  );
-
-  ipcMain.handle(
-    USER_MCP_CHANNELS.GET_SETTINGS_PATH,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async () => ({ success: true, data: getAugmentSettingsPath() }),
-      USER_MCP_CHANNELS.GET_SETTINGS_PATH,
-    ),
-  );
-
-  // Import readUserMcpServers here to avoid unused import warning at module level
-  // (it's only used in this handler)
-  ipcMain.handle(
-    USER_MCP_CHANNELS.GET_SERVERS,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async () => {
-        // Dynamic import to get the function
-        const { readUserMcpServers } = await import('../../mcp/main/user-mcp-settings');
-        const servers = await readUserMcpServers();
-        return { success: true, data: servers };
-      },
-      USER_MCP_CHANNELS.GET_SERVERS,
-    ),
-  );
-
-  // Get disabled MCP servers for a workspace
-  ipcMain.handle(
-    USER_MCP_CHANNELS.GET_WORKSPACE_DISABLED,
-    createSafeValidatedHandler(
-      UserMcpGetWorkspaceDisabledSchema,
-      async (_event, validated) => {
-        const { getWorkspaceDisabledMcpServers } = await import('../../mcp/main/user-mcp-settings');
-        const workspaceResult = await getWorkspaceDisabledMcpServers(validated.workspaceId);
-        if (workspaceResult !== null) {
-          // Workspace has explicit state (may be [] meaning "all enabled")
-          return { success: true, data: workspaceResult };
-        }
-        // No workspace-specific state — return null so the renderer
-        // knows to fall back to global defaults on its own
-        return { success: true, data: null };
-      },
-      USER_MCP_CHANNELS.GET_WORKSPACE_DISABLED,
-    ),
-  );
-
-  // Set disabled MCP servers for a workspace
-  ipcMain.handle(
-    USER_MCP_CHANNELS.SET_WORKSPACE_DISABLED,
-    createSafeValidatedHandler(
-      UserMcpSetWorkspaceDisabledSchema,
-      async (_event, validated) => {
-        const { setWorkspaceDisabledMcpServers } = await import('../../mcp/main/user-mcp-settings');
-        await setWorkspaceDisabledMcpServers(validated.workspaceId, validated.disabledServers);
-        return { success: true, data: null };
-      },
-      USER_MCP_CHANNELS.SET_WORKSPACE_DISABLED,
-    ),
-  );
-
-  // MCP CLI: List servers — delegated to the daemon (`host.exec`, PROTOCOL.md §5.14)
-  // so the auggie CLI runs on the workspace host, not the FE main process.
-  ipcMain.handle(
-    USER_MCP_CHANNELS.MCP_LIST,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async () => {
-        try {
-          const { findAuggieAsync } = await import('../../../shared/main/async-utils');
-          const auggiePath = await findAuggieAsync();
-          if (!auggiePath) {
-            return { success: false, error: 'Auggie CLI not found' };
-          }
-
-          const result = await hostExec(auggiePath, {
-            args: ['mcp', 'list', '--json'],
-            timeoutMs: 30_000,
-          });
-          if (result.exitCode === 0) {
-            try {
-              const servers = parseJsonFromCliOutput(result.stdout);
-              return { success: true, data: servers };
-            } catch (parseError) {
-              logger.error('Failed to parse MCP list JSON output', {
-                error: parseError instanceof Error ? parseError.message : String(parseError),
-                stdout: result.stdout,
-                stderr: result.stderr,
-              });
-              return {
-                success: false,
-                error:
-                  parseError instanceof Error
-                    ? parseError.message
-                    : 'Failed to parse MCP server list output',
-              };
-            }
-          }
-          return { success: false, error: result.stderr || 'Failed to list MCP servers' };
-        } catch (error) {
-          return { success: false, error: String(error) };
-        }
-      },
-      USER_MCP_CHANNELS.MCP_LIST,
-    ),
-  );
-
-  // MCP CLI: Add server
-  ipcMain.handle(
-    USER_MCP_CHANNELS.MCP_ADD,
-    createSafeValidatedHandler(
-      UserMcpAddSchema,
-      async (_event, validated) => {
-        try {
-          const { findAuggieAsync } = await import('../../../shared/main/async-utils');
-          const auggiePath = await findAuggieAsync();
-
-          // Fallback: write directly to ~/.augment/settings.json when CLI is unavailable
-          if (!auggiePath) {
-            try {
-              const { readUserMcpServers, writeUserMcpServers } = await import(
-                '../../mcp/main/user-mcp-settings'
-              );
-              const servers = (await readUserMcpServers()) ?? {};
-
-              // Build the server config from validated params
-              let serverConfig: Record<string, unknown>;
-              if (validated.transport === 'stdio') {
-                serverConfig = {
-                  command: validated.command ?? '',
-                  ...(validated.args
-                    ? { args: validated.args.split(/\s+/).filter(Boolean) }
-                    : {}),
-                  ...(validated.env ? { env: validated.env } : {}),
-                };
-              } else {
-                // http or sse
-                serverConfig = {
-                  type: validated.transport,
-                  url: validated.url ?? '',
-                  ...(validated.headers ? { headers: validated.headers } : {}),
-                  ...(validated.authType && validated.authType !== 'none'
-                    ? { authType: validated.authType }
-                    : {}),
-                };
-              }
-
-              servers[validated.name] = serverConfig as unknown as McpServerConfig;
-              const result = await writeUserMcpServers(servers);
-              if (!result.success) {
-                return { success: false, error: result.error ?? 'Failed to write settings' };
-              }
-              return { success: true, data: { message: 'Server added (direct write)' } };
-            } catch (directWriteError) {
-              return {
-                success: false,
-                error: `CLI not found and direct write failed: ${String(directWriteError)}`,
-              };
-            }
-          }
-
-          // Delegate `auggie mcp add` to the daemon (`host.exec`, PROTOCOL.md §5.14).
-          const args = ['mcp', 'add', validated.name];
-
-          // Add transport-specific options
-          if (validated.transport === 'stdio') {
-            if (validated.command) {
-              args.push('--command', validated.command);
-            }
-            if (validated.args) {
-              args.push('--args', validated.args);
-            }
-            if (validated.env) {
-              for (const [key, value] of Object.entries(validated.env)) {
-                args.push('-e', `${key}=${value}`);
-              }
-            }
-          } else {
-            // http or sse
-            args.push('-t', validated.transport);
-            if (validated.url) {
-              args.push('-u', validated.url);
-            }
-            if (validated.headers) {
-              for (const [key, value] of Object.entries(validated.headers)) {
-                // Use --header instead of -h to avoid conflict with auggie's top-level -h (--help) flag
-                args.push('--header', `${key}:${value}`);
-              }
-            }
-          }
-
-          // Always replace to avoid interactive prompts
-          // Use --replace instead of -r to avoid conflict with auggie's top-level -r (--resume) flag
-          args.push('--replace');
-
-          const result = await hostExec(auggiePath, {
-            args,
-            timeoutMs: 60_000,
-          });
-          if (result.exitCode === 0) {
-            // The CLI doesn't support authType, so patch it directly into settings.json
-            // after the CLI has written the base config.
-            if (validated.authType && validated.authType !== 'none') {
-              try {
-                const { patchServerAuthType } = await import(
-                  '../../mcp/main/user-mcp-settings'
-                );
-                await patchServerAuthType(validated.name, validated.authType);
-              } catch (patchError) {
-                logger.warn('Failed to persist authType to settings.json', {
-                  name: validated.name,
-                  authType: validated.authType,
-                  error: String(patchError),
-                });
-              }
-            }
-            return { success: true, data: { message: result.stdout.trim() || 'Server added' } };
-          }
-          return {
-            success: false,
-            error: result.stderr || result.stdout || 'Failed to add MCP server',
-          };
-        } catch (error) {
-          return { success: false, error: String(error) };
-        }
-      },
-      USER_MCP_CHANNELS.MCP_ADD,
-    ),
-  );
-
-  // MCP CLI: Remove server
-  ipcMain.handle(
-    USER_MCP_CHANNELS.MCP_REMOVE,
-    createSafeValidatedHandler(
-      UserMcpRemoveSchema,
-      async (_event, validated) => {
-        try {
-          const { findAuggieAsync } = await import('../../../shared/main/async-utils');
-          const auggiePath = await findAuggieAsync();
-
-          // Always clear any stored OAuth tokens for this server
-          try {
-            const { clearMcpOAuthTokens } = await import('../../mcp/main/mcp-oauth');
-            await clearMcpOAuthTokens(validated.name);
-            // Clear known aliases so tokens don't survive under alternate names
-            if (validated.name.toLowerCase() === 'figma') {
-              await clearMcpOAuthTokens('Figma');
-              await clearMcpOAuthTokens('figma');
-              await clearMcpOAuthTokens('augment-partner-remote-mcp-figma');
-            }
-          } catch (error) {
-            logger.error('Failed to clear MCP OAuth tokens during server removal:', error);
-          }
-
-          // Fallback: write directly to ~/.augment/settings.json when CLI is unavailable
-          if (!auggiePath) {
-            try {
-              const { readUserMcpServers, writeUserMcpServers } = await import(
-                '../../mcp/main/user-mcp-settings'
-              );
-              const servers = (await readUserMcpServers()) ?? {};
-              delete servers[validated.name];
-              const result = await writeUserMcpServers(servers);
-              if (!result.success) {
-                return { success: false, error: result.error ?? 'Failed to write settings' };
-              }
-              return { success: true, data: { message: 'Server removed (direct write)' } };
-            } catch (directWriteError) {
-              return {
-                success: false,
-                error: `CLI not found and direct write failed: ${String(directWriteError)}`,
-              };
-            }
-          }
-
-          // Delegate `auggie mcp remove` to the daemon (`host.exec`, PROTOCOL.md §5.14).
-          const result = await hostExec(auggiePath, {
-            args: ['mcp', 'remove', validated.name],
-            timeoutMs: 30_000,
-          });
-          if (result.exitCode === 0) {
-            return {
-              success: true,
-              data: { message: result.stdout.trim() || 'Server removed' },
-            };
-          }
-          return {
-            success: false,
-            error: result.stderr || result.stdout || 'Failed to remove MCP server',
-          };
-        } catch (error) {
-          return { success: false, error: String(error) };
-        }
-      },
-      USER_MCP_CHANNELS.MCP_REMOVE,
-    ),
-  );
+  // Settings (`settings:get/set/update/getAll`) — the main-side
+  // electron-store facade is retired (PROTOCOL.md §5.12). The
+  // renderer-side mock-IPC bridge (`settings-legacy-bridge-seeder.ts`)
+  // routes every legacy `settings:*` call to the daemon settings catalog
+  // (or to namespaced localStorage for the FE-only keys); no main-side
+  // handler is needed in the daemon-backed build. The `SETTINGS_CHANNELS`
+  // constants remain exported for the bridge seeder + its tests.
 
   // Check MCP server auth requirements
   ipcMain.handle(

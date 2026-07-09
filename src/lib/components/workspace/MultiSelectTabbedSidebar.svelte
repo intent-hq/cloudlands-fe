@@ -256,6 +256,14 @@
   // Track if we're doing a multi-panel transition (either before or after has multiple panels)
   let useSlideTransition = $state(false);
 
+  // Compute fly transition params from plain $state reads. Transition param expressions
+  // are evaluated at element teardown, outside reactive context, so they must not read
+  // deriveds (e.g. {@const}) or Svelte warns with derived_inert.
+  function flyParams(sign: 1 | -1) {
+    const useFly = !useSlideTransition && flyDirection !== 0;
+    return { x: useFly ? sign * flyDirection * 30 : 0, duration: useFly ? 200 : 0 };
+  }
+
   // Helper to get tab index for direction calculation (uses dynamic order)
   function getTabIndex(tabId: TabId): number {
     return tabOrder.indexOf(tabId);
@@ -898,12 +906,11 @@
       {#each orderedSelectedTabs as tabId, index (tabId)}
         {@const tab = TAB_DEFINITIONS.find((t) => t.id === tabId)}
         {@const isLast = index === selectedTabCount - 1}
-        {@const useFly = !useSlideTransition && flyDirection !== 0}
         <!-- Outer wrapper for fly transition (single panel switches) -->
         <div
           class={cn('w-full min-w-0 flex flex-col px-2', !isLast && 'border-b border-border')}
-          in:fly={{ x: useFly ? flyDirection * 30 : 0, duration: useFly ? 200 : 0 }}
-          out:fly={{ x: useFly ? -flyDirection * 30 : 0, duration: useFly ? 200 : 0 }}
+          in:fly={flyParams(1)}
+          out:fly={flyParams(-1)}
         >
           <!-- Inner wrapper for slide transition (multi-panel add/remove) -->
           <div

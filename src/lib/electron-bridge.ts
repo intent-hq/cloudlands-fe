@@ -348,12 +348,12 @@ export const dialog = {
   },
 };
 
-// Shell/opener replacements
+// Shell/opener replacements. Always routes through the shell:openExternal
+// channel (host-bridge-seeder → openExternalUrl); the old window.electronAPI
+// gate silently no-opped every external link when no preload bridge exists.
 export const shell = {
   async open(url: string): Promise<void> {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      await invoke('shell:openExternal', { url });
-    }
+    await invoke('shell:openExternal', { url });
   },
 };
 

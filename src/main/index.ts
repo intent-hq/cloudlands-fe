@@ -24,14 +24,16 @@ const { ipcMain, app, BrowserWindow } = require('electron');
 // See memoryMonitor.onPressure handler below for usage
 app.commandLine.appendSwitch('js-flags', '--expose-gc');
 
-// EARLY: Support multiple dev instances by using unique userData paths
-// This must run before setupConsoleLogCapture() so logs go to the correct userData directory
+// EARLY: Support multiple dev instances by using unique userData paths.
+// Namespaced by absolute DEV_PORT so cloudlands-fe cannot collide with other Electron
+// dev apps (e.g. the reference Intent build's "dev-instance-N" scheme) on the
+// SingletonLock. This must run before setupConsoleLogCapture() so logs go to the
+// correct userData directory.
 import * as path from 'path';
-if (process.env.NODE_ENV === 'development' && process.env.DEV_INSTANCE) {
-  const uniqueUserData = path.join(
-    app.getPath('userData'),
-    `dev-instance-${process.env.DEV_INSTANCE}`,
-  );
+import { resolveDevUserDataDirName } from './utils/resolve-dev-instance.js';
+const devUserDataSegment = resolveDevUserDataDirName();
+if (devUserDataSegment) {
+  const uniqueUserData = path.join(app.getPath('userData'), devUserDataSegment);
   app.setPath('userData', uniqueUserData);
 }
 
@@ -293,7 +295,6 @@ import {
   initializeUnifiedBackend,
   shutdownUnifiedBackend,
 } from '../features/agent/main/init-unified-backend';
-import { setupPersistenceIPC } from '../features/agent/main/persistence.ipc';
 import { setupAuggieIPC } from '../features/auggie/main/auggie.ipc';
 import { setupOpencodeIPC } from '../features/opencode/main/opencode.ipc';
 import { setupClaudeCodeIPC } from '../features/claude-code/main/claude-code.ipc';
@@ -303,49 +304,31 @@ import { setupCortexIPC } from '../features/cortex/main/cortex.ipc';
 import { setupDroidIPC } from '../features/droid/main/droid.ipc';
 import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-codes.ipc';
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
-import { setupCommentsIPC } from '../features/comments/main/comments.ipc';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
 import { setupDiffsIPC } from '../features/diffs/main/diffs.ipc';
 import { setupEditorIPC } from '../features/editor/main/editor.ipc';
 import { setupEventsIPC } from '../features/events/main/events.ipc';
 import { registerExternalEditorsHandlers } from '../features/external-editors/main/external-editors.ipc';
-import { setupFileTrackingIPC } from '../features/file-tracking/main/file-tracking.ipc';
 import { setupFileIPC } from '../features/file/main/file.ipc';
 import { setupGitTrackingIPC } from '../features/git-tracking/main/git-tracking.ipc';
 import { setupGitIPC } from '../features/git/main/git.ipc';
 import { setupGitHubAuthIPC } from '../features/github-auth/main/github-auth.ipc';
 import { registerIDEHandlers } from '../features/ide/main/ide.ipc';
 import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout-history.ipc';
-import { registerLineChangesIPC } from '../features/line-changes/line-changes.ipc';
 import { setupLinearAuthIPC } from '../features/linear-auth/main/linear-auth.ipc';
 import { setupLogIPC } from '../features/log/main/log.ipc';
-import {
-  setupMCPIPC,
-  cleanupMCP,
-} from '../features/mcp/mcp.ipc';
 import { setupBannerIPC } from '../features/banner/main/banner.ipc';
 import { setupMemoriesIPC } from '../features/memories/main/memories.ipc';
-import { setupAssetsIPC } from '../features/notes/main/assets.ipc';
-import { setupLineAttributionIPC } from '../features/notes/main/line-attribution.ipc';
-import { lineAttributionService } from '../features/notes/main/line-attribution.service';
-import {
-  setupNotesPrimitivesIPC,
-  cleanupNoteTerminals,
-} from '../features/notes/main/notes-primitives.ipc';
-import { setupNotesIPC } from '../features/notes/main/notes.ipc';
-import { crdtDocumentManager } from '../features/notes/main/storage';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
-import { setupRemoteFileSystemIPC } from '../features/remote-fs/main/remote-fs.ipc';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSkillsIPC } from '../features/agent/main/skills.ipc';
-import { setupTokenUsageIPC } from '../features/token-usage/main/token-usage.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
-import { setupPermissionIPC } from '../features/acp-official/main/permission.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import {
   registerBackendHandlers,
   disposeBackendClient,
+  getBackendClient,
 } from '../features/backend/main/backend.ipc';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 import { setupSandboxIPC } from '../features/sandbox/main/sandbox.ipc';
@@ -368,7 +351,6 @@ import { setupTestingIPC } from '../features/testing/main/testing.ipc';
 import { setupThirdPartySourcesIPC } from '../features/third-party-sources/main/third-party-sources.ipc';
 import { setupUserActivityIPC } from '../features/user-activity/main/user-activity.ipc';
 import { setupFirstVisitStateIPC } from '../features/workspace/main/first-visit-state.ipc';
-import { setupFileAttributionIPC } from '../features/workspace/main/provenance/file-attribution.ipc';
 import { setupRepoConfigIPC } from '../features/workspace/main/repo-config.ipc';
 import {
   initializeChangeDetectorManager,
@@ -378,14 +360,11 @@ import { setupWorkspaceSummaryIPC } from '../features/workspace/main/workspace-s
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
 import { claimDownloadAttribution } from './download-attribution';
+import { listRespondingAgents } from './running-agents';
 import { prefetchProviderModelCaches } from './utils/model-pool';
 
-import { agentBackendHandler } from '../features/agent/main/agent-backend-handler.service';
-import { agentPersistence } from '../features/agent/main/agent-persistence';
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
-import { agentPoolService } from '../features/agent/main/agent-pool.service';
-import { cleanupStaleTempFiles } from '../features/agent/main/agent-providers/acp-provider';
-import { cleanupBlankAgentSessions } from '../features/agent/main/cleanup-blank-agent-sessions';
+import { cleanupStaleTempFiles } from '../shared/main/temp-files';
 import { initializeUnifiedAgentHandlers } from '../features/agent/main/init-unified-handlers';
 import { initSpecialistsService } from '../features/agent/main/specialists.service';
 import { initAppSettingsService } from '../features/workspace/main/app-settings.service';
@@ -475,18 +454,6 @@ async function gracefulShutdown() {
     // fires. This delay gives those threads time to finish. (AUGMENT-INTENT-9)
     await new Promise((resolve) => setTimeout(resolve, 300));
 
-    // Kill any active note terminal processes (exec() spawns via shell,
-    // so these need tree-kill to avoid orphaning the child command)
-    try {
-      await cleanupNoteTerminals();
-      logger.info('Note terminals cleaned up');
-    } catch (error) {
-      logger.error(
-        'Error cleaning up note terminals:',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-
     // Stop all running workspace scripts (spawned via child_process.spawn)
     try {
       await disposeAllScriptProcessManagers();
@@ -498,18 +465,6 @@ async function gracefulShutdown() {
       );
     }
 
-    // Stop all MCP Hub child processes (workspace, notes, git servers per workspace)
-    // These are spawned by ServerManager and will persist as orphaned processes if not killed
-    try {
-      await cleanupMCP();
-      logger.info('MCP Hub servers stopped');
-    } catch (error) {
-      logger.error(
-        'Error stopping MCP Hub servers:',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-
     // Dispose the live backend JSON-RPC client (closes the UDS/TCP socket).
     try {
       disposeBackendClient();
@@ -517,25 +472,6 @@ async function gracefulShutdown() {
     } catch (error) {
       logger.error(
         'Error disposing backend client:',
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-
-    // Persist in-flight streaming agents BEFORE shutting down the backend so
-    // our clean-quit flush runs against live state (ConsolidatedBackendService
-    // .shutdown() saves sessions + kills providers, which would either clear
-    // state or overwrite it). Bounded by an internal 3s timeout and swallows
-    // its own errors; ignore the per-agent result here (logged internally).
-    try {
-      const result = await agentBackendHandler.persistShutdownState();
-      logger.info('Agent shutdown state persisted', {
-        persisted: result.persisted.length,
-        skipped: result.skipped.length,
-        failed: result.failed.length,
-      });
-    } catch (error) {
-      logger.error(
-        'Error persisting agent shutdown state:',
         error instanceof Error ? error : new Error(String(error)),
       );
     }
@@ -1335,9 +1271,6 @@ app.whenReady().then(async () => {
     const openWorkspaceIds = getAllOpenWorkspaceIds();
     try {
       workspaceService.trimCachesToOpenWorkspaces(openWorkspaceIds);
-      agentPersistence.trimLoadCachesToOpenWorkspaces(openWorkspaceIds);
-      agentBackendHandler.trimPersistenceListCacheToOpenWorkspaces(openWorkspaceIds);
-      crdtDocumentManager.trimCachesToOpenWorkspaces(openWorkspaceIds);
     } catch (error) {
       logger.warn('Failed to trim inactive workspace caches', {
         error: error instanceof Error ? error.message : String(error),
@@ -1397,17 +1330,13 @@ app.whenReady().then(async () => {
 
   setupWorkspaceIPC();
   setupWorkspaceSummaryIPC();
-  setupNotesIPC();
-  setupNotesPrimitivesIPC();
   setupFileIPC();
   setupSystemIPC();
   await setupConfigIPC();
-  setupFileTrackingIPC(); // Needed for agent components
   setupGitIPC(); // Needed for git operations
   setupGitHubAuthIPC(); // Needed for GitHub device flow auth
   setupLinearAuthIPC(); // Needed for Linear auth via Augment
   setupSentryAuthIPC(); // Needed for Sentry auth via API token
-  setupPersistenceIPC(); // Needed for agent persistence
   setupAgentConfigIPC(); // Needed for agent config
 
   // Initialize unified agent handlers with the backend adapter
@@ -1447,7 +1376,6 @@ app.whenReady().then(async () => {
   setupGitTrackingIPC(); // Needed for renderer git tracking on startup
   setupBannerIPC(); // Needed for promotional banner CDN fetch
   setupSpecialistsIPC(); // Needed for specialist selection on startup
-  setupPermissionIPC(); // Needed for ACP agent tool approvals
   setupAutoUpdateIPC(); // Needed for auto-update IPC on startup
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   startupMetrics.end('criticalIPC');
@@ -1462,35 +1390,17 @@ app.whenReady().then(async () => {
 
     setupFirstVisitStateIPC();
     setupPanelLayoutHistoryIPC();
-    setupCommentsIPC();
     setupUserActivityIPC();
-    setupLineAttributionIPC();
-    setupFileAttributionIPC();
-    setupAssetsIPC();
 
-    // Start line attribution service to listen for note updates
-    lineAttributionService.start();
-    logger.info('Line attribution service started');
     // MINIMAL REFACTOR: Commenting out duplicate IPC handler
     registerAgentContextHandlers();
 
-    // Initialize the agent backend handler
-    // WAVE 1 REFACTOR: The backend handler now has all handlers commented out
-    // to avoid duplication. The handlers are implemented in the service itself.
-    void agentBackendHandler; // Initialize the backend service
-
-    // Note: Unified handlers would need an adapter to work with agentBackendHandler
-    // For now, we'll uncomment the handlers in agentBackendHandler until we can
-    // properly migrate to the unified handler pattern
-
-    logger.info('Agent backend handler initialized');
     // setupTerminalIPC(); // Already called in critical IPC setup
     // setupEditorIPC(); // Already called in critical IPC setup
     setupDiffsIPC();
     setupLogIPC();
     setupTestingIPC();
     // setupAuggieIPC(); // Already called in critical IPC setup
-    setupRemoteFileSystemIPC();
     // setupEventsIPC(); // Already called in critical IPC setup
     // setupGitTrackingIPC(); // Already called in critical IPC setup
     // registerAcceptChangesHandlers(); // Already called in critical IPC setup
@@ -1500,16 +1410,14 @@ app.whenReady().then(async () => {
     setupRepoConfigIPC();
     // setupSpecialistsIPC(); // Already called in critical IPC setup
     setupSkillsIPC();
-    setupTokenUsageIPC();
+    // Token usage is daemon-owned (workspace.getTokenUsage, PROTOCOL §5.23);
+    // the renderer reads it directly over the JSON-RPC bridge.
     // setupWorkspaceRulesIPC(); // Already called in critical IPC setup
-    registerLineChangesIPC();
     // registerSetupScriptsHandlers(); // Already called in critical IPC setup
     // setupThirdPartySourcesIPC(); // Already called in critical IPC setup
 
     // Setup notification IPC handlers
     setupNotificationIPC();
-
-    // setupPermissionIPC(); // Already called in critical IPC setup
 
     // Setup keychain consent IPC handlers for git network operations
     const { setupKeychainIPC } = await import('../features/git/main/keychain.ipc');
@@ -1574,13 +1482,6 @@ app.whenReady().then(async () => {
       logger.debug('Error cleaning up stale temp files', { error });
     }
 
-    // Clean up historical blank agent session files from workspace metadata
-    try {
-      await cleanupBlankAgentSessions();
-    } catch (error) {
-      logger.debug('Error cleaning up blank agent session files', { error });
-    }
-
     // Auto-repair CLI symlink on startup (production only, silent)
     try {
       await autoRepairCliSymlink();
@@ -1588,9 +1489,11 @@ app.whenReady().then(async () => {
       logger.debug('Error auto-repairing CLI symlink on startup', { error });
     }
 
-    // Warm rtk detection cache (non-blocking, non-critical)
-    const { detectRtk } = await import('../features/agent/main/rtk-detector');
+    // Warm rtk detection cache and hydrate the FE-local rtkEnabled flag
+    // (non-blocking, non-critical).
+    const { detectRtk, initRtkEnabled } = await import('../features/agent/main/rtk-detector');
     detectRtk().catch(() => {});
+    initRtkEnabled().catch(() => {});
 
     startupMetrics.end('secondaryIPC');
     logger.info('All secondary IPC handlers registered successfully');
@@ -1644,57 +1547,8 @@ app.whenReady().then(async () => {
         })
         .catch(() => {});
 
-      // Stop agent providers for workspaces that have no open windows.
-      // These agents are streaming into the void (producing "no windows found"
-      // warnings) and accumulating memory with no user benefit. Their session
-      // data is persisted to disk, so they can be resumed when the user returns.
-      // IMPORTANT: Skip workspaces with active agents (streaming or pending requests)
-      // to avoid killing agents that are doing real background work.
-      Promise.all([
-        import('../features/agent/main/agent-backend-handler.service'),
-        import('../features/agent/main/orphaned-provider-cleanup'),
-        import('../features/system/main/system.ipc'),
-      ])
-        .then(
-          ([
-            { agentBackendHandler },
-            { getOrphanedProviderCleanupPlan },
-            { getAllOpenWorkspaceIds },
-          ]) => {
-            const openWorkspaceIds = new Set(getAllOpenWorkspaceIds());
-            const { safeToCleanup, skippedWithActiveAgents } = getOrphanedProviderCleanupPlan(
-              agentBackendHandler,
-              openWorkspaceIds,
-            );
-
-            for (const wsId of skippedWithActiveAgents) {
-              logger.info('Skipping orphaned workspace cleanup — has active agents', {
-                workspaceId: wsId,
-              });
-            }
-
-            if (safeToCleanup.length > 0) {
-              logger.info('Stopping orphaned agent providers (no open window, no active work)', {
-                safeToCleanup,
-                skippedWithActiveAgents: skippedWithActiveAgents.length,
-                openWorkspaceIds: [...openWorkspaceIds],
-              });
-              for (const wsId of safeToCleanup) {
-                agentBackendHandler.stopProvidersForWorkspace(wsId).catch((err: Error) => {
-                  logger.warn('Failed to stop orphaned providers', {
-                    workspaceId: wsId,
-                    error: err.message,
-                  });
-                });
-              }
-            }
-          },
-        )
-        .catch((err: unknown) => {
-          logger.warn('Failed to run orphaned agent provider cleanup', {
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
+      // Orphaned-provider cleanup retired with the FE `AgentBackendHandler`;
+      // provider lifecycle is now owned by intentd (PROTOCOL.md §5.5).
 
       // On critical pressure, drop unified main-process caches.
       // Entries are lazily re-populated from disk on next access.
@@ -1843,7 +1697,7 @@ app.whenReady().then(async () => {
       logger.error('Main window unavailable during post-window setup; skipping');
       return;
     }
-    await Promise.all([initializeUnifiedBackend(mainWindow), setupMCPIPC(mainWindow)]);
+    await initializeUnifiedBackend(mainWindow);
 
     try {
       startupMetrics.end('postWindowIPC');
@@ -1889,28 +1743,36 @@ app.whenReady().then(async () => {
  * check sees zero and silently skips the prompt.
  */
 async function confirmQuitWithRunningAgents(): Promise<boolean> {
-  const activeStreams = agentBackendHandler.getActiveStreams();
-  if (activeStreams.length === 0) {
+  // Live agent turns run inside the intentd daemon (agent.sendMessage, PROTOCOL
+  // §5.5), so the daemon's per-agent `isResponding` flag is the source of truth
+  // for "still running". The old check read main-process stream/accumulator
+  // state that no longer exists post-port (the main Redux store was removed),
+  // which crashed with an unhandled rejection on every quit.
+  const respondingAgents = await listRespondingAgents(getBackendClient());
+  if (respondingAgents.length === 0) {
     return true;
   }
 
   logger.info('Active agents detected during quit attempt', {
-    count: activeStreams.length,
-    agentIds: activeStreams.map((s) => s.agentId),
+    count: respondingAgents.length,
+    agentIds: respondingAgents.map((s) => s.agentId),
   });
 
+  // Daemon agents SURVIVE app quit: gracefulShutdown only closes the daemon
+  // socket, the agents keep working inside intentd. So this dialog informs
+  // rather than blocks — quitting loses no progress, and Quit is the default.
   const result = await dialog.showMessageBox({
-    type: 'warning',
-    title: 'Agents Running',
-    message: `${activeStreams.length} agent${activeStreams.length > 1 ? 's are' : ' is'} still running.`,
+    type: 'info',
+    title: 'Agents Still Working',
+    message: `${respondingAgents.length} agent${respondingAgents.length > 1 ? 's are' : ' is'} still working.`,
     detail:
-      'Quitting now will stop all running agents and they may lose progress. Are you sure you want to quit?',
-    buttons: ['Cancel', 'Quit Anyway'],
+      'Agents keep running in the background after the app closes. Their results will be waiting when you reopen. Quit now?',
+    buttons: ['Quit', 'Cancel'],
     defaultId: 0,
-    cancelId: 0,
+    cancelId: 1,
   });
 
-  if (result.response === 0) {
+  if (result.response === 1) {
     logger.info('User cancelled quit due to running agents');
     return false;
   }
@@ -2003,8 +1865,8 @@ app.on('window-all-closed', async () => {
     // same path before-quit (Cmd+Q) uses. gracefulShutdown() sets
     // isShuttingDown=true internally (so any subsequent before-quit is a
     // no-op), runs the full cleanup ordering — including the items only it
-    // performs (cleanupTerminals + settling delay, cleanupNoteTerminals,
-    // disposeAllScriptProcessManagers, cleanupMCP, cleanupAutoUpdater) — and
+    // performs (cleanupTerminals + settling delay,
+    // disposeAllScriptProcessManagers, cleanupAutoUpdater) — and
     // then calls app.exit(0). Delegating here (instead of running a bespoke
     // partial teardown and calling app.quit()) prevents before-quit re-entry
     // that otherwise showed a second running-agent prompt and ran a duplicate
@@ -2019,42 +1881,11 @@ app.on('window-all-closed', async () => {
   // with a proper settling delay. Calling it here too caused a double-cleanup
   // race that could crash conpty's native thread (AUGMENT-INTENT-8).
 
-  // Stop line attribution service
-  lineAttributionService.stop();
-  logger.info('Line attribution service stopped');
-
   // Cleanup IPC debug tracker
   ipcDebugTracker.dispose();
 
   // Cleanup all IPC handlers
   ipcCleanupManager.cleanupAll();
-
-  // Cleanup agent pool (warm providers)
-  try {
-    await agentPoolService.disposeAll();
-    logger.info('Agent pool disposed');
-  } catch (error) {
-    logger.error('Failed to dispose agent pool', error as Error);
-  }
-
-  // Persist in-flight streaming agents BEFORE backend shutdown so the
-  // clean-quit flush runs against live state. On Windows/Linux this is the
-  // common quit path (closing the last window), so we mirror the ordering
-  // from gracefulShutdown() — otherwise shutdownUnifiedBackend() would save
-  // sessions + kill providers and overwrite/clear the flush target.
-  try {
-    const result = await agentBackendHandler.persistShutdownState();
-    logger.info('Agent shutdown state persisted (window-all-closed)', {
-      persisted: result.persisted.length,
-      skipped: result.skipped.length,
-      failed: result.failed.length,
-    });
-  } catch (error) {
-    logger.error(
-      'Error persisting agent shutdown state (window-all-closed):',
-      error instanceof Error ? error : new Error(String(error)),
-    );
-  }
 
   // Cleanup agent backend
   try {
@@ -2105,7 +1936,17 @@ let isSecondInstance = false;
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
-  // Another instance is already running, quit this one
+  // Another instance already holds the SingletonLock in this userData directory.
+  // Log which path is contended before quitting so this isn't a silent no-op — a
+  // common failure mode when a foreign Electron dev app shares the same userData dir.
+  const contendedUserData = app.getPath('userData');
+  const message = `Another instance is already running; SingletonLock in userData=${contendedUserData} is held. Exiting.`;
+  console.error(`[Main] ${message}`);
+  try {
+    logger.error(message, { userData: contendedUserData });
+  } catch {
+    // logger may not have a transport wired up this early on some platforms
+  }
   isSecondInstance = true;
   app.quit();
 } else {

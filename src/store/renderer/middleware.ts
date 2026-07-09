@@ -19,17 +19,25 @@ import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
 import { createChatReadMiddleware } from "$features/agent/chat-read-service";
 import { createChatSendMiddleware } from "$features/agent/chat-send-service";
+import { createPermissionResponseMiddleware } from "$features/permission/permission-response-service";
 import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge";
 import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
+import { createModelSelectionPersistenceMiddleware } from "$features/settings/model-selection-persistence-service";
+import { createModelReloadMiddleware } from "$features/settings/model-reload-service";
+import { createProviderSettingsPersistenceMiddleware } from "$features/settings/provider-settings-persistence-service";
+import { createProviderAvailabilityCheckMiddleware } from "$features/providers/provider-availability-check-service";
 import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
 import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
 import { createAppLayoutNavigationMiddleware } from "$features/layout/app-layout-navigation-service";
 import { createWorkspaceNavigationTabMiddleware } from "$features/layout/workspace-navigation-tab-service";
+import { createWorkspaceNavigationLayoutMiddleware } from "$features/layout/workspace-navigation-layout-service";
 import { createFileExplorerReadMiddleware } from "$features/file-explorer/file-explorer-read-service";
 import { createFilesReadMiddleware } from "$features/files/files-read-service";
 import { createFilesWriteMiddleware } from "$features/files/files-write-service";
 import { createNotesWriteMiddleware } from "$features/notes/notes-write-service";
+import { createNotesVersionsMiddleware } from "$features/notes/notes-versions-service";
+import { createNotesReadMiddleware } from "$features/notes/notes-read-service";
 import { createGitHubAuthMiddleware } from "$features/github-auth/github-auth-store-service";
 import { createSentryAuthMiddleware } from "$features/sentry-auth/sentry-auth-store-service";
 import { createLinearAuthMiddleware } from "$features/linear-auth/linear-auth-store-service";
@@ -97,11 +105,17 @@ function buildMiddleware(): StoreMiddleware[] {
     // so opening an agent loads its full retained transcript via
     // `agents.getConversation` instead of showing an empty conversation.
     createChatReadMiddleware(),
-    // Give the (post-saga) `sendMessage` / `sendInitialMessageRequested`
-    // actions a real consumer so pressing Send in ChatPanel routes through
-    // `agent-stream-lifecycle.sendMessage()` again — producing a user message
-    // and a live-streaming assistant response — instead of being a no-op.
+    // Give the (post-saga) `sendMessage` action a real consumer so pressing
+    // Send in ChatPanel routes through `agent-stream-lifecycle.sendMessage()`
+    // again — producing a user message and a live-streaming assistant response
+    // — instead of being a no-op.
     createChatSendMiddleware(),
+    // Give the (post-saga) permission triggers (`approvePermission` /
+    // `denyPermission` / `cancelPermission` / `selectPermissionOption`) a real
+    // consumer so `InlinePermissionRequest` clicks route to `agent.respondPermission`
+    // (PROTOCOL §8) and the chosen outcome unblocks the agent instead of
+    // waiting out the 5-minute timeout.
+    createPermissionResponseMiddleware(),
     // Wire daemon `events.event` notifications (PROTOCOL §7) into the
     // `workspaceEvents/eventReceived` action so the `agentSession` reducer
     // can faithfully clear optimistic `isStreaming`/`isProcessing`/
@@ -114,6 +128,30 @@ function buildMiddleware(): StoreMiddleware[] {
     // daemon-events bridge above plugs into. The hydration is fire-and-forget
     // so dispatch stays synchronous and unaffected.
     createSettingsHydrationMiddleware(),
+    // Give the (post-saga) `selectModel` trigger a real handler (map to
+    // `setSelectedModel` for the active provider) and persist model picks to
+    // the daemon settings catalog (`model.providerDefaults` /
+    // `model.workspaceOverrides`, PROTOCOL §5.12) so the selection survives a
+    // reload — the hydration middleware above reads the same paths on boot.
+    createModelSelectionPersistenceMiddleware(),
+    // Give the (post-saga) `setActiveProvider` trigger a real handler so
+    // switching providers writes `providers.active` (PROTOCOL §5.12) back
+    // through the `appClient.settings` seam. Without this the pick lives only
+    // in the local slice and every restart reverts to whatever the daemon
+    // still had persisted.
+    createProviderSettingsPersistenceMiddleware(),
+    // Give the (post-saga) `reloadModelsForProvider` trigger a real handler so
+    // provider switches refetch the daemon catalog (`models.list`, PROTOCOL
+    // §5.30) and drive the loading → success/error transitions in the model
+    // slice. Without this the picker keeps showing the previous provider's
+    // catalog until the next full reload.
+    createModelReloadMiddleware(),
+    // Give the (post-saga) agent-availability triggers (`ensureProvidersChecked`,
+    // `checkAllProvidersRequested`, `checkSingleProviderRequested`) a real
+    // handler so onboarding/settings provider cards resolve to a terminal
+    // installed / not-installed / error state (and `hasCheckedOnce` flips)
+    // instead of spinning on "Checking…" forever.
+    createProviderAvailabilityCheckMiddleware(),
     // Give the (post-saga) `agentStreamUpdateReceived` action a real consumer
     // so a streaming agent's text/tool blocks grow live in the chat panel
     // (placeholder on first event, in-place block update on subsequent events,
@@ -141,6 +179,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // opens (or focuses) a `changes` tab keyed by `commitHash` instead of just
     // updating the navigation slice's `mainPanel.type`.
     createWorkspaceNavigationTabMiddleware(),
+    // Give the (post-saga) `hydrateWorkspaceNavigation` action a real handler
+    // so the workspace-creation flow (CompactWorkspaceInitializer / OnboardingPage)
+    // actually renders the pre-navigation intent (spec note in the main panel +
+    // initial-agent conversation in the adjacent drawer panel) instead of
+    // mounting the workspace page with an empty panel-layout.
+    createWorkspaceNavigationLayoutMiddleware(),
     // Give the (post-saga) file-explorer toggle/expand/refresh triggers a real
     // read handler so directories list their children via `files.list` again.
     createFileExplorerReadMiddleware(),
@@ -154,6 +198,18 @@ function buildMiddleware(): StoreMiddleware[] {
     // command create a note via `appClient.notes.create` and open it in the
     // main panel again instead of being a no-op.
     createNotesWriteMiddleware(),
+    // Give the (post-saga) `fetchNoteVersions` / `restoreNoteVersion` triggers
+    // real handlers so the note-history panel loads the version list via
+    // `notes.listVersions` (+ per-version `note.getVersion`) and the Restore
+    // button forwards to `notes.restoreVersion` + refreshes the editor and
+    // versions list. Without this the panel stays empty and Restore is a no-op.
+    createNotesVersionsMiddleware(),
+    // Give `workspaceMounted` a notes hydration handler so a workspace
+    // created/first-opened after boot fetches its notes (Spec included) via
+    // `appClient.notes.list` and renders instead of showing an empty panel
+    // until an app restart. Boot-seeded workspaces are unaffected — the
+    // service skips when the workspace-notes slice is already initialized.
+    createNotesReadMiddleware(),
     // Give the (post-saga) GitHub / Sentry / Linear OAuth connect/status/logout
     // triggers real handlers so the settings buttons run their auth flows again.
     createGitHubAuthMiddleware(),

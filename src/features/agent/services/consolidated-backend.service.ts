@@ -6,7 +6,6 @@
 import { invoke } from '$lib/electron-bridge';
 import { AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 import type { QueuedMessage } from '$shared/types/agent-session';
-import type { AgentSession } from '$shared/types';
 import { createLogger } from '$lib/utils/client-logger';
 
 const logger = createLogger('ConsolidatedBackendProxy');
@@ -126,9 +125,9 @@ export const unifiedOrchestrator = {
     }
   },
 
-  async listAgents(workspaceId: string): Promise<AgentSession[]> {
-    return invoke(AGENT_BACKEND_CHANNELS.LIST, { workspaceId }) as Promise<AgentSession[]>;
-  },
+  // listAgents (agent:backend:list) retired — its only caller was the
+  // main-process MCP tooling, which uses the main-side service directly;
+  // renderer agent lists hydrate from the daemon (agent.list, PROTOCOL §5.5).
 };
 
 // Alias for backward compatibility

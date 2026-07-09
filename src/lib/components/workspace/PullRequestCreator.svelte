@@ -1,7 +1,7 @@
 <script lang="ts">
   import { logger } from '$lib/utils/client-logger';
 
-  import { invoke } from '$lib/electron-bridge';
+  import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -20,10 +20,10 @@
   faSpinner,
   faCodeBranch,
   faXmark,
-  faInfo,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
-  import type { PullRequestInfo } from '$shared/types';
+  import { PullRequestStatus, type PullRequestInfo } from '$shared/types';
+  import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -44,11 +44,7 @@
   let formData = $state({
     title: { value: '', loading: false },
     description: { value: '', loading: false },
-    isDraft: false,
   });
-
-  // User instructions for PR generation
-  let userInstructions = $state('');
 
   // Track if we should auto-create after generation
   let autoCreatePending = $state(false);
@@ -64,35 +60,15 @@
     formData = {
       title: { value: '', loading: true },
       description: { value: '', loading: true },
-      isDraft: false,
     };
 
     try {
-      const workspaceContext = {
-        workspaceId: workspace.id,
-        title: workspace.title,
-        branch: workspace.branch,
-        baseRef: workspace.baseRef,
-        repositoryPath: workspace.repositoryPath,
-        repositoryOwner: workspace.repositoryOwner,
-        repositoryName: workspace.repositoryName,
-        userInstructions: userInstructions || undefined,
-      };
-
-      const result = await invoke<string>('pr:generateContent', workspaceContext);
-
-      if (result) {
-        try {
-          const parsed = JSON.parse(result);
-          formData.title.value = parsed.title || '';
-          formData.title.loading = false;
-          formData.description.value = parsed.description || '';
-          formData.description.loading = false;
-        } catch (e) {
-          logger.error('Failed to parse PR content:', e);
-          error = 'Failed to generate PR content';
-        }
-      }
+      // accept-changes.prepare returns suggested PR title/body (PROTOCOL.md §5.18)
+      const prepared = await AcceptChangesClient.prepare(WorkspaceId(workspace.id), 'create-pr');
+      formData.title.value = prepared.suggestedPRTitle || workspace.title || '';
+      formData.title.loading = false;
+      formData.description.value = prepared.suggestedPRBody || '';
+      formData.description.loading = false;
     } catch (err: any) {
       logger.error('Failed to generate PR content:', err);
       error = err.message || 'Failed to generate PR content';
@@ -126,36 +102,47 @@
     error = null;
 
     try {
-      const prData = {
-        workspaceId: workspace.id,
-        title: formData.title.value,
-        description: formData.description.value,
-        isDraft: formData.isDraft,
-        branch: workspace.branch,
-        baseRef: workspace.baseRef || 'main',
-      };
+      const result = await AcceptChangesClient.execute(WorkspaceId(workspace.id), 'create-pr', {
+        prTitle: formData.title.value,
+        prBody: formData.description.value,
+        targetBranch: workspace.baseRef || 'main',
+      });
 
-      const result = await invoke<PullRequestInfo>('pr:create', prData);
+      if (!result.success) {
+        error = result.error || 'Failed to create pull request';
+        return;
+      }
 
-      if (result) {
-        success = true;
+      success = true;
+      const prNumber = result.result?.prNumber;
+      const prUrl = result.result?.prHtmlUrl || result.result?.prUrl;
+      if (prNumber && prUrl) {
+        const pr: PullRequestInfo = {
+          id: String(prNumber),
+          number: prNumber,
+          url: prUrl,
+          title: formData.title.value,
+          status: PullRequestStatus.Open,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
         appStore.dispatch(
           updateWorkspaceEntity(workspace.id, {
-            activePullRequest: result,
-            prNumber: result.number,
+            activePullRequest: pr,
+            prNumber: pr.number,
           }),
         );
 
         // Notify parent
         if (onCreated) {
-          onCreated(result);
+          onCreated(pr);
         }
-
-        // Auto-close after a short delay
-        setTimeout(() => {
-          if (onClose) onClose();
-        }, 2000);
       }
+
+      // Auto-close after a short delay
+      setTimeout(() => {
+        if (onClose) onClose();
+      }, 2000);
     } catch (err: any) {
       logger.error('Failed to create PR:', err);
       error = err.message || 'Failed to create pull request';
@@ -201,21 +188,6 @@
           <span>Pull request created successfully!</span>
         </div>
       {:else}
-        <!-- User Instructions -->
-        <div class="space-y-2">
-          <label for="user-instructions" class="text-sm font-medium flex items-center gap-2">
-            <Fa icon={faInfo} size="sm" />
-            Additional Instructions (optional)
-          </label>
-          <Textarea
-            id="user-instructions"
-            bind:value={userInstructions}
-            placeholder="Add any specific instructions for generating the PR content..."
-            class="min-h-[80px]"
-            disabled={generatingContent || creatingPR}
-          />
-        </div>
-
         <!-- Title Field -->
         <div class="space-y-2">
           <label for="pr-title" class="text-sm font-medium">Title</label>
@@ -251,17 +223,6 @@
             />
           {/if}
         </div>
-
-        <!-- Draft Option -->
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            bind:checked={formData.isDraft}
-            disabled={creatingPR || generatingContent}
-            class="rounded border-border"
-          />
-          <span class="text-sm">Create as draft pull request</span>
-        </label>
       {/if}
     </div>
   </div>

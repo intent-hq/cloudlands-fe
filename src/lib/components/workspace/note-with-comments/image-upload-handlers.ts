@@ -1,12 +1,13 @@
 import type { Editor } from '@tiptap/core';
+import { toast } from 'svelte-sonner';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import type { LoggerLike } from './logger.types';
 
-export type InvokeLike = (channel: string, payload: unknown) => Promise<unknown>;
-
-type AssetsSaveResult = {
-  success: boolean;
-  data?: { assetId: string; url: string };
-  error?: string;
+/** PROTOCOL §5.2 `note.saveAsset` result — `url` round-trips through `note.readAsset`. */
+type SaveAssetResult = {
+  assetId: string;
+  path: string;
+  url: string;
 };
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -25,40 +26,36 @@ export async function uploadImageAndInsert(params: {
   file: File;
   editor: Editor | null | undefined;
   workspaceId: string | null | undefined;
-  invoke: InvokeLike;
   logger: LoggerLike;
 }): Promise<void> {
-  const { file, editor, workspaceId, invoke, logger } = params;
+  const { file, editor, workspaceId, logger } = params;
   if (!editor || !workspaceId) return;
 
   try {
     const dataUrl = await fileToDataUrl(file);
 
-    const result = (await invoke('assets:save', {
+    const result = await backendRequest<SaveAssetResult>('note.saveAsset', {
       workspaceId,
       data: dataUrl,
       mimeType: file.type,
       originalName: file.name,
-    })) as AssetsSaveResult;
+    });
 
-    if (result.success && result.data) {
-      editor.chain().focus().setImage({ src: result.data.url }).run();
-      logger.info('Image inserted into note', { assetId: result.data.assetId });
-    } else {
-      logger.error('Failed to upload image', { error: result.error });
-    }
+    editor.chain().focus().setImage({ src: result.url }).run();
+    logger.info('Image inserted into note', { assetId: result.assetId });
   } catch (error) {
-    logger.error('Error uploading image', error);
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('Failed to upload image', { error: message });
+    toast.error('Failed to upload image', { description: message });
   }
 }
 
 export function createImagePasteHandler(params: {
   getEditor: () => Editor | null | undefined;
   getWorkspaceId: () => string | null | undefined;
-  invoke: InvokeLike;
   logger: LoggerLike;
 }): (event: ClipboardEvent) => void {
-  const { getEditor, getWorkspaceId, invoke, logger } = params;
+  const { getEditor, getWorkspaceId, logger } = params;
 
   return (event: ClipboardEvent) => {
     const items = event.clipboardData?.items;
@@ -73,7 +70,6 @@ export function createImagePasteHandler(params: {
             file,
             editor: getEditor(),
             workspaceId: getWorkspaceId(),
-            invoke,
             logger,
           });
         }
@@ -86,10 +82,9 @@ export function createImagePasteHandler(params: {
 export function createImageDropHandler(params: {
   getEditor: () => Editor | null | undefined;
   getWorkspaceId: () => string | null | undefined;
-  invoke: InvokeLike;
   logger: LoggerLike;
 }): (event: DragEvent) => void {
-  const { getEditor, getWorkspaceId, invoke, logger } = params;
+  const { getEditor, getWorkspaceId, logger } = params;
 
   return (event: DragEvent) => {
     const files = event.dataTransfer?.files;
@@ -102,7 +97,6 @@ export function createImageDropHandler(params: {
           file,
           editor: getEditor(),
           workspaceId: getWorkspaceId(),
-          invoke,
           logger,
         });
         return;

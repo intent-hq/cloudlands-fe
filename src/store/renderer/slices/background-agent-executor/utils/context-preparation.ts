@@ -5,13 +5,11 @@
  * (commit, PR, review, walkthrough) to send to the background agent.
  */
 
+import { appClient } from '$lib/client';
 import { gitClient } from '$features/git/git.client';
 import { setGitStatus } from '$store/renderer/slices/git/git-slice';
 import { invoke } from '$lib/electron-bridge';
-import {
-  GIT_CHANNELS,
-  FILE_CHANNELS,
-} from '$shared/ipc/channels';
+import { FILE_CHANNELS } from '$shared/ipc/channels';
 import { createLogger } from '$lib/utils/client-logger';
 import { shouldSkipFileForAI } from '$shared/binary-file-extensions';
 import { store as appStore } from '$store/renderer/store';
@@ -147,22 +145,13 @@ async function getStagedDiffs(
       continue;
     }
 
-    const diffResult = (await invoke(GIT_CHANNELS.DIFF, {
-      workspaceId: workspace.id,
-      paths: [file.path],
+    // Daemon-backed staged hunks (`git.diffs`, PROTOCOL §5.6) via the
+    // appClient seam; errors fold to an empty list inside the seam.
+    const chunks = await appClient.git.diffs(workspace.id, {
+      path: file.path,
       staged: true,
-    })) as any;
-
-    let fileDiff = '';
-    if (diffResult?.success && diffResult?.data) {
-      if (typeof diffResult.data === 'string') {
-        fileDiff = diffResult.data;
-      } else if (Array.isArray(diffResult.data)) {
-        fileDiff = formatDiffChunks(diffResult.data);
-      } else if ((diffResult.data as any).chunks) {
-        fileDiff = `diff --git a/${file.path} b/${file.path}\n${formatDiffChunks(diffResult.data as any)}`;
-      }
-    }
+    });
+    const fileDiff = chunks.length > 0 ? formatDiffChunks(chunks) : '';
 
     if (fileDiff.length > MAX_DIFF_SIZE_PER_FILE) {
       largeDiffFiles.push({ path: file.path, size: fileDiff.length });
@@ -211,17 +200,12 @@ async function prepareCommitContext(
     skipped: skippedFiles.length,
   });
 
-  // Get recent commit messages for context
+  // Get recent commit messages for context (`git.commits`, PROTOCOL §5.6).
   let recentCommits: string[] = [];
   try {
-    const historyResult = (await invoke(GIT_CHANNELS.HISTORY, {
-      workspaceId: workspace.id,
-      limit: 5,
-    })) as any;
-    if (historyResult?.success && historyResult?.data) {
-      recentCommits = (historyResult.data as any[])
-        .map((commit: any) => commit.message || commit.subject)
-        .filter(Boolean);
+    const historyResult = await gitClient.getHistory(workspace.id, 5);
+    if (historyResult.ok) {
+      recentCommits = historyResult.data.map((commit) => commit.message).filter(Boolean);
     }
   } catch (error) {
     logger.warn('Failed to get recent commits:', error);
@@ -308,23 +292,29 @@ async function preparePRContext(
   resultTag: string,
   context?: AgentExecutorContext,
 ): Promise<string> {
+  // Commit list via the daemon (`git.commits`, PROTOCOL §5.6). Items carry
+  // both the full `hash` and the short `sha`; filtering matches the full hash
+  // since `includeCommitHashes` comes from file-tracking commit hashes.
   let commits: GitCommit[] = [];
   if (context?.commits && context.commits.length > 0) {
     commits = context.commits;
   } else if (context?.includeCommitHashes && context.includeCommitHashes.length > 0) {
-    const allCommits = await invoke<GitCommit[]>(GIT_CHANNELS.LOG, {
-      workspaceId: workspace.id, limit: 50,
-    });
-    if (allCommits && Array.isArray(allCommits)) {
+    const historyResult = await gitClient.getHistory(workspace.id, 50);
+    if (historyResult.ok) {
       const hashSet = new Set(context.includeCommitHashes);
-      commits = allCommits.filter((c) => hashSet.has(c.sha));
+      commits = historyResult.data
+        .filter((c) => hashSet.has(c.hash))
+        .map((c) => ({ sha: c.hash, message: c.message, author: c.author, date: c.date }));
     }
   } else {
-    const fetched = await invoke<GitCommit[]>(GIT_CHANNELS.LOG, {
-      workspaceId: workspace.id, limit: 20,
-    });
-    if (fetched && Array.isArray(fetched)) {
-      commits = fetched;
+    const historyResult = await gitClient.getHistory(workspace.id, 20);
+    if (historyResult.ok) {
+      commits = historyResult.data.map((c) => ({
+        sha: c.hash,
+        message: c.message,
+        author: c.author,
+        date: c.date,
+      }));
     }
   }
 

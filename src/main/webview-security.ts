@@ -78,7 +78,7 @@ function isDevServerUrl(parsed: URL): boolean {
     return false;
   }
 
-  const devPort = process.env.DEV_PORT || '5177';
+  const devPort = process.env.DEV_PORT || '5190';
   const hostAllowed = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
   const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
 

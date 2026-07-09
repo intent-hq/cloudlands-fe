@@ -21,22 +21,26 @@ import type {
   FileNode,
   GitStatus,
   Note,
+  NoteVersion,
   QueuedMessage,
   TaskStatus,
+  UpdateWorkspaceRequest,
   Workspace,
   WorkspaceTask,
   WorkspaceTaskStats,
 } from "$shared/types";
 import type { CommitInfo, TrackedChange } from "$features/file-tracking/types";
 import type { WorkspaceEvent } from "$features/events/types";
+import type { TokenUsage } from "$features/token-usage/token-usage-types";
 import type { TerminalTab } from "$store/renderer/slices/terminals/terminals-slice";
-import type { ScriptWithState } from "$store/renderer/slices/scripts/scripts-types";
+import type {
+  ScriptRuntimeState,
+  ScriptWithState,
+  WorkspaceScript,
+} from "$store/renderer/slices/scripts/scripts-types";
+import type { ScriptCategory, ScriptMode } from "$features/scripts/types";
 import type { SetupScript } from "$store/renderer/slices/setup-scripts/setup-scripts-types";
 import type { SkillInfo } from "$store/renderer/slices/skills/skills-types";
-import type {
-  CustomSpecialist,
-  FileSpecialist,
-} from "$store/renderer/slices/specialists/specialists-slice";
 import type { AuggieModel } from "$features/auggie/auggie-models.client";
 import type { RecentUrl } from "$store/renderer/slices/browser/browser-types";
 import type { McpServerConfig } from "$store/renderer/slices/mcp-settings/mcp-settings-types";
@@ -123,6 +127,26 @@ export interface AgentCreateRequest {
   workspaceContext?: Record<string, unknown>;
 }
 
+/**
+ * PROTOCOL §8 permission-response outcome carried by `agent.respondPermission`.
+ * `selected` picks one of the request's `options[]` by id; `cancelled` unblocks
+ * the agent without choosing any option.
+ */
+export type PermissionOutcome =
+  | { outcome: "selected"; optionId: string }
+  | { outcome: "cancelled" };
+
+/**
+ * `agent.respondPermission` outcome (PROTOCOL §8). The daemon returns
+ * `{ resolved: bool }` — `false` when the prompt is already gone (timed out or
+ * answered elsewhere). Folded onto MutationResult so callers can check
+ * `success` uniformly with the other `agent.*` arms; `resolved` is surfaced
+ * only when the daemon returned a value.
+ */
+export interface RespondPermissionResult extends MutationResult {
+  resolved?: boolean;
+}
+
 /** Pull-request summary surfaced by the git domain. */
 export interface PrStatusSummary {
   prNumber?: number;
@@ -159,6 +183,16 @@ export interface GitBranchStatusResult {
   hasUncommittedChanges: boolean;
 }
 
+/** `workspace.update` outcome — carries the daemon's updated workspace on success. */
+export interface WorkspaceUpdateResult extends MutationResult {
+  workspace?: Workspace;
+}
+
+/** `workspace.create` outcome — carries the daemon's created workspace on success. */
+export interface WorkspaceCreateResult extends MutationResult {
+  workspace?: Workspace;
+}
+
 export interface WorkspacesClient {
   list(): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
@@ -170,10 +204,33 @@ export interface WorkspacesClient {
    * monitoring) that the legacy main-process handler used to start.
    */
   open(id: string): Promise<Workspace | null>;
-  create(request: CreateWorkspaceRequest): Promise<MutationResult>;
+  /**
+   * Create a workspace (`workspace.create`, §5.1). The daemon returns
+   * `{ workspace }` — surfaced as `workspace` so the legacy `workspace:create`
+   * bridge can hand callers the created entity without a follow-up read.
+   */
+  create(request: CreateWorkspaceRequest): Promise<WorkspaceCreateResult>;
+  /**
+   * Update workspace fields (`workspace.update`, §5.1). The FE request `id`
+   * maps to the wire `workspaceId`. On success the daemon's authoritative
+   * updated `Workspace` is surfaced as `workspace` so callers can upsert it
+   * without a follow-up `workspace.get`.
+   */
+  update(request: UpdateWorkspaceRequest): Promise<WorkspaceUpdateResult>;
   delete(id: string): Promise<MutationResult>;
+  /** Archive a workspace (`workspace.archive`, §5.1). */
+  archive(id: string): Promise<MutationResult>;
+  /** Unarchive a workspace (`workspace.unarchive`, §5.1) — the archive-undo path. */
+  unarchive(id: string): Promise<MutationResult>;
   setActive(id: string): Promise<MutationResult>;
   recentViews(): Promise<Record<string, number>>;
+  /**
+   * `workspace.getTokenUsage` (PROTOCOL §5.23): the daemon-owned usage rollup
+   * for one workspace (the scan job itself is daemon-internal). Returns `null`
+   * when the workspace is unknown. Updated rollups are pushed via the
+   * `workspace:tokenUsage-changed` event (§6.5).
+   */
+  getTokenUsage(workspaceId: string): Promise<TokenUsage | null>;
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe;
 }
 
@@ -181,16 +238,24 @@ export interface AgentsClient {
   list(workspaceId: string): Promise<AgentSession[]>;
   get(agentId: string): Promise<AgentSession | null>;
   /**
-   * Full retained transcript for an agent (`agent.getConversation`, §5.5). Returns
-   * AgentMessage-granular messages (role/turn structure preserved) — the source
-   * the conversation UI hydrates from, unlike `chat.history` (flattened blocks).
-   * `limit` caps the most-recent-N returned; `truncated`/`totalMessages` report
-   * whether older history was dropped beyond the cap.
+   * One page of an agent's retained transcript (`agent.getConversation`, §5.5).
+   * Returns AgentMessage-granular messages (role/turn structure preserved) — the
+   * source the conversation UI hydrates from, unlike `chat.history` (flattened
+   * blocks). `limit` clamps to `[1,200]` (daemon default 50); the first page is
+   * the newest slice. `nextToken` is opaque and walks backward to older pages
+   * (`null` once the oldest message has been returned). Callers that want the
+   * full transcript must page until `nextToken` is null.
    */
   getConversation(
     agentId: string,
     limit?: number,
-  ): Promise<{ messages: AgentMessage[]; truncated: boolean; totalMessages: number }>;
+    pageToken?: string,
+  ): Promise<{
+    messages: AgentMessage[];
+    truncated: boolean;
+    totalMessages: number;
+    nextToken: string | null;
+  }>;
   /**
    * Create an agent session (`agent.create`, §5.5). The daemon returns the
    * full `AgentLite` projection of the newly persisted session (widened in
@@ -215,6 +280,13 @@ export interface AgentsClient {
   follow(agentId: string, follow: boolean): Promise<MutationResult>;
   lock(agentId: string, locked: boolean): Promise<MutationResult>;
   /**
+   * Cancel the agent's in-flight stream (`agent.stop`, §5.5). The response is
+   * just an ack (`{ success: true }`); the daemon cancels the current turn
+   * and emits the terminal `agent:stream:end` (§7), which is the signal that
+   * converges the FE streaming state.
+   */
+  stop(agentId: string): Promise<MutationResult>;
+  /**
    * Permanently delete an agent session (`agent.delete`, §5.5). The daemon is
    * **idempotent** — it returns `{ success: true }` even when the agent is
    * already gone — and emits `agent:deleted` (in `AGENT_LIFECYCLE_EVENTS`), so
@@ -222,6 +294,19 @@ export interface AgentsClient {
    * optional per the contract; the daemon resolves the workspace itself.
    */
   delete(agentId: string, workspaceId?: string): Promise<MutationResult>;
+  /**
+   * Resolve an outstanding interactive permission prompt
+   * (`agent.respondPermission`, PROTOCOL §8). The daemon forwards the chosen
+   * `outcome` to the blocked provider and emits `agent:permission:resolved`;
+   * the result carries `resolved: false` when no matching pending prompt was
+   * found (e.g. it already timed out or was answered elsewhere). Transport /
+   * daemon errors fold into `{ success: false, error }` so callers can decide
+   * whether to keep the prompt visible for a retry.
+   */
+  respondPermission(
+    requestId: string,
+    outcome: PermissionOutcome,
+  ): Promise<RespondPermissionResult>;
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe;
 }
 
@@ -229,6 +314,18 @@ export interface ChatClient {
   history(agentId: string): Promise<ContentBlock[]>;
   tokenUsage(agentId: string): Promise<{ input: number; output: number }>;
   subscribe(agentId: string, handler: SubscriptionHandler<ContentBlock[]>): Unsubscribe;
+  /**
+   * One-shot seq-0 snapshot from the `chat.subscribe` channel (PROTOCOL §7.1).
+   * The daemon's snapshot merges the newest `agent.getConversation` page with
+   * the synthetic in-flight assistant message (`isStreaming: true`) when a turn
+   * is currently streaming, so a client (re)opening the chat mid-turn rehydrates
+   * the interim response instead of clobbering it with persisted-only history.
+   * Subscribes, awaits the initial snapshot push, and unsubscribes — the live
+   * delta stream is still served by the `agent:stream:*` firehose.
+   */
+  subscribeSnapshot(
+    agentId: string,
+  ): Promise<{ messages: AgentMessage[]; truncated: boolean; totalMessages: number }>;
 }
 
 /** Parameters for `terminal.create` (PROTOCOL §5.13). `command` omitted ⇒ default shell. */
@@ -330,6 +427,13 @@ export interface AppliedSettingChange {
   value: unknown;
 }
 
+/** One user-override rule as read via `rules.get` (§5.21). */
+export interface UserRuleState {
+  enabled: boolean;
+  content: string;
+  updatedAt: number;
+}
+
 export interface SettingsClient {
   /** `settings.list` (§5.12). Returns every BE-owned setting with its current value (sensitive values redacted). */
   list(): Promise<SettingDefinitionWithValue[]>;
@@ -339,6 +443,10 @@ export interface SettingsClient {
   update(changes: AppSettingChange[]): Promise<AppliedSettingChange[]>;
   /** `settings.reset` (§5.12). Restores one setting to its `defaultValue`. */
   reset(path: string): Promise<AppliedSettingChange | null>;
+  /** `rules.get` (§5.21). Reads one global user-override rule type; `null` when the probe fails. */
+  getUserRule(ruleType: string): Promise<UserRuleState | null>;
+  /** `rules.update` (§5.21). Upserts the global user-override body (+ `enabled`) for one rule type. */
+  updateUserRule(ruleType: string, content: string, enabled?: boolean): Promise<MutationResult>;
   getUserPreferences(): Promise<UserPreferencesState | null>;
   setUserPreferences(prefs: Partial<UserPreferencesState>): Promise<MutationResult>;
   getProviderSettings(): Promise<ProviderSettingsState | null>;
@@ -454,6 +562,15 @@ export interface GitClient {
    * fallback without crashing on `result.success` against undefined.
    */
   branchStatus(repoPath: string, branchName: string): Promise<GitBranchStatusResult | null>;
+  /**
+   * Path-based pull (`git.pull`, §5.6) — ports the legacy `git:pullBranch` IPC
+   * used by the workspace-create auto-pull, which runs against an arbitrary
+   * repo path BEFORE a workspace exists. Ordinary pull failures (conflicts,
+   * unreachable remote, stash recovery) are the daemon's structured
+   * `{ ok: false, error }` result, folded into `{ success: false, error }`;
+   * transport/validation errors fold the same way. Never throws.
+   */
+  pull(repoPath: string, branchName: string): Promise<MutationResult>;
   subscribe(handler: SubscriptionHandler<GitStatus | null>): Unsubscribe;
   /**
    * Stage explicit paths (`git.stage`). Rejects all-files globs ('.'/'*'/'--all')
@@ -478,6 +595,67 @@ export interface NoteAddOptions {
 export interface NoteMetadataPatch {
   title?: string;
   tags?: string[];
+}
+
+/**
+ * `note.restoreVersion` outcome — carries the daemon's restored note on
+ * success so callers can refresh the editor without a follow-up `note.get`.
+ * The daemon appends a new version capturing the restored state.
+ */
+export interface NoteRestoreResult extends MutationResult {
+  note?: Note;
+}
+
+/**
+ * Author stamped on an attributed line (PROTOCOL §5.2.1). Mirrors the FE
+ * `LineAuthor` shape the tiptap gutter consumes (`line-to-block-mapper.ts`).
+ */
+export interface LineAttributionAuthor {
+  id: string;
+  name: string;
+  type: "user" | "agent" | "system";
+  turnNumber?: number;
+}
+
+/**
+ * Per-line attribution info (PROTOCOL §5.2.1). `timestamp` is milliseconds
+ * since the Unix epoch (JS `Date.now()`-compatible) so the gutter's age math
+ * works unchanged.
+ */
+export interface LineAttributionInfo {
+  timestamp: number;
+  author?: LineAttributionAuthor;
+}
+
+/**
+ * `note.lineAttribution.load` payload (PROTOCOL §5.2.1). Keys of
+ * `attributions` are stringified 1-based line numbers so the JSON shape
+ * matches what the FE `Record<number, LineAttributionInfo>` decoder in the
+ * gutter accepts. `null` when the daemon has not computed attributions yet.
+ */
+export interface LineAttributionData {
+  noteId: string;
+  workspaceId: string;
+  computedAt: string;
+  attributions: Record<string, LineAttributionInfo>;
+}
+
+/**
+ * `note.lineAttribution.*` seam (PROTOCOL §5.2.1). Attached to `NotesClient`
+ * so tiptap components resolve it as `appClient.notes.lineAttribution.*`.
+ */
+export interface LineAttributionClient {
+  /**
+   * Load the persisted attribution payload for a note, or `null` when the
+   * daemon has not computed one yet. The `line-attribution:updated` event
+   * (§6.5, relayed via daemon-events-bridge) drives live refreshes.
+   */
+  load(workspaceId: string, noteId: string): Promise<LineAttributionData | null>;
+  /**
+   * Force an immediate recompute + persist + `line-attribution:updated` emit,
+   * bypassing the daemon's 5 s debounce. Returns `{ ok: true }` on success.
+   */
+  computeNow(workspaceId: string, noteId: string): Promise<{ ok: boolean }>;
 }
 
 export interface NotesClient {
@@ -522,6 +700,31 @@ export interface NotesClient {
     metadata: NoteMetadataPatch,
     expectedVersion?: number,
   ): Promise<MutationResult>;
+  /**
+   * Full version history for a note (`note.listVersions` + per-version
+   * `note.getVersion`, PROTOCOL §5.2). Returns the ordered `NoteVersion[]` the
+   * version-history UI renders (each entry carries the full content the diff
+   * viewer needs). Errors propagate so callers can surface them.
+   */
+  listVersions(workspaceId: string, noteId: string): Promise<NoteVersion[]>;
+  /**
+   * Restore a note to a specific version (`note.restoreVersion`, PROTOCOL §5.2).
+   * The daemon resets the note's content to version `versionId` and appends a
+   * NEW version capturing the restored state; the response carries the updated
+   * note so the editor can refresh without a follow-up `note.get`.
+   */
+  restoreVersion(
+    workspaceId: string,
+    noteId: string,
+    versionId: string,
+  ): Promise<NoteRestoreResult>;
+  /**
+   * `note.lineAttribution.*` sub-domain (PROTOCOL §5.2.1). Consumed by the
+   * tiptap gutter to render "who last touched each line" over the daemon's
+   * version history; live refreshes flow through the `line-attribution:updated`
+   * event (§6.5) relayed by daemon-events-bridge.
+   */
+  lineAttribution: LineAttributionClient;
 }
 
 /** Inline checkbox status vocabulary (`task.updateStatus` / `task.update`). */
@@ -623,14 +826,75 @@ export interface CommentsClient {
   delete(noteId: string, commentId: string): Promise<MutationResult>;
 }
 
+/** Wire input for `script.create` (PROTOCOL §5.8); `workspaceId` is passed separately. */
+export interface ScriptCreateInput {
+  name: string;
+  command: string;
+  mode: ScriptMode;
+  cwd?: string;
+  env?: Record<string, string>;
+  category?: ScriptCategory;
+  autoStart?: boolean;
+  scriptId?: string;
+}
+
+/** `script.create` outcome — carries the daemon's created definition on success. */
+export interface ScriptCreateResult extends MutationResult {
+  script?: WorkspaceScript;
+}
+
+/** `script.run` result envelope (PROTOCOL §5.8). */
+export interface ScriptRunResult {
+  exitCode?: number;
+  output: string;
+  timedOut?: boolean;
+  warning?: string;
+}
+
 export interface ScriptsClient {
+  /** `script.list` — definitions with merged runtime state. */
   list(workspaceId: string): Promise<ScriptWithState[]>;
+  /** `script.create` — register a definition; returns the stored record. */
+  create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult>;
+  /** `script.remove` — stop (if running) and forget a script. */
+  remove(scriptId: string): Promise<MutationResult>;
+  /** `script.start`. */
+  start(scriptId: string): Promise<MutationResult>;
+  /** `script.stop`. */
+  stop(scriptId: string): Promise<MutationResult>;
+  /** `script.restart`. */
+  restart(scriptId: string): Promise<MutationResult>;
+  /** `script.output` — historical output-buffer text. */
+  output(scriptId: string, maxLines?: number): Promise<string>;
+  /** `script.status` — the script's runtime state, or null when unavailable. */
+  status(scriptId: string): Promise<ScriptRuntimeState | null>;
+  /** `script.run` — run a command-mode script to completion. */
+  run(
+    scriptId: string,
+    options?: { maxLines?: number; timeoutSeconds?: number },
+  ): Promise<ScriptRunResult | null>;
   subscribe(handler: SubscriptionHandler<ScriptWithState[]>): Unsubscribe;
+}
+
+/** Wire `SetupScript` record (PROTOCOL §5.25) — the per-workspace worktree setup script. */
+export interface WorkspaceSetupScript {
+  script: string;
+  projectType?: string | null;
+  updatedAt: number;
+  generatedBy?: "user" | "agent";
 }
 
 export interface SetupScriptsClient {
   list(): Promise<SetupScript[]>;
   subscribe(handler: SubscriptionHandler<SetupScript[]>): Unsubscribe;
+  /** `workspace.getSetupScript` (§5.25). */
+  get(workspaceId: string): Promise<WorkspaceSetupScript | null>;
+  /** `workspace.saveSetupScript` (§5.25) — persists the body; returns the stored record. */
+  save(workspaceId: string, script: string): Promise<WorkspaceSetupScript | null>;
+  /** `workspace.detectProjectType` (§5.25) — null when no known manifest is found. */
+  detectProjectType(workspaceId: string): Promise<string | null>;
+  /** `workspace.generateSetupScript` (§5.25) — AI-assisted draft (not auto-saved). */
+  generate(workspaceId: string): Promise<WorkspaceSetupScript | null>;
 }
 
 export interface SkillsClient {
@@ -638,10 +902,34 @@ export interface SkillsClient {
   subscribe(handler: SubscriptionHandler<SkillInfo[]>): Unsubscribe;
 }
 
+/**
+ * Wire `SpecialistDef` (`specialist.list`, PROTOCOL §5.11): the resolved view
+ * of one definition. `source` is the winning tier (project > user > bundled)
+ * and `path` the file it resolved from (omitted for `bundled`). The optional
+ * frontmatter scalars (`codingAgent`/`model`/`modelTier`/`roleReminder`/
+ * `agentType`) are carried through verbatim when present; `behaviorPrompt`
+ * mirrors `prompt` (the markdown body).
+ */
+export interface SpecialistDef {
+  id: string;
+  name: string;
+  description: string;
+  codingAgent?: string;
+  model?: string;
+  modelTier?: string;
+  roleReminder?: string;
+  agentType?: string;
+  prompt?: string;
+  behaviorPrompt?: string;
+  source: "project" | "user" | "bundled";
+  isCustomized?: boolean;
+  path?: string;
+}
+
 export interface SpecialistsClient {
-  listCustom(): Promise<CustomSpecialist[]>;
-  listFile(): Promise<FileSpecialist[]>;
-  subscribe(handler: SubscriptionHandler<CustomSpecialist[]>): Unsubscribe;
+  /** Merged bundled + user + project definitions (`specialist.list`, PROTOCOL §5.11). */
+  list(): Promise<SpecialistDef[]>;
+  subscribe(handler: SubscriptionHandler<SpecialistDef[]>): Unsubscribe;
 }
 
 export interface ModelsClient {
@@ -654,8 +942,26 @@ export interface BrowserClient {
   subscribe(handler: SubscriptionHandler<RecentUrl[]>): Unsubscribe;
 }
 
+/**
+ * GitHub-URL branch listing (`github.branches.list` + `github.repos.get`,
+ * §5.27) for a repo the user has not cloned yet: remote branch names plus the
+ * repo's default branch when the metadata read succeeds.
+ */
+export interface GitHubBranchListing {
+  branches: string[];
+  defaultBranch?: string;
+}
+
 export interface IntegrationsClient {
   githubUser(): Promise<GitHubUser | null>;
+  /**
+   * Remote branch names for a GitHub repo (`github.branches.list`, §5.27),
+   * with the default branch from `github.repos.get` (best-effort). Unlike the
+   * issue reads this THROWS on transport/daemon errors (e.g. "GitHub is not
+   * configured.") so the workspace-initializer BranchSelector can render an
+   * explicit error/auth state — never a fabricated branch list.
+   */
+  githubBranches(owner: string, repo: string): Promise<GitHubBranchListing>;
   linearIssues(): Promise<LinearIssueResult[]>;
   sentryIssues(): Promise<SentryIssueResult[]>;
   subscribe(handler: SubscriptionHandler<{ githubUser: GitHubUser | null }>): Unsubscribe;
@@ -668,8 +974,24 @@ export interface SystemClient {
   subscribe(handler: SubscriptionHandler<SystemStatusState>): Unsubscribe;
 }
 
+/** Filter options for `event.query` (PROTOCOL §5.10); all optional. */
+export interface EventQueryOptions {
+  eventType?: string;
+  actorType?: string;
+  actorId?: string;
+  path?: string;
+  minutesAgo?: number;
+  limit?: number;
+}
+
 export interface EventsClient {
+  /** Boot snapshot of the workspace event stream, oldest→newest. */
   list(workspaceId: string): Promise<WorkspaceEvent[]>;
+  /**
+   * Historical `event.query` read (PROTOCOL §5.10). Returns matching events in
+   * wire order (newest→oldest); the daemon defaults `limit` to 50.
+   */
+  query(workspaceId: string, options?: EventQueryOptions): Promise<WorkspaceEvent[]>;
   subscribe(workspaceId: string, handler: SubscriptionHandler<WorkspaceEvent[]>): Unsubscribe;
 }
 

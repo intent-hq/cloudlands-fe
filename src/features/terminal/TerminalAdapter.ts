@@ -1714,9 +1714,7 @@ export class TerminalAdapter {
           uri,
           workspaceId: this.workspaceId,
         });
-        if (typeof window !== 'undefined' && window.electronAPI) {
-          void invokeIpc('shell:openExternal', { url: uri });
-        }
+        void invokeIpc('shell:openExternal', { url: uri });
         return;
       }
 
@@ -1733,16 +1731,12 @@ export class TerminalAdapter {
             error: err,
           });
           // Fallback to external browser
-          if (typeof window !== 'undefined' && window.electronAPI) {
-            void invokeIpc('shell:openExternal', { url: uri });
-          }
+          void invokeIpc('shell:openExternal', { url: uri });
         });
     } catch (err) {
       logger.warn('Failed to handle link click', { uri, error: err });
       // Fallback to external browser
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        void invokeIpc('shell:openExternal', { url: uri });
-      }
+      void invokeIpc('shell:openExternal', { url: uri });
     }
   }
 

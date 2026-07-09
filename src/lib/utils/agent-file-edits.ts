@@ -2,8 +2,7 @@
  * Utility for tracking and displaying agent file edits in the file tree
  */
 
-import { invoke } from '$lib/electron-bridge';
-import type { WorkspaceEvent } from '$features/events/types';
+import { appClient } from '$lib/client';
 import { Logger } from '$shared/logger';
 
 const logger = new Logger('AgentFileEdits');
@@ -23,20 +22,26 @@ export async function getAgentFileEdits(
   filesPerAgent: number = 3,
 ): Promise<Map<string, string[]>> {
   try {
-    // Query for file change events by agents via IPC
+    // Query the daemon for agent-authored file events (`event.query`, PROTOCOL
+    // §5.10). The filter takes a single eventType, so the two relevant types
+    // are fetched in parallel and merged newest-first (each stream already
+    // arrives in wire order, newest→oldest).
     logger.info('[AgentEdits] Querying events', { workspaceId });
-    const result = await invoke<WorkspaceEvent[] | { data: WorkspaceEvent[] }>(
-      'events:query',
-      {
-        workspaceId,
-        filters: [
-          { field: 'actor.type', operator: 'equals', value: 'agent' },
-          { field: 'type', operator: 'in', value: ['file:changed', 'file:created'] },
-        ],
+    const [changed, created] = await Promise.all([
+      appClient.events.query(workspaceId, {
+        eventType: 'file:changed',
+        actorType: 'agent',
         limit: 100,
-      },
+      }),
+      appClient.events.query(workspaceId, {
+        eventType: 'file:created',
+        actorType: 'agent',
+        limit: 100,
+      }),
+    ]);
+    const events = [...changed, ...created].sort((a, b) =>
+      b.timestamp.localeCompare(a.timestamp),
     );
-    const events = Array.isArray(result) ? result : result?.data || [];
 
     logger.info('[AgentEdits] Query result', {
       eventCount: events?.length ?? 0,

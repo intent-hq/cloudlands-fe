@@ -8,24 +8,11 @@ import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { omitKey } from "../../utils/utils";
 import { upsertSession } from "../agent-session/agent-session-slice";
+import { workspaceDeleted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 export {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
 } from "./workspace-agents-stream-slice";
-
-export interface InitialAgentConfig {
-  agentId: string;
-  config: {
-    prompt?: string;
-    model?: string;
-    specialist?: string | null;
-    behaviorPrompt?: string;
-    isInitialAgent?: boolean;
-    isFirstWorkspaceAgent?: boolean;
-    metadata?: Record<string, unknown>;
-  };
-  timestamp: number;
-}
 
 export interface WorkspaceAgentState {
   /** Ordered list of agent IDs belonging to this workspace. Session data lives in agent-session slice. */
@@ -35,10 +22,8 @@ export interface WorkspaceAgentState {
   agentsLoaded: boolean;
   isLoadingAgents: boolean;
   initialAgentId: string | null;
-  initialAgentConfigProcessed: boolean;
   recentlyCreatedAgents: string[];
   isWaitingForFirstMessage: Record<string, boolean>;
-  initialAgentConfig: InitialAgentConfig | null;
   /** Currently active/focused agent in the workspace */
   activeAgentId: string | null;
   /** Whether the initial spec-writer agent is actively writing the spec */
@@ -179,10 +164,8 @@ export const emptyWorkspaceAgentState: WorkspaceAgentState = {
   agentsLoaded: false,
   isLoadingAgents: false,
   initialAgentId: null,
-  initialAgentConfigProcessed: false,
   recentlyCreatedAgents: [],
   isWaitingForFirstMessage: {},
-  initialAgentConfig: null,
   activeAgentId: null,
   isInitialSpecWriteInProgress: false,
   diskMessageCounts: {},
@@ -212,14 +195,22 @@ export const markAgentRecentlyCreated = createAction<[wsId: string, agentId: str
 export const setInitialAgentId = createAction<[wsId: string, agentId: string | null]>(
   "workspaceAgents/setInitialAgentId"
 );
-export const setInitialAgentConfigProcessed = createAction<[wsId: string, processed: boolean]>(
-  "workspaceAgents/setInitialAgentConfigProcessed"
-);
 export const setAgentsLoaded = createAction<[wsId: string, loaded: boolean]>(
   "workspaceAgents/setAgentsLoaded"
 );
 export const setIsLoadingAgents = createAction<[wsId: string, loading: boolean]>(
   "workspaceAgents/setIsLoadingAgents"
+);
+/**
+ * Fan-out trigger dispatched by the workspaceMounted fan-out
+ * (`lifecycle-ipc-read-service`) so a workspace first-opened after boot
+ * hydrates its agent list via `appClient.agents.list` — mirroring the boot
+ * `agents-seeder`. Saga-only trigger with no reducer entry (see AGENTS.md §8);
+ * the handler lives in `lifecycle-read-service` and is guarded by the
+ * per-workspace `agentsLoaded` flag so boot-seeded workspaces are unaffected.
+ */
+export const hydrateAgentsRequested = createAction<[wsId: string]>(
+  "workspaceAgents/hydrateAgentsRequested"
 );
 export const createAgentRequested = createAction<[wsId: string, agentType?: string]>(
   "workspaceAgents/createAgentRequested"
@@ -232,11 +223,6 @@ export const createAgentFromConfigRequested = createAsyncAction<[
   config: UnifiedAgentConfig,
   options?: AgentCreationRequestOptions,
 ], AgentSession>("workspaceAgents/createAgentFromConfig", "workspaceAgents/createAgentFromConfigRequested");
-export const activateInitialAgentRequested = createAction<[
-  wsId: string,
-  agentId: string,
-  config: UnifiedAgentConfig,
-]>("workspaceAgents/activateInitialAgentRequested");
 export const forkAgentRequested = createAction<[wsId: string, request: ForkAgentRequest]>(
   "workspaceAgents/forkAgentRequested"
 );
@@ -253,12 +239,6 @@ export const agentsLoaded = createAction<[wsId: string]>("workspaceAgents/agents
 export const setWaitingForFirstMessage = createAction<
   [wsId: string, agentId: string, waiting: boolean]
 >("workspaceAgents/setWaitingForFirstMessage");
-export const setInitialAgentConfig = createAction<[wsId: string, config: InitialAgentConfig]>(
-  "workspaceAgents/setInitialAgentConfig"
-);
-export const clearInitialAgentConfig = createAction<[wsId: string]>(
-  "workspaceAgents/clearInitialAgentConfig"
-);
 
 // --------------------------------------------------------------------------
 // New actions for unified-state-store migration
@@ -449,13 +429,6 @@ export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initia
     }
     return setWorkspaceState(state, wsId, { ...workspaceState, initialAgentId });
   })
-  .with(setInitialAgentConfigProcessed, (state, { payload: [wsId, initialAgentConfigProcessed] }) => {
-    const workspaceState = getWorkspaceState(state, wsId);
-    if (workspaceState.initialAgentConfigProcessed === initialAgentConfigProcessed) {
-      return state;
-    }
-    return setWorkspaceState(state, wsId, { ...workspaceState, initialAgentConfigProcessed });
-  })
   .with(setAgentsLoaded, (state, { payload: [wsId, agentsLoaded] }) => {
     const workspaceState = getWorkspaceState(state, wsId);
     if (workspaceState.agentsLoaded === agentsLoaded) {
@@ -485,21 +458,6 @@ export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initia
           [agentId]: true,
         }
         : omitKey(workspaceState.isWaitingForFirstMessage, agentId),
-    });
-  })
-  .with(setInitialAgentConfig, (state, { payload: [wsId, config] }) => {
-    const workspaceState = getWorkspaceState(state, wsId);
-    return setWorkspaceState(state, wsId, {
-      ...workspaceState,
-      initialAgentConfig: config,
-    });
-  })
-  .with(clearInitialAgentConfig, (state, { payload: [wsId] }) => {
-    const workspaceState = getWorkspaceState(state, wsId);
-    if (!workspaceState.initialAgentConfig) return state;
-    return setWorkspaceState(state, wsId, {
-      ...workspaceState,
-      initialAgentConfig: null,
     });
   })
   // --------------------------------------------------------------------------
@@ -545,6 +503,10 @@ export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initia
     return setWorkspaceState(state, wsId, { ...workspaceState, isInitialSpecWriteInProgress: isWriting });
   })
   .with(removeWorkspaceAgentState, (state, { payload: [wsId] }) => {
+    if (!state.byWorkspaceId[wsId]) return state;
+    return { byWorkspaceId: omitKey(state.byWorkspaceId, wsId) };
+  })
+  .with(workspaceDeleted, (state, { payload: [wsId] }) => {
     if (!state.byWorkspaceId[wsId]) return state;
     return { byWorkspaceId: omitKey(state.byWorkspaceId, wsId) };
   })

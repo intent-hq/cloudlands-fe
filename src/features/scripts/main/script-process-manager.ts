@@ -216,7 +216,10 @@ export class ScriptProcessManager {
     if (!managed) return;
     try {
       await ensureSubscription();
-      await getBackendClient().request('script.stop', { scriptId });
+      await getBackendClient().request('script.stop', {
+        workspaceId: this.workspaceId,
+        scriptId,
+      });
     } catch (error) {
       logger.warn('[Scripts] script.stop failed', {
         scriptId,
@@ -244,12 +247,18 @@ export class ScriptProcessManager {
       await ensureSubscription();
       if (managed.dirty || !managed.registered) {
         await getBackendClient()
-          .request('script.stop', { scriptId })
+          .request('script.stop', { workspaceId: this.workspaceId, scriptId })
           .catch(() => undefined);
         await this.ensureRegistered(managed);
-        await getBackendClient().request('script.start', { scriptId });
+        await getBackendClient().request('script.start', {
+          workspaceId: this.workspaceId,
+          scriptId,
+        });
       } else {
-        await getBackendClient().request('script.restart', { scriptId });
+        await getBackendClient().request('script.restart', {
+          workspaceId: this.workspaceId,
+          scriptId,
+        });
       }
     } catch (error) {
       logger.error('[Scripts] script.restart failed', error as Error);
@@ -278,7 +287,10 @@ export class ScriptProcessManager {
     const managed = this.scripts.get(scriptId);
     if (!managed) return;
     try {
-      await getBackendClient().request('script.remove', { scriptId });
+      await getBackendClient().request('script.remove', {
+        workspaceId: this.workspaceId,
+        scriptId,
+      });
     } catch (error) {
       // Not-found is fine — the daemon may never have seen this script.
       logger.debug('[Scripts] script.remove ignored', {
@@ -381,7 +393,10 @@ export class ScriptProcessManager {
     try {
       await ensureSubscription();
       await this.ensureRegistered(managed);
-      await getBackendClient().request('script.start', { scriptId: managed.script.id });
+      await getBackendClient().request('script.start', {
+        workspaceId: this.workspaceId,
+        scriptId: managed.script.id,
+      });
     } catch (error) {
       logger.error('[Scripts] script.start failed', error as Error);
       managed.state = {

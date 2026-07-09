@@ -25,10 +25,8 @@
   resolveCodeBlockLinePositions,
 } from './block-position-resolver';
   import { getAttributionOpacity } from './attribution-color-scale';
-  import {
-  invoke,
-  listenSync,
-} from '$lib/electron-bridge';
+  import { listenSync } from '$lib/electron-bridge';
+  import { appClient } from '$lib/client';
   import type { WorkspaceId, NoteId } from '$shared/types';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
 
@@ -117,23 +115,19 @@
   }
 
   /**
-   * Load line attribution data from disk
-   * Retries if the IPC handler is not yet registered (during app startup)
+   * Load line attribution data via the daemon (PROTOCOL §5.2.1
+   * `note.lineAttribution.load`). Returns the bare `LineAttributionData |
+   * null` payload; a `null` result means the daemon has not computed
+   * attributions yet, in which case the gutter renders empty.
    */
-  async function loadAttributions(retryCount = 0) {
-    const MAX_RETRIES = 3;
-    const RETRY_DELAY = 500; // ms
-
+  async function loadAttributions() {
     try {
-      const result = await invoke<{ success: boolean; data: any }>('line-attribution:load', {
-        workspaceId,
-        noteId,
-      });
+      const data = await appClient.notes.lineAttribution.load(workspaceId, noteId);
 
-      if (result.success && result.data) {
-        // Convert from Record<number, AttributionInfo> to Map<number, AttributionInfo>
+      if (data) {
+        // Convert from Record<lineNumber, AttributionInfo> to Map<number, AttributionInfo>
         const map = new Map<number, AttributionInfo>();
-        for (const [lineNum, attrInfo] of Object.entries(result.data.attributions)) {
+        for (const [lineNum, attrInfo] of Object.entries(data.attributions)) {
           map.set(Number(lineNum), attrInfo as AttributionInfo);
         }
         lineAttributions = map;
@@ -144,12 +138,7 @@
         logger.debug('[LineAttributionGutter] No attribution data found');
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      // Check if this is a "handler not registered" error and we haven't exceeded retries
-      if (errorMessage.includes('No handler registered') && retryCount < MAX_RETRIES) {
-        setTimeout(() => loadAttributions(retryCount + 1), RETRY_DELAY);
-      }
+      logger.debug('[LineAttributionGutter] Failed to load attributions', { error });
     }
   }
 

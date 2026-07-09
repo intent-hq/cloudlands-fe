@@ -76,48 +76,19 @@ export const IPC_CHANNELS = {
     GET_USER_RULES: 'agent:get-user-rules',
     GET_SPECIALIZATION_RULES: 'agent:get-specialization-rules',
     GET_ACTIVE_STREAMS: 'agent:get-active-streams',
-    LIFECYCLE_START: 'agent:lifecycle:start',
-    LIFECYCLE_STOP: 'agent:lifecycle:stop',
-    MESSAGING_SEND: 'agent:messaging:send',
-    MESSAGING_RECEIVE: 'agent:messaging:receive',
     TRACK_STARTED: 'agent:track-started',
     TRACK_COMPLETED: 'agent:track-completed',
     TRACK_ERROR: 'agent:track-error',
     CREATE: 'agent:create',
     CIRCUIT_BREAKER_RESET: 'agent:circuit-breaker:reset',
-    ACTIVATE: 'agent:activate',
     SEND_MESSAGE: 'agent:send-message',
     STOP: 'agent:stop',
-    CLEAR: 'agent:clear',
     SEND: 'agent:send',
     GET_SESSION: 'agent:get-session',
     LIST_SESSIONS: 'agent:list-sessions',
-    UPDATE_SESSION: 'agent:update-session',
     DELETE_SESSION: 'agent:delete-session',
-    EXPORT_SESSION: 'agent:export-session',
-    IMPORT_SESSION: 'agent:import-session',
-    GET_HISTORY: 'agent:get-history',
-    UPDATE_METADATA: 'agent:update-metadata',
     RENAME: 'agent:rename',
-    FORK_SESSION: 'agent:fork-session',
-    MERGE_SESSIONS: 'agent:merge-sessions',
-    GET_STATS: 'agent:get-stats',
-    VALIDATE_SESSION: 'agent:validate-session',
-    REPAIR_SESSION: 'agent:repair-session',
-    GET_CONTEXT: 'agent:get-context',
-    UPDATE_CONTEXT: 'agent:update-context',
-    CONTEXT_UPDATE: 'agent:context:update',
-    CONTEXT_GET_BY_WORKSPACE: 'agent:context:getByWorkspace',
-    CONTEXT_GET_BY_SESSION: 'agent:context:getBySession',
-    GET_CAPABILITIES: 'agent:get-capabilities',
-    SET_CAPABILITIES: 'agent:set-capabilities',
-    PAUSE: 'agent:pause',
-    GET_STATUS: 'agent:get-status',
     SET_PRIORITY: 'agent:set-priority',
-    GET_METRICS: 'agent:get-metrics',
-    RESET_METRICS: 'agent:reset-metrics',
-    GET_LOGS: 'agent:get-logs',
-    CLEAR_LOGS: 'agent:clear-logs',
     SUBSCRIBE_UPDATES: 'agent:subscribe-updates',
     UNSUBSCRIBE_UPDATES: 'agent:unsubscribe-updates',
     GET_SUGGESTIONS: 'agent:get-suggestions',
@@ -191,18 +162,6 @@ export const IPC_CHANNELS = {
     REMOVE_WORKFLOW_TAG: 'agent:remove-workflow-tag',
     // Agent model operations
     SET_MODEL: 'agent:set-model',
-    // Agent prompt operations
-    ENHANCE_PROMPT: 'agent:enhance-prompt',
-    GENERATE_LAYOUT: 'agent:generate-layout',
-    // Agent persistence operations
-    PERSISTENCE_SAVE: 'agent:persistence:save',
-    PERSISTENCE_LOAD: 'agent:persistence:load',
-    PERSISTENCE_DELETE: 'agent:persistence:delete',
-    PERSISTENCE_LIST: 'agent:persistence:list',
-    PERSISTENCE_SAVE_MESSAGE: 'agent:persistence:saveMessage',
-    PERSISTENCE_BATCH: 'agent:persistence:batch',
-    PERSISTENCE_METRICS: 'agent:persistence:metrics',
-    PERSISTENCE_CLEAR: 'agent:persistence:clear',
   },
 
   // Events System
@@ -332,51 +291,6 @@ export const IPC_CHANNELS = {
     GET_GIT_STATUS: 'file:getGitStatus',
     GET_TREE_WITH_SIZES: 'file:getTreeWithSizes',
     GET_DIRECTORY_STATUS: 'file:getDirectoryStatus',
-  },
-
-  // Notes
-  NOTES: {
-    LIST: 'notes:list',
-    CREATE: 'notes:create',
-    GET: 'notes:get',
-    UPDATE: 'notes:update',
-    DELETE: 'notes:delete',
-    SEARCH: 'notes:search',
-    EXPORT: 'notes:export',
-    IMPORT: 'notes:import',
-    RESTORE_SPEC: 'notes:restore-spec',
-    RESTORE_VERSION: 'notes:restore-version',
-    SUGGESTION: 'note:suggestion',
-    // Task metadata operations (Phase 1A)
-    MARK_AS_TASK: 'notes:mark-as-task',
-    UPDATE_TASK_STATUS: 'notes:update-task-status',
-    UPDATE_TASK_PEER_ORDER: 'notes:update-task-peer-order',
-    REMOVE_TASK_METADATA: 'notes:remove-task-metadata',
-    GET_TASK_NOTES: 'notes:get-task-notes',
-    // Task orchestration now uses parentId (sidebar hierarchy) as the dependency graph
-    // ADD_DEPENDENCY, REMOVE_DEPENDENCY, GET_DEPENDENCIES channels removed
-    GET_DEPENDENTS: 'notes:get-dependents', // Returns child notes (notes with this note as parentId)
-    CREATE_PREREQUISITE_NOTE: 'notes:create-prerequisite-note',
-    // Agent assignment operations (Phase 1C)
-    ASSIGN_AGENT_TO_TASK: 'notes:assign-agent-to-task',
-    // Task navigation
-    FIND_NEXT_TASK: 'notes:find-next-task',
-    FIND_READY_TASKS: 'notes:find-ready-tasks',
-    // Task block conversion
-    CONVERT_TASK_BLOCKS: 'notes:convert-task-blocks',
-    // Version management
-    FLUSH_PENDING_VERSION: 'notes:flush-pending-version',
-    // Batch operations (for homepage progress cards)
-    BATCH_LIST: 'notes:batch-list',
-  },
-
-  // Assets (images and files for notes)
-  ASSETS: {
-    SAVE: 'assets:save',
-    GET: 'assets:get',
-    GET_DATA_URL: 'assets:get-data-url',
-    DELETE: 'assets:delete',
-    LIST: 'assets:list',
   },
 
   // Notes Primitives (ws-block rendering)
@@ -518,21 +432,11 @@ export const IPC_CHANNELS = {
     RESTART_APP: 'feature-codes:restart-app',
   },
 
-  // User MCP Settings (~/.augment/settings.json)
+  // User MCP Settings — HTTP/SSE server auth checks and OAuth flow.
   USER_MCP: {
-    GET_SETTINGS_FILE: 'user-mcp:get-settings-file',
-    WRITE_SETTINGS_FILE: 'user-mcp:write-settings-file',
-    GET_SETTINGS_PATH: 'user-mcp:get-settings-path',
-    GET_SERVERS: 'user-mcp:get-servers', // Get parsed MCP servers
-    GET_WORKSPACE_DISABLED: 'user-mcp:get-workspace-disabled', // Get disabled servers for a workspace
-    SET_WORKSPACE_DISABLED: 'user-mcp:set-workspace-disabled', // Set disabled servers for a workspace
     CHECK_AUTH: 'user-mcp:check-auth', // Check if URL requires auth and if we have credentials
     TEST_CONNECTION: 'user-mcp:test-connection', // Test connection to HTTP/SSE server, returns status
     INITIATE_OAUTH: 'user-mcp:initiate-oauth', // Start OAuth flow for MCP server
-    // MCP CLI commands
-    MCP_LIST: 'user-mcp:mcp-list', // List MCP servers via CLI
-    MCP_ADD: 'user-mcp:mcp-add', // Add MCP server via CLI
-    MCP_REMOVE: 'user-mcp:mcp-remove', // Remove MCP server via CLI
   },
 
   // Notifications
@@ -540,14 +444,6 @@ export const IPC_CHANNELS = {
     TEST: 'notification:test',
     REQUEST_PERMISSION: 'notification:requestPermission',
     SHOW: 'notification:show',
-  },
-
-  // ACP Permissions (for agent tool approval)
-  PERMISSION: {
-    REQUEST: 'permission:request',
-    RESPOND: 'permission:respond',
-    EVENT: 'permission:event', // For main -> renderer push
-    GET_PENDING: 'permission:get-pending', // Get all pending permission requests (for page refresh recovery)
   },
 
   // Dialog
@@ -570,17 +466,6 @@ export const IPC_CHANNELS = {
     TRASH_ITEM: 'shell:trashItem',
     SHOW_ITEM_IN_FOLDER: 'shell:showItemInFolder',
     INSTALL_CLI: 'shell:install-cli',
-  },
-
-  // Comments
-  COMMENTS: {
-    CREATE: 'comments:create',
-    LIST: 'comments:list',
-    UPDATE: 'comments:update',
-    DELETE: 'comments:delete',
-    ADD: 'comments:add',
-    SUGGEST_CHANGE: 'comments:suggest-change',
-    UPDATE_STATUS: 'comments:update-status',
   },
 
   // Editor
@@ -635,36 +520,8 @@ export const IPC_CHANNELS = {
 
   // File Tracking
   FILE_TRACKING: {
-    INIT: 'file-tracking:init',
-    LOAD: 'file-tracking:load',
-    LOAD_COMMITS: 'file-tracking:load-commits',
-    LOAD_OLDER_COMMITS: 'file-tracking:load-older-commits',
-    SYNC: 'file-tracking:sync',
-    CLEAR: 'file-tracking:clear',
-    GET_CHANGES: 'file-tracking:get-changes',
-    GET_STATUS: 'file-tracking:get-status',
-    GET_LINE_STATS: 'file-tracking:get-line-stats',
-    REFRESH: 'file-tracking:refresh',
-    TRACK_CHANGE: 'file-tracking:track-change',
-    STAGE_CHANGES: 'file-tracking:stage-changes',
-    UNSTAGE_CHANGES: 'file-tracking:unstage-changes',
-    LOAD_TRANSITIONS: 'file-tracking:load-transitions',
     // Event emitted by agent file operations to trigger immediate UI update
     AGENT_FILE_CHANGED: 'file-tracking:agent-file-changed',
-  },
-
-  // Persistence
-  PERSISTENCE: {
-    SAVE: 'persistence:save',
-    LOAD: 'persistence:load',
-    DELETE: 'persistence:delete',
-    EXISTS: 'persistence:exists',
-    LOAD_AGENT_CONFIG: 'persistence:load-agent-config',
-    SAVE_AGENT_CONFIG: 'persistence:save-agent-config',
-    LOAD_SESSION: 'persistence:load-session',
-    SAVE_SESSION: 'persistence:save-session',
-    SAVE_REGISTRY: 'persistence:save-registry',
-    LOAD_REGISTRY: 'persistence:load-registry',
   },
 
   // Streaming
@@ -835,34 +692,9 @@ export const IPC_CHANNELS = {
     GET: 'diffs:get',
   },
 
-  // Line Changes
-  LINE_CHANGES: {
-    GET_WORKSPACE_STATS: 'line-changes:get-workspace-stats',
-    GET_ALL_WORKSPACE_STATS: 'line-changes:get-all-workspace-stats',
-    GET_AGENT_STATS: 'line-changes:get-agent-stats',
-    CALCULATE_DIFF: 'line-changes:calculate-diff',
-    UPDATE_WORKSPACE_STATS: 'line-changes:update-workspace-stats',
-    UPDATE_AGENT_STATS: 'line-changes:update-agent-stats',
-    CLEAR_WORKSPACE_STATS: 'line-changes:clear-workspace-stats',
-    CLEAR_AGENT_STATS: 'line-changes:clear-agent-stats',
-    MARK_AGENT_ACTIVE: 'changes:mark-agent-active',
-    GET_CURRENT: 'changes:get-current',
-    START_AGENT_EXECUTION: 'changes:start-agent-execution',
-    STOP_AGENT_EXECUTION: 'changes:stop-agent-execution',
-    MARK_AGENT_MODIFIED_FILES: 'changes:mark-agent-modified-files',
-  },
-
   // Line Attribution
   LINE_ATTRIBUTION: {
-    LOAD: 'line-attribution:load',
     UPDATED: 'line-attribution:updated',
-    COMPUTE_NOW: 'line-attribution:compute-now',
-  },
-
-  // File Attribution (for agent file writes)
-  FILE_ATTRIBUTION: {
-    RECORD_AGENT_WRITE: 'file-attribution:record-agent-write',
-    READ_FILE_AND_RECORD: 'file-attribution:read-file-and-record',
   },
 
   // Git Tracking
@@ -924,16 +756,6 @@ export const IPC_CHANNELS = {
 
   // Observability Extended
   OBSERVABILITY_EXT: {},
-
-  // MCP (Model Context Protocol)
-  MCP: {
-    EVENT: 'mcp:event',
-    TRANSITION_WORKSPACE: 'mcp:transition-workspace',
-    CALL_TOOL: 'mcp:call-tool',
-    LIST_TOOLS: 'mcp:list-tools',
-    CREATE_SERVER: 'mcp:create-server',
-    GET_STATUS: 'mcp:get-status',
-  },
 
   // Agent Testing
   AGENT_TESTING: {
@@ -997,15 +819,11 @@ export const IPC_CHANNELS = {
     GET_BACKGROUND_OPS_STATUS: 'git:background-ops-status',
   },
 
-  // Accept Changes
+  // Accept Changes — the workflow itself (status/prepare/execute/merge-pr/
+  // add-remote) is served by the intentd daemon over `backend:request`
+  // (PROTOCOL.md §5.18); only the local filesystem probe stays on IPC.
   ACCEPT_CHANGES: {
-    GET_STATUS: 'accept-changes:get-status',
-    PREPARE: 'accept-changes:prepare',
-    EXECUTE: 'accept-changes:execute',
-    EXPORT: 'accept-changes:export',
     CHECK_PATH_HAS_CHANGES: 'accept-changes:check-path-has-changes',
-    ADD_REMOTE: 'accept-changes:add-remote',
-    MERGE_PR: 'accept-changes:merge-pr',
   },
 
   // Chat Export
@@ -1146,7 +964,6 @@ export const IPC_CHANNELS = {
     RESTART: 'scripts:restart',
     GET_STATUS: 'scripts:get-status',
     GET_OUTPUT: 'scripts:get-output',
-    DETECT: 'scripts:detect',
     SAVE_TO_REPO: 'scripts:save-to-repo',
   },
 
@@ -1261,7 +1078,6 @@ export const EVENT_CHANNELS = [
   'terminal:disposed', // Terminal disposed event (from workspace cleanup)
   'events:new',
   'events:cleared',
-  'permission:event',
   'app:ready',
   'app:ui:navigate',
   'app:ui:highlight',
@@ -1272,7 +1088,6 @@ export const EVENT_CHANNELS = [
   'window:zoom-changed',
   'navigate-to-settings', // Navigation to settings from menu
   'git:status-changed',
-  'file-tracking:listener-ready',
   'file-tracking:changes-updated',
   'file-tracking:agent-file-changed',
   'line-attribution:updated',

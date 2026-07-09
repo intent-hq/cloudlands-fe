@@ -22,7 +22,8 @@ import type { StoreState } from '$lib/store/types';
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   getState: vi.fn(),
-  invoke: vi.fn(),
+  settingsGet: vi.fn(),
+  settingsUpdate: vi.fn(),
 }));
 
 vi.mock('$lib/store/redux-dispatch-bridge', () => ({
@@ -37,7 +38,11 @@ vi.mock('$store/renderer/store', () => ({
   },
 }));
 
-vi.mock('$lib/electron-bridge', () => ({ invoke: mocks.invoke }));
+vi.mock('$lib/client', () => ({
+  appClient: {
+    settings: { get: mocks.settingsGet, update: mocks.settingsUpdate },
+  },
+}));
 
 import {
   applySettingsProposal,
@@ -143,7 +148,7 @@ describe('settings-proposal-actions', () => {
       },
       preview: { title: 'Change settings' },
     };
-    mocks.invoke.mockRejectedValueOnce(new Error('settings unavailable'));
+    mocks.settingsUpdate.mockRejectedValueOnce(new Error('settings unavailable'));
 
     await expect(
       applySettingsProposalWork(makeDetail(proposal)),
@@ -151,10 +156,9 @@ describe('settings-proposal-actions', () => {
 
     expect(mocks.dispatch).toHaveBeenCalledWith(setDefaultModel('new-model'));
     expect(mocks.dispatch).toHaveBeenCalledWith(setDefaultModel('old-model'));
-    expect(mocks.invoke).toHaveBeenCalledWith('settings:set', {
-      key: 'enableUserMcpServers',
-      value: true,
-    });
+    expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+      { path: 'mcp.enableUserServers', value: true },
+    ]);
   });
 
   it('undo work reapplies reverse changes through the injected dispatch', async () => {
@@ -182,7 +186,7 @@ describe('settings-proposal-actions', () => {
         },
       }),
     );
-    mocks.invoke.mockRejectedValueOnce(new Error('undo unavailable'));
+    mocks.settingsUpdate.mockRejectedValueOnce(new Error('undo unavailable'));
 
     await expect(
       undoSettingsProposalWork([
@@ -194,7 +198,7 @@ describe('settings-proposal-actions', () => {
         {
           path: 'mcp.enableUserServers',
           value: false,
-          apply: { kind: 'settings-ipc', key: 'enableUserMcpServers' },
+          apply: { kind: 'daemon-settings-update', path: 'mcp.enableUserServers' },
         },
       ]),
     ).rejects.toThrow('Failed to undo settings change: undo unavailable');
@@ -226,5 +230,31 @@ describe('settings-proposal-actions', () => {
         kind: 'settings-change',
       }),
     );
+  });
+
+  // Regression pin for the B7 rewire: `daemon-settings`-sourced definitions
+  // must read via `appClient.settings.get(daemonPath)` and write via
+  // `appClient.settings.update`. `workspace.branchPrefix` has no explicit
+  // Redux case, so both operations flow through the new daemon helpers.
+  it('reads and writes daemon-settings definitions through appClient.settings', async () => {
+    mocks.settingsGet.mockResolvedValueOnce({
+      path: 'workspace.branchPrefix',
+      value: 'legacy-prefix/',
+    });
+    const proposal = makeProposal('workspace.branchPrefix', 'new-prefix/');
+
+    const result = await applySettingsProposalWork(makeDetail(proposal));
+
+    expect(mocks.settingsGet).toHaveBeenCalledWith('workspace.branchPrefix');
+    expect(mocks.settingsUpdate).toHaveBeenCalledWith([
+      { path: 'workspace.branchPrefix', value: 'new-prefix/' },
+    ]);
+    expect(result.reverseChanges).toEqual([
+      {
+        path: 'workspace.branchPrefix',
+        value: 'legacy-prefix/',
+        apply: { kind: 'daemon-settings-update', path: 'workspace.branchPrefix' },
+      },
+    ]);
   });
 });

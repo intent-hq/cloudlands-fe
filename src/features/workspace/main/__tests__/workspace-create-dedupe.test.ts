@@ -1,12 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceService } from '../workspace.service';
 import { InMemoryWorkspaceRepository } from '../workspace.repository';
-import { InMemoryNotesRepository } from '../../../notes/main/notes.repository';
 import { mainDispatch } from '../../../../store/main/redux-store-bridge';
 import { workspaceCreated } from '../../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 
 vi.mock('../../../../store/main/redux-store-bridge', () => ({
   mainDispatch: vi.fn((action: unknown) => action),
+}));
+
+// The initial-agent save now routes through the daemon
+// (PROTOCOL.md §5.5 `agent.create`); stub the JSON-RPC seam so the test does
+// not open a real UDS socket.
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: vi.fn(async () => ({ agent: { id: 'agent-first' } })) }),
 }));
 
 const mockedMainDispatch = vi.mocked(mainDispatch);
@@ -25,7 +31,7 @@ describe('WorkspaceService workspace creation dedupe', () => {
     fetch = +refs/heads/*:refs/remotes/origin/*
 `);
 
-    service = new WorkspaceService(repository, new InMemoryNotesRepository());
+    service = new WorkspaceService(repository);
     mockedMainDispatch.mockClear();
   });
 

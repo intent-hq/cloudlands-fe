@@ -37,6 +37,8 @@ export const initialState: McpSettingsState = {
   error: null,
   enabled: false,
   lastImportedCount: null,
+  advancedSaveStatus: "idle",
+  advancedSaveError: null,
   byWorkspaceId: {},
 };
 
@@ -169,6 +171,16 @@ export const restartServer = createAction<[name: string]>(
   "mcpSettings/restartServer"
 );
 
+/** Trigger: replace the whole server set from the advanced JSON editor */
+export const saveAdvancedJson = createAction<[jsonString: string]>(
+  "mcpSettings/saveAdvancedJson"
+);
+
+/** Set the advanced-editor save status (+ optional error message) */
+export const setAdvancedSaveStatus = createAction<
+  [status: McpSettingsState["advancedSaveStatus"], error?: string | null]
+>("mcpSettings/setAdvancedSaveStatus");
+
 // ============================================================================
 // Reducer
 // ============================================================================
@@ -245,6 +257,11 @@ export const mcpSettingsReducer = createReducer<McpSettingsState>(initialState)
   .with(importFromJsonCompleted, (state, { payload: [count] }) => ({
     ...state,
     lastImportedCount: count,
+  }))
+  .with(setAdvancedSaveStatus, (state, { payload: [status, error] }) => ({
+    ...state,
+    advancedSaveStatus: status,
+    advancedSaveError: error ?? null,
   }))
   .with(setWorkspaceDisabledServers, (state, { payload: [workspaceId, disabledServers] }) => {
     if (!workspaceId) return state;

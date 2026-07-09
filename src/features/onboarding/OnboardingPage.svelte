@@ -15,6 +15,8 @@
   import Fa from 'svelte-fa';
   import { faArrowLeft } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$shared/generated/ipc-client';
+  import { appClient } from '$lib/client';
+  import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
   import { v4 as uuidv4 } from 'uuid';
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
@@ -61,10 +63,7 @@
   extractLinearIssue,
   extractSentryIssue,
 } from '$features/onboarding/utils/parse-context-references';
-  import {
-  setInitialAgentConfig,
-  setInitialAgentId,
-} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { selectLastUsedScriptForRepo } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
   import {
   SETUP_SCRIPT_TEMPLATES,
@@ -571,21 +570,18 @@
     isOnboardingEnhancing = true;
     track('Used Prompt Enhance', { prompt_length: onboardingInputValue.trim().length });
     try {
-      const result = await invoke<{
-        success: boolean;
-        enhanced?: string;
-        error?: string;
-      }>('agent:enhance-prompt', { prompt: onboardingInputValue });
-      if (result?.success && result.enhanced) {
-        onboardingInputValue = result.enhanced;
-        await getOnboardingRichTextarea()?.setContent(result.enhanced);
-        toast.success('Prompt enhanced');
-      } else {
-        toast.error('Failed to enhance prompt');
-      }
+      // Daemon-side enhancement (agent.enhancePrompt, PROTOCOL §5.31)
+      const result = await enhancePrompt(onboardingInputValue);
+      onboardingInputValue = result.enhanced;
+      await getOnboardingRichTextarea()?.setContent(result.enhanced);
+      toast.success('Prompt enhanced');
     } catch (error) {
       logger.error('Failed to enhance prompt', error);
-      toast.error('Failed to enhance prompt');
+      toast.error(
+        error instanceof Error && error.message
+          ? `Failed to enhance prompt: ${error.message}`
+          : 'Failed to enhance prompt',
+      );
     } finally {
       isOnboardingEnhancing = false;
     }
@@ -663,12 +659,13 @@
           behind: onboardingBranchBehind,
         });
         try {
+          // Daemon-backed pull (`git.pull`, PROTOCOL §5.6) via the appClient
+          // seam — replaces the dead legacy `git:pullBranch` IPC. The seam
+          // folds the daemon's structured `{ ok: false, error }` failure into
+          // `{ success: false, error }` and never throws.
           const pullResult =
             typeof window !== 'undefined' && window.electronAPI
-              ? await invoke<any>('git:pullBranch', {
-                repoPath: projectSelection.repoPath,
-                branchName: projectSelection.branch,
-              })
+              ? await appClient.git.pull(projectSelection.repoPath, projectSelection.branch)
               : undefined;
           if (!pullResult?.success) {
             onboardingPullError = pullResult?.error || 'Failed to pull changes';
@@ -736,13 +733,16 @@
         worktreePath: workspace.worktreePath,
       });
 
+      // Daemon-backed (`workspace.update`, PROTOCOL §5.1) via workspaceClient —
+      // the legacy `workspace:update` IPC channel is unbridged in this build.
       if (selectedPRNumber && workspace.id) {
-        invoke('workspace:update', {
-          id: workspace.id,
-          prNumber: selectedPRNumber,
-        }).catch((err) => {
-          logger.warn('Failed to store PR number on workspace', { error: err });
-        });
+        void workspaceClient
+          .update({ id: workspace.id, prNumber: selectedPRNumber })
+          .then((updateResult) => {
+            if (!updateResult.ok) {
+              logger.warn('Failed to store PR number on workspace', { error: updateResult.error });
+            }
+          });
       }
 
       // Clear stale layout/storage
@@ -784,47 +784,20 @@
         });
       }
 
-      const agentConfigData = {
-        agentId: String(agentId),
-        config: {
-          agentId: String(agentId),
-          name: 'Agent',
-          model: effectiveModel,
-          prompt,
-          agentType,
-          provider,
-          behaviorPrompt,
-          specialist: specialistId,
-          contextReferences: contextReferences.length > 0 ? contextReferences : undefined,
-          imageBlocks: imageBlocks.length > 0 ? imageBlocks : undefined,
-          isInitialAgent: true,
-          isFirstWorkspaceAgent: true,
-          metadata: {
-            source: 'onboarding',
-            isInitialAgent: true,
-            isFirstWorkspaceAgent: true,
-            specialist: specialistId,
-          },
-        },
-        timestamp: Date.now(),
-      };
-      sessionStorage.setItem(
-        `workspace:${workspace.id}:initial-agent-pending`,
-        JSON.stringify(agentConfigData),
-      );
-      appStore.dispatch(setInitialAgentConfig(workspace.id, agentConfigData));
+      // Initial-agent delivery (message + sends) is owned by the daemon; the
+      // FE only records which agent is the initial one so the UI can highlight
+      // and focus it.
       appStore.dispatch(setInitialAgentId(workspace.id, String(agentId)));
-      sessionStorage.setItem(
-        `workspace:${workspace.id}:agent-config`,
-        JSON.stringify(agentConfigData.config),
-      );
-      sessionStorage.setItem(`workspace:${workspace.id}:initial-agent-id`, String(agentId));
 
+      // Same intent as CompactWorkspaceInitializer: land on the initial-agent
+      // conversation as the only tab, full-width. The spec note remains
+      // reachable from the sidebar; the main panel stays empty here so the
+      // middleware doesn't need to special-case an agent-only screen.
       appStore.dispatch(
         hydrateWorkspaceNavigation(workspace.id, {
           version: 2,
           workspace: { id: workspace.id, status: 'loading' },
-          mainPanel: { type: 'notes', selectedNoteId: 'spec' },
+          mainPanel: { type: 'empty' },
           drawer: { open: true, type: 'agent' as const, itemId: String(agentId) },
           navigation: { history: [], currentIndex: -1 },
           ui: { hasInitialized: false },

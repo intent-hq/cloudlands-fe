@@ -38,7 +38,7 @@ import { type UnifiedAgentConfig } from '$shared/types/agent.types';
 import { StreamManager } from './stream-manager';
 import { agentValidator } from './agent-validator';
 import { errorHandler } from '../services/error-handler';
-import { AGENT_BACKEND_CHANNELS, PERSISTENCE_CHANNELS } from '$shared/ipc/channels';
+import { AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 import { memoryManager } from './utils/memory-manager';
 import type { IDisposable } from '$shared/types/disposable';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
@@ -52,10 +52,41 @@ let WorkspaceConfig: typeof import('$shared/main/config').WorkspaceConfig | unde
 
 // Lazy-loaded invoke function for frontend context
 let invokeFunction: (typeof import('$lib/electron-bridge'))['invoke'] | undefined;
-let agentPersistence: any;
-let metadataFSFactory:
-  | ((workspaceId: string) => import('../../metadata-fs/main/metadata-fs').IMetadataFS)
+let getBackendClientFn:
+  | (typeof import('../../backend/main/backend.ipc'))['getBackendClient']
   | undefined;
+
+/** PROTOCOL.md §5.5 `agent.update` — whitelisted mutable fields. */
+const UPDATABLE_FIELDS = [
+  'status',
+  'isActive',
+  'acpSessionId',
+  'backendSessionId',
+  'name',
+  'nameExplicitlySet',
+  'model',
+  'provider',
+  'systemPrompt',
+  'specialist',
+  'taskNoteId',
+  'skipAutoCommit',
+  'completionReport',
+  'completionReportTimestamp',
+  'delegationDepth',
+  'initialMessage',
+  'contextReferences',
+  'imageBlocks',
+  'isBackground',
+] as const;
+
+function pickAgentUpdateChanges(agent: AgentSession): Record<string, unknown> {
+  const changes: Record<string, unknown> = {};
+  const src = agent as unknown as Record<string, unknown>;
+  for (const key of UPDATABLE_FIELDS) {
+    if (src[key] !== undefined) changes[key] = src[key];
+  }
+  return changes;
+}
 
 // Check if we're in the main process
 function isMainProcess(): boolean {
@@ -94,19 +125,24 @@ async function getNodeModules() {
       // Electron may not be available in all contexts
     }
 
-    // Load agent persistence if in main process
+    // Route agent-session CRUD through the daemon (PROTOCOL.md §5.5). The
+    // remote-workspace metadata read path retired in P3-5.1; callers now use
+    // LocalMetadataFS directly.
     try {
-      const persistenceModule = await import('../main/agent-persistence');
-      agentPersistence = persistenceModule.agentPersistence;
-      // Wire up IMetadataFS resolver for remote workspace support
-      const { getMetadataFS } = await import('../../metadata-fs/main/metadata-fs-factory');
-      metadataFSFactory = getMetadataFS;
-      persistenceModule.unifiedPersistence.setMetadataFSResolver(getMetadataFS);
+      const backendModule = await import('../../backend/main/backend.ipc');
+      getBackendClientFn = backendModule.getBackendClient;
     } catch (error) {
-      logger.warn('Could not load agent persistence module', error);
+      logger.warn('Could not load backend client module', error);
     }
   }
-  return { fs, path, ipcMain, BrowserWindow, agentPersistence, WorkspaceConfig, metadataFSFactory };
+  return {
+    fs,
+    path,
+    ipcMain,
+    BrowserWindow,
+    getBackendClient: getBackendClientFn,
+    WorkspaceConfig,
+  };
 }
 
 const logger = new Logger('ConsolidatedBackend');
@@ -555,28 +591,30 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         this.sessions.delete(id);
       }
 
-      // Persist deletion if enabled
+      // Persist deletion if enabled (PROTOCOL.md §5.5 `agent.delete`).
       if (this.config.persistenceEnabled && effectiveWorkspaceId) {
-        // Check if we're in the main process
-        if (isMainProcess()) {
-          logger.info('[deleteAgent] Running in main process, using direct persistence call');
-          // Direct call to persistence service in main process
-          const { agentPersistence } = await getNodeModules();
-          if (agentPersistence) {
-            logger.info('[deleteAgent] Calling agentPersistence.deleteAgent', {
+        const { getBackendClient } = await getNodeModules();
+        if (getBackendClient) {
+          logger.info('[deleteAgent] Calling agent.delete', {
+            agentId,
+            workspaceId: effectiveWorkspaceId,
+          });
+          try {
+            await getBackendClient().request('agent.delete', {
               agentId,
               workspaceId: effectiveWorkspaceId,
             });
-            const result = await agentPersistence.deleteAgent(agentId, effectiveWorkspaceId);
-            logger.info('[deleteAgent] Persistence deletion result', { result });
-          } else {
-            logger.error('[deleteAgent] agentPersistence not available in main process');
+            logger.info('[deleteAgent] Persistence deletion result', {
+              result: { success: true },
+            });
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            logger.info('[deleteAgent] Persistence deletion result', {
+              result: { success: false, error: errorMsg },
+            });
           }
         } else {
-          logger.info('[deleteAgent] Running in renderer process, using IPC');
-          // Use IPC from renderer process
-          const invoke = await getInvoke();
-          await invoke(PERSISTENCE_CHANNELS.DELETE, { agentId });
+          logger.error('[deleteAgent] backend client not available');
         }
       }
 
@@ -730,16 +768,12 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         systemPromptLength: agent.systemPrompt?.length || 0,
       });
 
-      // Save agent to disk immediately after creation to persist systemPrompt
+      // Save agent to disk immediately after creation to persist systemPrompt.
+      // The daemon owns canonical state and returns it synchronously from
+      // agent.get / agent.getSession, so the former markAgentPending guard
+      // (needed only for the file-backed loadAgent race) is no longer required.
       if (this.config.persistenceEnabled) {
         logger.info('[createAgent] Saving agent to disk', { agentId: agent.id });
-
-        // Mark agent as pending before save to avoid ENOENT errors from concurrent loadAgent calls
-        // This is important during bulk task delegation when multiple agents are created in parallel
-        if (isMainProcess() && agentPersistence) {
-          const { unifiedPersistence } = await import('../main/agent-persistence');
-          unifiedPersistence.markAgentPending(agent.id, agent);
-        }
 
         const saveResult = await this.saveAgent(agent.id);
         if (!saveResult.success) {
@@ -856,15 +890,14 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
         },
       });
 
-      // This service should only be used in the renderer process
-      // In the main process, the agent-backend-handler should directly use providers
+      // This service should only be used in the renderer process; streaming
+      // is driven from the renderer via IPC on AGENT_BACKEND_CHANNELS.
       if (typeof window === 'undefined') {
         // We're in the main process - this shouldn't happen
         logger.error('[sendMessage] ConsolidatedBackendService should not be used in main process');
         return {
           success: false,
-          error:
-            'ConsolidatedBackendService should not be used in main process. Use agent-backend-handler directly.',
+          error: 'ConsolidatedBackendService.sendMessage must not be called from the main process.',
         };
       }
 
@@ -924,25 +957,28 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
           return { success: true };
         }
 
+        const { getBackendClient } = await getNodeModules();
         let result: { success: boolean; error?: string };
-
-        // Check if we're in the main process
-        if (isMainProcess()) {
-          // Direct call to persistence service in main process
-          const { agentPersistence } = await getNodeModules();
-          if (agentPersistence) {
-            const saveResult = await agentPersistence.saveAgent(record.session);
-            result = saveResult;
-          } else {
-            result = { success: false, error: 'Persistence service not available' };
-          }
+        if (!getBackendClient) {
+          result = { success: false, error: 'Persistence service not available' };
         } else {
-          // Use IPC from renderer process
-          const invoke = await getInvoke();
-          result = (await invoke(PERSISTENCE_CHANNELS.SAVE, {
-            agentId,
-            session: record.session,
-          })) as { success: boolean; error?: string };
+          const changes = pickAgentUpdateChanges(record.session);
+          if (Object.keys(changes).length === 0) {
+            result = { success: true };
+          } else {
+            try {
+              await getBackendClient().request('agent.update', {
+                agentId: record.session.id,
+                workspaceId: record.session.workspaceId,
+                changes,
+              });
+              result = { success: true };
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              logger.warn('agent.update failed', { agentId: record.session.id, error: msg });
+              result = { success: false, error: msg };
+            }
+          }
         }
 
         if (!result?.success) {
@@ -976,33 +1012,23 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
 
       let result: { success: boolean; data?: AgentSession; error?: string };
 
-      // Check if we're in the main process
-      if (isMainProcess()) {
-        // Main process - use direct persistence call
-        const { agentPersistence } = await getNodeModules();
-        if (agentPersistence) {
-          // Do NOT pass workspace.path - let it use the correct metadata directory
-          const loadResult = await agentPersistence.loadAgent(
-            createAgentId(agentId),
-            createWorkspaceId(workspace.id),
-          );
-
-          if (loadResult.success && loadResult.data) {
-            result = { success: true, data: loadResult.data };
+      const { getBackendClient } = await getNodeModules();
+      if (getBackendClient) {
+        try {
+          const res = (await getBackendClient().request('agent.getSession', {
+            agentId: createAgentId(agentId),
+            workspaceId: createWorkspaceId(workspace.id),
+          })) as { session?: AgentSession };
+          if (res?.session) {
+            result = { success: true, data: res.session };
           } else {
-            result = { success: false, error: loadResult.error || 'Failed to load agent' };
+            result = { success: false, error: 'Failed to load agent' };
           }
-        } else {
-          result = { success: false, error: 'Persistence service not available' };
+        } catch (err) {
+          result = { success: false, error: err instanceof Error ? err.message : String(err) };
         }
       } else {
-        // Renderer process - use IPC
-        const invoke = await getInvoke();
-        result = (await invoke(PERSISTENCE_CHANNELS.LOAD, { agentId })) as {
-          success: boolean;
-          data?: AgentSession;
-          error?: string;
-        };
+        result = { success: false, error: 'Persistence service not available' };
       }
 
       if (!result?.success || !result?.data) {
@@ -1057,11 +1083,21 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
 
       // Check if we're in the main process
       if (isMainProcess()) {
-        // Direct call to persistence service in main process
-        const { agentPersistence } = await getNodeModules();
-        if (agentPersistence) {
-          const agents = await agentPersistence.listAgents(workspaceId);
-          return agents || [];
+        // Direct call to the daemon in main process (PROTOCOL.md §5.5 `agent.list`).
+        const { getBackendClient } = await getNodeModules();
+        if (getBackendClient) {
+          try {
+            const res = (await getBackendClient().request('agent.list', { workspaceId })) as {
+              agents?: Array<{ id: string }>;
+            };
+            return (res?.agents ?? []).map((a) => a.id);
+          } catch (err) {
+            logger.warn('agent.list failed', {
+              workspaceId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+            return [];
+          }
         } else {
           return [];
         }
@@ -1089,17 +1125,17 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
   async loadPersistedSessions(workspaceId: string): Promise<number> {
     if (!this.config.persistenceEnabled) return 0;
 
-    const { path, WorkspaceConfig, metadataFSFactory } = await getNodeModules();
+    const { path, WorkspaceConfig } = await getNodeModules();
     if (!path || !WorkspaceConfig) {
       logger.warn('[loadPersistedSessions] path or WorkspaceConfig not available');
       return 0;
     }
 
     try {
-      // Use IMetadataFS for remote workspace support.
-      // Falls back to LocalMetadataFS (pass-through to fs/promises) for local workspaces.
+      // Local-only after P3-5.1: the remote MetadataFS surface is retiring in
+      // Phase B, so persisted agent sessions load through LocalMetadataFS.
       const { LocalMetadataFS } = await import('../../metadata-fs/main/local-metadata-fs');
-      const metadataFS = metadataFSFactory ? metadataFSFactory(workspaceId) : new LocalMetadataFS();
+      const metadataFS = new LocalMetadataFS();
 
       // Use the correct workspace metadata directory, NOT process.cwd()
       const agentsDir = WorkspaceConfig.paths.agents(workspaceId);
@@ -1289,18 +1325,21 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     if (!record.messagesEvicted) return record.session;
 
     try {
+      const { getBackendClient } = await getNodeModules();
+      if (!getBackendClient) {
+        return record.session;
+      }
       let result: { success: boolean; data?: AgentSession; error?: string };
-      if (isMainProcess()) {
-        const { agentPersistence } = await getNodeModules();
-        if (!agentPersistence) {
-          return record.session;
-        }
-        result = await agentPersistence.loadAgent(record.agentId, record.workspaceId);
-      } else {
-        const invoke = await getInvoke();
-        result = (await invoke(PERSISTENCE_CHANNELS.LOAD, {
-          agentId: record.agentId.toString(),
-        })) as { success: boolean; data?: AgentSession; error?: string };
+      try {
+        const res = (await getBackendClient().request('agent.getSession', {
+          agentId: record.agentId,
+          workspaceId: record.workspaceId,
+        })) as { session?: AgentSession };
+        result = res?.session
+          ? { success: true, data: res.session }
+          : { success: false, error: 'Failed to load agent' };
+      } catch (err) {
+        result = { success: false, error: err instanceof Error ? err.message : String(err) };
       }
 
       if (!result.success || !result.data) {
@@ -1406,12 +1445,12 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
    *
    * NOTE: When running inside the Electron main process, `src/main/index.ts`
    * is the single owner of SIGINT/SIGTERM — it routes those signals through
-   * `gracefulShutdown()` so that `agentBackendHandler.persistShutdownState()`
-   * runs BEFORE backend provider teardown. Registering our own listeners here
-   * would race with that ordering (Node invokes signal listeners in
-   * registration order and these are registered first, during module init).
-   * Detect the Electron runtime and skip registration in that context; other
-   * callers can force-skip via INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS=1.
+   * `gracefulShutdown()` and tears the app down in a fixed order. Registering
+   * our own listeners here would race with that ordering (Node invokes signal
+   * listeners in registration order and these are registered first, during
+   * module init). Detect the Electron runtime and skip registration in that
+   * context; other callers can force-skip via
+   * INTENT_DISABLE_BACKEND_SIGNAL_HANDLERS=1.
    */
   private setupShutdownHandlers(): void {
     if (!(isMainProcess() && typeof process !== 'undefined' && typeof process.on === 'function')) {
@@ -1644,10 +1683,6 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     // Do NOT register duplicate handlers here as it causes issues with agent ID and systemPrompt passing
     // The handlers in unified-agent-handlers.ts properly extract agentId from the request object
 
-    // NOTE: Persistence handlers (PERSISTENCE_CHANNELS.SAVE and PERSISTENCE_CHANNELS.LOAD)
-    // are registered in persistence.ipc.ts with proper validation and error handling.
-    // Do NOT register duplicate handlers here as it causes "Attempted to register a second handler" errors.
-
     // Setup event forwarding
     this.setupEventForwarding();
 
@@ -1868,13 +1903,9 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     // Save all active sessions first.
     //
     // IMPORTANT: Skip sessions whose in-memory state still looks like an
-    // in-flight stream. The clean-quit path calls
-    // `agentBackendHandler.persistShutdownState()` BEFORE this shutdown — that
-    // flush loads a fresh copy from disk, repairs the stale streaming flags to
-    // idle, and writes the repaired copy back. Our in-memory `record.session`
-    // is a SEPARATE object reference that still carries the stale streaming
-    // snapshot; calling `saveAgent()` here would overwrite the repaired idle
-    // on-disk state with that stale snapshot.
+    // in-flight stream. Writing that snapshot back would persist stale
+    // streaming flags to disk, so any later `loadAgent` would resurrect a
+    // session that looks mid-stream when it is not.
     //
     // Detection must cover BOTH forms of stale streaming state:
     //  1. Session-level flags — `record.session.isStreaming/isProcessing`.
@@ -1883,9 +1914,9 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     //     in-memory backend session without setting session-level flags, so
     //     a session can be mid-stream with only the per-message flag set.
     //
-    // Skipping is safe when `persistShutdownState()` did not run (e.g.
-    // hard-kill or test environments): the disk state is left untouched and
-    // the next `loadAgent` path triggers orphan-recovery which repairs it.
+    // Skipping is safe: the on-disk copy is left untouched, and the next
+    // `loadAgent` path triggers orphan-recovery which repairs any residual
+    // stale streaming flags there.
     const hasStreamingMessage = (session: AgentSession | undefined): boolean => {
       if (!session?.messages) return false;
       for (const m of session.messages) {

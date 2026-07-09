@@ -38,6 +38,9 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     history: async (agentId) => fx.mockChatHistory[agentId] ?? [],
     tokenUsage: async (agentId) => fx.mockTokenUsage[agentId] ?? { input: 0, output: 0 },
     subscribe: (agentId, handler) => emitOnce(handler, fx.mockChatHistory[agentId] ?? []),
+    // Mock parity with the §7.1 seq-0 snapshot: an empty transcript is the
+    // safe default since fixtures don't model turn-granular AgentMessage lists.
+    subscribeSnapshot: async () => ({ messages: [], truncated: false, totalMessages: 0 }),
   };
 
   readonly terminals: AppClient["terminals"] = {
@@ -58,6 +61,8 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     get: async () => null,
     update: async (changes) => changes.map(({ path, value }) => ({ path, value })),
     reset: async (path) => ({ path, value: null }),
+    getUserRule: async () => ({ enabled: true, content: "", updatedAt: 0 }),
+    updateUserRule: async () => OK,
     getUserPreferences: async () => fx.mockUserPreferences,
     setUserPreferences: async () => OK,
     getProviderSettings: async () => fx.mockProviderSettings,
@@ -74,12 +79,24 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly scripts: AppClient["scripts"] = {
     list: async (workspaceId) =>
       fx.mockScripts.filter((script) => script.workspaceId === workspaceId),
+    create: async () => OK,
+    remove: async () => OK,
+    start: async () => OK,
+    stop: async () => OK,
+    restart: async () => OK,
+    output: async () => "",
+    status: async () => null,
+    run: async () => null,
     subscribe: (handler) => emitOnce(handler, fx.mockScripts),
   };
 
   readonly setupScripts: AppClient["setupScripts"] = {
     list: async () => fx.mockSetupScripts,
     subscribe: (handler) => emitOnce(handler, fx.mockSetupScripts),
+    get: async () => null,
+    save: async () => null,
+    detectProjectType: async () => null,
+    generate: async () => null,
   };
 
   readonly skills: AppClient["skills"] = {
@@ -89,8 +106,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   };
 
   readonly specialists: AppClient["specialists"] = {
-    listCustom: async () => fx.mockSpecialists,
-    listFile: async () => [],
+    list: async () => fx.mockSpecialists,
     subscribe: (handler) => emitOnce(handler, fx.mockSpecialists),
   };
 
@@ -107,6 +123,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
 
   readonly integrations: AppClient["integrations"] = {
     githubUser: async () => fx.mockGitHubUser,
+    githubBranches: async () => ({ branches: [] }),
     linearIssues: async () => fx.mockLinearIssues,
     sentryIssues: async () => fx.mockSentryIssues,
     subscribe: (handler) => emitOnce(handler, { githubUser: fx.mockGitHubUser }),
@@ -122,6 +139,19 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly events: AppClient["events"] = {
     list: async (workspaceId) =>
       workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockWorkspaceEvents : [],
+    // Mirrors `event.query` (PROTOCOL §5.10): exact-match filters, wire order
+    // newest→oldest, daemon default limit of 50.
+    query: async (workspaceId, options = {}) => {
+      if (workspaceId !== String(fx.MOCK_WORKSPACE_ID)) return [];
+      const matching = fx.mockWorkspaceEvents.filter(
+        (event) =>
+          (!options.eventType || event.type === options.eventType) &&
+          (!options.actorType || event.actor?.type === options.actorType) &&
+          (!options.actorId || event.actor?.id === options.actorId),
+      );
+      matching.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      return matching.slice(0, options.limit || 50);
+    },
     subscribe: (workspaceId, handler) =>
       emitOnce(handler, workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockWorkspaceEvents : []),
   };

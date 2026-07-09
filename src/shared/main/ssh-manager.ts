@@ -7,7 +7,6 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs';
 
 import * as net from 'net';
-import * as crypto from 'crypto';
 import { createRequire } from 'module';
 import { promisify } from 'util';
 import type { WebSocket as WebSocketType } from 'ws';
@@ -664,61 +663,6 @@ export class SSHManager extends EventEmitter {
   }
 
   /**
-   * Read a remote file's contents via SFTP.
-   * Returns the file content as a UTF-8 string, or null if the file does not exist.
-   * Supports `~` in paths.
-   */
-  private async readRemoteFile(connection: SSHConnection, remotePath: string): Promise<string | null> {
-    const sftp = await this.ensureSFTP(connection);
-    const resolvedPath = await this.resolveRemotePath(connection, remotePath);
-
-    return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      const stream = sftp.createReadStream(resolvedPath, { encoding: 'utf8' });
-
-      stream.on('data', (chunk: Buffer) => {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      });
-
-      stream.on('end', () => {
-        resolve(Buffer.concat(chunks).toString('utf8'));
-      });
-
-      stream.on('error', (err: Error & { code?: number }) => {
-        // SFTP error code 2 = SSH_FX_NO_SUCH_FILE
-        if (err.code === 2 || err.message?.includes('No such file')) {
-          resolve(null);
-        } else {
-          reject(err);
-        }
-      });
-    });
-  }
-
-  /**
-   * Write content to a remote file via SFTP.
-   * Supports `~` in paths.
-   */
-  private async writeRemoteFile(connection: SSHConnection, remotePath: string, content: string): Promise<void> {
-    const sftp = await this.ensureSFTP(connection);
-    const resolvedPath = await this.resolveRemotePath(connection, remotePath);
-
-    return new Promise((resolve, reject) => {
-      const stream = sftp.createWriteStream(resolvedPath, { encoding: 'utf8' });
-
-      stream.on('close', () => {
-        resolve();
-      });
-
-      stream.on('error', (err: Error) => {
-        reject(err);
-      });
-
-      stream.end(content, 'utf8');
-    });
-  }
-
-  /**
    * Upload a file to remote server.
    * Re-initializes SFTP if not already available. Supports `~` in remote paths.
    */
@@ -776,7 +720,7 @@ export class SSHManager extends EventEmitter {
 
     // Resolve ~ to the actual home directory before passing to the shell,
     // because escapeShellArg wraps the path in single quotes which prevents
-    // bash tilde expansion (e.g. '~/.intent-server' is treated literally).
+    // bash tilde expansion (e.g. '~/some/remote/dir' is treated literally).
     let resolvedPath = remotePath;
     if (remotePath.startsWith('~')) {
       resolvedPath = await this.resolveRemotePath(connection, remotePath);
@@ -787,130 +731,6 @@ export class SSHManager extends EventEmitter {
       throw new Error(
         `Failed to create remote directory ${remotePath}: ${result.stderr || `exit code ${result.exitCode}`}`,
       );
-    }
-  }
-
-  /**
-   * Discover the absolute path to auggie on the remote host.
-   *
-   * Strategy: Run `node ~/.intent-server/server.js discover` on the remote host.
-   * The intent-server discover command runs natively with full access to $SHELL,
-   * HOME, and the filesystem — avoiding the shell-environment issues that plague
-   * SSH exec channels (where $SHELL is unset and only minimal profiles are loaded).
-   *
-   * @param connectionId - The SSH connection to use
-   * @param overridePath - Optional user-configured auggie path (skips discovery)
-   * @returns The absolute path to auggie on the remote host
-   */
-  async discoverAuggiePath(connectionId: string, overridePath?: string): Promise<string> {
-    const connection = this.getActiveConnection(connectionId);
-
-    // If user provided an override, validate it exists and return
-    if (overridePath) {
-      // Resolve ~ to the remote home directory before escaping, because
-      // escapeShellArg wraps the path in single quotes which prevents
-      // the shell from expanding the tilde.
-      let resolvedOverride = overridePath;
-      if (overridePath.startsWith('~')) {
-        resolvedOverride = await this.resolveRemotePath(connection, overridePath);
-      }
-      this.logger.debug('Using user-configured auggie path', { connectionId, overridePath: resolvedOverride });
-      const checkResult = await this.executeCommand(connectionId, `test -x ${this.escapeShellArg(resolvedOverride)} && echo "ok"`, { timeout: 10000 });
-      if (checkResult.exitCode !== 0 || !checkResult.stdout.includes('ok')) {
-        throw new Error(
-          `Configured auggie path does not exist or is not executable: ${overridePath}`,
-        );
-      }
-      // Store the override in config
-      await this.storeAuggieConfig(connection, resolvedOverride);
-      return resolvedOverride;
-    }
-
-    this.logger.debug('Discovering auggie path on remote host via intent-server discover', { connectionId });
-
-    let auggiePath: string | null = null;
-
-    try {
-      const result = await this.executeCommand(
-        connectionId,
-        'node ~/.intent-server/server.js discover',
-        { timeout: 20000 },
-      );
-      if (result.exitCode === 0 && result.stdout.trim()) {
-        try {
-          const parsed = JSON.parse(result.stdout.trim());
-          if (parsed.ok && parsed.auggiePath) {
-            auggiePath = parsed.auggiePath;
-          }
-        } catch {
-          this.logger.warn('intent-server discover returned non-JSON stdout', {
-            connectionId,
-            stdout: result.stdout,
-          });
-        }
-      } else {
-        this.logger.warn('intent-server discover returned non-zero exit code', {
-          connectionId,
-          exitCode: result.exitCode,
-          stdout: result.stdout,
-          stderr: result.stderr,
-        });
-      }
-    } catch (error) {
-      this.logger.warn('intent-server discover failed', {
-        connectionId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-
-    if (!auggiePath) {
-      throw new Error(
-        'auggie not found on remote host. Install auggie or set the path in SSH host settings.',
-      );
-    }
-
-    this.logger.info('Discovered auggie path on remote', { connectionId, auggiePath });
-
-    // Store in config (backup cache on the client side)
-    await this.storeAuggieConfig(connection, auggiePath);
-
-    return auggiePath;
-  }
-
-  /**
-   * Store the auggie path in ~/.intent-server/config.json on the remote host.
-   */
-  private async storeAuggieConfig(connection: SSHConnection, auggiePath: string): Promise<void> {
-    try {
-      await this.ensureRemoteDirectory(connection.id, '~/.intent-server');
-
-      let config: Record<string, unknown> = {};
-
-      // Try to read existing config
-      const existingContent = await this.readRemoteFile(connection, '~/.intent-server/config.json');
-      if (existingContent) {
-        try {
-          config = JSON.parse(existingContent);
-        } catch {
-          // Invalid JSON, start fresh
-        }
-      }
-
-      config.auggiePath = auggiePath;
-
-      await this.writeRemoteFile(
-        connection,
-        '~/.intent-server/config.json',
-        JSON.stringify(config, null, 2) + '\n',
-      );
-
-      this.logger.debug('Stored auggie config on remote', { connectionId: connection.id, auggiePath });
-    } catch (error) {
-      // Non-fatal: log but don't throw since we already have the path
-      this.logger.warn('Failed to store auggie config on remote', {
-        connectionId: connection.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
     }
   }
 
@@ -927,56 +747,6 @@ export class SSHManager extends EventEmitter {
    */
   getConnections(): SSHConnection[] {
     return Array.from(this.connections.values());
-  }
-
-  /**
-   * Deploy intent-server.js to the remote host.
-   *
-   * Uploads the bundled intent-server.js to `~/.intent-server/server.js`.
-   * Skips upload if the remote version matches (compared via SHA-256 hash stored
-   * in `~/.intent-server/server.version`).
-   *
-   * @param connectionId - The SSH connection to use
-   * @param localBundlePath - Local path to the intent-server.js bundle
-   * @returns true if a new version was deployed, false if skipped (already up-to-date)
-   */
-  async deployIntentServer(connectionId: string, localBundlePath: string): Promise<boolean> {
-    const connection = this.getActiveConnection(connectionId);
-
-    this.logger.info('Deploying intent-server to remote', { connectionId, localBundlePath });
-
-    // Compute local file hash
-    const localContent = await fs.promises.readFile(localBundlePath);
-    const localHash = crypto.createHash('sha256').update(localContent).digest('hex');
-
-    // Check remote version hash
-    const remoteHash = await this.readRemoteFile(connection, '~/.intent-server/server.version');
-    if (remoteHash && remoteHash.trim() === localHash) {
-      this.logger.info('intent-server already up-to-date on remote, skipping deployment', {
-        connectionId,
-        hash: localHash,
-      });
-      return false;
-    }
-
-    // Ensure directory exists
-    await this.ensureRemoteDirectory(connectionId, '~/.intent-server');
-
-    // Upload the bundle
-    await this.uploadFile(connectionId, localBundlePath, '~/.intent-server/server.js');
-
-    // Write the version hash
-    await this.writeRemoteFile(connection, '~/.intent-server/server.version', localHash + '\n');
-
-    // Make executable (not strictly needed for `node` but good practice)
-    await this.executeCommand(connectionId, 'chmod +x ~/.intent-server/server.js', { timeout: 10000 });
-
-    this.logger.info('intent-server deployed successfully', {
-      connectionId,
-      hash: localHash,
-    });
-
-    return true;
   }
 
   /**

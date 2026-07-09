@@ -1,12 +1,11 @@
 /**
  * IMetadataFS — Filesystem abstraction for workspace metadata operations.
  *
- * Mirrors the subset of Node's `fs/promises` API used by
- * `FolderBasedNotesRepository` and related storage code.
+ * Mirrors the subset of Node's `fs/promises` API used by metadata sync
+ * and related storage code.
  *
- * Implementations:
- * - `LocalMetadataFS`  — thin pass-through to `fs/promises` (local workspaces)
- * - `RemoteMetadataFS` — routes through `RemoteRPCClient` (SSH workspaces)
+ * Implementation:
+ * - `LocalMetadataFS` — thin pass-through to `fs/promises`.
  */
 
 /**

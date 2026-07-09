@@ -13,7 +13,16 @@ import {
 } from 'vitest';
 import type { ToolCall } from '../protocol';
 
-// Mock instances - need to be hoisted
+// Mock instances - need to be hoisted.
+//
+// C1d-6: `agent-interaction-tools.ts` no longer imports the FE
+// `AgentBackendHandler`; its write/wake paths hit the daemon directly via
+// `agent.create` / `agent.sendMessage` / `agent.getSession` (PROTOCOL.md
+// §5.5). These per-method spies remain the seam every test asserts against —
+// the `installWriteWakeWireCompat()` helper below wires them into
+// `mockRequest` so existing `mockBackendHandler.createAgent.mockResolvedValue`
+// style fixtures keep describing the same behaviour without hand-editing 80+
+// legacy assertions.
 const mockBackendHandler = {
   createAgent: vi.fn(),
   sendBackendInitiatedMessage: vi.fn(),
@@ -32,10 +41,10 @@ const mockNotesService = vi.hoisted(() => ({
 
 const mockIsAutoCommitEnabled = vi.fn();
 
-const mockAgentPersistence = vi.hoisted(() => ({
-  loadAgent: vi.fn(),
-  saveAgent: vi.fn(),
-}));
+// P3-1: the mcp agent-session tools call the daemon via getBackendClient()
+// (PROTOCOL.md §5.5) instead of agentPersistence.*. `mockRequest` is the
+// wire-contract seam every test asserts against below.
+const mockRequest = vi.hoisted(() => vi.fn());
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const mockEventBus = {
@@ -92,12 +101,12 @@ const mockSelectorState = vi.hoisted(() => ({
   } as any,
 }));
 
-// Mock the dependencies before importing the tools
-vi.mock('$features/agent/main/agent-backend-handler.service', () => ({
-  AgentBackendHandler: {
-    getInstance: () => mockBackendHandler,
-  },
-}));
+// C1d-6: `agent-interaction-tools.ts` no longer imports the FE
+// `AgentBackendHandler`, so the previous `vi.mock('$features/agent/main/
+// agent-backend-handler.service', ...)` binding is gone. The write/wake seam
+// is now the daemon wire (`getBackendClient().request`), which
+// `installWriteWakeWireCompat()` below wires onto the `mockBackendHandler.*`
+// spies.
 
 // workspace-event-bus and unified-event-bus were deleted; events now dispatched via Redux
 
@@ -185,8 +194,8 @@ vi.mock('$features/protocol/main/protocol-adapter', () => ({
   },
 }));
 
-vi.mock('$features/agent/main/agent-persistence', () => ({
-  agentPersistence: mockAgentPersistence,
+vi.mock('$features/backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: mockRequest }),
 }));
 
 vi.mock('$features/notes/main/notes.service', () => ({
@@ -272,12 +281,182 @@ import {
 } from '../agent-interaction-tools';
 import { protocolAdapter } from '$features/protocol/main/protocol-adapter';
 
+// Translate the pre-rewire { success, data } shape into wire responses for
+// `agent.get` / `agent.getConversation` so the individual test bodies stay
+// legible. Tests that need to assert the exact JSON-RPC method + params
+// still inspect `mockRequest` directly.
+function stubDaemonAgentLoad(response: {
+  success: boolean;
+  data?: any;
+  error?: string;
+}) {
+  mockRequest.mockImplementation(async (method: string, params: any) => {
+    if (method === 'agent.get') {
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'agent not found');
+      }
+      return { agent: response.data };
+    }
+    if (method === 'agent.getConversation') {
+      const messages = response.success ? response.data?.messages ?? [] : [];
+      return { messages };
+    }
+    if (method === 'agent.reportToParent') {
+      // Daemon persists the child completion report and emits `agent:updated`;
+      // the stub just acknowledges (PROTOCOL.md §5.5).
+      return { success: true };
+    }
+    // C1d-6: write/wake methods (`agent.create` / `agent.sendMessage` /
+    // `agent.getSession`) fall through to the mockBackendHandler-bridged
+    // compat so tests that use this stub still exercise create/wake paths.
+    const compat = await invokeWriteWakeWireCompat(method, params);
+    if (compat !== undefined) return compat;
+    throw new Error(`unhandled RPC in stubDaemonAgentLoad: ${method}`);
+  });
+}
+
+// C1d-5: `list_agents` / `get_agent_diagnostics` read via daemon-primary
+// `agent.list` (PROTOCOL.md §5.5); the diagnostics tool additionally falls back
+// to `agent.get` for a focused non-active agent. This helper stubs both in one
+// mockImplementation so tests describe the daemon wire contract directly.
+function stubDaemonAgentList(agents: any[], agentDetails: Record<string, any> = {}) {
+  mockRequest.mockImplementation(async (method: string, params: any) => {
+    if (method === 'agent.list') {
+      return { agents };
+    }
+    if (method === 'agent.get') {
+      const agent = agentDetails[params?.agentId as string];
+      if (!agent) {
+        throw new Error('agent not found');
+      }
+      return { agent };
+    }
+    // C1d-6: same write/wake fall-through as `stubDaemonAgentLoad`.
+    const compat = await invokeWriteWakeWireCompat(method, params);
+    if (compat !== undefined) return compat;
+    throw new Error(`unhandled RPC in stubDaemonAgentList: ${method}`);
+  });
+}
+
+// C1d-6: bridge the `mockBackendHandler.*` spies onto the daemon wire seam
+// (`getBackendClient().request`). Each translation mirrors the request/response
+// contract in PROTOCOL.md §5.5 so the pre-C1d-6 test bodies keep asserting
+// their original request shapes and configuring their original response
+// fixtures — the write/wake seam simply moves from an FE handler singleton to
+// the JSON-RPC transport.
+//
+// - `agent.create`: unwraps the wire params, invokes `mockBackendHandler.
+//   createAgent(workspaceId, name, legacyOptions)` (hoisting metadata fields
+//   the retired handler used to accept at the top level), and wraps the
+//   `{ id, name }` return in `{ agent }`.
+// - `agent.sendMessage`: routes through `mockBackendHandler.
+//   sendBackendInitiatedMessage`. `ALREADY_STREAMING` collapses onto the new
+//   `{ queued: true, messageId }` wire response (the daemon auto-queues), so
+//   the queued-branch scenario also invokes `mockBackendHandler.
+//   handleQueueMessage` for its `queuedMessage.id`. `AGENT_DELETED` /
+//   `AGENT_NOT_FOUND` / other legacy errorCodes surface as JSON-RPC errors
+//   with matching text.
+// - `agent.getSession`: routes through `mockBackendHandler.
+//   getAgentResumability`. `status: 'not_found'` throws; `running` returns a
+//   session with `isStreaming: true`, `resumable` returns a session with idle
+//   flags — matching `daemonGetResumability`'s derivation in
+//   `agent-interaction-tools.ts`.
+async function invokeWriteWakeWireCompat(
+  method: string,
+  params: any,
+): Promise<any | undefined> {
+  if (method === 'agent.create') {
+    const md = params?.metadata ?? {};
+    const legacyOptions = {
+      workspacePath: params?.workspacePath,
+      model: params?.model,
+      provider: params?.provider,
+      agentType: params?.agentType,
+      initialMessage: md.initialMessage,
+      behaviorPrompt: md.behaviorPrompt,
+      specialistName: md.specialistName,
+      roleReminder: md.roleReminder,
+      contextReferences: md.contextReferences,
+      imageBlocks: md.imageBlocks,
+      metadata: md,
+    };
+    const agent = await mockBackendHandler.createAgent(
+      params?.workspaceId,
+      params?.name,
+      legacyOptions,
+    );
+    return { agent: agent ?? null };
+  }
+  if (method === 'agent.sendMessage') {
+    const legacyRes = await mockBackendHandler.sendBackendInitiatedMessage({
+      sessionId: params?.agentId,
+      workspaceId: params?.workspaceId,
+      message: params?.content,
+      messageMetadata: params?.messageMetadata,
+    });
+    if (legacyRes?.success) {
+      return { success: true, queued: false };
+    }
+    if (legacyRes?.errorCode === 'ALREADY_STREAMING') {
+      const queueRes = await mockBackendHandler.handleQueueMessage(null, {
+        agentId: params?.agentId,
+        content: params?.content,
+        workspaceId: params?.workspaceId,
+      });
+      if (queueRes?.success) {
+        return {
+          success: true,
+          queued: true,
+          messageId: queueRes.queuedMessage?.id,
+        };
+      }
+      throw new Error(queueRes?.error || 'queue unavailable');
+    }
+    if (legacyRes?.errorCode === 'AGENT_DELETED') {
+      throw new Error(legacyRes.error || 'agent has been deleted');
+    }
+    if (legacyRes?.errorCode === 'AGENT_NOT_FOUND') {
+      throw new Error(legacyRes.error || 'agent not found');
+    }
+    throw new Error(legacyRes?.error || 'send failed');
+  }
+  if (method === 'agent.getSession') {
+    const res = await mockBackendHandler.getAgentResumability(
+      params?.agentId,
+      params?.workspaceId,
+    );
+    if (!res || res.status === 'not_found') {
+      throw new Error('agent not found');
+    }
+    return {
+      session: {
+        ...(res.agentData || {}),
+        isStreaming: res.status === 'running',
+        isResponding: false,
+      },
+    };
+  }
+  return undefined;
+}
+
 describe('Agent Interaction Tools', () => {
   const workspaceId = 'test-workspace-id';
   const workspacePath = '/test/workspace/path';
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRequest.mockReset();
+    // Default wire routing: forward daemon write/wake calls through the
+    // `mockBackendHandler.*` spies (see `invokeWriteWakeWireCompat`). Reads
+    // like `agent.get` / `agent.getConversation` / `agent.reportToParent` are
+    // still resolved through individual test helpers (e.g. `stubDaemonAgentLoad`)
+    // or the per-describe-block `mockRequest.mockImplementation` overrides.
+    mockRequest.mockImplementation(async (method: string, params: any) => {
+      const compat = await invokeWriteWakeWireCompat(method, params);
+      if (compat !== undefined) return compat;
+      if (method === 'agent.get') return { agent: null };
+      return {};
+    });
     // Reset protocol adapter mocks after clearAllMocks
     vi.mocked(protocolAdapter.createNote).mockResolvedValue({
       ok: true,
@@ -926,26 +1105,39 @@ describe('Agent Interaction Tools', () => {
   });
 
   describe('ListAgentsTool', () => {
-    it('should list all agents in workspace (in-memory + persisted)', async () => {
+    it('issues agent.list({ workspaceId }) and projects AgentLite entries', async () => {
       const tool = new ListAgentsTool(workspaceId);
 
-      mockBackendHandler.listAllAgents.mockResolvedValue([
-        {
-          id: 'agent-1',
-          name: 'Agent One',
-          status: 'idle',
-          messages: [{ role: 'user' }, { role: 'assistant' }],
-          createdAt: new Date('2025-01-01'),
-          lastActivity: new Date('2025-01-02'),
-        },
-        {
-          id: 'agent-2',
-          name: 'Agent Two',
-          status: 'responding',
-          messages: [],
-          createdAt: new Date('2025-01-01'),
-        },
-      ]);
+      // C1d-5: `list_agents` reads daemon-primary (PROTOCOL.md §5.5
+      // `agent.list`); AgentLite entries carry messageCount + activity flags.
+      mockRequest.mockImplementation(async (method: string) => {
+        if (method === 'agent.list') {
+          return {
+            agents: [
+              {
+                id: 'agent-1',
+                name: 'Agent One',
+                status: 'idle',
+                messageCount: 2,
+                isStreaming: false,
+                isResponding: false,
+                createdAt: '2025-01-01T00:00:00.000Z',
+                lastActivity: '2025-01-02T00:00:00.000Z',
+              },
+              {
+                id: 'agent-2',
+                name: 'Agent Two',
+                status: 'responding',
+                messageCount: 0,
+                isStreaming: false,
+                isResponding: true,
+                createdAt: '2025-01-01T00:00:00.000Z',
+              },
+            ],
+          };
+        }
+        throw new Error(`unexpected ${method}`);
+      });
 
       const call: ToolCall = {
         name: 'list_agents',
@@ -964,21 +1156,44 @@ describe('Agent Interaction Tools', () => {
       const text = (result.content[0] as any).text;
       expect(text).toContain('Agent One');
       expect(text).toContain('Agent Two');
-      expect(mockBackendHandler.listAllAgents).toHaveBeenCalledWith(workspaceId);
+      expect(mockRequest).toHaveBeenCalledWith('agent.list', { workspaceId });
+      const infos = result.metadata?.agents as any[];
+      expect(infos.find((a) => a.id === 'agent-1')).toMatchObject({
+        messageCount: 2,
+        presentInBackend: false,
+      });
+      expect(infos.find((a) => a.id === 'agent-2')).toMatchObject({
+        messageCount: 0,
+        presentInBackend: true,
+      });
     });
   });
 
   describe('GetAgentStatusTool', () => {
-    it('should get status of a specific agent', async () => {
+    // C1d-5: `get_agent_status` reads daemon-primary (PROTOCOL.md §5.5
+    // `agent.getSession`); a single full-AgentSession call replaces the
+    // handler-first fallback chain and derives `presentInBackend` from the
+    // persisted `isStreaming`/`isResponding` flags.
+    it('issues agent.getSession({ agentId, workspaceId }) and returns active session details', async () => {
       const tool = new GetAgentStatusTool(workspaceId);
 
-      mockBackendHandler.getAgent.mockResolvedValue({
-        id: 'target-agent',
-        name: 'Target Agent',
-        status: 'idle',
-        messages: [{ role: 'user' }, { role: 'assistant' }, { role: 'user' }],
-        createdAt: new Date('2025-01-01'),
-        lastActivity: new Date('2025-01-02'),
+      mockRequest.mockImplementation(async (method: string, params: any) => {
+        if (method === 'agent.getSession') {
+          expect(params).toEqual({ agentId: 'target-agent', workspaceId });
+          return {
+            session: {
+              id: 'target-agent',
+              name: 'Target Agent',
+              status: 'idle',
+              messages: [{ role: 'user' }, { role: 'assistant' }, { role: 'user' }],
+              isStreaming: false,
+              isResponding: true,
+              createdAt: '2025-01-01T00:00:00.000Z',
+              lastActivity: '2025-01-02T00:00:00.000Z',
+            },
+          };
+        }
+        throw new Error(`unexpected ${method}`);
       });
 
       mockSubscriptionService.hasPendingEvents.mockReturnValue(true);
@@ -1003,14 +1218,27 @@ describe('Agent Interaction Tools', () => {
       const text = (result.content[0] as any).text;
       expect(text).toContain('Target Agent');
       expect(text).toContain('idle');
+      expect(text).toContain('Backend session: active');
+      expect(result.metadata?.agent).toMatchObject({
+        id: 'target-agent',
+        presentInBackend: true,
+        messageCount: 3,
+      });
+      expect(mockRequest).toHaveBeenCalledWith('agent.getSession', {
+        agentId: 'target-agent',
+        workspaceId,
+      });
     });
 
-    it('should handle non-existent agent', async () => {
+    it('returns an error when agent.getSession yields no session', async () => {
       const tool = new GetAgentStatusTool(workspaceId);
 
-      mockBackendHandler.getAgent.mockResolvedValue(null);
-      mockAgentPersistence.loadAgent.mockResolvedValue({ success: false, data: null });
-      mockBackendHandler.listAllAgents.mockResolvedValue([]);
+      mockRequest.mockImplementation(async (method: string) => {
+        if (method === 'agent.getSession') {
+          throw new Error('agent not found');
+        }
+        throw new Error(`unexpected ${method}`);
+      });
 
       const call: ToolCall = {
         name: 'get_agent_status',
@@ -1028,21 +1256,27 @@ describe('Agent Interaction Tools', () => {
       const result = await tool.execute(call);
 
       expect(result.isError).toBe(true);
+      expect((result.content[0] as any).text).toContain('non-existent-agent');
     });
 
-    it('falls back to persisted agents when no active backend session exists', async () => {
+    it('reports persisted-only when session flags are false', async () => {
       const tool = new GetAgentStatusTool(workspaceId);
 
-      mockBackendHandler.getAgent.mockResolvedValue(null);
-      mockAgentPersistence.loadAgent.mockResolvedValue({
-        success: true,
-        data: {
-          id: 'persisted-agent',
-          name: 'Persisted Agent',
-          status: 'idle',
-          messages: [{ role: 'user' }],
-          createdAt: '2026-06-19T04:00:00.000Z',
-        },
+      mockRequest.mockImplementation(async (method: string) => {
+        if (method === 'agent.getSession') {
+          return {
+            session: {
+              id: 'persisted-agent',
+              name: 'Persisted Agent',
+              status: 'idle',
+              messages: [{ role: 'user' }],
+              isStreaming: false,
+              isResponding: false,
+              createdAt: '2026-06-19T04:00:00.000Z',
+            },
+          };
+        }
+        throw new Error(`unexpected ${method}`);
       });
 
       const result = await tool.execute({
@@ -1065,20 +1299,25 @@ describe('Agent Interaction Tools', () => {
       });
     });
 
-    it('falls back to listAllAgents summaries when persisted load misses', async () => {
+    it('derives messageCount from metadata when messages array is absent', async () => {
       const tool = new GetAgentStatusTool(workspaceId);
 
-      mockBackendHandler.getAgent.mockResolvedValue(null);
-      mockAgentPersistence.loadAgent.mockResolvedValue({ success: false, data: null });
-      mockBackendHandler.listAllAgents.mockResolvedValue([
-        {
-          id: 'summary-only-agent',
-          name: 'Summary Only Agent',
-          status: 'idle',
-          metadata: { messageCount: 1 },
-          createdAt: '2026-06-19T04:00:00.000Z',
-        },
-      ]);
+      mockRequest.mockImplementation(async (method: string) => {
+        if (method === 'agent.getSession') {
+          return {
+            session: {
+              id: 'summary-only-agent',
+              name: 'Summary Only Agent',
+              status: 'idle',
+              metadata: { messageCount: 1 },
+              isStreaming: false,
+              isResponding: false,
+              createdAt: '2026-06-19T04:00:00.000Z',
+            },
+          };
+        }
+        throw new Error(`unexpected ${method}`);
+      });
 
       const result = await tool.execute({
         name: 'get_agent_status',
@@ -1105,7 +1344,7 @@ describe('Agent Interaction Tools', () => {
     it('should read full conversation history', async () => {
       const tool = new ReadAgentConversationTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'target-agent',
@@ -1153,7 +1392,7 @@ describe('Agent Interaction Tools', () => {
     it('should read last N messages', async () => {
       const tool = new ReadAgentConversationTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'target-agent',
@@ -1205,7 +1444,7 @@ describe('Agent Interaction Tools', () => {
     it('should handle non-existent agent', async () => {
       const tool = new ReadAgentConversationTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: false,
         data: null,
       });
@@ -1234,7 +1473,7 @@ describe('Agent Interaction Tools', () => {
     it('should get agent summary with tool calls', async () => {
       const tool = new GetAgentSummaryTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'target-agent',
@@ -1291,7 +1530,7 @@ describe('Agent Interaction Tools', () => {
     it('should handle agent with no messages', async () => {
       const tool = new GetAgentSummaryTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'target-agent',
@@ -1325,7 +1564,7 @@ describe('Agent Interaction Tools', () => {
     it('should handle non-existent agent', async () => {
       const tool = new GetAgentSummaryTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: false,
         data: null,
       });
@@ -1572,7 +1811,7 @@ describe('Agent Interaction Tools', () => {
 
     beforeEach(() => {
       mockIsAutoCommitEnabled.mockReturnValue(true);
-      mockAgentPersistence.loadAgent.mockResolvedValue({ success: false });
+      stubDaemonAgentLoad({ success: false });
       vi.mocked(protocolAdapter.getNote).mockResolvedValue({
         ok: true,
         data: { id: 'existing-task-note', title: 'Existing Task', content: 'x' },
@@ -1930,7 +2169,7 @@ describe('Agent Interaction Tools', () => {
       const tool = new ReportToParentTool(workspaceId);
 
       // Mock agent with parent (delegated agent)
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'child-agent-id',
@@ -1942,9 +2181,6 @@ describe('Agent Interaction Tools', () => {
           messages: [],
         },
       });
-
-      // Mock successful save
-      mockAgentPersistence.saveAgent = vi.fn().mockResolvedValue({ success: true });
 
       const call: ToolCall = {
         name: 'report_to_parent',
@@ -1970,7 +2206,7 @@ describe('Agent Interaction Tools', () => {
     it('should persist to disk AND sync the in-memory backend session', async () => {
       const tool = new ReportToParentTool(workspaceId);
 
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'child-agent-id',
@@ -1982,9 +2218,6 @@ describe('Agent Interaction Tools', () => {
           messages: [],
         },
       });
-
-      const saveAgentMock = vi.fn().mockResolvedValue({ success: true });
-      mockAgentPersistence.saveAgent = saveAgentMock;
 
       // Seed an in-memory session so the tool's sync path has something to update.
       mockBackendSessions.clear();
@@ -2011,18 +2244,20 @@ describe('Agent Interaction Tools', () => {
 
       expect(result.isError).toBe(false);
 
-      // (a) disk save happened with trimmed report + timestamp
-      expect(saveAgentMock).toHaveBeenCalledTimes(1);
-      const savedAgent = saveAgentMock.mock.calls[0][0];
-      expect(savedAgent.metadata.completionReport).toBe('Finished the work. Tests pass.');
-      expect(typeof savedAgent.metadata.completionReportTimestamp).toBe('string');
+      // (a) The daemon persist happened via agent.reportToParent with the
+      // trimmed report (PROTOCOL.md §5.5). The daemon owns the timestamp.
+      const rtpCall = mockRequest.mock.calls.find(
+        (call) => call[0] === 'agent.reportToParent',
+      );
+      expect(rtpCall).toBeDefined();
+      expect(rtpCall?.[1]).toEqual({ report: 'Finished the work. Tests pass.' });
 
       // (b) in-memory session now has both fields (and preserves prior metadata)
       expect(mockConsolidatedBackend.getSession).toHaveBeenCalledWith('child-agent-id');
       expect(fakeSession.metadata).toMatchObject({
         specialist: 'implementor',
         completionReport: 'Finished the work. Tests pass.',
-        completionReportTimestamp: savedAgent.metadata.completionReportTimestamp,
+        completionReportTimestamp: expect.any(String),
       });
     });
 
@@ -2030,7 +2265,7 @@ describe('Agent Interaction Tools', () => {
       const tool = new ReportToParentTool(workspaceId);
 
       // Mock agent without parent (not delegated)
-      mockAgentPersistence.loadAgent.mockResolvedValue({
+      stubDaemonAgentLoad({
         success: true,
         data: {
           id: 'standalone-agent-id',
@@ -2097,8 +2332,12 @@ describe('Agent Interaction Tools', () => {
       data: { ignoredSecret: 'SHOULD_NOT_LEAK' },
     });
 
+    // C1d-5: `get_agent_diagnostics` reads daemon-primary (PROTOCOL.md §5.5
+    // `agent.list`); the active-set previously served by `handler.listAgents`
+    // collapses onto AgentLite's `isStreaming`/`isResponding` flags, and the
+    // per-agent detail lookup routes through `agent.get`.
     it('returns an empty sanitized snapshot', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([]);
+      stubDaemonAgentList([]);
       const tool = new GetAgentDiagnosticsTool(workspaceId);
 
       const result = await tool.execute({
@@ -2117,16 +2356,25 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('reports normal agent, subscription, queue, delegation, and delivery counts', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
+      stubDaemonAgentList([
         {
           id: 'parent-agent',
           name: 'Parent',
           status: 'idle',
           metadata: { taskNoteId: 'task-1' },
-          messages: [{ role: 'user' }],
+          messageCount: 1,
+          isStreaming: false,
+          isResponding: false,
           lastActivity: '2026-06-19T04:00:00.000Z',
         },
-        { id: 'child-agent', name: 'Child', status: 'completed', metadata: { taskNoteId: 'task-2' } },
+        {
+          id: 'child-agent',
+          name: 'Child',
+          status: 'completed',
+          metadata: { taskNoteId: 'task-2' },
+          isStreaming: false,
+          isResponding: false,
+        },
       ]);
       mockSelectorState.workspaceSubscriptionState = {
         ...makeEmptyWorkspaceSubscriptionState(),
@@ -2196,13 +2444,15 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('surfaces stuck-risk signals and keeps output sanitized', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
+      stubDaemonAgentList([
         {
           id: 'parent-agent',
           name: 'Parent',
           status: 'responding',
           metadata: { taskNoteId: 'task-1', env: 'SECRET_ENV_VALUE' },
           messages: [{ content: 'SECRET_MESSAGE_VALUE' }],
+          isStreaming: false,
+          isResponding: false,
           lastActivity: '2026-06-19T03:00:00.000Z',
         },
       ]);
@@ -2275,8 +2525,15 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('keeps historical delivery timeout counters out of active stuck risks when queues are clear', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
-        { id: 'parent-agent', name: 'Parent', status: 'idle', lastActivity: '2026-06-19T04:00:00.000Z' },
+      stubDaemonAgentList([
+        {
+          id: 'parent-agent',
+          name: 'Parent',
+          status: 'idle',
+          isStreaming: false,
+          isResponding: false,
+          lastActivity: '2026-06-19T04:00:00.000Z',
+        },
       ]);
       mockSelectorState.workspaceSubscriptionState = {
         ...makeEmptyWorkspaceSubscriptionState(),
@@ -2311,8 +2568,15 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('surfaces recent delivery timeout counters while they are still operationally relevant', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
-        { id: 'parent-agent', name: 'Parent', status: 'idle', lastActivity: '2026-06-19T04:00:00.000Z' },
+      stubDaemonAgentList([
+        {
+          id: 'parent-agent',
+          name: 'Parent',
+          status: 'idle',
+          isStreaming: false,
+          isResponding: false,
+          lastActivity: '2026-06-19T04:00:00.000Z',
+        },
       ]);
       mockSelectorState.workspaceSubscriptionState = {
         ...makeEmptyWorkspaceSubscriptionState(),
@@ -2341,28 +2605,21 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('flags persisted-only agents that have an initial prompt but no response', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
+      // No `agentId` filter, so `agent.get` fallback is not triggered; the
+      // AgentLite entry from `agent.list` carries `metadata.messageCount: 1`
+      // and no `messages`, which drives `pendingInitialResponse: true`.
+      stubDaemonAgentList([
         {
           id: 'stuck-created-agent',
           name: 'Stuck Created Agent',
           status: 'idle',
           metadata: { messageCount: 1 },
+          isStreaming: false,
+          isResponding: false,
           createdAt: '2026-06-19T04:00:00.000Z',
           updatedAt: '2026-06-19T04:00:00.000Z',
         },
       ]);
-      mockBackendHandler.listAgents.mockResolvedValue([]);
-      mockAgentPersistence.loadAgent.mockResolvedValue({
-        success: true,
-        data: {
-          id: 'stuck-created-agent',
-          name: 'Stuck Created Agent',
-          status: 'idle',
-          messages: [{ role: 'user' }],
-          createdAt: '2026-06-19T04:00:00.000Z',
-          updatedAt: '2026-06-19T04:00:00.000Z',
-        },
-      });
       const tool = new GetAgentDiagnosticsTool(workspaceId);
 
       const result = await tool.execute({
@@ -2392,18 +2649,21 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('flags active idle agents that have an initial prompt but no response', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
+      // `isResponding: true` on the AgentLite marks the agent as active, so
+      // `presentInBackend` is true and the stuck-risk message omits the
+      // "no active backend session" clause.
+      stubDaemonAgentList([
         {
           id: 'active-never-started-agent',
           name: 'Active Never Started Agent',
           status: 'idle',
           messages: [{ role: 'user' }],
+          messageCount: 1,
+          isStreaming: false,
+          isResponding: true,
           createdAt: '2026-06-19T04:00:00.000Z',
           updatedAt: '2026-06-19T04:00:00.000Z',
         },
-      ]);
-      mockBackendHandler.listAgents.mockResolvedValue([
-        { id: 'active-never-started-agent', name: 'Active Never Started Agent', status: 'idle' },
       ]);
       const tool = new GetAgentDiagnosticsTool(workspaceId);
 
@@ -2435,28 +2695,33 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('does not flag persisted-only agents that already have an assistant response', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
+      // `agentId` filter is set and the AgentLite entry is not active, so the
+      // tool falls back to `agent.get` per PROTOCOL.md §5.5 for the fuller
+      // messages payload; the composite mock returns both shapes.
+      stubDaemonAgentList(
+        [
+          {
+            id: 'answered-persisted-agent',
+            name: 'Answered Persisted Agent',
+            status: 'idle',
+            metadata: { messageCount: 2 },
+            isStreaming: false,
+            isResponding: false,
+            createdAt: '2026-06-19T04:00:00.000Z',
+            updatedAt: '2026-06-19T04:01:00.000Z',
+          },
+        ],
         {
-          id: 'answered-persisted-agent',
-          name: 'Answered Persisted Agent',
-          status: 'idle',
-          metadata: { messageCount: 2 },
-          createdAt: '2026-06-19T04:00:00.000Z',
-          updatedAt: '2026-06-19T04:01:00.000Z',
+          'answered-persisted-agent': {
+            id: 'answered-persisted-agent',
+            name: 'Answered Persisted Agent',
+            status: 'idle',
+            messages: [{ role: 'user' }, { role: 'assistant' }],
+            createdAt: '2026-06-19T04:00:00.000Z',
+            updatedAt: '2026-06-19T04:01:00.000Z',
+          },
         },
-      ]);
-      mockBackendHandler.listAgents.mockResolvedValue([]);
-      mockAgentPersistence.loadAgent.mockResolvedValue({
-        success: true,
-        data: {
-          id: 'answered-persisted-agent',
-          name: 'Answered Persisted Agent',
-          status: 'idle',
-          messages: [{ role: 'user' }, { role: 'assistant' }],
-          createdAt: '2026-06-19T04:00:00.000Z',
-          updatedAt: '2026-06-19T04:01:00.000Z',
-        },
-      });
+      );
       const tool = new GetAgentDiagnosticsTool(workspaceId);
 
       const result = await tool.execute({
@@ -2481,10 +2746,10 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('uses canonical delegation completion for any-mode terminal ids', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
-        { id: 'parent-agent', name: 'Parent', status: 'idle' },
-        { id: 'expected-a', name: 'Expected A', status: 'idle' },
-        { id: 'expected-b', name: 'Expected B', status: 'idle' },
+      stubDaemonAgentList([
+        { id: 'parent-agent', name: 'Parent', status: 'idle', isStreaming: false, isResponding: false },
+        { id: 'expected-a', name: 'Expected A', status: 'idle', isStreaming: false, isResponding: false },
+        { id: 'expected-b', name: 'Expected B', status: 'idle', isStreaming: false, isResponding: false },
       ]);
       mockSelectorState.workspaceSubscriptionState = {
         ...makeEmptyWorkspaceSubscriptionState(),
@@ -2579,7 +2844,7 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('reports deleted-agent references', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([]);
+      stubDaemonAgentList([]);
       mockSelectorState.workspaceSubscriptionState = {
         ...makeEmptyWorkspaceSubscriptionState(),
         subscriptions: {
@@ -2621,10 +2886,37 @@ describe('Agent Interaction Tools', () => {
     });
 
     it('focuses diagnostics by task note or agent id', async () => {
-      mockBackendHandler.listAllAgents.mockResolvedValue([
-        { id: 'agent-a', name: 'A', status: 'idle', metadata: { taskNoteId: 'task-a' } },
-        { id: 'agent-b', name: 'B', status: 'idle', metadata: { taskNoteId: 'task-b' } },
-      ]);
+      // The `byAgent` call passes `agentId: 'agent-b'`, so the tool falls
+      // back to `agent.get`; the composite mock returns the same agent shape
+      // so the focused diagnostic is stable.
+      stubDaemonAgentList(
+        [
+          {
+            id: 'agent-a',
+            name: 'A',
+            status: 'idle',
+            metadata: { taskNoteId: 'task-a' },
+            isStreaming: false,
+            isResponding: false,
+          },
+          {
+            id: 'agent-b',
+            name: 'B',
+            status: 'idle',
+            metadata: { taskNoteId: 'task-b' },
+            isStreaming: false,
+            isResponding: false,
+          },
+        ],
+        {
+          'agent-b': {
+            id: 'agent-b',
+            name: 'B',
+            status: 'idle',
+            metadata: { taskNoteId: 'task-b' },
+          },
+        },
+      );
       mockSelectorState.workspaceSubscriptionState = {
         ...makeEmptyWorkspaceSubscriptionState(),
         subscriptions: {
@@ -2776,6 +3068,48 @@ describe('Agent Interaction Tools', () => {
       installSubscriptionScenarioMocks();
       mockIsAutoCommitEnabled.mockReturnValue(true);
       DelegateTaskTool.clearDelegationGroup(workspaceId, parentAgentId);
+      // P3-D4: MCP tools now hit the daemon directly for note.get/task.*
+      // (PROTOCOL.md §5.2, §5.4). Delegate to the legacy mockNotesService so
+      // existing per-test expectations keep working. C1d-6: write/wake
+      // (`agent.create` / `agent.sendMessage` / `agent.getSession`) fall
+      // through to `invokeWriteWakeWireCompat` so the same
+      // `mockBackendHandler.*` spies keep configuring behaviour.
+      mockRequest.mockImplementation(async (method: string, params: any) => {
+        if (method === 'note.get') {
+          const res = await mockNotesService.getNote(params?.workspaceId, params?.noteId);
+          if (!res || !res.ok) {
+            throw new Error(res?.error || 'note.get failed');
+          }
+          return { note: res.data };
+        }
+        if (method === 'task.assignAgent') {
+          const res = await mockNotesService.assignAgentToTask(
+            params?.workspaceId,
+            params?.noteId,
+            params?.agentId,
+          );
+          if (!res || !res.ok) {
+            throw new Error(res?.error || 'task.assignAgent failed');
+          }
+          return { ok: true, noteId: params?.noteId, agentId: params?.agentId };
+        }
+        if (method === 'task.removeAgentFromAllTasks') {
+          const res = await mockNotesService.removeAgentFromAllTasks(
+            params?.workspaceId,
+            params?.agentId,
+          );
+          if (!res || !res.ok) {
+            throw new Error(res?.error || 'task.removeAgentFromAllTasks failed');
+          }
+          return { ok: true, updatedCount: res.data ?? 0 };
+        }
+        const compat = await invokeWriteWakeWireCompat(method, params);
+        if (compat !== undefined) return compat;
+        if (method === 'agent.get') {
+          return { agent: null };
+        }
+        return {};
+      });
     });
 
     afterEach(() => {
@@ -2926,15 +3260,10 @@ describe('Agent Interaction Tools', () => {
         arguments: { taskNoteId, wait_mode: 'after_all' },
         context: makeContext(),
       });
-      const [aliasBackend, relativeBackend] = await Promise.all([
-        import('$features/agent/main/agent-backend-handler.service'),
-        import('../../../../agent/main/agent-backend-handler.service'),
-      ]);
-      vi.spyOn(relativeBackend.AgentBackendHandler, 'getInstance').mockReturnValue(
-        mockBackendHandler as any,
-      );
-      expect(aliasBackend.AgentBackendHandler.getInstance()).toBe(mockBackendHandler);
-      expect(relativeBackend.AgentBackendHandler.getInstance()).toBe(mockBackendHandler);
+      // C1d-6: `agent-interaction-tools.ts` no longer imports the FE
+      // `AgentBackendHandler`, so the alias/relative-path resolution spy that
+      // used to guard against dual-instance drift is retired. The daemon wire
+      // seam (`getBackendClient().request`) is the single seam under test now.
 
       const [first, second, duplicate] = await Promise.all([
         tool.execute(makeDelegateCall('task-concurrent-after-all-a')),
@@ -3052,21 +3381,50 @@ describe('Agent Interaction Tools', () => {
       ).toHaveLength(1);
     });
 
-    it('wakes an existing task agent and subscribes the caller to the response', async () => {
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: {
-          id: 'task-wake',
-          title: 'Wake task',
-          metadata: { task: { assignedAgentIds: ['agent-to-wake'] } },
-        },
+    // C1d-10: WakeOrCreateTaskAgentTool collapses onto a single
+    // `agent.wakeOrCreate` RPC (PROTOCOL.md §5.5, widened by C1d-10a). The
+    // daemon owns resumability probing, specialist inheritance, stale
+    // cleanup, and the create payload — the FE only supplies the wake-level
+    // `model`, `callerAgentId`, `messageMetadata`, and `create.*` bag, then
+    // maps the daemon's `action` discriminator onto its subscription and
+    // result-shape branches. These tests exercise the FE-visible request
+    // shape and branch mapping; the composed behaviors are covered daemon-side.
+    const stubWakeOrCreate = (
+      response:
+        | Partial<{
+            ok: boolean;
+            agentId: string;
+            agentName: string;
+            created: boolean;
+            action: 'message_queued_to_active_agent' | 'woke_existing' | 'created_new';
+            taskTitle: string;
+            result: { success?: boolean; queued?: boolean; messageId?: string };
+            cleanedUpAgentIds: string[];
+          }>
+        | Error,
+    ) => {
+      mockRequest.mockImplementation(async (method: string) => {
+        if (method === 'agent.wakeOrCreate') {
+          if (response instanceof Error) throw response;
+          return {
+            ok: true,
+            created: false,
+            result: { success: true, queued: false },
+            ...response,
+          };
+        }
+        if (method === 'agent.get') return { agent: null };
+        return {};
       });
-      mockBackendHandler.getAgentResumability.mockResolvedValue({
-        canWake: true,
-        status: 'resumable',
-        agentData: { metadata: { specialist: 'implementor' } },
+    };
+
+    it('sends a single agent.wakeOrCreate with the expected wire shape', async () => {
+      stubWakeOrCreate({
+        agentId: 'agent-to-wake',
+        agentName: 'Task: Wake task',
+        action: 'woke_existing',
+        taskTitle: 'Wake task',
       });
-      mockBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({ success: true });
       const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
 
       const result = await tool.execute({
@@ -3076,36 +3434,51 @@ describe('Agent Interaction Tools', () => {
       } as ToolCall);
 
       expectToolSuccess(result, 'wake_or_create woke_existing scenario');
+      const wakeCall = mockRequest.mock.calls.find((c) => c[0] === 'agent.wakeOrCreate');
+      expect(wakeCall?.[1]).toEqual(
+        expect.objectContaining({
+          workspaceId,
+          taskNoteId: 'task-wake',
+          contextMessage: 'Dependencies are ready.',
+          callerAgentId: parentAgentId,
+          messageMetadata: expect.objectContaining({
+            type: 'task_wake',
+            source: 'wake_or_create_task_agent',
+            taskNoteId: 'task-wake',
+            callerAgentId: parentAgentId,
+          }),
+          create: expect.objectContaining({
+            provider: 'programmatic-test',
+            agentType: 'task-loop',
+            contextReferences: [{ type: 'note', id: 'task-wake', name: 'task-wake' }],
+            skipAutoCommit: false,
+          }),
+        }),
+      );
+      // No FE-composed round-trips beyond the single wake RPC.
+      expect(
+        mockRequest.mock.calls.filter((c) =>
+          ['agent.getSession', 'agent.sendMessage', 'agent.create', 'note.get', 'task.assignAgent'].includes(
+            c[0] as string,
+          ),
+        ),
+      ).toEqual([]);
       expect(result.metadata).toMatchObject({
         action: 'woke_existing',
         agentId: 'agent-to-wake',
         taskNoteId: 'task-wake',
+        taskTitle: 'Wake task',
         subscriptionId: 'sub-parent-agent-id-agent-to-wake',
       });
-      expect(mockBackendHandler.sendBackendInitiatedMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sessionId: 'agent-to-wake',
-          message: 'Dependencies are ready.',
-          messageMetadata: expect.objectContaining({ taskNoteId: 'task-wake' }),
-        }),
-      );
     });
 
-    it('wakes a running assigned agent with a one-shot completion subscription', async () => {
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: {
-          id: 'task-running',
-          title: 'Running task',
-          metadata: { task: { assignedAgentIds: ['running-agent'] } },
-        },
+    it('subscribes the caller with a oneShot filter on woke_existing', async () => {
+      stubWakeOrCreate({
+        agentId: 'running-agent',
+        agentName: 'Task: Running task',
+        action: 'woke_existing',
+        taskTitle: 'Running task',
       });
-      mockBackendHandler.getAgentResumability.mockResolvedValue({
-        canWake: true,
-        status: 'running',
-        agentData: { metadata: { specialist: 'implementor' } },
-      });
-      mockBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({ success: true });
       const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
 
       const result = await tool.execute({
@@ -3116,7 +3489,6 @@ describe('Agent Interaction Tools', () => {
 
       expectToolSuccess(result, 'wake_or_create running assigned-agent scenario');
       expect(result.metadata).toMatchObject({ action: 'woke_existing', agentId: 'running-agent' });
-      expect(mockBackendHandler.createAgent).not.toHaveBeenCalled();
       expect(mockSubscriptionService.subscribe).toHaveBeenCalledWith(
         parentAgentId,
         parentAgentName,
@@ -3128,79 +3500,14 @@ describe('Agent Interaction Tools', () => {
       );
     });
 
-    it('uses the most recently assigned wakeable agent without probing older assignments', async () => {
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: {
-          id: 'task-most-recent',
-          title: 'Most recent task',
-          metadata: { task: { assignedAgentIds: ['older-agent', 'latest-agent'] } },
-        },
+    it('maps action=created_new onto the created_new metadata branch', async () => {
+      stubWakeOrCreate({
+        agentId: 'agent-created-fallback',
+        agentName: 'Task: Create fallback task',
+        action: 'created_new',
+        created: true,
+        taskTitle: 'Create fallback task',
       });
-      mockBackendHandler.getAgentResumability.mockResolvedValue({
-        canWake: true,
-        status: 'resumable',
-        agentData: { metadata: { specialist: 'verifier' } },
-      });
-      mockBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({ success: true });
-      const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
-
-      const result = await tool.execute({
-        name: 'wake_or_create_task_agent',
-        arguments: { taskNoteId: 'task-most-recent', contextMessage: 'Wake latest.' },
-        context: makeContext(),
-      } as ToolCall);
-
-      expectToolSuccess(result, 'wake_or_create most-recent selection scenario');
-      expect(result.metadata).toMatchObject({ action: 'woke_existing', agentId: 'latest-agent' });
-      expect(mockBackendHandler.getAgentResumability).toHaveBeenCalledTimes(1);
-      expect(mockBackendHandler.getAgentResumability).toHaveBeenCalledWith('latest-agent', workspaceId);
-      expect(mockBackendHandler.sendBackendInitiatedMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: 'latest-agent' }),
-      );
-      expect(mockBackendHandler.createAgent).not.toHaveBeenCalled();
-    });
-
-    it('removes stale newer missing assignments before waking an older resumable agent', async () => {
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: {
-          id: 'task-stale-then-wake',
-          title: 'Stale then wake task',
-          metadata: { task: { assignedAgentIds: ['older-resumable', 'missing-latest'] } },
-        },
-      });
-      mockNotesService.removeAgentFromAllTasks.mockResolvedValue({ ok: true, data: 1 });
-      mockBackendHandler.getAgentResumability.mockImplementation(async (agentId: string) =>
-        agentId === 'missing-latest'
-          ? { canWake: false, status: 'not_found' }
-          : { canWake: true, status: 'resumable', agentData: { metadata: { specialist: 'implementor' } } },
-      );
-      mockBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({ success: true });
-      const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
-
-      const result = await tool.execute({
-        name: 'wake_or_create_task_agent',
-        arguments: { taskNoteId: 'task-stale-then-wake', contextMessage: 'Wake older.' },
-        context: makeContext(),
-      } as ToolCall);
-
-      expectToolSuccess(result, 'wake_or_create stale-cleanup-before-wake scenario');
-      expect(result.metadata).toMatchObject({ action: 'woke_existing', agentId: 'older-resumable' });
-      expect(mockNotesService.removeAgentFromAllTasks).toHaveBeenCalledWith(
-        workspaceId,
-        'missing-latest',
-      );
-      expect(mockBackendHandler.createAgent).not.toHaveBeenCalled();
-    });
-
-    it('creates a programmatic-provider fallback agent when no assigned agent can wake', async () => {
-      useDeterministicAgentCreation(['agent-created-fallback']);
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: { id: 'task-create', title: 'Create fallback task', metadata: { task: {} } },
-      });
-      mockNotesService.assignAgentToTask.mockResolvedValue({ ok: true });
       const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
 
       const result = await tool.execute({
@@ -3213,44 +3520,43 @@ describe('Agent Interaction Tools', () => {
       expect(result.metadata).toMatchObject({
         action: 'created_new',
         agentId: 'agent-created-fallback',
+        agentName: 'Task: Create fallback task',
         taskNoteId: 'task-create',
+        taskTitle: 'Create fallback task',
         subscriptionId: 'sub-parent-agent-id-agent-created-fallback',
       });
-      expect(mockBackendHandler.createAgent).toHaveBeenCalledWith(
-        workspaceId,
-        'Task: Create fallback task',
-        expect.objectContaining({ provider: 'programmatic-test' }),
-      );
-      expect(mockNotesService.assignAgentToTask).toHaveBeenCalledWith(
-        workspaceId,
-        'task-create',
-        'agent-created-fallback',
-      );
     });
 
-    it('queues context to an already-active task agent without creating a duplicate', async () => {
+    it('propagates skipAutoCommit=true through create when workspace auto-commit is disabled', async () => {
+      mockIsAutoCommitEnabled.mockReturnValueOnce(false);
+      stubWakeOrCreate({
+        agentId: 'agent-created-no-autocommit',
+        action: 'created_new',
+        created: true,
+        taskTitle: 'No auto-commit task',
+      });
+      const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
+
+      await tool.execute({
+        name: 'wake_or_create_task_agent',
+        arguments: { taskNoteId: 'task-no-autocommit', contextMessage: 'Kickoff.' },
+        context: makeContext(),
+      } as ToolCall);
+
+      const wakeCall = mockRequest.mock.calls.find((c) => c[0] === 'agent.wakeOrCreate');
+      expect(wakeCall?.[1]).toMatchObject({
+        create: expect.objectContaining({ skipAutoCommit: true }),
+      });
+    });
+
+    it('takes the queued branch when daemon returns action=message_queued_to_active_agent', async () => {
       vi.useFakeTimers();
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: {
-          id: 'task-queued',
-          title: 'Queued task',
-          metadata: { task: { assignedAgentIds: ['active-agent'] } },
-        },
-      });
-      mockBackendHandler.getAgentResumability.mockResolvedValue({
-        canWake: true,
-        status: 'running',
-        agentData: { metadata: { specialist: 'implementor' } },
-      });
-      mockBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({
-        success: false,
-        errorCode: 'ALREADY_STREAMING',
-        error: 'active stream',
-      });
-      mockBackendHandler.handleQueueMessage.mockResolvedValue({
-        success: true,
-        queuedMessage: { id: 'msg-queued-wake' },
+      stubWakeOrCreate({
+        agentId: 'active-agent',
+        agentName: 'Task: Queued task',
+        action: 'message_queued_to_active_agent',
+        taskTitle: 'Queued task',
+        result: { success: true, queued: true, messageId: 'msg-queued-wake' },
       });
       const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
 
@@ -3267,12 +3573,6 @@ describe('Agent Interaction Tools', () => {
         taskNoteId: 'task-queued',
         subscriptionId: 'sub-parent-agent-id-active-agent',
         queuedMessageId: 'msg-queued-wake',
-      });
-      expect(mockBackendHandler.createAgent).not.toHaveBeenCalled();
-      expect(mockBackendHandler.handleQueueMessage).toHaveBeenCalledWith(null, {
-        agentId: 'active-agent',
-        content: 'Queue this context.',
-        workspaceId,
       });
       const subscriptionFilter = mockSubscriptionService.subscribe.mock.calls[0]?.[2];
       expect(
@@ -3300,242 +3600,28 @@ describe('Agent Interaction Tools', () => {
       );
     });
 
-    it('returns an error without duplicate creation when queueing to an active agent fails', async () => {
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: {
-          id: 'task-queue-fail',
-          title: 'Queue failure task',
-          metadata: { task: { assignedAgentIds: ['active-agent'] } },
-        },
-      });
-      mockBackendHandler.getAgentResumability.mockResolvedValue({
-        canWake: true,
-        status: 'running',
-        agentData: { metadata: { specialist: 'implementor' } },
-      });
-      mockBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({
-        success: false,
-        errorCode: 'ALREADY_STREAMING',
-        error: 'active stream',
-      });
-      mockBackendHandler.handleQueueMessage.mockResolvedValue({
-        success: false,
-        error: 'queue unavailable',
-      });
+    it('maps the -32602 depth-guard rejection onto the depth-cap tool error', async () => {
+      const depthError = Object.assign(
+        new Error('agent.wakeOrCreate: delegation depth 2 exceeds MAX_DELEGATION_DEPTH (2)'),
+        { rpcCode: -32602, code: 'INVALID_PARAMS' },
+      );
+      stubWakeOrCreate(depthError);
       const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
 
       const result = await tool.execute({
         name: 'wake_or_create_task_agent',
-        arguments: { taskNoteId: 'task-queue-fail', contextMessage: 'Queue this context.' },
+        arguments: { taskNoteId: 'task-depth', contextMessage: 'Try to recurse.' },
         context: makeContext(),
       } as ToolCall);
 
       expect(result.isError).toBe(true);
-      expect((result.content[0] as any).text).toContain('failed to queue context message');
-      expect(mockBackendHandler.createAgent).not.toHaveBeenCalled();
-      expect(mockSubscriptionService.subscribe).not.toHaveBeenCalled();
-    });
-
-    it('removes stale missing task-agent assignments before creating a replacement', async () => {
-      useDeterministicAgentCreation(['agent-created-after-missing']);
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: {
-          id: 'task-missing',
-          title: 'Missing task',
-          metadata: { task: { assignedAgentIds: ['missing-agent'] } },
-        },
-      });
-      mockNotesService.assignAgentToTask.mockResolvedValue({ ok: true });
-      mockNotesService.removeAgentFromAllTasks.mockResolvedValue({ ok: true, data: 1 });
-      mockBackendHandler.getAgentResumability.mockResolvedValue({
-        canWake: false,
-        status: 'not_found',
-      });
-      const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
-
-      const result = await tool.execute({
-        name: 'wake_or_create_task_agent',
-        arguments: { taskNoteId: 'task-missing', contextMessage: 'Recover missing assignment.' },
-        context: makeContext(),
-      } as ToolCall);
-
-      expectToolSuccess(result, 'wake_or_create missing assigned-agent recovery');
-      expect(result.metadata).toMatchObject({
-        action: 'created_new',
-        agentId: 'agent-created-after-missing',
-      });
-      expect(mockNotesService.removeAgentFromAllTasks).toHaveBeenCalledWith(
-        workspaceId,
-        'missing-agent',
-      );
-      expect(mockNotesService.assignAgentToTask).toHaveBeenCalledWith(
-        workspaceId,
-        'task-missing',
-        'agent-created-after-missing',
+      expect((result.content[0] as any).text).toContain(
+        'maximum delegation depth (2) reached',
       );
     });
 
-    it('falls back to create and cleans assignment when wake reports a deleted target', async () => {
-      useDeterministicAgentCreation(['agent-created-after-delete']);
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: {
-          id: 'task-deleted-target',
-          title: 'Deleted target task',
-          metadata: { task: { assignedAgentIds: ['deleted-agent'] } },
-        },
-      });
-      mockNotesService.assignAgentToTask.mockResolvedValue({ ok: true });
-      mockNotesService.removeAgentFromAllTasks.mockResolvedValue({ ok: true, data: 1 });
-      mockBackendHandler.getAgentResumability.mockResolvedValue({
-        canWake: true,
-        status: 'resumable',
-        agentData: { metadata: { specialist: 'implementor' } },
-      });
-      mockBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({
-        success: false,
-        errorCode: 'AGENT_DELETED',
-        error: 'Agent has been deleted',
-      });
-      const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
-
-      const result = await tool.execute({
-        name: 'wake_or_create_task_agent',
-        arguments: { taskNoteId: 'task-deleted-target', contextMessage: 'Recover deleted target.' },
-        context: makeContext(),
-      } as ToolCall);
-
-      expectToolSuccess(result, 'wake_or_create deleted target fallback scenario');
-      expect(result.metadata).toMatchObject({
-        action: 'created_new',
-        agentId: 'agent-created-after-delete',
-      });
-      expect(mockNotesService.removeAgentFromAllTasks).toHaveBeenCalledWith(
-        workspaceId,
-        'deleted-agent',
-      );
-      expect(mockNotesService.assignAgentToTask).toHaveBeenCalledWith(
-        workspaceId,
-        'task-deleted-target',
-        'agent-created-after-delete',
-      );
-    });
-
-    it('falls back to create when delivery reports agent not found', async () => {
-      useDeterministicAgentCreation(['agent-created-after-not-found']);
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: {
-          id: 'task-not-found-delivery',
-          title: 'Not found delivery task',
-          metadata: { task: { assignedAgentIds: ['vanished-agent'] } },
-        },
-      });
-      mockNotesService.assignAgentToTask.mockResolvedValue({ ok: true });
-      mockBackendHandler.getAgentResumability.mockResolvedValue({
-        canWake: true,
-        status: 'resumable',
-        agentData: { metadata: { specialist: 'implementor' } },
-      });
-      mockBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({
-        success: false,
-        errorCode: 'AGENT_NOT_FOUND',
-        error: 'Agent not found',
-      });
-      const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
-
-      const result = await tool.execute({
-        name: 'wake_or_create_task_agent',
-        arguments: { taskNoteId: 'task-not-found-delivery', contextMessage: 'Recover not found.' },
-        context: makeContext(),
-      } as ToolCall);
-
-      expectToolSuccess(result, 'wake_or_create agent-not-found delivery fallback scenario');
-      expect(result.metadata).toMatchObject({
-        action: 'created_new',
-        agentId: 'agent-created-after-not-found',
-      });
-    });
-
-    it('surfaces assignment failures while keeping the created replacement agent working', async () => {
-      useDeterministicAgentCreation(['agent-created-assignment-warning']);
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: {
-          id: 'task-assignment-fail',
-          title: 'Assignment failure task',
-          metadata: { task: { assignedAgentIds: [] } },
-        },
-      });
-      mockNotesService.assignAgentToTask.mockResolvedValue({ ok: false, error: 'write failed' });
-      const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
-
-      const result = await tool.execute({
-        name: 'wake_or_create_task_agent',
-        arguments: { taskNoteId: 'task-assignment-fail', contextMessage: 'Start despite metadata.' },
-        context: makeContext(),
-      } as ToolCall);
-
-      expectToolSuccess(result, 'wake_or_create assignment failure nonfatal scenario');
-      expect(result.metadata).toMatchObject({
-        action: 'created_new',
-        agentId: 'agent-created-assignment-warning',
-      });
-      expect(mockNotesService.assignAgentToTask).toHaveBeenCalledWith(
-        workspaceId,
-        'task-assignment-fail',
-        'agent-created-assignment-warning',
-      );
-    });
-
-    it('treats malformed assignedAgentIds metadata as empty instead of probing bogus ids', async () => {
-      useDeterministicAgentCreation(['agent-created-malformed-metadata']);
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: {
-          id: 'task-malformed',
-          title: 'Malformed metadata task',
-          metadata: { task: { assignedAgentIds: 'not-an-array' } },
-        },
-      });
-      mockNotesService.assignAgentToTask.mockResolvedValue({ ok: true });
-      const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
-
-      const result = await tool.execute({
-        name: 'wake_or_create_task_agent',
-        arguments: { taskNoteId: 'task-malformed', contextMessage: 'Normalize metadata.' },
-        context: makeContext(),
-      } as ToolCall);
-
-      expectToolSuccess(result, 'wake_or_create malformed metadata scenario');
-      expect(result.metadata).toMatchObject({
-        action: 'created_new',
-        agentId: 'agent-created-malformed-metadata',
-      });
-      expect(mockBackendHandler.getAgentResumability).not.toHaveBeenCalled();
-    });
-
-    it('does not create a duplicate agent for transient wake failures', async () => {
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: {
-          id: 'task-transient',
-          title: 'Transient task',
-          metadata: { task: { assignedAgentIds: ['resumable-agent'] } },
-        },
-      });
-      mockBackendHandler.getAgentResumability.mockResolvedValue({
-        canWake: true,
-        status: 'resumable',
-        agentData: { metadata: { specialist: 'implementor' } },
-      });
-      mockBackendHandler.sendBackendInitiatedMessage.mockResolvedValue({
-        success: false,
-        errorCode: 'HANDSHAKE_TIMEOUT',
-        error: 'temporary handshake issue',
-      });
+    it('surfaces non-depth-guard daemon errors verbatim without creating a duplicate agent', async () => {
+      stubWakeOrCreate(new Error('temporary handshake issue'));
       const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
 
       const result = await tool.execute({
@@ -3545,249 +3631,68 @@ describe('Agent Interaction Tools', () => {
       } as ToolCall);
 
       expect(result.isError).toBe(true);
-      expect((result.content[0] as any).text).toContain('Failed to wake assigned agent');
-      expect(mockBackendHandler.createAgent).not.toHaveBeenCalled();
-      expect(mockNotesService.assignAgentToTask).not.toHaveBeenCalled();
+      expect((result.content[0] as any).text).toContain('temporary handshake issue');
+      // No follow-up create attempt on the wire.
+      expect(mockRequest.mock.calls.some((c) => c[0] === 'agent.create')).toBe(false);
     });
   });
 
-  describe('WakeOrCreateTaskAgentTool model validation against wakeProvider', () => {
+  // C1d-10: after the FE collapse onto `agent.wakeOrCreate`, model validation
+  // no longer probes previous sessions for a wake-specific provider. The
+  // daemon owns specialist/model inheritance (PROTOCOL.md §5.5), so the FE
+  // validates the override against the caller's context provider (or an
+  // explicit registered provider prefix in `model`), matching the behaviour
+  // of `create_agent` / `delegate_task`.
+  describe('WakeOrCreateTaskAgentTool model validation against ctx.provider', () => {
     beforeEach(() => {
       mockIsAutoCommitEnabled.mockReturnValue(true);
-      mockNotesService.getNote.mockResolvedValue({
-        ok: true,
-        data: {
-          id: 'task-note-id',
-          title: 'Do the thing',
-          metadata: {
-            task: {
-              assignedAgentIds: ['previous-agent-id'],
-            },
-          },
-        },
-      });
-      mockNotesService.assignAgentToTask.mockResolvedValue({ ok: true });
-      mockBackendHandler.getAgentResumability.mockResolvedValue({
-        status: 'not_found',
-        canWake: false,
-        agentData: {
-          metadata: { specialist: 'implementor' },
-        },
-      });
-      mockBackendHandler.createAgent.mockResolvedValue({
-        id: 'new-task-agent-id',
-        name: 'Task: Do the thing',
+      mockRequest.mockImplementation(async (method: string) => {
+        if (method === 'agent.wakeOrCreate') {
+          return {
+            ok: true,
+            agentId: 'new-task-agent-id',
+            agentName: 'Task: Do the thing',
+            created: true,
+            action: 'created_new',
+            taskTitle: 'Do the thing',
+            result: { success: true, queued: false },
+          };
+        }
+        if (method === 'agent.get') return { agent: null };
+        return {};
       });
     });
 
-    it('normalizes a bare model against the wake provider (specialist codingAgent)', async () => {
-      vi.mocked(resolveSpecialistForAgent).mockReturnValueOnce({
-        specialistId: 'implementor',
-        specialistName: 'Implementor',
-        codingAgent: 'auggie',
-        model: 'auggie:opus4.7',
-        behaviorPrompt: '',
-        roleReminder: '',
-      });
-
+    it('sends a validated bare model on the wire when it normalizes for ctx.provider', async () => {
       const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
-      const call: ToolCall = {
+      const result = await tool.execute({
         name: 'wake_or_create_task_agent',
         arguments: {
           taskNoteId: 'task-note-id',
           contextMessage: 'Dependencies ready, please proceed.',
-          model: 'sonnet-4.5',
+          model: 'sonnet',
         },
         context: {
           workspaceId,
           agentId: 'parent-agent-id',
           agentName: 'Parent Agent',
           sessionId: 'session-123',
-          model: 'claude-code:sonnet',
-          provider: 'claude-code',
+          metadata: { model: 'claude-code:sonnet', provider: 'claude-code' },
         },
-      };
-
-      const result = await tool.execute(call);
+      } as ToolCall);
 
       expect(result.isError).toBe(false);
-      expect(mockBackendHandler.createAgent).toHaveBeenCalledWith(
-        workspaceId,
-        expect.any(String),
-        expect.objectContaining({
-          provider: 'auggie',
-          model: 'auggie:sonnet4.5',
-        }),
-      );
+      const wakeCall = mockRequest.mock.calls.find((c) => c[0] === 'agent.wakeOrCreate');
+      expect(wakeCall?.[1]).toMatchObject({
+        model: expect.stringContaining('sonnet'),
+        create: expect.objectContaining({ provider: 'claude-code' }),
+      });
       expect((result.metadata as any)?.modelOverrideWarning).toBeUndefined();
     });
 
-    it('emits a provider_mismatch warning when the override cannot be normalized for the wake provider', async () => {
-      vi.mocked(resolveSpecialistForAgent).mockReturnValueOnce({
-        specialistId: 'implementor',
-        specialistName: 'Implementor',
-        codingAgent: 'auggie',
-        model: 'auggie:opus4.7',
-        behaviorPrompt: '',
-        roleReminder: '',
-      });
-
+    it('emits an unknown-provider warning when the model prefix is not registered', async () => {
       const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
-      const call: ToolCall = {
-        name: 'wake_or_create_task_agent',
-        arguments: {
-          taskNoteId: 'task-note-id',
-          contextMessage: 'Dependencies ready, please proceed.',
-          model: 'definitely-not-a-model',
-        },
-        context: {
-          workspaceId,
-          agentId: 'parent-agent-id',
-          agentName: 'Parent Agent',
-          sessionId: 'session-123',
-          model: 'claude-code:sonnet',
-          provider: 'claude-code',
-        },
-      };
-
-      const result = await tool.execute(call);
-
-      expect(result.isError).toBe(false);
-      expect(mockBackendHandler.createAgent).toHaveBeenCalledWith(
-        workspaceId,
-        expect.any(String),
-        expect.objectContaining({
-          provider: 'auggie',
-          model: 'auggie:opus4.7',
-        }),
-      );
-      const warning = (result.metadata as any)?.modelOverrideWarning;
-      expect(warning).toBeDefined();
-      expect(warning.requested).toBe('definitely-not-a-model');
-      expect(warning.targetProvider).toBe('auggie');
-      expect(warning.reason).toBe('provider_mismatch');
-      const text = (result.content[0] as any).text as string;
-      expect(text).toContain('Model override warning');
-      expect(text).toContain('definitely-not-a-model');
-      expect(text).toContain('auggie');
-      expect(text).toContain('specialist config');
-    });
-
-    it('emits an unknown_model warning when a qualified override is missing from the wake provider live list', async () => {
-      // Live list for auggie explicitly excludes the requested model, so the
-      // wake path must discard the override and surface the unknown_model
-      // reason — this closes the prior silent-acceptance path.
-      mockGetCachedModelsForProvider.mockImplementation(async (provider) =>
-        provider === 'auggie' ? ['sonnet4.6', 'haiku4.5', 'opus4.7'] : null,
-      );
-      vi.mocked(resolveSpecialistForAgent).mockReturnValueOnce({
-        specialistId: 'implementor',
-        specialistName: 'Implementor',
-        codingAgent: 'auggie',
-        model: 'auggie:opus4.7',
-        behaviorPrompt: '',
-        roleReminder: '',
-      });
-
-      const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
-      const call: ToolCall = {
-        name: 'wake_or_create_task_agent',
-        arguments: {
-          taskNoteId: 'task-note-id',
-          contextMessage: 'Dependencies ready, please proceed.',
-          model: 'auggie:sonnet-9000',
-        },
-        context: {
-          workspaceId,
-          agentId: 'parent-agent-id',
-          agentName: 'Parent Agent',
-          sessionId: 'session-123',
-          model: 'claude-code:sonnet',
-          provider: 'claude-code',
-        },
-      };
-
-      const result = await tool.execute(call);
-
-      expect(result.isError).toBe(false);
-      // Override discarded → fall back to previous specialist's model.
-      expect(mockBackendHandler.createAgent).toHaveBeenCalledWith(
-        workspaceId,
-        expect.any(String),
-        expect.objectContaining({ provider: 'auggie', model: 'auggie:opus4.7' }),
-      );
-      const warning = (result.metadata as any)?.modelOverrideWarning;
-      expect(warning).toBeDefined();
-      expect(warning.reason).toBe('unknown_model');
-      expect(warning.requested).toBe('auggie:sonnet-9000');
-      expect(warning.targetProvider).toBe('auggie');
-      expect(warning.message).toContain('not in the current model list');
-      expect(warning.message).toContain('sonnet4.6');
-      const text = (result.content[0] as any).text as string;
-      expect(text).toContain('Model override warning');
-      expect(text).toContain('auggie:sonnet-9000');
-    });
-
-    // An explicit registered provider prefix in the `model` argument must
-    // override the previous specialist's codingAgent when computing the wake
-    // provider, and validation must run against the explicit provider.
-    it('honors an explicit registered provider prefix over the previous specialist codingAgent', async () => {
-      vi.mocked(resolveSpecialistForAgent).mockReturnValueOnce({
-        specialistId: 'implementor',
-        specialistName: 'Implementor',
-        codingAgent: 'auggie',
-        model: 'auggie:opus4.7',
-        behaviorPrompt: '',
-        roleReminder: '',
-      });
-
-      const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
-      const call: ToolCall = {
-        name: 'wake_or_create_task_agent',
-        arguments: {
-          taskNoteId: 'task-note-id',
-          contextMessage: 'Dependencies ready, please proceed.',
-          model: 'codex:gpt-5-codex',
-        },
-        context: {
-          workspaceId,
-          agentId: 'parent-agent-id',
-          agentName: 'Parent Agent',
-          sessionId: 'session-123',
-          model: 'claude-code:sonnet',
-          provider: 'claude-code',
-        },
-      };
-
-      const result = await tool.execute(call);
-
-      expect(result.isError).toBe(false);
-      expect(mockBackendHandler.createAgent).toHaveBeenCalledWith(
-        workspaceId,
-        expect.any(String),
-        expect.objectContaining({
-          provider: 'codex',
-          model: 'codex:gpt-5-codex',
-        }),
-      );
-      expect((result.metadata as any)?.modelOverrideWarning).toBeUndefined();
-    });
-
-    // An unknown prefix in the wake path must surface the structured
-    // `unknown-provider` warning and fall back to the previous specialist's
-    // model on the previous specialist's provider.
-    it('warns with unknown-provider and falls back when the wake-path prefix is not registered', async () => {
-      vi.mocked(resolveSpecialistForAgent).mockReturnValueOnce({
-        specialistId: 'implementor',
-        specialistName: 'Implementor',
-        codingAgent: 'auggie',
-        model: 'auggie:opus4.7',
-        behaviorPrompt: '',
-        roleReminder: '',
-      });
-
-      const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
-      const call: ToolCall = {
+      const result = await tool.execute({
         name: 'wake_or_create_task_agent',
         arguments: {
           taskNoteId: 'task-note-id',
@@ -3799,29 +3704,382 @@ describe('Agent Interaction Tools', () => {
           agentId: 'parent-agent-id',
           agentName: 'Parent Agent',
           sessionId: 'session-123',
-          model: 'claude-code:sonnet',
-          provider: 'claude-code',
+          metadata: { model: 'claude-code:sonnet', provider: 'claude-code' },
         },
-      };
-
-      const result = await tool.execute(call);
+      } as ToolCall);
 
       expect(result.isError).toBe(false);
-      expect(mockBackendHandler.createAgent).toHaveBeenCalledWith(
-        workspaceId,
-        expect.any(String),
-        expect.objectContaining({ provider: 'auggie', model: 'auggie:opus4.7' }),
-      );
       const warning = (result.metadata as any)?.modelOverrideWarning;
       expect(warning).toMatchObject({
         requested: 'coded:gpt-5-codex',
-        targetProvider: 'auggie',
+        targetProvider: 'claude-code',
         reason: 'unknown-provider',
         unknownProvider: 'coded',
       });
       expect(warning.message).toContain('Unknown provider: coded');
-      expect(warning.message).not.toContain('auggie');
-      expect(warning.message).not.toContain('codex');
+      const wakeCall = mockRequest.mock.calls.find((c) => c[0] === 'agent.wakeOrCreate');
+      // Rejected override → `model` is dropped from the wire request; daemon
+      // falls back to specialist/session inheritance.
+      expect(wakeCall?.[1]?.model).toBeUndefined();
     });
+
+    it('honors an explicit registered provider prefix as the validation target', async () => {
+      const tool = new WakeOrCreateTaskAgentTool(workspaceId, workspacePath);
+      const result = await tool.execute({
+        name: 'wake_or_create_task_agent',
+        arguments: {
+          taskNoteId: 'task-note-id',
+          contextMessage: 'Dependencies ready, please proceed.',
+          model: 'codex:gpt-5-codex',
+        },
+        context: {
+          workspaceId,
+          agentId: 'parent-agent-id',
+          agentName: 'Parent Agent',
+          sessionId: 'session-123',
+          metadata: { model: 'claude-code:sonnet', provider: 'claude-code' },
+        },
+      } as ToolCall);
+
+      expect(result.isError).toBe(false);
+      expect((result.metadata as any)?.modelOverrideWarning).toBeUndefined();
+      const wakeCall = mockRequest.mock.calls.find((c) => c[0] === 'agent.wakeOrCreate');
+      expect(wakeCall?.[1]).toMatchObject({
+        model: 'codex:gpt-5-codex',
+        create: expect.objectContaining({ provider: 'codex' }),
+      });
+    });
+  });
+
+});
+
+// P3-1: focused wire-contract tests that assert the exact JSON-RPC method +
+// params the mcp agent-session tools emit per PROTOCOL.md §5.5. These live
+// alongside the behavioural coverage above but mock `getBackendClient()` at
+// the transport seam instead of the persistence layer.
+describe('mcp agent-session tools — daemon wire contract (PROTOCOL.md §5.5)', () => {
+  const workspaceId = 'ws-wire';
+
+  beforeEach(() => {
+    mockRequest.mockReset();
+    // C1d-5: reads route entirely through the wire mock; handler stubs for
+    // retired read paths (`listAllAgents`/`listAgents`/`getAgent`) are no
+    // longer needed at this seam.
+  });
+
+  it('GetAgentStatusTool reads via agent.getSession (PROTOCOL.md §5.5)', async () => {
+    // C1d-5: `get_agent_status` collapses onto a single `agent.getSession`
+    // call — the pre-C1d-5 handler-first fallback chain is retired.
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.getSession') {
+        return {
+          session: {
+            id: 'a-1',
+            name: 'A',
+            status: 'idle',
+            messages: [],
+            isStreaming: false,
+            isResponding: false,
+          },
+        };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { GetAgentStatusTool } = await import('../agent-interaction-tools');
+    const tool = new GetAgentStatusTool(workspaceId);
+    await tool.execute({
+      name: 'get_agent_status',
+      arguments: { agentId: 'a-1' },
+      context: { workspaceId, agentId: 'requester', agentName: 'Requester' },
+    } as any);
+    expect(mockRequest).toHaveBeenCalledWith('agent.getSession', {
+      agentId: 'a-1',
+      workspaceId,
+    });
+  });
+
+  it('ListAgentsTool reads via agent.list (PROTOCOL.md §5.5)', async () => {
+    // C1d-5: `list_agents` reads daemon-primary; the request must carry
+    // `{ workspaceId }` and no other params, and the AgentLite response
+    // shape drives the tool's projection.
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.list') {
+        return { agents: [] };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { ListAgentsTool } = await import('../agent-interaction-tools');
+    const tool = new ListAgentsTool(workspaceId);
+    await tool.execute({
+      name: 'list_agents',
+      arguments: {},
+      context: { workspaceId, agentId: 'requester', agentName: 'Requester' },
+    } as any);
+    expect(mockRequest).toHaveBeenCalledWith('agent.list', { workspaceId });
+  });
+
+  it('GetAgentDiagnosticsTool reads via agent.list (PROTOCOL.md §5.5)', async () => {
+    // C1d-5: `get_agent_diagnostics` collapses the pre-C1d-5 dual read
+    // (`handler.listAllAgents` + `handler.listAgents`) onto a single
+    // `agent.list` call; per-agent detail still routes through `agent.get`.
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.list') {
+        return { agents: [] };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { GetAgentDiagnosticsTool } = await import('../agent-interaction-tools');
+    const tool = new GetAgentDiagnosticsTool(workspaceId);
+    await tool.execute({
+      name: 'get_agent_diagnostics',
+      arguments: {},
+      context: { workspaceId, agentId: 'requester', agentName: 'Requester' },
+    } as any);
+    expect(mockRequest).toHaveBeenCalledWith('agent.list', { workspaceId });
+  });
+
+  it('ReadAgentConversationTool calls agent.get + agent.getConversation', async () => {
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') {
+        return { agent: { id: 'a-1', name: 'A', metadata: {} } };
+      }
+      if (method === 'agent.getConversation') {
+        return { messages: [] };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { ReadAgentConversationTool } = await import('../agent-interaction-tools');
+    const tool = new ReadAgentConversationTool(workspaceId);
+    await tool.execute({
+      name: 'read_agent_conversation',
+      arguments: { agentId: 'a-1' },
+      context: { workspaceId, agentId: 'requester', agentName: 'Requester' },
+    } as any);
+    const methods = mockRequest.mock.calls.map((c) => c[0]);
+    expect(methods).toContain('agent.get');
+    expect(methods).toContain('agent.getConversation');
+    for (const call of mockRequest.mock.calls) {
+      expect(call[1]).toEqual({ agentId: 'a-1', workspaceId });
+    }
+  });
+
+  it('GetAgentSummaryTool calls agent.get + agent.getConversation', async () => {
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') {
+        return { agent: { id: 'a-1', name: 'A', status: 'idle', metadata: {} } };
+      }
+      if (method === 'agent.getConversation') {
+        return { messages: [] };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { GetAgentSummaryTool } = await import('../agent-interaction-tools');
+    const tool = new GetAgentSummaryTool(workspaceId);
+    await tool.execute({
+      name: 'get_agent_summary',
+      arguments: { agentId: 'a-1' },
+      context: { workspaceId, agentId: 'requester', agentName: 'Requester' },
+    } as any);
+    const methods = mockRequest.mock.calls.map((c) => c[0]);
+    expect(methods).toEqual(
+      expect.arrayContaining(['agent.get', 'agent.getConversation']),
+    );
+  });
+
+  it('ReportToParentTool persists via agent.reportToParent with only { report }', async () => {
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') {
+        return {
+          agent: { id: 'child', name: 'Child', metadata: { createdByAgentId: 'parent' } },
+        };
+      }
+      if (method === 'agent.reportToParent') {
+        return { success: true };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { ReportToParentTool } = await import('../agent-interaction-tools');
+    const tool = new ReportToParentTool(workspaceId);
+    const result = await tool.execute({
+      name: 'report_to_parent',
+      arguments: { report: '  All green.  ' },
+      context: { workspaceId, agentId: 'child', agentName: 'Child' },
+    } as any);
+    expect(result.isError).toBe(false);
+    const rtp = mockRequest.mock.calls.find((c) => c[0] === 'agent.reportToParent');
+    expect(rtp).toBeDefined();
+    // PROTOCOL.md §5.5 declares only `report` on the wire; the daemon derives
+    // the caller (delegated child) from the JSON-RPC connection context.
+    expect(rtp?.[1]).toEqual({ report: 'All green.' });
+  });
+
+  it('getDelegationDepth reads metadata.delegationDepth via agent.get', async () => {
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.get') {
+        return { agent: { metadata: { delegationDepth: 1 } } };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    // The helper is not exported directly; exercise it via CreateAgentTool's
+    // depth check by attempting to spawn a child from a depth-1 caller. We
+    // do NOT complete the create — the assertion below only cares that
+    // getDelegationDepth called `agent.get` first.
+    const { CreateAgentTool } = await import('../agent-interaction-tools');
+    const tool = new CreateAgentTool(workspaceId, '/tmp');
+    await tool.execute({
+      name: 'create_agent',
+      arguments: {
+        name: 'Child',
+        initialMessage: 'do',
+        specialist: 'implementor',
+        taskNoteId: 'existing-task-note',
+      },
+      context: { workspaceId, agentId: 'parent', agentName: 'Parent' },
+    } as any);
+    expect(mockRequest).toHaveBeenCalledWith('agent.get', {
+      agentId: 'parent',
+      workspaceId,
+    });
+  });
+
+  // C1d-6 wire contracts for the write/wake paths that used to route through
+  // the retired `AgentBackendHandler`. Each asserts the exact JSON-RPC
+  // method + params the tools emit per PROTOCOL.md §5.5.
+
+  it('CreateAgentTool writes via agent.create with metadata-hoisted specialist fields', async () => {
+    mockRequest.mockImplementation(async (method: string, params: any) => {
+      if (method === 'agent.get') return { agent: { metadata: { delegationDepth: 0 } } };
+      if (method === 'agent.create') {
+        return { agent: { id: 'wire-create-1', name: params?.name ?? 'Child' } };
+      }
+      if (method === 'agent.sendMessage') return { success: true, queued: false };
+      throw new Error(`unexpected ${method}`);
+    });
+    const { CreateAgentTool } = await import('../agent-interaction-tools');
+    const tool = new CreateAgentTool(workspaceId, '/tmp');
+    const result = await tool.execute({
+      name: 'create_agent',
+      arguments: { name: 'Wire Child', initialMessage: 'hello', specialist: 'implementor' },
+      context: { workspaceId, agentId: 'wire-parent', agentName: 'Wire Parent' },
+    } as any);
+    expect(result.isError).toBe(false);
+    const createCall = mockRequest.mock.calls.find((c) => c[0] === 'agent.create');
+    expect(createCall).toBeDefined();
+    // Specialist trio (`behaviorPrompt` / `specialistName` / `roleReminder`)
+    // and the pre-first-turn `initialMessage` fold into `metadata` per the
+    // widened `agent.create` seam. Top-level wire params carry the daemon-owned
+    // fields (`workspaceId` / `name` / `workspacePath` / `model` / `provider` /
+    // `agentType` / `metadata`).
+    expect(createCall?.[1]).toEqual(
+      expect.objectContaining({
+        workspaceId,
+        name: 'Wire Child',
+        workspacePath: '/tmp',
+        metadata: expect.objectContaining({
+          createdByAgentId: 'wire-parent',
+          isBackground: true,
+          behaviorPrompt: expect.stringContaining('implementor'),
+          specialistName: 'Implementor',
+          initialMessage: 'hello',
+        }),
+      }),
+    );
+    // Post-create initial send follows immediately on the same session.
+    const sendCall = mockRequest.mock.calls.find((c) => c[0] === 'agent.sendMessage');
+    expect(sendCall?.[1]).toEqual(
+      expect.objectContaining({ workspaceId, agentId: 'wire-create-1', content: 'hello' }),
+    );
+  });
+
+  it('WakeOrCreateTaskAgentTool sends a single agent.wakeOrCreate wire request', async () => {
+    // C1d-10: the tool no longer composes the wake path on the FE side —
+    // `agent.wakeOrCreate` (PROTOCOL.md §5.5, widened by C1d-10a) is the
+    // single RPC. Assert the exact request shape and that the response
+    // action drives the tool's result metadata.
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.wakeOrCreate') {
+        return {
+          ok: true,
+          agentId: 'wire-target',
+          agentName: 'Task: Wire task',
+          created: false,
+          action: 'woke_existing',
+          taskTitle: 'Wire task',
+          result: { success: true, queued: false, messageId: 'user-msg-1' },
+        };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { WakeOrCreateTaskAgentTool } = await import('../agent-interaction-tools');
+    const tool = new WakeOrCreateTaskAgentTool(workspaceId, '/tmp');
+    const result = await tool.execute({
+      name: 'wake_or_create_task_agent',
+      arguments: { taskNoteId: 'wire-task', contextMessage: 'Please continue.' },
+      context: { workspaceId, agentId: 'wire-caller', agentName: 'Wire Caller' },
+    } as any);
+    expect(result.isError).toBe(false);
+    expect(result.metadata).toMatchObject({ action: 'woke_existing', agentId: 'wire-target' });
+    const wakeCall = mockRequest.mock.calls.find((c) => c[0] === 'agent.wakeOrCreate');
+    expect(wakeCall?.[1]).toEqual(
+      expect.objectContaining({
+        workspaceId,
+        taskNoteId: 'wire-task',
+        contextMessage: 'Please continue.',
+        callerAgentId: 'wire-caller',
+        messageMetadata: expect.objectContaining({
+          type: 'task_wake',
+          source: 'wake_or_create_task_agent',
+          taskNoteId: 'wire-task',
+          callerAgentId: 'wire-caller',
+        }),
+        create: expect.objectContaining({
+          agentType: 'task-loop',
+          contextReferences: [{ type: 'note', id: 'wire-task', name: 'wire-task' }],
+        }),
+      }),
+    );
+    // The FE composition round-trips are retired — no `note.get`,
+    // `agent.getSession`, `agent.sendMessage`, `agent.create`, or
+    // `task.assignAgent` on the wire.
+    const otherMethods = mockRequest.mock.calls
+      .map((c) => c[0] as string)
+      .filter((m) => m !== 'agent.wakeOrCreate');
+    expect(otherMethods).toEqual([]);
+  });
+
+  it('WakeOrCreateTaskAgentTool queued branch flips on action=message_queued_to_active_agent', async () => {
+    // Post-C1d-10 the daemon composite reports the queued discriminator via
+    // the top-level `action` field; the tool takes the queued branch without
+    // any duplicate `agent.create` on the wire.
+    mockRequest.mockImplementation(async (method: string) => {
+      if (method === 'agent.wakeOrCreate') {
+        return {
+          ok: true,
+          agentId: 'wire-active',
+          agentName: 'Task: Wire queued task',
+          created: false,
+          action: 'message_queued_to_active_agent',
+          taskTitle: 'Wire queued task',
+          result: { success: true, queued: true, messageId: 'msg-wire-queued' },
+        };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const { WakeOrCreateTaskAgentTool } = await import('../agent-interaction-tools');
+    const tool = new WakeOrCreateTaskAgentTool(workspaceId, '/tmp');
+    const result = await tool.execute({
+      name: 'wake_or_create_task_agent',
+      arguments: { taskNoteId: 'wire-queued', contextMessage: 'Queue me.' },
+      context: { workspaceId, agentId: 'wire-caller', agentName: 'Wire Caller' },
+    } as any);
+    expect(result.isError).toBe(false);
+    expect(result.metadata).toMatchObject({
+      action: 'message_queued_to_active_agent',
+      agentId: 'wire-active',
+      taskNoteId: 'wire-queued',
+      queuedMessageId: 'msg-wire-queued',
+    });
+    // No duplicate agent creation — `agent.create` must not appear on the wire.
+    expect(mockRequest.mock.calls.some((c) => c[0] === 'agent.create')).toBe(false);
   });
 });

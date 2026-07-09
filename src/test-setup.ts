@@ -202,20 +202,6 @@ vi.mock('$features/protocol/main/protocol-adapter', () => ({
   },
 }));
 
-// Mock agent-backend-handler.service to avoid electron dependency at module load
-vi.mock('$features/agent/main/agent-backend-handler.service', () => ({
-  agentBackendHandler: {
-    createAgent: vi.fn().mockResolvedValue({ id: 'test-agent-id' }),
-    stopAgent: vi.fn().mockResolvedValue(undefined),
-    sendMessage: vi.fn().mockResolvedValue(undefined),
-    getAgent: vi.fn().mockReturnValue(null),
-    getAgentStatus: vi.fn().mockReturnValue(null),
-    listAgents: vi.fn().mockReturnValue([]),
-    cleanupAll: vi.fn().mockResolvedValue(undefined),
-  },
-  AgentBackendHandler: vi.fn(),
-}));
-
 // Mock electron-store to avoid disk writes
 vi.mock('electron-store', () => ({
   default: class MockElectronStore {
@@ -265,7 +251,6 @@ vi.mock('$shared/main/async-utils', () => ({
   writeJsonAsync: vi.fn(async () => undefined),
   readJsonAsync: vi.fn(async () => null),
   VSCODE_COMMON_PATHS: [],
-  AUGGIE_COMMON_PATHS: [],
 }));
 
 // Mock child_process.exec to avoid spawning git and shell, but keep spawn intact for integration tests

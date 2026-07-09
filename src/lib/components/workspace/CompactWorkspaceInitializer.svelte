@@ -13,7 +13,6 @@
 } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
   import { track } from '$lib/services/analytics';
-  import { WorkspaceId } from '$shared/types/branded-ids';
   import {
   SETUP_SCRIPT_TEMPLATES,
   getTemplateContent,
@@ -49,11 +48,7 @@
   selectAvailableModels,
 } from '$store/renderer/slices/model/model-selectors';
   import { setWorkspaceModel } from '$store/renderer/slices/model/model-slice';
-  import {
-  activateInitialAgentRequested,
-  setInitialAgentConfig,
-  setInitialAgentId,
-} from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
+  import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import {
   setWorkspaceEntity,
   updateWorkspaceEntity,
@@ -83,6 +78,8 @@
   faCodeBranch,
 } from '@fortawesome/free-solid-svg-icons';
   import { invoke } from '$lib/electron-bridge';
+  import { appClient } from '$lib/client';
+  import { enhancePrompt } from '$lib/client/live/live-prompt-enhancement';
   import Fa from 'svelte-fa';
   import PullConflictDialog, { type PullErrorType } from '../modals/PullConflictDialog.svelte';
 
@@ -1402,12 +1399,13 @@
           behind: branchBehind,
         });
         try {
+          // Daemon-backed pull (`git.pull`, PROTOCOL §5.6) via the appClient
+          // seam — replaces the dead legacy `git:pullBranch` IPC. The seam
+          // folds the daemon's structured `{ ok: false, error }` failure into
+          // `{ success: false, error }` and never throws.
           const pullResult =
             typeof window !== 'undefined' && window.electronAPI
-              ? await invoke<any>('git:pullBranch', {
-                repoPath,
-                branchName: branch,
-              })
+              ? await appClient.git.pull(repoPath, branch)
               : undefined;
           if (!pullResult?.success) {
             pullError = pullResult?.error || 'Failed to pull changes';
@@ -1793,14 +1791,17 @@
       const workspace = result.data;
 
       // If a PR context mention was used, store the PR number on the workspace
-      // so PR discovery can find the right PR later.
+      // so PR discovery can find the right PR later. Daemon-backed
+      // (`workspace.update`, PROTOCOL §5.1) via workspaceClient — the legacy
+      // `workspace:update` IPC channel is unbridged in this build.
       if (selectedPRNumber && workspace.id) {
-        invoke('workspace:update', {
-          id: workspace.id,
-          prNumber: selectedPRNumber,
-        }).catch((err) => {
-          logger.warn('Failed to store PR number on workspace', { error: err });
-        });
+        void workspaceClient
+          .update({ id: workspace.id, prNumber: selectedPRNumber })
+          .then((updateResult) => {
+            if (!updateResult.ok) {
+              logger.warn('Failed to store PR number on workspace', { error: updateResult.error });
+            }
+          });
       }
 
       // Clear any stale panel layout data for this workspace ID.
@@ -1863,45 +1864,20 @@
         });
       }
 
-      // NOTE: resolvedBehaviorPrompt was resolved earlier and is now in initialAgent.behaviorPrompt
-
-      // Store initial agent configuration for the workspace page to pick up
-      const agentConfigData = {
-        agentId: initialAgent.agentId,
-        config: {
-          ...initialAgent,
-          behaviorPrompt: resolvedBehaviorPrompt, // Include resolved behavior prompt
-          isInitialAgent: true,
-          isFirstWorkspaceAgent: true,
-        },
-        timestamp: Date.now(),
-      };
-
-      // Store pending agent config with timestamp (workspace page checks this)
-      sessionStorage.setItem(
-        `workspace:${workspace.id}:initial-agent-pending`,
-        JSON.stringify(agentConfigData),
-      );
-
-      // Also dispatch into Redux so the workspace page can read it without sessionStorage
-      appStore.dispatch(setInitialAgentConfig(workspace.id, agentConfigData));
+      // Initial-agent delivery (message + sends) is owned by the daemon; the
+      // FE only records which agent is the initial one so the UI can highlight
+      // and focus it.
       appStore.dispatch(setInitialAgentId(workspace.id, initialAgent.agentId));
 
-      // Store agent config for AuggieChatPanel to pick up
-      sessionStorage.setItem(
-        `workspace:${workspace.id}:agent-config`,
-        JSON.stringify(agentConfigData.config),
-      );
-
-      // Store the initial agent ID
-      sessionStorage.setItem(`workspace:${workspace.id}:initial-agent-id`, initialAgent.agentId);
-
-      // Pre-store the workspace state with the drawer open. The workspace-navigation
-      // saga owns persistence for workspace state.
+      // Pre-store the workspace state so the workspace page mounts on the
+      // initial-agent conversation as its only tab (full-width, no spec split).
+      // The spec note stays reachable manually from the sidebar; leaving the
+      // main panel empty here keeps the hydration payload consistent with the
+      // agent-only intent instead of asking the middleware to special-case it.
       const initialState: WorkspaceNavigationWorkspaceState = {
         version: 2,
         workspace: { id: workspace.id, status: 'loading' },
-        mainPanel: { type: 'notes', selectedNoteId: 'spec' },
+        mainPanel: { type: 'empty' },
         drawer: { open: true, type: 'agent' as const, itemId: initialAgent.agentId },
         navigation: { history: [], currentIndex: -1 },
         ui: { hasInitialized: false },
@@ -1919,34 +1895,6 @@
             },
           }),
         );
-
-        // Request initial agent activation through the workspace-agent saga.
-        // When staying on home page, the workspace page flow that normally does this is bypassed.
-        logger.info('[CompactWorkspaceInitializer] Requesting agent session for home page', {
-          workspaceId: workspace.id,
-          agentId: initialAgent.agentId,
-          hasPrompt: !!initialAgent.prompt,
-          specialist: specialistId,
-          hasBehaviorPrompt: !!resolvedBehaviorPrompt,
-          behaviorPromptLength: resolvedBehaviorPrompt?.length || 0,
-        });
-        appStore.dispatch(activateInitialAgentRequested(workspace.id, initialAgent.agentId, {
-          id: initialAgent.agentId,
-          name: agentName,
-          workspaceId: WorkspaceId(workspace.id),
-          model: initialAgent.model,
-          provider: selectedProvider,
-          agentType: initialAgent.agentType,
-          initialMessage: initialAgent.prompt,
-          contextReferences: initialAgent.contextReferences,
-          imageBlocks: initialAgent.imageBlocks,
-          behaviorPrompt: resolvedBehaviorPrompt,
-          metadata: {
-            ...initialAgent.metadata,
-            isInitialAgent: true,
-            isFirstWorkspaceAgent: true,
-          },
-        }));
       } else {
         await goto(`/workspace/${workspace.id}`);
       }
@@ -2366,25 +2314,22 @@
     const currentRequestId = ++enhanceRequestId;
 
     try {
-      const result = await invoke<{
-        success: boolean;
-        enhanced?: string;
-        error?: string;
-      }>('agent:enhance-prompt', { prompt: initialPrompt });
+      // Daemon-side enhancement (agent.enhancePrompt, PROTOCOL §5.31)
+      const result = await enhancePrompt(initialPrompt);
 
       if (currentRequestId === cancelledRequestId) return;
 
-      if (result?.success && result.enhanced) {
-        initialPrompt = result.enhanced;
-        await richTextarea?.setContent(result.enhanced);
-        toast.success('Prompt enhanced');
-      } else {
-        toast.error('Failed to enhance prompt');
-      }
+      initialPrompt = result.enhanced;
+      await richTextarea?.setContent(result.enhanced);
+      toast.success('Prompt enhanced');
     } catch (error) {
       if (currentRequestId === cancelledRequestId) return;
       logger.error('Failed to enhance prompt:', error);
-      toast.error('Failed to enhance prompt');
+      toast.error(
+        error instanceof Error && error.message
+          ? `Failed to enhance prompt: ${error.message}`
+          : 'Failed to enhance prompt',
+      );
     } finally {
       if (currentRequestId !== cancelledRequestId) {
         isEnhancing = false;

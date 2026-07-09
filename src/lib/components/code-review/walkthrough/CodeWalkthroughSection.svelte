@@ -13,7 +13,7 @@
   fly,
   slide,
 } from 'svelte/transition';
-  import { invoke } from '$lib/electron-bridge';
+  import { batchedGitDiff } from '$lib/components/ui/diff/diff-ipc-batcher';
   import WalkthroughFileDiff from './WalkthroughFileDiff.svelte';
   import WalkthroughCategoriesGrid from './WalkthroughCategoriesGrid.svelte';
   import WalkthroughCategorySection from './WalkthroughCategorySection.svelte';
@@ -153,27 +153,21 @@
     for (const filePath of allFiles) {
       if (fileDiffsCache.has(filePath)) continue;
 
-      const promise = invoke<{
-        success: boolean;
-        data?: Array<{ file: string; diff?: string; oldContent?: string; newContent?: string }>;
-      }>('git:diff', {
-        workspaceId: workspace.id,
-        paths: [filePath],
-        staged: true,
-      })
-        .then((response) => {
-          if (response.success && response.data?.[0]) {
-            const diffData = response.data[0];
-            // Build a unified diff string if not provided directly
-            let diffString = '';
-            if (typeof diffData === 'string') {
-              diffString = diffData;
-            } else if (diffData.diff) {
-              diffString = diffData.diff;
-            } else if (diffData.oldContent !== undefined && diffData.newContent !== undefined) {
-              // Generate a simple diff representation
-              diffString = generateUnifiedDiff(filePath, diffData.oldContent, diffData.newContent);
-            }
+      // Staged diff via the daemon `git.diffs` batcher (PROTOCOL §5.6); the
+      // enriched chunk carries the full old/new file sides, from which the
+      // unified patch is generated (the legacy `git:diff` IPC is retired).
+      const promise = batchedGitDiff(workspace.id, true, filePath)
+        .then((diffChunk) => {
+          if (
+            diffChunk &&
+            diffChunk.oldContent !== undefined &&
+            diffChunk.newContent !== undefined
+          ) {
+            const diffString = generateUnifiedDiff(
+              filePath,
+              diffChunk.oldContent,
+              diffChunk.newContent,
+            );
             if (diffString) {
               // Get stats from changes if available
               const change = changes.find((c) => c.relativePath === filePath);

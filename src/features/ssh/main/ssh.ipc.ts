@@ -10,7 +10,6 @@ import { createSafeValidatedHandler } from '../../../main/ipc-validation-middlew
 import { z } from 'zod';
 import { Logger } from '../../../shared/logger';
 import { sshManager } from '../../../shared/main/ssh-manager';
-import { remoteRPCManager } from '../../../shared/main/remote-rpc-manager';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -678,65 +677,57 @@ export function registerSSHHandlers(): void {
     ),
   );
 
-  // List directory - uses RPC when workspaceId is available, SSH fallback for pre-workspace setup
+  // List directory over SSH. Legacy RPC listDir has retired; the
+  // workspaceId branch now reuses the warmed `rpc-${workspaceId}` SSH
+  // connection, and the pre-workspace path
+  // establishes an ephemeral connection using the provided credentials.
+  // TODO(P3-5): route via daemon `fs.listDir` over WSS transport.
   ipcMain.handle(
     'ssh:listDirectory',
     createSafeValidatedHandler(
       ListDirectorySchema,
       async (_event, config) => {
         try {
-          // When workspaceId is provided, use RPC (workspace already exists)
-          if (config.workspaceId) {
-            logger.info('Listing directory via RPC', {
+          // Reuse the warmed workspace SSH connection when available; fall
+          // back to an ephemeral connection for pre-workspace pickers.
+          const reuseConnection = Boolean(config.workspaceId);
+          const connectionId = reuseConnection
+            ? `rpc-${config.workspaceId}`
+            : `list-dir-${Date.now()}`;
+
+          if (reuseConnection) {
+            logger.info('Listing SSH directory via workspace connection', {
               workspaceId: config.workspaceId,
               path: config.path,
             });
+          }
 
-            const rpcClient = await remoteRPCManager.getClient(config.workspaceId);
-            const result = await rpcClient.listDir({ path: config.path });
-
-            const files = result.entries.map((entry) => ({
-              name: entry.name,
-              type: entry.type === 'directory' ? 'directory' : 'file',
-              size: entry.size,
-              modified: entry.mtime,
-            }));
-
-            return {
-              success: true,
-              files,
+          if (!reuseConnection) {
+            logger.info('Listing SSH directory', {
+              host: config.host,
               path: config.path,
-            };
+              username: config.username,
+            });
+
+            if (!config.host || !config.username) {
+              return {
+                success: false,
+                error: 'host and username are required when workspaceId is not provided',
+              };
+            }
+
+            await sshManager.connect(connectionId, {
+              host: config.host,
+              port: config.port || 22,
+              username: config.username,
+              password: config.password,
+              privateKey: config.privateKey,
+              privateKeyPath: config.privateKeyPath,
+              useAgent: config.useAgent,
+              transport: config.transport,
+              wsUrl: config.wsUrl,
+            });
           }
-
-          // SSH fallback for pre-workspace setup (e.g., RemoteFilePicker)
-          const connectionId = `list-dir-${Date.now()}`;
-
-          logger.info('Listing SSH directory', {
-            host: config.host,
-            path: config.path,
-            username: config.username,
-          });
-
-          if (!config.host || !config.username) {
-            return {
-              success: false,
-              error: 'host and username are required when workspaceId is not provided',
-            };
-          }
-
-          // Connect to SSH
-          await sshManager.connect(connectionId, {
-            host: config.host,
-            port: config.port || 22,
-            username: config.username,
-            password: config.password,
-            privateKey: config.privateKey,
-            privateKeyPath: config.privateKeyPath,
-            useAgent: config.useAgent,
-            transport: config.transport,
-            wsUrl: config.wsUrl,
-          });
 
           // List directory using ls command
           let result;
@@ -784,8 +775,11 @@ export function registerSSHHandlers(): void {
               path: config.path,
             };
           } finally {
-            // Always disconnect, even if parsing throws
-            await sshManager.disconnect(connectionId);
+            // Only disconnect the ephemeral connection; the reused workspace
+            // connection is owned by the workspace lifecycle.
+            if (!reuseConnection) {
+              await sshManager.disconnect(connectionId);
+            }
           }
         } catch (error) {
           logger.error('Failed to list directory', error as Error, {
@@ -995,7 +989,7 @@ export function registerSSHHandlers(): void {
                 result.checks.node.version = nodeResult.stdout.trim();
                 const majorVersion = parseInt(versionMatch[1], 10);
                 if (majorVersion < 18) {
-                  result.warnings.nodeVersion = `Node.js ${nodeResult.stdout.trim()} is below v18; intent-server requires Node 18+`;
+                  result.warnings.nodeVersion = `Node.js ${nodeResult.stdout.trim()} is below v18; the remote runtime requires Node 18+`;
                 }
               } else {
                 result.checks.node.error = 'Could not parse Node.js version';
@@ -1007,7 +1001,7 @@ export function registerSSHHandlers(): void {
             result.checks.node.error = error instanceof Error ? error.message : String(error);
           }
 
-          // 6. Auggie Check - use same discovery strategy as intent-server
+          // 6. Auggie Check - use a login-shell + hardcoded-path discovery strategy
           // Non-interactive SSH shells don't have the user's PATH, so we need to:
           // 1. Try login shell with command -v
           // 2. Check common npm global paths
@@ -1031,7 +1025,7 @@ export function registerSSHHandlers(): void {
               }
             }
 
-            // Strategy 2: Check common hardcoded paths (same as intent-server)
+            // Strategy 2: Check common hardcoded paths (matches the legacy remote strategy)
             if (!auggiePath) {
               const commonPaths = [
                 '/usr/local/bin/auggie',

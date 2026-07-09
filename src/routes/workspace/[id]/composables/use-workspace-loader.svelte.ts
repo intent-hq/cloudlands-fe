@@ -12,11 +12,6 @@ import { createLogger } from '$lib/utils/client-logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { track } from '$lib/services/analytics';
 
-import {
-  selectInitialAgentConfig,
-  selectInitialAgentId,
-} from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
-import { setInitialAgentId } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
   selectActiveWorkspace,
@@ -51,22 +46,6 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
   // makes workspaceData.id match the new workspace before the loader runs,
   // but workspaceMounted hasn't been dispatched yet for the new workspace.
   let lastMountedWorkspaceId: string | null = null;
-
-  function hydrateInitialAgentIdBeforeMount(workspaceId: string) {
-    const state = appStore.state;
-    const initialAgentId = selectInitialAgentId.select(state, workspaceId);
-
-    if (initialAgentId) {
-      return;
-    }
-
-    const pendingConfig = selectInitialAgentConfig.select(state, workspaceId);
-    if (!pendingConfig?.agentId) {
-      return;
-    }
-
-    appStore.dispatch(setInitialAgentId(workspaceId, pendingConfig.agentId));
-  }
 
   async function loadWorkspace() {
     const { workspaceId, workspaceState, state } = options;
@@ -224,7 +203,6 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       });
       workspaceState.markInitialized();
       appStore.dispatch(setWorkspaceEntity(ws));
-      hydrateInitialAgentIdBeforeMount(ws.id);
       appStore.dispatch(workspaceMounted(ws.id));
       lastMountedWorkspaceId = ws.id;
       alreadyMounted = true;
@@ -278,7 +256,6 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       // Dispatch workspaceMounted only if we haven't already done so above
       // from cached data. This prevents duplicate saga forks.
       if (!alreadyMounted) {
-        hydrateInitialAgentIdBeforeMount(ws.id);
         appStore.dispatch(workspaceMounted(ws.id));
         lastMountedWorkspaceId = ws.id;
       }

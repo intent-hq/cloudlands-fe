@@ -8,12 +8,24 @@ import {
 } from 'vitest';
 import { WorkspaceService } from '../main/workspace.service';
 import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
-import { InMemoryNotesRepository } from '../../notes/main/notes.repository';
 import type { Workspace, WorkspaceId, WorkspaceUIContext } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
 
 vi.mock('../../../store/main/redux-store-bridge', () => ({
   mainDispatch: vi.fn((action: any) => action),
+}));
+
+// Stub the daemon client so WorkspaceService's activity-repair path
+// (`note.list` / `agent.list` per PROTOCOL.md §5.4/§5.5) resolves to empty
+// PROTOCOL-shaped results instead of reaching the real UDS socket.
+vi.mock('../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({
+    request: vi.fn(async (method: string) => {
+      if (method === 'note.list') return { notes: [] };
+      if (method === 'agent.list') return { agents: [] };
+      return {};
+    }),
+  }),
 }));
 
 vi.mock('../../terminal/main/terminal.ipc', () => ({
@@ -32,13 +44,6 @@ vi.mock('child_process', () => {
     ChildProcess: class {},
   };
 });
-
-vi.mock('../../agent/main/agent-persistence', () => ({
-  agentPersistence: {
-    listAgents: vi.fn(),
-    loadAgent: vi.fn(),
-  },
-}));
 
 vi.mock('../../git-tracking/main/github.service', () => ({
   GitHubService: class {},
@@ -74,8 +79,7 @@ describe('WorkspaceService retention cleanup', () => {
 
   beforeEach(() => {
     repository = new InMemoryWorkspaceRepository();
-    service = new WorkspaceService(repository, new InMemoryNotesRepository());
-    (service as any).store.get = vi.fn().mockReturnValue({});
+    service = new WorkspaceService(repository);
   });
 
   afterEach(() => {

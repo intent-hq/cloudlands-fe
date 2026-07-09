@@ -1496,11 +1496,20 @@ export async function sendMessage(
                     // Check if the response is in IpcResponse format
                     if (response && typeof response === 'object' && 'success' in response) {
                       if (!response.success) {
-                        throw new Error(
-                          response.error?.message || 'Failed to send message to backend',
-                        );
+                        // The daemon bridge surfaces errors as a plain string;
+                        // legacy IpcResponse envelopes use { message }.
+                        const rawError = (response as { error?: unknown }).error;
+                        const errorMessage =
+                          typeof rawError === 'string'
+                            ? rawError
+                            : (rawError as { message?: string } | undefined)?.message;
+                        throw new Error(errorMessage || 'Failed to send message to backend');
                       }
                     }
+                    // NOTE: no undefined/null-response guard is needed here —
+                    // an unbridged channel now REJECTS at the mock IPC router
+                    // (UnbridgedMockIpcChannelError) instead of resolving
+                    // undefined, so a dropped send already fails loudly.
 
                     // Track metrics
                     workspaceMetrics.incrementMessageSent(workspace.id);

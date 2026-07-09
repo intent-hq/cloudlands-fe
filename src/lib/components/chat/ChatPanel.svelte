@@ -87,7 +87,6 @@
   import {
   sendMessage,
   initializeChatRequested,
-  sendInitialMessageRequested,
   chatRebindStarted,
   chatRebindEnded,
   chatTrackedWorkspaceSet,
@@ -195,7 +194,6 @@
 
   // Constants
   const SCROLL_BOTTOM_THRESHOLD = 30; // pixels from bottom to consider "at bottom"
-  const INITIAL_AGENT_ACTIVATION_MARKER_GRACE_MS = 30_000;
   /** PERF: Number of recent turns to always render (for streaming and smooth UX) */
   const FORCE_VISIBLE_TURN_COUNT = 3;
   /** PERF: Minimum turns before enabling lazy loading (overhead not worth it for small conversations) */
@@ -1188,108 +1186,16 @@
     };
   });
 
-  // Pending initial prompt data - shown immediately as optimistic UI before the message is actually sent
-  // Uses prop first (passed from parent), then falls back to sessionStorage
-  // Returns both prompt text and contextReferences for proper display
-  function hasInitialMessageContent(config: any): boolean {
-    return !!(
-      config?.prompt?.trim?.() ||
-      config?.contextReferences?.length ||
-      config?.imageBlocks?.length
-    );
-  }
-
-  function hasFreshInitialAgentActivationMarker(wsId: string, currentAgentId: string): boolean {
-    const pendingAgentData = sessionStorage.getItem(`workspace:${wsId}:initial-agent-pending`);
-    if (!pendingAgentData) return false;
-
-    try {
-      const parsed = JSON.parse(pendingAgentData);
-      const pendingAgentId = parsed.agentId ?? parsed.config?.agentId;
-      if (pendingAgentId !== currentAgentId) return false;
-
-      const timestamp = typeof parsed.timestamp === 'number' ? parsed.timestamp : null;
-      return timestamp === null || Date.now() - timestamp < INITIAL_AGENT_ACTIVATION_MARKER_GRACE_MS;
-    } catch (err) {
-      logger.warn('Failed to parse initial agent pending marker for fallback send', {
-        agentId: currentAgentId,
-        wsId,
-        error: err,
-      });
-      return false;
-    }
-  }
-
-  function shouldRequestInitialMessageFallback(wsId: string, currentAgentId: string): boolean {
-    const agentConfigKey = `workspace:${wsId}:agent-config`;
-    const agentConfigData = sessionStorage.getItem(agentConfigKey);
-    if (!agentConfigData) return false;
-
-    try {
-      const config = JSON.parse(agentConfigData);
-      if (config.agentId !== currentAgentId || !hasInitialMessageContent(config)) return false;
-      if (config.messageSent) return false;
-      return !hasFreshInitialAgentActivationMarker(wsId, currentAgentId);
-    } catch (err) {
-      logger.warn('Failed to parse agent config for fallback send', {
-        agentId: currentAgentId,
-        wsId,
-        error: err,
-      });
-      return false;
-    }
-  }
-
+  // Pending initial prompt data - shown immediately as optimistic UI before the message is actually sent.
+  // Reads from `initialPromptProp` (passed from parent); the sessionStorage-based
+  // FE-side send was removed with the daemon-owned create sequence.
   function getInitialPendingData(): { prompt: string | null; contextReferences: any[] | null } {
-    // First check prop - this is the fastest path
     if (initialPromptProp) {
       logger.info('Using initial prompt from prop for optimistic display', {
         agentId,
         promptLength: initialPromptProp.length,
       });
-      // When using prop, we don't have contextReferences available
-      // They will be in sessionStorage if present
-      if (workspace) {
-        const agentConfigKey = `workspace:${workspace.id}:agent-config`;
-        const agentConfigData = sessionStorage.getItem(agentConfigKey);
-        if (agentConfigData) {
-          try {
-            const config = JSON.parse(agentConfigData);
-            if (config.agentId === agentId && config.contextReferences?.length > 0) {
-              return { prompt: initialPromptProp, contextReferences: config.contextReferences };
-            }
-          } catch {
-            // Ignore parse errors
-          }
-        }
-      }
       return { prompt: initialPromptProp, contextReferences: null };
-    }
-
-    // Fall back to sessionStorage
-    if (!workspace) return { prompt: null, contextReferences: null };
-
-    const agentConfigKey = `workspace:${workspace.id}:agent-config`;
-    const agentConfigData = sessionStorage.getItem(agentConfigKey);
-
-    if (agentConfigData) {
-      try {
-        const config = JSON.parse(agentConfigData);
-        if (config.agentId === agentId && (config.prompt || config.contextReferences?.length > 0)) {
-          logger.info('Found pending initial data from sessionStorage for optimistic display', {
-            agentId,
-            promptLength: config.prompt?.length || 0,
-            hasContextReferences: !!config.contextReferences?.length,
-            contextReferenceCount: config.contextReferences?.length || 0,
-          });
-          return {
-            prompt: config.prompt || null,
-            contextReferences: config.contextReferences || null,
-          };
-        }
-      } catch (err) {
-        logger.warn('Failed to parse agent config for optimistic display', err);
-      }
     }
     return { prompt: null, contextReferences: null };
   }
@@ -1666,18 +1572,10 @@
 
     // Chat values are reactive via Redux selectors.
     // No manual Redux store subscription needed — selectors provide always-current values.
-
-    // Request initial message send only for orphaned pending config.
-    // Fresh workspace creation is owned by the activation saga, which sends the
-    // first prompt and marks messageSent via onInitialSendCommit before sending.
-    if (
-      workspace &&
-      agentId &&
-      $agentMessages$.length === 0 &&
-      shouldRequestInitialMessageFallback(workspace.id, agentId)
-    ) {
-      appStore.dispatch(sendInitialMessageRequested(agentId, { wsId: workspace.id }));
-    }
+    // Initial-message delivery is owned by the daemon (harvested from
+    // metadata.initialMessage on workspace create); the ChatPanel no longer
+    // sends anything on mount — chat-history hydration renders the daemon-
+    // delivered message once it arrives.
 
     // Scroll handling on mount
     requestAnimationFrame(() => {

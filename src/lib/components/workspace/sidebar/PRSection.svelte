@@ -3,6 +3,7 @@
    * PRSection - Pull request creation, push/pull/sync, force push, rebase, connect remote, PR list
    * Manages all PR-related UI state and handlers.
    */
+  import { appClient } from '$lib/client';
   import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
   import { backgroundGitActionsService } from '$features/accept-changes/background-git-actions.service';
   import { selectExecutorState } from '$store/renderer/slices/background-agent-executor/background-agent-executor-selectors';
@@ -59,7 +60,6 @@
   import { Textarea } from '$lib/components/ui/textarea';
   import { toast } from '$lib/components/ui/toast';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
-  import { invoke } from '$shared/generated/ipc-client';
   import {
   track,
   trackGitOp,
@@ -516,8 +516,17 @@
   async function handlePull() {
     appStore.dispatch(setGitOperationFlag(workspaceId, 'isPulling', true));
     try {
-      const result = await gitClient.pull(workspaceId as WorkspaceId);
-      if (result.ok) {
+      // Daemon-backed pull (`git.pull`, PROTOCOL §5.6) via the appClient seam.
+      // The wire method is path-based (repoPath + branchName), replacing the
+      // retired workspace-scoped `git:pull` IPC.
+      const repoPath = $workspace$?.worktreePath || $workspace$?.path;
+      const branch = $workspace$?.branch;
+      if (!repoPath || !branch) {
+        toast.error('Failed to pull: workspace path or branch unavailable');
+        return;
+      }
+      const result = await appClient.git.pull(repoPath, branch);
+      if (result.success) {
         toast.success('Pulled remote commits successfully');
         gitCache.invalidateWorkspace(workspaceId as WorkspaceId);
         appStore.dispatch(loadGitStatus(workspaceId, true));
@@ -578,20 +587,14 @@
     if (!workspaceId || !$workspace$) return;
     try {
       const baseRef = $workspace$.baseRef || 'main';
+      // Daemon-backed file-at-ref reads (`git.showFile`, PROTOCOL §5.6);
+      // errors fold to { ok: false } inside the git client.
       const [oldContentResult, newContentResult] = await Promise.all([
-        typeof window !== 'undefined' && window.electronAPI
-          ? invoke<{ success: boolean; data?: string; error?: string }>('git:show-file', {
-            workspaceId, filePath, ref: baseRef,
-          })
-          : Promise.resolve(undefined),
-        typeof window !== 'undefined' && window.electronAPI
-          ? invoke<{ success: boolean; data?: string; error?: string }>('git:show-file', {
-            workspaceId, filePath, ref: 'HEAD',
-          })
-          : Promise.resolve(undefined),
+        gitClient.showFile(workspaceId as WorkspaceId, filePath, baseRef),
+        gitClient.showFile(workspaceId as WorkspaceId, filePath, 'HEAD'),
       ]);
-      const oldContent = oldContentResult?.success ? oldContentResult.data || '' : '';
-      const newContent = newContentResult?.success ? newContentResult.data || '' : '';
+      const oldContent = oldContentResult.ok ? oldContentResult.data : '';
+      const newContent = newContentResult.ok ? newContentResult.data : '';
       const fileStats = prFiles.find((f) => f.path === filePath);
       const change: TrackedChange = {
         id: `pr-file:${filePath}`,

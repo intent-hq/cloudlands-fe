@@ -7,7 +7,8 @@ import {
   type AppSettingDefinition,
 } from '$shared/app-settings-schema';
 import { Logger } from '$shared/logger';
-import { readUserMcpServers } from '../user-mcp-settings';
+import { getBackendClient } from '../../../backend/main/backend.ipc';
+import { getLocalPref } from '../../../../main/local-prefs';
 import type { ToolCall } from './protocol';
 import { emitProposalToChat, proposalToolResult } from './ws-app-proposal-content';
 
@@ -38,7 +39,95 @@ export class AppSettingsValidationError extends Error {
   }
 }
 
-const settingsStores: Record<string, any> = {};
+/**
+ * Rewires `source: 'electron-store'` reads onto their P3-4 owners. The legacy
+ * FE-main electron-store facade (`getSettingsStore(storeName)`) is retired:
+ * `sentry-auth` moved to daemon `accounts.sentry.*` (commit 503c19a4) and the
+ * default `settings` store was replaced by daemon settings-catalog +
+ * `main/local-prefs.ts` (commit 7afc138a). Fresh-start posture per §5.12 —
+ * never touch the old on-disk store files.
+ *
+ * Each schema path either routes to a daemon `settings.get` path (see
+ * `DAEMON_SETTING_PATHS` / `PROVIDER_PATH_KEYS`), a `main/local-prefs.ts`
+ * key (`LOCAL_PREF_KEYS`), or falls back to the definition's `defaultValue`.
+ * Sensitive paths keep their existing `valueForResult` redaction.
+ */
+const DAEMON_SETTING_PATHS: Record<string, string> = {
+  'providers.paths.auggie': 'context.auggiePath',
+  'workspace.branchPrefix': 'workspace.branchPrefix',
+  'workspace.worktreesLocation': 'workspace.worktreesLocation',
+  'workspace.sshKeyPath': 'workspace.sshKeyPath',
+  'workspace.defaultShell': 'workspace.defaultShell',
+  'workspace.autoFetch': 'workspace.autoFetch',
+  'workspace.autoCommit': 'git.autoCommit',
+  'notifications.enabled': 'notifications.enabled',
+  'notifications.soundEnabled': 'notifications.soundEnabled',
+  'notifications.soundOnlyWhenUnfocused': 'notifications.soundOnlyWhenUnfocused',
+  'notifications.volume': 'notifications.volume',
+  'mcp.enableUserServers': 'mcp.enableUserServers',
+  'mcp.disabledServers': 'mcp.disabledServers',
+  'linear.issueFilter': 'linear.issueFilter',
+};
+
+/** Schema paths whose value is a sub-key of the daemon `providers.paths` object. */
+const PROVIDER_PATH_KEYS: Record<string, string> = {
+  'providers.paths.claude-code': 'claude-code',
+  'providers.paths.codex': 'codex',
+};
+
+/** Schema paths owned by `main/local-prefs.ts` (FE-local, no daemon peer). */
+const LOCAL_PREF_KEYS: Record<string, string> = {
+  'preferences.betaUpdatesEnabled': 'betaUpdatesEnabled',
+  'rtk.enabled': 'rtkEnabled',
+};
+
+async function readDaemonSetting(path: string): Promise<unknown> {
+  try {
+    const result = (await getBackendClient().request('settings.get', {
+      path,
+    })) as { value?: unknown } | null;
+    return result?.value;
+  } catch (error) {
+    logger.debug('Daemon settings.get failed; using default', {
+      path,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
+}
+
+async function readElectronStoreOwner(definition: AppSettingDefinition): Promise<unknown> {
+  const daemonPath = DAEMON_SETTING_PATHS[definition.path];
+  if (daemonPath) return readDaemonSetting(daemonPath);
+
+  const providerKey = PROVIDER_PATH_KEYS[definition.path];
+  if (providerKey) {
+    const paths = await readDaemonSetting('providers.paths');
+    if (paths && typeof paths === 'object') {
+      return (paths as Record<string, unknown>)[providerKey];
+    }
+    return undefined;
+  }
+
+  const localPrefKey = LOCAL_PREF_KEYS[definition.path];
+  if (localPrefKey) {
+    try {
+      return await getLocalPref(localPrefKey);
+    } catch (error) {
+      logger.debug('Local-prefs read failed; using default', {
+        key: localPrefKey,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    }
+  }
+
+  // No P3-4 owner (e.g. openIn.hiddenEditors is §5.12 FE-only with no
+  // daemon peer and no local-prefs entry; accounts.sentry is a sensitive
+  // aggregated shape read-only through valueForResult). Fall back to the
+  // schema default rather than touching the retired electron-store file.
+  return undefined;
+}
 
 function definitionSummary(definition: AppSettingDefinition) {
   return {
@@ -93,18 +182,6 @@ function parseLocalStorageValue(
   return raw;
 }
 
-async function getSettingsStore(storeName = 'settings'): Promise<any | null> {
-  if (settingsStores[storeName]) return settingsStores[storeName];
-  try {
-    const ElectronStore = (await import('electron-store')).default;
-    settingsStores[storeName] = new ElectronStore({ name: storeName });
-    return settingsStores[storeName];
-  } catch (error) {
-    logger.warn('Unable to initialize settings store', { storeName, error });
-    return null;
-  }
-}
-
 async function readLocalStorageRaw(key: string): Promise<string | null | undefined> {
   try {
     const electron = await import('electron');
@@ -156,15 +233,69 @@ function valueForResult(definition: AppSettingDefinition, value: unknown): unkno
   return redactValue(value);
 }
 
+
+/**
+ * Read `mcp.servers` through the daemon's §5.22 `mcp.servers.list` surface
+ * instead of `~/.augment/settings.json` — the daemon is the single source of
+ * truth for the external MCP-server catalog (§5.12 marks the setting sensitive
+ * and the on-disk file is owned by the deferred agent-provider spawn path).
+ *
+ * The legacy `source: 'augment-settings'` shape was `Record<name, config>` keyed
+ * by server name (mirroring the on-disk `mcpServers` object), so we shape the
+ * wire array back into that record before returning. The whole entry is
+ * `sensitive: true`, so `valueForResult` will redact `env`/`headers` and any
+ * other secret-ish keys before the value reaches the caller.
+ */
+async function readDaemonMcpServersRecord(): Promise<Record<string, unknown>> {
+  try {
+    const result = (await getBackendClient().request('mcp.servers.list')) as
+      | { servers?: Array<Record<string, unknown>> }
+      | undefined;
+    const servers = Array.isArray(result?.servers) ? result.servers : [];
+    const record: Record<string, unknown> = {};
+    for (const server of servers) {
+      const name = (server as { name?: unknown }).name;
+      if (typeof name !== 'string' || !name) continue;
+      // Strip `id`/`name` from the value body — the record is keyed by name and
+      // the daemon-assigned id is not part of the settings-catalog shape.
+      const rest: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(server)) {
+        if (key === 'name' || key === 'id') continue;
+        rest[key] = value;
+      }
+      record[name] = rest;
+    }
+    return record;
+  } catch (error) {
+    logger.debug('mcp.servers.list failed; falling back to empty catalog', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {};
+  }
+}
+
 async function readDefinitionValue(definition: AppSettingDefinition): Promise<unknown> {
+  // Path-based P3-4 owner routing takes precedence over the (post-B7 legacy)
+  // `source` label — schema entries may now carry `daemon-settings` or
+  // `local-storage` while still belonging to a daemon-settings / providers-
+  // paths / local-prefs owner in `readElectronStoreOwner`. `valuePath` is
+  // handled inside that helper for `providers.paths.*` sub-keys.
+  if (
+    definition.path in DAEMON_SETTING_PATHS ||
+    definition.path in PROVIDER_PATH_KEYS ||
+    definition.path in LOCAL_PREF_KEYS
+  ) {
+    const rawValue = await readElectronStoreOwner(definition);
+    return rawValue === undefined ? definition.defaultValue : rawValue;
+  }
+
   let rawValue: unknown;
   if (definition.source === 'static') {
     rawValue = definition.defaultValue;
   } else if (definition.source === 'augment-settings') {
-    rawValue = await readUserMcpServers();
+    rawValue = await readDaemonMcpServersRecord();
   } else if (definition.source === 'electron-store') {
-    const store = await getSettingsStore(definition.storeName);
-    rawValue = definition.storageKey && store ? store.get(definition.storageKey) : undefined;
+    rawValue = await readElectronStoreOwner(definition);
   } else if (definition.source === 'local-storage') {
     const raw = definition.storageKey
       ? await readLocalStorageRaw(definition.storageKey)

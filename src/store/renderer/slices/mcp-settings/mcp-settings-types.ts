@@ -49,6 +49,10 @@ export type McpSettingsState = {
   enabled: boolean;
   /** Number of servers imported in the last JSON import (for UI feedback) */
   lastImportedCount: number | null;
+  /** Advanced JSON editor save state (replace-all via the daemon seam) */
+  advancedSaveStatus: "idle" | "saving" | "saved" | "error";
+  /** Advanced JSON editor save error (set when advancedSaveStatus === "error") */
+  advancedSaveError: string | null;
   /** Per-workspace disabled server names. */
   byWorkspaceId: Record<string, WorkspaceMcpSettingsState>;
 };
