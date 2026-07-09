@@ -116,7 +116,11 @@ describe('DirectoryPickerModal navigation', () => {
     expect(calls.slice(2)).toEqual([]);
   });
 
-  it('still re-requests when initialPath changes while open', async () => {
+  it('does not re-request when initialPath changes while open (fix 92303cfc)', async () => {
+    // The load-on-open effect is gated on `loadedFor === null` (fresh open
+    // after modal close), so parent-driven initialPath changes while open do
+    // NOT snap the picker back to the new initial path. The next fresh open
+    // will pick up the current initialPath value naturally.
     const { rerender } = render(DirectoryPickerModal, { props: { ...baseProps } });
     await flush();
     expect(loadCalls()).toHaveLength(1);
@@ -124,9 +128,7 @@ describe('DirectoryPickerModal navigation', () => {
     await rerender({ ...baseProps, initialPath: '/Users/me/repo' });
     await flush();
 
-    const calls = loadCalls();
-    expect(calls).toHaveLength(2);
-    expect(requestedPath(calls[1])).toBe('/Users/me/repo');
+    expect(loadCalls()).toHaveLength(1);
   });
 
   it('resets picker state when the modal closes', async () => {
