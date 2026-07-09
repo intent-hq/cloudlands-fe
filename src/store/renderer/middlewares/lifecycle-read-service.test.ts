@@ -50,8 +50,9 @@ import {
   setActiveAgentId,
 } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
 import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
+import { bulkUpsertSessions } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { AgentStatus } from "$shared/types/agent.types";
-import type { AgentSession } from "$shared/types";
+import type { AgentMessage, AgentSession } from "$shared/types";
 
 type Fn = ReturnType<typeof vi.fn>;
 const wsApi = appClient.workspaces as unknown as Record<string, Fn>;
@@ -375,5 +376,63 @@ describe("lifecycleReadService (hydrateAgentsRequested → agents.list convergen
     expect(wsAgents?.activeAgentId).toBe("agent-recycled-new");
     expect(appStore.state.agentSessions.byAgentId["agent-recycled-old"]).toBeUndefined();
     expect(appStore.state.agentSessions.byAgentId["agent-recycled-new"]).toBeDefined();
+  });
+
+  // Regression (LEAK-1 review #1): `agent.list` returns AgentLite — `messages`
+  // is always `[]` — so a re-mount refetch must not truncate a transcript the
+  // chat read path already hydrated.
+  it("re-mount hydration preserves an already-hydrated transcript", async () => {
+    const ws = "ws-agents-transcript";
+    const agentId = "agent-with-transcript";
+    agentsApi.list.mockResolvedValueOnce([makeAgent(agentId, ws)] as never);
+    appStore.dispatch(hydrateAgentsRequested(ws));
+    await flush();
+
+    // Chat hydration (agent.getConversation) fills the transcript.
+    const transcript: AgentMessage[] = [
+      { id: "m1", role: "user", timestamp: "2026-01-01T00:00:01.000Z" } as AgentMessage,
+      { id: "m2", role: "assistant", timestamp: "2026-01-01T00:00:02.000Z" } as AgentMessage,
+    ];
+    appStore.dispatch(bulkUpsertSessions([makeAgent(agentId, ws, { messages: transcript })]));
+    expect(appStore.state.agentSessions.byAgentId[agentId]?.messages).toHaveLength(2);
+
+    // Re-mount: the list refetch returns the Lite snapshot (messages: []).
+    agentsApi.list.mockResolvedValueOnce([makeAgent(agentId, ws)] as never);
+    appStore.dispatch(hydrateAgentsRequested(ws));
+    await flush();
+
+    expect(agentsApi.list).toHaveBeenCalledTimes(2);
+    expect(appStore.state.agentSessions.byAgentId[agentId]?.messages).toEqual(transcript);
+  });
+
+  // Regression (LEAK-1 review #2): a purge landing while an `agents:{wsId}`
+  // fetch is in flight must neither coalesce away the follow-up rehydrate nor
+  // let the stale pre-purge response resurrect the purged agents.
+  it("purge during an in-flight fetch discards the stale response and rehydrates fresh", async () => {
+    const ws = "ws-agents-inflight";
+    const stale = makeAgent("agent-inflight-stale", ws);
+    const fresh = makeAgent("agent-inflight-fresh", ws);
+    let resolveStale: (agents: AgentSession[]) => void = () => {};
+    agentsApi.list.mockReturnValueOnce(
+      new Promise<AgentSession[]>((resolve) => {
+        resolveStale = resolve;
+      }) as never,
+    );
+
+    appStore.dispatch(hydrateAgentsRequested(ws));
+    // Purge (recycled-ID create / delete) lands mid-flight, then the bridge
+    // re-requests hydration — this second fetch must actually go out.
+    appStore.dispatch(workspaceDeleted(ws, []));
+    agentsApi.list.mockResolvedValueOnce([fresh] as never);
+    appStore.dispatch(hydrateAgentsRequested(ws));
+    resolveStale([stale]);
+    await flush();
+
+    expect(agentsApi.list).toHaveBeenCalledTimes(2);
+    const wsAgents = appStore.state.workspaceAgents.byWorkspaceId[ws];
+    expect(wsAgents?.agentIds).toEqual(["agent-inflight-fresh"]);
+    expect(wsAgents?.activeAgentId).toBe("agent-inflight-fresh");
+    expect(appStore.state.agentSessions.byAgentId["agent-inflight-stale"]).toBeUndefined();
+    expect(appStore.state.agentSessions.byAgentId["agent-inflight-fresh"]).toBeDefined();
   });
 });
