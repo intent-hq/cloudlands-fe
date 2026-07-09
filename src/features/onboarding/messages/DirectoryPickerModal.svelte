@@ -89,15 +89,16 @@
     queueMicrotask(() => listContainerRef?.scrollTo({ top: 0 }));
   }
 
-  // Re-load whenever the modal opens (or the requested initial path changes).
-  // `loadedFor` and `listing` are read via `untrack` so user navigation —
-  // which updates `loadedFor` through requestDirectory() — does not re-run
-  // this effect and bounce the listing back to the initial path.
+  // Re-load whenever the modal opens. `loadedFor` and `listing` are read via
+  // `untrack` so that in-modal navigation (which sets `loadedFor` and eventually
+  // updates `listing`) does not re-trigger this effect and snap the picker back
+  // to `initialPath`. The close-effect resets `loadedFor` to `null`, so
+  // `loadedFor === null` is the fresh-open signal.
   $effect(() => {
     if (!open) return;
     const want = initialPath?.trim() || '';
     untrack(() => {
-      if (loadedFor !== want || listing === null) {
+      if (loadedFor === null) {
         requestDirectory(want || undefined);
       }
     });
