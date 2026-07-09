@@ -14,7 +14,6 @@ import {
 import {
   ProvenanceContextManager,
   resetProvenanceContextManager,
-  getProvenanceContextManager,
 } from '../provenance-context-manager';
 describe('ProvenanceContextManager', () => {
   let manager: ProvenanceContextManager;

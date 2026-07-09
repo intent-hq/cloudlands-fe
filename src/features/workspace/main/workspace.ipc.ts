@@ -23,7 +23,6 @@ import * as fs from 'fs/promises';
 import { Logger } from '../../../shared/logger';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
 import { workspaceFileChanges } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
-import { agentSessionUpdated } from '../../../store/main/slices/agent-events/agent-events-slice';
 import { emitWorkspaceEvent } from '../../../store/main/slices/workspace-events/workspace-events-slice';
 
 import { WorkspaceConfig } from '../../../shared/main/config.js';

@@ -655,6 +655,7 @@
               class="flex items-center gap-2 w-full text-left py-0.5 cursor-pointer hover:bg-muted/30 rounded transition-colors"
               onclick={() => {
                 if (stats.pr.url) {
+                  // eslint-disable-next-line intent/no-component-async-data-fetch -- shell.open is opening an external URL, not fetching domain data; rule misfires on the 'open' method name
                   void shell.open(stats.pr.url);
                 } else {
                   onSwitchTab?.('changes');

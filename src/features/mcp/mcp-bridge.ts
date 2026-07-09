@@ -37,7 +37,7 @@ export class MCPBridge {
     call: ToolCall,
     workspaceId: string,
     workspacePath: string,
-    environmentConfig?: any,
+    _environmentConfig?: any,
   ): Promise<ToolResult> {
     logger.debug('Executing MCP tool call', {
       tool: call.name,

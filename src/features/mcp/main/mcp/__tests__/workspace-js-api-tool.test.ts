@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 const {
   mockSendToWorkspaceWindows,
-  mockAgentHandler,
   mockWorkspaceSubscriptionState,
   mockBackendRequest,
 } = vi.hoisted(() => {
@@ -20,20 +19,6 @@ const {
     // C1d-4: ws-app-agents-api routes through daemon RPCs (PROTOCOL.md §5.5
     // `agent.list` / `agent.getSession`) instead of AgentBackendHandler.
     mockBackendRequest: vi.fn(async () => ({ agents: [] })),
-    mockAgentHandler: {
-        listAllAgents: vi.fn().mockResolvedValue([
-          {
-            id: 'agent-live',
-            name: 'Live Agent',
-            status: 'responding',
-            metadata: { taskNoteId: 'task-live', secret: 'AGENT_SECRET' },
-            messages: [{ content: 'MESSAGE_SECRET' }],
-            lastActivity: '2026-06-19T04:00:00.000Z',
-          },
-          { id: 'child-agent', name: 'Child Agent', status: 'completed' },
-        ]),
-        getAgent: vi.fn().mockResolvedValue(null),
-      },
       mockWorkspaceSubscriptionState: {
         subscriptions: {
           'sub-live': {
