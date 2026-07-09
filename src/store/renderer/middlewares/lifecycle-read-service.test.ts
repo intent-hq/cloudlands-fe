@@ -16,6 +16,7 @@ vi.mock("$lib/client", () => ({
     events: { list: vi.fn(() => Promise.resolve([])) },
     skills: { list: vi.fn(() => Promise.resolve([])) },
     scripts: { list: vi.fn(() => Promise.resolve([])) },
+    agents: { list: vi.fn(() => Promise.resolve([])) },
     git: {
       prStatus: vi.fn(() => Promise.resolve(null)),
       trackedChanges: vi.fn(() => Promise.resolve([])),
@@ -44,6 +45,13 @@ import {
   refreshRequested,
   requestAgentLineStats,
 } from "$store/renderer/slices/changes/changes-slice";
+import {
+  hydrateAgentsRequested,
+  setActiveAgentId,
+} from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
+import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
+import { AgentStatus } from "$shared/types/agent.types";
+import type { AgentSession } from "$shared/types";
 
 type Fn = ReturnType<typeof vi.fn>;
 const wsApi = appClient.workspaces as unknown as Record<string, Fn>;
@@ -51,6 +59,7 @@ const tasksApi = appClient.tasks as unknown as Record<string, Fn>;
 const eventsApi = appClient.events as unknown as Record<string, Fn>;
 const skillsApi = appClient.skills as unknown as Record<string, Fn>;
 const scriptsApi = appClient.scripts as unknown as Record<string, Fn>;
+const agentsApi = appClient.agents as unknown as Record<string, Fn>;
 const gitApi = appClient.git as unknown as Record<string, Fn>;
 const mockedGetAgentLineStats = vi.mocked(getAgentLineStats);
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -282,5 +291,89 @@ describe("lifecycleReadService (fake seam, real store)", () => {
     expect(request?.isLoading).toBe(false);
     expect(request?.error).toBe("metrics boom");
     expect(appStore.state.changes.agentStats[agentId]).toBeUndefined();
+  });
+});
+
+describe("lifecycleReadService (hydrateAgentsRequested → agents.list convergence)", () => {
+  beforeAll(() => appStore.init());
+  afterEach(() => vi.clearAllMocks());
+
+  function makeAgent(id: string, ws: string, overrides: Partial<AgentSession> = {}): AgentSession {
+    return {
+      id,
+      backendSessionId: `backend-${id}`,
+      workspaceId: ws,
+      name: id,
+      status: AgentStatus.Idle,
+      messages: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...overrides,
+    } as AgentSession;
+  }
+
+  it("hydrates the agent list and selects the first foreground agent", async () => {
+    const ws = "ws-agents-1";
+    const background = makeAgent("agent-hydrate-bg", ws, { isBackground: true });
+    const foreground = makeAgent("agent-hydrate-fg", ws);
+    agentsApi.list.mockResolvedValueOnce([background, foreground] as never);
+
+    appStore.dispatch(hydrateAgentsRequested(ws));
+    await flush();
+
+    expect(agentsApi.list).toHaveBeenCalledWith(ws);
+    const wsAgents = appStore.state.workspaceAgents.byWorkspaceId[ws];
+    expect(wsAgents?.agentsLoaded).toBe(true);
+    expect(wsAgents?.agentIds).toEqual(["agent-hydrate-bg", "agent-hydrate-fg"]);
+    expect(wsAgents?.activeAgentId).toBe("agent-hydrate-fg");
+    expect(appStore.state.agentSessions.byAgentId["agent-hydrate-fg"]).toBeDefined();
+  });
+
+  it("refetches on every hydrate (no agentsLoaded skip) without clobbering a still-valid active agent", async () => {
+    const ws = "ws-agents-2";
+    const a1 = makeAgent("agent-keep-1", ws);
+    const a2 = makeAgent("agent-keep-2", ws);
+    agentsApi.list.mockResolvedValue([a1, a2] as never);
+
+    appStore.dispatch(hydrateAgentsRequested(ws));
+    await flush();
+    expect(agentsApi.list).toHaveBeenCalledTimes(1);
+
+    // User picks the second agent, then the workspace re-mounts.
+    appStore.dispatch(setActiveAgentId(ws, "agent-keep-2"));
+    appStore.dispatch(hydrateAgentsRequested(ws));
+    await flush();
+
+    // The list WAS refetched (the old `agentsLoaded` guard would have skipped
+    // it) but the user's selection survives the reconcile.
+    expect(agentsApi.list).toHaveBeenCalledTimes(2);
+    expect(appStore.state.workspaceAgents.byWorkspaceId[ws]?.activeAgentId).toBe("agent-keep-2");
+    agentsApi.list.mockReset();
+    agentsApi.list.mockResolvedValue([] as never);
+  });
+
+  it("recycled workspace ID: purge then rehydrate surfaces only the new workspace's agents", async () => {
+    const ws = "ws-agents-recycled";
+    const stale = makeAgent("agent-recycled-old", ws);
+    agentsApi.list.mockResolvedValueOnce([stale] as never);
+    appStore.dispatch(hydrateAgentsRequested(ws));
+    await flush();
+    expect(appStore.state.workspaceAgents.byWorkspaceId[ws]?.agentIds).toEqual([
+      "agent-recycled-old",
+    ]);
+
+    // The recycled-ID create path (daemon-events-bridge `workspace:created`)
+    // purges the old ID's state, then re-requests hydration.
+    appStore.dispatch(workspaceDeleted(ws, ["agent-recycled-old"]));
+    const fresh = makeAgent("agent-recycled-new", ws);
+    agentsApi.list.mockResolvedValueOnce([fresh] as never);
+    appStore.dispatch(hydrateAgentsRequested(ws));
+    await flush();
+
+    const wsAgents = appStore.state.workspaceAgents.byWorkspaceId[ws];
+    expect(wsAgents?.agentIds).toEqual(["agent-recycled-new"]);
+    expect(wsAgents?.activeAgentId).toBe("agent-recycled-new");
+    expect(appStore.state.agentSessions.byAgentId["agent-recycled-old"]).toBeUndefined();
+    expect(appStore.state.agentSessions.byAgentId["agent-recycled-new"]).toBeDefined();
   });
 });

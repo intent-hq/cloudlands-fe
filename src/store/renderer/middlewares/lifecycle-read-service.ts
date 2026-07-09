@@ -87,6 +87,7 @@ import {
 import {
   hydrateAgentsRequested,
   setActiveAgentId,
+  setAgents,
   setAgentsLoaded,
 } from "../slices/workspace-agents/workspace-agents-slice";
 import {
@@ -263,21 +264,27 @@ function refreshAgentLineStats(agentId: string, forceRefresh: boolean): void {
 
 /**
  * Hydrate a workspace's agent list on mount, mirroring the boot `agents-seeder`
- * for this workspace only. Guarded by the per-workspace `agentsLoaded` flag so
- * a re-mount of a boot-seeded workspace is a no-op (leaving user-driven state
- * like the active agent intact). Selects the first foreground agent when found
- * so the chat panel renders content on first paint, matching the seeder.
+ * for this workspace only. Always refetches `agents.list` — a stale-skip guard
+ * on `agentsLoaded` previously let a recycled workspace ID keep the previous
+ * workspace's agents — and converges through the `setAgents` reconcile path.
+ * User-driven state is preserved: the active agent is only (re)selected when
+ * none is set or the current one is no longer known, so a re-mount of an
+ * unchanged workspace never clobbers the user's selection.
  */
 function hydrateWorkspaceAgents(wsId: string): void {
-  const already = appStore.state.workspaceAgents.byWorkspaceId[wsId]?.agentsLoaded;
-  if (already) return;
   coalesce(`agents:${wsId}`, async () => {
     const agents = await appClient.agents.list(wsId);
     appStore.dispatch(setAgentsLoaded(wsId, true));
     if (agents.length === 0) return;
+    appStore.dispatch(setAgents(wsId, agents));
     appStore.dispatch(bulkUpsertSessions(agents));
     for (const agent of agents) {
       appStore.dispatch(upsertSession(agent));
+    }
+    const workspaceState = appStore.state.workspaceAgents.byWorkspaceId[wsId];
+    const activeAgentId = workspaceState?.activeAgentId;
+    if (activeAgentId && (workspaceState?.agentIds ?? []).includes(activeAgentId)) {
+      return;
     }
     const firstForeground = agents.find((agent) => !agent.isBackground) ?? agents[0];
     appStore.dispatch(setActiveAgentId(wsId, String(firstForeground.id)));

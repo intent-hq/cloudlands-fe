@@ -210,6 +210,8 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
         "settings:changed",
         "workspace:tokenUsage-changed",
         "workspace:updated",
+        "workspace:created",
+        "workspace:deleted",
         "task:ready-tasks-changed",
         "changes:git-status",
         "changes:tracked",
@@ -1229,6 +1231,8 @@ describe("daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
         "settings:changed",
         "workspace:tokenUsage-changed",
         "workspace:updated",
+        "workspace:created",
+        "workspace:deleted",
         "task:ready-tasks-changed",
         "changes:git-status",
         "changes:tracked",
@@ -2217,6 +2221,110 @@ describe("daemonEventsBridge (workspace:deleted → purge agent/chat state)", ()
 
     const state = appStore.state as { agentSessions: { byAgentId: Record<string, unknown> } };
     expect(state.agentSessions.byAgentId[AGENT]).toBeDefined();
+  });
+});
+
+
+describe("daemonEventsBridge (workspace:created → recycled-ID purge + rehydrate)", () => {
+  const RECYCLED_WS = "ws-bridge-recycled";
+  const STALE_AGENT = "agent-bridge-stale";
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset(STALE_AGENT));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("purges stale local state for the recycled ID and refetches the agent list", async () => {
+    // Seed state under RECYCLED_WS as if it survived from the ID's previous
+    // life (i.e. the workspace:deleted event was never delivered).
+    const staleSession: AgentSession = {
+      id: STALE_AGENT,
+      backendSessionId: "backend-stale",
+      workspaceId: RECYCLED_WS,
+      name: "Stale",
+      status: AgentStatus.Idle,
+      messages: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    } as AgentSession;
+    appStore.dispatch(bulkUpsertSessions([staleSession]));
+    appStore.dispatch(upsertSession(staleSession));
+    appStore.dispatch(chatSendStarted(STALE_AGENT, RECYCLED_WS));
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-workspace-created-recycled",
+          workspaceId: RECYCLED_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "workspace:created",
+          actor: { type: "user", id: "u1" },
+          data: { workspaceId: RECYCLED_WS },
+        },
+      },
+    });
+    // hydrateAgentsRequested → lifecycle-read-service → appClient.agents.list
+    // (live client → mocked backendRequest); let the async hydrate settle.
+    await flush();
+
+    const after = appStore.state as {
+      agentSessions: {
+        byAgentId: Record<string, unknown>;
+        agentIdsByWorkspace: Record<string, string[]>;
+      };
+      workspaceAgents: { byWorkspaceId: Record<string, { agentIds?: string[] }> };
+      chatState: { byAgentId: Record<string, unknown> };
+    };
+    // Stale traces are purged (same path as workspace:deleted).
+    expect(after.agentSessions.byAgentId[STALE_AGENT]).toBeUndefined();
+    expect(after.agentSessions.agentIdsByWorkspace[RECYCLED_WS]).toBeUndefined();
+    expect(after.chatState.byAgentId[STALE_AGENT]).toBeUndefined();
+    expect(after.workspaceAgents.byWorkspaceId[RECYCLED_WS]?.agentIds ?? []).toEqual([]);
+    // The bridge re-hydrates from the daemon's canonical list (PROTOCOL §5.5).
+    expect(backendRequestSpy).toHaveBeenCalledWith("agent.list", {
+      workspaceId: RECYCLED_WS,
+    });
+  });
+
+  it("is a no-op (no purge, no refetch) when the created ID has no local state", async () => {
+    const FRESH_WS = "ws-bridge-fresh";
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    backendRequestSpy.mockClear();
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-workspace-created-fresh",
+          workspaceId: FRESH_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "workspace:created",
+          actor: { type: "user", id: "u1" },
+          data: { workspaceId: FRESH_WS },
+        },
+      },
+    });
+    await flush();
+
+    expect(backendRequestSpy).not.toHaveBeenCalledWith("agent.list", {
+      workspaceId: FRESH_WS,
+    });
   });
 });
 
