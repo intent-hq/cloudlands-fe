@@ -116,6 +116,7 @@
   // Side-effect import: runs every per-domain seeder's registration at startup.
   import '$store/renderer/seeders';
   import { startGitStatusSubscription } from '$features/git/git-status-subscription';
+  import { startWorkspaceListSubscription } from '$features/workspace/workspace-list-subscription';
   const logger = createLogger('+layout');
 
   function initStore(): () => void {
@@ -123,9 +124,12 @@
     void seedMockStore(appStore);
     // Auto-refresh git status when the daemon reports external git changes.
     const stopGitStatusSubscription = startGitStatusSubscription();
+    // Live-update the workspace list on daemon workspace:* events (e.g. rename).
+    const stopWorkspaceListSubscription = startWorkspaceListSubscription();
 
     return () => {
       stopGitStatusSubscription();
+      stopWorkspaceListSubscription();
       storeContext.dispose();
     };
   }
