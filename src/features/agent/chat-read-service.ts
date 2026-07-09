@@ -9,13 +9,15 @@
  * read path WITHOUT re-adding a saga and WITHOUT changing the dispatch site:
  * `createChatReadMiddleware()` observes every dispatched action and, on
  * `initializeChatRequested`, runs `loadChatTranscript(agentId)` — which fetches
- * the session (`appClient.agents.get`) AND the real transcript
- * (`appClient.agents.getConversation`, daemon `agent.getConversation` §5.5), then
- * hydrates the store exactly as the agents-seeder does: `bulkUpsertSessions`
- * populates the agent-session slice (`byAgentId` + messages = the conversation),
- * and `upsertSession` registers the agent id in the workspace-agents index.
- * `bulkUpsertSessions` is the action the agent-session reducer consumes to
- * populate `messages` (it normalizes/sorts/dedups/prunes on ingest).
+ * the session (`appClient.agents.get`) AND the real transcript via the
+ * `chat.subscribe` seq-0 snapshot (PROTOCOL §7.1, `appClient.chat.subscribeSnapshot`).
+ * The snapshot merges the newest `agent.getConversation` page with the
+ * synthetic in-flight assistant message (`isStreaming: true`) when a turn is
+ * currently streaming, so switching away and back to a chat mid-turn rehydrates
+ * the interim response instead of clobbering it with persisted-only history.
+ * `bulkUpsertSessions` populates the agent-session slice (`byAgentId` + messages
+ * = the conversation), and `upsertSession` registers the agent id in the
+ * workspace-agents index.
  *
  * READ-ONLY: this module never invokes an agent mutation (no create/send/stop).
  *
@@ -32,7 +34,6 @@
  * mid-initialization through the middleware chain).
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import type { AgentMessage } from "$shared/types";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
@@ -48,45 +49,6 @@ const logger = createLogger("ChatReadService");
 const inFlight = new Map<string, Promise<void>>();
 
 /**
- * Hard safety cap on the number of `agent.getConversation` pages fetched per
- * hydration — the daemon clamps `limit` to 200, so at 500 pages we've asked
- * for up to 100k messages, well past any realistic transcript. Prevents a
- * pathological loop from spinning forever if the daemon ever returned a
- * cursor that never terminated.
- */
-const MAX_TRANSCRIPT_PAGES = 500;
-
-/**
- * Page through `agent.getConversation` until `nextToken` is null, accumulating
- * every returned message. Guards against pathological loops by (a) stopping if
- * the daemon repeats a token and (b) capping total pages via
- * `MAX_TRANSCRIPT_PAGES`. Order within the returned array doesn't matter —
- * the agent-session reducer normalizes/sorts/dedups on ingest.
- */
-async function fetchAllConversationMessages(agentId: string): Promise<AgentMessage[]> {
-  const all: AgentMessage[] = [];
-  const seenTokens = new Set<string>();
-  let pageToken: string | undefined;
-  for (let page = 0; page < MAX_TRANSCRIPT_PAGES; page++) {
-    const response = await appClient.agents.getConversation(agentId, undefined, pageToken);
-    all.push(...response.messages);
-    const next = response.nextToken;
-    if (!next) return all;
-    if (seenTokens.has(next)) {
-      logger.warn("Aborting transcript pagination: nextToken repeated", { agentId });
-      return all;
-    }
-    seenTokens.add(next);
-    pageToken = next;
-  }
-  logger.warn("Aborting transcript pagination: page cap reached", {
-    agentId,
-    maxPages: MAX_TRANSCRIPT_PAGES,
-  });
-  return all;
-}
-
-/**
  * Fetch a single agent's session AND its real transcript from the seam, then
  * hydrate the store with `{ ...session, messages }`. Errors are swallowed
  * (logged only) so a failed read never clears an existing transcript. Concurrent
@@ -98,16 +60,16 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
 
   const run = (async () => {
     try {
-      const [session, messages] = await Promise.all([
+      const [session, snapshot] = await Promise.all([
         appClient.agents.get(agentId),
-        fetchAllConversationMessages(agentId),
+        appClient.chat.subscribeSnapshot(agentId),
       ]);
       if (session) {
         // Render BE state as-is: the daemon is the single source of truth for
         // streaming/responding flags. If a chat opens with "Thinking", that is
         // because the daemon snapshot actually reports a turn is in-flight;
         // any orphan/stale healing belongs in the daemon, not the renderer.
-        const sessionWithMessages = { ...session, messages };
+        const sessionWithMessages = { ...session, messages: snapshot.messages };
         appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
         appStore.dispatch(upsertSession(sessionWithMessages));
       }

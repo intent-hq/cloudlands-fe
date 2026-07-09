@@ -314,6 +314,18 @@ export interface ChatClient {
   history(agentId: string): Promise<ContentBlock[]>;
   tokenUsage(agentId: string): Promise<{ input: number; output: number }>;
   subscribe(agentId: string, handler: SubscriptionHandler<ContentBlock[]>): Unsubscribe;
+  /**
+   * One-shot seq-0 snapshot from the `chat.subscribe` channel (PROTOCOL §7.1).
+   * The daemon's snapshot merges the newest `agent.getConversation` page with
+   * the synthetic in-flight assistant message (`isStreaming: true`) when a turn
+   * is currently streaming, so a client (re)opening the chat mid-turn rehydrates
+   * the interim response instead of clobbering it with persisted-only history.
+   * Subscribes, awaits the initial snapshot push, and unsubscribes — the live
+   * delta stream is still served by the `agent:stream:*` firehose.
+   */
+  subscribeSnapshot(
+    agentId: string,
+  ): Promise<{ messages: AgentMessage[]; truncated: boolean; totalMessages: number }>;
 }
 
 /** Parameters for `terminal.create` (PROTOCOL §5.13). `command` omitted ⇒ default shell. */
