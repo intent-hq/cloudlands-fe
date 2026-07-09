@@ -101,7 +101,7 @@ describe('ScriptProcessManager daemon integration', () => {
     });
 
     const startCall = mockRequest.mock.calls.find((c) => c[0] === 'script.start');
-    expect(startCall?.[1]).toEqual({ scriptId: 'script-1' });
+    expect(startCall?.[1]).toEqual({ workspaceId: 'ws-1', scriptId: 'script-1' });
   });
 
   it('applies script:state events and invokes the state callback', async () => {
@@ -161,16 +161,25 @@ describe('ScriptProcessManager daemon integration', () => {
     mockRequest.mockResolvedValue({ ok: true });
 
     await manager.stop('script-1');
-    expect(mockRequest).toHaveBeenCalledWith('script.stop', { scriptId: 'script-1' });
+    expect(mockRequest).toHaveBeenCalledWith('script.stop', {
+      workspaceId: 'ws-1',
+      scriptId: 'script-1',
+    });
 
     mockRequest.mockClear();
     await manager.restart('script-1');
     // Definition matches what was registered, so we take the fast path.
-    expect(mockRequest).toHaveBeenCalledWith('script.restart', { scriptId: 'script-1' });
+    expect(mockRequest).toHaveBeenCalledWith('script.restart', {
+      workspaceId: 'ws-1',
+      scriptId: 'script-1',
+    });
 
     mockRequest.mockClear();
     await manager.remove('script-1');
-    expect(mockRequest).toHaveBeenCalledWith('script.remove', { scriptId: 'script-1' });
+    expect(mockRequest).toHaveBeenCalledWith('script.remove', {
+      workspaceId: 'ws-1',
+      scriptId: 'script-1',
+    });
     expect(manager.getManagedScriptIds()).toEqual([]);
   });
 
