@@ -87,12 +87,14 @@ import {
 import {
   hydrateAgentsRequested,
   setActiveAgentId,
+  setAgents,
   setAgentsLoaded,
 } from "../slices/workspace-agents/workspace-agents-slice";
 import {
   hydrateTerminalsRequested,
   loadWorkspaceTerminals,
 } from "../slices/terminals/terminals-slice";
+import { workspaceDeleted } from "../slices/workspace-lifecycle/workspace-lifecycle-slice";
 
 const logger = createLogger("LifecycleReadService");
 
@@ -103,16 +105,38 @@ const inFlight = new Map<string, Promise<void>>();
 function coalesce(key: string, fn: () => Promise<void>): void {
   const pending = inFlight.get(key);
   if (pending) return;
-  const run = (async () => {
+  // `let` + late assign: the finally closure references `run` before the
+  // initializer completes, which TS rejects as a self-referencing `const`.
+  let run: Promise<void> | undefined;
+  // eslint-disable-next-line prefer-const
+  run = (async () => {
     try {
       await fn();
     } catch (error) {
       logger.error(`Refresh failed for ${key}`, error);
     } finally {
-      inFlight.delete(key);
+      // Only clear the slot this run still owns — an invalidation
+      // (`invalidateAgentsHydration`) may have deleted it and a newer run may
+      // already occupy the key; deleting blindly would drop that run's dedup.
+      if (inFlight.get(key) === run) inFlight.delete(key);
     }
   })();
   inFlight.set(key, run);
+}
+
+/**
+ * Per-workspace agent-hydration generation. `workspaceDeleted` (real delete or
+ * the recycled-ID purge in daemon-events-bridge) bumps it and evicts the
+ * in-flight `agents:{wsId}` entry, so (a) a purge-then-rehydrate is never
+ * coalesced away behind a pre-purge fetch, and (b) a pre-purge response that
+ * resolves late is discarded instead of resurrecting stale agents.
+ */
+const agentsHydrationGeneration = new Map<string, number>();
+
+/** Bump the generation and evict the in-flight fetch for `wsId`'s agent list. */
+function invalidateAgentsHydration(wsId: string): void {
+  agentsHydrationGeneration.set(wsId, (agentsHydrationGeneration.get(wsId) ?? 0) + 1);
+  inFlight.delete(`agents:${wsId}`);
 }
 
 /** Re-fetch the workspace list + recency (mirrors workspaces-seeder, data only). */
@@ -263,21 +287,45 @@ function refreshAgentLineStats(agentId: string, forceRefresh: boolean): void {
 
 /**
  * Hydrate a workspace's agent list on mount, mirroring the boot `agents-seeder`
- * for this workspace only. Guarded by the per-workspace `agentsLoaded` flag so
- * a re-mount of a boot-seeded workspace is a no-op (leaving user-driven state
- * like the active agent intact). Selects the first foreground agent when found
- * so the chat panel renders content on first paint, matching the seeder.
+ * for this workspace only. Always refetches `agents.list` — a stale-skip guard
+ * on `agentsLoaded` previously let a recycled workspace ID keep the previous
+ * workspace's agents — and converges through the `setAgents` reconcile path.
+ * User-driven state is preserved: the active agent is only (re)selected when
+ * none is set or the current one is no longer known, so a re-mount of an
+ * unchanged workspace never clobbers the user's selection.
+ *
+ * Two staleness guards (see LEAK-1 review):
+ * - `agent.list` returns AgentLite (PROTOCOL §5.5) — metadata with `messages`
+ *   normalized to `[]`, never the retained transcript. Upserting the snapshot
+ *   as-is would truncate a transcript that `chat-read-service` /
+ *   `agent-read-service` already hydrated, so any existing messages are
+ *   preserved (same merge `ensureAgentSession` uses).
+ * - The hydration generation captured before the fetch is re-checked after it
+ *   resolves; a `workspaceDeleted` purge in between discards the response so a
+ *   pre-purge fetch can never merge stale agents back after the purge.
  */
 function hydrateWorkspaceAgents(wsId: string): void {
-  const already = appStore.state.workspaceAgents.byWorkspaceId[wsId]?.agentsLoaded;
-  if (already) return;
+  const generation = agentsHydrationGeneration.get(wsId) ?? 0;
   coalesce(`agents:${wsId}`, async () => {
-    const agents = await appClient.agents.list(wsId);
+    const fetched = await appClient.agents.list(wsId);
+    if ((agentsHydrationGeneration.get(wsId) ?? 0) !== generation) return;
     appStore.dispatch(setAgentsLoaded(wsId, true));
-    if (agents.length === 0) return;
+    if (fetched.length === 0) return;
+    const agents = fetched.map((agent) => {
+      const existing = appStore.state.agentSessions?.byAgentId[String(agent.id)];
+      return agent.messages.length === 0 && existing && existing.messages.length > 0
+        ? { ...agent, messages: existing.messages }
+        : agent;
+    });
+    appStore.dispatch(setAgents(wsId, agents));
     appStore.dispatch(bulkUpsertSessions(agents));
     for (const agent of agents) {
       appStore.dispatch(upsertSession(agent));
+    }
+    const workspaceState = appStore.state.workspaceAgents.byWorkspaceId[wsId];
+    const activeAgentId = workspaceState?.activeAgentId;
+    if (activeAgentId && (workspaceState?.agentIds ?? []).includes(activeAgentId)) {
+      return;
     }
     const firstForeground = agents.find((agent) => !agent.isBackground) ?? agents[0];
     appStore.dispatch(setActiveAgentId(wsId, String(firstForeground.id)));
@@ -366,6 +414,14 @@ export function createLifecycleReadMiddleware(): StoreMiddleware {
         case hydrateAgentsRequested.type: {
           const wsId = wsIdOf(action);
           if (wsId) hydrateWorkspaceAgents(wsId);
+          break;
+        }
+        // Purge (real delete or the bridge's recycled-ID create) invalidates
+        // any in-flight agent-list fetch so the follow-up rehydrate is neither
+        // coalesced away nor overwritten by a stale pre-purge response.
+        case workspaceDeleted.type: {
+          const wsId = wsIdOf(action);
+          if (wsId) invalidateAgentsHydration(wsId);
           break;
         }
         case hydrateTerminalsRequested.type: {

@@ -203,11 +203,13 @@ export const setIsLoadingAgents = createAction<[wsId: string, loading: boolean]>
 );
 /**
  * Fan-out trigger dispatched by the workspaceMounted fan-out
- * (`lifecycle-ipc-read-service`) so a workspace first-opened after boot
- * hydrates its agent list via `appClient.agents.list` — mirroring the boot
- * `agents-seeder`. Saga-only trigger with no reducer entry (see AGENTS.md §8);
- * the handler lives in `lifecycle-read-service` and is guarded by the
- * per-workspace `agentsLoaded` flag so boot-seeded workspaces are unaffected.
+ * (`lifecycle-ipc-read-service`) — and by the daemon-events-bridge on a
+ * recycled-ID `workspace:created` — so an opened workspace (re)hydrates its
+ * agent list via `appClient.agents.list`, mirroring the boot `agents-seeder`.
+ * Saga-only trigger with no reducer entry (see AGENTS.md §8); the handler
+ * lives in `lifecycle-read-service` and always refetches, converging the
+ * store on the daemon's canonical list without clobbering a still-valid
+ * active-agent selection.
  */
 export const hydrateAgentsRequested = createAction<[wsId: string]>(
   "workspaceAgents/hydrateAgentsRequested"

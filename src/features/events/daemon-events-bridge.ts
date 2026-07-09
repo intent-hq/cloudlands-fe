@@ -79,7 +79,11 @@
  * dispatches `workspace-lifecycle/workspaceDeleted(wsId, agentIds)`, which
  * purges the agent-session slice, workspace-agents index, and per-agent
  * chat-state entries — preventing a recreated same-slug workspace from
- * surfacing ghost agents.
+ * surfacing ghost agents. `workspace:created` covers the recycled-ID case:
+ * if the created ID still has local agent/chat state (the delete event was
+ * missed or never delivered), the bridge purges it the same way and then
+ * dispatches `hydrateAgentsRequested` so the store converges on the daemon's
+ * canonical agent list for the new workspace.
  *
  * Fan-out scoping: the daemon emits one `events.event` notification per
  * matching subscription on the socket (PROTOCOL §6.3 / intent-transport
@@ -110,6 +114,7 @@ import { streamStatusReceived } from "$store/renderer/slices/chat-state/chat-sta
 import { replaceAgentQueue } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import { renameSession } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
+import { hydrateAgentsRequested } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
 import { applyTaskStatusChanged } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
 import {
   bulkUpdateWorkspaceEntities,
@@ -734,6 +739,28 @@ function handleWorkspaceDeletedEvent(workspaceId: string): void {
   appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
 }
 
+/**
+ * `workspace:created` (PROTOCOL §7) — recycled-ID guard. A create may reuse
+ * the ID of a previously deleted workspace; if the store still carries
+ * agent/chat state under that ID (e.g. the `workspace:deleted` event was
+ * missed), purge it exactly like a delete would, then dispatch
+ * `hydrateAgentsRequested` so the lifecycle-read-service refetches the
+ * daemon's canonical agent list for the new workspace. A create for an ID
+ * with no local state is a no-op here (mount-time hydration covers it).
+ */
+function handleWorkspaceCreatedEvent(workspaceId: string): void {
+  const state = appStore.state as {
+    agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };
+    workspaceAgents?: { byWorkspaceId: Record<string, unknown> };
+  };
+  const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
+  const hasLocalState =
+    agentIds.length > 0 || state.workspaceAgents?.byWorkspaceId[workspaceId] !== undefined;
+  if (!hasLocalState) return;
+  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+  appStore.dispatch(hydrateAgentsRequested(workspaceId));
+}
+
 function handleSettingsChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
@@ -976,6 +1003,10 @@ function handleNotification(method: string, params: unknown): void {
     handleWorkspaceDeletedEvent(workspaceId);
     return;
   }
+  if (type === "workspace:created") {
+    handleWorkspaceCreatedEvent(workspaceId);
+    // fall through so the activity timeline records the creation.
+  }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
   // still listening on the legacy channels get the daemon event too.
@@ -1114,6 +1145,8 @@ async function installSubscriptionOnce(): Promise<void> {
         "settings:changed",
         "workspace:tokenUsage-changed",
         "workspace:updated",
+        "workspace:created",
+        "workspace:deleted",
         "task:ready-tasks-changed",
         "changes:git-status",
         "changes:tracked",
