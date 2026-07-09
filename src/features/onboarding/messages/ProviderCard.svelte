@@ -191,7 +191,7 @@
     {#if ready && selected}
       <div
         data-testid="provider-card-selected-banner"
-        class="absolute top-0 inset-x-0 z-20 flex items-center justify-center bg-primary text-primary-foreground py-1 text-[11px] font-semibold uppercase tracking-widest"
+        class="absolute top-0 inset-x-0 z-20 flex items-center justify-center bg-primary text-primary-foreground py-1 text-xs font-semibold uppercase tracking-widest"
       >
         Selected
       </div>
