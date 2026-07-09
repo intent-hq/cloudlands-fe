@@ -36,6 +36,7 @@ import {
   streamCompleted,
 } from '../chat-state/chat-state-slice';
 import { eventReceived } from '../workspace-events/workspace-events-slice';
+import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 import {
   selectAgentSession,
   selectAgentSessionsByIds,
@@ -646,6 +647,152 @@ describe('agent-session-slice reducer', () => {
         '<<<COMMIT_MESSAGE>>>fix: generated<<<\/COMMIT_MESSAGE>>>',
       );
     });
+
+    it('maps agent:session-stats-changed into session.stats without touching lifecycle fields', () => {
+      let state = agentSessionReducer(
+        initialState,
+        upsertSession(makeSession('a1', 'ws-1', { status: 'responding' as any, isStreaming: true })),
+      );
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-stats-1',
+          type: 'agent:session-stats-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            sessionId: 'a1',
+            agentId: 'a1',
+            stats: { creditsUsed: 1.54, messageCount: 18, toolCount: 42 },
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].stats).toEqual({
+        creditsUsed: 1.54,
+        messageCount: 18,
+        toolCount: 42,
+      });
+      expect(state.byAgentId['a1'].status).toBe('responding');
+      expect(state.byAgentId['a1'].isStreaming).toBe(true);
+    });
+
+    it('accepts null creditsUsed on agent:session-stats-changed', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-stats-2',
+          type: 'agent:session-stats-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            sessionId: 'a1',
+            stats: { creditsUsed: null, messageCount: 3, toolCount: 5 },
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].stats).toEqual({
+        creditsUsed: null,
+        messageCount: 3,
+        toolCount: 5,
+      });
+    });
+
+    it('falls back to sessionId when agentId is absent on stats event', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-stats-3',
+          type: 'agent:session-stats-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            sessionId: 'a1',
+            stats: { creditsUsed: 0.1, messageCount: 1, toolCount: 0 },
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].stats).toEqual({
+        creditsUsed: 0.1,
+        messageCount: 1,
+        toolCount: 0,
+      });
+    });
+
+    it('ignores agent:session-stats-changed when the session is not loaded', () => {
+      const state = agentSessionReducer(
+        initialState,
+        eventReceived('ws-1', {
+          id: 'evt-stats-4',
+          type: 'agent:session-stats-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            sessionId: 'unknown',
+            stats: { creditsUsed: 1, messageCount: 1, toolCount: 1 },
+          },
+        } as any),
+      );
+      expect(state).toBe(initialState);
+    });
+
+    it('ignores agent:session-stats-changed with a malformed stats payload', () => {
+      const seeded = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      const state = agentSessionReducer(
+        seeded,
+        eventReceived('ws-1', {
+          id: 'evt-stats-5',
+          type: 'agent:session-stats-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            sessionId: 'a1',
+            stats: { creditsUsed: 1, messageCount: 'not-a-number', toolCount: 1 },
+          },
+        } as any),
+      );
+      expect(state).toBe(seeded);
+      expect(state.byAgentId['a1'].stats).toBeUndefined();
+    });
+
+    it('returns the same state reference when stats are unchanged', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-stats-6a',
+          type: 'agent:session-stats-changed',
+          timestamp: '2024-01-01T00:00:00.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            stats: { creditsUsed: 2, messageCount: 4, toolCount: 6 },
+          },
+        } as any),
+      );
+      const afterFirst = state;
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-stats-6b',
+          type: 'agent:session-stats-changed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            stats: { creditsUsed: 2, messageCount: 4, toolCount: 6 },
+          },
+        } as any),
+      );
+      expect(state).toBe(afterFirst);
+    });
   });
 
   describe('updateAgentDigest', () => {
@@ -973,6 +1120,42 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1']).toBeUndefined();
       expect(state.byAgentId['a2']).toBeUndefined();
       expect(state.byAgentId['a3']).toBeDefined();
+    });
+  });
+
+  describe('workspaceDeleted', () => {
+    it('purges sessions and workspace index for the deleted workspace', () => {
+      const s1 = makeSession('a1', 'ws-1');
+      const s2 = makeSession('a2', 'ws-1');
+      const s3 = makeSession('a3', 'ws-2');
+      let state = agentSessionReducer(initialState, bulkUpsertSessions([s1, s2, s3]));
+      state = agentSessionReducer(state, workspaceDeleted('ws-1', ['a1', 'a2']));
+      expect(state.byAgentId['a1']).toBeUndefined();
+      expect(state.byAgentId['a2']).toBeUndefined();
+      expect(state.byAgentId['a3']).toBeDefined();
+      expect(state.agentIdsByWorkspace['ws-1']).toBeUndefined();
+      expect(state.agentIdsByWorkspace['ws-2']).toEqual(['a3']);
+    });
+
+    it('falls back to the payload agentIds when the workspace index is missing', () => {
+      // Regression: a session may still be in byAgentId even if the workspace
+      // index entry has already been dropped (e.g. by a preceding removeSession).
+      let state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1')]),
+      );
+      state = { ...state, agentIdsByWorkspace: {} };
+      state = agentSessionReducer(state, workspaceDeleted('ws-1', ['a1']));
+      expect(state.byAgentId['a1']).toBeUndefined();
+    });
+
+    it('is a no-op when the workspace has no sessions and no index entry', () => {
+      const state = agentSessionReducer(
+        initialState,
+        bulkUpsertSessions([makeSession('a1', 'ws-1')]),
+      );
+      const next = agentSessionReducer(state, workspaceDeleted('ws-missing', []));
+      expect(next).toBe(state);
     });
   });
 

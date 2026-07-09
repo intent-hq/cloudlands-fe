@@ -5,9 +5,17 @@ import type { AgentMessage, AgentSession } from "$shared/types";
 // Fake the live backend transport so the bridge installs against in-memory
 // fakes (no Electron). `vi.hoisted` keeps the spies visible to the hoisted
 // vi.mock factory.
-const { onBackendNotificationSpy, backendRequestSpy, capturedHandlers } = vi.hoisted(() => ({
+const {
+  onBackendNotificationSpy,
+  backendRequestSpy,
+  applyNoteFromEventSpy,
+  applyCommentFromEventSpy,
+  capturedHandlers,
+} = vi.hoisted(() => ({
   onBackendNotificationSpy: vi.fn(),
   backendRequestSpy: vi.fn(),
+  applyNoteFromEventSpy: vi.fn(),
+  applyCommentFromEventSpy: vi.fn(),
   capturedHandlers: [] as Array<(n: { method: string; params?: unknown }) => void>,
 }));
 vi.mock("$lib/client/live/backend-transport", () => ({
@@ -23,6 +31,19 @@ vi.mock("$lib/client/live/backend-transport", () => ({
     backendRequestSpy(method, params);
     return Promise.resolve({ subscriptionId: "sub-1" });
   },
+}));
+// Mock the notes-read-service so the bridge's note:* routing is observable
+// without touching the real appClient.notes.list seam.
+vi.mock("$features/notes/notes-read-service", () => ({
+  applyNoteFromEvent: applyNoteFromEventSpy,
+  createNotesReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
+  __resetNotesReadServiceForTests: () => {},
+}));
+// Mock the comments-read-service so the bridge's comment:* routing is
+// observable without touching the real appClient.comments.list seam.
+vi.mock("$features/comments/comments-read-service", () => ({
+  applyCommentFromEvent: applyCommentFromEventSpy,
+  __resetCommentsReadServiceForTests: () => {},
 }));
 
 // The bridge routes `agent:created`/`agent:updated` through the shared
@@ -43,10 +64,11 @@ import {
   bulkUpsertSessions,
   clearAllSessions,
   setAgentStreaming,
+  upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { selectAgentIsResponding } from "$store/renderer/slices/agent-session/agent-session-selectors";
 import { __resetDaemonEventsBridgeForTests } from "$features/events/daemon-events-bridge";
-import { chatReset } from "$store/renderer/slices/chat-state/chat-state-slice";
+import { chatReset, chatSendStarted } from "$store/renderer/slices/chat-state/chat-state-slice";
 import type { StatusEvent } from "$store/renderer/slices/chat-state/chat-state-types";
 import {
   clearAgentQueue,
@@ -230,6 +252,26 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
     expect(selectAgentIsResponding.select(appStore.state, AGENT)).toBe(false);
   });
 
+  it("routes agent:session-stats-changed (PROTOCOL §5.24) into agent-session.stats", async () => {
+    seedSession();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification("agent:session-stats-changed", {
+        sessionId: AGENT,
+        agentId: AGENT,
+        stats: { creditsUsed: 1.54, messageCount: 18, toolCount: 42 },
+      }),
+    );
+
+    expect(readSession()?.stats).toEqual({
+      creditsUsed: 1.54,
+      messageCount: 18,
+      toolCount: 42,
+    });
+  });
+
   it("ignores non-events.event methods, and forwards non-lifecycle events.event notifications into workspaceEvents without changing agent-session flags", async () => {
     seedSession({ isStreaming: true, status: AgentStatus.Active });
     await primeBridge();
@@ -242,6 +284,9 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
     // events.event carrying a non-lifecycle domain event — still stored in the
     // workspaceEvents buffer (activity timeline) but never flips the
     // agent-session isResponding flag, which is owned by the lifecycle subset.
+    // (`note:*` / `comment:*` / `task:*` / `pr:*` are intercepted with an
+    // early-return route, so pick a domain event that still falls through to
+    // the shared `eventReceived` dispatch.)
     handler({
       method: "events.event",
       params: {
@@ -249,7 +294,7 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
           id: "evt-2",
           workspaceId: WS,
           timestamp: "2026-01-02T00:00:00.000Z",
-          type: "note:updated",
+          type: "file:changed",
           actor: { type: "system" },
           data: { agentId: AGENT },
         },
@@ -1345,42 +1390,11 @@ describe("daemonEventsBridge (legacy mock-IPC relay — daemon events → listen
     expect(seen).toEqual([{ workspaceId: WS, changes: { title: "Renamed" } }]);
   });
 
-  it("re-emits pr:updated as workspace:updated carrying the PR fields as changes", async () => {
-    await primeBridge();
-    const seen = listenOn("workspace:updated");
-
-    // PROTOCOL §6.5 pr:updated → { workspaceId, prNumber, prStatus, activePullRequest }.
-    capturedHandlers[0]!(
-      notification("pr:updated", {
-        workspaceId: WS,
-        prNumber: 42,
-        prStatus: "open",
-        activePullRequest: { number: 42, url: "https://github.com/x/y/pull/42" },
-      }),
-    );
-
-    expect(seen).toEqual([
-      {
-        workspaceId: WS,
-        changes: {
-          activePullRequest: { number: 42, url: "https://github.com/x/y/pull/42" },
-          prNumber: 42,
-          prStatus: "open",
-        },
-      },
-    ]);
-  });
-
-  it("re-emits pr:unlinked as workspace:updated with a nulled activePullRequest", async () => {
-    await primeBridge();
-    const seen = listenOn("workspace:updated");
-
-    capturedHandlers[0]!(notification("pr:unlinked", { workspaceId: WS }));
-
-    expect(seen).toEqual([
-      { workspaceId: WS, changes: { activePullRequest: null, prNumber: null, prStatus: null } },
-    ]);
-  });
+  // `pr:linked` / `pr:updated` / `pr:unlinked` are no longer re-emitted onto
+  // the legacy `workspace:updated` mock-IPC channel — they are dispatched
+  // directly to the workspace slice via `handlePrEvent`. The Redux path is
+  // covered by the "daemonEventsBridge (pr:linked / pr:updated / pr:unlinked
+  // → workspace slice)" suite below.
 
   it("re-emits agent:status-changed and agent:idle onto their legacy channels (and still dispatches the lifecycle)", async () => {
     appStore.dispatch(clearAllSessions());
@@ -1983,5 +1997,559 @@ describe("daemonEventsBridge (session lifecycle — agent:created/renamed/update
     await flush();
 
     expect(ensureAgentSessionSpy).not.toHaveBeenCalled();
+  });
+});
+describe("daemonEventsBridge (note:* wire contract → applyNoteFromEvent)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    applyNoteFromEventSpy.mockClear();
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("routes note:created/updated/deleted envelopes to applyNoteFromEvent with the workspaceId + noteId", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-note-1",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "note:created",
+          actor: { type: "system" },
+          data: { noteId: "note-1", path: "/x", action: "create" },
+        },
+      },
+    });
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-note-2",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "note:updated",
+          actor: { type: "system" },
+          data: { noteId: "note-2", path: "/y", action: "update" },
+        },
+      },
+    });
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-note-3",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "note:deleted",
+          actor: { type: "system" },
+          data: { noteId: "note-3", path: "/z", action: "delete" },
+        },
+      },
+    });
+
+    expect(applyNoteFromEventSpy).toHaveBeenCalledWith(WS, "note-1", "note:created");
+    expect(applyNoteFromEventSpy).toHaveBeenCalledWith(WS, "note-2", "note:updated");
+    expect(applyNoteFromEventSpy).toHaveBeenCalledWith(WS, "note-3", "note:deleted");
+  });
+
+  it("drops note:* events without a workspaceId envelope", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-note-no-ws",
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "note:updated",
+          actor: { type: "system" },
+          data: { noteId: "note-x", path: "/x", action: "update" },
+        },
+      },
+    });
+
+    expect(applyNoteFromEventSpy).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("daemonEventsBridge (workspace:deleted → purge agent/chat state)", () => {
+  const OTHER_WS = "ws-bridge-other";
+  const OTHER_AGENT = "agent-bridge-other";
+
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    // chat-state persists across tests via appStore; reset the entries this
+    // suite seeds so preconditions/postconditions reflect only this test.
+    appStore.dispatch(chatReset(AGENT));
+    appStore.dispatch(chatReset(OTHER_AGENT));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("purges agent-session, workspace-agents, and chat-state for the deleted workspace", async () => {
+    // Seed two sessions — one in WS and one in a sibling workspace — to prove
+    // scoping. `bulkUpsertSessions` populates the agent-session slice while the
+    // per-item `upsertSession` also registers each agent in the workspace-agents
+    // index (see agent-mutation-service `persistSession`).
+    const sessionA: AgentSession = {
+      id: AGENT,
+      backendSessionId: "backend-1",
+      workspaceId: WS,
+      name: "A",
+      status: AgentStatus.Idle,
+      messages: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    } as AgentSession;
+    const sessionB: AgentSession = {
+      id: OTHER_AGENT,
+      backendSessionId: "backend-2",
+      workspaceId: OTHER_WS,
+      name: "B",
+      status: AgentStatus.Idle,
+      messages: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    } as AgentSession;
+    appStore.dispatch(bulkUpsertSessions([sessionA, sessionB]));
+    appStore.dispatch(upsertSession(sessionA));
+    appStore.dispatch(upsertSession(sessionB));
+
+    // Seed per-agent chat-state so the purge assertion has something to remove.
+    appStore.dispatch(chatSendStarted(AGENT, WS));
+    appStore.dispatch(chatSendStarted(OTHER_AGENT, OTHER_WS));
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Precondition: sessions, workspace-agents index and chat-state entries exist.
+    const before = appStore.state as {
+      agentSessions: {
+        byAgentId: Record<string, unknown>;
+        agentIdsByWorkspace: Record<string, string[]>;
+      };
+      workspaceAgents: { byWorkspaceId: Record<string, unknown> };
+      chatState: { byAgentId: Record<string, unknown> };
+    };
+    expect(before.agentSessions.byAgentId[AGENT]).toBeDefined();
+    expect(before.agentSessions.agentIdsByWorkspace[WS]).toContain(AGENT);
+    expect(before.workspaceAgents.byWorkspaceId[WS]).toBeDefined();
+    expect(before.chatState.byAgentId[AGENT]).toBeDefined();
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-workspace-deleted-1",
+          workspaceId: WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "workspace:deleted",
+          actor: { type: "user", id: "u1" },
+          data: { workspaceId: WS },
+        },
+      },
+    });
+
+    const after = appStore.state as typeof before;
+    expect(after.agentSessions.byAgentId[AGENT]).toBeUndefined();
+    expect(after.agentSessions.agentIdsByWorkspace[WS]).toBeUndefined();
+    expect(after.workspaceAgents.byWorkspaceId[WS]).toBeUndefined();
+    expect(after.chatState.byAgentId[AGENT]).toBeUndefined();
+
+    // Sibling workspace is untouched — recreate flow shows only fresh agents.
+    expect(after.agentSessions.byAgentId[OTHER_AGENT]).toBeDefined();
+    expect(after.agentSessions.agentIdsByWorkspace[OTHER_WS]).toContain(OTHER_AGENT);
+    expect(after.chatState.byAgentId[OTHER_AGENT]).toBeDefined();
+  });
+
+  it("drops workspace:deleted events lacking a workspaceId envelope", async () => {
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: AGENT,
+          backendSessionId: "backend-1",
+          workspaceId: WS,
+          name: "A",
+          status: AgentStatus.Idle,
+          messages: [],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        } as AgentSession,
+      ]),
+    );
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-workspace-deleted-no-ws",
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "workspace:deleted",
+          actor: { type: "user", id: "u1" },
+          data: {},
+        },
+      },
+    });
+
+    const state = appStore.state as { agentSessions: { byAgentId: Record<string, unknown> } };
+    expect(state.agentSessions.byAgentId[AGENT]).toBeDefined();
+  });
+});
+
+
+describe("daemonEventsBridge (task:status-changed → applyTaskStatusChanged)", () => {
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("applies task:status-changed onto the workspace-tasks slice for a hydrated workspace", async () => {
+    const TASK_WS = "ws-task-1";
+    // Seed a hydrated workspace-tasks entry so the reducer's `initialized`
+    // guard passes and the status update lands.
+    const { loadWorkspaceTasksSucceeded } = await import(
+      "$store/renderer/slices/workspace-tasks/workspace-tasks-slice"
+    );
+    appStore.dispatch(
+      loadWorkspaceTasksSucceeded(
+        TASK_WS,
+        [{ id: "note-t1", title: "Task 1", status: "not_started" }],
+        { total: 1, completed: 0, inProgress: 0 },
+      ),
+    );
+
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-task-1",
+          workspaceId: TASK_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "task:status-changed",
+          actor: { type: "system" },
+          data: {
+            noteId: "note-t1",
+            noteTitle: "Task 1",
+            previousStatus: "not_started",
+            newStatus: "in_progress",
+            changedAt: "2026-01-02T00:00:00.000Z",
+          },
+        },
+      },
+    });
+
+    const { getItem } = await import("@augmentcode/ag-redux-toolkit/utils/collections/collection-utils");
+    const state = appStore.state as {
+      workspaceTasks: {
+        byWorkspaceId: Record<string, { tasks: unknown }>;
+      };
+    };
+    const task = getItem(
+      state.workspaceTasks.byWorkspaceId[TASK_WS].tasks as never,
+      "note-t1",
+    ) as { status: string } | undefined;
+    expect(task?.status).toBe("in_progress");
+  });
+
+  it("drops task:status-changed events lacking a workspaceId envelope", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+    // No workspaceId — bridge must ignore the event; verified by absence of a throw.
+    expect(() =>
+      handler({
+        method: "events.event",
+        params: {
+          event: {
+            id: "evt-task-no-ws",
+            timestamp: "2026-01-02T00:00:00.000Z",
+            type: "task:status-changed",
+            actor: { type: "system" },
+            data: { noteId: "note-t1", newStatus: "complete" },
+          },
+        },
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("daemonEventsBridge (comment:added / comment:resolved → applyCommentFromEvent)", () => {
+  const COMMENT_WS = "ws-comment-1";
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    applyCommentFromEventSpy.mockClear();
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("routes comment:added and comment:resolved envelopes to applyCommentFromEvent with (workspaceId, noteId, kind)", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-comment-1",
+          workspaceId: COMMENT_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "comment:added",
+          actor: { type: "agent", id: AGENT },
+          data: { noteId: "note-c1", commentId: "c-1" },
+        },
+      },
+    });
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-comment-2",
+          workspaceId: COMMENT_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "comment:resolved",
+          actor: { type: "user", id: "u1" },
+          data: { noteId: "note-c1", threadId: "t-1", resolved: true },
+        },
+      },
+    });
+
+    expect(applyCommentFromEventSpy).toHaveBeenCalledWith(COMMENT_WS, "note-c1", "added");
+    expect(applyCommentFromEventSpy).toHaveBeenCalledWith(COMMENT_WS, "note-c1", "resolved");
+  });
+
+  it("drops comment:* events without a noteId", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-comment-no-note",
+          workspaceId: COMMENT_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "comment:added",
+          actor: { type: "system" },
+          data: {},
+        },
+      },
+    });
+
+    expect(applyCommentFromEventSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace slice)", () => {
+  const PR_WS = "ws-pr-1";
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import(
+      "$store/renderer/slices/workspace/workspace-slice"
+    );
+    const { WorkspaceStatus } = await import("$shared/types");
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: PR_WS,
+        title: "PR ws",
+        branch: "main",
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{
+    prNumber?: number;
+    prUrl?: string;
+    prStatus?: string;
+    activePullRequest?: unknown;
+  }> {
+    const { getItem } = await import(
+      "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils"
+    );
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, PR_WS) ?? {}) as never;
+  }
+
+  it("pr:linked writes prNumber / prUrl / prStatus / activePullRequest onto the workspace entity", async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-pr-linked-1",
+          workspaceId: PR_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "pr:linked",
+          actor: { type: "system" },
+          data: {
+            workspaceId: PR_WS,
+            prNumber: 42,
+            prUrl: "https://example.com/pr/42",
+            prStatus: "open",
+            activePullRequest: { number: 42, url: "https://example.com/pr/42" },
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.prNumber).toBe(42);
+    expect(ws.prUrl).toBe("https://example.com/pr/42");
+    expect(ws.prStatus).toBe("open");
+    expect(ws.activePullRequest).toMatchObject({ number: 42 });
+  });
+
+  it("pr:updated merges the changed fields without a full replace", async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Prime with pr:linked.
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-pr-linked-2",
+          workspaceId: PR_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "pr:linked",
+          actor: { type: "system" },
+          data: {
+            workspaceId: PR_WS,
+            prNumber: 42,
+            prUrl: "https://example.com/pr/42",
+            prStatus: "open",
+            activePullRequest: { number: 42 },
+          },
+        },
+      },
+    });
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-pr-updated-1",
+          workspaceId: PR_WS,
+          timestamp: "2026-01-02T00:00:01.000Z",
+          type: "pr:updated",
+          actor: { type: "system" },
+          data: {
+            workspaceId: PR_WS,
+            prNumber: 42,
+            prStatus: "merged",
+            activePullRequest: { number: 42, merged: true },
+          },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.prStatus).toBe("merged");
+    // prUrl was not in the pr:updated payload; the merge must retain it.
+    expect(ws.prUrl).toBe("https://example.com/pr/42");
+  });
+
+  it("pr:unlinked clears the workspace's PR fields", async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-pr-linked-3",
+          workspaceId: PR_WS,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "pr:linked",
+          actor: { type: "system" },
+          data: {
+            workspaceId: PR_WS,
+            prNumber: 42,
+            prUrl: "https://example.com/pr/42",
+            prStatus: "open",
+            activePullRequest: { number: 42 },
+          },
+        },
+      },
+    });
+
+    handler({
+      method: "events.event",
+      params: {
+        event: {
+          id: "evt-pr-unlinked-1",
+          workspaceId: PR_WS,
+          timestamp: "2026-01-02T00:00:02.000Z",
+          type: "pr:unlinked",
+          actor: { type: "system" },
+          data: { workspaceId: PR_WS },
+        },
+      },
+    });
+
+    const ws = await readWorkspace();
+    expect(ws.prNumber).toBeUndefined();
+    expect(ws.prUrl).toBeUndefined();
+    expect(ws.prStatus).toBeUndefined();
+    expect(ws.activePullRequest).toBeNull();
   });
 });

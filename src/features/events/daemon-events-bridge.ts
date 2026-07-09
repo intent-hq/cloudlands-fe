@@ -28,6 +28,27 @@
  *      (both dispatches carry `resetFirstChunk: true`), and the
  *      `'complete'` / `'error'` paths clear `statusEvents` on
  *      `agent:stream:end` / `agent:failed`.
+ *   4. `note:*` (workspace-scoped, §7) → `applyNoteFromEvent` in the
+ *      notes-read-service, which dispatches `applyNoteCreated`/
+ *      `applyNoteUpdated`/`applyNoteDeleted` on the workspace-notes slice so
+ *      agent-side note writes (add_to_note etc.) appear live in the notes
+ *      panel while the workspace is open.
+ *   5. `task:status-changed` (§6.5) → `applyTaskStatusChanged` on the
+ *      workspace-tasks slice so a task ticked complete/in-progress by an agent
+ *      or a sibling client updates the tasks pane / progress card without a
+ *      workspace reload. The event payload is self-sufficient
+ *      (`{ noteId, previousStatus, newStatus, ... }`), so the bridge maps it
+ *      directly without a follow-up fetch.
+ *   6. `comment:added` / `comment:resolved` (§6.5) → `applyCommentFromEvent` in
+ *      the comments-read-service, which refetches the affected note's comments
+ *      and reconciles the global comments slice per-comment (add / update /
+ *      remove) so other notes' comments stay intact. Wired the same way
+ *      `note:*` funnels through the notes-read-service.
+ *   7. `pr:linked` / `pr:updated` / `pr:unlinked` (§7.6) → `updateWorkspaceEntity`
+ *      on the workspace slice with `{ prNumber, prUrl, prStatus, activePullRequest }`
+ *      (or the cleared shape on unlink). This replaces the legacy main→renderer
+ *      relay path so the "View PR" pill / progress card refresh live while the
+ *      app runs.
  *
  * The stream family is accumulated per agent (one in-flight assistant per
  * agent) using the BE's monotonic `blockIndex` so the candidate transcript
@@ -53,6 +74,13 @@
  * `EMITTED_MOCK_IPC_EVENT_CHANNELS` (ipc-mock-router.ts) and reconciled
  * against listener call sites by ipc-channel-reconciliation.test.ts.
  *
+ * Workspace lifecycle: on `workspace:deleted` (§7) the bridge resolves the
+ * agent-id list for the doomed workspace from the agent-session index and
+ * dispatches `workspace-lifecycle/workspaceDeleted(wsId, agentIds)`, which
+ * purges the agent-session slice, workspace-agents index, and per-agent
+ * chat-state entries — preventing a recreated same-slug workspace from
+ * surfacing ghost agents.
+ *
  * Fan-out scoping: the daemon emits one `events.event` notification per
  * matching subscription on the socket (PROTOCOL §6.3 / intent-transport
  * `build_event_notification`), each tagged with `params.subscriptionId`. If any
@@ -66,7 +94,14 @@
  * `terminal:*` deliveries.
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import type { ContentBlock, QueuedMessage } from "$shared/types";
+import type {
+  ContentBlock,
+  PullRequestInfo,
+  PullRequestStatus,
+  QueuedMessage,
+  TaskStatus,
+  Workspace,
+} from "$shared/types";
 import type { AppliedSettingChange } from "$lib/client/app-client";
 import { store as appStore } from "$store/renderer/store";
 import { eventReceived } from "$store/renderer/slices/workspace-events/workspace-events-slice";
@@ -74,6 +109,14 @@ import { agentStreamUpdateReceived } from "$store/renderer/slices/workspace-agen
 import { streamStatusReceived } from "$store/renderer/slices/chat-state/chat-state-slice";
 import { replaceAgentQueue } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import { renameSession } from "$store/renderer/slices/agent-session/agent-session-slice";
+import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
+import { applyTaskStatusChanged } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
+import {
+  bulkUpdateWorkspaceEntities,
+  updateWorkspaceEntity,
+} from "$store/renderer/slices/workspace/workspace-slice";
+import { applyNoteFromEvent } from "$features/notes/notes-read-service";
+import { applyCommentFromEvent } from "$features/comments/comments-read-service";
 import { ensureAgentSession } from "$features/agent/agent-read-service";
 import {
   permissionRequestReceived,
@@ -582,6 +625,115 @@ function handlePermissionResolvedEvent(event: WorkspaceEvent): void {
   appStore.dispatch(removePermissionRequest(requestId));
 }
 
+/**
+ * `note:*` (§7 workspace-scoped) carries `{ noteId, path, action, ... }` — the
+ * daemon-authoritative "something changed" ping (PROTOCOL §7 note events do
+ * NOT embed the full note body). The handler routes to `applyNoteFromEvent`,
+ * which fetches the fresh note via `notes.list(workspaceId)` on
+ * `note:created`/`note:updated` and dispatches the matching `applyNote*`
+ * action, or dispatches `applyNoteDeleted` immediately on `note:deleted`.
+ */
+function handleNoteEvent(
+  event: WorkspaceEvent,
+  workspaceId: string,
+  type: "note:created" | "note:updated" | "note:deleted",
+): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  const noteId = data?.noteId;
+  if (typeof noteId !== "string" || noteId.length === 0) return;
+  applyNoteFromEvent(workspaceId, noteId, type);
+}
+
+/**
+ * `task:status-changed` (§6.5) carries the self-sufficient payload
+ * `{ noteId, noteTitle, previousStatus, newStatus, changedAt }` — the daemon
+ * mints the FE-canonical status word (`not_started` | `in_progress` |
+ * `complete` | ...) via `status_word` in `intent-services`, so no mapping is
+ * needed. The workspace-tasks reducer's own guard makes this a no-op if the
+ * workspace is not initialized or the task/status is unknown/unchanged.
+ */
+function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const noteId = data.noteId;
+  const newStatus = data.newStatus;
+  if (typeof noteId !== "string" || typeof newStatus !== "string") return;
+  appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
+}
+
+/**
+ * `comment:added` (§6.5, `{ noteId, commentId }`) and `comment:resolved`
+ * (`{ noteId, threadId, resolved }`) are wire pings — the payload only carries
+ * identifiers, so the actual comment/thread is refetched via
+ * `applyCommentFromEvent`. That helper diffs the affected note's fresh comment
+ * list against the global slice and dispatches per-comment
+ * add/update/remove actions so other notes' comments stay untouched.
+ */
+function handleCommentEvent(
+  event: WorkspaceEvent,
+  workspaceId: string,
+  kind: "added" | "resolved",
+): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  const noteId = data?.noteId;
+  if (typeof noteId !== "string" || noteId.length === 0) return;
+  applyCommentFromEvent(workspaceId, noteId, kind);
+}
+
+/**
+ * `pr:linked` (§7.6) carries `{ workspaceId, prNumber, prUrl, prStatus,
+ * activePullRequest }`; `pr:updated` carries the same shape minus `prUrl`; and
+ * `pr:unlinked` carries only `{ workspaceId }`. All three converge into a
+ * single `updateWorkspaceEntity` dispatch so the sidebar PR pill / progress
+ * card refresh live without waiting for the workspace list to refetch. This
+ * replaces the legacy `relayLegacyIpcEvent` `workspace:updated` re-emit for
+ * PR events — Redux is now the single source of truth for PR pill state.
+ */
+function handlePrEvent(
+  event: WorkspaceEvent,
+  workspaceId: string,
+  type: "pr:linked" | "pr:updated" | "pr:unlinked",
+): void {
+  const data = (event as { data?: Record<string, unknown> }).data ?? {};
+  const changes: Partial<Workspace> =
+    type === "pr:unlinked"
+      ? ({
+          prNumber: undefined,
+          prUrl: undefined,
+          prStatus: undefined,
+          activePullRequest: null,
+        } as Partial<Workspace>)
+      : {};
+  if (type !== "pr:unlinked") {
+    if (typeof data.prNumber === "number") changes.prNumber = data.prNumber;
+    if (typeof data.prUrl === "string") changes.prUrl = data.prUrl;
+    if (typeof data.prStatus === "string") changes.prStatus = data.prStatus as PullRequestStatus;
+    if (data.activePullRequest !== undefined) {
+      changes.activePullRequest = data.activePullRequest as PullRequestInfo | null;
+    }
+    if (Object.keys(changes).length === 0) return;
+  }
+  // `updateWorkspaceEntity` has no standalone reducer case — the workspace
+  // slice folds it through `bulkUpdateWorkspaceEntities`, which is the shared
+  // path for partial merges (see workspace-slice `.with(bulkUpdateWorkspaceEntities, ...)`).
+  appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
+}
+
+/**
+ * `workspace:deleted` (PROTOCOL §7) — purge every trace of the deleted
+ * workspace from Redux so a recreated same-slug workspace does not surface
+ * ghost agents. The chat-state slice is keyed by `agentId`, so we resolve the
+ * agent-id list from the agent-session workspace index *before* dispatching
+ * and pass it in the payload.
+ */
+function handleWorkspaceDeletedEvent(workspaceId: string): void {
+  const state = appStore.state as {
+    agentSessions?: { agentIdsByWorkspace: Record<string, string[]> };
+  };
+  const agentIds = state.agentSessions?.agentIdsByWorkspace[workspaceId] ?? [];
+  appStore.dispatch(workspaceDeleted(workspaceId, [...agentIds]));
+}
+
 function handleSettingsChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
@@ -682,10 +834,10 @@ function handleScriptStateEvent(event: WorkspaceEvent, workspaceId: string): voi
  *   `LineAttributionGutter.svelte` `listenSync('line-attribution:updated')`
  *   reload path fires without touching the daemon transport directly.
  * - `workspace:updated` → forwarded as `{ workspaceId, changes: data }`.
- * - `pr:linked`/`pr:updated`/`pr:unlinked` (§6.5) → `workspace:updated` with
- *   the PR fields as `changes`, because the legacy emitter surfaced PR
- *   discovery as a workspace update carrying `activePullRequest`/`prNumber`/
- *   `prStatus` — exactly the keys the WorkspaceProgressCard listener checks.
+ *
+ * `pr:linked`/`pr:updated`/`pr:unlinked` (§7.6) are no longer relayed here —
+ * they are dispatched directly to the workspace slice via `handlePrEvent` in
+ * `handleNotification`, replacing the legacy `workspace:updated` re-emit.
  */
 function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: string): void {
   const data = ((event as { data?: Record<string, unknown> }).data ?? {}) as Record<
@@ -717,18 +869,6 @@ function relayLegacyIpcEvent(type: string, event: WorkspaceEvent, workspaceId: s
       return;
     case "workspace:updated":
       emitMockIpcEvent("workspace:updated", { workspaceId, changes: data });
-      return;
-    case "pr:linked":
-    case "pr:updated":
-    case "pr:unlinked":
-      emitMockIpcEvent("workspace:updated", {
-        workspaceId,
-        changes: {
-          activePullRequest: data.activePullRequest ?? null,
-          prNumber: data.prNumber ?? null,
-          prStatus: data.prStatus ?? null,
-        },
-      });
       return;
   }
 }
@@ -830,9 +970,44 @@ function handleNotification(method: string, params: unknown): void {
   const workspaceId = workspaceIdOf(event);
   if (!workspaceId) return;
 
+  // Workspace lifecycle: purge every Redux trace of the deleted workspace so a
+  // recreated same-slug workspace does not surface ghost agents (§7).
+  if (type === "workspace:deleted") {
+    handleWorkspaceDeletedEvent(workspaceId);
+    return;
+  }
+
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
   // still listening on the legacy channels get the daemon event too.
   relayLegacyIpcEvent(type, event, workspaceId);
+
+  // Note domain events (§7 workspace-scoped) live-apply to the
+  // workspace-notes slice so agent-side note writes (add_to_note etc.) show
+  // up in the notes panel without a manual refresh.
+  if (type === "note:created" || type === "note:updated" || type === "note:deleted") {
+    handleNoteEvent(event, workspaceId, type);
+    return;
+  }
+
+  // Task/comment/PR domain events converge into their owning slices so the
+  // task pane, inline comment thread, and workspace PR pill refresh without a
+  // reload.
+  if (type === "task:status-changed") {
+    handleTaskStatusChangedEvent(event, workspaceId);
+    return;
+  }
+  if (type === "comment:added") {
+    handleCommentEvent(event, workspaceId, "added");
+    return;
+  }
+  if (type === "comment:resolved") {
+    handleCommentEvent(event, workspaceId, "resolved");
+    return;
+  }
+  if (type === "pr:linked" || type === "pr:updated" || type === "pr:unlinked") {
+    handlePrEvent(event, workspaceId, type);
+    return;
+  }
 
   // Live stream family — accumulate per-agent and grow the in-flight assistant
   // message. `agent:failed` flows through both paths: it finalizes any

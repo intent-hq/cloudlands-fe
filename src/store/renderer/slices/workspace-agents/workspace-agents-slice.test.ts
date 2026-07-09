@@ -47,6 +47,7 @@ import {
 } from './workspace-agents-slice';
 import { upsertSession } from '../agent-session/agent-session-slice';
 import { selectAgentSession } from '../agent-session/agent-session-selectors';
+import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
 const WS_1 = 'ws-1';
 const WS_2 = 'ws-2';
@@ -511,6 +512,22 @@ describe('workspace-agents selectors', () => {
       let state = workspaceAgentsReducer(initialState, addAgent(WS_1, mockAgent('agent-1')));
       state = workspaceAgentsReducer(state, removeWorkspaceAgentState(WS_1));
       expect(state.byWorkspaceId[WS_1]).toBeUndefined();
+    });
+  });
+
+  describe('workspaceDeleted', () => {
+    it('purges the workspace state entry so ghost agents cannot resurface', () => {
+      let state = workspaceAgentsReducer(initialState, addAgent(WS_1, mockAgent('agent-1')));
+      state = workspaceAgentsReducer(state, addAgent(WS_2, mockAgent('agent-2')));
+      state = workspaceAgentsReducer(state, workspaceDeleted(WS_1, ['agent-1']));
+      expect(state.byWorkspaceId[WS_1]).toBeUndefined();
+      expect(state.byWorkspaceId[WS_2]).toBeDefined();
+    });
+
+    it('is a no-op when the workspace has no state entry', () => {
+      const state = workspaceAgentsReducer(initialState, addAgent(WS_1, mockAgent('agent-1')));
+      const next = workspaceAgentsReducer(state, workspaceDeleted('ws-missing', []));
+      expect(next).toBe(state);
     });
   });
 

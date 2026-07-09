@@ -8,6 +8,7 @@ import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import { omitKey } from "../../utils/utils";
 import { upsertSession } from "../agent-session/agent-session-slice";
+import { workspaceDeleted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 export {
   agentStreamUpdateReceived,
   type AgentStreamUpdatePayload,
@@ -199,6 +200,17 @@ export const setAgentsLoaded = createAction<[wsId: string, loaded: boolean]>(
 );
 export const setIsLoadingAgents = createAction<[wsId: string, loading: boolean]>(
   "workspaceAgents/setIsLoadingAgents"
+);
+/**
+ * Fan-out trigger dispatched by the workspaceMounted fan-out
+ * (`lifecycle-ipc-read-service`) so a workspace first-opened after boot
+ * hydrates its agent list via `appClient.agents.list` — mirroring the boot
+ * `agents-seeder`. Saga-only trigger with no reducer entry (see AGENTS.md §8);
+ * the handler lives in `lifecycle-read-service` and is guarded by the
+ * per-workspace `agentsLoaded` flag so boot-seeded workspaces are unaffected.
+ */
+export const hydrateAgentsRequested = createAction<[wsId: string]>(
+  "workspaceAgents/hydrateAgentsRequested"
 );
 export const createAgentRequested = createAction<[wsId: string, agentType?: string]>(
   "workspaceAgents/createAgentRequested"
@@ -491,6 +503,10 @@ export const workspaceAgentsReducer = createReducer<WorkspaceAgentsState>(initia
     return setWorkspaceState(state, wsId, { ...workspaceState, isInitialSpecWriteInProgress: isWriting });
   })
   .with(removeWorkspaceAgentState, (state, { payload: [wsId] }) => {
+    if (!state.byWorkspaceId[wsId]) return state;
+    return { byWorkspaceId: omitKey(state.byWorkspaceId, wsId) };
+  })
+  .with(workspaceDeleted, (state, { payload: [wsId] }) => {
     if (!state.byWorkspaceId[wsId]) return state;
     return { byWorkspaceId: omitKey(state.byWorkspaceId, wsId) };
   })

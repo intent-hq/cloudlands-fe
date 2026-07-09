@@ -66,6 +66,8 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'agent:queue:stale-message',
   // Agent user message events
   'agent:user-message:sent',
+  // Agent session stats (PROTOCOL §5.24)
+  'agent:session-stats-changed',
   // Git events
   'git:commit',
   'git:push',

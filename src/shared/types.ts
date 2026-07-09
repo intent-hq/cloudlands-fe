@@ -41,6 +41,7 @@ import type {
   PendingAgentSession as NewPendingAgentSession,
   QueuedMessage as NewQueuedMessage,
   QueuedMessageContextItem as NewQueuedMessageContextItem,
+  SessionStats as NewSessionStats,
 } from './types/agent-session';
 import { isPendingAgentSession as isNewPendingAgentSession } from './types/agent-session';
 import { isAgentSession as isNewAgentSession } from './types/agent-session.guards';
@@ -931,6 +932,7 @@ export type AgentSession = NewAgentSession;
 export type PendingAgentSession = NewPendingAgentSession;
 export type QueuedMessage = NewQueuedMessage;
 export type QueuedMessageContextItem = NewQueuedMessageContextItem;
+export type SessionStats = NewSessionStats;
 
 // Re-export type guards
 export const isPendingAgentSession = isNewPendingAgentSession;

@@ -63,6 +63,19 @@ export enum AgentActivationState {
 }
 
 /**
+ * Cumulative per-session usage counters (PROTOCOL §5.24).
+ *
+ * Emitted verbatim from `agent.getSessionStats` and the
+ * `agent:session-stats-changed` event; `creditsUsed` is `null` when the
+ * provider has not reported a credit total yet.
+ */
+export interface SessionStats {
+  creditsUsed: number | null;
+  messageCount: number;
+  toolCount: number;
+}
+
+/**
  * Canonical AgentSession interface
  *
  * Represents a runtime session for an agent within a workspace.
@@ -206,6 +219,12 @@ export interface AgentSession {
 
   /** Canonical stop/finish reason from the latest terminal stream/status event */
   stopReason?: string | null;
+
+  /**
+   * Cumulative usage counters (PROTOCOL §5.24). Point-read via
+   * `agent.getSessionStats`; live-updated by `agent:session-stats-changed`.
+   */
+  stats?: SessionStats;
 
   // ========== Metadata & Progress ==========
   /** Session metadata */
