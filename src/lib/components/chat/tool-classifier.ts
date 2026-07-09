@@ -136,15 +136,59 @@ function cleanToolName(name: string | undefined | null): string {
     }
   }
 
-  // Strip common suffixes (MCP server names appended to tool names)
-  const lowerForSuffix = name.toLowerCase();
-  for (const suffix of CLEAN_SUFFIXES_TO_STRIP) {
-    if (lowerForSuffix.endsWith(suffix)) {
-      return name.slice(0, -suffix.length);
+  // Strip common suffixes (MCP server names appended to tool names).
+  // Loop to handle garbled names with a doubled suffix, e.g.
+  // "get_workspace_details_workspace-mcp_workspace-mcp".
+  let stripped = true;
+  while (stripped) {
+    stripped = false;
+    const lowerForSuffix = name.toLowerCase();
+    for (const suffix of CLEAN_SUFFIXES_TO_STRIP) {
+      if (lowerForSuffix.endsWith(suffix)) {
+        name = name.slice(0, -suffix.length);
+        stripped = true;
+        break;
+      }
     }
   }
 
   return name;
+}
+
+/**
+ * Detect prose ACP titles used as tool names (e.g. auggie sub-agent tool calls like
+ * "sub-agent-explore: Explore the services/ directory…" or "Deep workspace exploration").
+ * These are human-readable titles, not tool identifiers, and should be rendered verbatim
+ * rather than collapsed to a bare category verb by substring matching.
+ */
+function isProseToolName(name: string): boolean {
+  const trimmed = name.trim();
+  if (!/\s/.test(trimmed)) return false;
+  // Colon-prefixed titles: "sub-agent-explore: Explore …"
+  if (/^[A-Za-z0-9._-]+:\s/.test(trimmed)) return true;
+  // Multi-word prose (3+ words); two-word names like "List processes" keep category matching
+  return trimmed.split(/\s+/).length >= 3;
+}
+
+/**
+ * Render a prose title verbatim (truncated), with a category inferred from keywords.
+ */
+function proseTitleDisplay(title: string): ToolDisplay {
+  const lower = title.toLowerCase();
+  const category: ToolCategory = lower.includes('agent')
+    ? 'agent'
+    : lower.includes('note')
+      ? 'note'
+      : lower.includes('workspace')
+        ? 'workspace'
+        : 'generic';
+  return {
+    category,
+    icon: CATEGORY_ICONS[category],
+    verb: truncate(title.trim(), 120),
+    subject: null,
+    path: null,
+  };
 }
 
 /**
@@ -931,6 +975,26 @@ function classifyToolInner(
     hasCommand
   ) {
     return terminalDisplay(name, input);
+  }
+
+  // Prose ACP titles used as tool names (spaces / "sub-agent-x:" colon prefix).
+  // Render verbatim before the substring category matching below collapses them
+  // to a bare verb like "Workspace" or "Agent". Skipped when the input has
+  // structured fields that drive a richer category-specific display.
+  if (
+    isProseToolName(toolName) &&
+    !hasPath &&
+    !hasFilePaths &&
+    !hasQuery &&
+    !input.pattern &&
+    !input.glob &&
+    input.title === undefined &&
+    input.noteId === undefined &&
+    input.agentId === undefined &&
+    input.targetAgentId === undefined &&
+    !Array.isArray(input.tasks)
+  ) {
+    return proseTitleDisplay(toolName);
   }
 
   // Diagnostics (IDE issues)
@@ -1985,6 +2049,12 @@ function browserDisplay(name: string, input: Record<string, any>): ToolDisplay {
 }
 
 function genericDisplay(toolName: string, input: Record<string, any>): ToolDisplay {
+  // Unrecognized tool name with a prose ACP title: show the title verbatim
+  const acpTitle = typeof input._acpTitle === 'string' ? input._acpTitle.trim() : '';
+  if (acpTitle && isProseToolName(acpTitle)) {
+    return proseTitleDisplay(acpTitle);
+  }
+
   const cleanName = cleanToolName(toolName);
   const formattedName = cleanName
     .replace(/-/g, ' ')

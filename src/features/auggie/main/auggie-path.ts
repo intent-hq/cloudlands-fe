@@ -46,9 +46,7 @@ export async function findAuggiePathAsync(): Promise<string | null> {
       version?: string;
     }>('host.checkAuggie');
     if (result?.available && typeof result.path === 'string' && result.path.trim()) {
-      const resolved = result.path.trim();
-      logger.info('Resolved auggie via host.checkAuggie', { path: resolved });
-      return resolved;
+      return result.path.trim();
     }
     logger.debug('host.checkAuggie reported auggie unavailable');
     return null;

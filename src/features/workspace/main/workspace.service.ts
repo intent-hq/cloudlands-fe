@@ -2613,7 +2613,7 @@ export class WorkspaceService {
 
       if (candidates.length === 0) return;
 
-      logger.info('Periodic PR refresh: refreshing open PRs', { count: candidates.length });
+      logger.debug('Periodic PR refresh: refreshing open PRs', { count: candidates.length });
 
       // Clear any previously scheduled staggered timeouts before scheduling new ones
       for (const timeout of this.periodicPRStaggeredTimeouts) {
