@@ -49,6 +49,7 @@ import { createLifecycleReadMiddleware } from "./middlewares/lifecycle-read-serv
 import { createLifecycleIpcReadMiddleware } from "./middlewares/lifecycle-ipc-read-service";
 import { createUiLayoutPersistenceMiddleware } from "./middlewares/ui-layout-persistence-service";
 import { createUnreadTrackingPersistenceMiddleware } from "./middlewares/unread-tracking-persistence-service";
+import { createTabStatePersistenceMiddleware } from "./middlewares/tab-state-persistence-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
@@ -253,6 +254,10 @@ function buildMiddleware(): StoreMiddleware[] {
     // hydrates/persists across sessions and `clearWorkspaceUnread` clears the
     // workspace's agents via `clearAgentsUnread` again.
     createUnreadTrackingPersistenceMiddleware(),
+    // Give the (post-saga) tab-state persistence triggers real handlers so the
+    // workspace-tab strip (order/pin/active tab) and per-tab scroll positions
+    // hydrate on boot and persist on change across sessions via localStorage.
+    createTabStatePersistenceMiddleware(),
   ];
 
   // Debug middlewares need to be added AFTER batching middleware
