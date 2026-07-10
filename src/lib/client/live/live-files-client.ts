@@ -23,6 +23,7 @@ import {
   backendSubscribe,
   backendUnsubscribe,
   onBackendNotification,
+  onBackendReconnected,
 } from "./backend-transport";
 import { isEventInFamily, newIdempotencyKey, runMutation } from "./live-support";
 
@@ -207,20 +208,33 @@ export class LiveFilesClient implements FilesClient {
       if (isEventInFamily(n.method, n.params, "file")) emit();
     });
 
-    backendSubscribe<{ subscriptionId?: string }>({
-      eventTypes: ["file:changed", "file:created", "file:deleted", "file:renamed"],
-    })
-      .then((result) => {
-        subscriptionId = result?.subscriptionId;
-        if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
+    const doSubscribe = () =>
+      backendSubscribe<{ subscriptionId?: string }>({
+        eventTypes: ["file:changed", "file:created", "file:deleted", "file:renamed"],
       })
-      .catch(() => {
-        // Without a daemon subscription we still serve the initial snapshot.
-      });
+        .then((result) => {
+          subscriptionId = result?.subscriptionId;
+          if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
+        })
+        .catch(() => {
+          // Without a daemon subscription we still serve the initial snapshot.
+        });
+
+    doSubscribe();
+
+    // Reconnect replay (RESUB-1): daemon restart dropped the subscription
+    // registry; the notification handler is still wired, so only the
+    // subscribe call needs to be re-issued.
+    const offReconnect = onBackendReconnected(() => {
+      subscriptionId = undefined;
+      void doSubscribe();
+      emit();
+    });
 
     return () => {
       disposed = true;
       off();
+      offReconnect();
       if (subscriptionId) void backendUnsubscribe(subscriptionId);
     };
   }

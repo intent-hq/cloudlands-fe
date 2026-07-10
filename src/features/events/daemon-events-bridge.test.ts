@@ -11,12 +11,16 @@ const {
   applyNoteFromEventSpy,
   applyCommentFromEventSpy,
   capturedHandlers,
+  capturedReconnectHandlers,
 } = vi.hoisted(() => ({
   onBackendNotificationSpy: vi.fn(),
   backendRequestSpy: vi.fn(),
   applyNoteFromEventSpy: vi.fn(),
   applyCommentFromEventSpy: vi.fn(),
   capturedHandlers: [] as Array<(n: { method: string; params?: unknown }) => void>,
+  // RESUB-1: capture reconnect listeners so a test can simulate a daemon
+  // restart by invoking each captured handler.
+  capturedReconnectHandlers: [] as Array<() => void>,
 }));
 vi.mock("$lib/client/live/backend-transport", () => ({
   onBackendNotification: (handler: (n: { method: string; params?: unknown }) => void) => {
@@ -25,6 +29,13 @@ vi.mock("$lib/client/live/backend-transport", () => ({
     return () => {
       const idx = capturedHandlers.indexOf(handler);
       if (idx >= 0) capturedHandlers.splice(idx, 1);
+    };
+  },
+  onBackendReconnected: (handler: () => void) => {
+    capturedReconnectHandlers.push(handler);
+    return () => {
+      const idx = capturedReconnectHandlers.indexOf(handler);
+      if (idx >= 0) capturedReconnectHandlers.splice(idx, 1);
     };
   },
   backendRequest: (method: string, params?: unknown) => {
@@ -69,6 +80,18 @@ const { refreshWorkspaceSubscriptionEntriesSpy } = vi.hoisted(() => ({
 vi.mock("$features/agent/agent-subscription-read-service", () => ({
   refreshWorkspaceSubscriptionEntries: refreshWorkspaceSubscriptionEntriesSpy,
   createAgentSubscriptionReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) =>
+    next(a),
+}));
+
+// RESUB-1: mock chat-read-service so the bridge's reconnect refresh path can
+// assert `loadChatTranscript(activeAgentId)` fires without touching the real
+// `appClient.chat.subscribeSnapshot` seam.
+const { loadChatTranscriptSpy } = vi.hoisted(() => ({
+  loadChatTranscriptSpy: vi.fn(() => Promise.resolve()),
+}));
+vi.mock("$features/agent/chat-read-service", () => ({
+  loadChatTranscript: loadChatTranscriptSpy,
+  createChatReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) =>
     next(a),
 }));
 
@@ -2782,5 +2805,149 @@ describe("daemonEventsBridge (completion-watch refresh routing)", () => {
     handler(notification("agent:status-changed", { agentId: AGENT, status: "responding" }));
 
     expect(refreshWorkspaceSubscriptionEntriesSpy).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state refresh)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(async () => {
+    appStore.dispatch(clearAllSessions());
+    // Reset workspace/agent focus so a preceding test's setActiveWorkspaceId
+    // does not leak into the "no active workspace" case.
+    const { clearActiveWorkspace } = await import(
+      "$store/renderer/slices/workspace/workspace-slice"
+    );
+    const { setActiveAgentId } = await import(
+      "$store/renderer/slices/workspace-agents/workspace-agents-slice"
+    );
+    appStore.dispatch(clearActiveWorkspace());
+    appStore.dispatch(setActiveAgentId(WS, null));
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    loadChatTranscriptSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    capturedReconnectHandlers.length = 0;
+    seedSession();
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("registers a reconnect listener on install so `onBackendReconnected` fires the bridge's replay", async () => {
+    await primeBridge();
+    // Exactly one reconnect listener installed alongside the notification
+    // listener — install is a one-shot; consumers of the bridge must not
+    // register additional listeners against the shared client.
+    expect(capturedReconnectHandlers).toHaveLength(1);
+  });
+
+  it("re-issues events.subscribe with the identical eventTypes filter after reconnect", async () => {
+    await primeBridge();
+    const initialSubscribeCalls = backendRequestSpy.mock.calls.filter(
+      ([method]) => method === "events.subscribe",
+    );
+    expect(initialSubscribeCalls).toHaveLength(1);
+
+    // Simulate the main-process JsonRpcClient successfully reconnecting.
+    capturedReconnectHandlers[0]!();
+    await flush();
+
+    const afterReconnect = backendRequestSpy.mock.calls.filter(
+      ([method]) => method === "events.subscribe",
+    );
+    expect(afterReconnect).toHaveLength(2);
+    // Replay uses the same filter list — a divergence would silently drop
+    // event families after a daemon restart.
+    expect(afterReconnect[1][1]).toEqual(initialSubscribeCalls[0][1]);
+  });
+
+  it("keeps the initial notification listener registered across reconnect (no double-processing)", async () => {
+    await primeBridge();
+    expect(onBackendNotificationSpy).toHaveBeenCalledTimes(1);
+    expect(capturedHandlers).toHaveLength(1);
+
+    capturedReconnectHandlers[0]!();
+    await flush();
+
+    // Replay only re-issues subscribe; the notification listener persists on
+    // the same singleton transport (mirrors the main-process consumer
+    // pattern — a second registration would double-apply every event).
+    expect(onBackendNotificationSpy).toHaveBeenCalledTimes(1);
+    expect(capturedHandlers).toHaveLength(1);
+  });
+
+  it("fires loadChatTranscript for the active agent after reconnect (LEAK-1: pinned to active-at-completion)", async () => {
+    // Seed enough store state for the reconnect refresh to have a target:
+    // an active workspace and an active agent in that workspace. The
+    // hydrateAgentsRequested dispatch is fire-and-forget (saga-only trigger,
+    // no reducer entry — AGENTS.md §8), so we assert the observable seam:
+    // `loadChatTranscript` runs against the active agent. The workspace-less
+    // sibling below proves the whole refresh path is gated on activeWorkspaceId.
+    const {
+      setActiveWorkspaceId,
+    } = await import("$store/renderer/slices/workspace/workspace-slice");
+    const {
+      setActiveAgentId,
+    } = await import("$store/renderer/slices/workspace-agents/workspace-agents-slice");
+    appStore.dispatch(setActiveWorkspaceId(WS));
+    appStore.dispatch(setActiveAgentId(WS, AGENT));
+
+    await primeBridge();
+
+    capturedReconnectHandlers[0]!();
+    await flush();
+
+    expect(loadChatTranscriptSpy).toHaveBeenCalledWith(AGENT);
+    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips coarse-state refresh when no workspace is active (nothing to hydrate)", async () => {
+    // No `setActiveWorkspaceId` dispatched → activeWorkspaceId stays null.
+    await primeBridge();
+
+    capturedReconnectHandlers[0]!();
+    await flush();
+
+    // With no active workspace, the refresh path exits early — no chat load.
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+
+  it("accepts a fresh fan-out envelope after reconnect (the bridge's own subscriptionId is re-armed)", async () => {
+    // The mock's `events.subscribe` always resolves with "sub-1", so this
+    // asserts the bridge does not lock onto the initial id in a way that
+    // would reject a fresh replay's envelope. If the replay path forgot to
+    // reset `ownSubscriptionId`, a foreign envelope on the same wire could
+    // still leak through (see the fan-out scope-gate suite).
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    capturedReconnectHandlers[0]!();
+    await flush();
+
+    handler(
+      notificationWithSub(
+        "agent:stream:chunk",
+        {
+          agentId: AGENT,
+          content: "post-reconnect",
+          messageId: MESSAGE_ID,
+          blockIndex: 0,
+          blockId: `${MESSAGE_ID}:0`,
+          blockType: "text",
+          streamId: STREAM_ID,
+        },
+        "sub-1",
+      ),
+    );
+
+    expect(readAssistantMessages()[0].contentBlocks?.[0]).toMatchObject({
+      type: "text",
+      text: "post-reconnect",
+    });
   });
 });

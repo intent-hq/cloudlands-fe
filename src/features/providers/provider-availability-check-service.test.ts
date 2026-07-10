@@ -18,6 +18,7 @@ vi.mock("$lib/client/live/backend-transport", () => ({
   backendSubscribe: () => Promise.resolve({ subscriptionId: "sub-avail-1" }),
   backendUnsubscribe: () => Promise.resolve(),
   onBackendNotification: () => () => {},
+  onBackendReconnected: () => () => {},
 }));
 
 import { invoke } from "$lib/electron-bridge";

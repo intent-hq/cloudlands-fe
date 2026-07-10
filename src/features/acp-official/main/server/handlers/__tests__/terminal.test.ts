@@ -9,6 +9,9 @@ const mockEmitter = vi.hoisted(() => {
 
 vi.mock('../../../../../backend/main/backend.ipc', () => ({
   getBackendClient: () => Object.assign(mockEmitter, { request: mockRequest }),
+  // RESUB-1: ensureSubscription installs a reconnect listener; these tests
+  // do not exercise reconnect so the mock is a no-op disposer.
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 vi.mock('../../../../../../shared/logger', () => ({

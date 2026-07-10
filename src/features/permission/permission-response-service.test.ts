@@ -21,6 +21,7 @@ vi.mock("$lib/client/live/backend-transport", () => ({
   // permission-flow assertions below.
   backendRequest: () => Promise.resolve({ subscriptionId: "sub-perm-1" }),
   onBackendNotification: () => () => {},
+  onBackendReconnected: () => () => {},
 }));
 vi.mock("$lib/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("$lib/client")>();

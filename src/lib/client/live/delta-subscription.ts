@@ -23,6 +23,7 @@ import {
   backendUnsubscribe,
   detectLiveStateCapability,
   onBackendNotification,
+  onBackendReconnected,
 } from "./backend-transport";
 
 /** Incremental change set carried by a `kind:"delta"` push. */
@@ -236,11 +237,27 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     if (!live && matchLegacyEvent(n.method, n.params)) refetchEmit();
   });
 
+  // Reconnect (RESUB-1): the daemon dropped its subscription registry on
+  // restart, so the stashed id points at nothing. Clear local state, re-
+  // register for a fresh seq-0 snapshot, and bridge with a refetch so we
+  // converge on anything missed during the outage. Skip the
+  // `awaitingResnapshot` early-out so a reconnect racing an in-flight
+  // resnapshot still re-registers.
+  const offReconnect = onBackendReconnected(() => {
+    if (disposed) return;
+    awaitingResnapshot = false;
+    reconciler.reset();
+    subscriptionId = undefined;
+    register();
+    refetchEmit();
+  });
+
   register();
 
   return () => {
     disposed = true;
     off();
+    offReconnect();
     if (subscriptionId) void backendUnsubscribe(subscriptionId);
   };
 }

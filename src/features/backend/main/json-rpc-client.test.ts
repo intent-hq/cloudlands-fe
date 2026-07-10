@@ -308,6 +308,34 @@ describe("JsonRpcClient reconnect + heartbeat", () => {
 
     client.dispose();
   });
+
+  it("emits `reconnected` on the 2nd (and later) successful connect but not on the first (RESUB-1)", async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    const reconnected = vi.fn();
+    client.on("reconnected", reconnected);
+    client.start();
+
+    // First successful connect is the ordinary boot path — NOT a reconnect.
+    sockets[0].open();
+    expect(reconnected).not.toHaveBeenCalled();
+
+    // Drop and let the backoff reconnect fire.
+    sockets[0].emit("close");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets).toHaveLength(2);
+    sockets[1].open();
+    expect(reconnected).toHaveBeenCalledTimes(1);
+
+    // Second drop + reconnect fires the event again.
+    sockets[1].emit("close");
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets).toHaveLength(3);
+    sockets[2].open();
+    expect(reconnected).toHaveBeenCalledTimes(2);
+
+    client.dispose();
+  });
 });
 
 describe("mapErrorCode", () => {

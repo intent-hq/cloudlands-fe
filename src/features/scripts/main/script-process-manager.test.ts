@@ -18,6 +18,9 @@ const fakeClient = new FakeBackendClient();
 
 vi.mock('../../backend/main/backend.ipc', () => ({
   getBackendClient: () => fakeClient,
+  // RESUB-1: ensureSubscription installs a reconnect listener; these tests
+  // do not exercise reconnect so the mock is a no-op disposer.
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 vi.mock('../../../shared/logger', () => ({

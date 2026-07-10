@@ -141,3 +141,25 @@ export function onBackendNotification(handler: (n: BackendNotification) => void)
   );
   return () => api.offById(BACKEND.NOTIFICATION, listenerId);
 }
+
+/**
+ * Listen for backend reconnects. Fires when the main-process JSON-RPC client
+ * re-establishes the socket after a drop (`{ status: 'connected', reconnected:
+ * true }` marker broadcast by `backend.ipc.ts`). Renderer consumers that hold
+ * long-lived `events.subscribe` subscriptions or hydrated state derived from
+ * daemon events must re-issue their subscribes and, where appropriate, refresh
+ * coarse state so anything missed during the outage converges (RESUB-1).
+ * Returns a disposer.
+ */
+export function onBackendReconnected(handler: () => void): () => void {
+  const api = electronAPI();
+  if (!api) return () => {};
+  const listenerId = api.on(
+    BACKEND.STATUS,
+    (payload: { status?: string; reconnected?: boolean } | undefined) => {
+      if (payload?.status === "connected" && payload.reconnected === true) handler();
+    },
+  );
+  return () => api.offById(BACKEND.STATUS, listenerId);
+}
+

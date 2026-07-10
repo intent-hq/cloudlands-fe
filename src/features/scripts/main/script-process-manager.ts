@@ -13,7 +13,7 @@
  */
 
 import { Logger } from '../../../shared/logger';
-import { getBackendClient } from '../../backend/main/backend.ipc';
+import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
 import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
 import {
   ScriptOutputBuffer,
@@ -80,6 +80,14 @@ const managersByScriptId = new Map<string, ScriptProcessManager>();
 let subscriptionId: string | undefined;
 let notificationListener: ((n: JsonRpcNotification) => void) | undefined;
 let subscribePromise: Promise<void> | undefined;
+/**
+ * Sticky reconnect disposer, installed on first `ensureSubscription()`. On
+ * daemon restart the in-memory subscription registry is dropped; we replay
+ * `events.subscribe(['script:state', 'script:output'])` on the same client
+ * (the notification listener persists across reconnects) so live state /
+ * output continues to flow (RESUB-1).
+ */
+let reconnectDisposer: (() => void) | undefined;
 
 function decodeBase64(input: unknown): string {
   if (typeof input !== 'string' || input.length === 0) return '';
@@ -141,6 +149,29 @@ async function ensureSubscription(): Promise<void> {
   };
   notificationListener = listener;
   client.on('notification', listener);
+  if (!reconnectDisposer) {
+    reconnectDisposer = onBackendReconnected(() => {
+      // The notification listener persists across reconnects (same singleton
+      // client). Drop the stale id and re-issue subscribe directly so
+      // `script:*` events keep reaching the buffers (RESUB-1). Do NOT call
+      // `ensureSubscription()`; it would re-register a second notification
+      // handler and double-process every subsequent event.
+      subscriptionId = undefined;
+      if (managersByScriptId.size === 0) return;
+      getBackendClient()
+        .request<{ subscriptionId?: string }>('events.subscribe', {
+          eventTypes: ['script:state', 'script:output'],
+        })
+        .then((r) => {
+          subscriptionId = r?.subscriptionId;
+        })
+        .catch((error) => {
+          logger.warn('[Scripts] events.subscribe replay failed after reconnect', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+    });
+  }
   subscribePromise = (async () => {
     try {
       const result = await client.request<{ subscriptionId?: string }>('events.subscribe', {
@@ -492,6 +523,14 @@ export async function disposeAllScriptProcessManagers(): Promise<void> {
       // Client may already be torn down.
     }
     notificationListener = undefined;
+  }
+  if (reconnectDisposer) {
+    try {
+      reconnectDisposer();
+    } catch {
+      // Client may already be torn down.
+    }
+    reconnectDisposer = undefined;
   }
   subscribePromise = undefined;
 }

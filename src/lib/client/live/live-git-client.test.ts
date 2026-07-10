@@ -8,6 +8,9 @@ vi.mock("./backend-transport", () => ({
   backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: "sub-1" })),
   backendUnsubscribe: vi.fn(() => Promise.resolve()),
   onBackendNotification: vi.fn(() => () => {}),
+  // RESUB-1: subscribe() installs a reconnect listener; these tests do not
+  // exercise reconnect so the mock is a no-op disposer.
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 // Keep the REAL `runMutation` (so mutation tests assert the JSON-RPC method +

@@ -154,7 +154,9 @@ import type { McpServerStatus } from "$store/renderer/slices/mcp-settings/mcp-se
 import {
   backendRequest,
   onBackendNotification,
+  onBackendReconnected,
 } from "$lib/client/live/backend-transport";
+import { loadChatTranscript } from "$features/agent/chat-read-service";
 import { emitMockIpcEvent } from "$shared/ipc-mock-router";
 import type { WorkspaceEvent } from "$features/events/types";
 import { createLogger } from "$lib/utils/client-logger";
@@ -1184,6 +1186,89 @@ function handleNotification(method: string, params: unknown): void {
   appStore.dispatch(eventReceived(workspaceId, event));
 }
 
+/**
+ * Event types the bridge firehose subscribes to. Kept as a module constant so
+ * the initial install and the post-reconnect replay use the same filter list
+ * (RESUB-1) — a divergence here would silently drop event families after a
+ * daemon restart.
+ */
+const BRIDGE_SUBSCRIBE_EVENT_TYPES = [
+  "agent:*",
+  "file:*",
+  "note:*",
+  "comment:*",
+  "script:*",
+  "settings:changed",
+  "workspace:tokenUsage-changed",
+  "workspace:updated",
+  "workspace:created",
+  "workspace:deleted",
+  "task:ready-tasks-changed",
+  "changes:git-status",
+  "changes:tracked",
+  "line-attribution:updated",
+  "pr:*",
+  "mcp.servers:status-changed",
+] as const;
+
+/**
+ * Issue the firehose `events.subscribe` and stash the resulting id on
+ * `ownSubscriptionId` for the notification-scope gate. Shared by the one-shot
+ * install and the post-reconnect replay so both go through the same code path.
+ */
+async function subscribeFirehose(): Promise<void> {
+  try {
+    const result = (await backendRequest("events.subscribe", {
+      eventTypes: [...BRIDGE_SUBSCRIBE_EVENT_TYPES],
+    })) as { subscriptionId?: string } | undefined;
+    if (typeof result?.subscriptionId === "string" && result.subscriptionId.length > 0) {
+      ownSubscriptionId = result.subscriptionId;
+    } else {
+      logger.warn("events.subscribe returned no subscriptionId", result);
+    }
+  } catch (error) {
+    logger.error("events.subscribe (bridge firehose + legacy relay families) failed", error);
+  }
+}
+
+/**
+ * After the daemon restarts and the socket reconnects, its in-memory
+ * subscription registry is empty and the old `ownSubscriptionId` refers to
+ * nothing. Replay the firehose subscribe (obtaining a fresh id), then refresh
+ * coarse state so anything missed during the outage converges: re-hydrate the
+ * active workspace's agent list and the open chat conversation via the
+ * existing read-service paths (LEAK-1: both reads pin to the workspace/agent
+ * that are active AT DISPATCH TIME — a subsequent switch is handled by the
+ * read-service's own workspace guards).
+ */
+async function replayAfterReconnect(): Promise<void> {
+  // Drop the stale id first: the notification-scope gate accepts flat/legacy
+  // envelopes (no id) and matches on our own id — leaving the old id in place
+  // during the resubscribe window would let a foreign subscription's
+  // notifications leak through if they happened to share the old id.
+  ownSubscriptionId = undefined;
+  await subscribeFirehose();
+
+  // LEAK-1: capture the active workspace/agent at completion time; the
+  // read-services themselves coalesce concurrent loads per key so a workspace
+  // switch racing this replay does not double-hydrate.
+  const state = appStore.state as {
+    workspace?: { activeWorkspaceId?: string | null };
+    workspaceAgents?: {
+      byWorkspaceId: Record<string, { activeAgentId?: string | null }>;
+    };
+  };
+  const activeWorkspaceId = state.workspace?.activeWorkspaceId ?? null;
+  if (activeWorkspaceId) {
+    appStore.dispatch(hydrateAgentsRequested(activeWorkspaceId));
+    const activeAgentId =
+      state.workspaceAgents?.byWorkspaceId[activeWorkspaceId]?.activeAgentId ?? null;
+    if (activeAgentId) {
+      void loadChatTranscript(activeAgentId);
+    }
+  }
+}
+
 async function installSubscriptionOnce(): Promise<void> {
   if (installed) return;
   installed = true;
@@ -1205,41 +1290,25 @@ async function installSubscriptionOnce(): Promise<void> {
   // §5.2.1 / §6.5, `pr:*` §6.5 — see relayLegacyIpcEvent) to this socket.
   // The subscription id is owned by the bridge (no consumer needs it);
   // refetch delta-subscriptions in `live-agents-client` register their own.
-  try {
-    const result = (await backendRequest("events.subscribe", {
-      eventTypes: [
-        "agent:*",
-        "file:*",
-        "note:*",
-        "comment:*",
-        "script:*",
-        "settings:changed",
-        "workspace:tokenUsage-changed",
-        "workspace:updated",
-        "workspace:created",
-        "workspace:deleted",
-        "task:ready-tasks-changed",
-        "changes:git-status",
-        "changes:tracked",
-        "line-attribution:updated",
-        "pr:*",
-        "mcp.servers:status-changed",
-      ],
-    })) as { subscriptionId?: string } | undefined;
-    if (typeof result?.subscriptionId === "string" && result.subscriptionId.length > 0) {
-      ownSubscriptionId = result.subscriptionId;
-    } else {
-      logger.warn("events.subscribe returned no subscriptionId", result);
-    }
-  } catch (error) {
-    logger.error("events.subscribe (bridge firehose + legacy relay families) failed", error);
-  }
+  await subscribeFirehose();
+
+  // Daemon restart replay: the in-memory subscription registry is dropped on
+  // restart, so a straight `notification` re-registration is not enough — we
+  // must re-issue the subscribe AND converge coarse state (RESUB-1).
+  const offReconnect = onBackendReconnected(() => {
+    void replayAfterReconnect();
+  });
 
   cleanup = () => {
     try {
       off();
     } catch (error) {
       logger.error("backend notification off() threw", error);
+    }
+    try {
+      offReconnect();
+    } catch (error) {
+      logger.error("backend reconnect off() threw", error);
     }
   };
 }

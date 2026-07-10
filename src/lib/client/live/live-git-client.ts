@@ -46,6 +46,7 @@ import {
   backendSubscribe,
   backendUnsubscribe,
   onBackendNotification,
+  onBackendReconnected,
 } from "./backend-transport";
 import { isEventInFamily, listWorkspaceIds, runMutation } from "./live-support";
 
@@ -518,28 +519,42 @@ export class LiveGitClient implements GitClient {
         emit();
     });
 
-    backendSubscribe<{ subscriptionId?: string }>({
-      eventTypes: [
-        "git:commit",
-        "git:push",
-        "git:pull",
-        "git:branch",
-        "git:merge",
-        "changes:tracked",
-        "changes:git-status",
-      ],
-    })
-      .then((result) => {
-        subscriptionId = result?.subscriptionId;
-        if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
+    const doSubscribe = () =>
+      backendSubscribe<{ subscriptionId?: string }>({
+        eventTypes: [
+          "git:commit",
+          "git:push",
+          "git:pull",
+          "git:branch",
+          "git:merge",
+          "changes:tracked",
+          "changes:git-status",
+        ],
       })
-      .catch(() => {
-        // Without a daemon subscription we still serve the initial snapshot.
-      });
+        .then((result) => {
+          subscriptionId = result?.subscriptionId;
+          if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
+        })
+        .catch(() => {
+          // Without a daemon subscription we still serve the initial snapshot.
+        });
+
+    doSubscribe();
+
+    // On reconnect the daemon dropped its subscription registry (RESUB-1);
+    // the notification handler is still wired, so we only need to re-issue
+    // the subscribe and refresh the snapshot to converge on anything missed
+    // during the outage.
+    const offReconnect = onBackendReconnected(() => {
+      subscriptionId = undefined;
+      void doSubscribe();
+      emit();
+    });
 
     return () => {
       disposed = true;
       off();
+      offReconnect();
       if (subscriptionId) void backendUnsubscribe(subscriptionId);
     };
   }

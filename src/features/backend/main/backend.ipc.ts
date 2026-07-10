@@ -10,7 +10,12 @@
  *   - `backend:unsubscribe` → forward `events.unsubscribe`.
  *   - `backend:get-status` → current connection status.
  * Daemon JSON-RPC notifications are broadcast to every window on
- * `backend:notification`; connection-status changes on `backend:status`.
+ * `backend:notification`; connection-status changes on `backend:status`. The
+ * status payload carries a `reconnected: true` marker on the successful
+ * `connected` transition following an earlier drop, so renderer consumers can
+ * replay `events.subscribe` calls and refresh coarse state without a relaunch
+ * (RESUB-1). Main-process consumers observe the same signal directly via
+ * `onBackendReconnected(handler)`.
  */
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { Logger } from '$shared/logger';
@@ -56,12 +61,33 @@ export function getBackendClient(): JsonRpcClient {
     broadcast(BACKEND.NOTIFICATION, notification),
   );
   instance.on('status', (status: ConnectionStatus) => broadcast(BACKEND.STATUS, { status }));
+  // On reconnect the daemon has already dropped every in-memory subscription
+  // (see intentd's event-bus lifecycle); broadcast a distinct `{ status:
+  // 'connected', reconnected: true }` marker AFTER the plain status event so
+  // renderer consumers can replay their `events.subscribe` calls and refresh
+  // coarse state. This piggybacks on the existing `backend:status` channel to
+  // avoid growing the preload allow-list surface. See RESUB-1.
+  instance.on('reconnected', () =>
+    broadcast(BACKEND.STATUS, { status: 'connected', reconnected: true }),
+  );
   instance.on('error', (error: Error) =>
     logger.warn('Backend transport error', { error: error.message }),
   );
   client = instance;
   instance.start();
   return instance;
+}
+
+/**
+ * Register a main-process listener for backend reconnects. Fires each time the
+ * shared JsonRpcClient re-establishes the connection after a drop so consumers
+ * that hold long-lived `events.subscribe` subscriptions (terminal registry,
+ * script manager, ACP terminal handler) can re-issue them. Returns a disposer.
+ */
+export function onBackendReconnected(handler: () => void): () => void {
+  const instance = getBackendClient();
+  instance.on('reconnected', handler);
+  return () => instance.off('reconnected', handler);
 }
 
 /** Broadcast a payload to every live renderer window. */

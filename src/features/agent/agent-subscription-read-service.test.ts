@@ -16,6 +16,7 @@ const { backendRequestSpy } = vi.hoisted(() => ({
 vi.mock("$lib/client/live/backend-transport", () => ({
   backendRequest: (method: string, params?: unknown) => backendRequestSpy(method, params),
   onBackendNotification: () => () => {},
+  onBackendReconnected: () => () => {},
 }));
 
 import { store as appStore } from "$store/renderer/store";

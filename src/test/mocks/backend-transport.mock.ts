@@ -65,6 +65,7 @@ interface MockState {
   requestHandlers: Map<string, RequestHandler>;
   subscribeHandler: SubscribeHandler | null;
   notificationHandlers: Set<(n: BackendNotification) => void>;
+  reconnectHandlers: Set<() => void>;
   liveStateCapability: boolean;
   autoSubscriptionSeq: number;
   requests: RecordedRequest[];
@@ -76,6 +77,7 @@ const state: MockState = {
   requestHandlers: new Map(),
   subscribeHandler: null,
   notificationHandlers: new Set(),
+  reconnectHandlers: new Set(),
   liveStateCapability: false,
   autoSubscriptionSeq: 0,
   requests: [],
@@ -88,6 +90,7 @@ export function resetMockBackend(): void {
   state.requestHandlers.clear();
   state.subscribeHandler = null;
   state.notificationHandlers.clear();
+  state.reconnectHandlers.clear();
   state.liveStateCapability = false;
   state.autoSubscriptionSeq = 0;
   state.requests.length = 0;
@@ -138,6 +141,17 @@ function mockOnBackendNotification(handler: (n: BackendNotification) => void): (
   };
 }
 
+/**
+ * Register a reconnect listener. Consumers drive replays by calling
+ * `installMockBackend().triggerReconnect()` (RESUB-1).
+ */
+function mockOnBackendReconnected(handler: () => void): () => void {
+  state.reconnectHandlers.add(handler);
+  return () => {
+    state.reconnectHandlers.delete(handler);
+  };
+}
+
 async function mockDetectLiveStateCapability(): Promise<boolean> {
   return state.liveStateCapability;
 }
@@ -156,6 +170,7 @@ export const mockBackendTransportModule = {
   backendSubscribe: mockBackendSubscribe,
   backendUnsubscribe: mockBackendUnsubscribe,
   onBackendNotification: mockOnBackendNotification,
+  onBackendReconnected: mockOnBackendReconnected,
   detectLiveStateCapability: mockDetectLiveStateCapability,
   isBackendAvailable: mockIsBackendAvailable,
   BackendError,
@@ -261,11 +276,18 @@ export interface MockBackendHandle {
       | { type: string; data?: Record<string, unknown> } & EventEnvelopeOverrides,
   ): void;
   pushSubscriptionPush(frame: SubscriptionPushFrame): void;
+  /**
+   * Invoke every registered reconnect listener in insertion order. Simulates
+   * the main-process JsonRpcClient successfully re-establishing the daemon
+   * socket so consumers can assert their replay behaviour (RESUB-1).
+   */
+  triggerReconnect(): void;
   setLiveStateCapability(enabled: boolean): void;
   readonly requests: ReadonlyArray<RecordedRequest>;
   readonly subscribes: ReadonlyArray<unknown>;
   readonly unsubscribes: ReadonlyArray<string>;
   readonly notificationHandlerCount: number;
+  readonly reconnectHandlerCount: number;
   readonly builders: {
     buildEventNotification: typeof buildEventNotification;
     buildSubscriptionPushSnapshot: typeof buildSubscriptionPushSnapshot;
@@ -333,6 +355,9 @@ export function installMockBackend(): MockBackendHandle {
             }),
       );
     },
+    triggerReconnect() {
+      for (const handler of Array.from(state.reconnectHandlers)) handler();
+    },
     setLiveStateCapability(enabled) {
       state.liveStateCapability = enabled;
     },
@@ -347,6 +372,9 @@ export function installMockBackend(): MockBackendHandle {
     },
     get notificationHandlerCount() {
       return state.notificationHandlers.size;
+    },
+    get reconnectHandlerCount() {
+      return state.reconnectHandlers.size;
     },
     builders: {
       buildEventNotification,

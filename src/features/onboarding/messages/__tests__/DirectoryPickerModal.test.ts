@@ -24,6 +24,7 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
   onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 vi.mock('$lib/components/ui/Portal.svelte', async () => {

@@ -15,6 +15,11 @@
  * cannot cross-talk, then unsubscribes on the terminal `host:exec:exit` frame
  * (mirrors the `git.clone` streaming client in `workspace.service.ts`). All
  * caller env values ride inside the request payload and are never logged.
+ *
+ * Turn-scoped subscription (RESUB-1): the subscription lives for a single
+ * `host.execStream` invocation. If the daemon restarts mid-stream the
+ * pending request rejects, cleanup runs, and the caller retries; there is no
+ * long-lived subscription to replay after reconnect.
  */
 import { Buffer } from 'node:buffer';
 import { Logger } from '../logger';

@@ -11,6 +11,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("$lib/client/live/backend-transport", () => ({
   backendRequest: vi.fn(),
   onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 import { backendRequest } from "$lib/client/live/backend-transport";
