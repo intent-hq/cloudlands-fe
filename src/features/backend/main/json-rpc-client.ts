@@ -28,6 +28,28 @@ export interface JsonRpcNotification {
   params?: unknown;
 }
 
+/**
+ * Handler for a daemon-initiated (reverse) JSON-RPC request. Returns the
+ * `result` payload directly; throw a {@link ReverseRpcHandlerError} to control
+ * the numeric error code, or any other Error to surface as `-32603`.
+ */
+export type ReverseRequestHandler = (params: unknown) => Promise<unknown> | unknown;
+
+/**
+ * Throw this from a reverse-request handler to control the numeric JSON-RPC
+ * error code sent back to the daemon (falls back to `-32603` otherwise).
+ */
+export class ReverseRpcHandlerError extends Error {
+  readonly code: number;
+  readonly data?: unknown;
+  constructor(code: number, message: string, data?: unknown) {
+    super(message);
+    this.name = 'ReverseRpcHandlerError';
+    this.code = code;
+    this.data = data;
+  }
+}
+
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
 interface PendingRequest {
@@ -85,6 +107,8 @@ export class JsonRpcClient extends EventEmitter {
   private readonly pending = new Map<number, PendingRequest>();
   /** Sticky flag so `reconnected` only fires on the 2nd (or later) successful connect. */
   private hasBeenConnected = false;
+  /** Handlers for daemon-initiated (reverse) requests, keyed by method name. */
+  private readonly reverseHandlers = new Map<string, ReverseRequestHandler>();
 
   constructor(options: JsonRpcClientOptions = {}) {
     super();
@@ -121,6 +145,32 @@ export class JsonRpcClient extends EventEmitter {
     this.teardownSocket();
     this.setStatus('disconnected');
     this.removeAllListeners();
+  }
+
+  /**
+   * Register a handler for a daemon-initiated (reverse) JSON-RPC request
+   * (§5.14). Daemon-issued requests carry a `rev-<n>` string `id` and are
+   * dispatched to the handler registered for their `method`; the returned value
+   * is sent back as the JSON-RPC `result`. Throwing a
+   * {@link ReverseRpcHandlerError} lets the handler pick the numeric error
+   * code; any other Error surfaces as `-32603 INTERNAL_ERROR`. Idempotent:
+   * re-registering the same method replaces the previous handler. Returns a
+   * disposer for symmetric setup/teardown.
+   */
+  registerMethod(method: string, handler: ReverseRequestHandler): () => void {
+    this.reverseHandlers.set(method, handler);
+    return () => {
+      // Only clear the slot if it still points at *this* handler — a later
+      // re-registration must not be silently torn down by a stale disposer.
+      if (this.reverseHandlers.get(method) === handler) {
+        this.reverseHandlers.delete(method);
+      }
+    };
+  }
+
+  /** Remove a previously registered reverse-request handler (idempotent). */
+  unregisterMethod(method: string): void {
+    this.reverseHandlers.delete(method);
   }
 
   /** Send a JSON-RPC request and resolve with its result (or reject on error). */
@@ -240,8 +290,19 @@ export class JsonRpcClient extends EventEmitter {
     error?: JsonRpcErrorShape;
     params?: unknown;
   }): void {
-    // Response: has an id matching a pending request.
-    if (message.id != null) {
+    const hasMethod = typeof message.method === 'string';
+    const hasId = message.id != null;
+    // Inbound request: has BOTH `method` and `id` (daemon → client reverse RPC,
+    // §5.14). The `id` is preserved verbatim (client-side ids are numeric while
+    // daemon-issued reverse ids live in the `rev-<n>` string namespace); a
+    // daemon-issued response could never carry `method`, so the two branches
+    // do not overlap.
+    if (hasMethod && hasId) {
+      this.dispatchInboundRequest(message.id as number | string, message.method as string, message.params);
+      return;
+    }
+    // Response: correlate by numeric id against a pending outbound request.
+    if (hasId) {
       const numericId = Number(message.id);
       const entry = this.pending.get(numericId);
       if (entry) {
@@ -256,8 +317,49 @@ export class JsonRpcClient extends EventEmitter {
       }
     }
     // Notification: has a method and no id.
-    if (typeof message.method === 'string' && message.id == null) {
-      this.emit('notification', { method: message.method, params: message.params });
+    if (hasMethod && !hasId) {
+      this.emit('notification', { method: message.method as string, params: message.params });
+    }
+  }
+
+  private dispatchInboundRequest(id: number | string, method: string, params: unknown): void {
+    const handler = this.reverseHandlers.get(method);
+    if (!handler) {
+      this.sendReverseError(id, -32601, `Method not found: ${method}`);
+      return;
+    }
+    Promise.resolve()
+      .then(() => handler(params))
+      .then(
+        (result) => this.sendReverseResult(id, result),
+        (error: unknown) => {
+          if (error instanceof ReverseRpcHandlerError) {
+            this.sendReverseError(id, error.code, error.message, error.data);
+            return;
+          }
+          const message = error instanceof Error ? error.message : String(error);
+          this.sendReverseError(id, -32603, message);
+        },
+      );
+  }
+
+  private sendReverseResult(id: number | string, result: unknown): void {
+    const payload = `${JSON.stringify({ jsonrpc: '2.0', id, result: result ?? null })}\n`;
+    this.writeFrame(payload);
+  }
+
+  private sendReverseError(id: number | string, code: number, message: string, data?: unknown): void {
+    const error: { code: number; message: string; data?: unknown } = { code, message };
+    if (data !== undefined) error.data = data;
+    const payload = `${JSON.stringify({ jsonrpc: '2.0', id, error })}\n`;
+    this.writeFrame(payload);
+  }
+
+  private writeFrame(payload: string): void {
+    try {
+      this.socket?.write(payload);
+    } catch (error) {
+      this.emitError(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
