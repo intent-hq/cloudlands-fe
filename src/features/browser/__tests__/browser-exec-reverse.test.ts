@@ -131,7 +131,7 @@ describe('registerBrowserExecReverseHandler', () => {
     client.dispose();
   });
 
-  it('surfaces invalid params as -32603 (executor never called)', async () => {
+  it('surfaces invalid params as -32602 (executor never called)', async () => {
     const { client, socket } = makeClient();
     registerBrowserExecReverseHandler(client, { executor });
 
@@ -148,7 +148,7 @@ describe('registerBrowserExecReverseHandler', () => {
     expect(executor).not.toHaveBeenCalled();
     const response = JSON.parse(socket.writes[0]);
     expect(response.id).toBe('rev-3');
-    expect(response.error.code).toBe(-32603);
+    expect(response.error.code).toBe(-32602);
     expect(response.error.message).toMatch(/actions must not be empty/);
     client.dispose();
   });
@@ -193,6 +193,32 @@ describe('registerBrowserExecReverseHandler', () => {
       width: 10,
       height: 20,
     });
+    client.dispose();
+  });
+
+  it('keeps the base64 screenshot payload when saveAsset resolves without a url', async () => {
+    const { client, socket } = makeClient();
+    const original = { base64: 'AAAA', width: 10, height: 20 };
+    executor.mockResolvedValue({
+      success: true,
+      results: [{ action: 'screenshot', success: true, result: { ...original } }],
+    });
+    const saveAsset = vi.fn().mockResolvedValue(undefined);
+    registerBrowserExecReverseHandler(client, { executor, saveAsset });
+
+    socket.receive(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'rev-5',
+        method: BROWSER_EXEC_METHOD,
+        params: { actions: [{ action: 'screenshot' }], workspaceId: 'ws-1' },
+      })}\n`,
+    );
+    await flush();
+
+    expect(saveAsset).toHaveBeenCalledTimes(1);
+    const response = JSON.parse(socket.writes[0]);
+    expect(response.result.results[0].result).toEqual(original);
     client.dispose();
   });
 });

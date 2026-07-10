@@ -16,7 +16,10 @@
  */
 
 import { Logger } from '../../../shared/logger';
-import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
+import {
+  ReverseRpcHandlerError,
+  type JsonRpcClient,
+} from '../../backend/main/json-rpc-client';
 import type { ExecutionResult } from './browser-action-executor';
 
 const logger = new Logger('BrowserExecReverse');
@@ -110,16 +113,20 @@ export function registerBrowserExecReverseHandler(
 }
 
 function parseParams(raw: unknown): BrowserExecParams {
+  // Validation failures are deterministic bad-input errors, so surface them as
+  // JSON-RPC `-32602 INVALID_PARAMS` (not the `-32603 INTERNAL_ERROR` fallback
+  // that plain `Error`s would map to) so the daemon/caller can distinguish
+  // malformed payloads from handler faults.
   if (!raw || typeof raw !== 'object') {
-    throw new Error('browser.exec: params must be an object');
+    throw new ReverseRpcHandlerError(-32602, 'browser.exec: params must be an object');
   }
   const obj = raw as Record<string, unknown>;
   const actions = obj.actions;
   if (!Array.isArray(actions)) {
-    throw new Error('browser.exec: actions must be an array');
+    throw new ReverseRpcHandlerError(-32602, 'browser.exec: actions must be an array');
   }
   if (actions.length === 0) {
-    throw new Error('browser.exec: actions must not be empty');
+    throw new ReverseRpcHandlerError(-32602, 'browser.exec: actions must not be empty');
   }
   return {
     actions,
@@ -156,14 +163,25 @@ async function rewriteScreenshotAssets(
         mimeType: 'image/jpeg',
         originalName: `screenshot-${Date.now()}.jpg`,
       });
-      actionResult.result = {
-        assetUrl: saved?.url,
-        width: data.width,
-        height: data.height,
-      };
+      // Only replace the base64 payload once we actually have a usable
+      // `assetUrl` — `SaveAssetFn` may return `undefined` or a payload without
+      // `url`, and dropping the base64 in that case would leave the caller
+      // with neither the inline blob nor a fetchable URL.
+      if (saved?.url) {
+        actionResult.result = {
+          assetUrl: saved.url,
+          width: data.width,
+          height: data.height,
+        };
+      } else {
+        logger.warn(
+          'saveAsset returned no url; keeping base64 in screenshot result',
+          { workspaceId },
+        );
+      }
     } catch (err) {
       logger.warn('Failed to save screenshot as asset, keeping base64 in result', {
-        error: (err as Error).message,
+        error: err instanceof Error ? err.message : String(err),
       });
     }
   }
