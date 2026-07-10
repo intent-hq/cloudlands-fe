@@ -27,6 +27,7 @@ import {
   type JsonRpcNotification,
 } from './json-rpc-client';
 import { JsonRpcError } from './json-rpc-errors';
+import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
 
 const logger = new Logger('Backend-IPC');
 const BACKEND = IPC_CHANNELS.BACKEND;
@@ -73,6 +74,13 @@ export function getBackendClient(): JsonRpcClient {
   instance.on('error', (error: Error) =>
     logger.warn('Backend transport error', { error: error.message }),
   );
+  // FE-served reverse intents (PROTOCOL §5.14). `browser.exec` is dispatched
+  // from the daemon back to us and executed against the ported browser action
+  // pipeline. Screenshot assets are round-tripped through `note.saveAsset` via
+  // this same client so the wire payload stays small (GAP-2b).
+  registerBrowserExecReverseHandler(instance, {
+    saveAsset: (params) => instance.request<{ url?: string } | undefined>('note.saveAsset', params),
+  });
   client = instance;
   instance.start();
   return instance;
