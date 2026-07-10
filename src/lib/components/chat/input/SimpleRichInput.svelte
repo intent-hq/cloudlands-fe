@@ -171,9 +171,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
 
   // The Stop affordance must mirror the Thinking indicator: visible for the
   // entire turn the agent is responding, not just while text chunks are
-  // streaming. Composing the canonical responding/running signals here keeps
-  // Stop-button visibility in lockstep with `shouldShowPendingAssistantStatus`.
-  let showStopButton = $derived(isStreaming || isResponding || isRunning);
+  // streaming. `isRunning` intentionally NOT included: it stays true while a
+  // coordinator waits on delegated children after its own turn has ended
+  // (PROTOCOL §5.5 isWaitingForOtherAgents), and there is no turn to stop in
+  // that state — the "waiting on N agents" affordance lives elsewhere (IDLE-1).
+  let showStopButton = $derived(isStreaming || isResponding);
 
   $effect(() => {
     const justEnabled = previousDisabled && !disabled;

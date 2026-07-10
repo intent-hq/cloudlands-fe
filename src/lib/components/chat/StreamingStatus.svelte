@@ -230,9 +230,13 @@
   });
 
   // Should we show at all?
-  // Don't show thinking indicator when waiting for permission - the permission UI takes over
+  // Don't show thinking indicator when waiting for permission - the permission UI takes over.
+  // `isRunning` intentionally NOT included: it stays true while a coordinator waits on
+  // delegated children after its own turn has ended (PROTOCOL §5.5 isWaitingForOtherAgents),
+  // and the "waiting on N agents" affordance lives on separate surfaces — the streaming
+  // status must not conflate that idle-wait with an active turn (IDLE-1).
   let visible = $derived(
-    error || modelUnavailable || ((isStreaming || isProcessing || isRunning) && !hasPendingPermission),
+    error || modelUnavailable || ((isStreaming || isProcessing) && !hasPendingPermission),
   );
 
   // Whether we've received any streaming data — used to distinguish

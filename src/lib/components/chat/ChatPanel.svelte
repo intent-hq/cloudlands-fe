@@ -3112,7 +3112,9 @@
 
         <!-- Fallback: Show streaming/processing status when no messages and no pending message -->
         <!-- This covers the window where the backend starts processing before the user message echo arrives -->
-        {#if !pendingCondition && !messagesCondition && ($agentIsResponding$ || $agentSessionIsStreaming$ || $agentIsRunning$ || $chatError$ || $chatModelUnavailable$)}
+        <!-- `$agentIsRunning$` intentionally excluded (IDLE-1): it stays true while a coordinator waits on
+             delegated children after its own turn has ended, which is not a streaming state. -->
+        {#if !pendingCondition && !messagesCondition && ($agentIsResponding$ || $agentSessionIsStreaming$ || $chatError$ || $chatModelUnavailable$)}
           <div class="w-full">
             <div class="mb-4">
               <StreamingStatus

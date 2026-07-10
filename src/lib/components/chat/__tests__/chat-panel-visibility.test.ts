@@ -108,7 +108,11 @@ describe('chat panel visibility helpers', () => {
     ).toBe(false);
   });
 
-  it('shows pending assistant status when running but not streaming (waiting on sub-agents)', () => {
+  it('hides pending assistant status when only running (waiting on sub-agents), IDLE-1', () => {
+    // A coordinator whose own turn has ended but is still waiting on delegated
+    // children keeps `isRunning` true via `selectAgentIsRunning`
+    // (isWaitingForOtherAgents). That idle-wait must NOT render as a pending
+    // assistant turn — the streaming spinner and Stop button must clear.
     expect(
       shouldShowPendingAssistantStatus({
         isStreaming: false,
@@ -117,10 +121,10 @@ describe('chat panel visibility helpers', () => {
         error: null,
         modelUnavailable: null,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it('shows end-of-list status when running but not streaming on a completed assistant turn', () => {
+  it('hides end-of-list status when only running on a completed assistant turn, IDLE-1', () => {
     expect(
       shouldShowEndOfListStreamingStatus({
         isStreaming: false,
@@ -132,7 +136,7 @@ describe('chat panel visibility helpers', () => {
         lastTurnHasAssistantMessages: true,
         lastAssistantMessageIsStreaming: false,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('keeps end-of-list status hidden when genuinely idle (not running)', () => {

@@ -108,6 +108,24 @@ describe('StreamingStatus rendered UI', () => {
     expect(onRetryWithModel).toHaveBeenCalledWith('gpt5.5-fast');
   });
 
+  it('hides the Thinking spinner when only isRunning is true (waiting on sub-agents), IDLE-1', () => {
+    // A coordinator whose own turn has ended but is still waiting on delegated
+    // children keeps `isRunning` true via `selectAgentIsRunning`. That idle-wait
+    // must NOT render the Thinking spinner — the "waiting on N agents" affordance
+    // lives on separate sidebar/list surfaces.
+    const { container } = render(StreamingStatus, {
+      props: {
+        isStreaming: false,
+        isProcessing: false,
+        isRunning: true,
+        seed: 'agent-1',
+      },
+    });
+
+    expect(screen.queryByTestId('streaming-status-thinking')).toBeNull();
+    expect(container.firstElementChild).toBeNull();
+  });
+
   it('clears failed presentation when a new stream starts', async () => {
     const { rerender } = render(StreamingStatus, {
       props: {

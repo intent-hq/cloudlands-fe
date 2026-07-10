@@ -525,11 +525,14 @@ describe('SimpleRichInput Stop-button visibility', () => {
     expect(sendButton()).toBeNull();
   });
 
-  it('shows Stop when isRunning is true (coordinator waiting on sub-agents)', () => {
+  it('hides Stop when only isRunning is true (coordinator waiting on sub-agents), IDLE-1', () => {
+    // A coordinator whose own turn has ended but is still waiting on delegated
+    // children keeps `isRunning` true via `selectAgentIsRunning`. There is no
+    // turn to stop in that state — the Stop button must clear and Send returns.
     render(SimpleRichInput, { props: { ...baseProps(), isRunning: true } });
 
-    expect(stopButton()).not.toBeNull();
-    expect(sendButton()).toBeNull();
+    expect(stopButton()).toBeNull();
+    expect(sendButton()).not.toBeNull();
   });
 
   it('reverts to Send when all responding signals go false (agent:idle)', async () => {
