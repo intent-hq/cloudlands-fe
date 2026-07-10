@@ -795,6 +795,84 @@ describe("daemonEventsBridge (live stream wire contract — agent:stream:* → t
     expect(readStatusEvents()).toEqual([]);
   });
 
+  it("maps agent:stream:status (STAT-1 turn-startup family) to chatState/streamStatusReceived with the phase/message/level/timestamp verbatim; first chunk still clears it via the chunk reducer", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const promptAt = 1_700_000_000_000;
+    // `agent:stream:status` (PROTOCOL §6.5 / §7 pre-first-token family)
+    // arrives before any chunk with the daemon-authoritative phase/message
+    // (mirrors the reference `emitStatus('prompt', 'Sent prompt…')` shape).
+    handler(
+      notification("agent:stream:status", {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: "prompt",
+        message: "Sent prompt\u2026",
+        level: "info",
+        timestamp: promptAt,
+      }),
+    );
+
+    let events = readStatusEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      phase: "prompt",
+      message: "Sent prompt\u2026",
+      level: "info",
+      timestamp: promptAt,
+    });
+
+    // Subsequent phase (session-load with warn level, e.g. a resume path)
+    // appends — the bridge is a straight pass-through of the wire payload.
+    handler(
+      notification("agent:stream:status", {
+        agentId: AGENT,
+        workspaceId: WS,
+        phase: "session-load",
+        message: "Resuming session\u2026",
+        level: "warn",
+        timestamp: promptAt + 5,
+      }),
+    );
+    events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message, level: e.level }))).toEqual([
+      { phase: "prompt", message: "Sent prompt\u2026", level: "info" },
+      { phase: "session-load", message: "Resuming session\u2026", level: "warn" },
+    ]);
+
+    // First `agent:stream:chunk` appends the chunk reducer's "Streaming
+    // response…" entry after the startup hints — the bridge itself does NOT
+    // clear anything on the way in (mirrors the existing tool-call bridge
+    // path). The terminal reducer paths below own the clear.
+    handler(
+      notification("agent:stream:chunk", {
+        agentId: AGENT,
+        content: "Hi",
+        messageId: MESSAGE_ID,
+        blockIndex: 0,
+        blockId: `${MESSAGE_ID}:0`,
+        blockType: "text",
+        streamId: STREAM_ID,
+      }),
+    );
+    events = readStatusEvents();
+    expect(events.map((e) => ({ phase: e.phase, message: e.message }))).toEqual([
+      { phase: "prompt", message: "Sent prompt\u2026" },
+      { phase: "session-load", message: "Resuming session\u2026" },
+      { phase: "streaming", message: "Streaming response\u2026" },
+    ]);
+
+    // Terminal `agent:stream:end` clears the status hints (existing chunk
+    // reducer path via `dispatchStreamUpdate(..., "complete")`), including
+    // the pre-first-token startup hints — the bridge does not need to
+    // duplicate the clear.
+    handler(
+      notification("agent:stream:end", { agentId: AGENT, streamId: STREAM_ID }),
+    );
+    expect(readStatusEvents()).toEqual([]);
+  });
+
   it("tool started → completed short window: tool-call entry's duration ends at the completed event's timestamp", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;

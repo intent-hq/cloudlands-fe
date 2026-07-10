@@ -27,7 +27,12 @@
  *      auto-emits "Streaming response…" on the first text chunk after the tool
  *      (both dispatches carry `resetFirstChunk: true`), and the
  *      `'complete'` / `'error'` paths clear `statusEvents` on
- *      `agent:stream:end` / `agent:failed`.
+ *      `agent:stream:end` / `agent:failed`. The `agent:stream:status` wire
+ *      event (STAT-1 / PROTOCOL §7) — the pre-first-token turn-startup family
+ *      (`launch` / `init` / `session-create` / `session-load` / `prompt` →
+ *      "Sent prompt…") — flows through the same dispatch with
+ *      `resetFirstChunk: false` so the spinner shows the startup phase until
+ *      the first chunk / stream:end / failed clears it.
  *   4. `note:*` (workspace-scoped, §7) → `applyNoteFromEvent` in the
  *      notes-read-service, which dispatches `applyNoteCreated`/
  *      `applyNoteUpdated`/`applyNoteDeleted` on the workspace-notes slice so
@@ -451,6 +456,46 @@ function handleToolCallEvent(event: WorkspaceEvent, workspaceId: string): void {
       ),
     );
   }
+}
+
+/**
+ * `agent:stream:status` (PROTOCOL §6.5 / §7 pre-first-token hints) carries the
+ * self-sufficient `{ agentId, workspaceId, phase, message, level, timestamp }`
+ * payload the daemon emits while a turn is starting (`launch` / `init` /
+ * `session-create` / `session-load` / `prompt`). Map it directly to
+ * `streamStatusReceived` so the chat spinner surfaces the current phase —
+ * "Sent prompt…" and friends — before the first `agent:stream:chunk` arrives.
+ *
+ * `resetFirstChunk` is `false`: startup hints are cleared by the chunk /
+ * stream:end / failed reducer paths (see file header §3), not by the status
+ * event itself. Level/phase/message/timestamp round-trip verbatim so the shape
+ * matches the reference `StatusEventData` the ported StreamingStatus renders.
+ */
+function handleStreamStatusEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const agentId = data.agentId;
+  const phase = data.phase;
+  const message = data.message;
+  if (
+    typeof agentId !== "string" ||
+    agentId.length === 0 ||
+    typeof phase !== "string" ||
+    typeof message !== "string"
+  ) {
+    return;
+  }
+  const levelRaw = data.level;
+  const level: "info" | "warn" | "error" =
+    levelRaw === "warn" || levelRaw === "error" ? levelRaw : "info";
+  const timestamp = typeof data.timestamp === "number" ? data.timestamp : Date.now();
+  appStore.dispatch(
+    streamStatusReceived(
+      agentId,
+      { phase, message, level, timestamp },
+      false,
+    ),
+  );
 }
 
 function handleStreamEndEvent(event: WorkspaceEvent): void {
@@ -1072,6 +1117,10 @@ function handleNotification(method: string, params: unknown): void {
   }
   if (type === "agent:tool:call") {
     handleToolCallEvent(event, workspaceId);
+    return;
+  }
+  if (type === "agent:stream:status") {
+    handleStreamStatusEvent(event);
     return;
   }
   if (type === "agent:stream:end") {
