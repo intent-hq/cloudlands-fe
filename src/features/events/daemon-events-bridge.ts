@@ -123,6 +123,7 @@ import {
 import { applyNoteFromEvent } from "$features/notes/notes-read-service";
 import { applyCommentFromEvent } from "$features/comments/comments-read-service";
 import { ensureAgentSession } from "$features/agent/agent-read-service";
+import { refreshWorkspaceSubscriptionEntries } from "$features/agent/agent-subscription-read-service";
 import {
   permissionRequestReceived,
   removePermissionRequest,
@@ -154,6 +155,19 @@ import type { WorkspaceEvent } from "$features/events/types";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("DaemonEventsBridge");
+
+/**
+ * Agent-lifecycle events that change the daemon's completion-watch registry
+ * (AS-2/AS-4) — a child completing/failing/being deleted advances its parent's
+ * `after_all` group, and a create can add a new watched child. Each delivery
+ * refreshes the agent-subscription-ui entries for the event's workspace.
+ */
+const SUBSCRIPTION_REFRESH_EVENT_TYPES = new Set([
+  "agent:idle",
+  "agent:failed",
+  "agent:deleted",
+  "agent:created",
+]);
 
 /**
  * Per-agent in-flight stream accumulator. The BE assigns each block a
@@ -1011,6 +1025,14 @@ function handleNotification(method: string, params: unknown): void {
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
   // still listening on the legacy channels get the daemon event too.
   relayLegacyIpcEvent(type, event, workspaceId);
+
+  // Completion-watch lifecycle subset (side effect, never an early return):
+  // these events feed the daemon's AS-3/AS-4 fan-in, so refresh every tracked
+  // agent-subscription-ui entry via `agent.getSubscriptions` — completion
+  // counts tick live while a coordinator waits on `waitMode: after_all`.
+  if (SUBSCRIPTION_REFRESH_EVENT_TYPES.has(type)) {
+    refreshWorkspaceSubscriptionEntries(workspaceId);
+  }
 
   // Note domain events (§7 workspace-scoped) live-apply to the
   // workspace-notes slice so agent-side note writes (add_to_note etc.) show

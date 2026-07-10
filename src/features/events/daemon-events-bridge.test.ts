@@ -59,6 +59,19 @@ vi.mock("$features/agent/agent-read-service", () => ({
     next(a),
 }));
 
+// Fake the agent-subscription read service so the bridge's completion-watch
+// refresh routing (agent:idle/failed/deleted/created →
+// refreshWorkspaceSubscriptionEntries) is observable without real
+// `agent.getSubscriptions` fetches mutating the store.
+const { refreshWorkspaceSubscriptionEntriesSpy } = vi.hoisted(() => ({
+  refreshWorkspaceSubscriptionEntriesSpy: vi.fn(),
+}));
+vi.mock("$features/agent/agent-subscription-read-service", () => ({
+  refreshWorkspaceSubscriptionEntries: refreshWorkspaceSubscriptionEntriesSpy,
+  createAgentSubscriptionReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) =>
+    next(a),
+}));
+
 import { store as appStore } from "$store/renderer/store";
 import {
   bulkUpsertSessions,
@@ -2659,5 +2672,37 @@ describe("daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     expect(ws.prUrl).toBeUndefined();
     expect(ws.prStatus).toBeUndefined();
     expect(ws.activePullRequest).toBeNull();
+  });
+});
+
+describe("daemonEventsBridge (completion-watch refresh routing)", () => {
+  beforeEach(() => {
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    refreshWorkspaceSubscriptionEntriesSpy.mockClear();
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it.each(["agent:idle", "agent:failed", "agent:deleted", "agent:created"])(
+    "%s triggers refreshWorkspaceSubscriptionEntries for the event's workspace",
+    async (eventType) => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(notification(eventType, { agentId: AGENT }));
+
+      expect(refreshWorkspaceSubscriptionEntriesSpy).toHaveBeenCalledWith(WS);
+    },
+  );
+
+  it("non-completion agent events do not trigger a subscription refresh", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification("agent:renamed", { agentId: AGENT, name: "Renamed" }));
+    handler(notification("agent:status-changed", { agentId: AGENT, status: "responding" }));
+
+    expect(refreshWorkspaceSubscriptionEntriesSpy).not.toHaveBeenCalled();
   });
 });

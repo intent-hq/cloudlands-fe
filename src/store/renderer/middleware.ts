@@ -17,6 +17,7 @@ import { createStructuredCloneCheckerMiddleware } from "./middlewares/structured
 import { createStoreGuardMiddleware } from "../../store/utils/store-guard-middleware";
 import { createGitReadMiddleware } from "$features/git/git-read-service";
 import { createAgentReadMiddleware } from "$features/agent/agent-read-service";
+import { createAgentSubscriptionReadMiddleware } from "$features/agent/agent-subscription-read-service";
 import { createChatReadMiddleware } from "$features/agent/chat-read-service";
 import { createChatSendMiddleware } from "$features/agent/chat-send-service";
 import { createPermissionResponseMiddleware } from "$features/permission/permission-response-service";
@@ -96,6 +97,11 @@ function buildMiddleware(): StoreMiddleware[] {
     // Give the (post-saga) `ensureAgentSessionLoaded` action a real read handler
     // so a selected agent's session/conversation hydrates on demand again.
     createAgentReadMiddleware(),
+    // Give the (post-saga) `requestSubscriptionFetch` action a real read handler
+    // so the "Waiting for all N agents" row (AgentSubscriptions.svelte) populates
+    // from `agent.getSubscriptions` (PROTOCOL §5.5 extensions) and resets on
+    // `workspaceDeleted` (LEAK-1) instead of staying empty/stale.
+    createAgentSubscriptionReadMiddleware(),
     // Give the (post-saga) `loadFileContentRequested` action a real read handler
     // so file tabs and the diff viewer fetch content via `appClient.files.read`
     // and clear the loading skeleton (or surface an error) instead of hanging

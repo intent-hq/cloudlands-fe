@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => {
   const sentryMiddleware = createPassthroughMiddleware();
   const gitReadMiddleware = createPassthroughMiddleware();
   const agentReadMiddleware = createPassthroughMiddleware();
+  const agentSubscriptionReadMiddleware = createPassthroughMiddleware();
   const filesReadMiddleware = createPassthroughMiddleware();
   const chatReadMiddleware = createPassthroughMiddleware();
   const chatSendMiddleware = createPassthroughMiddleware();
@@ -58,6 +59,7 @@ const mocks = vi.hoisted(() => {
     createSentryBreadcrumbsMiddleware: vi.fn(() => sentryMiddleware),
     createGitReadMiddleware: vi.fn(() => gitReadMiddleware),
     createAgentReadMiddleware: vi.fn(() => agentReadMiddleware),
+    createAgentSubscriptionReadMiddleware: vi.fn(() => agentSubscriptionReadMiddleware),
     createFilesReadMiddleware: vi.fn(() => filesReadMiddleware),
     createChatReadMiddleware: vi.fn(() => chatReadMiddleware),
     createChatSendMiddleware: vi.fn(() => chatSendMiddleware),
@@ -97,6 +99,7 @@ const mocks = vi.hoisted(() => {
     sentryMiddleware,
     gitReadMiddleware,
     agentReadMiddleware,
+    agentSubscriptionReadMiddleware,
     filesReadMiddleware,
     chatReadMiddleware,
     chatSendMiddleware,
@@ -136,6 +139,9 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("$features/git/git-read-service", () => ({ createGitReadMiddleware: mocks.createGitReadMiddleware }));
 vi.mock("$features/agent/agent-read-service", () => ({ createAgentReadMiddleware: mocks.createAgentReadMiddleware }));
+vi.mock("$features/agent/agent-subscription-read-service", () => ({
+  createAgentSubscriptionReadMiddleware: mocks.createAgentSubscriptionReadMiddleware,
+}));
 vi.mock("$features/files/files-read-service", () => ({ createFilesReadMiddleware: mocks.createFilesReadMiddleware }));
 vi.mock("$features/agent/chat-read-service", () => ({ createChatReadMiddleware: mocks.createChatReadMiddleware }));
 vi.mock("$features/agent/chat-send-service", () => ({ createChatSendMiddleware: mocks.createChatSendMiddleware }));
@@ -283,6 +289,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
@@ -331,6 +338,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
@@ -379,6 +387,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
@@ -428,6 +437,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
@@ -494,6 +504,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
+      mocks.agentSubscriptionReadMiddleware,
       mocks.filesReadMiddleware,
       mocks.chatReadMiddleware,
       mocks.chatSendMiddleware,
