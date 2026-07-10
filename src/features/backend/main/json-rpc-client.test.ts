@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import type { Duplex } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { JsonRpcError, mapErrorCode } from "./json-rpc-errors";
-import { JsonRpcClient } from "./json-rpc-client";
+import { JsonRpcClient, ReverseRpcHandlerError } from "./json-rpc-client";
 
 /**
  * In-memory fake socket: captures outbound writes and lets tests inject inbound
@@ -197,6 +197,120 @@ describe("JsonRpcClient", () => {
     const expectation = expect(promise).rejects.toThrow();
     socket.emit("close");
     await expectation;
+    client.dispose();
+  });
+});
+
+describe("JsonRpcClient reverse requests (§5.14)", () => {
+  /** Await the microtask queue so async handler chains settle before we assert writes. */
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+  it("dispatches an inbound request (rev-* id + method) to the registered handler and writes the result", async () => {
+    const { client, socket } = makeClient();
+    const handler = vi.fn().mockResolvedValue({ ok: true });
+    client.registerMethod("browser.exec", handler);
+    client.start();
+    socket.open();
+
+    socket.receive(
+      `{"jsonrpc":"2.0","id":"rev-1","method":"browser.exec","params":{"actions":[{"action":"listTabs"}]}}\n`,
+    );
+    await flush();
+
+    expect(handler).toHaveBeenCalledWith({ actions: [{ action: "listTabs" }] });
+    expect(socket.writes).toHaveLength(1);
+    expect(JSON.parse(socket.writes[0])).toEqual({
+      jsonrpc: "2.0",
+      id: "rev-1",
+      result: { ok: true },
+    });
+    client.dispose();
+  });
+
+  it("returns METHOD_NOT_FOUND (-32601) for an inbound request with no registered handler", async () => {
+    const { client, socket } = makeClient();
+    client.start();
+    socket.open();
+
+    socket.receive(`{"jsonrpc":"2.0","id":"rev-1","method":"nope","params":{}}\n`);
+    await flush();
+
+    expect(socket.writes).toHaveLength(1);
+    expect(JSON.parse(socket.writes[0])).toEqual({
+      jsonrpc: "2.0",
+      id: "rev-1",
+      error: { code: -32601, message: "Method not found: nope" },
+    });
+    client.dispose();
+  });
+
+  it("returns INTERNAL_ERROR (-32603) when a handler throws a plain Error", async () => {
+    const { client, socket } = makeClient();
+    client.registerMethod("browser.exec", () => {
+      throw new Error("kaboom");
+    });
+    client.start();
+    socket.open();
+
+    socket.receive(`{"jsonrpc":"2.0","id":"rev-1","method":"browser.exec","params":{}}\n`);
+    await flush();
+
+    expect(JSON.parse(socket.writes[0])).toEqual({
+      jsonrpc: "2.0",
+      id: "rev-1",
+      error: { code: -32603, message: "kaboom" },
+    });
+    client.dispose();
+  });
+
+  it("honours ReverseRpcHandlerError code and data", async () => {
+    const { client, socket } = makeClient();
+    client.registerMethod("browser.exec", () => {
+      throw new ReverseRpcHandlerError(-32602, "bad params", { field: "actions" });
+    });
+    client.start();
+    socket.open();
+
+    socket.receive(`{"jsonrpc":"2.0","id":"rev-1","method":"browser.exec","params":{}}\n`);
+    await flush();
+
+    expect(JSON.parse(socket.writes[0])).toEqual({
+      jsonrpc: "2.0",
+      id: "rev-1",
+      error: { code: -32602, message: "bad params", data: { field: "actions" } },
+    });
+    client.dispose();
+  });
+
+  it("re-registration replaces the previous handler; disposer only tears down its own", async () => {
+    const { client, socket } = makeClient();
+    const first = vi.fn().mockResolvedValue("first");
+    const second = vi.fn().mockResolvedValue("second");
+    const disposeFirst = client.registerMethod("m", first);
+    client.registerMethod("m", second);
+    // Stale disposer must NOT unregister the newer handler.
+    disposeFirst();
+    client.start();
+    socket.open();
+
+    socket.receive(`{"jsonrpc":"2.0","id":"rev-1","method":"m","params":null}\n`);
+    await flush();
+
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(socket.writes[0]).result).toBe("second");
+    client.dispose();
+  });
+
+  it("does not interfere with normal outbound request/response correlation", async () => {
+    const { client, socket } = makeClient();
+    client.registerMethod("browser.exec", async () => ({ ok: true }));
+    client.start();
+    socket.open();
+
+    const promise = client.request("workspace.list");
+    socket.receive(`{"jsonrpc":"2.0","id":1,"result":{"workspaces":[]}}\n`);
+    await expect(promise).resolves.toEqual({ workspaces: [] });
     client.dispose();
   });
 });
