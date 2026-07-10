@@ -28,8 +28,6 @@
     isStreaming?: boolean;
     /** Whether processing (waiting for response) */
     isProcessing?: boolean;
-    /** Broader running signal (e.g. coordinator waiting on sub-agents) */
-    isRunning?: boolean;
     /** When the last streaming chunk was received (timestamp in ms) */
     lastChunkTime?: number | null;
     /** Whether we've received the first real chunk (distinct from lastChunkTime which is set on 'start') */
@@ -68,7 +66,6 @@
   let {
     isStreaming = false,
     isProcessing = false,
-    isRunning = false,
     lastChunkTime = null,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     receivedFirstChunk = false,
@@ -231,10 +228,6 @@
 
   // Should we show at all?
   // Don't show thinking indicator when waiting for permission - the permission UI takes over.
-  // `isRunning` intentionally NOT included: it stays true while a coordinator waits on
-  // delegated children after its own turn has ended (PROTOCOL §5.5 isWaitingForOtherAgents),
-  // and the "waiting on N agents" affordance lives on separate surfaces — the streaming
-  // status must not conflate that idle-wait with an active turn (IDLE-1).
   let visible = $derived(
     error || modelUnavailable || ((isStreaming || isProcessing) && !hasPendingPermission),
   );

@@ -108,43 +108,17 @@ describe('chat panel visibility helpers', () => {
     ).toBe(false);
   });
 
-  it('hides pending assistant status when only running (waiting on sub-agents), IDLE-1', () => {
+  it('keeps end-of-list status hidden when genuinely idle (IDLE-1)', () => {
     // A coordinator whose own turn has ended but is still waiting on delegated
-    // children keeps `isRunning` true via `selectAgentIsRunning`
-    // (isWaitingForOtherAgents). That idle-wait must NOT render as a pending
-    // assistant turn — the streaming spinner and Stop button must clear.
-    expect(
-      shouldShowPendingAssistantStatus({
-        isStreaming: false,
-        isProcessing: false,
-        isRunning: true,
-        error: null,
-        modelUnavailable: null,
-      }),
-    ).toBe(false);
-  });
-
-  it('hides end-of-list status when only running on a completed assistant turn, IDLE-1', () => {
+    // children clears `isStreaming` / `isProcessing` in the agent-session slice
+    // (PROTOCOL §5.5 isWaitingForOtherAgents is a separate BE-authoritative flag,
+    // no longer consulted by the pending-status gates). The end-of-list status
+    // must not render for that idle-wait — the "waiting on N agents" affordance
+    // lives on separate sidebar/list surfaces.
     expect(
       shouldShowEndOfListStreamingStatus({
         isStreaming: false,
         isProcessing: false,
-        isRunning: true,
-        error: null,
-        modelUnavailable: null,
-        hasMessages: true,
-        lastTurnHasAssistantMessages: true,
-        lastAssistantMessageIsStreaming: false,
-      }),
-    ).toBe(false);
-  });
-
-  it('keeps end-of-list status hidden when genuinely idle (not running)', () => {
-    expect(
-      shouldShowEndOfListStreamingStatus({
-        isStreaming: false,
-        isProcessing: false,
-        isRunning: false,
         error: null,
         modelUnavailable: null,
         hasMessages: true,

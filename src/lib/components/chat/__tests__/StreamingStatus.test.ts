@@ -108,16 +108,17 @@ describe('StreamingStatus rendered UI', () => {
     expect(onRetryWithModel).toHaveBeenCalledWith('gpt5.5-fast');
   });
 
-  it('hides the Thinking spinner when only isRunning is true (waiting on sub-agents), IDLE-1', () => {
+  it('stays hidden when nothing is streaming/processing (IDLE-1: coordinator waiting on children)', () => {
     // A coordinator whose own turn has ended but is still waiting on delegated
-    // children keeps `isRunning` true via `selectAgentIsRunning`. That idle-wait
-    // must NOT render the Thinking spinner — the "waiting on N agents" affordance
-    // lives on separate sidebar/list surfaces.
+    // children clears `isStreaming` / `isProcessing` in the agent-session slice
+    // (PROTOCOL §5.5 isWaitingForOtherAgents is a separate BE-authoritative flag,
+    // no longer plumbed into this component). The Thinking spinner must not
+    // render for that idle-wait — the "waiting on N agents" affordance lives on
+    // separate sidebar/list surfaces.
     const { container } = render(StreamingStatus, {
       props: {
         isStreaming: false,
         isProcessing: false,
-        isRunning: true,
         seed: 'agent-1',
       },
     });

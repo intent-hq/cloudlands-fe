@@ -7,18 +7,7 @@ type ChatResponseFlags = {
   modelUnavailable: unknown | null;
 };
 
-type PendingAssistantStatusState = ChatResponseFlags & {
-  /**
-   * Broader canonical running signal (`selectAgentIsRunning`). Accepted for
-   * backwards-compat with call sites; NOT consulted by the pending-status gates.
-   * `selectAgentIsRunning` stays true while a coordinator waits on delegated
-   * children after its own turn has ended (PROTOCOL §5.5
-   * `isWaitingForOtherAgents`), and the pending-assistant status must not
-   * conflate that idle-wait with an active turn (IDLE-1). The waiting affordance
-   * lives on separate sidebar/list surfaces.
-   */
-  isRunning?: boolean;
-};
+type PendingAssistantStatusState = ChatResponseFlags;
 
 type EndOfListStreamingStatusState = PendingAssistantStatusState & {
   hasMessages: boolean;
@@ -53,10 +42,11 @@ export function isSessionActivelyResponding(session: AgentSession | null): boole
 /**
  * Show the status row at the end of a user turn while waiting for the first
  * assistant message. `isStreaming` is included for backend reconnects that
- * restore only the active stream flag before chunks arrive. `isRunning` is
- * intentionally NOT consulted (see `PendingAssistantStatusState.isRunning`):
- * a coordinator idle-wait on delegated children must not render as a pending
- * assistant turn (IDLE-1).
+ * restore only the active stream flag before chunks arrive. The broader
+ * `selectAgentIsRunning` signal is intentionally NOT consulted: a coordinator
+ * idle-wait on delegated children (PROTOCOL §5.5 `isWaitingForOtherAgents`)
+ * must not render as a pending assistant turn (IDLE-1). The waiting affordance
+ * lives on separate sidebar/list surfaces.
  */
 export function shouldShowPendingAssistantStatus(state: PendingAssistantStatusState): boolean {
   return Boolean(
