@@ -788,6 +788,11 @@ export class WorkspaceService {
    * renderer broadcast — the previous local `spawn('git', 'clone', …)` +
    * stderr regex parser is retired. Rejects on RPC/stream failure with no
    * silent local fallback.
+   *
+   * Turn-scoped subscription (RESUB-1): the `events.subscribe` here lives for
+   * the duration of a single clone RPC. If the daemon restarts mid-clone the
+   * in-flight `git.clone` request rejects (the socket drops), the promise
+   * cleans up, and the caller retries — no replay logic needed here.
    */
   private async cloneWithProgress(
     url: string,

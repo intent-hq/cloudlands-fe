@@ -24,6 +24,7 @@ vi.mock("$lib/client/live/backend-transport", () => ({
   backendSubscribe: vi.fn(async () => ({})),
   backendUnsubscribe: vi.fn(async () => {}),
   onBackendNotification: vi.fn(() => () => {}),
+  onBackendReconnected: vi.fn(() => () => {}),
   detectLiveStateCapability: vi.fn(async () => false),
   isBackendAvailable: () => true,
   BackendError: class BackendError extends Error {},

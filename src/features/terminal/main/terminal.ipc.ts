@@ -41,7 +41,7 @@ import {
   terminalDisposed,
   terminalCreated,
 } from '../../../store/main/slices/terminal-events/terminal-events-slice';
-import { getBackendClient } from '../../backend/main/backend.ipc';
+import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
 import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
 
 const logger = new Logger('Terminal-IPC');
@@ -199,6 +199,15 @@ class DaemonTerminalRegistry {
   private byDaemonId = new Map<string, string>();
   private subscriptionId: string | undefined;
   private notificationListener: ((n: JsonRpcNotification) => void) | undefined;
+  /**
+   * Sticky reconnect listener, installed on first `ensureSubscription()` so we
+   * never register more than one hook against `getBackendClient()`. On daemon
+   * restart the in-memory subscription registry is dropped; we replay
+   * `events.subscribe(['terminal:data', 'terminal:exit'])` on the same client
+   * (the notification listener persists across reconnects) so live output /
+   * exit continues to flow (RESUB-1).
+   */
+  private reconnectDisposer: (() => void) | undefined;
 
   getTerminal(id: string): DaemonTerminal | undefined {
     return this.terminals.get(id);
@@ -296,6 +305,23 @@ class DaemonTerminalRegistry {
     };
     this.notificationListener = listener;
     client.on('notification', listener);
+    if (!this.reconnectDisposer) {
+      this.reconnectDisposer = onBackendReconnected(() => {
+        // The notification listener persists across reconnects (same singleton
+        // client). Drop the stale id first — it belonged to the previous
+        // connection and would never match a fresh notification's
+        // `subscriptionId` tag — then re-issue subscribe. Do NOT call
+        // `ensureSubscription()` again; the notification-listener guard would
+        // either skip it or double-register the listener depending on state.
+        this.subscriptionId = undefined;
+        if (this.terminals.size === 0) return;
+        void this.doSubscribe(getBackendClient());
+      });
+    }
+    await this.doSubscribe(client);
+  }
+
+  private async doSubscribe(client: ReturnType<typeof getBackendClient>): Promise<void> {
     try {
       const result = await client.request<{ subscriptionId?: string }>('events.subscribe', {
         eventTypes: ['terminal:data', 'terminal:exit'],

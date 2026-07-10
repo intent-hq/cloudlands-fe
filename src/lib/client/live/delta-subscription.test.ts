@@ -24,6 +24,9 @@ vi.mock("./backend-transport", () => ({
       notifyHandler = null;
     };
   }),
+  // RESUB-1: the delta subscription installs a reconnect listener; tests
+  // here do not exercise reconnect so the mock is a no-op disposer.
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 import {

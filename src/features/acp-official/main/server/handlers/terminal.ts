@@ -11,7 +11,7 @@
 import { randomUUID } from 'crypto';
 import type { TerminalExitStatus } from '../../../types';
 import { Logger } from '../../../../../shared/logger';
-import { getBackendClient } from '../../../../backend/main/backend.ipc';
+import { getBackendClient, onBackendReconnected } from '../../../../backend/main/backend.ipc';
 import type { JsonRpcNotification } from '../../../../backend/main/json-rpc-client';
 
 const logger = new Logger('ACPTerminalHandler');
@@ -111,6 +111,15 @@ export class TerminalHandler {
   private byDaemonId = new Map<string, string>();
   private subscriptionId?: string;
   private notificationListener?: (n: JsonRpcNotification) => void;
+  /**
+   * Sticky reconnect listener, installed on first `ensureSubscription()` so we
+   * never register more than one hook against `getBackendClient()`. On daemon
+   * restart the in-memory subscription registry is dropped; we replay the
+   * `events.subscribe(['terminal:data', 'terminal:exit'])` call so ACP
+   * terminals keep streaming output / exit-status after the reconnect
+   * (RESUB-1). Cleared on `dropSubscription()` (handler dispose).
+   */
+  private reconnectDisposer?: () => void;
 
   constructor(
     private workspacePath: string,
@@ -340,7 +349,21 @@ export class TerminalHandler {
     };
     this.notificationListener = listener;
     client.on('notification', listener);
+    if (!this.reconnectDisposer) {
+      this.reconnectDisposer = onBackendReconnected(() => {
+        // Notification listener persists on the same singleton client across
+        // reconnects — only re-issue the subscribe. Drop the stale id first
+        // so the notification-scope gate does not accept a foreign
+        // subscription's copies that happen to share the old id (RESUB-1).
+        this.subscriptionId = undefined;
+        if (this.terminals.size === 0) return;
+        void this.doSubscribe(getBackendClient());
+      });
+    }
+    await this.doSubscribe(client);
+  }
 
+  private async doSubscribe(client: ReturnType<typeof getBackendClient>): Promise<void> {
     try {
       const result = await client.request<{ subscriptionId?: string }>('events.subscribe', {
         eventTypes: ['terminal:data', 'terminal:exit'],
@@ -359,6 +382,14 @@ export class TerminalHandler {
     if (this.notificationListener) {
       client.off('notification', this.notificationListener);
       this.notificationListener = undefined;
+    }
+    if (this.reconnectDisposer) {
+      try {
+        this.reconnectDisposer();
+      } catch {
+        // Best-effort; the client may already be disposed.
+      }
+      this.reconnectDisposer = undefined;
     }
     if (this.subscriptionId) {
       const id = this.subscriptionId;

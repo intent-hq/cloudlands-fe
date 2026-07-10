@@ -12,6 +12,7 @@ vi.mock("$lib/client/live/backend-transport", () => ({
   backendSubscribe: () => Promise.resolve({ subscriptionId: "sub-model-1" }),
   backendUnsubscribe: () => Promise.resolve(),
   onBackendNotification: () => () => {},
+  onBackendReconnected: () => () => {},
 }));
 
 import { store as appStore } from "$store/renderer/store";

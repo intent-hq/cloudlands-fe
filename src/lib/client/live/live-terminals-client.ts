@@ -27,6 +27,7 @@ import {
   backendSubscribe,
   backendUnsubscribe,
   onBackendNotification,
+  onBackendReconnected,
 } from "./backend-transport";
 import { runMutation } from "./live-support";
 
@@ -206,23 +207,35 @@ export class LiveTerminalsClient implements TerminalsClient {
       }
     });
 
-    backendSubscribe<{ subscriptionId?: string }>({
-      eventTypes: ["terminal:data", "terminal:exit", "terminal:cwd", "terminal:title"],
-    })
-      .then((result) => {
-        subscriptionId = result?.subscriptionId;
-        if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
+    const doSubscribe = () =>
+      backendSubscribe<{ subscriptionId?: string }>({
+        eventTypes: ["terminal:data", "terminal:exit", "terminal:cwd", "terminal:title"],
       })
-      .catch(() => {
-        // If the daemon subscribe fails we leave `subscriptionId` unset; the
-        // gate above then drops every notification (we have no id to match on),
-        // which matches reality: without a live subscription the daemon won't
-        // route terminal events to this connection in the first place.
-      });
+        .then((result) => {
+          subscriptionId = result?.subscriptionId;
+          if (disposed && subscriptionId) void backendUnsubscribe(subscriptionId);
+        })
+        .catch(() => {
+          // If the daemon subscribe fails we leave `subscriptionId` unset; the
+          // gate above then drops every notification (we have no id to match on),
+          // which matches reality: without a live subscription the daemon won't
+          // route terminal events to this connection in the first place.
+        });
+
+    doSubscribe();
+
+    // On reconnect the daemon dropped its subscription registry; re-subscribe
+    // on the same handler so this terminal's events keep flowing. The scope
+    // gate above rekeys on the fresh id (RESUB-1).
+    const offReconnect = onBackendReconnected(() => {
+      subscriptionId = undefined;
+      void doSubscribe();
+    });
 
     return () => {
       disposed = true;
       off();
+      offReconnect();
       if (subscriptionId) void backendUnsubscribe(subscriptionId);
     };
   }

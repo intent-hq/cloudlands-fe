@@ -55,7 +55,10 @@ const DEFAULT_MAX_RECONNECT_MS = 30_000;
 
 /**
  * Events: `notification` (JsonRpcNotification), `status` (ConnectionStatus),
- * `error` (Error), `heartbeat` (void).
+ * `reconnected` (void — fires when a successful connect follows an earlier
+ * connected state so consumers can replay `events.subscribe` calls and
+ * refresh coarse state after a daemon restart), `error` (Error),
+ * `heartbeat` (void).
  */
 export class JsonRpcClient extends EventEmitter {
   private readonly config: BackendConnectionConfig;
@@ -80,6 +83,8 @@ export class JsonRpcClient extends EventEmitter {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private connectWaiters: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
   private readonly pending = new Map<number, PendingRequest>();
+  /** Sticky flag so `reconnected` only fires on the 2nd (or later) successful connect. */
+  private hasBeenConnected = false;
 
   constructor(options: JsonRpcClientOptions = {}) {
     super();
@@ -183,10 +188,19 @@ export class JsonRpcClient extends EventEmitter {
 
   private onConnected(): void {
     this.currentReconnectDelay = this.reconnectDelayMs;
+    const wasReconnect = this.hasBeenConnected;
+    this.hasBeenConnected = true;
     this.setStatus('connected');
     this.flushWaiters();
     this.startHeartbeat();
-    logger.info('Backend connected', { target: describeBackendConfig(this.config) });
+    logger.info('Backend connected', {
+      target: describeBackendConfig(this.config),
+      reconnected: wasReconnect,
+    });
+    // Emit AFTER `status` so consumers observing `status → connected` see the
+    // reconnect marker as a follow-up signal. Consumers replay subscriptions
+    // and refresh coarse state in this handler; see RESUB-1.
+    if (wasReconnect) this.emit('reconnected');
   }
 
   private onConnectionFailure(error: Error): void {
