@@ -28,8 +28,6 @@
     isStreaming?: boolean;
     /** Whether processing (waiting for response) */
     isProcessing?: boolean;
-    /** Broader running signal (e.g. coordinator waiting on sub-agents) */
-    isRunning?: boolean;
     /** When the last streaming chunk was received (timestamp in ms) */
     lastChunkTime?: number | null;
     /** Whether we've received the first real chunk (distinct from lastChunkTime which is set on 'start') */
@@ -68,7 +66,6 @@
   let {
     isStreaming = false,
     isProcessing = false,
-    isRunning = false,
     lastChunkTime = null,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     receivedFirstChunk = false,
@@ -230,9 +227,9 @@
   });
 
   // Should we show at all?
-  // Don't show thinking indicator when waiting for permission - the permission UI takes over
+  // Don't show thinking indicator when waiting for permission - the permission UI takes over.
   let visible = $derived(
-    error || modelUnavailable || ((isStreaming || isProcessing || isRunning) && !hasPendingPermission),
+    error || modelUnavailable || ((isStreaming || isProcessing) && !hasPendingPermission),
   );
 
   // Whether we've received any streaming data — used to distinguish

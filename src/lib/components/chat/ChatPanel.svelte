@@ -1376,7 +1376,6 @@
     shouldShowEndOfListStreamingStatus({
       isStreaming: $agentSessionIsStreaming$,
       isProcessing: $agentIsResponding$,
-      isRunning: $agentIsRunning$,
       error: $chatError$,
       modelUnavailable: $chatModelUnavailable$,
       hasMessages: $agentMessages$.length > 0,
@@ -2957,7 +2956,6 @@
                       <StreamingStatus
                         isStreaming={$agentSessionIsStreaming$}
                         isProcessing={$agentIsResponding$}
-                        isRunning={$agentIsRunning$}
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -2982,7 +2980,6 @@
                     <StreamingStatus
                       isStreaming={$agentSessionIsStreaming$}
                       isProcessing={$agentIsResponding$}
-                      isRunning={$agentIsRunning$}
                       lastChunkTime={$chatLastChunkTime$}
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3063,7 +3060,6 @@
                       <StreamingStatus
                         isStreaming={$agentSessionIsStreaming$}
                         isProcessing={$agentIsResponding$}
-                        isRunning={$agentIsRunning$}
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3088,7 +3084,6 @@
                     <StreamingStatus
                       isStreaming={$agentSessionIsStreaming$}
                       isProcessing={$agentIsResponding$}
-                      isRunning={$agentIsRunning$}
                       lastChunkTime={$chatLastChunkTime$}
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3112,13 +3107,12 @@
 
         <!-- Fallback: Show streaming/processing status when no messages and no pending message -->
         <!-- This covers the window where the backend starts processing before the user message echo arrives -->
-        {#if !pendingCondition && !messagesCondition && ($agentIsResponding$ || $agentSessionIsStreaming$ || $agentIsRunning$ || $chatError$ || $chatModelUnavailable$)}
+        {#if !pendingCondition && !messagesCondition && ($agentIsResponding$ || $agentSessionIsStreaming$ || $chatError$ || $chatModelUnavailable$)}
           <div class="w-full">
             <div class="mb-4">
               <StreamingStatus
                 isStreaming={$agentSessionIsStreaming$}
                 isProcessing={$agentIsResponding$}
-                isRunning={$agentIsRunning$}
                 lastChunkTime={$chatLastChunkTime$}
                 receivedFirstChunk={$chatReceivedFirstChunk$}
                 streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3308,12 +3302,11 @@
                       {/if}
 
                       <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
-                      {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, isRunning: $agentIsRunning$, error: $chatError$, modelUnavailable: $chatModelUnavailable$ }, )}
+                      {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: $chatError$, modelUnavailable: $chatModelUnavailable$ }, )}
                         <div class="mb-8">
                           <StreamingStatus
                             isStreaming={$agentSessionIsStreaming$}
                             isProcessing={$agentIsResponding$}
-                            isRunning={$agentIsRunning$}
                             lastChunkTime={$chatLastChunkTime$}
                             receivedFirstChunk={$chatReceivedFirstChunk$}
                             streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3371,7 +3364,6 @@
                             <StreamingStatus
                               isStreaming={$agentSessionIsStreaming$}
                               isProcessing={$agentIsResponding$}
-                              isRunning={$agentIsRunning$}
                               lastChunkTime={$chatLastChunkTime$}
                               receivedFirstChunk={$chatReceivedFirstChunk$}
                               streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3419,7 +3411,6 @@
                 <StreamingStatus
                   isStreaming={$agentSessionIsStreaming$}
                   isProcessing={$agentIsResponding$}
-                  isRunning={$agentIsRunning$}
                   lastChunkTime={$chatLastChunkTime$}
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
@@ -3566,7 +3557,6 @@
       disabled={!workspace || !$agentSession$}
       isStreaming={$agentSessionIsStreaming$}
       isResponding={$agentIsResponding$}
-      isRunning={$agentIsRunning$}
       {workspace}
       currentContext={currentMainPanelContext}
       {agentId}

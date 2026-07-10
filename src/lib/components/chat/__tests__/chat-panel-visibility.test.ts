@@ -108,39 +108,17 @@ describe('chat panel visibility helpers', () => {
     ).toBe(false);
   });
 
-  it('shows pending assistant status when running but not streaming (waiting on sub-agents)', () => {
-    expect(
-      shouldShowPendingAssistantStatus({
-        isStreaming: false,
-        isProcessing: false,
-        isRunning: true,
-        error: null,
-        modelUnavailable: null,
-      }),
-    ).toBe(true);
-  });
-
-  it('shows end-of-list status when running but not streaming on a completed assistant turn', () => {
+  it('keeps end-of-list status hidden when genuinely idle (IDLE-1)', () => {
+    // A coordinator whose own turn has ended but is still waiting on delegated
+    // children clears `isStreaming` / `isProcessing` in the agent-session slice
+    // (PROTOCOL §5.5 isWaitingForOtherAgents is a separate BE-authoritative flag,
+    // no longer consulted by the pending-status gates). The end-of-list status
+    // must not render for that idle-wait — the "waiting on N agents" affordance
+    // lives on separate sidebar/list surfaces.
     expect(
       shouldShowEndOfListStreamingStatus({
         isStreaming: false,
         isProcessing: false,
-        isRunning: true,
-        error: null,
-        modelUnavailable: null,
-        hasMessages: true,
-        lastTurnHasAssistantMessages: true,
-        lastAssistantMessageIsStreaming: false,
-      }),
-    ).toBe(true);
-  });
-
-  it('keeps end-of-list status hidden when genuinely idle (not running)', () => {
-    expect(
-      shouldShowEndOfListStreamingStatus({
-        isStreaming: false,
-        isProcessing: false,
-        isRunning: false,
         error: null,
         modelUnavailable: null,
         hasMessages: true,

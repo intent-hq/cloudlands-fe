@@ -525,16 +525,21 @@ describe('SimpleRichInput Stop-button visibility', () => {
     expect(sendButton()).toBeNull();
   });
 
-  it('shows Stop when isRunning is true (coordinator waiting on sub-agents)', () => {
-    render(SimpleRichInput, { props: { ...baseProps(), isRunning: true } });
+  it('shows Send (not Stop) when only the broader running signal would be true, IDLE-1', () => {
+    // A coordinator whose own turn has ended but is still waiting on delegated
+    // children clears `isStreaming` / `isResponding` in the agent-session slice
+    // (PROTOCOL §5.5 isWaitingForOtherAgents is a separate BE-authoritative flag,
+    // no longer plumbed into this component). There is no turn to stop in that
+    // state — Send must be the visible affordance.
+    render(SimpleRichInput, { props: { ...baseProps() } });
 
-    expect(stopButton()).not.toBeNull();
-    expect(sendButton()).toBeNull();
+    expect(stopButton()).toBeNull();
+    expect(sendButton()).not.toBeNull();
   });
 
   it('reverts to Send when all responding signals go false (agent:idle)', async () => {
     const { rerender } = render(SimpleRichInput, {
-      props: { ...baseProps(), isResponding: true, isStreaming: true, isRunning: true },
+      props: { ...baseProps(), isResponding: true, isStreaming: true },
     });
     expect(stopButton()).not.toBeNull();
 
@@ -542,7 +547,6 @@ describe('SimpleRichInput Stop-button visibility', () => {
       ...baseProps(),
       isResponding: false,
       isStreaming: false,
-      isRunning: false,
     });
 
     await waitFor(() => {

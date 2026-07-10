@@ -7,14 +7,7 @@ type ChatResponseFlags = {
   modelUnavailable: unknown | null;
 };
 
-type PendingAssistantStatusState = ChatResponseFlags & {
-  /**
-   * Broader canonical running signal (`selectAgentIsRunning`). Covers states the
-   * narrow streaming/processing flags miss — notably a coordinator paused while
-   * waiting on child/peer agents.
-   */
-  isRunning?: boolean;
-};
+type PendingAssistantStatusState = ChatResponseFlags;
 
 type EndOfListStreamingStatusState = PendingAssistantStatusState & {
   hasMessages: boolean;
@@ -49,15 +42,16 @@ export function isSessionActivelyResponding(session: AgentSession | null): boole
 /**
  * Show the status row at the end of a user turn while waiting for the first
  * assistant message. `isStreaming` is included for backend reconnects that
- * restore only the active stream flag before chunks arrive. `isRunning` covers
- * the broader running state (e.g. waiting on sub-agents) where the narrower
- * streaming/processing flags are false but a result is still pending.
+ * restore only the active stream flag before chunks arrive. The broader
+ * `selectAgentIsRunning` signal is intentionally NOT consulted: a coordinator
+ * idle-wait on delegated children (PROTOCOL §5.5 `isWaitingForOtherAgents`)
+ * must not render as a pending assistant turn (IDLE-1). The waiting affordance
+ * lives on separate sidebar/list surfaces.
  */
 export function shouldShowPendingAssistantStatus(state: PendingAssistantStatusState): boolean {
   return Boolean(
     state.isStreaming ||
       state.isProcessing ||
-      state.isRunning ||
       state.error ||
       state.modelUnavailable,
   );

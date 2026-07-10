@@ -74,13 +74,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
      * Drives the Stop-button visibility so it matches the Thinking indicator.
      */
     isResponding?: boolean;
-    /**
-     * Canonical "agent is running" signal — true for the broader running state
-     * including coordinators paused waiting on child/peer agents. Composed with
-     * `isStreaming` / `isResponding` to keep the Stop button visible for the
-     * full turn, mirroring the Thinking indicator's gate.
-     */
-    isRunning?: boolean;
     contextItems?: ContextItem[];
     currentContext?: MainPanelContext | null;
     editorSelection?: string | null;
@@ -127,7 +120,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     workspace,
     isStreaming = false,
     isResponding = false,
-    isRunning = false,
     contextItems = $bindable([]),
 
     currentContext: _currentContext, // Now using multi-panel-context Redux slice instead
@@ -169,11 +161,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   // Derived state: whether there's content to send (text, context items, or inline images)
   let canSend = $derived(value.trim() || contextItems.length > 0 || hasInlineImages);
 
-  // The Stop affordance must mirror the Thinking indicator: visible for the
-  // entire turn the agent is responding, not just while text chunks are
-  // streaming. Composing the canonical responding/running signals here keeps
-  // Stop-button visibility in lockstep with `shouldShowPendingAssistantStatus`.
-  let showStopButton = $derived(isStreaming || isResponding || isRunning);
+  // The Stop affordance mirrors the Thinking indicator: visible for the entire
+  // turn the agent is responding, not just while text chunks are streaming.
+  // The broader "coordinator waiting on delegated children" state (PROTOCOL §5.5
+  // isWaitingForOtherAgents) is intentionally NOT a Stop condition — there is
+  // no turn to stop while a parent is idle-waiting, and that affordance lives
+  // on sidebar/list surfaces (IDLE-1).
+  let showStopButton = $derived(isStreaming || isResponding);
 
   $effect(() => {
     const justEnabled = previousDisabled && !disabled;
