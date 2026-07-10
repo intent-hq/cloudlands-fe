@@ -49,6 +49,7 @@ const mocks = vi.hoisted(() => {
   const lifecycleIpcReadMiddleware = createPassthroughMiddleware();
   const uiLayoutPersistenceMiddleware = createPassthroughMiddleware();
   const unreadTrackingPersistenceMiddleware = createPassthroughMiddleware();
+  const tabStatePersistenceMiddleware = createPassthroughMiddleware();
   const loggerMiddleware = createPassthroughMiddleware();
   const refCheckMiddleware = createPassthroughMiddleware();
   const structuredCloneMiddleware = createPassthroughMiddleware();
@@ -91,6 +92,7 @@ const mocks = vi.hoisted(() => {
     createLifecycleIpcReadMiddleware: vi.fn(() => lifecycleIpcReadMiddleware),
     createUiLayoutPersistenceMiddleware: vi.fn(() => uiLayoutPersistenceMiddleware),
     createUnreadTrackingPersistenceMiddleware: vi.fn(() => unreadTrackingPersistenceMiddleware),
+    createTabStatePersistenceMiddleware: vi.fn(() => tabStatePersistenceMiddleware),
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
     createStructuredCloneCheckerMiddleware: vi.fn(() => structuredCloneMiddleware),
@@ -131,6 +133,7 @@ const mocks = vi.hoisted(() => {
     lifecycleIpcReadMiddleware,
     uiLayoutPersistenceMiddleware,
     unreadTrackingPersistenceMiddleware,
+    tabStatePersistenceMiddleware,
     loggerMiddleware,
     structuredCloneMiddleware,
     storeGuardMiddleware,
@@ -230,6 +233,9 @@ vi.mock("./middlewares/ui-layout-persistence-service", () => ({
 vi.mock("./middlewares/unread-tracking-persistence-service", () => ({
   createUnreadTrackingPersistenceMiddleware: mocks.createUnreadTrackingPersistenceMiddleware,
 }));
+vi.mock("./middlewares/tab-state-persistence-service", () => ({
+  createTabStatePersistenceMiddleware: mocks.createTabStatePersistenceMiddleware,
+}));
 vi.mock("./middlewares/batch", () => ({ createBatchingMiddleware: mocks.createBatchingMiddleware }));
 vi.mock("./middlewares/logger", () => ({ createLoggerMiddleware: mocks.createLoggerMiddleware }));
 vi.mock("./middlewares/sentry-breadcrumbs", () => ({
@@ -321,6 +327,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.directoryPickerReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
+      mocks.tabStatePersistenceMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
     ]);
@@ -370,6 +377,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.directoryPickerReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
+      mocks.tabStatePersistenceMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
     ]);
@@ -419,6 +427,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.directoryPickerReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
+      mocks.tabStatePersistenceMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
     ]);
@@ -469,6 +478,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.directoryPickerReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
+      mocks.tabStatePersistenceMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
   });
@@ -536,6 +546,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.directoryPickerReadMiddleware,
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
+      mocks.tabStatePersistenceMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
   });
