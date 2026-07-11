@@ -40,7 +40,7 @@
   let filterLoaded = $state(false);
 
   // Paste-API-key connect flow (PROTOCOL §5.28 — no OAuth; the key is stored
-  // via the daemon keyring path and the connection re-probed).
+  // via the daemon secrets-file path and the connection re-probed).
   let showKeyInput = $state(false);
   let apiKeyDraft = $state('');
 
@@ -183,8 +183,8 @@
         </button>
       </div>
       <p class="text-xs text-subtle">
-        Paste a Linear personal API key. It is stored in the daemon's OS keychain — never in
-        plaintext config.
+        Paste a Linear personal API key. It is stored by the daemon in a permission-restricted
+        secrets file — never in plaintext config or logs.
       </p>
     </div>
   {/if}

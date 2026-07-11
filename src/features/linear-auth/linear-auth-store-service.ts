@@ -2,19 +2,20 @@
  * Linear auth store-service — daemon-backed connect/disconnect (PROTOCOL §5.28).
  *
  * §5.28 has **no** `linear.connect` / `linear.revoke` wire method by design:
- * auth is a personal API key the daemon resolves from its OS keyring (keychain
- * service `intentd`, account `linear.token`) or `LINEAR_API_KEY`. Connect is
- * therefore a paste-API-key flow: the key is stored through the daemon settings
- * seam under the `linear.token` path (secret settings persist to the keyring,
- * §5.12) and the connection is re-probed via `linear.authStatus` (bridged by
+ * auth is a personal API key the daemon resolves from its file-backed secrets
+ * store (`intent_core::FileSecretStore`, `~/intent/secrets.json`, account
+ * `linear.token`) or `LINEAR_API_KEY`. Connect is therefore a paste-API-key
+ * flow: the key is stored through the daemon settings seam under the
+ * `linear.token` path (secret settings persist to the secrets file, §5.12) and
+ * the connection is re-probed via `linear.authStatus` (bridged by
  * `linearAuthClient.getAuthState`). Disconnect resets `linear.token` (deletes
- * the keyring entry) and re-probes — the env key may still authenticate, so the
- * probe result, not an assumption, drives the UI.
+ * the secrets-file entry) and re-probes — the env key may still authenticate,
+ * so the probe result, not an assumption, drives the UI.
  *
  * KNOWN BE GAP (recorded): the daemon settings catalog does not define the
  * `linear.token` path yet, so a live-daemon connect surfaces the daemon's
- * "unknown setting" error in the UI. The keyring account/service names already
- * match `intent-linear`'s resolver; only the catalog entry is missing.
+ * "unknown setting" error in the UI. The secrets-store account name already
+ * matches `intent-linear`'s resolver; only the catalog entry is missing.
  *
  * The legacy OAuth flow (start/cancel/poll + oauthUrl) is gone with its
  * unbridged `linear-auth:start-auth`/`cancel-auth`/`logout` channels.
@@ -41,7 +42,7 @@ import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("LinearAuthService");
 
-/** Daemon settings path whose secret value backs the Linear keyring entry (§5.28). */
+/** Daemon settings path whose secret value backs the Linear secrets-file entry (§5.28). */
 export const LINEAR_TOKEN_SETTING_PATH = "linear.token";
 
 /** Fetch auth state from the seam (force-refresh) and hydrate the store. */
@@ -57,9 +58,10 @@ export async function initializeLinearAuthFlow(): Promise<void> {
 }
 
 /**
- * Connect with a pasted personal API key: store it via the daemon keyring path,
- * then re-probe `linear.authStatus`. Errors (including the daemon rejecting the
- * settings path — see the BE gap above) surface via `setLinearError`.
+ * Connect with a pasted personal API key: store it via the daemon secrets-file
+ * path, then re-probe `linear.authStatus`. Errors (including the daemon
+ * rejecting the settings path — see the BE gap above) surface via
+ * `setLinearError`.
  */
 export async function connectLinearFlow(apiKey: string): Promise<void> {
   const key = apiKey.trim();
@@ -90,7 +92,7 @@ export async function connectLinearFlow(apiKey: string): Promise<void> {
 }
 
 /**
- * Disconnect: clear the keyring-held key (settings.reset deletes the secret),
+ * Disconnect: clear the secrets-file entry (settings.reset deletes the secret),
  * then re-probe — `LINEAR_API_KEY` in the daemon's environment may still
  * authenticate, and the UI must reflect that truthfully.
  */
