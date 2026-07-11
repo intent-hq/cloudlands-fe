@@ -78,8 +78,10 @@ const logger = new Logger('DirectStreamManager');
 // PERF: Reduced limits to prevent GC pressure and main thread freezes
 const STREAM_CONFIG = {
   // Timing - only for cleanup, not for streaming
-  CLEANUP_INTERVAL: AGENT_STREAMING_CONFIG.COMPLETION_DETECTION_MS, // Use shared constant (5 minutes)
-  SESSION_TIMEOUT: AGENT_STREAMING_CONFIG.BACKEND_STREAM_TIMEOUT_MS, // Use shared constant (30 minutes)
+  // NOTE: No SESSION_TIMEOUT — the daemon (intentd) owns turn lifetime; the
+  // main process must not forcibly terminate an in-flight stream on wall-clock
+  // grounds. Only completed / marked-for-cleanup sessions are GC'd here.
+  CLEANUP_INTERVAL: AGENT_STREAMING_CONFIG.STREAM_MANAGER_GC_INTERVAL_MS,
   RECOVERY_TIMEOUT: 5000, // 5 seconds - quick recovery attempts
   STALLED_TIMEOUT: 30000, // 30 seconds - health status updates (was 10 seconds, too aggressive)
   TIMEOUT: 10000, // 10 seconds - stalled stream cleanup threshold (was 1.5s, too aggressive during GC pauses)
@@ -1156,11 +1158,13 @@ export class StreamManager extends EventEmitter implements IDisposable {
   }
 
   /**
-   * Start cleanup interval
+   * Start cleanup interval — GC's completed / marked-for-cleanup sessions only.
+   * Turn lifetime is owned by the daemon, so in-flight sessions are never
+   * force-terminated here.
    */
   private startCleanupInterval(): void {
     const cleanup = memoryManager.registerTimer(
-      () => this.cleanupTimedOutSessions(),
+      () => this.cleanupCompletedSessions(),
       STREAM_CONFIG.CLEANUP_INTERVAL,
       'interval',
       this,
@@ -1187,31 +1191,37 @@ export class StreamManager extends EventEmitter implements IDisposable {
   }
 
   /**
-   * Clean up timed out sessions
+   * Garbage-collect completed and marked-for-cleanup sessions.
+   *
+   * In-flight sessions are intentionally NOT force-terminated here — the daemon
+   * (intentd) is the single source of truth for turn lifetime (PROMPT_TIMEOUT).
+   * A terminal event from the daemon (complete/error) marks the session
+   * complete, after which this GC reclaims its slot.
+   *
+   * Cadence: this method runs on the `CLEANUP_INTERVAL` timer
+   * (currently 1 hour, via `AGENT_STREAMING_CONFIG.STREAM_MANAGER_GC_INTERVAL_MS`).
+   * The thresholds below are *eligibility* thresholds for the next tick —
+   * an eligible session can therefore linger for up to one full tick before
+   * it is actually reclaimed (i.e. worst-case retention ≈ threshold +
+   * `CLEANUP_INTERVAL`).
    */
-  private cleanupTimedOutSessions(): void {
+  private cleanupCompletedSessions(): void {
     const now = Date.now();
-    const timeout = STREAM_CONFIG.SESSION_TIMEOUT;
-    const staleThreshold = 5 * 60 * 1000; // 5 minutes for completed sessions
+    const staleThreshold = 5 * 60 * 1000; // completed-session eligibility: idle ≥ 5 min
 
     for (const [streamId, session] of this.sessions) {
-      if (!session.isComplete && now - session.lastActivity > timeout) {
-        logger.warn('Cleaning up timed out session', {
-          streamId,
-          agentId: session.config.agentId,
-          inactiveDuration: now - session.lastActivity,
-        });
-        const error = new Error('Stream timed out');
-        this.handleError(streamId, error);
-      } else if (session.markedForCleanup && now - session.lastActivity > 1000) {
-        // Clean up marked sessions after 1 second (for testing)
+      if (session.markedForCleanup && now - session.lastActivity > 1000) {
+        // Marked-for-cleanup eligibility: idle > 1s. Actual reclamation
+        // happens on the next CLEANUP_INTERVAL tick (up to ~1h later).
         logger.info('Cleaning up marked session', {
           streamId,
           agentId: session.config.agentId,
         });
         this.cleanupSession(streamId);
       } else if (session.isComplete && now - session.lastActivity > staleThreshold) {
-        // Clean up completed sessions after 5 minutes
+        // Completed-session eligibility: idle > staleThreshold (5 min). Actual
+        // reclamation happens on the next CLEANUP_INTERVAL tick, so total
+        // retention is up to staleThreshold + CLEANUP_INTERVAL.
         logger.info('Cleaning up stale completed session', {
           streamId,
           agentId: session.config.agentId,

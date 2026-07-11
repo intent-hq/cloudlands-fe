@@ -72,19 +72,14 @@ describe('Streaming Timeout Configuration', () => {
   });
 
   describe('Shared Constants', () => {
-    it('should have backend stream timeout that allows long-running tasks', () => {
-      expect(AGENT_STREAMING_CONFIG.BACKEND_STREAM_TIMEOUT_MS).toBeGreaterThanOrEqual(
-        30 * 60 * 1000,
-      );
-      expect(AGENT_STREAMING_CONFIG.BACKEND_STREAM_TIMEOUT_MS).toBeLessThanOrEqual(
-        2 * 60 * 60 * 1000,
-      );
-    });
-
-    it('should have completion detection constant for truly stalled streams', () => {
-      expect(AGENT_STREAMING_CONFIG.COMPLETION_DETECTION_MS).toBeDefined();
-      expect(AGENT_STREAMING_CONFIG.COMPLETION_DETECTION_MS).toBeGreaterThanOrEqual(30 * 60 * 1000);
-      expect(AGENT_STREAMING_CONFIG.COMPLETION_DETECTION_MS).toBeLessThanOrEqual(2 * 60 * 60 * 1000);
+    // The FE no longer defines a backend-stream or prompt-response wall-clock
+    // timeout — the daemon (intentd) is the single source of truth for turn
+    // lifetime (PROMPT_TIMEOUT). Only the informational cleanup cadence and
+    // stall-retry cap remain.
+    it('should have stream-manager GC interval for cleanup of stale sessions', () => {
+      expect(AGENT_STREAMING_CONFIG.STREAM_MANAGER_GC_INTERVAL_MS).toBeDefined();
+      expect(AGENT_STREAMING_CONFIG.STREAM_MANAGER_GC_INTERVAL_MS).toBeGreaterThanOrEqual(30 * 60 * 1000);
+      expect(AGENT_STREAMING_CONFIG.STREAM_MANAGER_GC_INTERVAL_MS).toBeLessThanOrEqual(2 * 60 * 60 * 1000);
     });
 
     it('should have max stall retries defined', () => {
@@ -355,28 +350,11 @@ describe('Behavior Tests', () => {
     clearInterval(timer);
   });
 
-  it('should fire stream timeout and clean up handler', () => {
-    const STREAM_TIMEOUT_MS = 30 * 60 * 1000; // 30 min, matches BACKEND_STREAM_TIMEOUT_MS
-    let timedOut = false;
-    let handlerCleanedUp = false;
-
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
-      // Cleanup handler on timeout
-      handlerCleanedUp = true;
-    }, STREAM_TIMEOUT_MS);
-
-    // Not yet timed out
-    vi.advanceTimersByTime(STREAM_TIMEOUT_MS - 1000);
-    expect(timedOut).toBe(false);
-
-    // Advance past timeout
-    vi.advanceTimersByTime(1000);
-    expect(timedOut).toBe(true);
-    expect(handlerCleanedUp).toBe(true);
-
-    clearTimeout(timeoutId);
-  });
+  // NOTE: A previous "should fire stream timeout and clean up handler" test
+  // was removed with the FE-side wall-clock stream timeout it exercised. The
+  // daemon (intentd) is now the single source of truth for turn lifetime; the
+  // frontend no longer schedules a setTimeout that terminates in-flight
+  // streams. See agent-stream-lifecycle.ts and stream-manager.ts.
 
   it('should attempt recovery after stall by re-registering handler', () => {
     const STALL_DETECTION_MS = 90_000;

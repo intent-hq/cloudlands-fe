@@ -133,6 +133,3 @@ export const STATUS_EVENTS_STORAGE_KEY = 'chat-status-events';
 
 /** Minimum time between messages in ms (rate limiting) */
 export const MIN_MESSAGE_SEND_INTERVAL = 100;
-
-/** Stream timeout constant — re-exported from shared config for saga use */
-export { AGENT_STREAMING_CONFIG } from '$shared/constants/agent-streaming';

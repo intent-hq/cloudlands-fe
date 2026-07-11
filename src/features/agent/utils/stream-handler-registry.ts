@@ -40,9 +40,6 @@ export interface PingHandlerInfo {
 /** Active IPC stream handlers per agent */
 const activeStreamHandlers = new Map<string, StreamHandlerInfo>();
 
-/** Stream timeout timers per agent */
-const streamTimeouts = new Map<string, NodeJS.Timeout>();
-
 /** Pending stream handler registrations (race condition guard) */
 const pendingStreamRegistrations = new Set<string>();
 
@@ -90,39 +87,6 @@ export function getStreamHandlerCount(): number {
 export function clearAllStreamHandlers(): void {
   activeStreamHandlers.clear();
 }
-
-// ---------------------------------------------------------------------------
-// streamTimeouts accessors
-// ---------------------------------------------------------------------------
-
-export function getStreamTimeout(agentId: string): NodeJS.Timeout | undefined {
-  return streamTimeouts.get(agentId);
-}
-
-export function setStreamTimeout(agentId: string, timeout: NodeJS.Timeout): void {
-  streamTimeouts.set(agentId, timeout);
-}
-
-export function deleteStreamTimeout(agentId: string): boolean {
-  return streamTimeouts.delete(agentId);
-}
-
-export function getStreamTimeoutKeys(): string[] {
-  return Array.from(streamTimeouts.keys());
-}
-
-export function getStreamTimeoutCount(): number {
-  return streamTimeouts.size;
-}
-
-export function clearAndCancelAllStreamTimeouts(): void {
-  for (const timeout of streamTimeouts.values()) {
-    clearTimeout(timeout);
-  }
-  streamTimeouts.clear();
-}
-
-
 
 // ---------------------------------------------------------------------------
 // pendingStreamRegistrations accessors
@@ -247,13 +211,6 @@ export function cleanupStreamHandler(agentId: string): void {
 
   // 3. Clear pending registration
   pendingStreamRegistrations.delete(agentId);
-
-  // 4. Clear timeout
-  const timeout = streamTimeouts.get(agentId);
-  if (timeout) {
-    clearTimeout(timeout);
-    streamTimeouts.delete(agentId);
-  }
 }
 
 /**
@@ -299,7 +256,6 @@ export function disposeAllStreamState(): void {
   activePingHandlers.clear();
   pendingStreamRegistrations.clear();
   sendMessageStreamSetup.clear();
-  clearAndCancelAllStreamTimeouts();
   clearStreamingSafetyTimeout();
 }
 

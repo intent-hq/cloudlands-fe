@@ -42,10 +42,7 @@ import {
   errorRecovery,
   DEFAULT_STRATEGIES,
 } from './browser/services/error-recovery.service';
-import {
-  AGENT_STREAMING_CONFIG,
-  IN_FLIGHT_PROMPT_DROPPED_ERROR,
-} from '$shared/constants/agent-streaming';
+import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
 import { assertStreamingInvariant } from './utils/streaming-invariants';
 
 import * as streamRegistry from './utils/stream-handler-registry';
@@ -904,41 +901,13 @@ export async function sendMessage(
                   const handlerSessionId = session.id;
 
                   // Store reference to the service for use in callbacks
-
-                  // Set up a timeout to clean up the handler if no response is received
-                  const streamTimeout = setTimeout(() => {
-                    logger.warn('Stream timeout - cleaning up handler', {
-                      agentId,
-                      sessionId: session.id,
-                    });
-
-                    flushPendingChunkUpdate();
-
-                    dispatchRedux(
-                      agentStreamUpdateReceived({
-                        workspaceId: workspace.id,
-                        agentId,
-                        handlerSessionId: session.id,
-                        source: 'sendMessage',
-                        eventType: 'timeout',
-                        assistantMessageId,
-                        assistantAppMessageId,
-                        contentBlocks: buildOrderedContentBlocks(orderedItems, flatstr(textBuffer)),
-                      }),
-                    );
-
-                    // Use registry for targeted IPC cleanup
-                    logger.info('Stream timeout - cleaning up stream handler', {
-                      agentId,
-                      hasStoredHandler: streamRegistry.hasStreamHandler(agentId),
-                    });
-                    streamRegistry.cleanupStreamHandler(agentId);
-                    // Remove from the map after timeout fires
-                    streamRegistry.deleteStreamTimeout(agentId);
-                  }, AGENT_STREAMING_CONFIG.BACKEND_STREAM_TIMEOUT_MS + AGENT_STREAMING_CONFIG.FRONTEND_STREAM_CLEANUP_GRACE_MS); // Use shared config: backend timeout + grace period
-
-                  // Store the timeout in the map so it can be cleared later
-                  streamRegistry.setStreamTimeout(agentId, streamTimeout);
+                  //
+                  // NOTE: The frontend no longer imposes a wall-clock timeout on the
+                  // stream. The daemon (intentd) owns turn lifetime and will emit a
+                  // terminal event (complete with finishReason, or error) when the
+                  // turn ends. Informational stall detection (chat-state stall saga)
+                  // remains and continues to surface UI warnings without terminating
+                  // the stream.
 
                   // Track text buffer and ordered items for proper interleaving
                   let textBuffer = '';
@@ -1186,10 +1155,7 @@ export async function sendMessage(
                             });
                           }
 
-                          // Clean up the stream listener and timeout
-                          clearTimeout(streamTimeout);
-                          streamRegistry.deleteStreamTimeout(agentId);
-
+                          // Clean up the stream listener
                           // Use registry for targeted IPC cleanup
                           logger.debug('Cleaning up stream handler after complete event', {
                             agentId,
@@ -1252,10 +1218,7 @@ export async function sendMessage(
                             streamId: data.streamId,
                           }),
                         );
-                        // Clean up the stream listener and timeout
-                        clearTimeout(streamTimeout);
-                        streamRegistry.deleteStreamTimeout(agentId);
-
+                        // Clean up the stream listener
                         // Use registry for targeted IPC cleanup
                         logger.info('Stream error - cleaning up stream handler', {
                           agentId,
