@@ -199,10 +199,10 @@ describe("theme-service (pure helpers)", () => {
     expect(manager.setPresetTheme).not.toHaveBeenCalled();
   });
 
-  it("still rejects unknown non-empty preset IDs", () => {
+  it("still rejects unknown non-empty preset IDs and includes the ID in the error", () => {
     const manager = createThemeManagerMock();
     expect(() => applyPresetThemeToManager(manager, "unknown-id")).toThrow(
-      "Theme preset not found.",
+      "Unknown theme preset: unknown-id",
     );
   });
 
@@ -311,7 +311,7 @@ describe("createThemeMutationMiddleware (dispatch handlers + hydration)", () => 
     );
   });
 
-  it("surfaces preset lookup failures through setThemeError", async () => {
+  it("surfaces preset lookup failures through setThemeError with the preset ID", async () => {
     const middleware = createThemeMutationMiddleware();
     const invoke = middleware({} as never)((action) => action);
     appStore.dispatch(setThemeError(null));
@@ -320,7 +320,7 @@ describe("createThemeMutationMiddleware (dispatch handlers + hydration)", () => 
     await flush();
 
     const state = appStore.state as { theme: { error: string | null } };
-    expect(state.theme.error).toBe("Theme preset not found.");
+    expect(state.theme.error).toBe("Unknown theme preset: unknown");
   });
 
   it("validates then applies imported custom themes", async () => {

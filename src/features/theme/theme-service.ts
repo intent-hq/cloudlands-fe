@@ -147,7 +147,7 @@ export function applyPresetThemeToManager(manager: ThemeManager, presetId: strin
     return;
   }
   const preset = themePresets.find((item) => item.id === presetId);
-  if (!preset) throw new Error("Theme preset not found.");
+  if (!preset) throw new Error(`Unknown theme preset: ${presetId}`);
   manager.setPresetTheme(preset.id, preset.dark, preset.light);
 }
 
@@ -318,14 +318,20 @@ function bootOnce(): void {
  * action passes through the reducer, it routes the trigger to the matching
  * handler. Errors inside handlers are caught and surfaced through
  * `setThemeError` so the dispatch chain itself never throws.
+ *
+ * Ordering per action: (1) `next(action)` first so the reducer and any
+ * downstream middleware see the original action before boot-time hydration
+ * dispatches interleave, (2) then one-time boot on the very first action, and
+ * (3) then trigger routing. This preserves the "after the reducer runs"
+ * contract for both boot and per-action mutations.
  */
 export function createThemeMutationMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
+    const result = next(action);
     if (!installed) {
       installed = true;
       bootOnce();
     }
-    const result = next(action);
     if (!action || typeof action !== "object") return result;
     const type = (action as { type?: unknown }).type;
     switch (type) {
