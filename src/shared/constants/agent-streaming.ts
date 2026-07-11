@@ -13,13 +13,14 @@ export const AGENT_STREAMING_CONFIG = {
 
   /**
    * Interval (ms) between GC passes over completed / marked-for-cleanup stream
-   * sessions in the main-process stream manager. This is a periodic cleanup
-   * cadence for reclaiming resources — it does NOT enforce turn lifetime.
-   * The daemon (intentd) owns turn lifetime (PROMPT_TIMEOUT); the frontend does
-   * not force-terminate in-flight streams on wall-clock grounds. Informational
+   * sessions in the main-process stream manager (consumed as
+   * `STREAM_CONFIG.CLEANUP_INTERVAL`). This is a periodic cleanup cadence for
+   * reclaiming resources — it does NOT enforce turn lifetime. The daemon
+   * (intentd) owns turn lifetime (PROMPT_TIMEOUT); the frontend does not
+   * force-terminate in-flight streams on wall-clock grounds. Informational
    * stall detection remains a separate, non-terminal UI concern.
    */
-  COMPLETION_DETECTION_MS: 60 * 60 * 1000, // 1 hour
+  STREAM_MANAGER_GC_INTERVAL_MS: 60 * 60 * 1000, // 1 hour
 
   /**
    * Interval (ms) for saving session state to disk during streaming.

@@ -81,7 +81,7 @@ const STREAM_CONFIG = {
   // NOTE: No SESSION_TIMEOUT — the daemon (intentd) owns turn lifetime; the
   // main process must not forcibly terminate an in-flight stream on wall-clock
   // grounds. Only completed / marked-for-cleanup sessions are GC'd here.
-  CLEANUP_INTERVAL: AGENT_STREAMING_CONFIG.COMPLETION_DETECTION_MS,
+  CLEANUP_INTERVAL: AGENT_STREAMING_CONFIG.STREAM_MANAGER_GC_INTERVAL_MS,
   RECOVERY_TIMEOUT: 5000, // 5 seconds - quick recovery attempts
   STALLED_TIMEOUT: 30000, // 30 seconds - health status updates (was 10 seconds, too aggressive)
   TIMEOUT: 10000, // 10 seconds - stalled stream cleanup threshold (was 1.5s, too aggressive during GC pauses)
@@ -1199,7 +1199,7 @@ export class StreamManager extends EventEmitter implements IDisposable {
    * complete, after which this GC reclaims its slot.
    *
    * Cadence: this method runs on the `CLEANUP_INTERVAL` timer
-   * (currently 1 hour, via `AGENT_STREAMING_CONFIG.COMPLETION_DETECTION_MS`).
+   * (currently 1 hour, via `AGENT_STREAMING_CONFIG.STREAM_MANAGER_GC_INTERVAL_MS`).
    * The thresholds below are *eligibility* thresholds for the next tick —
    * an eligible session can therefore linger for up to one full tick before
    * it is actually reclaimed (i.e. worst-case retention ≈ threshold +

@@ -76,10 +76,10 @@ describe('Streaming Timeout Configuration', () => {
     // timeout — the daemon (intentd) is the single source of truth for turn
     // lifetime (PROMPT_TIMEOUT). Only the informational cleanup cadence and
     // stall-retry cap remain.
-    it('should have completion-detection cleanup cadence for GC of stale sessions', () => {
-      expect(AGENT_STREAMING_CONFIG.COMPLETION_DETECTION_MS).toBeDefined();
-      expect(AGENT_STREAMING_CONFIG.COMPLETION_DETECTION_MS).toBeGreaterThanOrEqual(30 * 60 * 1000);
-      expect(AGENT_STREAMING_CONFIG.COMPLETION_DETECTION_MS).toBeLessThanOrEqual(2 * 60 * 60 * 1000);
+    it('should have stream-manager GC interval for cleanup of stale sessions', () => {
+      expect(AGENT_STREAMING_CONFIG.STREAM_MANAGER_GC_INTERVAL_MS).toBeDefined();
+      expect(AGENT_STREAMING_CONFIG.STREAM_MANAGER_GC_INTERVAL_MS).toBeGreaterThanOrEqual(30 * 60 * 1000);
+      expect(AGENT_STREAMING_CONFIG.STREAM_MANAGER_GC_INTERVAL_MS).toBeLessThanOrEqual(2 * 60 * 60 * 1000);
     });
 
     it('should have max stall retries defined', () => {
