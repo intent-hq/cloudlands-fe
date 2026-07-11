@@ -50,6 +50,7 @@ import { createLifecycleIpcReadMiddleware } from "./middlewares/lifecycle-ipc-re
 import { createUiLayoutPersistenceMiddleware } from "./middlewares/ui-layout-persistence-service";
 import { createUnreadTrackingPersistenceMiddleware } from "./middlewares/unread-tracking-persistence-service";
 import { createTabStatePersistenceMiddleware } from "./middlewares/tab-state-persistence-service";
+import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
@@ -258,6 +259,13 @@ function buildMiddleware(): StoreMiddleware[] {
     // workspace-tab strip (order/pin/active tab) and per-tab scroll positions
     // hydrate on boot and persist on change across sessions via localStorage.
     createTabStatePersistenceMiddleware(),
+    // Give the (post-saga) theme triggers (`requestThemePreferenceChange` /
+    // `selectThemePreset` / `importCustomTheme` / `clearThemeCustomization`)
+    // real handlers so the Settings theme toggle and ColorThemeSettings
+    // preset / import / clear buttons apply and persist through the
+    // `ThemeManager` singleton again — and hydrate Redux from the manager's
+    // snapshot on boot so the slice reflects the persisted preference.
+    createThemeMutationMiddleware(),
   ];
 
   // Debug middlewares need to be added AFTER batching middleware
