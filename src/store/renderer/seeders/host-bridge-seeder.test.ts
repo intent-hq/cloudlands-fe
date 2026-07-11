@@ -335,6 +335,56 @@ describe("host-bridge-seeder", () => {
     });
   });
 
+  describe("external-editors:open-with-other → real Electron preload bridge (FE-served, PROTOCOL §5.14 host.pickApplication locus)", () => {
+    // Same window.electronAPI stash/restore pattern as shell:openExternal
+    // below — the seeder handler prefers the preload bridge when present and
+    // folds to the not-available failure when it is not.
+    let stashedElectronApi: unknown;
+
+    const removeElectronApi = () => {
+      stashedElectronApi = (window as any).electronAPI;
+      delete (window as any).electronAPI;
+    };
+    const restoreElectronApi = () => {
+      (window as any).electronAPI = stashedElectronApi;
+    };
+
+    it("forwards { path } to window.electronAPI.invoke and returns the bridge response verbatim when a preload bridge exists", async () => {
+      const bridgeInvoke = vi
+        .fn()
+        .mockResolvedValue({ success: true, appName: "Sublime Text" });
+      stashedElectronApi = (window as any).electronAPI;
+      (window as any).electronAPI = { invoke: bridgeInvoke };
+
+      const response = await mockInvoke("external-editors:open-with-other", {
+        path: "/repo/src/main.ts",
+      });
+
+      expect(bridgeInvoke).toHaveBeenCalledWith("external-editors:open-with-other", {
+        path: "/repo/src/main.ts",
+      });
+      // Daemon `backendRequest` is never touched — the chooser is CLIENT-owned.
+      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(response).toEqual({ success: true, appName: "Sublime Text" });
+      restoreElectronApi();
+    });
+
+    it("folds to the documented not-available failure when no preload bridge exists (bridge-less build)", async () => {
+      removeElectronApi();
+
+      const response = await mockInvoke("external-editors:open-with-other", {
+        path: "/repo",
+      });
+
+      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(response).toEqual({
+        success: false,
+        error: "Opening with another application is not available in this build",
+      });
+      restoreElectronApi();
+    });
+  });
+
   describe("shell:openExternal → openExternalUrl (FE-served, PROTOCOL §5.14 reverse-RPC locus)", () => {
     // src/test-setup.ts installs a global window.electronAPI mock whose
     // invoke() resolves { success: true } for any channel; stash it so the

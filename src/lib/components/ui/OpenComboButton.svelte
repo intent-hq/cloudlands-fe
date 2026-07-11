@@ -223,6 +223,10 @@
         );
         if (result?.success) {
           dropdownOpen = false;
+        } else if (result?.error && result.error !== 'No application selected') {
+          // Surface bridge-absent / spawn failures as a toast so the "Other"
+          // action fails loudly instead of silently no-oping.
+          toast.error(result.error);
         }
         return;
       }
