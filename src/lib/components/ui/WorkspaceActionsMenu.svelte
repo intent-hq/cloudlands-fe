@@ -439,9 +439,12 @@
       );
 
       if (!result?.success) {
-        // User cancelled or error - don't log as error if cancelled
+        // User cancelled or error - don't log/toast for a user cancel; surface
+        // every other failure (bridge-absent, spawn error) as a toast so the
+        // action fails loudly instead of silently no-oping.
         if (result?.error !== 'No application selected') {
           logger.error('Failed to open with other app:', result?.error);
+          toast.error(result?.error || 'Failed to open with other app');
         }
         return;
       }
@@ -449,6 +452,7 @@
       onClose?.();
     } catch (error) {
       logger.error('Failed to open with other app:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to open with other app');
     }
   }
 

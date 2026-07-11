@@ -372,14 +372,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // affordance is inert. (Editor opens are bridged to host.openInEditor in
   // host-bridge-seeder; URL opens to window.open.)
   ['shell:showItemInFolder', undefined],
-  // The "Open with…" native application chooser (OpenComboButton /
-  // WorkspaceActionsMenu). PROTOCOL §5.14 defines host.pickApplication as a
-  // daemon→client reverse RPC — the CLIENT must supply the chooser, and this
-  // build has none. Callers require `.success` and log/toast the error.
-  [
-    'external-editors:open-with-other',
-    { success: false, error: 'Opening with another application is not available in this build' },
-  ],
   // Electron-main CDP plumbing: EmbeddedBrowser's webContents registration
   // (caller `.catch`es and logs) and PanelLayout's response arm for the
   // browser:list-tabs-request event — which never fires in this build (see

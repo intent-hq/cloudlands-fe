@@ -276,6 +276,33 @@ registerMockIpcHandler("external-editors:open", async (arg) => {
 });
 
 /**
+ * `external-editors:open-with-other` — native application chooser dialog. Like
+ * `shell:openExternal`, this is CLIENT-owned (PROTOCOL §5.14 `host.pickApplication`
+ * is a daemon→client reverse RPC): the daemon has no dialog. When a real
+ * Electron preload bridge (`window.electronAPI.invoke`) is present, forward the
+ * `{ path }` payload verbatim to the main-process handler
+ * (`registerExternalEditorsHandlers` in
+ * `features/external-editors/main/external-editors.ipc.ts`) which shows the
+ * OS-native picker and spawns the chosen app. When no bridge exists (browser
+ * dev / bridge-less build) fold to the documented not-available failure so the
+ * callers' toast branch surfaces the gap — the pre-existing behavior when this
+ * channel was still an allowlisted absence.
+ */
+registerMockIpcHandler("external-editors:open-with-other", async (arg) => {
+  const params = asRecord(arg);
+  const path = typeof params.path === "string" ? params.path : "";
+  if (!path) throw new Error("Missing required parameter: path");
+  const bridge = typeof window !== "undefined" ? window.electronAPI : undefined;
+  if (bridge && typeof bridge.invoke === "function") {
+    return bridge.invoke("external-editors:open-with-other", { path });
+  }
+  return {
+    success: false,
+    error: "Opening with another application is not available in this build",
+  };
+});
+
+/**
  * `external-editors:detect-installed` → `host.listInstalledEditors`, enriched
  * with the shared EDITOR_REGISTRY display metadata (the daemon reports only
  * detection facts: id / installed / path / source / flatpakId). Entries the
