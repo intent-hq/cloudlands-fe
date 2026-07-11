@@ -364,6 +364,103 @@ describe("createThemeMutationMiddleware (dispatch handlers + hydration)", () => 
     expect(state.theme.name).toBe("light");
   });
 
+  it("syncs Redux exactly once per middleware-routed mutation even when ThemeManager echoes theme-changed synchronously", async () => {
+    // Every ThemeManager mutation (setTheme / setPresetTheme / setCustomTheme /
+    // clearCustomTheme) synchronously dispatches a `theme-changed` window
+    // event, and each handler also calls syncReduxFromThemeManager. Without
+    // suppression the listener would fire during the mutation and Redux would
+    // sync twice per action. Simulate that echo for all four mutation methods
+    // and assert each middleware-routed action produces exactly one
+    // `theme/setThemePreference` dispatch (from the explicit sync, not from
+    // the listener echo).
+    const emitLightEcho = () =>
+      window.dispatchEvent(
+        new CustomEvent("theme-changed", {
+          detail: { theme: "light", isDark: false, customThemeName: null, activePresetId: null },
+        }),
+      );
+    managerState.current = createThemeManagerMock({
+      getTheme: vi.fn(() => "light"),
+      isDark: vi.fn(() => false),
+      setTheme: vi.fn(emitLightEcho),
+      setPresetTheme: vi.fn(emitLightEcho),
+      setCustomTheme: vi.fn(emitLightEcho),
+      clearCustomTheme: vi.fn(emitLightEcho),
+    });
+    const middleware = createThemeMutationMiddleware();
+    const invoke = middleware({} as never)((action) => action);
+
+    invoke({ type: "unrelated/action" });
+    await flush();
+
+    // Wrap `appStore.dispatch` via a shadowing own-property so we count real
+    // dispatches without breaking the getter's `this` binding (vi.spyOn on the
+    // prototype getter loses the captured `this` and the store's requireCore()
+    // guard trips).
+    const protoDescriptor = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(appStore),
+      "dispatch",
+    ) as PropertyDescriptor | undefined;
+    const originalDispatch = protoDescriptor?.get?.call(appStore) as (
+      action: unknown,
+    ) => unknown;
+    const dispatchCalls: unknown[] = [];
+    Object.defineProperty(appStore, "dispatch", {
+      configurable: true,
+      enumerable: true,
+      get: () => (action: unknown) => {
+        dispatchCalls.push(action);
+        return originalDispatch(action);
+      },
+    });
+
+    try {
+      const countPreferenceDispatches = () =>
+        dispatchCalls.filter(
+          (action) => (action as { type?: string } | undefined)?.type === "theme/setThemePreference",
+        ).length;
+
+      for (const action of [
+        requestThemePreferenceChange("light"),
+        selectThemePreset("catppuccin"),
+        importCustomTheme({ name: "Custom", type: "dark", colors: { "editor.background": "#000000" } }),
+        clearThemeCustomization(),
+      ]) {
+        dispatchCalls.length = 0;
+        invoke(action);
+        await flush();
+        expect(countPreferenceDispatches()).toBe(1);
+      }
+    } finally {
+      delete (appStore as { dispatch?: unknown }).dispatch;
+    }
+  });
+
+  it("still routes external theme-changed events into Redux (system prefers-color-scheme flip)", async () => {
+    // The suppression flag must only mask ThemeManager echoes emitted inside
+    // middleware handlers — events from outside that scope (e.g. the media
+    // query firing while preference === 'system') must still propagate.
+    managerState.current = createThemeManagerMock({
+      getTheme: vi.fn(() => "system"),
+      isDark: vi.fn(() => false),
+    });
+    const middleware = createThemeMutationMiddleware();
+    const invoke = middleware({} as never)((action) => action);
+
+    invoke({ type: "unrelated/action" });
+    await flush();
+
+    window.dispatchEvent(
+      new CustomEvent("theme-changed", {
+        detail: { theme: "system", isDark: true, customThemeName: null, activePresetId: null },
+      }),
+    );
+
+    const state = appStore.state as { theme: { preference: string; name: string } };
+    expect(state.theme.preference).toBe("system");
+    expect(state.theme.name).toBe("dark");
+  });
+
   it("re-syncs Redux when the ThemeManager fires a theme-changed window event", async () => {
     managerState.current = createThemeManagerMock({ isDark: vi.fn(() => true) });
     const middleware = createThemeMutationMiddleware();

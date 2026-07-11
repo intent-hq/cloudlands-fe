@@ -77,6 +77,30 @@ export type ThemeChangedEventDetail = {
 
 let installed = false;
 let themeChangedListener: ((event: Event) => void) | null = null;
+/**
+ * Depth counter used to suppress the `theme-changed` listener during
+ * middleware-initiated ThemeManager mutations. Each of ThemeManager's
+ * mutation methods (`setTheme`, `setPresetTheme`, `setCustomTheme`,
+ * `clearCustomTheme`) synchronously dispatches a `theme-changed` window
+ * event, and every middleware handler already calls
+ * `syncReduxFromThemeManager` explicitly afterwards. Without suppression the
+ * listener would re-run `handleThemeChanged` for the echo and Redux would be
+ * synced twice per middleware-routed action. A counter (rather than a
+ * boolean) tolerates nested emissions such as `setPresetTheme(null)` which
+ * internally invokes `clearCustomTheme`. External `theme-changed` events
+ * (e.g. system `prefers-color-scheme` flipping while preference === 'system')
+ * arrive with the counter at zero and still flow through unchanged.
+ */
+let suppressListenerDepth = 0;
+
+function withListenerSuppressed<T>(fn: () => T): T {
+  suppressListenerDepth += 1;
+  try {
+    return fn();
+  } finally {
+    suppressListenerDepth -= 1;
+  }
+}
 
 export function themeNameFromIsDark(isDark: boolean): ThemeName {
   return isDark ? "dark" : "light";
@@ -232,7 +256,7 @@ export function handleThemePreferenceChangeRequested(
     const [preference] = action.payload;
     persistThemePreference(preference);
     const manager = getThemeManager();
-    applyThemePreferenceToManager(manager, preference);
+    withListenerSuppressed(() => applyThemePreferenceToManager(manager, preference));
     syncReduxFromThemeManager(manager);
     appStore.dispatch(setThemeError(null));
   } catch (error) {
@@ -248,7 +272,7 @@ export function handleThemePresetSelected(
   try {
     const [presetId] = action.payload;
     const manager = getThemeManager();
-    applyPresetThemeToManager(manager, presetId);
+    withListenerSuppressed(() => applyPresetThemeToManager(manager, presetId));
     syncReduxFromThemeManager(manager);
     appStore.dispatch(setThemeError(null));
   } catch (error) {
@@ -263,7 +287,7 @@ export function handleCustomThemeImported(
     const [json] = action.payload;
     validateCustomThemeImport(json);
     const manager = getThemeManager();
-    applyCustomThemeToManager(manager, json);
+    withListenerSuppressed(() => applyCustomThemeToManager(manager, json));
     syncReduxFromThemeManager(manager);
     appStore.dispatch(setThemeError(null));
   } catch (error) {
@@ -274,7 +298,7 @@ export function handleCustomThemeImported(
 export function handleThemeCustomizationCleared(): void {
   try {
     const manager = getThemeManager();
-    clearCustomThemeFromManager(manager);
+    withListenerSuppressed(() => clearCustomThemeFromManager(manager));
     syncReduxFromThemeManager(manager);
     appStore.dispatch(setThemeError(null));
   } catch (error) {
@@ -287,6 +311,7 @@ export function handleThemeCustomizationCleared(): void {
 function installThemeChangedListener(): void {
   if (typeof window === "undefined" || themeChangedListener !== null) return;
   themeChangedListener = (event: Event) => {
+    if (suppressListenerDepth > 0) return;
     const detail = (event as CustomEvent<ThemeChangedEventDetail>).detail ?? {};
     try {
       handleThemeChanged(detail);
@@ -361,4 +386,5 @@ export function __resetThemeMutationForTests(): void {
   }
   themeChangedListener = null;
   installed = false;
+  suppressListenerDepth = 0;
 }
