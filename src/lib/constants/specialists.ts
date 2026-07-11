@@ -366,7 +366,7 @@ Based on assessment, take action in priority order:
 - Group actionable comments intelligently — batch comments that touch the same file or are closely related into a single Implementor agent. Use your judgment: one agent per file or per logical group of changes is usually better than one agent per comment.
 - For each group, create a targeted Implementor agent via the \`workspace_api\` tool: \`ws.agent.create("Fix: <brief description>", "Fix the following review comments on PR #N: ...", { specialist: "implementor" })\` — include all grouped comments in the message.
 - Wait for implementor(s) to complete
-- After code changes are pushed, reply to each review comment explaining the fix: \`ws.pr.replyToReviewComment("<commentId>", "Fixed in <commit>. <brief explanation>")\`
+- After code changes are pushed, reply to each review comment explaining the fix (the first arg is the numeric \`commentId\` from \`ws.pr.listReviewComments\`): \`ws.pr.replyToReviewComment(123456789, "Fixed in <commit>. <brief explanation>")\`
 - Resolve each thread: \`ws.pr.resolveThread("<threadId>", "resolve")\`
 
 **B. Request Re-Review After Code Changes**
@@ -386,7 +386,7 @@ Based on assessment, take action in priority order:
 - Log your reasoning for why you believe it's transient
 
 **E. Reply to Non-Code Review Comments**
-- For review comments that are questions, acknowledgments, or don't require code changes: \`ws.pr.replyToReviewComment("<commentId>", "<response>")\`
+- For review comments that are questions, acknowledgments, or don't require code changes (numeric \`commentId\`): \`ws.pr.replyToReviewComment(123456789, "<response>")\`
 - Be concise and professional
 
 ### Step 3: WAIT — Sleep and Re-Assess
@@ -422,7 +422,7 @@ Update a workspace note after each iteration with: Iteration number, PR state su
 |------|---------|
 | \`ws.pr.status()\` | PR mergeability, conflicts, draft state, overall status |
 | \`ws.pr.listReviewComments({ status: "unresolved" })\` | Find unresolved inline review threads |
-| \`ws.pr.replyToReviewComment("<commentId>", "<body>")\` | Reply to a review comment thread |
+| \`ws.pr.replyToReviewComment(123456789, "<body>")\` | Reply to a review comment thread (numeric commentId) |
 | \`ws.pr.resolveThread("<threadId>", "resolve")\` | Resolve a review thread after fixing |
 | \`ws.pr.listComments({ count: 20 })\` | List general (non-inline) PR comments |
 | \`ws.pr.postComment("<body>")\` | Post a general comment (e.g., "augment review") |
@@ -637,7 +637,7 @@ Use the \`workspace_api\` tool to run JavaScript against the app-level \`ws.app.
 - \`ws.app.agents.*\` — list and read agent conversation threads across app workspaces for audits and retrospectives.
 - \`ws.app.settings.*\` — read current settings, propose changes, and apply approved setting changes.
 - \`ws.app.specialists.*\` — inspect built-in/custom specialists, propose edits, create specialists, and apply approved specialist changes.
-- \`ws.app.ui.navigate(target, { highlightId: "..." })\` — navigate the user to an app surface and optionally highlight the exact row, card, or control.
+- \`ws.app.ui.navigate("<route>", { highlightId: "..." })\` — navigate the user to an app surface and optionally highlight the exact row, card, or control.
 - \`ws.app.proposal.*\` — render proposal or confirmation cards in chat so the user can review and approve changes.
 
 If a specific tool name or schema is unclear, inspect available docs or ask a concise clarifying question. Do not invent destructive tool calls.
@@ -681,7 +681,7 @@ Example for "Review PR #648 on augmentcode/intent":
 
 ## Navigate vs. Inline Edits
 
-Prefer \`ws.app.ui.navigate(target, { highlightId: "..." })\` when the user wants to learn where something is, inspect a setting themselves, compare options visually, or continue manually in the UI. Use a NavLink in your message so the destination is visible and reusable.
+Prefer \`ws.app.ui.navigate("<route>", { highlightId: "..." })\` when the user wants to learn where something is, inspect a setting themselves, compare options visually, or continue manually in the UI. Use a NavLink in your message so the destination is visible and reusable.
 
 Prefer inline proposal/edit cards when the user asks you to make the change, wants to review a concrete diff, or the action can be completed cleanly from chat. For complex tasks, combine both: explain briefly, show a proposal card, and include a NavLink to the relevant page for context.
 
