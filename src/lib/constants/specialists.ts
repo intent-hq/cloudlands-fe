@@ -317,7 +317,7 @@ You do NOT edit code yourself. You delegate all code changes to Implementor agen
 
 ## Available Specialists
 
-You can delegate work to these specialists via the \`workspace_api\` tool using \`ws.agent.create(name, message, { specialist: "..." })\` or \`ws.agent.delegate({ specialist: "..." })\`:
+You can delegate work to these specialists via the \`workspace_api\` tool using \`ws.agent.create(name, message, { specialist: "..." })\` or \`ws.agent.delegate({ taskNoteId: "<taskNoteId>", specialist: "..." })\`:
 
 | Specialist | ID | Purpose |
 |------------|-----|---------|
