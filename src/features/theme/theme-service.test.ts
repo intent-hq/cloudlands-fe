@@ -231,7 +231,7 @@ describe("createThemeMutationMiddleware (dispatch handlers + hydration)", () => 
     vi.clearAllMocks();
   });
 
-  it("hydrates Redux from the ThemeManager snapshot on the first dispatched action", async () => {
+  it("hydrates Redux from the ThemeManager snapshot on the first dispatched action without re-applying to the manager", async () => {
     primeLocalStorage({ theme: "dark" });
     managerState.current = createThemeManagerMock({
       getTheme: vi.fn(() => "dark"),
@@ -246,26 +246,20 @@ describe("createThemeMutationMiddleware (dispatch handlers + hydration)", () => 
     const state = appStore.state as { theme: { preference: string; name: string } };
     expect(state.theme.preference).toBe("dark");
     expect(state.theme.name).toBe("dark");
-    expect(managerState.current!.setTheme).toHaveBeenCalledWith("dark", { persist: false });
+    // Boot must not call setTheme() — the ThemeManager constructor already
+    // ran loadTheme() and applied the stored preference; init only reflects
+    // that snapshot back into Redux.
+    expect(managerState.current!.setTheme).not.toHaveBeenCalled();
   });
 
-  it("syncs Redux exactly once on boot even though ThemeManager.setTheme fires theme-changed synchronously", async () => {
-    // Real ThemeManager.setTheme() dispatches a `theme-changed` window event
-    // synchronously. If the middleware installed its listener before running
-    // init, boot would sync Redux twice (once via syncReduxFromThemeManager and
-    // once via the listener). Mirror that behaviour here and assert the sync
-    // happens exactly once.
+  it("syncs Redux exactly once on boot and does not re-apply the theme to the ThemeManager", async () => {
+    // Init must not invoke ThemeManager.setTheme() (which would repeat DOM
+    // work and emit an extra theme-changed event). The boot-time sync happens
+    // exactly once through syncReduxFromThemeManager.
     primeLocalStorage({ theme: "dark" });
     managerState.current = createThemeManagerMock({
       getTheme: vi.fn(() => "dark"),
       isDark: vi.fn(() => true),
-      setTheme: vi.fn(() => {
-        window.dispatchEvent(
-          new CustomEvent("theme-changed", {
-            detail: { theme: "dark", isDark: true, customThemeName: null, activePresetId: null },
-          }),
-        );
-      }),
     });
     const dispatchSpy = vi.spyOn(appStore, "dispatch");
 
@@ -275,6 +269,7 @@ describe("createThemeMutationMiddleware (dispatch handlers + hydration)", () => 
     invoke({ type: "unrelated/action" });
     await flush();
 
+    expect(managerState.current!.setTheme).not.toHaveBeenCalled();
     const bootDispatchTypes = dispatchSpy.mock.calls
       .map(([action]) => (action as { type?: string })?.type)
       .filter((type) => type === "theme/setThemePreference");
@@ -335,6 +330,14 @@ describe("createThemeMutationMiddleware (dispatch handlers + hydration)", () => 
   });
 
   it("surfaces custom-theme validation errors through setThemeError", async () => {
+    // ThemeManager.setCustomTheme() parses the JSON itself and throws on
+    // invalid input before mutating state, so handleCustomThemeImported
+    // relies on that internal validation rather than pre-parsing.
+    managerState.current = createThemeManagerMock({
+      setCustomTheme: vi.fn(() => {
+        throw new Error("VSCode theme JSON missing colors object");
+      }),
+    });
     const middleware = createThemeMutationMiddleware();
     const invoke = middleware({} as never)((action) => action);
     appStore.dispatch(setThemeError(null));
@@ -344,7 +347,7 @@ describe("createThemeMutationMiddleware (dispatch handlers + hydration)", () => 
 
     const state = appStore.state as { theme: { error: string | null } };
     expect(state.theme.error).toContain("colors");
-    expect(managerState.current!.setCustomTheme).not.toHaveBeenCalled();
+    expect(managerState.current!.setCustomTheme).toHaveBeenCalledWith({ name: "Empty" });
   });
 
   it("clears custom themes through ThemeManager on clearThemeCustomization", async () => {

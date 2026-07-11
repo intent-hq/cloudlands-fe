@@ -33,7 +33,6 @@ import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import { store as appStore } from "$store/renderer/store";
 import { ThemeManager } from "$lib/utils/theme";
 import { themePresets } from "$lib/utils/theme-presets";
-import { parseVSCodeTheme } from "$lib/utils/vscode-theme-parser";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 import { createLogger } from "$lib/utils/client-logger";
 import {
@@ -175,10 +174,6 @@ export function applyPresetThemeToManager(manager: ThemeManager, presetId: strin
   manager.setPresetTheme(preset.id, preset.dark, preset.light);
 }
 
-export function validateCustomThemeImport(json: unknown): void {
-  parseVSCodeTheme(json);
-}
-
 export function applyCustomThemeToManager(manager: ThemeManager, json: unknown): void {
   manager.setCustomTheme(json);
 }
@@ -226,12 +221,18 @@ export function themeErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-/** Initial hydration — mirrors `initThemeSaga` in the reference codebase. */
+/**
+ * Initial hydration — mirrors `initThemeSaga` in the reference codebase.
+ *
+ * The ThemeManager singleton already reads the persisted preference from
+ * localStorage and applies it to the DOM in its constructor (`loadTheme()`),
+ * so init only needs to reflect that state back into Redux. Calling
+ * `setTheme()` here would repeat the DOM work, emit an extra `theme-changed`
+ * event, and — if the first-ever middleware action is a theme request —
+ * briefly re-apply the stored theme before the requested one wins.
+ */
 export function initThemeFromManager(): void {
-  const preference = readThemePreferenceFromStorage();
-  const manager = getThemeManager();
-  applyThemePreferenceToManager(manager, preference);
-  syncReduxFromThemeManager(manager);
+  syncReduxFromThemeManager(getThemeManager());
 }
 
 export function handleThemeChanged(detail: ThemeChangedEventDetail): void {
@@ -285,7 +286,6 @@ export function handleCustomThemeImported(
 ): void {
   try {
     const [json] = action.payload;
-    validateCustomThemeImport(json);
     const manager = getThemeManager();
     withListenerSuppressed(() => applyCustomThemeToManager(manager, json));
     syncReduxFromThemeManager(manager);
@@ -324,10 +324,10 @@ function installThemeChangedListener(): void {
 
 /** Lazy boot: hydrate + install the window listener on the first dispatched action.
  *
- * `initThemeFromManager()` calls `ThemeManager.setTheme()`, which synchronously
- * dispatches a `theme-changed` window event. Run init BEFORE installing the
- * listener so the boot-time sync happens exactly once (through
- * `syncReduxFromThemeManager`) instead of twice (listener + sync).
+ * Run init BEFORE installing the listener so any future ThemeManager
+ * emissions can only reach Redux through the listener; init itself performs a
+ * single explicit `syncReduxFromThemeManager` and never re-applies the theme
+ * back into the manager (see `initThemeFromManager` above).
  */
 function bootOnce(): void {
   try {
