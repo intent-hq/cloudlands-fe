@@ -6,46 +6,20 @@
 
 export const AGENT_STREAMING_CONFIG = {
   /**
-   * Maximum time (ms) the backend will keep a stream open without explicit completion
-   * before synthesizing a completion event.
-   * NOTE: Set to 30 minutes to allow for long-running tasks. Streams should complete
-   * naturally when the agent finishes, not be forcibly terminated by timeout.
-   */
-  BACKEND_STREAM_TIMEOUT_MS: 30 * 60 * 1000, // 30 minutes
-
-  /**
-   * Extra grace period (ms) the frontend keeps listening after backend timeout to
-   * capture any final events and cleanly tear down handlers.
-   */
-  FRONTEND_STREAM_CLEANUP_GRACE_MS: 15000, // 15 seconds
-
-  /**
    * How long (ms) to treat a persisted active stream as reconnectable after a reload.
    * After this, we consider metadata stale and clear it.
    */
   ACTIVE_STREAM_MAX_AGE_MS: 24 * 60 * 60 * 1000, // 24 hours
 
   /**
-   * Inactivity window (ms) used by providers to infer that a stream has completed
-   * when using inactivity-based detection.
-   * NOTE: Set to 1 hour to allow for very long-running operations. This is a
-   * FALLBACK ONLY for detecting truly dead connections. Streams should complete
-   * naturally when Auggie sends a stopReason, not be forcibly terminated by timeout.
-   * The frontend has its own stall detection (90 seconds) that shows UI warnings,
-   * but that doesn't stop the stream - it just informs the user.
-   *
-   * IMPORTANT: Do not reduce this value. Agents may execute complex multi-step
-   * operations (e.g., large refactors, test suites, deployments) that can take
-   * many minutes without emitting streaming chunks. Premature timeout causes
-   * the "agent stops and needs to be prodded" bug.
+   * Interval (ms) between GC passes over completed / marked-for-cleanup stream
+   * sessions in the main-process stream manager. This is a periodic cleanup
+   * cadence for reclaiming resources — it does NOT enforce turn lifetime.
+   * The daemon (intentd) owns turn lifetime (PROMPT_TIMEOUT); the frontend does
+   * not force-terminate in-flight streams on wall-clock grounds. Informational
+   * stall detection remains a separate, non-terminal UI concern.
    */
-  COMPLETION_DETECTION_MS: 60 * 60 * 1000, // 1 hour - only for detecting dead connections
-
-  /**
-   * Timeout (ms) for ACP prompt responses.
-   * Set to 30 minutes to match backend stream timeout.
-   */
-  PROMPT_RESPONSE_TIMEOUT_MS: 30 * 60 * 1000, // 30 minutes
+  COMPLETION_DETECTION_MS: 60 * 60 * 1000, // 1 hour
 
   /**
    * Interval (ms) for saving session state to disk during streaming.
