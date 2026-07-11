@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // FAKE seams: the renderer auth client (linear.authStatus probe) and the
-// AppClient settings domain (daemon keyring path) are stubbed so no IPC
+// AppClient settings domain (daemon secrets-file path) are stubbed so no IPC
 // happens. The service runs against the REAL configured store so the
 // middleware wiring and the state-setting dispatches are exercised end to end.
 vi.mock("$features/linear-auth/renderer/linear-auth.client", () => ({
@@ -61,7 +61,7 @@ describe("linearAuthStoreService (fake seams, real store)", () => {
     expect(state().isAuthenticated).toBe(true);
   });
 
-  it("connect stores the key under linear.token (daemon keyring path) and re-probes", async () => {
+  it("connect stores the key under linear.token (daemon secrets-file path) and re-probes", async () => {
     api.getAuthState.mockResolvedValueOnce({ isAuthenticated: true, requiresAugmentAuth: false });
 
     await connectLinearFlow("lin_api_abc123");
