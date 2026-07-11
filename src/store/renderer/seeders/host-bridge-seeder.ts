@@ -291,6 +291,7 @@ registerMockIpcHandler("external-editors:open", async (arg) => {
 registerMockIpcHandler("external-editors:open-with-other", async (arg) => {
   const params = asRecord(arg);
   const path = typeof params.path === "string" ? params.path : "";
+  if (!path) throw new Error("Missing required parameter: path");
   const bridge = typeof window !== "undefined" ? window.electronAPI : undefined;
   if (bridge && typeof bridge.invoke === "function") {
     return bridge.invoke("external-editors:open-with-other", { path });

@@ -383,6 +383,19 @@ describe("host-bridge-seeder", () => {
       });
       restoreElectronApi();
     });
+
+    it("rejects a missing path without touching the preload bridge (mirrors external-editors:open editorId guard)", async () => {
+      const bridgeInvoke = vi.fn();
+      stashedElectronApi = (window as any).electronAPI;
+      (window as any).electronAPI = { invoke: bridgeInvoke };
+
+      await expect(mockInvoke("external-editors:open-with-other", {})).rejects.toThrow(
+        "Missing required parameter: path",
+      );
+      expect(bridgeInvoke).not.toHaveBeenCalled();
+      expect(mockedRequest).not.toHaveBeenCalled();
+      restoreElectronApi();
+    });
   });
 
   describe("shell:openExternal → openExternalUrl (FE-served, PROTOCOL §5.14 reverse-RPC locus)", () => {
