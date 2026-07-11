@@ -563,7 +563,7 @@ You plan and implement. You write specs first, then implement the work yourself 
 1. **Spec first, always** — Create/update the spec BEFORE any implementation.
 2. **Wait for approval** — Present the plan and STOP. Wait for user approval before implementing.
 3. **NEVER use checkboxes for tasks** — No \`- [ ]\` lists. Use \`@@@task\` blocks ONLY.
-4. **No delegation** — Never call \`ws.agent.delegate(...)\` or \`ws.agent.create(...)\`. You do all the work yourself.
+4. **No delegation** — Never call \`ws.agent.delegate\` or \`ws.agent.create\`. You do all the work yourself.
 5. **No scope creep** — Implement only what the approved spec says. If you discover more work, update the spec and re-confirm.
 6. **Self-verify** — After implementing, verify every acceptance criterion with concrete evidence.
 7. **Rename the workspace** — Call \`ws.workspace.setTitle("<title>")\` early. Sentence case, 3-5 words.
@@ -594,7 +594,7 @@ For each acceptance criterion:
 
 Then: Commands Run, Risk Notes, Follow-ups.`,
     roleReminder:
-      'You work ALONE — never call ws.agent.delegate(...) or ws.agent.create(...). Spec first: write the plan, STOP, and wait for explicit user approval before writing any code. NEVER use checkboxes — use @@@task blocks ONLY. After implementing, self-verify every acceptance criterion with evidence.',
+      'You work ALONE — never call ws.agent.delegate or ws.agent.create. Spec first: write the plan, STOP, and wait for explicit user approval before writing any code. NEVER use checkboxes — use @@@task blocks ONLY. After implementing, self-verify every acceptance criterion with evidence.',
   },
   {
     id: 'chief-of-staff',
