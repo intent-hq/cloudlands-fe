@@ -249,6 +249,39 @@ describe("createThemeMutationMiddleware (dispatch handlers + hydration)", () => 
     expect(managerState.current!.setTheme).toHaveBeenCalledWith("dark", { persist: false });
   });
 
+  it("syncs Redux exactly once on boot even though ThemeManager.setTheme fires theme-changed synchronously", async () => {
+    // Real ThemeManager.setTheme() dispatches a `theme-changed` window event
+    // synchronously. If the middleware installed its listener before running
+    // init, boot would sync Redux twice (once via syncReduxFromThemeManager and
+    // once via the listener). Mirror that behaviour here and assert the sync
+    // happens exactly once.
+    primeLocalStorage({ theme: "dark" });
+    managerState.current = createThemeManagerMock({
+      getTheme: vi.fn(() => "dark"),
+      isDark: vi.fn(() => true),
+      setTheme: vi.fn(() => {
+        window.dispatchEvent(
+          new CustomEvent("theme-changed", {
+            detail: { theme: "dark", isDark: true, customThemeName: null, activePresetId: null },
+          }),
+        );
+      }),
+    });
+    const dispatchSpy = vi.spyOn(appStore, "dispatch");
+
+    const middleware = createThemeMutationMiddleware();
+    const invoke = middleware({} as never)((action) => action);
+
+    invoke({ type: "unrelated/action" });
+    await flush();
+
+    const bootDispatchTypes = dispatchSpy.mock.calls
+      .map(([action]) => (action as { type?: string })?.type)
+      .filter((type) => type === "theme/setThemePreference");
+    expect(bootDispatchTypes).toHaveLength(1);
+    dispatchSpy.mockRestore();
+  });
+
   it("persists and applies the requested theme preference", async () => {
     managerState.current = createThemeManagerMock({ getTheme: vi.fn(() => "light"), isDark: vi.fn(() => false) });
     const middleware = createThemeMutationMiddleware();

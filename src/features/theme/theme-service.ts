@@ -297,11 +297,17 @@ function installThemeChangedListener(): void {
   window.addEventListener("theme-changed", themeChangedListener);
 }
 
-/** Lazy boot: hydrate + install the window listener on the first dispatched action. */
+/** Lazy boot: hydrate + install the window listener on the first dispatched action.
+ *
+ * `initThemeFromManager()` calls `ThemeManager.setTheme()`, which synchronously
+ * dispatches a `theme-changed` window event. Run init BEFORE installing the
+ * listener so the boot-time sync happens exactly once (through
+ * `syncReduxFromThemeManager`) instead of twice (listener + sync).
+ */
 function bootOnce(): void {
   try {
-    installThemeChangedListener();
     initThemeFromManager();
+    installThemeChangedListener();
   } catch (error) {
     logger.warn("theme hydration failed", error);
   }
