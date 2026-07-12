@@ -151,7 +151,7 @@ async function probeDaemonSocket(socketPath: string): Promise<boolean> {
  * @param socketPath - Path to the UDS socket
  * @param timeoutMs - Timeout in milliseconds (default: 3000)
  */
-async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Promise<boolean> {
+export async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Promise<boolean> {
   if (!fs.existsSync(socketPath)) return false;
 
   return new Promise<boolean>((resolve) => {
@@ -211,15 +211,17 @@ async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Promise<b
  *
  * After an initial 2s grace period, probes the daemon every 10s with a 3s timeout.
  * If a probe fails, triggers the restart path.
+ *
+ * @param socketPath - Path to the UDS socket
+ * @param delayMs - Delay before the next probe (default: 2000 for initial grace, 10000 for steady-state)
  */
-function startHealthWatchdog(socketPath: string): void {
+function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
   // Clear any existing watchdog
   if (watchdogTimer) {
     clearTimeout(watchdogTimer);
     watchdogTimer = null;
   }
 
-  // Initial grace period: 2s
   watchdogTimer = setTimeout(async () => {
     if (isShuttingDown || !sidecarProcess) return;
 
@@ -233,9 +235,9 @@ function startHealthWatchdog(socketPath: string): void {
       return;
     }
 
-    // Schedule next probe in 10s
-    startHealthWatchdog(socketPath);
-  }, 2000);
+    // Schedule next probe in 10s (steady-state interval)
+    startHealthWatchdog(socketPath, 10000);
+  }, delayMs);
 }
 
 /**
