@@ -22,9 +22,13 @@ import { loadWorkspaceNotesSucceeded } from "$store/renderer/slices/workspace-no
 import { selectAllTabs } from "$store/renderer/slices/panel-layout/panel-layout-selectors";
 import {
   createAgentRequested,
+  createAgentFromConfigRequested,
   createAgentWithSpecialistRequested,
   runAgentForNoteRequested,
 } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
+import { agentSessionLaunchAgentRequested } from "$store/renderer/slices/agent-session/agent-session-slice";
+import { CHIEF_WORKSPACE_ID, WorkspaceId } from "$shared/types/branded-ids";
+import { createAgentTypeId } from "$shared/types/agent.types";
 import type { Note, Workspace } from "$shared/types";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -152,5 +156,102 @@ describe("agentCreationService (fake factory + client, real store)", () => {
     await flush();
     await flush();
     expect(createAgent).not.toHaveBeenCalled();
+  });
+
+  it("createAgentFromConfigRequested resolves with the created session and opens a tab when openAgent is true", async () => {
+    const WS = "ws-from-config";
+    const AGENT = "agent-from-config";
+    seedWorkspace(WS);
+    createAgent.mockResolvedValueOnce({ success: true, agent: makeSession(AGENT, WS), agentId: AGENT });
+
+    const action = createAgentFromConfigRequested(
+      WS,
+      { name: "Cfg", workspaceId: WorkspaceId(WS), agentType: createAgentTypeId("chat"), source: "test" },
+      { openAgent: true },
+    );
+    appStore.dispatch(action);
+    const resolved = await action.promise;
+
+    expect(resolved?.id).toBe(AGENT);
+    expect(createAgent).toHaveBeenCalledTimes(1);
+    expect(agentTabs(WS, AGENT)).toHaveLength(1);
+  });
+
+  it("createAgentFromConfigRequested does NOT open a tab when openAgent is false", async () => {
+    const WS = "ws-no-open";
+    const AGENT = "agent-no-open";
+    seedWorkspace(WS);
+    createAgent.mockResolvedValueOnce({ success: true, agent: makeSession(AGENT, WS), agentId: AGENT });
+
+    const action = createAgentFromConfigRequested(
+      WS,
+      { name: "Silent", workspaceId: WorkspaceId(WS), agentType: createAgentTypeId("chat"), source: "test" },
+      { openAgent: false },
+    );
+    appStore.dispatch(action);
+    const resolved = await action.promise;
+
+    expect(resolved?.id).toBe(AGENT);
+    expect(agentTabs(WS, AGENT)).toHaveLength(0);
+  });
+
+  it("createAgentFromConfigRequested rejects when the factory fails", async () => {
+    const WS = "ws-config-fail";
+    seedWorkspace(WS);
+    createAgent.mockResolvedValueOnce({ success: false, error: "boom" });
+
+    const action = createAgentFromConfigRequested(
+      WS,
+      { name: "X", workspaceId: WorkspaceId(WS), agentType: createAgentTypeId("chat"), source: "test" },
+    );
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow(/boom/);
+  });
+
+  it("createAgentFromConfigRequested rejects when the workspace is missing", async () => {
+    const action = createAgentFromConfigRequested(
+      "ws-missing-cfg",
+      { name: "X", workspaceId: WorkspaceId("ws-missing-cfg"), agentType: createAgentTypeId("chat"), source: "test" },
+    );
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow(/Workspace is not available/);
+    expect(createAgent).not.toHaveBeenCalled();
+  });
+
+  it("agentSessionLaunchAgentRequested resolves with the created session (chief workspace)", async () => {
+    const AGENT = "agent-chief-launch";
+    createAgent.mockResolvedValueOnce({
+      success: true,
+      agent: makeSession(AGENT, CHIEF_WORKSPACE_ID),
+      agentId: AGENT,
+    });
+
+    const action = agentSessionLaunchAgentRequested(
+      CHIEF_WORKSPACE_ID,
+      { name: "Chief thread", agentType: createAgentTypeId("workspace"), source: "chief-card" },
+      { openAgent: false },
+    );
+    appStore.dispatch(action);
+    const resolved = await action.promise;
+
+    expect(resolved?.id).toBe(AGENT);
+    expect(createAgent).toHaveBeenCalledTimes(1);
+    const [, config] = createAgent.mock.calls[0];
+    expect(config).toMatchObject({ agentType: "workspace", source: "chief-card" });
+    // Chief thread is created with openAgent: false — no tab is opened.
+    expect(agentTabs(CHIEF_WORKSPACE_ID, AGENT)).toHaveLength(0);
+  });
+
+  it("agentSessionLaunchAgentRequested rejects (with a clean error) on failure", async () => {
+    const WS = "ws-launch-fail";
+    seedWorkspace(WS);
+    createAgent.mockResolvedValueOnce({ success: false, error: "nope" });
+
+    const action = agentSessionLaunchAgentRequested(
+      WS,
+      { name: "Launch", agentType: createAgentTypeId("chat"), source: "test" },
+    );
+    appStore.dispatch(action);
+    await expect(action.promise).rejects.toThrow(/nope/);
   });
 });
