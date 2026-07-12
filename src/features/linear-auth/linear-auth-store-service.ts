@@ -100,7 +100,13 @@ export async function logoutLinearFlow(): Promise<void> {
   try {
     await appClient.settings.reset(LINEAR_TOKEN_SETTING_PATH);
   } catch (error) {
+    // Mirror connectLinearFlow: surface the daemon message via setLinearError
+    // and bail before the re-probe (which would otherwise clobber the error
+    // with `null` and mask the still-present key).
+    const message = error instanceof Error ? error.message : "Failed to clear the API key";
+    appStore.dispatch(setLinearError(message));
     logger.error("logout error", error);
+    return;
   }
   try {
     const authState = await linearAuthClient.getAuthState(true);
