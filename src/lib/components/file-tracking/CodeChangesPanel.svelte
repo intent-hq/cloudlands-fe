@@ -243,7 +243,10 @@
     // which applies an optimistic staged-state flip and reconciles from the
     // daemon — the proven post-saga path (see FileChangesSection).
     if (!workspaceId) return;
-    void stageFilesViaSeam(workspaceId, [change.relativePath || change.file]);
+    const result = await stageFilesViaSeam(workspaceId, [change.relativePath || change.file]);
+    if (!result.success) {
+      toast.error('Stage failed', { description: result.error || 'Unknown error' });
+    }
   }
 
   // TODO: unstage still dispatches the legacy changes-slice action — `git.unstage`
@@ -262,7 +265,12 @@
 
     // Stage all unstaged paths through the AppClient seam (git.stage).
     const paths = unstagedChanges.map((c) => c.relativePath || c.file).filter(Boolean);
-    if (paths.length > 0) void stageFilesViaSeam(workspaceId, paths);
+    if (paths.length > 0) {
+      const result = await stageFilesViaSeam(workspaceId, paths);
+      if (!result.success) {
+        toast.error('Stage failed', { description: result.error || 'Unknown error' });
+      }
+    }
   }
 
   // TODO: unstage still dispatches the legacy changes-slice action — `git.unstage`

@@ -348,7 +348,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         // Staging routes through the AppClient seam (git.stage). TODO: the
         // file-tracking-rendered list converges only once file-tracking moves
         // off legacy IPC (out of scope for this wave).
-        void stageFilesViaSeam(workspaceId, paths);
+        const result = await stageFilesViaSeam(workspaceId, paths);
+        if (!result.success) {
+          toast.error('Stage failed', { description: result.error || 'Unknown error' });
+        }
       }
     } finally {
       isStaging = false;
@@ -384,7 +387,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       return;
     }
     // Stage through the AppClient seam (git.stage).
-    void stageFilesViaSeam(workspaceId, filesToStage);
+    const stageResult = await stageFilesViaSeam(workspaceId, filesToStage);
+    if (!stageResult.success) {
+      toast.error('Stage failed', { description: stageResult.error || 'Unknown error' });
+    }
     clearSelection();
     await tick();
     if (filesToStage.length === 1) {
@@ -453,7 +459,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     }
     const paths = group.files.map((f) => f.path);
     // Stage through the AppClient seam (git.stage).
-    void stageFilesViaSeam(workspaceId, paths);
+    const result = await stageFilesViaSeam(workspaceId, paths);
+    if (!result.success) {
+      toast.error('Stage failed', { description: result.error || 'Unknown error' });
+    }
   }
 
   async function handleUnstageGroup(group: AgentChangeGroup) {
