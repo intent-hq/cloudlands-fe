@@ -857,19 +857,20 @@ export interface ScriptsClient {
   /** `script.create` — register a definition; returns the stored record. */
   create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult>;
   /** `script.remove` — stop (if running) and forget a script. */
-  remove(scriptId: string): Promise<MutationResult>;
+  remove(workspaceId: string, scriptId: string): Promise<MutationResult>;
   /** `script.start`. */
-  start(scriptId: string): Promise<MutationResult>;
+  start(workspaceId: string, scriptId: string): Promise<MutationResult>;
   /** `script.stop`. */
-  stop(scriptId: string): Promise<MutationResult>;
+  stop(workspaceId: string, scriptId: string): Promise<MutationResult>;
   /** `script.restart`. */
-  restart(scriptId: string): Promise<MutationResult>;
+  restart(workspaceId: string, scriptId: string): Promise<MutationResult>;
   /** `script.output` — historical output-buffer text. */
-  output(scriptId: string, maxLines?: number): Promise<string>;
+  output(workspaceId: string, scriptId: string, maxLines?: number): Promise<string>;
   /** `script.status` — the script's runtime state, or null when unavailable. */
-  status(scriptId: string): Promise<ScriptRuntimeState | null>;
+  status(workspaceId: string, scriptId: string): Promise<ScriptRuntimeState | null>;
   /** `script.run` — run a command-mode script to completion. */
   run(
+    workspaceId: string,
     scriptId: string,
     options?: { maxLines?: number; timeoutSeconds?: number },
   ): Promise<ScriptRunResult | null>;

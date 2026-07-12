@@ -146,31 +146,31 @@ export const scriptsClient = {
   },
 
   /** Remove a script definition (`script.remove`, §5.8). */
-  async remove(_workspaceId: string, scriptId: string): Promise<CommandResponse<void>> {
-    return toCommandResponse(await appClient.scripts.remove(scriptId));
+  async remove(workspaceId: string, scriptId: string): Promise<CommandResponse<void>> {
+    return toCommandResponse(await appClient.scripts.remove(workspaceId, scriptId));
   },
 
   /** Start a script by ID (`script.start`, §5.8). */
-  async start(_workspaceId: string, scriptId: string): Promise<CommandResponse<void>> {
-    return toCommandResponse(await appClient.scripts.start(scriptId));
+  async start(workspaceId: string, scriptId: string): Promise<CommandResponse<void>> {
+    return toCommandResponse(await appClient.scripts.start(workspaceId, scriptId));
   },
 
   /** Stop a running script (`script.stop`, §5.8). */
-  async stop(_workspaceId: string, scriptId: string): Promise<CommandResponse<void>> {
-    return toCommandResponse(await appClient.scripts.stop(scriptId));
+  async stop(workspaceId: string, scriptId: string): Promise<CommandResponse<void>> {
+    return toCommandResponse(await appClient.scripts.stop(workspaceId, scriptId));
   },
 
   /** Restart a script (`script.restart`, §5.8). */
-  async restart(_workspaceId: string, scriptId: string): Promise<CommandResponse<void>> {
-    return toCommandResponse(await appClient.scripts.restart(scriptId));
+  async restart(workspaceId: string, scriptId: string): Promise<CommandResponse<void>> {
+    return toCommandResponse(await appClient.scripts.restart(workspaceId, scriptId));
   },
 
   /** Get detailed runtime status of a script (`script.status`, §5.8). */
   async getStatus(
-    _workspaceId: string,
+    workspaceId: string,
     scriptId: string,
   ): Promise<{ success: boolean; status?: ScriptRuntimeState; error?: string }> {
-    const status = await appClient.scripts.status(scriptId);
+    const status = await appClient.scripts.status(workspaceId, scriptId);
     return status
       ? { success: true, status }
       : { success: false, error: 'Failed to read script status' };
@@ -275,7 +275,7 @@ export const scriptsClient = {
       let removed = 0;
       for (const [name, s] of existingAutoByName) {
         if (!detectedNames.has(name)) {
-          const removeResult = await appClient.scripts.remove(s.id);
+          const removeResult = await appClient.scripts.remove(workspaceId, s.id);
           if (removeResult.success) {
             removed += 1;
           } else {

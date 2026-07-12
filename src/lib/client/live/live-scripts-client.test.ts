@@ -112,43 +112,57 @@ describe("LiveScriptsClient (fake transport)", () => {
     ["start", "script.start"],
     ["stop", "script.stop"],
     ["restart", "script.restart"],
-  ] as const)("%s forwards %s with the scriptId", async (method, wireMethod) => {
-    mockedRequest.mockResolvedValueOnce({ ok: true, scriptId: "s-1" });
-    const client = new LiveScriptsClient();
+  ] as const)(
+    "%s forwards %s with workspaceId + scriptId (router requires workspaceId, §5.8)",
+    async (method, wireMethod) => {
+      mockedRequest.mockResolvedValueOnce({ ok: true, scriptId: "s-1" });
+      const client = new LiveScriptsClient();
 
-    const result = await client[method]("s-1");
+      const result = await client[method]("ws-1", "s-1");
 
-    expect(mockedRequest).toHaveBeenCalledWith(wireMethod, { scriptId: "s-1" });
-    expect(result).toEqual({ success: true });
-  });
+      expect(mockedRequest).toHaveBeenCalledWith(wireMethod, {
+        workspaceId: "ws-1",
+        scriptId: "s-1",
+      });
+      expect(result).toEqual({ success: true });
+    },
+  );
 
-  it("output forwards maxLines and returns the bare output-buffer string", async () => {
+  it("output forwards workspaceId + maxLines and returns the bare output-buffer string", async () => {
     mockedRequest.mockResolvedValueOnce("[2 lines]\nready\nlistening");
     const client = new LiveScriptsClient();
 
-    const output = await client.output("s-1", 10);
+    const output = await client.output("ws-1", "s-1", 10);
 
-    expect(mockedRequest).toHaveBeenCalledWith("script.output", { scriptId: "s-1", maxLines: 10 });
+    expect(mockedRequest).toHaveBeenCalledWith("script.output", {
+      workspaceId: "ws-1",
+      scriptId: "s-1",
+      maxLines: 10,
+    });
     expect(output).toBe("[2 lines]\nready\nlistening");
   });
 
-  it("status returns the runtime state verbatim and folds errors to null", async () => {
+  it("status forwards workspaceId, returns the runtime state verbatim and folds errors to null", async () => {
     const client = new LiveScriptsClient();
     mockedRequest.mockResolvedValueOnce(DEV_SCRIPT.runtime);
-    expect(await client.status("s-1")).toEqual(DEV_SCRIPT.runtime);
-    expect(mockedRequest).toHaveBeenCalledWith("script.status", { scriptId: "s-1" });
+    expect(await client.status("ws-1", "s-1")).toEqual(DEV_SCRIPT.runtime);
+    expect(mockedRequest).toHaveBeenCalledWith("script.status", {
+      workspaceId: "ws-1",
+      scriptId: "s-1",
+    });
 
     mockedRequest.mockRejectedValueOnce(new Error("script s-1 not found"));
-    expect(await client.status("s-1")).toBeNull();
+    expect(await client.status("ws-1", "s-1")).toBeNull();
   });
 
-  it("run forwards the §5.8 run envelope and returns it verbatim", async () => {
+  it("run forwards the §5.8 run envelope with workspaceId and returns it verbatim", async () => {
     mockedRequest.mockResolvedValueOnce({ exitCode: 0, output: "ok", timedOut: false });
     const client = new LiveScriptsClient();
 
-    const result = await client.run("s-1", { maxLines: 50, timeoutSeconds: 30 });
+    const result = await client.run("ws-1", "s-1", { maxLines: 50, timeoutSeconds: 30 });
 
     expect(mockedRequest).toHaveBeenCalledWith("script.run", {
+      workspaceId: "ws-1",
       scriptId: "s-1",
       maxLines: 50,
       timeoutSeconds: 30,
