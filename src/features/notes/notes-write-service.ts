@@ -309,6 +309,7 @@ async function flushContent(noteId: string): Promise<void> {
     if (!result.success) {
       if (reconcileNoteConflict(pending.workspaceId, noteId, result)) return;
       logger.error("Failed to save note content", result.error);
+      toast.error("Failed to save note", { description: result.error ?? "Unknown error" });
       await refetchWorkspaceNotes(pending.workspaceId);
       return;
     }
@@ -338,10 +339,13 @@ export async function updateNoteTitle(
         : await appClient.notes.updateMetadata(noteId, { title });
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
+      logger.error("Failed to update note title", result.error);
+      toast.error("Failed to update note title", {
+        description: result.error ?? "Unknown error",
+      });
       if (previous !== undefined) {
         appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, { title: previous }));
       }
-      logger.error("Failed to update note title", result.error);
       return;
     }
     if (rev !== undefined) advanceNoteRev(workspaceId, noteId, rev);
@@ -368,8 +372,11 @@ export async function updateNoteMetadata(
         : await appClient.notes.updateMetadata(noteId, metadata);
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
-      appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, rollback));
       logger.error("Failed to update note metadata", result.error);
+      toast.error("Failed to update note", {
+        description: result.error ?? "Unknown error",
+      });
+      appStore.dispatch(applyLocalNoteUpdate(workspaceId, noteId, rollback));
       return;
     }
     if (rev !== undefined) advanceNoteRev(workspaceId, noteId, rev);
@@ -389,8 +396,11 @@ export async function deleteNote(workspaceId: string, noteId: string): Promise<v
         : await appClient.notes.delete(noteId);
     if (!result.success) {
       if (reconcileNoteConflict(workspaceId, noteId, result)) return;
-      if (snapshot) appStore.dispatch(applyNoteCreated(workspaceId, snapshot));
       logger.error("Failed to delete note", result.error);
+      toast.error("Failed to delete note", {
+        description: result.error ?? "Unknown error",
+      });
+      if (snapshot) appStore.dispatch(applyNoteCreated(workspaceId, snapshot));
     }
   });
 }
