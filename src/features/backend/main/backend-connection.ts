@@ -59,8 +59,17 @@ export interface ResolveBackendConfigOptions {
   isDev?: boolean;
 }
 
-/** Default dev UDS path for the running intentd daemon. */
-export function defaultSocketPath(): string {
+/**
+ * Default dev UDS path for the running intentd daemon.
+ *
+ * Honors `INTENTD_DATA_DIR` (socket = `$INTENTD_DATA_DIR/intentd.sock`) so the
+ * FE connects to the same socket the sidecar spawned intentd with.
+ */
+export function defaultSocketPath(env: NodeJS.ProcessEnv = process.env): string {
+  const dataDir = env.INTENTD_DATA_DIR?.trim();
+  if (dataDir) {
+    return path.join(dataDir, 'intentd.sock');
+  }
   return path.join(os.homedir(), 'Library', 'Application Support', 'intentd', 'intentd.sock');
 }
 
@@ -90,7 +99,7 @@ export function resolveBackendConfig(
   if (opts.isDev) {
     return { transport: 'ws', wsUrl: DEFAULT_DEV_WS_URL };
   }
-  return { transport: 'uds', socketPath: defaultSocketPath() };
+  return { transport: 'uds', socketPath: defaultSocketPath(env) };
 }
 
 /**

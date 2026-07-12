@@ -73,12 +73,25 @@ describe('resolveBackendConfig precedence', () => {
 
   it('defaults packaged builds to the dev UDS path (backward compatible)', () => {
     const config = resolveBackendConfig({}, { isDev: false });
-    expect(config).toEqual({ transport: 'uds', socketPath: defaultSocketPath() });
+    expect(config).toEqual({ transport: 'uds', socketPath: defaultSocketPath({}) });
   });
 
   it('treats a missing opts.isDev as the packaged default', () => {
     const config = resolveBackendConfig({});
     expect(config.transport).toBe('uds');
+  });
+
+  it('honors INTENTD_DATA_DIR for the default UDS socket path', () => {
+    const config = resolveBackendConfig({ INTENTD_DATA_DIR: '/custom/data' }, { isDev: false });
+    expect(config).toEqual({ transport: 'uds', socketPath: '/custom/data/intentd.sock' });
+  });
+
+  it('INTENTD_SOCKET takes precedence over INTENTD_DATA_DIR', () => {
+    const config = resolveBackendConfig(
+      { INTENTD_SOCKET: '/override.sock', INTENTD_DATA_DIR: '/custom/data' },
+      { isDev: false },
+    );
+    expect(config).toEqual({ transport: 'uds', socketPath: '/override.sock' });
   });
 });
 
