@@ -14,6 +14,14 @@ files:
   - node_modules/**/*
   - resources/**/*
 
+# Bundle the intentd binary into the packaged app
+# Runtime path: process.resourcesPath/intentd/intentd
+extraResources:
+  - from: resources/sidecar
+    to: intentd
+    filter:
+      - "**/*"
+
 # Unpack renderer files from asar to avoid MIME type issues
 # Also unpack MCP server files since Node.js can't execute scripts from within asar
 # Unpack Express and related modules for HTTP MCP Bridge
