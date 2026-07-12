@@ -149,8 +149,8 @@ const handleUnhandledSvelteKitModules = () => ({
  * to SvelteKit's route handler and logged as a red `[404] GET /health`
  * line. Answering the probe here — as fast, opaque 404s — keeps the dev
  * console clean regardless of which port the renderer runs on. The scanner
- * still treats the response as "not a bridge" because the JSON payload
- * does not identify a bridge.
+ * still treats the response as "not a bridge" because the `text/plain`
+ * body (`not-a-bridge`) does not match a bridge response.
  */
 const devHealthProbeSilencer = () => ({
   name: 'dev-health-probe-silencer',
