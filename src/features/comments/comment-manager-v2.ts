@@ -926,16 +926,18 @@ export class CommentManagerV2 {
     this.editor.chain().focus().removeCommentAnchors(commentId).run();
 
     // Delete through the write service: optimistic removal + `comment.delete` +
-    // rollback are owned there. Returns whether the comment existed.
-    const removed = await commentsWrite.deleteComment(this.noteId, commentId);
+    // rollback (with a toast on failure) are owned there. `existed` mirrors the
+    // legacy boolean return so the follow-up cleanup still runs when the
+    // comment was present before the optimistic removal.
+    const { existed } = await commentsWrite.deleteComment(this.noteId, commentId);
 
-    if (removed) {
+    if (existed) {
       // Update decorations
       this.updateDecorations();
       logger.info('Removed comment', { commentId });
     }
 
-    return removed;
+    return existed;
   }
 
   /**
