@@ -121,6 +121,15 @@ describe("linearAuthStoreService (fake seams, real store)", () => {
     expect(state().error).toMatch(/LINEAR_API_KEY/);
   });
 
+  it("logout surfaces the daemon error via setLinearError when settings.reset rejects", async () => {
+    settings.reset.mockRejectedValueOnce(new Error("reset kaboom") as never);
+
+    await logoutLinearFlow();
+
+    expect(state().error).toBe("reset kaboom");
+    expect(api.getAuthState).not.toHaveBeenCalled();
+  });
+
   it("dispatching connectLinear invokes the flow (middleware wiring)", async () => {
     api.getAuthState.mockResolvedValue({ isAuthenticated: true, requiresAugmentAuth: false });
 

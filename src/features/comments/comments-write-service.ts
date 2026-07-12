@@ -14,6 +14,7 @@
  */
 import { appClient } from "$lib/client";
 import type { CommentAddParams, CommentRespondParams } from "$lib/client";
+import { toast } from "svelte-sonner";
 import type { CommentV2 } from "./comment-types-v2";
 import { store as appStore } from "$store/renderer/store";
 import {
@@ -27,55 +28,73 @@ const logger = createLogger("CommentsWriteService");
 
 /**
  * Add a comment optimistically, then persist via `comment.add`. The optimistic
- * comment is inserted into the store immediately; on failure it is removed.
- * Convergence to the daemon-assigned id is left to the subscribe→refetch loop.
+ * comment is inserted into the store immediately; on failure it is removed and
+ * a toast surfaces the daemon error. Returns `true` on success so callers can
+ * branch on the persist outcome; convergence to the daemon-assigned id is left
+ * to the subscribe→refetch loop.
  */
 export async function addComment(
   noteId: string,
   optimistic: CommentV2,
   params: CommentAddParams,
-): Promise<void> {
+): Promise<boolean> {
   appStore.dispatch(addCommentAction(optimistic));
 
   const result = await appClient.comments.add(noteId, params);
   if (!result.success) {
-    appStore.dispatch(removeCommentAction(optimistic.id));
     logger.error("Failed to add comment", result.error);
+    toast.error("Failed to add comment", { description: result.error ?? "Unknown error" });
+    appStore.dispatch(removeCommentAction(optimistic.id));
+    return false;
   }
+  return true;
 }
 
 /**
  * Reply to a thread/comment optimistically, then persist via `comment.respond`.
- * The optimistic reply is inserted immediately; on failure it is removed.
+ * The optimistic reply is inserted immediately; on failure it is removed and a
+ * toast surfaces the daemon error. Returns `true` on success so callers can
+ * branch on the persist outcome.
  */
 export async function respondToComment(
   noteId: string,
   optimisticReply: CommentV2,
   params: CommentRespondParams,
-): Promise<void> {
+): Promise<boolean> {
   appStore.dispatch(addCommentAction(optimisticReply));
 
   const result = await appClient.comments.respond(noteId, params);
   if (!result.success) {
-    appStore.dispatch(removeCommentAction(optimisticReply.id));
     logger.error("Failed to respond to comment", result.error);
+    toast.error("Failed to reply", { description: result.error ?? "Unknown error" });
+    appStore.dispatch(removeCommentAction(optimisticReply.id));
+    return false;
   }
+  return true;
 }
 
 /**
  * Delete a comment optimistically, then persist via `comment.delete`. The
  * comment is removed from the store immediately and restored from a snapshot on
- * failure. Returns whether the comment existed before the optimistic removal.
+ * failure (with a toast surfacing the daemon error). Returns `existed` (whether
+ * the comment existed before the optimistic removal — preserved for callers
+ * that key follow-up cleanup on prior presence) and `success` (whether the
+ * daemon persisted the delete) so callers can react to either.
  */
-export async function deleteComment(noteId: string, commentId: string): Promise<boolean> {
+export async function deleteComment(
+  noteId: string,
+  commentId: string,
+): Promise<{ existed: boolean; success: boolean }> {
   const snapshot = selectCommentById.select(appStore.state, commentId);
   appStore.dispatch(removeCommentAction(commentId));
 
   const result = await appClient.comments.delete(noteId, commentId);
   if (!result.success) {
-    if (snapshot) appStore.dispatch(addCommentAction(snapshot));
     logger.error("Failed to delete comment", result.error);
+    toast.error("Failed to delete comment", { description: result.error ?? "Unknown error" });
+    if (snapshot) appStore.dispatch(addCommentAction(snapshot));
+    return { existed: !!snapshot, success: false };
   }
 
-  return !!snapshot;
+  return { existed: !!snapshot, success: true };
 }

@@ -124,6 +124,18 @@ describe("notesWriteService (fake seam, real store)", () => {
     expect(notesApi.list).toHaveBeenCalledWith(WS);
   });
 
+  it("surfaces the daemon error via toast.error when a content save fails (non-conflict)", async () => {
+    seed(makeNote("n1"));
+    notesApi.setContent.mockResolvedValueOnce({ success: false, error: "boom" } as never);
+
+    updateNoteContent(WS, "n1", "edited", { immediate: true });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(toast.error).toHaveBeenCalledWith(
+      "Failed to save note",
+      expect.objectContaining({ description: "boom" }),
+    );
+  });
+
   it("updateNoteTitle is optimistic and rolls back on failure", async () => {
     seed(makeNote("n1", { title: "Old" }));
     notesApi.updateMetadata.mockResolvedValueOnce({ success: false, error: "no" } as never);
@@ -131,6 +143,10 @@ describe("notesWriteService (fake seam, real store)", () => {
     await updateNoteTitle(WS, "n1", "New");
     expect(notesApi.updateMetadata).toHaveBeenCalledWith("n1", { title: "New" });
     expect(selectNoteById.select(appStore.state, WS, "n1")?.title).toBe("Old");
+    expect(toast.error).toHaveBeenCalledWith(
+      "Failed to update note title",
+      expect.objectContaining({ description: "no" }),
+    );
   });
 
   it("deleteNote is optimistic and restores the note on failure", async () => {
@@ -140,6 +156,10 @@ describe("notesWriteService (fake seam, real store)", () => {
     await deleteNote(WS, "n1");
     expect(notesApi.delete).toHaveBeenCalledWith("n1");
     expect(selectNoteById.select(appStore.state, WS, "n1")).toBeDefined();
+    expect(toast.error).toHaveBeenCalledWith(
+      "Failed to delete note",
+      expect.objectContaining({ description: "no" }),
+    );
   });
 
   it("createNote forwards to the seam and reconciles via list on success", async () => {
