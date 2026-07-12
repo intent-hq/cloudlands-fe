@@ -57,10 +57,10 @@ import { createChiefVirtualWorkspace } from "$store/renderer/slices/workspace-ag
 import { buildTaskAgentInitialMessage } from "$features/notes/utils/task-agent-message-builder";
 import { store as appStore } from "$store/renderer/store";
 import {
+  agentSessionLaunchAgentRequested,
   bulkUpsertSessions,
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
-import { agentSessionLaunchAgentRequested } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { openAgentTabRequested } from "$store/renderer/slices/app-layout/app-layout-slice";
 import {
   openTab,
