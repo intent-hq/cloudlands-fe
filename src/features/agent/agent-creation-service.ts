@@ -1,15 +1,19 @@
 /**
  * Agent creation service — the post-saga handler for the orphaned
  * agent-creation triggers (`createAgentRequested`,
- * `createAgentWithSpecialistRequested`, `runAgentForNoteRequested`).
+ * `createAgentWithSpecialistRequested`, `runAgentForNoteRequested`,
+ * `createAgentFromConfigRequested`, `agentSessionLaunchAgentRequested`).
  *
  * These triggers lost their handlers when the saga runtime was removed (they
- * lived in `slices/workspace-agents/sagas/agent-creation-saga.ts`), so
- * Cmd/Ctrl+T, the New-agent / specialist UI, and the NoteMetadataBar run
- * button all dispatched no-op actions. This restores the behavior WITHOUT
- * re-adding a saga and WITHOUT changing any dispatch site:
- * `createAgentCreationMiddleware()` observes dispatched actions and routes
- * each trigger through the renderer's agent-creation seam.
+ * lived in `slices/workspace-agents/sagas/agent-creation-saga.ts` and
+ * `slices/agent-session/sagas/agent-chat-effects-saga.ts`), so Cmd/Ctrl+T, the
+ * New-agent / specialist UI, the NoteMetadataBar run button, Chief-of-Staff
+ * thread creation, and every direct `createAgentFromConfigRequested` dispatch
+ * site (AgentActionBlock, error-toast, panel-ai-layout, ScriptOutputViewer)
+ * became no-ops. This restores the behavior WITHOUT re-adding a saga and
+ * WITHOUT changing any dispatch site: `createAgentCreationMiddleware()`
+ * observes dispatched actions and routes each trigger through the renderer's
+ * agent-creation seam.
  *
  * Seam: agent creation goes through `agentFactory.createAgent()` (per AGENTS.md),
  * which is the live path — it invokes the real backend via `AGENT_CHANNELS.CREATE`
@@ -20,7 +24,12 @@
  * recorded in the BE hand-off note for future seam consolidation.
  *
  * On success the new agent's tab is opened/focused by reusing the 3.A1 open path
- * (`openAgentTabRequested`), so tab dedup/focus semantics stay in one place.
+ * (`openAgentTabRequested`), so tab dedup/focus semantics stay in one place. The
+ * async `createAgentFromConfigRequested` / `agentSessionLaunchAgentRequested`
+ * paths honor the caller's launch options (`openAgent`, `openInAdjacentPanel`,
+ * `panelId`, `sourcePanelId`) and settle each dispatched action's promise via
+ * `action.success` / `action.failure` so awaiting call sites (ChiefCard,
+ * AgentActionBlock) resolve or surface a clean error.
  *
  * Dependency-light per src/store AGENTS.md: top-level imports are limited to the
  * configured store, slice actions, store-free helpers/constants, shared types,
@@ -40,6 +49,8 @@ import {
   parseCompoundModelId,
   PROVIDER_MODEL_TIERS,
 } from "$shared/config/provider-config";
+import { cleanErrorMessage } from "$shared/errors/messages";
+import { unifiedIdService } from "$shared/services/unified-id.service";
 import { SPECIALISTS } from "$lib/constants/specialists";
 import { generateSpecialistAgentName } from "$lib/utils/agent-name-generator";
 import { createChiefVirtualWorkspace } from "$store/renderer/slices/workspace-agents/chief-virtual-workspace";
@@ -49,12 +60,20 @@ import {
   bulkUpsertSessions,
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
+import { agentSessionLaunchAgentRequested } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { openAgentTabRequested } from "$store/renderer/slices/app-layout/app-layout-slice";
 import {
+  openTab,
+  openTabInAdjacentOrSplit,
+} from "$store/renderer/slices/panel-layout/panel-layout-slice";
+import {
+  createAgentFromConfigRequested,
   createAgentRequested,
   createAgentWithSpecialistRequested,
   markAgentRecentlyCreated,
   runAgentForNoteRequested,
+  setActiveAgentId,
+  type AgentCreationRequestOptions,
 } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
 import { createLogger } from "$lib/utils/client-logger";
 
@@ -310,6 +329,154 @@ async function handleRunAgentForNote(
 }
 
 /**
+ * Open (or focus) the newly created agent's tab when the caller opted in via
+ * `options.openAgent`. Honors `openInAdjacentPanel`/`sourcePanelId` and an
+ * explicit `panelId`, mirroring the reference saga's `openCreatedAgent`.
+ */
+function openCreatedAgentForConfig(
+  wsId: string,
+  session: AgentSession,
+  options: AgentCreationRequestOptions | undefined,
+): void {
+  if (!options?.openAgent) return;
+  if (options.openInAdjacentPanel) {
+    appStore.dispatch(
+      openTabInAdjacentOrSplit(
+        wsId,
+        {
+          type: "agent",
+          title: session.name || "Agent",
+          agentId: session.id,
+          workspaceId: wsId,
+          closable: true,
+        },
+        options.sourcePanelId,
+      ),
+    );
+    return;
+  }
+  if (options.panelId) {
+    appStore.dispatch(
+      openTab(
+        wsId,
+        {
+          type: "agent",
+          title: session.name || "Agent",
+          agentId: session.id,
+          workspaceId: wsId,
+          closable: true,
+        },
+        options.panelId,
+      ),
+    );
+    return;
+  }
+  openCreatedAgentTab(wsId, session.id);
+}
+
+/**
+ * `createAgentFromConfigRequested`: async trigger dispatched by the launch
+ * handler (and by direct call sites like AgentActionBlock / error-toast /
+ * panel-ai-layout / ScriptOutputViewer). Routes through the shared factory
+ * seam, registers the session, and settles the caller's promise via
+ * `action.success` / `action.failure`.
+ */
+async function handleCreateAgentFromConfig(
+  action: ReturnType<typeof createAgentFromConfigRequested>,
+): Promise<void> {
+  const [wsId, config, options] = action.payload;
+  const deps = await loadCreationDeps();
+  const workspace = validateWorkspace(wsId, deps);
+  if (!workspace) {
+    const errorMessage = "Workspace is not available for agent creation";
+    logger.error("Failed to create agent from Redux request", {
+      workspaceId: wsId,
+      source: config.source,
+      error: errorMessage,
+    });
+    appStore.dispatch(action.failure(new Error(errorMessage)));
+    return;
+  }
+
+  try {
+    const agents = deps.selectAllWorkspaceAgents.select(appStore.state, wsId);
+    const result = await deps.agentFactory.createAgent(workspace, {
+      ...config,
+      workspaceId: WorkspaceId(wsId),
+    });
+    if (!result.success || !result.agent) {
+      const errorMessage = getCreationError(result.error);
+      logger.error("Failed to create agent from Redux request", {
+        workspaceId: wsId,
+        source: config.source,
+        error: errorMessage,
+      });
+      appStore.dispatch(action.failure(new Error(errorMessage)));
+      return;
+    }
+
+    const session = result.agent;
+    registerCreatedAgent(wsId, session, agents);
+    appStore.dispatch(setActiveAgentId(wsId, session.id));
+    openCreatedAgentForConfig(wsId, session, options);
+    appStore.dispatch(action.success(session));
+  } catch (error) {
+    const errorMessage = getCreationError(error);
+    logger.error("Failed to create agent from Redux request", {
+      workspaceId: wsId,
+      source: config.source,
+      error: errorMessage,
+    });
+    appStore.dispatch(action.failure(error instanceof Error ? error : new Error(errorMessage)));
+  }
+}
+
+/**
+ * `agentSessionLaunchAgentRequested`: async trigger dispatched by ChiefCard
+ * (new thread + auto-start) and other launch sites. Resolves the workspace's
+ * default model + provider (mirroring the reference saga), then delegates to
+ * `createAgentFromConfigRequested` and settles the launch promise with the
+ * created session (or a cleaned error message on failure).
+ */
+async function handleLaunchAgent(
+  action: ReturnType<typeof agentSessionLaunchAgentRequested>,
+): Promise<void> {
+  const [wsId, config, options] = action.payload;
+  try {
+    const deps = await loadCreationDeps();
+    const agentId = config.id ?? unifiedIdService.generateAgentId();
+    const model = config.model ?? deps.selectWorkspaceDefaultModel.select(appStore.state, wsId);
+    const activeProvider = deps.selectActiveProviderId.select(appStore.state);
+    const provider =
+      config.provider ??
+      (model.includes(":") ? parseCompoundModelId(model).providerId : activeProvider);
+
+    const createAction = createAgentFromConfigRequested(
+      wsId,
+      {
+        ...config,
+        id: agentId,
+        workspaceId: WorkspaceId(wsId),
+        model,
+        provider,
+      },
+      options,
+    );
+    appStore.dispatch(createAction);
+    const session = await createAction.promise;
+    appStore.dispatch(action.success(session));
+  } catch (error) {
+    const errorMessage = cleanErrorMessage(getCreationError(error, "Failed to launch agent"));
+    logger.error("Failed to launch agent", {
+      workspaceId: wsId,
+      source: (config as { source?: string }).source,
+      error: errorMessage,
+    });
+    appStore.dispatch(action.failure(new Error(errorMessage)));
+  }
+}
+
+/**
  * Middleware that gives the agent-creation triggers real handlers: after each
  * action passes through the (no-op) reducer, it routes the trigger to the
  * matching factory-backed handler. Fire-and-forget — dispatch stays synchronous
@@ -345,6 +512,16 @@ export function createAgentCreationMiddleware(): StoreMiddleware {
               typeof payload[2] === "string" ? payload[2] : undefined,
             );
           }
+          break;
+        case createAgentFromConfigRequested.type:
+          void handleCreateAgentFromConfig(
+            action as ReturnType<typeof createAgentFromConfigRequested>,
+          );
+          break;
+        case agentSessionLaunchAgentRequested.type:
+          void handleLaunchAgent(
+            action as ReturnType<typeof agentSessionLaunchAgentRequested>,
+          );
           break;
       }
     }
