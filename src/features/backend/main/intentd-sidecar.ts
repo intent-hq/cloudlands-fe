@@ -23,10 +23,15 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { Logger } from '$shared/logger';
+import { RestartPolicy } from './restart-policy';
 
 const logger = new Logger('Sidecar');
 
 let sidecarProcess: ChildProcess | null = null;
+let restartPolicy: RestartPolicy | null = null;
+let watchdogTimer: NodeJS.Timeout | null = null;
+let restartTimer: NodeJS.Timeout | null = null;
+let isShuttingDown = false;
 
 /** Spawn-policy decision result. */
 export interface ShouldSpawnDecision {
@@ -140,10 +145,192 @@ async function probeDaemonSocket(socketPath: string): Promise<boolean> {
 }
 
 /**
+ * Health check probe: sends a cheap JSON-RPC request to the daemon socket.
+ * Returns `true` if the daemon responds successfully within the timeout.
+ *
+ * @param socketPath - Path to the UDS socket
+ * @param timeoutMs - Timeout in milliseconds (default: 3000)
+ */
+async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Promise<boolean> {
+  if (!fs.existsSync(socketPath)) return false;
+
+  return new Promise<boolean>((resolve) => {
+    const client = net.connect({ path: socketPath });
+    let resolved = false;
+
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        client.destroy();
+        resolve(false);
+      }
+    }, timeoutMs);
+
+    // Send a cheap JSON-RPC ping request (workspace.list with lite:true)
+    const rpcRequest = {
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'workspace.list',
+      params: { lite: true },
+    };
+
+    client.on('connect', () => {
+      client.write(JSON.stringify(rpcRequest) + '\n');
+    });
+
+    client.on('data', (chunk: Buffer) => {
+      // Got a response - daemon is alive
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        client.destroy();
+        resolve(true);
+      }
+    });
+
+    client.on('error', () => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve(false);
+      }
+    });
+
+    client.on('end', () => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve(false);
+      }
+    });
+  });
+}
+
+/**
+ * Start the health watchdog for the sidecar daemon.
+ *
+ * After an initial 2s grace period, probes the daemon every 10s with a 3s timeout.
+ * If a probe fails, triggers the restart path.
+ */
+function startHealthWatchdog(socketPath: string): void {
+  // Clear any existing watchdog
+  if (watchdogTimer) {
+    clearTimeout(watchdogTimer);
+    watchdogTimer = null;
+  }
+
+  // Initial grace period: 2s
+  watchdogTimer = setTimeout(async () => {
+    if (isShuttingDown || !sidecarProcess) return;
+
+    const isHealthy = await healthCheckProbe(socketPath, 3000);
+    if (!isHealthy) {
+      logger.warn('Health check failed; triggering restart');
+      // Kill the process to trigger the restart path
+      if (sidecarProcess && !sidecarProcess.killed) {
+        sidecarProcess.kill('SIGKILL');
+      }
+      return;
+    }
+
+    // Schedule next probe in 10s
+    startHealthWatchdog(socketPath);
+  }, 2000);
+}
+
+/**
+ * Spawn the sidecar daemon process.
+ *
+ * Internal helper extracted from startIntentdSidecar for restart path reuse.
+ */
+async function spawnSidecarProcess(
+  binaryPath: string,
+  socketPath: string,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  if (isShuttingDown) return;
+
+  logger.info('Spawning intentd sidecar', { binaryPath, socketPath });
+
+  const spawnEnv = { ...env };
+  if (env.INTENTD_DATA_DIR?.trim()) {
+    spawnEnv.INTENTD_DATA_DIR = env.INTENTD_DATA_DIR.trim();
+  }
+
+  sidecarProcess = spawn(binaryPath, ['serve', '--listen', 'uds'], {
+    env: spawnEnv,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: false,
+  });
+
+  // Initialize restart policy if not already done
+  if (!restartPolicy) {
+    restartPolicy = new RestartPolicy();
+  }
+  restartPolicy.onSpawn();
+
+  sidecarProcess.stdout?.on('data', (chunk: Buffer) => {
+    const text = chunk.toString('utf8').trim();
+    if (text) logger.info(`[intentd stdout] ${text}`);
+  });
+
+  sidecarProcess.stderr?.on('data', (chunk: Buffer) => {
+    const text = chunk.toString('utf8').trim();
+    if (text) logger.warn(`[intentd stderr] ${text}`);
+  });
+
+  sidecarProcess.on('exit', (code, signal) => {
+    logger.info('Sidecar exited', { code, signal });
+
+    // Clear watchdog timer
+    if (watchdogTimer) {
+      clearTimeout(watchdogTimer);
+      watchdogTimer = null;
+    }
+
+    sidecarProcess = null;
+
+    // Consult restart policy
+    if (!restartPolicy) return;
+
+    const decision = restartPolicy.onExit(code, signal);
+    if (!decision.shouldRestart) {
+      logger.info('Not restarting sidecar', { reason: decision.reason });
+      return;
+    }
+
+    logger.info('Scheduling sidecar restart', {
+      delayMs: decision.delayMs,
+      remainingAttempts: decision.remainingAttempts,
+      reason: decision.reason,
+    });
+
+    // Schedule restart after backoff delay
+    restartTimer = setTimeout(async () => {
+      restartTimer = null;
+      if (isShuttingDown) {
+        logger.info('Skipping restart; shutdown in progress');
+        return;
+      }
+      await spawnSidecarProcess(binaryPath, socketPath, env);
+      // Start watchdog after successful spawn
+      startHealthWatchdog(socketPath);
+    }, decision.delayMs);
+  });
+
+  sidecarProcess.on('error', (err: Error) => {
+    logger.error('Sidecar process error', err);
+  });
+
+  // Start the health watchdog after spawning
+  startHealthWatchdog(socketPath);
+}
+
+/**
  * Start the intentd sidecar if the spawn policy allows it.
  *
  * Before spawning, probes the target socket to adopt an already-running daemon.
- * If spawning, pipes stdout/stderr to the main-process logger.
+ * If spawning, pipes stdout/stderr to the main-process logger and starts supervision.
  */
 export async function startIntentdSidecar(
   env: NodeJS.ProcessEnv = process.env,
@@ -174,44 +361,37 @@ export async function startIntentdSidecar(
     return;
   }
 
-  logger.info('Starting intentd sidecar', { binaryPath, socketPath });
-  const spawnEnv = { ...env };
-  if (env.INTENTD_DATA_DIR?.trim()) {
-    spawnEnv.INTENTD_DATA_DIR = env.INTENTD_DATA_DIR.trim();
-  }
-
-  sidecarProcess = spawn(binaryPath, ['serve', '--listen', 'uds'], {
-    env: spawnEnv,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: false,
-  });
-
-  sidecarProcess.stdout?.on('data', (chunk: Buffer) => {
-    const text = chunk.toString('utf8').trim();
-    if (text) logger.info(`[intentd stdout] ${text}`);
-  });
-
-  sidecarProcess.stderr?.on('data', (chunk: Buffer) => {
-    const text = chunk.toString('utf8').trim();
-    if (text) logger.warn(`[intentd stderr] ${text}`);
-  });
-
-  sidecarProcess.on('exit', (code, signal) => {
-    logger.info('Sidecar exited', { code, signal });
-    sidecarProcess = null;
-  });
-
-  sidecarProcess.on('error', (err: Error) => {
-    logger.error('Sidecar process error', err);
-  });
+  isShuttingDown = false;
+  await spawnSidecarProcess(binaryPath, socketPath, env);
 }
 
 /**
  * Stop the sidecar daemon (if running).
  *
  * Sends SIGTERM, waits for the grace period, then SIGKILL if still alive.
+ * Marks as intentional stop to suppress auto-restart.
  */
 export async function stopIntentdSidecar(gracePeriodMs = 3000): Promise<void> {
+  // Mark shutdown to prevent restarts
+  isShuttingDown = true;
+
+  // Clear watchdog timer
+  if (watchdogTimer) {
+    clearTimeout(watchdogTimer);
+    watchdogTimer = null;
+  }
+
+  // Clear restart timer (quit during pending backoff must not respawn)
+  if (restartTimer) {
+    clearTimeout(restartTimer);
+    restartTimer = null;
+  }
+
+  // Mark intentional stop in restart policy
+  if (restartPolicy) {
+    restartPolicy.markIntentionalStop();
+  }
+
   if (!sidecarProcess) return;
 
   logger.info('Stopping sidecar daemon...');
