@@ -59,26 +59,27 @@ export class LiveScriptsClient implements ScriptsClient {
     }
   }
 
-  async remove(scriptId: string): Promise<MutationResult> {
-    return runMutation("script.remove", { scriptId });
+  async remove(workspaceId: string, scriptId: string): Promise<MutationResult> {
+    return runMutation("script.remove", { workspaceId, scriptId });
   }
 
-  async start(scriptId: string): Promise<MutationResult> {
-    return runMutation("script.start", { scriptId });
+  async start(workspaceId: string, scriptId: string): Promise<MutationResult> {
+    return runMutation("script.start", { workspaceId, scriptId });
   }
 
-  async stop(scriptId: string): Promise<MutationResult> {
-    return runMutation("script.stop", { scriptId });
+  async stop(workspaceId: string, scriptId: string): Promise<MutationResult> {
+    return runMutation("script.stop", { workspaceId, scriptId });
   }
 
-  async restart(scriptId: string): Promise<MutationResult> {
-    return runMutation("script.restart", { scriptId });
+  async restart(workspaceId: string, scriptId: string): Promise<MutationResult> {
+    return runMutation("script.restart", { workspaceId, scriptId });
   }
 
-  async output(scriptId: string, maxLines?: number): Promise<string> {
+  async output(workspaceId: string, scriptId: string, maxLines?: number): Promise<string> {
     try {
       // `script.output` returns the output-buffer text as a bare JSON string (§5.8).
       const result = await backendRequest<unknown>("script.output", {
+        workspaceId,
         scriptId,
         ...(maxLines !== undefined ? { maxLines } : {}),
       });
@@ -88,9 +89,12 @@ export class LiveScriptsClient implements ScriptsClient {
     }
   }
 
-  async status(scriptId: string): Promise<ScriptRuntimeState | null> {
+  async status(workspaceId: string, scriptId: string): Promise<ScriptRuntimeState | null> {
     try {
-      const result = await backendRequest<ScriptRuntimeState>("script.status", { scriptId });
+      const result = await backendRequest<ScriptRuntimeState>("script.status", {
+        workspaceId,
+        scriptId,
+      });
       return result && typeof result === "object" ? result : null;
     } catch {
       return null;
@@ -98,11 +102,13 @@ export class LiveScriptsClient implements ScriptsClient {
   }
 
   async run(
+    workspaceId: string,
     scriptId: string,
     options?: { maxLines?: number; timeoutSeconds?: number },
   ): Promise<ScriptRunResult | null> {
     try {
       const result = await backendRequest<ScriptRunResult>("script.run", {
+        workspaceId,
         scriptId,
         ...(options?.maxLines !== undefined ? { maxLines: options.maxLines } : {}),
         ...(options?.timeoutSeconds !== undefined

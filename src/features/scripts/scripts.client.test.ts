@@ -272,7 +272,7 @@ describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
     const result = await scriptsClient.detect('ws-1');
 
     expect(scriptsRemove).toHaveBeenCalledTimes(1);
-    expect(scriptsRemove).toHaveBeenCalledWith('script-auto-stale');
+    expect(scriptsRemove).toHaveBeenCalledWith('ws-1', 'script-auto-stale');
     expect(result).toMatchObject({ detected: 1, added: 0, removed: 1 });
   });
 
