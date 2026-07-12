@@ -216,39 +216,6 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result.error).toContain('ipc boom');
   });
 
-  it('setAvailability forwards agent.setAvailability with the boolean', async () => {
-    backend.onRequest('agent.setAvailability', () => ({ id: 'agent-1' }));
-    const client = new LiveAgentsClient();
-
-    expect(await client.setAvailability('agent-1', true)).toEqual({ success: true });
-    expect(backend.requests[0]).toEqual({
-      method: 'agent.setAvailability',
-      params: { agentId: 'agent-1', available: true },
-    });
-  });
-
-  it('follow forwards agent.follow with the boolean', async () => {
-    backend.onRequest('agent.follow', () => ({ id: 'agent-1' }));
-    const client = new LiveAgentsClient();
-
-    expect(await client.follow('agent-1', false)).toEqual({ success: true });
-    expect(backend.requests[0]).toEqual({
-      method: 'agent.follow',
-      params: { agentId: 'agent-1', follow: false },
-    });
-  });
-
-  it('lock forwards agent.lock with the boolean', async () => {
-    backend.onRequest('agent.lock', () => ({ id: 'agent-1' }));
-    const client = new LiveAgentsClient();
-
-    expect(await client.lock('agent-1', true)).toEqual({ success: true });
-    expect(backend.requests[0]).toEqual({
-      method: 'agent.lock',
-      params: { agentId: 'agent-1', locked: true },
-    });
-  });
-
   it('stop forwards agent.stop with §5.5 params and folds the ack into success', async () => {
     // PROTOCOL §5.5: agent.stop takes `{ agentId }` and acks `{ success: true }`
     // — the daemon cancels the in-flight stream and emits the terminal

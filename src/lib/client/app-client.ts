@@ -276,9 +276,6 @@ export interface AgentsClient {
    * queue actually changed.
    */
   removeQueued(agentId: string, messageId: string): Promise<MutationResult>;
-  setAvailability(agentId: string, available: boolean): Promise<MutationResult>;
-  follow(agentId: string, follow: boolean): Promise<MutationResult>;
-  lock(agentId: string, locked: boolean): Promise<MutationResult>;
   /**
    * Cancel the agent's in-flight stream (`agent.stop`, §5.5). The response is
    * just an ack (`{ success: true }`); the daemon cancels the current turn
