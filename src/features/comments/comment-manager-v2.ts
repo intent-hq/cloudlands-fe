@@ -922,17 +922,20 @@ export class CommentManagerV2 {
       return false;
     }
 
-    // Remove anchors from document
-    this.editor.chain().focus().removeCommentAnchors(commentId).run();
-
     // Delete through the write service: optimistic removal + `comment.delete` +
-    // rollback (with a toast on failure) are owned there. `existed` mirrors the
-    // legacy boolean return so the follow-up cleanup still runs when the
-    // comment was present before the optimistic removal.
-    const { existed } = await commentsWrite.deleteComment(this.noteId, commentId);
+    // rollback (with a toast on failure) are owned there. `existed` reflects
+    // whether the comment was present before the optimistic removal; `success`
+    // reflects daemon persistence. Anchors are only removed once the delete
+    // persists so a rolled-back store entry does not desynchronise from the
+    // document.
+    const { existed, success } = await commentsWrite.deleteComment(this.noteId, commentId);
+
+    if (!success) {
+      return false;
+    }
 
     if (existed) {
-      // Update decorations
+      this.editor.chain().focus().removeCommentAnchors(commentId).run();
       this.updateDecorations();
       logger.info('Removed comment', { commentId });
     }
