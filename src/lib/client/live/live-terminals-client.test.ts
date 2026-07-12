@@ -140,14 +140,22 @@ describe("LiveTerminalsClient wire requests (fake transport)", () => {
     expect(await client.getBuffer("term-1")).toEqual("");
   });
 
-  it("output forwards terminal.readOutput and accepts a bare string or { output }", async () => {
+  it("output forwards terminal.readOutput with { workspaceId, terminalId } and accepts a bare string or { output }", async () => {
+    // PROTOCOL §5.13 / router.rs `terminal.readOutput` requires `workspaceId`
+    // alongside `terminalId` (mirrors the `script.*` fix in #25). Sending only
+    // `{ terminalId }` is rejected by the daemon router.
     mockedRequest.mockResolvedValueOnce("plaintext-1");
     mockedRequest.mockResolvedValueOnce({ output: "plaintext-2" });
     const client = new LiveTerminalsClient();
 
-    expect(await client.output("term-1")).toEqual("plaintext-1");
-    expect(await client.output("term-1")).toEqual("plaintext-2");
+    expect(await client.output("ws-1", "term-1")).toEqual("plaintext-1");
+    expect(await client.output("ws-1", "term-1")).toEqual("plaintext-2");
     expect(mockedRequest).toHaveBeenNthCalledWith(1, "terminal.readOutput", {
+      workspaceId: "ws-1",
+      terminalId: "term-1",
+    });
+    expect(mockedRequest).toHaveBeenNthCalledWith(2, "terminal.readOutput", {
+      workspaceId: "ws-1",
       terminalId: "term-1",
     });
   });

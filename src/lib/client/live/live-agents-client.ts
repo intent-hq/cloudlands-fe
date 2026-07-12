@@ -204,15 +204,6 @@ export class LiveAgentsClient implements AgentsClient {
     // self-drained or the FE's seeded queue may diverge after a daemon restart.
     return runMutation("agent.removeQueuedMessage", { agentId, messageId });
   }
-  async setAvailability(agentId: string, available: boolean): Promise<MutationResult> {
-    return runMutation("agent.setAvailability", { agentId, available });
-  }
-  async follow(agentId: string, follow: boolean): Promise<MutationResult> {
-    return runMutation("agent.follow", { agentId, follow });
-  }
-  async lock(agentId: string, locked: boolean): Promise<MutationResult> {
-    return runMutation("agent.lock", { agentId, locked });
-  }
   async stop(agentId: string): Promise<MutationResult> {
     // `agent.stop` (§5.5) takes `{ agentId }` and acks `{ success: true }`.
     // The daemon cancels the in-flight stream and emits the terminal

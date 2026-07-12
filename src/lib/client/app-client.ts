@@ -276,9 +276,6 @@ export interface AgentsClient {
    * queue actually changed.
    */
   removeQueued(agentId: string, messageId: string): Promise<MutationResult>;
-  setAvailability(agentId: string, available: boolean): Promise<MutationResult>;
-  follow(agentId: string, follow: boolean): Promise<MutationResult>;
-  lock(agentId: string, locked: boolean): Promise<MutationResult>;
   /**
    * Cancel the agent's in-flight stream (`agent.stop`, §5.5). The response is
    * just an ack (`{ success: true }`); the daemon cancels the current turn
@@ -387,8 +384,13 @@ export interface TerminalsClient {
    * live client decodes the base64 payload so callers receive a plain string.
    */
   getBuffer(terminalId: string, maxBytes?: number): Promise<string>;
-  /** Ported `terminal.readOutput` — plaintext convenience read for MCP-style callers. */
-  output(terminalId: string): Promise<string>;
+  /**
+   * Ported `terminal.readOutput` — plaintext convenience read for MCP-style
+   * callers. The daemon router (§5.13) requires `workspaceId` in addition to
+   * `terminalId`; callers thread the owning workspace through, matching the
+   * `terminal.*` mutation surface.
+   */
+  output(workspaceId: string, terminalId: string): Promise<string>;
   /** Subscribe to `terminal:*` events scoped to a single terminalId. */
   subscribeEvents(terminalId: string, handlers: TerminalEventHandlers): Unsubscribe;
   subscribe(handler: SubscriptionHandler<TerminalTab[]>): Unsubscribe;
