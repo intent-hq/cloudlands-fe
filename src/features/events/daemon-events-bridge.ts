@@ -1203,7 +1203,17 @@ const BRIDGE_SUBSCRIBE_EVENT_TYPES = [
   "workspace:updated",
   "workspace:created",
   "workspace:deleted",
-  "task:ready-tasks-changed",
+  // Daemon filter is exact-match unless the pattern ends in `:*`; a bare
+  // `task:ready-tasks-changed` therefore silently drops `task:status-changed`
+  // and every other task family the bridge's reducers act on. Use the
+  // wildcard so any future `task:*` event added on the BE reaches the FE
+  // without another subscribe change.
+  "task:*",
+  // Taxonomy parity with the reference `WorkspaceEventType` — the daemon
+  // emits `git:commit` / `git:pull` (and future `git:*` events) as workspace
+  // activity, and the bridge's activity-timeline reducer already handles
+  // them; without a matching subscribe filter the daemon never routes them.
+  "git:*",
   "changes:git-status",
   "changes:tracked",
   "line-attribution:updated",

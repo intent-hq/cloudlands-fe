@@ -248,7 +248,8 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
         "workspace:updated",
         "workspace:created",
         "workspace:deleted",
-        "task:ready-tasks-changed",
+        "task:*",
+        "git:*",
         "changes:git-status",
         "changes:tracked",
         "line-attribution:updated",
@@ -256,6 +257,30 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
         "mcp.servers:status-changed",
       ],
     });
+  });
+
+  it("events.subscribe filter matches task:status-changed and git:commit (daemon filter is exact-match unless :*)", async () => {
+    // The reducer-focused test below injects synthetic events straight into
+    // the captured handler, bypassing the daemon's per-subscription filter.
+    // This assertion locks in the wire contract: the bridge's subscribe list
+    // must include a pattern that matches every task/git family the reducers
+    // consume, otherwise the daemon routes nothing to the FE. Emulates the
+    // daemon-side filter — `pattern` matches `type` when `pattern === type`
+    // or `pattern.endsWith(":*")` and `type` starts with the prefix.
+    await primeBridge();
+    const call = backendRequestSpy.mock.calls.find(([method]) => method === "events.subscribe");
+    expect(call).toBeDefined();
+    const eventTypes = (call![1] as { eventTypes: string[] }).eventTypes;
+    const matchesFilter = (type: string) =>
+      eventTypes.some(
+        (pattern) =>
+          pattern === type ||
+          (pattern.endsWith(":*") && type.startsWith(pattern.slice(0, -1))),
+      );
+    expect(matchesFilter("task:status-changed")).toBe(true);
+    expect(matchesFilter("task:ready-tasks-changed")).toBe(true);
+    expect(matchesFilter("git:commit")).toBe(true);
+    expect(matchesFilter("git:pull")).toBe(true);
   });
 
   it("agent:idle notification flips selectAgentIsResponding from true → false", async () => {
@@ -1347,7 +1372,8 @@ describe("daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
         "workspace:updated",
         "workspace:created",
         "workspace:deleted",
-        "task:ready-tasks-changed",
+        "task:*",
+        "git:*",
         "changes:git-status",
         "changes:tracked",
         "line-attribution:updated",
