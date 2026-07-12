@@ -387,8 +387,13 @@ export interface TerminalsClient {
    * live client decodes the base64 payload so callers receive a plain string.
    */
   getBuffer(terminalId: string, maxBytes?: number): Promise<string>;
-  /** Ported `terminal.readOutput` — plaintext convenience read for MCP-style callers. */
-  output(terminalId: string): Promise<string>;
+  /**
+   * Ported `terminal.readOutput` — plaintext convenience read for MCP-style
+   * callers. The daemon router (§5.13) requires `workspaceId` in addition to
+   * `terminalId`; callers thread the owning workspace through, matching the
+   * `terminal.*` mutation surface.
+   */
+  output(workspaceId: string, terminalId: string): Promise<string>;
   /** Subscribe to `terminal:*` events scoped to a single terminalId. */
   subscribeEvents(terminalId: string, handlers: TerminalEventHandlers): Unsubscribe;
   subscribe(handler: SubscriptionHandler<TerminalTab[]>): Unsubscribe;

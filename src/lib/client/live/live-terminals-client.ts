@@ -152,9 +152,10 @@ export class LiveTerminalsClient implements TerminalsClient {
     }
   }
 
-  async output(terminalId: string): Promise<string> {
+  async output(workspaceId: string, terminalId: string): Promise<string> {
     try {
       const result = await backendRequest<{ output?: unknown } | string>("terminal.readOutput", {
+        workspaceId,
         terminalId,
       });
       if (typeof result === "string") return result;
