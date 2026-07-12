@@ -21,8 +21,6 @@ files:
 asarUnpack:
   - dist/renderer/**/*
   - resources/**/*
-  - dist/main/mcp-stdio-server.cjs
-  - dist/main/mcp-stdio-server-standalone.js
   - dist/features/mcp/servers/**/*
   - node_modules/express/**/*
   - node_modules/body-parser/**/*

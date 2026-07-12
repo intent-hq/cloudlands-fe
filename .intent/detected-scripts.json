@@ -83,12 +83,6 @@
       "mode": "command"
     },
     {
-      "name": "build:mcp",
-      "command": "pnpm build:mcp",
-      "category": "build",
-      "mode": "command"
-    },
-    {
       "name": "build:cdp-mcp",
       "command": "pnpm build:cdp-mcp",
       "category": "build",
@@ -482,12 +476,6 @@
       "name": "prebuild",
       "command": "pnpm prebuild",
       "category": "build",
-      "mode": "command"
-    },
-    {
-      "name": "test:mcp-stdio-proxy",
-      "command": "pnpm test:mcp-stdio-proxy",
-      "category": "test",
       "mode": "command"
     },
     {

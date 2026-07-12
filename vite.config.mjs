@@ -150,7 +150,7 @@ const handleUnhandledSvelteKitModules = () => ({
  * line. Answering the probe here — as fast, opaque 404s — keeps the dev
  * console clean regardless of which port the renderer runs on. The scanner
  * still treats the response as "not a bridge" because the JSON payload
- * does not identify a bridge (see src/main/mcp-bridge-health.ts).
+ * does not identify a bridge.
  */
 const devHealthProbeSilencer = () => ({
   name: 'dev-health-probe-silencer',
