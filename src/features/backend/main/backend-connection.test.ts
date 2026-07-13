@@ -19,7 +19,7 @@ import {
   resolveBackendConfig,
   WebSocketDuplex,
 } from './backend-connection';
-import { shouldSpawnSidecar } from './intentd-sidecar';
+import { shouldSpawnSidecar } from './intentd-spawn-policy';
 import { JsonRpcClient } from './json-rpc-client';
 
 // `ws` is aliased to a browser stub in `vitest.config.ts`; use createRequire to

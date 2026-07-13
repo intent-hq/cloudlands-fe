@@ -24,6 +24,11 @@ import * as path from 'node:path';
 
 import { Logger } from '$shared/logger';
 import { RestartPolicy } from './restart-policy';
+// Re-export from the policy module so existing importers keep working; consumers
+// that only need the decision (e.g. `backend-connection.ts`) import it from
+// `intentd-spawn-policy` directly to avoid pulling in the sidecar manager.
+export { shouldSpawnSidecar, type ShouldSpawnDecision } from './intentd-spawn-policy';
+import { shouldSpawnSidecar } from './intentd-spawn-policy';
 
 const logger = new Logger('Sidecar');
 
@@ -33,53 +38,15 @@ let watchdogTimer: NodeJS.Timeout | null = null;
 let restartTimer: NodeJS.Timeout | null = null;
 let isShuttingDown = false;
 
-/** Spawn-policy decision result. */
-export interface ShouldSpawnDecision {
-  shouldSpawn: boolean;
-  reason: string;
-}
-
-/**
- * Decide whether to spawn the sidecar daemon.
- *
- * Returns `shouldSpawn: false` when:
- *   - `INTENTD_SIDECAR=0` (explicit disable)
- *   - Any transport override is set (`INTENTD_SOCKET`, `INTENTD_WS_URL`, `INTENTD_TCP`)
- *   - Dev build without `INTENTD_SIDECAR=1`
- *
- * Pure function for testability.
- */
-export function shouldSpawnSidecar(
-  env: NodeJS.ProcessEnv,
-  isPackaged: boolean,
-): ShouldSpawnDecision {
-  const sidecarEnv = env.INTENTD_SIDECAR?.trim();
-  if (sidecarEnv === '0') {
-    return { shouldSpawn: false, reason: 'INTENTD_SIDECAR=0 disables spawning' };
-  }
-  if (env.INTENTD_SOCKET?.trim()) {
-    return { shouldSpawn: false, reason: 'INTENTD_SOCKET override disables spawning' };
-  }
-  if (env.INTENTD_WS_URL?.trim()) {
-    return { shouldSpawn: false, reason: 'INTENTD_WS_URL override disables spawning' };
-  }
-  if (env.INTENTD_TCP?.trim()) {
-    return { shouldSpawn: false, reason: 'INTENTD_TCP override disables spawning' };
-  }
-  if (!isPackaged && sidecarEnv !== '1') {
-    return { shouldSpawn: false, reason: 'dev build requires INTENTD_SIDECAR=1' };
-  }
-  return { shouldSpawn: true, reason: isPackaged ? 'packaged build' : 'INTENTD_SIDECAR=1' };
-}
-
 /**
  * Resolve the intentd binary path.
  *
  * Precedence:
- *   1. `INTENTD_BIN` env override (absolute path). The Makefile's `dev`
- *      target passes this pinned to the release binary it just built, so
- *      dev is not implicitly dependent on Electron's cwd being the
- *      monorepo root.
+ *   1. `INTENTD_BIN` env override — a path to the intentd binary. Absolute
+ *      paths are recommended (the Makefile's `dev` target passes an absolute
+ *      release path so dev is not implicitly dependent on Electron's cwd
+ *      being the monorepo root); relative paths are accepted and resolved
+ *      against `process.cwd()` via `fs.existsSync`.
  *   2. Packaged → `process.resourcesPath/intentd/intentd` (intentd.exe on Windows)
  *   3. Dev → walk from `cwd` up to the filesystem root looking for
  *      `packages/intentd/target/{release,debug}/intentd` (intentd.exe on
