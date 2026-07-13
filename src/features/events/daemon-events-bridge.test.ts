@@ -2802,6 +2802,151 @@ describe("daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
   });
 });
 
+describe("daemonEventsBridge (workspace:updated → workspace slice)", () => {
+  const WS_UPD = "ws-updated-1";
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    resetMockIpcRouter();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => {
+    resetMockIpcRouter();
+    vi.clearAllMocks();
+  });
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import(
+      "$store/renderer/slices/workspace/workspace-slice"
+    );
+    const { WorkspaceStatus } = await import("$shared/types");
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_UPD,
+        title: "Original",
+        branch: "main",
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<Record<string, unknown>> {
+    const { getItem } = await import(
+      "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils"
+    );
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_UPD) ?? {}) as never;
+  }
+
+  function updatedNotification(
+    changes: Record<string, unknown>,
+  ): { method: string; params?: unknown } {
+    return {
+      method: "events.event",
+      params: {
+        event: {
+          id: `evt-ws-updated-${Math.random().toString(36).slice(2, 8)}`,
+          workspaceId: WS_UPD,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "workspace:updated",
+          actor: { type: "system" },
+          data: { workspaceId: WS_UPD, changes },
+        },
+      },
+    };
+  }
+
+  it("merges a title-only delta onto the workspace entity (agent workspace.setTitle parity)", async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(updatedNotification({ title: "Add dark mode support" }));
+
+    const ws = await readWorkspace();
+    expect(ws.title).toBe("Add dark mode support");
+    // Unrelated fields on the entity stay intact.
+    expect(ws.branch).toBe("main");
+  });
+
+  it("merges non-title whitelisted delta fields (tags, statusMessage, status)", async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      updatedNotification({
+        tags: ["a", "b"],
+        statusMessage: "Reviewing PR",
+        status: "Inactive",
+      }),
+    );
+
+    const ws = await readWorkspace();
+    expect(ws.tags).toEqual(["a", "b"]);
+    expect(ws.statusMessage).toBe("Reviewing PR");
+    expect(ws.status).toBe("Inactive");
+  });
+
+  it("drops unknown wire fields rather than leaking them into the entity", async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      updatedNotification({
+        title: "Renamed",
+        // Not in the FE Workspace type; must be filtered out.
+        attention: "unread",
+        bogusField: 42,
+      }),
+    );
+
+    const ws = await readWorkspace();
+    expect(ws.title).toBe("Renamed");
+    expect((ws as Record<string, unknown>).attention).toBeUndefined();
+    expect((ws as Record<string, unknown>).bogusField).toBeUndefined();
+  });
+
+  it("still fires the legacy mock-IPC workspace:updated relay alongside the Redux update", async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const seen: unknown[] = [];
+    addMockIpcListener("workspace:updated", (payload) => seen.push(payload));
+
+    capturedHandlers[0]!(updatedNotification({ title: "Renamed" }));
+
+    // Redux path
+    const ws = await readWorkspace();
+    expect(ws.title).toBe("Renamed");
+    // Legacy relay path (unchanged shape: the full event `data` as `changes`).
+    expect(seen).toEqual([
+      { workspaceId: WS_UPD, changes: { workspaceId: WS_UPD, changes: { title: "Renamed" } } },
+    ]);
+  });
+
+  it("is a no-op when the delta has no whitelisted fields", async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(updatedNotification({ attention: "unread" }));
+
+    const ws = await readWorkspace();
+    expect(ws.title).toBe("Original");
+  });
+});
+
 describe("daemonEventsBridge (completion-watch refresh routing)", () => {
   beforeEach(() => {
     __resetDaemonEventsBridgeForTests();
