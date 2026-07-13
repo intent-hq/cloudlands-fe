@@ -29,7 +29,6 @@
   import {
   getTaskAssociationKeysInEditor,
   getTaskTextsInEditor,
-  removeAgentFromTasks,
   restoreTaskAgentAssociations,
 } from './note-with-comments/task-item-utils';
   import {
@@ -89,9 +88,7 @@
   import { setupEditorListeners } from '$lib/utils/editor-listeners';
   import { updateCommentDecorations } from '$lib/components/tiptap/CommentDecorations';
   import {
-  AGENT_ASSOCIATIONS_REMOVED_EVENT,
   pruneTaskAgentAssociationsForNote,
-  TASK_ASSOCIATION_CHANGED_EVENT,
 } from '$store/renderer/slices/task-agent-associations/task-agent-associations-slice';
   import { selectAssociationsForNote } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import { selectWorkspaceDefaultModel } from '$store/renderer/slices/model/model-selectors';
@@ -1623,31 +1620,13 @@
   onMount(() => {
     isInitializing = true;
 
-    // Listen for agent deletion events to clean up task assignments
-    const handleAgentRemoved = (
-      event: CustomEvent<{ agentId: string; noteId: string; workspaceId: string }>,
-    ) => {
-      const {
-        agentId: removedAgentId,
-        noteId: removedNoteId,
-        workspaceId: removedWorkspaceId,
-      } = event.detail;
-      // Only handle if this is for our note
-      if (
-        editor &&
-        !editor.isDestroyed &&
-        removedNoteId === noteId &&
-        removedWorkspaceId === workspace?.id
-      ) {
-        removeAgentFromTasks(editor, removedAgentId, logger);
-      }
-    };
-    window.addEventListener(AGENT_ASSOCIATIONS_REMOVED_EVENT, handleAgentRemoved as EventListener);
-
-    const handleTaskAssociationChanged = () => {
-      syncTaskAgentAssociations();
-    };
-    window.addEventListener(TASK_ASSOCIATION_CHANGED_EVENT, handleTaskAssociationChanged);
+    // Redux-driven convergence: the reactive $effect below (watching the
+    // taskAgentAssociations slice via `selectAssociationsForNote`) reconciles
+    // the editor's `delegatedAgentId` markup and the pruned-away rows when
+    // the daemon emits `task:agent-linked`/`task:agent-unlinked` (§6.5).
+    // A stale in-editor agent id is dropped when its association leaves the
+    // slice, so the legacy `agent-associations-removed` / `task-association-changed`
+    // window events (dead since the saga runtime was removed) are no longer needed.
 
     // Listen for scroll position save requests (before navigation)
     const handleSaveScrollPosition = (
@@ -1850,11 +1829,6 @@
     });
 
     return () => {
-      window.removeEventListener(
-        AGENT_ASSOCIATIONS_REMOVED_EVENT,
-        handleAgentRemoved as EventListener,
-      );
-      window.removeEventListener(TASK_ASSOCIATION_CHANGED_EVENT, handleTaskAssociationChanged);
       window.removeEventListener(
         'note:save-scroll-position',
         handleSaveScrollPosition as EventListener,

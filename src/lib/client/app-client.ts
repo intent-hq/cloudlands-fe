@@ -32,6 +32,11 @@ import type {
 import type { CommitInfo, TrackedChange } from "$features/file-tracking/types";
 import type { WorkspaceEvent } from "$features/events/types";
 import type { TokenUsage } from "$features/token-usage/token-usage-types";
+import type { ContextItem } from "$features/context/types";
+import type {
+  TaskAgentAssociation,
+  TaskAgentAssociationsByTaskKey,
+} from "$store/renderer/slices/task-agent-associations/task-agent-associations-types";
 import type { TerminalTab } from "$store/renderer/slices/terminals/terminals-slice";
 import type {
   ScriptRuntimeState,
@@ -231,6 +236,22 @@ export interface WorkspacesClient {
    * `workspace:tokenUsage-changed` event (§6.5).
    */
   getTokenUsage(workspaceId: string): Promise<TokenUsage | null>;
+  /**
+   * `workspace.getContext` (PROTOCOL §5.1): the daemon-owned chat-context
+   * attachment list for one workspace (notes, linear / github / sentry issues,
+   * browser URLs — the `ContextItem` union). Returns the items in the order
+   * the daemon persists them, or an empty array when the workspace has none.
+   * Updates are pushed via the `workspace:context-changed` event (§6.5).
+   */
+  getContext(workspaceId: string): Promise<ContextItem[]>;
+  /**
+   * `workspace.updateContext` (PROTOCOL §5.1): full-list replacement of the
+   * workspace's chat-context items. The daemon returns the persisted list
+   * verbatim so callers can reconcile without a follow-up `getContext`, and
+   * emits a self-sufficient `workspace:context-changed { workspaceId, items }`
+   * that the bridge folds into the context slice.
+   */
+  updateContext(workspaceId: string, items: ContextItem[]): Promise<ContextItem[]>;
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe;
 }
 
@@ -807,6 +828,33 @@ export interface TasksClient {
     title: string,
     options?: CreatePrerequisiteOptions,
   ): Promise<MutationResult>;
+  /**
+   * `task.listAgentLinks` (PROTOCOL §5.4): daemon-owned `byNoteId → byTaskKey`
+   * map answering "which agent is working on this checkbox?". Returns the map
+   * already grouped so the FE can dispatch it straight into
+   * `hydrateTaskAgentAssociations`. `task:agent-linked` /
+   * `task:agent-unlinked` events (§6.5) drive incremental updates.
+   */
+  listAgentLinks(
+    workspaceId: string,
+  ): Promise<Record<string, TaskAgentAssociationsByTaskKey>>;
+  /**
+   * `task.linkAgent` (PROTOCOL §5.4): persist a task↔agent linkage row. The
+   * daemon uses `taskKey ?? taskText` as the association key and echoes the
+   * stored row back so the FE can dispatch the authoritative shape. Emits
+   * `task:agent-linked` (§6.5).
+   */
+  linkAgent(
+    workspaceId: string,
+    noteId: string,
+    association: TaskAgentAssociation,
+  ): Promise<TaskAgentAssociation>;
+  /**
+   * `task.unlinkAgent` (PROTOCOL §5.4): drop the row keyed by `taskKey`.
+   * Returns `true` when the daemon removed a row, `false` when no matching
+   * row existed. Emits `task:agent-unlinked` on removal (§6.5).
+   */
+  unlinkAgent(workspaceId: string, noteId: string, taskKey: string): Promise<boolean>;
 }
 
 /** Parameters for creating a note-anchored comment (`comment.add`). */

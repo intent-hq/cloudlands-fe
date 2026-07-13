@@ -1,5 +1,4 @@
 type KnownWindowEventName =
-  | 'agent-associations-removed'
   | 'agent-follow-animation'
   | 'agent:scroll-to-turn'
   | 'app:deep-link-create'
@@ -20,7 +19,6 @@ type KnownWindowEventName =
   | 'resize'
   | 'scroll-to-task'
   | 'select-open'
-  | 'task-association-changed'
   | 'terminal-theme-changed'
   | 'theme-changed'
   | 'workspace:go-to-line'
