@@ -37,21 +37,25 @@ The beta release workflow is defined in `.github/workflows/release-beta.yml`.
 - `version` — semver version string (e.g., `1.2.3`)
 
 **What it does:**
-1. Validates semver format
-2. Checks out `cloudlands-fe` main branch
-3. Validates `INTENTD_READ_PAT` is configured
-4. Checks out `intent-hq/intentd` (main branch)
-5. Builds the `intentd` sidecar binary (arm64, with Rust cache)
-6. Installs frontend dependencies with pnpm
-7. Bumps version in `package.json`
-8. Commits version bump and creates git tag `v{version}`
-9. Imports macOS code signing certificate into a temporary keychain
-10. Builds and packages the macOS app (`.dmg` + `.zip` + `.blockmap` + `latest-mac.yml`)
-11. Signs and notarizes the app via `scripts/notarize.js` afterSign hook
-12. Publishes artifacts to `intent-hq/cloudlands-releases`:
+1. Validates semver format (supports prerelease suffixes like `1.2.3-beta.1`)
+2. Configures git token (RELEASE_PAT with repo scope for cross-repo operations)
+3. Checks out `cloudlands-fe` main branch
+4. Sets up pnpm and Node.js 22 with pnpm cache
+5. Installs frontend dependencies with pnpm
+6. Validates `INTENTD_READ_PAT` is configured
+7. Checks out `intent-hq/intentd` (main branch)
+8. Sets up Rust toolchain and caches Rust dependencies
+9. Builds the `intentd` sidecar binary (arm64)
+10. Bumps version in `package.json`
+11. Commits version bump and creates git tag `v{version}`
+12. Imports macOS code signing certificate into a temporary keychain
+13. Builds and packages the macOS app (`.dmg` + `.zip` + `.blockmap` + `latest-mac.yml`)
+14. Signs and notarizes the app via `scripts/notarize.js` afterSign hook
+15. Publishes artifacts to `intent-hq/cloudlands-releases`:
     - Creates immutable versioned release: `v{version}`
     - Updates rolling `beta` release tag (clobbers existing assets)
-13. Atomically pushes the version commit and tag to `cloudlands-fe`
+16. Atomically pushes the version commit and tag to `cloudlands-fe`
+17. Posts workflow summary with download URLs
 
 **Output:**
 - Versioned release on `cloudlands-releases`: `https://github.com/intent-hq/cloudlands-releases/releases/tag/v{version}`

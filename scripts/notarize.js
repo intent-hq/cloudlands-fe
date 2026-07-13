@@ -5,10 +5,10 @@
  * This script is called by electron-builder after signing.
  * It submits the app to Apple for notarization using Apple ID credentials.
  *
- * Required environment variables:
- * - CLOUDLANDS_APPLE_ID: Your Apple ID email
- * - CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD: App-specific password from appleid.apple.com
- * - CLOUDLANDS_APPLE_TEAM_ID: Your 10-character Team ID
+ * Required environment variables (CLOUDLANDS_* preferred, legacy APPLE_* also supported):
+ * - CLOUDLANDS_APPLE_ID (or APPLE_ID): Your Apple ID email
+ * - CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD (or APPLE_APP_SPECIFIC_PASSWORD): App-specific password from appleid.apple.com
+ * - CLOUDLANDS_APPLE_TEAM_ID (or APPLE_TEAM_ID): Your 10-character Team ID
  *
  * To create an app-specific password:
  * 1. Go to https://appleid.apple.com/account/manage
