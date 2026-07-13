@@ -108,7 +108,10 @@ export function resolveIntentdBinaryPath(
   // Dev: walk upward from cwd probing packages/intentd/target/{release,debug}.
   // The Electron cwd is not guaranteed to be the monorepo root (e.g. `pnpm run
   // dev` launched from `packages/cloudlands-fe`), so we search ancestors too.
-  let dir = path.resolve(cwd);
+  // Only resolve relative inputs — on Windows, `path.resolve` on an already-
+  // absolute POSIX-style path (e.g. `/monorepo`) prepends the current drive
+  // letter and changes the string form, which is unnecessary here.
+  let dir = path.isAbsolute(cwd) ? cwd : path.resolve(cwd);
   // Cap the walk to prevent runaway probing on unusual filesystems.
   for (let i = 0; i < 16; i++) {
     const releaseBinary = path.join(dir, 'packages/intentd/target/release', binaryName);
