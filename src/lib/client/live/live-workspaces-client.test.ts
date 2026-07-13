@@ -199,3 +199,95 @@ describe("LiveWorkspacesClient.getTokenUsage (PROTOCOL §5.23, fake transport)",
     expect(await client.getTokenUsage("ws-abc")).toBeNull();
   });
 });
+
+describe("LiveWorkspacesClient context (PROTOCOL §5.1, fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("getContext sends workspaceId and unwraps items", async () => {
+    const items = [
+      {
+        id: "n1",
+        type: "note",
+        title: "note",
+        provider: "internal",
+        noteId: "n1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    mockedRequest.mockResolvedValueOnce({ items });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.getContext("ws-abc")).toEqual(items);
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.getContext", {
+      workspaceId: "ws-abc",
+    });
+  });
+
+  it("getContext returns an empty array when items is missing / non-array", async () => {
+    mockedRequest.mockResolvedValueOnce({});
+    const client = new LiveWorkspacesClient();
+    expect(await client.getContext("ws-abc")).toEqual([]);
+  });
+
+  it("updateContext forwards items as full-list replacement and returns persisted list", async () => {
+    const items = [
+      {
+        id: "u-1",
+        type: "url",
+        title: "docs",
+        provider: "browser",
+        url: "https://example.com",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    mockedRequest.mockResolvedValueOnce({ items });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.updateContext("ws-abc", items as never)).toEqual(items);
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.updateContext", {
+      workspaceId: "ws-abc",
+      items,
+    });
+  });
+
+  // The context slice keys items by `id` and discriminates variants by `type`,
+  // so rows missing either would corrupt the Collection. The client filters
+  // those out at the seam before they reach the reducer.
+  it("getContext filters out rows missing id or type before returning", async () => {
+    const good = {
+      id: "n1",
+      type: "note",
+      title: "note",
+      provider: "internal",
+      noteId: "n1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    mockedRequest.mockResolvedValueOnce({
+      items: [good, { title: "missing id" }, { id: "n2" }, null, "n3"],
+    });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.getContext("ws-abc")).toEqual([good]);
+  });
+
+  it("updateContext filters out rows missing id or type before returning", async () => {
+    const good = {
+      id: "u-1",
+      type: "browser-url",
+      title: "docs",
+      provider: "browser",
+      url: "https://example.com",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    mockedRequest.mockResolvedValueOnce({
+      items: [good, { id: "u-2", title: "missing type" }, { type: "note" }],
+    });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.updateContext("ws-abc", [good] as never)).toEqual([good]);
+  });
+});

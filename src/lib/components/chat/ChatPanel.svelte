@@ -2414,6 +2414,15 @@
     const workspaceContextStr = buildWorkspaceContextString();
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
+    // Extract imageBlocks from inline image context items
+    const imageBlocks = inlineImageItems
+      .filter((item) => item.imageData && item.imageMimeType)
+      .map((item) => ({
+        type: 'image' as const,
+        data: item.imageData!,
+        mimeType: item.imageMimeType!,
+      }));
+
     // Dispatch all orchestration to the send-message saga
     appStore.dispatch(
       sendMessage(agentId, {
@@ -2422,6 +2431,7 @@
         contextItems: allContextItems,
         workspaceContextStr,
         noteIds,
+        ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
@@ -2529,6 +2539,15 @@
     const workspaceContextStr = buildWorkspaceContextString();
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
+    // Extract imageBlocks from inline image context items
+    const imageBlocks = inlineImageItems
+      .filter((item) => item.imageData && item.imageMimeType)
+      .map((item) => ({
+        type: 'image' as const,
+        data: item.imageData!,
+        mimeType: item.imageMimeType!,
+      }));
+
     appStore.dispatch(
       sendMessage(agentId, {
         wsId: workspace.id,
@@ -2536,6 +2555,7 @@
         contextItems: allContextItems,
         workspaceContextStr,
         noteIds,
+        ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
         skipQueueCheck: true,
         forceSubmit: true,
         agentName,

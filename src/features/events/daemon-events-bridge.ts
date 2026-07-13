@@ -121,7 +121,10 @@ import { replaceAgentQueue } from "$store/renderer/slices/agent-queue/agent-queu
 import { renameSession } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
 import { hydrateAgentsRequested } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
-import { applyTaskStatusChanged } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
+import {
+  applyTaskStatusChanged,
+  loadWorkspaceTasksRequested,
+} from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
 import {
   bulkUpdateWorkspaceEntities,
   updateWorkspaceEntity,
@@ -137,6 +140,13 @@ import {
 } from "$store/renderer/slices/permission/permission-slice";
 import { tokenUsageReceived } from "$store/renderer/slices/token-usage/token-usage-slice";
 import type { TokenUsage } from "$features/token-usage/token-usage-types";
+import { hydrateContextItems } from "$store/renderer/slices/context/context-slice";
+import type { ContextItem } from "$features/context/types";
+import {
+  applyTaskAgentLinked,
+  applyTaskAgentUnlinked,
+} from "$store/renderer/slices/task-agent-associations/task-agent-associations-slice";
+import type { TaskAgentAssociation } from "$store/renderer/slices/task-agent-associations/task-agent-associations-types";
 import { applySettingsChanges } from "$features/settings/settings-hydration-service";
 import {
   appendScriptOutput,
@@ -175,6 +185,7 @@ const SUBSCRIPTION_REFRESH_EVENT_TYPES = new Set([
   "agent:failed",
   "agent:deleted",
   "agent:created",
+  "agent:subscriptions-changed",
 ]);
 
 /**
@@ -609,6 +620,88 @@ function handleTokenUsageChangedEvent(event: WorkspaceEvent): void {
 }
 
 /**
+ * `workspace:context-changed` (§5.1 / §6.5) carries the full recomputed
+ * `{ workspaceId, items: ContextItem[] }` — self-sufficient per §6.7 — so the
+ * renderer mirrors it straight into the context slice via `hydrateContextItems`
+ * without a follow-up `workspace.getContext` read.
+ */
+function handleContextChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const dataWorkspaceId = data.workspaceId;
+  const workspaceId =
+    typeof dataWorkspaceId === "string" && dataWorkspaceId.length > 0
+      ? dataWorkspaceId
+      : workspaceIdOf(event);
+  const items = data.items;
+  if (!workspaceId || !Array.isArray(items)) return;
+  // The context slice keys items by `id` and discriminates variants by `type`,
+  // so filter out rows that lack either — they would silently corrupt the
+  // Collection. Provider-specific fields still round-trip verbatim per §5.1.
+  const filtered = items.filter((item): item is ContextItem => {
+    if (!item || typeof item !== "object") return false;
+    const record = item as { id?: unknown; type?: unknown };
+    return (
+      typeof record.id === "string" &&
+      record.id.length > 0 &&
+      typeof record.type === "string" &&
+      record.type.length > 0
+    );
+  });
+  appStore.dispatch(hydrateContextItems(workspaceId, filtered));
+}
+
+/**
+ * `task:agent-linked` (§5.4 / §6.5) carries the self-sufficient
+ * `{ workspaceId, noteId, taskKey, link: TaskAgentLink }` payload. We
+ * normalize the wire row into the renderer `TaskAgentAssociation` and
+ * dispatch the daemon-authoritative `applyTaskAgentLinked` action, which the
+ * mutation middleware ignores (avoiding an echo back to `task.linkAgent`).
+ */
+function handleTaskAgentLinkedEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const noteId = data.noteId;
+  const link = data.link;
+  if (typeof noteId !== "string" || !link || typeof link !== "object") return;
+  const raw = link as Record<string, unknown>;
+  const taskKey = raw.taskKey;
+  const taskText = raw.taskText;
+  const agentId = raw.agentId;
+  const createdAt = raw.createdAt;
+  if (
+    typeof taskKey !== "string" ||
+    typeof taskText !== "string" ||
+    typeof agentId !== "string" ||
+    typeof createdAt !== "number"
+  ) {
+    return;
+  }
+  const association: TaskAgentAssociation = {
+    noteId,
+    taskKey,
+    taskText,
+    agentId,
+    createdAt,
+  };
+  appStore.dispatch(applyTaskAgentLinked(workspaceId, noteId, association));
+}
+
+/**
+ * `task:agent-unlinked` (§5.4 / §6.5) carries `{ workspaceId, noteId, taskKey }`.
+ * Dispatched as `applyTaskAgentUnlinked` so the mutation middleware does not
+ * echo the removal back to `task.unlinkAgent`.
+ */
+function handleTaskAgentUnlinkedEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const noteId = data.noteId;
+  const taskKey = data.taskKey;
+  if (typeof noteId !== "string" || typeof taskKey !== "string") return;
+  appStore.dispatch(applyTaskAgentUnlinked(workspaceId, noteId, taskKey));
+}
+
+/**
  * `settings:changed` (§6.5) carries `{ changes: [{ path, value }] }` — the
  * applied subset of the most recent `settings.update` call (§5.12), with
  * sensitive values pre-redacted by the BE. We hand it straight to the shared
@@ -726,6 +819,8 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
   const newStatus = data.newStatus;
   if (typeof noteId !== "string" || typeof newStatus !== "string") return;
   appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
+  // STAB-8: Force refetch task list (including BE-owned stats) so sidebar updates live
+  appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
 }
 
 /**
@@ -1109,6 +1204,13 @@ function handleNotification(method: string, params: unknown): void {
     return;
   }
 
+  // `workspace:context-changed` (§5.1) carries `data.workspaceId`, so it
+  // also runs before the envelope workspace-id gate below.
+  if (type === "workspace:context-changed") {
+    handleContextChangedEvent(event);
+    return;
+  }
+
   // `mcp.servers:status-changed` (§6.5) is global — no `workspaceId` envelope
   // — so it must also run before the workspace-id gate below.
   if (type === "mcp.servers:status-changed") {
@@ -1151,6 +1253,12 @@ function handleNotification(method: string, params: unknown): void {
     refreshWorkspaceSubscriptionEntries(workspaceId);
   }
 
+  // STAB-9: Agent lifecycle events (status-changed, idle) should refresh the
+  // agent list so the sidebar shows live status/last-activity updates.
+  if (type === "agent:status-changed" || type === "agent:idle") {
+    appStore.dispatch(hydrateAgentsRequested(workspaceId));
+  }
+
   // Note domain events (§7 workspace-scoped) live-apply to the
   // workspace-notes slice so agent-side note writes (add_to_note etc.) show
   // up in the notes panel without a manual refresh.
@@ -1164,6 +1272,14 @@ function handleNotification(method: string, params: unknown): void {
   // reload.
   if (type === "task:status-changed") {
     handleTaskStatusChangedEvent(event, workspaceId);
+    return;
+  }
+  if (type === "task:agent-linked") {
+    handleTaskAgentLinkedEvent(event, workspaceId);
+    return;
+  }
+  if (type === "task:agent-unlinked") {
+    handleTaskAgentUnlinkedEvent(event, workspaceId);
     return;
   }
   if (type === "comment:added") {
@@ -1270,6 +1386,10 @@ const BRIDGE_SUBSCRIBE_EVENT_TYPES = [
   "script:*",
   "settings:changed",
   "workspace:tokenUsage-changed",
+  // `workspace:context-changed` (§5.1 / §6.5) — chat-context attachment
+  // list migrated off FE localStorage; the daemon emits the full new items
+  // list so the FE folds it via `hydrateContextItems` in the bridge.
+  "workspace:context-changed",
   "workspace:updated",
   "workspace:created",
   "workspace:deleted",

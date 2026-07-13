@@ -329,3 +329,117 @@ describe("LiveTasksClient mutations (fake transport)", () => {
     });
   });
 });
+
+describe("LiveTasksClient task↔agent linkage (PROTOCOL §5.4, fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("listAgentLinks forwards workspaceId and normalizes linksByNoteId rows", async () => {
+    const raw = {
+      "note-1": {
+        "agent:a1": {
+          workspaceId: "ws-1",
+          noteId: "note-1",
+          taskKey: "agent:a1",
+          taskText: "task text",
+          agentId: "a1",
+          createdAt: 1700000000000,
+        },
+      },
+    };
+    mockedRequest.mockResolvedValueOnce({ linksByNoteId: raw });
+    const client = new LiveTasksClient();
+
+    // `workspaceId` is stripped from each renderer row (slice is already
+    // workspace-scoped) but every required field round-trips.
+    expect(await client.listAgentLinks("ws-1")).toEqual({
+      "note-1": {
+        "agent:a1": {
+          noteId: "note-1",
+          taskKey: "agent:a1",
+          taskText: "task text",
+          agentId: "a1",
+          createdAt: 1700000000000,
+        },
+      },
+    });
+    expect(mockedRequest).toHaveBeenCalledWith("task.listAgentLinks", {
+      workspaceId: "ws-1",
+    });
+  });
+
+  it("listAgentLinks returns an empty map when the wire result is missing", async () => {
+    mockedRequest.mockResolvedValueOnce({});
+    const client = new LiveTasksClient();
+    expect(await client.listAgentLinks("ws-1")).toEqual({});
+  });
+
+  it("linkAgent forwards the association and normalizes the daemon-echoed link", async () => {
+    const link = {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      taskKey: "agent:a1",
+      taskText: "task text",
+      agentId: "a1",
+      createdAt: 1700000000000,
+    };
+    mockedRequest.mockResolvedValueOnce({ link });
+    const client = new LiveTasksClient();
+
+    const result = await client.linkAgent("ws-1", "note-1", {
+      noteId: "note-1",
+      taskText: "task text",
+      agentId: "a1",
+      createdAt: 1700000000000,
+      taskKey: "agent:a1",
+    });
+    expect(result).toEqual({
+      noteId: "note-1",
+      taskKey: "agent:a1",
+      taskText: "task text",
+      agentId: "a1",
+      createdAt: 1700000000000,
+    });
+    expect(mockedRequest).toHaveBeenCalledWith("task.linkAgent", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      taskText: "task text",
+      agentId: "a1",
+      taskKey: "agent:a1",
+    });
+  });
+
+  it("linkAgent omits taskKey from the wire payload when the association has none", async () => {
+    mockedRequest.mockResolvedValueOnce({ link: null });
+    const client = new LiveTasksClient();
+
+    await client.linkAgent("ws-1", "note-1", {
+      noteId: "note-1",
+      taskText: "task text",
+      agentId: "a1",
+      createdAt: 1700000000000,
+    });
+    expect(mockedRequest).toHaveBeenCalledWith("task.linkAgent", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      taskText: "task text",
+      agentId: "a1",
+    });
+  });
+
+  it("unlinkAgent returns the daemon's `removed` boolean", async () => {
+    mockedRequest.mockResolvedValueOnce({ removed: true });
+    const client = new LiveTasksClient();
+    expect(await client.unlinkAgent("ws-1", "note-1", "agent:a1")).toBe(true);
+    expect(mockedRequest).toHaveBeenCalledWith("task.unlinkAgent", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      taskKey: "agent:a1",
+    });
+  });
+
+  it("unlinkAgent returns false when the daemon reports no removal", async () => {
+    mockedRequest.mockResolvedValueOnce({ removed: false });
+    const client = new LiveTasksClient();
+    expect(await client.unlinkAgent("ws-1", "note-1", "agent:a1")).toBe(false);
+  });
+});
