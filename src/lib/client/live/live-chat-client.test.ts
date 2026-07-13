@@ -35,9 +35,6 @@ const reset = (transport as unknown as { __reset: () => void }).__reset;
 
 function mockChat(): ChatClient {
   return {
-    history: async () => [],
-    tokenUsage: async () => ({ input: 0, output: 0 }),
-    subscribe: () => () => {},
     subscribeSnapshot: async () => ({ messages: [], truncated: false, totalMessages: 0 }),
   };
 }
@@ -88,7 +85,7 @@ describe("LiveChatClient (fake transport)", () => {
       return {};
     });
 
-    const client = new LiveChatClient(mockChat());
+    const client = new LiveChatClient();
     const result = await client.subscribeSnapshot("agent-1");
 
     expect(mockedRequest).toHaveBeenCalledWith("chat.subscribe", { agentId: "agent-1" });
@@ -139,7 +136,7 @@ describe("LiveChatClient (fake transport)", () => {
       return {};
     });
 
-    const client = new LiveChatClient(mockChat());
+    const client = new LiveChatClient();
     const result = await client.subscribeSnapshot("agent-2");
 
     expect(result.messages).toHaveLength(1);
