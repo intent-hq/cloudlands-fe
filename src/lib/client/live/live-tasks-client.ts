@@ -18,6 +18,10 @@ import type {
   TasksClient,
   Unsubscribe,
 } from "../app-client";
+import type {
+  TaskAgentAssociation,
+  TaskAgentAssociationsByTaskKey,
+} from "$store/renderer/slices/task-agent-associations/task-agent-associations-types";
 import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
 import {
@@ -97,6 +101,32 @@ function conflictToTask(raw: Record<string, unknown>): WorkspaceTask | null {
 
 /** Zero-aggregate fallback for the synthesized `subscribe` snapshot (workspace not loaded). */
 const EMPTY_STATS: WorkspaceTaskStats = { total: 0, completed: 0, inProgress: 0 };
+
+/**
+ * Normalize a daemon `TaskAgentLink` row into the renderer
+ * `TaskAgentAssociation`. The daemon carries `workspaceId` on every row, but
+ * the FE slice is already workspace-scoped, so we drop it. `taskKey` is always
+ * populated by the daemon (`taskKey ?? taskText` at link time).
+ */
+function normalizeAgentLink(raw: unknown): TaskAgentAssociation | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const noteId = r.noteId;
+  const taskKey = r.taskKey;
+  const taskText = r.taskText;
+  const agentId = r.agentId;
+  const createdAt = r.createdAt;
+  if (
+    typeof noteId !== "string" ||
+    typeof taskKey !== "string" ||
+    typeof taskText !== "string" ||
+    typeof agentId !== "string" ||
+    typeof createdAt !== "number"
+  ) {
+    return null;
+  }
+  return { noteId, taskKey, taskText, agentId, createdAt };
+}
 
 /**
  * Normalize the wire `stats` aggregate from `task.list` into the canonical
@@ -246,6 +276,75 @@ export class LiveTasksClient implements TasksClient {
       ...(options?.status !== undefined ? { status: options.status } : {}),
       idempotencyKey: newIdempotencyKey(),
     });
+  }
+
+  /**
+   * `task.listAgentLinks` (PROTOCOL §5.4): the daemon returns both a flat
+   * `links` array and the pre-grouped `linksByNoteId` map. We consume the map
+   * directly (it matches the FE slice shape) and normalize each row into the
+   * renderer `TaskAgentAssociation` — dropping the daemon-only `workspaceId`
+   * field since the FE slice is already workspace-scoped.
+   */
+  async listAgentLinks(
+    workspaceId: string,
+  ): Promise<Record<string, TaskAgentAssociationsByTaskKey>> {
+    const result = await backendRequest<{ linksByNoteId?: unknown }>(
+      "task.listAgentLinks",
+      { workspaceId },
+    );
+    const raw = result?.linksByNoteId;
+    if (!raw || typeof raw !== "object") return {};
+    const out: Record<string, TaskAgentAssociationsByTaskKey> = {};
+    for (const [noteId, byKeyRaw] of Object.entries(raw as Record<string, unknown>)) {
+      if (!byKeyRaw || typeof byKeyRaw !== "object") continue;
+      const byKey: TaskAgentAssociationsByTaskKey = {};
+      for (const [taskKey, rowRaw] of Object.entries(byKeyRaw as Record<string, unknown>)) {
+        const assoc = normalizeAgentLink(rowRaw);
+        if (assoc) byKey[taskKey] = assoc;
+      }
+      if (Object.keys(byKey).length > 0) out[noteId] = byKey;
+    }
+    return out;
+  }
+
+  /**
+   * `task.linkAgent` (PROTOCOL §5.4): forwards the FE `TaskAgentAssociation`
+   * as `{ workspaceId, noteId, taskText, agentId, taskKey? }`. The daemon
+   * always echoes `{ link: TaskAgentLink }` with the persisted row; we
+   * normalize it back into the renderer shape so callers receive the exact
+   * association the daemon stored (and that `task:agent-linked` will emit).
+   */
+  async linkAgent(
+    workspaceId: string,
+    noteId: string,
+    association: TaskAgentAssociation,
+  ): Promise<TaskAgentAssociation> {
+    const result = await backendRequest<{ link?: unknown }>("task.linkAgent", {
+      workspaceId,
+      noteId,
+      taskText: association.taskText,
+      agentId: association.agentId,
+      ...(association.taskKey !== undefined ? { taskKey: association.taskKey } : {}),
+    });
+    const normalized = normalizeAgentLink(result?.link);
+    if (normalized) return normalized;
+    // Daemon always echoes a link on success; fall back to the input association
+    // (still workspace-scoped locally) so the caller has a usable shape.
+    return { ...association, noteId };
+  }
+
+  /**
+   * `task.unlinkAgent` (PROTOCOL §5.4): returns `{ removed: boolean }` where
+   * `removed` is `true` only when a matching row existed. We surface the flag
+   * so callers can distinguish a no-op removal from a real one.
+   */
+  async unlinkAgent(workspaceId: string, noteId: string, taskKey: string): Promise<boolean> {
+    const result = await backendRequest<{ removed?: unknown }>("task.unlinkAgent", {
+      workspaceId,
+      noteId,
+      taskKey,
+    });
+    return result?.removed === true;
   }
 
   /**

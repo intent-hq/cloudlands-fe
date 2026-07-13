@@ -10,6 +10,7 @@
 import { WorkspaceStatus, createWorkspaceId } from "$shared/types";
 import type { CreateWorkspaceRequest, UpdateWorkspaceRequest, Workspace } from "$shared/types";
 import type { TokenUsage } from "$features/token-usage/token-usage-types";
+import type { ContextItem } from "$features/context/types";
 import type {
   MutationResult,
   SubscriptionHandler,
@@ -177,6 +178,36 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     );
     const usage = result?.tokenUsage;
     return usage && typeof usage === "object" ? usage : null;
+  }
+
+  /**
+   * `workspace.getContext` (PROTOCOL §5.1): returns `{ items: ContextItem[] }`.
+   * The daemon treats each item as an opaque blob (`{ id, ...extras }`) so
+   * provider-specific fields (`identifier`, `number`, `favicon`, …) round-trip
+   * verbatim; the FE keeps its `ContextItem` union as the source of truth.
+   */
+  async getContext(workspaceId: string): Promise<ContextItem[]> {
+    const result = await backendRequest<{ items?: unknown[] }>(
+      "workspace.getContext",
+      { workspaceId },
+    );
+    const items = Array.isArray(result?.items) ? result.items : [];
+    return items.filter((item): item is ContextItem => Boolean(item) && typeof item === "object");
+  }
+
+  /**
+   * `workspace.updateContext` (PROTOCOL §5.1): full-list replacement of the
+   * workspace's chat-context items. Returns the persisted list verbatim.
+   * The self-sufficient `workspace:context-changed` event is the primary
+   * convergence path; the return value is surfaced for callers that need it.
+   */
+  async updateContext(workspaceId: string, items: ContextItem[]): Promise<ContextItem[]> {
+    const result = await backendRequest<{ items?: unknown[] }>(
+      "workspace.updateContext",
+      { workspaceId, items },
+    );
+    const next = Array.isArray(result?.items) ? result.items : [];
+    return next.filter((item): item is ContextItem => Boolean(item) && typeof item === "object");
   }
 
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe {
