@@ -894,7 +894,7 @@ describe('tool-classifier', () => {
     it('prefers structured input-shape routing over prose title (github-api ACP title)', () => {
       const result = classifyTool('Get recent failed CI runs', {
         summary: 'Get recent failed CI runs',
-        path: '/repos/cloudlands-ai/intentd/actions/runs',
+        path: '/repos/intent-hq/intentd/actions/runs',
       });
 
       expect(result.category).toBe('api');
