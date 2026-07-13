@@ -254,6 +254,9 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
     const result = await service.deleteWorkspace(ws.id);
 
     expect(result.ok).toBe(true);
+    const deleteCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.delete');
+    expect(deleteCalls).toHaveLength(1);
+    expect(deleteCalls[0]![1]).toEqual({ workspaceId: ws.id });
     const updateCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.update');
     expect(updateCalls).toHaveLength(0);
   });
