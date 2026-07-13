@@ -354,6 +354,7 @@ describe('Watchdog N-strikes policy', () => {
       }),
       killed: false,
       exitCode: null, // Process remains alive
+      signalCode: null, // No signal received yet
     } as unknown as ChildProcess;
     __setSidecarProcessForTesting(mockProcess);
 
@@ -396,6 +397,7 @@ describe('Watchdog N-strikes policy', () => {
       }),
       killed: false,
       exitCode: null,
+      signalCode: null,
     } as unknown as ChildProcess;
     __setSidecarProcessForTesting(mockProcess);
 

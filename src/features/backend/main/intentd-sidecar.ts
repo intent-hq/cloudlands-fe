@@ -36,6 +36,7 @@ let sidecarProcess: ChildProcess | null = null;
 let restartPolicy: RestartPolicy | null = null;
 let watchdogTimer: NodeJS.Timeout | null = null;
 let restartTimer: NodeJS.Timeout | null = null;
+let killEscalationTimer: NodeJS.Timeout | null = null;
 let isShuttingDown = false;
 let consecutiveFailures = 0;
 
@@ -51,6 +52,10 @@ export function __resetForTesting(): void {
   if (restartTimer) {
     clearTimeout(restartTimer);
     restartTimer = null;
+  }
+  if (killEscalationTimer) {
+    clearTimeout(killEscalationTimer);
+    killEscalationTimer = null;
   }
   sidecarProcess = null;
   restartPolicy = null;
@@ -273,12 +278,21 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
           proc.kill('SIGTERM');
           logger.info('Sent SIGTERM to sidecar; waiting 5s for graceful exit');
 
+          // Clear any previous kill escalation timer
+          if (killEscalationTimer) {
+            clearTimeout(killEscalationTimer);
+            killEscalationTimer = null;
+          }
+
           // Schedule SIGKILL if process doesn't exit within grace period
-          setTimeout(() => {
-            if (proc.exitCode === null) {
+          killEscalationTimer = setTimeout(() => {
+            // Check both exitCode and signalCode: a process that exited due to a signal
+            // has exitCode=null and signalCode set (e.g., 'SIGTERM')
+            if (proc.exitCode === null && proc.signalCode === null) {
               logger.warn('Sidecar did not exit gracefully; sending SIGKILL');
               proc.kill('SIGKILL');
             }
+            killEscalationTimer = null;
           }, 5000);
         }
         return;
@@ -341,10 +355,14 @@ async function spawnSidecarProcess(
   sidecarProcess.on('exit', (code, signal) => {
     logger.info('Sidecar exited', { code, signal });
 
-    // Clear watchdog timer and reset failure counter
+    // Clear watchdog timer, kill escalation timer, and reset failure counter
     if (watchdogTimer) {
       clearTimeout(watchdogTimer);
       watchdogTimer = null;
+    }
+    if (killEscalationTimer) {
+      clearTimeout(killEscalationTimer);
+      killEscalationTimer = null;
     }
     consecutiveFailures = 0;
 
