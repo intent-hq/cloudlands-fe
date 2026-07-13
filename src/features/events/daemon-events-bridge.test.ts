@@ -2971,7 +2971,7 @@ describe("daemonEventsBridge (completion-watch refresh routing)", () => {
 
   afterEach(() => vi.clearAllMocks());
 
-  it.each(["agent:idle", "agent:failed", "agent:deleted", "agent:created"])(
+  it.each(["agent:idle", "agent:failed", "agent:deleted", "agent:created", "agent:subscriptions-changed"])(
     "%s triggers refreshWorkspaceSubscriptionEntries for the event's workspace",
     async (eventType) => {
       await primeBridge();
@@ -2983,17 +2983,15 @@ describe("daemonEventsBridge (completion-watch refresh routing)", () => {
     },
   );
 
-  it("non-completion agent events do not trigger a subscription refresh", async () => {
+  it("non-completion agent events do not trigger a subscription refresh (except status-changed/idle which trigger agent list refresh instead)", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
     handler(notification("agent:renamed", { agentId: AGENT, name: "Renamed" }));
-    handler(notification("agent:status-changed", { agentId: AGENT, status: "responding" }));
 
     expect(refreshWorkspaceSubscriptionEntriesSpy).not.toHaveBeenCalled();
   });
 });
-
 
 describe("daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state refresh)", () => {
   beforeAll(() => {

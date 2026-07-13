@@ -121,7 +121,10 @@ import { replaceAgentQueue } from "$store/renderer/slices/agent-queue/agent-queu
 import { renameSession } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
 import { hydrateAgentsRequested } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
-import { applyTaskStatusChanged } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
+import {
+  applyTaskStatusChanged,
+  loadWorkspaceTasksRequested,
+} from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
 import {
   bulkUpdateWorkspaceEntities,
   updateWorkspaceEntity,
@@ -175,6 +178,7 @@ const SUBSCRIPTION_REFRESH_EVENT_TYPES = new Set([
   "agent:failed",
   "agent:deleted",
   "agent:created",
+  "agent:subscriptions-changed",
 ]);
 
 /**
@@ -726,6 +730,8 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
   const newStatus = data.newStatus;
   if (typeof noteId !== "string" || typeof newStatus !== "string") return;
   appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
+  // STAB-8: Refetch task list so sidebar updates live
+  appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
 }
 
 /**
@@ -1149,6 +1155,12 @@ function handleNotification(method: string, params: unknown): void {
   // counts tick live while a coordinator waits on `waitMode: after_all`.
   if (SUBSCRIPTION_REFRESH_EVENT_TYPES.has(type)) {
     refreshWorkspaceSubscriptionEntries(workspaceId);
+  }
+
+  // STAB-9: Agent lifecycle events (status-changed, idle) should refresh the
+  // agent list so the sidebar shows live status/last-activity updates.
+  if (type === "agent:status-changed" || type === "agent:idle") {
+    appStore.dispatch(hydrateAgentsRequested(workspaceId));
   }
 
   // Note domain events (§7 workspace-scoped) live-apply to the
