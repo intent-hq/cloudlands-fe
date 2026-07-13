@@ -1,12 +1,9 @@
 import type { ProtocolAdapter } from '$features/protocol/main/protocol-adapter';
 import { Logger } from '$shared/logger';
 import { sanitizeBranchName } from '$lib/utils/workspace-validation';
-import { gitService } from '$features/git/main/git.service';
+import { getBackendClient } from '$features/backend/main/backend.ipc';
 import { renameAgentOnDisk } from '$features/agent/main/agent-rename';
-import {
-  WORKSPACE_STATUS_MESSAGE_MAX_LENGTH,
-  type WorkspaceId,
-} from '$shared/types';
+import { WORKSPACE_STATUS_MESSAGE_MAX_LENGTH } from '$shared/types';
 
 import { createWorkspaceEvent } from '../../../events/types';
 import { emitWorkspaceEvent } from '../../../../store/main/slices/workspace-events/workspace-events-slice';
@@ -107,17 +104,20 @@ export function buildWorkspaceApi({
 
       if (workspace?.repositoryPath && workspace.branch && workspace.branch !== newBranch) {
         try {
-          const result = await gitService.renameBranch(
-            workspaceId as WorkspaceId,
-            workspace.branch,
-            newBranch,
-          );
-
-          if (result.ok || result.error?.includes('does not exist')) {
+          await getBackendClient().request('git.renameBranch', {
+            workspaceId,
+            oldBranchName: workspace.branch,
+            newBranchName: newBranch,
+          });
+          finalBranch = newBranch;
+        } catch (error) {
+          // Legacy parity: a rename against a non-existent old branch was a
+          // soft-success — the workspace still adopts the new branch name.
+          const message = error instanceof Error ? error.message : String(error);
+          if (message.includes('does not exist')) {
             finalBranch = newBranch;
           }
-        } catch {
-          // Keep the existing branch name if rename fails.
+          // Otherwise keep the existing branch name.
         }
       } else if (!workspace?.branch) {
         finalBranch = newBranch;

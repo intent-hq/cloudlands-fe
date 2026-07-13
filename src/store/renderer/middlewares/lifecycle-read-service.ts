@@ -50,6 +50,7 @@ import {
 } from "../slices/workspace/workspace-slice";
 import {
   ensureWorkspaceTasksLoaded,
+  loadWorkspaceTasksRequested,
   loadWorkspaceTasksSucceeded,
 } from "../slices/workspace-tasks/workspace-tasks-slice";
 import { eventsLoaded, loadEventsRequested } from "../slices/workspace-events/workspace-events-slice";
@@ -154,6 +155,14 @@ function refreshWorkspaces(): void {
 function ensureTasks(wsId: string): void {
   const ws = appStore.state.workspaceTasks.byWorkspaceId[wsId];
   if (ws?.loading || ws?.initialized) return;
+  coalesce(`tasks:${wsId}`, async () => {
+    const { tasks, stats } = await appClient.tasks.list(wsId);
+    appStore.dispatch(loadWorkspaceTasksSucceeded(wsId, tasks, stats));
+  });
+}
+
+/** Force-refetch tasks (no guard) for live updates when tasks change. */
+function refreshTasks(wsId: string): void {
   coalesce(`tasks:${wsId}`, async () => {
     const { tasks, stats } = await appClient.tasks.list(wsId);
     appStore.dispatch(loadWorkspaceTasksSucceeded(wsId, tasks, stats));
@@ -367,6 +376,11 @@ export function createLifecycleReadMiddleware(): StoreMiddleware {
         case ensureWorkspaceTasksLoaded.type: {
           const wsId = wsIdOf(action);
           if (wsId) ensureTasks(wsId);
+          break;
+        }
+        case loadWorkspaceTasksRequested.type: {
+          const wsId = wsIdOf(action);
+          if (wsId) refreshTasks(wsId);
           break;
         }
         case loadEventsRequested.type: {

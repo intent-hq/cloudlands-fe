@@ -13,12 +13,10 @@ import {
 } from 'vitest';
 
 // --- Mocks for workspace API dependencies ---
-vi.mock('$features/git/main/git.service', () => ({
-  gitService: {
-    renameBranch: vi.fn().mockResolvedValue({ ok: true }),
-    getCurrentBranch: vi.fn(),
-    getStatus: vi.fn(),
-  },
+// Default backend client stub — individual tests may re-`vi.doMock` it after
+// `vi.resetModules()` when they need a scoped mockRequest.
+vi.mock('$features/backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: vi.fn().mockResolvedValue({ ok: true }) }),
 }));
 
 vi.mock('$shared/main/config', () => ({
@@ -333,11 +331,12 @@ describe('buildWorkspaceApi – setAgentName', () => {
 });
 
 // =====================================================================
-// Git API tests – detectMergeConflicts (tested via buildWsGitApi)
+// Git API tests – checkMergeConflicts wire contract
 // =====================================================================
 describe('buildWsGitApi – checkMergeConflicts', () => {
-  // We test detectMergeConflicts indirectly through buildWsGitApi.checkMergeConflicts
-  // since it's a private function. We mock the dynamic imports it uses.
+  // After Wave B FE cut-over, the FE just forwards to the daemon RPC
+  // `git.checkMergeConflicts` (PROTOCOL.md §5.6); all merge-conflict detection
+  // logic lives on the daemon side. We pin the wire contract here.
 
   const workspaceId = 'ws-git-1';
   const call = { context: { agentId: 'agent-1' }, name: 'workspace_api', arguments: {} } as any;
@@ -346,177 +345,65 @@ describe('buildWsGitApi – checkMergeConflicts', () => {
     vi.resetModules();
   });
 
-  it('returns no conflicts when merge-tree succeeds (exit 0)', async () => {
-    const mockExecFile = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
-
-    // Mock the dynamic imports used by checkMergeConflicts
-    vi.doMock('$features/git/main/git.service', () => ({
-      gitService: {
-        getCurrentBranch: vi.fn().mockResolvedValue({ ok: true, data: 'feature-branch' }),
-        getStatus: vi.fn(),
-        renameBranch: vi.fn(),
-      },
-    }));
-    vi.doMock('$features/git/main/git-router', () => ({
-      getWorkspaceGitInfo: vi.fn().mockResolvedValue({ worktreePath: '/tmp/repo' }),
-    }));
-    vi.doMock('$shared/git/git-env', () => ({
-      execFileAsync: mockExecFile,
+  it('forwards workspaceId + targetBranch to git.checkMergeConflicts and returns the daemon envelope', async () => {
+    const daemonResult = {
+      hasConflicts: false,
+      conflictedFiles: [],
+      targetBranch: 'main',
+      currentBranch: 'feature-branch',
+    };
+    const mockRequest = vi.fn().mockResolvedValue(daemonResult);
+    vi.doMock('$features/backend/main/backend.ipc', () => ({
+      getBackendClient: () => ({ request: mockRequest }),
     }));
 
     const { buildWsGitApi } = await import('../ws-git-api');
     const api = buildWsGitApi({ workspaceId, call });
     const result = await api.checkMergeConflicts('main');
 
-    expect(result.hasConflicts).toBe(false);
-    expect(result.conflictedFiles).toEqual([]);
-    expect(result.currentBranch).toBe('feature-branch');
-    expect(result.targetBranch).toBe('main');
+    expect(mockRequest).toHaveBeenCalledWith('git.checkMergeConflicts', {
+      workspaceId,
+      targetBranch: 'main',
+    });
+    expect(result).toEqual(daemonResult);
+
+    vi.doUnmock('$features/backend/main/backend.ipc');
   });
 
-  it('detects conflicts with file names from modern merge-tree (exit 1)', async () => {
-    const conflictOutput = [
-      'Conflicting files:',
-      'src/file1.ts',
-      'src/file2.ts',
-    ].join('\n');
-
-    const mockExecFile = vi.fn()
-      // merge-tree call fails with exit 1
-      .mockRejectedValueOnce({ code: 1, stdout: conflictOutput, stderr: '' });
-
-    vi.doMock('$features/git/main/git.service', () => ({
-      gitService: {
-        getCurrentBranch: vi.fn().mockResolvedValue({ ok: true, data: 'feature' }),
-        getStatus: vi.fn(),
-        renameBranch: vi.fn(),
-      },
+  it('omits targetBranch when the caller did not supply one', async () => {
+    const daemonResult = {
+      hasConflicts: true,
+      conflictedFiles: ['src/a.ts'],
+      targetBranch: 'main',
+      currentBranch: 'feature',
+    };
+    const mockRequest = vi.fn().mockResolvedValue(daemonResult);
+    vi.doMock('$features/backend/main/backend.ipc', () => ({
+      getBackendClient: () => ({ request: mockRequest }),
     }));
-    vi.doMock('$features/git/main/git-router', () => ({
-      getWorkspaceGitInfo: vi.fn().mockResolvedValue({ worktreePath: '/tmp/repo' }),
-    }));
-    vi.doMock('$shared/git/git-env', () => ({ execFileAsync: mockExecFile }));
 
     const { buildWsGitApi } = await import('../ws-git-api');
     const api = buildWsGitApi({ workspaceId, call });
-    const result = await api.checkMergeConflicts('main');
+    const result = await api.checkMergeConflicts();
 
-    expect(result.hasConflicts).toBe(true);
-    expect(result.conflictedFiles).toContain('src/file1.ts');
-    expect(result.conflictedFiles).toContain('src/file2.ts');
+    expect(mockRequest).toHaveBeenCalledWith('git.checkMergeConflicts', { workspaceId });
+    expect(result).toEqual(daemonResult);
+
+    vi.doUnmock('$features/backend/main/backend.ipc');
   });
 
-  it('falls back to legacy when modern merge-tree reports unknown option', async () => {
-    const mockExecFile = vi.fn()
-      // Modern merge-tree fails with unknown option
-      .mockRejectedValueOnce(new Error('unknown option --write-tree'))
-      // merge-base succeeds
-      .mockResolvedValueOnce({ stdout: 'abc123\n', stderr: '' })
-      // legacy merge-tree succeeds with no conflicts
-      .mockResolvedValueOnce({ stdout: 'some output without conflict markers', stderr: '' });
-
-    vi.doMock('$features/git/main/git.service', () => ({
-      gitService: {
-        getCurrentBranch: vi.fn().mockResolvedValue({ ok: true, data: 'feature' }),
-        getStatus: vi.fn(),
-        renameBranch: vi.fn(),
-      },
+  it('propagates daemon rejections as a thrown Error', async () => {
+    const mockRequest = vi.fn().mockRejectedValue(new Error('not a git repo'));
+    vi.doMock('$features/backend/main/backend.ipc', () => ({
+      getBackendClient: () => ({ request: mockRequest }),
     }));
-    vi.doMock('$features/git/main/git-router', () => ({
-      getWorkspaceGitInfo: vi.fn().mockResolvedValue({ worktreePath: '/tmp/repo' }),
-    }));
-    vi.doMock('$shared/git/git-env', () => ({ execFileAsync: mockExecFile }));
 
     const { buildWsGitApi } = await import('../ws-git-api');
     const api = buildWsGitApi({ workspaceId, call });
-    const result = await api.checkMergeConflicts('main');
 
-    expect(result.hasConflicts).toBe(false);
-  });
+    await expect(api.checkMergeConflicts('main')).rejects.toThrow('not a git repo');
 
-  it('legacy path detects conflict markers and extracts files', async () => {
-    const legacyOutput = [
-      'changed in both',
-      '  base 100644 abc123 src/conflicted.ts',
-      '<<<<<<< Temporary merge branch',
-      'our content',
-      '=======',
-      'their content',
-      '>>>>>>> feature',
-    ].join('\n');
-
-    const mockExecFile = vi.fn()
-      // Modern merge-tree fails with unknown option
-      .mockRejectedValueOnce(new Error('unrecognized argument --write-tree'))
-      // merge-base succeeds
-      .mockResolvedValueOnce({ stdout: 'base-sha\n', stderr: '' })
-      // legacy merge-tree returns conflict markers
-      .mockResolvedValueOnce({ stdout: legacyOutput, stderr: '' });
-
-    vi.doMock('$features/git/main/git.service', () => ({
-      gitService: {
-        getCurrentBranch: vi.fn().mockResolvedValue({ ok: true, data: 'feature' }),
-        getStatus: vi.fn(),
-        renameBranch: vi.fn(),
-      },
-    }));
-    vi.doMock('$features/git/main/git-router', () => ({
-      getWorkspaceGitInfo: vi.fn().mockResolvedValue({ worktreePath: '/tmp/repo' }),
-    }));
-    vi.doMock('$shared/git/git-env', () => ({ execFileAsync: mockExecFile }));
-
-    const { buildWsGitApi } = await import('../ws-git-api');
-    const api = buildWsGitApi({ workspaceId, call });
-    const result = await api.checkMergeConflicts('main');
-
-    expect(result.hasConflicts).toBe(true);
-    expect(result.conflictedFiles).toContain('src/conflicted.ts');
-  });
-
-  it('returns same-branch shortcut when current equals target', async () => {
-    vi.doMock('$features/git/main/git.service', () => ({
-      gitService: {
-        getCurrentBranch: vi.fn().mockResolvedValue({ ok: true, data: 'main' }),
-        getStatus: vi.fn(),
-        renameBranch: vi.fn(),
-      },
-    }));
-    vi.doMock('$features/git/main/git-router', () => ({
-      getWorkspaceGitInfo: vi.fn().mockResolvedValue({ worktreePath: '/tmp/repo' }),
-    }));
-    vi.doMock('$shared/git/git-env', () => ({ execFileAsync: vi.fn() }));
-
-    const { buildWsGitApi } = await import('../ws-git-api');
-    const api = buildWsGitApi({ workspaceId, call });
-    const result = await api.checkMergeConflicts('main');
-
-    expect(result.hasConflicts).toBe(false);
-    expect(result.currentBranch).toBe('main');
-    expect(result.targetBranch).toBe('main');
-  });
-
-  it('assumes conflicts on unexpected error (e.g. code 128)', async () => {
-    const mockExecFile = vi.fn()
-      .mockRejectedValueOnce({ code: 128, stdout: '', message: 'fatal: not a git repo' });
-
-    vi.doMock('$features/git/main/git.service', () => ({
-      gitService: {
-        getCurrentBranch: vi.fn().mockResolvedValue({ ok: true, data: 'feature' }),
-        getStatus: vi.fn(),
-        renameBranch: vi.fn(),
-      },
-    }));
-    vi.doMock('$features/git/main/git-router', () => ({
-      getWorkspaceGitInfo: vi.fn().mockResolvedValue({ worktreePath: '/tmp/repo' }),
-    }));
-    vi.doMock('$shared/git/git-env', () => ({ execFileAsync: mockExecFile }));
-
-    const { buildWsGitApi } = await import('../ws-git-api');
-    const api = buildWsGitApi({ workspaceId, call });
-    const result = await api.checkMergeConflicts('main');
-
-    expect(result.hasConflicts).toBe(true);
-    expect(result.conflictedFiles).toEqual([]);
+    vi.doUnmock('$features/backend/main/backend.ipc');
   });
 });
 
