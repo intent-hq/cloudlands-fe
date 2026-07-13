@@ -202,7 +202,7 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
         });
         return result;
       } catch (error) {
-        throw new Error(toErrorMessage(error));
+        throw new Error(`Failed to check merge conflicts: ${toErrorMessage(error)}`);
       }
     },
   };

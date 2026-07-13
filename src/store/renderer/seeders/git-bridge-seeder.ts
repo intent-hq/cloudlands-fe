@@ -56,6 +56,12 @@ interface GitStatusResult {
 /** Local git reads used by the numstat / branch-base diff shims. */
 const LOCAL_TIMEOUT_MS = 60_000;
 
+/** Legacy `git.service.push` timeout — network op can outrun the transport default. */
+const PUSH_TIMEOUT_MS = 300_000;
+
+/** Legacy `git.service.fetch` timeout — network op can outrun the transport default. */
+const FETCH_TIMEOUT_MS = 60_000;
+
 /** Coerce a possibly-unknown argument into a plain object record. */
 function asRecord(arg: unknown): Record<string, unknown> {
   return arg && typeof arg === 'object' ? (arg as Record<string, unknown>) : {};
@@ -98,7 +104,7 @@ registerMockIpcHandler(IPC_CHANNELS.GIT.PUSH, async (arg) => {
   if (!workspaceId) return { success: false, error: 'Invalid workspace ID' };
   const force = asRecord(arg).force === true;
   try {
-    await backendRequest('git.push', { workspaceId, force });
+    await backendRequest('git.push', { workspaceId, force }, { timeoutMs: PUSH_TIMEOUT_MS });
     return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
@@ -109,7 +115,7 @@ registerMockIpcHandler(IPC_CHANNELS.GIT.FETCH, async (arg) => {
   const workspaceId = requireWorkspaceId(arg);
   if (!workspaceId) return { success: false, error: 'Invalid workspace ID' };
   try {
-    await backendRequest('git.fetch', { workspaceId });
+    await backendRequest('git.fetch', { workspaceId }, { timeoutMs: FETCH_TIMEOUT_MS });
     return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };

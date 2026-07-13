@@ -42,10 +42,11 @@ describe('git-bridge-seeder', () => {
 
       const result = await mockInvoke(IPC_CHANNELS.GIT.PUSH, { workspaceId: 'ws-1' });
 
-      expect(mockedRequest).toHaveBeenCalledWith('git.push', {
-        workspaceId: 'ws-1',
-        force: false,
-      });
+      expect(mockedRequest).toHaveBeenCalledWith(
+        'git.push',
+        { workspaceId: 'ws-1', force: false },
+        { timeoutMs: 300_000 },
+      );
       expect(result).toEqual({ success: true });
     });
 
@@ -57,10 +58,11 @@ describe('git-bridge-seeder', () => {
         force: true,
       });
 
-      expect(mockedRequest).toHaveBeenCalledWith('git.push', {
-        workspaceId: 'ws-1',
-        force: true,
-      });
+      expect(mockedRequest).toHaveBeenCalledWith(
+        'git.push',
+        { workspaceId: 'ws-1', force: true },
+        { timeoutMs: 300_000 },
+      );
       expect(result).toEqual({ success: false, error: 'rejected: stale info' });
     });
 
@@ -77,7 +79,11 @@ describe('git-bridge-seeder', () => {
       expect(await mockInvoke(IPC_CHANNELS.GIT.FETCH, { workspaceId: 'ws-1' })).toEqual({
         success: true,
       });
-      expect(mockedRequest).toHaveBeenCalledWith('git.fetch', { workspaceId: 'ws-1' });
+      expect(mockedRequest).toHaveBeenCalledWith(
+        'git.fetch',
+        { workspaceId: 'ws-1' },
+        { timeoutMs: 60_000 },
+      );
 
       mockedRequest.mockRejectedValueOnce(new Error('daemon unavailable'));
       expect(await mockInvoke(IPC_CHANNELS.GIT.FETCH, { workspaceId: 'ws-1' })).toEqual({
