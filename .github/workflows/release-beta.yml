@@ -52,6 +52,15 @@ jobs:
           ref: main
           token: ${{ steps.token.outputs.token }}
 
+      - name: Check for duplicate version tag
+        run: |
+          VERSION="${{ inputs.version }}"
+          if git ls-remote --tags origin | grep -q "refs/tags/v${VERSION}$"; then
+            echo "::error::Tag v${VERSION} already exists on origin. Use a different version number."
+            exit 1
+          fi
+          echo "Tag v${VERSION} does not exist, proceeding with release"
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
