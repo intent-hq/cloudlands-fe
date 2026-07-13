@@ -275,7 +275,7 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
 
           // Schedule SIGKILL if process doesn't exit within grace period
           setTimeout(() => {
-            if (proc.exitCode === null && !proc.killed) {
+            if (proc.exitCode === null) {
               logger.warn('Sidecar did not exit gracefully; sending SIGKILL');
               proc.kill('SIGKILL');
             }

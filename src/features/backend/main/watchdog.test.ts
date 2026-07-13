@@ -347,7 +347,11 @@ describe('Watchdog N-strikes policy', () => {
     } as any));
 
     const mockProcess = {
-      kill: vi.fn(),
+      kill: vi.fn((signal?: NodeJS.Signals | number) => {
+        // Mimic real Node.js behavior: killed becomes true after any successful kill()
+        if (signal) mockProcess.killed = true;
+        return true;
+      }),
       killed: false,
       exitCode: null, // Process remains alive
     } as unknown as ChildProcess;
@@ -385,7 +389,11 @@ describe('Watchdog N-strikes policy', () => {
     } as any));
 
     const mockProcess = {
-      kill: vi.fn(),
+      kill: vi.fn((signal?: NodeJS.Signals | number) => {
+        // Mimic real Node.js behavior: killed becomes true after any successful kill()
+        if (signal) mockProcess.killed = true;
+        return true;
+      }),
       killed: false,
       exitCode: null,
     } as unknown as ChildProcess;
