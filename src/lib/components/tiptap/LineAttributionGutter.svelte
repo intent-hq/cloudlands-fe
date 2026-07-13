@@ -25,6 +25,11 @@
   resolveCodeBlockLinePositions,
 } from './block-position-resolver';
   import { getAttributionOpacity } from './attribution-color-scale';
+  import {
+    coalesceAttributionSpans,
+    type CoalescedSpan,
+    type IndicatorEntry,
+  } from './attribution-span-coalescer';
   import { listenSync } from '$lib/electron-bridge';
   import { appClient } from '$lib/client';
   import type { WorkspaceId, NoteId } from '$shared/types';
@@ -45,20 +50,15 @@
   // Line attribution data loaded from disk
   let lineAttributions: LineAttributions = $state(new Map());
 
-  interface Indicator {
-    position: number;
-    timestamp: number;
-    author?: LineAuthor;
-    top: number;
-    height: number;
+  interface SpanIndicator extends CoalescedSpan {
     opacity: number;
     tooltip: string;
     ariaLabel: string;
-    isFromLatestVersion: boolean;
     isFirstOfLatestVersion: boolean;
+    labelTop: number; // Clamped position for label/avatar
   }
 
-  let indicators: Indicator[] = $state([]);
+  let spans: SpanIndicator[] = $state([]);
   let updateTimeout: number | null = null;
   let timestampUpdateInterval: number | null = null;
 
@@ -86,17 +86,17 @@
   }
 
   /**
-   * Handle click on indicator
-   * For agent-authored blocks, navigate to the agent's chat
+   * Handle click on span indicator
+   * For agent-authored spans, navigate to the agent's chat
    */
-  function handleIndicatorClick(event: MouseEvent | KeyboardEvent, indicator: Indicator) {
-    if (indicator.author?.type === 'agent' && indicator.author.id) {
+  function handleSpanClick(event: MouseEvent | KeyboardEvent, span: SpanIndicator) {
+    if (span.author?.type === 'agent' && span.author.id) {
       const panelElement = (event.target as HTMLElement)?.closest('[data-panel-id]');
       const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
       const openInAdjacentPanel = event.metaKey || event.ctrlKey;
       appStore.dispatch(
         openAgentTabRequested(workspaceId, {
-          agentId: indicator.author.id,
+          agentId: span.author.id,
           sourcePanelId,
           openInAdjacentPanel,
         }),
@@ -105,12 +105,12 @@
   }
 
   /**
-   * Handle keyboard events on indicator (for accessibility)
+   * Handle keyboard events on span indicator (for accessibility)
    */
-  function handleIndicatorKeydown(event: KeyboardEvent, indicator: Indicator) {
+  function handleSpanKeydown(event: KeyboardEvent, span: SpanIndicator) {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      handleIndicatorClick(event, indicator);
+      handleSpanClick(event, span);
     }
   }
 
@@ -178,9 +178,6 @@
     let oldestTimestamp = Infinity;
     let newestTimestamp = -Infinity;
 
-    // Track if the next indicator could be the first of the latest version
-    let couldBeFirstOfLatestVersion = true;
-
     for (const attrValue of blockAttributions.values()) {
       if (typeof attrValue === 'object' && 'type' in attrValue && attrValue.type === 'codeBlock') {
         // For code blocks, check all line attributions
@@ -204,7 +201,9 @@
     logger.debug(
       `[LineAttributionGutter] Color scale range: oldest=${oldestAgeMinutes}min ago, newest=${newestAgeMinutes}min ago, range=${rangeMinutes}min`,
     );
-    const newIndicators: Indicator[] = [];
+
+    // Build positioned entries for coalescing
+    const entries: IndicatorEntry[] = [];
 
     // For each attributed block, find its DOM element and get position
     for (const [position, attrValue] of blockAttributions.entries()) {
@@ -214,64 +213,25 @@
         const linePositions = resolveCodeBlockLinePositions(editor, position);
 
         if (linePositions.length > 0) {
-          // Create an indicator for each line in the code block
+          // Create an entry for each line in the code block
           for (const lineAttr of attrValue.lines) {
             const linePos = linePositions[lineAttr.lineIndex];
             if (!linePos) continue;
 
             const attrInfo = lineAttr.attribution;
-            const isFromLatestVersion = attrInfo.timestamp >= newestTimestamp;
 
-            // Build tooltip with author info if available
-            let tooltip = `Edited ${formatTimestamp(attrInfo.timestamp)}`;
-            if (attrInfo.author) {
-              const authorLabel = attrInfo.author.type === 'agent' ? 'Agent' : 'User';
-              tooltip += ` by ${authorLabel}: ${attrInfo.author.name}`;
-
-              // Add turn number for agent edits
-              if (attrInfo.author.type === 'agent' && attrInfo.author.turnNumber !== undefined) {
-                tooltip += ` (Turn ${attrInfo.author.turnNumber})`;
-              }
-            }
-
-            // Build aria-label for accessibility
-            let ariaLabel = tooltip;
-            if (attrInfo.author?.type === 'agent') {
-              ariaLabel += '. Click to view in chat';
-            }
-
-            const opacity = getAttributionOpacity(
-              attrInfo.timestamp,
-              oldestTimestamp,
-              newestTimestamp,
-              ABSOLUTE_RECENCY_WINDOW_MINUTES,
-            );
-
-            const isFirstOfLatestVersion = isFromLatestVersion && couldBeFirstOfLatestVersion;
-            if (isFirstOfLatestVersion) {
-              couldBeFirstOfLatestVersion = false;
-            }
-
-            newIndicators.push({
+            entries.push({
               position: position + lineAttr.lineIndex, // Unique position for each line
               timestamp: attrInfo.timestamp,
               author: attrInfo.author,
               top: linePos.top,
               height: linePos.height,
-              opacity,
-              tooltip,
-              ariaLabel,
-              isFromLatestVersion,
-              isFirstOfLatestVersion,
             });
           }
-        } else {
-          // No line positions found for code block
         }
       } else {
         // Handle regular block attribution
         const attrInfo = attrValue as AttributionInfo;
-        const isFromLatestVersion = attrInfo.timestamp >= newestTimestamp;
 
         // Resolve the block's position in the DOM
         const positionInfo = resolveBlockPosition(editor, position);
@@ -279,55 +239,74 @@
         if (positionInfo) {
           const { top, height } = positionInfo;
 
-          // Build tooltip with author info if available
-          let tooltip = `Edited ${formatTimestamp(attrInfo.timestamp)}`;
-          if (attrInfo.author) {
-            const authorLabel = attrInfo.author.type === 'agent' ? 'Agent' : 'User';
-            tooltip += ` by ${authorLabel}: ${attrInfo.author.name}`;
-
-            // Add turn number for agent edits
-            if (attrInfo.author.type === 'agent' && attrInfo.author.turnNumber !== undefined) {
-              tooltip += ` (Turn ${attrInfo.author.turnNumber})`;
-            }
-          }
-
-          // Build aria-label for accessibility
-          let ariaLabel = tooltip;
-          if (attrInfo.author?.type === 'agent') {
-            ariaLabel += '. Click to view in chat';
-          }
-
-          const opacity = getAttributionOpacity(
-            attrInfo.timestamp,
-            oldestTimestamp,
-            newestTimestamp,
-            ABSOLUTE_RECENCY_WINDOW_MINUTES,
-          );
-
-          const isFirstOfLatestVersion = isFromLatestVersion && couldBeFirstOfLatestVersion;
-          if (isFirstOfLatestVersion) {
-            couldBeFirstOfLatestVersion = false;
-          }
-
-          newIndicators.push({
+          entries.push({
             position,
             timestamp: attrInfo.timestamp,
             author: attrInfo.author,
             top,
             height,
-            opacity,
-            tooltip,
-            ariaLabel,
-            isFromLatestVersion,
-            isFirstOfLatestVersion,
           });
-        } else {
-          // No DOM node found at position
         }
       }
     }
 
-    indicators = newIndicators;
+    // Coalesce entries into spans
+    const coalescedSpans = coalesceAttributionSpans(entries, newestTimestamp);
+
+    // Get viewport info for clamping
+    const editorContent = document.getElementById('editor-content');
+    const viewportTop = editorContent ? editorContent.scrollTop : 0;
+
+    // Track if the next span could be the first of the latest version
+    let couldBeFirstOfLatestVersion = true;
+
+    // Build final span indicators with rendering info
+    const newSpans: SpanIndicator[] = coalescedSpans.map((span) => {
+      // Build tooltip with author info if available
+      let tooltip = `Edited ${formatTimestamp(span.timestamp)}`;
+      if (span.author) {
+        const authorLabel = span.author.type === 'agent' ? 'Agent' : 'User';
+        tooltip += ` by ${authorLabel}: ${span.author.name}`;
+
+        // Add turn number for agent edits
+        if (span.author.type === 'agent' && span.author.turnNumber !== undefined) {
+          tooltip += ` (Turn ${span.author.turnNumber})`;
+        }
+      }
+
+      // Build aria-label for accessibility
+      let ariaLabel = tooltip;
+      if (span.author?.type === 'agent') {
+        ariaLabel += '. Click to view in chat';
+      }
+
+      const opacity = getAttributionOpacity(
+        span.timestamp,
+        oldestTimestamp,
+        newestTimestamp,
+        ABSOLUTE_RECENCY_WINDOW_MINUTES,
+      );
+
+      const isFirstOfLatestVersion = span.isFromLatestVersion && couldBeFirstOfLatestVersion;
+      if (isFirstOfLatestVersion) {
+        couldBeFirstOfLatestVersion = false;
+      }
+
+      // Clamp label position to viewport
+      // Label anchors to span top, but clamps to viewport top edge
+      const labelTop = Math.max(span.top, viewportTop);
+
+      return {
+        ...span,
+        opacity,
+        tooltip,
+        ariaLabel,
+        isFirstOfLatestVersion,
+        labelTop,
+      };
+    });
+
+    spans = newSpans;
   }
 
   /**
@@ -477,40 +456,41 @@
 
 <!-- Gutter container -->
 <div class="absolute left-0 top-0 w-6 h-full pointer-events-none z-10">
-  {#each indicators as indicator (indicator.position)}
+  {#each spans as span (span.positions.join(','))}
     <div
-      class="absolute left-0 cursor-pointer pointer-events-auto group/indicator"
-      class:isLatest={indicator.isFromLatestVersion}
-      class:isFirstOfLatestVersion={indicator.isFirstOfLatestVersion}
-      style:top="{indicator.top}px"
-      style:height="{indicator.height}px"
-      title={indicator.tooltip}
-      aria-label={indicator.ariaLabel}
-      onclick={(e) => handleIndicatorClick(e, indicator)}
-      onkeydown={(e) => handleIndicatorKeydown(e, indicator)}
+      class="absolute left-0 cursor-pointer pointer-events-auto group/span"
+      class:isLatest={span.isFromLatestVersion}
+      class:isFirstOfLatestVersion={span.isFirstOfLatestVersion}
+      style:top="{span.top}px"
+      style:height="{span.height}px"
+      title={span.tooltip}
+      aria-label={span.ariaLabel}
+      onclick={(e) => handleSpanClick(e, span)}
+      onkeydown={(e) => handleSpanKeydown(e, span)}
       role="button"
       tabindex="0"
     >
       <div
-        class="absolute w-1 right-0 h-full rounded-sm bg-muted transition-[width] duration-200 group-hover/indicator:w-1.5"
-        style:opacity={indicator.opacity}
+        class="absolute w-1 right-0 h-full rounded-sm bg-muted transition-[width] duration-200 group-hover/span:w-1.5"
+        style:opacity={span.opacity}
       ></div>
-      <!-- Avatar for agent-authored blocks (shown on hover) -->
+      <!-- Avatar for agent-authored spans (shown on hover) -->
       <div
-        class="flex flex-col gap-0.5 leading-none absolute right-0 top-0 text-right pr-4 pl-0.5 rounded-md text-xs whitespace-nowrap text-muted-foreground opacity-0 group-hover/indicator:opacity-100 transition-opacity duration-200"
+        class="flex flex-col gap-0.5 leading-none absolute right-0 text-right pr-4 pl-0.5 rounded-md text-xs whitespace-nowrap text-muted-foreground opacity-0 group-hover/span:opacity-100 transition-opacity duration-200"
+        style:top="{span.labelTop - span.top}px"
       >
-        <div>{formatTimestamp(indicator.timestamp)}</div>
+        <div>{formatTimestamp(span.timestamp)}</div>
         <div>
-          {#if indicator.author?.type === 'agent'}
-            <div class="absolute right-5 top-0 -translate-y-full pointer-events-none z-1001">
+          {#if span.author?.type === 'agent'}
+            <div class="absolute right-5 top-0 pointer-events-none z-1001">
               <AuggieAvatar
                 size={20}
-                agentId={indicator.author.id}
+                agentId={span.author.id}
               />
             </div>
           {/if}
 
-          {indicator.author?.name}
+          {span.author?.name}
         </div>
       </div>
     </div>
