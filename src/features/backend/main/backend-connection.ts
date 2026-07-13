@@ -8,9 +8,18 @@
  *   - `INTENTD_SOCKET=/path/to.sock` → force UDS (highest precedence).
  *   - `INTENTD_WS_URL=ws://host:port[/ws]` → plain WebSocket to that URL.
  *   - `INTENTD_TCP=host:port` → legacy TCP (optionally TLS) stub, unchanged.
- *   - dev build (see [[ResolveBackendConfigOptions.isDev]]) with no env
- *     override → `ws://127.0.0.1:5181/ws` (loopback, no TLS, no token).
+ *   - dev build (see [[ResolveBackendConfigOptions.isDev]]) with the sidecar
+ *     spawn policy in effect (INTENTD_SIDECAR=1, no transport override) →
+ *     UDS at `defaultSocketPath(env)` (honors `INTENTD_DATA_DIR`), matching
+ *     the socket the sidecar spawns intentd on.
+ *   - dev build with no sidecar and no env override → `ws://127.0.0.1:5181/ws`
+ *     (loopback, no TLS, no token) — the two-terminal `dev-daemon + run-fe`
+ *     flow.
  *   - packaged build with no env override → the default dev UDS path.
+ *
+ * The dev+sidecar branch reuses [[shouldSpawnSidecar]] rather than duplicating
+ * env-string logic so the resolver and the spawn policy can never diverge on
+ * whether to connect over UDS or the loopback WebSocket.
  *
  * The daemon's WebSocket endpoint at `/ws` frames JSON-RPC as one message per
  * text frame (`intent-transport/src/ws.rs::connection_loop`). The
@@ -25,6 +34,8 @@ import tls from 'node:tls';
 import { Duplex } from 'node:stream';
 import { createRequire } from 'node:module';
 import type { RawData, WebSocket as WsWebSocket } from 'ws';
+
+import { shouldSpawnSidecar } from './intentd-sidecar';
 
 // The `ws` package is CJS and the vitest suite aliases the ESM import to a
 // browser-safe stub (see `vitest.config.ts`); `createRequire` sidesteps both,
@@ -97,6 +108,17 @@ export function resolveBackendConfig(
     return { transport: 'tcp', host, port, tls: env.INTENTD_TCP_INSECURE !== '1' };
   }
   if (opts.isDev) {
+    // Dev builds default to the loopback WebSocket for the two-terminal flow
+    // (`make dev-daemon` + `make run-fe`). When the sidecar spawn policy is
+    // in effect (`INTENTD_SIDECAR=1`, no transport override — the one-command
+    // `make dev` flow) intentd runs as our sidecar on its UDS socket, so we
+    // must connect there instead of ECONNREFUSEing 127.0.0.1:5181. Deriving
+    // the decision from `shouldSpawnSidecar` keeps the resolver and the
+    // spawn-policy in lockstep (see the pinning test in
+    // `backend-connection.test.ts`).
+    if (shouldSpawnSidecar(env, /* isPackaged */ false).shouldSpawn) {
+      return { transport: 'uds', socketPath: defaultSocketPath(env) };
+    }
     return { transport: 'ws', wsUrl: DEFAULT_DEV_WS_URL };
   }
   return { transport: 'uds', socketPath: defaultSocketPath(env) };
