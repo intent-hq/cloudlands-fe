@@ -66,6 +66,16 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Validate INTENTD_READ_PAT secret
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+        run: |
+          if [ -z "$INTENTD_READ_PAT" ]; then
+            echo "::error::INTENTD_READ_PAT secret is required to checkout intent-hq/intentd"
+            exit 1
+          fi
+          echo "INTENTD_READ_PAT is configured"
+
       - name: Checkout intentd
         uses: actions/checkout@v4
         with:
@@ -178,8 +188,8 @@ jobs:
 
       - name: Push commit and tag to cloudlands-fe
         run: |
-          git push origin main
-          git push origin "v${{ inputs.version }}"
+          VERSION="${{ inputs.version }}"
+          git push origin "HEAD:main" "refs/tags/v${VERSION}"
         env:
           GITHUB_TOKEN: ${{ steps.token.outputs.token }}
 

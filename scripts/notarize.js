@@ -10,8 +10,6 @@
  * - CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD: App-specific password from appleid.apple.com
  * - CLOUDLANDS_APPLE_TEAM_ID: Your 10-character Team ID
  *
- * (Legacy APPLE_* names without CLOUDLANDS_ prefix are also supported for backward compatibility)
- *
  * To create an app-specific password:
  * 1. Go to https://appleid.apple.com/account/manage
  * 2. Sign in with your Apple ID
@@ -38,10 +36,9 @@ export async function notarizing(context) {
   console.log(`Notarizing ${appPath}...`);
 
   // Get credentials from environment variables
-  // Support both CLOUDLANDS_* (new) and bare APPLE_* (legacy) for compatibility
-  const appleId = process.env.CLOUDLANDS_APPLE_ID || process.env.APPLE_ID;
-  const appleIdPassword = process.env.CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD || process.env.APPLE_APP_SPECIFIC_PASSWORD;
-  const teamId = process.env.CLOUDLANDS_APPLE_TEAM_ID || process.env.APPLE_TEAM_ID;
+  const appleId = process.env.CLOUDLANDS_APPLE_ID;
+  const appleIdPassword = process.env.CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD;
+  const teamId = process.env.CLOUDLANDS_APPLE_TEAM_ID;
 
   // Validate we have what we need
   if (!appleId || !appleIdPassword || !teamId) {
