@@ -84,21 +84,24 @@ Windows and Linux builds will follow the same GitHub Releases model but ship uns
 To build the app locally for manual testing:
 
 ```bash
-# Build intentd sidecar first (from monorepo root)
-cd packages/intentd
+# Clone and build intentd sidecar (if not already available)
+# In a sibling directory or separate location:
+git clone https://github.com/intent-hq/intentd.git
+cd intentd
 cargo build --release --target aarch64-apple-darwin
+INTENTD_BIN="$(pwd)/target/aarch64-apple-darwin/release/intentd"
 
-# Return to cloudlands-fe
-cd ../cloudlands-fe
+# Return to cloudlands-fe repo root
+cd /path/to/cloudlands-fe
 
-# Build the frontend and package
+# Build the frontend and package (set INTENTD_BIN to the built binary path)
 pnpm run build
-pnpm run dist:mac
+INTENTD_BIN="$INTENTD_BIN" pnpm run dist:mac
 ```
 
 The packaged `.dmg` and `.zip` will be in `dist-electron/`.
 
-**Note:** Local builds will not be signed or notarized unless you configure the signing environment variables locally.
+**Note:** Local builds will not be signed or notarized unless you configure the signing environment variables locally (`CLOUDLANDS_APPLE_ID`, `CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD`, `CLOUDLANDS_APPLE_TEAM_ID`, or legacy `APPLE_*` equivalents).
 
 ## Operational Notes
 

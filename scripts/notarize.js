@@ -36,9 +36,10 @@ export async function notarizing(context) {
   console.log(`Notarizing ${appPath}...`);
 
   // Get credentials from environment variables
-  const appleId = process.env.CLOUDLANDS_APPLE_ID;
-  const appleIdPassword = process.env.CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD;
-  const teamId = process.env.CLOUDLANDS_APPLE_TEAM_ID;
+  // Prefer CLOUDLANDS_* naming; fall back to legacy APPLE_* for backward compatibility
+  const appleId = process.env.CLOUDLANDS_APPLE_ID || process.env.APPLE_ID;
+  const appleIdPassword = process.env.CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD || process.env.APPLE_APP_SPECIFIC_PASSWORD;
+  const teamId = process.env.CLOUDLANDS_APPLE_TEAM_ID || process.env.APPLE_TEAM_ID;
 
   // Validate we have what we need
   if (!appleId || !appleIdPassword || !teamId) {
@@ -48,6 +49,8 @@ export async function notarizing(context) {
     console.log('  export CLOUDLANDS_APPLE_ID="your-apple-id@example.com"');
     console.log('  export CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD=""');
     console.log('  export CLOUDLANDS_APPLE_TEAM_ID=""');
+    console.log('');
+    console.log('(Legacy APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID are also supported)');
     console.log('');
     console.log('Get app-specific password at: https://appleid.apple.com/account/manage');
     return;
