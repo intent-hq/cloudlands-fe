@@ -53,6 +53,7 @@ import { createUiLayoutPersistenceMiddleware } from "./middlewares/ui-layout-per
 import { createUnreadTrackingPersistenceMiddleware } from "./middlewares/unread-tracking-persistence-service";
 import { createTabStatePersistenceMiddleware } from "./middlewares/tab-state-persistence-service";
 import { createSidebarNavPersistenceMiddleware } from "./middlewares/sidebar-nav-persistence-service";
+import { createBrowserPersistenceMiddleware } from "./middlewares/browser-persistence-service";
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
@@ -280,6 +281,10 @@ function buildMiddleware(): StoreMiddleware[] {
     // pinned workspaces, view mode, panel state, and other sidebar UI state
     // hydrate on boot and persist on change across sessions via localStorage.
     createSidebarNavPersistenceMiddleware(),
+    // Give the browser state persistence triggers real handlers so recent URLs
+    // hydrate from localStorage on workspace mount and persist on change
+    // (`addRecentUrl` / `removeRecentUrl` / `clearRecentUrls`).
+    createBrowserPersistenceMiddleware(),
     // Give the (post-saga) theme triggers (`requestThemePreferenceChange` /
     // `selectThemePreset` / `importCustomTheme` / `clearThemeCustomization`)
     // real handlers so the Settings theme toggle and ColorThemeSettings
