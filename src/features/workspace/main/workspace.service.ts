@@ -3151,6 +3151,12 @@ export class WorkspaceService {
         ...daemonWorkspace,
       });
 
+      // The daemon may echo cleared optional fields as `null` on the wire; the
+      // FE `Workspace` type expects `string | undefined` / `number | undefined`
+      // for these, so coerce nulls back to `undefined` before returning.
+      if ((merged.prUrl as unknown) === null) merged.prUrl = undefined;
+      if ((merged.prNumber as unknown) === null) merged.prNumber = undefined;
+
       if (requestedPrStatus !== undefined) {
         if (requestedPrStatus === null) {
           merged.prStatus = undefined;

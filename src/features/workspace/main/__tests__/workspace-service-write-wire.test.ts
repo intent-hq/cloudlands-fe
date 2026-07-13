@@ -164,15 +164,21 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
     }
   });
 
-  it('updateWorkspace normalizes prUrl empty string to null on the wire', async () => {
+  it('updateWorkspace normalizes prUrl empty string to null on the wire and coerces echoed nulls to undefined', async () => {
     const ws = seed({ prUrl: 'https://old' });
     daemonWorkspaces.set(ws.id, { ...ws });
 
-    await service.updateWorkspace({ id: ws.id, prUrl: '' });
+    const result = await service.updateWorkspace({ id: ws.id, prUrl: '' });
 
     const updateCall = requestMock.mock.calls.find(([m]) => m === 'workspace.update');
     expect(updateCall).toBeDefined();
     expect((updateCall![1] as Record<string, unknown>).prUrl).toBeNull();
+    // Merged workspace pins to the FE `Workspace` shape: cleared optionals must
+    // be `undefined`, not `null`, so downstream consumers can rely on the type.
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.prUrl).toBeUndefined();
+    }
   });
 
   it('deleteWorkspace sends workspace.delete with { workspaceId }', async () => {
