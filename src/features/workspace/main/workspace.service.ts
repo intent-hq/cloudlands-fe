@@ -3294,7 +3294,7 @@ export class WorkspaceService {
       mainDispatch(
         workspaceUpdated({
           workspaceId: id,
-          changes: { archived: false },
+          changes: { archived: false, status: WorkspaceStatus.Active },
         }),
       );
 
@@ -3442,11 +3442,13 @@ export class WorkspaceService {
     try {
       logger.info('Starting workspace purge');
       const response = (await getBackendClient().request('workspace.purge')) as {
-        removed?: number;
-        orphans?: number;
+        removed?: unknown;
+        orphans?: unknown;
       };
-      const removed = Number(response?.removed ?? 0);
-      const orphans = Number(response?.orphans ?? 0);
+      const toFiniteCount = (value: unknown): number =>
+        typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+      const removed = toFiniteCount(response?.removed);
+      const orphans = toFiniteCount(response?.orphans);
       logger.info('Workspace purge completed', { removed, orphans });
       return { ok: true, data: { removed, orphans } };
     } catch (error) {
@@ -3471,7 +3473,9 @@ export class WorkspaceService {
         directory,
       })) as { repositories?: unknown };
       const repositories = Array.isArray(response?.repositories)
-        ? (response.repositories as unknown[]).map((r) => String(r))
+        ? (response.repositories as unknown[]).filter(
+            (r): r is string => typeof r === 'string',
+          )
         : [];
       return { ok: true, data: repositories };
     } catch (error) {
