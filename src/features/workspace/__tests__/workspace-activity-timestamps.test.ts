@@ -78,6 +78,20 @@ const backendMocks = vi.hoisted(() => {
       if (!ws) throw new Error('Workspace not found');
       return { workspace: ws };
     }
+    if (method === 'workspace.update') {
+      // Daemon-side: apply the update, stamp `updatedAt`, and return `{ workspace }`
+      // per PROTOCOL.md §5.1 `workspace.update`.
+      const existing = workspacesById.get(workspaceId);
+      if (!existing) throw new Error('Workspace not found');
+      const { workspaceId: _wid, ...updates } = (params ?? {}) as Record<string, unknown>;
+      const next = {
+        ...existing,
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      workspacesById.set(workspaceId, next);
+      return { workspace: next };
+    }
     return {};
   });
   return {

@@ -1,0 +1,225 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * Wire-contract tests for the workspace.service ↔ daemon `workspace.*` write
+ * path rewire (PROTOCOL.md §5.1). `updateWorkspace`, `deleteWorkspace`,
+ * `archiveWorkspace`, and `unarchiveWorkspace` now delegate persistence to
+ * the daemon; these tests pin the exact JSON-RPC method names and params
+ * shapes so the wire contract cannot drift without the tests failing.
+ */
+
+const daemonWorkspaces = new Map<string, Record<string, unknown>>();
+
+const requestMock = vi.hoisted(() =>
+  vi.fn(async (method: string, params?: Record<string, unknown>) => {
+    if (method === 'agent.list') return { agents: [] };
+    if (method === 'note.list') return { notes: [] };
+    if (method === 'workspace.list') {
+      return { workspaces: Array.from(daemonWorkspaces.values()) };
+    }
+    if (method === 'workspace.get') {
+      const id = String(params?.workspaceId ?? '');
+      const match = daemonWorkspaces.get(id);
+      if (!match) throw new Error('Workspace not found');
+      return { workspace: match };
+    }
+    if (method === 'workspace.update') {
+      const id = String(params?.workspaceId ?? '');
+      const existing = daemonWorkspaces.get(id);
+      if (!existing) throw new Error('Workspace not found');
+      const { workspaceId: _wid, ...updates } = (params ?? {}) as Record<string, unknown>;
+      const next = { ...existing, ...updates, updatedAt: '2024-06-01T00:00:00.000Z' };
+      daemonWorkspaces.set(id, next);
+      return { workspace: next };
+    }
+    if (method === 'workspace.delete') {
+      const id = String(params?.workspaceId ?? '');
+      daemonWorkspaces.delete(id);
+      return { success: true };
+    }
+    if (method === 'workspace.archive') {
+      const id = String(params?.workspaceId ?? '');
+      const existing = daemonWorkspaces.get(id);
+      if (!existing) throw new Error('Workspace not found');
+      const next = {
+        ...existing,
+        status: 'Archived',
+        archived: true,
+        archivedAt: '2024-06-01T00:00:00.000Z',
+        updatedAt: '2024-06-01T00:00:00.000Z',
+      };
+      daemonWorkspaces.set(id, next);
+      return { success: true };
+    }
+    if (method === 'workspace.unarchive') {
+      const id = String(params?.workspaceId ?? '');
+      const existing = daemonWorkspaces.get(id);
+      if (!existing) throw new Error('Workspace not found');
+      const next = {
+        ...existing,
+        status: 'Active',
+        archived: false,
+        archivedAt: undefined,
+        updatedAt: '2024-06-01T00:00:00.000Z',
+      };
+      daemonWorkspaces.set(id, next);
+      return { success: true };
+    }
+    return {};
+  }),
+);
+
+vi.mock('../../../backend/main/backend.ipc', () => ({
+  getBackendClient: () => ({ request: requestMock }),
+}));
+
+vi.mock('../../../../store/main/redux-store-bridge', () => ({
+  mainDispatch: vi.fn((action: unknown) => action),
+}));
+
+import { WorkspaceService } from '../workspace.service';
+import { InMemoryWorkspaceRepository } from '../workspace.repository';
+import {
+  PullRequestStatus,
+  WorkspaceStatus,
+  type Workspace,
+  type WorkspaceId,
+} from '../../../../shared/types';
+
+function seed(overrides: Partial<Workspace> = {}): Workspace {
+  const now = '2024-01-01T00:00:00.000Z';
+  return {
+    id: 'ws-target' as WorkspaceId,
+    title: 'Target',
+    branch: 'workspace-target',
+    changesets: [],
+    timeline: [],
+    conversationInfo: [],
+    status: WorkspaceStatus.Active,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1)', () => {
+  let service: WorkspaceService;
+  let repository: InMemoryWorkspaceRepository;
+
+  beforeEach(() => {
+    requestMock.mockClear();
+    daemonWorkspaces.clear();
+    repository = new InMemoryWorkspaceRepository();
+    service = new WorkspaceService(repository);
+  });
+
+  afterEach(() => {
+    service.cleanup();
+    vi.clearAllMocks();
+  });
+
+  it('updateWorkspace sends workspace.update with workspaceId + camelCase fields; no client updatedAt', async () => {
+    const ws = seed();
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const result = await service.updateWorkspace({ id: ws.id, title: 'Renamed' });
+
+    expect(result.ok).toBe(true);
+    const updateCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.update');
+    expect(updateCalls).toHaveLength(1);
+    const [, params] = updateCalls[0]!;
+    expect(params).toEqual({ workspaceId: ws.id, title: 'Renamed' });
+    // FE must not stamp `updatedAt` on the wire — daemon owns it.
+    expect((params as Record<string, unknown>).updatedAt).toBeUndefined();
+    if (result.ok) {
+      expect(result.data.title).toBe('Renamed');
+      expect(result.data.updatedAt).toBe('2024-06-01T00:00:00.000Z');
+    }
+  });
+
+  it('updateWorkspace strips prStatus / activePullRequest / pullRequests before the wire call', async () => {
+    const ws = seed();
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const result = await service.updateWorkspace({
+      id: ws.id,
+      title: 'With PR',
+      prStatus: 'open' as any,
+      activePullRequest: { id: 'pr-1' } as any,
+      pullRequests: [{ id: 'pr-1' } as any],
+    });
+
+    expect(result.ok).toBe(true);
+    const updateCall = requestMock.mock.calls.find(([m]) => m === 'workspace.update');
+    expect(updateCall).toBeDefined();
+    const params = updateCall![1] as Record<string, unknown>;
+    expect(params.prStatus).toBeUndefined();
+    expect(params.activePullRequest).toBeUndefined();
+    expect(params.pullRequests).toBeUndefined();
+    // But callers still see them in the merged return.
+    if (result.ok) {
+      expect(result.data.prStatus).toBe(PullRequestStatus.Open);
+      expect(result.data.activePullRequest).toEqual({ id: 'pr-1' });
+      expect(result.data.pullRequests).toEqual([{ id: 'pr-1' }]);
+    }
+  });
+
+  it('updateWorkspace normalizes prUrl empty string to null on the wire', async () => {
+    const ws = seed({ prUrl: 'https://old' });
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    await service.updateWorkspace({ id: ws.id, prUrl: '' });
+
+    const updateCall = requestMock.mock.calls.find(([m]) => m === 'workspace.update');
+    expect(updateCall).toBeDefined();
+    expect((updateCall![1] as Record<string, unknown>).prUrl).toBeNull();
+  });
+
+  it('deleteWorkspace sends workspace.delete with { workspaceId }', async () => {
+    const ws = seed();
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const result = await service.deleteWorkspace(ws.id);
+
+    expect(result.ok).toBe(true);
+    const deleteCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.delete');
+    expect(deleteCalls).toHaveLength(1);
+    expect(deleteCalls[0]![1]).toEqual({ workspaceId: ws.id });
+    expect(daemonWorkspaces.has(ws.id)).toBe(false);
+  });
+
+  it('archiveWorkspace sends workspace.archive and refetches workspace.get for canonical shape', async () => {
+    const ws = seed();
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const result = await service.archiveWorkspace(ws.id);
+
+    expect(result.ok).toBe(true);
+    const archiveCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.archive');
+    expect(archiveCalls).toHaveLength(1);
+    expect(archiveCalls[0]![1]).toEqual({ workspaceId: ws.id });
+    // Refetch after archive.
+    const getCallsAfter = requestMock.mock.calls.filter(([m]) => m === 'workspace.get');
+    expect(getCallsAfter.length).toBeGreaterThanOrEqual(2);
+    if (result.ok) {
+      expect(result.data.archived).toBe(true);
+      expect(result.data.status).toBe(WorkspaceStatus.Archived);
+    }
+  });
+
+  it('unarchiveWorkspace sends workspace.unarchive and refetches workspace.get for canonical shape', async () => {
+    const ws = seed({ status: WorkspaceStatus.Archived, archived: true });
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const result = await service.unarchiveWorkspace(ws.id);
+
+    expect(result.ok).toBe(true);
+    const unarchiveCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.unarchive');
+    expect(unarchiveCalls).toHaveLength(1);
+    expect(unarchiveCalls[0]![1]).toEqual({ workspaceId: ws.id });
+    if (result.ok) {
+      expect(result.data.archived).toBe(false);
+      expect(result.data.status).toBe(WorkspaceStatus.Active);
+    }
+  });
+});
