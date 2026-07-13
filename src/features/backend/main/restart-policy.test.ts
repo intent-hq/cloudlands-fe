@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { RestartPolicy, DEFAULT_RESTART_POLICY_CONFIG } from './restart-policy';
+import { RestartPolicy } from './restart-policy';
 
 describe('RestartPolicy', () => {
   let policy: RestartPolicy;

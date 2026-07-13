@@ -62,7 +62,7 @@ export class RestartPolicy {
    * @param exitCode - Process exit code (null if killed by signal)
    * @param signal - Signal that killed the process (null if exited normally)
    */
-  onExit(exitCode: number | null, signal: string | null): RestartDecision {
+  onExit(_exitCode: number | null, _signal: string | null): RestartDecision {
     // Intentional stop suppresses restart
     if (this.intentionalStop) {
       this.reset();

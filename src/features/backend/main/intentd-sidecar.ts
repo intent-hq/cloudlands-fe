@@ -178,7 +178,7 @@ export async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Pr
       client.write(JSON.stringify(rpcRequest) + '\n');
     });
 
-    client.on('data', (chunk: Buffer) => {
+    client.on('data', (_chunk: Buffer) => {
       // Got a response - daemon is alive
       if (!resolved) {
         resolved = true;
