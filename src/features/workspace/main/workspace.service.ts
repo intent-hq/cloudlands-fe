@@ -1885,9 +1885,11 @@ export class WorkspaceService {
   }
 
   /**
-   * Repair legacy workspace metadata whose `updatedAt` was advanced by background writes.
-   * The repair is intentionally conservative: preserve valid `lastActivity`, otherwise
-   * derive activity from durable workspace-owned records and fall back to creation time.
+   * Derive a workspace-recency fallback when the daemon-served `lastActivity`
+   * is missing/invalid. The repair is transient (in-memory only) and never
+   * persisted: the daemon owns the field on disk per PROTOCOL.md §5.1. Daemon
+   * gap: `workspace.list`/`workspace.get` should populate `lastActivity` so
+   * this fallback becomes dead code.
    */
   private async repairWorkspaceActivityTimestamp(workspace: Workspace): Promise<Workspace> {
     if (this.isValidActivityTimestamp(workspace.lastActivity)) {
@@ -1899,17 +1901,7 @@ export class WorkspaceService {
       return workspace;
     }
 
-    const currentWorkspace = await this.repository.findById(workspace.id);
-    if (!currentWorkspace) {
-      return workspace;
-    }
-
-    if (this.isValidActivityTimestamp(currentWorkspace.lastActivity)) {
-      return currentWorkspace;
-    }
-
-    const repairedWorkspace = await this.saveWorkspaceUpdates(workspace.id, { lastActivity });
-    return repairedWorkspace ?? currentWorkspace;
+    return { ...workspace, lastActivity };
   }
 
   private async repairWorkspaceActivityTimestamps(workspaces: Workspace[]): Promise<Workspace[]> {
@@ -2450,8 +2442,6 @@ export class WorkspaceService {
       }
 
       let updatedWorkspace = workspace;
-      let updated = false;
-      const canonicalUpdates: Partial<Workspace> = {};
       const rendererUpdates: BackgroundEnrichmentWorkspaceUpdates = {};
 
       if (workspace.repositoryPath && (!workspace.repositoryOwner || !workspace.repositoryName)) {
@@ -2469,11 +2459,8 @@ export class WorkspaceService {
             repositoryOwner: owner,
             repositoryName: name,
           };
-          canonicalUpdates.repositoryOwner = owner;
-          canonicalUpdates.repositoryName = name;
           rendererUpdates.repositoryOwner = owner;
           rendererUpdates.repositoryName = name;
-          updated = true;
         }
       }
 
@@ -2482,8 +2469,6 @@ export class WorkspaceService {
           ...updatedWorkspace,
           diffs: undefined,
         };
-        canonicalUpdates.diffs = undefined;
-        updated = true;
       }
 
       // Enrich PR status (ciStatus and reviewDecision) for open PRs
@@ -2541,13 +2526,11 @@ export class WorkspaceService {
                   activePullRequest: undefined,
                   pullRequests: updatedPullRequests,
                 };
-                canonicalUpdates.prNumber = undefined;
-                canonicalUpdates.prUrl = undefined;
-                canonicalUpdates.prStatus = undefined;
-                canonicalUpdates.activePullRequest = undefined;
-                canonicalUpdates.pullRequests = updatedPullRequests;
-                updated = true;
-                await this.saveWorkspaceUpdates(workspaceId, canonicalUpdates);
+                // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE
+                // no longer writes stale-PR-link clears back to disk. Daemon
+                // gap: daemon should validate PR source-branch and clear stale
+                // links itself. Broadcast keeps renderer state in sync until
+                // the next daemon refresh.
                 await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
                   ...rendererUpdates,
                   activePullRequest: undefined,
@@ -2630,16 +2613,12 @@ export class WorkspaceService {
             }
 
             rendererUpdates.activePullRequest = enrichedPR;
-            canonicalUpdates.activePullRequest = enrichedPR;
             if (enrichedPR.status !== pr.status) {
               rendererUpdates.prStatus = enrichedPR.status;
-              canonicalUpdates.prStatus = enrichedPR.status;
             }
             if (updatedWorkspace.pullRequests) {
               rendererUpdates.pullRequests = updatedWorkspace.pullRequests;
-              canonicalUpdates.pullRequests = updatedWorkspace.pullRequests;
             }
-            updated = true;
             logger.debug('Enriched PR status for workspace', {
               workspaceId,
               prNumber: pr.number,
@@ -2657,13 +2636,11 @@ export class WorkspaceService {
         }
       }
 
-      if (updated) {
-        const savedWorkspace = await this.saveWorkspaceUpdates(workspaceId, canonicalUpdates);
-        if (savedWorkspace) {
-          updatedWorkspace = savedWorkspace;
-        }
-      }
-
+      // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
+      // longer writes background enrichment (git repo info / PR CI + review /
+      // stale-link clears) back to disk. Daemon gap: daemon should own PR
+      // enrichment and stamp the workspace itself. Broadcast keeps renderer
+      // state in sync until the next daemon refresh.
       await this.broadcastBackgroundEnrichmentUpdate(workspaceId, rendererUpdates);
     } catch (error) {
       logger.error('Background workspace enrichment failed', error as Error, { workspaceId });
@@ -2801,13 +2778,11 @@ export class WorkspaceService {
             const updatedPullRequests = (workspace.pullRequests || []).filter(
               (p) => p.number !== pr.number,
             );
-            await this.saveWorkspaceUpdates(workspaceId, {
-              prNumber: undefined,
-              prUrl: undefined,
-              prStatus: undefined,
-              activePullRequest: undefined,
-              pullRequests: updatedPullRequests,
-            });
+            // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
+            // longer writes stale-PR-link clears back to disk during periodic
+            // refresh. Daemon gap: daemon should validate PR source-branch and
+            // clear stale links itself. Broadcast keeps renderer state in sync
+            // until the next daemon refresh.
             await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
               activePullRequest: undefined,
               prNumber: undefined,
@@ -2880,31 +2855,16 @@ export class WorkspaceService {
           };
         }
 
-        const canonicalUpdates: Partial<Workspace> = {
-          activePullRequest: enrichedPR,
-          ...(enrichedPR.status !== pr.status && { prStatus: enrichedPR.status }),
-        };
-        if (updatedWorkspace.pullRequests) {
-          canonicalUpdates.pullRequests = updatedWorkspace.pullRequests;
-        }
-
-        const savedWorkspace = await this.saveWorkspaceUpdates(workspaceId, canonicalUpdates);
-        if (savedWorkspace) {
-          updatedWorkspace = savedWorkspace;
-        }
-
-        // Broadcast to renderer windows using the same format as background enrichment
+        // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
+        // longer writes periodic-PR-refresh enrichment (CI status / reviews /
+        // headSha) back to disk. Daemon gap: daemon should own PR enrichment
+        // and stamp the workspace itself. Broadcast keeps renderer state in
+        // sync until the next daemon refresh.
         const rendererUpdates: BackgroundEnrichmentWorkspaceUpdates = {
           activePullRequest: enrichedPR,
         };
         if (enrichedPR.status !== pr.status) {
           rendererUpdates.prStatus = enrichedPR.status;
-        }
-        if (updatedWorkspace.prNumber !== workspace.prNumber) {
-          rendererUpdates.prNumber = updatedWorkspace.prNumber;
-        }
-        if (updatedWorkspace.prUrl !== workspace.prUrl) {
-          rendererUpdates.prUrl = updatedWorkspace.prUrl;
         }
         if (updatedWorkspace.pullRequests) {
           rendererUpdates.pullRequests = updatedWorkspace.pullRequests;
@@ -2972,9 +2932,6 @@ export class WorkspaceService {
 
       workspace = await this.repairWorkspaceActivityTimestamp(workspace);
 
-      let updated = false;
-      const canonicalUpdates: Partial<Workspace> = {};
-
       // Validate worktree path exists, clear it if not
       // Skip validation for remote workspaces — their worktree paths only exist on the SSH host
       if (
@@ -2994,8 +2951,6 @@ export class WorkspaceService {
             ...workspace,
             worktreePath: undefined,
           };
-          canonicalUpdates.worktreePath = undefined;
-          updated = true;
         }
       } else if (
         workspace.worktreePath &&
@@ -3024,9 +2979,6 @@ export class WorkspaceService {
               repositoryOwner: newOwner,
               repositoryName: newName,
             };
-            canonicalUpdates.repositoryOwner = newOwner;
-            canonicalUpdates.repositoryName = newName;
-            updated = true;
           }
         }
       }
@@ -3042,25 +2994,17 @@ export class WorkspaceService {
       // We could do a deeper comparison if needed
       if (newDiffsLength > 0 && newDiffsLength !== existingDiffsLength) {
         workspace = { ...workspace, diffs };
-        canonicalUpdates.diffs = diffs;
-        updated = true;
       } else if (newDiffsLength === 0 && existingDiffsLength > 0) {
         // Clear diffs if they were removed
         workspace = { ...workspace, diffs: [] };
-        canonicalUpdates.diffs = [];
-        updated = true;
       }
 
-      // Save enriched data back if updated
-      if (updated) {
-        const savedWorkspace = await this.saveWorkspaceUpdates(id, canonicalUpdates);
-        if (savedWorkspace) {
-          workspace = savedWorkspace;
-        }
-      }
-
-      // Workspace payloads are metadata-only; diff/git/task summaries are
-      // fetched on demand via dedicated endpoints.
+      // Enrichment is in-memory only. Persistence is owned by the daemon
+      // (PROTOCOL.md §5.1); the FE no longer writes worktree/git/diffs
+      // enrichment back to disk from a read path. Daemon gap: daemon should
+      // validate worktree paths and own git repo info. Workspace payloads are
+      // metadata-only; diff/git/task summaries are fetched on demand via
+      // dedicated endpoints.
       return { ok: true, data: this.stripWorkspaceSummaries(workspace) };
     } catch (error) {
       logger.error('Failed to get workspace', error as Error, { workspaceId: id });
@@ -3462,19 +3406,10 @@ export class WorkspaceService {
 
       // Daemon `workspace.delete` (PROTOCOL.md §5.1) is authoritative for the
       // workspace row; the daemon treats a missing row as idempotent success.
+      // The FE no longer sweeps the retired local `.workspace/{id}` directory
+      // here — durable state lives in the daemon; any residual legacy disk
+      // artifacts are cleaned by `cleanupOrphanWorkspaces()` on startup.
       await getBackendClient().request('workspace.delete', { workspaceId: id });
-
-      // Best-effort cleanup of the retired local `.workspace/{id}` directory
-      // (legacy notes/agents/timeline). The daemon owns durable state now;
-      // this only sweeps residual disk artifacts. Failures are non-fatal.
-      try {
-        await this.repository.delete(id);
-      } catch (repoError) {
-        logger.debug('Local workspace directory cleanup skipped', {
-          workspaceId: id,
-          error: repoError instanceof Error ? repoError.message : String(repoError),
-        });
-      }
 
       // Emit event
       mainDispatch(
@@ -3859,23 +3794,14 @@ export class WorkspaceService {
         warningMessage: string,
         error: unknown,
       ): Promise<void> => {
+        // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
+        // longer writes the cleared worktree path back from a purge scan.
+        // Daemon gap: daemon should own worktree-path validation and clearing.
         logger.warn(warningMessage, {
           workspaceId: workspace.id,
           worktreePath: workspace.worktreePath,
           error: this.extractErrorMessage(error),
         });
-
-        try {
-          await this.saveWorkspaceUpdates(workspace.id, { worktreePath: undefined });
-        } catch (saveError) {
-          logger.warn(
-            'Failed to persist cleared worktree path during purge; leaving workspace intact',
-            {
-              workspaceId: workspace.id,
-              error: this.extractErrorMessage(saveError),
-            },
-          );
-        }
       };
 
       // Read workspace directories from canonical, current, and legacy roots
@@ -4312,33 +4238,6 @@ export class WorkspaceService {
     };
 
     await this.repository.save(sanitizedWorkspace);
-  }
-
-  private async saveWorkspaceUpdates(
-    workspaceId: WorkspaceId,
-    updates: Partial<Workspace>,
-  ): Promise<Workspace | null> {
-    if (workspaceId === CHIEF_WORKSPACE_ID) {
-      return {
-        ...getChiefWorkspace(),
-        ...updates,
-        id: CHIEF_WORKSPACE_ID,
-      };
-    }
-
-    const currentWorkspace = await this.repository.findById(workspaceId);
-    if (!currentWorkspace) {
-      return null;
-    }
-
-    const updatedWorkspace: Workspace = {
-      ...currentWorkspace,
-      ...updates,
-      id: currentWorkspace.id,
-    };
-
-    await this.saveWorkspace(updatedWorkspace);
-    return updatedWorkspace;
   }
 
   /**

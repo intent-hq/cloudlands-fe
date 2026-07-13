@@ -228,4 +228,36 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
       expect(result.data.status).toBe(WorkspaceStatus.Active);
     }
   });
+
+  it('getWorkspace never emits workspace.update (Wave A self-heal writeback collapse)', async () => {
+    // The `getWorkspace` read path previously wrote worktree/git-info/diff
+    // enrichment back to disk via `saveWorkspaceUpdates`, which advanced
+    // daemon-stamped `updatedAt` and violated the "FE does not heal BE
+    // payloads" contract. Post Wave A task 2, enrichment is in-memory only.
+    const ws = seed();
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const result = await service.getWorkspace(ws.id);
+
+    expect(result.ok).toBe(true);
+    const updateCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.update');
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it('deleteWorkspace only emits workspace.delete on the wire (no self-heal writes)', async () => {
+    // Regression pin: `deleteWorkspace` used to sweep local disk via
+    // `repository.delete()`. Post Wave A task 2, only the daemon wire call
+    // fires and no `workspace.update` writeback is emitted.
+    const ws = seed();
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const result = await service.deleteWorkspace(ws.id);
+
+    expect(result.ok).toBe(true);
+    const deleteCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.delete');
+    expect(deleteCalls).toHaveLength(1);
+    expect(deleteCalls[0]![1]).toEqual({ workspaceId: ws.id });
+    const updateCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.update');
+    expect(updateCalls).toHaveLength(0);
+  });
 });
