@@ -1,13 +1,20 @@
 /**
- * Unit tests for healthCheckProbe socket behavior.
+ * Unit tests for healthCheckProbe socket behavior and watchdog integration.
  *
  * Tests verify successful probe responses, timeout handling, error handling,
- * and socket cleanup across all code paths.
+ * socket cleanup, and the N-strikes restart policy with graceful kill escalation.
  */
+import { spawn, type ChildProcess } from 'node:child_process';
 import * as net from 'node:net';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { healthCheckProbe } from './intentd-sidecar';
+import {
+  healthCheckProbe,
+  __resetForTesting,
+  __setSidecarProcessForTesting,
+  __startWatchdogForTesting,
+} from './intentd-sidecar';
+import * as sidecarModule from './intentd-sidecar';
 
 // Mock fs.existsSync for socket path checks
 vi.mock('node:fs', async () => {
@@ -24,6 +31,15 @@ vi.mock('node:net', async () => {
   return {
     ...actual,
     connect: vi.fn(),
+  };
+});
+
+// Mock child_process.spawn for watchdog integration tests
+vi.mock('node:child_process', async () => {
+  const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  return {
+    ...actual,
+    spawn: vi.fn(),
   };
 });
 
@@ -49,7 +65,7 @@ describe('healthCheckProbe', () => {
           setTimeout(() => handler(), 0);
         } else if (event === 'data') {
           // Simulate daemon response after a short delay
-          setTimeout(() => handler(Buffer.from('{"jsonrpc":"2.0","id":1,"result":[]}')), 100);
+          setTimeout(() => handler(Buffer.from('{"jsonrpc":"2.0","id":1,"result":{"status":"running"}}')), 100);
         }
       }),
     };
@@ -62,7 +78,7 @@ describe('healthCheckProbe', () => {
 
     const result = await probePromise;
     expect(result).toBe(true);
-    expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('workspace.list'));
+    expect(mockSocket.write).toHaveBeenCalledWith(expect.stringContaining('system.status'));
     expect(mockSocket.destroy).toHaveBeenCalled();
   });
 
@@ -129,7 +145,7 @@ describe('healthCheckProbe', () => {
     expect(result).toBe(false);
   });
 
-  it('sends a JSON-RPC workspace.list request', async () => {
+  it('sends a JSON-RPC system.status request', async () => {
     const mockSocket = {
       write: vi.fn(),
       destroy: vi.fn(),
@@ -149,8 +165,252 @@ describe('healthCheckProbe', () => {
 
     expect(mockSocket.write).toHaveBeenCalledTimes(1);
     const writtenData = mockSocket.write.mock.calls[0][0];
-    expect(writtenData).toContain('"method":"workspace.list"');
-    expect(writtenData).toContain('"params":{"lite":true}');
+    expect(writtenData).toContain('"method":"system.status"');
+    expect(writtenData).toContain('"params":{}');
     expect(writtenData).toContain('"jsonrpc":"2.0"');
+  });
+});
+
+/**
+ * Watchdog N-strikes policy and graceful kill escalation tests.
+ *
+ * These tests verify the watchdog state machine per STAB-6 requirements:
+ * - Probe uses system.status (not workspace.list)
+ * - Single failure does not trigger kill
+ * - 3rd consecutive failure triggers SIGTERM
+ * - Successful probe resets failure counter
+ * - SIGTERM → SIGKILL escalation with ~5s grace period
+ */
+describe('Watchdog N-strikes policy', () => {
+  const mockConnect = vi.mocked(net.connect);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetForTesting();
+  });
+
+  afterEach(() => {
+    __resetForTesting();
+    vi.useRealTimers();
+  });
+
+  it('probe sends system.status method (not workspace.list)', async () => {
+    const mockSocket = {
+      write: vi.fn(),
+      destroy: vi.fn(),
+      on: vi.fn((event: string, handler: any) => {
+        if (event === 'connect') {
+          setTimeout(() => handler(), 0);
+        } else if (event === 'data') {
+          setTimeout(() => handler(Buffer.from('{"result":{}}')), 10);
+        }
+      }),
+    };
+    mockConnect.mockReturnValue(mockSocket as any);
+
+    await healthCheckProbe('/test.sock');
+
+    const writtenData = mockSocket.write.mock.calls[0][0];
+    expect(writtenData).toContain('"method":"system.status"');
+    expect(writtenData).not.toContain('workspace.list');
+    expect(writtenData).toContain('"params":{}');
+  });
+
+  it('single probe failure does NOT kill process', async () => {
+    vi.useFakeTimers();
+
+    // Mock socket to make probe fail (no 'data' event)
+    mockConnect.mockImplementation(() => ({
+      write: vi.fn(),
+      destroy: vi.fn(),
+      on: vi.fn((event: string, handler: any) => {
+        if (event === 'connect') setTimeout(() => handler(), 0);
+        // No 'data' event - probe will timeout and fail
+      }),
+    } as any));
+
+    const mockProcess = {
+      kill: vi.fn(),
+      killed: false,
+      exitCode: null,
+    } as unknown as ChildProcess;
+    __setSidecarProcessForTesting(mockProcess);
+
+    // Start watchdog with 100ms delay
+    __startWatchdogForTesting('/test.sock', 100);
+
+    // Advance to trigger first probe (100ms + 3000ms timeout)
+    await vi.advanceTimersByTimeAsync(3200);
+
+    // Process should NOT be killed after single failure
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+  });
+
+  it('3rd consecutive failure triggers SIGTERM', async () => {
+    vi.useFakeTimers();
+
+    // Mock socket to make all probes fail
+    mockConnect.mockImplementation(() => ({
+      write: vi.fn(),
+      destroy: vi.fn(),
+      on: vi.fn((event: string, handler: any) => {
+        if (event === 'connect') setTimeout(() => handler(), 0);
+        // No 'data' event - all probes fail
+      }),
+    } as any));
+
+    const mockProcess = {
+      kill: vi.fn(),
+      killed: false,
+      exitCode: null,
+    } as unknown as ChildProcess;
+    __setSidecarProcessForTesting(mockProcess);
+
+    // Start watchdog with 100ms delay
+    __startWatchdogForTesting('/test.sock', 100);
+
+    // First failure (100ms + 3s timeout)
+    await vi.advanceTimersByTimeAsync(3200);
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+
+    // Second failure (10s interval + 3s timeout)
+    await vi.advanceTimersByTimeAsync(13100);
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+
+    // Third failure - should trigger SIGTERM
+    await vi.advanceTimersByTimeAsync(13100);
+    expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(mockProcess.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it('successful probe resets failure counter', async () => {
+    vi.useFakeTimers();
+
+    let probeCount = 0;
+    // Mock socket: fail, fail, success, fail pattern
+    mockConnect.mockImplementation(() => {
+      probeCount++;
+      return {
+        write: vi.fn(),
+        destroy: vi.fn(),
+        on: vi.fn((event: string, handler: any) => {
+          if (event === 'connect') setTimeout(() => handler(), 0);
+          // Third probe succeeds, others fail
+          if (event === 'data' && probeCount === 3) {
+            setTimeout(() => handler(Buffer.from('{"result":{}}')), 10);
+          }
+        }),
+      } as any;
+    });
+
+    const mockProcess = {
+      kill: vi.fn(),
+      killed: false,
+      exitCode: null,
+    } as unknown as ChildProcess;
+    __setSidecarProcessForTesting(mockProcess);
+
+    // Start watchdog with 100ms delay
+    __startWatchdogForTesting('/test.sock', 100);
+
+    // First failure
+    await vi.advanceTimersByTimeAsync(3200);
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+    expect(probeCount).toBe(1);
+
+    // Second failure
+    await vi.advanceTimersByTimeAsync(13100);
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+    expect(probeCount).toBe(2);
+
+    // Third probe succeeds - counter resets
+    await vi.advanceTimersByTimeAsync(13100);
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+    expect(probeCount).toBe(3);
+
+    // Fourth probe fails - this is now "first" failure after reset
+    await vi.advanceTimersByTimeAsync(13100);
+    expect(mockProcess.kill).not.toHaveBeenCalled();
+    expect(probeCount).toBe(4);
+  });
+
+  it('SIGKILL sent after 5s grace period if process does not exit', async () => {
+    vi.useFakeTimers();
+
+    // Mock socket to make all probes fail
+    mockConnect.mockImplementation(() => ({
+      write: vi.fn(),
+      destroy: vi.fn(),
+      on: vi.fn((event: string, handler: any) => {
+        if (event === 'connect') setTimeout(() => handler(), 0);
+        // No 'data' event - all probes fail
+      }),
+    } as any));
+
+    const mockProcess = {
+      kill: vi.fn(),
+      killed: false,
+      exitCode: null, // Process remains alive
+    } as unknown as ChildProcess;
+    __setSidecarProcessForTesting(mockProcess);
+
+    // Start watchdog with 100ms delay
+    __startWatchdogForTesting('/test.sock', 100);
+
+    // Trigger 3 failures to get SIGTERM
+    await vi.advanceTimersByTimeAsync(3200); // 1st failure
+    await vi.advanceTimersByTimeAsync(13100); // 2nd failure
+    await vi.advanceTimersByTimeAsync(13100); // 3rd failure -> SIGTERM
+    expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(mockProcess.kill).toHaveBeenCalledTimes(1);
+
+    // Wait for 5s grace period
+    await vi.advanceTimersByTimeAsync(5100);
+
+    // SIGKILL should be sent
+    expect(mockProcess.kill).toHaveBeenCalledWith('SIGKILL');
+    expect(mockProcess.kill).toHaveBeenCalledTimes(2);
+  });
+
+  it('SIGKILL NOT sent if process exits gracefully within grace period', async () => {
+    vi.useFakeTimers();
+
+    // Mock socket to make all probes fail
+    mockConnect.mockImplementation(() => ({
+      write: vi.fn(),
+      destroy: vi.fn(),
+      on: vi.fn((event: string, handler: any) => {
+        if (event === 'connect') setTimeout(() => handler(), 0);
+        // No 'data' event - all probes fail
+      }),
+    } as any));
+
+    const mockProcess = {
+      kill: vi.fn(),
+      killed: false,
+      exitCode: null,
+    } as unknown as ChildProcess;
+    __setSidecarProcessForTesting(mockProcess);
+
+    // Start watchdog with 100ms delay
+    __startWatchdogForTesting('/test.sock', 100);
+
+    // Trigger 3 failures
+    await vi.advanceTimersByTimeAsync(3200); // 1st
+    await vi.advanceTimersByTimeAsync(13100); // 2nd
+    await vi.advanceTimersByTimeAsync(13100); // 3rd -> SIGTERM
+    expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(mockProcess.kill).toHaveBeenCalledTimes(1);
+
+    // Simulate process exiting gracefully before grace period expires
+    mockProcess.exitCode = 0;
+    mockProcess.killed = true;
+
+    // Wait for grace period
+    await vi.advanceTimersByTimeAsync(5100);
+
+    // SIGKILL should NOT be sent (only SIGTERM)
+    expect(mockProcess.kill).toHaveBeenCalledTimes(1);
+    expect(mockProcess.kill).not.toHaveBeenCalledWith('SIGKILL');
   });
 });
