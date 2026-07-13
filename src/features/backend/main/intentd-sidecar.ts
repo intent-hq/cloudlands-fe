@@ -44,7 +44,7 @@ let consecutiveFailures = 0;
  * Test seam: reset module state for testing.
  * @internal
  */
-export function __resetForTesting(): void {
+export function __resetIntentdSidecarForTesting(): void {
   if (watchdogTimer) {
     clearTimeout(watchdogTimer);
     watchdogTimer = null;
@@ -199,11 +199,11 @@ export async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Pr
     }, timeoutMs);
 
     // Send system.status request (control fast-path, no DB access)
+    // Omit params to match the established request shape in json-rpc-client.ts
     const rpcRequest = {
       jsonrpc: '2.0',
       id: Date.now(),
       method: 'system.status',
-      params: {},
     };
 
     client.on('connect', () => {

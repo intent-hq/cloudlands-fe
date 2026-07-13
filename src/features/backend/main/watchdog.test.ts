@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   healthCheckProbe,
-  __resetForTesting,
+  __resetIntentdSidecarForTesting,
   __setSidecarProcessForTesting,
   __startWatchdogForTesting,
 } from './intentd-sidecar';
@@ -165,7 +165,7 @@ describe('healthCheckProbe', () => {
     expect(mockSocket.write).toHaveBeenCalledTimes(1);
     const writtenData = mockSocket.write.mock.calls[0][0];
     expect(writtenData).toContain('"method":"system.status"');
-    expect(writtenData).toContain('"params":{}');
+    expect(writtenData).not.toContain('"params"');
     expect(writtenData).toContain('"jsonrpc":"2.0"');
   });
 });
@@ -185,11 +185,11 @@ describe('Watchdog N-strikes policy', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    __resetForTesting();
+    __resetIntentdSidecarForTesting();
   });
 
   afterEach(() => {
-    __resetForTesting();
+    __resetIntentdSidecarForTesting();
     vi.useRealTimers();
   });
 
@@ -212,7 +212,7 @@ describe('Watchdog N-strikes policy', () => {
     const writtenData = mockSocket.write.mock.calls[0][0];
     expect(writtenData).toContain('"method":"system.status"');
     expect(writtenData).not.toContain('workspace.list');
-    expect(writtenData).toContain('"params":{}');
+    expect(writtenData).not.toContain('"params"');
   });
 
   it('single probe failure does NOT kill process', async () => {
