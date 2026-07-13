@@ -1,30 +1,33 @@
 /**
  * Git IPC bridge — routes the legacy renderer→main `git:*` / `git-tracking:*`
- * working-copy operations that have NO dedicated daemon RPC onto the
- * daemon-owned one-shot exec (`host.exec`, PROTOCOL §5.14) and the
- * `host.directoryStatus` probe, so the daemon host stays the single execution
- * locus (the renderer never spawns git itself).
+ * working-copy operations onto the daemon so the daemon host stays the single
+ * execution locus (the renderer never spawns git itself).
  *
  * Channels served here and their daemon arms:
- *  - `git:push` / `git:fetch`            → `host.exec git push|fetch` in the
- *    workspace root (5-min timeout, matching the legacy network-op timeout).
- *  - `git:stage-hunk` / `git:unstage-hunk` → `git apply --cached [-R] -` with
- *    the hunk patch piped through the exec's argv (host.exec has no stdin
- *    channel), retrying with `--3way` like the legacy service. The legacy
- *    content-based unstage fallback is not replicated.
+ *  - `git:push`                          → `git.push` (PROTOCOL §5.6)
+ *  - `git:fetch`                         → `git.fetch` (§5.6)
+ *  - `git:stage-hunk` / `git:unstage-hunk` → `git.stageHunk` / `git.unstageHunk`
+ *    (§5.6). The daemon streams the patch to `git apply --cached [--reverse]`
+ *    on stdin with the direct-then-`--3way` fallback; the legacy content-based
+ *    unstage fallback is not replicated.
+ *  - `workspace:rename-branch`            → `git.renameBranch` (§5.6). The
+ *    daemon rename requires the old branch name, so this handler first reads
+ *    the current branch via `git.status` (§5.6) and forwards it.
  *  - `git:numstat` + branch-base `git:diff` → the legacy merge-base boundary
  *    resolution (`origin/<base>` → `<base>`, `--is-ancestor` sha fallback)
- *    re-run through `host.exec`; unresolvable boundaries fold to an empty
- *    result exactly like the legacy handlers. Working-tree `git:diff` reads
- *    were migrated to the daemon `git.diffs` (§5.6) and are rejected here.
+ *    still runs through the daemon-owned exec (`host.exec`, §5.14) because
+ *    there is no dedicated daemon RPC for them yet; unresolvable boundaries
+ *    fold to an empty result exactly like the legacy handlers. Working-tree
+ *    `git:diff` reads were migrated to the daemon `git.diffs` (§5.6) and are
+ *    rejected here.
  *  - `git:isRepository`                  → `host.directoryStatus.isGitRepo`.
  *  - `git-tracking:get-remote-url`       → `git -C <repoPath> config --get
  *    remote.origin.url` (path-based: the picker probes repos that predate any
  *    workspace, so no workspace cwd guard applies).
  *
  * Every handler preserves the legacy `{ success, data?, error? }` envelope its
- * call sites already consume — results come from real git on the daemon host,
- * never synthesized. Handlers are registered at import time (host-bridge
+ * call sites already consume — daemon rejections fold to `{ success: false,
+ * error }`, never a throw. Handlers are registered at import time (host-bridge
  * idiom).
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
@@ -45,10 +48,19 @@ interface HostDirectoryStatusResult {
   isGitRepo: boolean;
 }
 
-/** Network git operations (push/fetch) keep the legacy 5-minute timeout. */
-const NETWORK_TIMEOUT_MS = 300_000;
-/** Local git reads/mutations. */
+/** Daemon `git.status` result subset consumed by the rename-branch handler. */
+interface GitStatusResult {
+  branch?: string;
+}
+
+/** Local git reads used by the numstat / branch-base diff shims. */
 const LOCAL_TIMEOUT_MS = 60_000;
+
+/** Legacy `git.service.push` timeout — network op can outrun the transport default. */
+const PUSH_TIMEOUT_MS = 300_000;
+
+/** Legacy `git.service.fetch` timeout — network op can outrun the transport default. */
+const FETCH_TIMEOUT_MS = 60_000;
 
 /** Coerce a possibly-unknown argument into a plain object record. */
 function asRecord(arg: unknown): Record<string, unknown> {
@@ -85,17 +97,15 @@ function requireWorkspaceId(arg: unknown): string | null {
   return typeof workspaceId === 'string' && workspaceId ? workspaceId : null;
 }
 
-// ── git:push / git:fetch ──
+// ── git:push / git:fetch → git.push / git.fetch (§5.6) ──
 
 registerMockIpcHandler(IPC_CHANNELS.GIT.PUSH, async (arg) => {
   const workspaceId = requireWorkspaceId(arg);
   if (!workspaceId) return { success: false, error: 'Invalid workspace ID' };
   const force = asRecord(arg).force === true;
   try {
-    const args = force ? ['push', '--force-with-lease'] : ['push'];
-    const result = await gitExec(workspaceId, args, NETWORK_TIMEOUT_MS);
-    if (result.exitCode === 0) return { success: true };
-    return { success: false, error: execError(result, 'Failed to push changes') };
+    await backendRequest('git.push', { workspaceId, force }, { timeoutMs: PUSH_TIMEOUT_MS });
+    return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
@@ -105,54 +115,31 @@ registerMockIpcHandler(IPC_CHANNELS.GIT.FETCH, async (arg) => {
   const workspaceId = requireWorkspaceId(arg);
   if (!workspaceId) return { success: false, error: 'Invalid workspace ID' };
   try {
-    const result = await gitExec(workspaceId, ['fetch'], NETWORK_TIMEOUT_MS);
-    if (result.exitCode === 0) return { success: true };
-    return { success: false, error: execError(result, 'Failed to fetch remote changes') };
+    await backendRequest('git.fetch', { workspaceId }, { timeoutMs: FETCH_TIMEOUT_MS });
+    return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
 });
 
-// ── git:stage-hunk / git:unstage-hunk ──
-
-/**
- * `git apply --cached` reads the patch from stdin, which `host.exec` does not
- * carry — so the patch travels as a positional shell argument and is piped in
- * verbatim via `printf %s "$1"`. The flags are static strings; the patch is
- * never shell-interpolated.
- */
-async function applyHunk(
-  workspaceId: string,
-  hunkPatch: string,
-  flags: string[],
-): Promise<HostExecResult> {
-  const gitCommand = ['git', 'apply', '--cached', ...flags, '-'].join(' ');
-  return await backendRequest<HostExecResult>('host.exec', {
-    command: 'sh',
-    args: ['-c', `printf %s "$1" | ${gitCommand}`, 'sh', hunkPatch],
-    cwd: '.',
-    workspaceId,
-    timeoutMs: LOCAL_TIMEOUT_MS,
-  });
-}
+// ── git:stage-hunk / git:unstage-hunk → git.stageHunk / git.unstageHunk (§5.6) ──
 
 async function handleHunk(arg: unknown, reverse: boolean): Promise<unknown> {
   const workspaceId = requireWorkspaceId(arg);
   if (!workspaceId) return { success: false, error: 'Invalid workspace ID' };
-  const hunkPatch = asRecord(arg).hunkPatch;
+  const record = asRecord(arg);
+  const filePath = record.filePath;
+  const hunkPatch = record.hunkPatch;
+  if (typeof filePath !== 'string' || !filePath) {
+    return { success: false, error: 'filePath is required' };
+  }
   if (typeof hunkPatch !== 'string' || !hunkPatch) {
     return { success: false, error: 'hunkPatch is required' };
   }
-  const baseFlags = reverse ? ['--reverse'] : [];
-  const fallback = reverse ? 'Failed to unstage hunk' : 'Failed to stage hunk';
+  const method = reverse ? 'git.unstageHunk' : 'git.stageHunk';
   try {
-    let result = await applyHunk(workspaceId, hunkPatch, baseFlags);
-    if (result.exitCode !== 0) {
-      // Legacy parity: retry with --3way when the plain apply fails.
-      result = await applyHunk(workspaceId, hunkPatch, [...baseFlags, '--3way']);
-    }
-    if (result.exitCode === 0) return { success: true };
-    return { success: false, error: execError(result, fallback) };
+    await backendRequest(method, { workspaceId, filePath, hunkPatch });
+    return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
@@ -355,13 +342,14 @@ registerMockIpcHandler(IPC_CHANNELS.GIT_TRACKING.GET_REMOTE_URL, async (arg) => 
   }
 });
 
-// ── workspace:rename-branch (sidebar inline branch rename) ──
+// ── workspace:rename-branch → git.renameBranch (§5.6) ──
 
 // WorkspaceSidebarHeader / BranchDisplay rename the CURRENT worktree branch
 // and then persist the new name onto the Workspace themselves through
-// workspaceClient.update (daemon `workspace.update`, PROTOCOL §5.1), so only
-// the git mutation needs a bridge: git branch -m in the workspace root via
-// `host.exec` (§5.14). Callers check `.success` and toast `error`.
+// workspaceClient.update (daemon `workspace.update`, PROTOCOL §5.1). The
+// daemon `git.renameBranch` needs the old branch name, so this handler
+// reads it from `git.status` before issuing the rename. Callers check
+// `.success` and toast `error`.
 registerMockIpcHandler(IPC_CHANNELS.WORKSPACE.RENAME_BRANCH, async (arg) => {
   const record = asRecord(arg);
   const workspaceId = typeof record.id === 'string' && record.id ? record.id : null;
@@ -370,9 +358,17 @@ registerMockIpcHandler(IPC_CHANNELS.WORKSPACE.RENAME_BRANCH, async (arg) => {
   if (!workspaceId) return { success: false, error: 'Invalid workspace ID' };
   if (!newBranchName) return { success: false, error: 'Invalid branch name' };
   try {
-    const result = await gitExec(workspaceId, ['branch', '-m', newBranchName]);
-    if (result.exitCode === 0) return { success: true };
-    return { success: false, error: execError(result, 'Failed to rename branch') };
+    const status = await backendRequest<GitStatusResult>('git.status', { workspaceId });
+    const oldBranchName = status?.branch;
+    if (!oldBranchName) {
+      return { success: false, error: 'Failed to rename branch: current branch is unknown' };
+    }
+    await backendRequest('git.renameBranch', {
+      workspaceId,
+      oldBranchName,
+      newBranchName,
+    });
+    return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }

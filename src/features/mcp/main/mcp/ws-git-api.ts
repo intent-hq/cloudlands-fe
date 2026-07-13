@@ -1,20 +1,11 @@
 import type { GitStatus } from '$shared/types';
 
 import { Logger } from '../../../../shared/logger';
-import { WorkspaceId } from '../../../../shared/types/branded-ids';
 import type { ToolCall } from './protocol';
 import { backgroundGitOpsService } from '../../../git/main/background-git-ops.service';
-import { gitService } from '$features/git/main/git.service';
-import { getWorkspaceGitInfo } from '$features/git/main/git-router';
 import { assertAgentCommitAllowed } from '$features/workspace/main/workspace-settings.service';
 import { getBackendClient } from '$features/backend/main/backend.ipc';
-import { execFileAsync } from '$shared/git/git-env';
-
-type ExecFileFn = (
-  file: string,
-  args: readonly string[],
-  options?: { cwd?: string },
-) => Promise<{ stdout: string; stderr: string }>;
+import { WorkspaceId } from '../../../../shared/types/branded-ids';
 
 export interface WsGitAgentCommitOptions {
   files?: string[];
@@ -45,17 +36,19 @@ export interface WsGitApi {
 
 const logger = new Logger('WsGitApi');
 
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGitApi {
   return {
     async status() {
       logger.info('ws.git.status()', { workspaceId });
-      const result = await gitService.getStatus(WorkspaceId(workspaceId));
-
-      if (!result.ok) {
-        throw new Error(`Failed to get git status: ${result.error}`);
+      try {
+        return await getBackendClient().request<GitStatus>('git.status', { workspaceId });
+      } catch (error) {
+        throw new Error(`Failed to get git status: ${toErrorMessage(error)}`);
       }
-
-      return result.data;
     },
 
     async stage(paths) {
@@ -82,9 +75,10 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
         throw new Error('No file paths provided. Please specify at least one file path to stage.');
       }
 
-      const result = await gitService.stageFiles(WorkspaceId(workspaceId), pathList);
-      if (!result.ok) {
-        throw new Error(`Failed to stage files: ${result.error}`);
+      try {
+        await getBackendClient().request('git.stage', { workspaceId, paths: pathList });
+      } catch (error) {
+        throw new Error(`Failed to stage files: ${toErrorMessage(error)}`);
       }
 
       return { ok: true as const, paths: pathList };
@@ -108,13 +102,15 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
         fullMessage = `${message}\n\nAgent-Id: ${call.context.agentId}`;
       }
 
-      const result = await gitService.commit(WorkspaceId(workspaceId), fullMessage);
-      if (!result.ok) {
-        throw new Error(`Failed to commit: ${result.error}`);
+      try {
+        const result = await getBackendClient().request<{
+          hash?: string;
+          files?: string[];
+        }>('git.commit', { workspaceId, message: fullMessage });
+        return { ok: true as const, hash: result?.hash, files: result?.files };
+      } catch (error) {
+        throw new Error(`Failed to commit: ${toErrorMessage(error)}`);
       }
-
-      const data = result.data;
-      return { ok: true as const, hash: data?.hash, files: data?.files };
     },
 
     async agentCommit(message, opts = {}) {
@@ -193,38 +189,21 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
         targetBranch: requestedTargetBranch,
       });
 
-      const gitInfo = await getWorkspaceGitInfo(workspaceId);
-      if (!gitInfo) {
-        throw new Error('Could not find workspace git info');
+      try {
+        const result = await getBackendClient().request<{
+          hasConflicts: boolean;
+          conflictedFiles: string[];
+          cannotDetermine?: boolean;
+          targetBranch: string;
+          currentBranch: string;
+        }>('git.checkMergeConflicts', {
+          workspaceId,
+          ...(requestedTargetBranch !== undefined ? { targetBranch: requestedTargetBranch } : {}),
+        });
+        return result;
+      } catch (error) {
+        throw new Error(`Failed to check merge conflicts: ${toErrorMessage(error)}`);
       }
-
-      const branchResult = await gitService.getCurrentBranch(WorkspaceId(workspaceId));
-      if (!branchResult.ok) {
-        throw new Error(`Failed to get current branch: ${branchResult.error}`);
-      }
-
-      const currentBranch = branchResult.data;
-      const targetBranch =
-        requestedTargetBranch ?? (await detectDefaultBranch(gitInfo.worktreePath, execFileAsync));
-
-      if (!targetBranch) {
-        throw new Error(
-          'Could not determine target branch. Please specify a targetBranch parameter.',
-        );
-      }
-
-      if (currentBranch === targetBranch) {
-        return { hasConflicts: false, conflictedFiles: [], targetBranch, currentBranch };
-      }
-
-      const result = await detectMergeConflicts(
-        gitInfo.worktreePath,
-        currentBranch,
-        targetBranch,
-        execFileAsync,
-      );
-
-      return { ...result, targetBranch, currentBranch };
     },
   };
 }
@@ -232,114 +211,4 @@ export function buildWsGitApi({ workspaceId, call }: BuildWsGitApiParams): WsGit
 function buildAgentCommitMessage(message: string, agentId: string): string {
   const clean = message.trim().replace(/\n{3,}/g, '\n\n');
   return `${clean}\n\nAgent-Id: ${agentId}`;
-}
-
-async function detectDefaultBranch(worktreePath: string, execFile: ExecFileFn): Promise<string | null> {
-  for (const branch of ['main', 'master']) {
-    try {
-      await execFile('git', ['rev-parse', '--verify', branch], { cwd: worktreePath });
-      return branch;
-    } catch {
-      // Branch doesn't exist locally, try next.
-    }
-  }
-
-  return null;
-}
-
-async function detectMergeConflicts(
-  worktreePath: string,
-  currentBranch: string,
-  targetBranch: string,
-  execFile: ExecFileFn,
-): Promise<{ hasConflicts: boolean; conflictedFiles: string[]; cannotDetermine?: boolean }> {
-  try {
-    await execFile('git', ['merge-tree', '--write-tree', '--name-only', '--', targetBranch, currentBranch], {
-      cwd: worktreePath,
-    });
-    return { hasConflicts: false, conflictedFiles: [] };
-  } catch (error) {
-    const gitError = error as { code?: number; status?: number; stdout?: string; message?: string };
-    const exitCode = gitError.code ?? gitError.status;
-    const stdout = gitError.stdout ?? '';
-
-    if (exitCode === 1) {
-      const conflictedFiles: string[] = [];
-      const lines = stdout.split('\n');
-      let inConflictSection = false;
-
-      for (const line of lines) {
-        if (line.trim() === '') continue;
-        if (inConflictSection) {
-          const trimmed = line.trim();
-          if (!trimmed.endsWith(':')) {
-            conflictedFiles.push(trimmed);
-          }
-        }
-        if (line.trim().endsWith(':')) {
-          inConflictSection = true;
-        }
-      }
-
-      return { hasConflicts: true, conflictedFiles };
-    }
-
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    if (errorMessage.includes('unknown option') || errorMessage.includes('unrecognized argument')) {
-      return detectMergeConflictsLegacy(worktreePath, currentBranch, targetBranch, execFile);
-    }
-
-    logger.warn(`merge-tree failed for ${currentBranch}..${targetBranch}, assuming potential conflicts`, error);
-    return { hasConflicts: true, conflictedFiles: [] };
-  }
-}
-
-async function detectMergeConflictsLegacy(
-  worktreePath: string,
-  currentBranch: string,
-  targetBranch: string,
-  execFile: ExecFileFn,
-): Promise<{ hasConflicts: boolean; conflictedFiles: string[]; cannotDetermine?: boolean }> {
-  try {
-    let base: string;
-    try {
-      const { stdout } = await execFile('git', ['merge-base', '--', targetBranch, currentBranch], {
-        cwd: worktreePath,
-      });
-      base = stdout.trim();
-    } catch {
-      return { hasConflicts: false, conflictedFiles: [], cannotDetermine: true };
-    }
-
-    if (!base) {
-      return { hasConflicts: false, conflictedFiles: [], cannotDetermine: true };
-    }
-
-    const { stdout } = await execFile('git', ['merge-tree', '--', base, targetBranch, currentBranch], {
-      cwd: worktreePath,
-    });
-
-    const hasConflictMarkers = stdout.includes('<<<<<<<') && stdout.includes('>>>>>>>');
-    const conflictedFiles: string[] = [];
-
-    if (hasConflictMarkers) {
-      const lines = stdout.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].trim() !== 'changed in both') continue;
-
-        for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-          const match = lines[j].match(/^\s+base\s+\d+\s+[a-f0-9]+\s+(.+)$/);
-          if (match) {
-            conflictedFiles.push(match[1]);
-            break;
-          }
-        }
-      }
-    }
-
-    return { hasConflicts: hasConflictMarkers, conflictedFiles };
-  } catch (error) {
-    logger.warn(`legacy merge-tree failed for ${currentBranch}..${targetBranch}, assuming potential conflicts`, error);
-    return { hasConflicts: true, conflictedFiles: [] };
-  }
 }
