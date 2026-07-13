@@ -10,8 +10,9 @@
  * subscribe→refetch path drives on `git:*` events); on failure the optimistic
  * change is rolled back to the pre-mutation snapshot.
  *
- * `git.commit` is DESTRUCTIVE and `git.unstage` is a backend gap (not wired), so
- * only `stageFiles` and `commit` are exposed here.
+ * Exposed operations: `stageFiles`, `unstageFiles` (optimistic + rollback),
+ * `discardFiles` and `commit` (DESTRUCTIVE — no optimistic mutation; the
+ * post-mutation status is reconciled from the daemon regardless of outcome).
  *
  * This module is dependency-light: it imports only the AppClient seam, the
  * configured store, git slice actions, and selectors (per src/store AGENTS.md).
@@ -61,6 +62,54 @@ export async function stageFiles(
     if (snapshot) appStore.dispatch(setGitStatus(workspaceId, snapshot));
     logger.error("Failed to stage files", result.error);
     return result;
+  }
+  await reconcileGitStatus(workspaceId);
+  return result;
+}
+
+/**
+ * Unstage explicit paths with an optimistic staged-state flip; rolls back to
+ * the pre-unstage snapshot on failure and reconciles from the daemon on
+ * success.
+ */
+export async function unstageFiles(
+  workspaceId: string,
+  paths: string[],
+): Promise<MutationResult> {
+  const snapshot = selectGitStatus.select(appStore.state, workspaceId);
+  if (snapshot) {
+    const pathSet = new Set(paths);
+    const optimistic: GitStatus = {
+      ...snapshot,
+      files: snapshot.files.map((file) =>
+        pathSet.has(file.path) ? { ...file, staged: false } : file,
+      ),
+    };
+    appStore.dispatch(setGitStatus(workspaceId, optimistic));
+  }
+
+  const result = await appClient.git.unstage(workspaceId, paths);
+  if (!result.success) {
+    if (snapshot) appStore.dispatch(setGitStatus(workspaceId, snapshot));
+    logger.error("Failed to unstage files", result.error);
+    return result;
+  }
+  await reconcileGitStatus(workspaceId);
+  return result;
+}
+
+/**
+ * Discard working-tree changes for explicit paths (`git.discard`; DESTRUCTIVE).
+ * No optimistic mutation — the post-discard status is reconciled from the
+ * daemon regardless of outcome so the store reflects what actually happened.
+ */
+export async function discardFiles(
+  workspaceId: string,
+  paths: string[],
+): Promise<MutationResult> {
+  const result = await appClient.git.discard(workspaceId, paths);
+  if (!result.success) {
+    logger.error("Failed to discard files", result.error);
   }
   await reconcileGitStatus(workspaceId);
   return result;

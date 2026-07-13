@@ -268,6 +268,39 @@ function toTrackedChange(raw: unknown): TrackedChange | null {
   };
 }
 
+/**
+ * Validate + trim the explicit-paths param shared by `git.stage`,
+ * `git.unstage`, and `git.discard`: empty lists and all-files globs
+ * ('.'/'*'/'--all') are rejected upstream (mirroring the daemon contract) so
+ * the request is never even sent. `verb` labels the failure message
+ * ("Staging"/"Unstaging"/"Discarding").
+ */
+function cleanExplicitPaths(
+  paths: string[],
+  verb: string,
+): { ok: true; paths: string[] } | { ok: false; failure: MutationResult } {
+  const cleaned = paths.map((path) => path.trim()).filter(Boolean);
+  if (cleaned.length === 0) {
+    return {
+      ok: false,
+      failure: {
+        success: false,
+        error: `No file paths provided; ${verb.toLowerCase()} requires explicit paths.`,
+      },
+    };
+  }
+  if (cleaned.some((path) => path === "." || path === "*" || path.includes("--all"))) {
+    return {
+      ok: false,
+      failure: {
+        success: false,
+        error: `${verb} all files is not allowed; specify explicit file paths.`,
+      },
+    };
+  }
+  return { ok: true, paths: cleaned };
+}
+
 export class LiveGitClient implements GitClient {
   async status(workspaceId: string): Promise<GitStatus | null> {
     return fetchStatus(workspaceId);
@@ -439,19 +472,29 @@ export class LiveGitClient implements GitClient {
 
   // `git.stage` requires explicit paths: all-files globs ('.'/'*'/'--all') are
   // rejected upstream (mirroring the daemon contract) so the request is never
-  // even sent. `git.unstage` is a backend gap and is intentionally NOT wired.
+  // even sent. `git.unstage` and `git.discard` share the same explicit-paths
+  // contract (§5.6 extensions).
   async stage(workspaceId: string, paths: string[]): Promise<MutationResult> {
-    const cleaned = paths.map((path) => path.trim()).filter(Boolean);
-    if (cleaned.length === 0) {
-      return { success: false, error: "No file paths provided; staging requires explicit paths." };
-    }
-    if (cleaned.some((path) => path === "." || path === "*" || path.includes("--all"))) {
-      return {
-        success: false,
-        error: "Staging all files is not allowed; specify explicit file paths.",
-      };
-    }
-    return runMutation("git.stage", { workspaceId, paths: cleaned });
+    const cleaned = cleanExplicitPaths(paths, "Staging");
+    if (!cleaned.ok) return cleaned.failure;
+    return runMutation("git.stage", { workspaceId, paths: cleaned.paths });
+  }
+
+  // `git.unstage` (PROTOCOL §5.6 extensions) — the inverse of `git.stage`;
+  // idempotent on already-unstaged paths.
+  async unstage(workspaceId: string, paths: string[]): Promise<MutationResult> {
+    const cleaned = cleanExplicitPaths(paths, "Unstaging");
+    if (!cleaned.ok) return cleaned.failure;
+    return runMutation("git.unstage", { workspaceId, paths: cleaned.paths });
+  }
+
+  // `git.discard` (PROTOCOL §5.6 extensions) — DESTRUCTIVE: discards
+  // working-tree changes for the given paths (ports the legacy
+  // `discardChanges` behind the revert buttons).
+  async discard(workspaceId: string, paths: string[]): Promise<MutationResult> {
+    const cleaned = cleanExplicitPaths(paths, "Discarding");
+    if (!cleaned.ok) return cleaned.failure;
+    return runMutation("git.discard", { workspaceId, paths: cleaned.paths });
   }
 
   // `git.agentCommit` is DESTRUCTIVE: it requires `userRequested: true`. The

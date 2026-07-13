@@ -580,6 +580,17 @@ export interface GitClient {
    */
   stage(workspaceId: string, paths: string[]): Promise<MutationResult>;
   /**
+   * Unstage explicit paths (`git.unstage`, §5.6 extensions) — the inverse of
+   * `git.stage`. Same explicit-paths contract; idempotent on already-unstaged
+   * paths.
+   */
+  unstage(workspaceId: string, paths: string[]): Promise<MutationResult>;
+  /**
+   * Discard working-tree changes for explicit paths (`git.discard`, §5.6
+   * extensions). Same explicit-paths contract as `git.stage`. DESTRUCTIVE.
+   */
+  discard(workspaceId: string, paths: string[]): Promise<MutationResult>;
+  /**
    * Create a commit (`git.commit`). REQUIRES `userRequested: true`; the live
    * client attaches an idempotencyKey (§5.6/§7.7). DESTRUCTIVE.
    */

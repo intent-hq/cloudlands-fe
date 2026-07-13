@@ -15,14 +15,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   selectStagedWorkingChanges as selectFtStagedChanges,
   selectUnstagedWorkingChanges as selectFtUnstagedChanges,
 } from '$store/renderer/slices/changes/changes-selectors';
-  import {
-  stageByPathRequested,
-  unstageByPathRequested,
-  revertByPathRequested,
-  refreshRequested,
-} from '$store/renderer/slices/changes/changes-slice';
+  import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
   import type { TrackedChange } from '$features/file-tracking/types';
-  import { stageFiles as stageFilesViaSeam } from '$features/git/git-write-service';
+  import {
+  discardFiles as discardFilesViaSeam,
+  stageFiles as stageFilesViaSeam,
+  unstageFiles as unstageFilesViaSeam,
+} from '$features/git/git-write-service';
   import { loadGitStatus } from '$store/renderer/slices/git/git-slice';
   import { selectAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-selectors';
   import { setAutoCommitEnabled } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
@@ -358,9 +357,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     }
   }
 
-  // TODO: unstage still dispatches the legacy changes-slice action — `git.unstage`
-  // is a backend gap (not in the frozen wire catalog), so it cannot route through
-  // the git-write-service seam yet.
   async function handleUnstageAll() {
     isStaging = true;
     try {
@@ -370,7 +366,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       });
       const paths = unlockedChanges.map((c) => c.relativePath);
       if (paths.length > 0) {
-        appStore.dispatch(unstageByPathRequested(workspaceId, paths));
+        // Unstage through the AppClient seam (git.unstage).
+        const result = await unstageFilesViaSeam(workspaceId, paths);
+        if (!result.success) {
+          toast.error('Unstage failed', { description: result.error || 'Unknown error' });
+        }
       }
     } finally {
       isStaging = false;
@@ -419,7 +419,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       logger.warn('Cannot unstage file from locked agent', { path });
       return;
     }
-    appStore.dispatch(unstageByPathRequested(workspaceId, filesToUnstage));
+    // Unstage through the AppClient seam (git.unstage).
+    const unstageResult = await unstageFilesViaSeam(workspaceId, filesToUnstage);
+    if (!unstageResult.success) {
+      toast.error('Unstage failed', { description: unstageResult.error || 'Unknown error' });
+    }
     clearSelection();
     await tick();
     if (filesToUnstage.length === 1) {
@@ -448,7 +452,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       logger.warn('Cannot revert file from locked agent', { path });
       return;
     }
-    appStore.dispatch(revertByPathRequested(workspaceId, filesToRevert));
+    // Revert through the AppClient seam (git.discard; DESTRUCTIVE).
+    const revertResult = await discardFilesViaSeam(workspaceId, filesToRevert);
+    if (!revertResult.success) {
+      toast.error('Revert failed', { description: revertResult.error || 'Unknown error' });
+    }
     clearSelection();
   }
 
@@ -471,7 +479,11 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       return;
     }
     const paths = group.files.map((f) => f.path);
-    appStore.dispatch(unstageByPathRequested(workspaceId, paths));
+    // Unstage through the AppClient seam (git.unstage).
+    const result = await unstageFilesViaSeam(workspaceId, paths);
+    if (!result.success) {
+      toast.error('Unstage failed', { description: result.error || 'Unknown error' });
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -483,7 +495,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     const paths = group.files.map((f) => f.path);
     const commitMessage = group.agentName || 'Agent changes';
     try {
-      appStore.dispatch(stageByPathRequested(workspaceId, paths));
+      const stageResult = await stageFilesViaSeam(workspaceId, paths);
+      if (!stageResult.success) {
+        throw new Error(stageResult.error || 'Stage failed');
+      }
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
         commitMessage,
       });
@@ -543,11 +558,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     groupCommit.active = null;
   }
 
-  // TODO(redux-remove): per-group commit stays on the legacy IPC/AcceptChangesClient
-  // path (with stage/unstage-by-path saga-triggers) because it must temporarily
-  // unstage unrelated files to commit only this group, then re-stage them. The git
-  // AppClient seam has no `git.unstage` yet, so this selective commit cannot move to
-  // the seam until that backend gap is filled. Out of scope for the current wave.
+  // Per-group commit executes the commit itself over the legacy
+  // IPC/AcceptChangesClient path; the temporary unstage/re-stage around it
+  // routes through the git-write-service seam (git.unstage / git.stage).
   async function commitSingleGroup(group: AgentChangeGroup, section: 'unstaged' | 'staged') {
     const paths = group.files.map((f) => f.path);
     const pathSet = new Set(paths);
@@ -559,10 +572,16 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       .map((c) => c.relativePath);
     try {
       if (otherStagedPaths.length > 0) {
-        appStore.dispatch(unstageByPathRequested(workspaceId, otherStagedPaths));
+        const unstageResult = await unstageFilesViaSeam(workspaceId, otherStagedPaths);
+        if (!unstageResult.success) {
+          throw new Error(unstageResult.error || 'Unstage failed');
+        }
       }
       if (section === 'unstaged') {
-        appStore.dispatch(stageByPathRequested(workspaceId, paths));
+        const stageResult = await stageFilesViaSeam(workspaceId, paths);
+        if (!stageResult.success) {
+          throw new Error(stageResult.error || 'Stage failed');
+        }
       }
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
         commitMessage: message,
@@ -573,10 +592,9 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       }
     } finally {
       if (otherStagedPaths.length > 0) {
-        try {
-          appStore.dispatch(stageByPathRequested(workspaceId, otherStagedPaths));
-        } catch (restageError) {
-          logger.error('Failed to re-stage files after group commit', restageError as Error);
+        const restageResult = await stageFilesViaSeam(workspaceId, otherStagedPaths);
+        if (!restageResult.success) {
+          logger.error('Failed to re-stage files after group commit', restageResult.error);
         }
       }
       await Promise.all([

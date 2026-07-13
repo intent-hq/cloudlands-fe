@@ -15,10 +15,11 @@
   selectFileTrackingLoading,
 } from '$store/renderer/slices/changes/changes-selectors';
   import {
-  stageByPathRequested,
-  unstageByPathRequested,
-  revertByPathRequested,
-} from '$store/renderer/slices/changes/changes-slice';
+  discardFiles as discardFilesViaSeam,
+  stageFiles as stageFilesViaSeam,
+  unstageFiles as unstageFilesViaSeam,
+} from '$features/git/git-write-service';
+  import { toast } from '$lib/components/ui/toast';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import ChatChangesPanel from '$lib/components/chat/ChatChangesPanel.svelte';
@@ -129,6 +130,45 @@
     ];
   });
 
+  // The panel rows carry absolutized paths (workspacePath-prefixed above);
+  // the git.* wire contract takes repo-relative paths, so strip the prefix
+  // before handing them to the write-service seam.
+  function toRepoRelative(path: string): string {
+    return workspacePath && path.startsWith(`${workspacePath}/`)
+      ? path.slice(workspacePath.length + 1)
+      : path;
+  }
+
+  // Stage/unstage/revert route through the git-write-service seam
+  // (git.stage / git.unstage / git.discard): await + toast.error on failure.
+  // The seam is the sanctioned post-saga git-mutation mechanism (it dispatches
+  // the optimistic update + reconciles the store itself), so the
+  // component-async-data-fetch heuristic — which flags any `*-service` import —
+  // is disabled for these mutation calls.
+  async function stageViaSeam(paths: string[]) {
+    // eslint-disable-next-line intent/no-component-async-data-fetch
+    const result = await stageFilesViaSeam(workspaceId, paths.map(toRepoRelative));
+    if (!result.success) {
+      toast.error('Stage failed', { description: result.error || 'Unknown error' });
+    }
+  }
+
+  async function unstageViaSeam(paths: string[]) {
+    // eslint-disable-next-line intent/no-component-async-data-fetch
+    const result = await unstageFilesViaSeam(workspaceId, paths.map(toRepoRelative));
+    if (!result.success) {
+      toast.error('Unstage failed', { description: result.error || 'Unknown error' });
+    }
+  }
+
+  async function revertViaSeam(paths: string[]) {
+    // eslint-disable-next-line intent/no-component-async-data-fetch
+    const result = await discardFilesViaSeam(workspaceId, paths.map(toRepoRelative));
+    if (!result.success) {
+      toast.error('Revert failed', { description: result.error || 'Unknown error' });
+    }
+  }
+
   // Register header actions
   $effect(() => {
     if (!headerContext || !isActive) return;
@@ -197,23 +237,15 @@
   branchBaseCommitSha={$ftBoundarySha$ || $workspace?.baseCommitSha || null}
   showStagingControls={true}
   showCategoryFilter={true}
-  onStage={(path) => appStore.dispatch(stageByPathRequested(workspaceId, [path]))}
-  onUnstage={(path) => appStore.dispatch(unstageByPathRequested(workspaceId, [path]))}
-  onRevert={(path) => appStore.dispatch(revertByPathRequested(workspaceId, [path]))}
+  onStage={(path) => void stageViaSeam([path])}
+  onUnstage={(path) => void unstageViaSeam([path])}
+  onRevert={(path) => void revertViaSeam([path])}
   onStageAll={() => {
     const unstaged = $ftChanges$.filter((c) => c.stage === 'unstaged');
-    const paths = unstaged.map((c) => {
-      const rawPath = c.file || c.relativePath;
-      return rawPath?.startsWith('/') ? rawPath : `${workspacePath}/${rawPath}`;
-    });
-    appStore.dispatch(stageByPathRequested(workspaceId, paths));
+    void stageViaSeam(unstaged.map((c) => c.relativePath || c.file));
   }}
   onUnstageAll={() => {
     const staged = $ftChanges$.filter((c) => c.stage === 'staged');
-    const paths = staged.map((c) => {
-      const rawPath = c.file || c.relativePath;
-      return rawPath?.startsWith('/') ? rawPath : `${workspacePath}/${rawPath}`;
-    });
-    appStore.dispatch(unstageByPathRequested(workspaceId, paths));
+    void unstageViaSeam(staged.map((c) => c.relativePath || c.file));
   }}
 />

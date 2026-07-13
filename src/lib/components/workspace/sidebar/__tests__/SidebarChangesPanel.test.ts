@@ -125,12 +125,17 @@ vi.mock('$store/renderer/slices/changes/changes-slice', async (importOriginal) =
   setSidebarMergeWhenReady: vi.fn((wsId: string, value: boolean) => ({ type: 'changes/setSidebarMergeWhenReady', payload: [wsId, value] })),
 }));
 
-// Staging now routes through the git-write-service seam (FileChangesSection).
-const { mockStageFiles } = vi.hoisted(() => ({
+// Stage/unstage/revert now route through the git-write-service seam
+// (FileChangesSection).
+const { mockStageFiles, mockUnstageFiles, mockDiscardFiles } = vi.hoisted(() => ({
   mockStageFiles: vi.fn(() => Promise.resolve({ success: true })),
+  mockUnstageFiles: vi.fn(() => Promise.resolve({ success: true })),
+  mockDiscardFiles: vi.fn(() => Promise.resolve({ success: true })),
 }));
 vi.mock('$features/git/git-write-service', () => ({
   stageFiles: mockStageFiles,
+  unstageFiles: mockUnstageFiles,
+  discardFiles: mockDiscardFiles,
   commit: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
@@ -617,6 +622,8 @@ describe('SidebarChangesPanel', () => {
   beforeEach(async () => {
     await resetMocks();
     mockStageFiles.mockClear();
+    mockUnstageFiles.mockClear();
+    mockDiscardFiles.mockClear();
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -934,7 +941,7 @@ describe('SidebarChangesPanel', () => {
       expect(mockStageFiles).toHaveBeenCalledWith('ws-1', ['src/foo.ts']);
     });
 
-    it('calls unstageByPath when unstage action is invoked on staged file', async () => {
+    it('unstages via the git-write-service seam when unstage action is invoked on staged file', async () => {
       const staged = [
         makeChange({ relativePath: 'src/foo.ts', stage: ChangeStage.Staged }),
       ];
@@ -951,9 +958,7 @@ describe('SidebarChangesPanel', () => {
       const unstageBtns = container.querySelectorAll('[data-testid="unstage-btn"]');
       expect(unstageBtns.length).toBeGreaterThan(0);
       await fireEvent.click(unstageBtns[0]);
-      expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'changes/unstageByPathRequested', payload: ['ws-1', ['src/foo.ts']] })
-      );
+      expect(mockUnstageFiles).toHaveBeenCalledWith('ws-1', ['src/foo.ts']);
     });
 
     it('toggles commit drawer open and close', async () => {
@@ -1227,9 +1232,7 @@ describe('SidebarChangesPanel', () => {
       );
       expect(unstageAllBtn).toBeDefined();
       await fireEvent.click(unstageAllBtn!);
-      expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'changes/unstageByPathRequested', payload: ['ws-1', ['src/a.ts', 'src/b.ts']] })
-      );
+      expect(mockUnstageFiles).toHaveBeenCalledWith('ws-1', ['src/a.ts', 'src/b.ts']);
     });
 
     it('clicking a file dispatches workspace:open-diff event', async () => {
