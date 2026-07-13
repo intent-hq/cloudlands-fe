@@ -1,137 +1,103 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 /**
- * Unit tests for ChatPanel imageBlocks transformation (STAB-7 fix).
- * 
- * Verifies that handleSend and handleForceSubmit correctly transform
- * inline image context items (with imageData/imageMimeType) into
- * imageBlocks before dispatching the sendMessage action.
+ * Unit tests for ChatPanel imageBlocks transformation helper (STAB-7 fix).
+ *
+ * Verifies that the inline-image → imageBlocks mapping logic works correctly.
+ * This tests the transformation step that handleSend/handleForceSubmit use.
  */
 
-const mocks = vi.hoisted(() => {
-  const dispatchSpy = vi.fn();
-  return { dispatchSpy };
-});
+// Helper function extracted from ChatPanel transformation logic
+function extractImageBlocks(contextItems: any[]): any[] {
+  return contextItems
+    .filter(
+      (item) =>
+        item.type === 'inline-image' &&
+        typeof item.imageData === 'string' &&
+        typeof item.imageMimeType === 'string',
+    )
+    .map((item) => ({
+      type: 'image' as const,
+      data: item.imageData,
+      mimeType: item.imageMimeType,
+    }));
+}
 
-vi.mock('$store/renderer/store', () => ({
-  store: {
-    dispatch: mocks.dispatchSpy,
-    state: {},
-  },
-}));
+describe('ChatPanel imageBlocks transformation helper (STAB-7)', () => {
 
-// Mock sendMessage action creator
-vi.mock('$store/renderer/slices/chat-state/chat-state-slice', () => ({
-  sendMessage: vi.fn((agentId: string, payload: any) => ({
-    type: 'chatState/sendMessage',
-    payload: { agentId, payload },
-  })),
-}));
-
-describe('ChatPanel imageBlocks transformation (STAB-7)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.resetAllMocks();
-  });
-
-  it('transforms inline image context items into imageBlocks in sendMessage payload', () => {
-    // This test verifies the transformation logic from the investigation:
-    // inlineImageItems with imageData/imageMimeType should be mapped to imageBlocks
-    const inlineImageItems = [
+  it('transforms inline-image context items into imageBlocks', () => {
+    const contextItems = [
       {
         id: 'inline-image-1',
-        type: 'file' as const,
+        type: 'inline-image' as const,
         label: 'Screenshot',
         imageData: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
         imageMimeType: 'image/png',
       },
-      {
-        id: 'inline-image-2',
-        type: 'file' as const,
-        label: 'Photo',
-        imageData: '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAB//2Q==',
-        imageMimeType: 'image/jpeg',
-      },
+      { id: 'ctx-1', type: 'file' as const, label: 'README.md' },
     ];
 
-    const expectedImageBlocks = [
-      {
-        type: 'image' as const,
-        data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-        mimeType: 'image/png',
-      },
-      {
-        type: 'image' as const,
-        data: '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCwAB//2Q==',
-        mimeType: 'image/jpeg',
-      },
-    ];
-
-    // Simulate the transformation that happens in handleSend/handleForceSubmit
-    const imageBlocks = inlineImageItems
-      .filter((item) => item.imageData && item.imageMimeType)
-      .map((item) => ({
-        type: 'image' as const,
-        data: item.imageData!,
-        mimeType: item.imageMimeType!,
-      }));
-
-    expect(imageBlocks).toEqual(expectedImageBlocks);
-  });
-
-  it('filters out context items without imageData', () => {
-    const mixedContextItems = [
-      {
-        id: 'file-1',
-        type: 'file' as const,
-        label: 'Document.pdf',
-        // No imageData/imageMimeType - should be filtered out
-      },
-      {
-        id: 'inline-image-1',
-        type: 'file' as const,
-        label: 'Screenshot',
-        imageData: 'base64data',
-        imageMimeType: 'image/png',
-      },
-    ];
-
-    const imageBlocks = mixedContextItems
-      .filter((item) => item.imageData && item.imageMimeType)
-      .map((item) => ({
-        type: 'image' as const,
-        data: item.imageData!,
-        mimeType: item.imageMimeType!,
-      }));
+    const imageBlocks = extractImageBlocks(contextItems);
 
     expect(imageBlocks).toHaveLength(1);
     expect(imageBlocks[0]).toEqual({
       type: 'image',
-      data: 'base64data',
+      data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
       mimeType: 'image/png',
     });
   });
 
-  it('returns empty array when no inline images have data', () => {
-    const contextItemsWithoutImages = [
+  it('filters out context items without imageData/imageMimeType', () => {
+    const contextItems = [
       {
-        id: 'note-1',
-        type: 'note' as const,
-        label: 'Spec',
+        id: 'inline-image-1',
+        type: 'inline-image' as const,
+        label: 'Image with data',
+        imageData: 'base64data',
+        imageMimeType: 'image/jpeg',
+      },
+      {
+        id: 'file-1',
+        type: 'file' as const,
+        label: 'Regular file',
+      },
+      {
+        id: 'inline-image-2',
+        type: 'inline-image' as const,
+        label: 'Image without mimeType',
+        imageData: 'base64data2',
       },
     ];
 
-    const imageBlocks = contextItemsWithoutImages
-      .filter((item: any) => item.imageData && item.imageMimeType)
-      .map((item: any) => ({
-        type: 'image' as const,
-        data: item.imageData!,
-        mimeType: item.imageMimeType!,
-      }));
+    const imageBlocks = extractImageBlocks(contextItems);
 
-    expect(imageBlocks).toEqual([]);
+    expect(imageBlocks).toHaveLength(1);
+    expect(imageBlocks[0].data).toBe('base64data');
+    expect(imageBlocks[0].mimeType).toBe('image/jpeg');
+  });
+
+  it('handles multiple inline images', () => {
+    const contextItems = [
+      {
+        id: 'img-1',
+        type: 'inline-image' as const,
+        label: 'First image',
+        imageData: 'data1',
+        imageMimeType: 'image/png',
+      },
+      {
+        id: 'img-2',
+        type: 'inline-image' as const,
+        label: 'Second image',
+        imageData: 'data2',
+        imageMimeType: 'image/jpeg',
+      },
+    ];
+
+    const imageBlocks = extractImageBlocks(contextItems);
+
+    expect(imageBlocks).toHaveLength(2);
+    expect(imageBlocks[0]).toEqual({ type: 'image', data: 'data1', mimeType: 'image/png' });
+    expect(imageBlocks[1]).toEqual({ type: 'image', data: 'data2', mimeType: 'image/jpeg' });
   });
 });

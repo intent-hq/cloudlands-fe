@@ -3021,11 +3021,14 @@ describe("daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle trigg
     // Capture the dispatch function directly to preserve this binding
     const originalDispatch = appStore.dispatch;
     const dispatchSpy = vi.fn(originalDispatch);
-    vi.spyOn(appStore, "dispatch", "get").mockReturnValue(dispatchSpy);
+    const dispatchGetterSpy = vi.spyOn(appStore, "dispatch", "get").mockReturnValue(dispatchSpy);
 
     handler(notification("agent:status-changed", { agentId: AGENT, status: "responding" }));
 
     expect(dispatchSpy).toHaveBeenCalledWith(hydrateAgentsRequested(WS));
+
+    // Restore the getter to prevent leakage
+    dispatchGetterSpy.mockRestore();
   });
 
   it("agent:idle dispatches hydrateAgentsRequested(workspaceId)", async () => {
@@ -3040,11 +3043,14 @@ describe("daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle trigg
     // Capture the dispatch function directly to preserve this binding
     const originalDispatch = appStore.dispatch;
     const dispatchSpy = vi.fn(originalDispatch);
-    vi.spyOn(appStore, "dispatch", "get").mockReturnValue(dispatchSpy);
+    const dispatchGetterSpy = vi.spyOn(appStore, "dispatch", "get").mockReturnValue(dispatchSpy);
 
     handler(notification("agent:idle", { agentId: AGENT }));
 
     expect(dispatchSpy).toHaveBeenCalledWith(hydrateAgentsRequested(WS));
+
+    // Restore the getter to prevent leakage
+    dispatchGetterSpy.mockRestore();
   });
 });
 
@@ -3076,7 +3082,7 @@ describe("daemonEventsBridge (STAB-8 — task:status-changed triggers task refet
     // Capture the dispatch function directly to preserve this binding
     const originalDispatch = appStore.dispatch;
     const dispatchSpy = vi.fn(originalDispatch);
-    vi.spyOn(appStore, "dispatch", "get").mockReturnValue(dispatchSpy);
+    const dispatchGetterSpy = vi.spyOn(appStore, "dispatch", "get").mockReturnValue(dispatchSpy);
 
     handler(
       notification("task:status-changed", {
@@ -3086,6 +3092,9 @@ describe("daemonEventsBridge (STAB-8 — task:status-changed triggers task refet
     );
 
     expect(dispatchSpy).toHaveBeenCalledWith(loadWorkspaceTasksRequested(WS));
+
+    // Restore the getter to prevent leakage
+    dispatchGetterSpy.mockRestore();
   });
 });
 
