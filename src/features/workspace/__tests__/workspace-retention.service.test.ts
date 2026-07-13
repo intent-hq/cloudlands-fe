@@ -16,16 +16,35 @@ vi.mock('../../../store/main/redux-store-bridge', () => ({
 }));
 
 // Stub the daemon client so WorkspaceService's activity-repair path
-// (`note.list` / `agent.list` per PROTOCOL.md §5.4/§5.5) resolves to empty
-// PROTOCOL-shaped results instead of reaching the real UDS socket.
+// (`note.list` / `agent.list` per PROTOCOL.md §5.4/§5.5) and the retired
+// disk-read path's daemon replacement (`workspace.list` / `workspace.get` per
+// §5.1) resolve to PROTOCOL-shaped results without reaching the real UDS
+// socket. Workspace rows are seeded per-test through the `workspacesById` map
+// (mirrored from `repository.save` in `beforeEach`).
+const backendMocks = vi.hoisted(() => {
+  const workspacesById = new Map<string, Record<string, unknown>>();
+  const request = vi.fn(async (method: string, params?: unknown) => {
+    if (method === 'note.list') return { notes: [] };
+    if (method === 'agent.list') return { agents: [] };
+    if (method === 'workspace.list') {
+      return { workspaces: Array.from(workspacesById.values()) };
+    }
+    if (method === 'workspace.get') {
+      const id =
+        params && typeof params === 'object' && 'workspaceId' in params
+          ? String((params as { workspaceId?: unknown }).workspaceId ?? '')
+          : '';
+      const ws = workspacesById.get(id);
+      if (!ws) throw new Error('Workspace not found');
+      return { workspace: ws };
+    }
+    return {};
+  });
+  return { workspacesById, request };
+});
+
 vi.mock('../../backend/main/backend.ipc', () => ({
-  getBackendClient: () => ({
-    request: vi.fn(async (method: string) => {
-      if (method === 'note.list') return { notes: [] };
-      if (method === 'agent.list') return { agents: [] };
-      return {};
-    }),
-  }),
+  getBackendClient: () => ({ request: backendMocks.request }),
 }));
 
 vi.mock('../../terminal/main/terminal.ipc', () => ({
@@ -79,6 +98,16 @@ describe('WorkspaceService retention cleanup', () => {
 
   beforeEach(() => {
     repository = new InMemoryWorkspaceRepository();
+    backendMocks.workspacesById.clear();
+    backendMocks.request.mockClear();
+    // Mirror every `repository.save` into the daemon-read stub so
+    // `getWorkspace` / `listWorkspaces` (now backed by `workspace.get` /
+    // `workspace.list`) see rows the test wrote through the write path.
+    const originalSave = repository.save.bind(repository);
+    repository.save = async (ws) => {
+      await originalSave(ws);
+      backendMocks.workspacesById.set(ws.id, { ...ws });
+    };
     service = new WorkspaceService(repository);
   });
 

@@ -17,8 +17,6 @@ import {
 import type { Result, CommandResponse, WorkspaceId } from '../../../shared/types';
 import { protocolAdapter } from '../../protocol/main/protocol-adapter';
 import { changeDetectorManager as singletonChangeDetectorManager } from './change-detector-manager';
-import { MetadataWatcherManager } from './metadata-watcher-manager';
-import * as fs from 'fs/promises';
 
 import { Logger } from '../../../shared/logger';
 import { mainDispatch } from '../../../store/main/redux-store-bridge';
@@ -98,7 +96,6 @@ import {
   WorkspaceExportSchema,
   WorkspaceImportSchema,
   WorkspaceListSchema,
-  WorkspaceTestWatcherSchema,
   WorkspaceGetRecentSchema,
   WorkspaceClearRecentSchema,
   WorkspaceGetStatsSchema,
@@ -306,7 +303,6 @@ export function setupWorkspaceIPC(): void {
   registerValidationSchema(WORKSPACE_CHANNELS.EXPORT, WorkspaceExportSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.IMPORT, WorkspaceImportSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.LIST, WorkspaceListSchema);
-  registerValidationSchema(WORKSPACE_CHANNELS.TEST_WATCHER, WorkspaceTestWatcherSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.GET_RECENT, WorkspaceGetRecentSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.CLEAR_RECENT, WorkspaceClearRecentSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.GET_STATS, WorkspaceGetStatsSchema);
@@ -344,48 +340,10 @@ export function setupWorkspaceIPC(): void {
     WorkspaceUpdateSettingsAltSchema,
   );
 
-  // Test handler for metadata watcher
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.TEST_WATCHER,
-    createSafeValidatedHandler(
-      WorkspaceTestWatcherSchema,
-      async (_, validated) => {
-        try {
-          const workspace = await protocolAdapter.getWorkspace(validated.workspaceId);
-          if (!workspace) {
-            return { success: false, error: 'Workspace not found' };
-          }
+  // Metadata watcher retired alongside the workspace disk-read path; the
+  // legacy `WORKSPACE_CHANNELS.TEST_WATCHER` diagnostic handler is intentionally
+  // no longer registered.
 
-          const metadataPath = WorkspaceConfig.paths.metadata(validated.workspaceId);
-
-          logger.info('Testing metadata watcher', {
-            workspaceId: validated.workspaceId,
-            metadataPath,
-            worktreePath: workspace.worktreePath,
-            exists: await fs
-              .access(metadataPath)
-              .then(() => true)
-              .catch(() => false),
-          });
-
-          const metadataWatcher = MetadataWatcherManager.getInstance();
-          await metadataWatcher.stopWatching(validated.workspaceId);
-          await metadataWatcher.startWatching(validated.workspaceId, metadataPath);
-
-          return {
-            success: true,
-            metadataPath,
-            worktreePath: workspace.worktreePath,
-            message: 'Watcher restarted - check logs for file change events',
-          };
-        } catch (error) {
-          logger.error('Test watcher failed', error as Error);
-          return { success: false, error: String(error) };
-        }
-      },
-      WORKSPACE_CHANNELS.TEST_WATCHER,
-    ),
-  );
   logger.info('Setting up workspace IPC handlers');
 
   // List workspaces - use backward compatible method
@@ -528,18 +486,7 @@ export function setupWorkspaceIPC(): void {
             }
           }
 
-          // Stop metadata watcher
-          const metadataManager = MetadataWatcherManager.getInstance();
-          if (metadataManager) {
-            try {
-              await metadataManager.stopWatching(id);
-              logger.info('[WorkspaceIPC] Stopped metadata watcher', { workspaceId: id });
-            } catch (error) {
-              logger.warn('[WorkspaceIPC] Failed to stop metadata watcher', error as Error, {
-                workspaceId: id,
-              });
-            }
-          }
+          // Metadata watcher retired; nothing to stop here.
 
           // Clear MetadataFS cache so it's re-created on next open
           clearMetadataFSCache();
@@ -727,31 +674,8 @@ export function setupWorkspaceIPC(): void {
           // The workspace is usable immediately - monitoring, git integration, etc. initialize
           // in the background and will be ready by the time the user needs them.
 
-          // Start metadata watcher (fast, doesn't need to wait)
-          const metadataWatcherPromise = (async () => {
-            try {
-              const metadataWatcher = MetadataWatcherManager.getInstance();
-
-              // Stop any existing watcher first (in case of re-opening)
-              await metadataWatcher.stopWatching(id);
-
-              // Get the correct metadata path (not the worktree path!)
-              const metadataPath = WorkspaceConfig.paths.metadata(id);
-
-              // Start fresh watcher with the correct metadata path
-              await metadataWatcher.startWatching(id, metadataPath);
-              logger.info('Started metadata file watcher for workspace', {
-                workspaceId: id,
-                metadataPath,
-                worktreePath: workspace.worktreePath,
-              });
-            } catch (error) {
-              logger.error('Failed to start metadata watcher for workspace', error as Error, {
-                workspaceId: id,
-              });
-              // Don't fail the workspace open, just log the error
-            }
-          })();
+          // Metadata watcher retired alongside the workspace disk-read path;
+          // workspace metadata is served by the daemon (`workspace.get`).
 
           // Start monitoring in background - DON'T WAIT for it
           // This is the main performance optimization - monitoring can take several seconds
@@ -930,9 +854,6 @@ export function setupWorkspaceIPC(): void {
           // `ensure_spec_note`); the FE no longer performs FS-level orphan
           // recovery on open.
 
-          // Only wait for metadata watcher (fast) - let monitoring run in background
-          await metadataWatcherPromise;
-
           // Fire and forget the background initialization
           // Use void to explicitly indicate we're not awaiting this
           void monitoringAndGitPromise;
@@ -993,16 +914,7 @@ export function setupWorkspaceIPC(): void {
           }
         }
 
-        // Stop metadata file watcher
-        try {
-          const metadataWatcher = MetadataWatcherManager.getInstance();
-          await metadataWatcher.stopWatching(validatedId);
-          logger.debug('Stopped metadata file watcher for workspace', { workspaceId: validatedId });
-        } catch (error) {
-          logger.error('Failed to stop metadata watcher for workspace', error as Error, {
-            workspaceId: validatedId,
-          });
-        }
+        // Metadata watcher retired; nothing to stop here.
 
         // Clear MetadataFS cache for deleted workspace
         clearMetadataFSCache();

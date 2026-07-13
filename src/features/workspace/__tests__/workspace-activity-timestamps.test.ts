@@ -44,14 +44,17 @@ const githubServiceMocks = vi.hoisted(() => ({
 }));
 
 // Notes and agents now come from the daemon (PROTOCOL.md §5.4 `note.list`,
-// §5.5 `agent.list`). Each test seeds `notesByWorkspace` / `agentsByWorkspace`
-// (or a rejection map) instead of writing through in-memory repositories.
+// §5.5 `agent.list`). Workspaces themselves now come from `workspace.list` /
+// `workspace.get` (§5.1) after the disk-read path was retired; each test seeds
+// `workspacesById` alongside the in-memory repository so the daemon stub
+// mirrors the workspace records used by write-path helpers.
 const backendMocks = vi.hoisted(() => {
   const notesByWorkspace = new Map<string, Array<{ createdAt?: string; updatedAt?: string }>>();
   const agentsByWorkspace = new Map<
     string,
     Array<{ lastActivity?: string; updatedAt?: string; createdAt?: string }>
   >();
+  const workspacesById = new Map<string, Record<string, unknown>>();
   const rejectMethods = new Set<string>();
   const request = vi.fn(async (method: string, params: unknown) => {
     if (rejectMethods.has(method)) {
@@ -67,9 +70,23 @@ const backendMocks = vi.hoisted(() => {
     if (method === 'agent.list') {
       return { agents: agentsByWorkspace.get(workspaceId) ?? [] };
     }
+    if (method === 'workspace.list') {
+      return { workspaces: Array.from(workspacesById.values()) };
+    }
+    if (method === 'workspace.get') {
+      const ws = workspacesById.get(workspaceId);
+      if (!ws) throw new Error('Workspace not found');
+      return { workspace: ws };
+    }
     return {};
   });
-  return { notesByWorkspace, agentsByWorkspace, rejectMethods, request };
+  return {
+    notesByWorkspace,
+    agentsByWorkspace,
+    workspacesById,
+    rejectMethods,
+    request,
+  };
 });
 
 vi.mock('../../backend/main/backend.ipc', () => ({
@@ -133,12 +150,24 @@ describe('workspace activity timestamps', () => {
 
   beforeEach(() => {
     repository = new InMemoryWorkspaceRepository();
+    // Mirror every `repository.save` into the daemon-read stub so
+    // `listWorkspaces` / `getWorkspace` (now served by `workspace.list` /
+    // `workspace.get`) observe the same rows the write path persisted.
+    // Assigned directly (not via `vi.spyOn`) so per-test `vi.spyOn(repository,
+    // 'save')` gets a fresh call-count baseline like it did before the daemon
+    // read migration.
+    const originalSave = repository.save.bind(repository);
+    repository.save = async (ws) => {
+      await originalSave(ws);
+      backendMocks.workspacesById.set(ws.id, { ...ws });
+    };
     service = new WorkspaceService(repository);
     githubServiceMocks.getPullRequest.mockReset();
     githubServiceMocks.getCheckRuns.mockReset();
     githubServiceMocks.getReviews.mockReset();
     backendMocks.notesByWorkspace.clear();
     backendMocks.agentsByWorkspace.clear();
+    backendMocks.workspacesById.clear();
     backendMocks.rejectMethods.clear();
     backendMocks.request.mockClear();
   });
