@@ -201,6 +201,7 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
         loading: false,
         error: null,
         initialized: true,
+        notesVersion: workspaceState.notesVersion + 1,
       });
     }, state);
   })
@@ -234,6 +235,7 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
           },
         },
       }),
+      notesVersion: workspaceState.notesVersion + 1,
     });
   })
   .with(applyNoteCreated, (state, { payload: [workspaceId, note] }) => {
@@ -243,6 +245,7 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
     return setWorkspaceState(state, workspaceId, {
       ...workspaceState,
       notes: addItem(workspaceState.notes, note),
+      notesVersion: workspaceState.notesVersion + 1,
     });
   })
   .with(applyNoteDeleted, (state, { payload: [workspaceId, noteId] }) => {
@@ -255,6 +258,7 @@ export const workspaceNotesReducer = createReducer<WorkspaceNotesState>(initialS
     return setWorkspaceState(state, workspaceId, {
       ...workspaceState,
       notes,
+      notesVersion: workspaceState.notesVersion + 1,
     });
   })
   .with(applyNoteUpdated, (state, { payload: [workspaceId, noteId, note] }) => {
