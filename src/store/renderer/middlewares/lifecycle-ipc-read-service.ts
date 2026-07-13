@@ -9,9 +9,6 @@
  *     Collection-friendly `GithubRepoItem` shape and stored via `setGithubRepos`.
  *   `fetchEditors`    → `externalEditorsClient.detectInstalled()` (raw IPC),
  *     honoring the `lastFetched`/loading cache guard unless `forceRefresh`.
- *   `initContextForWorkspace` → `safeLocalStorage.getJSON()` for the per-workspace
- *     context key, hydrating items via `hydrateContextItems`. Guarded so a given
- *     workspace is hydrated at most once (avoids clobbering in-memory edits).
  *   `loadKnownRepos`  → `invoke(GET_RECENT_REPOSITORIES)` (raw IPC), stored via
  *     `setRepos`; best-effort, leaving the prior known-repos list intact on any
  *     failure (mirrors the `loadGithubRepos` keep-prior-on-error behavior).
@@ -34,6 +31,12 @@
  *         had no existing "requested" trigger; each is guarded on the receiving
  *         side so boot-seeded workspaces are unaffected)
  *
+ * `initContextForWorkspace` moved to the AppClient-seam
+ * `lifecycle-read-service` when workspace context migrated from localStorage
+ * onto the daemon (`workspace.getContext`, PROTOCOL §5.1); the
+ * `hydrateTaskAgentAssociationsRequested` companion for the task↔agent link
+ * store lives there too (`task.listAgentLinks`, PROTOCOL §5.4).
+ *
  * READ-ONLY: this module never invokes a mutation. Refreshes are coalesced per
  * key via an in-flight map so rapid dispatches collapse into a single fetch.
  *
@@ -51,8 +54,6 @@ import { externalEditorsClient } from "$features/external-editors/external-edito
 import { AcceptChangesClient } from "$features/accept-changes/accept-changes.client";
 import { invoke } from "$lib/electron-bridge";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
-import { safeLocalStorage } from "$lib/utils/safe-storage";
-import type { ContextItem } from "$features/context/types";
 import type { KnownRepo } from "$shared/types/known-repo";
 import type { WorkspaceId } from "$shared/types/branded-ids";
 import { store as appStore } from "$store/renderer/store";
@@ -72,10 +73,6 @@ import {
   fetchEditorsSuccess,
   setLoading,
 } from "../slices/external-editors/external-editors-slice";
-import {
-  hydrateContextItems,
-  initContextForWorkspace,
-} from "../slices/context/context-slice";
 import { loadKnownRepos, setRepos } from "../slices/known-repos/known-repos-slice";
 import { refreshAcceptChangesStatus } from "../slices/changes/changes-slice";
 import { setPostMergeState } from "../slices/git/git-slice";
@@ -90,6 +87,8 @@ import { loadWorkspaceDataRequested } from "../slices/changes/changes-slice";
 import { hydrateAgentsRequested } from "../slices/workspace-agents/workspace-agents-slice";
 import { hydrateTerminalsRequested } from "../slices/terminals/terminals-slice";
 import { hydrateFileExplorerRequested } from "../slices/file-explorer/file-explorer-slice";
+import { initContextForWorkspace } from "../slices/context/context-slice";
+import { hydrateTaskAgentAssociationsRequested } from "../slices/task-agent-associations/task-agent-associations-slice";
 
 const logger = createLogger("LifecycleIpcReadService");
 
@@ -160,31 +159,6 @@ function refreshEditors(forceRefresh: boolean): void {
     } finally {
       appStore.dispatch(setLoading(false));
     }
-  });
-}
-
-/** Workspace IDs already hydrated from localStorage; prevents clobbering in-memory edits. */
-const initializedContextWorkspaces = new Set<string>();
-
-/** localStorage key holding a workspace's persisted context items (mirrors the old saga). */
-function contextStorageKey(workspaceId: string): string {
-  return `workspace:context:${workspaceId}`;
-}
-
-/**
- * Hydrate a workspace's context items from localStorage exactly once (mirrors the
- * old context init saga). A missing/invalid key is a documented no-op: we record
- * the workspace as initialized and dispatch nothing, leaving existing state intact.
- */
-function refreshContextForWorkspace(workspaceId: string): void {
-  if (initializedContextWorkspaces.has(workspaceId)) return;
-  coalesce(`context:${workspaceId}`, async () => {
-    if (initializedContextWorkspaces.has(workspaceId)) return;
-    const stored = safeLocalStorage.getJSON<ContextItem[]>(contextStorageKey(workspaceId));
-    if (Array.isArray(stored)) {
-      appStore.dispatch(hydrateContextItems(workspaceId, stored));
-    }
-    initializedContextWorkspaces.add(workspaceId);
   });
 }
 
@@ -281,6 +255,9 @@ function fanOutWorkspaceMounted(workspaceId: string): void {
   appStore.dispatch(hydrateAgentsRequested(workspaceId));
   appStore.dispatch(hydrateTerminalsRequested(workspaceId));
   appStore.dispatch(hydrateFileExplorerRequested(workspaceId));
+  // Daemon-backed context + task↔agent linkage hydration (§5.1 / §5.4).
+  appStore.dispatch(initContextForWorkspace(workspaceId));
+  appStore.dispatch(hydrateTaskAgentAssociationsRequested(workspaceId));
 }
 
 /** First array-payload element coerced to a boolean force-refresh flag. */
@@ -311,11 +288,6 @@ export function createLifecycleIpcReadMiddleware(): StoreMiddleware {
         case fetchEditors.type:
           refreshEditors(forceRefreshOf(action));
           break;
-        case initContextForWorkspace.type: {
-          const workspaceId = workspaceIdOf(action);
-          if (workspaceId) refreshContextForWorkspace(workspaceId);
-          break;
-        }
         case loadKnownRepos.type:
           refreshKnownRepos();
           break;

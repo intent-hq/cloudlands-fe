@@ -11,8 +11,15 @@ vi.mock("$lib/client", () => ({
       list: vi.fn(() => Promise.resolve([])),
       recentViews: vi.fn(() => Promise.resolve({})),
       getTokenUsage: vi.fn(() => Promise.resolve(null)),
+      getContext: vi.fn(() => Promise.resolve([])),
+      updateContext: vi.fn(() => Promise.resolve([])),
     },
-    tasks: { list: vi.fn(() => Promise.resolve([])) },
+    tasks: {
+      list: vi.fn(() => Promise.resolve([])),
+      listAgentLinks: vi.fn(() => Promise.resolve({})),
+      linkAgent: vi.fn(() => Promise.resolve(null)),
+      unlinkAgent: vi.fn(() => Promise.resolve(false)),
+    },
     events: { list: vi.fn(() => Promise.resolve([])) },
     skills: { list: vi.fn(() => Promise.resolve([])) },
     scripts: { list: vi.fn(() => Promise.resolve([])) },
@@ -38,6 +45,9 @@ import { loadWorkspacesRequested } from "$store/renderer/slices/workspace/worksp
 import { ensureWorkspaceTasksLoaded } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
 import { loadEventsRequested } from "$store/renderer/slices/workspace-events/workspace-events-slice";
 import { fetchWorkspaceTokenUsage } from "$store/renderer/slices/token-usage/token-usage-slice";
+import { initContextForWorkspace } from "$store/renderer/slices/context/context-slice";
+import { selectContextItems } from "$store/renderer/slices/context/context-selectors";
+import { hydrateTaskAgentAssociationsRequested } from "$store/renderer/slices/task-agent-associations/task-agent-associations-slice";
 import { loadSkillsRequested } from "$store/renderer/slices/skills/skills-slice";
 import { refreshScripts } from "$store/renderer/slices/scripts/scripts-slice";
 import { refreshPRStatusRequested } from "$store/renderer/slices/pr-status/pr-status-slice";
@@ -130,6 +140,62 @@ describe("lifecycleReadService (fake seam, real store)", () => {
       ...tokenUsage,
       isStale: false,
     });
+  });
+
+  it("initContextForWorkspace hydrates items from workspace.getContext (§5.1)", async () => {
+    const ws = "ws-context-1";
+    const items = [
+      {
+        id: "n1",
+        type: "note" as const,
+        title: "note-1",
+        provider: "internal" as const,
+        noteId: "n1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    wsApi.getContext.mockResolvedValueOnce(items as never);
+
+    appStore.dispatch(initContextForWorkspace(ws));
+    await flush();
+
+    expect(wsApi.getContext).toHaveBeenCalledWith(ws);
+    expect(selectContextItems.select(appStore.state, ws).map((i) => i.id)).toEqual(["n1"]);
+  });
+
+  it("initContextForWorkspace hydrates each workspace only once", async () => {
+    const ws = "ws-context-2";
+    wsApi.getContext.mockResolvedValue([] as never);
+
+    appStore.dispatch(initContextForWorkspace(ws));
+    await flush();
+    appStore.dispatch(initContextForWorkspace(ws));
+    await flush();
+
+    expect(wsApi.getContext).toHaveBeenCalledTimes(1);
+  });
+
+  it("hydrateTaskAgentAssociationsRequested hydrates via task.listAgentLinks (§5.4)", async () => {
+    const ws = "ws-links-1";
+    const byNoteId = {
+      "note-1": {
+        "agent:a1": {
+          noteId: "note-1",
+          taskKey: "agent:a1",
+          taskText: "do the thing",
+          agentId: "a1",
+          createdAt: 1700000000000,
+        },
+      },
+    };
+    tasksApi.listAgentLinks.mockResolvedValueOnce(byNoteId as never);
+
+    appStore.dispatch(hydrateTaskAgentAssociationsRequested(ws));
+    await flush();
+
+    expect(tasksApi.listAgentLinks).toHaveBeenCalledWith(ws);
+    expect(appStore.state.taskAgentAssociations.byWorkspaceId[ws]?.byNoteId).toEqual(byNoteId);
   });
 
   it("fetchWorkspaceTokenUsage marks cached numbers stale when the read fails", async () => {

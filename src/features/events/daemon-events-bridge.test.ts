@@ -104,6 +104,7 @@ import {
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { selectAgentIsResponding } from "$store/renderer/slices/agent-session/agent-session-selectors";
 import { __resetDaemonEventsBridgeForTests } from "$features/events/daemon-events-bridge";
+import { selectContextItems } from "$store/renderer/slices/context/context-selectors";
 import { chatReset, chatSendStarted } from "$store/renderer/slices/chat-state/chat-state-slice";
 import type { StatusEvent } from "$store/renderer/slices/chat-state/chat-state-types";
 import {
@@ -245,6 +246,7 @@ describe("daemonEventsBridge (wire contract — agent:idle clears the spinner)",
         "script:*",
         "settings:changed",
         "workspace:tokenUsage-changed",
+        "workspace:context-changed",
         "workspace:updated",
         "workspace:created",
         "workspace:deleted",
@@ -1369,6 +1371,7 @@ describe("daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
         "script:*",
         "settings:changed",
         "workspace:tokenUsage-changed",
+        "workspace:context-changed",
         "workspace:updated",
         "workspace:created",
         "workspace:deleted",
@@ -1437,6 +1440,136 @@ describe("daemonEventsBridge (usage wire contract — workspace:tokenUsage-chang
       tokenUsage: { byWorkspaceId: Record<string, unknown> };
     };
     expect(state.tokenUsage.byWorkspaceId["ws-token-empty"]).toBeUndefined();
+  });
+});
+
+describe("daemonEventsBridge (context wire contract — workspace:context-changed → context slice)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(() => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("mirrors the pushed §5.1 items list into the context slice via hydrateContextItems", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    const items = [
+      {
+        id: "n1",
+        type: "note",
+        title: "note-1",
+        provider: "internal",
+        noteId: "n1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    handler!(notification("workspace:context-changed", { workspaceId: WS, items }));
+
+    // The context slice stores items as a Collection keyed by `id`; assert on
+    // the flat item list so the test does not lean on the internal collection
+    // shape.
+    expect(selectContextItems.select(appStore.state, WS).map((i) => i.id)).toEqual(["n1"]);
+  });
+
+  it("ignores a push without an items array", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(notification("workspace:context-changed", { workspaceId: "ws-ctx-empty" }));
+
+    const state = appStore.state as {
+      context: { byWorkspaceId: Record<string, unknown> };
+    };
+    expect(state.context.byWorkspaceId["ws-ctx-empty"]).toBeUndefined();
+  });
+});
+
+describe("daemonEventsBridge (linkage wire contract — task:agent-linked / task:agent-unlinked)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(() => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("folds task:agent-linked into taskAgentAssociations via applyTaskAgentLinked", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    const link = {
+      workspaceId: WS,
+      noteId: "note-1",
+      taskKey: "agent:a1",
+      taskText: "do it",
+      agentId: "a1",
+      createdAt: 1700000000000,
+    };
+    handler!(
+      notification("task:agent-linked", { workspaceId: WS, noteId: "note-1", taskKey: "agent:a1", link }),
+    );
+
+    const state = appStore.state as {
+      taskAgentAssociations: {
+        byWorkspaceId: Record<string, { byNoteId: Record<string, Record<string, unknown>> }>;
+      };
+    };
+    expect(state.taskAgentAssociations.byWorkspaceId[WS]?.byNoteId["note-1"]?.["agent:a1"]).toEqual({
+      noteId: "note-1",
+      taskKey: "agent:a1",
+      taskText: "do it",
+      agentId: "a1",
+      createdAt: 1700000000000,
+    });
+  });
+
+  it("removes the row when task:agent-unlinked arrives", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    handler!(
+      notification("task:agent-linked", {
+        workspaceId: WS,
+        noteId: "note-2",
+        taskKey: "agent:a2",
+        link: {
+          workspaceId: WS,
+          noteId: "note-2",
+          taskKey: "agent:a2",
+          taskText: "gone soon",
+          agentId: "a2",
+          createdAt: 1700000000001,
+        },
+      }),
+    );
+    handler!(
+      notification("task:agent-unlinked", {
+        workspaceId: WS,
+        noteId: "note-2",
+        taskKey: "agent:a2",
+      }),
+    );
+
+    const state = appStore.state as {
+      taskAgentAssociations: {
+        byWorkspaceId: Record<string, { byNoteId: Record<string, unknown> }>;
+      };
+    };
+    expect(state.taskAgentAssociations.byWorkspaceId[WS]?.byNoteId["note-2"]).toBeUndefined();
   });
 });
 

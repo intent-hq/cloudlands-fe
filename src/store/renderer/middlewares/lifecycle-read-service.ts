@@ -20,10 +20,15 @@
  * store module is still mid-initialization through the middleware chain).
  *
  * Scope note — triggers handled elsewhere or deliberately deferred:
- *   The `initContextForWorkspace`, `fetchEditors`, `loadKnownRepos`,
- *   `loadGithubRepos`, `refreshAcceptChangesStatus`, and the `workspaceMounted`
- *   fan-out are NOT AppClient-seam backed (localStorage / raw IPC), so they live
- *   in the companion `lifecycle-ipc-read-service` instead. `workspaceMounted`
+ *   `fetchEditors`, `loadKnownRepos`, `loadGithubRepos`,
+ *   `refreshAcceptChangesStatus`, and the `workspaceMounted` fan-out are NOT
+ *   AppClient-seam backed (raw IPC / fan-out only), so they live in the
+ *   companion `lifecycle-ipc-read-service` instead. `initContextForWorkspace`
+ *   and `hydrateTaskAgentAssociationsRequested` used to live over there too
+ *   when the workspace `context` slice + `taskAgentAssociations` slice were
+ *   persisted in FE `localStorage`; they moved here once the daemon owned
+ *   both stores (`workspace.getContext` / `task.listAgentLinks`, PROTOCOL
+ *   §5.1 / §5.4). `workspaceMounted`
  *   re-dispatches the per-workspace triggers a fresh mount needs (tasks/events/
  *   accept-changes/scripts/skills/PR status/agents/terminals/file-explorer),
  *   reusing the same handlers — no fetch logic of its own.
@@ -59,6 +64,14 @@ import {
   tokenUsageFetchFailed,
   tokenUsageReceived,
 } from "../slices/token-usage/token-usage-slice";
+import {
+  hydrateContextItems,
+  initContextForWorkspace,
+} from "../slices/context/context-slice";
+import {
+  hydrateTaskAgentAssociations,
+  hydrateTaskAgentAssociationsRequested,
+} from "../slices/task-agent-associations/task-agent-associations-slice";
 import { loadSkillsRequested, setSkills } from "../slices/skills/skills-slice";
 import { refreshScripts, setScriptsData, setScriptsInitialized } from "../slices/scripts/scripts-slice";
 import {
@@ -174,6 +187,46 @@ function refreshEvents(wsId: string): void {
   coalesce(`events:${wsId}`, async () => {
     const events = await appClient.events.list(wsId);
     appStore.dispatch(eventsLoaded(wsId, events));
+  });
+}
+
+/**
+ * Workspace IDs already hydrated from the daemon; skips repeat fetches so
+ * `initContextForWorkspace` (dispatched by the ContextPanel mount and the
+ * workspaceMounted fan-out) does not clobber in-memory edits with a stale
+ * refetch. Cross-window updates flow via `workspace:context-changed` events.
+ */
+const initializedContextWorkspaces = new Set<string>();
+
+/**
+ * Hydrate a workspace's chat-context items from the daemon
+ * (`workspace.getContext`, PROTOCOL §5.1) exactly once. A missing workspace
+ * or an empty list is a documented no-op (leaves existing state intact); the
+ * daemon-events bridge folds subsequent updates via `hydrateContextItems`.
+ */
+function hydrateWorkspaceContext(wsId: string): void {
+  if (initializedContextWorkspaces.has(wsId)) return;
+  coalesce(`context:${wsId}`, async () => {
+    if (initializedContextWorkspaces.has(wsId)) return;
+    const items = await appClient.workspaces.getContext(wsId);
+    if (Array.isArray(items) && items.length > 0) {
+      appStore.dispatch(hydrateContextItems(wsId, items));
+    }
+    initializedContextWorkspaces.add(wsId);
+  });
+}
+
+/**
+ * Hydrate a workspace's task↔agent linkage map from the daemon
+ * (`task.listAgentLinks`, PROTOCOL §5.4). The daemon returns the pre-grouped
+ * `byNoteId → byTaskKey` shape, so the live client hands it straight to
+ * `hydrateTaskAgentAssociations`. `task:agent-linked`/`task:agent-unlinked`
+ * events (§6.5) drive incremental updates from the bridge afterwards.
+ */
+function hydrateWorkspaceTaskAgentAssociations(wsId: string): void {
+  coalesce(`taskAgentLinks:${wsId}`, async () => {
+    const byNoteId = await appClient.tasks.listAgentLinks(wsId);
+    appStore.dispatch(hydrateTaskAgentAssociations(wsId, byNoteId));
   });
 }
 
@@ -391,6 +444,16 @@ export function createLifecycleReadMiddleware(): StoreMiddleware {
         case fetchWorkspaceTokenUsage.type: {
           const wsId = wsIdOf(action);
           if (wsId) refreshTokenUsage(wsId);
+          break;
+        }
+        case initContextForWorkspace.type: {
+          const wsId = wsIdOf(action);
+          if (wsId) hydrateWorkspaceContext(wsId);
+          break;
+        }
+        case hydrateTaskAgentAssociationsRequested.type: {
+          const wsId = wsIdOf(action);
+          if (wsId) hydrateWorkspaceTaskAgentAssociations(wsId);
           break;
         }
         case loadSkillsRequested.type: {
