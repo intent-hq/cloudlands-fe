@@ -78,9 +78,11 @@ describe("taskAgentAssociationsMutationService (fake seam, real store)", () => {
     unlinkAgent.mockClear();
 
     // Only the `agent:a1` task survives in the editor (taskKey + taskText).
-    // `agent:a2` (taskText "gone") is dropped.
+    // `agent:a2` (taskText "gone") is dropped. The action signature is
+    // `string[]`; keep the test payload consistent with the wire contract
+    // and production call sites.
     appStore.dispatch(
-      pruneTaskAgentAssociationsForNote(ws, "note-1", new Set(["agent:a1", "do it"])),
+      pruneTaskAgentAssociationsForNote(ws, "note-1", ["agent:a1", "do it"]),
     );
     await flush();
 

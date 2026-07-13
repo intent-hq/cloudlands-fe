@@ -206,6 +206,32 @@ describe("lifecycleReadService (fake seam, real store)", () => {
     expect(selectContextItems.select(appStore.state, ws)).toEqual([]);
   });
 
+  // Once-per-workspace guard must be released on unmount — the context slice
+  // clears workspace state on `workspaceUnmounted`, so a remount of the same
+  // workspace id must re-run `workspace.getContext` instead of staying empty.
+  it("initContextForWorkspace re-hydrates after workspaceUnmounted clears the guard", async () => {
+    const ws = "ws-context-remount";
+    const { workspaceUnmounted } = await import(
+      "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice"
+    );
+    wsApi.getContext.mockResolvedValue([] as never);
+
+    appStore.dispatch(initContextForWorkspace(ws));
+    await flush();
+    expect(wsApi.getContext).toHaveBeenCalledTimes(1);
+
+    // Re-triggering while mounted stays deduped by the guard.
+    appStore.dispatch(initContextForWorkspace(ws));
+    await flush();
+    expect(wsApi.getContext).toHaveBeenCalledTimes(1);
+
+    // Unmount clears the guard so the next mount refetches.
+    appStore.dispatch(workspaceUnmounted(ws));
+    appStore.dispatch(initContextForWorkspace(ws));
+    await flush();
+    expect(wsApi.getContext).toHaveBeenCalledTimes(2);
+  });
+
   it("hydrateTaskAgentAssociationsRequested hydrates via task.listAgentLinks (§5.4)", async () => {
     const ws = "ws-links-1";
     const byNoteId = {

@@ -108,7 +108,10 @@ import {
   hydrateTerminalsRequested,
   loadWorkspaceTerminals,
 } from "../slices/terminals/terminals-slice";
-import { workspaceDeleted } from "../slices/workspace-lifecycle/workspace-lifecycle-slice";
+import {
+  workspaceDeleted,
+  workspaceUnmounted,
+} from "../slices/workspace-lifecycle/workspace-lifecycle-slice";
 
 const logger = createLogger("LifecycleReadService");
 
@@ -495,10 +498,26 @@ export function createLifecycleReadMiddleware(): StoreMiddleware {
         }
         // Purge (real delete or the bridge's recycled-ID create) invalidates
         // any in-flight agent-list fetch so the follow-up rehydrate is neither
-        // coalesced away nor overwritten by a stale pre-purge response.
+        // coalesced away nor overwritten by a stale pre-purge response. It
+        // also drops the once-per-workspace context-init flag: the context
+        // slice clears its own state on delete via the workspace-scoped
+        // reducers, so a subsequent mount must be free to re-hydrate.
         case workspaceDeleted.type: {
           const wsId = wsIdOf(action);
-          if (wsId) invalidateAgentsHydration(wsId);
+          if (wsId) {
+            invalidateAgentsHydration(wsId);
+            initializedContextWorkspaces.delete(wsId);
+          }
+          break;
+        }
+        // Session-end cleanup: the context slice clears the workspace's items
+        // on `workspaceUnmounted`, so drop the once-per-workspace init flag
+        // too — otherwise a remount of the same workspace id would skip the
+        // `workspace.getContext` refetch and stay empty until an event
+        // arrives.
+        case workspaceUnmounted.type: {
+          const wsId = wsIdOf(action);
+          if (wsId) initializedContextWorkspaces.delete(wsId);
           break;
         }
         case hydrateTerminalsRequested.type: {
