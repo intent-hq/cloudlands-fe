@@ -65,11 +65,24 @@ function unwrap<T>(response: BackendResult<T> | undefined): T {
   return response.result as T;
 }
 
-/** Forward a JSON-RPC request to the daemon via the main process. */
-export async function backendRequest<T = unknown>(method: string, params?: unknown): Promise<T> {
+/**
+ * Forward a JSON-RPC request to the daemon via the main process.
+ *
+ * `options.timeoutMs` overrides the shared JSON-RPC client's default request
+ * timeout for a single call. Used for long-running daemon operations
+ * (e.g. `git.pull`) whose own bound exceeds the flat 30s default so the
+ * daemon's structured `{ok:false}` result wins over a transport timeout.
+ */
+export async function backendRequest<T = unknown>(
+  method: string,
+  params?: unknown,
+  options?: { timeoutMs?: number },
+): Promise<T> {
   const api = electronAPI();
   if (!api) throw new BackendError({ code: "UNAVAILABLE", message: "Backend bridge unavailable" });
-  const response = (await api.invoke(BACKEND.REQUEST, { method, params })) as BackendResult<T>;
+  const invokePayload: { method: string; params?: unknown; timeoutMs?: number } = { method, params };
+  if (options?.timeoutMs !== undefined) invokePayload.timeoutMs = options.timeoutMs;
+  const response = (await api.invoke(BACKEND.REQUEST, invokePayload)) as BackendResult<T>;
   return unwrap(response);
 }
 

@@ -188,6 +188,61 @@ describe("JsonRpcClient", () => {
     client.dispose();
   });
 
+  // Per-call `timeoutMs` override lets long-running daemon operations
+  // (e.g. `git.pull`, whose own bound exceeds the flat client default) run
+  // longer than the flat `requestTimeoutMs` without disturbing other requests.
+  it("honours a per-call timeoutMs override longer than the client default", async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const client = new JsonRpcClient({
+      socketFactory: () => socket as unknown as Duplex,
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 50,
+    });
+    client.start();
+    socket.open();
+
+    const promise = client.request("git.pull", { repoPath: "/r", branchName: "main" }, {
+      timeoutMs: 500,
+    });
+    const settled = vi.fn();
+    void promise.then(settled, settled);
+
+    // Well past the default (50ms) but well before the override (500ms): the
+    // request is still in flight because the override wins.
+    await vi.advanceTimersByTimeAsync(120);
+    expect(settled).not.toHaveBeenCalled();
+
+    // Just past the override: the request times out on the override boundary.
+    const expectation = expect(promise).rejects.toThrow(/timed out: git\.pull/);
+    await vi.advanceTimersByTimeAsync(400);
+    await expectation;
+    client.dispose();
+  });
+
+  it("falls back to the client default when the per-call override is absent or invalid", async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const client = new JsonRpcClient({
+      socketFactory: () => socket as unknown as Duplex,
+      heartbeatIntervalMs: 0,
+      requestTimeoutMs: 50,
+    });
+    client.start();
+    socket.open();
+
+    // No options → default. Negative/zero/NaN also fall back so a bad caller
+    // cannot install a zero-timer that trips synchronously.
+    for (const bad of [undefined, { timeoutMs: 0 }, { timeoutMs: -1 }, { timeoutMs: Number.NaN }]) {
+      const promise = bad === undefined ? client.request("slow") : client.request("slow", undefined, bad);
+      const expectation = expect(promise).rejects.toThrow(/timed out/);
+      await vi.advanceTimersByTimeAsync(60);
+      await expectation;
+    }
+
+    client.dispose();
+  });
+
   it("rejects in-flight requests when the connection drops", async () => {
     const { client, socket } = makeClient();
     client.start();

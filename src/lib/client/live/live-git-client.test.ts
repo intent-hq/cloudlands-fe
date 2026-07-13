@@ -715,11 +715,28 @@ describe("LiveGitClient.pull (fake transport)", () => {
 
     const result = await client.pull("/Users/clement/src/intent", "main");
 
-    expect(mockedRequest).toHaveBeenCalledWith("git.pull", {
-      repoPath: "/Users/clement/src/intent",
-      branchName: "main",
-    });
+    expect(mockedRequest).toHaveBeenCalledWith(
+      "git.pull",
+      { repoPath: "/Users/clement/src/intent", branchName: "main" },
+      { timeoutMs: 150_000 },
+    );
     expect(result).toEqual({ success: true });
+  });
+
+  it("passes a 150s transport timeout override so the daemon's structured {ok:false} beats a JSON-RPC timeout", async () => {
+    // Regression: with the flat 30s JSON-RPC client default, a legitimately-slow
+    // `git.pull` timed out on the transport before the daemon's 120s bound
+    // could return the structured `{ok:false}` result. The workspace-create
+    // pre-create pull passes a 150s override to keep the transport alive
+    // longer than the daemon's own bound.
+    mockedRequest.mockResolvedValueOnce({ ok: true });
+    const client = new LiveGitClient();
+
+    await client.pull("/repo", "main");
+
+    const call = mockedRequest.mock.calls[0];
+    expect(call[0]).toBe("git.pull");
+    expect(call[2]).toEqual({ timeoutMs: 150_000 });
   });
 
   it("maps the structured { ok: false, error } failure into a failed MutationResult", async () => {

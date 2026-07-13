@@ -173,10 +173,28 @@ export class JsonRpcClient extends EventEmitter {
     this.reverseHandlers.delete(method);
   }
 
-  /** Send a JSON-RPC request and resolve with its result (or reject on error). */
-  request<T = unknown>(method: string, params?: unknown): Promise<T> {
+  /**
+   * Send a JSON-RPC request and resolve with its result (or reject on error).
+   *
+   * `options.timeoutMs` overrides the client's default `requestTimeoutMs` for a
+   * single call — used for long-running daemon operations (e.g. `git.pull`)
+   * whose own bound exceeds the flat client default, so the daemon's structured
+   * `{ok:false}` result wins over a transport timeout. A non-finite or negative
+   * override falls back to the default; `0` is not honoured (guard against a
+   * ready-to-time-out timer).
+   */
+  request<T = unknown>(
+    method: string,
+    params?: unknown,
+    options?: { timeoutMs?: number },
+  ): Promise<T> {
     if (this.disposed) return Promise.reject(new Error('JSON-RPC client disposed'));
     const id = ++this.requestId;
+    const override = options?.timeoutMs;
+    const timeoutMs =
+      typeof override === 'number' && Number.isFinite(override) && override > 0
+        ? override
+        : this.requestTimeoutMs;
     return new Promise<T>((resolve, reject) => {
       // Register the pending entry and write synchronously once connected, so a
       // response that arrives immediately after the call is correlated correctly.
@@ -185,7 +203,7 @@ export class JsonRpcClient extends EventEmitter {
         const timeout = setTimeout(() => {
           this.pending.delete(id);
           reject(new Error(`JSON-RPC request timed out: ${method}`));
-        }, this.requestTimeoutMs);
+        }, timeoutMs);
         this.pending.set(id, {
           method,
           timeout,

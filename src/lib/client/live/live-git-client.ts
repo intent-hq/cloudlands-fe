@@ -50,6 +50,13 @@ import {
 } from "./backend-transport";
 import { isEventInFamily, listWorkspaceIds, runMutation } from "./live-support";
 
+/**
+ * Transport timeout for `git.pull` (PROTOCOL §5.6). Longer than the daemon's
+ * own 120s pull bound so its structured `{ok:false}` result wins over a
+ * transport timeout when a pull runs long — see `pull()` below.
+ */
+const PULL_TIMEOUT_MS = 150_000;
+
 /** Coerce a raw daemon git-status object into the renderer `GitStatus` shape. */
 function normalizeGitStatus(raw: Record<string, unknown>): GitStatus {
   const rawFiles = Array.isArray(raw.files) ? raw.files : [];
@@ -523,12 +530,19 @@ export class LiveGitClient implements GitClient {
   // a JSON-RPC error; both that and transport/validation errors (bad repoPath
   // → -32602) fold into `{ success: false, error }` so callers drive the
   // PullConflictDialog off the MutationResult without a throw path.
+  //
+  // Pull is a legitimately-slow network op (remote fetch + rebase/merge) whose
+  // daemon-side bound is 120s. Pass a 150s per-call transport timeout — longer
+  // than the daemon's bound — so the daemon's structured `{ok:false}` result
+  // wins over a flat 30s JSON-RPC transport timeout when a pull genuinely runs
+  // long.
   async pull(repoPath: string, branchName: string): Promise<MutationResult> {
     try {
-      const result = await backendRequest<Record<string, unknown>>("git.pull", {
-        repoPath,
-        branchName,
-      });
+      const result = await backendRequest<Record<string, unknown>>(
+        "git.pull",
+        { repoPath, branchName },
+        { timeoutMs: PULL_TIMEOUT_MS },
+      );
       if (result && typeof result === "object" && result.ok === true) return { success: true };
       const error =
         result && typeof result === "object" && typeof result.error === "string" && result.error

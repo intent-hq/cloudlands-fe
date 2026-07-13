@@ -131,18 +131,26 @@ export function registerBackendHandlers(): void {
   if (handlersRegistered) return;
   handlersRegistered = true;
 
-  ipcMain.handle(BACKEND.REQUEST, async (_event, payload: { method?: string; params?: unknown }) => {
-    const method = payload?.method;
-    if (typeof method !== 'string' || method.length === 0) {
-      return { ok: false, error: { code: 'INVALID_PARAMS', message: 'method is required' } };
-    }
-    try {
-      const result = await getBackendClient().request(method, payload?.params);
-      return { ok: true, result };
-    } catch (error) {
-      return { ok: false, error: toErrorPayload(error) };
-    }
-  });
+  ipcMain.handle(
+    BACKEND.REQUEST,
+    async (_event, payload: { method?: string; params?: unknown; timeoutMs?: number }) => {
+      const method = payload?.method;
+      if (typeof method !== 'string' || method.length === 0) {
+        return { ok: false, error: { code: 'INVALID_PARAMS', message: 'method is required' } };
+      }
+      // `timeoutMs` is an optional per-call override forwarded verbatim to the
+      // JSON-RPC client. Long daemon operations (e.g. `git.pull`, whose own
+      // bound exceeds the flat 30s default) pass a larger value so the daemon's
+      // structured `{ok:false}` result wins over a transport timeout.
+      const timeoutMs = typeof payload?.timeoutMs === 'number' ? payload.timeoutMs : undefined;
+      try {
+        const result = await getBackendClient().request(method, payload?.params, { timeoutMs });
+        return { ok: true, result };
+      } catch (error) {
+        return { ok: false, error: toErrorPayload(error) };
+      }
+    },
+  );
 
   ipcMain.handle(BACKEND.SUBSCRIBE, async (_event, params: unknown) => {
     try {
