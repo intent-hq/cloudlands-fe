@@ -2,7 +2,7 @@
 
 Electron + SvelteKit + TypeScript desktop frontend for the `intentd` daemon. It
 is consumed as the `packages/cloudlands-fe` git submodule of
-[Cloudlands-AI/monorepo](https://github.com/Cloudlands-AI/monorepo).
+[intent-hq/monorepo](https://github.com/intent-hq/monorepo).
 
 ## Architecture
 
@@ -38,7 +38,7 @@ the monorepo:
 
 ```bash
 # Clone the monorepo with submodules
-git clone --recurse-submodules https://github.com/Cloudlands-AI/monorepo.git
+git clone --recurse-submodules https://github.com/intent-hq/monorepo.git
 
 # …or, in an existing monorepo checkout, initialize just this submodule
 git submodule update --init packages/cloudlands-fe
@@ -53,7 +53,7 @@ You can also clone and run this repository on its own (the app falls back to the
 mock AppClient when no daemon is present):
 
 ```bash
-git clone https://github.com/Cloudlands-AI/cloudlands-fe.git
+git clone https://github.com/intent-hq/cloudlands-fe.git
 cd cloudlands-fe
 pnpm install
 ```

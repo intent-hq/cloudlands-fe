@@ -95,7 +95,7 @@ describe("workspaces-seeder legacy IPC bridges", () => {
           {
             path: "/Users/me/src/intent",
             name: "intent",
-            owner: "cloudlands-ai",
+            owner: "intent-hq",
             addedAt: "2026-01-01T00:00:00Z",
             lastUsedAt: "2026-01-02T00:00:00Z",
           },
@@ -113,7 +113,7 @@ describe("workspaces-seeder legacy IPC bridges", () => {
         {
           path: "/Users/me/src/intent",
           name: "intent",
-          owner: "cloudlands-ai",
+          owner: "intent-hq",
           addedAt: "2026-01-01T00:00:00Z",
           lastUsedAt: "2026-01-02T00:00:00Z",
         },
