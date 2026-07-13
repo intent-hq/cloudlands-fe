@@ -24,6 +24,11 @@ import * as path from 'node:path';
 
 import { Logger } from '$shared/logger';
 import { RestartPolicy } from './restart-policy';
+// Re-export from the policy module so existing importers keep working; consumers
+// that only need the decision (e.g. `backend-connection.ts`) import it from
+// `intentd-spawn-policy` directly to avoid pulling in the sidecar manager.
+export { shouldSpawnSidecar, type ShouldSpawnDecision } from './intentd-spawn-policy';
+import { shouldSpawnSidecar } from './intentd-spawn-policy';
 
 const logger = new Logger('Sidecar');
 
@@ -33,52 +38,21 @@ let watchdogTimer: NodeJS.Timeout | null = null;
 let restartTimer: NodeJS.Timeout | null = null;
 let isShuttingDown = false;
 
-/** Spawn-policy decision result. */
-export interface ShouldSpawnDecision {
-  shouldSpawn: boolean;
-  reason: string;
-}
-
-/**
- * Decide whether to spawn the sidecar daemon.
- *
- * Returns `shouldSpawn: false` when:
- *   - `INTENTD_SIDECAR=0` (explicit disable)
- *   - Any transport override is set (`INTENTD_SOCKET`, `INTENTD_WS_URL`, `INTENTD_TCP`)
- *   - Dev build without `INTENTD_SIDECAR=1`
- *
- * Pure function for testability.
- */
-export function shouldSpawnSidecar(
-  env: NodeJS.ProcessEnv,
-  isPackaged: boolean,
-): ShouldSpawnDecision {
-  const sidecarEnv = env.INTENTD_SIDECAR?.trim();
-  if (sidecarEnv === '0') {
-    return { shouldSpawn: false, reason: 'INTENTD_SIDECAR=0 disables spawning' };
-  }
-  if (env.INTENTD_SOCKET?.trim()) {
-    return { shouldSpawn: false, reason: 'INTENTD_SOCKET override disables spawning' };
-  }
-  if (env.INTENTD_WS_URL?.trim()) {
-    return { shouldSpawn: false, reason: 'INTENTD_WS_URL override disables spawning' };
-  }
-  if (env.INTENTD_TCP?.trim()) {
-    return { shouldSpawn: false, reason: 'INTENTD_TCP override disables spawning' };
-  }
-  if (!isPackaged && sidecarEnv !== '1') {
-    return { shouldSpawn: false, reason: 'dev build requires INTENTD_SIDECAR=1' };
-  }
-  return { shouldSpawn: true, reason: isPackaged ? 'packaged build' : 'INTENTD_SIDECAR=1' };
-}
-
 /**
  * Resolve the intentd binary path.
  *
  * Precedence:
- *   1. `INTENTD_BIN` env override (absolute path)
+ *   1. `INTENTD_BIN` env override — a path to the intentd binary. Absolute
+ *      paths are recommended (the Makefile's `dev` target passes an absolute
+ *      release path so dev is not implicitly dependent on Electron's cwd
+ *      being the monorepo root); relative paths are accepted and resolved
+ *      against `process.cwd()` via `fs.existsSync`.
  *   2. Packaged → `process.resourcesPath/intentd/intentd` (intentd.exe on Windows)
- *   3. Dev → `packages/intentd/target/release/intentd` (intentd.exe on Windows) then `debug/intentd`
+ *   3. Dev → walk from `cwd` up to the filesystem root looking for
+ *      `packages/intentd/target/{release,debug}/intentd` (intentd.exe on
+ *      Windows). Preferring release matches the `dev` target's output;
+ *      the upward walk lets `pnpm run dev` work whether Electron is
+ *      launched from the monorepo root or from `packages/cloudlands-fe`.
  *
  * Returns `null` if no binary is found (caller should fail or adopt external daemon).
  * Pure function for testability (uses `fs.existsSync`, but caller can mock).
@@ -98,11 +72,23 @@ export function resolveIntentdBinaryPath(
     const packagedBinary = path.join(resourcesPath, 'intentd', binaryName);
     return fs.existsSync(packagedBinary) ? packagedBinary : null;
   }
-  // Dev: check release first, then debug
-  const releaseBinary = path.join(cwd, 'packages/intentd/target/release', binaryName);
-  if (fs.existsSync(releaseBinary)) return releaseBinary;
-  const debugBinary = path.join(cwd, 'packages/intentd/target/debug', binaryName);
-  if (fs.existsSync(debugBinary)) return debugBinary;
+  // Dev: walk upward from cwd probing packages/intentd/target/{release,debug}.
+  // The Electron cwd is not guaranteed to be the monorepo root (e.g. `pnpm run
+  // dev` launched from `packages/cloudlands-fe`), so we search ancestors too.
+  // Only resolve relative inputs — on Windows, `path.resolve` on an already-
+  // absolute POSIX-style path (e.g. `/monorepo`) prepends the current drive
+  // letter and changes the string form, which is unnecessary here.
+  let dir = path.isAbsolute(cwd) ? cwd : path.resolve(cwd);
+  // Cap the walk to prevent runaway probing on unusual filesystems.
+  for (let i = 0; i < 16; i++) {
+    const releaseBinary = path.join(dir, 'packages/intentd/target/release', binaryName);
+    if (fs.existsSync(releaseBinary)) return releaseBinary;
+    const debugBinary = path.join(dir, 'packages/intentd/target/debug', binaryName);
+    if (fs.existsSync(debugBinary)) return debugBinary;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
   return null;
 }
 
@@ -359,13 +345,23 @@ export async function startIntentdSidecar(
 
   const binaryPath = resolveIntentdBinaryPath(env, isPackaged, resourcesPath, cwd);
   if (!binaryPath) {
+    // Log every input that fed the decision so the user can tell why we
+    // skipped: INTENTD_BIN not pointing at an existing file, the packaged
+    // resources path missing the bundled binary, or the dev upward walk from
+    // cwd not finding `packages/intentd/target/{release,debug}/intentd`.
     logger.warn('intentd binary not found; skipping sidecar spawn', {
       isPackaged,
       resourcesPath,
       cwd,
+      intentdBinEnv: env.INTENTD_BIN ?? null,
     });
     return;
   }
+
+  logger.info('Resolved intentd binary', {
+    binaryPath,
+    source: env.INTENTD_BIN?.trim() === binaryPath ? 'INTENTD_BIN' : isPackaged ? 'packaged' : 'dev',
+  });
 
   isShuttingDown = false;
   await spawnSidecarProcess(binaryPath, socketPath, env);

@@ -19,6 +19,7 @@ import {
   resolveBackendConfig,
   WebSocketDuplex,
 } from './backend-connection';
+import { shouldSpawnSidecar } from './intentd-spawn-policy';
 import { JsonRpcClient } from './json-rpc-client';
 
 // `ws` is aliased to a browser stub in `vitest.config.ts`; use createRequire to
@@ -66,8 +67,26 @@ describe('resolveBackendConfig precedence', () => {
     expect(config.tls).toBe(false);
   });
 
-  it('defaults dev builds to the loopback WebSocket URL', () => {
+  it('defaults dev builds without sidecar to the loopback WebSocket URL', () => {
     const config = resolveBackendConfig({}, { isDev: true });
+    expect(config).toEqual({ transport: 'ws', wsUrl: DEFAULT_DEV_WS_URL });
+  });
+
+  it('defaults dev+sidecar (INTENTD_SIDECAR=1) to the UDS transport', () => {
+    const config = resolveBackendConfig({ INTENTD_SIDECAR: '1' }, { isDev: true });
+    expect(config).toEqual({ transport: 'uds', socketPath: defaultSocketPath({}) });
+  });
+
+  it('honors INTENTD_DATA_DIR for the dev+sidecar UDS socket path', () => {
+    const config = resolveBackendConfig(
+      { INTENTD_SIDECAR: '1', INTENTD_DATA_DIR: '/tmp/dev-seat' },
+      { isDev: true },
+    );
+    expect(config).toEqual({ transport: 'uds', socketPath: '/tmp/dev-seat/intentd.sock' });
+  });
+
+  it('dev+INTENTD_SIDECAR=0 stays on the loopback WebSocket default', () => {
+    const config = resolveBackendConfig({ INTENTD_SIDECAR: '0' }, { isDev: true });
     expect(config).toEqual({ transport: 'ws', wsUrl: DEFAULT_DEV_WS_URL });
   });
 
@@ -93,6 +112,51 @@ describe('resolveBackendConfig precedence', () => {
     );
     expect(config).toEqual({ transport: 'uds', socketPath: '/override.sock' });
   });
+});
+
+describe('resolveBackendConfig × shouldSpawnSidecar pinning', () => {
+  // These two functions must not be able to disagree on whether the dev
+  // build is talking to a sidecar-spawned intentd over UDS or to an external
+  // dev-daemon over the loopback WebSocket. If a future change to
+  // `shouldSpawnSidecar` widens/narrows the spawn set, this test fails until
+  // `resolveBackendConfig` is updated to match.
+  const matrix: Array<{ name: string; env: NodeJS.ProcessEnv }> = [
+    { name: 'no env', env: {} },
+    { name: 'INTENTD_SIDECAR=1', env: { INTENTD_SIDECAR: '1' } },
+    { name: 'INTENTD_SIDECAR=0', env: { INTENTD_SIDECAR: '0' } },
+    { name: 'INTENTD_SIDECAR=1 + INTENTD_DATA_DIR', env: { INTENTD_SIDECAR: '1', INTENTD_DATA_DIR: '/tmp/x' } },
+  ];
+
+  for (const { name, env } of matrix) {
+    it(`dev+${name}: transport matches spawn policy`, () => {
+      const config = resolveBackendConfig(env, { isDev: true });
+      const decision = shouldSpawnSidecar(env, /* isPackaged */ false);
+      if (decision.shouldSpawn) {
+        expect(config.transport).toBe('uds');
+        expect(config.socketPath).toBe(defaultSocketPath(env));
+      } else {
+        expect(config.transport).toBe('ws');
+        expect(config.wsUrl).toBe(DEFAULT_DEV_WS_URL);
+      }
+    });
+  }
+
+  // Env transport overrides suppress spawning AND win the transport
+  // resolution, but the resolver returns their configured transport (uds/ws/
+  // tcp) rather than the sidecar UDS default — assert that explicitly so we
+  // don't accidentally re-route packaged/dev overrides through the sidecar
+  // socket.
+  const overrides: Array<{ name: string; env: NodeJS.ProcessEnv; expectTransport: 'uds' | 'ws' | 'tcp' }> = [
+    { name: 'INTENTD_SOCKET', env: { INTENTD_SIDECAR: '1', INTENTD_SOCKET: '/tmp/o.sock' }, expectTransport: 'uds' },
+    { name: 'INTENTD_WS_URL', env: { INTENTD_SIDECAR: '1', INTENTD_WS_URL: 'ws://h:9/ws' }, expectTransport: 'ws' },
+    { name: 'INTENTD_TCP', env: { INTENTD_SIDECAR: '1', INTENTD_TCP: '10.0.0.1:6000' }, expectTransport: 'tcp' },
+  ];
+  for (const { name, env, expectTransport } of overrides) {
+    it(`dev+${name} override: sidecar suppressed AND transport is the override`, () => {
+      expect(shouldSpawnSidecar(env, false).shouldSpawn).toBe(false);
+      expect(resolveBackendConfig(env, { isDev: true }).transport).toBe(expectTransport);
+    });
+  }
 });
 
 describe('describeBackendConfig', () => {

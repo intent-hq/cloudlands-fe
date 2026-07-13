@@ -157,6 +157,33 @@ describe('resolveIntentdBinaryPath', () => {
     const binaryPath = resolveIntentdBinaryPath({}, false, '/resources', '/monorepo');
     expect(binaryPath).toBeNull();
   });
+
+  it('probes upward from cwd to locate packages/intentd/target when Electron cwd is a subdir', () => {
+    const binaryName = process.platform === 'win32' ? 'intentd.exe' : 'intentd';
+    const expectedPath = path.join('/monorepo/packages/intentd/target/release', binaryName);
+    mockExistsSync.mockImplementation((probe) => probe === expectedPath);
+    // Electron launched from packages/cloudlands-fe: cwd is a nested subdir.
+    const binaryPath = resolveIntentdBinaryPath(
+      {},
+      false,
+      '/resources',
+      '/monorepo/packages/cloudlands-fe',
+    );
+    expect(binaryPath).toBe(expectedPath);
+  });
+
+  it('probes upward to find the debug binary when release is absent', () => {
+    const binaryName = process.platform === 'win32' ? 'intentd.exe' : 'intentd';
+    const expectedPath = path.join('/monorepo/packages/intentd/target/debug', binaryName);
+    mockExistsSync.mockImplementation((probe) => probe === expectedPath);
+    const binaryPath = resolveIntentdBinaryPath(
+      {},
+      false,
+      '/resources',
+      '/monorepo/packages/cloudlands-fe/src/main',
+    );
+    expect(binaryPath).toBe(expectedPath);
+  });
 });
 
 describe('resolveSocketPath', () => {
