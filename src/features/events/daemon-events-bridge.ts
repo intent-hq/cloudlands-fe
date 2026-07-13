@@ -635,9 +635,19 @@ function handleContextChangedEvent(event: WorkspaceEvent): void {
       : workspaceIdOf(event);
   const items = data.items;
   if (!workspaceId || !Array.isArray(items)) return;
-  const filtered = items.filter(
-    (item): item is ContextItem => Boolean(item) && typeof item === "object",
-  );
+  // The context slice keys items by `id` and discriminates variants by `type`,
+  // so filter out rows that lack either — they would silently corrupt the
+  // Collection. Provider-specific fields still round-trip verbatim per §5.1.
+  const filtered = items.filter((item): item is ContextItem => {
+    if (!item || typeof item !== "object") return false;
+    const record = item as { id?: unknown; type?: unknown };
+    return (
+      typeof record.id === "string" &&
+      record.id.length > 0 &&
+      typeof record.type === "string" &&
+      record.type.length > 0
+    );
+  });
   appStore.dispatch(hydrateContextItems(workspaceId, filtered));
 }
 

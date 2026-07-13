@@ -251,4 +251,43 @@ describe("LiveWorkspacesClient context (PROTOCOL §5.1, fake transport)", () => 
       items,
     });
   });
+
+  // The context slice keys items by `id` and discriminates variants by `type`,
+  // so rows missing either would corrupt the Collection. The client filters
+  // those out at the seam before they reach the reducer.
+  it("getContext filters out rows missing id or type before returning", async () => {
+    const good = {
+      id: "n1",
+      type: "note",
+      title: "note",
+      provider: "internal",
+      noteId: "n1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    mockedRequest.mockResolvedValueOnce({
+      items: [good, { title: "missing id" }, { id: "n2" }, null, "n3"],
+    });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.getContext("ws-abc")).toEqual([good]);
+  });
+
+  it("updateContext filters out rows missing id or type before returning", async () => {
+    const good = {
+      id: "u-1",
+      type: "browser-url",
+      title: "docs",
+      provider: "browser",
+      url: "https://example.com",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    mockedRequest.mockResolvedValueOnce({
+      items: [good, { id: "u-2", title: "missing type" }, { type: "note" }],
+    });
+    const client = new LiveWorkspacesClient();
+
+    expect(await client.updateContext("ws-abc", [good] as never)).toEqual([good]);
+  });
 });

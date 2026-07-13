@@ -64,6 +64,25 @@ function isWorkspaceEvent(method: string, params: unknown): boolean {
   return typeof type !== "string" || type.startsWith("workspace");
 }
 
+/**
+ * Structural type guard for a wire `ContextItem`. Every variant of the union
+ * requires `ContextItemBase` (`id`, `type`, `title`, `provider`, `createdAt`,
+ * `updatedAt`), and the context slice keys its Collection by `id` while
+ * consumers discriminate on `type`, so a row missing either would silently
+ * corrupt state. We keep the check minimal — id/type as non-empty strings —
+ * and let provider-specific fields round-trip verbatim per §5.1.
+ */
+function isContextItem(item: unknown): item is ContextItem {
+  if (!item || typeof item !== "object") return false;
+  const record = item as { id?: unknown; type?: unknown };
+  return (
+    typeof record.id === "string" &&
+    record.id.length > 0 &&
+    typeof record.type === "string" &&
+    record.type.length > 0
+  );
+}
+
 export class LiveWorkspacesClient implements WorkspacesClient {
   async list(): Promise<Workspace[]> {
     const result = await backendRequest<{ workspaces?: unknown[] }>("workspace.list");
@@ -192,7 +211,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       { workspaceId },
     );
     const items = Array.isArray(result?.items) ? result.items : [];
-    return items.filter((item): item is ContextItem => Boolean(item) && typeof item === "object");
+    return items.filter(isContextItem);
   }
 
   /**
@@ -207,7 +226,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
       { workspaceId, items },
     );
     const next = Array.isArray(result?.items) ? result.items : [];
-    return next.filter((item): item is ContextItem => Boolean(item) && typeof item === "object");
+    return next.filter(isContextItem);
   }
 
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe {

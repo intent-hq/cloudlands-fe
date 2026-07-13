@@ -200,18 +200,18 @@ const initializedContextWorkspaces = new Set<string>();
 
 /**
  * Hydrate a workspace's chat-context items from the daemon
- * (`workspace.getContext`, PROTOCOL §5.1) exactly once. A missing workspace
- * or an empty list is a documented no-op (leaves existing state intact); the
- * daemon-events bridge folds subsequent updates via `hydrateContextItems`.
+ * (`workspace.getContext`, PROTOCOL §5.1) exactly once. The daemon is
+ * authoritative, so an empty list still dispatches `hydrateContextItems` —
+ * that resets any stale in-memory state accumulated before the read landed
+ * and matches what the workspace looks like after this reconciliation. The
+ * daemon-events bridge folds subsequent updates via the same reducer.
  */
 function hydrateWorkspaceContext(wsId: string): void {
   if (initializedContextWorkspaces.has(wsId)) return;
   coalesce(`context:${wsId}`, async () => {
     if (initializedContextWorkspaces.has(wsId)) return;
     const items = await appClient.workspaces.getContext(wsId);
-    if (Array.isArray(items) && items.length > 0) {
-      appStore.dispatch(hydrateContextItems(wsId, items));
-    }
+    appStore.dispatch(hydrateContextItems(wsId, Array.isArray(items) ? items : []));
     initializedContextWorkspaces.add(wsId);
   });
 }

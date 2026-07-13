@@ -176,6 +176,36 @@ describe("lifecycleReadService (fake seam, real store)", () => {
     expect(wsApi.getContext).toHaveBeenCalledTimes(1);
   });
 
+  // Empty from the daemon is authoritative — the reducer must be told the
+  // workspace is empty so any stale in-memory items (e.g. from a cross-window
+  // event that landed before init) are cleared to reflect the wire state.
+  it("initContextForWorkspace dispatches an empty hydrate when the daemon returns no items", async () => {
+    const ws = "ws-context-empty";
+    // Pre-seed the slice with a stale item to prove the empty daemon list
+    // wins the reconciliation.
+    const stale = {
+      id: "stale",
+      type: "note" as const,
+      title: "stale",
+      provider: "internal" as const,
+      noteId: "stale",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const { hydrateContextItems } = await import(
+      "$store/renderer/slices/context/context-slice"
+    );
+    appStore.dispatch(hydrateContextItems(ws, [stale]));
+    expect(selectContextItems.select(appStore.state, ws).map((i) => i.id)).toEqual(["stale"]);
+
+    wsApi.getContext.mockResolvedValueOnce([] as never);
+    appStore.dispatch(initContextForWorkspace(ws));
+    await flush();
+
+    expect(wsApi.getContext).toHaveBeenCalledWith(ws);
+    expect(selectContextItems.select(appStore.state, ws)).toEqual([]);
+  });
+
   it("hydrateTaskAgentAssociationsRequested hydrates via task.listAgentLinks (§5.4)", async () => {
     const ws = "ws-links-1";
     const byNoteId = {

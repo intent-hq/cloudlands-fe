@@ -1491,6 +1491,34 @@ describe("daemonEventsBridge (context wire contract — workspace:context-change
     };
     expect(state.context.byWorkspaceId["ws-ctx-empty"]).toBeUndefined();
   });
+
+  // The context slice keys items by `id` and discriminates variants by `type`,
+  // so the bridge drops rows missing either before dispatching — mirrors the
+  // filter the AppClient seam applies to `workspace.getContext` responses.
+  it("filters out rows missing id or type before hydrating", async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0];
+
+    const good = {
+      id: "n1",
+      type: "note",
+      title: "note-1",
+      provider: "internal",
+      noteId: "n1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    handler!(
+      notification("workspace:context-changed", {
+        workspaceId: "ws-ctx-filter",
+        items: [good, { title: "missing id/type" }, { id: "n2" }, null, "n3"],
+      }),
+    );
+
+    expect(
+      selectContextItems.select(appStore.state, "ws-ctx-filter").map((i) => i.id),
+    ).toEqual(["n1"]);
+  });
 });
 
 describe("daemonEventsBridge (linkage wire contract — task:agent-linked / task:agent-unlinked)", () => {
