@@ -189,8 +189,15 @@ jobs:
               --prerelease
           fi
 
-          # Upload artifacts with --clobber to overwrite existing files
-          gh release upload beta --repo intent-hq/cloudlands-releases --clobber \
+          # Delete existing assets to prevent accumulation (versioned filenames don't clobber)
+          echo "Cleaning up old assets from rolling beta release"
+          gh release view beta --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
+            echo "Deleting old asset: $asset"
+            gh release delete-asset beta "$asset" --repo intent-hq/cloudlands-releases --yes || true
+          done
+
+          # Upload new artifacts
+          gh release upload beta --repo intent-hq/cloudlands-releases \
             dist-electron/*.dmg \
             dist-electron/*.zip \
             dist-electron/*.blockmap \
