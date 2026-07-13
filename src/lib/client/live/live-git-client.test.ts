@@ -568,6 +568,84 @@ describe("LiveGitClient.stage (fake transport)", () => {
   });
 });
 
+// `git.unstage` (PROTOCOL §5.6 extensions) is the inverse of `git.stage` and
+// shares the explicit-paths contract (all-files globs rejected upstream).
+describe("LiveGitClient.unstage (fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("forwards git.unstage with trimmed explicit paths and folds success", async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true, paths: ["a.ts", "b.ts"] });
+    const client = new LiveGitClient();
+
+    const result = await client.unstage("ws-1", [" a.ts ", "b.ts", ""]);
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.unstage", {
+      workspaceId: "ws-1",
+      paths: ["a.ts", "b.ts"],
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("rejects all-files globs and empty lists upstream WITHOUT touching the daemon", async () => {
+    const client = new LiveGitClient();
+
+    for (const paths of [["."], ["*"], ["git reset --all"], ["   ", ""]]) {
+      const result = await client.unstage("ws-1", paths);
+      expect(result.success).toBe(false);
+    }
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it("maps a daemon unstage error into a failed MutationResult", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("unstage boom"));
+    const client = new LiveGitClient();
+
+    expect(await client.unstage("ws-1", ["a.ts"])).toEqual({
+      success: false,
+      error: "unstage boom",
+    });
+  });
+});
+
+// `git.discard` (PROTOCOL §5.6 extensions) discards working-tree changes for
+// explicit paths (DESTRUCTIVE); same params/validation family as git.stage.
+describe("LiveGitClient.discard (fake transport)", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("forwards git.discard with trimmed explicit paths and folds success", async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true, paths: ["a.ts"] });
+    const client = new LiveGitClient();
+
+    const result = await client.discard("ws-1", [" a.ts ", ""]);
+
+    expect(mockedRequest).toHaveBeenCalledWith("git.discard", {
+      workspaceId: "ws-1",
+      paths: ["a.ts"],
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("rejects all-files globs and empty lists upstream WITHOUT touching the daemon", async () => {
+    const client = new LiveGitClient();
+
+    for (const paths of [["."], ["*"], ["git checkout --all"], ["   ", ""]]) {
+      const result = await client.discard("ws-1", paths);
+      expect(result.success).toBe(false);
+    }
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it("maps a daemon discard error into a failed MutationResult", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("discard boom"));
+    const client = new LiveGitClient();
+
+    expect(await client.discard("ws-1", ["a.ts"])).toEqual({
+      success: false,
+      error: "discard boom",
+    });
+  });
+});
+
 describe("LiveGitClient.commit (fake transport)", () => {
   afterEach(() => vi.clearAllMocks());
 
