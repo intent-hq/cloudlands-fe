@@ -2993,12 +2993,14 @@ describe("daemonEventsBridge (completion-watch refresh routing)", () => {
   });
 });
 
-describe.skip("daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle trigger agent list refresh)", () => {
+describe("daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle trigger agent list refresh)", () => {
   beforeAll(() => {
     appStore.init();
   });
 
   beforeEach(() => {
+    // Ensure store is initialized (idempotent if already initialized)
+    appStore.init();
     appStore.dispatch(clearAllSessions());
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
@@ -3010,38 +3012,56 @@ describe.skip("daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle 
   it("agent:status-changed dispatches hydrateAgentsRequested(workspaceId)", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
-    const dispatchSpy = vi.spyOn(appStore, "dispatch");
 
-    handler(notification("agent:status-changed", { agentId: AGENT, status: "responding" }));
-
+    // Get hydrateAgentsRequested before creating spy to avoid import timing issues
     const hydrateAgentsRequested = await import(
       "$store/renderer/slices/workspace-agents/workspace-agents-slice"
     ).then((m) => m.hydrateAgentsRequested);
 
+    // Capture the dispatch function directly to preserve this binding
+    const originalDispatch = appStore.dispatch;
+    const dispatchSpy = vi.fn(originalDispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, "dispatch", "get").mockReturnValue(dispatchSpy);
+
+    handler(notification("agent:status-changed", { agentId: AGENT, status: "responding" }));
+
     expect(dispatchSpy).toHaveBeenCalledWith(hydrateAgentsRequested(WS));
+
+    // Restore the getter to prevent leakage
+    dispatchGetterSpy.mockRestore();
   });
 
   it("agent:idle dispatches hydrateAgentsRequested(workspaceId)", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
-    const dispatchSpy = vi.spyOn(appStore, "dispatch");
 
-    handler(notification("agent:idle", { agentId: AGENT }));
-
+    // Get hydrateAgentsRequested before creating spy to avoid import timing issues
     const hydrateAgentsRequested = await import(
       "$store/renderer/slices/workspace-agents/workspace-agents-slice"
     ).then((m) => m.hydrateAgentsRequested);
 
+    // Capture the dispatch function directly to preserve this binding
+    const originalDispatch = appStore.dispatch;
+    const dispatchSpy = vi.fn(originalDispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, "dispatch", "get").mockReturnValue(dispatchSpy);
+
+    handler(notification("agent:idle", { agentId: AGENT }));
+
     expect(dispatchSpy).toHaveBeenCalledWith(hydrateAgentsRequested(WS));
+
+    // Restore the getter to prevent leakage
+    dispatchGetterSpy.mockRestore();
   });
 });
 
-describe.skip("daemonEventsBridge (STAB-8 — task:status-changed triggers task refetch)", () => {
+describe("daemonEventsBridge (STAB-8 — task:status-changed triggers task refetch)", () => {
   beforeAll(() => {
     appStore.init();
   });
 
   beforeEach(() => {
+    // Ensure store is initialized (idempotent if already initialized)
+    appStore.init();
     appStore.dispatch(clearAllSessions());
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
@@ -3053,7 +3073,16 @@ describe.skip("daemonEventsBridge (STAB-8 — task:status-changed triggers task 
   it("task:status-changed dispatches loadWorkspaceTasksRequested(workspaceId) for task list refetch", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
-    const dispatchSpy = vi.spyOn(appStore, "dispatch");
+
+    // Get loadWorkspaceTasksRequested before creating spy to avoid import timing issues
+    const loadWorkspaceTasksRequested = await import(
+      "$store/renderer/slices/workspace-tasks/workspace-tasks-slice"
+    ).then((m) => m.loadWorkspaceTasksRequested);
+
+    // Capture the dispatch function directly to preserve this binding
+    const originalDispatch = appStore.dispatch;
+    const dispatchSpy = vi.fn(originalDispatch);
+    const dispatchGetterSpy = vi.spyOn(appStore, "dispatch", "get").mockReturnValue(dispatchSpy);
 
     handler(
       notification("task:status-changed", {
@@ -3062,11 +3091,10 @@ describe.skip("daemonEventsBridge (STAB-8 — task:status-changed triggers task 
       })
     );
 
-    const loadWorkspaceTasksRequested = await import(
-      "$store/renderer/slices/workspace-tasks/workspace-tasks-slice"
-    ).then((m) => m.loadWorkspaceTasksRequested);
-
     expect(dispatchSpy).toHaveBeenCalledWith(loadWorkspaceTasksRequested(WS));
+
+    // Restore the getter to prevent leakage
+    dispatchGetterSpy.mockRestore();
   });
 });
 
@@ -3076,6 +3104,8 @@ describe("daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
   });
 
   beforeEach(async () => {
+    // Ensure store is initialized (idempotent if already initialized)
+    appStore.init();
     appStore.dispatch(clearAllSessions());
     // Reset workspace/agent focus so a preceding test's setActiveWorkspaceId
     // does not leak into the "no active workspace" case.
