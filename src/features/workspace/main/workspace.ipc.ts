@@ -29,6 +29,7 @@ import { execAsync } from '../../../shared/git/git-env';
 import { getNotificationService } from '../../notifications/main/notification.service';
 import { GitService } from '../../git/main/git.service';
 import { getWorkspaceGitInfo } from '../../git/main/git-router';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 import { cleanupWorkspaceTerminals } from '../../terminal/main/terminal.ipc';
 import { disposeScriptProcessManager } from '../../scripts/main/script-process-manager';
 import { readScripts } from '../../scripts/main/scripts-persistence';
@@ -1220,19 +1221,27 @@ export function setupWorkspaceIPC(): void {
             return resultToCommandResponse({ ok: true, data: workspace });
           }
 
-          // Create GitService instance to rename the branch
-          const gitService = new GitService();
-
-          // Get the ACTUAL current git branch name from the worktree
-          // (The workspace.branch is the display name, which may differ from the actual git branch)
-          const currentBranchResult = await gitService.getCurrentBranch(workspaceId as WorkspaceId);
-          if (!currentBranchResult.ok) {
+          // Read the ACTUAL current git branch name from the worktree via
+          // the daemon `git.status` (PROTOCOL §5.6). The workspace.branch is
+          // the display name, which may differ from the actual git branch.
+          let actualGitBranch: string;
+          try {
+            const status = await getBackendClient().request<{ branch?: string }>('git.status', {
+              workspaceId,
+            });
+            if (!status?.branch) {
+              return resultToCommandResponse({
+                ok: false,
+                error: 'Failed to get current git branch',
+              });
+            }
+            actualGitBranch = status.branch;
+          } catch (error) {
             return resultToCommandResponse({
               ok: false,
-              error: currentBranchResult.error || 'Failed to get current git branch',
+              error: error instanceof Error ? error.message : 'Failed to get current git branch',
             });
           }
-          const actualGitBranch = currentBranchResult.data;
 
           logger.info('Git branch info', {
             workspaceId,
@@ -1241,17 +1250,18 @@ export function setupWorkspaceIPC(): void {
             newBranchName,
           });
 
-          // Rename the git branch (includes duplicate/worktree checks)
-          const renameResult = await gitService.renameBranch(
-            workspaceId as WorkspaceId,
-            actualGitBranch,
-            newBranchName,
-          );
-
-          if (!renameResult.ok) {
+          // Rename the git branch via the daemon (§5.6 — includes
+          // duplicate/worktree checks).
+          try {
+            await getBackendClient().request('git.renameBranch', {
+              workspaceId,
+              oldBranchName: actualGitBranch,
+              newBranchName,
+            });
+          } catch (error) {
             return resultToCommandResponse({
               ok: false,
-              error: renameResult.error,
+              error: error instanceof Error ? error.message : 'Failed to rename branch',
             });
           }
 

@@ -1,14 +1,14 @@
 /**
  * Git IPC Handlers
  *
- * Registers IPC handlers for the git operations the intentd daemon does not
- * serve yet. Channels with a daemon arm (PROTOCOL §5.6) — status, stage,
- * unstage, commit, pull, history/log, commit-details, pullBranch (→ path-based
- * `git.pull`), getBranchStatus (→ `git.branchStatus`) and show-file (→
- * `git.showFile`) — have been retired here: the renderer reaches the daemon
- * directly via `backendRequest('git.*')`. What remains is the local-only
- * surface: hunk staging, discard, push, fetch, diff-with-content/numstat,
- * lock removal, branch listing/rename and remote inspection.
+ * Registers main-process IPC handlers for the git operations the daemon does
+ * not own. Channels with a daemon arm (PROTOCOL §5.6) have been retired here:
+ * status, stage, unstage, commit, pull, history/log, commit-details,
+ * pullBranch, getBranchStatus, showFile, and — after Wave B — hunk
+ * staging/unstaging, discard, push, fetch, branch rename, and lock removal.
+ * What remains is the local-only read/inspection surface: branch-base + local
+ * diff/numstat, branch listing, is-repository, remote inspection, auto-commit
+ * status readback, and background-git-ops status readback.
  */
 
 import { ipcMain } from 'electron';
@@ -21,37 +21,15 @@ import {
   restoreWorkspaceId,
   type WorkspaceId,
 } from '../../../shared/types/index.js';
-import {
-  GitGetBranchesSchema,
-  GitRenameBranchSchema,
-} from '../../../main/ipc-schemas.js';
-import {
-  getWorkspaceGitInfo,
-  validatePathsInScope,
-} from './git-router.js';
+import { GitGetBranchesSchema } from '../../../main/ipc-schemas.js';
+import { getWorkspaceGitInfo } from './git-router.js';
 import { execAsync } from '../../../shared/git/git-env';
 import { getAutoCommitStatuses } from '../../agent/main/auto-commit.service';
-import { trackMain } from '$lib/services/analytics/main';
 
 const logger = new Logger('GitIPC');
 const gitService = new GitService();
 
 // Validation schemas
-const WorkspaceIdSchema = z.object({
-  workspaceId: z.string(),
-});
-
-const PushSchema = z.object({
-  workspaceId: z.string(),
-  branch: z.string().optional(),
-  force: z.boolean().optional(),
-});
-
-const StageFilesSchema = z.object({
-  workspaceId: z.string(),
-  paths: z.array(z.string()),
-});
-
 const DiffSchema = z.object({
   workspaceId: z.string(),
   paths: z.array(z.string()).optional(),
@@ -68,12 +46,6 @@ const GetBranchesSchema = z.object({
   includeRemote: z.boolean().optional(),
 });
 
-const StageHunkSchema = z.object({
-  workspaceId: z.string(),
-  filePath: z.string(),
-  hunkPatch: z.string(),
-});
-
 /**
  * Setup git IPC handlers
  */
@@ -85,205 +57,13 @@ export function setupGitIPC() {
   // git:getBranchStatus have been retired: the renderer now reaches the
   // daemon directly via backendRequest('git.*') (PROTOCOL §5.6), which also
   // retires their local execFileAsync and remote routing.
-
-  // Stage a specific hunk (partial staging)
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.STAGE_HUNK,
-    createSafeValidatedHandler(
-      StageHunkSchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        // Note: Remote hunk staging not supported yet
-        const gitInfo = await getWorkspaceGitInfo(workspaceId);
-        if (!gitInfo) {
-          return { success: false, error: 'Failed to get workspace git info' };
-        }
-
-        if (gitInfo.isRemote) {
-          return { success: false, error: 'Hunk staging not supported for remote workspaces' };
-        }
-
-        // Validate that the file path is within scope
-        const scopeError = validatePathsInScope(
-          [validated.filePath],
-          gitInfo.scope,
-          gitInfo.worktreePath,
-        );
-        if (scopeError) {
-          logger.warn('Attempted to stage hunk outside scope', {
-            workspaceId,
-            scope: gitInfo.scope,
-          });
-          return { success: false, error: scopeError };
-        }
-
-        const result = await gitService.stageHunk(
-          workspaceId as WorkspaceId,
-          validated.filePath,
-          validated.hunkPatch,
-        );
-        if (result.ok) {
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.STAGE_HUNK,
-    ),
-  );
-
-  // Unstage a specific hunk (partial unstaging)
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.UNSTAGE_HUNK,
-    createSafeValidatedHandler(
-      StageHunkSchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        // Note: Remote hunk unstaging not supported yet
-        const gitInfo = await getWorkspaceGitInfo(workspaceId);
-        if (!gitInfo) {
-          return { success: false, error: 'Failed to get workspace git info' };
-        }
-
-        if (gitInfo.isRemote) {
-          return { success: false, error: 'Hunk unstaging not supported for remote workspaces' };
-        }
-
-        // Validate that the file path is within scope
-        const scopeError = validatePathsInScope(
-          [validated.filePath],
-          gitInfo.scope,
-          gitInfo.worktreePath,
-        );
-        if (scopeError) {
-          logger.warn('Attempted to unstage hunk outside scope', {
-            workspaceId,
-            scope: gitInfo.scope,
-          });
-          return { success: false, error: scopeError };
-        }
-
-        const result = await gitService.unstageHunk(
-          workspaceId as WorkspaceId,
-          validated.filePath,
-          validated.hunkPatch,
-        );
-        if (result.ok) {
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.UNSTAGE_HUNK,
-    ),
-  );
-
-  // Discard unstaged changes
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.DISCARD,
-    createSafeValidatedHandler(
-      StageFilesSchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        // Remote discard-changes retired in P3-5.1; return an error for
-        // remote-configured workspaces instead of routing through the legacy
-        // remote stack.
-        const gitInfo = await getWorkspaceGitInfo(workspaceId);
-        if (gitInfo?.isRemote) {
-          return {
-            success: false,
-            error: 'Discard changes is not supported for remote workspaces',
-          };
-        }
-
-        const result = await gitService.discardChanges(workspaceId as WorkspaceId, validated.paths);
-        if (result.ok) {
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.DISCARD,
-    ),
-  );
-
-  // Push changes
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.PUSH,
-    createSafeValidatedHandler(
-      PushSchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        const force = validated.force ?? false;
-
-        // Remote push retired in P3-5.1; return an error for remote-configured
-        // workspaces instead of routing through the legacy remote stack.
-        const gitInfo = await getWorkspaceGitInfo(workspaceId);
-        if (gitInfo?.isRemote) {
-          return { success: false, error: 'Push is not supported for remote workspaces' };
-        }
-
-        const result = await gitService.push(workspaceId as WorkspaceId, force);
-        if (result.ok) {
-          // Track push event
-          trackMain('Pushed Changes', {
-            workspace_id: workspaceId,
-            success: true,
-          });
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.PUSH,
-    ),
-  );
-
-  // Fetch remote changes without merging
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.FETCH,
-    createSafeValidatedHandler(
-      WorkspaceIdSchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        // Remote fetch retired in P3-5.1; return an error for
-        // remote-configured workspaces instead of routing through the legacy
-        // remote stack.
-        const gitInfo = await getWorkspaceGitInfo(workspaceId);
-        if (gitInfo?.isRemote) {
-          return { success: false, error: 'Fetch is not supported for remote workspaces' };
-        }
-
-        const result = await gitService.fetch(workspaceId as WorkspaceId);
-        if (result.ok) {
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.FETCH,
-    ),
-  );
+  //
+  // Wave B (Audit G F1) — git:stage-hunk / git:unstage-hunk / git:discard /
+  // git:push / git:fetch / git:removeLockFile / git:rename-branch also
+  // retired: the git-bridge seeder (`src/store/renderer/seeders/
+  // git-bridge-seeder.ts`) routes them straight to
+  // `git.stageHunk` / `git.unstageHunk` / `git.discard` / `git.push` /
+  // `git.fetch` / `git.removeLockFile` / `git.renameBranch` respectively.
 
   // Get diff
   ipcMain.handle(
@@ -370,27 +150,6 @@ export function setupGitIPC() {
         return { success: false, error: result.error };
       },
       IPC_CHANNELS.GIT.NUMSTAT,
-    ),
-  );
-
-  // Remove lock file
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.REMOVE_LOCK,
-    createSafeValidatedHandler(
-      WorkspaceIdSchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-        const result = await gitService.removeLockFile(workspaceId as WorkspaceId);
-        if (result.ok) {
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.REMOVE_LOCK,
     ),
   );
 
@@ -623,33 +382,6 @@ export function setupGitIPC() {
         }
       },
       IPC_CHANNELS.GIT.GET_REMOTES,
-    ),
-  );
-
-  // Rename branch
-  ipcMain.handle(
-    IPC_CHANNELS.GIT.RENAME_BRANCH,
-    createSafeValidatedHandler(
-      GitRenameBranchSchema,
-      async (_, validated) => {
-        const workspaceId = restoreWorkspaceId(validated.workspaceId);
-        if (!workspaceId) {
-          return { success: false, error: 'Invalid workspace ID' };
-        }
-
-        const result = await gitService.renameBranch(
-          workspaceId as WorkspaceId,
-          validated.oldBranchName,
-          validated.newBranchName,
-        );
-
-        if (result.ok) {
-          return { success: true, data: result.data };
-        } else {
-          return { success: false, error: result.error };
-        }
-      },
-      IPC_CHANNELS.GIT.RENAME_BRANCH,
     ),
   );
 

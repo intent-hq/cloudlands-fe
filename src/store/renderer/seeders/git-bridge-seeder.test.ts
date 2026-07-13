@@ -36,34 +36,30 @@ describe('git-bridge-seeder', () => {
 
   afterEach(() => vi.clearAllMocks());
 
-  describe('git:push / git:fetch → host.exec (§5.14)', () => {
-    it('push runs `git push` in the workspace root with the 5-min network timeout', async () => {
-      mockedRequest.mockResolvedValueOnce(execResult());
+  describe('git:push / git:fetch → git.push / git.fetch (§5.6)', () => {
+    it('push forwards workspaceId + force:false to git.push', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true, branch: 'main', pushedSha: 'abc' });
 
       const result = await mockInvoke(IPC_CHANNELS.GIT.PUSH, { workspaceId: 'ws-1' });
 
-      expect(mockedRequest).toHaveBeenCalledWith('host.exec', {
-        command: 'git',
-        args: ['push'],
-        cwd: '.',
+      expect(mockedRequest).toHaveBeenCalledWith('git.push', {
         workspaceId: 'ws-1',
-        timeoutMs: 300_000,
+        force: false,
       });
       expect(result).toEqual({ success: true });
     });
 
-    it('push force:true uses --force-with-lease and folds a non-zero exit to the stderr message', async () => {
-      mockedRequest.mockResolvedValueOnce(
-        execResult({ exitCode: 1, stderr: 'rejected: stale info\n' }),
-      );
+    it('push force:true forwards force:true and folds a daemon rejection to the error envelope', async () => {
+      mockedRequest.mockRejectedValueOnce(new Error('rejected: stale info'));
 
       const result = await mockInvoke(IPC_CHANNELS.GIT.PUSH, {
         workspaceId: 'ws-1',
         force: true,
       });
 
-      expect(mockedRequest.mock.calls[0][1]).toMatchObject({
-        args: ['push', '--force-with-lease'],
+      expect(mockedRequest).toHaveBeenCalledWith('git.push', {
+        workspaceId: 'ws-1',
+        force: true,
       });
       expect(result).toEqual({ success: false, error: 'rejected: stale info' });
     });
@@ -76,18 +72,12 @@ describe('git-bridge-seeder', () => {
       expect(mockedRequest).not.toHaveBeenCalled();
     });
 
-    it('fetch runs `git fetch` and folds a transport throw into the error envelope', async () => {
-      mockedRequest.mockResolvedValueOnce(execResult());
+    it('fetch forwards workspaceId to git.fetch and folds a transport throw into the error envelope', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true });
       expect(await mockInvoke(IPC_CHANNELS.GIT.FETCH, { workspaceId: 'ws-1' })).toEqual({
         success: true,
       });
-      expect(mockedRequest).toHaveBeenCalledWith('host.exec', {
-        command: 'git',
-        args: ['fetch'],
-        cwd: '.',
-        workspaceId: 'ws-1',
-        timeoutMs: 300_000,
-      });
+      expect(mockedRequest).toHaveBeenCalledWith('git.fetch', { workspaceId: 'ws-1' });
 
       mockedRequest.mockRejectedValueOnce(new Error('daemon unavailable'));
       expect(await mockInvoke(IPC_CHANNELS.GIT.FETCH, { workspaceId: 'ws-1' })).toEqual({
@@ -97,11 +87,11 @@ describe('git-bridge-seeder', () => {
     });
   });
 
-  describe('git:stage-hunk / git:unstage-hunk → git apply --cached via sh pipe', () => {
+  describe('git:stage-hunk / git:unstage-hunk → git.stageHunk / git.unstageHunk (§5.6)', () => {
     const PATCH = '--- a/f.ts\n+++ b/f.ts\n@@ -1 +1 @@\n-a\n+b\n';
 
-    it('stage-hunk pipes the patch as a positional arg into `git apply --cached -`', async () => {
-      mockedRequest.mockResolvedValueOnce(execResult());
+    it('stage-hunk forwards workspaceId + filePath + hunkPatch to git.stageHunk', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true });
 
       const result = await mockInvoke(IPC_CHANNELS.GIT.STAGE_HUNK, {
         workspaceId: 'ws-1',
@@ -109,37 +99,16 @@ describe('git-bridge-seeder', () => {
         hunkPatch: PATCH,
       });
 
-      expect(mockedRequest).toHaveBeenCalledWith('host.exec', {
-        command: 'sh',
-        args: ['-c', 'printf %s "$1" | git apply --cached -', 'sh', PATCH],
-        cwd: '.',
-        workspaceId: 'ws-1',
-        timeoutMs: 60_000,
-      });
-      expect(result).toEqual({ success: true });
-    });
-
-    it('stage-hunk retries with --3way when the plain apply fails (legacy parity)', async () => {
-      mockedRequest
-        .mockResolvedValueOnce(execResult({ exitCode: 1, stderr: 'patch does not apply' }))
-        .mockResolvedValueOnce(execResult());
-
-      const result = await mockInvoke(IPC_CHANNELS.GIT.STAGE_HUNK, {
+      expect(mockedRequest).toHaveBeenCalledWith('git.stageHunk', {
         workspaceId: 'ws-1',
         filePath: 'f.ts',
         hunkPatch: PATCH,
       });
-
-      expect(mockedRequest.mock.calls[1][1]).toMatchObject({
-        args: ['-c', 'printf %s "$1" | git apply --cached --3way -', 'sh', PATCH],
-      });
       expect(result).toEqual({ success: true });
     });
 
-    it('unstage-hunk reverses the apply and surfaces the exec error when both attempts fail', async () => {
-      mockedRequest
-        .mockResolvedValueOnce(execResult({ exitCode: 1, stderr: 'bad patch' }))
-        .mockResolvedValueOnce(execResult({ exitCode: 1, stderr: 'bad patch' }));
+    it('unstage-hunk forwards to git.unstageHunk and folds a daemon rejection into the error envelope', async () => {
+      mockedRequest.mockRejectedValueOnce(new Error('bad patch'));
 
       const result = await mockInvoke(IPC_CHANNELS.GIT.UNSTAGE_HUNK, {
         workspaceId: 'ws-1',
@@ -147,13 +116,32 @@ describe('git-bridge-seeder', () => {
         hunkPatch: PATCH,
       });
 
-      expect(mockedRequest.mock.calls[0][1]).toMatchObject({
-        args: ['-c', 'printf %s "$1" | git apply --cached --reverse -', 'sh', PATCH],
-      });
-      expect(mockedRequest.mock.calls[1][1]).toMatchObject({
-        args: ['-c', 'printf %s "$1" | git apply --cached --reverse --3way -', 'sh', PATCH],
+      expect(mockedRequest).toHaveBeenCalledWith('git.unstageHunk', {
+        workspaceId: 'ws-1',
+        filePath: 'f.ts',
+        hunkPatch: PATCH,
       });
       expect(result).toEqual({ success: false, error: 'bad patch' });
+    });
+
+    it('stage-hunk without a filePath fails without touching the wire', async () => {
+      expect(
+        await mockInvoke(IPC_CHANNELS.GIT.STAGE_HUNK, {
+          workspaceId: 'ws-1',
+          hunkPatch: PATCH,
+        }),
+      ).toEqual({ success: false, error: 'filePath is required' });
+      expect(mockedRequest).not.toHaveBeenCalled();
+    });
+
+    it('stage-hunk without a hunkPatch fails without touching the wire', async () => {
+      expect(
+        await mockInvoke(IPC_CHANNELS.GIT.STAGE_HUNK, {
+          workspaceId: 'ws-1',
+          filePath: 'f.ts',
+        }),
+      ).toEqual({ success: false, error: 'hunkPatch is required' });
+      expect(mockedRequest).not.toHaveBeenCalled();
     });
   });
 
@@ -350,40 +338,52 @@ describe('git-bridge-seeder', () => {
     });
   });
 
-  describe('workspace:rename-branch → host.exec git branch -m (§5.14)', () => {
-    it('renames the current worktree branch in the workspace root', async () => {
-      mockedRequest.mockResolvedValueOnce(execResult());
+  describe('workspace:rename-branch → git.renameBranch (§5.6)', () => {
+    it('reads the current branch via git.status and forwards it to git.renameBranch', async () => {
+      mockedRequest
+        .mockResolvedValueOnce({ branch: 'add-dark-mode' })
+        .mockResolvedValueOnce({ ok: true, oldBranch: 'add-dark-mode', newBranch: 'feature/renamed' });
 
       const result = await mockInvoke(IPC_CHANNELS.WORKSPACE.RENAME_BRANCH, {
         id: 'ws-1',
         newBranchName: 'feature/renamed',
       });
 
-      expect(mockedRequest).toHaveBeenCalledWith('host.exec', {
-        command: 'git',
-        args: ['branch', '-m', 'feature/renamed'],
-        cwd: '.',
+      expect(mockedRequest).toHaveBeenNthCalledWith(1, 'git.status', { workspaceId: 'ws-1' });
+      expect(mockedRequest).toHaveBeenNthCalledWith(2, 'git.renameBranch', {
         workspaceId: 'ws-1',
-        timeoutMs: 60_000,
+        oldBranchName: 'add-dark-mode',
+        newBranchName: 'feature/renamed',
       });
       expect(result).toEqual({ success: true });
     });
 
-    it('folds a non-zero exit to the stderr message and validates params without touching the wire', async () => {
-      mockedRequest.mockResolvedValueOnce(
-        execResult({ exitCode: 128, stderr: 'fatal: a branch named x already exists\n' }),
-      );
+    it('folds a daemon rejection into the error envelope', async () => {
+      mockedRequest
+        .mockResolvedValueOnce({ branch: 'add-dark-mode' })
+        .mockRejectedValueOnce(new Error('fatal: a branch named x already exists'));
+
       expect(
         await mockInvoke(IPC_CHANNELS.WORKSPACE.RENAME_BRANCH, { id: 'ws-1', newBranchName: 'x' }),
       ).toEqual({ success: false, error: 'fatal: a branch named x already exists' });
+    });
 
+    it('rejects when git.status has no branch (detached HEAD or missing worktree)', async () => {
+      mockedRequest.mockResolvedValueOnce({ branch: '' });
+      expect(
+        await mockInvoke(IPC_CHANNELS.WORKSPACE.RENAME_BRANCH, { id: 'ws-1', newBranchName: 'x' }),
+      ).toEqual({ success: false, error: 'Failed to rename branch: current branch is unknown' });
+      expect(mockedRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('validates params without touching the wire', async () => {
       expect(
         await mockInvoke(IPC_CHANNELS.WORKSPACE.RENAME_BRANCH, { newBranchName: 'x' }),
       ).toEqual({ success: false, error: 'Invalid workspace ID' });
       expect(
         await mockInvoke(IPC_CHANNELS.WORKSPACE.RENAME_BRANCH, { id: 'ws-1', newBranchName: '  ' }),
       ).toEqual({ success: false, error: 'Invalid branch name' });
-      expect(mockedRequest).toHaveBeenCalledTimes(1);
+      expect(mockedRequest).not.toHaveBeenCalled();
     });
   });
 });
