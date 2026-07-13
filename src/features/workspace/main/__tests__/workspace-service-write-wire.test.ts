@@ -65,6 +65,53 @@ const requestMock = vi.hoisted(() =>
       daemonWorkspaces.set(id, next);
       return { success: true };
     }
+    if (method === 'workspace.restore') {
+      const id = String(params?.workspaceId ?? '');
+      const existing = daemonWorkspaces.get(id);
+      if (!existing) throw new Error('Workspace not found');
+      const next = {
+        ...existing,
+        status: 'Active',
+        archived: false,
+        archivedAt: undefined,
+        updatedAt: '2024-06-01T00:00:00.000Z',
+      };
+      daemonWorkspaces.set(id, next);
+      return { workspace: next };
+    }
+    if (method === 'workspace.duplicate') {
+      const id = String(params?.workspaceId ?? '');
+      const existing = daemonWorkspaces.get(id);
+      if (!existing) throw new Error('Workspace not found');
+      const newId = `${id}-copy`;
+      const newTitle =
+        typeof params?.newTitle === 'string' && params.newTitle.trim().length > 0
+          ? String(params.newTitle)
+          : `${existing.title ?? 'Workspace'} (Copy)`;
+      const next = {
+        ...existing,
+        id: newId,
+        title: newTitle,
+        branch: newId,
+        createdAt: '2024-06-01T00:00:00.000Z',
+        updatedAt: '2024-06-01T00:00:00.000Z',
+        lastActivity: '2024-06-01T00:00:00.000Z',
+      };
+      daemonWorkspaces.set(newId, next);
+      return { workspace: next };
+    }
+    if (method === 'workspace.cleanup') {
+      return { success: true };
+    }
+    if (method === 'workspace.purge') {
+      return { removed: 2, orphans: 1 };
+    }
+    if (method === 'workspace.findRepositories') {
+      return { repositories: ['/repos/a', '/repos/b'] };
+    }
+    if (method === 'workspace.initializeRepository') {
+      return { success: true };
+    }
     return {};
   }),
 );
@@ -79,6 +126,7 @@ vi.mock('../../../../store/main/redux-store-bridge', () => ({
 
 import { WorkspaceService } from '../workspace.service';
 import { InMemoryWorkspaceRepository } from '../workspace.repository';
+import { mainDispatch } from '../../../../store/main/redux-store-bridge';
 import {
   PullRequestStatus,
   WorkspaceStatus,
@@ -259,5 +307,141 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
     expect(deleteCalls[0]![1]).toEqual({ workspaceId: ws.id });
     const updateCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.update');
     expect(updateCalls).toHaveLength(0);
+  });
+
+  it('duplicateWorkspace sends workspace.duplicate with { workspaceId, newTitle? } and normalizes the returned workspace', async () => {
+    const ws = seed();
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const result = await service.duplicateWorkspace(ws.id, 'Renamed Copy');
+
+    expect(result.ok).toBe(true);
+    const duplicateCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.duplicate');
+    expect(duplicateCalls).toHaveLength(1);
+    expect(duplicateCalls[0]![1]).toEqual({ workspaceId: ws.id, newTitle: 'Renamed Copy' });
+    if (result.ok) {
+      expect(result.data.id).toBe(`${ws.id}-copy`);
+      expect(result.data.title).toBe('Renamed Copy');
+    }
+  });
+
+  it('duplicateWorkspace omits newTitle from the params when not provided', async () => {
+    const ws = seed();
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const result = await service.duplicateWorkspace(ws.id);
+
+    expect(result.ok).toBe(true);
+    const duplicateCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.duplicate');
+    expect(duplicateCalls).toHaveLength(1);
+    expect(duplicateCalls[0]![1]).toEqual({ workspaceId: ws.id });
+  });
+
+  it('restoreWorkspace sends workspace.restore with { workspaceId } and returns the daemon workspace', async () => {
+    const ws = seed({ status: WorkspaceStatus.Archived, archived: true });
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const result = await service.restoreWorkspace(ws.id);
+
+    expect(result.ok).toBe(true);
+    const restoreCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.restore');
+    expect(restoreCalls).toHaveLength(1);
+    expect(restoreCalls[0]![1]).toEqual({ workspaceId: ws.id });
+    if (result.ok) {
+      expect(result.data.archived).toBe(false);
+      expect(result.data.status).toBe(WorkspaceStatus.Active);
+    }
+    // `restoreWorkspace` must not fall back to the retired unarchive path.
+    const unarchiveCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.unarchive');
+    expect(unarchiveCalls).toHaveLength(0);
+    // The emitted `workspaceUpdated` delta must carry both `archived: false`
+    // and the new `status`, otherwise the renderer's changes-merge leaves the
+    // sidebar showing the stale `Archived` status until a full refetch.
+    const updateDispatch = (mainDispatch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([action]) =>
+        typeof action === 'object' && action !== null && 'type' in action &&
+        (action as { type: string }).type === 'domainEvents/workspaceUpdated',
+    );
+    expect(updateDispatch).toBeDefined();
+    const payload = (updateDispatch![0] as { payload: [{ workspaceId: string; changes: Record<string, unknown> }] })
+      .payload[0];
+    expect(payload.workspaceId).toBe(ws.id);
+    expect(payload.changes).toEqual({
+      archived: false,
+      status: WorkspaceStatus.Active,
+    });
+  });
+
+  it('cleanupWorkspace sends workspace.cleanup with { workspaceId } and no local shell-outs', async () => {
+    const ws = seed();
+    daemonWorkspaces.set(ws.id, { ...ws });
+
+    const result = await service.cleanupWorkspace(ws.id);
+
+    expect(result.ok).toBe(true);
+    const cleanupCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.cleanup');
+    expect(cleanupCalls).toHaveLength(1);
+    expect(cleanupCalls[0]![1]).toEqual({ workspaceId: ws.id });
+  });
+
+  it('purgeDeletedWorkspaces sends workspace.purge with no params and returns { removed, orphans }', async () => {
+    const result = await service.purgeDeletedWorkspaces();
+
+    expect(result.ok).toBe(true);
+    const purgeCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.purge');
+    expect(purgeCalls).toHaveLength(1);
+    // The daemon `workspace.purge` takes no params (PROTOCOL.md §5.1).
+    expect(purgeCalls[0]![1]).toBeUndefined();
+    if (result.ok) {
+      expect(result.data).toEqual({ removed: 2, orphans: 1 });
+    }
+  });
+
+  it('purgeDeletedWorkspaces clamps non-finite / non-number daemon counts to 0 (no NaN leaks)', async () => {
+    requestMock.mockImplementationOnce(async (method: string) => {
+      expect(method).toBe('workspace.purge');
+      return { removed: 'oops', orphans: null };
+    });
+    const result = await service.purgeDeletedWorkspaces();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual({ removed: 0, orphans: 0 });
+      expect(Number.isNaN(result.data.removed)).toBe(false);
+      expect(Number.isNaN(result.data.orphans)).toBe(false);
+    }
+  });
+
+  it('findRepositories sends workspace.findRepositories with { directory } and returns the daemon repositories list', async () => {
+    const result = await service.findRepositories('/some/directory');
+
+    expect(result.ok).toBe(true);
+    const findCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.findRepositories');
+    expect(findCalls).toHaveLength(1);
+    expect(findCalls[0]![1]).toEqual({ directory: '/some/directory' });
+    if (result.ok) {
+      expect(result.data).toEqual(['/repos/a', '/repos/b']);
+    }
+  });
+
+  it('findRepositories drops non-string entries instead of stringifying them', async () => {
+    requestMock.mockImplementationOnce(async () => ({
+      repositories: ['/repos/valid', { unexpected: true }, null, 42, '/repos/also-valid'],
+    }));
+    const result = await service.findRepositories('/some/directory');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toEqual(['/repos/valid', '/repos/also-valid']);
+      // No `[object Object]` or other coerced garbage on the wire boundary.
+      expect(result.data.every((r) => typeof r === 'string' && !r.includes('object'))).toBe(true);
+    }
+  });
+
+  it('initializeNewRepository sends workspace.initializeRepository with { path } and no local git shell-outs', async () => {
+    const result = await service.initializeNewRepository('/repos/new');
+
+    expect(result.ok).toBe(true);
+    const initCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.initializeRepository');
+    expect(initCalls).toHaveLength(1);
+    expect(initCalls[0]![1]).toEqual({ path: '/repos/new' });
   });
 });
