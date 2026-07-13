@@ -2994,10 +2994,6 @@ describe("daemonEventsBridge (completion-watch refresh routing)", () => {
 });
 
 describe("daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle trigger agent list refresh)", () => {
-  beforeAll(() => {
-    appStore.init();
-  });
-
   beforeEach(() => {
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
@@ -3035,10 +3031,6 @@ describe("daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle trigg
 });
 
 describe("daemonEventsBridge (STAB-8 — task:status-changed triggers task refetch)", () => {
-  beforeAll(() => {
-    appStore.init();
-  });
-
   beforeEach(() => {
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
