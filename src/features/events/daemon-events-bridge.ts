@@ -123,6 +123,7 @@ import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/wor
 import { hydrateAgentsRequested } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
 import {
   applyTaskStatusChanged,
+  ensureWorkspaceTasksLoaded,
   loadWorkspaceTasksRequested,
 } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
 import {
