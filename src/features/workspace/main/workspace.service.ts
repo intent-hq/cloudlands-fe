@@ -219,6 +219,94 @@ export class WorkspaceService {
   }
 
   /**
+   * Fetch a single workspace from the daemon via `workspace.get` (PROTOCOL.md §5.1).
+   * Chief is synthesized locally to preserve the FE-side pinned-epoch shape without a
+   * daemon round-trip. Returns `null` when the daemon has no such workspace (parity
+   * with the retired disk repository `findById`).
+   */
+  private async fetchWorkspaceFromDaemon(id: WorkspaceId): Promise<Workspace | null> {
+    if (id === CHIEF_WORKSPACE_ID) {
+      return getChiefWorkspace();
+    }
+    try {
+      const response = (await getBackendClient().request('workspace.get', {
+        workspaceId: id,
+      })) as { workspace?: unknown } | unknown;
+      const raw =
+        response && typeof response === 'object' && 'workspace' in response
+          ? (response as { workspace?: unknown }).workspace
+          : response;
+      if (!raw || typeof raw !== 'object') return null;
+      return this.normalizeDaemonWorkspace(raw as Record<string, unknown>);
+    } catch (error) {
+      const message = (error as Error).message ?? String(error);
+      // Missing-workspace surfaces as a JSON-RPC error; fold to `null` so callers
+      // preserve the legacy `findById` contract instead of throwing.
+      if (/not\s*found/i.test(message)) return null;
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch every workspace from the daemon via `workspace.list` (PROTOCOL.md §5.1).
+   * `includeArchived` is forwarded so the daemon does the filtering rather than the
+   * FE having to load-and-drop archived rows. Chief is never surfaced by the daemon
+   * `workspace.list` — parity with the retired `findAll()` which relied on
+   * `getChiefWorkspace()` being fetched via `findById` on demand.
+   */
+  private async fetchWorkspacesFromDaemon(includeArchived: boolean): Promise<Workspace[]> {
+    const response = (await getBackendClient().request('workspace.list', {
+      includeArchived,
+    })) as { workspaces?: unknown[] };
+    const rows = Array.isArray(response?.workspaces) ? response.workspaces : [];
+    return rows.map((raw) =>
+      this.normalizeDaemonWorkspace(raw as Record<string, unknown>),
+    );
+  }
+
+  /**
+   * Coerce a raw daemon workspace payload into the FE `Workspace` shape. The daemon
+   * emits camelCase (per `intent-core::model::Workspace` serde config), so the spread
+   * preserves every documented field verbatim; FE-only container arrays that the
+   * daemon does not carry (`changesets`, `timeline`, `conversationInfo`) default to
+   * empty so consumers can iterate without null checks. Renderer parity with
+   * `src/lib/client/live/live-workspaces-client.ts::normalizeWorkspace`.
+   */
+  private normalizeDaemonWorkspace(raw: Record<string, unknown>): Workspace {
+    const now = new Date().toISOString();
+    const rawId = String(raw.id ?? raw.workspaceId ?? '');
+    return {
+      ...(raw as Partial<Workspace>),
+      id: rawId as WorkspaceId,
+      title: String(raw.title ?? raw.name ?? rawId),
+      branch: String(raw.branch ?? ''),
+      status: this.toWorkspaceStatus(raw.status),
+      changesets: Array.isArray(raw.changesets)
+        ? (raw.changesets as Workspace['changesets'])
+        : [],
+      timeline: Array.isArray(raw.timeline) ? (raw.timeline as Workspace['timeline']) : [],
+      conversationInfo: Array.isArray(raw.conversationInfo)
+        ? (raw.conversationInfo as Workspace['conversationInfo'])
+        : [],
+      createdAt: String(raw.createdAt ?? now),
+      updatedAt: String(raw.updatedAt ?? now),
+    } as Workspace;
+  }
+
+  private toWorkspaceStatus(value: unknown): WorkspaceStatus {
+    switch (String(value).toLowerCase()) {
+      case 'inactive':
+        return WorkspaceStatus.Inactive;
+      case 'archived':
+        return WorkspaceStatus.Archived;
+      case 'deleted':
+        return WorkspaceStatus.Deleted;
+      default:
+        return WorkspaceStatus.Active;
+    }
+  }
+
+  /**
    * Get diffs for a workspace from the changeHistory
    */
   private getWorkspaceDiffs(workspaceId: string): DiffChunk[] {
@@ -1975,17 +2063,21 @@ export class WorkspaceService {
     Result<{ workspaces: WorkspaceMetadata[]; total: number; hasMore: boolean }, string>
   > {
     try {
-      const allWorkspaces = await this.repository.findAll();
+      // Daemon `workspace.list` (PROTOCOL.md §5.1) is the source of truth; the retired
+      // disk repository `findAll()` is no longer consulted here. `includeArchived`
+      // is forwarded so the daemon does the archive filtering server-side.
+      const includeArchived = options?.includeArchived === true;
+      const allWorkspaces = await this.fetchWorkspacesFromDaemon(includeArchived);
 
-      // Always filter out deleted workspaces - they should never be returned
-      // Filter archived only if not explicitly requested
+      // Deleted workspaces are never returned; the daemon already excludes them but
+      // filter defensively so a future protocol change cannot leak tombstones. The
+      // archived filter mirrors the daemon's `includeArchived` so callers that
+      // request only active workspaces get the same rows either way.
       const filteredWorkspaces = allWorkspaces.filter((w) => {
-        // Never include deleted workspaces
         if (w.status === WorkspaceStatus.Deleted) {
           return false;
         }
-        // Include archived only if explicitly requested
-        if (w.status === WorkspaceStatus.Archived && !options?.includeArchived) {
+        if (w.status === WorkspaceStatus.Archived && !includeArchived) {
           return false;
         }
         return true;
@@ -2867,8 +2959,9 @@ export class WorkspaceService {
         return { ok: true, data: workspace };
       }
 
-      // Use repository to get workspace
-      let workspace = await this.repository.findById(id);
+      // Daemon `workspace.get` (PROTOCOL.md §5.1) is the source of truth; the
+      // retired disk repository `findById()` is no longer consulted here.
+      let workspace = await this.fetchWorkspaceFromDaemon(id);
 
       if (!workspace) {
         return {

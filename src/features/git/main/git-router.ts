@@ -2,13 +2,15 @@
  * Git Router
  *
  * Loads workspace git metadata and validates scope-restricted paths for local
- * workspaces. Remote-workspace routing retired in P3-5.
+ * workspaces. Remote-workspace routing retired in P3-5. Workspace metadata is
+ * fetched from the intentd daemon via `workspace.get` (PROTOCOL.md §5.1) rather
+ * than the retired on-disk `workspace.json` file.
  */
 
 import type { SSHConnectionConfig } from '../../../shared/main/ssh-manager';
-import { WorkspaceConfig } from '../../../shared/main/config';
 import { Logger } from '../../../shared/logger';
-import fs from 'fs';
+import type { WorkspaceId } from '../../../shared/types';
+import { workspaceService } from '../../workspace/main/workspace.service';
 import path from 'path';
 
 const logger = new Logger('GitRouter');
@@ -71,57 +73,49 @@ export interface WorkspaceGitInfo {
 }
 
 /**
- * Get workspace git info from metadata
+ * Get workspace git info from metadata (served by the daemon via
+ * `workspace.get`; the retired `workspace.json` disk read is no longer used).
  */
 export async function getWorkspaceGitInfo(workspaceId: string): Promise<WorkspaceGitInfo | null> {
-  const workspaceJsonPath = WorkspaceConfig.paths.workspaceMetadata(workspaceId);
-
-  if (!fs.existsSync(workspaceJsonPath)) {
-    logger.warn('Workspace metadata not found', { workspaceId, workspaceJsonPath });
+  const result = await workspaceService.getWorkspace(workspaceId as WorkspaceId);
+  if (!result.ok) {
+    logger.warn('Workspace metadata not found', { workspaceId, error: result.error });
     return null;
   }
 
-  try {
-    const rawData = fs.readFileSync(workspaceJsonPath, 'utf-8');
-    // Handle empty or whitespace-only files (can happen during concurrent writes)
-    if (!rawData || rawData.trim().length === 0) {
-      logger.warn('Workspace metadata file is empty', { workspaceId, workspaceJsonPath });
-      return null;
-    }
-    const workspaceData = JSON.parse(rawData);
-    const isRemote = workspaceData.isRemote === true;
-    const worktreePath = workspaceData.worktreePath || workspaceData.repositoryPath;
+  const workspace = result.data;
+  const isRemote = workspace.isRemote === true;
+  const worktreePath = workspace.worktreePath || workspace.repositoryPath;
 
-    if (!worktreePath) {
-      logger.warn('No worktree or repository path in workspace metadata', { workspaceId });
-      return null;
-    }
+  if (!worktreePath) {
+    logger.warn('No worktree or repository path in workspace metadata', { workspaceId });
+    return null;
+  }
 
-    let sshConfig: SSHConnectionConfig | undefined;
-    if (isRemote && workspaceData.environmentConfig?.ssh) {
-      const ssh = workspaceData.environmentConfig.ssh;
-      sshConfig = {
-        host: ssh.host,
-        port: ssh.port || 22,
-        username: ssh.user,
-        password: ssh.password,
-        privateKeyPath: ssh.key_path,
-        useAgent: ssh.use_agent,
-        transport: ssh.transport,
-        wsUrl: ssh.ws_url,
-      };
-    }
-
-    return {
-      isRemote,
-      worktreePath,
-      repositoryPath: workspaceData.repositoryPath,
-      sshConfig,
-      branch: workspaceData.branch,
-      scope: workspaceData.scope,
+  // Remote-workspace routing was retired in P3-5 and the daemon no longer emits
+  // an `environmentConfig` block; the SSH resolver stays here for parity but
+  // becomes a no-op once `isRemote` is never set true (defensive).
+  let sshConfig: SSHConnectionConfig | undefined;
+  const ssh = workspace.environmentConfig?.ssh;
+  if (isRemote && ssh) {
+    sshConfig = {
+      host: ssh.host,
+      port: ssh.port || 22,
+      username: ssh.user,
+      password: ssh.password,
+      privateKeyPath: ssh.key_path,
+      useAgent: ssh.use_agent,
+      transport: ssh.transport,
+      wsUrl: ssh.ws_url,
     };
-  } catch (error) {
-    logger.error('Failed to read workspace metadata', error as Error, { workspaceId });
-    return null;
   }
+
+  return {
+    isRemote,
+    worktreePath,
+    repositoryPath: workspace.repositoryPath,
+    sshConfig,
+    branch: workspace.branch,
+    scope: workspace.scope,
+  };
 }
