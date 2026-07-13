@@ -731,7 +731,7 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
   if (typeof noteId !== "string" || typeof newStatus !== "string") return;
   appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
   // STAB-8: Refetch task list so sidebar updates live
-  appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
+  appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId));
 }
 
 /**
