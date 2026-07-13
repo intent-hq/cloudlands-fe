@@ -123,7 +123,7 @@ import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/wor
 import { hydrateAgentsRequested } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";
 import {
   applyTaskStatusChanged,
-  ensureWorkspaceTasksLoaded,
+  loadWorkspaceTasksRequested,
 } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
 import {
   bulkUpdateWorkspaceEntities,
@@ -730,8 +730,8 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
   const newStatus = data.newStatus;
   if (typeof noteId !== "string" || typeof newStatus !== "string") return;
   appStore.dispatch(applyTaskStatusChanged(workspaceId, noteId, newStatus as TaskStatus));
-  // STAB-8: Refetch task list so sidebar updates live
-  appStore.dispatch(ensureWorkspaceTasksLoaded(workspaceId));
+  // STAB-8: Force refetch task list (including BE-owned stats) so sidebar updates live
+  appStore.dispatch(loadWorkspaceTasksRequested(workspaceId));
 }
 
 /**

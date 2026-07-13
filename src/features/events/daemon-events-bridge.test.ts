@@ -3046,7 +3046,7 @@ describe("daemonEventsBridge (STAB-8 — task:status-changed triggers task refet
 
   afterEach(() => vi.clearAllMocks());
 
-  it("task:status-changed dispatches ensureWorkspaceTasksLoaded(workspaceId) for task list refetch", async () => {
+  it("task:status-changed dispatches loadWorkspaceTasksRequested(workspaceId) for task list refetch", async () => {
     await primeBridge();
     const handler = capturedHandlers[0]!;
     const dispatchSpy = vi.spyOn(appStore, "dispatch");
@@ -3058,11 +3058,11 @@ describe("daemonEventsBridge (STAB-8 — task:status-changed triggers task refet
       })
     );
 
-    const ensureWorkspaceTasksLoaded = await import(
+    const loadWorkspaceTasksRequested = await import(
       "$store/renderer/slices/workspace-tasks/workspace-tasks-slice"
-    ).then((m) => m.ensureWorkspaceTasksLoaded);
+    ).then((m) => m.loadWorkspaceTasksRequested);
 
-    expect(dispatchSpy).toHaveBeenCalledWith(ensureWorkspaceTasksLoaded(WS));
+    expect(dispatchSpy).toHaveBeenCalledWith(loadWorkspaceTasksRequested(WS));
   });
 });
 
