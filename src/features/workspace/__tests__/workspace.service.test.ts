@@ -672,21 +672,16 @@ describe('WorkspaceService', () => {
       expect(created.ok).toBe(true);
       if (!created.ok) return;
 
-      // Mock removeGitWorktree to track if it's called
-      const removeGitWorktreeSpy = vi.spyOn(service as any, 'removeGitWorktree');
-
+      // Local git-worktree removal is now owned by the daemon
+      // (`workspace.delete`, PROTOCOL.md §5.1); the FE has no local
+      // `removeGitWorktree` to spy on. Assert that `workspace.delete` still
+      // fires and the workspace is gone from the FE view.
       const result = await service.deleteWorkspace(created.data.id);
 
       expect(result.ok).toBe(true);
 
-      // Verify removeGitWorktree was NOT called for skipWorktree mode
-      expect(removeGitWorktreeSpy).not.toHaveBeenCalled();
-
-      // Verify workspace is deleted
       const getResult = await service.getWorkspace(created.data.id);
       expect(getResult.ok).toBe(false);
-
-      removeGitWorktreeSpy.mockRestore();
     });
   });
 
