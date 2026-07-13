@@ -50,15 +50,6 @@ vi.mock('../change-detector-manager', () => ({
   },
 }));
 
-vi.mock('../metadata-watcher-manager', () => ({
-  MetadataWatcherManager: {
-    getInstance: vi.fn(() => ({
-      stopWatching: vi.fn(),
-      startWatching: vi.fn(),
-    })),
-  },
-}));
-
 vi.mock('../repo-registry', () => ({
   initRepoRegistry: mocks.initRepoRegistry,
   getAllRepos: mocks.getAllRepos,
