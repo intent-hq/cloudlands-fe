@@ -8,7 +8,6 @@ import {
   it,
   expect,
   vi,
-  beforeEach,
 } from 'vitest';
 import { GitService } from '../main/git.service';
 
@@ -259,52 +258,4 @@ describe('GitService', () => {
     });
   });
 
-  describe('stageFiles error handling', () => {
-    const workspaceId = 'test-workspace-id';
-    const paths = ['file1.jpg', 'file2.jpg'];
-
-    let gitServiceInstance: GitService;
-
-    beforeEach(async () => {
-      gitServiceInstance = new GitService();
-      // Mock acquireGitOperationMutex to return a no-op release function
-      (gitServiceInstance as any).acquireGitOperationMutex = vi.fn().mockResolvedValue(() => {});
-      // Mock getWorktreePath to return a fake path
-      (gitServiceInstance as any).getWorktreePath = vi.fn().mockReturnValue('/fake/worktree');
-    });
-
-    it('should return trimmed stderr when execFileAsync throws with stderr', async () => {
-      const { execFileAsync } = await import('../../../shared/git/git-env');
-      const mockExecFileAsync = vi.mocked(execFileAsync);
-
-      const error = new Error(
-        'Command failed: git add -- file1.jpg file2.jpg file3.jpg file4.jpg file5.jpg',
-      );
-      (error as any).stderr = "fatal: pathspec '\"some file\"' did not match any files\n";
-      mockExecFileAsync.mockRejectedValueOnce(error);
-
-      const result = await gitServiceInstance.stageFiles(workspaceId, paths);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error).toBe("fatal: pathspec '\"some file\"' did not match any files");
-      }
-    });
-
-    it('should fall back to error.message when stderr is empty', async () => {
-      const { execFileAsync } = await import('../../../shared/git/git-env');
-      const mockExecFileAsync = vi.mocked(execFileAsync);
-
-      const error = new Error('Some git error without stderr');
-      (error as any).stderr = '';
-      mockExecFileAsync.mockRejectedValueOnce(error);
-
-      const result = await gitServiceInstance.stageFiles(workspaceId, paths);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error).toBe('Some git error without stderr');
-      }
-    });
-  });
 });

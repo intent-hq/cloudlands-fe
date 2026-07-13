@@ -360,12 +360,16 @@ describe('workspace orphan cleanup', () => {
 
   // ── Existing tests ────────────────────────────────────────────────
 
-  it('does not delete a valid workspace when clearing an invalid worktree path fails to save', async () => {
+  it('does not delete a valid workspace with an invalid worktree path during purge', async () => {
+    // Post Wave A task 2, `clearWorktreePath()` inside the orphan purge is a
+    // warn-log only — persistence is owned by the daemon (PROTOCOL.md §5.1).
+    // The regression this pins: a missing worktree path must not cascade into
+    // deleting the workspace directory itself.
     const workspaceId = randomUUID() as WorkspaceId;
     const workspacePath = path.join(WorkspaceConfig.WORKSPACES_BASE, workspaceId);
     const metadataDir = path.join(workspacePath, WorkspaceConfig.METADATA_FOLDER);
     const metadataPath = path.join(metadataDir, WorkspaceConfig.WORKSPACE_METADATA_FILE);
-    const save = vi.fn().mockRejectedValue(new Error('save failed'));
+    const save = vi.fn();
     const workspaceFixture = createWorkspaceFixture(workspaceId, {
       worktreePath: path.join(baseDir, 'missing-worktree'),
     });
@@ -391,7 +395,7 @@ describe('workspace orphan cleanup', () => {
       const result = await service.purgeDeletedWorkspaces();
 
       expect(result.ok).toBe(true);
-      expect(save).toHaveBeenCalledTimes(1);
+      expect(save).not.toHaveBeenCalled();
       await expect(fs.access(workspacePath)).resolves.toBeUndefined();
       await expect(fs.access(metadataPath)).resolves.toBeUndefined();
     } finally {

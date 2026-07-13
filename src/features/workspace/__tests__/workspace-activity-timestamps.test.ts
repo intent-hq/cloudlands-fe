@@ -78,6 +78,20 @@ const backendMocks = vi.hoisted(() => {
       if (!ws) throw new Error('Workspace not found');
       return { workspace: ws };
     }
+    if (method === 'workspace.update') {
+      // Daemon-side: apply the update, stamp `updatedAt`, and return `{ workspace }`
+      // per PROTOCOL.md §5.1 `workspace.update`.
+      const existing = workspacesById.get(workspaceId);
+      if (!existing) throw new Error('Workspace not found');
+      const { workspaceId: _wid, ...updates } = (params ?? {}) as Record<string, unknown>;
+      const next = {
+        ...existing,
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      workspacesById.set(workspaceId, next);
+      return { workspace: next };
+    }
     return {};
   });
   return {
@@ -192,7 +206,7 @@ describe('workspace activity timestamps', () => {
     }
   });
 
-  it('clears a stale PR link during background enrichment without advancing updatedAt', async () => {
+  it('does not persist a stale-PR-link clear during background enrichment (daemon owns persistence)', async () => {
     const oldTimestamp = '2023-06-01T10:00:00.000Z';
     const pullRequest = createOpenPullRequest(oldTimestamp);
     const workspace = createWorkspace({
@@ -208,13 +222,18 @@ describe('workspace activity timestamps', () => {
 
     await (service as any).performBackgroundEnrichment(workspace.id);
 
+    // Enrichment is broadcast-only after the Wave A write-path collapse; the
+    // repository row must be untouched and `workspace.update` must not fire.
     const saved = await repository.findById(workspace.id);
-    expect(saved?.activePullRequest).toBeUndefined();
-    expect(saved?.pullRequests).toEqual([]);
+    expect(saved?.activePullRequest).toEqual(pullRequest);
+    expect(saved?.pullRequests).toEqual([pullRequest]);
     expect(saved?.updatedAt).toBe(oldTimestamp);
+    expect(
+      backendMocks.request.mock.calls.some(([method]) => method === 'workspace.update'),
+    ).toBe(false);
   });
 
-  it('clears a stale PR link during periodic refresh without advancing updatedAt', async () => {
+  it('does not persist a stale-PR-link clear during periodic refresh (daemon owns persistence)', async () => {
     const oldTimestamp = '2023-07-01T10:00:00.000Z';
     const pullRequest = createOpenPullRequest(oldTimestamp);
     const workspace = createWorkspace({
@@ -232,9 +251,12 @@ describe('workspace activity timestamps', () => {
     await (service as any).performPRRefreshEnrichment(workspace.id);
 
     const saved = await repository.findById(workspace.id);
-    expect(saved?.activePullRequest).toBeUndefined();
-    expect(saved?.pullRequests).toEqual([]);
+    expect(saved?.activePullRequest).toEqual(pullRequest);
+    expect(saved?.pullRequests).toEqual([pullRequest]);
     expect(saved?.updatedAt).toBe(oldTimestamp);
+    expect(
+      backendMocks.request.mock.calls.some(([method]) => method === 'workspace.update'),
+    ).toBe(false);
   });
 
   it('repairs corrupted workspace recency from durable activity without using updatedAt', async () => {
@@ -283,9 +305,15 @@ describe('workspace activity timestamps', () => {
     expect(repaired?.updatedAt).toBe(corruptedUpdatedAt);
     expect(getWorkspaceActivityDisplayTime(repaired!)).toBe(Date.parse(agentActivity));
 
+    // Repair is in-memory only (Wave A write-path collapse); the daemon
+    // (PROTOCOL.md §5.1) owns the persisted `lastActivity`. The repository
+    // row must be untouched and `workspace.update` must not fire.
     const saved = await repository.findById(workspace.id);
-    expect(saved?.lastActivity).toBe(agentActivity);
+    expect(saved?.lastActivity).toBeUndefined();
     expect(saved?.updatedAt).toBe(corruptedUpdatedAt);
+    expect(
+      backendMocks.request.mock.calls.some(([method]) => method === 'workspace.update'),
+    ).toBe(false);
   });
 
   it('preserves existing valid lastActivity during repair', async () => {

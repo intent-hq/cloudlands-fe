@@ -1885,9 +1885,11 @@ export class WorkspaceService {
   }
 
   /**
-   * Repair legacy workspace metadata whose `updatedAt` was advanced by background writes.
-   * The repair is intentionally conservative: preserve valid `lastActivity`, otherwise
-   * derive activity from durable workspace-owned records and fall back to creation time.
+   * Derive a workspace-recency fallback when the daemon-served `lastActivity`
+   * is missing/invalid. The repair is transient (in-memory only) and never
+   * persisted: the daemon owns the field on disk per PROTOCOL.md §5.1. Daemon
+   * gap: `workspace.list`/`workspace.get` should populate `lastActivity` so
+   * this fallback becomes dead code.
    */
   private async repairWorkspaceActivityTimestamp(workspace: Workspace): Promise<Workspace> {
     if (this.isValidActivityTimestamp(workspace.lastActivity)) {
@@ -1899,17 +1901,7 @@ export class WorkspaceService {
       return workspace;
     }
 
-    const currentWorkspace = await this.repository.findById(workspace.id);
-    if (!currentWorkspace) {
-      return workspace;
-    }
-
-    if (this.isValidActivityTimestamp(currentWorkspace.lastActivity)) {
-      return currentWorkspace;
-    }
-
-    const repairedWorkspace = await this.saveWorkspaceUpdates(workspace.id, { lastActivity });
-    return repairedWorkspace ?? currentWorkspace;
+    return { ...workspace, lastActivity };
   }
 
   private async repairWorkspaceActivityTimestamps(workspaces: Workspace[]): Promise<Workspace[]> {
@@ -2450,8 +2442,6 @@ export class WorkspaceService {
       }
 
       let updatedWorkspace = workspace;
-      let updated = false;
-      const canonicalUpdates: Partial<Workspace> = {};
       const rendererUpdates: BackgroundEnrichmentWorkspaceUpdates = {};
 
       if (workspace.repositoryPath && (!workspace.repositoryOwner || !workspace.repositoryName)) {
@@ -2469,11 +2459,8 @@ export class WorkspaceService {
             repositoryOwner: owner,
             repositoryName: name,
           };
-          canonicalUpdates.repositoryOwner = owner;
-          canonicalUpdates.repositoryName = name;
           rendererUpdates.repositoryOwner = owner;
           rendererUpdates.repositoryName = name;
-          updated = true;
         }
       }
 
@@ -2482,8 +2469,6 @@ export class WorkspaceService {
           ...updatedWorkspace,
           diffs: undefined,
         };
-        canonicalUpdates.diffs = undefined;
-        updated = true;
       }
 
       // Enrich PR status (ciStatus and reviewDecision) for open PRs
@@ -2541,13 +2526,11 @@ export class WorkspaceService {
                   activePullRequest: undefined,
                   pullRequests: updatedPullRequests,
                 };
-                canonicalUpdates.prNumber = undefined;
-                canonicalUpdates.prUrl = undefined;
-                canonicalUpdates.prStatus = undefined;
-                canonicalUpdates.activePullRequest = undefined;
-                canonicalUpdates.pullRequests = updatedPullRequests;
-                updated = true;
-                await this.saveWorkspaceUpdates(workspaceId, canonicalUpdates);
+                // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE
+                // no longer writes stale-PR-link clears back to disk. Daemon
+                // gap: daemon should validate PR source-branch and clear stale
+                // links itself. Broadcast keeps renderer state in sync until
+                // the next daemon refresh.
                 await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
                   ...rendererUpdates,
                   activePullRequest: undefined,
@@ -2630,16 +2613,12 @@ export class WorkspaceService {
             }
 
             rendererUpdates.activePullRequest = enrichedPR;
-            canonicalUpdates.activePullRequest = enrichedPR;
             if (enrichedPR.status !== pr.status) {
               rendererUpdates.prStatus = enrichedPR.status;
-              canonicalUpdates.prStatus = enrichedPR.status;
             }
             if (updatedWorkspace.pullRequests) {
               rendererUpdates.pullRequests = updatedWorkspace.pullRequests;
-              canonicalUpdates.pullRequests = updatedWorkspace.pullRequests;
             }
-            updated = true;
             logger.debug('Enriched PR status for workspace', {
               workspaceId,
               prNumber: pr.number,
@@ -2657,13 +2636,11 @@ export class WorkspaceService {
         }
       }
 
-      if (updated) {
-        const savedWorkspace = await this.saveWorkspaceUpdates(workspaceId, canonicalUpdates);
-        if (savedWorkspace) {
-          updatedWorkspace = savedWorkspace;
-        }
-      }
-
+      // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
+      // longer writes background enrichment (git repo info / PR CI + review /
+      // stale-link clears) back to disk. Daemon gap: daemon should own PR
+      // enrichment and stamp the workspace itself. Broadcast keeps renderer
+      // state in sync until the next daemon refresh.
       await this.broadcastBackgroundEnrichmentUpdate(workspaceId, rendererUpdates);
     } catch (error) {
       logger.error('Background workspace enrichment failed', error as Error, { workspaceId });
@@ -2801,13 +2778,11 @@ export class WorkspaceService {
             const updatedPullRequests = (workspace.pullRequests || []).filter(
               (p) => p.number !== pr.number,
             );
-            await this.saveWorkspaceUpdates(workspaceId, {
-              prNumber: undefined,
-              prUrl: undefined,
-              prStatus: undefined,
-              activePullRequest: undefined,
-              pullRequests: updatedPullRequests,
-            });
+            // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
+            // longer writes stale-PR-link clears back to disk during periodic
+            // refresh. Daemon gap: daemon should validate PR source-branch and
+            // clear stale links itself. Broadcast keeps renderer state in sync
+            // until the next daemon refresh.
             await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
               activePullRequest: undefined,
               prNumber: undefined,
@@ -2880,31 +2855,16 @@ export class WorkspaceService {
           };
         }
 
-        const canonicalUpdates: Partial<Workspace> = {
-          activePullRequest: enrichedPR,
-          ...(enrichedPR.status !== pr.status && { prStatus: enrichedPR.status }),
-        };
-        if (updatedWorkspace.pullRequests) {
-          canonicalUpdates.pullRequests = updatedWorkspace.pullRequests;
-        }
-
-        const savedWorkspace = await this.saveWorkspaceUpdates(workspaceId, canonicalUpdates);
-        if (savedWorkspace) {
-          updatedWorkspace = savedWorkspace;
-        }
-
-        // Broadcast to renderer windows using the same format as background enrichment
+        // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
+        // longer writes periodic-PR-refresh enrichment (CI status / reviews /
+        // headSha) back to disk. Daemon gap: daemon should own PR enrichment
+        // and stamp the workspace itself. Broadcast keeps renderer state in
+        // sync until the next daemon refresh.
         const rendererUpdates: BackgroundEnrichmentWorkspaceUpdates = {
           activePullRequest: enrichedPR,
         };
         if (enrichedPR.status !== pr.status) {
           rendererUpdates.prStatus = enrichedPR.status;
-        }
-        if (updatedWorkspace.prNumber !== workspace.prNumber) {
-          rendererUpdates.prNumber = updatedWorkspace.prNumber;
-        }
-        if (updatedWorkspace.prUrl !== workspace.prUrl) {
-          rendererUpdates.prUrl = updatedWorkspace.prUrl;
         }
         if (updatedWorkspace.pullRequests) {
           rendererUpdates.pullRequests = updatedWorkspace.pullRequests;
@@ -2972,9 +2932,6 @@ export class WorkspaceService {
 
       workspace = await this.repairWorkspaceActivityTimestamp(workspace);
 
-      let updated = false;
-      const canonicalUpdates: Partial<Workspace> = {};
-
       // Validate worktree path exists, clear it if not
       // Skip validation for remote workspaces — their worktree paths only exist on the SSH host
       if (
@@ -2994,8 +2951,6 @@ export class WorkspaceService {
             ...workspace,
             worktreePath: undefined,
           };
-          canonicalUpdates.worktreePath = undefined;
-          updated = true;
         }
       } else if (
         workspace.worktreePath &&
@@ -3024,9 +2979,6 @@ export class WorkspaceService {
               repositoryOwner: newOwner,
               repositoryName: newName,
             };
-            canonicalUpdates.repositoryOwner = newOwner;
-            canonicalUpdates.repositoryName = newName;
-            updated = true;
           }
         }
       }
@@ -3042,25 +2994,17 @@ export class WorkspaceService {
       // We could do a deeper comparison if needed
       if (newDiffsLength > 0 && newDiffsLength !== existingDiffsLength) {
         workspace = { ...workspace, diffs };
-        canonicalUpdates.diffs = diffs;
-        updated = true;
       } else if (newDiffsLength === 0 && existingDiffsLength > 0) {
         // Clear diffs if they were removed
         workspace = { ...workspace, diffs: [] };
-        canonicalUpdates.diffs = [];
-        updated = true;
       }
 
-      // Save enriched data back if updated
-      if (updated) {
-        const savedWorkspace = await this.saveWorkspaceUpdates(id, canonicalUpdates);
-        if (savedWorkspace) {
-          workspace = savedWorkspace;
-        }
-      }
-
-      // Workspace payloads are metadata-only; diff/git/task summaries are
-      // fetched on demand via dedicated endpoints.
+      // Enrichment is in-memory only. Persistence is owned by the daemon
+      // (PROTOCOL.md §5.1); the FE no longer writes worktree/git/diffs
+      // enrichment back to disk from a read path. Daemon gap: daemon should
+      // validate worktree paths and own git repo info. Workspace payloads are
+      // metadata-only; diff/git/task summaries are fetched on demand via
+      // dedicated endpoints.
       return { ok: true, data: this.stripWorkspaceSummaries(workspace) };
     } catch (error) {
       logger.error('Failed to get workspace', error as Error, { workspaceId: id });
@@ -3073,6 +3017,14 @@ export class WorkspaceService {
 
   /**
    * Update a workspace
+   *
+   * Delegates persistence to the daemon (`workspace.update`, PROTOCOL.md §5.1);
+   * the daemon owns `updatedAt` stamping and returns the canonical workspace.
+   * FE-only request fields the daemon `WorkspaceUpdate` shape does not accept
+   * (`prStatus`, `activePullRequest`, `pullRequests`) are stripped before the
+   * wire call and re-applied to the returned merged workspace as a best-effort
+   * so callers keep seeing them. Follow-up: extend daemon `WorkspaceUpdate`
+   * (Audit E daemon gap).
    */
   async updateWorkspace(request: UpdateWorkspaceRequest): Promise<Result<Workspace, string>> {
     try {
@@ -3088,76 +3040,102 @@ export class WorkspaceService {
         };
       }
 
-      // Get existing workspace
+      // Get existing workspace (used for merge + PR-status/PR-link normalization)
       const existingResult = await this.getWorkspace(request.id as WorkspaceId);
       if (!existingResult.ok) {
         return existingResult;
       }
 
-      // Merge updates
-      const { prStatus: requestedPrStatus, prUrl: requestedPrUrl, ...rest } = request as any;
+      const {
+        id: _idIgnored,
+        prStatus: requestedPrStatus,
+        prUrl: requestedPrUrl,
+        activePullRequest: requestedActivePr,
+        pullRequests: requestedPullRequests,
+        ...rest
+      } = request as UpdateWorkspaceRequest & { [k: string]: unknown };
 
-      // Normalize PR status
-      let normalizedPrStatus = existingResult.data.prStatus;
-      if (typeof requestedPrStatus === 'string') {
-        const s = requestedPrStatus.toLowerCase();
-        if (s === 'open') normalizedPrStatus = PullRequestStatus.Open;
-        else if (s === 'closed') normalizedPrStatus = PullRequestStatus.Closed;
-        else if (s === 'merged') normalizedPrStatus = PullRequestStatus.Merged;
-        else if (s === 'draft') normalizedPrStatus = PullRequestStatus.Draft;
-      } else if (requestedPrStatus !== undefined) {
-        normalizedPrStatus = requestedPrStatus as PullRequestStatus;
-      }
-
-      // Normalize PR URL (convert empty string to undefined to avoid storing invalid URLs)
-      let normalizedPrUrl: string | undefined = existingResult.data.prUrl;
+      // Normalize PR URL (convert empty string to null so daemon clears it)
+      let normalizedPrUrl: string | null | undefined;
       if (requestedPrUrl !== undefined) {
-        // null means "clear the URL", empty string also means "no URL"
         normalizedPrUrl =
-          requestedPrUrl === null || requestedPrUrl === '' ? undefined : requestedPrUrl;
+          requestedPrUrl === null || requestedPrUrl === '' ? null : requestedPrUrl;
       }
 
-      const updates: Partial<Workspace> = {
-        ...(rest as Partial<Workspace>),
-        updatedAt: new Date().toISOString(),
+      // Build daemon payload. `updatedAt` is stamped daemon-side; do NOT send it.
+      // Fields not present in daemon `WorkspaceUpdate` are omitted here.
+      const daemonParams: Record<string, unknown> = {
+        workspaceId: request.id,
+        ...(rest as Record<string, unknown>),
       };
-      if (requestedPrStatus !== undefined) {
-        updates.prStatus = normalizedPrStatus;
-      }
       if (requestedPrUrl !== undefined) {
-        updates.prUrl = normalizedPrUrl;
+        daemonParams.prUrl = normalizedPrUrl;
       }
 
-      // Save updated workspace
-      const savedWorkspace = await this.saveWorkspaceUpdates(request.id as WorkspaceId, updates);
-      if (!savedWorkspace) {
+      const response = (await getBackendClient().request('workspace.update', daemonParams)) as
+        | { workspace?: unknown }
+        | undefined;
+      const rawWorkspace = response && typeof response === 'object' ? response.workspace : undefined;
+      if (!rawWorkspace || typeof rawWorkspace !== 'object') {
         return {
           ok: false,
           error: 'Workspace not found',
         };
       }
-      // Strip summaries that may linger in older persisted JSON so the
-      // returned payload stays metadata-only.
-      const workspace: Workspace = this.stripWorkspaceSummaries({
+      const daemonWorkspace = this.normalizeDaemonWorkspace(
+        rawWorkspace as Record<string, unknown>,
+      );
+
+      // Merge: daemon response is authoritative for fields it owns; FE-only
+      // request fields (prStatus, activePullRequest, pullRequests) are applied
+      // on top so callers see them. Existing data provides fallback for any
+      // fields the daemon may drop from its `workspace.update` response.
+      const merged: Workspace = this.stripWorkspaceSummaries({
         ...existingResult.data,
-        ...savedWorkspace,
+        ...daemonWorkspace,
       });
+
+      // The daemon may echo cleared optional fields as `null` on the wire; the
+      // FE `Workspace` type expects `string | undefined` / `number | undefined`
+      // for these, so coerce nulls back to `undefined` before returning.
+      if ((merged.prUrl as unknown) === null) merged.prUrl = undefined;
+      if ((merged.prNumber as unknown) === null) merged.prNumber = undefined;
+
+      if (requestedPrStatus !== undefined) {
+        if (requestedPrStatus === null) {
+          merged.prStatus = undefined;
+        } else if (typeof requestedPrStatus === 'string') {
+          const s = requestedPrStatus.toLowerCase();
+          if (s === 'open') merged.prStatus = PullRequestStatus.Open;
+          else if (s === 'closed') merged.prStatus = PullRequestStatus.Closed;
+          else if (s === 'merged') merged.prStatus = PullRequestStatus.Merged;
+          else if (s === 'draft') merged.prStatus = PullRequestStatus.Draft;
+        } else {
+          merged.prStatus = requestedPrStatus as PullRequestStatus;
+        }
+      }
+      if (requestedActivePr !== undefined) {
+        merged.activePullRequest = requestedActivePr === null ? undefined : requestedActivePr;
+      }
+      if (requestedPullRequests !== undefined) {
+        merged.pullRequests = requestedPullRequests ?? [];
+      }
 
       // Emit event
       mainDispatch(
         workspaceUpdated({
-          workspaceId: workspace.id,
+          workspaceId: merged.id,
           changes: request,
         }),
       );
 
       logger.info('Workspace updated', {
-        workspaceId: workspace.id,
+        workspaceId: merged.id,
         changedFields: Object.keys(rest).filter((k) => k !== 'id'),
         ...(request.title !== undefined ? { newTitle: request.title } : {}),
       });
 
-      return { ok: true, data: workspace };
+      return { ok: true, data: merged };
     } catch (error) {
       logger.error('Failed to update workspace', error as Error, { workspaceId: request.id });
       return {
@@ -3426,8 +3404,12 @@ export class WorkspaceService {
         });
       }
 
-      // Remove workspace directory via repository
-      await this.repository.delete(id);
+      // Daemon `workspace.delete` (PROTOCOL.md §5.1) is authoritative for the
+      // workspace row; the daemon treats a missing row as idempotent success.
+      // The FE no longer sweeps the retired local `.workspace/{id}` directory
+      // here — durable state lives in the daemon; any residual legacy disk
+      // artifacts are cleaned by `cleanupOrphanWorkspaces()` on startup.
+      await getBackendClient().request('workspace.delete', { workspaceId: id });
 
       // Emit event
       mainDispatch(
@@ -3463,6 +3445,14 @@ export class WorkspaceService {
 
   /**
    * Archive a workspace (mark as archived)
+   *
+   * Delegates to the daemon (`workspace.archive`, PROTOCOL.md §5.1). The daemon
+   * flips `status`/`archived`/`archivedAt`/`updatedAt` server-side and emits
+   * `workspace:updated`. The current router returns `{ success: true }` and
+   * discards the daemon-service `Workspace` return value; the FE refetches via
+   * `workspace.get` so callers still receive the canonical workspace payload.
+   * Follow-up: return the workspace from the archive/unarchive router arms
+   * (Audit E daemon gap).
    */
   async archiveWorkspace(id: WorkspaceId): Promise<Result<Workspace, string>> {
     try {
@@ -3471,24 +3461,22 @@ export class WorkspaceService {
         return workspaceResult;
       }
 
-      const updates: Partial<Workspace> = {
-        status: WorkspaceStatus.Archived,
-        archived: true,
-        archivedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      await getBackendClient().request('workspace.archive', { workspaceId: id });
 
-      const savedWorkspace = await this.saveWorkspaceUpdates(id, updates);
-      if (!savedWorkspace) {
-        return {
-          ok: false,
-          error: 'Workspace not found',
+      // Refetch to get the daemon-canonical workspace (server-stamped timestamps
+      // and archived flags). Fall back to a locally-derived shape if the refetch
+      // fails so the FE contract still holds.
+      let workspace = await this.fetchWorkspaceFromDaemon(id);
+      if (!workspace) {
+        const now = new Date().toISOString();
+        workspace = {
+          ...workspaceResult.data,
+          status: WorkspaceStatus.Archived,
+          archived: true,
+          archivedAt: now,
+          updatedAt: now,
         };
       }
-      const workspace: Workspace = {
-        ...workspaceResult.data,
-        ...savedWorkspace,
-      };
 
       // Emit event
       mainDispatch(
@@ -3511,6 +3499,10 @@ export class WorkspaceService {
 
   /**
    * Unarchive a workspace
+   *
+   * Delegates to the daemon (`workspace.unarchive`, PROTOCOL.md §5.1). Same
+   * refetch pattern as `archiveWorkspace`; see the doc comment there for the
+   * router-return daemon gap.
    */
   async unarchiveWorkspace(id: WorkspaceId): Promise<Result<Workspace, string>> {
     try {
@@ -3519,24 +3511,18 @@ export class WorkspaceService {
         return workspaceResult;
       }
 
-      const updates: Partial<Workspace> = {
-        status: WorkspaceStatus.Active,
-        archived: false,
-        archivedAt: undefined,
-        updatedAt: new Date().toISOString(),
-      };
+      await getBackendClient().request('workspace.unarchive', { workspaceId: id });
 
-      const savedWorkspace = await this.saveWorkspaceUpdates(id, updates);
-      if (!savedWorkspace) {
-        return {
-          ok: false,
-          error: 'Workspace not found',
+      let workspace = await this.fetchWorkspaceFromDaemon(id);
+      if (!workspace) {
+        workspace = {
+          ...workspaceResult.data,
+          status: WorkspaceStatus.Active,
+          archived: false,
+          archivedAt: undefined,
+          updatedAt: new Date().toISOString(),
         };
       }
-      const workspace: Workspace = {
-        ...workspaceResult.data,
-        ...savedWorkspace,
-      };
 
       // Emit event
       mainDispatch(
@@ -3808,23 +3794,14 @@ export class WorkspaceService {
         warningMessage: string,
         error: unknown,
       ): Promise<void> => {
+        // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
+        // longer writes the cleared worktree path back from a purge scan.
+        // Daemon gap: daemon should own worktree-path validation and clearing.
         logger.warn(warningMessage, {
           workspaceId: workspace.id,
           worktreePath: workspace.worktreePath,
           error: this.extractErrorMessage(error),
         });
-
-        try {
-          await this.saveWorkspaceUpdates(workspace.id, { worktreePath: undefined });
-        } catch (saveError) {
-          logger.warn(
-            'Failed to persist cleared worktree path during purge; leaving workspace intact',
-            {
-              workspaceId: workspace.id,
-              error: this.extractErrorMessage(saveError),
-            },
-          );
-        }
       };
 
       // Read workspace directories from canonical, current, and legacy roots
@@ -4261,33 +4238,6 @@ export class WorkspaceService {
     };
 
     await this.repository.save(sanitizedWorkspace);
-  }
-
-  private async saveWorkspaceUpdates(
-    workspaceId: WorkspaceId,
-    updates: Partial<Workspace>,
-  ): Promise<Workspace | null> {
-    if (workspaceId === CHIEF_WORKSPACE_ID) {
-      return {
-        ...getChiefWorkspace(),
-        ...updates,
-        id: CHIEF_WORKSPACE_ID,
-      };
-    }
-
-    const currentWorkspace = await this.repository.findById(workspaceId);
-    if (!currentWorkspace) {
-      return null;
-    }
-
-    const updatedWorkspace: Workspace = {
-      ...currentWorkspace,
-      ...updates,
-      id: currentWorkspace.id,
-    };
-
-    await this.saveWorkspace(updatedWorkspace);
-    return updatedWorkspace;
   }
 
   /**
