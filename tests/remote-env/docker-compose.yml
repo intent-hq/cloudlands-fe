@@ -1,0 +1,62 @@
+# Remote Environment Test Server - Docker Compose
+# Use profiles to test different configurations
+
+services:
+  # Standard environment - typical SSH setup
+  standard:
+    build:
+      context: .
+      args:
+        SSH_PORT: 22
+        SSH_USER: testuser
+        INSTALL_NODEJS: "true"
+        INSTALL_PYTHON: "true"
+        MINIMAL_INSTALL: "false"
+    ports:
+      - "2222:22"
+    volumes:
+      - standard-home:/home/testuser
+    profiles:
+      - standard
+      - all
+
+  # DevPod-like environment - non-standard port, shared user
+  devpod:
+    build:
+      context: .
+      args:
+        SSH_PORT: 22022
+        SSH_USER: augment
+        INSTALL_NODEJS: "true"
+        INSTALL_PYTHON: "true"
+        MINIMAL_INSTALL: "false"
+    ports:
+      - "22022:22022"
+    volumes:
+      - devpod-home:/home/augment
+    profiles:
+      - devpod
+      - all
+
+  # Minimal environment - tests graceful degradation
+  minimal:
+    build:
+      context: .
+      args:
+        SSH_PORT: 22
+        SSH_USER: minuser
+        INSTALL_NODEJS: "false"
+        INSTALL_PYTHON: "false"
+        MINIMAL_INSTALL: "true"
+    ports:
+      - "2223:22"
+    volumes:
+      - minimal-home:/home/minuser
+    profiles:
+      - minimal
+      - all
+
+volumes:
+  standard-home:
+  devpod-home:
+  minimal-home:

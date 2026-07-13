@@ -1,0 +1,134 @@
+name: Intent - Emergency Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to roll back TO (e.g., 1.2.3)'
+        required: true
+        type: string
+      reason:
+        description: 'Reason for rollback (included in audit trail)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Validate version format
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format '$VERSION'. Expected semver (e.g., 1.2.3)"
+            exit 1
+          fi
+          echo "Version $VERSION is valid"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: 'latest'
+
+      - name: Authenticate with GCP
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.INTENT_GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Run rollback
+        run: bash scripts/rollback-stable-gcp.sh "${{ inputs.version }}"
+        env:
+          GCS_BUCKET: ${{ secrets.INTENT_GCS_BUCKET }}
+          GCP_PROJECT: ${{ secrets.INTENT_GCP_PROJECT }}
+          CLOUD_CDN_URL_MAP: ${{ secrets.INTENT_CLOUD_CDN_URL_MAP }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+
+      - name: Validate rollback
+        env:
+          GCS_BUCKET: ${{ secrets.INTENT_GCS_BUCKET }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+        run: |
+          VERSION="${{ inputs.version }}"
+          echo "🔍 Validating stable manifests point at v$VERSION..."
+
+          for manifest in latest-mac.yml; do
+            echo ""
+            echo "--- $manifest ---"
+            CONTENT=$(gcloud storage cat "gs://$GCS_BUCKET/stable/$manifest")
+            echo "$CONTENT"
+
+            MANIFEST_VERSION=$(echo "$CONTENT" | grep "^version:" | awk '{print $2}')
+            if [ "$MANIFEST_VERSION" != "$VERSION" ]; then
+              echo "::error::$manifest version is '$MANIFEST_VERSION', expected '$VERSION'"
+              exit 1
+            fi
+            echo "✓ $manifest points at v$VERSION"
+          done
+
+          echo ""
+          echo "✅ Rollback validation passed"
+
+      - name: Post summary
+        if: always()
+        run: |
+          VERSION="${{ inputs.version }}"
+          REASON="${{ inputs.reason }}"
+          STATUS="${{ job.status }}"
+
+          echo "## ⚠️ Emergency Rollback" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Status:** $STATUS" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Triggered by:** ${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Time:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$REASON" ]; then
+            echo "**Reason:** $REASON" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Stable Channel URLs" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Apple Silicon Mac](https://cdn.augmentcode.com/stable/Intent-latest-arm64.dmg)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify Slack
+        if: always()
+        run: |
+          VERSION="${{ inputs.version }}"
+          REASON="${{ inputs.reason }}"
+          STATUS="${{ job.status }}"
+
+          if [ "$STATUS" = "success" ]; then
+            EMOJI="⚠️"
+            STATUS_TEXT="completed"
+          else
+            EMOJI="🚨"
+            STATUS_TEXT="FAILED"
+          fi
+
+          REASON_LINE=""
+          if [ -n "$REASON" ]; then
+            REASON_LINE="\\n*Reason:* ${REASON}"
+          fi
+
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{
+              \"text\": \"${EMOJI} Stable channel rollback to v${VERSION} ${STATUS_TEXT}\",
+              \"blocks\": [
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \"*${EMOJI} Emergency Rollback — ${STATUS_TEXT}*\\n\\n*Version:* v${VERSION}\\n*Channel:* stable\\n*Triggered by:* ${{ github.actor }}${REASON_LINE}\"
+                  }
+                }
+              ]
+            }" \
+            ${{ secrets.INTENT_SLACK_WEBHOOK_URL }}

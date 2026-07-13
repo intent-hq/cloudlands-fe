@@ -1,0 +1,174 @@
+name: Intent - Beta Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+# Never cancel a release in progress
+concurrency:
+  group: intent-release
+  cancel-in-progress: false
+
+jobs:
+  beta-release:
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - name: Validate version format
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format '$VERSION'. Expected semver (e.g., 1.2.3)"
+            exit 1
+          fi
+          echo "Version $VERSION is valid"
+
+      # Use RELEASE_PAT to push to protected branches. Falls back to GITHUB_TOKEN
+      # with a warning (push will fail if branch protection requires a PAT).
+      # RELEASE_PAT needs `repo` scope to push commits and tags to protected branches.
+      - name: Configure git token
+        id: token
+        env:
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+          FALLBACK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "$RELEASE_PAT" ]; then
+            echo "token=$RELEASE_PAT" >> "$GITHUB_OUTPUT"
+            echo "Using RELEASE_PAT for git operations"
+          else
+            echo "::warning::RELEASE_PAT secret is not set. Falling back to GITHUB_TOKEN. Push will fail if main branch is protected."
+            echo "token=$FALLBACK_TOKEN" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ steps.token.outputs.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version
+        run: npm run version:set -- ${{ inputs.version }}
+
+      - name: Create .env file
+        run: |
+          cat > .env << EOF
+          SENTRY_DSN="${{ secrets.INTENT_SENTRY_DSN }}"
+          SENTRY_RELEASE="intent@${{ inputs.version }}"
+          SENTRY_AUTH_TOKEN="${{ secrets.INTENT_SENTRY_AUTH_TOKEN }}"
+          SEGMENT_WRITE_KEY="${{ secrets.INTENT_SEGMENT_WRITE_KEY }}"
+          EOF
+
+      - name: Commit version bump and create tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: bump version to ${{ inputs.version }}"
+          git tag -a "v${{ inputs.version }}" -m "Release v${{ inputs.version }}"
+
+      - name: Import code signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.AUGMENT_INTENT_MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.AUGMENT_INTENT_MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.INTENT_KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          echo "$MACOS_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 -P "$MACOS_CERTIFICATE_PWD" \
+            -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+      - name: Build and package macOS app
+        run: npm run dist:mac
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+          CSC_LINK: ${{ secrets.AUGMENT_INTENT_MACOS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.AUGMENT_INTENT_MACOS_CERTIFICATE_PWD }}
+          APPLE_ID: ${{ secrets.AUGMENT_INTENT_APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.AUGMENT_INTENT_APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.AUGMENT_INTENT_APPLE_TEAM_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate release notes
+        run: npm run generate:release-notes
+        continue-on-error: true
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: 'latest'
+
+      - name: Authenticate with GCP
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.INTENT_GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Upload to GCP beta channel
+        run: bash scripts/upload-release-gcp.sh beta
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          GCS_BUCKET: ${{ secrets.INTENT_GCS_BUCKET }}
+          GCP_PROJECT: ${{ secrets.INTENT_GCP_PROJECT }}
+          CLOUD_CDN_URL_MAP: ${{ secrets.INTENT_CLOUD_CDN_URL_MAP }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+
+      - name: Push commit and tag to main
+        run: |
+          git push origin main
+          git push origin "v${{ inputs.version }}"
+        env:
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+
+      - name: Post summary
+        run: |
+          VERSION="${{ inputs.version }}"
+          echo "## Beta Release" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Tag:** \`v$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Channel:** beta" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Download URLs" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Apple Silicon Mac](https://cdn.augmentcode.com/beta/Intent-latest-arm64.dmg)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify Slack
+        if: success()
+        run: |
+          VERSION="${{ inputs.version }}"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{
+              \"text\": \"Intent v${VERSION} released to beta channel\",
+              \"blocks\": [
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \"*Intent Beta Release*\n\n*Version:* v${VERSION}\n*Channel:* beta\n*Tag:* \`v${VERSION}\`\n*Triggered by:* ${{ github.actor }}\n\n<https://cdn.augmentcode.com/beta/Intent-latest-arm64.dmg|Download (Apple Silicon)> · <intent://settings?beta=true|Enroll in beta>\"
+                  }
+                }
+              ]
+            }" \
+            ${{ secrets.INTENT_SLACK_WEBHOOK_URL }}

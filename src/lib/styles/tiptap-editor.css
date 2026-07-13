@@ -1,0 +1,1129 @@
+/* TipTap Editor Styles */
+.tiptap-editor {
+  height: 100%;
+  outline: none;
+  color: hsl(var(--foreground));
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+/* ===== Content breakout: wide elements fill the full editor width ===== */
+/* Text stays in a max-width prose column, but wide elements expand to fill
+   the entire #editor-content area. Uses CSS container query units (100cqw)
+   to break out of both the container padding and the max-width constraint.
+   NOTE: .tiptap-editor and .ProseMirror are the SAME element (compound selector).
+   NOTE: SvelteNodeViewRenderer wraps node views in div.node-{nodeName},
+         so we target those classes (NOT data-type attributes). */
+.tiptap-editor.ProseMirror > img,
+.tiptap-editor.ProseMirror > .tableWrapper,
+.tiptap-editor.ProseMirror > pre,
+.tiptap-editor.ProseMirror > hr,
+.tiptap-editor.ProseMirror > details,
+.tiptap-editor.ProseMirror > .node-mermaidBlock,
+.tiptap-editor.ProseMirror > .node-choiceBlock,
+.tiptap-editor.ProseMirror > .node-tasksBlock,
+.tiptap-editor.ProseMirror > .node-reference_block,
+.tiptap-editor.ProseMirror > .node-cli_block,
+.tiptap-editor.ProseMirror > .node-agent_action_block,
+.tiptap-editor.ProseMirror > .node-patch_block,
+.tiptap-editor.ProseMirror > .node-diagram_block {
+  --breakout-padding: 2rem;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  width: fit-content;
+  min-width: 100%;
+  max-width: calc(100cqw - 2 * var(--breakout-padding));
+}
+
+/* Code blocks: don't expand beyond prose column width — keeps them
+   visually aligned with surrounding text at wide viewports. */
+.tiptap-editor.ProseMirror > pre {
+  width: 100%;
+}
+
+/* Table wrapper: scroll container so wide tables scroll within the breakout area */
+.tiptap-editor.ProseMirror > .tableWrapper {
+  overflow-x: auto;
+}
+
+/* Diagram blocks: margin-based breakout (no transform — transform creates
+   a containing block that breaks position:fixed in fullscreen overlays).
+   Flexbox centering makes the inner content only as wide as the diagram,
+   while the outer lane spans the full editor width. */
+.tiptap-editor.ProseMirror > .node-mermaidBlock,
+.tiptap-editor.ProseMirror > .node-diagram_block {
+  position: static;
+  left: auto;
+  transform: none;
+  width: calc(100cqw - 2 * var(--breakout-padding));
+  min-width: 0;
+  max-width: calc(100cqw - 2 * var(--breakout-padding));
+  margin-left: calc((100% - 100cqw + 2 * var(--breakout-padding)) / 2);
+  margin-right: calc((100% - 100cqw + 2 * var(--breakout-padding)) / 2);
+  display: flex;
+  justify-content: center;
+}
+
+/* Cap inner wrapper so very wide SVGs scale down instead of overflowing */
+.tiptap-editor.ProseMirror > .node-mermaidBlock > [data-node-view-wrapper],
+.tiptap-editor.ProseMirror > .node-diagram_block > [data-node-view-wrapper] {
+  max-width: 100%;
+}
+
+/* Monospace mode: code blocks don't need breakout since they're already
+   styled differently (transparent bg, triple backtick fences) */
+.note-font-monospace .tiptap-editor.ProseMirror > pre {
+  position: static;
+  left: auto;
+  transform: none;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Disable breakout when comments sidebar is active to avoid overlap */
+.tiptap-editor-wrapper.with-comments .tiptap-editor.ProseMirror > img,
+.tiptap-editor-wrapper.with-comments .tiptap-editor.ProseMirror > .tableWrapper,
+.tiptap-editor-wrapper.with-comments .tiptap-editor.ProseMirror > pre,
+.tiptap-editor-wrapper.with-comments .tiptap-editor.ProseMirror > hr,
+.tiptap-editor-wrapper.with-comments .tiptap-editor.ProseMirror > details,
+.tiptap-editor-wrapper.with-comments .tiptap-editor.ProseMirror > .node-mermaidBlock,
+.tiptap-editor-wrapper.with-comments .tiptap-editor.ProseMirror > .node-choiceBlock,
+.tiptap-editor-wrapper.with-comments .tiptap-editor.ProseMirror > .node-tasksBlock,
+.tiptap-editor-wrapper.with-comments .tiptap-editor.ProseMirror > .node-reference_block,
+.tiptap-editor-wrapper.with-comments .tiptap-editor.ProseMirror > .node-cli_block,
+.tiptap-editor-wrapper.with-comments .tiptap-editor.ProseMirror > .node-agent_action_block,
+.tiptap-editor-wrapper.with-comments .tiptap-editor.ProseMirror > .node-patch_block,
+.tiptap-editor-wrapper.with-comments .tiptap-editor.ProseMirror > .node-diagram_block {
+  position: static;
+  left: auto;
+  transform: none;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* Preserved selection - shown when editor loses focus but selection should remain visible */
+/* Mimics the native browser "inactive selection" appearance (gray/muted background) */
+.tiptap-editor .preserved-selection {
+  background-color: hsl(var(--muted-foreground) / 0.25);
+}
+
+.dark .tiptap-editor .preserved-selection {
+  background-color: hsl(var(--muted-foreground) / 0.3);
+}
+
+/* Note Font Style Variants */
+.note-font-sans .tiptap-editor {
+  font-family:
+    -apple-system, BlinkMacSystemFont, Inter, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell',
+    'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+}
+
+.note-font-monospace .tiptap-editor {
+  /* Berkeley Mono is the designer's choice - used by Linear, Raycast, Arc */
+  /* iA Writer Mono/Duo/Quattro are beautiful writing-focused monospace fonts */
+  font-family:
+    'Berkeley Mono', 'iA Writer Mono', 'Commit Mono', 'Monaspace Neon', 'JetBrains Mono', 'SF Mono',
+    ui-monospace, monospace;
+  letter-spacing: -0.011em;
+  font-feature-settings:
+    'calt' 1,
+    'liga' 1;
+}
+
+.note-font-monospace .tiptap-editor h1,
+.note-font-monospace .tiptap-editor h1:not(:first-child),
+.note-font-monospace .tiptap-editor h2,
+.note-font-monospace .tiptap-editor h2:not(:first-child),
+.note-font-monospace .tiptap-editor h3,
+.note-font-monospace .tiptap-editor h3:not(:first-child),
+.note-font-monospace .tiptap-editor h4,
+.note-font-monospace .tiptap-editor h4:not(:first-child),
+.note-font-monospace .tiptap-editor h5,
+.note-font-monospace .tiptap-editor h5:not(:first-child),
+.note-font-monospace .tiptap-editor h6,
+.note-font-monospace .tiptap-editor h6:not(:first-child) {
+  font-size: 1em;
+  font-weight: 500;
+  margin: 1em 0 0 0;
+  line-height: inherit;
+  color: hsl(var(--muted-foreground) / 0.6);
+}
+
+.note-font-monospace .tiptap-editor ul {
+  margin: 0;
+  padding: 0;
+  margin-block: 0 !important;
+}
+
+.note-font-monospace .tiptap-editor li {
+  margin: 0;
+  padding: 0;
+  margin-block: 0 !important;
+  /* decoration on inside */
+  /* list-style-position: inside; */
+  margin-left: 1rem;
+}
+
+/* Monospace mode: Inline code with backticks as literal characters */
+/* These classes are applied via TipTap decorations, not marks */
+/* Only show styling in monospace mode */
+.note-font-monospace .monospace-backtick-code {
+  /* Subtle styling to indicate code in monospace mode */
+  color: hsl(var(--accent-foreground));
+  background: hsl(var(--sidebar) / 0.5);
+  border-radius: 0.125rem;
+  padding: 0 0.125rem;
+}
+
+/* Monospace mode: Hide regular code mark styling (we use decorations instead) */
+/* Exclude file path code elements (they have special clickable styling) */
+.note-font-monospace .tiptap-editor code:not(pre code):not(:has(.is-file-path)):not(.is-file-path) {
+  background: transparent;
+  color: hsl(var(--accent-foreground));
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  font-family: inherit;
+}
+
+/* For any existing code marks in monospace mode, show backticks via CSS */
+.note-font-monospace
+  .tiptap-editor
+  code:not(pre code):not(:has(.is-file-path)):not(.is-file-path)::before {
+  content: '`';
+}
+
+.note-font-monospace
+  .tiptap-editor
+  code:not(pre code):not(:has(.is-file-path)):not(.is-file-path)::after {
+  content: '`';
+}
+
+/* Monospace mode: Show markdown syntax for code blocks (triple backticks) */
+.note-font-monospace .tiptap-editor pre {
+  background: transparent;
+  color: hsl(var(--accent-foreground));
+  border: none;
+  padding: 0;
+  position: relative;
+}
+
+.note-font-monospace .tiptap-editor pre::before {
+  content: '```';
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.note-font-monospace .tiptap-editor pre::after {
+  content: '```';
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.note-font-monospace .tiptap-editor pre code {
+  display: block;
+}
+
+.note-font-monospace .tiptap-editor h1,
+.note-font-monospace .tiptap-editor h2,
+.note-font-monospace .tiptap-editor h3,
+.note-font-monospace .tiptap-editor ul {
+  margin-bottom: 0.5em !important;
+}
+
+/* Mention Chip Styles */
+.mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  background: hsl(var(--sidebar));
+  color: hsl(var(--muted-foreground));
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  vertical-align: baseline;
+  text-decoration: none;
+  line-height: 1.5;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.mention-chip:hover {
+  background: hsl(var(--muted) / 0.8);
+}
+
+.mention-chip:focus {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 1px;
+}
+
+/* Mention chip icon */
+.mention-chip-icon {
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+}
+
+/* Paste Chip Styles - inline chip for multi-line pasted text */
+.paste-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  background: hsl(var(--sidebar));
+  color: hsl(var(--muted-foreground));
+  border-radius: 4px;
+  font-weight: 500;
+  font-size: 0.75rem;
+  cursor: default;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  vertical-align: baseline;
+  line-height: 1.5;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.paste-chip:hover {
+  background: hsl(var(--muted) / 0.8);
+}
+
+/* Mention popup styles */
+.mention-popup {
+  position: fixed !important;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  max-width: 560px;
+  max-height: 380px;
+  overflow: visible;
+  z-index: 60 !important;
+  display: block !important;
+}
+
+.dark .mention-popup {
+  /* Dark mode handled by component */
+}
+
+.tiptap-editor p {
+  margin: 0 0 0.75rem 0;
+}
+
+.tiptap-editor p:last-child {
+  margin-bottom: 0;
+}
+
+/* Links */
+.tiptap-editor a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.tiptap-editor a:hover,
+.tiptap-editor a:focus-visible {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
+.tiptap-editor h1,
+.tiptap-editor h2,
+.tiptap-editor h3 {
+  font-weight: 600;
+  margin: 1rem 0 0.2rem 0;
+  line-height: 1.3em;
+  color: hsl(var(--foreground));
+}
+
+.tiptap-editor h1 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-size: 1.5rem;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+.tiptap-editor h1:not(:first-child) {
+  margin-top: 1em;
+}
+
+.tiptap-editor h2 {
+  font-size: 1.25rem;
+  letter-spacing: -0.016em;
+  font-weight: 600;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+.tiptap-editor h2:not(:first-child) {
+  margin-top: 1em;
+}
+
+.tiptap-editor h3 {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.tiptap-editor h3:not(:first-child) {
+  margin-top: 1em;
+}
+
+div.tiptap-editor ul {
+  list-style-type: disc;
+  list-style-position: outside;
+  margin: 0 0 0.75rem 0;
+  padding-left: 1.5rem;
+}
+
+div.tiptap-editor ol {
+  list-style-type: decimal;
+  list-style-position: outside;
+  margin: 0 0 0.75rem 0;
+  padding-left: 1.5rem;
+}
+
+.tiptap-editor li {
+  margin: 0.25rem 0;
+}
+
+/* Task List Styles */
+.tiptap-editor ul.task-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0 0 0.75rem 0;
+}
+
+.tiptap-editor ul.task-list li.task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.tiptap-editor ul.task-list li.task-item::before {
+  content: none;
+}
+
+.tiptap-editor ul.task-list li.task-item input[type='checkbox'] {
+  margin-top: 0.125rem;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.25rem;
+  background: hsl(var(--background));
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tiptap-editor ul.task-list li.task-item input[type='checkbox']:checked {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+}
+
+.tiptap-editor ul.task-list li.task-item input[type='checkbox']:hover {
+  border-color: hsl(var(--primary));
+}
+
+.tiptap-editor ul.task-list li.task-item[data-checked='true'] > div > p,
+.tiptap-editor ul.task-list li.task-item[data-checked='true'] > div {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+/* Nested task lists */
+.tiptap-editor ul.task-list ul.task-list {
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+  margin-left: 1.5rem;
+}
+
+/* Enhanced Custom Task Item Styles */
+.tiptap-editor .custom-task-item-container {
+  position: relative;
+  border-radius: 0.375rem;
+  transition: background-color 0.15s ease;
+}
+
+.tiptap-editor .custom-task-item-container:hover {
+  background-color: hsl(var(--sidebar) / 0.3);
+}
+
+.tiptap-editor .task-item-checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+
+.tiptap-editor .task-item-checkbox {
+  appearance: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  border: none;
+  border-radius: 0.3125rem;
+  background: hsl(var(--muted));
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.tiptap-editor .task-item-checkbox:hover {
+  background: hsl(var(--muted-foreground) / 0.25);
+}
+
+.tiptap-editor .task-item-checkbox:checked {
+  background: hsl(var(--foreground));
+}
+
+.tiptap-editor .task-item-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.3rem;
+  height: 0.5rem;
+  border: solid hsl(var(--background));
+  border-width: 0 2px 2px 0;
+  /* Offset slightly to account for visual weight of L-shaped checkmark */
+  transform: translate(-45%, -60%) rotate(45deg);
+}
+
+/* Indeterminate state for in-progress tasks */
+.tiptap-editor .task-item-checkbox:indeterminate {
+  background: hsl(var(--foreground));
+}
+
+.tiptap-editor .task-item-checkbox:indeterminate::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.5rem;
+  height: 2px;
+  background: hsl(var(--background));
+  transform: translate(-50%, -50%);
+}
+
+.tiptap-editor .task-item-menu-button {
+  color: hsl(var(--muted-foreground));
+  transition: all 0.15s ease;
+}
+
+.tiptap-editor .task-item-menu-button:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--sidebar));
+}
+
+.tiptap-editor .task-item-content {
+  outline: none;
+}
+
+.tiptap-editor .task-item-content p {
+  margin: 0;
+}
+
+/* Inline code styling */
+.tiptap-editor code {
+  background: hsl(var(--sidebar));
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.95em;
+  letter-spacing: 0;
+  font-family: 'JetBrains Mono', monospace;
+  /* Prevent overflow on long code */
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Clickable file path code elements - styled like mention chips */
+/* The decoration adds is-file-path class to a span INSIDE the code element */
+/* Use :has() to style the parent code element when it contains a file path */
+.tiptap-editor code:has(.is-file-path),
+code:has(.is-file-path) {
+  display: inline;
+  padding: 1px 6px;
+  background: hsl(var(--sidebar));
+  color: hsl(var(--muted-foreground));
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 1em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  vertical-align: baseline;
+  text-decoration: none;
+  line-height: 1.5;
+  /* Allow wrapping for long file paths */
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.tiptap-editor code:has(.is-file-path):hover,
+code:has(.is-file-path):hover {
+  background: hsl(var(--muted) / 0.8);
+}
+
+.tiptap-editor code:has(.is-file-path):focus,
+code:has(.is-file-path):focus {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 1px;
+}
+
+/* Also support direct class on code element (legacy/fallback) */
+.tiptap-editor code.is-file-path,
+code.is-file-path {
+  display: inline;
+  padding: 1px 6px;
+  background: hsl(var(--muted) / 0.7);
+  color: hsl(var(--muted-foreground));
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 1em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  vertical-align: baseline;
+  text-decoration: none;
+  line-height: 1.5;
+  /* Allow wrapping for long file paths */
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.tiptap-editor code.is-file-path:hover,
+code.is-file-path:hover {
+  background: hsl(var(--muted) / 0.8);
+}
+
+.tiptap-editor code.is-file-path:focus,
+code.is-file-path:focus {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 1px;
+}
+
+/* Code blocks */
+.tiptap-editor pre {
+  position: relative;
+  background: var(--color-sidebar);
+  color: hsl(var(--muted-foreground));
+  border: none;
+  border-radius: 0.25rem;
+  padding: 0.8rem 1.3rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+  font-size: 1em;
+  line-height: 1.5;
+}
+
+.tiptap-editor pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  color: hsl(var(--muted-foreground));
+  white-space: pre;
+}
+
+/* Code block copy button (injected via ProseMirror Decoration.widget) */
+.tiptap-editor pre .code-block-copy-btn {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 10;
+}
+
+.tiptap-editor pre:hover .code-block-copy-btn {
+  opacity: 1;
+}
+
+.tiptap-editor pre .code-block-copy-btn:hover {
+  background: hsl(var(--muted) / 0.9);
+  color: hsl(var(--foreground));
+}
+
+.tiptap-editor pre .code-block-copy-btn.copied {
+  color: hsl(var(--primary));
+}
+
+/* Syntax highlighting for code blocks */
+.tiptap-editor .hljs {
+  /* padding: 0 !important; */
+}
+
+/* Dark mode syntax highlighting (default) */
+.tiptap-editor .hljs-keyword {
+  color: #c084fc !important;
+  font-weight: 500;
+}
+
+.tiptap-editor .hljs-string {
+  color: #86efac !important;
+}
+
+.tiptap-editor .hljs-number {
+  color: #fbbf24 !important;
+}
+
+.tiptap-editor .hljs-function {
+  color: #60a5fa !important;
+}
+
+.tiptap-editor .hljs-comment {
+  color: #6b7280 !important;
+  font-style: italic;
+}
+
+.tiptap-editor .hljs-variable {
+  color: #fca5a5 !important;
+}
+
+.tiptap-editor .hljs-class,
+.tiptap-editor .hljs-title {
+  color: #fde047 !important;
+}
+
+.tiptap-editor .hljs-attr,
+.tiptap-editor .hljs-attribute {
+  color: #c084fc !important;
+}
+
+.tiptap-editor .hljs-built_in {
+  color: #60a5fa !important;
+}
+
+.tiptap-editor .hljs-params {
+  color: #fca5a5 !important;
+}
+
+.tiptap-editor .hljs-literal {
+  color: #fbbf24 !important;
+}
+
+.tiptap-editor .hljs-type {
+  color: #60a5fa !important;
+}
+
+.tiptap-editor .hljs-name {
+  color: #fde047 !important;
+}
+
+.tiptap-editor .hljs-tag {
+  color: #c084fc !important;
+}
+
+.tiptap-editor .hljs-attr-name {
+  color: #c084fc !important;
+}
+
+.tiptap-editor .hljs-attr-value {
+  color: #86efac !important;
+}
+
+.tiptap-editor .hljs-meta {
+  color: #6b7280 !important;
+}
+
+.tiptap-editor .hljs-symbol {
+  color: #fbbf24 !important;
+}
+
+.tiptap-editor .hljs-bullet {
+  color: #fbbf24 !important;
+}
+
+.tiptap-editor .hljs-link {
+  color: #60a5fa !important;
+}
+
+.tiptap-editor .hljs-section {
+  color: #fde047 !important;
+}
+
+.tiptap-editor .hljs-emphasis {
+  font-style: italic;
+}
+
+.tiptap-editor .hljs-strong {
+  font-weight: bold;
+}
+
+.tiptap-editor strong {
+  font-weight: 600;
+}
+
+.tiptap-editor em {
+  font-style: italic;
+}
+
+/* Table styles */
+.tiptap-editor table {
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 1rem;
+}
+
+.tiptap-editor table th,
+.tiptap-editor table td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  word-break: auto-phrase;
+  white-space: normal;
+}
+
+.tiptap-editor table th {
+  background: hsl(var(--muted) / 0.3);
+  font-weight: 600;
+}
+
+.tiptap-editor table tr:hover {
+  background: hsl(var(--muted) / 0.3);
+}
+
+.tiptap-editor table thead {
+  border-bottom: 2px solid hsl(var(--border));
+}
+
+/* Light mode syntax highlighting overrides */
+.dark .tiptap-editor .hljs-keyword {
+  color: #c084fc !important;
+}
+
+/* For light mode - use darker colors (uses .light class on html element) */
+.light .tiptap-editor pre {
+  background: hsl(var(--sidebar));
+}
+
+.light .tiptap-editor .hljs-keyword {
+  color: #7c3aed !important;
+}
+
+.light .tiptap-editor .hljs-string {
+  color: #059669 !important;
+}
+
+.light .tiptap-editor .hljs-number {
+  color: #b45309 !important;
+}
+
+.light .tiptap-editor .hljs-function {
+  color: #1d4ed8 !important;
+}
+
+.light .tiptap-editor .hljs-variable {
+  color: #dc2626 !important;
+}
+
+.light .tiptap-editor .hljs-class,
+.light .tiptap-editor .hljs-title {
+  color: #b45309 !important;
+}
+
+.light .tiptap-editor .hljs-attr,
+.light .tiptap-editor .hljs-attribute {
+  color: #7c3aed !important;
+}
+
+.light .tiptap-editor .hljs-built_in {
+  color: #1d4ed8 !important;
+}
+
+.light .tiptap-editor .hljs-params {
+  color: #dc2626 !important;
+}
+
+.light .tiptap-editor .hljs-literal {
+  color: #b45309 !important;
+}
+
+.light .tiptap-editor .hljs-type {
+  color: #1d4ed8 !important;
+}
+
+.light .tiptap-editor .hljs-name {
+  color: #b45309 !important;
+}
+
+.light .tiptap-editor .hljs-tag {
+  color: #7c3aed !important;
+}
+
+.light .tiptap-editor .hljs-attr-name {
+  color: #7c3aed !important;
+}
+
+.light .tiptap-editor .hljs-attr-value {
+  color: #059669 !important;
+}
+
+.light .tiptap-editor .hljs-symbol {
+  color: #b45309 !important;
+}
+
+.light .tiptap-editor .hljs-bullet {
+  color: #b45309 !important;
+}
+
+.light .tiptap-editor .hljs-link {
+  color: #1d4ed8 !important;
+}
+
+.light .tiptap-editor .hljs-section {
+  color: #b45309 !important;
+}
+
+.tiptap-editor blockquote {
+  border-left: 3px solid hsl(var(--border));
+  padding-left: 1rem;
+  margin: 0.75rem 0;
+  color: hsl(var(--muted-foreground));
+}
+
+.tiptap-editor hr {
+  border: none;
+  border-top: 1px solid hsl(var(--border));
+  margin: 1rem 0;
+}
+
+/* Details/Summary Collapsible Blocks */
+.tiptap-editor details {
+  margin: 0.75rem 0;
+  border: 1px solid hsl(var(--border) / 0.5);
+  border-radius: 0.375rem;
+  padding: 0.75rem;
+  background: hsl(var(--background));
+}
+
+.tiptap-editor details[open] {
+  padding-bottom: 0.5rem;
+}
+
+.tiptap-editor details summary {
+  cursor: pointer;
+  font-weight: 600;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tiptap-editor details summary::-webkit-details-marker {
+  display: none;
+}
+
+.tiptap-editor details summary::before {
+  content: '▶';
+  font-size: 0.6rem;
+  color: hsl(var(--muted-foreground));
+  transition: transform 0.15s ease;
+}
+
+.tiptap-editor details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.tiptap-editor details .details-content {
+  padding-left: 1rem;
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid hsl(var(--border) / 0.3);
+}
+
+.tiptap-editor details .details-content p:first-child {
+  margin-top: 0;
+}
+
+.tiptap-editor details .details-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* TipTap Placeholder - Multiple selectors to ensure it works */
+.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before,
+.tiptap-editor .ProseMirror p.is-empty:first-child::before,
+.ProseMirror p.is-editor-empty:first-child::before,
+.ProseMirror p.is-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: hsl(var(--muted-foreground));
+  /* font-style: italic; */
+  pointer-events: none;
+  float: left;
+  height: 0;
+  width: 100%;
+}
+
+/* Override placeholder when coordinator is writing initial spec */
+.ProseMirror[data-initial-spec-write='true'] p.is-editor-empty:first-child::before,
+.ProseMirror[data-initial-spec-write='true'] p.is-empty:first-child::before {
+  content: 'The Coordinator is analyzing your codebase and drafting a spec to delegate work across multiple agents. Stop it to edit the spec yourself.';
+}
+
+.tiptap-editor:focus {
+  outline: none;
+}
+
+/* Comment Mark Styles */
+.tiptap-editor mark[data-comment-id] {
+  background-color: rgba(250, 204, 21, 0.4);
+  border-radius: 0.25rem;
+  padding: 0 0.125rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.tiptap-editor mark[data-comment-id]:hover {
+  background-color: rgba(250, 204, 21, 0.6);
+}
+
+.dark .tiptap-editor mark[data-comment-id] {
+  background-color: rgba(180, 83, 9, 0.4);
+}
+
+.dark .tiptap-editor mark[data-comment-id]:hover {
+  background-color: rgba(180, 83, 9, 0.6);
+}
+
+/* Suggestion Styles */
+.suggestion {
+  position: relative;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+/* Addition suggestions - green underline */
+.suggestion-addition {
+  background-color: rgba(34, 197, 94, 0.1);
+  border-bottom: 2px solid rgb(34, 197, 94);
+  padding-bottom: 1px;
+}
+
+.suggestion-addition:hover {
+  background-color: rgba(34, 197, 94, 0.2);
+}
+
+/* Deletion suggestions - red strikethrough */
+.suggestion-deletion {
+  background-color: rgba(239, 68, 68, 0.1);
+  text-decoration: line-through;
+  text-decoration-color: rgb(239, 68, 68);
+  text-decoration-thickness: 2px;
+}
+
+.suggestion-deletion:hover {
+  background-color: rgba(239, 68, 68, 0.2);
+}
+
+/* Modification suggestions - yellow highlight */
+.suggestion-modification {
+  background-color: rgba(245, 158, 11, 0.2);
+  border-bottom: 2px solid rgb(245, 158, 11);
+  padding-bottom: 1px;
+}
+
+.suggestion-modification:hover {
+  background-color: rgba(245, 158, 11, 0.3);
+}
+
+/* Accepted suggestions */
+.suggestion-accepted {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Rejected suggestions */
+.suggestion-rejected {
+  opacity: 0.3;
+  text-decoration: line-through;
+  pointer-events: none;
+}
+
+/* Suggestion tooltip */
+.suggestion-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  background: hsl(var(--popover));
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.375rem;
+  padding: 0.5rem;
+  margin-bottom: 0.25rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  z-index: 50;
+  min-width: 200px;
+  max-width: 300px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.suggestion-tooltip-author {
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  margin-bottom: 0.25rem;
+}
+
+.suggestion-tooltip-reason {
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 0.5rem;
+}
+
+.suggestion-tooltip-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.suggestion-tooltip-actions button {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 0.25rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.suggestion-tooltip-actions button:hover {
+  background: hsl(var(--accent));
+}
+
+.suggestion-tooltip-actions button.accept {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgb(34, 197, 94);
+  color: rgb(34, 197, 94);
+}
+
+.suggestion-tooltip-actions button.accept:hover {
+  background: rgba(34, 197, 94, 0.2);
+}
+
+.suggestion-tooltip-actions button.reject {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgb(239, 68, 68);
+  color: rgb(239, 68, 68);
+}
+
+.suggestion-tooltip-actions button.reject:hover {
+  background: rgba(239, 68, 68, 0.2);
+}

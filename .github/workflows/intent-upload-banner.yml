@@ -1,0 +1,124 @@
+name: Intent - Upload Banner
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'banner/intent-banner.json'
+  workflow_dispatch:
+    inputs:
+      banner_json:
+        description: 'Override banner JSON (bypasses repo file). Example: [{"id":"my-banner","startAt":"2026-03-05T00:00:00Z","endAt":"2026-03-19T23:59:59Z","priority":1,"dismissable":true,"message":"Hello world","buttons":[]}]'
+        required: false
+        type: string
+
+# OIDC token for GCP Workload Identity Federation
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: intent-banner
+  cancel-in-progress: true
+
+jobs:
+  upload-banner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate with GCP (OIDC)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.INTENT_GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.INTENT_GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: 'latest'
+
+      - name: Resolve banner JSON
+        id: banner
+        run: |
+          BANNER_FILE=$(mktemp)
+          OVERRIDE=$(cat <<'EOJSON'
+          ${{ inputs.banner_json }}
+          EOJSON
+          )
+          OVERRIDE="${OVERRIDE#"${OVERRIDE%%[![:space:]]*}"}"
+          OVERRIDE="${OVERRIDE%"${OVERRIDE##*[![:space:]]}"}"
+
+          if [ -n "$OVERRIDE" ]; then
+            # workflow_dispatch override — validate JSON and ensure top-level array
+            if ! echo "$OVERRIDE" | jq -e 'type == "array"' > /dev/null 2>&1; then
+              echo "❌ Error: Input must be a valid JSON array"
+              echo "$OVERRIDE"
+              exit 1
+            fi
+            echo "$OVERRIDE" | jq . > "$BANNER_FILE"
+            echo "source=workflow_dispatch override" >> "$GITHUB_OUTPUT"
+          elif [ ! -f banner/intent-banner.json ]; then
+            # File missing — treat as clear
+            echo '[]' > "$BANNER_FILE"
+            echo "source=banner/intent-banner.json (missing, defaulting to clear)" >> "$GITHUB_OUTPUT"
+          else
+            # Read from repo file
+            if ! jq -e 'type == "array"' banner/intent-banner.json > /dev/null 2>&1; then
+              echo "❌ Error: banner/intent-banner.json must be a valid JSON array"
+              exit 1
+            fi
+            jq . banner/intent-banner.json > "$BANNER_FILE"
+            echo "source=banner/intent-banner.json" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Determine action
+          CONTENT=$(cat "$BANNER_FILE")
+          if [ "$CONTENT" = "[]" ]; then
+            echo "action=clear" >> "$GITHUB_OUTPUT"
+          else
+            echo "action=set" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "file=$BANNER_FILE" >> "$GITHUB_OUTPUT"
+          echo "📋 Banner contents:"
+          cat "$BANNER_FILE" | jq .
+
+      - name: Upload banner to GCS
+        run: |
+          gcloud storage cp "${{ steps.banner.outputs.file }}" \
+            "gs://${{ secrets.INTENT_GCS_BUCKET }}/stable/banner.json" \
+            --content-type="application/json"
+
+      - name: Invalidate CDN cache
+        run: |
+          gcloud compute url-maps invalidate-cdn-cache "${{ secrets.INTENT_CLOUD_CDN_URL_MAP }}" \
+            --path "/stable/banner.json" \
+            --project="${{ secrets.INTENT_GCP_PROJECT }}" \
+            --quiet
+
+      - name: Post summary
+        run: |
+          ACTION="${{ steps.banner.outputs.action }}"
+          SOURCE="${{ steps.banner.outputs.source }}"
+
+          echo "## 📢 Banner ${ACTION^}d" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Triggered by:** ${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Source:** ${SOURCE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$ACTION" = "set" ]; then
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat "${{ steps.banner.outputs.file }}" | jq . >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Banner has been **cleared**." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "🌐 **CDN URL:** https://cdn.augmentcode.com/stable/banner.json" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,76 @@
+#!/bin/bash
+# intent - Open Intent by Augment with a directory pre-populated
+#
+# Usage:
+#   intent [directory]
+#   intent              # uses current directory
+#   intent /path/to/dir # uses specified directory
+#   intent .            # uses current directory (explicit)
+
+set -e
+
+# Resolve the directory path
+DIR="${1:-.}"
+
+# Convert to absolute path
+if [[ "$DIR" != /* ]]; then
+  DIR="$(cd "$DIR" 2>/dev/null && pwd)" || {
+    echo "Error: Directory '$1' does not exist" >&2
+    exit 1
+  }
+fi
+
+# Verify directory exists
+if [ ! -d "$DIR" ]; then
+  echo "Error: '$DIR' is not a directory" >&2
+  exit 1
+fi
+
+# URL-encode the path (basic encoding for spaces and special chars)
+ENCODED_DIR=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$DIR', safe='/'))")
+
+# Open the deep link
+DEEP_LINK="intent://create?repo=${ENCODED_DIR}"
+
+# Detect dev mode by checking if electron binary exists relative to this script
+# Resolve the real path of this script (following symlinks)
+REAL_SCRIPT="$(readlink -f "$0" 2>/dev/null || readlink "$0" 2>/dev/null || echo "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
+# resources/bin/ → project root is 2 levels up
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ELECTRON="$PROJECT_ROOT/node_modules/.bin/electron"
+MAIN_ENTRY="$PROJECT_ROOT/dist/main"
+
+if [ -x "$ELECTRON" ] && [ -d "$MAIN_ENTRY" ]; then
+  # Dev mode: launch Electron.app directly via macOS open command
+  # This fully detaches from terminal (no TTY takeover)
+  ELECTRON_APP="$PROJECT_ROOT/node_modules/electron/dist/Electron.app"
+  if [ "$(uname -s)" = "Darwin" ] && [ -d "$ELECTRON_APP" ]; then
+    open -n "$ELECTRON_APP" --args "$MAIN_ENTRY" "$DEEP_LINK"
+  else
+    # Non-macOS fallback
+    "$ELECTRON" "$MAIN_ENTRY" "$DEEP_LINK" </dev/null &>/dev/null &
+    disown 2>/dev/null || true
+  fi
+  echo "Opening Intent (dev mode) with directory: $DIR"
+else
+  # Production: use OS URL scheme handler
+  case "$(uname -s)" in
+    Darwin)
+      open "$DEEP_LINK"
+      ;;
+    Linux)
+      xdg-open "$DEEP_LINK"
+      ;;
+    MINGW*|MSYS*|CYGWIN*)
+      start "$DEEP_LINK"
+      ;;
+    *)
+      echo "Error: Unsupported platform" >&2
+      exit 1
+      ;;
+  esac
+  echo "Opening Intent with directory: $DIR"
+fi
+
+

@@ -1,0 +1,155 @@
+#!/usr/bin/env node
+
+/**
+ * Parallel Agent Runner - Main Entry Point
+ *
+ * A production-ready system for running parallel agent workflows
+ * with automatic monitoring, error recovery, and reporting.
+ */
+
+const { ParallelRunner } = require('./lib/core/runner');
+const { ConfigParser } = require('./lib/parser/config-parser');
+const { Logger } = require('./lib/utils/logger');
+const { Monitor } = require('./lib/monitor/monitor');
+const path = require('path');
+const fs = require('fs');
+
+// Parse command line arguments
+const args = process.argv.slice(2);
+const flags = {};
+const positional = [];
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i].startsWith('--')) {
+    const key = args[i].slice(2);
+    const value = args[i + 1] && !args[i + 1].startsWith('--') ? args[++i] : true;
+    flags[key] = value;
+  } else {
+    positional.push(args[i]);
+  }
+}
+
+// Show help if requested
+if (flags.help || positional.length === 0) {
+  console.log(`
+Parallel Agent Runner
+
+Usage: ./run <config.yaml> [options]
+
+Options:
+  --dry-run              Show what would be executed without running
+  --no-monitor           Don't start the monitoring dashboard
+  --log-dir <dir>        Custom log directory (default: logs/run-{timestamp})
+  --model <model>        Override model specified in config
+  --max-parallel <n>     Override max parallel agents
+  --no-retry             Disable automatic retry on failures
+  --verbose              Enable verbose logging
+  --help                 Show this help message
+
+Examples:
+  ./run examples/simple-wave.yaml
+  ./run my-config.yaml --dry-run
+  ./run my-config.yaml --max-parallel 2 --no-monitor
+`);
+  process.exit(0);
+}
+
+// Initialize logger
+const logger = new Logger('ParallelRunner', {
+  verbose: flags.verbose,
+  logFile: flags['log-dir'] ? path.join(flags['log-dir'], 'runner.log') : null
+});
+
+async function main() {
+  try {
+    const configFile = positional[0];
+
+    // Check if config file exists
+    if (!fs.existsSync(configFile)) {
+      logger.error(`Configuration file not found: ${configFile}`);
+      process.exit(1);
+    }
+
+    logger.info(`Loading configuration from: ${configFile}`);
+
+    // Parse configuration
+    const parser = new ConfigParser();
+    const config = await parser.parse(configFile);
+
+    // Apply command line overrides
+    if (flags.model) config.model = flags.model;
+    if (flags['max-parallel']) config.maxParallel = parseInt(flags['max-parallel']);
+    if (flags['no-retry']) config.autoRetry = false;
+    if (flags['log-dir']) config.logDir = flags['log-dir'];
+
+    // Validate configuration
+    const validation = parser.validate(config);
+    if (!validation.valid) {
+      logger.error('Configuration validation failed:');
+      validation.errors.forEach(err => logger.error(`  - ${err}`));
+      process.exit(1);
+    }
+
+    logger.success('Configuration loaded and validated');
+    logger.info(`Title: ${config.title}`);
+    logger.info(`Packages: ${config.packages.length}`);
+    logger.info(`Max Parallel: ${config.maxParallel || 4}`);
+
+    // Dry run mode
+    if (flags['dry-run']) {
+      logger.info('\n🏃 DRY RUN MODE - No agents will be launched\n');
+      logger.info('Execution plan:');
+      const runner = new ParallelRunner(config, { dryRun: true });
+      const plan = runner.getExecutionPlan();
+      plan.forEach((wave, i) => {
+        const packageIds = wave.packages.map(p => p.id).join(', ');
+        logger.info(`  Wave ${i + 1}: ${packageIds}`);
+      });
+      process.exit(0);
+    }
+
+    // Start monitoring dashboard (unless disabled)
+    let monitor;
+    if (!flags['no-monitor']) {
+      monitor = new Monitor(config);
+      await monitor.start();
+      logger.info(`Monitoring dashboard started: http://localhost:${monitor.port}`);
+    }
+
+    // Create and start runner
+    const runner = new ParallelRunner(config, {
+      verbose: flags.verbose,
+      monitor: monitor
+    });
+
+    logger.info('\n🚀 Starting parallel agent execution...\n');
+
+    // Run the wave
+    const result = await runner.run();
+
+    // Show results
+    logger.info('\n📊 Execution Results:\n');
+    logger.info(`Total Duration: ${result.duration}`);
+    logger.info(`Packages Completed: ${result.completed}/${result.total}`);
+    if (result.failed > 0) {
+      logger.warning(`Packages Failed: ${result.failed}`);
+    }
+
+    logger.info(`\nLogs: ${result.logDir}`);
+    logger.info(`Report: ${result.reportFile}`);
+
+    // Keep monitor running if enabled
+    if (monitor && !flags['no-monitor']) {
+      logger.info('\nMonitoring dashboard will continue running. Press Ctrl+C to exit.');
+    } else {
+      process.exit(result.failed > 0 ? 1 : 0);
+    }
+
+  } catch (error) {
+    logger.error('Fatal error:', error);
+    process.exit(1);
+  }
+}
+
+// Run main function
+main().catch(console.error);

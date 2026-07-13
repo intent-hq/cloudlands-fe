@@ -1,0 +1,50 @@
+<svg width="540" height="360" viewBox="0 0 540 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Intent drag-to-install background</title>
+  <desc id="desc">Background art guiding users to drag the app into Applications.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B1022"/>
+      <stop offset="100%" stop-color="#111A33"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#16253C" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#0E1527" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="arrow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6BD5FF"/>
+      <stop offset="100%" stop-color="#A5FFDF"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect width="540" height="360" fill="url(#bg)"/>
+
+  <rect x="28" y="92" width="484" height="176" rx="20" fill="url(#panel)" stroke="#1E2A45" stroke-width="1.25" opacity="0.95" filter="url(#shadow)"/>
+  <rect x="28" y="92" width="484" height="176" rx="20" fill="#FFFFFF" opacity="0.04"/>
+
+  <g fill="#DCE6FF" font-family="SF Pro Display, Helvetica, Arial, sans-serif" text-anchor="middle">
+    <text x="270" y="64" font-size="20" font-weight="600">Drag Intent into Applications</text>
+    <text x="270" y="86" font-size="13" fill="#93A7C8">Drop the icon on the right, then open it from Applications.</text>
+  </g>
+
+  <g opacity="0.75">
+    <ellipse cx="150" cy="198" rx="70" ry="72" fill="#1C2844" stroke="#2C3B5C" stroke-opacity="0.7"/>
+    <ellipse cx="400" cy="198" rx="70" ry="72" fill="#1C2844" stroke="#2C3B5C" stroke-opacity="0.7"/>
+  </g>
+
+  <g stroke="url(#arrow)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.9">
+    <path d="M214 198 H322"/>
+    <path d="M308 182 L322 198 308 214" fill="url(#arrow)"/>
+  </g>
+
+  <g fill="#A8B9D7" font-family="SF Pro Display, Helvetica, Arial, sans-serif" text-anchor="middle">
+    <text x="150" y="286" font-size="13">Intent.app</text>
+    <text x="400" y="286" font-size="13">Applications</text>
+  </g>
+
+  <g fill="#8093B5" font-family="SF Pro Display, Helvetica, Arial, sans-serif" text-anchor="middle">
+    <text x="270" y="320" font-size="12">Signed and notarized for macOS</text>
+  </g>
+</svg>

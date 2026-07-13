@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "lib": ["ES2022", "DOM"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "node",
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+    "typeRoots": ["./node_modules/@types"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "$lib/*": ["src/lib/*"],
+      "$store/*": ["src/store/*"],
+      "$shared/*": ["src/shared/*"],
+      "$features/*": ["src/features/*"],
+      "@augmentcode/ag-redux-toolkit/types": ["src/lib/store-shim/types"],
+      "@augmentcode/ag-redux-toolkit/svelte-store": ["src/lib/store-shim/svelte-store"],
+      "@augmentcode/ag-redux-toolkit/utils/store/create-action": ["src/lib/store-shim/utils/store/create-action"],
+      "@augmentcode/ag-redux-toolkit/utils/store/create-reducer": ["src/lib/store-shim/utils/store/create-reducer"],
+      "@augmentcode/ag-redux-toolkit/utils/store/boolean-preference": ["src/lib/store-shim/utils/store/boolean-preference"],
+      "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils": ["src/lib/store-shim/utils/collections/collection-utils"]
+    }
+  },
+  "include": ["src/preload/**/*.ts"],
+  "exclude": ["node_modules", "dist", "src/preload/index.template.ts"]
+}

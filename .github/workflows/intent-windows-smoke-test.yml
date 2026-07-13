@@ -1,0 +1,357 @@
+name: Intent Windows Smoke Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_source:
+        description: 'Where to get the app build'
+        required: true
+        default: 'local'
+        type: choice
+        options:
+          - local
+          - cdn
+      cdn_channel:
+        description: 'CDN channel (only used when build_source=cdn)'
+        required: false
+        default: 'alpha'
+        type: choice
+        options:
+          - alpha
+          - beta
+          - stable
+  workflow_call:
+    inputs:
+      build_source:
+        description: 'Where to get the app build'
+        required: true
+        type: string
+      cdn_channel:
+        description: 'CDN channel (only used when build_source=cdn)'
+        required: false
+        default: 'alpha'
+        type: string
+    secrets:
+      AUGMENT_SESSION_AUTH:
+        required: false
+      ANTHROPIC_API_KEY:
+        required: false
+      OPENAI_API_KEY:
+        required: false
+
+concurrency:
+  group: intent-windows-smoke-test
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    if: inputs.build_source != 'cdn'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Restore node_modules cache
+        id: cache-deps
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules
+          key: deps-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Save node_modules cache
+        if: success() && steps.cache-deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: node_modules
+          key: deps-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Compute build cache key
+        id: build-cache-key
+        run: |
+          echo "hash=${{ hashFiles('src/main/**', 'src/preload/**', 'src/lib/**', 'src/features/**', 'src/routes/**', 'src/shared/**', 'src/types/**', 'src/utils/**', 'src/assets/**', 'src/app.*', 'src/hooks.client.ts', 'src/tailwind-references.css', 'package.json', 'package-lock.json', 'electron-builder.yml', 'vite.config.mjs', 'postcss.config.mjs', 'tsconfig*.json', 'svelte.config.js', 'tailwind.config.js', 'build/**', 'static/**', 'resources/**') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Electron build cache
+        id: cache-build
+        uses: actions/cache/restore@v4
+        with:
+          path: dist-electron/
+          key: electron-build-${{ runner.os }}-${{ steps.build-cache-key.outputs.hash }}
+
+      - name: Build packaged app
+        if: steps.cache-build.outputs.cache-hit != 'true'
+        run: CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:win
+
+      - name: Save Electron build cache
+        if: success() && steps.cache-build.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: dist-electron/
+          key: electron-build-${{ runner.os }}-${{ steps.build-cache-key.outputs.hash }}
+
+      - name: Upload Electron build
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-electron-build
+          path: dist-electron/
+          retention-days: 1
+
+  test:
+    name: Test (${{ matrix.provider }})
+    needs: build
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [auggie, claude-code, codex, opencode]
+    defaults:
+      run:
+        shell: bash
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+      AUGMENT_SESSION_AUTH: ${{ secrets.AUGMENT_SESSION_AUTH }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Restore node_modules cache
+        id: cache-deps
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules
+          key: deps-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download Electron build (from artifact)
+        if: inputs.build_source != 'cdn'
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-electron-build
+          path: dist-electron/
+
+      - name: Download Electron build (from CDN)
+        if: inputs.build_source == 'cdn'
+        run: |
+          CHANNEL="${{ inputs.cdn_channel }}"
+          EXE_URL="https://cdn.augmentcode.com/${CHANNEL}/Intent-latest-Setup.exe"
+          echo "📥 Downloading ${CHANNEL} build from CDN..."
+          curl -fSL -o Intent-latest-Setup.exe "$EXE_URL"
+          echo "📦 Installing into dist-electron/win-unpacked/..."
+          mkdir -p dist-electron/win-unpacked
+          WIN_DEST="$(cygpath -w "$PWD/dist-electron/win-unpacked")"
+          export MSYS2_ARG_CONV_EXCL='*'
+          ./Intent-latest-Setup.exe /S /D=$WIN_DEST
+          test -f "dist-electron/win-unpacked/Intent by Augment.exe"
+          echo "✅ CDN build (${CHANNEL}) ready"
+
+      - name: Install and authenticate auggie
+        if: matrix.provider == 'auggie' && env.AUGMENT_SESSION_AUTH != ''
+        run: |
+          npm install -g @augmentcode/auggie
+          mkdir -p ~/.augment
+          echo '${{ env.AUGMENT_SESSION_AUTH }}' > ~/.augment/session.json
+
+      - name: Verify auggie auth
+        if: matrix.provider == 'auggie' && env.AUGMENT_SESSION_AUTH != ''
+        run: auggie --version
+
+      - name: Install claude-code
+        if: matrix.provider == 'claude-code' && env.ANTHROPIC_API_KEY != ''
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Install codex
+        if: matrix.provider == 'codex' && env.OPENAI_API_KEY != ''
+        run: npm install -g @openai/codex
+
+      - name: Authenticate codex CLI
+        if: matrix.provider == 'codex' && env.OPENAI_API_KEY != ''
+        run: echo "$OPENAI_API_KEY" | codex login --with-api-key
+
+      - name: Verify codex login
+        if: matrix.provider == 'codex' && env.OPENAI_API_KEY != ''
+        run: codex login status
+
+      - name: Verify codex CLI works end-to-end
+        if: matrix.provider == 'codex' && env.OPENAI_API_KEY != ''
+        timeout-minutes: 2
+        run: codex exec "Respond with just the word ok" --sandbox read-only
+
+      - name: Detect available codex model
+        if: matrix.provider == 'codex' && env.OPENAI_API_KEY != ''
+        timeout-minutes: 3
+        run: |
+          for model in gpt-5.3-codex gpt-5.2-codex gpt-5.1-codex gpt-5-codex; do
+            echo "Trying model: $model"
+            if codex exec --model "$model" "Respond with just ok" --sandbox read-only 2>&1; then
+              echo "CODEX_SMOKE_MODEL=codex:$model/low" >> "$GITHUB_ENV"
+              echo "✅ Using model: $model"
+              exit 0
+            fi
+            echo "❌ $model not available"
+          done
+          echo "⚠️ No codex model available — test will likely fail"
+
+      - name: Install opencode
+        if: matrix.provider == 'opencode' && env.ANTHROPIC_API_KEY != ''
+        run: npm install -g opencode-ai
+
+      - name: Run smoke tests
+        run: npx playwright test --config=e2e/build-smoke.config.ts --grep "${{ matrix.provider }}" --grep-invert "multi-provider"
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-smoke-test-report-${{ matrix.provider }}
+          path: e2e-reports/
+          retention-days: 7
+
+  test-multi-provider:
+    name: Test (multi-provider)
+    needs: build
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+      AUGMENT_SESSION_AUTH: ${{ secrets.AUGMENT_SESSION_AUTH }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Restore node_modules cache
+        id: cache-deps
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules
+          key: deps-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download Electron build (from artifact)
+        if: inputs.build_source != 'cdn'
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-electron-build
+          path: dist-electron/
+
+      - name: Download Electron build (from CDN)
+        if: inputs.build_source == 'cdn'
+        run: |
+          CHANNEL="${{ inputs.cdn_channel }}"
+          EXE_URL="https://cdn.augmentcode.com/${CHANNEL}/Intent-latest-Setup.exe"
+          echo "📥 Downloading ${CHANNEL} build from CDN..."
+          curl -fSL -o Intent-latest-Setup.exe "$EXE_URL"
+          echo "📦 Installing into dist-electron/win-unpacked/..."
+          mkdir -p dist-electron/win-unpacked
+          WIN_DEST="$(cygpath -w "$PWD/dist-electron/win-unpacked")"
+          export MSYS2_ARG_CONV_EXCL='*'
+          ./Intent-latest-Setup.exe /S /D=$WIN_DEST
+          test -f "dist-electron/win-unpacked/Intent by Augment.exe"
+          echo "✅ CDN build (${CHANNEL}) ready"
+
+      - name: Install and authenticate auggie
+        if: env.AUGMENT_SESSION_AUTH != ''
+        run: |
+          npm install -g @augmentcode/auggie
+          mkdir -p ~/.augment
+          echo '${{ env.AUGMENT_SESSION_AUTH }}' > ~/.augment/session.json
+
+      - name: Verify auggie auth
+        if: env.AUGMENT_SESSION_AUTH != ''
+        run: auggie --version
+
+      - name: Install claude-code
+        if: env.ANTHROPIC_API_KEY != ''
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Install codex
+        if: env.OPENAI_API_KEY != ''
+        run: npm install -g @openai/codex
+
+      - name: Authenticate codex CLI
+        if: env.OPENAI_API_KEY != ''
+        run: echo "$OPENAI_API_KEY" | codex login --with-api-key
+
+      - name: Verify codex login
+        if: env.OPENAI_API_KEY != ''
+        run: codex login status
+
+      - name: Verify codex CLI works end-to-end
+        if: env.OPENAI_API_KEY != ''
+        timeout-minutes: 2
+        run: codex exec "Respond with just the word ok" --sandbox read-only
+
+      - name: Detect available codex model
+        if: env.OPENAI_API_KEY != ''
+        timeout-minutes: 3
+        run: |
+          for model in gpt-5.3-codex gpt-5.2-codex gpt-5.1-codex gpt-5-codex; do
+            echo "Trying model: $model"
+            if codex exec --model "$model" "Respond with just ok" --sandbox read-only 2>&1; then
+              echo "CODEX_SMOKE_MODEL=codex:$model/low" >> "$GITHUB_ENV"
+              echo "✅ Using model: $model"
+              exit 0
+            fi
+            echo "❌ $model not available"
+          done
+          echo "⚠️ No codex model available — test will likely fail"
+
+      - name: Install opencode
+        if: env.ANTHROPIC_API_KEY != ''
+        run: npm install -g opencode-ai
+
+      - name: Run smoke tests
+        run: npx playwright test --config=e2e/build-smoke.config.ts --grep "multi-provider"
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-smoke-test-report-multi-provider
+          path: e2e-reports/
+          retention-days: 7

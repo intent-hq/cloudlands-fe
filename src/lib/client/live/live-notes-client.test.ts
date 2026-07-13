@@ -1,0 +1,457 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { CreateNoteRequest } from "$shared/types";
+
+// FAKE transport only: the backend bridge is mocked so no note mutation ever
+// reaches the user's real daemon. `resolveNoteWorkspaceId` is stubbed so
+// note-scoped mutations resolve deterministically without extra list calls;
+// `runMutation` / `newIdempotencyKey` stay real so the asserted method + params
+// and the success/error folding are the genuine code paths.
+vi.mock("./backend-transport", () => ({
+  backendRequest: vi.fn(),
+  backendSubscribe: vi.fn(() => Promise.resolve({ subscriptionId: "sub-1" })),
+  backendUnsubscribe: vi.fn(() => Promise.resolve()),
+  onBackendNotification: vi.fn(() => () => {}),
+}));
+
+vi.mock("./live-support", async (importActual) => {
+  const actual = await importActual<typeof import("./live-support")>();
+  return { ...actual, resolveNoteWorkspaceId: vi.fn(() => Promise.resolve("ws-1")) };
+});
+
+import { backendRequest } from "./backend-transport";
+import { resolveNoteWorkspaceId } from "./live-support";
+import { LiveNotesClient, normalizeNote } from "./live-notes-client";
+
+const mockedRequest = vi.mocked(backendRequest);
+const mockedResolve = vi.mocked(resolveNoteWorkspaceId);
+
+describe("LiveNotesClient mutations (fake transport)", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    mockedResolve.mockResolvedValue("ws-1");
+  });
+
+  it("create forwards note.create with the request + an idempotencyKey", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    const result = await client.create({
+      workspaceId: "ws-1",
+      title: "T",
+      content: "C",
+    } as CreateNoteRequest);
+
+    expect(result).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith(
+      "note.create",
+      expect.objectContaining({
+        workspaceId: "ws-1",
+        title: "T",
+        content: "C",
+        idempotencyKey: expect.any(String),
+      }),
+    );
+  });
+
+  it("create generates a distinct idempotencyKey per call", async () => {
+    mockedRequest.mockResolvedValue({ id: "note-x" });
+    const client = new LiveNotesClient();
+
+    await client.create({ workspaceId: "ws-1", title: "A", content: "" } as CreateNoteRequest);
+    await client.create({ workspaceId: "ws-1", title: "B", content: "" } as CreateNoteRequest);
+
+    const first = (mockedRequest.mock.calls[0][1] as { idempotencyKey: string }).idempotencyKey;
+    const second = (mockedRequest.mock.calls[1][1] as { idempotencyKey: string }).idempotencyKey;
+    expect(first).not.toEqual(second);
+  });
+
+  it("setContent resolves the workspace and forwards note.setContent", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    expect(await client.setContent("note-1", "hello")).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith("note.setContent", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      content: "hello",
+    });
+  });
+
+  it("add forwards note.add with heading/position only when provided", async () => {
+    mockedRequest.mockResolvedValue({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    await client.add("note-1", "body", { position: "end" });
+    expect(mockedRequest).toHaveBeenLastCalledWith("note.add", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      content: "body",
+      position: "end",
+    });
+
+    await client.add("note-1", "body");
+    expect(mockedRequest).toHaveBeenLastCalledWith("note.add", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      content: "body",
+    });
+  });
+
+  it("edit forwards note.edit with old/new", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    await client.edit("note-1", "foo", "bar");
+    expect(mockedRequest).toHaveBeenCalledWith("note.edit", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      old: "foo",
+      new: "bar",
+    });
+  });
+
+  it("editLines forwards note.editLines with the inclusive range", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    await client.editLines("note-1", 2, 5, "x");
+    expect(mockedRequest).toHaveBeenCalledWith("note.editLines", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      start: 2,
+      end: 5,
+      content: "x",
+    });
+  });
+
+  it("delete forwards note.delete", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    expect(await client.delete("note-1")).toEqual({ success: true });
+    expect(mockedRequest).toHaveBeenCalledWith("note.delete", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+    });
+  });
+
+  it("updateMetadata forwards note.updateMetadata with title/tags", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    await client.updateMetadata("note-1", { title: "New", tags: ["a"] });
+    expect(mockedRequest).toHaveBeenCalledWith("note.updateMetadata", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      title: "New",
+      tags: ["a"],
+    });
+  });
+
+  it("fails a note-scoped mutation when the workspace cannot be resolved", async () => {
+    mockedResolve.mockResolvedValueOnce(null);
+    const client = new LiveNotesClient();
+
+    const result = await client.setContent("ghost", "x");
+    expect(result.success).toBe(false);
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it("maps a daemon error to a failed MutationResult without throwing", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("boom"));
+    const client = new LiveNotesClient();
+
+    expect(await client.delete("note-1")).toEqual({ success: false, error: "boom" });
+  });
+
+  // ---- §11.4-D: rev normalization (inert; read-only carry-through) ----------
+
+  it("normalizeNote carries a numeric rev when the daemon returns one", () => {
+    const note = normalizeNote({ id: "note-1", title: "T", rev: 7 }, "ws-1");
+    expect(note.rev).toBe(7);
+  });
+
+  it("normalizeNote leaves rev undefined when the daemon omits it", () => {
+    const note = normalizeNote({ id: "note-1", title: "T" }, "ws-1");
+    expect(note.rev).toBeUndefined();
+  });
+
+  it("normalizeNote ignores a non-numeric rev (preserves last-writer-wins)", () => {
+    const note = normalizeNote({ id: "note-1", title: "T", rev: "9" }, "ws-1");
+    expect(note.rev).toBeUndefined();
+  });
+
+  // ---- §11.4-D: expectedVersion forwarding (only when defined) --------------
+
+  it("setContent forwards expectedVersion when provided", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    await client.setContent("note-1", "hello", 4);
+    expect(mockedRequest).toHaveBeenCalledWith("note.setContent", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      content: "hello",
+      expectedVersion: 4,
+    });
+  });
+
+  it("setContent omits expectedVersion when undefined (unchanged behavior)", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    await client.setContent("note-1", "hello");
+    const params = mockedRequest.mock.calls[0][1] as Record<string, unknown>;
+    expect("expectedVersion" in params).toBe(false);
+  });
+
+  it("updateMetadata forwards expectedVersion when provided", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    await client.updateMetadata("note-1", { title: "New" }, 2);
+    expect(mockedRequest).toHaveBeenCalledWith("note.updateMetadata", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      title: "New",
+      expectedVersion: 2,
+    });
+  });
+
+  it("delete forwards expectedVersion when provided", async () => {
+    mockedRequest.mockResolvedValueOnce({ id: "note-1" });
+    const client = new LiveNotesClient();
+
+    await client.delete("note-1", 5);
+    expect(mockedRequest).toHaveBeenCalledWith("note.delete", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      expectedVersion: 5,
+    });
+  });
+
+  // ---- §11.4-D: optimistic-concurrency conflict mapping --------------------
+  // A simulated daemon conflict (-32005 + data.code "conflict") must surface a
+  // structured conflict outcome carrying the NORMALIZED authoritative note —
+  // NOT collapse into the generic error string.
+
+  function rejectWith(extra: Record<string, unknown>, message = "conflict"): void {
+    mockedRequest.mockRejectedValueOnce(Object.assign(new Error(message), extra));
+  }
+
+  it("maps a -32005 conflict to a structured outcome with the normalized current note", async () => {
+    rejectWith({
+      rpcCode: -32005,
+      data: { code: "conflict", current: { id: "note-1", title: "Server", content: "srv", rev: 7 } },
+    });
+    const client = new LiveNotesClient();
+
+    const result = await client.setContent("note-1", "mine", 3);
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("conflict");
+    expect(result.conflict?.current).toMatchObject({
+      id: "note-1",
+      title: "Server",
+      content: "srv",
+      rev: 7,
+      workspaceId: "ws-1",
+    });
+  });
+
+  it("maps a -32005 conflict on updateMetadata to a structured outcome with the normalized current note", async () => {
+    rejectWith({
+      rpcCode: -32005,
+      data: { code: "conflict", current: { id: "note-1", title: "Server", rev: 6 } },
+    });
+    const client = new LiveNotesClient();
+
+    const result = await client.updateMetadata("note-1", { title: "Mine" }, 2);
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("conflict");
+    expect(result.conflict?.current).toMatchObject({
+      id: "note-1",
+      title: "Server",
+      rev: 6,
+      workspaceId: "ws-1",
+    });
+  });
+
+  it("maps a -32005 conflict on delete to a structured outcome with the normalized current note", async () => {
+    rejectWith({
+      rpcCode: -32005,
+      data: { code: "conflict", current: { id: "note-1", title: "Server", rev: 11 } },
+    });
+    const client = new LiveNotesClient();
+
+    const result = await client.delete("note-1", 5);
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("conflict");
+    expect(result.conflict?.current).toMatchObject({
+      id: "note-1",
+      title: "Server",
+      rev: 11,
+      workspaceId: "ws-1",
+    });
+  });
+
+  it("does NOT set conflict for a generic (non -32005) daemon error", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("boom"));
+    const client = new LiveNotesClient();
+
+    const result = await client.setContent("note-1", "mine", 3);
+    expect(result).toEqual({ success: false, error: "boom" });
+  });
+
+  it("does NOT set conflict when -32005 lacks data.code 'conflict'", async () => {
+    rejectWith({ rpcCode: -32005, data: { code: "SERVER_ERROR" } }, "server error");
+    const client = new LiveNotesClient();
+
+    const result = await client.updateMetadata("note-1", { title: "X" }, 1);
+    expect(result.success).toBe(false);
+    expect(result.conflict).toBeUndefined();
+  });
+
+  // ---- §5.2 version history: listVersions + restoreVersion ---------------
+
+  it("listVersions calls note.listVersions then batches note.getVersion per entry (FE-shape)", async () => {
+    // First call → summaries; the client then batches getVersion for each `v`.
+    mockedRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+      if (method === "note.listVersions") {
+        return [
+          { type: "snapshot", v: 1, date: "2026-01-01T00:00:00.000Z", author: { id: "u", name: "U", type: "user" }, title: "T1", contentLength: 4 },
+          { type: "snapshot", v: 2, date: "2026-01-02T00:00:00.000Z", author: { id: "a", name: "A", type: "agent" }, title: "T2", contentLength: 6 },
+        ];
+      }
+      if (method === "note.getVersion") {
+        const v = (params.v as number);
+        return { type: "snapshot", v, date: `2026-01-0${v}T00:00:00.000Z`, author: { id: "x", name: "X", type: v === 1 ? "user" : "agent" }, title: `T${v}`, content: v === 1 ? "body" : "body-2" };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+    const client = new LiveNotesClient();
+
+    const versions = await client.listVersions("ws-1", "note-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("note.listVersions", { workspaceId: "ws-1", noteId: "note-1" });
+    expect(mockedRequest).toHaveBeenCalledWith("note.getVersion", { workspaceId: "ws-1", noteId: "note-1", v: 1 });
+    expect(mockedRequest).toHaveBeenCalledWith("note.getVersion", { workspaceId: "ws-1", noteId: "note-1", v: 2 });
+    expect(versions).toEqual([
+      { versionId: "1", versionNumber: 1, content: "body", title: "T1", author: { id: "x", name: "X", type: "user" }, createdAt: "2026-01-01T00:00:00.000Z" },
+      { versionId: "2", versionNumber: 2, content: "body-2", title: "T2", author: { id: "x", name: "X", type: "agent" }, createdAt: "2026-01-02T00:00:00.000Z" },
+    ]);
+  });
+
+  it("listVersions returns [] when the daemon reports no versions", async () => {
+    mockedRequest.mockResolvedValueOnce([]);
+    const client = new LiveNotesClient();
+
+    const versions = await client.listVersions("ws-1", "note-1");
+    expect(versions).toEqual([]);
+    expect(mockedRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("listVersions drops a per-version getVersion failure but keeps the rest", async () => {
+    mockedRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+      if (method === "note.listVersions") {
+        return [
+          { type: "snapshot", v: 1, date: "2026-01-01T00:00:00.000Z", author: { id: "u", name: "U", type: "user" }, title: "T1", contentLength: 1 },
+          { type: "snapshot", v: 2, date: "2026-01-02T00:00:00.000Z", author: { id: "u", name: "U", type: "user" }, title: "T2", contentLength: 1 },
+        ];
+      }
+      if ((params.v as number) === 1) throw new Error("boom");
+      return { type: "snapshot", v: 2, date: "2026-01-02T00:00:00.000Z", author: { id: "u", name: "U", type: "user" }, title: "T2", content: "b" };
+    });
+    const client = new LiveNotesClient();
+
+    const versions = await client.listVersions("ws-1", "note-1");
+    expect(versions.map((v) => v.versionNumber)).toEqual([2]);
+  });
+
+  it("restoreVersion forwards note.restoreVersion with numeric v and returns the normalized note", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      ok: true,
+      noteId: "note-1",
+      restoredFrom: 2,
+      v: 5,
+      note: { id: "note-1", workspaceId: "ws-1", title: "T", content: "restored", rev: 5 },
+    });
+    const client = new LiveNotesClient();
+
+    const result = await client.restoreVersion("ws-1", "note-1", "2");
+
+    expect(mockedRequest).toHaveBeenCalledWith("note.restoreVersion", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+      v: 2,
+    });
+    expect(result.success).toBe(true);
+    expect(result.note?.content).toBe("restored");
+    expect(result.note?.workspaceId).toBe("ws-1");
+    expect(result.note?.rev).toBe(5);
+  });
+
+  it("restoreVersion rejects a non-numeric versionId without a wire call", async () => {
+    const client = new LiveNotesClient();
+
+    const result = await client.restoreVersion("ws-1", "note-1", "not-a-number");
+    expect(result.success).toBe(false);
+    expect(mockedRequest).not.toHaveBeenCalled();
+  });
+
+  it("restoreVersion folds a daemon error into a failed result without throwing", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("nope"));
+    const client = new LiveNotesClient();
+
+    const result = await client.restoreVersion("ws-1", "note-1", "3");
+    expect(result).toEqual({ success: false, error: "nope" });
+  });
+
+  // ---- Line attribution (PROTOCOL §5.2.1) -------------------------------
+  // `note.lineAttribution.load` returns the bare `LineAttributionData | null`
+  // payload; the client passes `workspaceId` + `noteId` through directly
+  // (no `resolveNoteWorkspaceId`, the gutter carries the workspaceId as a prop).
+
+  it("lineAttribution.load forwards note.lineAttribution.load and returns the payload", async () => {
+    const payload = {
+      noteId: "note-1",
+      workspaceId: "ws-1",
+      computedAt: "2026-07-05T12:34:56.000Z",
+      attributions: {
+        "1": {
+          timestamp: 1720193696000,
+          author: { id: "system", name: "intentd", type: "system" as const },
+        },
+      },
+    };
+    mockedRequest.mockResolvedValueOnce(payload);
+    const client = new LiveNotesClient();
+
+    const result = await client.lineAttribution.load("ws-1", "note-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("note.lineAttribution.load", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+    });
+    expect(result).toEqual(payload);
+  });
+
+  it("lineAttribution.load returns null when the daemon has no attributions yet", async () => {
+    mockedRequest.mockResolvedValueOnce(null);
+    const client = new LiveNotesClient();
+
+    expect(await client.lineAttribution.load("ws-1", "note-1")).toBeNull();
+  });
+
+  it("lineAttribution.computeNow forwards note.lineAttribution.computeNow and returns { ok }", async () => {
+    mockedRequest.mockResolvedValueOnce({ ok: true });
+    const client = new LiveNotesClient();
+
+    const result = await client.lineAttribution.computeNow("ws-1", "note-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("note.lineAttribution.computeNow", {
+      workspaceId: "ws-1",
+      noteId: "note-1",
+    });
+    expect(result).toEqual({ ok: true });
+  });
+});

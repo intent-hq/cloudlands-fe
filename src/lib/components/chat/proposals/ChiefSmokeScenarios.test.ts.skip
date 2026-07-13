@@ -1,0 +1,531 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { derived, readable } from 'svelte/store';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Proposal, ProposalActionDetail } from '$shared/types/proposal';
+import type { Workspace } from '$shared/types';
+import { WorkspaceStatusEnum } from '$shared/types';
+import { initSvelteDeps } from '$lib/store/utils/create-selector';
+import { applyWorkspaceProposal } from '$lib/store/slices/workspace-operations/workspace-operations-slice';
+import type { ChiefThreadSummary } from '$lib/store/slices/sidebar-nav/sidebar-nav-types';
+
+const mocks = vi.hoisted(() => {
+  const dispatch = vi.fn();
+  const goto = vi.fn(() => Promise.resolve());
+  const launchAgentRequested = vi.fn();
+  let chiefPreview: { title: string; preview: string; isActive: boolean } | null = null;
+  let chiefThreads: ChiefThreadSummary[] = [];
+  let activeAgentId: string | null = null;
+  let panelWidth = 480;
+  let launchPromise: Promise<{ id: string }> = Promise.resolve({ id: 'agent-chief' });
+  const readable = <T>(value: T) => ({
+    subscribe(run: (value: T) => void) {
+      run(value);
+      return () => {};
+    },
+  });
+  return {
+    dispatch,
+    goto,
+    launchAgentRequested,
+    readable,
+    get chiefPreview() {
+      return chiefPreview;
+    },
+    set chiefPreview(value: { title: string; preview: string; isActive: boolean } | null) {
+      chiefPreview = value;
+    },
+    get chiefThreads() {
+      return chiefThreads;
+    },
+    set chiefThreads(value: ChiefThreadSummary[]) {
+      chiefThreads = value;
+    },
+    get activeAgentId() {
+      return activeAgentId;
+    },
+    set activeAgentId(value: string | null) {
+      activeAgentId = value;
+    },
+    get panelWidth() {
+      return panelWidth;
+    },
+    set panelWidth(value: number) {
+      panelWidth = value;
+    },
+    get launchPromise() {
+      return launchPromise;
+    },
+    set launchPromise(value: Promise<{ id: string }>) {
+      launchPromise = value;
+    },
+  };
+});
+
+vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/') } }));
+
+vi.mock('$lib/store/redux-dispatch-bridge', () => ({
+  getReduxStore: () => ({
+    dispatch: mocks.dispatch,
+    getState: () => ({
+      storeUtility: { updatesLocked: false },
+      uiHighlight: { activeById: {}, durationMsById: {} },
+      settingsProposalHistory: { entries: {} },
+      proposalLifecycle: {},
+    }),
+    subscribe: () => () => {},
+  }),
+}));
+
+vi.mock('$lib/electron-bridge', () => ({ invoke: vi.fn() }));
+vi.mock('svelte-sonner', () => ({ toast: { error: vi.fn() } }));
+vi.mock('svelte-fa', async () => ({
+  default: (await import('../../workspace/sidebar/__tests__/mocks/Fa.svelte')).default,
+}));
+
+vi.mock('$lib/components/chat/ChatPanel.svelte', async () => ({
+  default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
+}));
+vi.mock('$lib/components/ui/tooltip', async () => ({
+  Tooltip: (await import('../../workspace/sidebar/__tests__/mocks/MockTooltip.svelte')).default,
+}));
+vi.mock('$lib/components/ui/tooltip/Tooltip.svelte', async () => ({
+  default: (await import('../../workspace/sidebar/__tests__/mocks/MockTooltip.svelte')).default,
+}));
+vi.mock('$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+  default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
+}));
+vi.mock('$lib/components/workspace/initializer/RepoAndBranchPicker.svelte', async () => ({
+  default: (await import('../../workspace/sidebar/__tests__/mocks/MockRepoAndBranchPicker.svelte'))
+    .default,
+}));
+vi.mock('$lib/components/chat/SpecialistDropdown.svelte', async () => ({
+  default: (await import('../../workspace/sidebar/__tests__/mocks/MockSpecialistDropdown.svelte'))
+    .default,
+}));
+vi.mock('$lib/components/workspace/WorkspacePhaseIndicator.svelte', async () => ({
+  default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
+}));
+vi.mock('$lib/components/workspace/WorkspaceHoverCard.svelte', async () => ({
+  default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
+}));
+vi.mock('$lib/components/ui/RelativeTime.svelte', async () => ({
+  default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
+}));
+vi.mock('$lib/components/ui/sidebar-context-menu/SidebarContextMenu.svelte', async () => ({
+  default: (await import('../../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
+}));
+
+vi.mock('$lib/store/slices/sidebar-nav/sidebar-nav-slice', () => ({
+  openPanel: vi.fn((item: string) => ({ type: 'sidebarNav/openPanel', payload: [item] })),
+  closePanel: vi.fn(() => ({ type: 'sidebarNav/closePanel' })),
+  toggleCardPinned: vi.fn(() => ({ type: 'sidebarNav/toggleCardPinned' })),
+  setChiefActiveAgentId: vi.fn((agentId: string | null) => ({
+    type: 'sidebarNav/setChiefActiveAgentId',
+    payload: [agentId],
+  })),
+  incrementContextMenuOpen: vi.fn(() => ({ type: 'sidebarNav/incrementContextMenuOpen' })),
+  decrementContextMenuOpen: vi.fn(() => ({ type: 'sidebarNav/decrementContextMenuOpen' })),
+}));
+vi.mock('$lib/store/slices/sidebar-nav/sidebar-nav-selectors', () => ({
+  selectChiefActiveAgentId: vi.fn(() => mocks.readable(mocks.activeAgentId)),
+  selectChiefThreadPreview: vi.fn(() => mocks.readable(mocks.chiefPreview)),
+  selectChiefThreads: vi.fn(() => mocks.readable(mocks.chiefThreads)),
+  selectPanelWidth: vi.fn(() => mocks.readable(mocks.panelWidth)),
+  selectIsCardPinned: vi.fn(() => mocks.readable(false)),
+}));
+vi.mock('$lib/store/slices/workspace/workspace-slice', () => ({
+  setWorkspaceEntity: vi.fn((workspace: Workspace) => ({
+    type: 'workspace/setWorkspaceEntity',
+    payload: [workspace],
+  })),
+}));
+vi.mock('$lib/store/slices/workspace-lifecycle/workspace-lifecycle-slice', () => ({
+  workspaceMounted: vi.fn((workspaceId: string) => ({
+    type: 'workspace/mounted',
+    payload: [workspaceId],
+  })),
+  workspaceUnmounted: vi.fn((workspaceId: string) => ({
+    type: 'workspace/unmounted',
+    payload: [workspaceId],
+  })),
+}));
+vi.mock('$lib/store/slices/agent-session/agent-session-slice', () => ({
+  agentSessionLaunchAgentRequested: mocks.launchAgentRequested.mockImplementation(() =>
+    Object.assign({ type: 'agentSession/launchAgentRequested' }, { promise: mocks.launchPromise }),
+  ),
+}));
+vi.mock('$lib/store/slices/workspace/workspace-selectors', () => ({
+  selectWorkspaceActivePullRequest: { select: vi.fn(() => null) },
+}));
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-selectors', () => ({
+  selectAllWorkspaceAgents: Object.assign(
+    vi.fn(() => mocks.readable([])),
+    {
+      select: vi.fn(() => []),
+    },
+  ),
+}));
+vi.mock('$lib/store/slices/workspace-agents/workspace-agents-slice', () => ({
+  deleteAgentWithUndoRequested: vi.fn((wsId: string, agentId: string, title: string) => ({
+    type: 'workspaceAgents/deleteAgentWithUndoRequested',
+    payload: [wsId, agentId, title],
+  })),
+  setActiveAgentId: vi.fn((wsId: string, agentId: string | null) => ({
+    type: 'workspaceAgents/setActiveAgentId',
+    payload: [wsId, agentId],
+  })),
+}));
+vi.mock('$lib/store/slices/specialists/specialists-selectors', () => ({
+  selectSpecialists: Object.assign(
+    vi.fn(() => mocks.readable([])),
+    { select: vi.fn(() => []) },
+  ),
+  selectEffectiveBehaviorPrompt: Object.assign(
+    vi.fn(() => ''),
+    { select: vi.fn(() => '') },
+  ),
+}));
+vi.mock('$lib/store/slices/agent-session/agent-session-selectors', () => ({
+  selectAgentIsResponding: { select: vi.fn(() => false) },
+  selectAgentIsWaiting: { select: vi.fn(() => false) },
+  selectAgentSession: { select: vi.fn(() => null) },
+}));
+
+const workspace = (id: string, title: string, status = WorkspaceStatusEnum.Active): Workspace => ({
+  id,
+  title,
+  branch: 'main',
+  changesets: [],
+  timeline: [],
+  conversationInfo: [],
+  status,
+  createdAt: '2026-05-15T00:00:00.000Z',
+  updatedAt: '2026-05-15T00:00:00.000Z',
+  lastActivity: '2026-05-15T00:00:00.000Z',
+  repositoryOwner: 'augment',
+  repositoryName: 'intent',
+});
+
+describe('Chief of Staff smoke scenarios', () => {
+  beforeEach(() => {
+    initSvelteDeps({
+      readable,
+      derived,
+      getStoreContext: () => undefined,
+      isLifecycleOutsideComponentError: () => false,
+      createStoreStateReadable: (store) =>
+        readable(store.getState(), (set) => store.subscribe(() => set(store.getState()))),
+      createThrottledReadable: (source) => source,
+    });
+    mocks.dispatch.mockClear();
+    mocks.goto.mockClear();
+    mocks.launchAgentRequested.mockClear();
+    mocks.chiefPreview = null;
+    mocks.chiefThreads = [];
+    mocks.activeAgentId = null;
+    mocks.panelWidth = 480;
+    mocks.launchPromise = Promise.resolve({ id: 'agent-chief' });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+  });
+
+  it('opens the Chief sidebar and renders workspace cards for a list-my-workspaces response', async () => {
+    mocks.chiefPreview = {
+      title: 'Review PR #651 cleanup',
+      preview: 'This will delete the workspace for the PR review.',
+      isActive: false,
+    };
+    const ChiefCard = (await import('../../layout/sidebar-nav/cards/ChiefCard.svelte')).default;
+    const WorkspaceCard = (await import('../../workspace/WorkspaceCard.svelte')).default;
+
+    const { container } = render(ChiefCard, { props: { expanded: false } });
+    await tick();
+    mocks.dispatch.mockClear();
+
+    expect(screen.getByText('Review PR #651 cleanup')).toBeTruthy();
+    expect(screen.getByText('This will delete the workspace for the PR review.')).toBeTruthy();
+    expect(screen.queryByText('Open Chief')).toBeNull();
+    expect(container.querySelector('[data-icon="wand-magic-sparkles"]')).toBeNull();
+
+    const openChiefButton = screen.getByRole('button', { name: 'Open Chief' });
+    expect(openChiefButton).toBeTruthy();
+    await fireEvent.click(openChiefButton);
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'sidebarNav/openPanel',
+      payload: ['chief'],
+    });
+
+    render(WorkspaceCard, {
+      props: { workspace: workspace('ws-1', 'Archive Cleanup'), suppressHover: true },
+    });
+    render(WorkspaceCard, {
+      props: { workspace: workspace('ws-2', 'Settings Polish'), suppressHover: true },
+    });
+
+    expect(screen.getByText('Archive Cleanup')).toBeTruthy();
+    expect(screen.getByText('Settings Polish')).toBeTruthy();
+  });
+
+  it('uses the active Chief thread for the collapsed hover preview', async () => {
+    mocks.chiefPreview = {
+      title: 'New thread May 26th',
+      preview: 'No messages yet.',
+      isActive: false,
+    };
+    mocks.activeAgentId = 'agent-current';
+    mocks.chiefThreads = [
+      {
+        agentId: 'agent-empty',
+        title: 'New thread May 26th',
+        preview: 'No messages yet.',
+        updatedAt: '2026-05-26T15:00:00.000Z',
+        messageCount: 0,
+        isActive: false,
+      },
+      {
+        agentId: 'agent-current',
+        title: 'Archive watcher cleanup',
+        preview: 'This will delete the workspace for the PR review.',
+        updatedAt: '2026-05-26T14:00:00.000Z',
+        messageCount: 2,
+        isActive: false,
+      },
+    ];
+    const ChiefCard = (await import('../../layout/sidebar-nav/cards/ChiefCard.svelte')).default;
+
+    render(ChiefCard, { props: { expanded: false } });
+    await tick();
+
+    expect(screen.getByText('Archive watcher cleanup')).toBeTruthy();
+    expect(screen.getByText('This will delete the workspace for the PR review.')).toBeTruthy();
+    expect(screen.queryByText('New thread May 26th')).toBeNull();
+  });
+
+  it('skips empty newer Chief threads after refresh when choosing the collapsed hover preview', async () => {
+    mocks.chiefThreads = [
+      {
+        agentId: 'agent-empty',
+        title: 'New thread May 26th',
+        preview: 'No messages yet.',
+        updatedAt: '2026-05-26T15:00:00.000Z',
+        messageCount: 0,
+        isActive: false,
+      },
+      {
+        agentId: 'agent-risk-audit',
+        title: 'Audit my active workspaces and open PRs for risk',
+        preview: 'I have a snapshot of 63 active workspaces.',
+        updatedAt: '2026-05-26T14:00:00.000Z',
+        messageCount: 2,
+        isActive: true,
+      },
+    ];
+    const ChiefCard = (await import('../../layout/sidebar-nav/cards/ChiefCard.svelte')).default;
+
+    render(ChiefCard, { props: { expanded: false } });
+    await tick();
+
+    expect(screen.getByText('Audit my active workspaces and open PRs for risk')).toBeTruthy();
+    expect(screen.getByText('I have a snapshot of 63 active workspaces.')).toBeTruthy();
+    expect(screen.queryByText('New thread May 26th')).toBeNull();
+  });
+
+  it('lets a persisted Chief thread id win over refresh fallback heuristics', async () => {
+    mocks.activeAgentId = 'agent-empty';
+    mocks.chiefThreads = [
+      {
+        agentId: 'agent-empty',
+        title: 'New thread May 26th',
+        preview: 'No messages yet.',
+        updatedAt: '2026-05-26T15:00:00.000Z',
+        messageCount: 0,
+        isActive: false,
+      },
+      {
+        agentId: 'agent-risk-audit',
+        title: 'Audit my active workspaces and open PRs for risk',
+        preview: 'I have a snapshot of 63 active workspaces.',
+        updatedAt: '2026-05-26T14:00:00.000Z',
+        messageCount: 2,
+        isActive: true,
+      },
+    ];
+    const ChiefCard = (await import('../../layout/sidebar-nav/cards/ChiefCard.svelte')).default;
+
+    render(ChiefCard, { props: { expanded: false } });
+    await tick();
+
+    expect(screen.getByText('New thread May 26th')).toBeTruthy();
+    expect(screen.getByText('No messages yet.')).toBeTruthy();
+    expect(screen.queryByText('Audit my active workspaces and open PRs for risk')).toBeNull();
+  });
+
+  it('auto-starts one Chief thread only when the expanded panel opens empty', async () => {
+    let resolveLaunch: (value: { id: string }) => void = () => {};
+    mocks.launchPromise = new Promise((resolve) => {
+      resolveLaunch = resolve;
+    });
+    const ChiefCard = (await import('../../layout/sidebar-nav/cards/ChiefCard.svelte')).default;
+
+    const { rerender } = render(ChiefCard, { props: { expanded: false } });
+    await tick();
+    expect(mocks.launchAgentRequested).not.toHaveBeenCalled();
+
+    await rerender({ expanded: true });
+    await waitFor(() => expect(mocks.launchAgentRequested).toHaveBeenCalledTimes(1));
+    const dispatchedTypes = mocks.dispatch.mock.calls.map(([action]) => action.type);
+    const workspaceSetIndex = dispatchedTypes.indexOf('workspace/setWorkspaceEntity');
+    const workspaceMountedIndex = dispatchedTypes.indexOf('workspace/mounted');
+    const launchIndex = dispatchedTypes.indexOf('agentSession/launchAgentRequested');
+    expect(workspaceSetIndex).toBeGreaterThanOrEqual(0);
+    expect(workspaceMountedIndex).toBeGreaterThan(workspaceSetIndex);
+    expect(launchIndex).toBeGreaterThan(workspaceMountedIndex);
+    expect(screen.getByRole('button', { name: 'New Chief thread' }).hasAttribute('disabled')).toBe(
+      true,
+    );
+
+    await rerender({ expanded: false });
+    await rerender({ expanded: true });
+    await tick();
+    expect(mocks.launchAgentRequested).toHaveBeenCalledTimes(1);
+
+    resolveLaunch({ id: 'agent-chief' });
+  });
+
+  it('does not auto-start when the expanded Chief panel already has threads', async () => {
+    mocks.chiefThreads = [
+      {
+        agentId: 'agent-existing',
+        title: 'Existing Chief thread',
+        preview: 'No messages yet.',
+        updatedAt: '2026-05-15T00:00:00.000Z',
+        messageCount: 0,
+        isActive: false,
+      },
+    ];
+    const ChiefCard = (await import('../../layout/sidebar-nav/cards/ChiefCard.svelte')).default;
+
+    render(ChiefCard, { props: { expanded: true } });
+    await tick();
+
+    expect(mocks.launchAgentRequested).not.toHaveBeenCalled();
+    expect(screen.getByText('Chief of Staff')).toBeTruthy();
+    expect(screen.queryByText('Existing Chief thread')).toBeNull();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Chief thread history' }));
+    expect(screen.getByText('Existing Chief thread')).toBeTruthy();
+  });
+
+  it('applies a create-workspace ProposalCard with the proposed repository params', async () => {
+    const ProposalCard = (await import('./ProposalCard.svelte')).default;
+    const proposal: Proposal = {
+      kind: 'workspace-create',
+      payload: {
+        operation: 'workspace.create',
+        params: { repositoryPath: '/repo/x' },
+      },
+      preview: {
+        title: 'Create workspace for repo X',
+        workspaceCreate: {
+          repoPath: '/repo/x',
+          repoType: 'local',
+          branch: 'main',
+          specialist: null,
+        },
+      },
+      applyToolCallId: 'tool-create-workspace',
+    };
+
+    render(ProposalCard, {
+      props: {
+        proposal,
+        onApply: (detail: ProposalActionDetail) => mocks.dispatch(applyWorkspaceProposal(detail)),
+      },
+    });
+
+    expect(screen.getByText('Repo')).toBeTruthy();
+    expect(screen.getByText('Base branch')).toBeTruthy();
+    expect(screen.getByText('Specialist')).toBeTruthy();
+    expect(screen.getByTestId('proposal-repo-picker')).toBeTruthy();
+    expect(screen.getByTestId('proposal-branch-picker')).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: /Create workspace/ }));
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'workspaceOperations/applyWorkspaceProposal',
+        payload: [
+          expect.objectContaining({
+            proposal: expect.objectContaining({ kind: 'workspace-create' }),
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('applies a Sonnet default-model settings ProposalCard through the lifecycle action', async () => {
+    const ProposalCard = (await import('./ProposalCard.svelte')).default;
+    const { applySettingsProposal } = await import('./settings-proposal-actions');
+    const proposal: Proposal = {
+      kind: 'settings-change',
+      payload: { changes: [{ path: 'backgroundAgents.defaultModel', value: 'claude-3-5-sonnet' }] },
+      preview: {
+        title: 'Change default model to Sonnet',
+        fields: [
+          {
+            key: 'backgroundAgents.defaultModel',
+            label: 'Default model',
+            before: '',
+            after: 'claude-3-5-sonnet',
+          },
+        ],
+      },
+    };
+
+    render(ProposalCard, { props: { proposal, onApply: applySettingsProposal } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'proposalLifecycle/applyProposalRequested',
+          payload: [
+            expect.objectContaining({
+              kind: 'settings-change',
+              detail: {
+                proposal,
+                editedFields: {},
+                selectedBulkItemIds: [],
+              },
+            }),
+          ],
+        }),
+      ),
+    );
+  });
+
+  it('navigates and requests a highlight when a Chief NavLink is clicked', async () => {
+    const NavLink = (await import('../NavLink.svelte')).default;
+
+    render(NavLink, {
+      props: { target: '/settings#backgroundAgents.defaultModel', label: 'Open Sonnet setting' },
+    });
+
+    await fireEvent.click(screen.getByRole('link', { name: /Open Sonnet setting/ }));
+
+    expect(mocks.goto).toHaveBeenCalledWith('/settings#backgroundAgents.defaultModel');
+    await waitFor(() =>
+      expect(mocks.dispatch).toHaveBeenCalledWith({
+        type: 'uiHighlight/requestUiHighlight',
+        payload: ['backgroundAgents.defaultModel'],
+      }),
+    );
+  });
+});

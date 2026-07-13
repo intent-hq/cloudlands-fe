@@ -1,0 +1,78 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "strict": true,
+    "verbatimModuleSyntax": false,
+    "moduleResolution": "bundler",
+    "module": "esnext",
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["vite/client", "svelte", "node", "vitest/globals"],
+    "baseUrl": ".",
+    "paths": {
+      "$lib": ["./src/lib"],
+      "$lib/*": ["./src/lib/*"],
+      "$store": ["./src/store"],
+      "$store/*": ["./src/store/*"],
+      "$app": ["./src/app"],
+      "$app/*": ["./src/app/*"],
+      "$features": ["./src/features"],
+      "$features/*": ["./src/features/*"],
+      "$shared": ["./src/shared"],
+      "$shared/*": ["./src/shared/*"],
+      "@augmentcode/ag-redux-toolkit/types": ["./src/lib/store-shim/types"],
+      "@augmentcode/ag-redux-toolkit/svelte-store": ["./src/lib/store-shim/svelte-store"],
+      "@augmentcode/ag-redux-toolkit/utils/store/create-action": [
+        "./src/lib/store-shim/utils/store/create-action"
+      ],
+      "@augmentcode/ag-redux-toolkit/utils/store/create-reducer": [
+        "./src/lib/store-shim/utils/store/create-reducer"
+      ],
+      "@augmentcode/ag-redux-toolkit/utils/store/boolean-preference": [
+        "./src/lib/store-shim/utils/store/boolean-preference"
+      ],
+      "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils": [
+        "./src/lib/store-shim/utils/collections/collection-utils"
+      ],
+      "ag-redux-toolkit/types": ["./src/lib/store-shim/types"],
+      "ag-redux-toolkit/svelte-store": ["./src/lib/store-shim/svelte-store"],
+      "ag-redux-toolkit/utils/store/create-action": [
+        "./src/lib/store-shim/utils/store/create-action"
+      ],
+      "ag-redux-toolkit/utils/store/create-reducer": [
+        "./src/lib/store-shim/utils/store/create-reducer"
+      ],
+      "ag-redux-toolkit/utils/store/boolean-preference": [
+        "./src/lib/store-shim/utils/store/boolean-preference"
+      ],
+      "ag-redux-toolkit/utils/collections/collection-utils": [
+        "./src/lib/store-shim/utils/collections/collection-utils"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.d.ts",
+    "src/**/*.ts",
+    "src/**/*.js",
+    "src/**/*.svelte",
+    ".svelte-kit/ambient.d.ts",
+    ".svelte-kit/non-ambient.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "dist-electron",
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/lib/types/**/*.js",
+    "src/features/agent/testing/**/*",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
+}

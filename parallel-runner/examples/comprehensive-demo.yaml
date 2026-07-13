@@ -1,0 +1,135 @@
+# Comprehensive Demo Configuration
+# Demonstrates all features of the Parallel Agent Runner
+
+title: "Comprehensive Feature Demo"
+description: |
+  This configuration demonstrates all available features including:
+  - Multiple execution waves
+  - Complex dependencies
+  - Custom prompts
+  - Variable substitution
+  - Templates
+  - Configuration options
+
+# Custom variables for substitution
+variables:
+  workspace: "experimental/amelia/workspaces"
+  target_dir: "src"
+  max_errors: 100
+
+# Use templates for common patterns
+templates:
+  - "typescript-fixes"
+
+# Package definitions with dependencies
+packages:
+  # Wave 1: Independent tasks
+  - id: "analyze"
+    name: "Analyze Codebase"
+    description: |
+      Analyze the {workspace} directory to understand:
+      - Current TypeScript error count
+      - Test coverage
+      - Code structure
+
+  - id: "setup"
+    name: "Setup Environment"
+    description: |
+      Prepare the environment:
+      - Verify dependencies
+      - Check build tools
+      - Create backup
+
+  # Wave 2: Dependent on Wave 1
+  - id: "fix-types"
+    name: "Fix Type Errors"
+    description: |
+      Fix TypeScript errors in {target_dir}:
+      - Type definitions
+      - Import statements
+      - Type casting issues
+    dependencies: ["analyze"]
+
+  - id: "fix-tests"
+    name: "Fix Test Failures"
+    description: |
+      Fix failing tests:
+      - Update test fixtures
+      - Fix mock data
+      - Resolve test type errors
+    dependencies: ["analyze", "setup"]
+
+  # Wave 3: Dependent on Wave 2
+  - id: "optimize"
+    name: "Optimize Code"
+    description: |
+      Optimize the fixed code:
+      - Remove unused imports
+      - Simplify type definitions
+      - Improve performance
+    dependencies: ["fix-types"]
+
+  - id: "document"
+    name: "Update Documentation"
+    description: |
+      Update documentation:
+      - Add type documentation
+      - Update examples
+      - Generate API docs
+    dependencies: ["fix-types", "fix-tests"]
+
+  # Wave 4: Final validation
+  - id: "validate"
+    name: "Final Validation"
+    description: |
+      Validate all changes:
+      - Run full TypeScript check
+      - Execute all tests
+      - Generate report
+    dependencies: ["optimize", "document"]
+
+# Custom prompts for all packages
+prompts:
+  - name: "context"
+    template: |
+      You are working on the {title} project.
+      Current package: {package_name}
+
+      IMPORTANT RULES:
+      1. Work only in {workspace} directory
+      2. Maximum {max_errors} errors to fix per run
+      3. Document all changes
+
+  - name: "work"
+    template: |
+      Execute the following task:
+      {package_description}
+
+      Steps:
+      1. Analyze the current state
+      2. Plan your approach
+      3. Make necessary changes
+      4. Verify your work
+
+  - name: "verify"
+    template: |
+      Verification checklist:
+      - [ ] Changes are working correctly
+      - [ ] No new errors introduced
+      - [ ] Tests are passing
+      - [ ] Documentation updated
+
+# Configuration options
+config:
+  maxParallel: 3          # Run up to 3 agents simultaneously
+  timeoutMinutes: 45      # 45 minutes per agent
+  autoRetry: true         # Retry failed agents
+  retryAttempts: 2        # Try twice before giving up
+  continueOnError: false  # Stop on first failure
+  runTests: true          # Run tests during consolidation
+
+# Model configuration
+model: "opus4.1"
+
+# Enable consolidation phase
+consolidation: true

@@ -1,0 +1,107 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+dist
+dist-electron
+.svelte-kit
+
+# Include build resources (icons, entitlements) - override parent gitignore
+!build/
+build/ios/
+
+# Generated icon files in build/ (regenerated from src/assets/icons/)
+# Source of truth for icons is src/assets/icons/
+# Keep entitlements.mac.plist in build/ (not generated)
+build/icon.png
+build/icon-*.png
+build/icon.svg
+build/icon-dev.svg
+build/icon.icns
+build/icon.ico
+build/icon.iconset/
+
+# Exception: Include CDP MCP server build output
+!cdp-mcp-server/dist/
+!cdp-mcp-server/dist/*.cjs
+!cdp-mcp-server/dist/*.js
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Build-time generated config (contains secrets baked from .env)
+# See scripts/generate-build-config.cjs for how this works
+src/main/build-config.generated.ts
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+
+# Logs
+*.log
+log.txt
+log-*.txt
+logs*.txt
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Electron
+out
+
+# Testing
+coverage
+test-results
+test-reports
+playwright-report
+test-harness-report.json
+
+# Temporary files
+*.tmp
+*.temp
+.cache
+
+# Debug files
+*.tsbuildinfo
+
+# Agent workspace notes
+.workspace-notes/
+.workspace-notes.backup/
+
+# Prevent literal ~ directory (path expansion bug)
+~/
+
+# Augment folder (created by auggie)
+.augment/
+
+# Workspace data directories (should be in ~/.workspaces, not in repo)
+.workspaces/
+# UUID-based workspace directories
+[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]/
+# Simpler pattern for UUID directories
+*-*-*-*-*/
+!.agents/skills/ag-redux-toolkit/
+trace.json
+
+native/IntentDynamicIsland/.build
+gcp-creds.json
+
+
+# E2E test reports (screenshots, traces, etc.)
+e2e-reports/
+
+# Auto-generated intent config
+.intent/
+
+# Sidecar binary staging directory (copy-sidecar.js output)
+resources/sidecar/

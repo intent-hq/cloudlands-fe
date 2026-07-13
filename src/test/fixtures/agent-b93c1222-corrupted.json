@@ -1,0 +1,47 @@
+{
+  "id": "agent-b93c1222-corrupted",
+  "backendSessionId": null,
+  "workspaceId": "ws-test",
+  "name": "Test Corrupted Agent",
+  "status": "idle",
+  "messages": [
+    {
+      "id": "msg_aaa00001",
+      "role": "user",
+      "timestamp": "2024-01-01T00:00:01.000Z",
+      "contentBlocks": [{ "type": "text", "text": "Hello, how are you?" }]
+    },
+    {
+      "id": "msg_aaa00002",
+      "role": "assistant",
+      "timestamp": "2024-01-01T00:00:02.000Z",
+      "contentBlocks": [{ "type": "text", "text": "I'm doing well, thanks for asking!" }]
+    },
+    {
+      "id": "msg_aaa00003",
+      "role": "user",
+      "timestamp": "2024-01-01T00:00:10.000Z",
+      "contentBlocks": [{ "type": "text", "text": "Can you help me with a task?" }]
+    },
+    {
+      "id": "msg_aaa00004",
+      "role": "assistant",
+      "timestamp": "2024-01-01T00:00:12.000Z",
+      "contentBlocks": [{ "type": "text", "text": "Of course! What do you need help with?" }]
+    },
+    {
+      "id": "dup-plain-uuid-00002",
+      "role": "assistant",
+      "timestamp": "2024-01-01T00:00:15.000Z",
+      "contentBlocks": [{ "type": "text", "text": "I'm doing well, thanks for asking!" }]
+    },
+    {
+      "id": "dup-plain-uuid-00004",
+      "role": "assistant",
+      "timestamp": "2024-01-01T00:00:18.000Z",
+      "contentBlocks": [{ "type": "text", "text": "Of course! What do you need help with?" }]
+    }
+  ],
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": "2024-01-01T00:00:18.000Z"
+}

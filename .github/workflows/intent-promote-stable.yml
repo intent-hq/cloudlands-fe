@@ -1,0 +1,217 @@
+name: Intent - Promote Beta to Stable
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Beta version to promote (e.g., 1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Only one promotion at a time, never cancel in progress
+concurrency:
+  group: intent-promote
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate beta artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Validate version format
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format '$VERSION'. Expected semver (e.g., 1.2.3)"
+            exit 1
+          fi
+          echo "Version $VERSION is valid"
+
+      - name: Verify beta manifests on CDN
+        run: |
+          VERSION="${{ inputs.version }}"
+          CDN_BASE="https://cdn.augmentcode.com/beta"
+          FAILED=0
+
+          echo "Checking beta manifests for v$VERSION..."
+
+          for manifest in latest-mac.yml; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$CDN_BASE/$manifest")
+            if [ "$STATUS" = "200" ]; then
+              echo "  $manifest: OK ($STATUS)"
+
+              # Verify version in manifest matches
+              MANIFEST_VERSION=$(curl -s "$CDN_BASE/$manifest" | grep "^version:" | sed 's/version: //')
+              if [ "$MANIFEST_VERSION" != "$VERSION" ]; then
+                echo "::error::$manifest version mismatch: expected $VERSION, got $MANIFEST_VERSION"
+                FAILED=1
+              else
+                echo "  $manifest version: $MANIFEST_VERSION (matches)"
+              fi
+            else
+              echo "::error::$manifest not found on CDN (HTTP $STATUS)"
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Verify beta artifacts accessible
+        run: |
+          VERSION="${{ inputs.version }}"
+          CDN_BASE="https://cdn.augmentcode.com/beta"
+          FAILED=0
+
+          echo "Checking beta artifacts for v$VERSION..."
+
+          # Check key artifacts exist (HEAD request)
+          for artifact in \
+            "Intent by Augment-${VERSION}-arm64.dmg" \
+            "Intent by Augment-${VERSION}-arm64-mac.zip"; do
+
+            ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$artifact'))")
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --head "$CDN_BASE/$ENCODED")
+            if [ "$STATUS" = "200" ]; then
+              echo "  $artifact: OK"
+            else
+              echo "::warning::$artifact returned HTTP $STATUS (may not exist for this build)"
+            fi
+          done
+
+          # At minimum, the latest DMGs must exist
+          for dmg in Intent-latest-arm64.dmg; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --head "$CDN_BASE/$dmg")
+            if [ "$STATUS" = "200" ]; then
+              echo "  $dmg: OK"
+            else
+              echo "::error::$dmg not found on CDN (HTTP $STATUS)"
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            exit 1
+          fi
+
+  smoke-test:
+    name: Smoke test beta DMG
+    needs: validate
+    runs-on: macos-14
+    timeout-minutes: 15
+
+    steps:
+      - name: Download and verify beta DMG
+        run: |
+          VERSION="${{ inputs.version }}"
+          CDN_BASE="https://cdn.augmentcode.com/beta"
+          DMG_URL="$CDN_BASE/Intent-latest-arm64.dmg"
+
+          echo "Downloading beta DMG..."
+          curl -fSL -o intent-beta.dmg "$DMG_URL"
+
+          # Check file size (should be > 50MB for a real app)
+          FILE_SIZE=$(stat -f%z intent-beta.dmg 2>/dev/null || stat -c%s intent-beta.dmg 2>/dev/null)
+          echo "DMG size: $FILE_SIZE bytes ($(( FILE_SIZE / 1024 / 1024 )) MB)"
+
+          if [ "$FILE_SIZE" -lt 52428800 ]; then
+            echo "::error::DMG is suspiciously small (< 50MB). Expected a full app bundle."
+            exit 1
+          fi
+
+          # Verify it's a valid DMG
+          echo "Verifying DMG integrity..."
+          hdiutil verify intent-beta.dmg
+          echo "DMG verification passed"
+
+          # Clean up
+          rm -f intent-beta.dmg
+
+  promote:
+    name: Promote to stable
+    needs: smoke-test
+    runs-on: macos-14
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: 'latest'
+
+      - name: Authenticate with GCP
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.INTENT_GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Promote beta to stable
+        run: bash scripts/promote-to-stable-gcp.sh "${{ inputs.version }}"
+        env:
+          GCS_BUCKET: ${{ secrets.INTENT_GCS_BUCKET }}
+          GCP_PROJECT: ${{ secrets.INTENT_GCP_PROJECT }}
+          CLOUD_CDN_URL_MAP: ${{ secrets.INTENT_CLOUD_CDN_URL_MAP }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+
+      - name: Verify stable manifests
+        run: |
+          VERSION="${{ inputs.version }}"
+          CDN_BASE="https://cdn.augmentcode.com/stable"
+          FAILED=0
+
+          echo "Waiting for CDN cache to propagate..."
+          sleep 10
+
+          for manifest in latest-mac.yml; do
+            MANIFEST_VERSION=$(curl -s "$CDN_BASE/$manifest" | grep "^version:" | sed 's/version: //')
+            if [ "$MANIFEST_VERSION" = "$VERSION" ]; then
+              echo "  $manifest: v$MANIFEST_VERSION (correct)"
+            else
+              echo "::warning::$manifest shows v$MANIFEST_VERSION, expected v$VERSION (CDN may still be propagating)"
+            fi
+          done
+
+      - name: Post summary
+        run: |
+          VERSION="${{ inputs.version }}"
+          echo "## Stable Promotion" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Promoted from:** beta" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Channel:** stable" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Download URLs" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Apple Silicon Mac](https://cdn.augmentcode.com/stable/Intent-latest-arm64.dmg)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Verification" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Beta manifests validated" >> "$GITHUB_STEP_SUMMARY"
+          echo "- DMG smoke test passed (size + hdiutil verify)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Stable manifests updated" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify Slack
+        if: success()
+        run: |
+          VERSION="${{ inputs.version }}"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{
+              \"text\": \"Intent v${VERSION} promoted to stable channel\",
+              \"blocks\": [
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \"*Intent Stable Promotion*\n\n*Version:* v${VERSION}\n*Promoted from:* beta\n*Channel:* stable\n*Triggered by:* ${{ github.actor }}\n\n<https://cdn.augmentcode.com/stable/Intent-latest-arm64.dmg|Download Apple Silicon>\"
+                  }
+                }
+              ]
+            }" \
+            ${{ secrets.INTENT_SLACK_WEBHOOK_URL }}

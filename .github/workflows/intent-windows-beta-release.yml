@@ -1,0 +1,176 @@
+name: Intent - Windows Beta Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        type: string
+      integrated_signing:
+        description: 'Enable DigiCert code signing'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# Never cancel a release in progress
+concurrency:
+  group: intent-windows-release
+  cancel-in-progress: false
+
+jobs:
+  windows-beta-release:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Validate version format
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format '$VERSION'. Expected semver (e.g., 1.2.3)"
+            exit 1
+          fi
+          echo "Version $VERSION is valid"
+
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version
+        run: npm run version:set -- ${{ inputs.version }}
+
+      - name: Create .env file
+        shell: bash
+        run: |
+          cat > .env << 'EOF'
+          SENTRY_DSN="${{ secrets.INTENT_SENTRY_DSN }}"
+          SENTRY_RELEASE="intent@${{ inputs.version }}"
+          SENTRY_AUTH_TOKEN="${{ secrets.INTENT_SENTRY_AUTH_TOKEN }}"
+          SEGMENT_WRITE_KEY="${{ secrets.INTENT_SEGMENT_WRITE_KEY }}"
+          EOF
+
+      # ── DigiCert signing setup ──────────────────────────────────────
+      - name: Decode DigiCert client certificate
+        if: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_SM_HOST != '' }}
+        shell: bash
+        run: |
+          echo "${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_FILE_B64 }}" | base64 --decode > /d/Certificate_pkcs12.p12
+
+      - name: Setup DigiCert Software Trust Manager
+        if: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_SM_HOST != '' }}
+        uses: digicert/code-signing-software-trust-action@v1
+        with:
+          simple-signing-mode: true
+        env:
+          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
+          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
+
+      - name: Build and package Windows app
+        run: npm run dist:win
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+          INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING: ${{ inputs.integrated_signing && vars.INTENT_WINDOWS_SM_HOST != '' && 'true' || '' }}
+          INTENT_WINDOWS_SM_KEYPAIR_ALIAS: ${{ vars.INTENT_WINDOWS_SM_KEYPAIR_ALIAS }}
+          SM_HOST: ${{ vars.INTENT_WINDOWS_SM_HOST }}
+          SM_API_KEY: ${{ secrets.INTENT_WINDOWS_SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: D:\\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.INTENT_WINDOWS_SM_CLIENT_CERT_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify Authenticode signature
+        id: signing
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path dist-electron -Filter '*.exe' | Where-Object { $_.Name -match 'Setup' } | Select-Object -First 1
+          if (-not $exe) {
+            echo "::warning::No installer .exe found in dist-electron"
+            echo "signed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $sig = Get-AuthenticodeSignature -FilePath $exe.FullName
+          echo "Installer: $($exe.Name)"
+          echo "Signature status: $($sig.Status)"
+          echo "Signer: $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -eq 'Valid') {
+            echo "signed=true" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "::warning::Installer is not signed or signature is invalid (status: $($sig.Status)) — skipping upload"
+            echo "signed=false" >> $env:GITHUB_OUTPUT
+          }
+
+
+      - name: Setup Google Cloud SDK
+        if: steps.signing.outputs.signed == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: 'latest'
+
+      - name: Authenticate with GCP
+        if: steps.signing.outputs.signed == 'true'
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.INTENT_GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Upload to GCP beta channel
+        if: steps.signing.outputs.signed == 'true'
+        shell: bash
+        run: bash scripts/upload-release-windows-gcp.sh beta
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          GCS_BUCKET: ${{ secrets.INTENT_GCS_BUCKET }}
+          GCP_PROJECT: ${{ secrets.INTENT_GCP_PROJECT }}
+          CLOUD_CDN_URL_MAP: ${{ secrets.INTENT_CLOUD_CDN_URL_MAP }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+
+      - name: Post summary
+        if: steps.signing.outputs.signed == 'true'
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          echo "## Windows Beta Release" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Channel:** beta" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Download URLs" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Windows Installer](https://cdn.augmentcode.com/beta/Intent-latest-Setup.exe)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify Slack
+        if: success() && steps.signing.outputs.signed == 'true'
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{
+              \"text\": \"Intent Windows v${VERSION} released to beta channel\",
+              \"blocks\": [
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \"*Intent Windows Beta Release*\n\n*Version:* v${VERSION}\n*Channel:* beta\n*Triggered by:* ${{ github.actor }}\n\n<https://cdn.augmentcode.com/beta/Intent-latest-Setup.exe|Windows Installer>\"
+                  }
+                }
+              ]
+            }" \
+            ${{ secrets.INTENT_SLACK_WEBHOOK_URL }}
+

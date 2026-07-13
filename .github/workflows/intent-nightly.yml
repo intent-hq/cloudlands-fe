@@ -1,0 +1,146 @@
+name: Intent - Nightly Alpha Build
+
+on:
+  # Nightly schedule disabled — builds can still be triggered manually.
+  # schedule:
+  #   # Run daily at ~06:00 UTC
+  #   - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Cancel any in-progress nightly if a new one triggers
+concurrency:
+  group: intent-nightly
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compute alpha version
+        id: version
+        run: |
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          NEXT_PATCH=$(node -p "v = require('./package.json').version.split('.'), v[2] = +v[2] + 1, v.join('.')")
+          DATE_STAMP=$(date -u +%Y%m%d)
+          ALPHA_VERSION="${NEXT_PATCH}-alpha.${DATE_STAMP}"
+          echo "base=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "alpha=$ALPHA_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v${ALPHA_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Nightly version: $ALPHA_VERSION (base: $BASE_VERSION)"
+
+      - name: Set alpha version
+        run: npm run version:set -- ${{ steps.version.outputs.alpha }}
+
+      - name: Create .env file
+        run: |
+          cat > .env << EOF
+          SENTRY_DSN="${{ secrets.INTENT_SENTRY_DSN }}"
+          SENTRY_RELEASE="intent@${{ steps.version.outputs.alpha }}"
+          SENTRY_AUTH_TOKEN="${{ secrets.INTENT_SENTRY_AUTH_TOKEN }}"
+          SEGMENT_WRITE_KEY="${{ secrets.INTENT_SEGMENT_WRITE_KEY }}"
+          EOF
+
+      - name: Import code signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.AUGMENT_INTENT_MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.AUGMENT_INTENT_MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.INTENT_KEYCHAIN_PASSWORD }}
+        run: |
+          # Create a temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # Import certificate
+          echo "$MACOS_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 -P "$MACOS_CERTIFICATE_PWD" \
+            -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+      - name: Build and package macOS app
+        run: npm run dist:mac
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+          CSC_LINK: ${{ secrets.AUGMENT_INTENT_MACOS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.AUGMENT_INTENT_MACOS_CERTIFICATE_PWD }}
+          APPLE_ID: ${{ secrets.AUGMENT_INTENT_APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.AUGMENT_INTENT_APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.AUGMENT_INTENT_APPLE_TEAM_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: 'latest'
+
+      - name: Authenticate with GCP
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.INTENT_GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Rename update manifest for auto-update compatibility
+        run: mv dist-electron/alpha-mac.yml dist-electron/latest-mac.yml
+
+      - name: Upload to GCP alpha channel
+        run: bash scripts/upload-release-gcp.sh alpha
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.alpha }}
+          GCS_BUCKET: ${{ secrets.INTENT_GCS_BUCKET }}
+          GCP_PROJECT: ${{ secrets.INTENT_GCP_PROJECT }}
+          CLOUD_CDN_URL_MAP: ${{ secrets.INTENT_CLOUD_CDN_URL_MAP }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+
+      - name: Create and push git tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post summary
+        run: |
+          ALPHA_VERSION="${{ steps.version.outputs.alpha }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          echo "## Nightly Alpha Build" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** $ALPHA_VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Tag:** \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Channel:** alpha" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Base version:** ${{ steps.version.outputs.base }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Download URLs" >> "$GITHUB_STEP_SUMMARY"
+          echo "- [Apple Silicon Mac](https://cdn.augmentcode.com/alpha/Intent-latest-arm64.dmg)" >> "$GITHUB_STEP_SUMMARY"
+
+  smoke-test:
+    name: Smoke Test
+    needs: nightly
+    uses: ./.github/workflows/intent-smoke-test.yml
+    with:
+      build_source: cdn
+      cdn_channel: alpha
+    secrets: inherit

@@ -1,0 +1,23 @@
+[
+    {
+        "id": "opus-4-7",
+        "startAt": "2026-04-15T00:00:00Z",
+        "endAt": "2026-04-30T23:59:59Z",
+        "priority": 1,
+        "dismissable": true,
+        "message": "Try Opus 4.7 within Auggie, 50% off until April 30.",
+        "buttons": [
+            {
+                "text": "Set Auggie as default",
+                "action": {
+                    "type": "setDefaultAgent",
+                    "agentId": "auggie"
+                },
+                "hideWhen": {
+                    "type": "defaultAgentIs",
+                    "agentId": "auggie"
+                }
+            }
+        ]
+    }
+]

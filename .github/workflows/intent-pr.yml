@@ -1,0 +1,266 @@
+name: Intent PR Checks
+
+on:
+  pull_request:
+    branches: ['main']
+
+# Cancel in progress workflows on pull_requests.
+# https://docs.github.com/en/actions/using-jobs/using-concurrency#example-using-a-fallback-value
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-renderer:
+    name: Type Check (renderer)
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Svelte check
+        run: pnpm run check
+      - name: Type check
+        run: pnpm run type-check
+
+  typecheck-main:
+    name: Build & Verify (main process)
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate build config
+        run: pnpm run generate:build-config
+      - name: Generate IPC channels
+        run: pnpm run generate:ipc-channels
+      - name: Build main process
+        run: pnpm run build:main
+      - name: Verify main process has no devDependency imports
+        run: |
+          # svelte is a devDependency stripped from packaged builds.
+          # Hide it and try importing files reachable from the main-
+          # process entry. If any module in the chain transitively
+          # resolves 'svelte', Node fails with ERR_MODULE_NOT_FOUND —
+          # the same crash that occurs inside the packaged app.asar.
+          #
+          # We cannot import dist/main/index.js directly because it
+          # requires 'electron' (unavailable in plain Node), which may
+          # error out *before* the resolver reaches the svelte path,
+          # producing a false pass (this is exactly the bug that let
+          # PR #654 through). Instead we import the specific service
+          # modules that sit on the boundary between the main process
+          # and renderer-only dependencies.
+          mv node_modules/svelte node_modules/svelte.HIDDEN
+
+          FAILED=0
+          for MODULE in \
+            dist/features/agent/services/stream-manager.js \
+            dist/features/agent/main/consolidated-backend.service.js \
+            dist/features/agent/main/agent-backend-handler.service.js; do
+
+            EXIT_CODE=0
+            OUTPUT=$(node --input-type=module \
+              -e "await import('./$MODULE'); process.exit(0);" \
+              2>&1) || EXIT_CODE=$?
+
+            if [ "$EXIT_CODE" -ne 0 ] && echo "$OUTPUT" | grep -q "Cannot find package 'svelte'"; then
+              echo "FAIL: $MODULE"
+              echo "$OUTPUT" | head -3
+              FAILED=1
+            fi
+          done
+
+          mv node_modules/svelte.HIDDEN node_modules/svelte
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::Main-process modules transitively import svelte. This will crash packaged builds."
+            exit 1
+          fi
+
+          echo "✓ No svelte imports found in main-process module graph."
+
+  typecheck-preload:
+    name: Type Check (preload)
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate IPC channels
+        run: pnpm run generate:ipc-channels
+      - name: Type check (preload)
+        run: pnpm exec tsc --noEmit -p tsconfig.preload.json
+
+  lint:
+    name: ESLint
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: ESLint
+        run: pnpm run lint
+
+  test:
+    name: Unit Tests
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Unit tests
+        run: pnpm run test:unit
+
+  accessibility:
+    name: Accessibility Lint
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+          run_install: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Accessibility lint
+        run: bash scripts/check-accessibility.sh
+
+  dispatch-gate:
+    name: Workspace Dispatch Gate
+    runs-on: macos-14
+    timeout-minutes: 10
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: workspace:* dispatcher gate
+        run: node scripts/check-workspace-event-dispatchers.mjs
+
+  gate:
+    name: Type Check & Test
+    runs-on: macos-14
+    if: always()
+    needs:
+      [
+        typecheck-renderer,
+        typecheck-main,
+        typecheck-preload,
+        lint,
+        test,
+        accessibility,
+        dispatch-gate,
+      ]
+    steps:
+      - name: Check results
+        run: |
+          echo "Architecture gate temporarily disabled; re-enable by restoring the lint:architecture package script and architecture-gate workflow job."
+          if [ "${{ needs.typecheck-renderer.result }}" != "success" ] || \
+             [ "${{ needs.typecheck-main.result }}" != "success" ] || \
+             [ "${{ needs.typecheck-preload.result }}" != "success" ] || \
+             [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ] || \
+             [ "${{ needs.accessibility.result }}" != "success" ] || \
+             [ "${{ needs.dispatch-gate.result }}" != "success" ]; then
+            echo "One or more jobs failed"
+            exit 1
+          fi

@@ -1,0 +1,200 @@
+const FUNCTION_TYPES = new Set([
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ArrowFunctionExpression',
+]);
+
+const SELECTOR_IMPORT_SOURCE_PATTERN = /selectors/;
+
+const DERIVED_RUNE_NAMES = new Set(['$derived']);
+
+const SELECTOR_NESTED_MESSAGE =
+  'Selector readables from *-selectors files must be created during component initialization (top-level <script>). For one-off reads in callbacks, handlers, and async functions, use selector.select(store.state, ...) with the configured Store instance.';
+
+const GET_SELECTOR_MESSAGE =
+  'Do not wrap selector readables with svelte/store get(). Create the selector readable during component initialization and use it reactively, or use selector.select(store.state, ...) with the configured Store instance when you need a one-off read.';
+
+const REDUNDANT_DERIVED_READABLE_MESSAGE =
+  'Do not mirror readable values with $derived($readable$). Use the readable value directly instead.';
+
+function unwrapExpression(node) {
+  let current = node;
+
+  while (current) {
+    switch (current.type) {
+      case 'ChainExpression':
+        current = current.expression;
+        break;
+      case 'TSAsExpression':
+      case 'TSTypeAssertion':
+      case 'TSNonNullExpression':
+      case 'ParenthesizedExpression':
+        current = current.expression;
+        break;
+      default:
+        return current;
+    }
+  }
+
+  return current;
+}
+
+function isWrappedSelectorArgumentToGet(node, svelteStoreGetNames) {
+  let current = node;
+
+  while (current.parent) {
+    switch (current.parent.type) {
+      case 'ChainExpression':
+      case 'TSAsExpression':
+      case 'TSTypeAssertion':
+      case 'TSNonNullExpression':
+      case 'ParenthesizedExpression':
+        current = current.parent;
+        break;
+      default:
+        return current.parent.type === 'CallExpression'
+          && current.parent.arguments[0] === current
+          && isTrackedIdentifier(current.parent.callee, svelteStoreGetNames);
+    }
+  }
+
+  return false;
+}
+
+function isTrackedIdentifier(node, names) {
+  const unwrapped = unwrapExpression(node);
+  return unwrapped?.type === 'Identifier' && names.has(unwrapped.name);
+}
+
+function isSelectorCall(node, selectorNames) {
+  const unwrapped = unwrapExpression(node);
+  if (unwrapped?.type !== 'CallExpression') {
+    return false;
+  }
+
+  return isTrackedIdentifier(unwrapped.callee, selectorNames);
+}
+
+function isReadableValueIdentifier(node) {
+  const unwrapped = unwrapExpression(node);
+  return unwrapped?.type === 'Identifier'
+    && unwrapped.name.startsWith('$')
+    && unwrapped.name.endsWith('$')
+    && unwrapped.name.length > 2;
+}
+
+function isRedundantReadableDerivedAlias(node) {
+  const init = unwrapExpression(node.init);
+  return init?.type === 'CallExpression'
+    && isTrackedIdentifier(init.callee, DERIVED_RUNE_NAMES)
+    && init.arguments.length === 1
+    && isReadableValueIdentifier(init.arguments[0]);
+}
+
+function isInsideFunction(node) {
+  for (let current = node.parent; current; current = current.parent) {
+    if (FUNCTION_TYPES.has(current.type)) {
+      return true;
+    }
+    if (current.type === 'Program') {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+function isInsideEventHandler(node) {
+  for (let current = node.parent; current; current = current.parent) {
+    if (current.type === 'SvelteDirective' && current.kind === 'EventHandler') {
+      return true;
+    }
+
+    if (
+      current.type === 'SvelteAttribute'
+      && typeof current.key?.name === 'string'
+      && /^on[A-Z]/.test(current.key.name)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isInsideModuleScript(node) {
+  for (let current = node.parent; current; current = current.parent) {
+    if (current.type === 'SvelteScriptElement') {
+      return current.startTag?.attributes?.some(
+        (attribute) => attribute.type === 'SvelteAttribute'
+          && attribute.key?.name === 'context'
+          && attribute.value?.some((value) => value.type === 'SvelteLiteral' && value.value === 'module'),
+      ) ?? false;
+    }
+  }
+
+  return false;
+}
+
+function isRestrictedLifecycleContext(node) {
+  return isInsideFunction(node) || isInsideEventHandler(node) || isInsideModuleScript(node);
+}
+
+function isSelectorImportSource(source) {
+  return typeof source === 'string' && SELECTOR_IMPORT_SOURCE_PATTERN.test(source);
+}
+
+export default {
+  meta: {
+    type: 'problem',
+    docs: {
+      description: 'Warn about selector lifecycle violations and redundant readable aliases in Svelte components',
+    },
+    schema: [],
+  },
+
+  create(context) {
+    const svelteStoreGetNames = new Set();
+    const selectorNames = new Set();
+    return {
+      ImportDeclaration(node) {
+        const source = node.source.value;
+
+        for (const specifier of node.specifiers) {
+          if (specifier.type !== 'ImportSpecifier') {
+            continue;
+          }
+
+          if (source === 'svelte/store' && specifier.imported.name === 'get') {
+            svelteStoreGetNames.add(specifier.local.name);
+          }
+
+          if (isSelectorImportSource(source) && specifier.imported.name.startsWith('select')) {
+            selectorNames.add(specifier.local.name);
+          }
+        }
+      },
+
+      CallExpression(node) {
+        if (isTrackedIdentifier(node.callee, svelteStoreGetNames) && isSelectorCall(node.arguments[0], selectorNames)) {
+          context.report({ node, message: GET_SELECTOR_MESSAGE });
+          return;
+        }
+
+        if (
+          isTrackedIdentifier(node.callee, selectorNames)
+          && isRestrictedLifecycleContext(node)
+          && !isWrappedSelectorArgumentToGet(node, svelteStoreGetNames)
+        ) {
+          context.report({ node, message: SELECTOR_NESTED_MESSAGE });
+        }
+      },
+
+      VariableDeclarator(node) {
+        if (isRedundantReadableDerivedAlias(node)) {
+          context.report({ node, message: REDUNDANT_DERIVED_READABLE_MESSAGE });
+        }
+      },
+    };
+  },
+};
