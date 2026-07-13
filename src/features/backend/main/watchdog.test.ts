@@ -4,7 +4,7 @@
  * Tests verify successful probe responses, timeout handling, error handling,
  * socket cleanup, and the N-strikes restart policy with graceful kill escalation.
  */
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import * as net from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,7 +14,6 @@ import {
   __setSidecarProcessForTesting,
   __startWatchdogForTesting,
 } from './intentd-sidecar';
-import * as sidecarModule from './intentd-sidecar';
 
 // Mock fs.existsSync for socket path checks
 vi.mock('node:fs', async () => {
