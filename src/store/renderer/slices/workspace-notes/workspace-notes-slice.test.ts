@@ -72,6 +72,7 @@ describe("workspaceNotesReducer", () => {
             refsCount: {},
           },
           initialized: true,
+          notesVersion: 1,
         },
         [WS_2]: {
           ...emptyWorkspaceNotesState,
@@ -82,9 +83,24 @@ describe("workspaceNotesReducer", () => {
             refsCount: {},
           },
           initialized: true,
+          notesVersion: 1,
         },
       },
     });
+  });
+
+  it("bumps notesVersion on loadWorkspaceNotesSucceeded so mount-time hydration ticks version-gated selectors", () => {
+    const first = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1")] })
+    );
+    const second = workspaceNotesReducer(
+      first,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1"), mockNote("note-2")] })
+    );
+
+    expect(first.byWorkspaceId[WS_1].notesVersion).toBe(1);
+    expect(second.byWorkspaceId[WS_1].notesVersion).toBe(2);
   });
 
   it("tracks loading and errors per workspace", () => {
@@ -131,6 +147,27 @@ describe("workspaceNotesReducer", () => {
     expect(getItem(nextState.byWorkspaceId[WS_1].notes, "task-1" as Note["id"])?.metadata?.task?.status).toBe(
       "complete"
     );
+    expect(nextState.byWorkspaceId[WS_1].notesVersion).toBe(
+      loadedState.byWorkspaceId[WS_1].notesVersion + 1
+    );
+  });
+
+  it("does not bump notesVersion on applyTaskStatusChanged for uninitialized or non-task notes", () => {
+    const uninitializedState = workspaceNotesReducer(
+      initialState,
+      applyTaskStatusChanged(WS_1, "task-1", "complete")
+    );
+    expect(uninitializedState).toBe(initialState);
+
+    const loadedState = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("plain-1")] })
+    );
+    const noTaskState = workspaceNotesReducer(
+      loadedState,
+      applyTaskStatusChanged(WS_1, "plain-1", "complete")
+    );
+    expect(noTaskState).toBe(loadedState);
   });
 
   it("appends created notes only for tracked workspaces", () => {
@@ -146,6 +183,9 @@ describe("workspaceNotesReducer", () => {
       "note-1",
       "note-2",
     ]);
+    expect(trackedState.byWorkspaceId[WS_1].notesVersion).toBe(
+      loadedState.byWorkspaceId[WS_1].notesVersion + 1
+    );
     expect(untrackedState).toBe(loadedState);
   });
 
@@ -160,6 +200,20 @@ describe("workspaceNotesReducer", () => {
     const nextState = workspaceNotesReducer(loadedState, applyNoteDeleted(WS_1, "note-1"));
 
     expect(getItems(nextState.byWorkspaceId[WS_1].notes).map((note) => note.id)).toEqual(["note-2"]);
+    expect(nextState.byWorkspaceId[WS_1].notesVersion).toBe(
+      loadedState.byWorkspaceId[WS_1].notesVersion + 1
+    );
+  });
+
+  it("does not bump notesVersion on applyNoteDeleted when the note is absent", () => {
+    const loadedState = workspaceNotesReducer(
+      initialState,
+      loadWorkspaceNotesSucceeded([WS_1], { [WS_1]: [mockNote("note-1")] })
+    );
+
+    const nextState = workspaceNotesReducer(loadedState, applyNoteDeleted(WS_1, "note-missing"));
+
+    expect(nextState).toBe(loadedState);
   });
 
   it("replaces updated notes when a full note payload is available", () => {
