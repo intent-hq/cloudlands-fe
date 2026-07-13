@@ -111,6 +111,7 @@ import type {
   TaskStatus,
   Workspace,
 } from "$shared/types";
+import { WorkspaceStatus } from "$shared/types";
 import type { AppliedSettingChange } from "$lib/client/app-client";
 import { store as appStore } from "$store/renderer/store";
 import { eventReceived } from "$store/renderer/slices/workspace-events/workspace-events-slice";
@@ -786,6 +787,66 @@ function handlePrEvent(
 }
 
 /**
+ * `workspace:updated` (PROTOCOL §6.5 / §7) carries `{ workspaceId, changes }`
+ * where `changes` is the applied `WorkspaceUpdate` delta — the fields the
+ * caller actually asked to mutate, with `Option::is_none` fields skipped in
+ * serialization (see `crates/intent-core/src/model.rs::WorkspaceUpdate` and
+ * `crates/intentd/tests/uds_events.rs::workspace_update_emits_workspace_updated_with_delta`).
+ * Reference-parity with `watchWorkspaceUpdatedSaga` in the legacy
+ * `workspace-ipc-saga.ts`: dispatch a merge onto the workspace entity so the
+ * sidebar/header react synchronously (agent `workspace.setTitle` was the
+ * regression that motivated this — the legacy relay fires
+ * `WorkspaceProgressCard`'s `listenSync`, but never touched Redux).
+ *
+ * The wire delta is whitelisted against the applied-delta shape rather than
+ * blind-spread, so unknown fields (e.g. `attention`, which has no FE
+ * `Workspace` field) are dropped rather than leaking into the entity. Field
+ * names match FE `Workspace` camelCase 1:1 with the daemon struct.
+ *
+ * The legacy `relayLegacyIpcEvent` re-emit (case `"workspace:updated"`) stays
+ * untouched — `WorkspaceProgressCard` still listens on the mock-IPC channel.
+ */
+function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data ?? {};
+  const wireChanges = (data as { changes?: unknown }).changes;
+  if (!wireChanges || typeof wireChanges !== "object") return;
+  const raw = wireChanges as Record<string, unknown>;
+  const changes: Partial<Workspace> = {};
+  if (typeof raw.title === "string") changes.title = raw.title;
+  if (typeof raw.statusMessage === "string") changes.statusMessage = raw.statusMessage;
+  if (typeof raw.branch === "string") changes.branch = raw.branch;
+  if (typeof raw.baseRef === "string") changes.baseRef = raw.baseRef;
+  if (typeof raw.baseCommitSha === "string") changes.baseCommitSha = raw.baseCommitSha;
+  if (
+    typeof raw.status === "string" &&
+    (Object.values(WorkspaceStatus) as string[]).includes(raw.status)
+  ) {
+    changes.status = raw.status as WorkspaceStatus;
+  }
+  if (Array.isArray(raw.tags) && raw.tags.every((t) => typeof t === "string")) {
+    changes.tags = raw.tags as string[];
+  }
+  if (typeof raw.path === "string") changes.path = raw.path;
+  if (typeof raw.repositoryPath === "string") changes.repositoryPath = raw.repositoryPath;
+  if (typeof raw.repositoryOwner === "string") changes.repositoryOwner = raw.repositoryOwner;
+  if (typeof raw.repositoryName === "string") changes.repositoryName = raw.repositoryName;
+  if (typeof raw.worktreePath === "string") changes.worktreePath = raw.worktreePath;
+  if (typeof raw.scope === "string") changes.scope = raw.scope;
+  if (typeof raw.skipWorktree === "boolean") changes.skipWorktree = raw.skipWorktree;
+  if (typeof raw.setupScript === "string") changes.setupScript = raw.setupScript;
+  if (typeof raw.isRemote === "boolean") changes.isRemote = raw.isRemote;
+  if (typeof raw.defaultModel === "string") changes.defaultModel = raw.defaultModel;
+  if (typeof raw.prNumber === "number") changes.prNumber = raw.prNumber;
+  if (typeof raw.prUrl === "string") changes.prUrl = raw.prUrl;
+  if (typeof raw.lastActivity === "string") changes.lastActivity = raw.lastActivity;
+  if (typeof raw.archived === "boolean") changes.archived = raw.archived;
+  if (Object.keys(changes).length === 0) return;
+  // Same reducer path as `handlePrEvent` — `updateWorkspaceEntity` has no
+  // standalone case; the slice folds it through `bulkUpdateWorkspaceEntities`.
+  appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, changes)]));
+}
+
+/**
  * `workspace:deleted` (PROTOCOL §7) — purge every trace of the deleted
  * workspace from Redux so a recreated same-slug workspace does not surface
  * ghost agents. The chat-state slice is keyed by `agentId`, so we resolve the
@@ -1067,6 +1128,15 @@ function handleNotification(method: string, params: unknown): void {
   if (type === "workspace:created") {
     handleWorkspaceCreatedEvent(workspaceId);
     // fall through so the activity timeline records the creation.
+  }
+  // `workspace:updated` (§6.5) — merge the applied delta onto the workspace
+  // entity so agent-driven `workspace.setTitle` / `workspace.update` writes
+  // reflect in the sidebar/header live. Side effect, never an early return:
+  // `relayLegacyIpcEvent` below still fans out to the mock-IPC channel that
+  // `WorkspaceProgressCard` listens on, and the timeline dispatch below still
+  // records the update.
+  if (type === "workspace:updated") {
+    handleWorkspaceUpdatedEvent(event, workspaceId);
   }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
