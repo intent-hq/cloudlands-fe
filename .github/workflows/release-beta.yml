@@ -197,6 +197,9 @@ jobs:
       - name: Post summary
         run: |
           VERSION="${{ inputs.version }}"
+          # Derive actual DMG filename from dist-electron and URL-encode it
+          DMG_FILE=$(find dist-electron -maxdepth 1 -name "*.dmg" -exec basename {} \; -quit)
+          DMG_ENCODED=$(printf '%s' "$DMG_FILE" | jq -sRr @uri)
           {
             echo "## Beta Release"
             echo ""
@@ -205,7 +208,7 @@ jobs:
             echo "**Channel:** beta"
             echo ""
             echo "### Download URLs"
-            echo "- [Apple Silicon Mac (DMG)](https://github.com/intent-hq/cloudlands-releases/releases/download/beta/Intent-$VERSION-arm64.dmg)"
+            echo "- [Apple Silicon Mac (DMG)](https://github.com/intent-hq/cloudlands-releases/releases/download/beta/$DMG_ENCODED)"
             echo "- [Auto-updater feed](https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml)"
             echo ""
             echo "### Releases"
