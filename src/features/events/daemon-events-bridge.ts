@@ -124,7 +124,6 @@ import { hydrateAgentsRequested } from "$store/renderer/slices/workspace-agents/
 import {
   applyTaskStatusChanged,
   ensureWorkspaceTasksLoaded,
-  loadWorkspaceTasksRequested,
 } from "$store/renderer/slices/workspace-tasks/workspace-tasks-slice";
 import {
   bulkUpdateWorkspaceEntities,
