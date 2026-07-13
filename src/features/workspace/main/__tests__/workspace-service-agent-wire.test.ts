@@ -12,10 +12,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * failing.
  */
 
+// Shared workspace list surfaced by the daemon read seam so
+// `WorkspaceService.listWorkspaces` (which now issues `workspace.list` per
+// PROTOCOL.md §5.1) sees the workspace the tests created through the in-memory
+// repository write path.
+const daemonWorkspaces: Array<Record<string, unknown>> = [];
+
 const requestMock = vi.hoisted(() =>
-  vi.fn(async (method: string) => {
+  vi.fn(async (method: string, params?: Record<string, unknown>) => {
     if (method === 'agent.list') return { agents: [] };
     if (method === 'agent.create') return { agent: { id: 'agent-init' } };
+    if (method === 'workspace.list') {
+      return { workspaces: daemonWorkspaces };
+    }
+    if (method === 'workspace.get') {
+      const id = params?.workspaceId;
+      const match = daemonWorkspaces.find((w) => w.id === id);
+      if (!match) throw new Error('Workspace not found');
+      return { workspace: match };
+    }
     return {};
   }),
 );
@@ -45,14 +60,32 @@ describe('workspace.service ↔ daemon agent.* (PROTOCOL.md §5.5)', () => {
 
   beforeEach(() => {
     requestMock.mockClear();
-    requestMock.mockImplementation(async (method: string) => {
+    daemonWorkspaces.length = 0;
+    requestMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
       if (method === 'agent.list') return { agents: [] };
       if (method === 'agent.create') return { agent: { id: 'agent-init' } };
+      if (method === 'workspace.list') return { workspaces: daemonWorkspaces };
+      if (method === 'workspace.get') {
+        const id = params?.workspaceId;
+        const match = daemonWorkspaces.find((w) => w.id === id);
+        if (!match) throw new Error('Workspace not found');
+        return { workspace: match };
+      }
       return {};
     });
 
     repository = new InMemoryWorkspaceRepository();
     vi.spyOn(repository, 'readGitConfig').mockResolvedValue(GIT_CONFIG_FIXTURE);
+    // Mirror the in-memory `save` into the daemon-read stub so `listWorkspaces`
+    // (now served by `workspace.list`) sees rows the tests create through the
+    // legacy `WorkspaceService.createWorkspace` write path.
+    const originalSave = repository.save.bind(repository);
+    vi.spyOn(repository, 'save').mockImplementation(async (ws) => {
+      await originalSave(ws);
+      const idx = daemonWorkspaces.findIndex((row) => row.id === ws.id);
+      if (idx >= 0) daemonWorkspaces[idx] = { ...ws };
+      else daemonWorkspaces.push({ ...ws });
+    });
 
     service = new WorkspaceService(repository);
   });
@@ -147,8 +180,9 @@ describe('workspace.service ↔ daemon agent.* (PROTOCOL.md §5.5)', () => {
 
     requestMock.mockClear();
     // Feed an AgentLite-shaped response so the activity-candidate reducer has
-    // something to iterate.
-    requestMock.mockImplementation(async (method: string) => {
+    // something to iterate; `workspace.list` still surfaces the same daemon rows
+    // the repository save spy mirrored above.
+    requestMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
       if (method === 'agent.list') {
         return {
           agents: [
@@ -160,6 +194,13 @@ describe('workspace.service ↔ daemon agent.* (PROTOCOL.md §5.5)', () => {
             },
           ],
         };
+      }
+      if (method === 'workspace.list') return { workspaces: daemonWorkspaces };
+      if (method === 'workspace.get') {
+        const id = params?.workspaceId;
+        const match = daemonWorkspaces.find((w) => w.id === id);
+        if (!match) throw new Error('Workspace not found');
+        return { workspace: match };
       }
       return {};
     });
