@@ -232,6 +232,7 @@ describe('Watchdog N-strikes policy', () => {
       kill: vi.fn(),
       killed: false,
       exitCode: null,
+      signalCode: null,
     } as unknown as ChildProcess;
     __setSidecarProcessForTesting(mockProcess);
 
@@ -262,6 +263,7 @@ describe('Watchdog N-strikes policy', () => {
       kill: vi.fn(),
       killed: false,
       exitCode: null,
+      signalCode: null,
     } as unknown as ChildProcess;
     __setSidecarProcessForTesting(mockProcess);
 
@@ -306,6 +308,7 @@ describe('Watchdog N-strikes policy', () => {
       kill: vi.fn(),
       killed: false,
       exitCode: null,
+      signalCode: null,
     } as unknown as ChildProcess;
     __setSidecarProcessForTesting(mockProcess);
 

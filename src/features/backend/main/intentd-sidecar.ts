@@ -271,7 +271,8 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
         consecutiveFailures = 0; // Reset for next spawn cycle
 
         // Kill the process with graceful escalation
-        if (sidecarProcess && !sidecarProcess.killed) {
+        // Check if process is still alive before attempting to kill
+        if (sidecarProcess && sidecarProcess.exitCode === null && sidecarProcess.signalCode === null) {
           const proc = sidecarProcess;
 
           // Send SIGTERM first
@@ -474,6 +475,12 @@ export async function stopIntentdSidecar(gracePeriodMs = 3000): Promise<void> {
   if (restartTimer) {
     clearTimeout(restartTimer);
     restartTimer = null;
+  }
+
+  // Clear kill escalation timer (prevent late SIGKILL during/after shutdown)
+  if (killEscalationTimer) {
+    clearTimeout(killEscalationTimer);
+    killEscalationTimer = null;
   }
 
   // Mark intentional stop in restart policy
