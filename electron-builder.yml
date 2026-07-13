@@ -1,5 +1,5 @@
-appId: com.augment.intent
-productName: Intent by Augment
+appId: app.cloudlands.intent
+productName: Intent
 directories:
   output: dist-electron
   buildResources: build
@@ -93,7 +93,7 @@ dmg:
 
 win:
   icon: src/assets/icons/icon.ico
-  publisherName: "Augment Computing Inc"
+  publisherName: "Clement Pang"
   # Custom sign hook: uses DigiCert smctl when INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING=true,
   # silently skips for local dev builds.
   signtoolOptions:
@@ -132,4 +132,4 @@ linux:
 
 publish:
   provider: generic
-  url: https://cdn.augmentcode.com/stable
+  url: https://github.com/intent-hq/cloudlands-releases/releases/download/stable
