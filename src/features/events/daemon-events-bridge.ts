@@ -111,6 +111,7 @@ import type {
   TaskStatus,
   Workspace,
 } from "$shared/types";
+import { WorkspaceStatus } from "$shared/types";
 import type { AppliedSettingChange } from "$lib/client/app-client";
 import { store as appStore } from "$store/renderer/store";
 import { eventReceived } from "$store/renderer/slices/workspace-events/workspace-events-slice";
@@ -816,7 +817,12 @@ function handleWorkspaceUpdatedEvent(event: WorkspaceEvent, workspaceId: string)
   if (typeof raw.branch === "string") changes.branch = raw.branch;
   if (typeof raw.baseRef === "string") changes.baseRef = raw.baseRef;
   if (typeof raw.baseCommitSha === "string") changes.baseCommitSha = raw.baseCommitSha;
-  if (typeof raw.status === "string") changes.status = raw.status as Workspace["status"];
+  if (
+    typeof raw.status === "string" &&
+    (Object.values(WorkspaceStatus) as string[]).includes(raw.status)
+  ) {
+    changes.status = raw.status as WorkspaceStatus;
+  }
   if (Array.isArray(raw.tags) && raw.tags.every((t) => typeof t === "string")) {
     changes.tags = raw.tags as string[];
   }

@@ -2945,6 +2945,21 @@ describe("daemonEventsBridge (workspace:updated → workspace slice)", () => {
     const ws = await readWorkspace();
     expect(ws.title).toBe("Original");
   });
+
+  it("drops an out-of-enum status value rather than writing it to Redux", async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // A buggy client / BE contract violation must not poison the closed
+    // WorkspaceStatus enum in the store; the title still merges through.
+    handler(updatedNotification({ title: "Renamed", status: "NotARealStatus" }));
+
+    const ws = await readWorkspace();
+    expect(ws.title).toBe("Renamed");
+    // Original seeded status ("Active") is preserved.
+    expect(ws.status).toBe("Active");
+  });
 });
 
 describe("daemonEventsBridge (completion-watch refresh routing)", () => {
