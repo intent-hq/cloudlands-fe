@@ -303,6 +303,15 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
       },
     },
   ],
+  // Skills discovery (LiveSkillsClient list). The FE-main skills loader
+  // scans `.augment/skills/` + `~/.augment/skills/` and parses SKILL.md
+  // frontmatter — no daemon surface (PROTOCOL.md has no `skill.*` RPC; skills
+  // stay FE-main-owned per IMPLEMENTATION_SPEC Group C). LiveSkillsClient
+  // invokes via `window.electronAPI.invoke` (bypassing the mock router in
+  // tests/non-Electron environments), so it needs allowlisting. The client
+  // folds absence to an empty array; the skills-seeder polled refresh and
+  // lifecycle-read-service both degrade gracefully to no skills.
+  ['skills:list', { success: true, data: [] }],
   // Native OS file dialogs (GitWorkspaceSettings / ProviderPathConfig pickers
   // and the electron-bridge showOpenDialog/showSaveDialog wrappers). There is
   // no native dialog in this build; every caller already has a
