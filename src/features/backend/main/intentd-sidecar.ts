@@ -77,8 +77,8 @@ export function shouldSpawnSidecar(
  *
  * Precedence:
  *   1. `INTENTD_BIN` env override (absolute path)
- *   2. Packaged → `process.resourcesPath/intentd/intentd`
- *   3. Dev → `packages/intentd/target/release/intentd` then `debug/intentd`
+ *   2. Packaged → `process.resourcesPath/intentd/intentd` (intentd.exe on Windows)
+ *   3. Dev → `packages/intentd/target/release/intentd` (intentd.exe on Windows) then `debug/intentd`
  *
  * Returns `null` if no binary is found (caller should fail or adopt external daemon).
  * Pure function for testability (uses `fs.existsSync`, but caller can mock).
@@ -89,18 +89,19 @@ export function resolveIntentdBinaryPath(
   resourcesPath: string,
   cwd: string,
 ): string | null {
+  const binaryName = process.platform === 'win32' ? 'intentd.exe' : 'intentd';
   const override = env.INTENTD_BIN?.trim();
   if (override && fs.existsSync(override)) {
     return override;
   }
   if (isPackaged) {
-    const packagedBinary = path.join(resourcesPath, 'intentd', 'intentd');
+    const packagedBinary = path.join(resourcesPath, 'intentd', binaryName);
     return fs.existsSync(packagedBinary) ? packagedBinary : null;
   }
   // Dev: check release first, then debug
-  const releaseBinary = path.join(cwd, 'packages/intentd/target/release/intentd');
+  const releaseBinary = path.join(cwd, 'packages/intentd/target/release', binaryName);
   if (fs.existsSync(releaseBinary)) return releaseBinary;
-  const debugBinary = path.join(cwd, 'packages/intentd/target/debug/intentd');
+  const debugBinary = path.join(cwd, 'packages/intentd/target/debug', binaryName);
   if (fs.existsSync(debugBinary)) return debugBinary;
   return null;
 }
@@ -139,6 +140,7 @@ async function probeDaemonSocket(socketPath: string): Promise<boolean> {
     });
     client.on('error', () => {
       clearTimeout(timeout);
+      client.destroy();
       resolve(false);
     });
   });
@@ -192,6 +194,7 @@ export async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Pr
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
+        client.destroy();
         resolve(false);
       }
     });
@@ -200,6 +203,7 @@ export async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Pr
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
+        client.destroy();
         resolve(false);
       }
     });

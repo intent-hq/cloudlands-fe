@@ -3,8 +3,9 @@
  * Cross-platform script to copy the intentd binary into the electron-builder
  * resources staging directory for packaging.
  *
- * The packaged binary will land at `process.resourcesPath/intentd/intentd` at runtime,
- * matching the path contract in src/features/backend/main/intentd-sidecar.ts::resolveIntentdBinaryPath.
+ * The packaged binary will land at `process.resourcesPath/intentd/intentd` at runtime
+ * (intentd.exe on Windows), matching the path contract in
+ * src/features/backend/main/intentd-sidecar.ts::resolveIntentdBinaryPath.
  *
  * macOS signing: the bundled binary is signed/notarized by electron-builder's afterSign
  * hook (scripts/notarize.js) along with the rest of the app bundle. No separate signing

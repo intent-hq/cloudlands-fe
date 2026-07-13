@@ -1,11 +1,11 @@
 /**
- * Unit tests for the health watchdog behavior.
+ * Unit tests for healthCheckProbe socket behavior.
  *
- * Tests verify probe timing (2s initial grace, 10s interval), timeout handling,
- * restart triggering on probe failure, and timer cleanup on shutdown.
+ * Tests verify successful probe responses, timeout handling, error handling,
+ * and socket cleanup across all code paths.
  */
 import * as net from 'node:net';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { healthCheckProbe } from './intentd-sidecar';
 

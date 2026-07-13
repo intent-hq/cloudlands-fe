@@ -107,6 +107,8 @@ describe('resolveIntentdBinaryPath', () => {
   });
 
   it('ignores INTENTD_BIN when the file does not exist', () => {
+    const binaryName = process.platform === 'win32' ? 'intentd.exe' : 'intentd';
+    const expectedPath = path.join('/cwd/packages/intentd/target/release', binaryName);
     mockExistsSync.mockReturnValueOnce(false); // INTENTD_BIN does not exist
     mockExistsSync.mockReturnValueOnce(true); // release binary exists
     const binaryPath = resolveIntentdBinaryPath(
@@ -115,14 +117,16 @@ describe('resolveIntentdBinaryPath', () => {
       '/resources',
       '/cwd',
     );
-    expect(binaryPath).toBe('/cwd/packages/intentd/target/release/intentd');
+    expect(binaryPath).toBe(expectedPath);
   });
 
   it('returns packaged binary path when isPackaged=true and file exists', () => {
+    const binaryName = process.platform === 'win32' ? 'intentd.exe' : 'intentd';
+    const expectedPath = path.join('/app/resources', 'intentd', binaryName);
     mockExistsSync.mockReturnValue(true);
     const binaryPath = resolveIntentdBinaryPath({}, true, '/app/resources', '/cwd');
-    expect(binaryPath).toBe('/app/resources/intentd/intentd');
-    expect(mockExistsSync).toHaveBeenCalledWith('/app/resources/intentd/intentd');
+    expect(binaryPath).toBe(expectedPath);
+    expect(mockExistsSync).toHaveBeenCalledWith(expectedPath);
   });
 
   it('returns null when packaged binary does not exist', () => {
@@ -132,16 +136,20 @@ describe('resolveIntentdBinaryPath', () => {
   });
 
   it('prefers release over debug in dev mode', () => {
+    const binaryName = process.platform === 'win32' ? 'intentd.exe' : 'intentd';
+    const expectedPath = path.join('/monorepo/packages/intentd/target/release', binaryName);
     mockExistsSync.mockReturnValueOnce(true); // release exists
     const binaryPath = resolveIntentdBinaryPath({}, false, '/resources', '/monorepo');
-    expect(binaryPath).toBe('/monorepo/packages/intentd/target/release/intentd');
+    expect(binaryPath).toBe(expectedPath);
   });
 
   it('falls back to debug when release does not exist', () => {
+    const binaryName = process.platform === 'win32' ? 'intentd.exe' : 'intentd';
+    const expectedPath = path.join('/monorepo/packages/intentd/target/debug', binaryName);
     mockExistsSync.mockReturnValueOnce(false); // release does not exist
     mockExistsSync.mockReturnValueOnce(true); // debug exists
     const binaryPath = resolveIntentdBinaryPath({}, false, '/resources', '/monorepo');
-    expect(binaryPath).toBe('/monorepo/packages/intentd/target/debug/intentd');
+    expect(binaryPath).toBe(expectedPath);
   });
 
   it('returns null when neither release nor debug exists in dev mode', () => {

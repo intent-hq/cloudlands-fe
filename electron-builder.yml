@@ -15,7 +15,7 @@ files:
   - resources/**/*
 
 # Bundle the intentd binary into the packaged app
-# Runtime path: process.resourcesPath/intentd/intentd
+# Runtime path: process.resourcesPath/intentd/intentd (intentd.exe on Windows)
 extraResources:
   - from: resources/sidecar
     to: intentd
