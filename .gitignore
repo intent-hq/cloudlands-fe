@@ -102,3 +102,6 @@ e2e-reports/
 
 # Auto-generated intent config
 .intent/
+
+# Sidecar binary staging directory (copy-sidecar.js output)
+resources/sidecar/

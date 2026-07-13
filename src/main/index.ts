@@ -330,6 +330,10 @@ import {
   disposeBackendClient,
   getBackendClient,
 } from '../features/backend/main/backend.ipc';
+import {
+  startIntentdSidecar,
+  stopIntentdSidecar,
+} from '../features/backend/main/intentd-sidecar';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
 import { setupSandboxIPC } from '../features/sandbox/main/sandbox.ipc';
 import { setupSentryAuthIPC } from '../features/sentry-auth/main/sentry-auth.ipc';
@@ -472,6 +476,19 @@ async function gracefulShutdown() {
     } catch (error) {
       logger.error(
         'Error disposing backend client:',
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+
+    // Stop the intentd sidecar daemon (if we spawned it). SIGTERM with a grace
+    // period, then SIGKILL. This runs AFTER disposeBackendClient() so the FE
+    // closes the socket before we kill the daemon.
+    try {
+      await stopIntentdSidecar();
+      logger.info('Sidecar daemon stopped');
+    } catch (error) {
+      logger.error(
+        'Error stopping sidecar daemon:',
         error instanceof Error ? error : new Error(String(error)),
       );
     }
@@ -1377,6 +1394,13 @@ app.whenReady().then(async () => {
   setupBannerIPC(); // Needed for promotional banner CDN fetch
   setupSpecialistsIPC(); // Needed for specialist selection on startup
   setupAutoUpdateIPC(); // Needed for auto-update IPC on startup
+
+  // Start the intentd sidecar daemon (if spawn policy allows). This MUST run
+  // before registerBackendHandlers() so the daemon is ready before the first
+  // JSON-RPC client connection attempt. Adoption logic (probe socket first)
+  // ensures we don't spawn when an external daemon is already running.
+  await startIntentdSidecar(process.env, app.isPackaged, process.resourcesPath, process.cwd());
+
   registerBackendHandlers(); // Needed for live JSON-RPC transport (workspaces domain)
   startupMetrics.end('criticalIPC');
 
