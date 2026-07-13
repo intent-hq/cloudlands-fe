@@ -28,8 +28,6 @@ vi.mock('$store/renderer/slices/chat-state/chat-state-slice', () => ({
   })),
 }));
 
-import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
-
 describe('ChatPanel imageBlocks transformation (STAB-7)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
