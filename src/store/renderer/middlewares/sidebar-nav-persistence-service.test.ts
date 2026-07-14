@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createSidebarNavPersistenceMiddleware } from "./sidebar-nav-persistence-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
-import type { StoreMiddleware, StoreApi, Dispatch } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreApi, Dispatch } from "@augmentcode/ag-redux-toolkit/types";
 import type { StoreState } from "../types";
 import {
   setPinnedWorkspaceIds,
