@@ -7,10 +7,12 @@ import {
   it,
   expect,
   beforeEach,
+  vi,
 } from 'vitest';
 import {
   getChiefWorkspace,
   InMemoryWorkspaceRepository,
+  DaemonWorkspaceRepository,
 } from '../main/workspace.repository';
 import type { Workspace } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
@@ -177,21 +179,20 @@ describe('InMemoryWorkspaceRepository', () => {
 // resolved via daemon RPCs (workspace.get / workspace.list, PROTOCOL.md §5.1).
 // Tests use InMemoryWorkspaceRepository for isolation.
 
-describe('DaemonWorkspaceRepository', async () => {
-  const { DaemonWorkspaceRepository } = await import('../main/workspace.repository');
-  const { vi } = await import('vitest');
+// Mock the backend client before importing DaemonWorkspaceRepository
+vi.mock('../../backend/main/backend.ipc');
 
-  let repository: InstanceType<typeof DaemonWorkspaceRepository>;
+describe('DaemonWorkspaceRepository', () => {
+  let repository: DaemonWorkspaceRepository;
   let mockBackendClient: { request: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
-    repository = new DaemonWorkspaceRepository();
-    mockBackendClient = { request: vi.fn() };
+    const { getBackendClient } = await import('../../backend/main/backend.ipc');
 
-    // Mock the backend client getter
-    vi.doMock('../../backend/main/backend.ipc', () => ({
-      getBackendClient: () => mockBackendClient,
-    }));
+    mockBackendClient = { request: vi.fn() };
+    vi.mocked(getBackendClient).mockReturnValue(mockBackendClient as any);
+
+    repository = new DaemonWorkspaceRepository();
   });
 
   describe('findById', () => {
