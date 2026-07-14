@@ -276,11 +276,28 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
           const proc = sidecarProcess;
 
           // Send SIGTERM first
+          let sigtermSent = false;
           try {
-            proc.kill('SIGTERM');
-            logger.info('Sent SIGTERM to sidecar; waiting 5s for graceful exit');
+            sigtermSent = proc.kill('SIGTERM');
+            if (sigtermSent) {
+              logger.info('Sent SIGTERM to sidecar; waiting 5s for graceful exit');
+            } else {
+              logger.warn('SIGTERM send returned false (process may have already exited)');
+            }
           } catch (err) {
             logger.error('Failed to send SIGTERM to sidecar', { error: err });
+          }
+
+          // If SIGTERM failed to send, immediately try SIGKILL
+          if (!sigtermSent) {
+            try {
+              const killed = proc.kill('SIGKILL');
+              if (killed) {
+                logger.warn('Sent SIGKILL immediately (SIGTERM failed)');
+              }
+            } catch (err) {
+              logger.error('Failed to send SIGKILL to sidecar', { error: err });
+            }
             return;
           }
 

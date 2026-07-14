@@ -229,7 +229,7 @@ describe('Watchdog N-strikes policy', () => {
     } as any));
 
     const mockProcess = {
-      kill: vi.fn(),
+      kill: vi.fn(() => true),
       killed: false,
       exitCode: null,
       signalCode: null,
@@ -260,7 +260,7 @@ describe('Watchdog N-strikes policy', () => {
     } as any));
 
     const mockProcess = {
-      kill: vi.fn(),
+      kill: vi.fn(() => true),
       killed: false,
       exitCode: null,
       signalCode: null,
@@ -305,7 +305,7 @@ describe('Watchdog N-strikes policy', () => {
     });
 
     const mockProcess = {
-      kill: vi.fn(),
+      kill: vi.fn(() => true),
       killed: false,
       exitCode: null,
       signalCode: null,
