@@ -118,6 +118,7 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/notes/primitives/ReferenceBlock.svelte',
   'src/lib/components/settings/AIBehaviorEditor.svelte',
   'src/lib/components/settings/AdditionalAgentsSettings.svelte',
+  'src/lib/components/settings/AgentBackendSettings.svelte',
   'src/lib/components/settings/AgentRulesEditor.svelte',
   'src/lib/components/settings/ColorThemeSettings.svelte',
   'src/lib/components/settings/GitWorkspaceSettings.svelte',
