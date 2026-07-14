@@ -33,6 +33,7 @@ import { LiveSetupScriptsClient } from "./live-setup-scripts-client";
 import { LiveSkillsClient } from "./live-skills-client";
 import { LiveSpecialistsClient } from "./live-specialists-client";
 import { LiveSystemClient } from "./live-system-client";
+import { LiveServerClient } from "./live-server-client";
 import { LiveTasksClient } from "./live-tasks-client";
 import { LiveTerminalsClient } from "./live-terminals-client";
 import { LiveWorkspacesClient } from "./live-workspaces-client";
@@ -59,4 +60,5 @@ export class LiveAppClient implements AppClient {
   readonly skills = new LiveSkillsClient();
   readonly browser = new LiveBrowserClient();
   readonly system = new LiveSystemClient();
+  readonly server = new LiveServerClient();
 }
