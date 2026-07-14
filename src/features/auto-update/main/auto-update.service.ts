@@ -225,6 +225,16 @@ class AutoUpdateService {
     const feedUrl = `${baseUrl}/${channel}`;
     autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl });
     logger.info('Update channel set', { channel, feedUrl });
+
+    // Persist the channel choice so it survives restart
+    this.persistChannelSetting(channel).catch((error) => {
+      logger.error('Failed to persist update channel setting', error as Error);
+    });
+  }
+
+  private async persistChannelSetting(channel: UpdateChannel): Promise<void> {
+    const { setLocalPref } = await import('../../../main/local-prefs');
+    await setLocalPref(BETA_UPDATES_STORAGE_KEY, channel === 'beta');
   }
 
   async checkForUpdates(): Promise<UpdateState> {
