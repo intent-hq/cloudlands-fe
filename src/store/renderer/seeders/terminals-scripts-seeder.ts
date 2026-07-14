@@ -100,10 +100,10 @@ registerMockSeeder("terminals-scripts", async ({ store, client }) => {
     try {
       const scripts = await client.scripts.list(wsId);
       store.dispatch(setScriptsData(wsId, scripts));
+      store.dispatch(setScriptsInitialized(wsId, true));
     } catch (err) {
       console.warn(`Mock seeder: failed to load scripts for workspace ${wsId}`, err);
     }
-    store.dispatch(setScriptsInitialized(wsId, true));
   }
 
   // ── Setup scripts (global, not workspace-scoped) ──
