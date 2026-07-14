@@ -6,9 +6,11 @@
   import {
   faFolder,
   faKey,
+  faInfoCircle,
 } from '@fortawesome/free-solid-svg-icons';
   import { refreshAutoCommitSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { store as appStore } from '$store/renderer/store';
+  import { selectActiveWorkspace } from '$store/renderer/slices/workspace/workspace-selectors';
   import { onMount } from 'svelte';
   import {
   validateBranchPrefix,
@@ -20,10 +22,16 @@
   let sshKeyPath = $state('');
   let autoFetch = $state(false);
   let autoCommit = $state(true);
+  let cowIsolation = $state(false);
   let defaultShell = $state('auto');
   let branchPrefix = $state('');
   let branchPrefixError = $state('');
   let settingsError = $state('');
+
+  // Current workspace (for CoW capability check)
+  const currentWorkspace = $derived(selectActiveWorkspace.select(appStore.state));
+  // CoW toggle is visible only when workspace supports it
+  const showCowToggle = $derived(currentWorkspace?.cowSupported === true);
 
   // Daemon setting path per field (PROTOCOL §5.12, BE-owned workspace/git group).
   const SETTING_PATHS = {
@@ -32,6 +40,7 @@
     defaultShell: 'workspace.defaultShell',
     autoFetch: 'workspace.autoFetch',
     autoCommit: 'git.autoCommit',
+    cowIsolation: 'workspace.cowIsolation',
     branchPrefix: 'workspace.branchPrefix',
   } as const;
 
@@ -74,6 +83,7 @@
       [SETTING_PATHS.defaultShell]: defaultShell,
       [SETTING_PATHS.autoFetch]: autoFetch,
       [SETTING_PATHS.autoCommit]: autoCommit,
+      [SETTING_PATHS.cowIsolation]: cowIsolation,
       [SETTING_PATHS.branchPrefix]: branchPrefix,
     };
   }
@@ -91,6 +101,7 @@
     defaultShell = stringValue(byPath.get(SETTING_PATHS.defaultShell)) || 'auto';
     autoFetch = byPath.get(SETTING_PATHS.autoFetch) === true;
     autoCommit = byPath.get(SETTING_PATHS.autoCommit) !== false;
+    cowIsolation = byPath.get(SETTING_PATHS.cowIsolation) === true;
     branchPrefix = stringValue(byPath.get(SETTING_PATHS.branchPrefix));
     loadedValues = currentValues();
   }
@@ -311,6 +322,20 @@
         />
         Auto-commit changes
       </label>
+      {#if showCowToggle}
+        <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer group">
+          <input
+            type="checkbox"
+            bind:checked={cowIsolation}
+            onchange={handleSave}
+            class="cursor-pointer"
+          />
+          <span>Use Copy-on-Write for Agent Isolation</span>
+          <span class="text-subtle hover:text-foreground transition-colors" title="Runs each delegated agent in an instant copy-on-write clone of this directory so parallel agents never interfere with each other or your working copy; each agent's changes are merged back automatically when it finishes. Only available when this workspace works directly on your directory (no worktree) and the filesystem supports CoW (APFS on macOS, btrfs/XFS-reflink on Linux, ReFS/Dev Drive on Windows).">
+            <Fa icon={faInfoCircle} size="sm" />
+          </span>
+        </label>
+      {/if}
     </div>
   </section>
 </div>

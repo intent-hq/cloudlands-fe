@@ -10,6 +10,7 @@
   installUpdate,
   simulateSetState,
 } from '$store/renderer/slices/auto-update/auto-update-slice';
+  import { autoUpdateClient } from '$features/auto-update/auto-update.client';
   import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
   import AIBehaviorEditor from '$lib/components/settings/AIBehaviorEditor.svelte';
   import AIBehaviorSidebar, {
@@ -24,6 +25,7 @@
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
+  import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectIsProviderActive } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -36,12 +38,14 @@
   import {
   resetNotificationSettings,
   setAgentFontStyle,
+  setBetaUpdatesEnabled,
   setCodeFontFamily,
   setNoteFontStyle,
   type AgentFontStyle,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
   selectAgentFontStyle,
+  selectBetaUpdatesEnabled,
   selectCodeFontFamily,
   selectCodeFontFamilyCSS,
   selectCodeFontFamilyLabel,
@@ -65,6 +69,7 @@
 
   const isReadyToInstall$ = selectIsReadyToInstall();
   const autoUpdateStatus$ = selectAutoUpdateStatus();
+  const betaUpdatesEnabled$ = selectBetaUpdatesEnabled();
   const noteFontStyle = selectNoteFontStyle();
   const isNoteMonospace = selectIsNoteMonospace();
   const agentFontStyle = selectAgentFontStyle();
@@ -276,6 +281,20 @@
     });
   }
 
+  async function handleBetaUpdatesToggle(enabled: string | boolean) {
+    const value = Boolean(enabled);
+    // Call the auto-update service to persist and switch the feed immediately
+    try {
+      await autoUpdateClient.setChannel(value ? 'beta' : 'stable');
+      // Only update Redux state after successful IPC call
+      appStore.dispatch(setBetaUpdatesEnabled(value));
+      logger.info('Update channel set to', value ? 'beta' : 'stable');
+    } catch (error) {
+      logger.error('Failed to set update channel', error);
+      // On failure, toggle state remains unchanged in Redux
+    }
+  }
+
   async function handleTestSentryError() {
     sentryTestStatus = 'Sending test error to Sentry...';
     try {
@@ -445,6 +464,18 @@
           <WebSocketApiSettings />
         </div>
 
+        <!-- Agent Backend -->
+        <div id="agent-backend" class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Agent Backend
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <AgentBackendSettings />
+            </section>
+          </div>
+        </div>
+
         <!-- Quick Actions -->
         <div id="utility-default-model" class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
@@ -453,6 +484,32 @@
           <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
             <section class="px-6 py-5">
               <BackgroundAgentSettings />
+            </section>
+          </div>
+        </div>
+
+        <!-- Updates -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Updates
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-foreground">Beta updates</p>
+                  <p class="text-xs text-subtle mt-0.5">
+                    Receive beta releases with new features and early improvements. Beta updates may be less stable than stable releases.
+                  </p>
+                </div>
+                <Toggle
+                  variant="switch"
+                  pressed={$betaUpdatesEnabled$}
+                  onChange={handleBetaUpdatesToggle}
+                  size="sm"
+                  ariaLabel="Enable beta updates"
+                />
+              </div>
             </section>
           </div>
         </div>

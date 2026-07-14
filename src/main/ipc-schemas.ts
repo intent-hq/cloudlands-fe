@@ -6,10 +6,7 @@
  */
 
 import { z } from 'zod';
-import {
-  FirstVisitStateSchema,
-  WorkspaceStatusMessageSchema,
-} from '../shared/schemas';
+import { FirstVisitStateSchema, WorkspaceStatusMessageSchema } from '../shared/schemas';
 import { isValidWorkspaceId } from '../shared/types/branded-ids';
 // IPC allow-list of workspace event-type strings.
 //
@@ -64,6 +61,10 @@ export const WORKSPACE_EVENT_TYPE_LITERALS = [
   'agent:queue:processing',
   'agent:queue:processing-cancelled',
   'agent:queue:stale-message',
+  // Agent process events
+  'agent:process:queued',
+  'agent:process:resumed',
+  'agent:process:evicted',
   // Agent user message events
   'agent:user-message:sent',
   // Agent session stats (PROTOCOL §5.24)
@@ -696,7 +697,6 @@ export const AgentDeleteSessionSchema = z.union([
     workspaceId: z.string().optional(),
   }),
 ]);
-
 
 export const AgentActivateSchema = z.object({
   agentId: z.string().min(1, 'Agent ID is required'),
@@ -1959,4 +1959,3 @@ export const AuggieMcpCheckDroidSchema = z.object({}).strict();
 export const SkillsListSchema = z.object({
   workspaceId: WorkspaceIdSchema,
 });
-

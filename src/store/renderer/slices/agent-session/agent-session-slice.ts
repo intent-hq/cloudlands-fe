@@ -258,6 +258,7 @@ type CanonicalAgentSessionUpdates = {
   isResponding?: boolean;
   stopReason?: string | null;
   lastAgentResponse?: string;
+  processQueueHint?: AgentSession['processQueueHint'];
 };
 
 type CanonicalAgentStatusWithSummary = CanonicalAgentStatusFields & {
@@ -301,6 +302,17 @@ function canonicalSessionUpdates(
     updates.isStreaming = fields.isStreaming ?? false;
     updates.isProcessing = fields.isProcessing ?? false;
     updates.isResponding = fields.isResponding ?? false;
+  }
+
+  // Defensively clear processQueueHint when agent transitions to normal running state
+  // or terminal state. This handles reconnect cases where agent:process:resumed may
+  // not arrive, and prevents stale hints after failed/idle transitions.
+  if (
+    fields.isResponding === true ||
+    fields.isActive === true ||
+    (typeof fields.status === 'string' && TERMINAL_STATUSES.has(fields.status))
+  ) {
+    updates.processQueueHint = undefined;
   }
 
   return updates;
@@ -718,6 +730,22 @@ export const updateAgentDigest = createAction<
   [wsId: string, agentId: string, digest: string | null]
 >('workspaceAgents/updateAgentDigest');
 
+/**
+ * Set process queue hint (agent:process:queued event).
+ * Payload: [agentId, used, cap]
+ */
+export const setProcessQueueHint = createAction<[agentId: string, used: number, cap: number]>(
+  'agentSessions/setProcessQueueHint',
+);
+
+/**
+ * Clear process queue hint (agent:process:resumed or normal state transition).
+ * Payload: [agentId]
+ */
+export const clearProcessQueueHint = createAction<[agentId: string]>(
+  'agentSessions/clearProcessQueueHint',
+);
+
 /** Rename agent session */
 export const renameSession = createAction<[agentId: string, name: string]>(
   'agentSessions/renameSession',
@@ -994,5 +1022,15 @@ export const agentSessionReducer = createReducer<AgentSessionState>(initialState
       isStreaming: false,
       isProcessing: false,
       isResponding: false,
+    }),
+  )
+  .with(setProcessQueueHint, (state, { payload: [agentId, used, cap] }) =>
+    updateSessionFields(state, agentId, {
+      processQueueHint: { waiting: true, used, cap },
+    }),
+  )
+  .with(clearProcessQueueHint, (state, { payload: [agentId] }) =>
+    updateSessionFields(state, agentId, {
+      processQueueHint: undefined,
     }),
   );
