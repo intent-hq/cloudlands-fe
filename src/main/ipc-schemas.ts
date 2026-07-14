@@ -260,8 +260,6 @@ export const WorkspaceCleanupSchema = z.object({
   id: WorkspaceIdSchema,
 });
 
-export const WorkspacePurgeSchema = z.object({});
-
 export const WorkspaceActivateSchema = z.object({
   id: WorkspaceIdSchema,
 });

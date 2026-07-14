@@ -88,7 +88,6 @@ import {
   WorkspaceArchiveSchema,
   WorkspaceUnarchiveSchema,
   WorkspaceCleanupSchema,
-  WorkspacePurgeSchema,
   WorkspaceActivateSchema,
   WorkspaceGetRootSchema,
   WorkspaceGetMetadataSchema,
@@ -295,7 +294,6 @@ export function setupWorkspaceIPC(): void {
   registerValidationSchema(WORKSPACE_CHANNELS.ARCHIVE, WorkspaceArchiveSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.UNARCHIVE, WorkspaceUnarchiveSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.CLEANUP, WorkspaceCleanupSchema);
-  registerValidationSchema(WORKSPACE_CHANNELS.PURGE, WorkspacePurgeSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.ACTIVATE, WorkspaceActivateSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.GET_ROOT, WorkspaceGetRootSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.GET_METADATA, WorkspaceGetMetadataSchema);
@@ -1115,20 +1113,6 @@ export function setupWorkspaceIPC(): void {
         return resultToCommandResponse(result);
       },
       WORKSPACE_CHANNELS.CLEANUP,
-    ),
-  );
-
-  // Purge deleted workspaces - permanently removes deleted workspaces and orphan directories
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.PURGE,
-    createSafeValidatedHandler(
-      WorkspacePurgeSchema,
-      async () => {
-        logger.info('Purging deleted workspaces');
-        const result = await protocolAdapter.purgeDeletedWorkspaces();
-        return resultToCommandResponse(result);
-      },
-      WORKSPACE_CHANNELS.PURGE,
     ),
   );
 
