@@ -3330,17 +3330,10 @@ export class WorkspaceService {
   }
 
   /**
-   * Purge orphan workspace directories and deleted workspaces.
-   * - Removes directories with no valid workspace.json
-   * - Permanently deletes workspaces with status: Deleted
-   * - Detects and cleans up workspaces with invalid git worktrees (after worktree prune)
-   * Should be run periodically or on app startup.
-   */
-  /**
    * Migrate workspaces from ~/intent/{id} to ~/intent/workspaces/{id}.
    * For workspaces that exist in both locations, merges the .workspace/ metadata
    * (~/intent/{id}/.workspace/ is authoritative) and removes the old location.
-   * Should be called once at startup, before purgeDeletedWorkspaces().
+   * Should be called once at startup.
    */
   async migrateWorkspacesToCanonicalLocation(): Promise<{
     migrated: number;
@@ -3435,28 +3428,6 @@ export class WorkspaceService {
       } else {
         await fs.copyFile(srcPath, tgtPath);
       }
-    }
-  }
-
-  async purgeDeletedWorkspaces(): Promise<Result<{ removed: number; orphans: number }, string>> {
-    try {
-      logger.info('Starting workspace purge');
-      const response = (await getBackendClient().request('workspace.purge')) as {
-        removed?: unknown;
-        orphans?: unknown;
-      };
-      const toFiniteCount = (value: unknown): number =>
-        typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
-      const removed = toFiniteCount(response?.removed);
-      const orphans = toFiniteCount(response?.orphans);
-      logger.info('Workspace purge completed', { removed, orphans });
-      return { ok: true, data: { removed, orphans } };
-    } catch (error) {
-      logger.error('Failed to purge workspaces', error as Error);
-      return {
-        ok: false,
-        error: this.extractErrorMessage(error),
-      };
     }
   }
 

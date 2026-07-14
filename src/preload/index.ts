@@ -40,7 +40,6 @@ const ALLOWED_CHANNELS = [
   "workspace:archive",
   "workspace:unarchive",
   "workspace:cleanup",
-  "workspace:purge",
   "workspace:duplicate",
   "workspace:rename",
   "workspace:export",

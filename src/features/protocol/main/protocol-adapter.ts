@@ -188,11 +188,6 @@ export class ProtocolAdapter {
     return await this.workspaceService.migrateWorkspacesToCanonicalLocation();
   }
 
-  async purgeDeletedWorkspaces(): Promise<Result<{ removed: number; orphans: number }, string>> {
-    logger.info('Protocol: purgeDeletedWorkspaces');
-    return await this.workspaceService.purgeDeletedWorkspaces();
-  }
-
   async findRepositories(directory: string): Promise<Result<string[], string>> {
     logger.debug('Protocol: findRepositories', { directory });
     return await this.workspaceService.findRepositories(directory);

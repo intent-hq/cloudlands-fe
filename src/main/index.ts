@@ -1481,21 +1481,6 @@ app.whenReady().then(async () => {
       logger.warn('Error migrating workspaces on startup', { error });
     }
 
-    // Purge deleted workspaces and orphan directories on startup
-    try {
-      const purgeResult = await protocolAdapter.purgeDeletedWorkspaces();
-      if (purgeResult.ok) {
-        const { removed, orphans } = purgeResult.data;
-        if (removed > 0 || orphans > 0) {
-          logger.info('Purged deleted workspaces on startup', { removed, orphans });
-        }
-      } else {
-        logger.warn('Failed to purge deleted workspaces', { error: purgeResult.error });
-      }
-    } catch (error) {
-      logger.warn('Error purging deleted workspaces on startup', { error });
-    }
-
     // Clean up stale temp files from ~/.augment/tmp (from crashed/killed agents)
     try {
       const result = await cleanupStaleTempFiles();
