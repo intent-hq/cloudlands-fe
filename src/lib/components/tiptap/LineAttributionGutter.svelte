@@ -18,7 +18,6 @@
   mapLineAttributionsToBlocks,
   type LineAttributions,
   type AttributionInfo,
-  type LineAuthor,
 } from './line-to-block-mapper';
   import {
   resolveBlockPosition,
