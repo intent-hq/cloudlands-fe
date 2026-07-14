@@ -74,11 +74,19 @@
     // dequeued mid-edit. If the message is already gone (race with drain),
     // the backend will error and we'll handle gracefully.
     if (onedit) {
-      const result = await onedit(message.id, message.content, true);
-      if (!result.success) {
-        // Message was already dequeued - clear edit state
-        // TODO STAB-27: Drop content into composer as draft instead of losing it
-        console.warn('Failed to hold queued message for editing:', result.error);
+      try {
+        const result = await onedit(message.id, message.content, true);
+        if (!result.success) {
+          // Message was already dequeued - clear edit state
+          // TODO STAB-27: Drop content into composer as draft instead of losing it
+          console.warn('Failed to hold queued message for editing:', result.error);
+          editingId = null;
+          editContent = '';
+          editOriginalContent = '';
+        }
+      } catch (error) {
+        // IPC/network failure - clear edit state
+        console.error('Exception while engaging hold for queued message edit:', error);
         editingId = null;
         editContent = '';
         editOriginalContent = '';
@@ -91,16 +99,28 @@
     const messageId = editingId;
     const originalContent = editOriginalContent;
 
-    // Clear edit state first
+    // STAB-27: Release hold with original content (editing:false) BEFORE clearing edit state
+    // so if the release fails, we stay in edit mode and the user can retry
+    if (messageId && onedit) {
+      try {
+        const result = await onedit(messageId, originalContent, false);
+        if (!result.success) {
+          // Release failed - stay in edit mode
+          console.error('Failed to release queued message hold on cancel:', result.error);
+          return;
+        }
+      } catch (error) {
+        // IPC/network failure - stay in edit mode
+        console.error('Exception while releasing queued message hold on cancel:', error);
+        return;
+      }
+    }
+
+    // Only clear edit state after successful release
     editingId = null;
     editContent = '';
     editOriginalContent = '';
     editStartedProgrammatically = false;
-
-    // STAB-27: Release hold with original content (editing:false)
-    if (messageId && onedit) {
-      await onedit(messageId, originalContent, false);
-    }
 
     if (wasProgrammatic) ondone?.();
   }
@@ -111,16 +131,28 @@
       const messageId = editingId;
       const newContent = editContent.trim();
 
-      // Clear edit state first
+      // STAB-27: Save with edited content and release hold (editing:false triggers self-drain)
+      // Do this BEFORE clearing edit state so if it fails, we stay in edit mode
+      if (onedit) {
+        try {
+          const result = await onedit(messageId, newContent, false);
+          if (!result.success) {
+            // Save failed - stay in edit mode
+            console.error('Failed to save queued message edit:', result.error);
+            return;
+          }
+        } catch (error) {
+          // IPC/network failure - stay in edit mode
+          console.error('Exception while saving queued message edit:', error);
+          return;
+        }
+      }
+
+      // Only clear edit state after successful save
       editingId = null;
       editContent = '';
       editOriginalContent = '';
       editStartedProgrammatically = false;
-
-      // STAB-27: Save with edited content and release hold (editing:false triggers self-drain)
-      if (onedit) {
-        await onedit(messageId, newContent, false);
-      }
 
       if (wasProgrammatic) ondone?.();
     } else if (editingId) {
