@@ -375,22 +375,22 @@ describe('DaemonWorkspaceRepository', () => {
       expect(result).toBe('');
     });
 
-    it('should fallback to filesystem when workspaceId not provided', async () => {
-      // When no workspaceId, should use filesystem fallback
-      const result = await repository.readGitConfig('/path/to/repo');
+    it('should not call RPC when workspaceId not provided', async () => {
+      // When no workspaceId, the DaemonWorkspaceRepository will not call the backend
+      // and will return empty string (or the repository may throw an error)
+      await repository.readGitConfig('/path/to/repo');
 
       // Should not have called the backend
       expect(mockBackendClient.request).not.toHaveBeenCalled();
     });
 
-    it('should fallback to filesystem when RPC fails', async () => {
+    it('should return empty string when RPC fails', async () => {
       mockBackendClient.request.mockRejectedValue(new Error('RPC failed'));
 
-      // Should gracefully fallback - won't throw
+      // DaemonWorkspaceRepository catches RPC errors and returns empty string
       const result = await repository.readGitConfig('/path/to/repo', 'ws-123' as any);
 
-      // The filesystem fallback will return mock data from InMemoryWorkspaceRepository
-      expect(result).toBeDefined();
+      expect(result).toBe('');
     });
   });
 });
