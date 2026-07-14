@@ -554,6 +554,127 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
 }
 
 /**
+ * Daemon-backed implementation that reads workspace metadata via JSON-RPC
+ * (`workspace.get` / `workspace.list`, PROTOCOL.md §5.1).
+ */
+export class DaemonWorkspaceRepository implements WorkspaceRepository {
+  async findById(id: WorkspaceId): Promise<Workspace | null> {
+    if (id === CHIEF_WORKSPACE_ID) {
+      return getChiefWorkspace();
+    }
+
+    if (WorkspaceConfig.isVirtualWorkspace(id)) {
+      return null;
+    }
+
+    try {
+      const { getBackendClient } = await import('../../backend/main/backend.ipc');
+      const response = (await getBackendClient().request('workspace.get', {
+        workspaceId: id,
+      })) as { workspace?: Workspace } | undefined;
+
+      const workspace = response?.workspace;
+      if (!workspace) {
+        return null;
+      }
+
+      // Register the slug so isWorkspaceSlug() recognizes intent-based slugs
+      registerWorkspaceSlug(id);
+
+      return workspace;
+    } catch (error) {
+      logger.error('Failed to fetch workspace from daemon', error as Error, { workspaceId: id });
+      return null;
+    }
+  }
+
+  async findAll(): Promise<Workspace[]> {
+    try {
+      const { getBackendClient } = await import('../../backend/main/backend.ipc');
+      const response = (await getBackendClient().request('workspace.list')) as {
+        workspaces?: Workspace[];
+      } | undefined;
+
+      const workspaces = response?.workspaces || [];
+
+      // Register all workspace slugs
+      for (const workspace of workspaces) {
+        registerWorkspaceSlug(workspace.id);
+      }
+
+      return workspaces;
+    } catch (error) {
+      logger.error('Failed to list workspaces from daemon', error as Error);
+      return [];
+    }
+  }
+
+  async exists(id: WorkspaceId): Promise<boolean> {
+    if (id === CHIEF_WORKSPACE_ID) {
+      return true;
+    }
+
+    if (WorkspaceConfig.isVirtualWorkspace(id)) {
+      return false;
+    }
+
+    // Check existence by trying to fetch the workspace
+    const workspace = await this.findById(id);
+    return workspace !== null;
+  }
+
+  async save(_workspace: Workspace): Promise<void> {
+    throw new Error(
+      'DaemonWorkspaceRepository.save not implemented — mutations should route through daemon RPCs (workspace.update, workspace.create)',
+    );
+  }
+
+  async delete(_id: WorkspaceId): Promise<void> {
+    throw new Error(
+      'DaemonWorkspaceRepository.delete not implemented — mutations should route through daemon RPC (workspace.delete)',
+    );
+  }
+
+  async cleanup(id: WorkspaceId): Promise<void> {
+    // No-op — daemon owns workspace lifecycle
+    logger.debug('DaemonWorkspaceRepository.cleanup no-op (daemon-owned lifecycle)', {
+      workspaceId: id,
+    });
+  }
+
+  async saveContext(_workspaceId: WorkspaceId, _context: any): Promise<void> {
+    throw new Error(
+      'DaemonWorkspaceRepository.saveContext not implemented — context mutations should route through daemon RPC (workspace.updateContext)',
+    );
+  }
+
+  async readContext(_workspaceId: WorkspaceId): Promise<any | null> {
+    throw new Error(
+      'DaemonWorkspaceRepository.readContext not implemented — context reads should route through daemon RPC (workspace.getContext)',
+    );
+  }
+
+  async readGitConfig(_repoPath: string): Promise<string> {
+    throw new Error(
+      'DaemonWorkspaceRepository.readGitConfig not implemented — git operations should not read from repository',
+    );
+  }
+
+  async scanDirectory(_dir: string, _depth: number = 0): Promise<string[]> {
+    throw new Error(
+      'DaemonWorkspaceRepository.scanDirectory not implemented — directory scanning should not happen through repository',
+    );
+  }
+
+  async cleanCache(id: WorkspaceId): Promise<void> {
+    // No-op — daemon owns cache
+    logger.debug('DaemonWorkspaceRepository.cleanCache no-op (daemon-owned cache)', {
+      workspaceId: id,
+    });
+  }
+}
+
+/**
  * In-memory implementation for testing
  */
 export class InMemoryWorkspaceRepository implements WorkspaceRepository {
