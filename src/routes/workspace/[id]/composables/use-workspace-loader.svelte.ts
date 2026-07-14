@@ -233,13 +233,13 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       // Hydrate Redux with the (potentially fresher) workspace entity.
       appStore.dispatch(setWorkspaceEntity(ws));
 
-      // STAB-24 fix: Dispatch workspaceMounted if it wasn't already dispatched
-      // during the pre-population block above. On first visits, alreadyMounted
-      // is true and this is skipped. On return visits (where the pre-population
-      // block was skipped), alreadyMounted is false and this ensures
-      // workspaceMounted runs to re-hydrate terminal tabs and other workspace
-      // state. The middleware coalesces concurrent fetches, so this is safe.
-      if (!alreadyMounted || isReturnVisit) {
+      // STAB-24 fix: Dispatch workspaceMounted unless it was already dispatched
+      // during the pre-population block above. The pre-population block only runs
+      // when (ws && !isReturnVisit), so alreadyMounted is only true for first
+      // visits to a cached workspace. In all other cases (return visits or
+      // uncached first visits), we need to dispatch workspaceMounted here to
+      // ensure terminal tabs and other workspace-scoped state are hydrated.
+      if (!alreadyMounted) {
         appStore.dispatch(workspaceMounted(ws.id));
         lastMountedWorkspaceId = ws.id;
       }
