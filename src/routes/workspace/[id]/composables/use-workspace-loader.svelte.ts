@@ -168,11 +168,11 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // and lets workspaceMounted sagas (agent loading, terminal init, etc.)
     // start without waiting for backend confirmation.
     //
-    // STAB-24 fix: Always dispatch workspaceMounted when switching back to a
-    // workspace, even if it was already mounted before. This ensures terminal
-    // tabs and other workspace-scoped state are re-hydrated from the daemon.
-    // The fan-out handlers are idempotent and coalesced, so redundant fetches
-    // are cheap.
+    // STAB-24 fix: Skip the pre-population block on return visits (when
+    // lastMountedWorkspaceId already equals workspaceId) to avoid redundant
+    // state updates. workspaceMounted will still be dispatched later (after
+    // the backend open() call) to ensure terminal tabs and other workspace-
+    // scoped state are re-hydrated from the daemon.
     let alreadyMounted = false;
     const isReturnVisit = lastMountedWorkspaceId === workspaceId;
     if (ws && !isReturnVisit) {
@@ -233,11 +233,12 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       // Hydrate Redux with the (potentially fresher) workspace entity.
       appStore.dispatch(setWorkspaceEntity(ws));
 
-      // STAB-24 fix: Always dispatch workspaceMounted, even on return visits.
-      // For first visits when !alreadyMounted, this ensures the fan-out runs.
-      // For return visits (alreadyMounted true), we still dispatch to re-hydrate
-      // terminal tabs and other workspace state that may have been cleared or
-      // stale. The middleware coalesces concurrent fetches, so this is safe.
+      // STAB-24 fix: Dispatch workspaceMounted if it wasn't already dispatched
+      // during the pre-population block above. On first visits, alreadyMounted
+      // is true and this is skipped. On return visits (where the pre-population
+      // block was skipped), alreadyMounted is false and this ensures
+      // workspaceMounted runs to re-hydrate terminal tabs and other workspace
+      // state. The middleware coalesces concurrent fetches, so this is safe.
       if (!alreadyMounted || isReturnVisit) {
         appStore.dispatch(workspaceMounted(ws.id));
         lastMountedWorkspaceId = ws.id;
