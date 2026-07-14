@@ -194,10 +194,12 @@ describe("agent-subscription-read-service", () => {
     await fetchAgentSubscriptionSnapshot(WS, PARENT);
     expect(readEntry(WS, PARENT)?.waitingState).toBe("completed");
 
-    // The cleanup re-fetches (still empty) and removes the entry.
+    // The cleanup re-fetches (still empty) and transitions to idle.
+    // STAB-23: resetSubscriptionUI keeps an idle entry instead of deleting so
+    // refreshWorkspaceSubscriptionEntries can reach the agent on future events.
     await vi.advanceTimersByTimeAsync(COMPLETED_DISPLAY_DURATION_MS);
     await vi.advanceTimersByTimeAsync(0);
-    expect(readEntry(WS, PARENT)).toBeUndefined();
+    expect(readEntry(WS, PARENT)?.waitingState).toBe("idle");
   });
 
   it("completed cleanup refreshes instead of resetting when new active data arrived", async () => {

@@ -71,6 +71,10 @@ export const resetSubscriptionUI = createAction<[workspaceId: string, agentId: s
   'agentSubscriptionUI/resetSubscriptionUI',
 );
 
+export const deleteSubscriptionUI = createAction<[workspaceId: string, agentId: string]>(
+  'agentSubscriptionUI/deleteSubscriptionUI',
+);
+
 /** Dispatched by the AgentSubscriptions component to request an initial fetch
  *  when the component mounts or the agentId changes. The saga handles the
  *  actual IPC call so no side effects live in the component. */
@@ -147,6 +151,24 @@ export const agentSubscriptionUIReducer = createReducer<AgentSubscriptionUIState
     };
   })
   .with(resetSubscriptionUI, (state, { payload: [workspaceId, agentId] }) => {
+    const key = makeKey(workspaceId, agentId);
+    const existing = state.entries[key];
+    if (!existing) return state;
+    // STAB-23: keep an idle entry instead of deleting so future
+    // refreshWorkspaceSubscriptionEntries fan-outs still reach this agent.
+    // Actual deletion happens on workspace deleted (via deleteSubscriptionUI).
+    return {
+      ...state,
+      entries: {
+        ...state.entries,
+        [key]: {
+          ...emptyEntry,
+          waitingState: 'idle',
+        },
+      },
+    };
+  })
+  .with(deleteSubscriptionUI, (state, { payload: [workspaceId, agentId] }) => {
     const key = makeKey(workspaceId, agentId);
     if (!state.entries[key]) return state;
     const { [key]: _, ...rest } = state.entries;

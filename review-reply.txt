@@ -1,0 +1,1 @@
+Fixed in e3ebfc27 - added all panel/hover actions (openPanel, closePanel, togglePanel, closeAll, closeHoverCards) to CARD_PINNED_ACTION_TYPES.
