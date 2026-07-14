@@ -1405,12 +1405,25 @@ function handleNotification(method: string, params: unknown): void {
     }
   }
   // Process-queue events (§6.5): agent:process:queued sets the hint,
-  // agent:process:resumed clears it. Both update the session's processQueueHint.
+  // agent:process:resumed clears it, agent:process:evicted clears it. These are
+  // transient UI hints and should not clutter the activity timeline, so they
+  // return early rather than falling through to eventReceived.
   if (type === 'agent:process:queued') {
     handleProcessQueuedEvent(event);
+    return;
   }
   if (type === 'agent:process:resumed') {
     handleProcessResumedEvent(event);
+    return;
+  }
+  if (type === 'agent:process:evicted') {
+    // Evicted means the agent was removed from the queue (e.g., cancelled/failed
+    // before resuming). Clear the hint so the UI doesn't show a stale waiting state.
+    const data = (event as { data?: Record<string, unknown> }).data;
+    if (data && typeof data.agentId === 'string') {
+      appStore.dispatch(clearProcessQueueHint(data.agentId));
+    }
+    return;
   }
 
   // Storage + fan-out: every workspace-scoped event flows into
