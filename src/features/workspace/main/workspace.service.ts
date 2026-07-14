@@ -86,7 +86,7 @@ import {
   validateRepositoryPath,
 } from '../../../main/utils/workspace-validation';
 import type { WorkspaceRepository } from './workspace.repository';
-import { FileSystemWorkspaceRepository, getChiefWorkspace } from './workspace.repository';
+import { DaemonWorkspaceRepository, getChiefWorkspace } from './workspace.repository';
 import {
   getBranchPrefix,
   getWorktreesLocation,
@@ -208,7 +208,7 @@ export class WorkspaceService {
   private readonly RECENTLY_DELETED_TTL = 60000; // 60 seconds - long enough for zombie events to settle
 
   constructor(
-    private readonly repository: WorkspaceRepository = new FileSystemWorkspaceRepository(),
+    private readonly repository: WorkspaceRepository = new DaemonWorkspaceRepository(),
     private readonly idService: UnifiedIdService = unifiedIdService,
   ) {
     // Domain event listeners (including task:status-changed) are now handled

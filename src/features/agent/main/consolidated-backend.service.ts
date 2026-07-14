@@ -2082,6 +2082,7 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
     agentId: string,
     messageId: string,
     content: string,
+    editing?: boolean,
   ): Promise<{ success: boolean; error?: string }> {
     if (isMainProcess()) {
       throw new Error('editQueuedMessage should only be called from frontend');
@@ -2089,11 +2090,19 @@ export class ConsolidatedBackendService extends EventEmitter implements IDisposa
 
     try {
       const invoke = await getInvoke();
-      const result = (await invoke(AGENT_BACKEND_CHANNELS.EDIT_QUEUED, {
+      const payload: Record<string, unknown> = {
         agentId,
         messageId,
         content,
-      })) as { success: boolean; data?: { success: boolean; error?: string }; error?: any };
+      };
+      if (editing !== undefined) {
+        payload.editing = editing;
+      }
+      const result = (await invoke(AGENT_BACKEND_CHANNELS.EDIT_QUEUED, payload)) as {
+        success: boolean;
+        data?: { success: boolean; error?: string };
+        error?: any
+      };
       // IPC wraps response in { success, data }, so unwrap the inner data
       if (result?.success && result?.data) {
         return result.data;

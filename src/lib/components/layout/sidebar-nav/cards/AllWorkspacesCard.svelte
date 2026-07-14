@@ -188,7 +188,10 @@
     });
   });
 
-  const statusLabels: Record<WorkspaceDisplayStatus, string> = {
+  type GroupingStatus = WorkspaceDisplayStatus | 'idle';
+
+  const statusLabels: Record<GroupingStatus, string> = {
+    idle: 'Idle',
     not_started: 'No Code Changes',
     in_progress: 'In Progress',
     complete: 'Complete',
@@ -197,7 +200,8 @@
     pr_merged: 'PR Merged',
   };
 
-  const statusOrder: WorkspaceDisplayStatus[] = [
+  const statusOrder: GroupingStatus[] = [
+    'idle',
     'in_progress',
     'pr_ready',
     'pr_open',
@@ -206,10 +210,29 @@
     'pr_merged',
   ];
 
+  function getGroupingStatus(ws: Workspace): GroupingStatus {
+    const baseStatus = getDisplayStatus(ws);
+
+    // PR states and complete always keep their status, never go to IDLE
+    if (baseStatus === 'pr_merged' || baseStatus === 'pr_open' ||
+        baseStatus === 'pr_ready' || baseStatus === 'complete') {
+      return baseStatus;
+    }
+
+    // For in_progress or not_started: if zero streaming agents, it's IDLE
+    void $activeStreamsVersion$;
+    const hasActiveAgents = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id).length > 0;
+    if (!hasActiveAgents && (baseStatus === 'in_progress' || baseStatus === 'not_started')) {
+      return 'idle';
+    }
+
+    return baseStatus;
+  }
+
   const groupedByStatus = $derived.by(() => {
-    const groups = new Map<WorkspaceDisplayStatus, Workspace[]>();
+    const groups = new Map<GroupingStatus, Workspace[]>();
     for (const ws of filteredWorkspaces) {
-      const status = getDisplayStatus(ws);
+      const status = getGroupingStatus(ws);
       if (!groups.has(status)) groups.set(status, []);
       groups.get(status)!.push(ws);
     }

@@ -62,12 +62,21 @@ export const unifiedOrchestrator = {
     agentId: string,
     messageId: string,
     content: string,
+    editing?: boolean,
   ): Promise<QueueOperationResult> {
-    const result = (await invoke(AGENT_BACKEND_CHANNELS.EDIT_QUEUED, {
+    const payload: Record<string, unknown> = {
       agentId,
       messageId,
       content,
-    })) as { success: boolean; data?: QueueOperationResult; error?: { message?: string } };
+    };
+    if (editing !== undefined) {
+      payload.editing = editing;
+    }
+    const result = (await invoke(AGENT_BACKEND_CHANNELS.EDIT_QUEUED, payload)) as {
+      success: boolean;
+      data?: QueueOperationResult;
+      error?: { message?: string }
+    };
     return unwrapIpcResponse(result) as QueueOperationResult;
   },
 

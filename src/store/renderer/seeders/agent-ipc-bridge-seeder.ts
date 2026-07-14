@@ -248,22 +248,28 @@ registerMockIpcHandler(AGENT_BACKEND_CHANNELS.QUEUE_MESSAGE, async (arg) => {
 
 /**
  * `agent:backend:edit-queued` → daemon `agent.editQueuedMessage`
- * (PROTOCOL §5.5: `{ agentId, messageId, content }` →
+ * (PROTOCOL §5.5: `{ agentId, messageId, content, editing? }` →
  * `{ success, queuedMessage }`). Wrapped for orchestrator unwrap; the
  * QueuedMessage round-trip is what the ChatPanel queued-message UI binds to.
+ * STAB-27: editing flag holds the message during edit (daemon skips it in drain).
  */
 registerMockIpcHandler(AGENT_BACKEND_CHANNELS.EDIT_QUEUED, async (arg) => {
   const request = asRecord(arg);
   const agentId = readString(request, "agentId");
   const messageId = readString(request, "messageId");
   const content = typeof request.content === "string" ? (request.content as string) : "";
+  const editing = typeof request.editing === "boolean" ? request.editing : undefined;
   if (!agentId || !messageId) {
     return {
       success: false,
       error: { message: "agentId and messageId are required" },
     };
   }
-  return forwardToOrchestrator("agent.editQueuedMessage", { agentId, messageId, content });
+  const payload: Record<string, unknown> = { agentId, messageId, content };
+  if (editing !== undefined) {
+    payload.editing = editing;
+  }
+  return forwardToOrchestrator("agent.editQueuedMessage", payload);
 });
 
 /**
