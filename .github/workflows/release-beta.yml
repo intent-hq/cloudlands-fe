@@ -203,12 +203,48 @@ jobs:
             dist-electron/*.blockmap \
             dist-electron/latest-mac.yml
 
-      - name: Push commit and tag to cloudlands-fe
+      - name: Push tag to cloudlands-fe
         run: |
           VERSION="${{ inputs.version }}"
-          git push origin "HEAD:main" "refs/tags/v${VERSION}"
+          git push origin "refs/tags/v${VERSION}"
         env:
           GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+
+      - name: Open version-bump PR to main
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          BRANCH="release/v${VERSION}-version-bump"
+
+          # Push version-bump commit to feature branch (force-push for idempotency)
+          git push origin "HEAD:${BRANCH}" --force
+
+          # Check if PR already exists for this branch
+          EXISTING_PR=$(gh pr list --repo intent-hq/cloudlands-fe --head "${BRANCH}" --json number --jq '.[0].number // empty')
+
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR #${EXISTING_PR} already exists for branch ${BRANCH}"
+            echo "Branch was force-pushed with updated commit"
+          else
+            # Create new PR
+            gh pr create \
+              --repo intent-hq/cloudlands-fe \
+              --base main \
+              --head "${BRANCH}" \
+              --title "chore: bump version to ${VERSION}" \
+              --body "Automated version bump to v${VERSION} from release workflow.
+
+          **Note:** The tag \`v${VERSION}\` points to the workflow commit on this branch. After merging, the tag will reference this branch's commit, not the merge commit on main.
+
+          **Release artifacts:**
+          - [Versioned release](https://github.com/intent-hq/cloudlands-releases/releases/tag/v${VERSION})
+          - [Rolling beta channel](https://github.com/intent-hq/cloudlands-releases/releases/tag/beta)
+
+          Triggered by workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+            echo "Created PR for version bump to ${VERSION}"
+          fi
 
       - name: Post summary
         run: |
