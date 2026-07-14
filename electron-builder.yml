@@ -61,9 +61,9 @@ mac:
   requirements: build/app-requirements.txt
   notarize: true
   # Sign bundled intentd sidecar binary (extraResources are not auto-signed)
-  # Path is relative to app Contents directory
+  # Path is relative to .app bundle root (joined with path.resolve(appPath, destination))
   binaries:
-    - "Resources/intentd/intentd"
+    - "Contents/Resources/intentd/intentd"
   target:
     - target: dmg
       arch:
