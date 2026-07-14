@@ -116,7 +116,10 @@ import type { AppliedSettingChange } from "$lib/client/app-client";
 import { store as appStore } from "$store/renderer/store";
 import { eventReceived } from "$store/renderer/slices/workspace-events/workspace-events-slice";
 import { agentStreamUpdateReceived } from "$store/renderer/slices/workspace-agents/workspace-agents-stream-slice";
-import { streamStatusReceived } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  streamStatusReceived,
+  chatSendFailed,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
 import { replaceAgentQueue } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import { renameSession } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { workspaceDeleted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
@@ -525,11 +528,18 @@ function handleStreamEndEvent(event: WorkspaceEvent): void {
 function handleAgentFailedStream(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   const agentId = data?.agentId;
+  const error = data?.error;
   if (typeof agentId !== "string") return;
   const state = streamsByAgent.get(agentId);
   if (!state) return;
   dispatchStreamUpdate(agentId, state, "error");
   streamsByAgent.delete(agentId);
+
+  // Set chat error when agent:failed arrives so the StreamingStatus component
+  // displays the failure message and Retry button
+  if (typeof error === "string" && error.length > 0) {
+    appStore.dispatch(chatSendFailed(agentId, error));
+  }
 }
 
 /**

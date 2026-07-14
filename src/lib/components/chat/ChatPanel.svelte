@@ -90,6 +90,8 @@
   chatRebindStarted,
   chatRebindEnded,
   chatTrackedWorkspaceSet,
+  chatErrorCleared,
+  chatSendFailed,
 } from '$store/renderer/slices/chat-state/chat-state-slice';
   import {
   selectChatError,
@@ -102,6 +104,7 @@
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { selectWorkspaceNavigationMainPanel } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
+  import { appClient } from '$lib/client';
 
   import { selectTasksForAgent } from '$store/renderer/slices/task-agent-associations/task-agent-associations-selectors';
   import type { TaskAgentAssociation } from '$store/renderer/slices/task-agent-associations/task-agent-associations-types';
@@ -109,6 +112,7 @@
   import {
   extractAllContent,
   type SuggestedPrompt,
+  AgentStatus,
 } from '$shared/types';
   import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
   import type { ContextItem } from './input/context-api';
@@ -2451,8 +2455,39 @@
   }
 
   // Handle retrying the last failed message
-  function handleRetry() {
-    if (!workspace) return;
+  async function handleRetry() {
+    if (!workspace || !agentId) return;
+
+    // When agent status is "error" (spawn failure after retries exhausted),
+    // call the new agent.retry RPC to redrive the failed spawn.
+    // Otherwise fall through to the regular retry-last-message path.
+    const currentStatus = $agentSession$?.status;
+    if (currentStatus === AgentStatus.Error) {
+      try {
+        // Clear the current error so the UI shows loading state
+        appStore.dispatch(chatErrorCleared(agentId));
+
+        const result = await appClient.agents.retry(agentId, workspace.id);
+
+        if (!result.ok) {
+          // Retry was rejected (agent not in error status) - restore error
+          // and fall through to regular retry
+          if ($chatError$) {
+            appStore.dispatch(chatSendFailed(agentId, $chatError$));
+          }
+          appStore.dispatch(agentSessionRetryLastMessageRequested(agentId, workspace.id));
+        }
+        // If ok:true, the daemon emits agent:status-changed events and redrives
+        // the queued message; the UI updates reactively via those events
+      } catch (err) {
+        // Transport error - restore error and show message
+        const errorMsg = err instanceof Error ? err.message : 'Failed to retry agent spawn';
+        appStore.dispatch(chatSendFailed(agentId, errorMsg));
+      }
+      return;
+    }
+
+    // Normal retry path for non-error statuses
     appStore.dispatch(agentSessionRetryLastMessageRequested(agentId, workspace.id));
   }
 
