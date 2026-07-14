@@ -48,6 +48,7 @@ import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { store as appStore } from "$store/renderer/store";
 import {
+  deleteSubscriptionUI,
   makeKey,
   requestSubscriptionFetch,
   resetSubscriptionUI,
@@ -297,8 +298,9 @@ export function refreshWorkspaceSubscriptionEntries(wsId: string): void {
 
 /**
  * LEAK-1 purge: bump the hydration generation (discarding in-flight and
- * late-resolving fetches plus pending completion timers) and reset every entry
- * of the deleted workspace.
+ * late-resolving fetches plus pending completion timers) and delete every entry
+ * of the deleted workspace. STAB-23: uses deleteSubscriptionUI (not reset) to
+ * actually remove entries when the workspace is deleted.
  */
 export function purgeWorkspaceSubscriptionEntries(wsId: string): void {
   workspaceGeneration.set(wsId, currentWorkspaceGeneration(wsId) + 1);
@@ -309,7 +311,7 @@ export function purgeWorkspaceSubscriptionEntries(wsId: string): void {
   for (const key of Object.keys(readEntries())) {
     if (!key.startsWith(prefix)) continue;
     inFlight.delete(key);
-    appStore.dispatch(resetSubscriptionUI(wsId, key.slice(prefix.length)));
+    appStore.dispatch(deleteSubscriptionUI(wsId, key.slice(prefix.length)));
   }
 }
 
