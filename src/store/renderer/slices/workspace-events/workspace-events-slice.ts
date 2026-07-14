@@ -68,9 +68,11 @@ export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initia
     // instead of blindly appending. The boot snapshot from `eventsLoaded` is
     // already oldest→newest (via `LiveEventsClient.list()`), so maintain that
     // order when live events arrive from the daemon-events-bridge.
-    const combined = [...wsState.events, safeEvent].sort((a, b) =>
-      a.timestamp.localeCompare(b.timestamp),
-    );
+    const combined = [...wsState.events, safeEvent].sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      return timeA - timeB;
+    });
     const nextEvents = combined.slice(-MAX_EVENTS);
     return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
   })
@@ -88,9 +90,11 @@ export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initia
     if (deduped.length === 0) return state;
     // STAB-2: Merge and sort by timestamp (oldest→newest) to maintain
     // chronological order regardless of the arrival sequence of live events.
-    const combined = [...wsState.events, ...deduped].sort((a, b) =>
-      a.timestamp.localeCompare(b.timestamp),
-    );
+    const combined = [...wsState.events, ...deduped].sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      return timeA - timeB;
+    });
     const nextEvents = combined.slice(-MAX_EVENTS);
     return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
   })
