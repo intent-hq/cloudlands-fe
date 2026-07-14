@@ -28,6 +28,8 @@ import {
   openPanel,
   closePanel,
   togglePanel,
+  closeAll,
+  closeHoverCards,
   setCardPinned,
   toggleCardPinned,
   setChiefActiveAgentId,
@@ -64,12 +66,18 @@ const PANEL_ITEM_ACTION_TYPES = new Set<string>([
   openPanel.type,
   closePanel.type,
   togglePanel.type,
+  closeAll.type,
 ]);
 
 /** Actions whose reducer changes isCardPinned and needs a write-back. */
 const CARD_PINNED_ACTION_TYPES = new Set<string>([
   setCardPinned.type,
   toggleCardPinned.type,
+  openPanel.type,
+  closePanel.type,
+  togglePanel.type,
+  closeAll.type,
+  closeHoverCards.type,
 ]);
 
 /** Actions whose reducer changes chiefActiveAgentId and needs a write-back. */
@@ -218,17 +226,23 @@ export function createSidebarNavPersistenceMiddleware(): StoreMiddleware {
         const state = api.getState() as StoreState;
         if (PINNED_WORKSPACES_ACTION_TYPES.has(action.type)) {
           persistPinnedWorkspaceIds(state);
-        } else if (VIEW_MODE_ACTION_TYPES.has(action.type)) {
+        }
+        if (VIEW_MODE_ACTION_TYPES.has(action.type)) {
           persistViewMode(state);
-        } else if (PANEL_WIDTH_ACTION_TYPES.has(action.type)) {
+        }
+        if (PANEL_WIDTH_ACTION_TYPES.has(action.type)) {
           persistPanelWidth(state);
-        } else if (PANEL_ITEM_ACTION_TYPES.has(action.type)) {
+        }
+        if (PANEL_ITEM_ACTION_TYPES.has(action.type)) {
           persistPanelItem(state);
-        } else if (CARD_PINNED_ACTION_TYPES.has(action.type)) {
+        }
+        if (CARD_PINNED_ACTION_TYPES.has(action.type)) {
           persistCardPinned(state);
-        } else if (CHIEF_ACTIVE_AGENT_ID_ACTION_TYPES.has(action.type)) {
+        }
+        if (CHIEF_ACTIVE_AGENT_ID_ACTION_TYPES.has(action.type)) {
           persistChiefActiveAgentId(state);
-        } else if (MULTISELECT_TAB_ORDER_ACTION_TYPES.has(action.type)) {
+        }
+        if (MULTISELECT_TAB_ORDER_ACTION_TYPES.has(action.type)) {
           persistMultiSelectTabOrder(state);
         }
       }
