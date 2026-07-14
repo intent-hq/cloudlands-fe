@@ -337,25 +337,31 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
-    // Deliver agent:process:queued event — should set processQueueHint
+    // Deliver agent:process:queued event — should set processQueueHint.
+    // Use saturated values (used === cap) to match the documented semantics
+    // ("all slots active") per PROTOCOL §6.5.
     handler(
       notification('agent:process:queued', {
         agentId: AGENT,
-        used: 2,
+        used: 3,
         cap: 3,
       }),
     );
 
     expect(readSession()?.processQueueHint).toEqual({
       waiting: true,
-      used: 2,
+      used: 3,
       cap: 3,
     });
 
-    // Deliver agent:process:resumed event — should clear processQueueHint
+    // Deliver agent:process:resumed event — should clear processQueueHint.
+    // Include used/cap to match PROTOCOL §6.5 (AgentProcessResumedEvent carries
+    // { agentId, used, cap }) even though the handler only uses agentId.
     handler(
       notification('agent:process:resumed', {
         agentId: AGENT,
+        used: 2,
+        cap: 3,
       }),
     );
 
