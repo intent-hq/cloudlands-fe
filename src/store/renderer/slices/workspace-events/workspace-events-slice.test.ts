@@ -17,11 +17,11 @@ import {
 const WS_1 = 'ws-1';
 const WS_2 = 'ws-2';
 
-function mockEvent(id: string, workspaceId = WS_1): WorkspaceEvent {
+function mockEvent(id: string, workspaceId = WS_1, timestampOverride?: string): WorkspaceEvent {
   return {
     id,
     workspaceId,
-    timestamp: '2026-03-25T00:00:00.000Z',
+    timestamp: timestampOverride ?? '2026-03-25T00:00:00.000Z',
     type: 'file:changed',
     actor: { type: 'system' },
   };
@@ -184,5 +184,74 @@ describe('workspaceEventsReducer', () => {
     expect(state.byWorkspaceId[WS_1].loading).toBe(true);
     const next = workspaceEventsReducer(state, setEventsLoading(WS_1, false));
     expect(next.byWorkspaceId[WS_1].loading).toBe(false);
+  });
+
+  // STAB-2 regression: live events must be inserted in timestamp-sorted order
+  it('inserts eventReceived in chronological order (oldest→newest)', () => {
+    // Simulate initial load with 3 events in chronological order
+    const initialEvents = [
+      mockEvent('evt-1', WS_1, '2026-01-01T10:00:00.000Z'),
+      mockEvent('evt-2', WS_1, '2026-01-01T11:00:00.000Z'),
+      mockEvent('evt-3', WS_1, '2026-01-01T12:00:00.000Z'),
+    ];
+    let state = workspaceEventsReducer(initialState, eventsLoaded(WS_1, initialEvents));
+
+    // Receive a new event with a timestamp between evt-1 and evt-2
+    const newEvent = mockEvent('evt-mid', WS_1, '2026-01-01T10:30:00.000Z');
+    state = workspaceEventsReducer(state, eventReceived(WS_1, newEvent));
+
+    // Verify the event was inserted in the correct chronological position
+    expect(state.byWorkspaceId[WS_1].events.map((e) => e.id)).toEqual([
+      'evt-1',
+      'evt-mid',
+      'evt-2',
+      'evt-3',
+    ]);
+  });
+
+  it('inserts bulkEventsReceived in chronological order', () => {
+    // Simulate initial load
+    const initialEvents = [
+      mockEvent('evt-1', WS_1, '2026-01-01T10:00:00.000Z'),
+      mockEvent('evt-4', WS_1, '2026-01-01T13:00:00.000Z'),
+    ];
+    let state = workspaceEventsReducer(initialState, eventsLoaded(WS_1, initialEvents));
+
+    // Receive bulk events with timestamps that should interleave
+    const newEvents = [
+      mockEvent('evt-2', WS_1, '2026-01-01T11:00:00.000Z'),
+      mockEvent('evt-3', WS_1, '2026-01-01T12:00:00.000Z'),
+      mockEvent('evt-5', WS_1, '2026-01-01T14:00:00.000Z'),
+    ];
+    state = workspaceEventsReducer(state, bulkEventsReceived(WS_1, newEvents));
+
+    // Verify all events are in chronological order
+    expect(state.byWorkspaceId[WS_1].events.map((e) => e.id)).toEqual([
+      'evt-1',
+      'evt-2',
+      'evt-3',
+      'evt-4',
+      'evt-5',
+    ]);
+  });
+
+  it('maintains chronological order when newest event arrives first', () => {
+    // Start with older events
+    const initialEvents = [
+      mockEvent('evt-old-1', WS_1, '2026-01-01T10:00:00.000Z'),
+      mockEvent('evt-old-2', WS_1, '2026-01-01T11:00:00.000Z'),
+    ];
+    let state = workspaceEventsReducer(initialState, eventsLoaded(WS_1, initialEvents));
+
+    // Receive a very recent event (should go at the end)
+    const recentEvent = mockEvent('evt-new', WS_1, '2026-01-02T10:00:00.000Z');
+    state = workspaceEventsReducer(state, eventReceived(WS_1, recentEvent));
+
+    // Verify newest event is at the end
+    expect(state.byWorkspaceId[WS_1].events.map((e) => e.id)).toEqual([
+      'evt-old-1',
+      'evt-old-2',
+      'evt-new',
+    ]);
   });
 });
