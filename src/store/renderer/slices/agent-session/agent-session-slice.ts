@@ -304,9 +304,14 @@ function canonicalSessionUpdates(
     updates.isResponding = fields.isResponding ?? false;
   }
 
-  // Defensively clear processQueueHint when agent transitions to normal running state.
-  // This handles reconnect cases where agent:process:resumed may not arrive.
-  if (fields.isResponding === true || fields.isActive === true) {
+  // Defensively clear processQueueHint when agent transitions to normal running state
+  // or terminal state. This handles reconnect cases where agent:process:resumed may
+  // not arrive, and prevents stale hints after failed/idle transitions.
+  if (
+    fields.isResponding === true ||
+    fields.isActive === true ||
+    (typeof fields.status === 'string' && TERMINAL_STATUSES.has(fields.status))
+  ) {
     updates.processQueueHint = undefined;
   }
 

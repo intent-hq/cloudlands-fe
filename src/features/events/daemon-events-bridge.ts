@@ -603,6 +603,10 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
  * an agent spawn is queued waiting for a free process slot. The payload is
  * self-sufficient per §6.7, so the renderer sets the hint directly without a
  * follow-up read.
+ *
+ * Ensure the session exists before applying the hint so the update doesn't get
+ * silently dropped if the event arrives during reconnect/rehydration before the
+ * session is in Redux.
  */
 function handleProcessQueuedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -613,7 +617,11 @@ function handleProcessQueuedEvent(event: WorkspaceEvent): void {
   if (typeof agentId !== 'string' || typeof used !== 'number' || typeof cap !== 'number') {
     return;
   }
-  appStore.dispatch(setProcessQueueHint(agentId, used, cap));
+  // Ensure session exists before applying the hint (the reducer's
+  // updateSessionFields is a no-op if the session doesn't exist yet).
+  void ensureAgentSession(agentId).then(() => {
+    appStore.dispatch(setProcessQueueHint(agentId, used, cap));
+  });
 }
 
 /**
