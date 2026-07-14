@@ -188,8 +188,11 @@ describe('Agent Subscription Main↔Renderer Contract', () => {
     expect(mainState.byWorkspaceId[WS]?.deletedAgents[AGENT]).toBeDefined();
 
     rendererState = agentSubscriptionUIReducer(rendererState, resetSubscriptionUI(WS, AGENT));
-    // resetSubscriptionUI removes the entry entirely — deleted agent has no UI presence
-    expect(rendererState.entries[key]).toBeUndefined();
+    // STAB-23: resetSubscriptionUI now keeps an idle entry instead of deleting so
+    // refreshWorkspaceSubscriptionEntries can reach agents on future events. This
+    // prevents the footer from disappearing when a new delegation starts after cleanup.
+    expect(rendererState.entries[key].waitingState).toBe('idle');
+    expect(rendererState.entries[key].subscriptions).toHaveLength(0);
   });
 
   // 5. event names match between main and renderer
