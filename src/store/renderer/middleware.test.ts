@@ -53,6 +53,7 @@ const mocks = vi.hoisted(() => {
   const unreadTrackingPersistenceMiddleware = createPassthroughMiddleware();
   const tabStatePersistenceMiddleware = createPassthroughMiddleware();
   const sidebarNavPersistenceMiddleware = createPassthroughMiddleware();
+  const browserPersistenceMiddleware = createPassthroughMiddleware();
   const themeMutationMiddleware = createPassthroughMiddleware();
   const loggerMiddleware = createPassthroughMiddleware();
   const refCheckMiddleware = createPassthroughMiddleware();
@@ -102,6 +103,7 @@ const mocks = vi.hoisted(() => {
     createUnreadTrackingPersistenceMiddleware: vi.fn(() => unreadTrackingPersistenceMiddleware),
     createTabStatePersistenceMiddleware: vi.fn(() => tabStatePersistenceMiddleware),
     createSidebarNavPersistenceMiddleware: vi.fn(() => sidebarNavPersistenceMiddleware),
+    createBrowserPersistenceMiddleware: vi.fn(() => browserPersistenceMiddleware),
     createThemeMutationMiddleware: vi.fn(() => themeMutationMiddleware),
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
@@ -147,6 +149,7 @@ const mocks = vi.hoisted(() => {
     unreadTrackingPersistenceMiddleware,
     tabStatePersistenceMiddleware,
     sidebarNavPersistenceMiddleware,
+    browserPersistenceMiddleware,
     themeMutationMiddleware,
     loggerMiddleware,
     structuredCloneMiddleware,
@@ -260,6 +263,9 @@ vi.mock("./middlewares/tab-state-persistence-service", () => ({
 vi.mock("./middlewares/sidebar-nav-persistence-service", () => ({
   createSidebarNavPersistenceMiddleware: mocks.createSidebarNavPersistenceMiddleware,
 }));
+vi.mock("./middlewares/browser-persistence-service", () => ({
+  createBrowserPersistenceMiddleware: mocks.createBrowserPersistenceMiddleware,
+}));
 vi.mock("$features/theme/theme-service", () => ({
   createThemeMutationMiddleware: mocks.createThemeMutationMiddleware,
 }));
@@ -358,6 +364,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
+      mocks.browserPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -412,6 +419,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
+      mocks.browserPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -466,6 +474,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
+      mocks.browserPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -521,6 +530,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
+      mocks.browserPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
@@ -593,6 +603,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
       mocks.sidebarNavPersistenceMiddleware,
+      mocks.browserPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.structuredCloneMiddleware,
     ]);

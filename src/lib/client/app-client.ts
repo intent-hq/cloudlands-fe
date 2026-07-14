@@ -13,7 +13,6 @@
 import type {
   AgentMessage,
   AgentSession,
-  ContentBlock,
   CreateNoteRequest,
   CreateWorkspaceRequest,
   DiffChunk,
@@ -329,9 +328,6 @@ export interface AgentsClient {
 }
 
 export interface ChatClient {
-  history(agentId: string): Promise<ContentBlock[]>;
-  tokenUsage(agentId: string): Promise<{ input: number; output: number }>;
-  subscribe(agentId: string, handler: SubscriptionHandler<ContentBlock[]>): Unsubscribe;
   /**
    * One-shot seq-0 snapshot from the `chat.subscribe` channel (PROTOCOL §7.1).
    * The daemon's snapshot merges the newest `agent.getConversation` page with

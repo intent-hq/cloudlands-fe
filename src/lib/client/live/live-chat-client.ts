@@ -1,22 +1,17 @@
 /**
  * Live chat domain backed by the intentd daemon (PROTOCOL §7.1).
  *
- * Only the seq-0 snapshot fetch is live: `subscribeSnapshot` opens a
- * `chat.subscribe` on the daemon subscription fast-path, awaits the initial
- * `subscription.push { kind: "snapshot", seq: 0 }` — which the daemon merges
- * with the in-flight assistant message (CS-0 D5) when a turn is streaming —
- * then closes the subscription with `chat.unsubscribe`. This gives ChatPanel a
- * hydration path that preserves the interim response on tab-switch, replacing
- * the older `agent.getConversation` read (persisted-only, would clobber the
- * in-memory partial).
- *
- * The rest of the ChatClient surface (`history`, `tokenUsage`, `subscribe`)
- * still delegates to the in-memory mock: live deltas continue to arrive via
- * the existing `agent:stream:*` firehose, so a full §7.1 delta reconciler is
- * out of scope here.
+ * `subscribeSnapshot` opens a `chat.subscribe` on the daemon subscription
+ * fast-path, awaits the initial `subscription.push { kind: "snapshot", seq: 0 }`
+ * — which the daemon merges with the in-flight assistant message when a turn is
+ * streaming — then closes the subscription with `chat.unsubscribe`. This gives
+ * ChatPanel a hydration path that preserves the interim response on tab-switch,
+ * replacing the older `agent.getConversation` read (persisted-only, would
+ * clobber the in-memory partial). Live deltas continue to arrive via the
+ * existing `agent:stream:*` firehose.
  */
-import type { AgentMessage, ContentBlock } from "$shared/types";
-import type { ChatClient, SubscriptionHandler, Unsubscribe } from "../app-client";
+import type { AgentMessage } from "$shared/types";
+import type { ChatClient } from "../app-client";
 import { backendRequest, onBackendNotification } from "./backend-transport";
 
 /** Shape of a `chat.subscribe` seq-0 snapshot per PROTOCOL §7.1. */
@@ -65,20 +60,6 @@ function isSnapshotPush(
 
 /** The concrete `ChatClient` used by `LiveAppClient`. */
 export class LiveChatClient implements ChatClient {
-  /**
-   * Delegate to a mock-provided `history` implementation (still fixture-backed
-   * until the flattened token history has its own daemon read).
-   */
-  history: (agentId: string) => Promise<ContentBlock[]>;
-  tokenUsage: (agentId: string) => Promise<{ input: number; output: number }>;
-  subscribe: (agentId: string, handler: SubscriptionHandler<ContentBlock[]>) => Unsubscribe;
-
-  constructor(mockChat: ChatClient) {
-    this.history = mockChat.history.bind(mockChat);
-    this.tokenUsage = mockChat.tokenUsage.bind(mockChat);
-    this.subscribe = mockChat.subscribe.bind(mockChat);
-  }
-
   async subscribeSnapshot(agentId: string): Promise<ChatSnapshotResult> {
     // Register the notification listener BEFORE calling `chat.subscribe` so a
     // synchronously-broadcast seq-0 push cannot race the subscribe reply.
