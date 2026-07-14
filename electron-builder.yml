@@ -13,6 +13,7 @@ files:
   - package.json
   - node_modules/**/*
   - resources/**/*
+  - "!resources/sidecar/**"
 
 # Bundle the intentd binary into the packaged app
 # Runtime path: process.resourcesPath/intentd/intentd (intentd.exe on Windows)
