@@ -13,6 +13,8 @@ import {
   openPanel,
   closePanel,
   togglePanel,
+  closeAll,
+  closeHoverCards,
   setCardPinned,
   toggleCardPinned,
   setChiefActiveAgentId,
@@ -299,6 +301,80 @@ describe("sidebar-nav-persistence-service", () => {
       chain(toggleCardPinned());
 
       expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(CARD_PINNED_KEY, true);
+    });
+
+    it("persists both panelItem and isCardPinned after closeAll", () => {
+      const middleware = createSidebarNavPersistenceMiddleware();
+      const chain = middleware(mockApi)(mockNext);
+
+      const newState = {
+        sidebarNav: { ...sidebarNavInitialState, panelItem: null, isCardPinned: false },
+      } as StoreState;
+      mockApi.getState = () => newState;
+
+      chain(closeAll(false));
+
+      expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(PANEL_ITEM_KEY, null);
+      expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(CARD_PINNED_KEY, false);
+    });
+
+    it("persists isCardPinned after closeHoverCards", () => {
+      const middleware = createSidebarNavPersistenceMiddleware();
+      const chain = middleware(mockApi)(mockNext);
+
+      const newState = {
+        sidebarNav: { ...sidebarNavInitialState, isCardPinned: false },
+      } as StoreState;
+      mockApi.getState = () => newState;
+
+      chain(closeHoverCards());
+
+      expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(CARD_PINNED_KEY, false);
+    });
+
+    it("persists both panelItem and isCardPinned after openPanel", () => {
+      const middleware = createSidebarNavPersistenceMiddleware();
+      const chain = middleware(mockApi)(mockNext);
+
+      const newState = {
+        sidebarNav: { ...sidebarNavInitialState, panelItem: "workspace-context", isCardPinned: false },
+      } as StoreState;
+      mockApi.getState = () => newState;
+
+      chain(openPanel("workspace-context"));
+
+      expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(PANEL_ITEM_KEY, "workspace-context");
+      expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(CARD_PINNED_KEY, false);
+    });
+
+    it("persists both panelItem and isCardPinned after closePanel", () => {
+      const middleware = createSidebarNavPersistenceMiddleware();
+      const chain = middleware(mockApi)(mockNext);
+
+      const newState = {
+        sidebarNav: { ...sidebarNavInitialState, panelItem: null, isCardPinned: false },
+      } as StoreState;
+      mockApi.getState = () => newState;
+
+      chain(closePanel());
+
+      expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(PANEL_ITEM_KEY, null);
+      expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(CARD_PINNED_KEY, false);
+    });
+
+    it("persists both panelItem and isCardPinned after togglePanel", () => {
+      const middleware = createSidebarNavPersistenceMiddleware();
+      const chain = middleware(mockApi)(mockNext);
+
+      const newState = {
+        sidebarNav: { ...sidebarNavInitialState, panelItem: "chief", isCardPinned: false },
+      } as StoreState;
+      mockApi.getState = () => newState;
+
+      chain(togglePanel("chief"));
+
+      expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(PANEL_ITEM_KEY, "chief");
+      expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(CARD_PINNED_KEY, false);
     });
 
     it("persists chiefActiveAgentId after setChiefActiveAgentId", () => {
