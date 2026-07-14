@@ -112,7 +112,7 @@ jobs:
           ls -lh target/aarch64-apple-darwin/release/intentd
 
       - name: Set version in package.json
-        run: pnpm run version:set -- ${{ inputs.version }}
+        run: pnpm run version:set "${{ inputs.version }}"
 
       - name: Commit version bump and create tag
         run: |
