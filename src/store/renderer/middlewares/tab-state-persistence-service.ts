@@ -152,6 +152,20 @@ export function createTabStatePersistenceMiddleware(): StoreMiddleware {
       const result = next(action);
       if (action) {
         if (TAB_PERSIST_ACTION_TYPES.has(action.type)) {
+          // Guard against boot-time clobber (STAB-26): if cleanupInvalidWorkspaceTabs
+          // fires before the workspace list has loaded, skip persisting the cleanup result.
+          // The reducer still runs (updating Redux state), but we don't overwrite the
+          // hydrated tabs in localStorage with an empty list. Once hasLoaded becomes true,
+          // subsequent cleanups (including empty validIds for all-workspaces-removed) persist
+          // correctly.
+          if (action.type === cleanupInvalidWorkspaceTabs.type) {
+            const state = api.getState() as StoreState;
+            if (!state.workspace.hasLoaded) {
+              // Skip persistence: workspace list hasn't loaded yet, so persisting would
+              // clobber the hydrated state with early/partial cleanup results.
+              return result;
+            }
+          }
           persistWorkspaceTabsState(api.getState() as StoreState);
         } else if (SCROLL_PERSIST_ACTION_TYPES.has(action.type)) {
           persistScrollPositions(api.getState() as StoreState);
