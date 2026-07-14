@@ -25,7 +25,7 @@
   interface Props {
     messages: QueuedMessage[];
     disabled?: boolean;
-    onedit?: (messageId: string, content: string) => void;
+    onedit?: (messageId: string, content: string, editing?: boolean) => Promise<{ success: boolean; error?: string }>;
     onremove?: (messageId: string) => void;
     onsendnow?: (messageId: string) => void;
     ondone?: () => void;
@@ -36,6 +36,7 @@
   // Track which message is being edited
   let editingId = $state<string | null>(null);
   let editContent = $state('');
+  let editOriginalContent = $state('');
   let editStartedProgrammatically = $state(false);
 
   // Auto-resize textarea to fit content
@@ -63,30 +64,67 @@
     });
   }
 
-  function startEdit(message: QueuedMessage) {
+  async function startEdit(message: QueuedMessage) {
     editStartedProgrammatically = false;
     editingId = message.id;
     editContent = message.content;
+    editOriginalContent = message.content;
+
+    // STAB-27: Engage hold immediately (editing:true) so the message isn't
+    // dequeued mid-edit. If the message is already gone (race with drain),
+    // the backend will error and we'll handle gracefully.
+    if (onedit) {
+      const result = await onedit(message.id, message.content, true);
+      if (!result.success) {
+        // Message was already dequeued - clear edit state
+        // TODO STAB-27: Drop content into composer as draft instead of losing it
+        console.warn('Failed to hold queued message for editing:', result.error);
+        editingId = null;
+        editContent = '';
+        editOriginalContent = '';
+      }
+    }
   }
 
-  function cancelEdit() {
+  async function cancelEdit() {
     const wasProgrammatic = editStartedProgrammatically;
+    const messageId = editingId;
+    const originalContent = editOriginalContent;
+
+    // Clear edit state first
     editingId = null;
     editContent = '';
+    editOriginalContent = '';
     editStartedProgrammatically = false;
+
+    // STAB-27: Release hold with original content (editing:false)
+    if (messageId && onedit) {
+      await onedit(messageId, originalContent, false);
+    }
+
     if (wasProgrammatic) ondone?.();
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     if (editingId && editContent.trim()) {
       const wasProgrammatic = editStartedProgrammatically;
-      onedit?.(editingId, editContent.trim());
+      const messageId = editingId;
+      const newContent = editContent.trim();
+
+      // Clear edit state first
       editingId = null;
       editContent = '';
+      editOriginalContent = '';
       editStartedProgrammatically = false;
+
+      // STAB-27: Save with edited content and release hold (editing:false triggers self-drain)
+      if (onedit) {
+        await onedit(messageId, newContent, false);
+      }
+
       if (wasProgrammatic) ondone?.();
     } else if (editingId) {
-      cancelEdit();
+      await cancelEdit();
     }
   }
 
@@ -127,8 +165,9 @@
       <div class="space-y-px">
         {#each messages as message (message.id)}
           <div
-            class="group flex items-start gap-2 px-2.5 py-1 text-subtle text-sm grid"
+            class="group flex items-start gap-2 px-2.5 py-1 text-subtle text-sm grid {message.editing ? 'opacity-60' : ''}"
             transition:fly={{ y: 10, duration: 200 }}
+            title={message.editing ? 'Held for editing' : undefined}
           >
             {#if editingId === message.id}
               <!-- Edit mode -->

@@ -409,6 +409,66 @@ describe("agent-ipc-bridge-seeder", () => {
       expect(response.success).toBe(false);
       expect(response.error?.message).toContain("messageId");
     });
+
+    it("STAB-27: sends editing:true to hold a queued message during edit", async () => {
+      // PROTOCOL §5.5 + agent_ops.rs: `editing` flag holds the message in the queue
+      // (daemon skips it during drain). The daemon returns the updated QueuedMessage
+      // with editing:true in the response.
+      const queued = {
+        id: "q-1",
+        content: "original",
+        position: 0,
+        queuedAt: "2026-01-01T00:00:00Z",
+        editing: true
+      };
+      mockedRequest.mockResolvedValueOnce({ success: true, queuedMessage: queued });
+
+      const result = await unifiedOrchestrator.editQueuedMessage("agent-7", "q-1", "original", true);
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.editQueuedMessage", {
+        agentId: "agent-7",
+        messageId: "q-1",
+        content: "original",
+        editing: true,
+      });
+      expect(result).toEqual({ success: true, queuedMessage: queued });
+    });
+
+    it("STAB-27: sends editing:false to release hold and allow self-drain", async () => {
+      // When saving edits, editing:false triggers daemon self-drain logic
+      const queued = {
+        id: "q-1",
+        content: "edited content",
+        position: 0,
+        queuedAt: "2026-01-01T00:00:00Z"
+        // editing field omitted (daemon only includes it when true)
+      };
+      mockedRequest.mockResolvedValueOnce({ success: true, queuedMessage: queued });
+
+      const result = await unifiedOrchestrator.editQueuedMessage("agent-7", "q-1", "edited content", false);
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.editQueuedMessage", {
+        agentId: "agent-7",
+        messageId: "q-1",
+        content: "edited content",
+        editing: false,
+      });
+      expect(result).toEqual({ success: true, queuedMessage: queued });
+    });
+
+    it("STAB-27: omits editing flag when not provided (backward compat)", async () => {
+      const queued = { id: "q-1", content: "edited", position: 0, queuedAt: "2026-01-01T00:00:00Z" };
+      mockedRequest.mockResolvedValueOnce({ success: true, queuedMessage: queued });
+
+      const result = await unifiedOrchestrator.editQueuedMessage("agent-7", "q-1", "edited");
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.editQueuedMessage", {
+        agentId: "agent-7",
+        messageId: "q-1",
+        content: "edited",
+      });
+      expect(result).toEqual({ success: true, queuedMessage: queued });
+    });
   });
 
   describe("agent:backend:remove-queued → daemon agent.removeQueuedMessage", () => {
