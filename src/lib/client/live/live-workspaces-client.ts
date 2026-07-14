@@ -10,6 +10,7 @@
 import { WorkspaceStatus, createWorkspaceId } from "$shared/types";
 import type { CreateWorkspaceRequest, UpdateWorkspaceRequest, Workspace } from "$shared/types";
 import type { TokenUsage } from "$features/token-usage/token-usage-types";
+import type { ContextItem } from "$features/context/types";
 import type {
   MutationResult,
   SubscriptionHandler,
@@ -61,6 +62,25 @@ function isWorkspaceEvent(method: string, params: unknown): boolean {
   const type = (params as { type?: unknown } | undefined)?.type;
   // Refetch on any workspace-scoped event; if the type is absent, refetch too.
   return typeof type !== "string" || type.startsWith("workspace");
+}
+
+/**
+ * Structural type guard for a wire `ContextItem`. Every variant of the union
+ * requires `ContextItemBase` (`id`, `type`, `title`, `provider`, `createdAt`,
+ * `updatedAt`), and the context slice keys its Collection by `id` while
+ * consumers discriminate on `type`, so a row missing either would silently
+ * corrupt state. We keep the check minimal — id/type as non-empty strings —
+ * and let provider-specific fields round-trip verbatim per §5.1.
+ */
+function isContextItem(item: unknown): item is ContextItem {
+  if (!item || typeof item !== "object") return false;
+  const record = item as { id?: unknown; type?: unknown };
+  return (
+    typeof record.id === "string" &&
+    record.id.length > 0 &&
+    typeof record.type === "string" &&
+    record.type.length > 0
+  );
 }
 
 export class LiveWorkspacesClient implements WorkspacesClient {
@@ -177,6 +197,36 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     );
     const usage = result?.tokenUsage;
     return usage && typeof usage === "object" ? usage : null;
+  }
+
+  /**
+   * `workspace.getContext` (PROTOCOL §5.1): returns `{ items: ContextItem[] }`.
+   * The daemon treats each item as an opaque blob (`{ id, ...extras }`) so
+   * provider-specific fields (`identifier`, `number`, `favicon`, …) round-trip
+   * verbatim; the FE keeps its `ContextItem` union as the source of truth.
+   */
+  async getContext(workspaceId: string): Promise<ContextItem[]> {
+    const result = await backendRequest<{ items?: unknown[] }>(
+      "workspace.getContext",
+      { workspaceId },
+    );
+    const items = Array.isArray(result?.items) ? result.items : [];
+    return items.filter(isContextItem);
+  }
+
+  /**
+   * `workspace.updateContext` (PROTOCOL §5.1): full-list replacement of the
+   * workspace's chat-context items. Returns the persisted list verbatim.
+   * The self-sufficient `workspace:context-changed` event is the primary
+   * convergence path; the return value is surfaced for callers that need it.
+   */
+  async updateContext(workspaceId: string, items: ContextItem[]): Promise<ContextItem[]> {
+    const result = await backendRequest<{ items?: unknown[] }>(
+      "workspace.updateContext",
+      { workspaceId, items },
+    );
+    const next = Array.isArray(result?.items) ? result.items : [];
+    return next.filter(isContextItem);
   }
 
   subscribe(handler: SubscriptionHandler<Workspace[]>): Unsubscribe {

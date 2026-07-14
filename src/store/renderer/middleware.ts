@@ -30,6 +30,8 @@ import { createProviderAvailabilityCheckMiddleware } from "$features/providers/p
 import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
 import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
+import { createContextMutationMiddleware } from "$features/context/context-mutation-service";
+import { createTaskAgentAssociationsMutationMiddleware } from "$features/tasks/task-agent-associations-mutation-service";
 import { createAppLayoutNavigationMiddleware } from "$features/layout/app-layout-navigation-service";
 import { createWorkspaceNavigationTabMiddleware } from "$features/layout/workspace-navigation-tab-service";
 import { createWorkspaceNavigationLayoutMiddleware } from "$features/layout/workspace-navigation-layout-service";
@@ -180,6 +182,20 @@ function buildMiddleware(): StoreMiddleware[] {
     // via `appClient.agents.get`; activate marks the session ACTIVE and
     // refetches; save is a no-op on the mock seam (Redux IS the state).
     createAgentMutationMiddleware(),
+    // Give the (post-saga) context slice's `addContextItem` /
+    // `removeContextItem` / `updateContextItem` triggers a real write handler
+    // so chat-context edits forward to `workspace.updateContext` (PROTOCOL
+    // §5.1) instead of the removed `safeLocalStorage` persist. The daemon's
+    // `workspace:context-changed` event (folded via daemon-events-bridge)
+    // converges cross-window state.
+    createContextMutationMiddleware(),
+    // Give the (post-saga) taskAgentAssociations slice's mutation triggers
+    // real write handlers so `addTaskAgentAssociation` /
+    // `removeTaskAgentAssociation` / `pruneTaskAgentAssociationsForNote`
+    // forward to `task.linkAgent` / `task.unlinkAgent` (PROTOCOL §5.4)
+    // instead of the removed localStorage persist. Cross-window convergence
+    // flows via the `task:agent-linked` / `task:agent-unlinked` events.
+    createTaskAgentAssociationsMutationMiddleware(),
     // Give the (post-saga) `openAgentTabRequested` action a real handler so
     // clicking an agent opens (or focuses) its conversation tab again.
     createAppLayoutNavigationMiddleware(),
