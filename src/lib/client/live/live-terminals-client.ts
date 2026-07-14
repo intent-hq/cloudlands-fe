@@ -92,24 +92,20 @@ function extractSubscriptionId(params: unknown): string | undefined {
 
 export class LiveTerminalsClient implements TerminalsClient {
   async list(workspaceId: string): Promise<TerminalTab[]> {
-    try {
-      const result = await backendRequest<{ terminals?: unknown[] } | unknown[]>("terminal.list", {
-        workspaceId,
-      });
-      const raw = Array.isArray(result)
-        ? result
-        : Array.isArray((result as { terminals?: unknown[] })?.terminals)
-          ? (result as { terminals: unknown[] }).terminals
-          : [];
-      const tabs: TerminalTab[] = [];
-      for (const entry of raw) {
-        const tab = toTerminalTab(entry, workspaceId);
-        if (tab) tabs.push(tab);
-      }
-      return tabs;
-    } catch {
-      return [];
+    const result = await backendRequest<{ terminals?: unknown[] } | unknown[]>("terminal.list", {
+      workspaceId,
+    });
+    const raw = Array.isArray(result)
+      ? result
+      : Array.isArray((result as { terminals?: unknown[] })?.terminals)
+        ? (result as { terminals: unknown[] }).terminals
+        : [];
+    const tabs: TerminalTab[] = [];
+    for (const entry of raw) {
+      const tab = toTerminalTab(entry, workspaceId);
+      if (tab) tabs.push(tab);
     }
+    return tabs;
   }
 
   async create(params: TerminalCreateParams): Promise<MutationResult> {
