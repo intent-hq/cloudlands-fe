@@ -377,20 +377,19 @@ describe('DaemonWorkspaceRepository', () => {
 
     it('should not call RPC when workspaceId not provided', async () => {
       // When no workspaceId, the DaemonWorkspaceRepository will not call the backend
-      // and will return empty string (or the repository may throw an error)
-      await repository.readGitConfig('/path/to/repo');
+      // and will fall back to filesystem (which throws if no .git/config exists)
+      await expect(repository.readGitConfig('/path/to/repo')).rejects.toThrow();
 
       // Should not have called the backend
       expect(mockBackendClient.request).not.toHaveBeenCalled();
     });
 
-    it('should return empty string when RPC fails', async () => {
+    it('should fallback to filesystem when RPC fails', async () => {
       mockBackendClient.request.mockRejectedValue(new Error('RPC failed'));
 
-      // DaemonWorkspaceRepository catches RPC errors and returns empty string
-      const result = await repository.readGitConfig('/path/to/repo', 'ws-123' as any);
-
-      expect(result).toBe('');
+      // DaemonWorkspaceRepository catches RPC errors and falls back to filesystem
+      // (which throws if no .git/config exists)
+      await expect(repository.readGitConfig('/path/to/repo', 'ws-123' as any)).rejects.toThrow();
     });
   });
 });
