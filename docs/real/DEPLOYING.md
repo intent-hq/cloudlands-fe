@@ -1,240 +1,117 @@
 # Deploying Intent
 
-Google Cloud Platform (GCP) is the primary release target for Intent. The current upload and promotion flow is built around Google Cloud Storage plus Cloud CDN. AWS scripts remain in the repository only for migration and legacy support.
-
-## What the Release Scripts Expect
-
-The deployment scripts assume release artifacts already exist in `dist-electron/`.
-
-Typical macOS release preparation:
-
-```bash
-pnpm run version:patch        # or version:minor / version:major
-pnpm run generate:release-notes
-pnpm run dist:mac
-```
-
-Typical Windows release preparation:
-
-```bash
-pnpm run generate:release-notes
-pnpm run dist:win
-```
-
-If `dist-electron/release-notes.json` is missing, the upload scripts warn and tell you to run `pnpm run generate:release-notes` first.
-
-## Required GCP Environment Variables
-
-All GCP upload and promotion scripts validate the same core environment variables:
-
-```bash
-export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
-export GCS_BUCKET="intent-updates"
-export GCP_PROJECT="my-gcp-project"
-export CLOUD_CDN_URL_MAP="intent-cdn"
-```
-
-These variables are used by:
-
-- `scripts/upload-release.sh`
-- `scripts/upload-release-gcp.sh`
-- `scripts/upload-release-windows-gcp.sh`
-- `scripts/promote-to-stable-gcp.sh`
-
-The scripts authenticate with:
-
-```bash
-gcloud auth activate-service-account --key-file="$GOOGLE_APPLICATION_CREDENTIALS" --project="$GCP_PROJECT" --quiet
-```
+Intent releases are published to GitHub Releases on the public `intent-hq/cloudlands-releases` repository. The desktop app's auto-updater (electron-updater) pulls from rolling channel tags (`beta`, `stable`) on that repo.
 
 ## Release Channels
 
-All release scripts use the same channel model:
+Intent uses a channel-based update model:
 
-- `stable` — default user channel
-- `beta` — prerelease testing channel
-- `alpha` — internal/early testing channel
+- **`beta`** — Rolling release tag for beta testing; auto-updater pulls from `https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml`
+- **`stable`** — Rolling release tag for general availability; auto-updater pulls from `https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml`
 
-The primary CDN endpoints are:
+Each workflow dispatch also creates an immutable versioned release (`v{version}`) for archival and rollback.
 
-- `https://cdn.augmentcode.com/stable/latest-mac.yml`
-- `https://cdn.augmentcode.com/beta/latest-mac.yml`
-- `https://cdn.augmentcode.com/alpha/latest-mac.yml`
+## Required GitHub Secrets
 
-Windows uploads use `latest.yml` instead of `latest-mac.yml`.
+Release workflows require the following secrets configured on `intent-hq/cloudlands-fe`:
 
-## Primary Upload Flows
+**macOS signing + notarization:**
+- `CLOUDLANDS_MACOS_CERTIFICATE` — base64-encoded p12 certificate
+- `CLOUDLANDS_MACOS_CERTIFICATE_PWD` — certificate password
+- `CLOUDLANDS_KEYCHAIN_PASSWORD` — temporary keychain password
+- `CLOUDLANDS_APPLE_ID` — Apple ID for notarization
+- `CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD` — app-specific password from appleid.apple.com
+- `CLOUDLANDS_APPLE_TEAM_ID` — 10-character team ID
 
-### Dual Upload Script: `upload-release.sh`
+**Repository access:**
+- `RELEASE_PAT` — Personal access token with `repo` scope on `cloudlands-fe` + `cloudlands-releases`
+- `INTENTD_READ_PAT` — Personal access token with read-only access to `intent-hq/intentd`
 
-`pnpm run upload:stable`, `pnpm run upload:beta`, and `pnpm run upload:alpha` are aliases for:
+## Beta Release Workflow
 
-```bash
-bash scripts/upload-release.sh <channel>
-```
+The beta release workflow is defined in `.github/workflows/release-beta.yml`.
 
-This is the migration-oriented script. Its behavior is:
+**Trigger:** Manual workflow dispatch from the GitHub Actions UI
 
-- uploads release files to GCP as the primary source of truth
-- uploads `latest-mac.yml` to GCP
-- rewrites the AWS-side manifest to point at GCP CDN URLs
-- optionally publishes migration manifests to AWS for older clients still checking S3/CloudFront
-- invalidates the GCP Cloud CDN path for the chosen channel
+**Input:**
+- `version` — semver version string (e.g., `1.2.3`)
 
-For macOS artifacts, it uploads:
+**What it does:**
+1. Validates semver format (supports prerelease suffixes like `1.2.3-beta.1`)
+2. Configures git token (RELEASE_PAT with repo scope for cross-repo operations)
+3. Checks out `cloudlands-fe` main branch
+4. Sets up pnpm and Node.js 22 with pnpm cache
+5. Installs frontend dependencies with pnpm
+6. Validates `INTENTD_READ_PAT` is configured
+7. Checks out `intent-hq/intentd` (main branch)
+8. Sets up Rust toolchain and caches Rust dependencies
+9. Builds the `intentd` sidecar binary (arm64)
+10. Bumps version in `package.json`
+11. Commits version bump and creates git tag `v{version}`
+12. Imports macOS code signing certificate into a temporary keychain
+13. Builds and packages the macOS app (`.dmg` + `.zip` + `.blockmap` + `latest-mac.yml`)
+14. Signs and notarizes the app via `scripts/notarize.js` afterSign hook
+15. Publishes artifacts to `intent-hq/cloudlands-releases`:
+    - Creates immutable versioned release: `v{version}`
+    - Updates rolling `beta` release tag (clobbers existing assets)
+16. Atomically pushes the version commit and tag to `cloudlands-fe`
+17. Posts workflow summary with download URLs
 
-- `latest-mac.yml`
-- versioned `.zip` files
-- versioned `.blockmap` files
-- versioned `.dmg` files
-- `Intent-latest-arm64.dmg`
-- `release-notes.json`
-- `release-notes-<version>.json`
+**Output:**
+- Versioned release on `cloudlands-releases`: `https://github.com/intent-hq/cloudlands-releases/releases/tag/v{version}`
+- Rolling beta channel: `https://github.com/intent-hq/cloudlands-releases/releases/tag/beta`
+- Auto-updater feed: `https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml`
 
-## GCP-Only macOS Upload: `upload-release-gcp.sh`
+## Promote-to-Stable Workflow
 
-Use the GCP-only script when you do not need the AWS migration step:
+_(Not yet implemented — planned as a separate workflow)_
 
-```bash
-pnpm run upload:gcp-only:stable
-# or
-bash scripts/upload-release-gcp.sh stable
-```
+The promote-to-stable workflow will:
+1. Identify the latest beta release from `intent-hq/cloudlands-releases`
+2. Copy all artifacts to the `stable` rolling release tag
+3. Create an immutable stable versioned release
 
-This script uploads the same macOS artifacts as the dual-upload flow, but only to GCP/Cloud CDN.
+## Rollback Workflow
 
-It also invalidates the selected CDN path:
+_(Not yet implemented — planned as a separate workflow)_
 
-```bash
-gcloud compute url-maps invalidate-cdn-cache "$CLOUD_CDN_URL_MAP" \
-  --path "/$CHANNEL/*" \
-  --project "$GCP_PROJECT" \
-  --quiet
-```
+The rollback workflow will restore a previous versioned release to a channel's rolling tag.
 
-## GCP-Only Windows Upload: `upload-release-windows-gcp.sh`
+## Windows and Linux Builds
 
-Windows releases use a separate GCP-only uploader:
+_(Not yet implemented — planned as separate platform matrix jobs in the release workflow)_
 
-```bash
-bash scripts/upload-release-windows-gcp.sh stable
-```
+Windows and Linux builds will follow the same GitHub Releases model but ship unsigned (no Windows Authenticode cert available).
 
-This script uploads Windows update artifacts to `gs://$GCS_BUCKET/<channel>/` and invalidates Cloud CDN.
+## Manual Local Build (Development / Testing)
 
-It looks for and uploads:
-
-- `latest.yml`
-- versioned `.exe` installers
-- versioned `.blockmap` files
-- `Intent-latest-Setup.exe`
-
-Primary Windows CDN endpoints:
-
-- `https://cdn.augmentcode.com/<channel>/latest.yml`
-- `https://cdn.augmentcode.com/<channel>/Intent-latest-Setup.exe`
-
-## Promoting Beta to Stable on GCP
-
-The primary stable-promotion flow is:
+To build the app locally for manual testing:
 
 ```bash
-bash scripts/promote-to-stable-gcp.sh [version]
+# Clone and build intentd sidecar (if not already available)
+# In a sibling directory or separate location:
+git clone https://github.com/intent-hq/intentd.git
+cd intentd
+cargo build --release --target aarch64-apple-darwin
+INTENTD_BIN="$(pwd)/target/aarch64-apple-darwin/release/intentd"
+
+# Return to cloudlands-fe repo root
+cd /path/to/cloudlands-fe
+
+# Build the frontend and package (set INTENTD_BIN to the built binary path)
+pnpm run build
+INTENTD_BIN="$INTENTD_BIN" pnpm run dist:mac
 ```
 
-If no version is provided, the script reads `beta/latest-mac.yml` from GCS to discover the current beta version.
+The packaged `.dmg` and `.zip` will be in `dist-electron/`.
 
-The promotion script copies these artifacts from `beta/` to `stable/` when present:
-
-- `latest-mac.yml`
-- versioned release files that match the chosen version
-- `Intent-latest-arm64.dmg`
-- `release-notes.json`
-- `release-notes-<version>.json`
-
-After copying, it invalidates `/stable/*` in Cloud CDN.
-
-## Recommended GCP Release Sequences
-
-### Stable macOS release
-
-```bash
-pnpm run version:patch
-pnpm run generate:release-notes
-pnpm run dist:mac
-pnpm run upload:gcp-only:stable
-```
-
-### Beta macOS release
-
-```bash
-pnpm run version:patch
-pnpm run generate:release-notes
-pnpm run dist:mac
-pnpm run upload:gcp-only:beta
-```
-
-### Promote tested beta to stable
-
-```bash
-bash scripts/promote-to-stable-gcp.sh
-```
-
-Or promote a specific version explicitly:
-
-```bash
-bash scripts/promote-to-stable-gcp.sh 1.2.3
-```
-
-## Release Notes
-
-Release notes are generated with:
-
-```bash
-pnpm run generate:release-notes
-```
-
-The upload scripts look for `dist-electron/release-notes.json` and, when it exists, upload both:
-
-- `release-notes.json`
-- `release-notes-<version>.json`
-
-This applies to both `upload-release.sh` and `upload-release-gcp.sh`, and `promote-to-stable-gcp.sh` also copies those files from beta to stable.
-
-## AWS (Legacy / Migration Support)
-
-AWS is no longer the primary deployment target.
-
-The remaining AWS scripts are kept so older clients and migration workflows can continue to function:
-
-- `scripts/upload-release.sh` can optionally publish AWS migration manifests if AWS settings are available.
-- `scripts/promote-beta-to-stable.sh` is the legacy AWS beta-to-stable promotion script.
-
-### AWS variables used by the migration/legacy flow
-
-`upload-release.sh` checks for:
-
-```bash
-export AWS_REGION="us-west-2"
-export S3_BUCKET="intent-downloads"
-export CLOUDFRONT_DISTRIBUTION_ID="<optional-cloudfront-id>"
-```
-
-In practice, AWS CLI credentials must also already be available to `aws`, typically via `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` or a configured profile.
-
-If `AWS_REGION` or `S3_BUCKET` is missing, `upload-release.sh` warns and skips the AWS migration upload rather than failing the GCP release.
-
-### Legacy AWS promotion
-
-```bash
-bash scripts/promote-beta-to-stable.sh [version]
-```
-
-This script copies macOS beta artifacts from S3 to the stable S3 prefix, optionally invalidates CloudFront, and is intended only for legacy support.
+**Note:** Local builds will not be signed or notarized unless you configure the signing environment variables locally (`CLOUDLANDS_APPLE_ID`, `CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD`, `CLOUDLANDS_APPLE_TEAM_ID`, or legacy `APPLE_*` equivalents).
 
 ## Operational Notes
 
-- Always verify `dist-electron/` contains the expected artifacts before uploading.
-- GCP upload success does not mean CDN invalidation is instantaneous; allow a few minutes for caches to refresh.
-- Keep service-account files and cloud credentials out of version control.
-- Prefer the GCP-only scripts for current releases unless you explicitly need the AWS migration path.
+- All release workflows run on GitHub Actions; there are no manual upload scripts
+- Secrets are configured at the repository level and referenced in workflow YAML
+- Release artifacts are public on `intent-hq/cloudlands-releases`
+- The auto-updater uses the rolling channel tags (`beta`, `stable`) to find updates
+- Versioned releases (`v{version}`) provide immutable archives for rollback
+- Keep PATs and certificate passwords out of logs and transcripts
