@@ -617,11 +617,13 @@ function handleProcessQueuedEvent(event: WorkspaceEvent): void {
   if (typeof agentId !== 'string' || typeof used !== 'number' || typeof cap !== 'number') {
     return;
   }
-  // Ensure session exists before applying the hint (the reducer's
-  // updateSessionFields is a no-op if the session doesn't exist yet).
-  void ensureAgentSession(agentId).then(() => {
-    appStore.dispatch(setProcessQueueHint(agentId, used, cap));
-  });
+  // The Redux reducer's updateSessionFields is a no-op when the session
+  // doesn't exist yet, but during normal operation the agent:created or
+  // agent:updated event will have already hydrated the session before
+  // agent:process:queued arrives. If the event arrives during reconnect before
+  // the session is in Redux, the hint will be silently dropped, which is acceptable
+  // (the hint is transient UI state and will resolve once the agent resumes).
+  appStore.dispatch(setProcessQueueHint(agentId, used, cap));
 }
 
 /**
