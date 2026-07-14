@@ -168,11 +168,11 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // and lets workspaceMounted sagas (agent loading, terminal init, etc.)
     // start without waiting for backend confirmation.
     //
-    // STAB-24 fix: Skip the pre-population block on return visits (when
-    // lastMountedWorkspaceId already equals workspaceId) to avoid redundant
-    // state updates. workspaceMounted will still be dispatched later (after
-    // the backend open() call) to ensure terminal tabs and other workspace-
-    // scoped state are re-hydrated from the daemon.
+    // STAB-24 fix: Skip the pre-population block when re-running the loader
+    // for the same workspace ID (lastMountedWorkspaceId === workspaceId) to
+    // avoid redundant state updates. workspaceMounted will still be dispatched
+    // later (after the backend open() call) to ensure terminal tabs and other
+    // workspace-scoped state are re-hydrated from the daemon.
     let alreadyMounted = false;
     const isReturnVisit = lastMountedWorkspaceId === workspaceId;
     if (ws && !isReturnVisit) {
