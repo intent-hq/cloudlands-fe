@@ -58,7 +58,7 @@ export interface WorkspaceRepository {
   cleanup(id: WorkspaceId): Promise<void>;
   saveContext(workspaceId: WorkspaceId, context: any): Promise<void>;
   readContext(workspaceId: WorkspaceId): Promise<any | null>;
-  readGitConfig(repoPath: string): Promise<string>;
+  readGitConfig(repoPath: string, workspaceId?: WorkspaceId): Promise<string>;
   scanDirectory(dir: string, depth?: number): Promise<string[]>;
   cleanCache(id: WorkspaceId): Promise<void>;
 }
@@ -471,7 +471,7 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
    * Read git config to extract repository info.
    * Handles both direct git repos and subdirectories of git repos.
    */
-  async readGitConfig(repoPath: string): Promise<string> {
+  async readGitConfig(repoPath: string, _workspaceId?: WorkspaceId): Promise<string> {
     try {
       // First try the direct path
       const gitConfigPath = path.join(repoPath, '.git', 'config');
@@ -672,34 +672,68 @@ export class DaemonWorkspaceRepository implements WorkspaceRepository {
   }
 
   async saveContext(workspaceId: WorkspaceId, context: any): Promise<void> {
-    // Fallback to filesystem until workspace.updateContext RPC is available (PROTOCOL.md §5.1)
-    if (!this.filesystemFallback) {
-      this.filesystemFallback = new FileSystemWorkspaceRepository();
+    // Use workspace.updateContext RPC (PROTOCOL.md §5.1, intentd#159)
+    try {
+      const { getBackendClient } = await import('../../backend/main/backend.ipc');
+      // Ensure context is an array (the RPC expects items: ContextItem[])
+      const items = Array.isArray(context) ? context : [];
+      await getBackendClient().request('workspace.updateContext', {
+        workspaceId,
+        items,
+      });
+      logger.debug('Context saved to daemon', { workspaceId, itemCount: items.length });
+    } catch (error) {
+      logger.error('Failed to save context to daemon', error as Error, { workspaceId });
+      throw error;
     }
-    logger.debug('DaemonWorkspaceRepository.saveContext falling back to filesystem', {
-      workspaceId,
-    });
-    return this.filesystemFallback.saveContext(workspaceId, context);
   }
 
   async readContext(workspaceId: WorkspaceId): Promise<any | null> {
-    // Fallback to filesystem until workspace.getContext RPC is available (PROTOCOL.md §5.1)
-    if (!this.filesystemFallback) {
-      this.filesystemFallback = new FileSystemWorkspaceRepository();
+    // Use workspace.getContext RPC (PROTOCOL.md §5.1, intentd#159)
+    try {
+      const { getBackendClient } = await import('../../backend/main/backend.ipc');
+      const response = (await getBackendClient().request('workspace.getContext', {
+        workspaceId,
+      })) as { items?: any[] } | undefined;
+
+      logger.debug('Context read from daemon', { workspaceId, itemCount: response?.items?.length || 0 });
+      return response?.items || null;
+    } catch (error) {
+      logger.error('Failed to read context from daemon', error as Error, { workspaceId });
+      // Return null instead of throwing - context is optional
+      return null;
     }
-    logger.debug('DaemonWorkspaceRepository.readContext falling back to filesystem', {
-      workspaceId,
-    });
-    return this.filesystemFallback.readContext(workspaceId);
   }
 
-  async readGitConfig(repoPath: string): Promise<string> {
-    // Fallback to filesystem — git config reads are not yet daemon-backed
+  async readGitConfig(repoPath: string, workspaceId?: WorkspaceId): Promise<string> {
+    // Use git.getConfig RPC when workspaceId is available (PROTOCOL.md §5.6, intentd#159)
+    if (workspaceId) {
+      try {
+        const { getBackendClient } = await import('../../backend/main/backend.ipc');
+        const response = (await getBackendClient().request('git.getConfig', {
+          workspaceId,
+        })) as { config?: string } | undefined;
+
+        const config = response?.config || '';
+        logger.debug('Git config read from daemon', { workspaceId, length: config.length });
+        return config;
+      } catch (error) {
+        logger.debug('Failed to read git config from daemon, falling back to filesystem', {
+          workspaceId,
+          repoPath,
+          error: (error as Error).message,
+        });
+        // Fall through to filesystem fallback
+      }
+    }
+
+    // Fallback to filesystem for cases without workspaceId or when RPC fails
     if (!this.filesystemFallback) {
       this.filesystemFallback = new FileSystemWorkspaceRepository();
     }
-    logger.debug('DaemonWorkspaceRepository.readGitConfig falling back to filesystem', {
+    logger.debug('DaemonWorkspaceRepository.readGitConfig using filesystem', {
       repoPath,
+      hasWorkspaceId: !!workspaceId,
     });
     return this.filesystemFallback.readGitConfig(repoPath);
   }
@@ -791,7 +825,7 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async readGitConfig(repoPath: string): Promise<string> {
+  async readGitConfig(repoPath: string, _workspaceId?: WorkspaceId): Promise<string> {
     // In-memory implementation returns mock config
     return `[remote "origin"]
     url = git@github.com:test/repo.git`;
