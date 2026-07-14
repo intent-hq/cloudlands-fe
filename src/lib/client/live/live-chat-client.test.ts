@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BackendNotification } from "./backend-transport";
-import type { ChatClient } from "../app-client";
 
 // FAKE transport only: no request/notification reaches the real daemon. Tests
 // assert the JSON-RPC method + params `chat.subscribe`/`chat.unsubscribe` emit
@@ -32,15 +31,6 @@ import { LiveChatClient } from "./live-chat-client";
 const mockedRequest = vi.mocked(transport.backendRequest);
 const emit = (transport as unknown as { __emit: (n: BackendNotification) => void }).__emit;
 const reset = (transport as unknown as { __reset: () => void }).__reset;
-
-function mockChat(): ChatClient {
-  return {
-    history: async () => [],
-    tokenUsage: async () => ({ input: 0, output: 0 }),
-    subscribe: () => () => {},
-    subscribeSnapshot: async () => ({ messages: [], truncated: false, totalMessages: 0 }),
-  };
-}
 
 describe("LiveChatClient (fake transport)", () => {
   afterEach(() => {
@@ -88,7 +78,7 @@ describe("LiveChatClient (fake transport)", () => {
       return {};
     });
 
-    const client = new LiveChatClient(mockChat());
+    const client = new LiveChatClient();
     const result = await client.subscribeSnapshot("agent-1");
 
     expect(mockedRequest).toHaveBeenCalledWith("chat.subscribe", { agentId: "agent-1" });
@@ -139,7 +129,7 @@ describe("LiveChatClient (fake transport)", () => {
       return {};
     });
 
-    const client = new LiveChatClient(mockChat());
+    const client = new LiveChatClient();
     const result = await client.subscribeSnapshot("agent-2");
 
     expect(result.messages).toHaveLength(1);
