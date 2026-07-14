@@ -3431,8 +3431,6 @@ export class WorkspaceService {
     }
   }
 
-
-
   /**
    * Find repositories in a directory
    *

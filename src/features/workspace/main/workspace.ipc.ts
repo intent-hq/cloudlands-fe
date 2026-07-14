@@ -1116,8 +1116,6 @@ export function setupWorkspaceIPC(): void {
     ),
   );
 
-
-
   // Save workspace (stub - not yet implemented)
   ipcMain.handle(
     WORKSPACE_CHANNELS.SAVE,
