@@ -1361,6 +1361,15 @@ function handleNotification(method: string, params: unknown): void {
   if (type === "agent:updated") {
     handleAgentUpdatedEvent(event);
   }
+  // STAB-22: agent:message events with role="assistant" should trigger a
+  // conversation refetch so AgentCard preview updates for watched agents whose
+  // tab was never opened. The event payload is { agentId, messageId, role }.
+  if (type === "agent:message") {
+    const { agentId, role } = event.data ?? {};
+    if (typeof agentId === "string" && role === "assistant") {
+      void loadChatTranscript(agentId);
+    }
+  }
 
   // Storage + fan-out: every workspace-scoped event flows into
   // `workspaceEvents` (activity timeline) and, for the agent-lifecycle subset
