@@ -190,18 +190,24 @@ describe('agentSubscriptionUIReducer', () => {
   });
 
   describe('resetSubscriptionUI', () => {
-    it('removes the entry for the given key', () => {
+    it('transitions entry to idle instead of removing it', () => {
       let state = agentSubscriptionUIReducer(
         initialState,
         setSubscriptionSnapshot(WS, AGENT, {
           subscriptions: [sub],
           delegationGroups: [],
           agentStatuses: {},
-          waitingState: 'idle',
+          waitingState: 'waiting',
         }),
       );
       state = agentSubscriptionUIReducer(state, resetSubscriptionUI(WS, AGENT));
-      expect(state.entries[makeKey(WS, AGENT)]).toBeUndefined();
+      // STAB-23: resetSubscriptionUI now keeps an idle entry so
+      // refreshWorkspaceSubscriptionEntries can reach the agent on future events.
+      const key = makeKey(WS, AGENT);
+      expect(state.entries[key]).toBeDefined();
+      expect(state.entries[key].waitingState).toBe('idle');
+      expect(state.entries[key].subscriptions).toHaveLength(0);
+      expect(state.entries[key].delegationGroups).toHaveLength(0);
     });
 
     it('returns same reference when key does not exist', () => {
