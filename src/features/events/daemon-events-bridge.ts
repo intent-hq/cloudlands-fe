@@ -600,13 +600,16 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
 
 /**
  * `agent:process:queued` (§6.5) carries `{ agentId, used, cap }` — emitted when
- * an agent spawn is queued waiting for a free process slot. The payload is
- * self-sufficient per §6.7, so the renderer sets the hint directly without a
- * follow-up read.
+ * an agent spawn is queued waiting for a free process slot (maxConcurrent limit).
+ * The payload is self-sufficient per §6.7, so the renderer sets the hint directly
+ * without a follow-up read.
  *
- * Ensure the session exists before applying the hint so the update doesn't get
- * silently dropped if the event arrives during reconnect/rehydration before the
- * session is in Redux.
+ * The Redux reducer's updateSessionFields is a no-op when the session doesn't
+ * exist yet, but during normal operation the agent:created or agent:updated
+ * event will have already hydrated the session before agent:process:queued
+ * arrives. If the event arrives during reconnect before the session is in Redux,
+ * the hint will be silently dropped (acceptable — the hint is transient UI state
+ * and will resolve once the agent resumes).
  */
 function handleProcessQueuedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
@@ -617,12 +620,6 @@ function handleProcessQueuedEvent(event: WorkspaceEvent): void {
   if (typeof agentId !== 'string' || typeof used !== 'number' || typeof cap !== 'number') {
     return;
   }
-  // The Redux reducer's updateSessionFields is a no-op when the session
-  // doesn't exist yet, but during normal operation the agent:created or
-  // agent:updated event will have already hydrated the session before
-  // agent:process:queued arrives. If the event arrives during reconnect before
-  // the session is in Redux, the hint will be silently dropped, which is acceptable
-  // (the hint is transient UI state and will resolve once the agent resumes).
   appStore.dispatch(setProcessQueueHint(agentId, used, cap));
 }
 
