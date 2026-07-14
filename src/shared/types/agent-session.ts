@@ -222,6 +222,18 @@ export interface AgentSession {
    */
   waitingForAgentIds?: string[];
 
+  /**
+   * Process queue hint (PROTOCOL §6.5 agent:process:queued/resumed).
+   * Set when the agent is queued for a process slot, cleared when resumed or
+   * transitions to normal running state. UI renders as "Waiting for a free agent
+   * slot (used/cap)".
+   */
+  processQueueHint?: {
+    waiting: boolean;
+    used?: number;
+    cap?: number;
+  };
+
   /** Canonical stop/finish reason from the latest terminal stream/status event */
   stopReason?: string | null;
 

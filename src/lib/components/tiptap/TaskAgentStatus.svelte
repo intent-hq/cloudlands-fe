@@ -1,26 +1,18 @@
 <script lang="ts">
-
   import {
-  selectAgentIsResponding,
-  selectAgentSessionStreamingContent,
-  selectAgentSession,
-} from '$store/renderer/slices/agent-session/agent-session-selectors';
+    selectAgentIsResponding,
+    selectAgentSessionStreamingContent,
+    selectAgentSession,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import {
-  selectActiveWorkspaceId,
-  selectWorkspaceById,
-} from '$store/renderer/slices/workspace/workspace-selectors';
+    selectActiveWorkspaceId,
+    selectWorkspaceById,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
 
   import { restoreAgentSessionRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { createLogger } from '$lib/utils/client-logger';
-  import {
-  AgentStatus,
-  type ContentBlock,
-  type ToolUseBlock,
-} from '$shared/types';
-  import {
-  onMount,
-  onDestroy,
-} from 'svelte';
+  import { AgentStatus, type ContentBlock, type ToolUseBlock } from '$shared/types';
+  import { onMount, onDestroy } from 'svelte';
   import { getLastMeaningfulLine } from '$lib/utils/text-utils';
   import { AuggieTextParser } from '$lib/utils/auggie-text-parser';
   import { taskAgentPollingManager } from './task-agent-polling-manager';
@@ -370,6 +362,9 @@
     }
   });
 
+  // Process queue hint from Redux state
+  const processQueueHint = $derived(storeAgent?.processQueueHint);
+
   // Determine agent status - defined before latestContent since it depends on this value
   type AgentDisplayStatus = 'streaming' | 'active' | 'complete' | 'error' | 'idle' | 'unknown';
   const agentStatus: AgentDisplayStatus = $derived.by(() => {
@@ -522,7 +517,13 @@
     contenteditable="false"
   >
     <div class="status-content">
-      {#if agentDigest}
+      {#if processQueueHint?.waiting}
+        <!-- Process queue hint takes priority -->
+        <span class="status-text"
+          >Waiting for a free agent slot ({processQueueHint.used}/{processQueueHint.cap}
+          busy)</span
+        >
+      {:else if agentDigest}
         <!-- Show digest prominently when available -->
         <span class="line-clamp-3 break-all text-subtle">{agentDigest}</span>
       {:else if !agent && !agentFound}
