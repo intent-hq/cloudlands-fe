@@ -20,6 +20,7 @@ import {
   toggleWorkspaceTabPin,
   WORKSPACE_TABS_STORAGE_KEY,
 } from "$store/renderer/slices/tab-state/tab-state-slice";
+import { setWorkspaceHasLoaded } from "$store/renderer/slices/workspace/workspace-slice";
 import type { StoreState } from "$store/renderer/types";
 import { createTabStatePersistenceMiddleware } from "./tab-state-persistence-service";
 
@@ -45,12 +46,20 @@ type FakeApi = {
 
 function createFakeApi(): FakeApi {
   let tabState = tabStateReducer(undefined, { type: "@@init" } as never);
+  let workspaceState = { hasLoaded: false, loading: false, error: null };
   const dispatch = vi.fn((action: unknown) => {
     tabState = tabStateReducer(tabState, action as never);
+    // Handle setWorkspaceHasLoaded action
+    if (action && typeof action === 'object' && 'type' in action) {
+      if (action.type === setWorkspaceHasLoaded.type && 'payload' in action) {
+        const payload = action.payload as [boolean];
+        workspaceState = { ...workspaceState, hasLoaded: payload[0] };
+      }
+    }
     return action;
   });
   return {
-    getState: () => ({ tabState } as unknown as StoreState),
+    getState: () => ({ tabState, workspace: workspaceState } as unknown as StoreState),
     dispatch,
   };
 }
@@ -197,12 +206,12 @@ describe("tabStatePersistenceService — per-action persistence", () => {
 
   it("REGRESSION: hydrated tabs clobbered by early cleanupInvalidWorkspaceTabs with empty validIds", () => {
     // Simulates the boot-order race: hydrate restores tabs from localStorage,
-    // then cleanupInvalidWorkspaceTabs fires with an empty validIds list
+    // then cleanupInvalidWorkspaceTabs fires before workspace.hasLoaded becomes true
     // (workspace list not yet loaded) and wipes all tabs, persisting the empty
     // state back to localStorage.
     //
-    // Expected behavior: cleanup with empty validIds should NOT persist an empty
-    // list back over the hydrated state during the boot window.
+    // Expected behavior: cleanup that fires before workspace.hasLoaded should NOT
+    // persist, preventing the empty result from clobbering the hydrated state.
     safeLocalStorage.setJSON(WORKSPACE_TABS_STORAGE_KEY, {
       openTabs: ["ws-a", "ws-b"],
       currentTabId: "ws-a",
@@ -212,18 +221,16 @@ describe("tabStatePersistenceService — per-action persistence", () => {
       tabOrder: ["ws-a", "ws-b"],
     } satisfies PersistedWorkspaceTabsState);
 
-    const { api } = build();
+    const { dispatch } = build();
     // Middleware hydrates on creation (line 148 in the service)
-    const chain = createTabStatePersistenceMiddleware()(api);
-    const next = (action: unknown) => api.dispatch(action);
-    const dispatchChained = chain(next);
+    // workspace.hasLoaded is false by default at boot
 
-    // At this point tabs are hydrated into Redux state
-    // Now simulate the race: workspace list loads empty or partial
-    dispatchChained(cleanupInvalidWorkspaceTabs([]));
+    // Now simulate the race: cleanupInvalidWorkspaceTabs fires with empty validIds
+    // before workspace.hasLoaded becomes true
+    dispatch(cleanupInvalidWorkspaceTabs([]));
 
-    // BUG: the persisted state should NOT be empty — tabs that were just
-    // hydrated must not be wiped by cleanup with an incomplete validIds list.
+    // The persisted state should NOT be clobbered — tabs that were just
+    // hydrated must not be wiped by cleanup that fires before hasLoaded.
     const stored = safeLocalStorage.getJSON<PersistedWorkspaceTabsState>(
       WORKSPACE_TABS_STORAGE_KEY,
     );
@@ -232,8 +239,10 @@ describe("tabStatePersistenceService — per-action persistence", () => {
     expect(stored?.openTabs).toContain("ws-a");
   });
 
-  it("cleanupInvalidWorkspaceTabs prunes stale ids and rewrites storage", () => {
+  it("cleanupInvalidWorkspaceTabs prunes stale ids and rewrites storage when hasLoaded is true", () => {
     const { dispatch } = build();
+    // Simulate workspace list loaded
+    dispatch(setWorkspaceHasLoaded(true));
     dispatch(openWorkspaceTab("ws-keep"));
     dispatch(openWorkspaceTab("ws-drop"));
     dispatch(cleanupInvalidWorkspaceTabs(["ws-keep"]));
@@ -243,5 +252,23 @@ describe("tabStatePersistenceService — per-action persistence", () => {
     expect(stored?.openTabs).toContain("ws-keep");
     expect(stored?.openTabs ?? []).not.toContain("ws-drop");
     expect(stored?.tabOrder ?? []).not.toContain("ws-drop");
+  });
+
+  it("cleanupInvalidWorkspaceTabs with empty validIds DOES persist after workspace list is loaded", () => {
+    // Once workspace.hasLoaded is true, even an empty validIds cleanup should persist,
+    // as that represents a legitimate "all workspaces removed/archived" outcome.
+    const { dispatch } = build();
+    dispatch(openWorkspaceTab("ws-a"));
+    dispatch(openWorkspaceTab("ws-b"));
+    // Mark workspace list as loaded
+    dispatch(setWorkspaceHasLoaded(true));
+    // Now cleanup with empty validIds (all workspaces removed)
+    dispatch(cleanupInvalidWorkspaceTabs([]));
+    const stored = safeLocalStorage.getJSON<PersistedWorkspaceTabsState>(
+      WORKSPACE_TABS_STORAGE_KEY,
+    );
+    // Should persist the empty cleanup result since hasLoaded is true
+    expect(stored?.openTabs).toEqual([]);
+    expect(stored?.tabOrder).toEqual([]);
   });
 });
