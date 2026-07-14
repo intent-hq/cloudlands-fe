@@ -84,6 +84,7 @@ import {
   setVolume,
   type FontStyle,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { autoUpdateClient } from '$features/auto-update/auto-update.client';
 import {
   setDefaultModel,
   setTypeOverride,
@@ -314,9 +315,15 @@ function isFontStyle(value: unknown): value is FontStyle {
 
 function dispatchReduxAction(path: string, value: unknown): boolean {
   switch (path) {
-    case 'preferences.betaUpdatesEnabled':
-      appStore.dispatch(setBetaUpdatesEnabled(Boolean(value)));
+    case 'preferences.betaUpdatesEnabled': {
+      const enabled = Boolean(value);
+      appStore.dispatch(setBetaUpdatesEnabled(enabled));
+      // Also call SET_CHANNEL IPC to persist and switch feed immediately
+      autoUpdateClient.setChannel(enabled ? 'beta' : 'stable').catch((error) => {
+        console.error('Failed to set update channel via IPC', error);
+      });
       return true;
+    }
     case 'preferences.spellcheckEnabled':
       appStore.dispatch(setSpellcheckEnabled(Boolean(value)));
       return true;

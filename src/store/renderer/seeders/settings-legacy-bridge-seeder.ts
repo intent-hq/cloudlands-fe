@@ -56,11 +56,12 @@ const PROVIDER_PATH_KEYS: Record<string, string> = {
 };
 
 /**
- * FE-only keys (PROTOCOL §5.12 "Not exposed (FE-only)": `betaUpdatesEnabled`,
- * `hiddenOpenInEditors`, `rtkEnabled`, `linearIssueFilter`,
- * `downloadAttribution`, …) persist under this localStorage namespace —
- * per-user local preferences, same durability class as the electron-store
- * file the reference main process used.
+ * FE-only keys (PROTOCOL §5.12 "Not exposed (FE-only)": `hiddenOpenInEditors`,
+ * `rtkEnabled`, `linearIssueFilter`, `downloadAttribution`, …) persist under
+ * this localStorage namespace — per-user local preferences, same durability
+ * class as the electron-store file the reference main process used.
+ * Note: `betaUpdatesEnabled` was migrated to main-process local-prefs.json
+ * and is no longer localStorage-backed.
  */
 const LOCAL_STORAGE_PREFIX = "legacy-settings:";
 
