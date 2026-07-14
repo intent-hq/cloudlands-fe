@@ -24,6 +24,11 @@ export class LiveSystemClient implements SystemClient {
    * UI stable (no uncaught rejections on transient network/daemon failures) and
    * matches the component contract, which renders `null` as "Checking…" rather
    * than crashing on error.
+   *
+   * Field coercion: missing or non-boolean `nodeVersionOk` becomes `null` (UI
+   * "unknown" state); missing/invalid `auggieInstalled` and `binaryInstallAvailable`
+   * become `false` (safer default: if the daemon doesn't confirm installation or
+   * availability, the UI should not offer install/download affordances).
    */
   async status(): Promise<SystemStatusState> {
     try {

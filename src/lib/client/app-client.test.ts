@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appClient } from "./index";
 import { SKILLS_CHANNELS } from "$shared/ipc/channels";
 import { IPC_CHANNELS } from "$shared/ipc-registry";

@@ -5,7 +5,7 @@
  * maps the main-process `SkillMetadata` shape to the renderer's `SkillInfo`
  * contract (stripping `allowedTools` and `compatibility`).
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LiveSkillsClient } from "./live-skills-client";
 import { SKILLS_CHANNELS } from "$shared/ipc/channels";
 

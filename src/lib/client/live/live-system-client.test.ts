@@ -4,7 +4,7 @@
  * Asserts that the client invokes `system.status` with the correct wire request
  * and maps the PROTOCOL-shaped mock response to `SystemStatusState` faithfully.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LiveSystemClient } from "./live-system-client";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import type { SystemStatusState } from "$store/renderer/slices/system-status/system-status-slice";
