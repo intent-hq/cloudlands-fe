@@ -2474,27 +2474,22 @@
     // Otherwise fall through to the regular retry-last-message path.
     const currentStatus = $agentSession$?.status;
     if (currentStatus === AgentStatus.Error) {
-      try {
-        // Clear the current error so the UI shows loading state
-        appStore.dispatch(chatErrorCleared(agentId));
+      // Capture the current error message before clearing so we can restore it on failure
+      const priorError = $chatError$ || 'Agent failed to start';
 
-        const result = await appClient.agents.retry(agentId, workspace.id);
+      // Clear the current error so the UI shows loading state
+      appStore.dispatch(chatErrorCleared(agentId));
 
-        if (!result.ok) {
-          // Retry was rejected (agent not in error status) - restore error
-          // and fall through to regular retry
-          if ($chatError$) {
-            appStore.dispatch(chatSendFailed(agentId, $chatError$));
-          }
-          appStore.dispatch(agentSessionRetryLastMessageRequested(agentId, workspace.id));
-        }
-        // If ok:true, the daemon emits agent:status-changed events and redrives
-        // the queued message; the UI updates reactively via those events
-      } catch (err) {
-        // Transport error - restore error and show message
-        const errorMsg = err instanceof Error ? err.message : 'Failed to retry agent spawn';
-        appStore.dispatch(chatSendFailed(agentId, errorMsg));
+      const result = await appClient.agents.retry(agentId, workspace.id);
+
+      if (!result.ok) {
+        // Retry was rejected - surface the error or fall back to prior error
+        const errorToShow = result.error || priorError;
+        appStore.dispatch(chatSendFailed(agentId, errorToShow));
+        appStore.dispatch(agentSessionRetryLastMessageRequested(agentId, workspace.id));
       }
+      // If ok:true, the daemon emits agent:status-changed events and redrives
+      // the queued message; the UI updates reactively via those events
       return;
     }
 
