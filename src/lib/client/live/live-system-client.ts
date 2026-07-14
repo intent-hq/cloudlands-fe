@@ -14,11 +14,6 @@ import type { SystemClient, SubscriptionHandler, Unsubscribe } from "../app-clie
 import { backendRequest } from "./backend-transport";
 import { autoUpdateClient } from "$features/auto-update/auto-update.client";
 
-function emitOnce<T>(handler: SubscriptionHandler<T>, value: T): Unsubscribe {
-  setTimeout(() => handler(value), 0);
-  return () => {};
-}
-
 export class LiveSystemClient implements SystemClient {
   async status(): Promise<SystemStatusState> {
     try {
@@ -34,8 +29,9 @@ export class LiveSystemClient implements SystemClient {
       return {
         nodeVersionOk: typeof result.nodeVersionOk === "boolean" ? result.nodeVersionOk : null,
         nodeVersion: typeof result.nodeVersion === "string" ? result.nodeVersion : undefined,
-        auggieInstalled: Boolean(result.auggieInstalled),
-        binaryInstallAvailable: Boolean(result.binaryInstallAvailable),
+        auggieInstalled: typeof result.auggieInstalled === "boolean" ? result.auggieInstalled : false,
+        binaryInstallAvailable:
+          typeof result.binaryInstallAvailable === "boolean" ? result.binaryInstallAvailable : false,
       };
     } catch {
       return {
@@ -48,8 +44,10 @@ export class LiveSystemClient implements SystemClient {
   }
 
   async releaseNotes(): Promise<ReleaseNotes | null> {
-    // Release notes are not managed by the daemon; return null.
-    // The FE manages this through its own channels.
+    // Release notes are not yet wired through the auto-update surface.
+    // autoUpdate() provides update state through autoUpdateClient.getState(),
+    // but release notes content is not currently exposed by the auto-update
+    // client. Return null for now; wire when the client adds release notes access.
     return null;
   }
 

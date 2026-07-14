@@ -9,6 +9,15 @@ import { LiveSystemClient } from "./live-system-client";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import type { SystemStatusState } from "$store/renderer/slices/system-status/system-status-slice";
 
+// Mock autoUpdateClient
+vi.mock("$features/auto-update/auto-update.client", () => ({
+  autoUpdateClient: {
+    getState: vi.fn(),
+  },
+}));
+
+import { autoUpdateClient } from "$features/auto-update/auto-update.client";
+
 describe("LiveSystemClient", () => {
   let client: LiveSystemClient;
   let mockInvoke: ReturnType<typeof vi.fn>;
@@ -132,11 +141,25 @@ describe("LiveSystemClient", () => {
   });
 
   describe("autoUpdate", () => {
-    it("delegates to autoUpdateClient.getState", async () => {
-      // autoUpdateClient is a module-level export; we need to mock its implementation
+    it("delegates to autoUpdateClient.getState and adds toast fields", async () => {
+      const mockUpdateState = {
+        status: "idle" as const,
+        currentVersion: "0.5.0",
+        updateInfo: null,
+        progress: null,
+        error: null,
+        channel: "stable" as const,
+      };
+      vi.mocked(autoUpdateClient.getState).mockResolvedValue(mockUpdateState);
+
       const result = await client.autoUpdate();
-      // Expect null or a valid state; the exact behavior depends on autoUpdateClient mock
-      expect(result === null || typeof result === "object").toBe(true);
+
+      expect(autoUpdateClient.getState).toHaveBeenCalledOnce();
+      expect(result).toEqual({
+        ...mockUpdateState,
+        toastVisible: false,
+        downloadedToastDismissedAt: null,
+      });
     });
   });
 

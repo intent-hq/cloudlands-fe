@@ -21,6 +21,7 @@ import { BROWSER_STORAGE_KEY_PREFIX, MAX_RECENT_URLS } from "../slices/browser/b
 import {
   hydrateBrowserState,
   addRecentUrl,
+  updateUrlMetadata,
   removeRecentUrl,
   clearRecentUrls,
   initBrowserWorkspace,
@@ -34,6 +35,7 @@ function storageKey(workspaceId: string): string {
 /** Actions whose reducer can change `recentUrls` and therefore need a write-back. */
 const PERSIST_ACTION_TYPES = new Set<string>([
   addRecentUrl.type,
+  updateUrlMetadata.type,
   removeRecentUrl.type,
   clearRecentUrls.type,
 ]);

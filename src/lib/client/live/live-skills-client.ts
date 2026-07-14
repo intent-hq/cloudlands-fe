@@ -76,12 +76,11 @@ export class LiveSkillsClient implements SkillsClient {
     // No `skills:*` change events exist on the wire (the loader is polled
     // on-demand), so the subscription is a one-shot snapshot of the current
     // discovered skills.
-    let cancelled = false;
     // The mock contract calls with no workspaceId; the live path needs one.
     // Emit an empty list synchronously to match the mock's emit-once behavior.
     handler([]);
     return () => {
-      cancelled = true;
+      // no-op unsubscribe for this emit-once subscription
     };
   }
 }

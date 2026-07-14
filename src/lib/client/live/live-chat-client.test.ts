@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BackendNotification } from "./backend-transport";
-import type { ChatClient } from "../app-client";
 
 // FAKE transport only: no request/notification reaches the real daemon. Tests
 // assert the JSON-RPC method + params `chat.subscribe`/`chat.unsubscribe` emit
@@ -32,12 +31,6 @@ import { LiveChatClient } from "./live-chat-client";
 const mockedRequest = vi.mocked(transport.backendRequest);
 const emit = (transport as unknown as { __emit: (n: BackendNotification) => void }).__emit;
 const reset = (transport as unknown as { __reset: () => void }).__reset;
-
-function mockChat(): ChatClient {
-  return {
-    subscribeSnapshot: async () => ({ messages: [], truncated: false, totalMessages: 0 }),
-  };
-}
 
 describe("LiveChatClient (fake transport)", () => {
   afterEach(() => {

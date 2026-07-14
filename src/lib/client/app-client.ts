@@ -13,7 +13,6 @@
 import type {
   AgentMessage,
   AgentSession,
-  ContentBlock,
   CreateNoteRequest,
   CreateWorkspaceRequest,
   DiffChunk,

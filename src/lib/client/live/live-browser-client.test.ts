@@ -6,8 +6,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { LiveBrowserClient } from "./live-browser-client";
 import { BROWSER_STORAGE_KEY_PREFIX, MAX_RECENT_URLS } from "$store/renderer/slices/browser/browser-types";
+import type { RecentUrl } from "$store/renderer/slices/browser/browser-types";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
-import type { RecentUrl } from "../app-client";
 
 function storageKey(workspaceId: string): string {
   return `${BROWSER_STORAGE_KEY_PREFIX}${workspaceId}`;
