@@ -217,6 +217,25 @@ export class LiveAgentsClient implements AgentsClient {
     // the emitted `agent:deleted` event to reconcile the list.
     return runMutation("agent.delete", { agentId });
   }
+  async retry(agentId: string, workspaceId: string): Promise<{ ok: boolean; error?: string }> {
+    // `agent.retry` redrives a failed agent spawn. Only valid when agent status
+    // is `error`; returns `{ ok: false }` otherwise. Clears error status to
+    // pending, tears down stale child, redrives queued message. Emits
+    // agent:status-changed events.
+    try {
+      const result = await backendRequest<{ ok?: unknown } | undefined>("agent.retry", {
+        agentId,
+        workspaceId,
+      });
+      const ok = typeof result?.ok === "boolean" ? result.ok : false;
+      return { ok, error: ok ? undefined : "Agent not in error status" };
+    } catch (error) {
+      // Transport/RPC errors return { ok: false, error } rather than throwing so
+      // callers can surface the error and keep the retry button visible.
+      const errorMsg = error instanceof Error ? error.message : "Failed to retry agent spawn";
+      return { ok: false, error: errorMsg };
+    }
+  }
   async respondPermission(
     requestId: string,
     outcome: PermissionOutcome,
