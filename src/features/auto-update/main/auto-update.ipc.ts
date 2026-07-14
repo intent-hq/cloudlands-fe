@@ -13,15 +13,13 @@ import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { Logger } from '../../../shared/logger';
 import { AUTO_UPDATE_CHANNELS } from '../types';
+import { SetChannelRequestSchema } from '../auto-update-validation';
 import { autoUpdateService } from './auto-update.service';
 
 const logger = new Logger('AutoUpdateIPC');
 
 // Validation schemas
 const EmptySchema = z.object({}).optional();
-const SetChannelSchema = z.object({
-  channel: z.enum(['stable', 'beta', 'alpha']),
-});
 
 /**
  * Setup auto-update IPC handlers
@@ -95,7 +93,7 @@ export function setupAutoUpdateIPC(): void {
   ipcMain.handle(
     AUTO_UPDATE_CHANNELS.SET_CHANNEL,
     createSafeValidatedHandler(
-      SetChannelSchema,
+      SetChannelRequestSchema,
       async (_event, validated) => {
         autoUpdateService.setChannel(validated.channel);
         return { success: true };

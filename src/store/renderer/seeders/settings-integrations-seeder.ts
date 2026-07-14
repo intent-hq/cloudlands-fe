@@ -57,12 +57,22 @@ import {
   setSentryConnected,
   setSentryIssues,
 } from "../slices/sentry-auth/sentry-auth-slice";
+import { autoUpdateClient } from "$features/auto-update/auto-update.client";
 
 registerMockSeeder("settings-integrations", async ({ store, client }) => {
   // ── User preferences ──
   const prefs = await client.settings.getUserPreferences();
   if (prefs) {
-    store.dispatch(setBetaUpdatesEnabled(prefs.betaUpdatesEnabled));
+    // Sync beta updates preference with main-process local-prefs (the source of truth)
+    // This ensures Redux state matches the actual updater channel after restart
+    try {
+      const autoUpdateState = await autoUpdateClient.getState();
+      const mainProcessBetaEnabled = autoUpdateState.channel === 'beta';
+      store.dispatch(setBetaUpdatesEnabled(mainProcessBetaEnabled));
+    } catch {
+      // Fall back to client preference if auto-update state is unavailable
+      store.dispatch(setBetaUpdatesEnabled(prefs.betaUpdatesEnabled));
+    }
     store.dispatch(setSpellcheckEnabled(prefs.spellcheckEnabled));
     store.dispatch(setZoomFactor(prefs.zoomFactor));
     store.dispatch(setShowArchived(prefs.showArchived));

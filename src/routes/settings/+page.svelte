@@ -154,20 +154,6 @@
   const isDevMode = import.meta.env.DEV;
   const isMac = isMacPlatform();
 
-  // Sync beta updates toggle with main-process local-prefs on mount
-  // This ensures the toggle shows the correct state after restart
-  $effect(() => {
-    autoUpdateClient.getState().then((state) => {
-      const mainProcessBetaEnabled = state.channel === 'beta';
-      // Only dispatch if the Redux state diverges from main-process truth
-      if ($betaUpdatesEnabled$ !== mainProcessBetaEnabled) {
-        appStore.dispatch(setBetaUpdatesEnabled(mainProcessBetaEnabled));
-      }
-    }).catch((error) => {
-      logger.error('Failed to sync beta updates state from main process', error);
-    });
-  });
-
   // Get back label - show workspace title if coming from a workspace
   const backLabel = $derived.by(() => {
     const prevPath = getSettingsPreviousPath();
