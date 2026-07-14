@@ -4,8 +4,10 @@ directories:
   output: dist-electron
   buildResources: build
 
-# Code signing and notarization hook
-# Runs after the app is signed to submit for Apple notarization
+# Code signing hooks
+# afterPack: Signs intentd sidecar BEFORE main app signing (prevents seal invalidation)
+# afterSign: Submits signed app to Apple for notarization
+afterPack: scripts/sign-sidecar.js
 afterSign: scripts/notarize.js
 
 files:
@@ -59,12 +61,10 @@ mac:
   # Code signing - requires Apple Developer certificate
   # Set APPLE_ID and APPLE_APP_SPECIFIC_PASSWORD env vars for notarization
   # identity: "Developer ID Application: Your Name (TEAM_ID)"
-  requirements: build/app-requirements.txt
+  # No custom requirements - codesign derives DR from the actual signing certificate
   notarize: true
-  # Sign bundled intentd sidecar binary (extraResources are not auto-signed)
-  # Path is relative to .app bundle root (joined with path.resolve(appPath, destination))
-  binaries:
-    - "Contents/Resources/intentd/intentd"
+  # intentd sidecar is signed via afterPack hook (scripts/sign-sidecar.js)
+  # before the main app seal is created, preventing "nested code modified" errors
   target:
     - target: dmg
       arch:
