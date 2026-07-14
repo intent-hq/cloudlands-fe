@@ -81,6 +81,7 @@ export interface IAgentBackendService {
     agentId: string;
     messageId: string;
     content: string;
+    editing?: boolean;
   }): Promise<{ success: boolean; error?: string }>;
   removeQueuedMessage(request: {
     agentId: string;

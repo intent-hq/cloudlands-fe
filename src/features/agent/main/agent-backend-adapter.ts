@@ -264,17 +264,27 @@ class AgentBackendAdapter implements IAgentBackendService {
     agentId: string;
     messageId: string;
     content: string;
+    editing?: boolean;
   }): Promise<{ success: boolean; error?: string }> {
     logger.debug('Adapter: editQueuedMessage', {
       agentId: request.agentId,
       messageId: request.messageId,
+      editing: request.editing,
     });
     try {
-      const result = (await getBackendClient().request('agent.editQueuedMessage', {
+      const params: Record<string, unknown> = {
         agentId: request.agentId,
         messageId: request.messageId,
         content: request.content,
-      })) as { success?: boolean; error?: string };
+      };
+      // STAB-27: Forward optional editing flag to daemon for hold/release
+      if (request.editing !== undefined) {
+        params.editing = request.editing;
+      }
+      const result = (await getBackendClient().request('agent.editQueuedMessage', params)) as {
+        success?: boolean;
+        error?: string
+      };
       return { success: result?.success !== false, error: result?.error };
     } catch (error) {
       return {
