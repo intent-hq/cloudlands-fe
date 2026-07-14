@@ -89,17 +89,21 @@ registerMockSeeder("terminals-scripts", async ({ store, client }) => {
     const wsId = String(workspace.id);
 
     // ── Terminals ──
-    const terminals = await client.terminals.list(wsId);
-    if (terminals.length > 0) {
+    try {
+      const terminals = await client.terminals.list(wsId);
       store.dispatch(loadWorkspaceTerminals(wsId, terminals));
+    } catch (err) {
+      console.warn(`Mock seeder: failed to load terminals for workspace ${wsId}`, err);
     }
 
     // ── Workspace scripts ──
-    const scripts = await client.scripts.list(wsId);
-    if (scripts.length > 0) {
+    try {
+      const scripts = await client.scripts.list(wsId);
       store.dispatch(setScriptsData(wsId, scripts));
+      store.dispatch(setScriptsInitialized(wsId, true));
+    } catch (err) {
+      console.warn(`Mock seeder: failed to load scripts for workspace ${wsId}`, err);
     }
-    store.dispatch(setScriptsInitialized(wsId, true));
   }
 
   // ── Setup scripts (global, not workspace-scoped) ──

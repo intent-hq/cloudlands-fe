@@ -14,7 +14,6 @@ import { track } from '$lib/services/analytics';
 
 import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
-  selectActiveWorkspace,
   selectWorkspaceById,
 } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
@@ -130,7 +129,7 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
   async function handleRealWorkspaceLoad(
     workspaceId: string,
     workspaceState: WorkspacePageStateManager,
-    state: WorkspacePageState | null,
+    _state: WorkspacePageState | null,
   ) {
     // Don't try to load the 'new' placeholder — it's the onboarding flow
     if (workspaceId === 'new') {
@@ -150,32 +149,6 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // Load real workspace - prefer already-initialized workspace from the store
     let ws = selectWorkspaceById.select(appStore.state, workspaceId);
 
-    // Check if this workspace is already fully loaded and active.
-    // If so, we only need to call the backend open() for monitoring idempotency
-    // and can skip all frontend state re-initialization. This prevents redundant
-    // reactive updates (agent list resets, state re-initialization) when the user
-    // navigates away and back to the same workspace — which would clear streaming
-    // state and cause active streams to appear disconnected.
-    const isAlreadyActive =
-      ws &&
-      selectActiveWorkspace.select(appStore.state)?.id === workspaceId &&
-      state?.workspaceData?.id === workspaceId &&
-      lastMountedWorkspaceId === workspaceId;
-
-    if (isAlreadyActive) {
-      logger.info('Workspace already active, sending idempotent open only', {
-        workspaceId,
-        hasWorktreePath: !!ws?.worktreePath,
-      });
-
-      // Fire-and-forget: backend open() is idempotent and ensures monitoring is running.
-      // We don't need to await or process the result since the workspace is already loaded.
-      workspaceClient.open(WorkspaceId(workspaceId)).catch((error) => {
-        logger.warn('Background workspace open failed (non-critical)', { workspaceId, error });
-      });
-      return;
-    }
-
     // NOTE: We previously skipped workspaceClient.open() when the workspace already had a worktreePath.
     // However, this caused a bug where change detection monitoring wouldn't start on revisits.
     // The backend open() call is idempotent and fast if monitoring is already running, so we always call it
@@ -194,8 +167,15 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // that occurs when safeWorkspace is null during the open() round-trip,
     // and lets workspaceMounted sagas (agent loading, terminal init, etc.)
     // start without waiting for backend confirmation.
+    //
+    // STAB-24 fix: Skip the pre-population block when re-running the loader
+    // for the same workspace ID (lastMountedWorkspaceId === workspaceId) to
+    // avoid redundant state updates. workspaceMounted will still be dispatched
+    // later (after the backend open() call) to ensure terminal tabs and other
+    // workspace-scoped state are re-hydrated from the daemon.
     let alreadyMounted = false;
-    if (ws) {
+    const isReturnVisit = lastMountedWorkspaceId === workspaceId;
+    if (ws && !isReturnVisit) {
       logger.info('Pre-populating workspace state from cache before open()', { workspaceId });
       workspaceState.updateState({
         workspaceData: ws,
@@ -253,8 +233,12 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       // Hydrate Redux with the (potentially fresher) workspace entity.
       appStore.dispatch(setWorkspaceEntity(ws));
 
-      // Dispatch workspaceMounted only if we haven't already done so above
-      // from cached data. This prevents duplicate saga forks.
+      // STAB-24 fix: Dispatch workspaceMounted unless it was already dispatched
+      // during the pre-population block above. The pre-population block only runs
+      // when (ws && !isReturnVisit), so alreadyMounted is only true for first
+      // visits to a cached workspace. In all other cases (return visits or
+      // uncached first visits), we need to dispatch workspaceMounted here to
+      // ensure terminal tabs and other workspace-scoped state are hydrated.
       if (!alreadyMounted) {
         appStore.dispatch(workspaceMounted(ws.id));
         lastMountedWorkspaceId = ws.id;

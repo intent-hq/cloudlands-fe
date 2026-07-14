@@ -399,9 +399,11 @@ function hydrateWorkspaceAgents(wsId: string): void {
 
 /**
  * Hydrate a workspace's terminals on mount, mirroring the boot
- * `terminals-scripts-seeder` terminal section. Fire-and-forget; the reducer's
- * `loadWorkspaceTerminals` handles the empty-list case idempotently, so no
- * external guard is needed.
+ * `terminals-scripts-seeder` terminal section. A successful fetch (including
+ * an authoritative empty list) dispatches `loadWorkspaceTerminals` to converge
+ * the store; a failed fetch is swallowed by the coalesce wrapper and leaves
+ * prior tab state intact, so transient errors during workspace switches do NOT
+ * clobber live terminals (STAB-24).
  */
 function hydrateWorkspaceTerminals(wsId: string): void {
   coalesce(`terminals:${wsId}`, async () => {

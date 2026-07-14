@@ -188,6 +188,13 @@ describe("LiveTerminalsClient wire requests (fake transport)", () => {
       },
     ]);
   });
+
+  it("list throws on transport error (STAB-24 fix: failed fetch must not clobber tabs)", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("network timeout"));
+    const client = new LiveTerminalsClient();
+
+    await expect(client.list("ws-1")).rejects.toThrow("network timeout");
+  });
 });
 
 describe("LiveTerminalsClient.subscribeEvents (PROTOCOL-shaped events)", () => {
