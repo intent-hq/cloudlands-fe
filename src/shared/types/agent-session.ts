@@ -226,7 +226,7 @@ export interface AgentSession {
    * Process queue hint (PROTOCOL §6.5 agent:process:queued/resumed).
    * Set when the agent is queued for a process slot, cleared when resumed or
    * transitions to normal running state. UI renders as "Waiting for a free agent
-   * slot (used/cap)".
+   * slot (used/cap busy)".
    */
   processQueueHint?: {
     waiting: boolean;
