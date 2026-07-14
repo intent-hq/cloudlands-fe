@@ -13,7 +13,6 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { WorkspaceService } from '../main/workspace.service';
-import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import type { WorkspaceUIContext } from '../../../shared/types';
 import { WorkspaceConfig } from '../../../shared/main/config.js';
 
