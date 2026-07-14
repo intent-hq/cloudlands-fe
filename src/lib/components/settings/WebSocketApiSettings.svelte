@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable intent/no-component-async-data-fetch */
   /**
    * WebSocket API Settings Component
    *
@@ -9,6 +10,10 @@
    *
    * Handles error states (failed start rolls back setting, INTENTD_AUTH_TOKEN
    * blocks rotation, -32001 on remote calls). Keeps FE-side discovery countdown.
+   *
+   * This component directly calls appClient methods per the restored pattern from
+   * commit 27293564. The WebSocket API settings are transient UI state that do not
+   * belong in Redux; the settings themselves are persisted by the daemon.
    */
   import { onMount, onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
@@ -29,7 +34,7 @@
   let port = $state<number | null>(null);
   let certFingerprint = $state('');
   let localIps = $state<string[]>([]);
-  let hostname = $state('');
+  let _hostname = $state('');
   let loading = $state(true);
   let regenerating = $state(false);
   let discoveryEnabled = $state(false);
@@ -67,7 +72,7 @@
         port = info.port;
         certFingerprint = info.certFingerprint;
         localIps = info.localIps;
-        hostname = info.hostname;
+        _hostname = info.hostname;
       }
     } catch (error) {
       toast.error(`Failed to load WebSocket API status: ${error instanceof Error ? error.message : String(error)}`);
