@@ -672,37 +672,23 @@ export class DaemonWorkspaceRepository implements WorkspaceRepository {
   }
 
   async saveContext(workspaceId: WorkspaceId, context: any): Promise<void> {
-    // Use workspace.updateContext RPC (PROTOCOL.md §5.1, intentd#159)
-    try {
-      const { getBackendClient } = await import('../../backend/main/backend.ipc');
-      // Ensure context is an array (the RPC expects items: ContextItem[])
-      const items = Array.isArray(context) ? context : [];
-      await getBackendClient().request('workspace.updateContext', {
-        workspaceId,
-        items,
-      });
-      logger.debug('Context saved to daemon', { workspaceId, itemCount: items.length });
-    } catch (error) {
-      logger.error('Failed to save context to daemon', error as Error, { workspaceId });
-      throw error;
+    // Filesystem fallback for workspace UI context (navigation state).
+    // Note: workspace.updateContext RPC (PROTOCOL.md §5.1) handles chat-context items,
+    // NOT workspace UI context — these are different domains requiring separate daemon support.
+    if (!this.filesystemFallback) {
+      this.filesystemFallback = new FileSystemWorkspaceRepository();
     }
+    return this.filesystemFallback.saveContext(workspaceId, context);
   }
 
   async readContext(workspaceId: WorkspaceId): Promise<any | null> {
-    // Use workspace.getContext RPC (PROTOCOL.md §5.1, intentd#159)
-    try {
-      const { getBackendClient } = await import('../../backend/main/backend.ipc');
-      const response = (await getBackendClient().request('workspace.getContext', {
-        workspaceId,
-      })) as { items?: any[] } | undefined;
-
-      logger.debug('Context read from daemon', { workspaceId, itemCount: response?.items?.length || 0 });
-      return response?.items || null;
-    } catch (error) {
-      logger.error('Failed to read context from daemon', error as Error, { workspaceId });
-      // Return null instead of throwing - context is optional
-      return null;
+    // Filesystem fallback for workspace UI context (navigation state).
+    // Note: workspace.getContext RPC (PROTOCOL.md §5.1) returns chat-context items,
+    // NOT workspace UI context — these are different domains requiring separate daemon support.
+    if (!this.filesystemFallback) {
+      this.filesystemFallback = new FileSystemWorkspaceRepository();
     }
+    return this.filesystemFallback.readContext(workspaceId);
   }
 
   async readGitConfig(repoPath: string, workspaceId?: WorkspaceId): Promise<string> {

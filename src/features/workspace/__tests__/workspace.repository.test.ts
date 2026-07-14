@@ -291,68 +291,6 @@ describe('DaemonWorkspaceRepository', () => {
     });
   });
 
-  describe('readContext', () => {
-    it('should call workspace.getContext and return items', async () => {
-      const testItems = [
-        { id: 'item-1', type: 'note', title: 'Test Note' },
-        { id: 'item-2', type: 'linear-issue', title: 'Test Issue' },
-      ];
-
-      mockBackendClient.request.mockResolvedValue({ items: testItems });
-
-      const result = await repository.readContext('ws-123' as any);
-
-      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.getContext', {
-        workspaceId: 'ws-123',
-      });
-      expect(result).toEqual(testItems);
-    });
-
-    it('should return null when no items', async () => {
-      mockBackendClient.request.mockResolvedValue({});
-
-      const result = await repository.readContext('ws-123' as any);
-
-      expect(result).toBeNull();
-    });
-
-    it('should return null on error', async () => {
-      mockBackendClient.request.mockRejectedValue(new Error('Connection failed'));
-
-      const result = await repository.readContext('ws-123' as any);
-
-      expect(result).toBeNull();
-    });
-  });
-
-  describe('saveContext', () => {
-    it('should call workspace.updateContext with items', async () => {
-      const testItems = [
-        { id: 'item-1', type: 'note', title: 'Test Note' },
-      ];
-
-      mockBackendClient.request.mockResolvedValue({ items: testItems });
-
-      await repository.saveContext('ws-123' as any, testItems);
-
-      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.updateContext', {
-        workspaceId: 'ws-123',
-        items: testItems,
-      });
-    });
-
-    it('should convert non-array context to empty array', async () => {
-      mockBackendClient.request.mockResolvedValue({ items: [] });
-
-      await repository.saveContext('ws-123' as any, null);
-
-      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.updateContext', {
-        workspaceId: 'ws-123',
-        items: [],
-      });
-    });
-  });
-
   describe('readGitConfig', () => {
     it('should call git.getConfig when workspaceId provided', async () => {
       const testConfig = '[remote "origin"]\n    url = git@github.com:test/repo.git';
