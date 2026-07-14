@@ -504,7 +504,8 @@
                   </p>
                 </div>
                 <Toggle
-                  value={$betaUpdatesEnabled$}
+                  variant="switch"
+                  pressed={$betaUpdatesEnabled$}
                   onChange={handleBetaUpdatesToggle}
                   size="sm"
                 />
