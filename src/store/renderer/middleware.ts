@@ -52,6 +52,7 @@ import { createLifecycleIpcReadMiddleware } from "./middlewares/lifecycle-ipc-re
 import { createUiLayoutPersistenceMiddleware } from "./middlewares/ui-layout-persistence-service";
 import { createUnreadTrackingPersistenceMiddleware } from "./middlewares/unread-tracking-persistence-service";
 import { createTabStatePersistenceMiddleware } from "./middlewares/tab-state-persistence-service";
+import { createSidebarNavPersistenceMiddleware } from "./middlewares/sidebar-nav-persistence-service";
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
@@ -275,6 +276,10 @@ function buildMiddleware(): StoreMiddleware[] {
     // workspace-tab strip (order/pin/active tab) and per-tab scroll positions
     // hydrate on boot and persist on change across sessions via localStorage.
     createTabStatePersistenceMiddleware(),
+    // Give the (post-saga) sidebar-nav persistence triggers real handlers so
+    // pinned workspaces, view mode, panel state, and other sidebar UI state
+    // hydrate on boot and persist on change across sessions via localStorage.
+    createSidebarNavPersistenceMiddleware(),
     // Give the (post-saga) theme triggers (`requestThemePreferenceChange` /
     // `selectThemePreset` / `importCustomTheme` / `clearThemeCustomization`)
     // real handlers so the Settings theme toggle and ColorThemeSettings
