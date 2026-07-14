@@ -36,7 +36,48 @@ let sidecarProcess: ChildProcess | null = null;
 let restartPolicy: RestartPolicy | null = null;
 let watchdogTimer: NodeJS.Timeout | null = null;
 let restartTimer: NodeJS.Timeout | null = null;
+let killEscalationTimer: NodeJS.Timeout | null = null;
 let isShuttingDown = false;
+let consecutiveFailures = 0;
+
+/**
+ * Test seam: reset module state for testing.
+ * @internal
+ */
+export function __resetIntentdSidecarForTesting(): void {
+  if (watchdogTimer) {
+    clearTimeout(watchdogTimer);
+    watchdogTimer = null;
+  }
+  if (restartTimer) {
+    clearTimeout(restartTimer);
+    restartTimer = null;
+  }
+  if (killEscalationTimer) {
+    clearTimeout(killEscalationTimer);
+    killEscalationTimer = null;
+  }
+  sidecarProcess = null;
+  restartPolicy = null;
+  isShuttingDown = false;
+  consecutiveFailures = 0;
+}
+
+/**
+ * Test seam: set the sidecar process handle for testing.
+ * @internal
+ */
+export function __setSidecarProcessForTesting(proc: ChildProcess | null): void {
+  sidecarProcess = proc;
+}
+
+/**
+ * Test seam: start the watchdog directly for testing.
+ * @internal
+ */
+export function __startWatchdogForTesting(socketPath: string, delayMs?: number): void {
+  startHealthWatchdog(socketPath, delayMs);
+}
 
 /**
  * Resolve the intentd binary path.
@@ -136,6 +177,9 @@ async function probeDaemonSocket(socketPath: string): Promise<boolean> {
  * Health check probe: sends a cheap JSON-RPC request to the daemon socket.
  * Returns `true` if the daemon responds successfully within the timeout.
  *
+ * Uses `system.status` which hits the control fast-path (no SQLite) to avoid
+ * false negatives during transient database contention.
+ *
  * @param socketPath - Path to the UDS socket
  * @param timeoutMs - Timeout in milliseconds (default: 3000)
  */
@@ -154,12 +198,12 @@ export async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Pr
       }
     }, timeoutMs);
 
-    // Send a cheap JSON-RPC ping request (workspace.list with lite:true)
+    // Send system.status request (control fast-path, no DB access)
+    // Omit params to match the established request shape in json-rpc-client.ts
     const rpcRequest = {
       jsonrpc: '2.0',
       id: Date.now(),
-      method: 'workspace.list',
-      params: { lite: true },
+      method: 'system.status',
     };
 
     client.on('connect', () => {
@@ -200,7 +244,9 @@ export async function healthCheckProbe(socketPath: string, timeoutMs = 3000): Pr
  * Start the health watchdog for the sidecar daemon.
  *
  * After an initial 2s grace period, probes the daemon every 10s with a 3s timeout.
- * If a probe fails, triggers the restart path.
+ * Requires 3 consecutive failures before triggering a restart (a successful probe
+ * resets the counter). Kill escalation: SIGTERM first, then SIGKILL after 5s if
+ * the process hasn't exited.
  *
  * @param socketPath - Path to the UDS socket
  * @param delayMs - Delay before the next probe (default: 2000 for initial grace, 10000 for steady-state)
@@ -217,13 +263,75 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
 
     const isHealthy = await healthCheckProbe(socketPath, 3000);
     if (!isHealthy) {
-      logger.warn('Health check failed; triggering restart');
-      // Kill the process to trigger the restart path
-      if (sidecarProcess && !sidecarProcess.killed) {
-        sidecarProcess.kill('SIGKILL');
+      consecutiveFailures++;
+      logger.warn('Health check failed', { attempt: consecutiveFailures, threshold: 3 });
+
+      if (consecutiveFailures >= 3) {
+        logger.warn('Health check failure threshold reached; triggering graceful restart');
+        consecutiveFailures = 0; // Reset for next spawn cycle
+
+        // Kill the process with graceful escalation
+        // Check if process is still alive before attempting to kill
+        if (sidecarProcess && sidecarProcess.exitCode === null && sidecarProcess.signalCode === null) {
+          const proc = sidecarProcess;
+
+          // Send SIGTERM first
+          let sigtermSent = false;
+          try {
+            sigtermSent = proc.kill('SIGTERM');
+            if (sigtermSent) {
+              logger.info('Sent SIGTERM to sidecar; waiting 5s for graceful exit');
+            } else {
+              logger.warn('SIGTERM send returned false (process may have already exited)');
+            }
+          } catch (err) {
+            logger.error('Failed to send SIGTERM to sidecar', { error: err });
+          }
+
+          // If SIGTERM failed to send, immediately try SIGKILL
+          if (!sigtermSent) {
+            try {
+              const killed = proc.kill('SIGKILL');
+              if (killed) {
+                logger.warn('Sent SIGKILL immediately (SIGTERM failed)');
+              }
+            } catch (err) {
+              logger.error('Failed to send SIGKILL to sidecar', { error: err });
+            }
+            return;
+          }
+
+          // Clear any previous kill escalation timer
+          if (killEscalationTimer) {
+            clearTimeout(killEscalationTimer);
+            killEscalationTimer = null;
+          }
+
+          // Schedule SIGKILL if process doesn't exit within grace period
+          killEscalationTimer = setTimeout(() => {
+            // Check both exitCode and signalCode: a process that exited due to a signal
+            // has exitCode=null and signalCode set (e.g., 'SIGTERM')
+            if (proc.exitCode === null && proc.signalCode === null) {
+              logger.warn('Sidecar did not exit gracefully; sending SIGKILL');
+              try {
+                proc.kill('SIGKILL');
+              } catch (err) {
+                logger.error('Failed to send SIGKILL to sidecar', { error: err });
+              }
+            }
+            killEscalationTimer = null;
+          }, 5000);
+        }
+        return;
       }
+
+      // Not at threshold yet - schedule next probe
+      startHealthWatchdog(socketPath, 10000);
       return;
     }
+
+    // Healthy probe - reset failure counter
+    consecutiveFailures = 0;
 
     // Schedule next probe in 10s (steady-state interval)
     startHealthWatchdog(socketPath, 10000);
@@ -274,11 +382,16 @@ async function spawnSidecarProcess(
   sidecarProcess.on('exit', (code, signal) => {
     logger.info('Sidecar exited', { code, signal });
 
-    // Clear watchdog timer
+    // Clear watchdog timer, kill escalation timer, and reset failure counter
     if (watchdogTimer) {
       clearTimeout(watchdogTimer);
       watchdogTimer = null;
     }
+    if (killEscalationTimer) {
+      clearTimeout(killEscalationTimer);
+      killEscalationTimer = null;
+    }
+    consecutiveFailures = 0;
 
     sidecarProcess = null;
 
@@ -377,16 +490,23 @@ export async function stopIntentdSidecar(gracePeriodMs = 3000): Promise<void> {
   // Mark shutdown to prevent restarts
   isShuttingDown = true;
 
-  // Clear watchdog timer
+  // Clear watchdog timer and reset failure counter
   if (watchdogTimer) {
     clearTimeout(watchdogTimer);
     watchdogTimer = null;
   }
+  consecutiveFailures = 0;
 
   // Clear restart timer (quit during pending backoff must not respawn)
   if (restartTimer) {
     clearTimeout(restartTimer);
     restartTimer = null;
+  }
+
+  // Clear kill escalation timer (prevent late SIGKILL during/after shutdown)
+  if (killEscalationTimer) {
+    clearTimeout(killEscalationTimer);
+    killEscalationTimer = null;
   }
 
   // Mark intentional stop in restart policy
