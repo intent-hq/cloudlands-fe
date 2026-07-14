@@ -29,8 +29,15 @@ vi.mock("$lib/client", () => ({
     workspaces: {
       list: vi.fn(() => Promise.resolve([])),
       recentViews: vi.fn(() => Promise.resolve({})),
+      getContext: vi.fn(() => Promise.resolve([])),
+      updateContext: vi.fn(() => Promise.resolve([])),
     },
-    tasks: { list: vi.fn(() => Promise.resolve([])) },
+    tasks: {
+      list: vi.fn(() => Promise.resolve([])),
+      listAgentLinks: vi.fn(() => Promise.resolve({})),
+      linkAgent: vi.fn(() => Promise.resolve(null)),
+      unlinkAgent: vi.fn(() => Promise.resolve(false)),
+    },
     events: { list: vi.fn(() => Promise.resolve([])) },
     skills: { list: vi.fn(() => Promise.resolve([])) },
     scripts: { list: vi.fn(() => Promise.resolve([])) },
@@ -62,15 +69,9 @@ import {
   loadKnownRepos,
   setRepos,
 } from "$store/renderer/slices/known-repos/known-repos-slice";
-import {
-  addContextItem,
-  initContextForWorkspace,
-} from "$store/renderer/slices/context/context-slice";
-import { selectContextItems } from "$store/renderer/slices/context/context-selectors";
 import { refreshAcceptChangesStatus } from "$store/renderer/slices/changes/changes-slice";
 import { setPostMergeState } from "$store/renderer/slices/git/git-slice";
 import { workspaceMounted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
-import type { ContextItem } from "$features/context/types";
 import type { WorkspaceGitStatus } from "$features/accept-changes/types";
 import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
@@ -79,18 +80,7 @@ const reposApi = githubAuthClient as unknown as { listRepos: Fn };
 const editorsApi = externalEditorsClient as unknown as { detectInstalled: Fn };
 const acceptApi = AcceptChangesClient as unknown as { getStatus: Fn };
 const invokeMock = vi.mocked(invoke);
-const getItemMock = window.localStorage.getItem as unknown as Fn;
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-const noteItem = (id: string): ContextItem => ({
-  id,
-  type: "note",
-  title: id,
-  provider: "internal",
-  noteId: id,
-  createdAt: "2026-01-01T00:00:00.000Z",
-  updatedAt: "2026-01-01T00:00:00.000Z",
-});
 
 const editor = (id: string) => ({
   id,
@@ -319,7 +309,8 @@ describe("lifecycleIpcReadService (fake seams, real store)", () => {
   it("workspaceMounted fans out to every per-workspace hydration trigger", async () => {
     const wsId = "ws-mounted-fanout";
     acceptApi.getStatus.mockResolvedValue(gitStatus() as never);
-    const tasksApi = appClient.tasks as unknown as { list: Fn };
+    const tasksApi = appClient.tasks as unknown as { list: Fn; listAgentLinks: Fn };
+    const workspacesApi = appClient.workspaces as unknown as { getContext: Fn };
     const eventsApi = appClient.events as unknown as { list: Fn };
     const skillsApi = appClient.skills as unknown as { list: Fn };
     const scriptsApi = appClient.scripts as unknown as { list: Fn };
@@ -350,34 +341,8 @@ describe("lifecycleIpcReadService (fake seams, real store)", () => {
     expect(agentsApi.list).toHaveBeenCalledWith(wsId);
     expect(terminalsApi.list).toHaveBeenCalledWith(wsId);
     expect(filesApi.explorerTree).toHaveBeenCalledWith(wsId);
-  });
-
-  it("initContextForWorkspace hydrates items persisted in localStorage", async () => {
-    const wsId = "ws-context-hydrate";
-    // The global test-setup stubs window.localStorage with vi.fn()s; drive getItem
-    // so safeLocalStorage.getJSON returns the persisted array.
-    getItemMock.mockReturnValueOnce(JSON.stringify([noteItem("n1"), noteItem("n2")]));
-
-    appStore.dispatch(initContextForWorkspace(wsId));
-    await flush();
-
-    expect(getItemMock).toHaveBeenCalledWith(`workspace:context:${wsId}`);
-    expect(selectContextItems.select(appStore.state, wsId).map((i) => i.id)).toEqual([
-      "n1",
-      "n2",
-    ]);
-  });
-
-  it("initContextForWorkspace is a no-op when no persisted context exists", async () => {
-    const wsId = "ws-context-missing";
-    getItemMock.mockReturnValueOnce(null);
-    appStore.dispatch(addContextItem(wsId, noteItem("inmemory")));
-
-    appStore.dispatch(initContextForWorkspace(wsId));
-    await flush();
-
-    expect(selectContextItems.select(appStore.state, wsId).map((i) => i.id)).toEqual([
-      "inmemory",
-    ]);
+    // Daemon-backed context + task↔agent linkage hydration (§5.1 / §5.4).
+    expect(workspacesApi.getContext).toHaveBeenCalledWith(wsId);
+    expect(tasksApi.listAgentLinks).toHaveBeenCalledWith(wsId);
   });
 });

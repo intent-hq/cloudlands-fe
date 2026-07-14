@@ -7,7 +7,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const version = process.argv[2];
+// Filter out '--' separator that some package managers pass
+const args = process.argv.slice(2).filter(arg => arg !== '--');
+const version = args[0];
 
 if (!version) {
   console.error('Error: Version argument is required');

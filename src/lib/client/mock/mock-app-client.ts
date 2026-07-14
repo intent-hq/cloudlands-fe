@@ -35,9 +35,6 @@ function emitOnce<T>(handler: SubscriptionHandler<T>, snapshot: T): Unsubscribe 
 
 export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly chat: AppClient["chat"] = {
-    history: async (agentId) => fx.mockChatHistory[agentId] ?? [],
-    tokenUsage: async (agentId) => fx.mockTokenUsage[agentId] ?? { input: 0, output: 0 },
-    subscribe: (agentId, handler) => emitOnce(handler, fx.mockChatHistory[agentId] ?? []),
     // Mock parity with the §7.1 seq-0 snapshot: an empty transcript is the
     // safe default since fixtures don't model turn-granular AgentMessage lists.
     subscribeSnapshot: async () => ({ messages: [], truncated: false, totalMessages: 0 }),

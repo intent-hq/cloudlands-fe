@@ -31,6 +31,8 @@ const mocks = vi.hoisted(() => {
   const agentStreamMiddleware = createPassthroughMiddleware();
   const agentCreationMiddleware = createPassthroughMiddleware();
   const agentMutationMiddleware = createPassthroughMiddleware();
+  const contextMutationMiddleware = createPassthroughMiddleware();
+  const taskAgentAssociationsMutationMiddleware = createPassthroughMiddleware();
   const appLayoutNavigationMiddleware = createPassthroughMiddleware();
   const workspaceNavigationTabMiddleware = createPassthroughMiddleware();
   const workspaceNavigationLayoutMiddleware = createPassthroughMiddleware();
@@ -50,6 +52,8 @@ const mocks = vi.hoisted(() => {
   const uiLayoutPersistenceMiddleware = createPassthroughMiddleware();
   const unreadTrackingPersistenceMiddleware = createPassthroughMiddleware();
   const tabStatePersistenceMiddleware = createPassthroughMiddleware();
+  const sidebarNavPersistenceMiddleware = createPassthroughMiddleware();
+  const browserPersistenceMiddleware = createPassthroughMiddleware();
   const themeMutationMiddleware = createPassthroughMiddleware();
   const loggerMiddleware = createPassthroughMiddleware();
   const refCheckMiddleware = createPassthroughMiddleware();
@@ -75,6 +79,10 @@ const mocks = vi.hoisted(() => {
     createAgentStreamMiddleware: vi.fn(() => agentStreamMiddleware),
     createAgentCreationMiddleware: vi.fn(() => agentCreationMiddleware),
     createAgentMutationMiddleware: vi.fn(() => agentMutationMiddleware),
+    createContextMutationMiddleware: vi.fn(() => contextMutationMiddleware),
+    createTaskAgentAssociationsMutationMiddleware: vi.fn(
+      () => taskAgentAssociationsMutationMiddleware,
+    ),
     createAppLayoutNavigationMiddleware: vi.fn(() => appLayoutNavigationMiddleware),
     createWorkspaceNavigationTabMiddleware: vi.fn(() => workspaceNavigationTabMiddleware),
     createWorkspaceNavigationLayoutMiddleware: vi.fn(() => workspaceNavigationLayoutMiddleware),
@@ -94,6 +102,8 @@ const mocks = vi.hoisted(() => {
     createUiLayoutPersistenceMiddleware: vi.fn(() => uiLayoutPersistenceMiddleware),
     createUnreadTrackingPersistenceMiddleware: vi.fn(() => unreadTrackingPersistenceMiddleware),
     createTabStatePersistenceMiddleware: vi.fn(() => tabStatePersistenceMiddleware),
+    createSidebarNavPersistenceMiddleware: vi.fn(() => sidebarNavPersistenceMiddleware),
+    createBrowserPersistenceMiddleware: vi.fn(() => browserPersistenceMiddleware),
     createThemeMutationMiddleware: vi.fn(() => themeMutationMiddleware),
     createLoggerMiddleware: vi.fn(() => loggerMiddleware),
     createReferenceChangeDetectorMiddleware: vi.fn(() => refCheckMiddleware),
@@ -117,6 +127,8 @@ const mocks = vi.hoisted(() => {
     agentStreamMiddleware,
     agentCreationMiddleware,
     agentMutationMiddleware,
+    contextMutationMiddleware,
+    taskAgentAssociationsMutationMiddleware,
     appLayoutNavigationMiddleware,
     workspaceNavigationTabMiddleware,
     workspaceNavigationLayoutMiddleware,
@@ -136,6 +148,8 @@ const mocks = vi.hoisted(() => {
     uiLayoutPersistenceMiddleware,
     unreadTrackingPersistenceMiddleware,
     tabStatePersistenceMiddleware,
+    sidebarNavPersistenceMiddleware,
+    browserPersistenceMiddleware,
     themeMutationMiddleware,
     loggerMiddleware,
     structuredCloneMiddleware,
@@ -180,6 +194,13 @@ vi.mock("$features/agent/agent-creation-service", () => ({
 }));
 vi.mock("$features/agent/agent-mutation-service", () => ({
   createAgentMutationMiddleware: mocks.createAgentMutationMiddleware,
+}));
+vi.mock("$features/context/context-mutation-service", () => ({
+  createContextMutationMiddleware: mocks.createContextMutationMiddleware,
+}));
+vi.mock("$features/tasks/task-agent-associations-mutation-service", () => ({
+  createTaskAgentAssociationsMutationMiddleware:
+    mocks.createTaskAgentAssociationsMutationMiddleware,
 }));
 vi.mock("$features/layout/app-layout-navigation-service", () => ({
   createAppLayoutNavigationMiddleware: mocks.createAppLayoutNavigationMiddleware,
@@ -238,6 +259,12 @@ vi.mock("./middlewares/unread-tracking-persistence-service", () => ({
 }));
 vi.mock("./middlewares/tab-state-persistence-service", () => ({
   createTabStatePersistenceMiddleware: mocks.createTabStatePersistenceMiddleware,
+}));
+vi.mock("./middlewares/sidebar-nav-persistence-service", () => ({
+  createSidebarNavPersistenceMiddleware: mocks.createSidebarNavPersistenceMiddleware,
+}));
+vi.mock("./middlewares/browser-persistence-service", () => ({
+  createBrowserPersistenceMiddleware: mocks.createBrowserPersistenceMiddleware,
 }));
 vi.mock("$features/theme/theme-service", () => ({
   createThemeMutationMiddleware: mocks.createThemeMutationMiddleware,
@@ -315,6 +342,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
+      mocks.contextMutationMiddleware,
+      mocks.taskAgentAssociationsMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.workspaceNavigationTabMiddleware,
       mocks.workspaceNavigationLayoutMiddleware,
@@ -334,6 +363,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
+      mocks.sidebarNavPersistenceMiddleware,
+      mocks.browserPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -366,6 +397,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
+      mocks.contextMutationMiddleware,
+      mocks.taskAgentAssociationsMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.workspaceNavigationTabMiddleware,
       mocks.workspaceNavigationLayoutMiddleware,
@@ -385,6 +418,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
+      mocks.sidebarNavPersistenceMiddleware,
+      mocks.browserPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -417,6 +452,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
+      mocks.contextMutationMiddleware,
+      mocks.taskAgentAssociationsMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.workspaceNavigationTabMiddleware,
       mocks.workspaceNavigationLayoutMiddleware,
@@ -436,6 +473,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
+      mocks.sidebarNavPersistenceMiddleware,
+      mocks.browserPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.structuredCloneMiddleware,
       mocks.loggerMiddleware,
@@ -469,6 +508,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
+      mocks.contextMutationMiddleware,
+      mocks.taskAgentAssociationsMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.workspaceNavigationTabMiddleware,
       mocks.workspaceNavigationLayoutMiddleware,
@@ -488,6 +529,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
+      mocks.sidebarNavPersistenceMiddleware,
+      mocks.browserPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.structuredCloneMiddleware,
     ]);
@@ -538,6 +581,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
+      mocks.contextMutationMiddleware,
+      mocks.taskAgentAssociationsMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
       mocks.workspaceNavigationTabMiddleware,
       mocks.workspaceNavigationLayoutMiddleware,
@@ -557,6 +602,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.uiLayoutPersistenceMiddleware,
       mocks.unreadTrackingPersistenceMiddleware,
       mocks.tabStatePersistenceMiddleware,
+      mocks.sidebarNavPersistenceMiddleware,
+      mocks.browserPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.structuredCloneMiddleware,
     ]);

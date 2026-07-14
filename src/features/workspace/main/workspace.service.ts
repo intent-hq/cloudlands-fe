@@ -1885,173 +1885,6 @@ export class WorkspaceService {
   }
 
   /**
-   * Repair legacy workspace metadata whose `updatedAt` was advanced by background writes.
-   * The repair is intentionally conservative: preserve valid `lastActivity`, otherwise
-   * derive activity from durable workspace-owned records and fall back to creation time.
-   */
-  private async repairWorkspaceActivityTimestamp(workspace: Workspace): Promise<Workspace> {
-    if (this.isValidActivityTimestamp(workspace.lastActivity)) {
-      return workspace;
-    }
-
-    const lastActivity = await this.deriveWorkspaceLastActivity(workspace);
-    if (!lastActivity || workspace.lastActivity === lastActivity) {
-      return workspace;
-    }
-
-    const currentWorkspace = await this.repository.findById(workspace.id);
-    if (!currentWorkspace) {
-      return workspace;
-    }
-
-    if (this.isValidActivityTimestamp(currentWorkspace.lastActivity)) {
-      return currentWorkspace;
-    }
-
-    const repairedWorkspace = await this.saveWorkspaceUpdates(workspace.id, { lastActivity });
-    return repairedWorkspace ?? currentWorkspace;
-  }
-
-  private async repairWorkspaceActivityTimestamps(workspaces: Workspace[]): Promise<Workspace[]> {
-    if (workspaces.length === 0) {
-      return workspaces;
-    }
-
-    const results = new Array<Workspace>(workspaces.length);
-    let nextIndex = 0;
-    const concurrency = Math.min(10, workspaces.length);
-
-    await Promise.all(
-      Array.from({ length: concurrency }, async () => {
-        while (true) {
-          const currentIndex = nextIndex++;
-          if (currentIndex >= workspaces.length) return;
-          const workspace = workspaces[currentIndex];
-          if (!workspace) continue;
-          results[currentIndex] = await this.repairWorkspaceActivityTimestamp(workspace);
-        }
-      }),
-    );
-
-    return results;
-  }
-
-  private async deriveWorkspaceLastActivity(workspace: Workspace): Promise<string | undefined> {
-    const candidates: string[] = [];
-
-    for (const entry of workspace.timeline || []) {
-      this.addActivityCandidate(candidates, entry?.timestamp);
-    }
-    for (const changeset of workspace.changesets || []) {
-      this.addActivityCandidate(candidates, changeset?.createdAt);
-    }
-    for (const conversation of workspace.conversationInfo || []) {
-      this.addActivityCandidate(candidates, conversation?.endedAt);
-      this.addActivityCandidate(candidates, conversation?.startedAt);
-    }
-
-    await Promise.all([
-      this.addNoteActivityCandidates(workspace.id, candidates),
-      this.addAgentActivityCandidates(workspace.id, candidates),
-    ]);
-
-    const latestActivity = this.getLatestActivityCandidate(candidates);
-    if (latestActivity) {
-      return latestActivity;
-    }
-
-    return this.normalizeActivityTimestamp(workspace.createdAt);
-  }
-
-  private async addNoteActivityCandidates(
-    workspaceId: WorkspaceId,
-    candidates: string[],
-  ): Promise<void> {
-    try {
-      // Route through the daemon (PROTOCOL.md §5.4 `note.list`); the daemon
-      // returns camelCase `createdAt`/`updatedAt` per intent-core `Note`.
-      const result = (await getBackendClient().request('note.list', {
-        workspaceId,
-      })) as { notes?: Array<{ createdAt?: string; updatedAt?: string }> } | undefined;
-      const notes = Array.isArray(result?.notes) ? result.notes : [];
-      for (const note of notes) {
-        this.addActivityCandidate(candidates, note.updatedAt);
-        this.addActivityCandidate(candidates, note.createdAt);
-      }
-    } catch (error) {
-      logger.warn('Failed to derive workspace activity from notes', {
-        workspaceId,
-        error: (error as Error).message,
-      });
-    }
-  }
-
-  private async addAgentActivityCandidates(
-    workspaceId: WorkspaceId,
-    candidates: string[],
-  ): Promise<void> {
-    try {
-      // Route through the daemon (PROTOCOL.md §5.5 `agent.list`): the AgentLite
-      // projection already carries `lastActivity`, `updatedAt`, and `createdAt`,
-      // so we no longer list ids and load each session individually.
-      const result = (await getBackendClient().request('agent.list', {
-        workspaceId,
-      })) as {
-        agents?: Array<{
-          lastActivity?: string;
-          updatedAt?: string;
-          createdAt?: string;
-        }>;
-      };
-
-      for (const agent of result?.agents ?? []) {
-        this.addActivityCandidate(candidates, agent?.lastActivity);
-        this.addActivityCandidate(candidates, agent?.updatedAt);
-        this.addActivityCandidate(candidates, agent?.createdAt);
-      }
-    } catch (error) {
-      logger.warn('Failed to derive workspace activity from agents', {
-        workspaceId,
-        error: (error as Error).message,
-      });
-    }
-  }
-
-  private addActivityCandidate(candidates: string[], value: unknown): void {
-    const timestamp = this.normalizeActivityTimestamp(value);
-    if (timestamp) {
-      candidates.push(timestamp);
-    }
-  }
-
-  private getLatestActivityCandidate(candidates: string[]): string | undefined {
-    let latestTime = 0;
-    let latestTimestamp: string | undefined;
-
-    for (const candidate of candidates) {
-      const time = Date.parse(candidate);
-      if (Number.isFinite(time) && time > latestTime) {
-        latestTime = time;
-        latestTimestamp = candidate;
-      }
-    }
-
-    return latestTimestamp;
-  }
-
-  private isValidActivityTimestamp(value: unknown): value is string | Date {
-    return !!this.normalizeActivityTimestamp(value);
-  }
-
-  private normalizeActivityTimestamp(value: unknown): string | undefined {
-    if (!value) return undefined;
-    const date = value instanceof Date ? value : typeof value === 'string' ? new Date(value) : null;
-    if (!date) return undefined;
-    const time = date.getTime();
-    return Number.isFinite(time) ? new Date(time).toISOString() : undefined;
-  }
-
-  /**
    * List all workspaces with optional pagination
    */
   async listWorkspaces(options?: {
@@ -2082,12 +1915,12 @@ export class WorkspaceService {
         }
         return true;
       });
-      const repairedWorkspaces = await this.repairWorkspaceActivityTimestamps(filteredWorkspaces);
-
-      // Apply pagination
+      // `lastActivity` is now daemon-authoritative on every path that
+      // returns a `Workspace` on the wire (PROTOCOL.md §5.1 / §9.1); the FE
+      // no longer derives it here.
       const offset = options?.offset || 0;
-      const limit = options?.limit || repairedWorkspaces.length;
-      const paginatedWorkspaces = repairedWorkspaces.slice(offset, offset + limit);
+      const limit = options?.limit || filteredWorkspaces.length;
+      const paginatedWorkspaces = filteredWorkspaces.slice(offset, offset + limit);
 
       let sanitizedWorkspaces: WorkspaceMetadata[];
       // PERF: Default workspace lists to lite mode so startup and validation flows
@@ -2149,8 +1982,8 @@ export class WorkspaceService {
         ok: true,
         data: {
           workspaces: sanitizedWorkspaces,
-          total: repairedWorkspaces.length,
-          hasMore: offset + limit < repairedWorkspaces.length,
+          total: filteredWorkspaces.length,
+          hasMore: offset + limit < filteredWorkspaces.length,
         },
       };
     } catch (error) {
@@ -2450,8 +2283,6 @@ export class WorkspaceService {
       }
 
       let updatedWorkspace = workspace;
-      let updated = false;
-      const canonicalUpdates: Partial<Workspace> = {};
       const rendererUpdates: BackgroundEnrichmentWorkspaceUpdates = {};
 
       if (workspace.repositoryPath && (!workspace.repositoryOwner || !workspace.repositoryName)) {
@@ -2469,11 +2300,8 @@ export class WorkspaceService {
             repositoryOwner: owner,
             repositoryName: name,
           };
-          canonicalUpdates.repositoryOwner = owner;
-          canonicalUpdates.repositoryName = name;
           rendererUpdates.repositoryOwner = owner;
           rendererUpdates.repositoryName = name;
-          updated = true;
         }
       }
 
@@ -2482,8 +2310,6 @@ export class WorkspaceService {
           ...updatedWorkspace,
           diffs: undefined,
         };
-        canonicalUpdates.diffs = undefined;
-        updated = true;
       }
 
       // Enrich PR status (ciStatus and reviewDecision) for open PRs
@@ -2541,13 +2367,11 @@ export class WorkspaceService {
                   activePullRequest: undefined,
                   pullRequests: updatedPullRequests,
                 };
-                canonicalUpdates.prNumber = undefined;
-                canonicalUpdates.prUrl = undefined;
-                canonicalUpdates.prStatus = undefined;
-                canonicalUpdates.activePullRequest = undefined;
-                canonicalUpdates.pullRequests = updatedPullRequests;
-                updated = true;
-                await this.saveWorkspaceUpdates(workspaceId, canonicalUpdates);
+                // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE
+                // no longer writes stale-PR-link clears back to disk. Daemon
+                // gap: daemon should validate PR source-branch and clear stale
+                // links itself. Broadcast keeps renderer state in sync until
+                // the next daemon refresh.
                 await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
                   ...rendererUpdates,
                   activePullRequest: undefined,
@@ -2630,16 +2454,12 @@ export class WorkspaceService {
             }
 
             rendererUpdates.activePullRequest = enrichedPR;
-            canonicalUpdates.activePullRequest = enrichedPR;
             if (enrichedPR.status !== pr.status) {
               rendererUpdates.prStatus = enrichedPR.status;
-              canonicalUpdates.prStatus = enrichedPR.status;
             }
             if (updatedWorkspace.pullRequests) {
               rendererUpdates.pullRequests = updatedWorkspace.pullRequests;
-              canonicalUpdates.pullRequests = updatedWorkspace.pullRequests;
             }
-            updated = true;
             logger.debug('Enriched PR status for workspace', {
               workspaceId,
               prNumber: pr.number,
@@ -2657,13 +2477,11 @@ export class WorkspaceService {
         }
       }
 
-      if (updated) {
-        const savedWorkspace = await this.saveWorkspaceUpdates(workspaceId, canonicalUpdates);
-        if (savedWorkspace) {
-          updatedWorkspace = savedWorkspace;
-        }
-      }
-
+      // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
+      // longer writes background enrichment (git repo info / PR CI + review /
+      // stale-link clears) back to disk. Daemon gap: daemon should own PR
+      // enrichment and stamp the workspace itself. Broadcast keeps renderer
+      // state in sync until the next daemon refresh.
       await this.broadcastBackgroundEnrichmentUpdate(workspaceId, rendererUpdates);
     } catch (error) {
       logger.error('Background workspace enrichment failed', error as Error, { workspaceId });
@@ -2801,13 +2619,11 @@ export class WorkspaceService {
             const updatedPullRequests = (workspace.pullRequests || []).filter(
               (p) => p.number !== pr.number,
             );
-            await this.saveWorkspaceUpdates(workspaceId, {
-              prNumber: undefined,
-              prUrl: undefined,
-              prStatus: undefined,
-              activePullRequest: undefined,
-              pullRequests: updatedPullRequests,
-            });
+            // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
+            // longer writes stale-PR-link clears back to disk during periodic
+            // refresh. Daemon gap: daemon should validate PR source-branch and
+            // clear stale links itself. Broadcast keeps renderer state in sync
+            // until the next daemon refresh.
             await this.broadcastBackgroundEnrichmentUpdate(workspaceId, {
               activePullRequest: undefined,
               prNumber: undefined,
@@ -2880,31 +2696,16 @@ export class WorkspaceService {
           };
         }
 
-        const canonicalUpdates: Partial<Workspace> = {
-          activePullRequest: enrichedPR,
-          ...(enrichedPR.status !== pr.status && { prStatus: enrichedPR.status }),
-        };
-        if (updatedWorkspace.pullRequests) {
-          canonicalUpdates.pullRequests = updatedWorkspace.pullRequests;
-        }
-
-        const savedWorkspace = await this.saveWorkspaceUpdates(workspaceId, canonicalUpdates);
-        if (savedWorkspace) {
-          updatedWorkspace = savedWorkspace;
-        }
-
-        // Broadcast to renderer windows using the same format as background enrichment
+        // Persistence is owned by the daemon (PROTOCOL.md §5.1); the FE no
+        // longer writes periodic-PR-refresh enrichment (CI status / reviews /
+        // headSha) back to disk. Daemon gap: daemon should own PR enrichment
+        // and stamp the workspace itself. Broadcast keeps renderer state in
+        // sync until the next daemon refresh.
         const rendererUpdates: BackgroundEnrichmentWorkspaceUpdates = {
           activePullRequest: enrichedPR,
         };
         if (enrichedPR.status !== pr.status) {
           rendererUpdates.prStatus = enrichedPR.status;
-        }
-        if (updatedWorkspace.prNumber !== workspace.prNumber) {
-          rendererUpdates.prNumber = updatedWorkspace.prNumber;
-        }
-        if (updatedWorkspace.prUrl !== workspace.prUrl) {
-          rendererUpdates.prUrl = updatedWorkspace.prUrl;
         }
         if (updatedWorkspace.pullRequests) {
           rendererUpdates.pullRequests = updatedWorkspace.pullRequests;
@@ -2970,11 +2771,6 @@ export class WorkspaceService {
         };
       }
 
-      workspace = await this.repairWorkspaceActivityTimestamp(workspace);
-
-      let updated = false;
-      const canonicalUpdates: Partial<Workspace> = {};
-
       // Validate worktree path exists, clear it if not
       // Skip validation for remote workspaces — their worktree paths only exist on the SSH host
       if (
@@ -2994,8 +2790,6 @@ export class WorkspaceService {
             ...workspace,
             worktreePath: undefined,
           };
-          canonicalUpdates.worktreePath = undefined;
-          updated = true;
         }
       } else if (
         workspace.worktreePath &&
@@ -3024,9 +2818,6 @@ export class WorkspaceService {
               repositoryOwner: newOwner,
               repositoryName: newName,
             };
-            canonicalUpdates.repositoryOwner = newOwner;
-            canonicalUpdates.repositoryName = newName;
-            updated = true;
           }
         }
       }
@@ -3042,25 +2833,17 @@ export class WorkspaceService {
       // We could do a deeper comparison if needed
       if (newDiffsLength > 0 && newDiffsLength !== existingDiffsLength) {
         workspace = { ...workspace, diffs };
-        canonicalUpdates.diffs = diffs;
-        updated = true;
       } else if (newDiffsLength === 0 && existingDiffsLength > 0) {
         // Clear diffs if they were removed
         workspace = { ...workspace, diffs: [] };
-        canonicalUpdates.diffs = [];
-        updated = true;
       }
 
-      // Save enriched data back if updated
-      if (updated) {
-        const savedWorkspace = await this.saveWorkspaceUpdates(id, canonicalUpdates);
-        if (savedWorkspace) {
-          workspace = savedWorkspace;
-        }
-      }
-
-      // Workspace payloads are metadata-only; diff/git/task summaries are
-      // fetched on demand via dedicated endpoints.
+      // Enrichment is in-memory only. Persistence is owned by the daemon
+      // (PROTOCOL.md §5.1); the FE no longer writes worktree/git/diffs
+      // enrichment back to disk from a read path. Daemon gap: daemon should
+      // validate worktree paths and own git repo info. Workspace payloads are
+      // metadata-only; diff/git/task summaries are fetched on demand via
+      // dedicated endpoints.
       return { ok: true, data: this.stripWorkspaceSummaries(workspace) };
     } catch (error) {
       logger.error('Failed to get workspace', error as Error, { workspaceId: id });
@@ -3073,6 +2856,14 @@ export class WorkspaceService {
 
   /**
    * Update a workspace
+   *
+   * Delegates persistence to the daemon (`workspace.update`, PROTOCOL.md §5.1);
+   * the daemon owns `updatedAt` stamping and returns the canonical workspace.
+   * FE-only request fields the daemon `WorkspaceUpdate` shape does not accept
+   * (`prStatus`, `activePullRequest`, `pullRequests`) are stripped before the
+   * wire call and re-applied to the returned merged workspace as a best-effort
+   * so callers keep seeing them. Follow-up: extend daemon `WorkspaceUpdate`
+   * (Audit E daemon gap).
    */
   async updateWorkspace(request: UpdateWorkspaceRequest): Promise<Result<Workspace, string>> {
     try {
@@ -3088,76 +2879,102 @@ export class WorkspaceService {
         };
       }
 
-      // Get existing workspace
+      // Get existing workspace (used for merge + PR-status/PR-link normalization)
       const existingResult = await this.getWorkspace(request.id as WorkspaceId);
       if (!existingResult.ok) {
         return existingResult;
       }
 
-      // Merge updates
-      const { prStatus: requestedPrStatus, prUrl: requestedPrUrl, ...rest } = request as any;
+      const {
+        id: _idIgnored,
+        prStatus: requestedPrStatus,
+        prUrl: requestedPrUrl,
+        activePullRequest: requestedActivePr,
+        pullRequests: requestedPullRequests,
+        ...rest
+      } = request as UpdateWorkspaceRequest & { [k: string]: unknown };
 
-      // Normalize PR status
-      let normalizedPrStatus = existingResult.data.prStatus;
-      if (typeof requestedPrStatus === 'string') {
-        const s = requestedPrStatus.toLowerCase();
-        if (s === 'open') normalizedPrStatus = PullRequestStatus.Open;
-        else if (s === 'closed') normalizedPrStatus = PullRequestStatus.Closed;
-        else if (s === 'merged') normalizedPrStatus = PullRequestStatus.Merged;
-        else if (s === 'draft') normalizedPrStatus = PullRequestStatus.Draft;
-      } else if (requestedPrStatus !== undefined) {
-        normalizedPrStatus = requestedPrStatus as PullRequestStatus;
-      }
-
-      // Normalize PR URL (convert empty string to undefined to avoid storing invalid URLs)
-      let normalizedPrUrl: string | undefined = existingResult.data.prUrl;
+      // Normalize PR URL (convert empty string to null so daemon clears it)
+      let normalizedPrUrl: string | null | undefined;
       if (requestedPrUrl !== undefined) {
-        // null means "clear the URL", empty string also means "no URL"
         normalizedPrUrl =
-          requestedPrUrl === null || requestedPrUrl === '' ? undefined : requestedPrUrl;
+          requestedPrUrl === null || requestedPrUrl === '' ? null : requestedPrUrl;
       }
 
-      const updates: Partial<Workspace> = {
-        ...(rest as Partial<Workspace>),
-        updatedAt: new Date().toISOString(),
+      // Build daemon payload. `updatedAt` is stamped daemon-side; do NOT send it.
+      // Fields not present in daemon `WorkspaceUpdate` are omitted here.
+      const daemonParams: Record<string, unknown> = {
+        workspaceId: request.id,
+        ...(rest as Record<string, unknown>),
       };
-      if (requestedPrStatus !== undefined) {
-        updates.prStatus = normalizedPrStatus;
-      }
       if (requestedPrUrl !== undefined) {
-        updates.prUrl = normalizedPrUrl;
+        daemonParams.prUrl = normalizedPrUrl;
       }
 
-      // Save updated workspace
-      const savedWorkspace = await this.saveWorkspaceUpdates(request.id as WorkspaceId, updates);
-      if (!savedWorkspace) {
+      const response = (await getBackendClient().request('workspace.update', daemonParams)) as
+        | { workspace?: unknown }
+        | undefined;
+      const rawWorkspace = response && typeof response === 'object' ? response.workspace : undefined;
+      if (!rawWorkspace || typeof rawWorkspace !== 'object') {
         return {
           ok: false,
           error: 'Workspace not found',
         };
       }
-      // Strip summaries that may linger in older persisted JSON so the
-      // returned payload stays metadata-only.
-      const workspace: Workspace = this.stripWorkspaceSummaries({
+      const daemonWorkspace = this.normalizeDaemonWorkspace(
+        rawWorkspace as Record<string, unknown>,
+      );
+
+      // Merge: daemon response is authoritative for fields it owns; FE-only
+      // request fields (prStatus, activePullRequest, pullRequests) are applied
+      // on top so callers see them. Existing data provides fallback for any
+      // fields the daemon may drop from its `workspace.update` response.
+      const merged: Workspace = this.stripWorkspaceSummaries({
         ...existingResult.data,
-        ...savedWorkspace,
+        ...daemonWorkspace,
       });
+
+      // The daemon may echo cleared optional fields as `null` on the wire; the
+      // FE `Workspace` type expects `string | undefined` / `number | undefined`
+      // for these, so coerce nulls back to `undefined` before returning.
+      if ((merged.prUrl as unknown) === null) merged.prUrl = undefined;
+      if ((merged.prNumber as unknown) === null) merged.prNumber = undefined;
+
+      if (requestedPrStatus !== undefined) {
+        if (requestedPrStatus === null) {
+          merged.prStatus = undefined;
+        } else if (typeof requestedPrStatus === 'string') {
+          const s = requestedPrStatus.toLowerCase();
+          if (s === 'open') merged.prStatus = PullRequestStatus.Open;
+          else if (s === 'closed') merged.prStatus = PullRequestStatus.Closed;
+          else if (s === 'merged') merged.prStatus = PullRequestStatus.Merged;
+          else if (s === 'draft') merged.prStatus = PullRequestStatus.Draft;
+        } else {
+          merged.prStatus = requestedPrStatus as PullRequestStatus;
+        }
+      }
+      if (requestedActivePr !== undefined) {
+        merged.activePullRequest = requestedActivePr === null ? undefined : requestedActivePr;
+      }
+      if (requestedPullRequests !== undefined) {
+        merged.pullRequests = requestedPullRequests ?? [];
+      }
 
       // Emit event
       mainDispatch(
         workspaceUpdated({
-          workspaceId: workspace.id,
+          workspaceId: merged.id,
           changes: request,
         }),
       );
 
       logger.info('Workspace updated', {
-        workspaceId: workspace.id,
+        workspaceId: merged.id,
         changedFields: Object.keys(rest).filter((k) => k !== 'id'),
         ...(request.title !== undefined ? { newTitle: request.title } : {}),
       });
 
-      return { ok: true, data: workspace };
+      return { ok: true, data: merged };
     } catch (error) {
       logger.error('Failed to update workspace', error as Error, { workspaceId: request.id });
       return {
@@ -3169,120 +2986,32 @@ export class WorkspaceService {
 
   /**
    * Duplicate a workspace
+   *
+   * Delegates to the daemon (`workspace.duplicate`, PROTOCOL.md §5.1). The
+   * daemon owns fresh-id allocation, worktree provisioning, spec seeding, and
+   * non-spec note copy; the FE only forwards the request and emits its local
+   * lifecycle event so redux consumers observe the new row.
    */
   async duplicateWorkspace(id: WorkspaceId, newTitle?: string): Promise<Result<Workspace, string>> {
     try {
       logger.info('Starting duplication of workspace', { workspaceId: id });
 
-      // Get the source workspace
-      const sourceResult = await this.getWorkspace(id as WorkspaceId);
-      if (!sourceResult.ok) {
-        return sourceResult;
+      const response = (await getBackendClient().request('workspace.duplicate', {
+        workspaceId: id,
+        ...(newTitle ? { newTitle } : {}),
+      })) as { workspace?: unknown } | unknown;
+      const raw =
+        response && typeof response === 'object' && 'workspace' in response
+          ? (response as { workspace?: unknown }).workspace
+          : response;
+      if (!raw || typeof raw !== 'object') {
+        return { ok: false, error: 'Daemon returned an invalid workspace payload' };
       }
+      const newWorkspace = this.normalizeDaemonWorkspace(raw as Record<string, unknown>);
 
-      const sourceWorkspace = sourceResult.data;
-
-      // Generate new workspace ID (friendly slug format)
-      const newId = this.idService.generateWorkspaceId();
-
-      // Copy workspace metadata
-      const now = new Date().toISOString();
-      const newWorkspace: Workspace = {
-        ...sourceWorkspace,
-        id: newId,
-        title: newTitle || `${sourceWorkspace.title} (Copy)`,
-        branch: newId, // Use workspace ID as branch name
-        createdAt: now,
-        updatedAt: now,
-        lastActivity: now,
-        changesets: [], // Don't copy changesets
-        timeline: [], // Don't copy timeline
-        conversationInfo: [], // Don't copy conversation info
-        diffs: [], // Don't copy diffs
-        worktreePath: undefined, // Will be created if needed
-      };
-
-      // If source has a repository, create a new worktree for the duplicate
-      if (sourceWorkspace.repositoryPath) {
-        try {
-          const gitRepoInfo = await this.getGitRepoInfo(sourceWorkspace.repositoryPath, {
-            isRemote: !!sourceWorkspace.isRemote,
-            workspaceId: id as string,
-          });
-
-          // Generate worktree path with human-readable name
-          const customWorktreesBase = getWorktreesLocation() || undefined;
-          const worktreePath = WorkspaceConfig.paths.worktree(
-            newId,
-            gitRepoInfo.name,
-            newWorkspace.title,
-            customWorktreesBase,
-          );
-
-          // Ensure parent directories exist (e.g. ~/intent/workspaces/{id}/)
-          await fs.mkdir(path.dirname(worktreePath), { recursive: true });
-
-          const worktreeResult = await this.createGitWorktree(
-            sourceWorkspace.repositoryPath,
-            worktreePath,
-            newWorkspace.branch,
-            sourceWorkspace.baseRef,
-          );
-
-          if (worktreeResult.ok) {
-            newWorkspace.worktreePath = worktreePath;
-          }
-        } catch (worktreeError) {
-          logger.warn(
-            'Failed to create git worktree for duplicated workspace',
-            worktreeError as Error,
-          );
-          // Continue without worktree - user can create it manually
-        }
-      }
-
-      // Save new workspace metadata via repository. Default spec-note seeding
-      // for the duplicated workspace is owned by the daemon (`workspace.create`
-      // runs `ensure_spec_note`); the FE no longer bootstraps the spec here.
-      await this.saveWorkspace(newWorkspace);
-
-      // Copy non-spec notes from the source workspace through the daemon
-      // (PROTOCOL.md §5.4 `note.list` + `note.create`). The daemon assigns
-      // fresh note IDs; the source `spec` is skipped because the daemon seeds
-      // the new workspace's spec itself.
-      try {
-        const client = getBackendClient();
-        const listResult = (await client.request('note.list', {
-          workspaceId: id,
-        })) as { notes?: Array<{
-          id: string;
-          title: string;
-          content?: string;
-          tags?: string[];
-          parentId?: string | null;
-        }> } | undefined;
-        const sourceNotes = Array.isArray(listResult?.notes) ? listResult.notes : [];
-        for (const sourceNote of sourceNotes) {
-          if (sourceNote.id === 'spec') continue;
-          await client.request('note.create', {
-            workspaceId: newId,
-            title: sourceNote.title,
-            ...(sourceNote.content !== undefined ? { content: sourceNote.content } : {}),
-            ...(Array.isArray(sourceNote.tags) && sourceNote.tags.length > 0
-              ? { tags: sourceNote.tags }
-              : {}),
-            ...(sourceNote.parentId ? { parentId: sourceNote.parentId } : {}),
-          });
-        }
-      } catch (notesError) {
-        logger.warn('Failed to copy notes for duplicated workspace', notesError as Error);
-        // Continue even if notes copy fails
-      }
-
-      // Emit event
       mainDispatch(
         workspaceCreated({
-          workspaceId: newId,
+          workspaceId: newWorkspace.id,
           workspace: newWorkspace,
         }),
       );
@@ -3296,16 +3025,7 @@ export class WorkspaceService {
       return { ok: true, data: newWorkspace };
     } catch (error) {
       logger.error('Error duplicating workspace', error as Error, { workspaceId: id });
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : typeof error === 'string'
-            ? error
-            : JSON.stringify(error);
-      return {
-        ok: false,
-        error: errorMessage || 'Failed to duplicate workspace',
-      };
+      return { ok: false, error: this.extractErrorMessage(error) };
     }
   }
 
@@ -3344,81 +3064,65 @@ export class WorkspaceService {
         }),
       );
 
-      // Remove git worktree if it exists
+      // Remote-only worktree cleanup: the daemon `workspace.delete` sweeps
+      // local worktrees itself (PROTOCOL.md §5.1), but has no SSH capability
+      // for remote workspaces — the FE still opens a dedicated connection to
+      // remove the remote worktree, its parent folder, and the remote
+      // `.workspace/` metadata directory before the daemon persists the
+      // delete.
       const worktreeWorkspaceResult = await this.getWorkspace(id as WorkspaceId);
+      const workspaceRow = worktreeWorkspaceResult.ok ? worktreeWorkspaceResult.data : null;
+      const ssh = workspaceRow?.environmentConfig?.ssh;
+      const remoteWorktreePath = workspaceRow?.worktreePath;
+      const remoteRepoPath = workspaceRow?.repositoryPath;
       if (
-        worktreeWorkspaceResult.ok &&
-        worktreeWorkspaceResult.data.worktreePath &&
-        worktreeWorkspaceResult.data.repositoryPath &&
-        !worktreeWorkspaceResult.data.skipWorktree // Don't remove worktree for direct-branch mode
+        workspaceRow &&
+        remoteWorktreePath &&
+        remoteRepoPath &&
+        !workspaceRow.skipWorktree &&
+        workspaceRow.isRemote &&
+        ssh
       ) {
+        const sshConfig: SSHConnectionConfig = {
+          host: ssh.host,
+          port: ssh.port || 22,
+          username: ssh.user,
+          password: ssh.password,
+          privateKeyPath: ssh.key_path,
+          useAgent: ssh.use_agent,
+          transport: ssh.transport,
+          wsUrl: ssh.ws_url,
+        };
+        const deleteConnectionId = `delete-${id}`;
         try {
-          const workspace = worktreeWorkspaceResult.data;
-          logger.debug('Removing git worktree', {
-            worktreePath: workspace.worktreePath,
-            isRemote: workspace.isRemote,
-          });
+          await sshManager.connect(deleteConnectionId, sshConfig);
 
-          if (workspace.isRemote && workspace.environmentConfig?.ssh) {
-            // For remote workspaces, open a dedicated SSH connection first.
-            // When deleting from the home page there is no active RPC/SSH
-            // connection, so we must create one before any remote operations.
-            const ssh = workspace.environmentConfig.ssh;
-            const sshConfig: SSHConnectionConfig = {
-              host: ssh.host,
-              port: ssh.port || 22,
-              username: ssh.user,
-              password: ssh.password,
-              privateKeyPath: ssh.key_path,
-              useAgent: ssh.use_agent,
-              transport: ssh.transport,
-              wsUrl: ssh.ws_url,
-            };
-            const deleteConnectionId = `delete-${id}`;
-            try {
-              await sshManager.connect(deleteConnectionId, sshConfig);
+          const worktreePathArg = escapeShellArg(remoteWorktreePath);
+          const repoPathArg = escapeShellArg(remoteRepoPath);
+          await sshManager.executeCommand(
+            deleteConnectionId,
+            `cd ${repoPathArg} && git worktree remove --force ${worktreePathArg} 2>/dev/null; cd ${repoPathArg} && git worktree prune 2>/dev/null; true`,
+            { timeout: 15000 },
+          );
 
-              // Remove the git worktree via direct SSH command (avoids RPC dependency)
-              const worktreePath = escapeShellArg(worktreeWorkspaceResult.data.worktreePath);
-              const repoPath = escapeShellArg(worktreeWorkspaceResult.data.repositoryPath);
-              await sshManager.executeCommand(
-                deleteConnectionId,
-                `cd ${repoPath} && git worktree remove --force ${worktreePath} 2>/dev/null; cd ${repoPath} && git worktree prune 2>/dev/null; true`,
-                { timeout: 15000 },
-              );
-
-              // Remove the workspace folder (parent of worktreePath) - only if empty
-              const workspaceFolder = path.posix.dirname(worktreeWorkspaceResult.data.worktreePath);
-              await sshManager.executeCommand(
-                deleteConnectionId,
-                `rmdir ${escapeShellArg(workspaceFolder)} 2>/dev/null || true`,
-                { timeout: 5000 },
-              );
-              // Clean up remote .workspace/ metadata directory
-              await sshManager.executeCommand(
-                deleteConnectionId,
-                `rm -rf ~/intent/workspaces/${escapeShellArg(id)}/.workspace`,
-                { timeout: 5000 },
-              );
-            } catch (cleanupErr) {
-              logger.warn('Failed to clean up remote workspace', {
-                workspaceId: id,
-                error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-              });
-            } finally {
-              await sshManager.disconnect(deleteConnectionId).catch(() => {});
-            }
-          } else if (workspace.repositoryPath && workspace.worktreePath) {
-            // For local workspaces, use local git commands
-            // Pass the workspace ID to only delete the branch if it matches
-            await this.removeGitWorktree(workspace.repositoryPath, workspace.worktreePath, id);
-          }
-          logger.debug('Git worktree removed successfully');
-        } catch (worktreeError) {
-          logger.warn('Failed to remove git worktree', worktreeError as Error, {
+          const workspaceFolder = path.posix.dirname(remoteWorktreePath);
+          await sshManager.executeCommand(
+            deleteConnectionId,
+            `rmdir ${escapeShellArg(workspaceFolder)} 2>/dev/null || true`,
+            { timeout: 5000 },
+          );
+          await sshManager.executeCommand(
+            deleteConnectionId,
+            `rm -rf ~/intent/workspaces/${escapeShellArg(id)}/.workspace`,
+            { timeout: 5000 },
+          );
+        } catch (cleanupErr) {
+          logger.warn('Failed to clean up remote workspace', {
             workspaceId: id,
+            error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
           });
-          // Continue with deletion even if worktree removal fails
+        } finally {
+          await sshManager.disconnect(deleteConnectionId).catch(() => {});
         }
       } else if (worktreeWorkspaceResult.ok && worktreeWorkspaceResult.data.skipWorktree) {
         logger.info('Skipping git worktree removal for direct-branch mode workspace', {
@@ -3426,8 +3130,11 @@ export class WorkspaceService {
         });
       }
 
-      // Remove workspace directory via repository
-      await this.repository.delete(id);
+      // Daemon `workspace.delete` (PROTOCOL.md §5.1) is authoritative for the
+      // workspace row and now owns local git-worktree removal alongside the
+      // cascade over agents/notes. The daemon treats a missing row as
+      // idempotent success.
+      await getBackendClient().request('workspace.delete', { workspaceId: id });
 
       // Emit event
       mainDispatch(
@@ -3463,6 +3170,14 @@ export class WorkspaceService {
 
   /**
    * Archive a workspace (mark as archived)
+   *
+   * Delegates to the daemon (`workspace.archive`, PROTOCOL.md §5.1). The daemon
+   * flips `status`/`archived`/`archivedAt`/`updatedAt` server-side and emits
+   * `workspace:updated`. The current router returns `{ success: true }` and
+   * discards the daemon-service `Workspace` return value; the FE refetches via
+   * `workspace.get` so callers still receive the canonical workspace payload.
+   * Follow-up: return the workspace from the archive/unarchive router arms
+   * (Audit E daemon gap).
    */
   async archiveWorkspace(id: WorkspaceId): Promise<Result<Workspace, string>> {
     try {
@@ -3471,24 +3186,22 @@ export class WorkspaceService {
         return workspaceResult;
       }
 
-      const updates: Partial<Workspace> = {
-        status: WorkspaceStatus.Archived,
-        archived: true,
-        archivedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      await getBackendClient().request('workspace.archive', { workspaceId: id });
 
-      const savedWorkspace = await this.saveWorkspaceUpdates(id, updates);
-      if (!savedWorkspace) {
-        return {
-          ok: false,
-          error: 'Workspace not found',
+      // Refetch to get the daemon-canonical workspace (server-stamped timestamps
+      // and archived flags). Fall back to a locally-derived shape if the refetch
+      // fails so the FE contract still holds.
+      let workspace = await this.fetchWorkspaceFromDaemon(id);
+      if (!workspace) {
+        const now = new Date().toISOString();
+        workspace = {
+          ...workspaceResult.data,
+          status: WorkspaceStatus.Archived,
+          archived: true,
+          archivedAt: now,
+          updatedAt: now,
         };
       }
-      const workspace: Workspace = {
-        ...workspaceResult.data,
-        ...savedWorkspace,
-      };
 
       // Emit event
       mainDispatch(
@@ -3511,6 +3224,10 @@ export class WorkspaceService {
 
   /**
    * Unarchive a workspace
+   *
+   * Delegates to the daemon (`workspace.unarchive`, PROTOCOL.md §5.1). Same
+   * refetch pattern as `archiveWorkspace`; see the doc comment there for the
+   * router-return daemon gap.
    */
   async unarchiveWorkspace(id: WorkspaceId): Promise<Result<Workspace, string>> {
     try {
@@ -3519,24 +3236,18 @@ export class WorkspaceService {
         return workspaceResult;
       }
 
-      const updates: Partial<Workspace> = {
-        status: WorkspaceStatus.Active,
-        archived: false,
-        archivedAt: undefined,
-        updatedAt: new Date().toISOString(),
-      };
+      await getBackendClient().request('workspace.unarchive', { workspaceId: id });
 
-      const savedWorkspace = await this.saveWorkspaceUpdates(id, updates);
-      if (!savedWorkspace) {
-        return {
-          ok: false,
-          error: 'Workspace not found',
+      let workspace = await this.fetchWorkspaceFromDaemon(id);
+      if (!workspace) {
+        workspace = {
+          ...workspaceResult.data,
+          status: WorkspaceStatus.Active,
+          archived: false,
+          archivedAt: undefined,
+          updatedAt: new Date().toISOString(),
         };
       }
-      const workspace: Workspace = {
-        ...workspaceResult.data,
-        ...savedWorkspace,
-      };
 
       // Emit event
       mainDispatch(
@@ -3559,39 +3270,55 @@ export class WorkspaceService {
   }
 
   /**
-   * Restore a workspace (alias for unarchiveWorkspace)
+   * Restore an archived workspace.
+   *
+   * Delegates to the daemon (`workspace.restore`, PROTOCOL.md §5.1), which is
+   * a semantic alias of `workspace.unarchive` returning the refreshed
+   * `Workspace`. The FE emits `workspaceUpdated` so redux consumers observe
+   * the archived → active transition.
    */
   async restoreWorkspace(id: WorkspaceId): Promise<Result<Workspace, string>> {
-    return this.unarchiveWorkspace(id);
+    try {
+      const response = (await getBackendClient().request('workspace.restore', {
+        workspaceId: id,
+      })) as { workspace?: unknown } | unknown;
+      const raw =
+        response && typeof response === 'object' && 'workspace' in response
+          ? (response as { workspace?: unknown }).workspace
+          : response;
+      if (!raw || typeof raw !== 'object') {
+        return { ok: false, error: 'Daemon returned an invalid workspace payload' };
+      }
+      const workspace = this.normalizeDaemonWorkspace(raw as Record<string, unknown>);
+
+      mainDispatch(
+        workspaceUpdated({
+          workspaceId: id,
+          changes: { archived: false, status: WorkspaceStatus.Active },
+        }),
+      );
+
+      logger.info('Workspace restored', { workspaceId: id });
+
+      return { ok: true, data: workspace };
+    } catch (error) {
+      logger.error('Failed to restore workspace', error as Error, { workspaceId: id });
+      return { ok: false, error: this.extractErrorMessage(error) };
+    }
   }
 
   /**
    * Cleanup workspace (remove temporary files, cache, etc.)
+   *
+   * Delegates to the daemon (`workspace.cleanup`, PROTOCOL.md §5.1). The
+   * daemon sweeps the workspace cache directory and runs `git gc` on the
+   * local worktree; the FE no longer touches disk or shells out to git here.
    */
   async cleanupWorkspace(id: WorkspaceId): Promise<Result<void, string>> {
     try {
       logger.info('Cleaning up workspace', { workspaceId: id });
-
-      // Clean up cache directory using repository
-      await this.repository.cleanCache(id);
-
-      // Clean up git worktree if needed
-      const workspaceResult = await this.getWorkspace(id as WorkspaceId);
-      if (workspaceResult.ok && workspaceResult.data.worktreePath) {
-        const worktreePath = workspaceResult.data.worktreePath;
-
-        // Run git gc to clean up git objects
-        try {
-          await execFileAsync('git', ['gc', '--aggressive'], { cwd: worktreePath });
-          logger.debug('Git gc completed', { workspaceId: id });
-        } catch (error) {
-          logger.warn('Git gc failed', error as Error, { workspaceId: id });
-          // Git gc might fail, that's okay
-        }
-      }
-
+      await getBackendClient().request('workspace.cleanup', { workspaceId: id });
       logger.info('Workspace cleanup completed', { workspaceId: id });
-
       return { ok: true, data: undefined };
     } catch (error) {
       logger.error('Failed to cleanup workspace', error as Error, { workspaceId: id });
@@ -3714,311 +3441,15 @@ export class WorkspaceService {
   async purgeDeletedWorkspaces(): Promise<Result<{ removed: number; orphans: number }, string>> {
     try {
       logger.info('Starting workspace purge');
-
-      let removed = 0;
-      let orphans = 0;
-
-      const isErrnoCode = (error: unknown, code: string): boolean =>
-        typeof error === 'object' &&
-        error !== null &&
-        'code' in error &&
-        (error as NodeJS.ErrnoException).code === code;
-
-      const ORPHAN_GRACE_PERIOD_MS = 300_000; // 5 minutes grace period
-
-      const removeOrphanWorkspace = async (
-        workspaceId: WorkspaceId,
-        workspacePath: string,
-        metadataPath: string,
-        reason: 'missing metadata' | 'invalid metadata',
-      ): Promise<void> => {
-        // Guard against racing concurrent workspace creation or metadata rewrites.
-        // If the directory was recently created/modified, skip deletion.
-        try {
-          const dirStat = await fs.stat(workspacePath);
-          const ageMs = Date.now() - dirStat.mtimeMs;
-          if (ageMs < ORPHAN_GRACE_PERIOD_MS) {
-            logger.warn(
-              'Skipping orphan workspace removal — directory modified recently, may be mid-creation or mid-write',
-              {
-                workspaceId,
-                metadataPath,
-                reason,
-                ageMs: Math.round(ageMs),
-                graceMs: ORPHAN_GRACE_PERIOD_MS,
-              },
-            );
-            return;
-          }
-        } catch (statError) {
-          if (isErrnoCode(statError, 'ENOENT')) {
-            // Directory already gone — nothing to remove
-            return;
-          }
-          // Other stat errors — skip deletion to be safe
-          logger.warn('Failed to stat workspace directory during orphan check, skipping removal', {
-            workspaceId,
-            workspacePath,
-            error: (statError as Error).message,
-          });
-          return;
-        }
-
-        // Final safety check: attempt to load via repository — if it succeeds, this is NOT an orphan
-        try {
-          const loaded = await this.repository.findById(workspaceId);
-          if (loaded) {
-            logger.warn(
-              'Skipping orphan workspace removal — findById() loaded successfully, not a true orphan',
-              {
-                workspaceId,
-                workspacePath,
-                metadataPath,
-                reason,
-              },
-            );
-            return;
-          }
-        } catch (findError) {
-          logger.warn(
-            'Skipping orphan workspace removal — findById() threw, cannot confirm workspace is truly orphaned',
-            {
-              workspaceId,
-              workspacePath,
-              metadataPath,
-              reason,
-              error: (findError as Error).message,
-            },
-          );
-          return;
-        }
-
-        logger.info('Removing orphan workspace directory (no valid workspace.json)', {
-          workspaceId,
-          workspacePath,
-          metadataPath,
-          reason,
-        });
-        await fs.rm(workspacePath, { recursive: true, force: true });
-        orphans++;
+      const response = (await getBackendClient().request('workspace.purge')) as {
+        removed?: unknown;
+        orphans?: unknown;
       };
-
-      const clearWorktreePath = async (
-        workspace: Workspace,
-        warningMessage: string,
-        error: unknown,
-      ): Promise<void> => {
-        logger.warn(warningMessage, {
-          workspaceId: workspace.id,
-          worktreePath: workspace.worktreePath,
-          error: this.extractErrorMessage(error),
-        });
-
-        try {
-          await this.saveWorkspaceUpdates(workspace.id, { worktreePath: undefined });
-        } catch (saveError) {
-          logger.warn(
-            'Failed to persist cleared worktree path during purge; leaving workspace intact',
-            {
-              workspaceId: workspace.id,
-              error: this.extractErrorMessage(saveError),
-            },
-          );
-        }
-      };
-
-      // Read workspace directories from canonical, current, and legacy roots
-      const seenIds = new Set<string>();
-      const validDirNames: { name: string; root: string }[] = [];
-
-      // Scan canonical ~/intent/workspaces/ first
-      try {
-        const workspacesBaseEntries = await fs.readdir(WorkspaceConfig.WORKSPACES_BASE, {
-          withFileTypes: true,
-        });
-        for (const entry of workspacesBaseEntries) {
-          if (
-            entry.isDirectory() &&
-            WorkspaceConfig.isValidWorkspaceId(entry.name) &&
-            !WorkspaceConfig.isVirtualWorkspace(entry.name)
-          ) {
-            seenIds.add(entry.name);
-            validDirNames.push({ name: entry.name, root: WorkspaceConfig.WORKSPACES_BASE });
-          }
-        }
-      } catch {
-        // ~/intent/workspaces/ doesn't exist yet -- that's fine
-      }
-
-      // Scan current root ~/intent/ (for any not-yet-migrated workspaces)
-      try {
-        const currentEntries = await fs.readdir(WorkspaceConfig.WORKSPACE_ROOT, {
-          withFileTypes: true,
-        });
-        for (const entry of currentEntries) {
-          if (
-            entry.isDirectory() &&
-            WorkspaceConfig.isValidWorkspaceId(entry.name) &&
-            !WorkspaceConfig.isVirtualWorkspace(entry.name) &&
-            !seenIds.has(entry.name)
-          ) {
-            seenIds.add(entry.name);
-            validDirNames.push({ name: entry.name, root: WorkspaceConfig.WORKSPACE_ROOT });
-          }
-        }
-      } catch {
-        // Shouldn't happen but be safe
-      }
-
-      try {
-        const legacyEntries = await fs.readdir(WorkspaceConfig.LEGACY_WORKSPACE_ROOT, {
-          withFileTypes: true,
-        });
-        for (const entry of legacyEntries) {
-          if (
-            entry.isDirectory() &&
-            WorkspaceConfig.isValidWorkspaceId(entry.name) &&
-            !WorkspaceConfig.isVirtualWorkspace(entry.name) &&
-            !seenIds.has(entry.name)
-          ) {
-            validDirNames.push({ name: entry.name, root: WorkspaceConfig.LEGACY_WORKSPACE_ROOT });
-          }
-        }
-      } catch {
-        // Legacy directory doesn't exist -- that's fine
-      }
-
-      for (const entry of validDirNames) {
-        const workspaceId = entry.name as WorkspaceId;
-        const workspacePath = path.join(entry.root, entry.name);
-        const metadataPath = path.join(
-          entry.root,
-          entry.name,
-          WorkspaceConfig.METADATA_FOLDER,
-          WorkspaceConfig.WORKSPACE_METADATA_FILE,
-        );
-
-        let workspace: Workspace;
-
-        try {
-          await fs.access(metadataPath);
-        } catch (error) {
-          if (isErrnoCode(error, 'ENOENT')) {
-            await removeOrphanWorkspace(
-              workspaceId,
-              workspacePath,
-              metadataPath,
-              'missing metadata',
-            );
-          } else {
-            logger.warn('Failed to access workspace metadata during purge, skipping workspace', {
-              workspaceId,
-              metadataPath,
-              error: this.extractErrorMessage(error),
-            });
-          }
-          continue;
-        }
-
-        try {
-          const data = await fs.readFile(metadataPath, 'utf-8');
-          workspace = JSON.parse(data) as Workspace;
-        } catch (error) {
-          if (isErrnoCode(error, 'ENOENT')) {
-            await removeOrphanWorkspace(
-              workspaceId,
-              workspacePath,
-              metadataPath,
-              'missing metadata',
-            );
-          } else if (error instanceof SyntaxError) {
-            await removeOrphanWorkspace(
-              workspaceId,
-              workspacePath,
-              metadataPath,
-              'invalid metadata',
-            );
-          } else {
-            logger.warn('Failed to read workspace metadata during purge, skipping workspace', {
-              workspaceId,
-              metadataPath,
-              error: this.extractErrorMessage(error),
-            });
-          }
-          continue;
-        }
-
-        // If status is Deleted, remove the entire directory
-        if (workspace.status === WorkspaceStatus.Deleted) {
-          logger.info('Purging deleted workspace', { workspaceId });
-          await fs.rm(workspacePath, { recursive: true, force: true });
-          removed++;
-        }
-        // If status is Archived but has no archivedAt, it's an old "deleted" workspace
-        // that was incorrectly marked as archived - purge it
-        else if (workspace.status === WorkspaceStatus.Archived && !workspace.archivedAt) {
-          logger.info('Purging legacy deleted workspace (archived without archivedAt)', {
-            workspaceId,
-          });
-          await fs.rm(workspacePath, { recursive: true, force: true });
-          removed++;
-        }
-        // Check if workspace has a worktree path that no longer exists
-        // This can happen after 'git worktree prune'
-        // Skip validation for remote workspaces — their worktree paths only exist on the SSH host
-        else if (
-          workspace.worktreePath &&
-          !workspace.isRemote &&
-          workspace.environmentConfig?.type !== 'remote'
-        ) {
-          try {
-            await fs.access(workspace.worktreePath);
-
-            try {
-              await execFileAsync('git', ['rev-parse', '--git-dir'], {
-                cwd: workspace.worktreePath,
-              });
-            } catch (error) {
-              if (isErrnoCode(error, 'ENOENT')) {
-                logger.warn(
-                  'Git was unavailable during workspace purge, leaving worktree path unchanged',
-                  {
-                    workspaceId,
-                    worktreePath: workspace.worktreePath,
-                    error: this.extractErrorMessage(error),
-                  },
-                );
-              } else {
-                await clearWorktreePath(
-                  workspace,
-                  'Workspace has invalid git worktree, clearing worktree path',
-                  error,
-                );
-              }
-            }
-          } catch (error) {
-            if (isErrnoCode(error, 'ENOENT')) {
-              await clearWorktreePath(
-                workspace,
-                'Workspace worktree path does not exist, clearing it',
-                error,
-              );
-            } else {
-              logger.warn(
-                'Failed to access workspace worktree path during purge, leaving worktree path unchanged',
-                {
-                  workspaceId,
-                  worktreePath: workspace.worktreePath,
-                  error: this.extractErrorMessage(error),
-                },
-              );
-            }
-          }
-        }
-      }
-
+      const toFiniteCount = (value: unknown): number =>
+        typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+      const removed = toFiniteCount(response?.removed);
+      const orphans = toFiniteCount(response?.orphans);
       logger.info('Workspace purge completed', { removed, orphans });
-
       return { ok: true, data: { removed, orphans } };
     } catch (error) {
       logger.error('Failed to purge workspaces', error as Error);
@@ -4031,12 +3462,21 @@ export class WorkspaceService {
 
   /**
    * Find repositories in a directory
+   *
+   * Delegates to the daemon (`workspace.findRepositories`, PROTOCOL.md §5.1).
+   * The daemon performs the recursive git-repository scan; the FE only
+   * forwards the request.
    */
   async findRepositories(directory: string): Promise<Result<string[], string>> {
     try {
-      // Use repository method to scan for git repositories
-      const repositories = await this.repository.scanDirectory(directory);
-
+      const response = (await getBackendClient().request('workspace.findRepositories', {
+        directory,
+      })) as { repositories?: unknown };
+      const repositories = Array.isArray(response?.repositories)
+        ? (response.repositories as unknown[]).filter(
+            (r): r is string => typeof r === 'string',
+          )
+        : [];
       return { ok: true, data: repositories };
     } catch (error) {
       return {
@@ -4263,157 +3703,25 @@ export class WorkspaceService {
     await this.repository.save(sanitizedWorkspace);
   }
 
-  private async saveWorkspaceUpdates(
-    workspaceId: WorkspaceId,
-    updates: Partial<Workspace>,
-  ): Promise<Workspace | null> {
-    if (workspaceId === CHIEF_WORKSPACE_ID) {
-      return {
-        ...getChiefWorkspace(),
-        ...updates,
-        id: CHIEF_WORKSPACE_ID,
-      };
-    }
-
-    const currentWorkspace = await this.repository.findById(workspaceId);
-    if (!currentWorkspace) {
-      return null;
-    }
-
-    const updatedWorkspace: Workspace = {
-      ...currentWorkspace,
-      ...updates,
-      id: currentWorkspace.id,
-    };
-
-    await this.saveWorkspace(updatedWorkspace);
-    return updatedWorkspace;
-  }
-
   /**
    * Initialize a new git repository at the given path.
-   * Creates the directory if it doesn't exist, initializes git with 'main' as default branch,
-   * and creates an initial commit.
+   *
+   * Delegates to the daemon (`workspace.initializeRepository`, PROTOCOL.md
+   * §5.1). The daemon creates the directory (if missing), runs `git init -b
+   * main`, seeds `.gitignore`/`README.md`, and produces an initial commit;
+   * the FE only forwards the path.
    */
   async initializeNewRepository(repoPath: string): Promise<Result<void, string>> {
     try {
       logger.info('Initializing new git repository', { repoPath });
-
-      // Create directory if it doesn't exist
-      await fs.mkdir(repoPath, { recursive: true });
-
-      // Check if already a git repo with commits
-      const gitDir = path.join(repoPath, '.git');
-      let isExistingRepo = false;
-      try {
-        await fs.access(gitDir);
-        // Check if there are any commits
-        const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: repoPath });
-        if (stdout.trim()) {
-          isExistingRepo = true;
-          logger.info('Directory is already a git repo with commits, skipping initialization', {
-            repoPath,
-          });
-        }
-      } catch {
-        // Not a git repo or no commits yet, proceed with initialization
-      }
-
-      if (isExistingRepo) {
-        return { ok: true, data: undefined };
-      }
-
-      // Initialize git with 'main' as the default branch
-      await execFileAsync('git', ['init', '-b', 'main'], { cwd: repoPath });
-
-      // Configure git user for this repo (required for commits)
-      // First try to get global config, fall back to defaults
-      let userName = 'Intent';
-      let userEmail = 'intent@local';
-      try {
-        const { stdout: globalName } = await execFileAsync(
-          'git',
-          ['config', '--global', 'user.name'],
-          { cwd: repoPath },
-        );
-        if (globalName.trim()) userName = globalName.trim();
-      } catch {
-        // No global config, use default
-      }
-      try {
-        const { stdout: globalEmail } = await execFileAsync(
-          'git',
-          ['config', '--global', 'user.email'],
-          { cwd: repoPath },
-        );
-        if (globalEmail.trim()) userEmail = globalEmail.trim();
-      } catch {
-        // No global config, use default
-      }
-      await execFileAsync('git', ['config', 'user.name', userName], { cwd: repoPath });
-      await execFileAsync('git', ['config', 'user.email', userEmail], { cwd: repoPath });
-
-      // Create a .gitignore file with common patterns
-      const gitignoreContent = `# Dependencies
-node_modules/
-.pnpm-store/
-
-# Build outputs
-dist/
-build/
-out/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Logs
-*.log
-npm-debug.log*
-`;
-      await fs.writeFile(path.join(repoPath, '.gitignore'), gitignoreContent);
-
-      // Create a README.md
-      const repoName = path.basename(repoPath);
-      const readmeContent = `# ${repoName}
-
-A new project created with Intent by Augment.
-`;
-      await fs.writeFile(path.join(repoPath, 'README.md'), readmeContent);
-
-      // Stage all files
-      await execFileAsync('git', ['add', '.'], { cwd: repoPath });
-
-      // Create initial commit (use --allow-empty to handle edge cases)
-      try {
-        await execFileAsync('git', ['commit', '-m', 'Initial commit'], { cwd: repoPath });
-      } catch (commitError: any) {
-        // Check if it's just "nothing to commit" which is fine
-        if (commitError.stdout?.includes('nothing to commit')) {
-          logger.info('No changes to commit (repo already initialized)', { repoPath });
-        } else {
-          throw commitError;
-        }
-      }
-
+      await getBackendClient().request('workspace.initializeRepository', { path: repoPath });
       logger.info('New git repository initialized successfully', { repoPath });
       return { ok: true, data: undefined };
     } catch (error) {
       logger.error('Failed to initialize new git repository', error as Error, { repoPath });
       return {
         ok: false,
-        error: `Failed to initialize repository: ${(error as Error).message}`,
+        error: `Failed to initialize repository: ${this.extractErrorMessage(error)}`,
       };
     }
   }
@@ -5249,131 +4557,6 @@ A new project created with Intent by Augment.
     } catch {
       return false;
     }
-  }
-
-  private async removeGitWorktree(
-    repoPath: string,
-    worktreePath: string,
-    workspaceId?: WorkspaceId,
-  ): Promise<void> {
-    // FIX: Use lock to serialize git worktree operations per repository
-    // This prevents corruption when multiple add/remove operations run concurrently
-    return this.withGitWorktreeLock(repoPath, async () => {
-      try {
-        logger.info('Removing git worktree', { repoPath, worktreePath, workspaceId });
-        const startTime = Date.now();
-
-        // Get the branch name before removing the worktree
-        let branchName: string | undefined;
-        try {
-          const branchStartTime = Date.now();
-          const { stdout: branchOutput } = await execFileAsync(
-            'git',
-            ['rev-parse', '--abbrev-ref', 'HEAD'],
-            { cwd: worktreePath },
-          );
-          logger.debug('git rev-parse completed', { timeMs: Date.now() - branchStartTime });
-          branchName = branchOutput.trim();
-          // Don't delete main/master or detached HEAD
-          if (branchName === 'HEAD' || branchName === 'main' || branchName === 'master') {
-            branchName = undefined;
-          }
-        } catch {
-          // Worktree might be in a bad state, continue with removal
-          logger.debug('Could not determine worktree branch', { worktreePath });
-        }
-
-        const removeStartTime = Date.now();
-        await execFileAsync('git', ['worktree', 'remove', worktreePath, '--force'], {
-          cwd: repoPath,
-        });
-        logger.info('git worktree remove completed', { timeMs: Date.now() - removeStartTime });
-
-        // Verify worktree was actually removed
-        try {
-          await fs.access(worktreePath);
-          // If we get here, the directory still exists
-          logger.warn(
-            'Worktree directory still exists after git removal, attempting manual cleanup',
-            {
-              worktreePath,
-            },
-          );
-          // Try to remove the directory manually as fallback
-          try {
-            const rmStartTime = Date.now();
-            await fs.rm(worktreePath, { recursive: true, force: true });
-            logger.info('Manually removed worktree directory', {
-              worktreePath,
-              timeMs: Date.now() - rmStartTime,
-            });
-          } catch (manualError) {
-            logger.error('Failed to manually remove worktree directory', manualError as Error, {
-              worktreePath,
-            });
-          }
-        } catch {
-          // Directory doesn't exist, which is what we want
-          logger.debug('Worktree successfully removed', { worktreePath });
-        }
-
-        // Delete the workspace branch after removing the worktree
-        // Only delete if the branch name matches the workspace ID to avoid
-        // accidentally deleting pre-existing branches that the workspace was using
-        if (branchName && workspaceId && branchName === workspaceId) {
-          try {
-            const branchDeleteStartTime = Date.now();
-            await execFileAsync('git', ['branch', '-D', branchName], { cwd: repoPath });
-            logger.info('Deleted workspace branch', {
-              branch: branchName,
-              workspaceId,
-              timeMs: Date.now() - branchDeleteStartTime,
-            });
-          } catch (branchError) {
-            // Branch deletion is best-effort - don't fail if it doesn't work
-            logger.debug('Could not delete workspace branch', {
-              branch: branchName,
-              workspaceId,
-              error: (branchError as Error).message,
-            });
-          }
-        } else if (branchName && workspaceId && branchName !== workspaceId) {
-          // Branch doesn't match workspace ID - this was likely a pre-existing branch
-          logger.info('Skipping branch deletion - branch does not match workspace ID', {
-            branch: branchName,
-            workspaceId,
-          });
-        }
-
-        logger.info('removeGitWorktree total time', {
-          workspaceId,
-          totalTimeMs: Date.now() - startTime,
-        });
-
-        // Prune stale worktree references in the background (fire-and-forget)
-        // This is best-effort cleanup and doesn't need to block workspace deletion
-        // Running it outside the critical path improves deletion responsiveness
-        setImmediate(() => {
-          const pruneStartTime = Date.now();
-          execFileAsync('git', ['worktree', 'prune'], { cwd: repoPath })
-            .then(() => {
-              logger.debug('git worktree prune completed (background)', {
-                timeMs: Date.now() - pruneStartTime,
-              });
-            })
-            .catch(() => {
-              // Prune is best-effort, ignore errors
-            });
-        });
-      } catch (error) {
-        logger.error('Failed to remove git worktree', error as Error, {
-          repoPath,
-          worktreePath,
-        });
-        // Don't throw - allow workspace deletion to continue even if worktree removal fails
-        // The worktree may be in an inconsistent state and can be cleaned up manually later
-      }
-    });
   }
 
   /**

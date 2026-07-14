@@ -1,5 +1,5 @@
-appId: com.augment.intent
-productName: Intent by Augment
+appId: app.cloudlands.intent
+productName: Intent
 directories:
   output: dist-electron
   buildResources: build
@@ -13,6 +13,7 @@ files:
   - package.json
   - node_modules/**/*
   - resources/**/*
+  - "!resources/sidecar/**"
 
 # Bundle the intentd binary into the packaged app
 # Runtime path: process.resourcesPath/intentd/intentd (intentd.exe on Windows)
@@ -60,6 +61,10 @@ mac:
   # identity: "Developer ID Application: Your Name (TEAM_ID)"
   requirements: build/app-requirements.txt
   notarize: true
+  # Sign bundled intentd sidecar binary (extraResources are not auto-signed)
+  # Path is relative to .app bundle root (joined with path.resolve(appPath, destination))
+  binaries:
+    - "Contents/Resources/intentd/intentd"
   target:
     - target: dmg
       arch:
@@ -93,7 +98,7 @@ dmg:
 
 win:
   icon: src/assets/icons/icon.ico
-  publisherName: "Augment Computing Inc"
+  publisherName: "Clement Pang"
   # Custom sign hook: uses DigiCert smctl when INTENT_WINDOWS_ENABLE_INTEGRATED_SIGNING=true,
   # silently skips for local dev builds.
   signtoolOptions:
@@ -132,4 +137,4 @@ linux:
 
 publish:
   provider: generic
-  url: https://cdn.augmentcode.com/stable
+  url: https://github.com/intent-hq/cloudlands-releases/releases/download/stable

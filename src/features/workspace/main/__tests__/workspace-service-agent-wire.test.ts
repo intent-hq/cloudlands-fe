@@ -161,58 +161,10 @@ describe('workspace.service ↔ daemon agent.* (PROTOCOL.md §5.5)', () => {
     }
   });
 
-  it('addAgentActivityCandidates routes through agent.list when repairing activity timestamps', async () => {
-    const created = await service.createWorkspace({
-      repositoryPath: '/path/to/repo',
-      skipWorktree: true,
-    });
-    expect(created.ok).toBe(true);
-    if (!created.ok) return;
 
-    // Force the activity-repair path by clearing the workspace's lastActivity;
-    // `listWorkspaces` will then call `deriveWorkspaceLastActivity` →
-    // `addAgentActivityCandidates` → daemon `agent.list`.
-    const stored = await repository.findById(created.data.id);
-    expect(stored).not.toBeNull();
-    if (!stored) return;
-    (stored as any).lastActivity = undefined;
-    await repository.save(stored);
-
-    requestMock.mockClear();
-    // Feed an AgentLite-shaped response so the activity-candidate reducer has
-    // something to iterate; `workspace.list` still surfaces the same daemon rows
-    // the repository save spy mirrored above.
-    requestMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
-      if (method === 'agent.list') {
-        return {
-          agents: [
-            {
-              id: 'agent-a',
-              lastActivity: '2025-01-02T03:04:05.000Z',
-              updatedAt: '2025-01-02T03:04:05.000Z',
-              createdAt: '2025-01-01T00:00:00.000Z',
-            },
-          ],
-        };
-      }
-      if (method === 'workspace.list') return { workspaces: daemonWorkspaces };
-      if (method === 'workspace.get') {
-        const id = params?.workspaceId;
-        const match = daemonWorkspaces.find((w) => w.id === id);
-        if (!match) throw new Error('Workspace not found');
-        return { workspace: match };
-      }
-      return {};
-    });
-
-    await service.listWorkspaces({ lite: true });
-
-    const listCalls = requestMock.mock.calls.filter(([m]) => m === 'agent.list');
-    // Both getWorkspaceAgentIds (lite path) and addAgentActivityCandidates
-    // route through `agent.list { workspaceId }`.
-    expect(listCalls.length).toBeGreaterThanOrEqual(2);
-    for (const [, params] of listCalls) {
-      expect(params).toEqual({ workspaceId: created.data.id });
-    }
-  });
+  // NOTE: The former `addAgentActivityCandidates routes through agent.list
+  // when repairing activity timestamps` test was retired alongside the FE
+  // `deriveWorkspaceLastActivity` / `addAgentActivityCandidates` helpers —
+  // the daemon now owns `lastActivity` on every wire path (PROTOCOL.md §5.1
+  // / §9.1), so there is no FE-side repair to exercise.
 });

@@ -30,6 +30,8 @@ import { createProviderAvailabilityCheckMiddleware } from "$features/providers/p
 import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
 import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
+import { createContextMutationMiddleware } from "$features/context/context-mutation-service";
+import { createTaskAgentAssociationsMutationMiddleware } from "$features/tasks/task-agent-associations-mutation-service";
 import { createAppLayoutNavigationMiddleware } from "$features/layout/app-layout-navigation-service";
 import { createWorkspaceNavigationTabMiddleware } from "$features/layout/workspace-navigation-tab-service";
 import { createWorkspaceNavigationLayoutMiddleware } from "$features/layout/workspace-navigation-layout-service";
@@ -50,6 +52,8 @@ import { createLifecycleIpcReadMiddleware } from "./middlewares/lifecycle-ipc-re
 import { createUiLayoutPersistenceMiddleware } from "./middlewares/ui-layout-persistence-service";
 import { createUnreadTrackingPersistenceMiddleware } from "./middlewares/unread-tracking-persistence-service";
 import { createTabStatePersistenceMiddleware } from "./middlewares/tab-state-persistence-service";
+import { createSidebarNavPersistenceMiddleware } from "./middlewares/sidebar-nav-persistence-service";
+import { createBrowserPersistenceMiddleware } from "./middlewares/browser-persistence-service";
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
@@ -179,6 +183,20 @@ function buildMiddleware(): StoreMiddleware[] {
     // via `appClient.agents.get`; activate marks the session ACTIVE and
     // refetches; save is a no-op on the mock seam (Redux IS the state).
     createAgentMutationMiddleware(),
+    // Give the (post-saga) context slice's `addContextItem` /
+    // `removeContextItem` / `updateContextItem` triggers a real write handler
+    // so chat-context edits forward to `workspace.updateContext` (PROTOCOL
+    // §5.1) instead of the removed `safeLocalStorage` persist. The daemon's
+    // `workspace:context-changed` event (folded via daemon-events-bridge)
+    // converges cross-window state.
+    createContextMutationMiddleware(),
+    // Give the (post-saga) taskAgentAssociations slice's mutation triggers
+    // real write handlers so `addTaskAgentAssociation` /
+    // `removeTaskAgentAssociation` / `pruneTaskAgentAssociationsForNote`
+    // forward to `task.linkAgent` / `task.unlinkAgent` (PROTOCOL §5.4)
+    // instead of the removed localStorage persist. Cross-window convergence
+    // flows via the `task:agent-linked` / `task:agent-unlinked` events.
+    createTaskAgentAssociationsMutationMiddleware(),
     // Give the (post-saga) `openAgentTabRequested` action a real handler so
     // clicking an agent opens (or focuses) its conversation tab again.
     createAppLayoutNavigationMiddleware(),
@@ -259,6 +277,14 @@ function buildMiddleware(): StoreMiddleware[] {
     // workspace-tab strip (order/pin/active tab) and per-tab scroll positions
     // hydrate on boot and persist on change across sessions via localStorage.
     createTabStatePersistenceMiddleware(),
+    // Give the (post-saga) sidebar-nav persistence triggers real handlers so
+    // pinned workspaces, view mode, panel state, and other sidebar UI state
+    // hydrate on boot and persist on change across sessions via localStorage.
+    createSidebarNavPersistenceMiddleware(),
+    // Give the browser state persistence triggers real handlers so recent URLs
+    // hydrate from localStorage on workspace mount and persist on change
+    // (`addRecentUrl` / `updateUrlMetadata` / `removeRecentUrl` / `clearRecentUrls`).
+    createBrowserPersistenceMiddleware(),
     // Give the (post-saga) theme triggers (`requestThemePreferenceChange` /
     // `selectThemePreset` / `importCustomTheme` / `clearThemeCustomization`)
     // real handlers so the Settings theme toggle and ColorThemeSettings

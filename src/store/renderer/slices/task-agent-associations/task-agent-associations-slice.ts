@@ -9,10 +9,6 @@ import type {
   TaskAgentAssociationsWorkspaceState,
 } from "./task-agent-associations-types";
 
-export const TASK_AGENT_ASSOCIATIONS_STORAGE_PREFIX = "task-agent-associations:";
-export const TASK_ASSOCIATION_CHANGED_EVENT = "task-association-changed";
-export const AGENT_ASSOCIATIONS_REMOVED_EVENT = "agent-associations-removed";
-
 const TASK_AGENT_KEY_PREFIX = "agent:";
 
 export const emptyTaskAgentAssociationsWorkspaceState: TaskAgentAssociationsWorkspaceState = {
@@ -25,6 +21,15 @@ export const initialState: TaskAgentAssociationsState = {
 
 const { getWorkspaceState, setWorkspaceState, clearWorkspaceState } =
   createWorkspaceScopedHelpers(emptyTaskAgentAssociationsWorkspaceState);
+
+/**
+ * Trigger: hydrate the task↔agent association map for a workspace from the
+ * daemon (`task.listAgentLinks`, PROTOCOL §5.4). The lifecycle read service
+ * services this action; the reducer path is `hydrateTaskAgentAssociations`.
+ */
+export const hydrateTaskAgentAssociationsRequested = createAction<[
+  workspaceId: string,
+]>("taskAgentAssociations/hydrateTaskAgentAssociationsRequested");
 
 export const hydrateTaskAgentAssociations = createAction<[
   workspaceId: string,
@@ -58,6 +63,29 @@ export const applyRemoveTaskAgentAssociationsForAgent = createAction<[
   workspaceId: string,
   agentId: string,
 ]>("taskAgentAssociations/applyRemoveTaskAgentAssociationsForAgent");
+
+/**
+ * Apply a daemon-authoritative `task:agent-linked` event (PROTOCOL §6.5).
+ * Distinct from `addTaskAgentAssociation` so the mutation middleware — which
+ * forwards local `add`s to `task.linkAgent` — does not echo daemon-driven
+ * additions back to the daemon in an infinite loop.
+ */
+export const applyTaskAgentLinked = createAction<[
+  workspaceId: string,
+  noteId: string,
+  association: TaskAgentAssociation,
+]>("taskAgentAssociations/applyTaskAgentLinked");
+
+/**
+ * Apply a daemon-authoritative `task:agent-unlinked` event (PROTOCOL §6.5).
+ * Distinct from `removeTaskAgentAssociation` for the same reason as
+ * `applyTaskAgentLinked` above.
+ */
+export const applyTaskAgentUnlinked = createAction<[
+  workspaceId: string,
+  noteId: string,
+  taskKey: string,
+]>("taskAgentAssociations/applyTaskAgentUnlinked");
 
 function omitKey<T>(record: Record<string, T>, key: string): Record<string, T> {
   const { [key]: _omitted, ...rest } = record;
@@ -121,6 +149,21 @@ export const taskAgentAssociationsReducer = createReducer<TaskAgentAssociationsS
       },
     });
   })
+  .with(applyTaskAgentLinked, (state, { payload: [workspaceId, noteId, association] }) => {
+    // Same reducer shape as `addTaskAgentAssociation`; the distinct action
+    // type is what keeps the mutation middleware from echoing daemon events.
+    const workspaceState = getWorkspaceState(state, workspaceId);
+    const noteAssociations = workspaceState.byNoteId[noteId] ?? {};
+    return setWorkspaceState(state, workspaceId, {
+      byNoteId: {
+        ...workspaceState.byNoteId,
+        [noteId]: {
+          ...noteAssociations,
+          [getAssociationKey(association)]: association,
+        },
+      },
+    });
+  })
   .with(removeTaskAgentAssociation, (state, { payload: [workspaceId, noteId, taskKeyOrText] }) => {
     const workspaceState = getWorkspaceState(state, workspaceId);
     const noteAssociations = workspaceState.byNoteId[noteId];
@@ -133,6 +176,20 @@ export const taskAgentAssociationsReducer = createReducer<TaskAgentAssociationsS
       ? omitKey(workspaceState.byNoteId, noteId)
       : { ...workspaceState.byNoteId, [noteId]: nextNoteAssociations };
 
+    return setWorkspaceState(state, workspaceId, { byNoteId });
+  })
+  .with(applyTaskAgentUnlinked, (state, { payload: [workspaceId, noteId, taskKey] }) => {
+    // Same reducer shape as `removeTaskAgentAssociation`; distinct action
+    // type keeps the mutation middleware from echoing daemon events.
+    const workspaceState = getWorkspaceState(state, workspaceId);
+    const noteAssociations = workspaceState.byNoteId[noteId];
+    if (!noteAssociations) return state;
+    const associationKey = findAssociationKey(noteAssociations, taskKey);
+    if (!associationKey) return state;
+    const nextNoteAssociations = omitKey(noteAssociations, associationKey);
+    const byNoteId = Object.keys(nextNoteAssociations).length === 0
+      ? omitKey(workspaceState.byNoteId, noteId)
+      : { ...workspaceState.byNoteId, [noteId]: nextNoteAssociations };
     return setWorkspaceState(state, workspaceId, { byNoteId });
   })
   .with(pruneTaskAgentAssociationsForNote, (state, { payload: [workspaceId, noteId, currentTaskKeysOrTexts] }) => {
