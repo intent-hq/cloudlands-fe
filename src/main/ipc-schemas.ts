@@ -756,6 +756,7 @@ export const AgentEditQueuedMessageSchema = z.object({
   agentId: z.string().min(1, 'Agent ID is required'),
   messageId: z.string().min(1, 'Message ID is required'),
   content: z.string().min(1, 'Message content is required'),
+  editing: z.boolean().optional(),
 });
 
 export const AgentRemoveQueuedMessageSchema = z.object({

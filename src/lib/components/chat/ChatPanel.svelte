@@ -2231,11 +2231,12 @@
   });
 
   // Handle editing a queued message
-  async function handleEditQueuedMessage(messageId: string, content: string) {
-    const result = await unifiedOrchestrator.editQueuedMessage(agentId, messageId, content);
+  async function handleEditQueuedMessage(messageId: string, content: string, editing?: boolean) {
+    const result = await unifiedOrchestrator.editQueuedMessage(agentId, messageId, content, editing);
     if (!result.success) {
       logger.error('Failed to edit queued message', { messageId, error: result.error });
     }
+    return result;
   }
 
   // Handle removing a queued message — the saga removes it optimistically from

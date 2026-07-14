@@ -49,6 +49,11 @@ export interface QueuedMessage {
   imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>;
   /** Position in queue (0 = next to be sent) */
   position: number;
+  /**
+   * Optional editing flag (STAB-27). When true, the daemon holds this message
+   * and skips it during queue drain. Only included in responses when true.
+   */
+  editing?: boolean;
 }
 
 /**
