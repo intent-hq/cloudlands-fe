@@ -507,6 +507,7 @@
                   pressed={$betaUpdatesEnabled$}
                   onChange={handleBetaUpdatesToggle}
                   size="sm"
+                  ariaLabel="Enable beta updates"
                 />
               </div>
             </section>

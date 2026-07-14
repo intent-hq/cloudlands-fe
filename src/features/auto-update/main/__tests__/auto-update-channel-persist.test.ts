@@ -51,6 +51,9 @@ describe('AutoUpdateService channel persistence', () => {
   });
 
   afterEach(async () => {
+    // Clean up timers and intervals
+    vi.clearAllTimers();
+    vi.useRealTimers();
     // Clean up the temp directory
     await fs.rm(testUserDataPath, { recursive: true, force: true });
   });
@@ -63,19 +66,19 @@ describe('AutoUpdateService channel persistence', () => {
     const mockWindow = {} as any;
     await autoUpdateService.initialize(mockWindow);
 
-    // Set the channel to beta
-    autoUpdateService.setChannel('beta');
+    // Set the channel to beta (now awaitable)
+    await autoUpdateService.setChannel('beta');
 
-    // Wait a moment for the async persist operation
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    // Read the local-prefs.json file
+    // Poll for the local-prefs.json file to be written
     const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
-    const prefsContent = await fs.readFile(prefsPath, 'utf8');
-    const prefs = JSON.parse(prefsContent);
-
-    // Verify betaUpdatesEnabled was persisted
-    expect(prefs.betaUpdatesEnabled).toBe(true);
+    await expect.poll(
+      async () => {
+        const prefsContent = await fs.readFile(prefsPath, 'utf8');
+        const prefs = JSON.parse(prefsContent);
+        return prefs.betaUpdatesEnabled;
+      },
+      { timeout: 2000, interval: 50 },
+    ).toBe(true);
   });
 
   it('setChannel(stable) persists betaUpdatesEnabled=false to local-prefs.json', async () => {
@@ -86,19 +89,19 @@ describe('AutoUpdateService channel persistence', () => {
     const mockWindow = {} as any;
     await autoUpdateService.initialize(mockWindow);
 
-    // Set the channel to stable
-    autoUpdateService.setChannel('stable');
+    // Set the channel to stable (now awaitable)
+    await autoUpdateService.setChannel('stable');
 
-    // Wait a moment for the async persist operation
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    // Read the local-prefs.json file
+    // Poll for the local-prefs.json file to be written
     const prefsPath = path.join(testUserDataPath, 'local-prefs.json');
-    const prefsContent = await fs.readFile(prefsPath, 'utf8');
-    const prefs = JSON.parse(prefsContent);
-
-    // Verify betaUpdatesEnabled was persisted
-    expect(prefs.betaUpdatesEnabled).toBe(false);
+    await expect.poll(
+      async () => {
+        const prefsContent = await fs.readFile(prefsPath, 'utf8');
+        const prefs = JSON.parse(prefsContent);
+        return prefs.betaUpdatesEnabled;
+      },
+      { timeout: 2000, interval: 50 },
+    ).toBe(false);
   });
 
   it('loadChannelFromSettings reads betaUpdatesEnabled from local-prefs.json on init', async () => {

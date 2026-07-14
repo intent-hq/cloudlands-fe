@@ -215,8 +215,13 @@ class AutoUpdateService {
     });
   }
 
-  setChannel(channel: UpdateChannel) {
+  async setChannel(channel: UpdateChannel): Promise<void> {
     this.state.channel = channel;
+
+    // Persist the channel choice BEFORE the baseUrl guard so the preference
+    // survives even if AUTO_UPDATE_URL is missing
+    await this.persistChannelSetting(channel);
+
     const baseUrl = getUpdateBaseUrl();
     if (!baseUrl) {
       logger.warn('Cannot set update channel: AUTO_UPDATE_URL not configured');
@@ -225,11 +230,6 @@ class AutoUpdateService {
     const feedUrl = `${baseUrl}/${channel}`;
     autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl });
     logger.info('Update channel set', { channel, feedUrl });
-
-    // Persist the channel choice so it survives restart
-    this.persistChannelSetting(channel).catch((error) => {
-      logger.error('Failed to persist update channel setting', error as Error);
-    });
   }
 
   private async persistChannelSetting(channel: UpdateChannel): Promise<void> {

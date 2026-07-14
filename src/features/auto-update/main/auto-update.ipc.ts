@@ -95,7 +95,7 @@ export function setupAutoUpdateIPC(): void {
     createSafeValidatedHandler(
       SetChannelRequestSchema,
       async (_event, validated) => {
-        autoUpdateService.setChannel(validated.channel);
+        await autoUpdateService.setChannel(validated.channel);
         return { success: true };
       },
       AUTO_UPDATE_CHANNELS.SET_CHANNEL,
