@@ -1,0 +1,7 @@
+Addressed most Copilot review comments:
+
+✅ Added closeAll and closeHoverCards to persistence action triggers
+✅ Changed else if chain to independent if statements for multi-field persistence
+✅ Added comprehensive test coverage for these scenarios
+
+Re: per-workspace localStorage keys (MULTISELECT_SIDEBAR_SELECTED_TABS_PREFIX, WORKSPACE_NOTE_ORDER_PREFIX, WORKSPACE_COLLAPSED_NOTES_PREFIX): These are out of scope for STAB-20 which specifically targets sidebar pinned workspaces not surviving app restart. The middleware currently hydrates these maps from localStorage on boot, but doesn't persist updates to them. Suggest filing a separate STAB issue for per-workspace sidebar state persistence if this is causing issues.

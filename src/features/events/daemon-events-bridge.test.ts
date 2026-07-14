@@ -3215,6 +3215,73 @@ describe("daemonEventsBridge (STAB-9 — agent:status-changed / agent:idle trigg
   });
 });
 
+describe("daemonEventsBridge (STAB-22 — agent:message triggers transcript hydration for unopened agents)", () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(clearAllSessions());
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+    loadChatTranscriptSpy.mockClear();
+  });
+
+  it("agent:message with role=assistant triggers loadChatTranscript when session has no messages", async () => {
+    // Seed a session with no messages (unopened agent)
+    seedSession({ messages: [] });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification("agent:message", { agentId: AGENT, messageId: "msg-1", role: "assistant" }));
+
+    expect(loadChatTranscriptSpy).toHaveBeenCalledWith(AGENT);
+    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("agent:message with role=assistant skips loadChatTranscript when session already has messages", async () => {
+    // Seed a session with existing messages (already hydrated)
+    const existingMessage: AgentMessage = {
+      id: "msg-existing",
+      role: "assistant",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      contentBlocks: [{ type: "text", text: "existing message" }],
+    } as AgentMessage;
+    seedSession({ messages: [existingMessage] });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification("agent:message", { agentId: AGENT, messageId: "msg-2", role: "assistant" }));
+
+    // Should not call loadChatTranscript because session already has messages
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+
+  it("agent:message with role=assistant loads transcript when session doesn't exist yet", async () => {
+    // Don't seed any session - agent doesn't exist in state yet
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification("agent:message", { agentId: "agent-new", messageId: "msg-1", role: "assistant" }));
+
+    // Should call loadChatTranscript because session doesn't exist (undefined check)
+    expect(loadChatTranscriptSpy).toHaveBeenCalledWith("agent-new");
+    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("agent:message with role=user does not trigger loadChatTranscript", async () => {
+    seedSession({ messages: [] });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(notification("agent:message", { agentId: AGENT, messageId: "msg-1", role: "user" }));
+
+    // Should not call loadChatTranscript for user messages
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("daemonEventsBridge (STAB-8 — task:status-changed triggers task refetch)", () => {
   beforeAll(() => {
     appStore.init();
@@ -3400,6 +3467,78 @@ describe("daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     expect(readAssistantMessages()[0].contentBlocks?.[0]).toMatchObject({
       type: "text",
       text: "post-reconnect",
+    });
+  });
+
+  describe("agent:failed → chatSendFailed", () => {
+    it("dispatches chatSendFailed when agent:failed carries an error message", async () => {
+      const agentId = "agent-failed-1";
+      const messageId = "msg-failed-1";
+      const streamId = "stream-failed-1";
+      const errorMsg = "Agent spawn failed after 3 retries";
+
+      appStore.dispatch(upsertSession({ id: agentId, name: "Test Agent", workspaceId: WS }));
+      await primeBridge();
+      const handler = capturedHandlers[0];
+
+      // Start a stream so there's something for agent:failed to finalize
+      handler!(
+        notification("agent:stream:chunk", {
+          agentId,
+          content: "Working",
+          messageId,
+          blockIndex: 0,
+          blockId: `${messageId}:0`,
+          blockType: "text",
+          streamId,
+        }),
+      );
+
+      handler!(
+        notification("agent:failed", {
+          agentId,
+          error: errorMsg,
+          status: "error",
+        }),
+      );
+
+      const chatState = appStore.state.chatState.byAgentId[agentId];
+      expect(chatState).toBeDefined();
+      expect(chatState.error).toBe(errorMsg);
+    });
+
+    it("sets default error message when agent:failed has no explicit error", async () => {
+      const agentId = "agent-failed-2";
+      const messageId = "msg-failed-2";
+      const streamId = "stream-failed-2";
+
+      appStore.dispatch(upsertSession({ id: agentId, name: "Test Agent", workspaceId: WS }));
+      await primeBridge();
+      const handler = capturedHandlers[0];
+
+      // Start a stream so there's something for agent:failed to finalize
+      handler!(
+        notification("agent:stream:chunk", {
+          agentId,
+          content: "Working",
+          messageId,
+          blockIndex: 0,
+          blockId: `${messageId}:0`,
+          blockType: "text",
+          streamId,
+        }),
+      );
+
+      handler!(
+        notification("agent:failed", {
+          agentId,
+          status: "error",
+        }),
+      );
+
+      const chatState = appStore.state.chatState.byAgentId[agentId];
+      // When no explicit error is provided, the reducer supplies a default message
+      expect(chatState?.error).toBe("The response was interrupted. Please try again.");
     });
   });
 });
