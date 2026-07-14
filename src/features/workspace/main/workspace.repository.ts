@@ -554,6 +554,171 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
 }
 
 /**
+ * Daemon-backed implementation that reads workspace metadata via JSON-RPC
+ * (`workspace.get` / `workspace.list`, PROTOCOL.md §5.1).
+ *
+ * Falls back to FileSystemWorkspaceRepository for operations not yet daemon-backed
+ * (context, git config).
+ */
+export class DaemonWorkspaceRepository implements WorkspaceRepository {
+  private filesystemFallback?: FileSystemWorkspaceRepository;
+
+  async findById(id: WorkspaceId): Promise<Workspace | null> {
+    if (id === CHIEF_WORKSPACE_ID) {
+      return getChiefWorkspace();
+    }
+
+    if (WorkspaceConfig.isVirtualWorkspace(id)) {
+      return null;
+    }
+
+    try {
+      const { getBackendClient } = await import('../../backend/main/backend.ipc');
+      const response = (await getBackendClient().request('workspace.get', {
+        workspaceId: id,
+      })) as { workspace?: Workspace } | undefined;
+
+      const workspace = response?.workspace;
+      if (!workspace) {
+        return null;
+      }
+
+      // Register the slug so isWorkspaceSlug() recognizes intent-based slugs
+      registerWorkspaceSlug(id);
+
+      return workspace;
+    } catch (error) {
+      logger.error('Failed to fetch workspace from daemon', error as Error, { workspaceId: id });
+      return null;
+    }
+  }
+
+  async findAll(): Promise<Workspace[]> {
+    try {
+      const { getBackendClient } = await import('../../backend/main/backend.ipc');
+      const response = (await getBackendClient().request('workspace.list')) as {
+        workspaces?: Workspace[];
+      } | undefined;
+
+      const workspaces = response?.workspaces || [];
+
+      // Guard against non-array responses
+      if (!Array.isArray(workspaces)) {
+        logger.warn('workspace.list returned non-array workspaces', {
+          type: typeof workspaces,
+        });
+        return [];
+      }
+
+      // Register all workspace slugs
+      for (const workspace of workspaces) {
+        registerWorkspaceSlug(workspace.id);
+      }
+
+      return workspaces;
+    } catch (error) {
+      logger.error('Failed to list workspaces from daemon', error as Error);
+      return [];
+    }
+  }
+
+  async exists(id: WorkspaceId): Promise<boolean> {
+    if (id === CHIEF_WORKSPACE_ID) {
+      return true;
+    }
+
+    if (WorkspaceConfig.isVirtualWorkspace(id)) {
+      return false;
+    }
+
+    // Check existence by trying to fetch the workspace
+    const workspace = await this.findById(id);
+    return workspace !== null;
+  }
+
+  async save(workspace: Workspace): Promise<void> {
+    // Use workspace.update daemon RPC for metadata
+    try {
+      const { getBackendClient } = await import('../../backend/main/backend.ipc');
+      await getBackendClient().request('workspace.update', {
+        workspaceId: workspace.id,
+        title: workspace.title,
+        tags: workspace.tags,
+        branch: workspace.branch,
+        status: workspace.status,
+      });
+    } catch (error) {
+      logger.error('Failed to save workspace via daemon', error as Error);
+      throw error;
+    }
+  }
+
+  async delete(id: WorkspaceId): Promise<void> {
+    // Use workspace.delete daemon RPC
+    try {
+      const { getBackendClient } = await import('../../backend/main/backend.ipc');
+      await getBackendClient().request('workspace.delete', { workspaceId: id });
+    } catch (error) {
+      logger.error('Failed to delete workspace via daemon', error as Error);
+      throw error;
+    }
+  }
+
+  async cleanup(id: WorkspaceId): Promise<void> {
+    // No-op — daemon owns workspace lifecycle
+    logger.debug('DaemonWorkspaceRepository.cleanup no-op (daemon-owned lifecycle)', {
+      workspaceId: id,
+    });
+  }
+
+  async saveContext(workspaceId: WorkspaceId, context: any): Promise<void> {
+    // Fallback to filesystem until workspace.updateContext RPC is available (PROTOCOL.md §5.1)
+    if (!this.filesystemFallback) {
+      this.filesystemFallback = new FileSystemWorkspaceRepository();
+    }
+    logger.debug('DaemonWorkspaceRepository.saveContext falling back to filesystem', {
+      workspaceId,
+    });
+    return this.filesystemFallback.saveContext(workspaceId, context);
+  }
+
+  async readContext(workspaceId: WorkspaceId): Promise<any | null> {
+    // Fallback to filesystem until workspace.getContext RPC is available (PROTOCOL.md §5.1)
+    if (!this.filesystemFallback) {
+      this.filesystemFallback = new FileSystemWorkspaceRepository();
+    }
+    logger.debug('DaemonWorkspaceRepository.readContext falling back to filesystem', {
+      workspaceId,
+    });
+    return this.filesystemFallback.readContext(workspaceId);
+  }
+
+  async readGitConfig(repoPath: string): Promise<string> {
+    // Fallback to filesystem — git config reads are not yet daemon-backed
+    if (!this.filesystemFallback) {
+      this.filesystemFallback = new FileSystemWorkspaceRepository();
+    }
+    logger.debug('DaemonWorkspaceRepository.readGitConfig falling back to filesystem', {
+      repoPath,
+    });
+    return this.filesystemFallback.readGitConfig(repoPath);
+  }
+
+  async scanDirectory(_dir: string, _depth: number = 0): Promise<string[]> {
+    throw new Error(
+      'DaemonWorkspaceRepository.scanDirectory not implemented — directory scanning should not happen through repository',
+    );
+  }
+
+  async cleanCache(id: WorkspaceId): Promise<void> {
+    // No-op — daemon owns cache
+    logger.debug('DaemonWorkspaceRepository.cleanCache no-op (daemon-owned cache)', {
+      workspaceId: id,
+    });
+  }
+}
+
+/**
  * In-memory implementation for testing
  */
 export class InMemoryWorkspaceRepository implements WorkspaceRepository {

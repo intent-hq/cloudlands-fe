@@ -8,7 +8,7 @@ import {
 import { getBackendClient } from '../../../backend/main/backend.ipc';
 import { terminalManager } from '../../../terminal/main/terminal.ipc';
 import {
-  FileSystemWorkspaceRepository,
+  DaemonWorkspaceRepository,
   type WorkspaceRepository,
 } from '../../../workspace/main/workspace.repository';
 import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
@@ -31,7 +31,7 @@ import {
 
 const logger = new Logger('WorkspaceMiscApi');
 const browserDocsTool = new BrowserDocsTool();
-const defaultWorkspaceRepository = new FileSystemWorkspaceRepository();
+const defaultWorkspaceRepository = new DaemonWorkspaceRepository();
 
 interface WorkspaceManagerLike {
   getNote(workspaceId: string, noteId: string): Promise<any>;

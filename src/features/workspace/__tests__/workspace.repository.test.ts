@@ -7,21 +7,16 @@ import {
   it,
   expect,
   beforeEach,
-  afterEach,
   vi,
 } from 'vitest';
 import {
-  FileSystemWorkspaceRepository,
   getChiefWorkspace,
   InMemoryWorkspaceRepository,
+  DaemonWorkspaceRepository,
 } from '../main/workspace.repository';
 import type { Workspace } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
-import { WorkspaceConfig } from '../../../shared/main/config';
-import { promises as fs } from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 
 import { randomUUID } from 'crypto';
 
@@ -180,109 +175,119 @@ describe('InMemoryWorkspaceRepository', () => {
   });
 });
 
-describe('FileSystemWorkspaceRepository disk JSON freshness', () => {
-  let repository: FileSystemWorkspaceRepository;
-  let tempRoot: string;
-  let originalWorkspacesBaseDir: string | undefined;
+// FileSystemWorkspaceRepository tests removed — workspace metadata is now
+// resolved via daemon RPCs (workspace.get / workspace.list, PROTOCOL.md §5.1).
+// Tests use InMemoryWorkspaceRepository for isolation.
 
-  const createFileSystemWorkspace = (overrides?: Partial<Workspace>): Workspace => ({
-    id: randomUUID(),
-    title: 'Disk Workspace',
-    branch: 'main',
-    changesets: [],
-    timeline: [],
-    conversationInfo: [],
-    status: WorkspaceStatus.Active,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    ...overrides,
-  });
+// Mock the backend client before importing DaemonWorkspaceRepository
+vi.mock('../../backend/main/backend.ipc');
+
+describe('DaemonWorkspaceRepository', () => {
+  let repository: DaemonWorkspaceRepository;
+  let mockBackendClient: { request: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
-    originalWorkspacesBaseDir = process.env.WORKSPACES_BASE_DIR;
-    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'intent-workspace-repository-'));
-    process.env.WORKSPACES_BASE_DIR = tempRoot;
-    repository = new FileSystemWorkspaceRepository();
+    const { getBackendClient } = await import('../../backend/main/backend.ipc');
+
+    mockBackendClient = { request: vi.fn() };
+    vi.mocked(getBackendClient).mockReturnValue(mockBackendClient as any);
+
+    repository = new DaemonWorkspaceRepository();
   });
 
-  afterEach(async () => {
-    if (originalWorkspacesBaseDir === undefined) {
-      delete process.env.WORKSPACES_BASE_DIR;
-    } else {
-      process.env.WORKSPACES_BASE_DIR = originalWorkspacesBaseDir;
-    }
+  describe('findById', () => {
+    it('should call workspace.get with correct params and return workspace', async () => {
+      const testWorkspace = {
+        id: 'ws-test-123',
+        title: 'Test Workspace',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+      };
 
-    await fs.rm(tempRoot, { recursive: true, force: true });
-  });
+      mockBackendClient.request.mockResolvedValue({ workspace: testWorkspace });
 
-  it('findById reads current workspace JSON from disk on repeated calls', async () => {
-    const workspace = createFileSystemWorkspace({ title: 'Original Title' });
+      const result = await repository.findById('ws-test-123' as any);
 
-    await repository.save(workspace);
-    await expect(repository.findById(workspace.id)).resolves.toMatchObject({
-      title: 'Original Title',
+      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.get', {
+        workspaceId: 'ws-test-123',
+      });
+      expect(result).toEqual(testWorkspace);
     });
 
-    const externallyUpdatedWorkspace = {
-      ...workspace,
-      title: 'Externally Updated Title',
-      updatedAt: new Date(Date.now() + 1000).toISOString(),
-    };
-    await fs.writeFile(
-      WorkspaceConfig.paths.workspaceMetadata(workspace.id),
-      JSON.stringify(externallyUpdatedWorkspace, null, 2),
-      'utf-8',
-    );
+    it('should return null when workspace not found', async () => {
+      mockBackendClient.request.mockResolvedValue({});
 
-    await expect(repository.findById(workspace.id)).resolves.toMatchObject({
-      title: 'Externally Updated Title',
+      const result = await repository.findById('ws-nonexistent' as any);
+
+      expect(result).toBeNull();
     });
   });
 
-  it('findAll returns workspace objects parsed from current workspace JSON files', async () => {
-    const workspace = createFileSystemWorkspace({ title: 'List Original Title' });
+  describe('findAll', () => {
+    it('should call workspace.list and return workspaces', async () => {
+      const testWorkspaces = [
+        { id: 'ws-1', title: 'Workspace 1' },
+        { id: 'ws-2', title: 'Workspace 2' },
+      ];
 
-    await repository.save(workspace);
-    expect((await repository.findAll()).find((w) => w.id === workspace.id)?.title).toBe(
-      'List Original Title',
-    );
+      mockBackendClient.request.mockResolvedValue({ workspaces: testWorkspaces });
 
-    const externallyUpdatedWorkspace = {
-      ...workspace,
-      title: 'List Externally Updated Title',
-      updatedAt: new Date(Date.now() + 1000).toISOString(),
-    };
-    await fs.writeFile(
-      WorkspaceConfig.paths.workspaceMetadata(workspace.id),
-      JSON.stringify(externallyUpdatedWorkspace, null, 2),
-      'utf-8',
-    );
+      const result = await repository.findAll();
 
-    expect((await repository.findAll()).find((w) => w.id === workspace.id)?.title).toBe(
-      'List Externally Updated Title',
-    );
-  });
-});
+      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.list');
+      expect(result).toEqual(testWorkspaces);
+    });
 
-describe('FileSystemWorkspaceRepository virtual workspaces', () => {
-  it('should resolve chief workspace without reading workspace metadata from disk', async () => {
-    const repository = new FileSystemWorkspaceRepository();
-    const accessSpy = vi.spyOn(fs, 'access');
+    it('should guard against non-array responses', async () => {
+      mockBackendClient.request.mockResolvedValue({ workspaces: { notAnArray: true } });
 
-    const chiefWorkspace = await repository.findById(CHIEF_WORKSPACE_ID);
+      const result = await repository.findAll();
 
-    expect(chiefWorkspace).toEqual(getChiefWorkspace());
-    expect(accessSpy).not.toHaveBeenCalled();
-    accessSpy.mockRestore();
+      expect(result).toEqual([]);
+    });
+
+    it('should return empty array on error', async () => {
+      mockBackendClient.request.mockRejectedValue(new Error('Connection failed'));
+
+      const result = await repository.findAll();
+
+      expect(result).toEqual([]);
+    });
   });
 
-  it('should not create directories when asked to save chief workspace', async () => {
-    const repository = new FileSystemWorkspaceRepository();
-    const mkdirSpy = vi.spyOn(fs, 'mkdir');
+  describe('save', () => {
+    it('should call workspace.update with workspace fields', async () => {
+      const workspace = {
+        id: 'ws-123',
+        title: 'Updated Workspace',
+        tags: ['tag1'],
+        branch: 'feature-branch',
+        status: WorkspaceStatus.Active,
+      } as Workspace;
 
-    await repository.save(getChiefWorkspace());
+      mockBackendClient.request.mockResolvedValue({ workspace });
 
-    expect(mkdirSpy).not.toHaveBeenCalled();
-    mkdirSpy.mockRestore();
+      await repository.save(workspace);
+
+      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.update', {
+        workspaceId: 'ws-123',
+        title: 'Updated Workspace',
+        tags: ['tag1'],
+        branch: 'feature-branch',
+        status: WorkspaceStatus.Active,
+      });
+    });
+  });
+
+  describe('delete', () => {
+    it('should call workspace.delete with workspaceId', async () => {
+      mockBackendClient.request.mockResolvedValue({ success: true });
+
+      await repository.delete('ws-123' as any);
+
+      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.delete', {
+        workspaceId: 'ws-123',
+      });
+    });
   });
 });

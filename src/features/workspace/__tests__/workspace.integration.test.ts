@@ -16,6 +16,9 @@ import { WorkspaceService } from '../main/workspace.service';
 import type { WorkspaceUIContext } from '../../../shared/types';
 import { WorkspaceConfig } from '../../../shared/main/config.js';
 
+// Context operations still use filesystem fallback (DaemonWorkspaceRepository.{save,read}Context)
+// until workspace.updateContext / workspace.getContext daemon RPCs are available (PROTOCOL.md §5.1).
+// These tests verify the fallback path continues to work.
 describe('Workspace Current Context Integration', () => {
   let workspaceService: WorkspaceService;
   let testWorkspaceId: string;
@@ -24,7 +27,7 @@ describe('Workspace Current Context Integration', () => {
     // New workspace ID for each test
     testWorkspaceId = randomUUID();
 
-    // Create a new WorkspaceService instance for testing
+    // Use default DaemonWorkspaceRepository (which falls back to filesystem for context)
     workspaceService = new WorkspaceService();
   });
 
@@ -103,9 +106,10 @@ describe('Workspace Current Context Integration', () => {
     await workspaceService.updateCurrentContext(testWorkspaceId, testContext);
 
     // Create a new service instance (simulates app restart - cache is empty)
+    // Uses default DaemonWorkspaceRepository which falls back to filesystem for context
     const newServiceInstance = new WorkspaceService();
 
-    // Get the current context (should read from disk)
+    // Get the current context (should read from disk via fallback)
     const retrievedContext = await newServiceInstance.getCurrentContext(testWorkspaceId);
 
     expect(retrievedContext).toEqual(testContext);
