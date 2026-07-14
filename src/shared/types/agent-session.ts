@@ -230,8 +230,8 @@ export interface AgentSession {
    */
   processQueueHint?: {
     waiting: boolean;
-    used?: number;
-    cap?: number;
+    used: number;
+    cap: number;
   };
 
   /** Canonical stop/finish reason from the latest terminal stream/status event */
