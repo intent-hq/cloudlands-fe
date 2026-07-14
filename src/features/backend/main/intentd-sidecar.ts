@@ -276,8 +276,13 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
           const proc = sidecarProcess;
 
           // Send SIGTERM first
-          proc.kill('SIGTERM');
-          logger.info('Sent SIGTERM to sidecar; waiting 5s for graceful exit');
+          try {
+            proc.kill('SIGTERM');
+            logger.info('Sent SIGTERM to sidecar; waiting 5s for graceful exit');
+          } catch (err) {
+            logger.error('Failed to send SIGTERM to sidecar', { error: err });
+            return;
+          }
 
           // Clear any previous kill escalation timer
           if (killEscalationTimer) {
@@ -291,7 +296,11 @@ function startHealthWatchdog(socketPath: string, delayMs = 2000): void {
             // has exitCode=null and signalCode set (e.g., 'SIGTERM')
             if (proc.exitCode === null && proc.signalCode === null) {
               logger.warn('Sidecar did not exit gracefully; sending SIGKILL');
-              proc.kill('SIGKILL');
+              try {
+                proc.kill('SIGKILL');
+              } catch (err) {
+                logger.error('Failed to send SIGKILL to sidecar', { error: err });
+              }
             }
             killEscalationTimer = null;
           }, 5000);
