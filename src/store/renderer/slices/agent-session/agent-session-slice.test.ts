@@ -793,6 +793,56 @@ describe('agent-session-slice reducer', () => {
       );
       expect(state).toBe(afterFirst);
     });
+
+    it('sets status to error on agent:failed event', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-failed-1',
+          type: 'agent:failed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            error: 'Agent spawn failed after 3 retries',
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1']).toMatchObject({
+        status: 'error',
+        activationState: 'error',
+        isActive: false,
+        isStreaming: false,
+        isProcessing: false,
+        isResponding: false,
+        stopReason: 'Agent spawn failed after 3 retries',
+      });
+    });
+
+    it('defaults status to error on agent:failed when data.status is missing', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-failed-2',
+          type: 'agent:failed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            error: 'Spawn timeout',
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].status).toBe('error');
+      expect(state.byAgentId['a1'].stopReason).toBe('Spawn timeout');
+    });
   });
 
   describe('updateAgentDigest', () => {

@@ -322,6 +322,17 @@
     isDelegatedBackgroundTaskSession($agentSession$),
   );
 
+  // Derive error state: combine transient chatError with persisted agent status.
+  // After a reload, chatError is null but agent status may be Error — use
+  // stopReason or a generic message so StreamingStatus shows the failure + Retry button.
+  const effectiveError = $derived.by(() => {
+    if ($chatError$) return $chatError$;
+    if ($agentSession$?.status === AgentStatus.Error) {
+      return $agentSession$.stopReason || 'Agent spawn failed';
+    }
+    return null;
+  });
+
   // Track if there's a pending permission request for this agent
   // When a permission is pending, we hide the "Thinking" indicator since the permission UI shows instead
   const allPermissionRequests = selectPermissionRequests();
@@ -3006,7 +3017,7 @@
                       backendSessionId={auggieSessionId}
                     />
                   </div>
-                  {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && ($chatError$ || $chatModelUnavailable$))}
+                  {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$))}
                     <div class="mb-16">
                       <StreamingStatus
                         isStreaming={$agentSessionIsStreaming$}
@@ -3014,7 +3025,7 @@
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                        error={$chatError$}
+                        error={effectiveError}
                         isStalled={$chatIsStalled$}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
@@ -3038,7 +3049,7 @@
                       lastChunkTime={$chatLastChunkTime$}
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                      error={$chatError$}
+                      error={effectiveError}
                       isStalled={$chatIsStalled$}
                       modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
@@ -3118,7 +3129,7 @@
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                        error={$chatError$}
+                        error={effectiveError}
                         isStalled={$chatIsStalled$}
                         modelUnavailable={$chatModelUnavailable$}
                         {hasPendingPermission}
@@ -3142,7 +3153,7 @@
                       lastChunkTime={$chatLastChunkTime$}
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                      error={$chatError$}
+                      error={effectiveError}
                       isStalled={$chatIsStalled$}
                       modelUnavailable={$chatModelUnavailable$}
                       {hasPendingPermission}
@@ -3171,7 +3182,7 @@
                 lastChunkTime={$chatLastChunkTime$}
                 receivedFirstChunk={$chatReceivedFirstChunk$}
                 streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                error={$chatError$}
+                error={effectiveError}
                 isStalled={$chatIsStalled$}
                 modelUnavailable={$chatModelUnavailable$}
                 {hasPendingPermission}
@@ -3357,7 +3368,7 @@
                       {/if}
 
                       <!-- Show status when active but no assistant message yet, or when there's an error/modelUnavailable -->
-                      {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: $chatError$, modelUnavailable: $chatModelUnavailable$ }, )}
+                      {#if groupIndex === groupedMessages.length - 1 && turnIndex === turns.length - 1 && turn.assistantMessages.length === 0 && shouldShowPendingAssistantStatus( { isStreaming: $agentSessionIsStreaming$, isProcessing: $agentIsResponding$, error: effectiveError, modelUnavailable: $chatModelUnavailable$ }, )}
                         <div class="mb-8">
                           <StreamingStatus
                             isStreaming={$agentSessionIsStreaming$}
@@ -3365,7 +3376,7 @@
                             lastChunkTime={$chatLastChunkTime$}
                             receivedFirstChunk={$chatReceivedFirstChunk$}
                             streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                            error={$chatError$}
+                            error={effectiveError}
                             isStalled={$chatIsStalled$}
                             modelUnavailable={$chatModelUnavailable$}
                             {hasPendingPermission}
@@ -3414,7 +3425,7 @@
                           />
                         </div>
                         <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->
-                        {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && ($chatError$ || $chatModelUnavailable$))}
+                        {#if (isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$))}
                           <div class="mb-16">
                             <StreamingStatus
                               isStreaming={$agentSessionIsStreaming$}
@@ -3422,7 +3433,7 @@
                               lastChunkTime={$chatLastChunkTime$}
                               receivedFirstChunk={$chatReceivedFirstChunk$}
                               streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                              error={$chatError$}
+                              error={effectiveError}
                               isStalled={$chatIsStalled$}
                               modelUnavailable={$chatModelUnavailable$}
                               {hasPendingPermission}
@@ -3469,7 +3480,7 @@
                   lastChunkTime={$chatLastChunkTime$}
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                  error={$chatError$}
+                  error={effectiveError}
                   isStalled={$chatIsStalled$}
                   modelUnavailable={$chatModelUnavailable$}
                   {hasPendingPermission}

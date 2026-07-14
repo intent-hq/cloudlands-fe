@@ -401,4 +401,43 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     const page = await client.getConversation('agent-1');
     expect(page.nextToken).toBeNull();
   });
+
+  describe('retry', () => {
+    it('calls agent.retry with correct params and returns ok:true on success', async () => {
+      backend.onRequest('agent.retry', (params) => {
+        expect(params).toEqual({
+          agentId: 'agent-retry-1',
+          workspaceId: 'ws-retry-1',
+        });
+        return { ok: true };
+      });
+      const client = new LiveAgentsClient();
+
+      const result = await client.retry('agent-retry-1', 'ws-retry-1');
+      expect(result).toEqual({ ok: true });
+      expect(backend.requests).toHaveLength(1);
+      expect(backend.requests[0].method).toBe('agent.retry');
+    });
+
+    it('returns ok:false when backend returns ok:false', async () => {
+      backend.onRequest('agent.retry', () => ({
+        ok: false,
+        error: 'Agent not in error status',
+      }));
+      const client = new LiveAgentsClient();
+
+      const result = await client.retry('agent-not-error', 'ws-1');
+      expect(result).toEqual({ ok: false });
+    });
+
+    it('returns ok:false on transport error without throwing', async () => {
+      backend.onRequest('agent.retry', () => {
+        throw new Error('Transport failure');
+      });
+      const client = new LiveAgentsClient();
+
+      const result = await client.retry('agent-fail', 'ws-1');
+      expect(result).toEqual({ ok: false });
+    });
+  });
 });
