@@ -283,14 +283,15 @@
 
   async function handleBetaUpdatesToggle(enabled: string | boolean) {
     const value = Boolean(enabled);
-    // Dispatch the Redux action to update the renderer state
-    appStore.dispatch(setBetaUpdatesEnabled(value));
     // Call the auto-update service to persist and switch the feed immediately
     try {
       await autoUpdateClient.setChannel(value ? 'beta' : 'stable');
+      // Only update Redux state after successful IPC call
+      appStore.dispatch(setBetaUpdatesEnabled(value));
       logger.info('Update channel set to', value ? 'beta' : 'stable');
     } catch (error) {
       logger.error('Failed to set update channel', error);
+      // On failure, toggle state remains unchanged in Redux
     }
   }
 
