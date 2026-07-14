@@ -3469,4 +3469,76 @@ describe("daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       text: "post-reconnect",
     });
   });
+
+  describe("agent:failed → chatSendFailed", () => {
+    it("dispatches chatSendFailed when agent:failed carries an error message", async () => {
+      const agentId = "agent-failed-1";
+      const messageId = "msg-failed-1";
+      const streamId = "stream-failed-1";
+      const errorMsg = "Agent spawn failed after 3 retries";
+
+      appStore.dispatch(upsertSession({ id: agentId, name: "Test Agent", workspaceId: WS }));
+      await primeBridge();
+      const handler = capturedHandlers[0];
+
+      // Start a stream so there's something for agent:failed to finalize
+      handler!(
+        notification("agent:stream:chunk", {
+          agentId,
+          content: "Working",
+          messageId,
+          blockIndex: 0,
+          blockId: `${messageId}:0`,
+          blockType: "text",
+          streamId,
+        }),
+      );
+
+      handler!(
+        notification("agent:failed", {
+          agentId,
+          error: errorMsg,
+          status: "error",
+        }),
+      );
+
+      const chatState = appStore.state.chatState.byAgentId[agentId];
+      expect(chatState).toBeDefined();
+      expect(chatState.error).toBe(errorMsg);
+    });
+
+    it("sets default error message when agent:failed has no explicit error", async () => {
+      const agentId = "agent-failed-2";
+      const messageId = "msg-failed-2";
+      const streamId = "stream-failed-2";
+
+      appStore.dispatch(upsertSession({ id: agentId, name: "Test Agent", workspaceId: WS }));
+      await primeBridge();
+      const handler = capturedHandlers[0];
+
+      // Start a stream so there's something for agent:failed to finalize
+      handler!(
+        notification("agent:stream:chunk", {
+          agentId,
+          content: "Working",
+          messageId,
+          blockIndex: 0,
+          blockId: `${messageId}:0`,
+          blockType: "text",
+          streamId,
+        }),
+      );
+
+      handler!(
+        notification("agent:failed", {
+          agentId,
+          status: "error",
+        }),
+      );
+
+      const chatState = appStore.state.chatState.byAgentId[agentId];
+      // When no explicit error is provided, the reducer supplies a default message
+      expect(chatState?.error).toBe("The response was interrupted. Please try again.");
+    });
+  });
 });
