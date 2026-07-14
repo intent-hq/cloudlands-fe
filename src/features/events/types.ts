@@ -110,6 +110,11 @@ export const WorkspaceEventType = {
   AgentQueueProcessingCancelled: 'agent:queue:processing-cancelled',
   AgentQueueStaleMessage: 'agent:queue:stale-message',
 
+  // Agent process-registry lifecycle events
+  AgentProcessQueued: 'agent:process:queued',
+  AgentProcessResumed: 'agent:process:resumed',
+  AgentProcessEvicted: 'agent:process:evicted',
+
   // Agent user message events (for cross-client sync)
   AgentUserMessageSent: 'agent:user-message:sent',
 
@@ -743,6 +748,47 @@ export interface AgentQueueStaleMessageEvent extends WorkspaceEventBase {
 }
 
 /**
+ * Emitted when an agent spawn is queued waiting for a free process slot
+ * (all slots active). Self-sufficient payload carries `{ agentId, used, cap }`
+ * so clients can render the cap-saturation state without polling.
+ */
+export interface AgentProcessQueuedEvent extends WorkspaceEventBase {
+  type: 'agent:process:queued';
+  data: {
+    agentId: string;
+    used: number;
+    cap: number;
+  };
+}
+
+/**
+ * Emitted when a queued agent spawn resumes (a slot freed).
+ * Self-sufficient payload carries `{ agentId, used, cap }`.
+ */
+export interface AgentProcessResumedEvent extends WorkspaceEventBase {
+  type: 'agent:process:resumed';
+  data: {
+    agentId: string;
+    used: number;
+    cap: number;
+  };
+}
+
+/**
+ * Emitted when the process registry evicts the LRU idle process.
+ * Self-sufficient payload carries `{ agentId, used, cap }`.
+ * No UI rendering required per task scope.
+ */
+export interface AgentProcessEvictedEvent extends WorkspaceEventBase {
+  type: 'agent:process:evicted';
+  data: {
+    agentId: string;
+    used: number;
+    cap: number;
+  };
+}
+
+/**
  * Emitted when an agent streams a text chunk (token-by-token)
  */
 export interface AgentStreamChunkEvent extends WorkspaceEventBase {
@@ -839,6 +885,10 @@ export type SpecificWorkspaceEvent =
   | AgentEventDeliveryTimeoutEvent
   | AgentSubscriptionsRestoredEvent
   | AgentSubscriptionsChangedEvent
+  // Agent process-registry events
+  | AgentProcessQueuedEvent
+  | AgentProcessResumedEvent
+  | AgentProcessEvictedEvent
   | AgentMessageDeliveryFailedEvent
   // Agent queue events (for WebSocket API)
   | AgentQueueUpdatedEvent
