@@ -15,12 +15,13 @@
  *   afterPack: scripts/sign-sidecar.js
  */
 
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
  * Find the Developer ID Application signing identity from the keychain
@@ -56,10 +57,10 @@ async function signBinary(binaryPath, identity) {
   // --force: replace any existing signature
   // --options runtime: enable hardened runtime (required for notarization)
   // --timestamp: add secure timestamp (required for Gatekeeper)
-  const command = `codesign --force --options runtime --timestamp --sign "${identity}" "${binaryPath}"`;
+  const args = ['--force', '--options', 'runtime', '--timestamp', '--sign', identity, binaryPath];
 
   try {
-    const { stdout, stderr } = await execAsync(command);
+    const { stdout, stderr } = await execFileAsync('codesign', args);
     if (stdout) console.log(stdout);
     if (stderr) console.error(stderr);
     console.log('  ✓ Signed successfully');
@@ -77,10 +78,10 @@ async function signBinary(binaryPath, identity) {
 async function verifySignature(binaryPath) {
   console.log(`  Verifying: ${binaryPath}`);
 
-  const command = `codesign --verify --deep --strict --verbose=2 "${binaryPath}"`;
+  const args = ['--verify', '--deep', '--strict', '--verbose=2', binaryPath];
 
   try {
-    const { stdout, stderr } = await execAsync(command);
+    const { stdout, stderr } = await execFileAsync('codesign', args);
     if (stdout) console.log(stdout);
     if (stderr) console.log(stderr); // codesign outputs to stderr even on success
     console.log('  ✓ Verification passed');
@@ -134,9 +135,9 @@ export async function signSidecar(context) {
     }
   }
 
-  // Check if CSC_IDENTITY_AUTO_DISCOVERY is explicitly disabled
-  if (process.env.CSC_IDENTITY_AUTO_DISCOVERY === 'false') {
-    console.log('Skipping sidecar signing - CSC_IDENTITY_AUTO_DISCOVERY=false');
+  // Only skip if auto-discovery is disabled AND no explicit identity is set
+  if (process.env.CSC_IDENTITY_AUTO_DISCOVERY === 'false' && !process.env.CSC_NAME && !process.env.CSC_LINK) {
+    console.log('Skipping sidecar signing - CSC_IDENTITY_AUTO_DISCOVERY=false and no explicit identity set');
     console.log('This is expected for local unsigned builds.');
     return;
   }
