@@ -17,21 +17,19 @@ import { InMemoryWorkspaceRepository } from '../main/workspace.repository';
 import type { WorkspaceUIContext } from '../../../shared/types';
 import { WorkspaceConfig } from '../../../shared/main/config.js';
 
-// Tests skipped: workspace context is now managed daemon-side (workspace.updateContext / workspace.getContext, PROTOCOL.md §5.1).
-// The in-memory repository doesn't write to disk, so filesystem checks are invalid.
-// Context caching logic in WorkspaceService is still covered by unit tests.
-describe.skip('Workspace Current Context Integration', () => {
+// Context operations still use filesystem fallback (DaemonWorkspaceRepository.{save,read}Context)
+// until workspace.updateContext / workspace.getContext daemon RPCs are available (PROTOCOL.md §5.1).
+// These tests verify the fallback path continues to work.
+describe('Workspace Current Context Integration', () => {
   let workspaceService: WorkspaceService;
-  let repository: InMemoryWorkspaceRepository;
   let testWorkspaceId: string;
 
   beforeEach(async () => {
     // New workspace ID for each test
     testWorkspaceId = randomUUID();
 
-    // Create a new WorkspaceService instance with InMemoryWorkspaceRepository for testing
-    repository = new InMemoryWorkspaceRepository();
-    workspaceService = new WorkspaceService(repository);
+    // Use default DaemonWorkspaceRepository (which falls back to filesystem for context)
+    workspaceService = new WorkspaceService();
   });
 
   afterEach(async () => {
@@ -109,9 +107,10 @@ describe.skip('Workspace Current Context Integration', () => {
     await workspaceService.updateCurrentContext(testWorkspaceId, testContext);
 
     // Create a new service instance (simulates app restart - cache is empty)
+    // Uses default DaemonWorkspaceRepository which falls back to filesystem for context
     const newServiceInstance = new WorkspaceService();
 
-    // Get the current context (should read from disk)
+    // Get the current context (should read from disk via fallback)
     const retrievedContext = await newServiceInstance.getCurrentContext(testWorkspaceId);
 
     expect(retrievedContext).toEqual(testContext);

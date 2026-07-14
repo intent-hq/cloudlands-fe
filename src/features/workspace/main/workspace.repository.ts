@@ -556,8 +556,13 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
 /**
  * Daemon-backed implementation that reads workspace metadata via JSON-RPC
  * (`workspace.get` / `workspace.list`, PROTOCOL.md §5.1).
+ *
+ * Falls back to FileSystemWorkspaceRepository for operations not yet daemon-backed
+ * (context, git config).
  */
 export class DaemonWorkspaceRepository implements WorkspaceRepository {
+  private filesystemFallback?: FileSystemWorkspaceRepository;
+
   async findById(id: WorkspaceId): Promise<Workspace | null> {
     if (id === CHIEF_WORKSPACE_ID) {
       return getChiefWorkspace();
@@ -597,6 +602,14 @@ export class DaemonWorkspaceRepository implements WorkspaceRepository {
 
       const workspaces = response?.workspaces || [];
 
+      // Guard against non-array responses
+      if (!Array.isArray(workspaces)) {
+        logger.warn('workspace.list returned non-array workspaces', {
+          type: typeof workspaces,
+        });
+        return [];
+      }
+
       // Register all workspace slugs
       for (const workspace of workspaces) {
         registerWorkspaceSlug(workspace.id);
@@ -623,16 +636,32 @@ export class DaemonWorkspaceRepository implements WorkspaceRepository {
     return workspace !== null;
   }
 
-  async save(_workspace: Workspace): Promise<void> {
-    throw new Error(
-      'DaemonWorkspaceRepository.save not implemented — mutations should route through daemon RPCs (workspace.update, workspace.create)',
-    );
+  async save(workspace: Workspace): Promise<void> {
+    // Use workspace.update daemon RPC for metadata
+    try {
+      const { getBackendClient } = await import('../../backend/main/backend.ipc');
+      await getBackendClient().request('workspace.update', {
+        workspaceId: workspace.id,
+        title: workspace.title,
+        tags: workspace.tags,
+        branch: workspace.branch,
+        status: workspace.status,
+      });
+    } catch (error) {
+      logger.error('Failed to save workspace via daemon', error as Error);
+      throw error;
+    }
   }
 
-  async delete(_id: WorkspaceId): Promise<void> {
-    throw new Error(
-      'DaemonWorkspaceRepository.delete not implemented — mutations should route through daemon RPC (workspace.delete)',
-    );
+  async delete(id: WorkspaceId): Promise<void> {
+    // Use workspace.delete daemon RPC
+    try {
+      const { getBackendClient } = await import('../../backend/main/backend.ipc');
+      await getBackendClient().request('workspace.delete', { workspaceId: id });
+    } catch (error) {
+      logger.error('Failed to delete workspace via daemon', error as Error);
+      throw error;
+    }
   }
 
   async cleanup(id: WorkspaceId): Promise<void> {
@@ -642,22 +671,37 @@ export class DaemonWorkspaceRepository implements WorkspaceRepository {
     });
   }
 
-  async saveContext(_workspaceId: WorkspaceId, _context: any): Promise<void> {
-    throw new Error(
-      'DaemonWorkspaceRepository.saveContext not implemented — context mutations should route through daemon RPC (workspace.updateContext)',
-    );
+  async saveContext(workspaceId: WorkspaceId, context: any): Promise<void> {
+    // Fallback to filesystem until workspace.updateContext RPC is available (PROTOCOL.md §5.1)
+    if (!this.filesystemFallback) {
+      this.filesystemFallback = new FileSystemWorkspaceRepository();
+    }
+    logger.debug('DaemonWorkspaceRepository.saveContext falling back to filesystem', {
+      workspaceId,
+    });
+    return this.filesystemFallback.saveContext(workspaceId, context);
   }
 
-  async readContext(_workspaceId: WorkspaceId): Promise<any | null> {
-    throw new Error(
-      'DaemonWorkspaceRepository.readContext not implemented — context reads should route through daemon RPC (workspace.getContext)',
-    );
+  async readContext(workspaceId: WorkspaceId): Promise<any | null> {
+    // Fallback to filesystem until workspace.getContext RPC is available (PROTOCOL.md §5.1)
+    if (!this.filesystemFallback) {
+      this.filesystemFallback = new FileSystemWorkspaceRepository();
+    }
+    logger.debug('DaemonWorkspaceRepository.readContext falling back to filesystem', {
+      workspaceId,
+    });
+    return this.filesystemFallback.readContext(workspaceId);
   }
 
-  async readGitConfig(_repoPath: string): Promise<string> {
-    throw new Error(
-      'DaemonWorkspaceRepository.readGitConfig not implemented — git operations should not read from repository',
-    );
+  async readGitConfig(repoPath: string): Promise<string> {
+    // Fallback to filesystem — git config reads are not yet daemon-backed
+    if (!this.filesystemFallback) {
+      this.filesystemFallback = new FileSystemWorkspaceRepository();
+    }
+    logger.debug('DaemonWorkspaceRepository.readGitConfig falling back to filesystem', {
+      repoPath,
+    });
+    return this.filesystemFallback.readGitConfig(repoPath);
   }
 
   async scanDirectory(_dir: string, _depth: number = 0): Promise<string[]> {

@@ -176,3 +176,117 @@ describe('InMemoryWorkspaceRepository', () => {
 // FileSystemWorkspaceRepository tests removed — workspace metadata is now
 // resolved via daemon RPCs (workspace.get / workspace.list, PROTOCOL.md §5.1).
 // Tests use InMemoryWorkspaceRepository for isolation.
+
+describe('DaemonWorkspaceRepository', async () => {
+  const { DaemonWorkspaceRepository } = await import('../main/workspace.repository');
+  const { vi } = await import('vitest');
+
+  let repository: InstanceType<typeof DaemonWorkspaceRepository>;
+  let mockBackendClient: { request: ReturnType<typeof vi.fn> };
+
+  beforeEach(async () => {
+    repository = new DaemonWorkspaceRepository();
+    mockBackendClient = { request: vi.fn() };
+
+    // Mock the backend client getter
+    vi.doMock('../../backend/main/backend.ipc', () => ({
+      getBackendClient: () => mockBackendClient,
+    }));
+  });
+
+  describe('findById', () => {
+    it('should call workspace.get with correct params and return workspace', async () => {
+      const testWorkspace = {
+        id: 'ws-test-123',
+        title: 'Test Workspace',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+      };
+
+      mockBackendClient.request.mockResolvedValue({ workspace: testWorkspace });
+
+      const result = await repository.findById('ws-test-123' as any);
+
+      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.get', {
+        workspaceId: 'ws-test-123',
+      });
+      expect(result).toEqual(testWorkspace);
+    });
+
+    it('should return null when workspace not found', async () => {
+      mockBackendClient.request.mockResolvedValue({});
+
+      const result = await repository.findById('ws-nonexistent' as any);
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('findAll', () => {
+    it('should call workspace.list and return workspaces', async () => {
+      const testWorkspaces = [
+        { id: 'ws-1', title: 'Workspace 1' },
+        { id: 'ws-2', title: 'Workspace 2' },
+      ];
+
+      mockBackendClient.request.mockResolvedValue({ workspaces: testWorkspaces });
+
+      const result = await repository.findAll();
+
+      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.list');
+      expect(result).toEqual(testWorkspaces);
+    });
+
+    it('should guard against non-array responses', async () => {
+      mockBackendClient.request.mockResolvedValue({ workspaces: { notAnArray: true } });
+
+      const result = await repository.findAll();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should return empty array on error', async () => {
+      mockBackendClient.request.mockRejectedValue(new Error('Connection failed'));
+
+      const result = await repository.findAll();
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('save', () => {
+    it('should call workspace.update with workspace fields', async () => {
+      const workspace = {
+        id: 'ws-123',
+        title: 'Updated Workspace',
+        tags: ['tag1'],
+        branch: 'feature-branch',
+        status: WorkspaceStatus.Active,
+      } as Workspace;
+
+      mockBackendClient.request.mockResolvedValue({ workspace });
+
+      await repository.save(workspace);
+
+      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.update', {
+        workspaceId: 'ws-123',
+        title: 'Updated Workspace',
+        tags: ['tag1'],
+        branch: 'feature-branch',
+        status: WorkspaceStatus.Active,
+      });
+    });
+  });
+
+  describe('delete', () => {
+    it('should call workspace.delete with workspaceId', async () => {
+      mockBackendClient.request.mockResolvedValue({ success: true });
+
+      await repository.delete('ws-123' as any);
+
+      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.delete', {
+        workspaceId: 'ws-123',
+      });
+    });
+  });
+});
