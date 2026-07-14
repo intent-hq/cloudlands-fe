@@ -290,4 +290,107 @@ describe('DaemonWorkspaceRepository', () => {
       });
     });
   });
+
+  describe('readContext', () => {
+    it('should call workspace.getContext and return items', async () => {
+      const testItems = [
+        { id: 'item-1', type: 'note', title: 'Test Note' },
+        { id: 'item-2', type: 'linear-issue', title: 'Test Issue' },
+      ];
+
+      mockBackendClient.request.mockResolvedValue({ items: testItems });
+
+      const result = await repository.readContext('ws-123' as any);
+
+      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.getContext', {
+        workspaceId: 'ws-123',
+      });
+      expect(result).toEqual(testItems);
+    });
+
+    it('should return null when no items', async () => {
+      mockBackendClient.request.mockResolvedValue({});
+
+      const result = await repository.readContext('ws-123' as any);
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null on error', async () => {
+      mockBackendClient.request.mockRejectedValue(new Error('Connection failed'));
+
+      const result = await repository.readContext('ws-123' as any);
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('saveContext', () => {
+    it('should call workspace.updateContext with items', async () => {
+      const testItems = [
+        { id: 'item-1', type: 'note', title: 'Test Note' },
+      ];
+
+      mockBackendClient.request.mockResolvedValue({ items: testItems });
+
+      await repository.saveContext('ws-123' as any, testItems);
+
+      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.updateContext', {
+        workspaceId: 'ws-123',
+        items: testItems,
+      });
+    });
+
+    it('should convert non-array context to empty array', async () => {
+      mockBackendClient.request.mockResolvedValue({ items: [] });
+
+      await repository.saveContext('ws-123' as any, null);
+
+      expect(mockBackendClient.request).toHaveBeenCalledWith('workspace.updateContext', {
+        workspaceId: 'ws-123',
+        items: [],
+      });
+    });
+  });
+
+  describe('readGitConfig', () => {
+    it('should call git.getConfig when workspaceId provided', async () => {
+      const testConfig = '[remote "origin"]\n    url = git@github.com:test/repo.git';
+
+      mockBackendClient.request.mockResolvedValue({ config: testConfig });
+
+      const result = await repository.readGitConfig('/path/to/repo', 'ws-123' as any);
+
+      expect(mockBackendClient.request).toHaveBeenCalledWith('git.getConfig', {
+        workspaceId: 'ws-123',
+      });
+      expect(result).toEqual(testConfig);
+    });
+
+    it('should return empty string when config not in response', async () => {
+      mockBackendClient.request.mockResolvedValue({});
+
+      const result = await repository.readGitConfig('/path/to/repo', 'ws-123' as any);
+
+      expect(result).toBe('');
+    });
+
+    it('should fallback to filesystem when workspaceId not provided', async () => {
+      // When no workspaceId, should use filesystem fallback
+      const result = await repository.readGitConfig('/path/to/repo');
+
+      // Should not have called the backend
+      expect(mockBackendClient.request).not.toHaveBeenCalled();
+    });
+
+    it('should fallback to filesystem when RPC fails', async () => {
+      mockBackendClient.request.mockRejectedValue(new Error('RPC failed'));
+
+      // Should gracefully fallback - won't throw
+      const result = await repository.readGitConfig('/path/to/repo', 'ws-123' as any);
+
+      // The filesystem fallback will return mock data from InMemoryWorkspaceRepository
+      expect(result).toBeDefined();
+    });
+  });
 });
