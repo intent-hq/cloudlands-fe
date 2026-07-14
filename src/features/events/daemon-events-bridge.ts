@@ -1364,10 +1364,15 @@ function handleNotification(method: string, params: unknown): void {
   // STAB-22: agent:message events with role="assistant" should trigger a
   // conversation refetch so AgentCard preview updates for watched agents whose
   // tab was never opened. The event payload is { agentId, messageId, role }.
+  // Guard: only load if the session has no messages yet (avoid redundant fetches
+  // for already-hydrated transcripts).
   if (type === "agent:message") {
     const { agentId, role } = event.data ?? {};
     if (typeof agentId === "string" && role === "assistant") {
-      void loadChatTranscript(agentId);
+      const session = appStore.state.agentSessions.byAgentId[agentId];
+      if (!session || session.messages.length === 0) {
+        void loadChatTranscript(agentId);
+      }
     }
   }
 
