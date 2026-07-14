@@ -5,7 +5,6 @@
   import {
   selectIsReadyToInstall,
   selectAutoUpdateStatus,
-  selectAutoUpdateChannel,
 } from '$store/renderer/slices/auto-update/auto-update-selectors';
   import {
   installUpdate,
@@ -70,7 +69,6 @@
 
   const isReadyToInstall$ = selectIsReadyToInstall();
   const autoUpdateStatus$ = selectAutoUpdateStatus();
-  const autoUpdateChannel$ = selectAutoUpdateChannel();
   const betaUpdatesEnabled$ = selectBetaUpdatesEnabled();
   const noteFontStyle = selectNoteFontStyle();
   const isNoteMonospace = selectIsNoteMonospace();
