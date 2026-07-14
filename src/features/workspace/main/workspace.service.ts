@@ -366,22 +366,9 @@ export class WorkspaceService {
     },
   ): Promise<{ owner?: string; name?: string; url?: string }> {
     try {
-      let configContent: string;
-
-      if (remoteContext?.isRemote && remoteContext.workspaceId) {
-        // Remote workspace: git-config read over the legacy remote RPC has
-        // retired. Return no repo info until the daemon's WSS transport
-        // lands and can serve `file.read` here.
-        // TODO(P3-5): route via daemon `file.read` over WSS transport.
-        logger.info('Skipping remote git config read; legacy RPC retired', {
-          repoPath,
-          workspaceId: remoteContext.workspaceId,
-        });
-        return {};
-      } else {
-        // Local workspace: read git config from filesystem
-        configContent = await this.repository.readGitConfig(repoPath);
-      }
+      // Use git.getConfig RPC when workspaceId is available (STAB-10b, intentd#159)
+      const workspaceId = remoteContext?.workspaceId as WorkspaceId | undefined;
+      const configContent = await this.repository.readGitConfig(repoPath, workspaceId);
 
       // Validate config content is a string
       if (!configContent || typeof configContent !== 'string') {
@@ -1487,7 +1474,10 @@ export class WorkspaceService {
 
           // Extract git repository info (skip if already set from GitHub clone)
           if (!gitRepoInfo.owner && !gitRepoInfo.name) {
-            gitRepoInfo = await this.getGitRepoInfo(effectiveRepositoryPath);
+            gitRepoInfo = await this.getGitRepoInfo(effectiveRepositoryPath, {
+              isRemote: false,
+              workspaceId: id as string,
+            });
           }
 
           // Check if skipWorktree mode is enabled
