@@ -13,12 +13,14 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { WorkspaceService } from '../main/workspace.service';
+import { FileSystemWorkspaceRepository } from '../main/workspace.repository';
 import type { WorkspaceUIContext } from '../../../shared/types';
 import { WorkspaceConfig } from '../../../shared/main/config.js';
 
-// Context operations still use filesystem fallback (DaemonWorkspaceRepository.{save,read}Context)
-// until workspace.updateContext / workspace.getContext daemon RPCs are available (PROTOCOL.md §5.1).
-// These tests verify the fallback path continues to work.
+// These tests verify the filesystem fallback path for workspace context operations.
+// DaemonWorkspaceRepository now uses workspace.getContext/updateContext RPCs (intentd#159, PROTOCOL.md §5.1)
+// but falls back to filesystem when the RPCs are unavailable. These tests use FileSystemWorkspaceRepository
+// directly to test the fallback implementation.
 describe('Workspace Current Context Integration', () => {
   let workspaceService: WorkspaceService;
   let testWorkspaceId: string;
@@ -27,8 +29,9 @@ describe('Workspace Current Context Integration', () => {
     // New workspace ID for each test
     testWorkspaceId = randomUUID();
 
-    // Use default DaemonWorkspaceRepository (which falls back to filesystem for context)
-    workspaceService = new WorkspaceService();
+    // Use FileSystemWorkspaceRepository directly to test the filesystem path
+    const repository = new FileSystemWorkspaceRepository();
+    workspaceService = new WorkspaceService(repository);
   });
 
   afterEach(async () => {
@@ -106,10 +109,10 @@ describe('Workspace Current Context Integration', () => {
     await workspaceService.updateCurrentContext(testWorkspaceId, testContext);
 
     // Create a new service instance (simulates app restart - cache is empty)
-    // Uses default DaemonWorkspaceRepository which falls back to filesystem for context
-    const newServiceInstance = new WorkspaceService();
+    const repository = new FileSystemWorkspaceRepository();
+    const newServiceInstance = new WorkspaceService(repository);
 
-    // Get the current context (should read from disk via fallback)
+    // Get the current context (should read from disk)
     const retrievedContext = await newServiceInstance.getCurrentContext(testWorkspaceId);
 
     expect(retrievedContext).toEqual(testContext);
