@@ -474,23 +474,20 @@
         class="absolute w-1 right-0 h-full rounded-sm bg-muted transition-[width] duration-200 group-hover/span:w-1.5"
         style:opacity={span.opacity}
       ></div>
-      <!-- Avatar for agent-authored spans (shown on hover) -->
+      <!-- Avatar and label for spans (shown on hover) -->
       <div
-        class="flex flex-col gap-0.5 leading-none absolute right-0 text-right pr-4 pl-0.5 rounded-md text-xs whitespace-nowrap text-muted-foreground opacity-0 group-hover/span:opacity-100 transition-opacity duration-200"
+        class="flex flex-row items-center gap-1 leading-none absolute right-0 pr-4 pl-0.5 rounded-md text-xs whitespace-nowrap text-muted-foreground opacity-0 group-hover/span:opacity-100 transition-opacity duration-200"
         style:top="{span.labelTop - span.top}px"
       >
-        <div>{formatTimestamp(span.timestamp)}</div>
-        <div>
-          {#if span.author?.type === 'agent'}
-            <div class="absolute right-5 top-0 pointer-events-none z-1001">
-              <AuggieAvatar
-                size={20}
-                agentId={span.author.id}
-              />
-            </div>
-          {/if}
-
-          {span.author?.name}
+        {#if span.author?.type === 'agent'}
+          <AuggieAvatar
+            size={20}
+            agentId={span.author.id}
+          />
+        {/if}
+        <div class="flex flex-col gap-0.5 text-right">
+          <div>{formatTimestamp(span.timestamp)}</div>
+          <div>{span.author?.name}</div>
         </div>
       </div>
     </div>
