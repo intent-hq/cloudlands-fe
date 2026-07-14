@@ -1,0 +1,233 @@
+name: Release Beta
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Never cancel a release in progress
+concurrency:
+  group: cloudlands-release
+  cancel-in-progress: false
+
+jobs:
+  beta-release:
+    runs-on: macos-14
+    timeout-minutes: 90
+
+    steps:
+      - name: Validate version format
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$ ]]; then
+            echo "::error::Invalid version format '$VERSION'. Expected semver (e.g., 1.2.3 or 1.2.3-beta.1)"
+            exit 1
+          fi
+          echo "Version $VERSION is valid"
+
+      # Use RELEASE_PAT to push to protected branches and publish to cloudlands-releases
+      - name: Configure git token
+        id: token
+        env:
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+          FALLBACK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "$RELEASE_PAT" ]; then
+            echo "token=$RELEASE_PAT" >> "$GITHUB_OUTPUT"
+            echo "Using RELEASE_PAT for git operations and release publishing"
+          else
+            echo "::error::RELEASE_PAT secret is required for this workflow"
+            exit 1
+          fi
+
+      - name: Checkout cloudlands-fe main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ steps.token.outputs.token }}
+
+      - name: Check for duplicate version tag
+        run: |
+          VERSION="${{ inputs.version }}"
+          if git ls-remote --tags origin | grep -q "refs/tags/v${VERSION}$"; then
+            echo "::error::Tag v${VERSION} already exists on origin. Use a different version number."
+            exit 1
+          fi
+          echo "Tag v${VERSION} does not exist, proceeding with release"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate INTENTD_READ_PAT secret
+        env:
+          INTENTD_READ_PAT: ${{ secrets.INTENTD_READ_PAT }}
+        run: |
+          if [ -z "$INTENTD_READ_PAT" ]; then
+            echo "::error::INTENTD_READ_PAT secret is required to checkout intent-hq/intentd"
+            exit 1
+          fi
+          echo "INTENTD_READ_PAT is configured"
+
+      - name: Checkout intentd
+        uses: actions/checkout@v4
+        with:
+          repository: intent-hq/intentd
+          ref: main
+          token: ${{ secrets.INTENTD_READ_PAT }}
+          path: intentd-repo
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: intentd-repo -> target
+
+      - name: Build intentd sidecar
+        run: |
+          cd intentd-repo
+          cargo build --release --target aarch64-apple-darwin
+          pwd_path="$(pwd)"
+          echo "Built intentd at: ${pwd_path}/target/aarch64-apple-darwin/release/intentd"
+          ls -lh target/aarch64-apple-darwin/release/intentd
+
+      - name: Set version in package.json
+        run: pnpm run version:set -- ${{ inputs.version }}
+
+      - name: Commit version bump and create tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: bump version to ${{ inputs.version }}"
+          git tag -a "v${{ inputs.version }}" -m "Release v${{ inputs.version }}"
+
+      - name: Import code signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.CLOUDLANDS_KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12" 2>/dev/null || \
+            echo "$MACOS_CERTIFICATE" | base64 -D > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$MACOS_CERTIFICATE_PWD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+      - name: Build and package macOS app
+        run: pnpm run dist:mac
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
+          INTENTD_BIN: ${{ github.workspace }}/intentd-repo/target/aarch64-apple-darwin/release/intentd
+          CSC_LINK: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE_PWD }}
+          CLOUDLANDS_APPLE_ID: ${{ secrets.CLOUDLANDS_APPLE_ID }}
+          CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD }}
+          CLOUDLANDS_APPLE_TEAM_ID: ${{ secrets.CLOUDLANDS_APPLE_TEAM_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List built artifacts
+        run: |
+          echo "Built artifacts:"
+          find dist-electron -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" -o -name "latest-mac.yml" \) -exec ls -lh {} \;
+
+      - name: Publish to GitHub Releases (versioned tag)
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          # Create an immutable versioned release on intent-hq/cloudlands-releases
+          gh release create "v${VERSION}" \
+            --repo intent-hq/cloudlands-releases \
+            --title "Intent v${VERSION}" \
+            --notes "Intent beta release v${VERSION}" \
+            --draft=false \
+            --prerelease \
+            dist-electron/*.dmg \
+            dist-electron/*.zip \
+            dist-electron/*.blockmap \
+            dist-electron/latest-mac.yml
+
+      - name: Publish to GitHub Releases (rolling beta tag)
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          # Ensure the rolling 'beta' release tag exists
+          if ! gh release view beta --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
+            echo "Creating rolling 'beta' release tag"
+            gh release create beta \
+              --repo intent-hq/cloudlands-releases \
+              --title "Intent Beta Channel (Rolling)" \
+              --notes "Rolling beta channel - always points to the latest beta release. Auto-updater uses this." \
+              --draft=false \
+              --prerelease
+          fi
+
+          # Delete existing assets to prevent accumulation (versioned filenames don't clobber)
+          echo "Cleaning up old assets from rolling beta release"
+          gh release view beta --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
+            echo "Deleting old asset: $asset"
+            gh release delete-asset beta "$asset" --repo intent-hq/cloudlands-releases --yes || true
+          done
+
+          # Upload new artifacts
+          gh release upload beta --repo intent-hq/cloudlands-releases \
+            dist-electron/*.dmg \
+            dist-electron/*.zip \
+            dist-electron/*.blockmap \
+            dist-electron/latest-mac.yml
+
+      - name: Push commit and tag to cloudlands-fe
+        run: |
+          VERSION="${{ inputs.version }}"
+          git push origin "HEAD:main" "refs/tags/v${VERSION}"
+        env:
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+
+      - name: Post summary
+        run: |
+          VERSION="${{ inputs.version }}"
+          # Derive actual DMG filename from dist-electron and URL-encode it
+          DMG_FILE=$(find dist-electron -maxdepth 1 -name "*.dmg" -exec basename {} \; -quit)
+          DMG_ENCODED=$(printf '%s' "$DMG_FILE" | jq -sRr @uri)
+          {
+            echo "## Beta Release"
+            echo ""
+            echo "**Version:** v$VERSION"
+            echo "**Tag:** \`v$VERSION\`"
+            echo "**Channel:** beta"
+            echo ""
+            echo "### Download URLs"
+            echo "- [Apple Silicon Mac (DMG)](https://github.com/intent-hq/cloudlands-releases/releases/download/beta/$DMG_ENCODED)"
+            echo "- [Auto-updater feed](https://github.com/intent-hq/cloudlands-releases/releases/download/beta/latest-mac.yml)"
+            echo ""
+            echo "### Releases"
+            echo "- [Versioned release](https://github.com/intent-hq/cloudlands-releases/releases/tag/v$VERSION)"
+            echo "- [Rolling beta channel](https://github.com/intent-hq/cloudlands-releases/releases/tag/beta)"
+          } >> "$GITHUB_STEP_SUMMARY"
