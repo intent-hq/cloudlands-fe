@@ -80,18 +80,9 @@ export class LiveSystemClient implements SystemClient {
   }
 
   subscribe(handler: SubscriptionHandler<SystemStatusState>): Unsubscribe {
-    // Emit-once with the initial fetch.
-    this.status().then(
-      (state) => handler(state),
-      () => {
-        handler({
-          nodeVersionOk: null,
-          nodeVersion: undefined,
-          auggieInstalled: false,
-          binaryInstallAvailable: false,
-        });
-      },
-    );
+    // Emit-once with the initial fetch. status() always resolves, so no rejection
+    // handler is needed — the catch branch is unreachable.
+    this.status().then((state) => handler(state));
     return () => {};
   }
 }

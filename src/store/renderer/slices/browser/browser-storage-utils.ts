@@ -3,13 +3,16 @@
  *
  * Extracted from live-browser-client.ts and browser-persistence-service.ts
  * to keep the storageKey generation and RecentUrl validation logic in one place.
+ *
+ * Note: BROWSER_STORAGE_KEY_PREFIX is also defined in browser-types.ts for the
+ * slice reducer to use when it needs the prefix directly. These should stay in sync,
+ * but the slice doesn't need this module's storageKey() helper.
  */
-import { BROWSER_STORAGE_KEY_PREFIX } from "./browser-types";
 import type { RecentUrl } from "./browser-types";
 
 /** localStorage key for a workspace's recent URLs: `browser-recent-${workspaceId}` */
 export function storageKey(workspaceId: string): string {
-  return `${BROWSER_STORAGE_KEY_PREFIX}${workspaceId}`;
+  return `browser-recent-${workspaceId}`;
 }
 
 /** Type guard for `RecentUrl` (runtime validation of localStorage payloads). */

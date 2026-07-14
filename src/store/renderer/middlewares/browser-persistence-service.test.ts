@@ -15,6 +15,7 @@ import {
 } from "../slices/browser/browser-slice";
 import type { StoreState } from "../types";
 import type { RecentUrl } from "../slices/browser/browser-types";
+import { storageKey } from "../slices/browser/browser-storage-utils";
 
 vi.mock("$lib/utils/safe-storage", () => ({
   safeLocalStorage: {
@@ -56,7 +57,7 @@ describe("browserPersistenceMiddleware", () => {
       const action = initBrowserWorkspace(workspaceId);
       middleware(mockApi)(mockNext)(action);
 
-      expect(safeLocalStorage.getJSON).toHaveBeenCalledWith(`browser-recent-${workspaceId}`);
+      expect(safeLocalStorage.getJSON).toHaveBeenCalledWith(storageKey(workspaceId));
       expect(mockApi.dispatch).toHaveBeenCalledWith(hydrateBrowserState(workspaceId, storedUrls));
     });
 
@@ -108,7 +109,7 @@ describe("browserPersistenceMiddleware", () => {
       middleware(mockApi)(mockNext)(action);
 
       expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(
-        `browser-recent-${workspaceId}`,
+        storageKey(workspaceId),
         mockState.browser.byWorkspaceId[workspaceId].recentUrls,
       );
     });
@@ -118,7 +119,7 @@ describe("browserPersistenceMiddleware", () => {
       middleware(mockApi)(mockNext)(action);
 
       expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(
-        `browser-recent-${workspaceId}`,
+        storageKey(workspaceId),
         mockState.browser.byWorkspaceId[workspaceId].recentUrls,
       );
     });
