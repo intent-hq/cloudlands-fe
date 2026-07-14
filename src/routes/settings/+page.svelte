@@ -24,6 +24,7 @@
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
   import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
+  import AgentBackendSettings from '$lib/components/settings/AgentBackendSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectIsProviderActive } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -443,6 +444,18 @@
             WebSocket API
           </h2>
           <WebSocketApiSettings />
+        </div>
+
+        <!-- Agent Backend -->
+        <div id="agent-backend" class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Agent Backend
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <AgentBackendSettings />
+            </section>
+          </div>
         </div>
 
         <!-- Quick Actions -->
