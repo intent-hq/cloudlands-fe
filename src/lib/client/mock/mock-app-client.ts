@@ -133,6 +133,20 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     subscribe: (handler) => emitOnce(handler, fx.mockSystemStatus),
   };
 
+  readonly server: AppClient["server"] = {
+    pairingInfo: async () => ({
+      token: "mock-token-1234567890abcdef",
+      certFingerprint: "SHA256:ABCD1234EFGH5678IJKL9012MNOP3456QRST7890UVWX",
+      port: 5181,
+      path: "/ws",
+      localIps: ["127.0.0.1", "192.168.1.100"],
+      hostname: "localhost.local",
+    }),
+    rotateToken: async () => ({
+      token: "mock-new-token-fedcba0987654321",
+    }),
+  };
+
   readonly events: AppClient["events"] = {
     list: async (workspaceId) =>
       workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockWorkspaceEvents : [],

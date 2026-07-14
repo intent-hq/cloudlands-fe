@@ -23,6 +23,7 @@
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
   import RtkSettings from '$lib/components/settings/RtkSettings.svelte';
+  import WebSocketApiSettings from '$lib/components/settings/WebSocketApiSettings.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { selectIsProviderActive } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -434,6 +435,14 @@
             MCP Servers
           </h2>
           <McpServersSettings isAuggieProvider={$isAuggieProvider$} />
+        </div>
+
+        <!-- WebSocket API -->
+        <div id="websocket-api" class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            WebSocket API
+          </h2>
+          <WebSocketApiSettings />
         </div>
 
         <!-- Quick Actions -->

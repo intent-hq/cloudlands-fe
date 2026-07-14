@@ -1042,6 +1042,23 @@ export interface SystemClient {
   subscribe(handler: SubscriptionHandler<SystemStatusState>): Unsubscribe;
 }
 
+/** Pairing info for WebSocket API (server.pairingInfo, local-only UDS) */
+export interface ServerPairingInfo {
+  token: string;
+  certFingerprint: string;
+  port: number | null;
+  path: string;
+  localIps: string[];
+  hostname: string;
+}
+
+export interface ServerClient {
+  /** server.pairingInfo — local-only (UDS); returns pairing credentials. Throws on remote calls. */
+  pairingInfo(): Promise<ServerPairingInfo>;
+  /** server.rotateToken — local-only (UDS); mints a new token. Throws when INTENTD_AUTH_TOKEN is set. */
+  rotateToken(): Promise<{ token: string }>;
+}
+
 /** Filter options for `event.query` (PROTOCOL §5.10); all optional. */
 export interface EventQueryOptions {
   eventType?: string;
@@ -1083,5 +1100,6 @@ export interface AppClient {
   browser: BrowserClient;
   integrations: IntegrationsClient;
   system: SystemClient;
+  server: ServerClient;
   events: EventsClient;
 }
