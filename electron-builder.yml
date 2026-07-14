@@ -60,6 +60,10 @@ mac:
   # identity: "Developer ID Application: Your Name (TEAM_ID)"
   requirements: build/app-requirements.txt
   notarize: true
+  # Sign bundled intentd sidecar binary (extraResources are not auto-signed)
+  # Path is relative to app Contents directory
+  binaries:
+    - "Resources/intentd/intentd"
   target:
     - target: dmg
       arch:
