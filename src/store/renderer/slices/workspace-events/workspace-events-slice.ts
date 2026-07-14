@@ -64,7 +64,14 @@ export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initia
     // snapshot from `event.query`, and a subsequent live push carrying the
     // same id (fan-out gate notwithstanding) must not double-append.
     if (wsState.events.some((existing) => existing.id === safeEvent.id)) return state;
-    const nextEvents = [...wsState.events, safeEvent].slice(-MAX_EVENTS);
+    // STAB-2: Insert the new event in timestamp-sorted order (oldest→newest)
+    // instead of blindly appending. The boot snapshot from `eventsLoaded` is
+    // already oldest→newest (via `LiveEventsClient.list()`), so maintain that
+    // order when live events arrive from the daemon-events-bridge.
+    const combined = [...wsState.events, safeEvent].sort((a, b) =>
+      a.timestamp.localeCompare(b.timestamp),
+    );
+    const nextEvents = combined.slice(-MAX_EVENTS);
     return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
   })
   .with(bulkEventsReceived, (state, { payload: [workspaceId, events] }) => {
@@ -79,7 +86,12 @@ export const workspaceEventsReducer = createReducer<WorkspaceEventsState>(initia
       deduped.push(candidate);
     }
     if (deduped.length === 0) return state;
-    const nextEvents = [...wsState.events, ...deduped].slice(-MAX_EVENTS);
+    // STAB-2: Merge and sort by timestamp (oldest→newest) to maintain
+    // chronological order regardless of the arrival sequence of live events.
+    const combined = [...wsState.events, ...deduped].sort((a, b) =>
+      a.timestamp.localeCompare(b.timestamp),
+    );
+    const nextEvents = combined.slice(-MAX_EVENTS);
     return setWorkspaceState(state, workspaceId, { ...wsState, events: nextEvents });
   })
   .with(eventsLoaded, (state, { payload: [workspaceId, events] }) => {
