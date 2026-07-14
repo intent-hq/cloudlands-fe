@@ -253,8 +253,16 @@
     const coalescedSpans = coalesceAttributionSpans(entries, newestTimestamp);
 
     // Get viewport info for clamping
+    // Calculate viewport top relative to the editor DOM (not #editor-content)
     const editorContent = document.getElementById('editor-content');
-    const viewportTop = editorContent ? editorContent.scrollTop : 0;
+    const editorElement = editor?.view?.dom;
+    let viewportTop = 0;
+    if (editorContent && editorElement) {
+      const editorContentRect = editorContent.getBoundingClientRect();
+      const editorDomRect = editorElement.getBoundingClientRect();
+      // Viewport top relative to editor DOM = where editor-content viewport starts within editor DOM coordinates
+      viewportTop = editorContentRect.top - editorDomRect.top;
+    }
 
     // Track if the next span could be the first of the latest version
     let couldBeFirstOfLatestVersion = true;
@@ -456,18 +464,20 @@
 <!-- Gutter container -->
 <div class="absolute left-0 top-0 w-6 h-full pointer-events-none z-10">
   {#each spans as span (span.positions.join(','))}
+    {@const isClickable = span.author?.type === 'agent'}
     <div
-      class="absolute left-0 cursor-pointer pointer-events-auto group/span"
+      class="absolute left-0 pointer-events-auto group/span"
+      class:cursor-pointer={isClickable}
       class:isLatest={span.isFromLatestVersion}
       class:isFirstOfLatestVersion={span.isFirstOfLatestVersion}
       style:top="{span.top}px"
       style:height="{span.height}px"
       title={span.tooltip}
       aria-label={span.ariaLabel}
-      onclick={(e) => handleSpanClick(e, span)}
-      onkeydown={(e) => handleSpanKeydown(e, span)}
-      role="button"
-      tabindex="0"
+      onclick={isClickable ? (e) => handleSpanClick(e, span) : undefined}
+      onkeydown={isClickable ? (e) => handleSpanKeydown(e, span) : undefined}
+      role={isClickable ? "button" : undefined}
+      tabindex={isClickable ? 0 : undefined}
     >
       <div
         class="absolute w-1 right-0 h-full rounded-sm bg-muted transition-[width] duration-200 group-hover/span:w-1.5"
