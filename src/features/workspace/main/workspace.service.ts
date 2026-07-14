@@ -3330,13 +3330,6 @@ export class WorkspaceService {
   }
 
   /**
-   * Purge orphan workspace directories and deleted workspaces.
-   * - Removes directories with no valid workspace.json
-   * - Permanently deletes workspaces with status: Deleted
-   * - Detects and cleans up workspaces with invalid git worktrees (after worktree prune)
-   * Should be run periodically or on app startup.
-   */
-  /**
    * Migrate workspaces from ~/intent/{id} to ~/intent/workspaces/{id}.
    * For workspaces that exist in both locations, merges the .workspace/ metadata
    * (~/intent/{id}/.workspace/ is authoritative) and removes the old location.

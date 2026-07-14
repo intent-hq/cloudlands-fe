@@ -1481,8 +1481,6 @@ app.whenReady().then(async () => {
       logger.warn('Error migrating workspaces on startup', { error });
     }
 
-
-
     // Clean up stale temp files from ~/.augment/tmp (from crashed/killed agents)
     try {
       const result = await cleanupStaleTempFiles();
