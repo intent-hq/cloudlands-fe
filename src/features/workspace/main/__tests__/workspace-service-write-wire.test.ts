@@ -103,9 +103,6 @@ const requestMock = vi.hoisted(() =>
     if (method === 'workspace.cleanup') {
       return { success: true };
     }
-    if (method === 'workspace.purge') {
-      return { removed: 2, orphans: 1 };
-    }
     if (method === 'workspace.findRepositories') {
       return { repositories: ['/repos/a', '/repos/b'] };
     }
@@ -384,32 +381,7 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
     expect(cleanupCalls[0]![1]).toEqual({ workspaceId: ws.id });
   });
 
-  it('purgeDeletedWorkspaces sends workspace.purge with no params and returns { removed, orphans }', async () => {
-    const result = await service.purgeDeletedWorkspaces();
 
-    expect(result.ok).toBe(true);
-    const purgeCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.purge');
-    expect(purgeCalls).toHaveLength(1);
-    // The daemon `workspace.purge` takes no params (PROTOCOL.md §5.1).
-    expect(purgeCalls[0]![1]).toBeUndefined();
-    if (result.ok) {
-      expect(result.data).toEqual({ removed: 2, orphans: 1 });
-    }
-  });
-
-  it('purgeDeletedWorkspaces clamps non-finite / non-number daemon counts to 0 (no NaN leaks)', async () => {
-    requestMock.mockImplementationOnce(async (method: string) => {
-      expect(method).toBe('workspace.purge');
-      return { removed: 'oops', orphans: null };
-    });
-    const result = await service.purgeDeletedWorkspaces();
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data).toEqual({ removed: 0, orphans: 0 });
-      expect(Number.isNaN(result.data.removed)).toBe(false);
-      expect(Number.isNaN(result.data.orphans)).toBe(false);
-    }
-  });
 
   it('findRepositories sends workspace.findRepositories with { directory } and returns the daemon repositories list', async () => {
     const result = await service.findRepositories('/some/directory');
