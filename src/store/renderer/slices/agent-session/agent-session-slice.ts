@@ -335,7 +335,7 @@ function canonicalFieldsFromWorkspaceEvent(event: {
       agentId,
       {
         ...data,
-        status: data.status ?? 'failed',
+        status: data.status ?? 'error',
         activationState: data.activationState ?? 'error',
         isActive: data.isActive ?? false,
         isStreaming: data.isStreaming ?? false,
