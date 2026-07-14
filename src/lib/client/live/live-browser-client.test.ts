@@ -5,13 +5,10 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { LiveBrowserClient } from "./live-browser-client";
-import { BROWSER_STORAGE_KEY_PREFIX, MAX_RECENT_URLS } from "$store/renderer/slices/browser/browser-types";
+import { MAX_RECENT_URLS } from "$store/renderer/slices/browser/browser-types";
 import type { RecentUrl } from "$store/renderer/slices/browser/browser-types";
+import { storageKey } from "$store/renderer/slices/browser/browser-storage-utils";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
-
-function storageKey(workspaceId: string): string {
-  return `${BROWSER_STORAGE_KEY_PREFIX}${workspaceId}`;
-}
 
 /** Wire an in-memory Map to window.localStorage for tests. */
 function installMemoryLocalStorage(): Map<string, string> {
@@ -32,6 +29,7 @@ function installMemoryLocalStorage(): Map<string, string> {
   });
   Object.defineProperty(window.localStorage, "length", {
     get: () => mem.size,
+    configurable: true,
   });
   return mem;
 }

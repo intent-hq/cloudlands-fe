@@ -77,7 +77,8 @@ export class LiveSkillsClient implements SkillsClient {
     // on-demand), so the subscription is a one-shot snapshot of the current
     // discovered skills.
     // The mock contract calls with no workspaceId; the live path needs one.
-    // Emit an empty list synchronously to match the mock's emit-once behavior.
+    // Emit an empty list synchronously (no workspace context to call the actual
+    // loader). Components use `list(workspaceId)` for real data.
     handler([]);
     return () => {
       // no-op unsubscribe for this emit-once subscription

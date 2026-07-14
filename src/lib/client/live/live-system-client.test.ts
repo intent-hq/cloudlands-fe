@@ -21,19 +21,26 @@ import { autoUpdateClient } from "$features/auto-update/auto-update.client";
 describe("LiveSystemClient", () => {
   let client: LiveSystemClient;
   let mockInvoke: ReturnType<typeof vi.fn>;
+  let originalWindow: typeof globalThis.window;
 
   beforeEach(() => {
+    originalWindow = globalThis.window;
     client = new LiveSystemClient();
     mockInvoke = vi.fn();
 
-    // Mock window.electronAPI.invoke
-    globalThis.window = {
+    // Mock window.electronAPI.invoke using vi.stubGlobal
+    vi.stubGlobal("window", {
       electronAPI: {
         invoke: mockInvoke,
         on: vi.fn(),
         offById: vi.fn(),
       },
-    } as any;
+    });
+  });
+
+  afterEach(() => {
+    // Restore original window to prevent leakage
+    vi.stubGlobal("window", originalWindow);
   });
 
   describe("status", () => {

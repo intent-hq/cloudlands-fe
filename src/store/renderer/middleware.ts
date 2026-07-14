@@ -283,7 +283,7 @@ function buildMiddleware(): StoreMiddleware[] {
     createSidebarNavPersistenceMiddleware(),
     // Give the browser state persistence triggers real handlers so recent URLs
     // hydrate from localStorage on workspace mount and persist on change
-    // (`addRecentUrl` / `removeRecentUrl` / `clearRecentUrls`).
+    // (`addRecentUrl` / `updateUrlMetadata` / `removeRecentUrl` / `clearRecentUrls`).
     createBrowserPersistenceMiddleware(),
     // Give the (post-saga) theme triggers (`requestThemePreferenceChange` /
     // `selectThemePreset` / `importCustomTheme` / `clearThemeCustomization`)

@@ -15,6 +15,16 @@ import { backendRequest } from "./backend-transport";
 import { autoUpdateClient } from "$features/auto-update/auto-update.client";
 
 export class LiveSystemClient implements SystemClient {
+  /**
+   * Fetches system status from the daemon via `system.status` JSON-RPC.
+   *
+   * This method intentionally **always resolves** (never rejects), even when
+   * the daemon call fails. Callers always receive a `SystemStatusState` object;
+   * `nodeVersionOk: null` signals "unknown/error" state. This design keeps the
+   * UI stable (no uncaught rejections on transient network/daemon failures) and
+   * matches the component contract, which renders `null` as "Checking…" rather
+   * than crashing on error.
+   */
   async status(): Promise<SystemStatusState> {
     try {
       const result = await backendRequest<SystemStatusState>("system.status");

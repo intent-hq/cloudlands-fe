@@ -2,8 +2,9 @@
  * AppClient seam entry point.
  *
  * Exposes the domain contract types and a single process-wide `appClient`
- * singleton backed by `LiveAppClient`, which implements all domains against
- * the live intentd daemon via the JSON-RPC IPC bridge.
+ * singleton backed by `LiveAppClient`. Most domains reach the live intentd
+ * daemon via JSON-RPC; exceptions include `skills` (FE-main IPC), `browser`
+ * (localStorage), and `system` (mixed JSON-RPC + autoUpdateClient).
  */
 import type { AppClient } from "./app-client";
 import { LiveAppClient } from "./live/live-app-client";

@@ -12,17 +12,24 @@ import { SKILLS_CHANNELS } from "$shared/ipc/channels";
 describe("LiveSkillsClient", () => {
   let client: LiveSkillsClient;
   let mockInvoke: ReturnType<typeof vi.fn>;
+  let originalWindow: typeof globalThis.window;
 
   beforeEach(() => {
+    originalWindow = globalThis.window;
     client = new LiveSkillsClient();
     mockInvoke = vi.fn();
 
-    // Mock window.electronAPI.invoke
-    globalThis.window = {
+    // Mock window.electronAPI.invoke using vi.stubGlobal
+    vi.stubGlobal("window", {
       electronAPI: {
         invoke: mockInvoke,
       },
-    } as any;
+    });
+  });
+
+  afterEach(() => {
+    // Restore original window to prevent leakage
+    vi.stubGlobal("window", originalWindow);
   });
 
   describe("list", () => {
@@ -83,7 +90,7 @@ describe("LiveSkillsClient", () => {
     });
 
     it("returns empty array when electronAPI is unavailable", async () => {
-      globalThis.window = undefined as any;
+      vi.stubGlobal("window", undefined);
 
       const result = await client.list("ws-abc");
 

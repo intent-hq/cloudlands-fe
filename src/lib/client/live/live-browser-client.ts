@@ -12,8 +12,8 @@
  * round-trip.
  *
  * Persistence is handled by the browser persistence middleware, which observes
- * `addRecentUrl`/`removeRecentUrl`/`clearRecentUrls` reducer updates and writes
- * back to localStorage after the reducer runs.
+ * `addRecentUrl`/`updateUrlMetadata`/`removeRecentUrl`/`clearRecentUrls` reducer
+ * updates and writes back to localStorage after the reducer runs.
  */
 import type {
   AppClient,
@@ -21,14 +21,10 @@ import type {
   SubscriptionHandler,
   Unsubscribe,
 } from "../app-client";
-import { BROWSER_STORAGE_KEY_PREFIX, MAX_RECENT_URLS } from "$store/renderer/slices/browser/browser-types";
+import { MAX_RECENT_URLS } from "$store/renderer/slices/browser/browser-types";
 import type { RecentUrl } from "$store/renderer/slices/browser/browser-types";
+import { storageKey, isRecentUrl } from "$store/renderer/slices/browser/browser-storage-utils";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
-
-/** localStorage key for a workspace's recent URLs: `browser-recent-${workspaceId}` */
-function storageKey(workspaceId: string): string {
-  return `${BROWSER_STORAGE_KEY_PREFIX}${workspaceId}`;
-}
 
 /** Load recent URLs from localStorage, capped at MAX_RECENT_URLS. */
 function loadRecentUrls(workspaceId: string): RecentUrl[] {
@@ -37,18 +33,6 @@ function loadRecentUrls(workspaceId: string): RecentUrl[] {
   return stored
     .filter((item): item is RecentUrl => isRecentUrl(item))
     .slice(0, MAX_RECENT_URLS);
-}
-
-/** Type guard for `RecentUrl` (runtime validation of localStorage payloads). */
-function isRecentUrl(value: unknown): value is RecentUrl {
-  if (!value || typeof value !== "object") return false;
-  const obj = value as Record<string, unknown>;
-  return (
-    typeof obj.url === "string" &&
-    typeof obj.lastVisited === "string" &&
-    (obj.title === undefined || typeof obj.title === "string") &&
-    (obj.favicon === undefined || typeof obj.favicon === "string")
-  );
 }
 
 export class LiveBrowserClient implements BrowserClient {

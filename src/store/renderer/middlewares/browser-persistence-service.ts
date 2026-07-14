@@ -6,8 +6,10 @@
  *
  * Like `unread-tracking-persistence-service`, this reconnects the path WITHOUT
  * re-adding a saga and WITHOUT changing any call site:
- *   - On creation it hydrates `recentUrls` from localStorage per workspace.
- *   - After any URL-mutating action it writes the current list back.
+ *   - Hydrates `recentUrls` from localStorage when `initBrowserWorkspace` is
+ *     dispatched (typically on workspace mount).
+ *   - After any URL-mutating action (`addRecentUrl`, `updateUrlMetadata`,
+ *     `removeRecentUrl`, `clearRecentUrls`) it writes the current list back.
  *
  * Dependency-light per src/store AGENTS.md: imports only the safe-storage helper
  * and slice actions — no selectors and no store module (state is read through the
@@ -17,7 +19,8 @@ import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 import type { StoreState } from "../types";
 import type { RecentUrl } from "../slices/browser/browser-types";
-import { BROWSER_STORAGE_KEY_PREFIX, MAX_RECENT_URLS } from "../slices/browser/browser-types";
+import { MAX_RECENT_URLS } from "../slices/browser/browser-types";
+import { storageKey, isRecentUrl } from "../slices/browser/browser-storage-utils";
 import {
   hydrateBrowserState,
   addRecentUrl,
@@ -26,11 +29,6 @@ import {
   clearRecentUrls,
   initBrowserWorkspace,
 } from "../slices/browser/browser-slice";
-
-/** localStorage key for a workspace's recent URLs: `browser-recent-${workspaceId}` */
-function storageKey(workspaceId: string): string {
-  return `${BROWSER_STORAGE_KEY_PREFIX}${workspaceId}`;
-}
 
 /** Actions whose reducer can change `recentUrls` and therefore need a write-back. */
 const PERSIST_ACTION_TYPES = new Set<string>([
@@ -47,18 +45,6 @@ function loadStoredRecentUrls(workspaceId: string): RecentUrl[] {
   return stored
     .filter((item): item is RecentUrl => isRecentUrl(item))
     .slice(0, MAX_RECENT_URLS);
-}
-
-/** Type guard for `RecentUrl` (runtime validation of localStorage payloads). */
-function isRecentUrl(value: unknown): value is RecentUrl {
-  if (!value || typeof value !== "object") return false;
-  const obj = value as Record<string, unknown>;
-  return (
-    typeof obj.url === "string" &&
-    typeof obj.lastVisited === "string" &&
-    (obj.title === undefined || typeof obj.title === "string") &&
-    (obj.favicon === undefined || typeof obj.favicon === "string")
-  );
 }
 
 /** Persist recent URLs to localStorage for a workspace. */
