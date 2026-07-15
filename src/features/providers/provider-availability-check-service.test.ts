@@ -11,25 +11,6 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Hoist the captured backend status listener AND install the spy before module imports.
-const { capturedBackendStatusListener } = vi.hoisted(() => {
-  const capturedBackendStatusListener = { current: null as ((payload: any) => void) | null };
-
-  // Install the spy on window.electronAPI.on BEFORE any modules import.
-  // test-setup.ts has already set up the base electronAPI mock, so we can enhance it.
-  if (typeof window !== "undefined" && (window as any).electronAPI) {
-    const originalOn = (window as any).electronAPI.on;
-    (window as any).electronAPI.on = vi.fn((channel: string, handler: (payload: any) => void) => {
-      if (channel === "backend:status") {
-        capturedBackendStatusListener.current = handler;
-      }
-      return originalOn(channel, handler);
-    });
-  }
-
-  return { capturedBackendStatusListener };
-});
-
 // Fake the live backend transport so unrelated boot middlewares (settings
 // hydration, daemon events bridge) resolve quietly against a stub.
 vi.mock("$lib/client/live/backend-transport", () => ({
@@ -38,6 +19,13 @@ vi.mock("$lib/client/live/backend-transport", () => ({
   backendUnsubscribe: () => Promise.resolve(),
   onBackendNotification: () => () => {},
   onBackendReconnected: () => () => {}, // Unused now but kept for compatibility
+}));
+
+// Mock electron-bridge: use the window.electronAPI set up by test-setup.ts,
+// and provide a vi.fn mock for invoke so tests can spy on it.
+vi.mock("$lib/electron-bridge", () => ({
+  electronAPI: () => (window as any).electronAPI,
+  invoke: vi.fn(),
 }));
 
 import { invoke } from "$lib/electron-bridge";
@@ -259,8 +247,10 @@ describe("provider-availability-check-service", () => {
   it("backend connected event triggers bulk re-check and flips state from unavailable to available", async () => {
     // The middleware factory runs when appStore.init() is called in beforeAll, which
     // should register a BACKEND.STATUS listener via electronAPI().on().
-    expect(capturedBackendStatusListener.current).toBeTruthy();
-    expect(typeof capturedBackendStatusListener.current).toBe("function");
+    const backendStatusHandlers = (window as any).electronAPI._getRegisteredHandlers("backend:status");
+    expect(backendStatusHandlers.length).toBeGreaterThan(0);
+    const backendStatusListener = backendStatusHandlers[0];
+    expect(typeof backendStatusListener).toBe("function");
 
     // Clear the spy to measure only reconnect-triggered calls.
     checkSingleSpy.mockClear();
@@ -283,7 +273,7 @@ describe("provider-availability-check-service", () => {
     // This could be either initial connect (no reconnected flag) or reconnect
     // (reconnected: true). Both should trigger a bulk re-check.
     // Test the initial-connect case (reconnected undefined) to prove the startup race fix.
-    capturedBackendStatusListener.current!({ status: "connected" });
+    backendStatusListener({ status: "connected" });
 
     // Flush several rounds to let the async bulk check settle.
     await flush();

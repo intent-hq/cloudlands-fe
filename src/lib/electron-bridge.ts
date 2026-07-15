@@ -102,6 +102,18 @@ export function isElectron(): boolean {
 }
 
 /**
+ * Get the Electron IPC API for direct event listener registration.
+ * Middleware that needs to subscribe to IPC events (e.g., BACKEND.STATUS)
+ * can call electronAPI().on(...) directly.
+ */
+export function electronAPI() {
+  if (typeof window === 'undefined' || !(window as any).electronAPI) {
+    throw new Error('electronAPI is not available (not running in Electron environment)');
+  }
+  return (window as any).electronAPI;
+}
+
+/**
  * Invoke an IPC method.
  *
  * Routed through the mock IPC router (via the generated client) rather than the

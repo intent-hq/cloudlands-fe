@@ -29,11 +29,13 @@
  * the logger (no selectors).
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import { invoke } from "$lib/electron-bridge";
+import { electronAPI, invoke } from "$lib/electron-bridge";
 import { createLogger } from "$lib/utils/client-logger";
-import { onBackendReconnected } from "$lib/client/live/backend-transport";
-import { PROVIDERS_CHANNELS } from "$shared/ipc/channels";
+import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/config/provider-config";
+
+const PROVIDERS_CHANNELS = IPC_CHANNELS.PROVIDERS;
+const BACKEND_CHANNELS = IPC_CHANNELS.BACKEND;
 import { clearProviderAvailabilityCache } from "$features/providers/provider-availability.client";
 import { store as appStore } from "$store/renderer/store";
 import {
@@ -103,19 +105,25 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
     return inFlight;
   };
 
-  // On backend reconnect (after a prior drop), re-run the bulk availability check
-  // even if hasCheckedOnce is true. The daemon may have restarted; re-probing
-  // lets provider cards flip from unavailable → available without a reload.
-  // NOTE: onBackendReconnected only fires when status payload includes { reconnected: true },
-  // which occurs after an earlier successful connection was dropped and then restored.
-  // It does NOT fire on the initial first connect after startup, so the startup race
-  // is still covered by the first-mount ensureProvidersChecked trigger.
-  // The disposer is not captured because this middleware is created once during store init
-  // and persists for the app lifetime; there's no teardown hook. In HMR/dev scenarios where
-  // the module reloads, duplicate listeners could accumulate, but that's a dev-only issue.
-  void onBackendReconnected(() => {
-    logger.info("Backend reconnected — re-running provider availability bulk check");
-    void runBulkCheck();
+  // On backend connect/reconnect, re-run the bulk availability check even if
+  // hasCheckedOnce is true. Listen to BACKEND.STATUS directly to catch BOTH:
+  //   1. Initial connect (startup): json-rpc-client.ts line 261 → setStatus('connected')
+  //      → backend.ipc.ts line 64 emits { status: 'connected' } (no reconnected flag).
+  //   2. Reconnect (drop recovery): same path, plus json-rpc-client.ts line 271 adds
+  //      { reconnected: true }.
+  // This fixes the startup race where probes fail before intentd.sock exists; cards
+  // can now flip from unavailable → available when the daemon comes online without
+  // a reload.
+  // The disposer is not captured because this middleware is created once during store
+  // init and persists for the app lifetime; there's no teardown hook. In HMR/dev
+  // scenarios duplicate listeners could accumulate, but that's dev-only.
+  electronAPI().on(BACKEND_CHANNELS.STATUS, (payload: { status: string; reconnected?: boolean }) => {
+    if (payload.status === "connected") {
+      logger.info("Backend connected — re-running provider availability bulk check", {
+        isReconnect: payload.reconnected === true,
+      });
+      void runBulkCheck();
+    }
   });
 
   return () => (next) => (action) => {
