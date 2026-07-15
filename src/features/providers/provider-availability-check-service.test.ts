@@ -280,9 +280,10 @@ describe("provider-availability-check-service", () => {
     });
 
     // Simulate backend connected event by calling the captured listener.
-    // This could be either initial connect (reconnected: false/undefined) or reconnect
+    // This could be either initial connect (no reconnected flag) or reconnect
     // (reconnected: true). Both should trigger a bulk re-check.
-    capturedBackendStatusListener.current!({ status: "connected", reconnected: true });
+    // Test the initial-connect case (reconnected undefined) to prove the startup race fix.
+    capturedBackendStatusListener.current!({ status: "connected" });
 
     // Flush several rounds to let the async bulk check settle.
     await flush();
