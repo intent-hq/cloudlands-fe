@@ -29,7 +29,7 @@
  * the logger (no selectors).
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import { electronAPI, invoke } from "$lib/electron-bridge";
+import { invoke } from "$lib/electron-bridge";
 import { createLogger } from "$lib/utils/client-logger";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/config/provider-config";
@@ -114,17 +114,23 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
   // This fixes the startup race where probes fail before intentd.sock exists; cards
   // can now flip from unavailable → available when the daemon comes online without
   // a reload.
-  // The disposer is not captured because this middleware is created once during store
-  // init and persists for the app lifetime; there's no teardown hook. In HMR/dev
-  // scenarios duplicate listeners could accumulate, but that's dev-only.
-  electronAPI().on(BACKEND_CHANNELS.STATUS, (payload: { status: string; reconnected?: boolean }) => {
-    if (payload.status === "connected") {
-      logger.info("Backend connected — re-running provider availability bulk check", {
-        isReconnect: payload.reconnected === true,
-      });
-      void runBulkCheck();
-    }
-  });
+  // The listener is registered once during middleware creation (store init) and
+  // persists for the app lifetime. No teardown hook exists, so the disposer is
+  // intentionally not captured. In HMR/dev scenarios duplicate listeners could
+  // accumulate, but that's dev-only.
+  if (typeof window !== "undefined" && (window as any).electronAPI) {
+    (window as any).electronAPI.on(
+      BACKEND_CHANNELS.STATUS,
+      (payload: { status: string; reconnected?: boolean }) => {
+        if (payload.status === "connected") {
+          logger.info("Backend connected — re-running provider availability bulk check", {
+            isReconnect: payload.reconnected === true,
+          });
+          void runBulkCheck();
+        }
+      },
+    );
+  }
 
   return () => (next) => (action) => {
     const result = next(action);

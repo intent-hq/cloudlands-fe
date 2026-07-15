@@ -55,6 +55,10 @@ async function handleInitAutoUpdate(): Promise<void> {
     return;
   }
 
+  // Set the guard immediately after checking to prevent concurrent calls from
+  // double-registering listeners during the await below.
+  listenersRegistered = true;
+
   try {
     // Register IPC listeners — map each event to its corresponding slice action
     autoUpdateClient.onShowToast(() => {
@@ -82,9 +86,10 @@ async function handleInitAutoUpdate(): Promise<void> {
     const initialState = await autoUpdateClient.getState();
     appStore.dispatch(setUpdateState(initialState));
 
-    listenersRegistered = true;
     logger.debug("Auto-update listeners registered and initial state fetched");
   } catch (error) {
+    // Reset flag on error so a retry can attempt registration again
+    listenersRegistered = false;
     logger.error("Failed to initialize auto-update", error);
     // Degrade gracefully — the component will still dispatch actions but events
     // won't flow until the next init attempt (e.g. on reload).
@@ -107,4 +112,12 @@ export function createAutoUpdateMutationMiddleware(): StoreMiddleware {
     }
     return result;
   };
+}
+
+/**
+ * Test-only reset function to clear the `listenersRegistered` flag between tests.
+ * @internal
+ */
+export function __resetAutoUpdateMiddlewareForTests(): void {
+  listenersRegistered = false;
 }

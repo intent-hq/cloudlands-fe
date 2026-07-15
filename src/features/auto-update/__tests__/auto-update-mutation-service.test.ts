@@ -23,7 +23,7 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 import { AUTO_UPDATE_CHANNELS } from "$features/auto-update/types";
 import { store as appStore } from "$store/renderer/store";
 import { initAutoUpdate } from "$store/renderer/slices/auto-update/auto-update-slice";
-import type { UpdateState, UpdateProgress } from "$features/auto-update/types";
+import type { UpdateState } from "$features/auto-update/types";
 import {
   registerMockIpcHandler,
   emitMockIpcEvent,
@@ -31,6 +31,7 @@ import {
   addMockIpcListener,
   mockIpcListenerCount,
 } from "$shared/ipc-mock-router";
+import { __resetAutoUpdateMiddlewareForTests } from "$features/auto-update/auto-update-mutation-service";
 
 const flush = async () => {
   for (let i = 0; i < 5; i++) {
@@ -44,9 +45,8 @@ beforeAll(() => {
   (window as any).electronAPI = {
     ...((window as any).electronAPI || {}),
     on: vi.fn((channel: string, handler: (data: any) => void) => {
-      const dispose = addMockIpcListener(channel, handler);
+      addMockIpcListener(channel, handler);
       const id = ++listenerIdCounter;
-      // Store the disposer for offById
       return id;
     }),
     offById: vi.fn(),
@@ -60,6 +60,9 @@ describe("auto-update-mutation-service", () => {
 
   beforeEach(async () => {
     await flush();
+    // Reset the middleware's idempotent guard so each test can re-register listeners
+    __resetAutoUpdateMiddlewareForTests();
+    // Reset the mock IPC router to clear all listeners
     resetMockIpcRouter();
   });
 
