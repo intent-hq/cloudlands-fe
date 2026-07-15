@@ -132,6 +132,7 @@ import {
   applyTaskStatusChanged,
   loadWorkspaceTasksRequested,
 } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
+import { refreshRequested } from '$store/renderer/slices/changes/changes-slice';
 import {
   bulkUpdateWorkspaceEntities,
   updateWorkspaceEntity,
@@ -222,6 +223,15 @@ let cleanup: (() => void) | null = null;
  * `subscriptionId` are always accepted regardless of this value.
  */
 let ownSubscriptionId: string | undefined;
+
+/**
+ * Debounce timers for changes-slice refresh per workspace. `changes:tracked`
+ * can fire very frequently during agent activity (matching the note in
+ * WorkspaceProgressCard.svelte line ~213), so we debounce ~1s per workspace to
+ * avoid redundant refreshRequested dispatches.
+ */
+const changesRefreshTimersByWorkspace = new Map<string, ReturnType<typeof setTimeout>>();
+const CHANGES_REFRESH_DEBOUNCE_MS = 1000;
 
 function workspaceIdOf(event: WorkspaceEvent | undefined): string | null {
   if (!event || typeof event !== 'object') return null;
@@ -1204,6 +1214,25 @@ function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
   }
 }
 
+/**
+ * Debounced changes-slice refresh for git/changes events (`git:commit`,
+ * `git:pull`, `changes:tracked`). These events can fire very frequently during
+ * agent activity, so we debounce ~1s per workspace to avoid redundant
+ * refreshRequested dispatches. Mirrors the precedent in
+ * WorkspaceProgressCard.svelte line ~213.
+ */
+function debouncedChangesRefresh(workspaceId: string): void {
+  const existing = changesRefreshTimersByWorkspace.get(workspaceId);
+  if (existing) {
+    clearTimeout(existing);
+  }
+  const timer = setTimeout(() => {
+    appStore.dispatch(refreshRequested(workspaceId));
+    changesRefreshTimersByWorkspace.delete(workspaceId);
+  }, CHANGES_REFRESH_DEBOUNCE_MS);
+  changesRefreshTimersByWorkspace.set(workspaceId, timer);
+}
+
 function handleNotification(method: string, params: unknown): void {
   if (method !== 'events.event') return;
   // Fan-out scope gate (see file header): drop notifications delivered through
@@ -1322,6 +1351,16 @@ function handleNotification(method: string, params: unknown): void {
   if (type === 'pr:linked' || type === 'pr:updated' || type === 'pr:unlinked') {
     handlePrEvent(event, workspaceId, type);
     return;
+  }
+
+  // Git/changes events (`git:commit`, `git:pull`, `changes:tracked`) should
+  // refresh the changes slice so daemon-originated commits appear live in the
+  // sidebar Changes panel. Debounce per workspace (~1s) because
+  // `changes:tracked` can fire very frequently during agent activity.
+  if (type === 'git:commit' || type === 'git:pull' || type === 'changes:tracked') {
+    debouncedChangesRefresh(workspaceId);
+    // Fall through to the relayLegacyIpcEvent + eventReceived dispatches below
+    // so the legacy mock-IPC listeners and activity timeline still work.
   }
 
   // Live stream family — accumulate per-agent and grow the in-flight assistant
@@ -1596,4 +1635,9 @@ export function __resetDaemonEventsBridgeForTests(): void {
   installed = false;
   ownSubscriptionId = undefined;
   streamsByAgent.clear();
+  // Clear all pending debounce timers so tests start from a clean slate
+  for (const timer of changesRefreshTimersByWorkspace.values()) {
+    clearTimeout(timer);
+  }
+  changesRefreshTimersByWorkspace.clear();
 }
