@@ -37,7 +37,6 @@ import { PROVIDERS_CHANNELS } from "$shared/ipc/channels";
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/config/provider-config";
 import { store as appStore } from "$store/renderer/store";
 import {
-  checkAllProvidersComplete,
   checkAllProvidersRequested,
   checkSingleProviderRequested,
   ensureProvidersChecked,

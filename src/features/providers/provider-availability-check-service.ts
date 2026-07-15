@@ -53,9 +53,6 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
   /** Coalesce overlapping bulk checks (focus + visibility can fire together). */
   let inFlight: Promise<void> | null = null;
 
-  /** Cleanup disposer for the reconnect listener (long-lived, but tidy). */
-  let cleanupReconnectListener: (() => void) | null = null;
-
   const runSingleCheck = async (providerId: string): Promise<void> => {
     try {
       const result = await invoke<{
@@ -112,7 +109,8 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
   // lets provider cards flip from unavailable → available without a reload.
   // RESUB-1: backend.ipc emits `{ status: 'connected', reconnected: true }`
   // after every successful reconnect following an earlier drop.
-  cleanupReconnectListener = onBackendReconnected(() => {
+  // Cleanup handler is held by the transport layer; middleware doesn't expose dispose.
+  void onBackendReconnected(() => {
     logger.info("Backend reconnected — re-running provider availability bulk check");
     void runBulkCheck();
   });
