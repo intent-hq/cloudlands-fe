@@ -37,7 +37,6 @@ import { PROVIDERS_CHANNELS } from "$shared/ipc/channels";
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/config/provider-config";
 import { store as appStore } from "$store/renderer/store";
 import {
-  checkAllProvidersRequested,
   checkSingleProviderRequested,
   ensureProvidersChecked,
 } from "$store/renderer/slices/agent-availability/agent-availability-slice";
@@ -246,17 +245,29 @@ describe("provider-availability-check-service", () => {
     expect(appStore.state.agentAvailability.providerLoadingMap.droid).toBe(false);
   });
 
-  // Backend reconnect structural test: Verify the handler is registered.
-  it("backend reconnect listener is registered during middleware init", () => {
-    // The middleware factory runs when appStore.init() is called in beforeAll, which
-    // should call onBackendReconnected() and capture the handler.
+  // Backend reconnect: Verify the handler triggers a fresh bulk check.
+  it("backend reconnect triggers a fresh bulk check even when hasCheckedOnce is true", async () => {
+    // Set up: run an initial bulk check to set hasCheckedOnce = true
+    routeCheckSingle({
+      codex: async () => ({ success: true, providerId: "codex", data: { available: true, authenticated: false } }),
+    });
+
+    appStore.dispatch(ensureProvidersChecked());
+    await flush();
+
+    expect(appStore.state.agentAvailability.hasCheckedOnce).toBe(true);
+    const initialCallCount = checkSingleSpy.mock.calls.length;
+
+    // Clear spy calls to isolate reconnect behavior
+    checkSingleSpy.mockClear();
+
+    // Simulate backend reconnect
     expect(capturedReconnectHandler.current).toBeTruthy();
-    expect(typeof capturedReconnectHandler.current).toBe("function");
-    // Structural verification: the implementation correctly wires up the reconnect listener.
-    // Full functional testing (calling the handler and verifying bulk check) is blocked by
-    // test harness limitations: the middleware's `inFlight` guard is module-scoped and persists
-    // across tests, making it impossible to reliably trigger a fresh bulk check in this test
-    // without affecting other tests. The implementation is verified correct by inspection and
-    // passes when run in isolation (`pnpm vitest run -t "backend reconnect"`).
+    capturedReconnectHandler.current!();
+    await flush();
+
+    // Verify that a fresh bulk check was triggered (all providers checked again)
+    expect(checkSingleSpy.mock.calls.length).toBeGreaterThanOrEqual(ALL_PROVIDER_IDS.length);
+    expect(checkSingleSpy).toHaveBeenCalledWith("codex");
   });
 });

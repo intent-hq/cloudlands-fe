@@ -103,13 +103,15 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
     return inFlight;
   };
 
-  // On backend reconnect (including first connect after startup race), re-run
-  // the bulk availability check even if hasCheckedOnce is true. The daemon may
-  // have restarted or the sidecar socket may have just come up; re-probing
+  // On backend reconnect (after a prior drop), re-run the bulk availability check
+  // even if hasCheckedOnce is true. The daemon may have restarted; re-probing
   // lets provider cards flip from unavailable → available without a reload.
-  // RESUB-1: backend.ipc emits `{ status: 'connected', reconnected: true }`
-  // after every successful reconnect following an earlier drop.
-  // Cleanup handler is held by the transport layer; middleware doesn't expose dispose.
+  // NOTE: onBackendReconnected only fires when status payload includes { reconnected: true },
+  // which occurs after an earlier successful connection was dropped and then restored.
+  // It does NOT fire on the initial first connect after startup, so the startup race
+  // is still covered by the first-mount ensureProvidersChecked trigger.
+  // The disposer is intentionally not captured; middleware lifecycle ties to store init,
+  // and the transport layer manages cleanup when the connection closes.
   void onBackendReconnected(() => {
     logger.info("Backend reconnected — re-running provider availability bulk check");
     void runBulkCheck();
