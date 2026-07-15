@@ -117,6 +117,10 @@
   import '$store/renderer/seeders';
   import { startGitStatusSubscription } from '$features/git/git-status-subscription';
   import { startWorkspaceListSubscription } from '$features/workspace/workspace-list-subscription';
+  import { installInterruptedAgentsService } from '$features/agent/interrupted-agents-service';
+  import InterruptedAgentsModal from '$lib/components/modals/InterruptedAgentsModal.svelte';
+  import type { InterruptedAgent } from '$lib/client/app-client';
+  import { LiveAppClient } from '$lib/client/live/live-app-client';
   const logger = createLogger('+layout');
 
   function initStore(): () => void {
@@ -189,6 +193,10 @@
   const featureCodeDialogOpen = selectFeatureCodeDialogOpen();
   const isPaletteOpen$ = selectIsPaletteOpen();
   const paletteQuery$ = selectPaletteQuery();
+
+  // Interrupted agents modal state
+  let showInterruptedAgentsModal = $state(false);
+  let interruptedAgents = $state<InterruptedAgent[]>([]);
 
   // PERF: Consolidated workspace sync effect - handles both tab syncing and cleanup
   // Merging these effects reduces re-renders when workspaces change
@@ -353,6 +361,13 @@
     // Initialize global cleanup service
     globalCleanupService.initialize();
     appStore.dispatch(initializeGitHubAuth());
+
+    // Initialize interrupted-agents service
+    const appClient = new LiveAppClient();
+    const disposeInterruptedAgents = installInterruptedAgentsService(appClient, (agents) => {
+      interruptedAgents = agents;
+      showInterruptedAgentsModal = true;
+    });
 
     // Initialize release notes store to detect version changes and show release notes
     // We need to fetch the channel directly from main process since the auto-update
@@ -815,8 +830,47 @@
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       cleanupLinkTooltip();
       window.removeEventListener('keydown', handleBrowserNavigation);
+      disposeInterruptedAgents();
     };
   });
+
+  async function handleResumeSelectedAgents(resumeIds: string[], abandonIds: string[]) {
+    const appClient = new LiveAppClient();
+    try {
+      const result = await appClient.agents.resolveInterrupted({ resume: resumeIds, abandon: abandonIds });
+      logger.info('Resolved interrupted agents', { result });
+      // Import toast lazily
+      import('svelte-sonner').then(({ toast }) => {
+        if (result.resumed.length > 0) {
+          toast.success(`Resumed ${result.resumed.length} agent${result.resumed.length !== 1 ? 's' : ''}`);
+        }
+        if (result.failed.length > 0) {
+          toast.error(`Failed to resolve ${result.failed.length} agent${result.failed.length !== 1 ? 's' : ''}`);
+        }
+      }).catch(() => {});
+    } catch (error) {
+      logger.error('Failed to resolve interrupted agents', { error });
+      import('svelte-sonner').then(({ toast }) => {
+        toast.error('Failed to resolve interrupted agents');
+      }).catch(() => {});
+    }
+  }
+
+  async function handleAbandonAllAgents(abandonIds: string[]) {
+    const appClient = new LiveAppClient();
+    try {
+      const result = await appClient.agents.resolveInterrupted({ abandon: abandonIds });
+      logger.info('Abandoned all interrupted agents', { result });
+      import('svelte-sonner').then(({ toast }) => {
+        toast.info(`Abandoned ${result.abandoned.length} agent${result.abandoned.length !== 1 ? 's' : ''}`);
+      }).catch(() => {});
+    } catch (error) {
+      logger.error('Failed to abandon interrupted agents', { error });
+      import('svelte-sonner').then(({ toast }) => {
+        toast.error('Failed to abandon interrupted agents');
+      }).catch(() => {});
+    }
+  }
 
   function handleGitHubAuthSuccess() {
     const pendingAuth = selectPendingGitHubAuth.select(appStore.state);
@@ -1114,6 +1168,17 @@
       if ($featureCodeDialogOpen) {
         appStore.dispatch(toggleFeatureCodeDialog());
       }
+    }}
+  />
+
+  <!-- Interrupted Agents Modal (shown on connect/reconnect if agents were interrupted) -->
+  <InterruptedAgentsModal
+    bind:open={showInterruptedAgentsModal}
+    agents={interruptedAgents}
+    onResumeSelected={handleResumeSelectedAgents}
+    onAbandonAll={handleAbandonAllAgents}
+    onClose={() => {
+      showInterruptedAgentsModal = false;
     }}
   />
 

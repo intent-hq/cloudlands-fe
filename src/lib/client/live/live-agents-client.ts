@@ -265,6 +265,65 @@ export class LiveAgentsClient implements AgentsClient {
     }
   }
 
+  async listInterrupted(): Promise<import("../app-client").InterruptedAgent[]> {
+    // `agent.listInterrupted` (wire contract in spec) returns agents interrupted by
+    // daemon restart. Older daemons lacking this method throw -32601 (method not
+    // found) — we silently return an empty array so the modal doesn't appear.
+    try {
+      const result = await backendRequest<{ agents?: unknown[] } | undefined>(
+        "agent.listInterrupted",
+        {},
+      );
+      const agents = Array.isArray(result?.agents) ? result.agents : [];
+      return agents.map((raw) => {
+        const a = raw as Record<string, unknown>;
+        return {
+          agentId: String(a.agentId ?? ""),
+          workspaceId: String(a.workspaceId ?? ""),
+          workspaceName: String(a.workspaceName ?? ""),
+          agentName: String(a.agentName ?? ""),
+          prevStatus: String(a.prevStatus ?? ""),
+          interruptedAt: String(a.interruptedAt ?? ""),
+        };
+      });
+    } catch (error) {
+      // -32601 = method not found (older daemon). Fail silently per spec.
+      if (error instanceof Error && error.message.includes("-32601")) {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  async resolveInterrupted(params: {
+    resume?: string[];
+    abandon?: string[];
+  }): Promise<import("../app-client").ResolveInterruptedResult> {
+    // `agent.resolveInterrupted` resumes selected agents, abandons the rest. The
+    // daemon is idempotent — calling with already-resolved IDs is safe.
+    try {
+      const result = await backendRequest<
+        { resumed?: string[]; abandoned?: string[]; failed?: unknown[] } | undefined
+      >("agent.resolveInterrupted", params);
+      return {
+        resumed: Array.isArray(result?.resumed) ? result.resumed : [],
+        abandoned: Array.isArray(result?.abandoned) ? result.abandoned : [],
+        failed: Array.isArray(result?.failed)
+          ? result.failed.map((f) => {
+              const obj = f as Record<string, unknown>;
+              return {
+                agentId: String(obj.agentId ?? ""),
+                error: String(obj.error ?? ""),
+              };
+            })
+          : [],
+      };
+    } catch (error) {
+      // Transport/RPC errors propagate so callers can surface them.
+      throw error;
+    }
+  }
+
   /**
    * Resolve the workspace this agent belongs to. Cached on every `normalizeAgent`
    * call (list/get/subscribe paths); on miss we lazily refetch via `agent.get`,
