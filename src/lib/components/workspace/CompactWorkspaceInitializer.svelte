@@ -108,6 +108,8 @@
 } from '$shared/config/provider-config';
   import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
   import { store as appStore } from '$store/renderer/store';
+  import type { ContextItem } from '$lib/components/chat/input/context-api';
+  import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
 
   const availableModels$ = selectAvailableModels();
   const selectedModel$ = selectSelectedModel();
@@ -414,6 +416,8 @@
   let remoteSetup: any = $state(savedState?.remoteSetup ?? null);
   // Restore prompt from sessionStorage so users don't lose drafts on navigation
   let initialPrompt = $state(sessionStorage.getItem(`${FORM_STATE_KEY}-prompt`) ?? '');
+  // Context items for image attachments (images become attachment items, not inline nodes)
+  let contextItems = $state<ContextItem[]>([]);
   // Use saved state first, then fall back to last submitted values, then defaults
   // NOTE: selectedSpecialist can be null (meaning "General / no specialist").
   // We check !== undefined instead of using ?? because null is a valid value
@@ -1491,9 +1495,9 @@
         })),
       });
 
-      // Extract inline images from the editor
+      // Extract inline images from the editor (legacy fallback)
       const inlineImages = richTextarea?.getInlineImages() ?? [];
-      logger.info('[CompactWorkspaceInitializer] Extracted inline images', {
+      logger.info('[CompactWorkspaceInitializer] Extracted inline images (fallback)', {
         imageCount: inlineImages.length,
       });
 
@@ -1641,9 +1645,23 @@
         }
       }
 
-      // Convert inline images to imageBlocks (separate from contextReferences)
-      // This ensures images are passed properly and don't trigger fallback text
+      // Extract imageBlocks from ALL context items with imageData/imageMimeType
+      // (includes attachment items created by processImageFiles)
+      // Also include inline images as fallback for legacy support
       const imageBlocks: Array<{ type: 'image'; data: string; mimeType: string }> = [];
+
+      // First, add images from attachment context items
+      for (const item of contextItems) {
+        if (item.imageData && item.imageMimeType) {
+          imageBlocks.push({
+            type: 'image',
+            data: item.imageData,
+            mimeType: item.imageMimeType,
+          });
+        }
+      }
+
+      // Then, add inline images as fallback (for any that were manually inserted)
       for (let i = 0; i < inlineImages.length; i++) {
         const img = inlineImages[i];
         // Parse data URL to extract mime type and base64 data
@@ -1943,6 +1961,7 @@
     }
     remoteSetup = null;
     initialPrompt = '';
+    contextItems = []; // Clear attachment items
     richTextarea?.clear(); // Clear the TipTap editor content
     // Immediately clear sessionStorage to prevent prompt from persisting across navigation
     // (the $effect may not run before navigation completes)
@@ -2120,12 +2139,19 @@
     }
   }
 
-  // Shared file processing logic - images are inserted inline, other files as mentions
+  // Shared file processing logic - images become attachment items, other files as mentions
   async function processImageFiles(files: File[]) {
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-    const insertedImageCount = { value: 0 };
+    const addedImageCount = { value: 0 };
     const insertedFileCount = { value: 0 };
     const oversizedFiles: string[] = [];
+
+    // Helper to format file sizes - hoisted outside loop
+    function formatFileSize(bytes: number): string {
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
 
     for (const file of files) {
       if (file.size > MAX_FILE_SIZE) {
@@ -2133,15 +2159,33 @@
         continue;
       }
 
-      // Images are inserted inline
+      // Images become attachment context items (not inline nodes)
       if (file.type.startsWith('image/')) {
         try {
           const dataUrl = await fileToDataUrl(file);
-          richTextarea?.insertImage(dataUrl, file.name);
-          insertedImageCount.value++;
+          // Parse data URL to extract mime type and base64 data
+          const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            const [, mimeType, base64Data] = match;
+            const fileName = file.name || `Image ${contextItems.length + 1}`;
+
+            const contextItem: ContextItem = {
+              id: `image-${Date.now()}-${contextItems.length}`,
+              type: 'file',
+              label: fileName,
+              description: `${mimeType} • ${formatFileSize(file.size)}`,
+              path: fileName,
+              file: file,
+              imageData: base64Data,
+              imageMimeType: mimeType,
+            };
+
+            contextItems = [...contextItems, contextItem];
+            addedImageCount.value++;
+          }
         } catch (err) {
-          logger.error('Failed to insert image', { fileName: file.name, error: err });
-          toast.error(`Failed to insert image: ${file.name}`);
+          logger.error('Failed to process image', { fileName: file.name, error: err });
+          toast.error(`Failed to process image: ${file.name}`);
         }
       } else {
         // Non-image files are inserted as mentions
@@ -2167,8 +2211,8 @@
       }
     }
 
-    if (insertedImageCount.value > 0) {
-      logger.debug(`Inserted ${insertedImageCount.value} image(s) inline`);
+    if (addedImageCount.value > 0) {
+      logger.debug(`Added ${addedImageCount.value} image(s) as attachments`);
     }
 
     if (insertedFileCount.value > 0) {
@@ -2187,6 +2231,11 @@
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
+  }
+
+  // Remove a context item (for attachment removal)
+  function removeContextItem(id: string) {
+    contextItems = contextItems.filter((item) => item.id !== id);
   }
 
   // Track the last PR identifier we attempted to fetch branch info for
@@ -2429,6 +2478,25 @@
         </div>
       {/if}
     </div>
+
+    <!-- Attachment previews (images only, Slack-style thumbnails) -->
+    {#if contextItems.some((item) => item.type === 'file' && ((item.imageData && item.imageMimeType) || (item.file && item.file.type?.startsWith('image/'))))}
+      <div class="px-2.5 pt-2 pb-1 flex flex-wrap gap-2">
+        {#each contextItems.filter((item) => item.type === 'file' && ((item.imageData && item.imageMimeType) || (item.file && item.file.type?.startsWith('image/')))) as item (item.id)}
+          <AttachmentPreview
+            id={item.id}
+            name={item.label}
+            type={item.file?.type || item.imageMimeType || ''}
+            size={item.file?.size}
+            file={item.file}
+            imageData={item.imageData}
+            imageMimeType={item.imageMimeType}
+            onRemove={removeContextItem}
+            variant="thumbnail"
+          />
+        {/each}
+      </div>
+    {/if}
 
     <!-- Linear issue row (inside border, top-left) -->
     {#if isExpanded}

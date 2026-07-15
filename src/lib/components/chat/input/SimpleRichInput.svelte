@@ -161,6 +161,27 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   // Derived state: whether there's content to send (text, context items, or inline images)
   let canSend = $derived(value.trim() || contextItems.length > 0 || hasInlineImages);
 
+  // Separate image attachments from other context items for Slack-style layout
+  // An item is an image attachment only if we can actually render a thumbnail:
+  // - Has both imageData AND imageMimeType (base64 data URL), OR
+  // - Has a File object with an image/* mime type
+  const imageAttachments = $derived(
+    contextItems.filter(
+      (item) =>
+        item.type === 'file' &&
+        ((item.imageData && item.imageMimeType) || (item.file && item.file.type?.startsWith('image/')))
+    )
+  );
+  const nonImageItems = $derived(
+    contextItems.filter(
+      (item) =>
+        !(
+          item.type === 'file' &&
+          ((item.imageData && item.imageMimeType) || (item.file && item.file.type?.startsWith('image/')))
+        )
+    )
+  );
+
   // The Stop affordance mirrors the Thinking indicator: visible for the entire
   // turn the agent is responding, not just while text chunks are streaming.
   // The broader "coordinator waiting on delegated children" state (PROTOCOL §5.5
@@ -673,7 +694,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
    */
   async function processImageFiles(files: File[]) {
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-    const insertedCount = { value: 0 };
+    const addedCount = { value: 0 };
     const oversizedFiles: string[] = [];
 
     for (const file of files) {
@@ -682,26 +703,47 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         continue;
       }
 
-      // Only process image files inline
+      // Non-image files go to context items via the non-image path
       if (!file.type.startsWith('image/')) {
-        // Non-image files still go to context items
         await processNonImageFile(file);
         continue;
       }
 
       try {
         const dataUrl = await fileToDataUrl(file);
-        // Insert image inline in TipTap editor
-        tiptap?.insertImage(dataUrl, file.name);
-        insertedCount.value++;
+        // Extract base64 data from data URL (remove "data:image/...;base64," prefix)
+        const base64Match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!base64Match) {
+          throw new Error('Invalid data URL format');
+        }
+        const [, mimeType, base64Data] = base64Match;
+
+        // Add image to context items (attachment flow) instead of inserting inline
+        const timestamp = Date.now();
+        const fileName = file.name || `image-${timestamp}.${mimeType.split('/')[1] || 'png'}`;
+        const contextItem: ContextItem = {
+          id: `file-upload-${timestamp}-${fileName}`,
+          type: 'file',
+          label: fileName,
+          description: `${mimeType} • ${formatFileSize(file.size)}`,
+          path: fileName,
+          file: file,
+          imageData: base64Data,
+          imageMimeType: mimeType,
+        };
+
+        contextItems = [...contextItems, contextItem];
+        oncontextAdd?.(contextItem);
+        addedCount.value++;
       } catch (error) {
-        logger.error('Failed to insert image', { fileName: file.name, error });
-        toast.error(`Failed to insert image: ${file.name}`);
+        logger.error('Failed to add image to context', { fileName: file.name, error });
+        toast.error(`Failed to add image: ${file.name}`);
       }
     }
 
-    if (insertedCount.value > 0) {
-      logger.debug(`Inserted ${insertedCount.value} image(s) inline`);
+    if (addedCount.value > 0) {
+      logger.debug(`Added ${addedCount.value} image(s) to context`);
+      toast.success(`Added ${addedCount.value} image(s) to context`);
     }
 
     if (oversizedFiles.length > 0) {
@@ -894,13 +936,13 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     </div>
   </button>
 
-  <!-- Context items (uploaded files, attachments) - shown above editor when present -->
-  {#if contextItems && contextItems.length > 0}
+  <!-- Non-image context items and selections - shown above editor when present -->
+  {#if nonImageItems.length > 0}
     <div
       class="flex items-center gap-1 px-1 py-0.5 min-w-0 overflow-x-auto scrollbar-none"
       style="-ms-overflow-style: none; scrollbar-width: none;"
     >
-      {#each contextItems as item (item.id)}
+      {#each nonImageItems as item (item.id)}
         {#if item.type === 'selection' && item.content}
           <TooltipRich side="top" align="start" maxWidth="24rem" delayDuration={300}>
             {#snippet children()}
@@ -920,7 +962,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             {/snippet}
           </TooltipRich>
         {:else if item.type === 'file' && (item.file || item.imageData)}
-          <!-- Uploaded/pasted file with preview or base64 image -->
+          <!-- Non-image file with chip preview -->
           <AttachmentPreview
             id={item.id}
             name={item.label}
@@ -930,6 +972,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
             imageData={item.imageData}
             imageMimeType={item.imageMimeType}
             onRemove={removeContextItem}
+            variant="chip"
           />
         {:else}
           <!-- Other context items (notes, folders, etc.) -->
@@ -993,6 +1036,28 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       </div>
     {/if}
   </div>
+
+  <!-- Image attachments - shown below editor in Slack-style thumbnail row -->
+  {#if imageAttachments.length > 0}
+    <div
+      class="flex items-center gap-2 px-1 py-1 min-w-0 overflow-x-auto scrollbar-none"
+      style="-ms-overflow-style: none; scrollbar-width: none;"
+    >
+      {#each imageAttachments as item (item.id)}
+        <AttachmentPreview
+          id={item.id}
+          name={item.label}
+          type={item.file?.type || item.imageMimeType || ''}
+          size={item.file?.size}
+          file={item.file}
+          imageData={item.imageData}
+          imageMimeType={item.imageMimeType}
+          onRemove={removeContextItem}
+          variant="thumbnail"
+        />
+      {/each}
+    </div>
+  {/if}
 
   <!-- Hidden file input - accepts any file type -->
   <input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileChange} />
