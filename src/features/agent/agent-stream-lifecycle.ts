@@ -689,6 +689,12 @@ export async function sendMessage(
      * dispatched here merges with it via appMessageId dedup.
      */
     userAppMessageId?: string;
+    /**
+     * Message priority for interrupt semantics. When "interrupt", preempts an
+     * in-flight turn (PROTOCOL.md §5.5: cancels the turn keep-alive and delivers
+     * immediately instead of queueing). Used by force-send (⌘Enter).
+     */
+    priority?: 'interrupt';
   } = {},
 ): Promise<void> {
   // Wrap entire sendMessage operation with performance tracking
@@ -1446,6 +1452,8 @@ export async function sendMessage(
                       assistantMessageId,
                       userAppMessageId,
                       assistantAppMessageId,
+                      // Message priority for force-send interrupt (PROTOCOL.md §5.5)
+                      priority: options.priority,
                     });
 
                     if (isInFlightPromptDedupResponse(response)) {
