@@ -719,9 +719,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         const [, mimeType, base64Data] = base64Match;
 
         // Add image to context items (attachment flow) instead of inserting inline
-        const fileName = file.name || `image-${Date.now()}.${mimeType.split('/')[1] || 'png'}`;
+        const timestamp = Date.now();
+        const fileName = file.name || `image-${timestamp}.${mimeType.split('/')[1] || 'png'}`;
         const contextItem: ContextItem = {
-          id: `file-upload-${Date.now()}-${fileName}`,
+          id: `file-upload-${timestamp}-${fileName}`,
           type: 'file',
           label: fileName,
           description: `${mimeType} • ${formatFileSize(file.size)}`,

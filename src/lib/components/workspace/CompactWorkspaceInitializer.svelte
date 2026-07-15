@@ -2480,9 +2480,9 @@
     </div>
 
     <!-- Attachment previews (images only, Slack-style thumbnails) -->
-    {#if contextItems.some((item) => item.type === 'file' && (item.imageData || item.imageMimeType || item.file?.type?.startsWith('image/')))}
+    {#if contextItems.some((item) => item.type === 'file' && ((item.imageData && item.imageMimeType) || (item.file && item.file.type?.startsWith('image/'))))}
       <div class="px-2.5 pt-2 pb-1 flex flex-wrap gap-2">
-        {#each contextItems.filter((item) => item.type === 'file' && (item.imageData || item.imageMimeType || item.file?.type?.startsWith('image/'))) as item (item.id)}
+        {#each contextItems.filter((item) => item.type === 'file' && ((item.imageData && item.imageMimeType) || (item.file && item.file.type?.startsWith('image/')))) as item (item.id)}
           <AttachmentPreview
             id={item.id}
             name={item.label}
