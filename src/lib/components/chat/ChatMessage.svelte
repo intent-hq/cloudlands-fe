@@ -1058,9 +1058,9 @@
                     }
                   }}
                   onkeydown={(e) => {
-                    if ((e.key === 'Enter' || e.key === ' ') && isImageBlock(imageBlock)) {
+                    if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      openImageLightbox(imageBlock, e.currentTarget, i);
+                      e.currentTarget.click();
                     }
                   }}
                   aria-label="View attached image {i + 1} of {imageBlocks.length} full size"
