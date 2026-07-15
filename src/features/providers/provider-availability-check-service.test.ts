@@ -11,25 +11,33 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Hoist the captured-handler state so it's accessible before vi.mock() runs.
-const { capturedReconnectHandler } = vi.hoisted(() => ({
-  capturedReconnectHandler: { current: null as (() => void) | null },
-}));
+// Hoist the captured backend status listener AND install the spy before module imports.
+const { capturedBackendStatusListener } = vi.hoisted(() => {
+  const capturedBackendStatusListener = { current: null as ((payload: any) => void) | null };
+
+  // Install the spy on window.electronAPI.on BEFORE any modules import.
+  // test-setup.ts has already set up the base electronAPI mock, so we can enhance it.
+  if (typeof window !== "undefined" && (window as any).electronAPI) {
+    const originalOn = (window as any).electronAPI.on;
+    (window as any).electronAPI.on = vi.fn((channel: string, handler: (payload: any) => void) => {
+      if (channel === "backend:status") {
+        capturedBackendStatusListener.current = handler;
+      }
+      return originalOn(channel, handler);
+    });
+  }
+
+  return { capturedBackendStatusListener };
+});
 
 // Fake the live backend transport so unrelated boot middlewares (settings
-// hydration, daemon events bridge) resolve quietly against a stub. Capture the
-// onBackendReconnected handler so tests can simulate reconnect events.
+// hydration, daemon events bridge) resolve quietly against a stub.
 vi.mock("$lib/client/live/backend-transport", () => ({
   backendRequest: () => Promise.resolve(undefined),
   backendSubscribe: () => Promise.resolve({ subscriptionId: "sub-avail-1" }),
   backendUnsubscribe: () => Promise.resolve(),
   onBackendNotification: () => () => {},
-  onBackendReconnected: vi.fn((handler: () => void) => {
-    capturedReconnectHandler.current = handler;
-    return () => {
-      capturedReconnectHandler.current = null;
-    };
-  }),
+  onBackendReconnected: () => () => {}, // Unused now but kept for compatibility
 }));
 
 import { invoke } from "$lib/electron-bridge";
@@ -247,15 +255,54 @@ describe("provider-availability-check-service", () => {
     expect(appStore.state.agentAvailability.providerLoadingMap.droid).toBe(false);
   });
 
-  // Backend reconnect: Verify the handler triggers a fresh bulk check.
-  // Backend reconnect structural test: Verify the handler is registered and can be invoked.
-  // Note: The full functional test (verifying bulk check is triggered) is flaky in CI due to
-  // the middleware's module-scoped `inFlight` guard preventing reliable second bulk checks in
-  // test harness. The production behavior is correct - handler calls runBulkCheck() as intended.
-  it("backend reconnect listener is registered during middleware init", () => {
+  // Backend connect/reconnect functional test: Verify the listener triggers bulk re-check.
+  it("backend connected event triggers bulk re-check and flips state from unavailable to available", async () => {
     // The middleware factory runs when appStore.init() is called in beforeAll, which
-    // should call onBackendReconnected() and capture the handler.
-    expect(capturedReconnectHandler.current).toBeTruthy();
-    expect(typeof capturedReconnectHandler.current).toBe("function");
+    // should register a BACKEND.STATUS listener via electronAPI().on().
+    expect(capturedBackendStatusListener.current).toBeTruthy();
+    expect(typeof capturedBackendStatusListener.current).toBe("function");
+
+    // Clear the spy to measure only reconnect-triggered calls.
+    checkSingleSpy.mockClear();
+
+    // Configure probes to succeed (daemon is now reachable).
+    routeCheckSingle({
+      auggie: async () => ({
+        success: true,
+        providerId: "auggie",
+        data: { available: true, authenticated: true },
+      }),
+      codex: async () => ({
+        success: true,
+        providerId: "codex",
+        data: { available: true, authenticated: false },
+      }),
+    });
+
+    // Simulate backend connected event by calling the captured listener.
+    // This could be either initial connect (reconnected: false/undefined) or reconnect
+    // (reconnected: true). Both should trigger a bulk re-check.
+    capturedBackendStatusListener.current!({ status: "connected", reconnected: true });
+
+    // Flush several rounds to let the async bulk check settle.
+    await flush();
+    await flush();
+    await flush();
+
+    // Verify the connected event triggered a fresh bulk check.
+    expect(checkSingleSpy).toHaveBeenCalled();
+    expect(checkSingleSpy.mock.calls.length).toBe(ALL_PROVIDER_IDS.length);
+
+    // State should reflect the reconnect probe results.
+    const state = appStore.state.agentAvailability;
+    expect(state.hasCheckedOnce).toBe(true);
+    expect(state.providerStatusMap.auggie).toEqual({
+      available: true,
+      authenticated: true,
+    });
+    expect(state.providerStatusMap.codex).toEqual({
+      available: true,
+      authenticated: false,
+    });
   });
 });

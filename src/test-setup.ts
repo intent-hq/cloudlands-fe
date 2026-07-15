@@ -122,8 +122,12 @@ if (typeof window !== 'undefined') {
           return { success: true, data: null };
       }
     }),
-    on: vi.fn(),
+    on: vi.fn((channel: string, handler: any) => {
+      // Return a mock listener ID
+      return `listener-${Math.random()}`;
+    }),
     off: vi.fn(),
+    offById: vi.fn(),
   };
 }
 
