@@ -414,26 +414,26 @@ describe('DaemonWorkspaceRepository', () => {
       expect(result).toEqual(testContext);
     });
 
-    it('should return null when daemon returns null (no coercion)', async () => {
+    it('should return null when daemon returns null (no coercion, no migration)', async () => {
       mockBackendClient.request.mockResolvedValue({ uiContext: null });
 
-      // Mock filesystem fallback to return null (no FS context)
-      const mockFsReadContext = vi.fn().mockResolvedValue(null);
+      // Mock filesystem fallback - should NOT be called since null is a valid stored value
+      const mockFsReadContext = vi.fn();
       (repository as any).filesystemFallback = {
         readContext: mockFsReadContext,
       };
 
       const result = await repository.readContext('ws-123' as any);
 
-      // Should have checked filesystem for migration but found nothing
-      expect(mockFsReadContext).toHaveBeenCalledWith('ws-123');
+      // Should NOT check filesystem since null is a valid value, not missing context
+      expect(mockFsReadContext).not.toHaveBeenCalled();
       expect(result).toBeNull();
     });
 
-    it('should return null when daemon returns undefined', async () => {
+    it('should return null when daemon returns undefined (field absent, no FS migration)', async () => {
       mockBackendClient.request.mockResolvedValue({});
 
-      // Mock filesystem fallback to return null (no FS context)
+      // Mock filesystem fallback to return null (no FS context to migrate)
       const mockFsReadContext = vi.fn().mockResolvedValue(null);
       (repository as any).filesystemFallback = {
         readContext: mockFsReadContext,
@@ -441,7 +441,7 @@ describe('DaemonWorkspaceRepository', () => {
 
       const result = await repository.readContext('ws-123' as any);
 
-      // Should have checked filesystem for migration but found nothing
+      // Should check filesystem for migration when field is absent/undefined
       expect(mockFsReadContext).toHaveBeenCalledWith('ws-123');
       expect(result).toBeNull();
     });
@@ -454,10 +454,10 @@ describe('DaemonWorkspaceRepository', () => {
         lastUpdated: '2026-07-14T00:00:00.000Z',
       };
 
-      // First call: daemon returns null (no context stored)
+      // First call: daemon returns undefined (field absent, no context stored)
       // Second call: migration write-through
       mockBackendClient.request
-        .mockResolvedValueOnce({ uiContext: null })
+        .mockResolvedValueOnce({})
         .mockResolvedValueOnce({ uiContext: fsContext });
 
       // Mock filesystem fallback to return FS context
@@ -516,10 +516,10 @@ describe('DaemonWorkspaceRepository', () => {
         lastUpdated: '2026-07-14T00:00:00.000Z',
       };
 
-      // First call: daemon returns null
+      // First call: daemon returns undefined (field absent)
       // Second call: migration fails
       mockBackendClient.request
-        .mockResolvedValueOnce({ uiContext: null })
+        .mockResolvedValueOnce({})
         .mockRejectedValueOnce(new Error('Migration failed'));
 
       const mockFsReadContext = vi.fn().mockResolvedValue(fsContext);

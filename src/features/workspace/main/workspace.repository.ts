@@ -716,9 +716,9 @@ export class DaemonWorkspaceRepository implements WorkspaceRepository {
 
       const daemonContext = response?.uiContext;
 
-      // One-time migration: if daemon has no stored context but FS file exists,
-      // seed the daemon from FS (write-through)
-      if (daemonContext === null || daemonContext === undefined) {
+      // One-time migration: if daemon has no stored context (field absent/undefined) but FS file exists,
+      // seed the daemon from FS (write-through). Explicit null values are returned as-is.
+      if (daemonContext === undefined) {
         if (!this.filesystemFallback) {
           this.filesystemFallback = new FileSystemWorkspaceRepository();
         }
@@ -746,8 +746,8 @@ export class DaemonWorkspaceRepository implements WorkspaceRepository {
       }
 
       logger.debug('UI context read from daemon', { workspaceId });
-      // Return daemon context as-is (null, undefined, or the value) - no coercion
-      return daemonContext ?? null;
+      // Return daemon context as-is - no coercion. Undefined becomes null for consistency with return type.
+      return daemonContext !== undefined ? daemonContext : null;
     } catch (error) {
       logger.debug('Failed to read UI context from daemon, falling back to filesystem', {
         workspaceId,
