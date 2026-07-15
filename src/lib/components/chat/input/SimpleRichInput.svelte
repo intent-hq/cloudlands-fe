@@ -162,11 +162,14 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   let canSend = $derived(value.trim() || contextItems.length > 0 || hasInlineImages);
 
   // Separate image attachments from other context items for Slack-style layout
+  // An item is an image attachment only if we can actually render a thumbnail:
+  // - Has both imageData AND imageMimeType (base64 data URL), OR
+  // - Has a File object with an image/* mime type
   const imageAttachments = $derived(
     contextItems.filter(
       (item) =>
         item.type === 'file' &&
-        (item.imageData || item.imageMimeType || item.file?.type?.startsWith('image/'))
+        ((item.imageData && item.imageMimeType) || (item.file && item.file.type?.startsWith('image/')))
     )
   );
   const nonImageItems = $derived(
@@ -174,7 +177,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       (item) =>
         !(
           item.type === 'file' &&
-          (item.imageData || item.imageMimeType || item.file?.type?.startsWith('image/'))
+          ((item.imageData && item.imageMimeType) || (item.file && item.file.type?.startsWith('image/')))
         )
     )
   );

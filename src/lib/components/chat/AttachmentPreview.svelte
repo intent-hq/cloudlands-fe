@@ -137,7 +137,7 @@
       <Button
         variant="ghost"
         size="icon-xs"
-        class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 bg-background/80 hover:bg-background shadow-sm"
+        class="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150 bg-background/80 hover:bg-background shadow-sm"
         onclick={handleRemoveClick}
         aria-label="Remove {name}"
       >
@@ -176,7 +176,7 @@
       <Button
         variant="ghost-light"
         size="icon-xs"
-        class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150 -my-1 -mr-1"
+        class="shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150 -my-1 -mr-1"
         onclick={() => onRemove(id)}
         aria-label="Remove attachment"
       >

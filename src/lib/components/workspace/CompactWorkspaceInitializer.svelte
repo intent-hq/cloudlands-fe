@@ -2146,6 +2146,13 @@
     const insertedFileCount = { value: 0 };
     const oversizedFiles: string[] = [];
 
+    // Helper to format file sizes - hoisted outside loop
+    function formatFileSize(bytes: number): string {
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
     for (const file of files) {
       if (file.size > MAX_FILE_SIZE) {
         oversizedFiles.push(file.name);
@@ -2161,12 +2168,6 @@
           if (match) {
             const [, mimeType, base64Data] = match;
             const fileName = file.name || `Image ${contextItems.length + 1}`;
-
-            function formatFileSize(bytes: number): string {
-              if (bytes < 1024) return `${bytes} B`;
-              if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-              return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-            }
 
             const contextItem: ContextItem = {
               id: `image-${Date.now()}-${contextItems.length}`,
