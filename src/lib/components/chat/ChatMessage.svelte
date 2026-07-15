@@ -55,6 +55,14 @@
     content?: string;
   }
 
+  /** Image content block structure */
+  interface ImageBlock {
+    type: 'image';
+    data: string;
+    mimeType: string;
+    fileName?: string;
+  }
+
   /**
    * Fix GitHub URL for PRs and issues
    * The stored URL may be incorrect (e.g., author's profile instead of PR/issue URL)
@@ -609,19 +617,11 @@
   });
 
   // Open image in lightbox
-  function openImageLightbox(imageBlock: any, openerElement: HTMLButtonElement) {
+  function openImageLightbox(imageBlock: ImageBlock, openerElement: HTMLButtonElement, index: number = 0) {
     lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
-    lightboxImageName = 'Attached Image';
+    lightboxImageName = imageBlock.fileName || `Attached Image ${index + 1}`;
     lightboxOpenerElement = openerElement;
     lightboxOpen = true;
-  }
-
-  // Handle keyboard events for image thumbnails
-  function handleImageKeydown(e: KeyboardEvent, imageBlock: any, openerElement: HTMLButtonElement) {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      openImageLightbox(imageBlock, openerElement);
-    }
   }
 
   // Extract file blocks from contentBlocks
@@ -1055,26 +1055,26 @@
           {#if imageBlocks.length > 0}
             <div class="flex flex-wrap gap-1.5 mt-2">
               {#each imageBlocks as imageBlock, i (i)}
-                {#snippet imageButton()}
-                  <button
-                    type="button"
-                    class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
-                    onclick={(e) => {
-                      openImageLightbox(imageBlock, e.currentTarget);
-                    }}
-                    onkeydown={(e) => {
-                      handleImageKeydown(e, imageBlock, e.currentTarget);
-                    }}
-                    aria-label="View attached image full size"
-                  >
-                    <img
-                      src="data:{imageBlock.mimeType};base64,{imageBlock.data}"
-                      alt="Attached"
-                      class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
-                    />
-                  </button>
-                {/snippet}
-                {@render imageButton()}
+                <button
+                  type="button"
+                  class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
+                  onclick={(e) => {
+                    openImageLightbox(imageBlock, e.currentTarget, i);
+                  }}
+                  onkeydown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openImageLightbox(imageBlock, e.currentTarget, i);
+                    }
+                  }}
+                  aria-label="View attached image {i + 1} of {imageBlocks.length} full size"
+                >
+                  <img
+                    src="data:{imageBlock.mimeType};base64,{imageBlock.data}"
+                    alt="Attached image {i + 1}"
+                    class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
+                  />
+                </button>
               {/each}
             </div>
           {/if}

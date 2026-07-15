@@ -83,7 +83,7 @@ describe('ChatMessage image lightbox', () => {
     render(ChatMessage, { props: { message } });
 
     // Find the image button
-    const imageButton = screen.getByRole('button', { name: /view attached image full size/i });
+    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
     expect(imageButton).toBeTruthy();
 
     // Click the image
@@ -100,7 +100,7 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image full size/i });
+    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
 
     // Press Enter key
     await fireEvent.keyDown(imageButton, { key: 'Enter' });
@@ -116,7 +116,7 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image full size/i });
+    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
 
     // Press Space key
     await fireEvent.keyDown(imageButton, { key: ' ' });
@@ -132,7 +132,7 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image full size/i });
+    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
     await fireEvent.click(imageButton);
 
     // Wait for lightbox to appear
@@ -154,7 +154,7 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image full size/i });
+    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
     await fireEvent.click(imageButton);
 
     // Wait for lightbox
@@ -177,7 +177,7 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image full size/i });
+    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
     await fireEvent.click(imageButton);
 
     // Wait for lightbox to appear
@@ -201,7 +201,7 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image full size/i });
+    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
     await fireEvent.click(imageButton);
 
     // Wait for lightbox
@@ -223,7 +223,7 @@ describe('ChatMessage image lightbox', () => {
     const message = createMessageWithImage();
     render(ChatMessage, { props: { message } });
 
-    const imageButton = screen.getByRole('button', { name: /view attached image full size/i });
+    const imageButton = screen.getByRole('button', { name: /view attached image 1 of 1 full size/i });
     await fireEvent.click(imageButton);
 
     // Wait for lightbox
@@ -247,7 +247,7 @@ describe('ChatMessage image lightbox', () => {
     render(ChatMessage, { props: { message } });
 
     // Should have two image buttons
-    const imageButtons = screen.getAllByRole('button', { name: /view attached image full size/i });
+    const imageButtons = screen.getAllByRole('button', { name: /view attached image \d of \d full size/i });
     expect(imageButtons).toHaveLength(2);
 
     // Click the first image
