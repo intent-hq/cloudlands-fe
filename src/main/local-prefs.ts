@@ -104,3 +104,14 @@ export async function deleteLocalPref(key: string): Promise<void> {
 export function __resetLocalPrefsWriteChainForTesting(): void {
   writeChain = Promise.resolve();
 }
+
+/**
+ * Test-only: await any in-flight writes, then reset the chain.
+ * Call this in afterEach before deleting temp directories to ensure
+ * all file operations complete before cleanup.
+ * @internal
+ */
+export async function __drainLocalPrefsWriteChainForTesting(): Promise<void> {
+  await writeChain;
+  writeChain = Promise.resolve();
+}
