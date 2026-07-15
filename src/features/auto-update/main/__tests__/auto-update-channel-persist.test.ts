@@ -54,6 +54,11 @@ describe('AutoUpdateService channel persistence', () => {
     // Clean up timers and intervals
     vi.clearAllTimers();
     vi.useRealTimers();
+    // Drain any in-flight writes from local-prefs before cleanup
+    const { __drainLocalPrefsWriteChainForTesting } = await import(
+      '../../../../main/local-prefs'
+    );
+    await __drainLocalPrefsWriteChainForTesting();
     // Clean up the temp directory
     await fs.rm(testUserDataPath, { recursive: true, force: true });
   });
