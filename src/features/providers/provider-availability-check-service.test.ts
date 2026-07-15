@@ -37,6 +37,7 @@ import { PROVIDERS_CHANNELS } from "$shared/ipc/channels";
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/config/provider-config";
 import { store as appStore } from "$store/renderer/store";
 import {
+  checkAllProvidersRequested,
   checkSingleProviderRequested,
   ensureProvidersChecked,
 } from "$store/renderer/slices/agent-availability/agent-availability-slice";
@@ -263,6 +264,10 @@ describe("provider-availability-check-service", () => {
     // Simulate backend reconnect
     expect(capturedReconnectHandler.current).toBeTruthy();
     capturedReconnectHandler.current!();
+
+    // Extra flushes to ensure the reconnect handler's bulk check completes
+    await flush();
+    await flush();
     await flush();
 
     // Verify that a fresh bulk check was triggered (all providers checked again)
