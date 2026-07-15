@@ -350,7 +350,7 @@ export class ChangeDetectorManager extends EventEmitter {
       this.saveHistoryDebounceTimer = null;
     }
     // Save any pending changes before disposing
-    void this.doSaveChangeHistory();
+    await this.doSaveChangeHistory();
 
     // Clear all pending detectors
     this.pendingDetectors.clear();

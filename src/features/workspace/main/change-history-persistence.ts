@@ -73,6 +73,8 @@ async function ensureInitialized(): Promise<void> {
     await initPromise;
     // Re-check initialized after awaiting in case init failed
     if (!initialized) {
+      // Clear initPromise so retry is possible
+      initPromise = null;
       throw new Error('Change history initialization failed');
     }
     return;
@@ -80,6 +82,8 @@ async function ensureInitialized(): Promise<void> {
   // If neither initialized nor initPromise, init was never called — trigger it now
   await initChangeHistory();
   if (!initialized) {
+    // Clear initPromise so retry is possible
+    initPromise = null;
     throw new Error('Change history initialization failed');
   }
 }
@@ -123,7 +127,7 @@ export async function setChangeHistoryForWorkspace(
   } else {
     cache[workspaceId] = chunks;
   }
-  // Await the push so callers can rely on daemon persistence completing
+  // Await the push attempt; errors are logged but not propagated
   await pushChangeHistory({ ...cache });
 }
 
@@ -142,7 +146,7 @@ export async function bulkSetChangeHistory(
       cache[workspaceId] = chunks;
     }
   }
-  // Await the push so callers can rely on daemon persistence completing
+  // Await the push attempt; errors are logged but not propagated
   await pushChangeHistory({ ...cache });
 }
 
