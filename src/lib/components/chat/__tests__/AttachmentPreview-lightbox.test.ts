@@ -357,7 +357,6 @@ describe('AttachmentPreview thumbnail lightbox', () => {
     });
 
     const closeButton = screen.getByRole('button', { name: /close preview/i });
-    const dialog = screen.getByRole('dialog', { name: /image preview/i });
 
     // Tab from close button should wrap to close button (only focusable element)
     await fireEvent.keyDown(closeButton, { key: 'Tab' });
