@@ -256,7 +256,6 @@ describe("provider-availability-check-service", () => {
     await flush();
 
     expect(appStore.state.agentAvailability.hasCheckedOnce).toBe(true);
-    const initialCallCount = checkSingleSpy.mock.calls.length;
 
     // Clear spy calls to isolate reconnect behavior
     checkSingleSpy.mockClear();
