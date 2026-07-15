@@ -18,7 +18,14 @@ vi.mock("$lib/client/live/backend-transport", () => ({
   backendSubscribe: () => Promise.resolve({ subscriptionId: "sub-avail-1" }),
   backendUnsubscribe: () => Promise.resolve(),
   onBackendNotification: () => () => {},
-  onBackendReconnected: () => () => {},
+  onBackendReconnected: () => () => {}, // Unused now but kept for compatibility
+}));
+
+// Mock electron-bridge: use the window.electronAPI set up by test-setup.ts,
+// and provide a vi.fn mock for invoke so tests can spy on it.
+vi.mock("$lib/electron-bridge", () => ({
+  electronAPI: () => (window as any).electronAPI,
+  invoke: vi.fn(),
 }));
 
 import { invoke } from "$lib/electron-bridge";
@@ -76,7 +83,13 @@ describe("provider-availability-check-service", () => {
   });
 
   beforeEach(async () => {
-    await flush();
+    // Flush many rounds to ensure any in-flight bulk checks from previous tests fully
+    // settle. The middleware's `inFlight` guard is closure-scoped to the middleware instance
+    // created by appStore.init() and persists across tests (store is initialized once in beforeAll).
+    // Empirically, 30 flush cycles are needed to allow all previous checks to complete.
+    for (let i = 0; i < 30; i++) {
+      await flush();
+    }
     clearProviderAvailabilityCache();
     checkSingleSpy.mockReset();
     mockedInvoke.mockImplementation(async (channel: string, data?: unknown) => {
@@ -228,5 +241,60 @@ describe("provider-availability-check-service", () => {
     await flush();
 
     expect(appStore.state.agentAvailability.providerLoadingMap.droid).toBe(false);
+  });
+
+  // Backend connect/reconnect functional test: Verify the listener triggers bulk re-check.
+  it("backend connected event triggers bulk re-check and flips state from unavailable to available", async () => {
+    // The middleware factory runs when appStore.init() is called in beforeAll, which
+    // should register a BACKEND.STATUS listener via window.electronAPI.on().
+    // Select the most recently registered handler to avoid order-dependencies across suites.
+    const backendStatusHandlers = (window as any).electronAPI._getRegisteredHandlers("backend:status");
+    expect(backendStatusHandlers.length).toBeGreaterThan(0);
+    const backendStatusListener = backendStatusHandlers[backendStatusHandlers.length - 1];
+    expect(typeof backendStatusListener).toBe("function");
+
+    // Clear the spy to measure only reconnect-triggered calls.
+    checkSingleSpy.mockClear();
+
+    // Configure probes to succeed (daemon is now reachable).
+    routeCheckSingle({
+      auggie: async () => ({
+        success: true,
+        providerId: "auggie",
+        data: { available: true, authenticated: true },
+      }),
+      codex: async () => ({
+        success: true,
+        providerId: "codex",
+        data: { available: true, authenticated: false },
+      }),
+    });
+
+    // Simulate backend connected event by calling the captured listener.
+    // This could be either initial connect (no reconnected flag) or reconnect
+    // (reconnected: true). Both should trigger a bulk re-check.
+    // Test the initial-connect case (reconnected undefined) to prove the startup race fix.
+    backendStatusListener({ status: "connected" });
+
+    // Flush several rounds to let the async bulk check settle.
+    await flush();
+    await flush();
+    await flush();
+
+    // Verify the connected event triggered a fresh bulk check.
+    expect(checkSingleSpy).toHaveBeenCalled();
+    expect(checkSingleSpy.mock.calls.length).toBe(ALL_PROVIDER_IDS.length);
+
+    // State should reflect the reconnect probe results.
+    const state = appStore.state.agentAvailability;
+    expect(state.hasCheckedOnce).toBe(true);
+    expect(state.providerStatusMap.auggie).toEqual({
+      available: true,
+      authenticated: true,
+    });
+    expect(state.providerStatusMap.codex).toEqual({
+      available: true,
+      authenticated: false,
+    });
   });
 });
