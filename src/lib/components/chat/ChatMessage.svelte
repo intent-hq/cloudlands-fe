@@ -25,6 +25,8 @@
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import { isImageBlock } from '$shared/types/content-block.guards';
+  import type { ContentBlock } from '$shared/types/content-block';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
@@ -53,14 +55,6 @@
     url?: string;
     /** Full content for tooltip */
     content?: string;
-  }
-
-  /** Image content block structure */
-  interface ImageBlock {
-    type: 'image';
-    data: string;
-    mimeType: string;
-    fileName?: string;
   }
 
   /**
@@ -617,7 +611,7 @@
   });
 
   // Open image in lightbox
-  function openImageLightbox(imageBlock: ImageBlock, openerElement: HTMLButtonElement, index: number = 0) {
+  function openImageLightbox(imageBlock: ContentBlock & { data: string; mimeType: string }, openerElement: HTMLButtonElement, index: number = 0) {
     lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
     lightboxImageName = imageBlock.fileName || `Attached Image ${index + 1}`;
     lightboxOpenerElement = openerElement;
@@ -1059,12 +1053,14 @@
                   type="button"
                   class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
                   onclick={(e) => {
-                    openImageLightbox(imageBlock as ImageBlock, e.currentTarget, i);
+                    if (isImageBlock(imageBlock)) {
+                      openImageLightbox(imageBlock, e.currentTarget, i);
+                    }
                   }}
                   onkeydown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
+                    if ((e.key === 'Enter' || e.key === ' ') && isImageBlock(imageBlock)) {
                       e.preventDefault();
-                      openImageLightbox(imageBlock as ImageBlock, e.currentTarget, i);
+                      openImageLightbox(imageBlock, e.currentTarget, i);
                     }
                   }}
                   aria-label="View attached image {i + 1} of {imageBlocks.length} full size"
