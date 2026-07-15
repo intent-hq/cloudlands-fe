@@ -88,6 +88,19 @@ if (typeof window !== 'undefined') {
     value: localStorageMock,
   });
 
+  // Persistent handler tracking (survives across beforeEach calls) so tests can
+  // spy on listeners registered during store initialization (which happens once in beforeAll).
+  if (!(window as any)._electronAPIHandlers) {
+    (window as any)._electronAPIHandlers = new Map<string, Array<(payload: any) => void>>();
+  }
+  const registeredHandlers = (window as any)._electronAPIHandlers;
+
+  // Persistent listener ID counter for deterministic listener IDs
+  if (!(window as any)._electronAPIListenerCounter) {
+    (window as any)._electronAPIListenerCounter = { count: 0 };
+  }
+  const listenerCounter = (window as any)._electronAPIListenerCounter;
+
   (window as any).electronAPI = {
     invoke: vi.fn(async (channel: string, data?: any) => {
       // Return mock responses based on channel
@@ -122,8 +135,19 @@ if (typeof window !== 'undefined') {
           return { success: true, data: null };
       }
     }),
-    on: vi.fn(),
+    on: vi.fn((channel: string, handler: any) => {
+      // Store the handler for tests that need to trigger events
+      if (!registeredHandlers.has(channel)) {
+        registeredHandlers.set(channel, []);
+      }
+      registeredHandlers.get(channel)!.push(handler);
+      // Return a deterministic listener ID based on channel and registration count
+      return `listener-${channel}-${++listenerCounter.count}`;
+    }),
     off: vi.fn(),
+    offById: vi.fn(),
+    // Expose a test helper to get registered handlers
+    _getRegisteredHandlers: (channel: string) => registeredHandlers.get(channel) || [],
   };
 }
 
