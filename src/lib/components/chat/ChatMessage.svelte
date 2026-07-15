@@ -24,6 +24,7 @@
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
+  import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
@@ -200,6 +201,12 @@
   // Local state
   let messageElement: HTMLDivElement;
   let showRulesInspector = $state(false);
+
+  // Lightbox state for sent image attachments
+  let lightboxOpen = $state(false);
+  let lightboxImageUrl = $state('');
+  let lightboxImageName = $state('');
+  let lightboxOpenerElement: HTMLButtonElement | null = $state(null);
 
   // Parse context pills from message text
   // Context format: [Currently viewing file: path] or [Currently viewing note: title] etc.
@@ -600,6 +607,22 @@
       (block: any) => block.type === 'image' && block.data && block.mimeType,
     );
   });
+
+  // Open image in lightbox
+  function openImageLightbox(imageBlock: any, openerElement: HTMLButtonElement) {
+    lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
+    lightboxImageName = 'Attached Image';
+    lightboxOpenerElement = openerElement;
+    lightboxOpen = true;
+  }
+
+  // Handle keyboard events for image thumbnails
+  function handleImageKeydown(e: KeyboardEvent, imageBlock: any, openerElement: HTMLButtonElement) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openImageLightbox(imageBlock, openerElement);
+    }
+  }
 
   // Extract file blocks from contentBlocks
   const fileBlocks = $derived.by(() => {
@@ -1032,20 +1055,26 @@
           {#if imageBlocks.length > 0}
             <div class="flex flex-wrap gap-1.5 mt-2">
               {#each imageBlocks as imageBlock, i (i)}
-                <button
-                  type="button"
-                  class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0"
-                  onclick={() => {
-                    const dataUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
-                    window.open(dataUrl, '_blank');
-                  }}
-                >
-                  <img
-                    src="data:{imageBlock.mimeType};base64,{imageBlock.data}"
-                    alt="Attached"
-                    class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
-                  />
-                </button>
+                {#snippet imageButton()}
+                  <button
+                    type="button"
+                    class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
+                    onclick={(e) => {
+                      openImageLightbox(imageBlock, e.currentTarget);
+                    }}
+                    onkeydown={(e) => {
+                      handleImageKeydown(e, imageBlock, e.currentTarget);
+                    }}
+                    aria-label="View attached image full size"
+                  >
+                    <img
+                      src="data:{imageBlock.mimeType};base64,{imageBlock.data}"
+                      alt="Attached"
+                      class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
+                    />
+                  </button>
+                {/snippet}
+                {@render imageButton()}
               {/each}
             </div>
           {/if}
@@ -1129,3 +1158,11 @@
     onClose={() => (showRulesInspector = false)}
   />
 {/if}
+
+<!-- Image Lightbox for sent message attachments -->
+<ImageLightbox
+  bind:open={lightboxOpen}
+  imageUrl={lightboxImageUrl}
+  imageName={lightboxImageName}
+  openerElement={lightboxOpenerElement}
+/>
