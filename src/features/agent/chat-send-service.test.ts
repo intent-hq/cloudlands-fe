@@ -401,4 +401,35 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     await expect(action.promise).rejects.toThrow("stop boom");
     expect(selectChatAgentState.select(appStore.state, AGENT)?.isInterrupting).toBe(false);
   });
+
+  it("forceSubmit bypasses queue-on-send check and passes priority:interrupt to lifecycle.sendMessage", async () => {
+    // STAB-38 regression test: when agent is in-flight and user force-sends,
+    // the middleware must NOT route through agent.queueMessage — it must call
+    // lifecycle.sendMessage with priority: "interrupt" so the daemon preempts
+    // the active turn per PROTOCOL.md §5.5.
+    seedSession({ isStreaming: true, status: AgentStatus.Active });
+
+    appStore.dispatch(
+      sendMessage(AGENT, { wsId: WS, text: "interrupt now", forceSubmit: true, skipQueueCheck: true }),
+    );
+    await flush();
+    await flush();
+
+    // Must NOT queue
+    expect(agentsQueue).not.toHaveBeenCalled();
+
+    // MUST call lifecycle.sendMessage
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    const [agentIdArg, contentArg, workspaceArg, optionsArg] = lifecycleSendMessage.mock.calls[0] as [
+      string,
+      string,
+      Workspace,
+      { priority?: string; imageBlocks?: unknown; noteIds?: string[] },
+    ];
+    expect(agentIdArg).toBe(AGENT);
+    expect(contentArg).toBe("interrupt now");
+    expect(workspaceArg.id).toBe(WS);
+    // The key regression assertion: priority must be "interrupt"
+    expect(optionsArg.priority).toBe("interrupt");
+  });
 });
