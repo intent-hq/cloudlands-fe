@@ -309,9 +309,9 @@ export class WorkspaceService {
   /**
    * Get diffs for a workspace from the changeHistory
    */
-  private getWorkspaceDiffs(workspaceId: string): DiffChunk[] {
+  private async getWorkspaceDiffs(workspaceId: string): Promise<DiffChunk[]> {
     try {
-      return getChangeHistoryForWorkspace(workspaceId) as unknown as DiffChunk[];
+      return (await getChangeHistoryForWorkspace(workspaceId)) as unknown as DiffChunk[];
     } catch (error) {
       logger.error('Error loading diffs', error as Error, { workspaceId });
       return [];
@@ -2813,7 +2813,7 @@ export class WorkspaceService {
       }
 
       // Load diffs from changeHistory
-      const diffs = this.getWorkspaceDiffs(workspace.id);
+      const diffs = await this.getWorkspaceDiffs(workspace.id);
 
       // Only update if diffs have actually changed
       const existingDiffsLength = workspace.diffs?.length || 0;
