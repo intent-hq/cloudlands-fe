@@ -659,6 +659,10 @@ export const AgentBackendStreamMessageSchema = z
     queuedMessageId: z.string().optional(),
     queuedMessageAppMessageId: z.string().optional(),
     skipUserMessage: z.boolean().optional(),
+    // Message priority for interrupt semantics (STAB-38). When "interrupt",
+    // the daemon preempts the in-flight turn keep-alive and delivers immediately
+    // instead of queueing (PROTOCOL.md §5.5).
+    priority: z.enum(['interrupt']).optional(),
   })
   .superRefine((data, ctx) => {
     const hasContent = data.content && data.content.trim().length > 0;
