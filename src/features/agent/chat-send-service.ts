@@ -66,6 +66,7 @@ const logger = createLogger("ChatSendService");
 type LifecycleSendOptions = {
   imageBlocks?: SendMessagePayload["imageBlocks"];
   noteIds?: string[];
+  priority?: "interrupt";
 };
 
 /**
@@ -95,6 +96,7 @@ async function dispatchToLifecycle(
   text: string,
   workspaceContextStr: string | undefined,
   options: LifecycleSendOptions,
+  forceSubmit: boolean,
 ): Promise<void> {
   let deps: SendDeps;
   try {
@@ -126,7 +128,13 @@ async function dispatchToLifecycle(
   // and seed the local queue from the returned `queuedMessage` so the UI
   // immediately shows the queued-message state (no extra hydration round
   // trip required).
-  if (deps.selectAgentIsResponding.select(appStore.state, agentId)) {
+  //
+  // EXCEPTION: forceSubmit bypasses queue-on-send (STAB-38 fix). Force-send
+  // (⌘Enter) must interrupt the active turn, not queue behind it — that's
+  // the entire point of force-send. The lifecycle send will pass
+  // `priority: "interrupt"` to the daemon, which preempts the in-flight turn
+  // keep-alive per PROTOCOL.md §5.5.
+  if (!forceSubmit && deps.selectAgentIsResponding.select(appStore.state, agentId)) {
     appStore.dispatch(clearChatDraft(wsId, agentId));
     try {
       const result = await appClient.agents.queue(agentId, content);
@@ -169,6 +177,9 @@ async function dispatchToLifecycle(
     await deps.sendMessage(agentId, content, workspace, {
       imageBlocks: options.imageBlocks,
       noteIds: options.noteIds,
+      // Pass priority: "interrupt" when force-send is active (STAB-38 fix).
+      // The daemon will preempt the in-flight turn instead of queueing.
+      priority: options.priority,
     });
   } catch (error) {
     // AUDIT-P0-2: dispatch chatSendFailed so the error appears in the UI
@@ -287,10 +298,21 @@ export function createChatSendMiddleware(): StoreMiddleware {
         typeof inner.text === "string" &&
         inner.text.length > 0
       ) {
-        void dispatchToLifecycle(agentId, inner.wsId, inner.text, inner.workspaceContextStr, {
-          imageBlocks: inner.imageBlocks,
-          noteIds: inner.noteIds,
-        });
+        const forceSubmit = inner.forceSubmit === true;
+        void dispatchToLifecycle(
+          agentId,
+          inner.wsId,
+          inner.text,
+          inner.workspaceContextStr,
+          {
+            imageBlocks: inner.imageBlocks,
+            noteIds: inner.noteIds,
+            // STAB-38 fix: set priority: "interrupt" when force-send is active.
+            // The daemon will preempt the in-flight turn per PROTOCOL.md §5.5.
+            priority: forceSubmit ? "interrupt" : undefined,
+          },
+          forceSubmit,
+        );
       }
     } else if ((action as { type?: unknown }).type === removeQueuedMessageRequested.type) {
       const payload = (action as { payload?: unknown }).payload as

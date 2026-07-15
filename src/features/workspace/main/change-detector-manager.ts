@@ -137,14 +137,14 @@ export class ChangeDetectorManager extends EventEmitter {
    * Clear change history for a workspace (from memory AND disk)
    * PERF: Called when workspace is deleted to prevent memory bloat
    */
-  clearHistory(workspaceId: string): void {
+  async clearHistory(workspaceId: string): Promise<void> {
     logger.debug('Clearing history', { workspaceId });
     // Only clear if manager is initialized - this is expected during cleanup
     if (!this._realManager) {
       logger.debug('clearHistory called but manager not initialized (no-op)', { workspaceId });
       return;
     }
-    this._realManager.clearHistory(workspaceId);
+    await this._realManager.clearHistory(workspaceId);
   }
 
   /**

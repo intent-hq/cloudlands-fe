@@ -902,7 +902,7 @@ export function setupWorkspaceIPC(): void {
           try {
             await manager.stopMonitoring(validatedId);
             // PERF: Clear change history for deleted workspace to prevent memory bloat
-            manager.clearHistory(validatedId);
+            await manager.clearHistory(validatedId);
             logger.debug('Stopped monitoring and cleared history for workspace', {
               workspaceId: validatedId,
             });
