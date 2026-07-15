@@ -80,7 +80,7 @@
     }
   }
 
-  // Global keydown listener for Escape and focus trap
+  // Global keydown listener for Escape key
   $effect(() => {
     if (!open) return;
 

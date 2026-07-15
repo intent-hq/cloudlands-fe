@@ -332,4 +332,39 @@ describe('AttachmentPreview thumbnail lightbox', () => {
     // No assertion on focus since the thumbnail is unmounted
     // The test passing without throwing proves the isConnected check works
   });
+
+  it('traps focus with Tab key cycling between close button and dialog', async () => {
+    render(AttachmentPreview, {
+      props: {
+        id: 'test-img',
+        name: 'test.png',
+        type: 'image/png',
+        imageData: mockImageData,
+        imageMimeType: mockImageMimeType,
+        variant: 'thumbnail',
+      },
+    });
+
+    // Open the lightbox
+    const thumbnailButton = screen.getByRole('button', { name: /view test\.png full size/i });
+    await fireEvent.click(thumbnailButton);
+
+    // Wait for lightbox to appear and close button to be focused
+    await waitFor(() => {
+      const closeButton = screen.getByRole('button', { name: /close preview/i });
+      expect(closeButton).toBeTruthy();
+      expect(document.activeElement).toBe(closeButton);
+    });
+
+    const closeButton = screen.getByRole('button', { name: /close preview/i });
+    const dialog = screen.getByRole('dialog', { name: /image preview/i });
+
+    // Tab from close button should wrap to close button (only focusable element)
+    await fireEvent.keyDown(closeButton, { key: 'Tab' });
+    expect(document.activeElement).toBe(closeButton);
+
+    // Shift+Tab from close button should also stay on close button
+    await fireEvent.keyDown(closeButton, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(closeButton);
+  });
 });
