@@ -1059,12 +1059,12 @@
                   type="button"
                   class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
                   onclick={(e) => {
-                    openImageLightbox(imageBlock, e.currentTarget, i);
+                    openImageLightbox(imageBlock as ImageBlock, e.currentTarget, i);
                   }}
                   onkeydown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      openImageLightbox(imageBlock, e.currentTarget, i);
+                      openImageLightbox(imageBlock as ImageBlock, e.currentTarget, i);
                     }
                   }}
                   aria-label="View attached image {i + 1} of {imageBlocks.length} full size"
