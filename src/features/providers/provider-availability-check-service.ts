@@ -31,6 +31,7 @@
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import { invoke } from "$lib/electron-bridge";
 import { createLogger } from "$lib/utils/client-logger";
+import { onBackendReconnected } from "$lib/client/live/backend-transport";
 import { PROVIDERS_CHANNELS } from "$shared/ipc/channels";
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/config/provider-config";
 import { clearProviderAvailabilityCache } from "$features/providers/provider-availability.client";
@@ -51,6 +52,9 @@ const logger = createLogger("ProviderAvailabilityCheckService");
 export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
   /** Coalesce overlapping bulk checks (focus + visibility can fire together). */
   let inFlight: Promise<void> | null = null;
+
+  /** Cleanup disposer for the reconnect listener (long-lived, but tidy). */
+  let cleanupReconnectListener: (() => void) | null = null;
 
   const runSingleCheck = async (providerId: string): Promise<void> => {
     try {
@@ -101,6 +105,17 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
     })();
     return inFlight;
   };
+
+  // On backend reconnect (including first connect after startup race), re-run
+  // the bulk availability check even if hasCheckedOnce is true. The daemon may
+  // have restarted or the sidecar socket may have just come up; re-probing
+  // lets provider cards flip from unavailable → available without a reload.
+  // RESUB-1: backend.ipc emits `{ status: 'connected', reconnected: true }`
+  // after every successful reconnect following an earlier drop.
+  cleanupReconnectListener = onBackendReconnected(() => {
+    logger.info("Backend reconnected — re-running provider availability bulk check");
+    void runBulkCheck();
+  });
 
   return () => (next) => (action) => {
     const result = next(action);

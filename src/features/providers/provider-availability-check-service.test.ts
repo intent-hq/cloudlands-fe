@@ -12,13 +12,20 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Fake the live backend transport so unrelated boot middlewares (settings
-// hydration, daemon events bridge) resolve quietly against a stub.
+// hydration, daemon events bridge) resolve quietly against a stub. Capture the
+// onBackendReconnected handler so tests can simulate reconnect events.
+let capturedReconnectHandler: (() => void) | null = null;
 vi.mock("$lib/client/live/backend-transport", () => ({
   backendRequest: () => Promise.resolve(undefined),
   backendSubscribe: () => Promise.resolve({ subscriptionId: "sub-avail-1" }),
   backendUnsubscribe: () => Promise.resolve(),
   onBackendNotification: () => () => {},
-  onBackendReconnected: () => () => {},
+  onBackendReconnected: vi.fn((handler: () => void) => {
+    capturedReconnectHandler = handler;
+    return () => {
+      capturedReconnectHandler = null;
+    };
+  }),
 }));
 
 import { invoke } from "$lib/electron-bridge";
@@ -228,5 +235,62 @@ describe("provider-availability-check-service", () => {
     await flush();
 
     expect(appStore.state.agentAvailability.providerLoadingMap.droid).toBe(false);
+  });
+
+  it("backend reconnect triggers bulk re-check even after hasCheckedOnce is set", async () => {
+    // Simulate the startup race: provider probes fail before the backend connects.
+    const failingProbes: Record<string, () => Promise<CheckSingleResponse>> = {};
+    for (const providerId of ALL_PROVIDER_IDS) {
+      failingProbes[providerId] = async () => ({
+        success: false,
+        providerId,
+        error: "ENOENT: daemon not listening yet",
+      });
+    }
+    routeCheckSingle(failingProbes);
+
+    // First check: ensureProvidersChecked fans out per-provider probes that all fail.
+    appStore.dispatch(ensureProvidersChecked());
+    await flush();
+
+    expect(appStore.state.agentAvailability.hasCheckedOnce).toBe(true);
+    // Every provider landed unavailable (status undefined → UI renders as `available: false`).
+    for (const providerId of ALL_PROVIDER_IDS) {
+      expect(appStore.state.agentAvailability.providerStatusMap[providerId]).toBeUndefined();
+      expect(appStore.state.agentAvailability.providerLoadingMap[providerId]).toBe(false);
+    }
+
+    // Daemon starts up, backend reconnects. Now the probes succeed.
+    routeCheckSingle({
+      auggie: async () => ({
+        success: true,
+        providerId: "auggie",
+        data: { available: true, authenticated: true },
+      }),
+      codex: async () => ({
+        success: true,
+        providerId: "codex",
+        data: { available: true, authenticated: false },
+      }),
+    });
+
+    // Simulate backend reconnect — the middleware registered a handler on init.
+    expect(capturedReconnectHandler).toBeTruthy();
+    capturedReconnectHandler!();
+    await flush();
+
+    // State flips: auggie and codex are now available, even though hasCheckedOnce
+    // stayed true. The reconnect handler bypasses the hasCheckedOnce guard.
+    const stateAfterReconnect = appStore.state.agentAvailability;
+    expect(stateAfterReconnect.hasCheckedOnce).toBe(true);
+    expect(stateAfterReconnect.providerStatusMap.auggie).toEqual({
+      available: true,
+      authenticated: true,
+    });
+    expect(stateAfterReconnect.providerStatusMap.codex).toEqual({
+      available: true,
+      authenticated: false,
+    });
+    expect(checkSingleSpy).toHaveBeenCalledTimes(ALL_PROVIDER_IDS.length * 2);
   });
 });
