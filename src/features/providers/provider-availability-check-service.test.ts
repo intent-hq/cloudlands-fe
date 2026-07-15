@@ -88,8 +88,9 @@ describe("provider-availability-check-service", () => {
 
   beforeEach(async () => {
     // Flush many rounds to ensure any in-flight bulk checks from previous tests fully
-    // settle. The middleware's `inFlight` guard is module-scoped and persists across tests.
-    // Empirically, 30 flush cycles (300ms) are needed to allow all previous checks to complete.
+    // settle. The middleware's `inFlight` guard is closure-scoped to the middleware instance
+    // created by appStore.init() and persists across tests (store is initialized once in beforeAll).
+    // Empirically, 30 flush cycles are needed to allow all previous checks to complete.
     for (let i = 0; i < 30; i++) {
       await flush();
     }

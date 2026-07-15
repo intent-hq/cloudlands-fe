@@ -110,8 +110,9 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
   // which occurs after an earlier successful connection was dropped and then restored.
   // It does NOT fire on the initial first connect after startup, so the startup race
   // is still covered by the first-mount ensureProvidersChecked trigger.
-  // The disposer is intentionally not captured; middleware lifecycle ties to store init,
-  // and the transport layer manages cleanup when the connection closes.
+  // The disposer is not captured because this middleware is created once during store init
+  // and persists for the app lifetime; there's no teardown hook. In HMR/dev scenarios where
+  // the module reloads, duplicate listeners could accumulate, but that's a dev-only issue.
   void onBackendReconnected(() => {
     logger.info("Backend reconnected — re-running provider availability bulk check");
     void runBulkCheck();

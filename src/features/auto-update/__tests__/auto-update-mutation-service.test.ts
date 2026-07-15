@@ -29,6 +29,7 @@ import {
   emitMockIpcEvent,
   resetMockIpcRouter,
   addMockIpcListener,
+  mockIpcListenerCount,
 } from "$shared/ipc-mock-router";
 
 const flush = async () => {
@@ -86,19 +87,19 @@ describe("auto-update-mutation-service", () => {
     expect(getStateSpy).toHaveBeenCalled();
 
     // Verify listeners registered for all event channels
-    expect(eventHandlers.has(AUTO_UPDATE_CHANNELS.SHOW_TOAST)).toBe(true);
-    expect(eventHandlers.has(AUTO_UPDATE_CHANNELS.UP_TO_DATE)).toBe(true);
-    expect(eventHandlers.has(AUTO_UPDATE_CHANNELS.STATUS_CHANGED)).toBe(true);
-    expect(eventHandlers.has(AUTO_UPDATE_CHANNELS.PROGRESS)).toBe(true);
-    expect(eventHandlers.has(AUTO_UPDATE_CHANNELS.ERROR)).toBe(true);
+    expect(mockIpcListenerCount(AUTO_UPDATE_CHANNELS.SHOW_TOAST)).toBeGreaterThan(0);
+    expect(mockIpcListenerCount(AUTO_UPDATE_CHANNELS.UP_TO_DATE)).toBeGreaterThan(0);
+    expect(mockIpcListenerCount(AUTO_UPDATE_CHANNELS.STATUS_CHANGED)).toBeGreaterThan(0);
+    expect(mockIpcListenerCount(AUTO_UPDATE_CHANNELS.PROGRESS)).toBeGreaterThan(0);
+    expect(mockIpcListenerCount(AUTO_UPDATE_CHANNELS.ERROR)).toBeGreaterThan(0);
 
-    const listenerCountBefore = eventHandlers.get(AUTO_UPDATE_CHANNELS.STATUS_CHANGED)!.length;
+    const listenerCountBefore = mockIpcListenerCount(AUTO_UPDATE_CHANNELS.STATUS_CHANGED);
 
     // Dispatch initAutoUpdate again — should be idempotent (no duplicate listeners)
     appStore.dispatch(initAutoUpdate());
     await flush();
 
-    const listenerCountAfter = eventHandlers.get(AUTO_UPDATE_CHANNELS.STATUS_CHANGED)!.length;
+    const listenerCountAfter = mockIpcListenerCount(AUTO_UPDATE_CHANNELS.STATUS_CHANGED);
     expect(listenerCountAfter).toBe(listenerCountBefore);
   });
 
@@ -109,7 +110,11 @@ describe("auto-update-mutation-service", () => {
     }));
 
     appStore.dispatch(initAutoUpdate());
-    await flush();
+    // Wait longer to ensure async handleInitAutoUpdate completes
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Verify listeners are registered
+    expect(mockIpcListenerCount(AUTO_UPDATE_CHANNELS.SHOW_TOAST)).toBeGreaterThan(0);
 
     // Simulate SHOW_TOAST IPC event
     emitMockIpcEvent(AUTO_UPDATE_CHANNELS.SHOW_TOAST, undefined);
@@ -128,7 +133,8 @@ describe("auto-update-mutation-service", () => {
     }));
 
     appStore.dispatch(initAutoUpdate());
-    await flush();
+    // Wait longer to ensure async handleInitAutoUpdate completes
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     // Simulate UP_TO_DATE IPC event
     emitMockIpcEvent(AUTO_UPDATE_CHANNELS.UP_TO_DATE, { version: "2.0.2", isDev: false });
