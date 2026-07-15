@@ -55,6 +55,7 @@ import { createTabStatePersistenceMiddleware } from "./middlewares/tab-state-per
 import { createSidebarNavPersistenceMiddleware } from "./middlewares/sidebar-nav-persistence-service";
 import { createBrowserPersistenceMiddleware } from "./middlewares/browser-persistence-service";
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
+import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
@@ -292,6 +293,13 @@ function buildMiddleware(): StoreMiddleware[] {
     // `ThemeManager` singleton again — and hydrate Redux from the manager's
     // snapshot on boot so the slice reflects the persisted preference.
     createThemeMutationMiddleware(),
+    // Give the (post-saga) `initAutoUpdate` trigger a real handler so
+    // UpdateNotification.svelte onMount registers `autoUpdateClient` IPC
+    // listeners (status-changed / progress / error / show-toast / up-to-date)
+    // and fetches initial state — making "Check for Updates" show UI feedback
+    // (checking toast → up-to-date / available / error) instead of silently
+    // running the check in main with zero renderer-side events.
+    createAutoUpdateMutationMiddleware(),
   ];
 
   // Debug middlewares need to be added AFTER batching middleware
