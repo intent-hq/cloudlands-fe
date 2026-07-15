@@ -298,10 +298,21 @@ export function createChatSendMiddleware(): StoreMiddleware {
         typeof inner.text === "string" &&
         inner.text.length > 0
       ) {
-        void dispatchToLifecycle(agentId, inner.wsId, inner.text, inner.workspaceContextStr, {
-          imageBlocks: inner.imageBlocks,
-          noteIds: inner.noteIds,
-        });
+        const forceSubmit = inner.forceSubmit === true;
+        void dispatchToLifecycle(
+          agentId,
+          inner.wsId,
+          inner.text,
+          inner.workspaceContextStr,
+          {
+            imageBlocks: inner.imageBlocks,
+            noteIds: inner.noteIds,
+            // STAB-38 fix: set priority: "interrupt" when force-send is active.
+            // The daemon will preempt the in-flight turn per PROTOCOL.md §5.5.
+            priority: forceSubmit ? "interrupt" : undefined,
+          },
+          forceSubmit,
+        );
       }
     } else if ((action as { type?: unknown }).type === removeQueuedMessageRequested.type) {
       const payload = (action as { payload?: unknown }).payload as
