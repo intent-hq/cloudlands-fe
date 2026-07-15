@@ -672,22 +672,95 @@ export class DaemonWorkspaceRepository implements WorkspaceRepository {
   }
 
   async saveContext(workspaceId: WorkspaceId, context: any): Promise<void> {
-    // Filesystem fallback for workspace UI context (navigation state).
-    // Note: workspace.updateContext RPC (PROTOCOL.md §5.1) handles chat-context items,
-    // NOT workspace UI context — these are different domains requiring separate daemon support.
+    if (WorkspaceConfig.isVirtualWorkspace(workspaceId)) {
+      logger.debug('Virtual workspace context save skipped', { workspaceId });
+      return;
+    }
+
+    // Use workspace.updateUiContext RPC (PROTOCOL.md §5.1, intentd#175)
+    try {
+      const { getBackendClient } = await import('../../backend/main/backend.ipc');
+      await getBackendClient().request('workspace.updateUiContext', {
+        workspaceId,
+        uiContext: context,
+      });
+      logger.debug('UI context saved to daemon', { workspaceId });
+      return;
+    } catch (error) {
+      logger.debug('Failed to save UI context to daemon, falling back to filesystem', {
+        workspaceId,
+        error: (error as Error).message,
+      });
+      // Fall through to filesystem fallback
+    }
+
+    // Fallback to filesystem when RPC fails
     if (!this.filesystemFallback) {
       this.filesystemFallback = new FileSystemWorkspaceRepository();
     }
+    logger.debug('DaemonWorkspaceRepository.saveContext using filesystem', { workspaceId });
     return this.filesystemFallback.saveContext(workspaceId, context);
   }
 
   async readContext(workspaceId: WorkspaceId): Promise<any | null> {
-    // Filesystem fallback for workspace UI context (navigation state).
-    // Note: workspace.getContext RPC (PROTOCOL.md §5.1) returns chat-context items,
-    // NOT workspace UI context — these are different domains requiring separate daemon support.
+    if (WorkspaceConfig.isVirtualWorkspace(workspaceId)) {
+      return null;
+    }
+
+    // Use workspace.getUiContext RPC (PROTOCOL.md §5.1, intentd#175)
+    try {
+      const { getBackendClient } = await import('../../backend/main/backend.ipc');
+      const response = (await getBackendClient().request('workspace.getUiContext', {
+        workspaceId,
+      })) as { uiContext?: any | null } | undefined;
+
+      const daemonContext = response?.uiContext;
+
+      // One-time migration: if daemon has no stored context (field absent/undefined) but FS file exists,
+      // seed the daemon from FS (write-through). Explicit null values are returned as-is.
+      if (daemonContext === undefined) {
+        if (!this.filesystemFallback) {
+          this.filesystemFallback = new FileSystemWorkspaceRepository();
+        }
+        const fsContext = await this.filesystemFallback.readContext(workspaceId);
+
+        if (fsContext !== null) {
+          logger.debug('Migrating UI context from filesystem to daemon', { workspaceId });
+          // Write-through to daemon (migration)
+          try {
+            await getBackendClient().request('workspace.updateUiContext', {
+              workspaceId,
+              uiContext: fsContext,
+            });
+            logger.debug('UI context migrated to daemon', { workspaceId });
+            return fsContext;
+          } catch (migrationError) {
+            logger.warn('Failed to migrate UI context to daemon', {
+              workspaceId,
+              error: (migrationError as Error).message,
+            });
+            // Return FS context anyway since migration failed
+            return fsContext;
+          }
+        }
+      }
+
+      logger.debug('UI context read from daemon', { workspaceId });
+      // Return daemon context as-is - no coercion. Undefined becomes null for consistency with return type.
+      return daemonContext !== undefined ? daemonContext : null;
+    } catch (error) {
+      logger.debug('Failed to read UI context from daemon, falling back to filesystem', {
+        workspaceId,
+        error: (error as Error).message,
+      });
+      // Fall through to filesystem fallback
+    }
+
+    // Fallback to filesystem when RPC fails
     if (!this.filesystemFallback) {
       this.filesystemFallback = new FileSystemWorkspaceRepository();
     }
+    logger.debug('DaemonWorkspaceRepository.readContext using filesystem', { workspaceId });
     return this.filesystemFallback.readContext(workspaceId);
   }
 
