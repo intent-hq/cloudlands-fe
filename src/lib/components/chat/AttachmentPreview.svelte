@@ -57,7 +57,7 @@
     // Use base64 data if available
     if (imageData && imageMimeType) {
       thumbnailUrl = `data:${imageMimeType};base64,${imageData}`;
-      return;
+      return undefined; // explicit - no cleanup needed for data URLs
     }
     // Otherwise use File object
     if (file && type.startsWith('image/')) {
@@ -65,6 +65,8 @@
       thumbnailUrl = url;
       return () => URL.revokeObjectURL(url);
     }
+    // Clear thumbnailUrl if neither condition matches
+    thumbnailUrl = null;
   });
 
   // Determine icon based on file type

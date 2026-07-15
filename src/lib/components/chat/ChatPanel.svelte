@@ -2430,8 +2430,8 @@
     const workspaceContextStr = buildWorkspaceContextString();
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
-    // Extract imageBlocks from ALL context items with imageData/imageMimeType
-    // (includes both attachment items and inline images as fallback)
+    // Extract imageBlocks from any context item with imageData/imageMimeType
+    // Works for both file-type attachments and legacy inline-image items
     const imageBlocks = allContextItems
       .filter((item) => item.imageData && item.imageMimeType)
       .map((item) => ({
@@ -2582,8 +2582,8 @@
     const workspaceContextStr = buildWorkspaceContextString();
     const noteIds = currentMainPanelContext?.noteId ? [currentMainPanelContext.noteId] : undefined;
 
-    // Extract imageBlocks from ALL context items with imageData/imageMimeType
-    // (includes both attachment items and inline images as fallback)
+    // Extract imageBlocks from any context item with imageData/imageMimeType
+    // Works for both file-type attachments and legacy inline-image items
     const imageBlocks = allContextItems
       .filter((item) => item.imageData && item.imageMimeType)
       .map((item) => ({

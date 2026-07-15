@@ -49,13 +49,6 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      close();
-      return;
-    }
-
     // Manual focus trap: Tab and Shift+Tab cycle between focusable elements
     if (e.key === 'Tab') {
       if (!dialogElement) return;
