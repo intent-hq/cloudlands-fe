@@ -67,19 +67,24 @@ export async function initChangeHistory(): Promise<void> {
   return initPromise;
 }
 
-function warnIfUninitialized(action: string): boolean {
-  if (!initialized) {
-    logger.warn(`Change history not initialized, ${action}`);
-    return false;
+async function ensureInitialized(): Promise<void> {
+  if (initialized) return;
+  if (initPromise) {
+    await initPromise;
+    return;
   }
-  return true;
+  // If neither initialized nor initPromise, init was never called — trigger it now
+  await initChangeHistory();
 }
 
 /**
  * Get diff chunks for a single workspace from the in-memory cache.
+ * Waits for initialization if it's in progress.
  */
-export function getChangeHistoryForWorkspace(workspaceId: string): DiffChunk[] {
-  if (!warnIfUninitialized(`returning empty history for ${workspaceId}`)) return [];
+export async function getChangeHistoryForWorkspace(
+  workspaceId: string,
+): Promise<DiffChunk[]> {
+  await ensureInitialized();
   const entry = cache[workspaceId];
   return Array.isArray(entry) ? entry : [];
 }
@@ -87,21 +92,23 @@ export function getChangeHistoryForWorkspace(workspaceId: string): DiffChunk[] {
 /**
  * Get the full change-history map (used by callers that need to enumerate
  * workspaces present on disk).
+ * Waits for initialization if it's in progress.
  */
-export function getAllChangeHistory(): ChangeHistoryMap {
-  if (!warnIfUninitialized('returning empty map')) return {};
+export async function getAllChangeHistory(): Promise<ChangeHistoryMap> {
+  await ensureInitialized();
   return cache;
 }
 
 /**
  * Replace or delete a workspace's history and push the updated map to the
  * daemon.
+ * Waits for initialization if it's in progress.
  */
-export function setChangeHistoryForWorkspace(
+export async function setChangeHistoryForWorkspace(
   workspaceId: string,
   chunks: DiffChunk[] | undefined,
-): void {
-  if (!warnIfUninitialized(`cannot save history for ${workspaceId}`)) return;
+): Promise<void> {
+  await ensureInitialized();
 
   if (!chunks || chunks.length === 0) {
     if (cache[workspaceId] === undefined) return;
@@ -114,9 +121,12 @@ export function setChangeHistoryForWorkspace(
 
 /**
  * Bulk-replace multiple workspaces' histories with a single push to the daemon.
+ * Waits for initialization if it's in progress.
  */
-export function bulkSetChangeHistory(entries: Iterable<[string, DiffChunk[]]>): void {
-  if (!warnIfUninitialized('cannot bulk save history')) return;
+export async function bulkSetChangeHistory(
+  entries: Iterable<[string, DiffChunk[]]>,
+): Promise<void> {
+  await ensureInitialized();
   for (const [workspaceId, chunks] of entries) {
     if (!chunks || chunks.length === 0) {
       delete cache[workspaceId];

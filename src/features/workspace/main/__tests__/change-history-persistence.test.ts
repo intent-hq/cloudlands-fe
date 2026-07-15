@@ -53,8 +53,8 @@ describe('change-history-persistence ↔ daemon settings.* (PROTOCOL.md §5.12)'
     expect(requestMock).toHaveBeenCalledWith('settings.get', {
       path: 'workspace.changeHistory',
     });
-    expect(getChangeHistoryForWorkspace('ws1')).toHaveLength(1);
-    expect(getChangeHistoryForWorkspace('missing')).toEqual([]);
+    expect(await getChangeHistoryForWorkspace('ws1')).toHaveLength(1);
+    expect(await getChangeHistoryForWorkspace('missing')).toEqual([]);
   });
 
   it('setChangeHistoryForWorkspace pushes the updated map via settings.update { changes: [...] }', async () => {
@@ -63,7 +63,7 @@ describe('change-history-persistence ↔ daemon settings.* (PROTOCOL.md §5.12)'
     );
     await initChangeHistory();
     requestMock.mockClear();
-    setChangeHistoryForWorkspace('ws1', [{ files: [], timestamp: 't' } as any]);
+    await setChangeHistoryForWorkspace('ws1', [{ files: [], timestamp: 't' } as any]);
     await flush();
     expect(requestMock).toHaveBeenCalledWith('settings.update', {
       changes: [
@@ -85,9 +85,9 @@ describe('change-history-persistence ↔ daemon settings.* (PROTOCOL.md §5.12)'
     );
     await initChangeHistory();
     requestMock.mockClear();
-    setChangeHistoryForWorkspace('ws1', []);
+    await setChangeHistoryForWorkspace('ws1', []);
     await flush();
-    expect(getAllChangeHistory()).toEqual({});
+    expect(await getAllChangeHistory()).toEqual({});
     expect(requestMock).toHaveBeenCalledWith('settings.update', {
       changes: [{ path: 'workspace.changeHistory', value: {} }],
     });
@@ -99,7 +99,7 @@ describe('change-history-persistence ↔ daemon settings.* (PROTOCOL.md §5.12)'
     );
     await initChangeHistory();
     requestMock.mockClear();
-    bulkSetChangeHistory([
+    await bulkSetChangeHistory([
       ['ws1', [{ files: [], timestamp: 't1' } as any]],
       ['ws2', [{ files: [], timestamp: 't2' } as any]],
     ]);
@@ -111,6 +111,59 @@ describe('change-history-persistence ↔ daemon settings.* (PROTOCOL.md §5.12)'
           path: 'workspace.changeHistory',
           value: {
             ws1: [{ files: [], timestamp: 't1' }],
+            ws2: [{ files: [], timestamp: 't2' }],
+          },
+        },
+      ],
+    });
+  });
+
+  it('[STAB-37] accessors wait for init when called before initialization completes', async () => {
+    // Mock settings.get to return history after a delay
+    let resolveInit: (value: any) => void;
+    const initPromise = new Promise((resolve) => {
+      resolveInit = resolve;
+    });
+    requestMock.mockImplementation(async () => {
+      await initPromise;
+      return {
+        path: 'workspace.changeHistory',
+        value: { ws1: [{ files: [], timestamp: 't' }] },
+      };
+    });
+
+    const {
+      initChangeHistory,
+      getChangeHistoryForWorkspace,
+      getAllChangeHistory,
+      setChangeHistoryForWorkspace,
+    } = await import('../change-history-persistence');
+
+    // Start init but don't await it yet
+    const initTask = initChangeHistory();
+
+    // Call accessors before init completes — they should wait
+    const getTask = getChangeHistoryForWorkspace('ws1');
+    const getAllTask = getAllChangeHistory();
+
+    // Complete the init
+    resolveInit!({});
+    await initTask;
+
+    // Verify accessors return correct data (no warnings, no empty fallbacks)
+    expect(await getTask).toEqual([{ files: [], timestamp: 't' }]);
+    expect(await getAllTask).toEqual({ ws1: [{ files: [], timestamp: 't' }] });
+
+    // setChangeHistoryForWorkspace should also work after init
+    requestMock.mockClear();
+    await setChangeHistoryForWorkspace('ws2', [{ files: [], timestamp: 't2' } as any]);
+    await flush();
+    expect(requestMock).toHaveBeenCalledWith('settings.update', {
+      changes: [
+        {
+          path: 'workspace.changeHistory',
+          value: {
+            ws1: [{ files: [], timestamp: 't' }],
             ws2: [{ files: [], timestamp: 't2' }],
           },
         },

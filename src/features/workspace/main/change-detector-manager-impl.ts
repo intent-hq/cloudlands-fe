@@ -350,7 +350,7 @@ export class ChangeDetectorManager extends EventEmitter {
       this.saveHistoryDebounceTimer = null;
     }
     // Save any pending changes before disposing
-    this.doSaveChangeHistory();
+    void this.doSaveChangeHistory();
 
     // Clear all pending detectors
     this.pendingDetectors.clear();
@@ -470,10 +470,10 @@ export class ChangeDetectorManager extends EventEmitter {
    * Get change history for a workspace
    * PERF: Only loads history for the specific workspace requested
    */
-  getHistory(workspaceId: string, limit?: number): DiffChunk[] {
+  async getHistory(workspaceId: string, limit?: number): Promise<DiffChunk[]> {
     // PERF: Load history for this specific workspace if not in memory
     if (!this.changeHistory.has(workspaceId)) {
-      this.loadWorkspaceHistory(workspaceId);
+      await this.loadWorkspaceHistory(workspaceId);
     }
     const history = this.changeHistory.get(workspaceId) || [];
     if (limit) {
@@ -486,10 +486,10 @@ export class ChangeDetectorManager extends EventEmitter {
    * Get all changes for a workspace
    * PERF: Only loads history for the specific workspace requested
    */
-  getAllChanges(workspaceId: string): DiffChunk[] {
+  async getAllChanges(workspaceId: string): Promise<DiffChunk[]> {
     // PERF: Load history for this specific workspace if not in memory
     if (!this.changeHistory.has(workspaceId)) {
-      this.loadWorkspaceHistory(workspaceId);
+      await this.loadWorkspaceHistory(workspaceId);
     }
     return this.changeHistory.get(workspaceId) || [];
   }
@@ -497,9 +497,9 @@ export class ChangeDetectorManager extends EventEmitter {
   /**
    * Clear history for a workspace (from memory and disk)
    */
-  clearHistory(workspaceId: string): void {
+  async clearHistory(workspaceId: string): Promise<void> {
     this.changeHistory.delete(workspaceId);
-    this.saveWorkspaceHistory(workspaceId, []);
+    await this.saveWorkspaceHistory(workspaceId, []);
   }
 
   /**
@@ -918,9 +918,9 @@ export class ChangeDetectorManager extends EventEmitter {
    * PERF: Load history for a SINGLE workspace from disk
    * Only loads what's needed, not all 500+ workspaces
    */
-  private loadWorkspaceHistory(workspaceId: string): void {
+  private async loadWorkspaceHistory(workspaceId: string): Promise<void> {
     try {
-      const stored = getChangeHistoryForWorkspace(workspaceId);
+      const stored = await getChangeHistoryForWorkspace(workspaceId);
       if (stored.length > 0) {
         this.changeHistory.set(workspaceId, stored);
         logger.debug('[ChangeDetectorManager] Loaded history for workspace', {
@@ -938,10 +938,10 @@ export class ChangeDetectorManager extends EventEmitter {
    * PERF: Save history for a SINGLE workspace to disk
    * Reads existing data, updates just this workspace, writes back
    */
-  private saveWorkspaceHistory(workspaceId: string, chunks: DiffChunk[]): void {
+  private async saveWorkspaceHistory(workspaceId: string, chunks: DiffChunk[]): Promise<void> {
     try {
       const stripped = chunks.length === 0 ? [] : this.stripLargeContent(chunks);
-      setChangeHistoryForWorkspace(workspaceId, stripped);
+      await setChangeHistoryForWorkspace(workspaceId, stripped);
       logger.debug('[ChangeDetectorManager] Saved history for workspace', {
         workspaceId,
         chunks: chunks.length,
@@ -965,7 +965,7 @@ export class ChangeDetectorManager extends EventEmitter {
     // Schedule the save with debouncing
     this.saveHistoryDebounceTimer = setTimeout(() => {
       this.saveHistoryDebounceTimer = null;
-      this.doSaveChangeHistory();
+      void this.doSaveChangeHistory();
     }, this.SAVE_DEBOUNCE_MS);
   }
 
@@ -973,7 +973,7 @@ export class ChangeDetectorManager extends EventEmitter {
    * Actually save change history to store (called after debounce)
    * PERF: Only saves workspaces currently in memory, preserves others on disk
    */
-  private doSaveChangeHistory(): void {
+  private async doSaveChangeHistory(): Promise<void> {
     try {
       // Push only the workspaces we have in memory (stripped) to the daemon;
       // the persistence layer preserves other workspaces already on disk.
@@ -981,10 +981,11 @@ export class ChangeDetectorManager extends EventEmitter {
       for (const [workspaceId, chunks] of this.changeHistory.entries()) {
         stripped.push([workspaceId, this.stripLargeContent(chunks)]);
       }
-      bulkSetChangeHistory(stripped);
+      await bulkSetChangeHistory(stripped);
+      const allHistory = await getAllChangeHistory();
       logger.debug('[ChangeDetectorManager] Change history saved to disk', {
         inMemory: this.changeHistory.size,
-        onDisk: Object.keys(getAllChangeHistory()).length,
+        onDisk: Object.keys(allHistory).length,
       });
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
