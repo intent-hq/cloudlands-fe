@@ -25,9 +25,10 @@ import { store as appStore } from "$store/renderer/store";
 import { initAutoUpdate } from "$store/renderer/slices/auto-update/auto-update-slice";
 import type { UpdateState, UpdateProgress } from "$features/auto-update/types";
 import {
-  registerMockInvokeHandler,
+  registerMockIpcHandler,
   emitMockIpcEvent,
-  clearMockIpcRouter,
+  resetMockIpcRouter,
+  addMockIpcListener,
 } from "$shared/ipc-mock-router";
 
 const flush = async () => {
@@ -36,25 +37,18 @@ const flush = async () => {
   }
 };
 
-// Mock window.electronAPI for event listeners
-const eventHandlers = new Map<string, Array<(data: any) => void>>();
-let handlerIdCounter = 0;
-
+// Wire up window.electronAPI.on to addMockIpcListener so auto-update client listeners work
 beforeAll(() => {
-  (global as any).window = {
-    electronAPI: {
-      on: vi.fn((channel: string, callback: (data: any) => void) => {
-        if (!eventHandlers.has(channel)) {
-          eventHandlers.set(channel, []);
-        }
-        const id = ++handlerIdCounter;
-        eventHandlers.get(channel)!.push(callback);
-        return id;
-      }),
-      offById: vi.fn((channel: string, id: number) => {
-        // Simple cleanup — not critical for these tests
-      }),
-    },
+  let listenerIdCounter = 0;
+  (window as any).electronAPI = {
+    ...((window as any).electronAPI || {}),
+    on: vi.fn((channel: string, handler: (data: any) => void) => {
+      const dispose = addMockIpcListener(channel, handler);
+      const id = ++listenerIdCounter;
+      // Store the disposer for offById
+      return id;
+    }),
+    offById: vi.fn(),
   };
 });
 
@@ -65,9 +59,7 @@ describe("auto-update-mutation-service", () => {
 
   beforeEach(async () => {
     await flush();
-    eventHandlers.clear();
-    handlerIdCounter = 0;
-    clearMockIpcRouter();
+    resetMockIpcRouter();
   });
 
   it("should register IPC listeners exactly once on initAutoUpdate", async () => {
@@ -80,11 +72,10 @@ describe("auto-update-mutation-service", () => {
       channel: "stable",
     };
 
-    mockedInvoke.mockImplementation(async (channel: string) => {
-      if (channel === AUTO_UPDATE_CHANNELS.GET_STATE) {
-        return { success: true, data: initialState };
-      }
-      return { success: true, data: null };
+    const getStateSpy = vi.fn();
+    registerMockIpcHandler(AUTO_UPDATE_CHANNELS.GET_STATE, async () => {
+      getStateSpy();
+      return { success: true, data: initialState };
     });
 
     // Dispatch initAutoUpdate — should register listeners and fetch state
@@ -92,7 +83,7 @@ describe("auto-update-mutation-service", () => {
     await flush();
 
     // Verify getState was called
-    expect(mockedInvoke).toHaveBeenCalledWith(AUTO_UPDATE_CHANNELS.GET_STATE);
+    expect(getStateSpy).toHaveBeenCalled();
 
     // Verify listeners registered for all event channels
     expect(eventHandlers.has(AUTO_UPDATE_CHANNELS.SHOW_TOAST)).toBe(true);
@@ -112,14 +103,16 @@ describe("auto-update-mutation-service", () => {
   });
 
   it("should dispatch showToastChecking when SHOW_TOAST event fires", async () => {
-    mockedInvoke.mockResolvedValue({ success: true, data: { status: "idle" } });
+    registerMockIpcHandler(AUTO_UPDATE_CHANNELS.GET_STATE, async () => ({
+      success: true,
+      data: { status: "idle", currentVersion: "2.0.2", updateInfo: null, progress: null, error: null, channel: "stable" },
+    }));
 
     appStore.dispatch(initAutoUpdate());
     await flush();
 
     // Simulate SHOW_TOAST IPC event
-    const handlers = eventHandlers.get(AUTO_UPDATE_CHANNELS.SHOW_TOAST)!;
-    handlers.forEach((handler) => handler(undefined));
+    emitMockIpcEvent(AUTO_UPDATE_CHANNELS.SHOW_TOAST, undefined);
     await flush();
 
     // Verify slice state
@@ -129,14 +122,16 @@ describe("auto-update-mutation-service", () => {
   });
 
   it("should dispatch setUpToDate + showToast when UP_TO_DATE event fires", async () => {
-    mockedInvoke.mockResolvedValue({ success: true, data: { status: "idle", currentVersion: "2.0.2" } });
+    registerMockIpcHandler(AUTO_UPDATE_CHANNELS.GET_STATE, async () => ({
+      success: true,
+      data: { status: "idle", currentVersion: "2.0.2", updateInfo: null, progress: null, error: null, channel: "stable" },
+    }));
 
     appStore.dispatch(initAutoUpdate());
     await flush();
 
     // Simulate UP_TO_DATE IPC event
-    const handlers = eventHandlers.get(AUTO_UPDATE_CHANNELS.UP_TO_DATE)!;
-    handlers.forEach((handler) => handler({ version: "2.0.2", isDev: false }));
+    emitMockIpcEvent(AUTO_UPDATE_CHANNELS.UP_TO_DATE, { version: "2.0.2", isDev: false });
     await flush();
 
     // Verify slice state
