@@ -18,6 +18,7 @@ import type { SearchContext } from '../../src/lib/services/mentions/types';
 // Mock the daemon transport (FolderProvider → search.fileNames)
 vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
+  onBackendReconnected: vi.fn(() => () => {}),
 }));
 
 // Mock the appClient (NoteProvider → note.list / workspace list)
