@@ -246,7 +246,7 @@ describe("provider-availability-check-service", () => {
   // Backend connect/reconnect functional test: Verify the listener triggers bulk re-check.
   it("backend connected event triggers bulk re-check and flips state from unavailable to available", async () => {
     // The middleware factory runs when appStore.init() is called in beforeAll, which
-    // should register a BACKEND.STATUS listener via electronAPI().on().
+    // should register a BACKEND.STATUS listener via window.electronAPI.on().
     const backendStatusHandlers = (window as any).electronAPI._getRegisteredHandlers("backend:status");
     expect(backendStatusHandlers.length).toBeGreaterThan(0);
     const backendStatusListener = backendStatusHandlers[0];

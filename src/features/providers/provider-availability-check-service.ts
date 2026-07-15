@@ -33,11 +33,11 @@ import { invoke } from "$lib/electron-bridge";
 import { createLogger } from "$lib/utils/client-logger";
 import { IPC_CHANNELS } from "$shared/ipc-registry";
 import { PROVIDER_AVAILABILITY_KEY_TO_ID } from "$shared/config/provider-config";
+import { clearProviderAvailabilityCache } from "$features/providers/provider-availability.client";
+import { store as appStore } from "$store/renderer/store";
 
 const PROVIDERS_CHANNELS = IPC_CHANNELS.PROVIDERS;
 const BACKEND_CHANNELS = IPC_CHANNELS.BACKEND;
-import { clearProviderAvailabilityCache } from "$features/providers/provider-availability.client";
-import { store as appStore } from "$store/renderer/store";
 import {
   checkAllProvidersComplete,
   checkAllProvidersRequested,

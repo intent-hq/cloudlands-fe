@@ -88,11 +88,13 @@ async function handleInitAutoUpdate(): Promise<void> {
 
     logger.debug("Auto-update listeners registered and initial state fetched");
   } catch (error) {
-    // Reset flag on error so a retry can attempt registration again
-    listenersRegistered = false;
+    // Do NOT reset listenersRegistered here — all listener registrations
+    // (onShowToast / onUpToDate / onStatusChanged / onProgress / onError) are
+    // synchronous and happen before the getState() await. If getState() throws,
+    // listeners are already registered and a retry would duplicate them.
     logger.error("Failed to initialize auto-update", error);
-    // Degrade gracefully — the component will still dispatch actions but events
-    // won't flow until the next init attempt (e.g. on reload).
+    // Degrade gracefully — listeners are wired but the slice won't have initial
+    // state until the next check.
   }
 }
 
