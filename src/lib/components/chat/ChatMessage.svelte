@@ -24,6 +24,9 @@
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
+  import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import { isImageBlock } from '$shared/types/content-block.guards';
+  import type { ContentBlock } from '$shared/types/content-block';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
@@ -200,6 +203,12 @@
   // Local state
   let messageElement: HTMLDivElement;
   let showRulesInspector = $state(false);
+
+  // Lightbox state for sent image attachments
+  let lightboxOpen = $state(false);
+  let lightboxImageUrl = $state('');
+  let lightboxImageName = $state('');
+  let lightboxOpenerElement: HTMLButtonElement | null = $state(null);
 
   // Parse context pills from message text
   // Context format: [Currently viewing file: path] or [Currently viewing note: title] etc.
@@ -600,6 +609,14 @@
       (block: any) => block.type === 'image' && block.data && block.mimeType,
     );
   });
+
+  // Open image in lightbox
+  function openImageLightbox(imageBlock: ContentBlock & { data: string; mimeType: string }, openerElement: HTMLButtonElement, index: number = 0) {
+    lightboxImageUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
+    lightboxImageName = imageBlock.fileName || `Attached Image ${index + 1}`;
+    lightboxOpenerElement = openerElement;
+    lightboxOpen = true;
+  }
 
   // Extract file blocks from contentBlocks
   const fileBlocks = $derived.by(() => {
@@ -1034,15 +1051,23 @@
               {#each imageBlocks as imageBlock, i (i)}
                 <button
                   type="button"
-                  class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0"
-                  onclick={() => {
-                    const dataUrl = `data:${imageBlock.mimeType};base64,${imageBlock.data}`;
-                    window.open(dataUrl, '_blank');
+                  class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 focus:outline-none focus:ring-2 focus:ring-primary rounded"
+                  onclick={(e) => {
+                    if (isImageBlock(imageBlock)) {
+                      openImageLightbox(imageBlock, e.currentTarget, i);
+                    }
                   }}
+                  onkeydown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.currentTarget.click();
+                    }
+                  }}
+                  aria-label="View attached image {i + 1} of {imageBlocks.length} full size"
                 >
                   <img
                     src="data:{imageBlock.mimeType};base64,{imageBlock.data}"
-                    alt="Attached"
+                    alt="Attached image {i + 1}"
                     class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
                   />
                 </button>
@@ -1129,3 +1154,11 @@
     onClose={() => (showRulesInspector = false)}
   />
 {/if}
+
+<!-- Image Lightbox for sent message attachments -->
+<ImageLightbox
+  bind:open={lightboxOpen}
+  imageUrl={lightboxImageUrl}
+  imageName={lightboxImageName}
+  openerElement={lightboxOpenerElement}
+/>
