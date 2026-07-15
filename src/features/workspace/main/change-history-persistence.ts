@@ -62,6 +62,8 @@ export async function initChangeHistory(): Promise<void> {
       });
     } catch (error) {
       logger.error('Failed to initialize change history', error as Error);
+      // Clear initPromise on failure so retry is possible
+      initPromise = null;
     }
   })();
   return initPromise;
