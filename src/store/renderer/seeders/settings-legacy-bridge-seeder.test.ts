@@ -122,11 +122,24 @@ describe("settings-legacy-bridge-seeder", () => {
 
     it("persists FE-only keys to namespaced localStorage", async () => {
       const result = await mockInvoke<Envelope>(SETTINGS_CHANNELS.SET, {
+        key: "linearIssueFilter",
+        value: "all",
+      });
+      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem("legacy-settings:linearIssueFilter")).toBe('"all"');
+      expect(result).toEqual({ success: true });
+    });
+
+    it("routes daemon keys to backend settings.update (rtkEnabled → rtk.enabled)", async () => {
+      mockedRequest.mockResolvedValue({});
+      const result = await mockInvoke<Envelope>(SETTINGS_CHANNELS.SET, {
         key: "rtkEnabled",
         value: true,
       });
-      expect(mockedRequest).not.toHaveBeenCalled();
-      expect(window.localStorage.getItem("legacy-settings:rtkEnabled")).toBe("true");
+      expect(mockedRequest).toHaveBeenCalledWith("settings.update", {
+        changes: [{ path: "rtk.enabled", value: true }],
+      });
+      expect(window.localStorage.getItem("legacy-settings:rtkEnabled")).toBeNull();
       expect(result).toEqual({ success: true });
     });
   });
