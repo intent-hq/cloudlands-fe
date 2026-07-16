@@ -4,13 +4,17 @@
    *
    * Allows users to enable/disable rtk command prefixing for agents.
    * The toggle is disabled when rtk is not installed on the system.
+   *
+   * The rtk.enabled flag is now daemon-backed (PROTOCOL §5.12) after Wave 1
+   * merged intentd PR #190. The component reads/writes via settings.get/update
+   * like other daemon-backed settings (e.g., AgentBackendSettings.svelte).
    */
 
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
   import { onMount } from 'svelte';
   import { invoke } from '$shared/generated/ipc-client';
-  import { safeLocalStorage } from '$lib/utils/safe-storage';
+  import { appClient } from '$lib/client';
 
   import {
   addTerminal,
@@ -25,23 +29,31 @@
   let rtkEnabled = $state(false);
   let loaded = $state(false);
   let checking = $state(false);
+  let settingsError = $state('');
 
-  // PROTOCOL §5.12 classifies `rtk.enabled` as FE-only ("Not exposed") — the
-  // flag persists locally, while availability comes from the daemon-backed
-  // `system:check-rtk` bridge (`host.findBinary`).
-  const RTK_ENABLED_STORAGE_KEY = 'rtkEnabled';
+  const SETTING_PATH = 'rtk.enabled';
 
   onMount(async () => {
-    rtkEnabled = safeLocalStorage.getItem(RTK_ENABLED_STORAGE_KEY) === 'true';
+    // Read rtk.enabled from daemon settings catalog (LiveSettingsClient.get folds errors to null)
+    const entry = await appClient.settings.get(SETTING_PATH);
+    if (entry === null) {
+      settingsError = 'Failed to load RTK settings from the daemon.';
+      console.error('Failed to load RTK settings: daemon returned null');
+    } else {
+      rtkEnabled = typeof entry.value === 'boolean' ? entry.value : false;
+      settingsError = '';
+    }
+
+    // Check if rtk is installed (separate failure domain)
     try {
-      // Check if rtk is installed
       const availResult = await invoke<any>(SYSTEM_CHANNELS.CHECK_RTK, undefined);
       rtkAvailable = availResult?.data?.available ?? false;
-    } catch {
-      // Silently fail
-    } finally {
-      loaded = true;
+    } catch (error) {
+      console.error('Failed to check RTK availability:', error);
+      // rtkAvailable stays false, toggle will be disabled
     }
+
+    loaded = true;
   });
 
   async function recheckRtk() {
@@ -87,13 +99,25 @@
     }
   }
 
-  function handleToggle() {
-    rtkEnabled = !rtkEnabled;
-    safeLocalStorage.setItem(RTK_ENABLED_STORAGE_KEY, String(rtkEnabled));
+  async function handleToggle() {
+    const newValue = !rtkEnabled;
+    try {
+      await appClient.settings.update([{ path: SETTING_PATH, value: newValue }]);
+      rtkEnabled = newValue;
+      settingsError = '';
+    } catch (error) {
+      settingsError = 'Failed to save RTK setting.';
+      console.error('Failed to update rtk.enabled setting:', error);
+    }
   }
 </script>
 
 {#if loaded}
+  {#if settingsError}
+    <div class="text-xs text-destructive mb-2">
+      {settingsError}
+    </div>
+  {/if}
   <div class="flex justify-between">
     <div>
       <p class="text-sm font-medium text-foreground">RTK command optimization</p>

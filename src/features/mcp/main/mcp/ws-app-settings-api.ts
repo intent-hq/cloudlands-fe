@@ -67,6 +67,7 @@ const DAEMON_SETTING_PATHS: Record<string, string> = {
   'mcp.enableUserServers': 'mcp.enableUserServers',
   'mcp.disabledServers': 'mcp.disabledServers',
   'linear.issueFilter': 'linear.issueFilter',
+  'rtk.enabled': 'rtk.enabled',
 };
 
 /** Schema paths whose value is a sub-key of the daemon `providers.paths` object. */
@@ -78,7 +79,6 @@ const PROVIDER_PATH_KEYS: Record<string, string> = {
 /** Schema paths owned by `main/local-prefs.ts` (FE-local, no daemon peer). */
 const LOCAL_PREF_KEYS: Record<string, string> = {
   'preferences.betaUpdatesEnabled': 'betaUpdatesEnabled',
-  'rtk.enabled': 'rtkEnabled',
 };
 
 async function readDaemonSetting(path: string): Promise<unknown> {

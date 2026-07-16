@@ -5,7 +5,7 @@
  * Edit this file directly - it's the source of truth.
  */
 
-import { getRtkPromptInstruction } from '../rtk-detector';
+
 
 const INSTRUCTION = `# Augment Agent
 
@@ -136,10 +136,9 @@ export function getBaseInstruction(): string {
     result += CDP_DEBUG_INSTRUCTION;
   }
 
-  const rtkInstruction = getRtkPromptInstruction();
-  if (rtkInstruction) {
-    result += '\n' + rtkInstruction + '\n';
-  }
+  // RTK prompt injection is now daemon-side (intentd PR #190) — the daemon's
+  // assemble_system_prompt injects the RTK instruction when rtk.enabled is true.
+  // Removed the FE-local getRtkPromptInstruction() call here.
 
   return result;
 }
