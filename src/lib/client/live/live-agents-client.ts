@@ -217,18 +217,23 @@ export class LiveAgentsClient implements AgentsClient {
     // the emitted `agent:deleted` event to reconcile the list.
     return runMutation("agent.delete", { agentId });
   }
-  async retry(agentId: string, workspaceId: string): Promise<{ ok: boolean; error?: string }> {
+  async retry(
+    agentId: string,
+    workspaceId: string,
+  ): Promise<{ ok: boolean; redriven?: boolean; error?: string }> {
     // `agent.retry` redrives a failed agent spawn. Only valid when agent status
-    // is `error`; returns `{ ok: false }` otherwise. Clears error status to
-    // pending, tears down stale child, redrives queued message. Emits
-    // agent:status-changed events.
+    // is `error`; returns `{ ok: false }` otherwise. On ok:true, `redriven`
+    // reports whether a queued message existed and is being redriven (status
+    // cleared to pending) or the queue was empty (status cleared to idle —
+    // nothing to redrive). Emits agent:status-changed events.
     try {
-      const result = await backendRequest<{ ok?: unknown } | undefined>("agent.retry", {
-        agentId,
-        workspaceId,
-      });
+      const result = await backendRequest<{ ok?: unknown; redriven?: unknown } | undefined>(
+        "agent.retry",
+        { agentId, workspaceId },
+      );
       const ok = typeof result?.ok === "boolean" ? result.ok : false;
-      return { ok, error: ok ? undefined : "Agent not in error status" };
+      const redriven = typeof result?.redriven === "boolean" ? result.redriven : undefined;
+      return { ok, redriven, error: ok ? undefined : "Agent not in error status" };
     } catch (error) {
       // Transport/RPC errors return { ok: false, error } rather than throwing so
       // callers can surface the error and keep the retry button visible.

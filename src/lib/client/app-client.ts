@@ -313,14 +313,19 @@ export interface AgentsClient {
   delete(agentId: string, workspaceId?: string): Promise<MutationResult>;
   /**
    * Retry a failed agent spawn (`agent.retry`). Only valid when the agent
-   * status is `error` (after spawn exhaustion); returns `{ ok: true }` on
-   * success or `{ ok: false, error?: string }` when the agent is not in error
-   * status or a transport error occurs. Clears the error status back to
-   * pending, tears down any stale child, and redrives the queued message.
-   * Emits `agent:status-changed` events (pending → active → idle/error
-   * depending on the retry outcome).
+   * status is `error` (after spawn exhaustion); returns `{ ok: false, error? }`
+   * when the agent is not in error status or a transport error occurs. On
+   * `ok: true`, `redriven` reports whether a queued message existed: `true` —
+   * error cleared to pending, stale child torn down, queued message redriven;
+   * `false` — the queue was empty, error cleared to idle, nothing to redrive
+   * (undefined on older daemons that omit the field). Emits
+   * `agent:status-changed` events (pending → active → idle/error depending on
+   * the retry outcome).
    */
-  retry(agentId: string, workspaceId: string): Promise<{ ok: boolean; error?: string }>;
+  retry(
+    agentId: string,
+    workspaceId: string,
+  ): Promise<{ ok: boolean; redriven?: boolean; error?: string }>;
   /**
    * Resolve an outstanding interactive permission prompt
    * (`agent.respondPermission`, PROTOCOL §8). The daemon forwards the chosen

@@ -121,6 +121,7 @@
   import DateSeparator from './DateSeparator.svelte';
   import EventWakeupBanner, { parseAgentEvents } from './EventWakeupBanner.svelte';
   import AgentCard from './AgentCard.svelte';
+  import { toast } from 'svelte-sonner';
   import { isDelegatedBackgroundTaskSession } from '$shared/utils/agent-session-metadata';
   import StreamingStatus from './StreamingStatus.svelte';
   import RegularAgentWelcome from './RegularAgentWelcome.svelte';
@@ -2489,9 +2490,24 @@
         const errorToShow = result.error || priorError;
         appStore.dispatch(chatSendFailed(agentId, errorToShow));
         appStore.dispatch(agentSessionRetryLastMessageRequested(agentId, workspace.id));
+        return;
       }
-      // If ok:true, the daemon emits agent:status-changed events and redrives
-      // the queued message; the UI updates reactively via those events
+
+      // ok:true — the daemon cleared the error and emits agent:status-changed
+      // (pending when a queued message is redriven, idle when the queue was
+      // empty). Converge the local session status from the RPC ack too, so the
+      // error banner clears even if the status event is missed (STAB-54).
+      appStore.dispatch(
+        updateAgentSessionFields(agentId, {
+          status: result.redriven ? AgentStatus.Pending : AgentStatus.RuntimeIdle,
+          stopReason: null,
+        }),
+      );
+      if (result.redriven === false) {
+        // Nothing was queued to redrive — the error is cleared, but no new
+        // turn starts. Tell the user what to do next instead of a silent no-op.
+        toast.info('Nothing to retry — error cleared. Send a message to start a new turn.');
+      }
       return;
     }
 

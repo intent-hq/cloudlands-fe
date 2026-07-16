@@ -409,14 +409,30 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
           agentId: 'agent-retry-1',
           workspaceId: 'ws-retry-1',
         });
-        return { ok: true };
+        return { ok: true, redriven: true };
       });
       const client = new LiveAgentsClient();
 
       const result = await client.retry('agent-retry-1', 'ws-retry-1');
-      expect(result).toEqual({ ok: true, error: undefined });
+      expect(result).toEqual({ ok: true, redriven: true, error: undefined });
       expect(backend.requests).toHaveLength(1);
       expect(backend.requests[0].method).toBe('agent.retry');
+    });
+
+    it('surfaces redriven:false when the daemon had nothing to redrive', async () => {
+      backend.onRequest('agent.retry', () => ({ ok: true, redriven: false }));
+      const client = new LiveAgentsClient();
+
+      const result = await client.retry('agent-empty-queue', 'ws-1');
+      expect(result).toEqual({ ok: true, redriven: false, error: undefined });
+    });
+
+    it('leaves redriven undefined when the daemon omits it (older daemon)', async () => {
+      backend.onRequest('agent.retry', () => ({ ok: true }));
+      const client = new LiveAgentsClient();
+
+      const result = await client.retry('agent-old-daemon', 'ws-1');
+      expect(result).toEqual({ ok: true, redriven: undefined, error: undefined });
     });
 
     it('returns ok:false with error message when backend returns ok:false', async () => {
