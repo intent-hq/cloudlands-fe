@@ -14,7 +14,7 @@ concurrency:
 jobs:
   typecheck-renderer:
     name: Type Check (renderer)
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       GIT_TERMINAL_PROMPT: '0'
@@ -42,7 +42,7 @@ jobs:
 
   typecheck-main:
     name: Build & Verify (main process)
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       GIT_TERMINAL_PROMPT: '0'
@@ -115,7 +115,7 @@ jobs:
 
   typecheck-preload:
     name: Type Check (preload)
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       GIT_TERMINAL_PROMPT: '0'
@@ -141,9 +141,9 @@ jobs:
       - name: Type check (preload)
         run: pnpm exec tsc --noEmit -p tsconfig.preload.json
 
-  lint:
-    name: ESLint
-    runs-on: macos-14
+  static-checks:
+    name: Lint & Static Checks
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       GIT_TERMINAL_PROMPT: '0'
@@ -166,10 +166,14 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: ESLint
         run: pnpm run lint
+      - name: Accessibility lint
+        run: bash scripts/check-accessibility.sh
+      - name: workspace:* dispatcher gate
+        run: node scripts/check-workspace-event-dispatchers.mjs
 
   test:
     name: Unit Tests
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       GIT_TERMINAL_PROMPT: '0'
@@ -193,63 +197,17 @@ jobs:
       - name: Unit tests
         run: pnpm run test:unit
 
-  accessibility:
-    name: Accessibility Lint
-    runs-on: macos-14
-    timeout-minutes: 30
-    env:
-      GIT_TERMINAL_PROMPT: '0'
-      NODE_OPTIONS: '--max-old-space-size=4096'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.30.3
-          run_install: false
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Accessibility lint
-        run: bash scripts/check-accessibility.sh
-
-  dispatch-gate:
-    name: Workspace Dispatch Gate
-    runs-on: macos-14
-    timeout-minutes: 10
-    env:
-      GIT_TERMINAL_PROMPT: '0'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - name: workspace:* dispatcher gate
-        run: node scripts/check-workspace-event-dispatchers.mjs
-
   gate:
     name: Type Check & Test
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     if: always()
     needs:
       [
         typecheck-renderer,
         typecheck-main,
         typecheck-preload,
-        lint,
+        static-checks,
         test,
-        accessibility,
-        dispatch-gate,
       ]
     steps:
       - name: Check results
@@ -258,10 +216,8 @@ jobs:
           if [ "${{ needs.typecheck-renderer.result }}" != "success" ] || \
              [ "${{ needs.typecheck-main.result }}" != "success" ] || \
              [ "${{ needs.typecheck-preload.result }}" != "success" ] || \
-             [ "${{ needs.lint.result }}" != "success" ] || \
-             [ "${{ needs.test.result }}" != "success" ] || \
-             [ "${{ needs.accessibility.result }}" != "success" ] || \
-             [ "${{ needs.dispatch-gate.result }}" != "success" ]; then
+             [ "${{ needs.static-checks.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ]; then
             echo "One or more jobs failed"
             exit 1
           fi
