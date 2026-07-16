@@ -54,7 +54,12 @@ describe('RtkSettings wire contract (PROTOCOL §5.12)', () => {
       if (method === 'settings.get') {
         // Assert PROTOCOL §5.12 settings.get shape: { path: string }
         expect(params).toEqual({ path: 'rtk.enabled' });
-        return { path: 'rtk.enabled', value: true };
+        // Return complete PROTOCOL §5.12 settings.get response
+        return {
+          path: 'rtk.enabled',
+          value: true,
+          definition: { path: 'rtk.enabled', type: 'boolean', scope: 'user' },
+        };
       }
       throw new Error(`Unexpected method: ${method}`);
     });
@@ -70,14 +75,20 @@ describe('RtkSettings wire contract (PROTOCOL §5.12)', () => {
   it('issues settings.update with PROTOCOL-shaped { changes: [...] } when toggle changes', async () => {
     mocks.mockBackendRequest.mockImplementation(async (method: string, params: unknown) => {
       if (method === 'settings.get') {
-        return { path: 'rtk.enabled', value: false };
+        // Return complete PROTOCOL §5.12 settings.get response
+        return {
+          path: 'rtk.enabled',
+          value: false,
+          definition: { path: 'rtk.enabled', type: 'boolean', scope: 'user' },
+        };
       }
       if (method === 'settings.update') {
         // Assert PROTOCOL §5.12 settings.update shape: { changes: [ { path, value }, ... ] }
         expect(params).toEqual({
           changes: [{ path: 'rtk.enabled', value: true }],
         });
-        return {};
+        // Return complete PROTOCOL §5.12 settings.update response
+        return { applied: [{ path: 'rtk.enabled', value: true }] };
       }
       throw new Error(`Unexpected method: ${method}`);
     });
@@ -87,7 +98,7 @@ describe('RtkSettings wire contract (PROTOCOL §5.12)', () => {
 
     await waitFor(() => screen.getByRole('switch'));
     const toggle = screen.getByRole('switch');
-    
+
     await fireEvent.click(toggle);
 
     await waitFor(() => {
