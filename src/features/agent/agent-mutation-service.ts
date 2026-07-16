@@ -110,6 +110,21 @@ function persistSession(session: AgentSession): void {
   appStore.dispatch(upsertSession(session));
 }
 
+/**
+ * STAB-55: `agent.get` returns AgentLite (PROTOCOL §5.5) — metadata and message
+ * COUNTS only, with `messages` normalized to `[]`. Persisting such a projection
+ * as-is clobbers a transcript that `chat-read-service` already hydrated, so any
+ * existing messages are preserved when the fetched projection carries none
+ * (same merge `agent-read-service.ensureAgentSession` uses).
+ */
+function preserveExistingMessages(fetched: AgentSession): AgentSession {
+  if (fetched.messages && fetched.messages.length > 0) return fetched;
+  const existing = readSession(String(fetched.id));
+  return existing && existing.messages.length > 0
+    ? { ...fetched, messages: existing.messages }
+    : fetched;
+}
+
 function hasUsableAgentSession(session: AgentSession | undefined | null): session is AgentSession {
   return !!session?.backendSessionId && session.status !== AgentStatus.Pending;
 }
@@ -137,7 +152,7 @@ async function handleRestore(
     const fetched = await appClient.agents.get(agentId);
     if (fetched) {
       const wsScoped: AgentSession = {
-        ...fetched,
+        ...preserveExistingMessages(fetched),
         workspaceId: wsId as AgentSession["workspaceId"],
       };
       persistSession(wsScoped);
@@ -171,7 +186,7 @@ async function handleActivate(
       });
     }
     const fetched = await appClient.agents.get(agentId);
-    const source = fetched ?? existing ?? null;
+    const source = fetched ? preserveExistingMessages(fetched) : (existing ?? null);
     if (!source) {
       appStore.dispatch(action.success(null));
       return;

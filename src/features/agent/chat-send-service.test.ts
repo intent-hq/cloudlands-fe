@@ -9,21 +9,31 @@ import type { AgentSession, QueuedMessage, Workspace } from "$shared/types";
 // BE-state in-flight read, the chatSendStarted dispatch, the queue-on-send
 // branch, and the queue-removal optimistic-delete branch are exercised end to
 // end. vi.hoisted() keeps the spies in scope of the hoisted vi.mock factories.
-const { lifecycleSendMessage, agentsQueue, agentsRemoveQueued, agentsStop } = vi.hoisted(() => ({
-  lifecycleSendMessage: vi.fn(() => Promise.resolve()),
-  agentsQueue: vi.fn(() =>
-    Promise.resolve({ success: true } as { success: boolean; queuedMessage?: unknown }),
-  ),
-  agentsRemoveQueued: vi.fn(() =>
-    Promise.resolve({ success: true } as { success: boolean; error?: string }),
-  ),
-  agentsStop: vi.fn(() =>
-    Promise.resolve({ success: true } as { success: boolean; error?: string }),
-  ),
-}));
+const { lifecycleSendMessage, agentsQueue, agentsRemoveQueued, agentsStop, loadChatTranscriptSpy } =
+  vi.hoisted(() => ({
+    lifecycleSendMessage: vi.fn(() => Promise.resolve()),
+    agentsQueue: vi.fn(() =>
+      Promise.resolve({ success: true } as { success: boolean; queuedMessage?: unknown }),
+    ),
+    agentsRemoveQueued: vi.fn(() =>
+      Promise.resolve({ success: true } as { success: boolean; error?: string }),
+    ),
+    agentsStop: vi.fn(() =>
+      Promise.resolve({ success: true } as { success: boolean; error?: string }),
+    ),
+    loadChatTranscriptSpy: vi.fn(() => Promise.resolve()),
+  }));
 vi.mock("$features/agent/agent-stream-lifecycle", () => ({
   sendMessage: lifecycleSendMessage,
 }));
+// STAB-55: the send path hydrates a non-hydrated agent via the chat-read
+// service before deciding queue-vs-send; spied so the tests can assert
+// hydration ordering without a daemon call. Partial mock — the middleware
+// chain still needs the real createChatReadMiddleware export.
+vi.mock("$features/agent/chat-read-service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$features/agent/chat-read-service")>();
+  return { ...actual, loadChatTranscript: loadChatTranscriptSpy };
+});
 vi.mock("$lib/client", () => ({
   appClient: {
     agents: { queue: agentsQueue, removeQueued: agentsRemoveQueued, stop: agentsStop },
@@ -108,6 +118,8 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     agentsRemoveQueued.mockImplementation(() => Promise.resolve({ success: true }));
     agentsStop.mockReset();
     agentsStop.mockImplementation(() => Promise.resolve({ success: true }));
+    loadChatTranscriptSpy.mockReset();
+    loadChatTranscriptSpy.mockImplementation(() => Promise.resolve());
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(clearAgentQueue(AGENT));
     seedWorkspace();
@@ -431,5 +443,94 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(workspaceArg.id).toBe(WS);
     // The key regression assertion: priority must be "interrupt"
     expect(optionsArg.priority).toBe("interrupt");
+  });
+
+  // -------------------------------------------------------------------------
+  // STAB-55: sending to a non-hydrated agent must hydrate first, not clobber
+  // -------------------------------------------------------------------------
+
+  it("STAB-55: send to an agent with NO session in the store hydrates via loadChatTranscript before the lifecycle send", async () => {
+    // Repro shape: workspace selected before a daemon restart — the store has
+    // no session for the agent (or a stale one) and ChatPanel never re-fired
+    // initializeChatRequested. The send path must trigger hydration itself.
+    appStore.dispatch(clearAllSessions());
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "hello cold" }));
+    await flush();
+    await flush();
+
+    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
+    expect(loadChatTranscriptSpy).toHaveBeenCalledWith(AGENT);
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    // Hydration must complete BEFORE the lifecycle send fires.
+    expect(loadChatTranscriptSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      lifecycleSendMessage.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("STAB-55: send to a session with an EMPTY transcript hydrates first (empty messages = not hydrated)", async () => {
+    // seedSession() seeds messages: [] — the AgentLite projection shape that
+    // `agent.list`/`agent.get` return. An empty transcript is indistinguishable
+    // from "never hydrated", so the send path must run the transcript load.
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "hello empty" }));
+    await flush();
+    await flush();
+
+    expect(loadChatTranscriptSpy).toHaveBeenCalledWith(AGENT);
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("STAB-55: send to an already-hydrated session (non-empty transcript) skips the extra hydration", async () => {
+    seedSession({
+      messages: [
+        {
+          id: "m-prior",
+          role: "assistant",
+          timestamp: "2026-01-01T00:00:00.000Z",
+          contentBlocks: [{ type: "text", text: "prior history" }],
+        },
+      ] as AgentSession["messages"],
+    });
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "hello warm" }));
+    await flush();
+    await flush();
+
+    expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("STAB-55: queue-vs-send decision reads the POST-hydration streaming flags", async () => {
+    // The stale pre-restart store says idle, but hydration reveals the daemon
+    // is actually mid-turn — the refreshed flags must route the message
+    // through agent.queueMessage, not the lifecycle send.
+    appStore.dispatch(clearAllSessions());
+    loadChatTranscriptSpy.mockImplementationOnce(async () => {
+      seedSession({ isStreaming: true, isResponding: true, status: AgentStatus.Active });
+    });
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "queue after hydrate" }));
+    await flush();
+    await flush();
+
+    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
+    expect(lifecycleSendMessage).not.toHaveBeenCalled();
+    expect(agentsQueue).toHaveBeenCalledWith(AGENT, "queue after hydrate");
+  });
+
+  it("STAB-55: a failed hydration still proceeds with the send (degrades, never blocks)", async () => {
+    // loadChatTranscript swallows errors internally; even if it unexpectedly
+    // rejects, the send path must not wedge the composer — the middleware
+    // guards the await and proceeds with the send.
+    appStore.dispatch(clearAllSessions());
+    loadChatTranscriptSpy.mockImplementationOnce(() => Promise.reject(new Error("read boom")));
+
+    appStore.dispatch(sendMessage(AGENT, { wsId: WS, text: "still send" }));
+    await flush();
+    await flush();
+
+    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("still send");
   });
 });

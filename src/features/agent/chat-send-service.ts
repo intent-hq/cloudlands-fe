@@ -59,6 +59,7 @@ import {
   replaceAgentQueue,
 } from "$store/renderer/slices/agent-queue/agent-queue-slice";
 import type { SendMessagePayload } from "$store/renderer/slices/chat-state/chat-state-types";
+import { loadChatTranscript } from "$features/agent/chat-read-service";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("ChatSendService");
@@ -120,6 +121,35 @@ async function dispatchToLifecycle(
   const content = workspaceContextStr
     ? `${workspaceContextStr}\n\n${text.trim()}`
     : text.trim();
+
+  // STAB-55: sending to a NON-HYDRATED agent (no session in the store, or a
+  // session whose transcript was never loaded — e.g. the workspace was already
+  // selected before a daemon restart, so ChatPanel never re-dispatched
+  // initializeChatRequested) must hydrate FIRST. Without this, the send path's
+  // restore (`agent.get` → AgentLite, messages normalized to []) seeds an
+  // empty transcript and the queue-on-send decision below reads stale
+  // pre-restart streaming flags — the chat renders blank while the daemon
+  // processes normally. `loadChatTranscript` fetches the session + the real
+  // transcript (chat.subscribe seq-0 snapshot) and refreshes the BE-owned
+  // streaming flags; it is coalesced per agent and swallows errors, so a
+  // failed hydration degrades to the previous behavior instead of blocking
+  // the send.
+  const sessionsState = appStore.state as {
+    agentSessions?: { byAgentId: Record<string, { messages?: unknown[] }> };
+  };
+  const existingSession = sessionsState.agentSessions?.byAgentId[agentId];
+  if (!existingSession || (existingSession.messages?.length ?? 0) === 0) {
+    try {
+      await loadChatTranscript(agentId);
+    } catch (error) {
+      // loadChatTranscript swallows its own errors; this guard only covers an
+      // unexpected throw so hydration failure can never block the send.
+      logger.warn("Pre-send transcript hydration threw; proceeding with send", {
+        agentId,
+        error,
+      });
+    }
+  }
 
   // Queue-on-send: derive in-flight status SOLELY from BE-returned session
   // state (selectAgentIsResponding reads `isResponding`/`isStreaming`/status
