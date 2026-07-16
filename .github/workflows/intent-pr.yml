@@ -172,9 +172,13 @@ jobs:
         run: node scripts/check-workspace-event-dispatchers.mjs
 
   test:
-    name: Unit Tests
+    name: Unit Tests (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     env:
       GIT_TERMINAL_PROMPT: '0'
       NODE_OPTIONS: '--max-old-space-size=4096'
@@ -195,7 +199,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Unit tests
-        run: pnpm run test:unit
+        run: pnpm run test:unit -- --shard=${{ matrix.shard }}/4
 
   gate:
     name: Type Check & Test
