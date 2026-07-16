@@ -220,7 +220,7 @@ export class LiveAgentsClient implements AgentsClient {
   async retry(
     agentId: string,
     workspaceId: string,
-  ): Promise<{ ok: boolean; redriven?: boolean; error?: string }> {
+  ): Promise<{ ok: true; redriven?: boolean } | { ok: false; error: string }> {
     // `agent.retry` redrives a failed agent spawn. Only valid when agent status
     // is `error`; returns `{ ok: false }` otherwise. On ok:true, `redriven`
     // reports whether a queued message existed and is being redriven (status
@@ -231,9 +231,11 @@ export class LiveAgentsClient implements AgentsClient {
         "agent.retry",
         { agentId, workspaceId },
       );
-      const ok = typeof result?.ok === "boolean" ? result.ok : false;
-      const redriven = typeof result?.redriven === "boolean" ? result.redriven : undefined;
-      return { ok, redriven, error: ok ? undefined : "Agent not in error status" };
+      if (result?.ok !== true) {
+        return { ok: false, error: "Agent not in error status" };
+      }
+      const redriven = typeof result.redriven === "boolean" ? result.redriven : undefined;
+      return { ok: true, redriven };
     } catch (error) {
       // Transport/RPC errors return { ok: false, error } rather than throwing so
       // callers can surface the error and keep the retry button visible.

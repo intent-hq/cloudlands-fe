@@ -2497,9 +2497,11 @@
       // (pending when a queued message is redriven, idle when the queue was
       // empty). Converge the local session status from the RPC ack too, so the
       // error banner clears even if the status event is missed (STAB-54).
+      // Only an explicit `redriven: false` means idle; `undefined` (older
+      // daemon omitting the field) keeps the pre-STAB-54 pending behaviour.
       appStore.dispatch(
         updateAgentSessionFields(agentId, {
-          status: result.redriven ? AgentStatus.Pending : AgentStatus.RuntimeIdle,
+          status: result.redriven === false ? AgentStatus.RuntimeIdle : AgentStatus.Pending,
           stopReason: null,
         }),
       );
