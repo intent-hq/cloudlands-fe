@@ -34,23 +34,18 @@
   const SETTING_PATH = 'rtk.enabled';
 
   onMount(async () => {
-    try {
-      // Read rtk.enabled from daemon settings catalog
-      const entry = await appClient.settings.get(SETTING_PATH);
-      if (entry === null) {
-        settingsError = 'Failed to load RTK settings from the daemon.';
-        console.error('Failed to load RTK settings: daemon returned null');
-      } else {
-        rtkEnabled = typeof entry.value === 'boolean' ? entry.value : false;
-        settingsError = '';
-      }
-    } catch (error) {
+    // Read rtk.enabled from daemon settings catalog (LiveSettingsClient.get folds errors to null)
+    const entry = await appClient.settings.get(SETTING_PATH);
+    if (entry === null) {
       settingsError = 'Failed to load RTK settings from the daemon.';
-      console.error('Failed to load RTK settings:', error);
+      console.error('Failed to load RTK settings: daemon returned null');
+    } else {
+      rtkEnabled = typeof entry.value === 'boolean' ? entry.value : false;
+      settingsError = '';
     }
 
+    // Check if rtk is installed (separate failure domain)
     try {
-      // Check if rtk is installed (separate from settings read)
       const availResult = await invoke<any>(SYSTEM_CHANNELS.CHECK_RTK, undefined);
       rtkAvailable = availResult?.data?.available ?? false;
     } catch (error) {

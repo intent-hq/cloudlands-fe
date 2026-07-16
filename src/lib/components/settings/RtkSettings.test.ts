@@ -131,8 +131,8 @@ describe('RtkSettings', () => {
     });
   });
 
-  it('handles settings.get errors gracefully', async () => {
-    mocks.mockSettingsGet.mockRejectedValue(new Error('Network error'));
+  it('handles settings.get null return (real client behavior on transport failure)', async () => {
+    mocks.mockSettingsGet.mockResolvedValue(null);
     mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
 
     render(RtkSettings);
