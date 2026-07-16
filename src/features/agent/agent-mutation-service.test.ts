@@ -118,6 +118,87 @@ describe("agentMutationService (fake appClient.agents.get, real store)", () => {
     await expect(action.promise).rejects.toThrow("boom");
   });
 
+  it("STAB-55: restore refetch preserves the hydrated transcript when agent.get returns the AgentLite empty-messages projection", async () => {
+    // Repro: agent in error state after a daemon restart — the local session
+    // is NOT usable (no backendSessionId), so restore refetches `agent.get`.
+    // The wire projection is AgentLite (PROTOCOL §5.5): messages normalized to
+    // []. Persisting it as-is clobbered the transcript chat-read-service had
+    // already hydrated, blanking the chat on the next send.
+    const WS = "ws-restore-preserve";
+    const AGENT = "agent-restore-preserve";
+    const transcript = [
+      {
+        id: "m-history-1",
+        role: "user",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        contentBlocks: [{ type: "text", text: "earlier question" }],
+      },
+      {
+        id: "m-history-2",
+        role: "assistant",
+        timestamp: "2026-01-01T00:00:01.000Z",
+        contentBlocks: [{ type: "text", text: "earlier answer" }],
+      },
+    ] as AgentSession["messages"];
+    seedSession(
+      makeSession(AGENT, WS, {
+        backendSessionId: null,
+        status: AgentStatus.Error,
+        messages: transcript,
+      }),
+    );
+    // The daemon restarted: agent.get returns a fresh AgentLite with messages: [].
+    get.mockResolvedValueOnce(makeSession(AGENT, WS, { status: AgentStatus.Idle, messages: [] }));
+
+    const action = restoreAgentSessionRequested(WS, AGENT);
+    appStore.dispatch(action);
+    const resolved = await action.promise;
+
+    expect(get).toHaveBeenCalledWith(AGENT);
+    expect(resolved?.messages?.map((m) => m.id)).toEqual(["m-history-1", "m-history-2"]);
+    expect(readSession(AGENT)?.messages?.map((m) => m.id)).toEqual([
+      "m-history-1",
+      "m-history-2",
+    ]);
+  });
+
+  it("STAB-55: restore refetch keeps the fetched transcript when agent.get actually returns messages", async () => {
+    const WS = "ws-restore-fetched-msgs";
+    const AGENT = "agent-restore-fetched-msgs";
+    seedSession(
+      makeSession(AGENT, WS, {
+        backendSessionId: null,
+        status: AgentStatus.Pending,
+        messages: [
+          {
+            id: "m-local",
+            role: "user",
+            timestamp: "2026-01-01T00:00:00.000Z",
+            contentBlocks: [{ type: "text", text: "local" }],
+          },
+        ] as AgentSession["messages"],
+      }),
+    );
+    get.mockResolvedValueOnce(
+      makeSession(AGENT, WS, {
+        messages: [
+          {
+            id: "m-wire",
+            role: "user",
+            timestamp: "2026-01-01T00:00:02.000Z",
+            contentBlocks: [{ type: "text", text: "wire" }],
+          },
+        ] as AgentSession["messages"],
+      }),
+    );
+
+    const action = restoreAgentSessionRequested(WS, AGENT);
+    appStore.dispatch(action);
+    const resolved = await action.promise;
+
+    expect(resolved?.messages?.map((m) => m.id)).toEqual(["m-wire"]);
+  });
+
   it("activateAgentRequested marks the session ACTIVE and resolves", async () => {
     const WS = "ws-activate";
     const AGENT = "agent-activate";
@@ -137,6 +218,35 @@ describe("agentMutationService (fake appClient.agents.get, real store)", () => {
     expect(resolved?.activationState).toBe(AgentActivationState.ACTIVE);
     expect(resolved?.status).toBe(AgentStatus.Active);
     expect(readSession(AGENT)?.activationState).toBe(AgentActivationState.ACTIVE);
+  });
+
+  it("STAB-55: activate refetch preserves the hydrated transcript when agent.get returns the AgentLite empty-messages projection", async () => {
+    const WS = "ws-activate-preserve";
+    const AGENT = "agent-activate-preserve";
+    const transcript = [
+      {
+        id: "m-act-1",
+        role: "user",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        contentBlocks: [{ type: "text", text: "history" }],
+      },
+    ] as AgentSession["messages"];
+    seedSession(
+      makeSession(AGENT, WS, {
+        backendSessionId: null,
+        status: AgentStatus.Pending,
+        activationState: AgentActivationState.PENDING,
+        messages: transcript,
+      }),
+    );
+    get.mockResolvedValueOnce(makeSession(AGENT, WS, { status: AgentStatus.Pending, messages: [] }));
+
+    const action = activateAgentRequested(WS, AGENT);
+    appStore.dispatch(action);
+    const resolved = await action.promise;
+
+    expect(resolved?.messages?.map((m) => m.id)).toEqual(["m-act-1"]);
+    expect(readSession(AGENT)?.messages?.map((m) => m.id)).toEqual(["m-act-1"]);
   });
 
   it("activateAgentRequested is a no-op when the session is already Active", async () => {
