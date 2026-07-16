@@ -42,6 +42,11 @@
   let discoveryExpiresAt = $state<number | null>(null);
   let discoveryCountdownNow = $state<number | null>(null);
 
+  // Port editing state
+  let persistedPort = $state<number>(5181); // persisted setting value
+  let editedPort = $state<string>('5181'); // input value as string
+  let portSaving = $state(false);
+
   let showToken = $state(false);
   let showQr = $state(false);
   let qrDataUrl = $state('');
@@ -61,15 +66,22 @@
       loading = true;
       const settings = await appClient.settings.list();
       const wsApiEnabled = settings.find((s: { path: string; value: unknown }) => s.path === 'server.wsApi.enabled');
+      const wsApiPort = settings.find((s: { path: string; value: unknown }) => s.path === 'server.wsApi.port');
       const discoveryEnabledSetting = settings.find((s: { path: string; value: unknown }) => s.path === 'server.discovery.enabled');
 
       enabled = wsApiEnabled?.value === true;
       discoveryEnabled = discoveryEnabledSetting?.value === true;
 
+      // Load persisted port (always, not only when enabled)
+      if (typeof wsApiPort?.value === 'number') {
+        persistedPort = wsApiPort.value;
+        editedPort = String(wsApiPort.value);
+      }
+
       if (enabled) {
         const info = await appClient.server.pairingInfo();
         token = info.token;
-        port = info.port;
+        port = info.port; // bound port from pairing info
         certFingerprint = info.certFingerprint;
         localIps = info.localIps;
         _hostname = info.hostname;
@@ -102,6 +114,52 @@
     } catch (error) {
       toast.error(`Failed to toggle WebSocket API: ${error instanceof Error ? error.message : String(error)}`);
       enabled = !checked;
+    }
+  }
+
+  async function handlePortSave() {
+    const newPort = Number(editedPort);
+    if (!Number.isInteger(newPort) || newPort < 1024 || newPort > 65535) {
+      return; // invalid input, do nothing
+    }
+
+    try {
+      portSaving = true;
+      const result = await appClient.settings.update([
+        { path: 'server.wsApi.port', value: newPort },
+      ]);
+
+      // Check if the daemon rolled back the setting on failure
+      const applied = result.find((r: { path: string; value: unknown }) => r.path === 'server.wsApi.port');
+      if (applied && applied.value !== newPort) {
+        // Daemon rolled back to a different value (could be the old value or a different one)
+        const rolledBackValue = typeof applied.value === 'number' ? applied.value : persistedPort;
+        toast.error('Failed to change port; setting rolled back');
+        persistedPort = rolledBackValue;
+        editedPort = String(rolledBackValue);
+        return;
+      }
+
+      // Success
+      persistedPort = newPort;
+      if (enabled) {
+        // Refresh pairing info to show the new bound port (separate try/catch so only update failures are treated as save failures)
+        try {
+          const info = await appClient.server.pairingInfo();
+          port = info.port;
+        } catch {
+          // Pairing info refresh failed, but the setting was saved successfully
+        }
+        toast.success(`Port changed to ${newPort}`);
+      } else {
+        toast.success(`Port saved (will be used when enabled)`);
+      }
+    } catch (error) {
+      // Daemon error (e.g., port already in use)
+      toast.error(`Failed to change port: ${error instanceof Error ? error.message : String(error)}`);
+      editedPort = String(persistedPort);
+    } finally {
+      portSaving = false;
     }
   }
 
@@ -252,6 +310,45 @@
     </div>
   </section>
 
+  <!-- Port (always visible) -->
+  <section class="px-6 py-4">
+    {#snippet portValidation()}
+      {@const portNum = Number(editedPort)}
+      {@const isValid = Number.isInteger(portNum) && portNum >= 1024 && portNum <= 65535}
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-sm text-muted-foreground">Port</span>
+        <div class="flex items-center gap-2">
+          <input
+            type="number"
+            min="1024"
+            max="65535"
+            bind:value={editedPort}
+            disabled={portSaving}
+            aria-label="WebSocket API port"
+            class="w-24 text-sm font-mono text-foreground bg-muted px-2 py-0.5 rounded border border-border focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
+          />
+          {#if editedPort !== String(persistedPort)}
+            <button
+              type="button"
+              onclick={handlePortSave}
+              disabled={portSaving || !isValid}
+              class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {portSaving ? 'Saving...' : 'Save'}
+            </button>
+          {/if}
+        </div>
+      </div>
+      {#if !isValid}
+        <p class="text-xs text-amber-500/90 mt-1">Port must be an integer between 1024 and 65535</p>
+      {/if}
+      {#if enabled && port}
+        <p class="text-xs text-subtle mt-1">Currently bound to port {port}</p>
+      {/if}
+    {/snippet}
+    {@render portValidation()}
+  </section>
+
   {#if enabled}
     <div transition:slide={{ duration: 200 }}>
       <!-- Mobile App Pairing -->
@@ -271,16 +368,6 @@
             <Fa icon={faQrcode} size="sm" />
             Show QR Code
           </button>
-        </div>
-      </section>
-
-      <!-- Port -->
-      <section class="px-6 py-4">
-        <div class="flex items-center justify-between">
-          <span class="text-sm text-muted-foreground">Port</span>
-          <code class="text-sm font-mono text-foreground bg-muted px-2 py-0.5 rounded"
-            >{port}</code
-          >
         </div>
       </section>
 
