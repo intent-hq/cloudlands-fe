@@ -626,10 +626,10 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     description: 'Whether RTK helper behavior is enabled.',
     category: 'per-feature',
     type: 'boolean',
-    source: 'local-storage',
-    storageKey: 'legacy-settings:rtkEnabled',
+    source: 'daemon-settings',
+    storageKey: 'rtk.enabled',
     defaultValue: false,
-    apply: { kind: 'local-storage-set', key: 'legacy-settings:rtkEnabled' },
+    apply: { kind: 'daemon-settings-update', path: 'rtk.enabled' },
   },
   {
     path: 'linear.issueFilter',
