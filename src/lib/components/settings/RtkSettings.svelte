@@ -30,6 +30,7 @@
   let loaded = $state(false);
   let checking = $state(false);
   let settingsError = $state('');
+  let updating = $state(false);
 
   const SETTING_PATH = 'rtk.enabled';
 
@@ -100,7 +101,9 @@
   }
 
   async function handleToggle() {
+    if (updating) return; // Guard against re-entrancy
     const newValue = !rtkEnabled;
+    updating = true;
     try {
       await appClient.settings.update([{ path: SETTING_PATH, value: newValue }]);
       rtkEnabled = newValue;
@@ -108,6 +111,8 @@
     } catch (error) {
       settingsError = 'Failed to save RTK setting.';
       console.error('Failed to update rtk.enabled setting:', error);
+    } finally {
+      updating = false;
     }
   }
 </script>
