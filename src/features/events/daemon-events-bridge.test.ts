@@ -3603,6 +3603,10 @@ describe('daemonEventsBridge (changes refresh — git:commit/git:pull/changes:tr
   afterEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
+
+    // Restore appStore.dispatch getter overridden by wrapDispatch() to avoid leaking into other suites.
+    const original = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(appStore), 'dispatch');
+    if (original) Object.defineProperty(appStore, 'dispatch', original);
   });
 
   function wrapDispatch() {
