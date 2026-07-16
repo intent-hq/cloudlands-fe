@@ -370,8 +370,13 @@ export class WorkspaceService {
       const workspaceId = remoteContext?.workspaceId as WorkspaceId | undefined;
       const configContent = await this.repository.readGitConfig(repoPath, workspaceId);
 
-      // Validate config content is a string
-      if (!configContent || typeof configContent !== 'string') {
+      // Empty/missing config is the normal "no remote configured" case — not an error
+      if (!configContent) {
+        return {};
+      }
+
+      // Non-string content indicates a contract violation upstream
+      if (typeof configContent !== 'string') {
         logger.warn('Invalid git config content', { repoPath, type: typeof configContent });
         return {};
       }
