@@ -3,6 +3,7 @@ name: Intent PR Checks
 on:
   pull_request:
     branches: ['main']
+  merge_group:
 
 # Cancel in progress workflows on pull_requests.
 # https://docs.github.com/en/actions/using-jobs/using-concurrency#example-using-a-fallback-value
