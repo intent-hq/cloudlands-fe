@@ -118,8 +118,8 @@
   }
 
   async function handlePortSave() {
-    const newPort = parseInt(editedPort, 10);
-    if (isNaN(newPort) || newPort < 1024 || newPort > 65535) {
+    const newPort = Number(editedPort);
+    if (!Number.isInteger(newPort) || newPort < 1024 || newPort > 65535) {
       return; // invalid input, do nothing
     }
 
@@ -132,18 +132,24 @@
       // Check if the daemon rolled back the setting on failure
       const applied = result.find((r: { path: string; value: unknown }) => r.path === 'server.wsApi.port');
       if (applied && applied.value !== newPort) {
-        // Daemon rolled back
+        // Daemon rolled back to a different value (could be the old value or a different one)
+        const rolledBackValue = typeof applied.value === 'number' ? applied.value : persistedPort;
         toast.error('Failed to change port; setting rolled back');
-        editedPort = String(persistedPort);
+        persistedPort = rolledBackValue;
+        editedPort = String(rolledBackValue);
         return;
       }
 
       // Success
       persistedPort = newPort;
       if (enabled) {
-        // Refresh pairing info to show the new bound port
-        const info = await appClient.server.pairingInfo();
-        port = info.port;
+        // Refresh pairing info to show the new bound port (separate try/catch so only update failures are treated as save failures)
+        try {
+          const info = await appClient.server.pairingInfo();
+          port = info.port;
+        } catch {
+          // Pairing info refresh failed, but the setting was saved successfully
+        }
         toast.success(`Port changed to ${newPort}`);
       } else {
         toast.success(`Port saved (will be used when enabled)`);
@@ -306,35 +312,41 @@
 
   <!-- Port (always visible) -->
   <section class="px-6 py-4">
-    <div class="flex items-center justify-between gap-3">
-      <span class="text-sm text-muted-foreground">Port</span>
-      <div class="flex items-center gap-2">
-        <input
-          type="number"
-          min="1024"
-          max="65535"
-          bind:value={editedPort}
-          disabled={portSaving}
-          class="w-24 text-sm font-mono text-foreground bg-muted px-2 py-0.5 rounded border border-border focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
-        />
-        {#if editedPort !== String(persistedPort)}
-          <button
-            type="button"
-            onclick={handlePortSave}
-            disabled={portSaving || isNaN(parseInt(editedPort, 10)) || parseInt(editedPort, 10) < 1024 || parseInt(editedPort, 10) > 65535}
-            class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {portSaving ? 'Saving...' : 'Save'}
-          </button>
-        {/if}
+    {#snippet portValidation()}
+      {@const portNum = Number(editedPort)}
+      {@const isValid = Number.isInteger(portNum) && portNum >= 1024 && portNum <= 65535}
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-sm text-muted-foreground">Port</span>
+        <div class="flex items-center gap-2">
+          <input
+            type="number"
+            min="1024"
+            max="65535"
+            bind:value={editedPort}
+            disabled={portSaving}
+            aria-label="WebSocket API port"
+            class="w-24 text-sm font-mono text-foreground bg-muted px-2 py-0.5 rounded border border-border focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
+          />
+          {#if editedPort !== String(persistedPort)}
+            <button
+              type="button"
+              onclick={handlePortSave}
+              disabled={portSaving || !isValid}
+              class="px-3 py-1 text-xs font-medium text-foreground bg-accent hover:bg-accent/80 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {portSaving ? 'Saving...' : 'Save'}
+            </button>
+          {/if}
+        </div>
       </div>
-    </div>
-    {#if isNaN(parseInt(editedPort, 10)) || parseInt(editedPort, 10) < 1024 || parseInt(editedPort, 10) > 65535}
-      <p class="text-xs text-amber-500/90 mt-1">Port must be between 1024 and 65535</p>
-    {/if}
-    {#if enabled && port}
-      <p class="text-xs text-subtle mt-1">Currently bound to port {port}</p>
-    {/if}
+      {#if !isValid}
+        <p class="text-xs text-amber-500/90 mt-1">Port must be an integer between 1024 and 65535</p>
+      {/if}
+      {#if enabled && port}
+        <p class="text-xs text-subtle mt-1">Currently bound to port {port}</p>
+      {/if}
+    {/snippet}
+    {@render portValidation()}
   </section>
 
   {#if enabled}

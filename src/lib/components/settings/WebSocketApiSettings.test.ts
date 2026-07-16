@@ -69,6 +69,13 @@ describe('WebSocketApiSettings', () => {
     const toggle = screen.getByRole('switch');
     await fireEvent.click(toggle);
 
+    // Assert: settings.update was called with exact payload
+    await waitFor(() => {
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'server.wsApi.enabled', value: true },
+      ]);
+    });
+
     // Assert: toast.error was called with the daemon's error message
     await waitFor(() => {
       expect(mockToast.error).toHaveBeenCalledWith(
@@ -122,12 +129,16 @@ describe('WebSocketApiSettings', () => {
     });
   });
 
-  it('shows Save button when port value differs from persisted setting', async () => {
+  it('shows Save button when port value differs from persisted setting, and clicking Save calls settings.update', async () => {
     // Arrange: WSS disabled, port 5181
     mocks.mockSettingsList.mockResolvedValue([
       { path: 'server.wsApi.enabled', value: false },
       { path: 'server.wsApi.port', value: 5181 },
       { path: 'server.discovery.enabled', value: false },
+    ]);
+
+    mocks.mockSettingsUpdate.mockResolvedValueOnce([
+      { path: 'server.wsApi.port', value: 5182 },
     ]);
 
     render(WebSocketApiSettings);
@@ -139,8 +150,24 @@ describe('WebSocketApiSettings', () => {
     await fireEvent.input(portInput, { target: { value: '5182' } });
 
     // Assert: Save button appears
+    const saveButton = await waitFor(() => screen.getByText('Save'));
+    expect(saveButton).toBeTruthy();
+
+    // Act: click Save
+    await fireEvent.click(saveButton);
+
+    // Assert: settings.update was called with exact payload
     await waitFor(() => {
-      expect(screen.getByText('Save')).toBeTruthy();
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'server.wsApi.port', value: 5182 },
+      ]);
+    });
+
+    // Assert: success toast was shown
+    await waitFor(() => {
+      expect(mockToast.success).toHaveBeenCalledWith(
+        expect.stringContaining('saved')
+      );
     });
   });
 });
