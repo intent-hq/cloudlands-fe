@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import RtkSettings from './RtkSettings.svelte';
+import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 
 // Mock appClient and IPC invoke
 const mocks = vi.hoisted(() => ({
@@ -105,7 +106,7 @@ describe('RtkSettings', () => {
     render(RtkSettings);
 
     await waitFor(() => {
-      expect(mocks.mockInvoke).toHaveBeenCalledWith('system:check-rtk', undefined);
+      expect(mocks.mockInvoke).toHaveBeenCalledWith(SYSTEM_CHANNELS.CHECK_RTK, undefined);
     });
   });
 

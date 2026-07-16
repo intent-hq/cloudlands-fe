@@ -37,8 +37,13 @@
     try {
       // Read rtk.enabled from daemon settings catalog
       const entry = await appClient.settings.get(SETTING_PATH);
-      rtkEnabled = typeof entry?.value === 'boolean' ? entry.value : false;
-      settingsError = '';
+      if (entry === null) {
+        settingsError = 'Failed to load RTK settings from the daemon.';
+        console.error('Failed to load RTK settings: daemon returned null');
+      } else {
+        rtkEnabled = typeof entry.value === 'boolean' ? entry.value : false;
+        settingsError = '';
+      }
     } catch (error) {
       settingsError = 'Failed to load RTK settings from the daemon.';
       console.error('Failed to load RTK settings:', error);
