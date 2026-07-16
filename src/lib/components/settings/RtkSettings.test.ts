@@ -136,9 +136,33 @@ describe('RtkSettings', () => {
 
     render(RtkSettings);
 
-    // Should still render without crashing
     await waitFor(() => {
-      expect(screen.getByText(/RTK command optimization/)).toBeTruthy();
+      expect(screen.getByText(/Failed to load RTK settings from the daemon/)).toBeTruthy();
     });
+  });
+
+  it('reverts toggle state when settings.update fails', async () => {
+    mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: false });
+    mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
+    mocks.mockSettingsUpdate.mockRejectedValue(new Error('Network error'));
+
+    render(RtkSettings);
+
+    const toggle = await screen.findByRole('switch');
+    expect(toggle.getAttribute('data-state')).toBe('off');
+
+    await fireEvent.click(toggle);
+
+    await waitFor(() => {
+      // Toggle should remain off since update failed
+      expect(toggle.getAttribute('data-state')).toBe('off');
+      // Error message should be displayed
+      expect(screen.getByText(/Failed to save RTK setting/)).toBeTruthy();
+    });
+
+    // settings.update should have been attempted
+    expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+      { path: 'rtk.enabled', value: true },
+    ]);
   });
 });

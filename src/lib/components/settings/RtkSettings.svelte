@@ -29,6 +29,7 @@
   let rtkEnabled = $state(false);
   let loaded = $state(false);
   let checking = $state(false);
+  let settingsError = $state('');
 
   const SETTING_PATH = 'rtk.enabled';
 
@@ -41,8 +42,10 @@
       // Check if rtk is installed
       const availResult = await invoke<any>(SYSTEM_CHANNELS.CHECK_RTK, undefined);
       rtkAvailable = availResult?.data?.available ?? false;
-    } catch {
-      // Silently fail
+      settingsError = '';
+    } catch (error) {
+      settingsError = 'Failed to load RTK settings from the daemon.';
+      console.error('Failed to load RTK settings:', error);
     } finally {
       loaded = true;
     }
@@ -93,17 +96,27 @@
 
   async function handleToggle() {
     const newValue = !rtkEnabled;
+    // Only save if changed (deduplication)
+    if (newValue === rtkEnabled) return;
+
     try {
       await appClient.settings.update([{ path: SETTING_PATH, value: newValue }]);
       rtkEnabled = newValue;
+      settingsError = '';
     } catch (error) {
+      settingsError = 'Failed to save RTK setting.';
       console.error('Failed to update rtk.enabled setting:', error);
-      // Revert on error
+      // State automatically reverts since we only update on success
     }
   }
 </script>
 
 {#if loaded}
+  {#if settingsError}
+    <div class="text-xs text-destructive mb-2">
+      {settingsError}
+    </div>
+  {/if}
   <div class="flex justify-between">
     <div>
       <p class="text-sm font-medium text-foreground">RTK command optimization</p>
