@@ -28,12 +28,11 @@ import type {
   ScriptCategory,
   ScriptSource,
 } from './types';
-import { IPC_CHANNELS } from '../../shared/ipc-registry';
 import { createLogger } from '$lib/utils/client-logger';
-import { invoke as invokeIpc } from '../../shared/generated/ipc-client';
 import { appClient } from '$lib/client';
 import type { MutationResult } from '$lib/client';
 import { detectScriptCandidates, type PackageManager } from './detect-scripts';
+import { backendRequest } from '$lib/client/live/backend-transport';
 
 const logger = createLogger('ScriptsClient');
 
@@ -65,20 +64,6 @@ interface CommandResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
-}
-
-/** Invoke an IPC channel with error handling. */
-async function invoke<T>(channel: string, data?: unknown): Promise<CommandResponse<T>> {
-  if (typeof window !== 'undefined' && window.electronAPI) {
-    try {
-      return await invokeIpc<CommandResponse<T>>(channel, data);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'IPC call failed';
-      logger.error(`IPC call to ${channel} failed`, { error: message });
-      return { success: false, error: message };
-    }
-  }
-  return { success: false, error: 'Electron IPC not available' };
 }
 
 /** Fold an AppClient MutationResult into the CommandResponse shape callers expect. */
@@ -305,23 +290,56 @@ export const scriptsClient = {
   /**
    * Save workspace scripts to the repo-level `.intent/config.json`.
    *
-   * The payload is sourced from the live daemon `script.list` (§5.8) and
-   * shipped to the main handler, which merges it into the existing repo
-   * config (preserving non-script keys). An empty live list is a no-op on
-   * the main side (`written: false`) — it never clobbers a populated repo
-   * config with `[]`.
+   * Routes through the daemon's `repoConfig.get` / `repoConfig.save` surface
+   * (PROTOCOL §5.33). Reads the live `script.list`, fetches the existing repo
+   * config, merges `scripts[]` preserving all non-script keys, and persists
+   * the result. An empty live list is a no-op (never clobbers a populated repo
+   * config with `[]`).
    */
   async saveToRepo(workspaceId: string): Promise<CommandResponse<void>> {
-    const scripts = await appClient.scripts.list(workspaceId);
-    const payload = scripts.map(({ name, command, mode, category, cwd, env, autoStart }) => ({
-      name,
-      command,
-      mode,
-      ...(category !== undefined ? { category } : {}),
-      ...(cwd !== undefined ? { cwd } : {}),
-      ...(env !== undefined ? { env } : {}),
-      ...(autoStart !== undefined ? { autoStart } : {}),
-    }));
-    return invoke<void>(IPC_CHANNELS.SCRIPTS.SAVE_TO_REPO, { workspaceId, scripts: payload });
+    try {
+      const scripts = await appClient.scripts.list(workspaceId);
+      const payload = scripts.map(({ name, command, mode, category, cwd, env, autoStart }) => ({
+        name,
+        command,
+        mode,
+        ...(category !== undefined ? { category } : {}),
+        ...(cwd !== undefined ? { cwd } : {}),
+        ...(env !== undefined ? { env } : {}),
+        ...(autoStart !== undefined ? { autoStart } : {}),
+      }));
+
+      // Empty list is a no-op — never clobber a populated repo config with [].
+      if (payload.length === 0) {
+        logger.debug('saveToRepo: empty script list, skipping write');
+        return { success: true };
+      }
+
+      // Fetch the existing repo config from the daemon.
+      const getResult = await backendRequest<{ config?: unknown }>('repoConfig.get', {
+        workspaceId,
+      });
+      const existingConfig =
+        getResult?.config && typeof getResult.config === 'object' ? getResult.config : {};
+
+      // Merge scripts[] into the config, preserving all other keys.
+      const updatedConfig = { ...existingConfig, scripts: payload };
+
+      // Persist via repoConfig.save.
+      await backendRequest<{ config?: unknown }>('repoConfig.save', {
+        workspaceId,
+        config: updatedConfig,
+      });
+
+      logger.info('Saved scripts to repo config via daemon', {
+        workspaceId,
+        count: payload.length,
+      });
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to save scripts to repo config', { workspaceId, error: message });
+      return { success: false, error: message };
+    }
   },
 };

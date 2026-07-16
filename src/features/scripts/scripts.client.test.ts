@@ -3,20 +3,21 @@ import type { ScriptWithState } from './types';
 import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
 
 // FAKE seams: the daemon script.* (via appClient.scripts), the daemon file.read
-// (via appClient.files) and the raw IPC invoke boundary are all mocked, so no
-// call reaches a real daemon or the mock router. The tests assert the exact
-// wire payloads: the save-to-repo scripts array MUST be sourced from the live
-// daemon list (the legacy local store is empty in daemon builds — forwarding
-// nothing is what clobbered .intent/config.json with `scripts: []`), and
-// detect() MUST diff manifest candidates against the live script.list before
-// upserting through `script.create` (scriptId upsert) so repeat clicks don't
-// duplicate rows.
+// (via appClient.files), and backendRequest (for repoConfig.get/save) are all
+// mocked, so no call reaches a real daemon or the mock router. The tests
+// assert the exact wire payloads: saveToRepo MUST source its scripts array
+// from the live daemon list (the legacy local store is empty in daemon builds
+// — forwarding nothing is what clobbered .intent/config.json with `scripts: []`),
+// merge it into the existing config preserving non-script keys, and treat an
+// empty list as a no-op. detect() MUST diff manifest candidates against the
+// live script.list before upserting through `script.create` (scriptId upsert)
+// so repeat clicks don't duplicate rows.
 const {
   scriptsList,
   scriptsCreate,
   scriptsRemove,
   filesRead,
-  invokeIpc,
+  backendRequestMock,
 } = vi.hoisted(() => ({
   scriptsList: vi.fn<(workspaceId: string) => Promise<unknown[]>>(() => Promise.resolve([])),
   scriptsCreate: vi.fn(() => Promise.resolve({ success: true })),
@@ -24,7 +25,7 @@ const {
   filesRead: vi.fn<(workspaceId: string, path: string) => Promise<unknown>>(
     () => Promise.resolve(null),
   ),
-  invokeIpc: vi.fn(() => Promise.resolve({ success: true, written: true })),
+  backendRequestMock: vi.fn(() => Promise.resolve({ config: {} })),
 }));
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -32,8 +33,8 @@ vi.mock('$lib/client', () => ({
     files: { read: filesRead },
   },
 }));
-vi.mock('../../shared/generated/ipc-client', () => ({
-  invoke: invokeIpc,
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: backendRequestMock,
 }));
 
 import { scriptsClient } from './scripts.client';
@@ -75,10 +76,10 @@ function liveScript(overrides: Partial<ScriptWithState> = {}): ScriptWithState {
   } as ScriptWithState;
 }
 
-describe('scriptsClient.saveToRepo (fake daemon list + IPC seam)', () => {
+describe('scriptsClient.saveToRepo (daemon repoConfig.get/save migration)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it('sends the live daemon script.list as the save-to-repo payload, stripping runtime fields', async () => {
+  it('fetches the existing repo config, merges scripts[], and persists via repoConfig.save', async () => {
     scriptsList.mockResolvedValueOnce([
       liveScript({
         id: 'script-dev',
@@ -92,59 +93,95 @@ describe('scriptsClient.saveToRepo (fake daemon list + IPC seam)', () => {
       }),
       liveScript({ id: 'script-test', name: 'test', command: 'pnpm test', mode: 'command' }),
     ]);
+    backendRequestMock.mockResolvedValueOnce({
+      config: { branchPrefix: 'feat/', setupScript: './setup.sh' },
+    });
+    backendRequestMock.mockResolvedValueOnce({ config: {} });
 
     const result = await scriptsClient.saveToRepo('ws-1');
 
     expect(scriptsList).toHaveBeenCalledWith('ws-1');
-    expect(invokeIpc).toHaveBeenCalledWith('scripts:save-to-repo', {
+    expect(backendRequestMock).toHaveBeenCalledWith('repoConfig.get', { workspaceId: 'ws-1' });
+    expect(backendRequestMock).toHaveBeenCalledWith('repoConfig.save', {
       workspaceId: 'ws-1',
-      scripts: [
-        {
-          name: 'dev',
-          command: 'pnpm dev',
-          mode: 'service',
-          category: 'dev',
-          cwd: 'packages/app',
-          env: { NODE_ENV: 'development' },
-          autoStart: true,
-        },
-        { name: 'test', command: 'pnpm test', mode: 'command' },
-      ],
+      config: {
+        branchPrefix: 'feat/',
+        setupScript: './setup.sh',
+        scripts: [
+          {
+            name: 'dev',
+            command: 'pnpm dev',
+            mode: 'service',
+            category: 'dev',
+            cwd: 'packages/app',
+            env: { NODE_ENV: 'development' },
+            autoStart: true,
+          },
+          { name: 'test', command: 'pnpm test', mode: 'command' },
+        ],
+      },
     });
     expect(result.success).toBe(true);
   });
 
   it('omits undefined optional fields instead of shipping explicit undefined', async () => {
     scriptsList.mockResolvedValueOnce([liveScript()]);
+    backendRequestMock.mockResolvedValueOnce({ config: {} });
+    backendRequestMock.mockResolvedValueOnce({ config: {} });
 
     await scriptsClient.saveToRepo('ws-1');
 
-    const [, payload] = invokeIpc.mock.calls[0] as [string, { scripts: object[] }];
-    expect(payload.scripts[0]).toEqual({ name: 'dev', command: 'pnpm dev', mode: 'service' });
-    expect(payload.scripts[0]).not.toHaveProperty('category');
-    expect(payload.scripts[0]).not.toHaveProperty('cwd');
-    expect(payload.scripts[0]).not.toHaveProperty('env');
-    expect(payload.scripts[0]).not.toHaveProperty('autoStart');
+    const saveCall = backendRequestMock.mock.calls[1];
+    const savedScripts = (saveCall[1] as { config: { scripts: object[] } }).config.scripts;
+    expect(savedScripts[0]).toEqual({ name: 'dev', command: 'pnpm dev', mode: 'service' });
+    expect(savedScripts[0]).not.toHaveProperty('category');
+    expect(savedScripts[0]).not.toHaveProperty('cwd');
+    expect(savedScripts[0]).not.toHaveProperty('env');
+    expect(savedScripts[0]).not.toHaveProperty('autoStart');
   });
 
-  it('forwards an empty live list verbatim (main handler treats it as a no-op)', async () => {
+  it('treats an empty live list as a no-op and never calls repoConfig.save', async () => {
     scriptsList.mockResolvedValueOnce([]);
-
-    await scriptsClient.saveToRepo('ws-1');
-
-    expect(invokeIpc).toHaveBeenCalledWith('scripts:save-to-repo', {
-      workspaceId: 'ws-1',
-      scripts: [],
-    });
-  });
-
-  it('surfaces the handler failure envelope without masking it as success', async () => {
-    scriptsList.mockResolvedValueOnce([liveScript()]);
-    invokeIpc.mockResolvedValueOnce({ success: false, error: 'disk full' });
 
     const result = await scriptsClient.saveToRepo('ws-1');
 
-    expect(result).toEqual({ success: false, error: 'disk full' });
+    expect(backendRequestMock).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+  });
+
+  it('preserves all non-script keys when merging', async () => {
+    scriptsList.mockResolvedValueOnce([
+      liveScript({ name: 'build', command: 'pnpm build', mode: 'command' }),
+    ]);
+    backendRequestMock.mockResolvedValueOnce({
+      config: {
+        branchPrefix: 'aw/',
+        instructions: 'Use TypeScript strict mode',
+        runScript: 'pnpm dev',
+        scripts: [{ name: 'old', command: 'echo old', mode: 'command' }],
+      },
+    });
+    backendRequestMock.mockResolvedValueOnce({ config: {} });
+
+    await scriptsClient.saveToRepo('ws-1');
+
+    const saveCall = backendRequestMock.mock.calls[1];
+    const savedConfig = (saveCall[1] as { config: object }).config;
+    expect(savedConfig).toEqual({
+      branchPrefix: 'aw/',
+      instructions: 'Use TypeScript strict mode',
+      runScript: 'pnpm dev',
+      scripts: [{ name: 'build', command: 'pnpm build', mode: 'command' }],
+    });
+  });
+
+  it('surfaces a backendRequest failure envelope without masking it as success', async () => {
+    scriptsList.mockResolvedValueOnce([liveScript()]);
+    backendRequestMock.mockRejectedValueOnce(new Error('daemon offline'));
+
+    const result = await scriptsClient.saveToRepo('ws-1');
+
+    expect(result).toEqual({ success: false, error: 'daemon offline' });
   });
 });
 

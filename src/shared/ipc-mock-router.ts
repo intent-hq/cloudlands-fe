@@ -239,18 +239,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // `response?.success && response.data` and `.catch`es, so the badges simply
   // stay hidden until a daemon surface exists.
   ['git:get-auto-commit-status', undefined],
-  // Interaction-gated repo-config write (TerminalSidebar / QuakeTerminalOverlay
-  // "Save to repo"). The legacy handler wrote the repo-level scripts file with
-  // no daemon arm (§5.8 covers lifecycle only; there's no scripts:save-to-repo
-  // RPC). The caller folds `success: false` into its toast. `scripts:detect`
-  // used to live here too — it now runs renderer-side against the daemon
-  // `file.read` + `script.list/create/remove` surface (see
-  // `features/scripts/detect-scripts.ts` and `scripts.client.ts`), so the
-  // channel is retired.
-  [
-    'scripts:save-to-repo',
-    { success: false, error: 'Saving scripts to the repo config is not available in this build' },
-  ],
   // ── IPC batch 8: the remaining frozen audit debt, dispositioned ──
   // Analytics config read (fetchAnalyticsConfig, fired on EVERY page load via
   // hooks.client.ts initAnalytics). The Segment write key lived in the
