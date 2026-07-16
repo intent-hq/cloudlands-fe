@@ -3583,3 +3583,249 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
     });
   });
 });
+
+describe('daemonEventsBridge (changes refresh — git:commit/git:pull/changes:tracked → refreshRequested)', () => {
+  beforeAll(() => {
+    appStore.init();
+  });
+
+  let dispatchCalls: any[];
+
+  beforeEach(async () => {
+    dispatchCalls = [];
+    appStore.dispatch(clearAllSessions());
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+
+    // Restore appStore.dispatch getter overridden by wrapDispatch() to avoid leaking into other suites.
+    const original = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(appStore), 'dispatch');
+    if (original) Object.defineProperty(appStore, 'dispatch', original);
+  });
+
+  function wrapDispatch() {
+    const originalGetter = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(appStore),
+      'dispatch',
+    )!.get!;
+    const realDispatch = originalGetter.call(appStore);
+
+    Object.defineProperty(appStore, 'dispatch', {
+      get() {
+        return (action: any) => {
+          dispatchCalls.push(action);
+          return realDispatch(action);
+        };
+      },
+      configurable: true,
+    });
+  }
+
+  it('git:commit event triggers debounced refreshRequested with the right workspaceId', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Use fake timers BEFORE dispatching the event
+    vi.useFakeTimers();
+
+    // Wrap dispatch to track calls
+    wrapDispatch();
+
+    // Feed a PROTOCOL §6.3 git:commit envelope
+    handler(
+      notification('git:commit', {
+        sha: 'abc123',
+        message: 'feat: add feature',
+      }),
+    );
+
+    // Debounce should not have dispatched yet
+    const refreshCallsBefore = dispatchCalls.filter(
+      (action) => action.type === 'changes/refreshRequested',
+    );
+    expect(refreshCallsBefore).toHaveLength(0);
+
+    // Fast-forward past the debounce timeout
+    vi.advanceTimersByTime(1000);
+
+    // Now refreshRequested should be dispatched with the right workspaceId
+    const refreshCalls = dispatchCalls.filter(
+      (action) => action.type === 'changes/refreshRequested',
+    );
+    expect(refreshCalls).toHaveLength(1);
+    expect(refreshCalls[0]).toMatchObject({
+      type: 'changes/refreshRequested',
+      payload: [WS],
+    });
+  });
+
+  it('git:pull event triggers debounced refreshRequested', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    wrapDispatch();
+
+    handler(
+      notification('git:pull', {
+        branch: 'main',
+      }),
+    );
+
+    vi.advanceTimersByTime(1000);
+
+    const refreshCalls = dispatchCalls.filter(
+      (action) => action.type === 'changes/refreshRequested',
+    );
+    expect(refreshCalls).toHaveLength(1);
+    expect(refreshCalls[0]).toMatchObject({
+      type: 'changes/refreshRequested',
+      payload: [WS],
+    });
+  });
+
+  it('changes:tracked event triggers debounced refreshRequested', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    wrapDispatch();
+
+    handler(
+      notification('changes:tracked', {
+        path: 'src/lib.rs',
+      }),
+    );
+
+    vi.advanceTimersByTime(1000);
+
+    const refreshCalls = dispatchCalls.filter(
+      (action) => action.type === 'changes/refreshRequested',
+    );
+    expect(refreshCalls).toHaveLength(1);
+    expect(refreshCalls[0]).toMatchObject({
+      type: 'changes/refreshRequested',
+      payload: [WS],
+    });
+  });
+
+  it('rapid changes:tracked events for the same workspace are debounced into a single refreshRequested', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    wrapDispatch();
+
+    // Fire 5 rapid events
+    for (let i = 0; i < 5; i++) {
+      handler(
+        notification('changes:tracked', {
+          path: `src/file${i}.rs`,
+        }),
+      );
+      vi.advanceTimersByTime(200); // Less than the 1s debounce
+    }
+
+    // Advance past the final debounce
+    vi.advanceTimersByTime(1000);
+
+    // Should only have dispatched once
+    const refreshCalls = dispatchCalls.filter(
+      (action) => action.type === 'changes/refreshRequested',
+    );
+    expect(refreshCalls).toHaveLength(1);
+    expect(refreshCalls[0]).toMatchObject({
+      type: 'changes/refreshRequested',
+      payload: [WS],
+    });
+  });
+
+  it('events for different workspaces are debounced independently', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    wrapDispatch();
+
+    const WS2 = 'ws-bridge-2';
+
+    // Fire event for workspace 1
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-1',
+          workspaceId: WS,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'git:commit',
+          actor: { type: 'system' },
+          data: { sha: 'abc123' },
+        },
+      },
+    });
+
+    vi.advanceTimersByTime(500);
+
+    // Fire event for workspace 2
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-2',
+          workspaceId: WS2,
+          timestamp: '2026-01-02T00:00:01.000Z',
+          type: 'git:commit',
+          actor: { type: 'system' },
+          data: { sha: 'def456' },
+        },
+      },
+    });
+
+    // Advance to trigger workspace 1's debounce
+    vi.advanceTimersByTime(500);
+
+    const refreshCalls1 = dispatchCalls.filter(
+      (action) =>
+        action.type === 'changes/refreshRequested' &&
+        action.payload[0] === WS,
+    );
+    expect(refreshCalls1).toHaveLength(1);
+
+    // Advance to trigger workspace 2's debounce
+    vi.advanceTimersByTime(500);
+
+    const refreshCalls2 = dispatchCalls.filter(
+      (action) =>
+        action.type === 'changes/refreshRequested' &&
+        action.payload[0] === WS2,
+    );
+    expect(refreshCalls2).toHaveLength(1);
+  });
+
+  it('unrelated event types do not trigger refreshRequested', async () => {
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    vi.useFakeTimers();
+    wrapDispatch();
+
+    handler(
+      notification('file:changed', {
+        path: 'src/lib.rs',
+      }),
+    );
+
+    vi.advanceTimersByTime(1000);
+
+    const refreshCalls = dispatchCalls.filter(
+      (action) => action.type === 'changes/refreshRequested',
+    );
+    expect(refreshCalls).toHaveLength(0);
+  });
+});
