@@ -757,6 +757,17 @@ describe('WorkspaceService', () => {
       expect(warnSpy).not.toHaveBeenCalled();
     });
 
+    it('returns {} without warning when git config is null or undefined', async () => {
+      for (const value of [null, undefined]) {
+        vi.spyOn(workspaceRepository, 'readGitConfig').mockResolvedValue(value as any);
+
+        const result = await (service as any).getGitRepoInfo('/tmp/no-config-repo');
+
+        expect(result).toEqual({});
+        expect(warnSpy).not.toHaveBeenCalled();
+      }
+    });
+
     it('warns when git config content is a non-string contract violation', async () => {
       vi.spyOn(workspaceRepository, 'readGitConfig').mockResolvedValue(123 as any);
 
@@ -766,6 +777,18 @@ describe('WorkspaceService', () => {
       expect(warnSpy).toHaveBeenCalledWith(
         'Invalid git config content',
         expect.objectContaining({ type: 'number' }),
+      );
+    });
+
+    it('warns for falsy non-string config content (e.g. false)', async () => {
+      vi.spyOn(workspaceRepository, 'readGitConfig').mockResolvedValue(false as any);
+
+      const result = await (service as any).getGitRepoInfo('/tmp/bad-config-repo');
+
+      expect(result).toEqual({});
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Invalid git config content',
+        expect.objectContaining({ type: 'boolean' }),
       );
     });
   });

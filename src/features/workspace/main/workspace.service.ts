@@ -371,7 +371,7 @@ export class WorkspaceService {
       const configContent = await this.repository.readGitConfig(repoPath, workspaceId);
 
       // Empty/missing config is the normal "no remote configured" case — not an error
-      if (!configContent) {
+      if (configContent === '' || configContent == null) {
         return {};
       }
 
