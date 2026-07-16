@@ -749,7 +749,7 @@ describe('WorkspaceService', () => {
     });
 
     it('returns {} without warning when git config is empty', async () => {
-      vi.spyOn(workspaceRepository, 'readGitConfig').mockResolvedValue('');
+      vi.mocked(workspaceRepository.readGitConfig).mockResolvedValue('');
 
       const result = await (service as any).getGitRepoInfo('/tmp/no-remote-repo');
 
@@ -758,8 +758,9 @@ describe('WorkspaceService', () => {
     });
 
     it('returns {} without warning when git config is null or undefined', async () => {
+      const readGitConfigMock = vi.mocked(workspaceRepository.readGitConfig);
       for (const value of [null, undefined]) {
-        vi.spyOn(workspaceRepository, 'readGitConfig').mockResolvedValue(value as any);
+        readGitConfigMock.mockResolvedValue(value as any);
 
         const result = await (service as any).getGitRepoInfo('/tmp/no-config-repo');
 
@@ -769,7 +770,7 @@ describe('WorkspaceService', () => {
     });
 
     it('warns when git config content is a non-string contract violation', async () => {
-      vi.spyOn(workspaceRepository, 'readGitConfig').mockResolvedValue(123 as any);
+      vi.mocked(workspaceRepository.readGitConfig).mockResolvedValue(123 as any);
 
       const result = await (service as any).getGitRepoInfo('/tmp/bad-config-repo');
 
@@ -781,7 +782,7 @@ describe('WorkspaceService', () => {
     });
 
     it('warns for falsy non-string config content (e.g. false)', async () => {
-      vi.spyOn(workspaceRepository, 'readGitConfig').mockResolvedValue(false as any);
+      vi.mocked(workspaceRepository.readGitConfig).mockResolvedValue(false as any);
 
       const result = await (service as any).getGitRepoInfo('/tmp/bad-config-repo');
 
