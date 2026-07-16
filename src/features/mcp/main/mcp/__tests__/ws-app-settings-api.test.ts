@@ -144,18 +144,29 @@ describe('buildWsAppSettingsApi', () => {
     });
   });
 
-  it('routes FE-local electron-store paths through main/local-prefs.getLocalPref', async () => {
-    localPrefSpy.mockImplementation(async (key: string) => {
-      if (key === 'rtkEnabled') return true;
-      return undefined;
-    });
+  it('routes rtk.enabled through daemon settings.get (migrated from FE-local)', async () => {
+    backendRequestSpy.mockResolvedValue({ value: true });
 
     const api = buildWsAppSettingsApi('__chief__', call);
     const result = await api.get('rtk.enabled');
 
-    expect(localPrefSpy).toHaveBeenCalledWith('rtkEnabled');
-    expect(backendRequestSpy).not.toHaveBeenCalled();
+    expect(backendRequestSpy).toHaveBeenCalledWith('settings.get', { path: 'rtk.enabled' });
+    expect(localPrefSpy).not.toHaveBeenCalled();
     expect(result).toMatchObject({ path: 'rtk.enabled', value: true });
+  });
+
+  it('routes FE-local electron-store paths through main/local-prefs.getLocalPref', async () => {
+    localPrefSpy.mockImplementation(async (key: string) => {
+      if (key === 'betaUpdatesEnabled') return true;
+      return undefined;
+    });
+
+    const api = buildWsAppSettingsApi('__chief__', call);
+    const result = await api.get('preferences.betaUpdatesEnabled');
+
+    expect(localPrefSpy).toHaveBeenCalledWith('betaUpdatesEnabled');
+    expect(backendRequestSpy).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ path: 'preferences.betaUpdatesEnabled', value: true });
   });
 
   it('falls back to the schema defaultValue when no P3-4 owner is mapped (accounts.sentry)', async () => {
