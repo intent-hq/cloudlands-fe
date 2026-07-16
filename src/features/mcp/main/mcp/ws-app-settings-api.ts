@@ -67,6 +67,7 @@ const DAEMON_SETTING_PATHS: Record<string, string> = {
   'mcp.enableUserServers': 'mcp.enableUserServers',
   'mcp.disabledServers': 'mcp.disabledServers',
   'linear.issueFilter': 'linear.issueFilter',
+  'rtk.enabled': 'rtk.enabled',
 };
 
 /** Schema paths whose value is a sub-key of the daemon `providers.paths` object. */
