@@ -47,6 +47,7 @@ const DAEMON_SETTING_PATHS: Record<string, string> = {
   autoCommit: "git.autoCommit",
   enableUserMcpServers: "mcp.enableUserServers",
   disabledMcpServers: "mcp.disabledServers",
+  rtkEnabled: "rtk.enabled",
 };
 
 /** Legacy per-provider path keys → sub-key of the daemon `providers.paths` object. */
