@@ -7,7 +7,6 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 
 // Mock backend transport (the wire seam)
 const mocks = vi.hoisted(() => ({
