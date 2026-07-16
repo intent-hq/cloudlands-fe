@@ -22,6 +22,7 @@ import {
 } from '../../../store/main/slices/workspace-lifecycle-events/workspace-lifecycle-events-slice';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 import { type Workspace, WorkspaceStatus } from '../../../shared/types';
+import { Logger } from '../../../shared/logger';
 
 // Mock mainDispatch
 vi.mock('../../../store/main/redux-store-bridge', () => ({
@@ -732,6 +733,63 @@ describe('WorkspaceService', () => {
             workspaceId: created.data.id,
           }),
         ),
+      );
+    });
+  });
+
+  describe('getGitRepoInfo', () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    it('returns {} without warning when git config is empty', async () => {
+      vi.mocked(workspaceRepository.readGitConfig).mockResolvedValue('');
+
+      const result = await (service as any).getGitRepoInfo('/tmp/no-remote-repo');
+
+      expect(result).toEqual({});
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('returns {} without warning when git config is null or undefined', async () => {
+      const readGitConfigMock = vi.mocked(workspaceRepository.readGitConfig);
+      for (const value of [null, undefined]) {
+        readGitConfigMock.mockResolvedValue(value as any);
+
+        const result = await (service as any).getGitRepoInfo('/tmp/no-config-repo');
+
+        expect(result).toEqual({});
+        expect(warnSpy).not.toHaveBeenCalled();
+      }
+    });
+
+    it('warns when git config content is a non-string contract violation', async () => {
+      vi.mocked(workspaceRepository.readGitConfig).mockResolvedValue(123 as any);
+
+      const result = await (service as any).getGitRepoInfo('/tmp/bad-config-repo');
+
+      expect(result).toEqual({});
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Invalid git config content',
+        expect.objectContaining({ type: 'number' }),
+      );
+    });
+
+    it('warns for falsy non-string config content (e.g. false)', async () => {
+      vi.mocked(workspaceRepository.readGitConfig).mockResolvedValue(false as any);
+
+      const result = await (service as any).getGitRepoInfo('/tmp/bad-config-repo');
+
+      expect(result).toEqual({});
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Invalid git config content',
+        expect.objectContaining({ type: 'boolean' }),
       );
     });
   });
