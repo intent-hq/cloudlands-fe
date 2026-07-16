@@ -38,17 +38,22 @@
       // Read rtk.enabled from daemon settings catalog
       const entry = await appClient.settings.get(SETTING_PATH);
       rtkEnabled = typeof entry?.value === 'boolean' ? entry.value : false;
-
-      // Check if rtk is installed
-      const availResult = await invoke<any>(SYSTEM_CHANNELS.CHECK_RTK, undefined);
-      rtkAvailable = availResult?.data?.available ?? false;
       settingsError = '';
     } catch (error) {
       settingsError = 'Failed to load RTK settings from the daemon.';
       console.error('Failed to load RTK settings:', error);
-    } finally {
-      loaded = true;
     }
+
+    try {
+      // Check if rtk is installed (separate from settings read)
+      const availResult = await invoke<any>(SYSTEM_CHANNELS.CHECK_RTK, undefined);
+      rtkAvailable = availResult?.data?.available ?? false;
+    } catch (error) {
+      console.error('Failed to check RTK availability:', error);
+      // rtkAvailable stays false, toggle will be disabled
+    }
+
+    loaded = true;
   });
 
   async function recheckRtk() {
@@ -96,9 +101,6 @@
 
   async function handleToggle() {
     const newValue = !rtkEnabled;
-    // Only save if changed (deduplication)
-    if (newValue === rtkEnabled) return;
-
     try {
       await appClient.settings.update([{ path: SETTING_PATH, value: newValue }]);
       rtkEnabled = newValue;
@@ -106,7 +108,6 @@
     } catch (error) {
       settingsError = 'Failed to save RTK setting.';
       console.error('Failed to update rtk.enabled setting:', error);
-      // State automatically reverts since we only update on success
     }
   }
 </script>

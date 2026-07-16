@@ -1,26 +1,18 @@
+feat: rewire RTK toggle to daemon rtk.enabled setting
+
 Rewires the RTK settings toggle to use the daemon's rtk.enabled setting instead of FE-local persistence, completing Wave 2 of the RTK optimization restore (Wave 1: intentd PR #190, merged as 5c5fb75).
 
-## Changes
+Changes:
+- RtkSettings.svelte: Read/write rtk.enabled via appClient.settings.get/update (daemon-backed)
+- app-settings-schema.ts: Mark rtk.enabled as daemon-settings source
+- Removed dead injection path: Deleted rtk-detector.ts and its test
+- Test: Added RtkSettings.test.ts with 9 comprehensive tests including error handling
+- User-visible error feedback for settings operations
+- Deduplication check before settings.update
 
-- **RtkSettings.svelte**: Read/write rtk.enabled via appClient.settings.get/update (daemon-backed), replacing localStorage
-- **app-settings-schema.ts**: Mark rtk.enabled as daemon-settings source with daemon-settings-update apply kind
-- **Removed dead injection path**: Deleted rtk-detector.ts and its test, removed getRtkPromptInstruction calls from base-system-prompt.ts and main/index.ts (prompt injection now lives daemon-side per intentd PR #190)
-- **Test**: Added RtkSettings.test.ts asserting exact settings.update request shape for rtk.enabled toggle (PROTOCOL-shaped mock response)
+All gates passed:
+✅ pnpm run check — PASS
+✅ All tsc --noEmit — PASS
+✅ pnpm vitest run RtkSettings.test.ts — PASS (9/9 tests)
 
-## Verification
-
-✅ pnpm run check — PASS (0 errors, 256 warnings)
-✅ pnpm tsc -p tsconfig.json --noEmit — PASS
-✅ pnpm tsc -p tsconfig.main.json --noEmit — PASS
-✅ pnpm tsc -p tsconfig.preload.json --noEmit — PASS
-✅ pnpm vitest run RtkSettings.test.ts — PASS (8/8 tests)
-
-## Removed Files
-
-- src/features/agent/main/rtk-detector.ts
-- src/features/agent/main/__tests__/rtk-detector.test.ts
-
-## Related
-
-- Wave 1: intentd PR #190 (merged, commit 5c5fb75)
-- Wave 3 (docs + monorepo submodule bumps): follows this PR
+Reviewed and addressed feedback from panghy (PR #89)

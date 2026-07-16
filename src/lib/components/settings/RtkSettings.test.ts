@@ -64,7 +64,7 @@ describe('RtkSettings', () => {
     expect(toggle.getAttribute('data-state')).toBe('off');
   });
 
-  it('issues settings.update with exact request shape when toggle is clicked', async () => {
+  it('calls settings.update with correct arguments when toggle is clicked', async () => {
     mocks.mockSettingsGet.mockResolvedValue({ path: 'rtk.enabled', value: false });
     mocks.mockInvoke.mockResolvedValue({ data: { available: true } });
     mocks.mockSettingsUpdate.mockResolvedValue([{ path: 'rtk.enabled', value: true }]);
