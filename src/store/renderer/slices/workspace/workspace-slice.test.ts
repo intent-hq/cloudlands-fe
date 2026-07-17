@@ -9,6 +9,7 @@ import {
   openTerminalOverlay,
   toggleTerminalOverlay,
 } from "../terminals/terminals-slice";
+import { workspaceDeleted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import {
   createCollection,
   getItem,
@@ -678,6 +679,96 @@ describe("workspace selectors", () => {
     const ws = makeWorkspace({ id: "ws-1", title: "Current" });
     const state = stateWith({ activeWorkspaceId: "ws-1", workspaces: createCollection("id", [ws]) });
     expect(selectCurrentWorkspace.select(state as any)).toEqual(ws);
+  });
+
+  describe("workspaceDeleted", () => {
+    it("removes the workspace entity from the collection", () => {
+      const ws1 = makeWorkspace({ id: "ws-1" as WorkspaceId });
+      const ws2 = makeWorkspace({ id: "ws-2" as WorkspaceId });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(ws1));
+      state = workspaceReducer(state, setWorkspaceEntity(ws2));
+      state = workspaceReducer(state, workspaceDeleted("ws-1", []));
+      expect(getItem(state.workspaces, "ws-1")).toBeUndefined();
+      expect(getItem(state.workspaces, "ws-2")).toBeDefined();
+    });
+
+    it("clears activeWorkspaceId if it matches the deleted workspace", () => {
+      const ws = makeWorkspace({ id: "ws-1" as WorkspaceId });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+      state = workspaceReducer(state, setActiveWorkspaceId("ws-1"));
+      state = workspaceReducer(state, workspaceDeleted("ws-1", []));
+      expect(state.activeWorkspaceId).toBeNull();
+    });
+
+    it("does not clear activeWorkspaceId if it does not match the deleted workspace", () => {
+      const ws1 = makeWorkspace({ id: "ws-1" as WorkspaceId });
+      const ws2 = makeWorkspace({ id: "ws-2" as WorkspaceId });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(ws1));
+      state = workspaceReducer(state, setWorkspaceEntity(ws2));
+      state = workspaceReducer(state, setActiveWorkspaceId("ws-2"));
+      state = workspaceReducer(state, workspaceDeleted("ws-1", []));
+      expect(state.activeWorkspaceId).toBe("ws-2");
+    });
+
+    it("clears the workspace from pendingDeletions map", () => {
+      const ws = makeWorkspace({ id: "ws-1" as WorkspaceId });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+      state = workspaceReducer(state, markWorkspacePendingDeletion("ws-1"));
+      expect(state.pendingDeletions["ws-1"]).toBe(true);
+      state = workspaceReducer(state, workspaceDeleted("ws-1", []));
+      expect(state.pendingDeletions["ws-1"]).toBeUndefined();
+    });
+
+    it("clears the workspace from recency.lastViewedAt map", () => {
+      const ws = makeWorkspace({ id: "ws-1" as WorkspaceId });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+      state = workspaceReducer(state, recordWorkspaceView("ws-1", 123456));
+      expect(state.recency.lastViewedAt["ws-1"]).toBe(123456);
+      state = workspaceReducer(state, workspaceDeleted("ws-1", []));
+      expect(state.recency.lastViewedAt["ws-1"]).toBeUndefined();
+    });
+
+    it("clears the workspace from pendingCreations map", () => {
+      const ws = makeWorkspace({ id: "ws-1" as WorkspaceId });
+      let state = workspaceReducer(initialState, setPendingCreation(ws));
+      expect(state.pendingCreations["ws-1"]).toBeDefined();
+      state = workspaceReducer(state, workspaceDeleted("ws-1", []));
+      expect(state.pendingCreations["ws-1"]).toBeUndefined();
+    });
+
+    it("survives an in-flight replaceWorkspaceList during the undo window", () => {
+      const ws1 = makeWorkspace({ id: "ws-1" as WorkspaceId });
+      const ws2 = makeWorkspace({ id: "ws-2" as WorkspaceId });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(ws1));
+      state = workspaceReducer(state, setWorkspaceEntity(ws2));
+
+      // Mark pending deletion (optimistic hide)
+      state = workspaceReducer(state, markWorkspacePendingDeletion("ws-1"));
+      expect(state.pendingDeletions["ws-1"]).toBe(true);
+
+      // Simulate an in-flight snapshot arriving during undo window
+      state = workspaceReducer(state, replaceWorkspaceList([ws1, ws2]));
+
+      // ws-1 should still be hidden due to pendingDeletions filter
+      expect(getItem(state.workspaces, "ws-1")).toBeUndefined();
+      expect(getItem(state.workspaces, "ws-2")).toBeDefined();
+      // pendingDeletions entry should still be there (not cleared by replaceWorkspaceList)
+      expect(state.pendingDeletions["ws-1"]).toBe(true);
+
+      // Now actual delete event arrives
+      state = workspaceReducer(state, workspaceDeleted("ws-1", []));
+
+      // ws-1 should be permanently gone and pendingDeletions cleared
+      expect(getItem(state.workspaces, "ws-1")).toBeUndefined();
+      expect(state.pendingDeletions["ws-1"]).toBeUndefined();
+    });
+
+    it("is a no-op when the workspace does not exist", () => {
+      const ws = makeWorkspace({ id: "ws-1" as WorkspaceId });
+      const state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+      const next = workspaceReducer(state, workspaceDeleted("ws-missing", []));
+      expect(next).toBe(state);
+    });
   });
 
 });
