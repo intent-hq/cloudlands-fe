@@ -20,6 +20,7 @@ import {
 } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
 import {
   PANEL_LAYOUT_STORAGE_KEY_PREFIX,
+  HISTORY_PERSIST_DEBOUNCE_MS,
   type WorkspacePanelLayout,
 } from "$store/renderer/slices/panel-layout/panel-layout-types";
 import type { StoreState } from "$store/renderer/types";
@@ -323,7 +324,7 @@ describe("panelLayoutPersistenceService — history", () => {
 
     expect(savePanelLayoutHistory).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(HISTORY_PERSIST_DEBOUNCE_MS);
     await vi.runAllTimersAsync();
 
     expect(savePanelLayoutHistory).toHaveBeenCalled();

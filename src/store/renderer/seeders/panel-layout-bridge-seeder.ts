@@ -15,8 +15,7 @@
  * Handlers are registered at import time (seeder idiom).
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
-
-
+import { PANEL_LAYOUT_CHANNELS } from '$shared/ipc/channels';
 
 // ── panel-layout:save → stub (no-op for tests) ──
 
@@ -24,7 +23,7 @@ import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 // is a no-op (the reconciliation test just needs the channel to be bridged
 // so it doesn't fail the unbridged-invoke check).
 // Returns boolean like the real main-process handler (true = success).
-registerMockIpcHandler('panel-layout:save', async (_arg) => {
+registerMockIpcHandler(PANEL_LAYOUT_CHANNELS.SAVE, async (_arg) => {
   // In real implementation (main process), this would write to disk.
   // For tests, we just acknowledge the save.
   return true;
@@ -35,7 +34,7 @@ registerMockIpcHandler('panel-layout:save', async (_arg) => {
 // The load channel reads layout history from disk. In test mode this
 // returns null (no persisted history), matching the real handler's
 // return type (PanelLayoutHistoryData | null).
-registerMockIpcHandler('panel-layout:load', async (_arg) => {
+registerMockIpcHandler(PANEL_LAYOUT_CHANNELS.LOAD, async (_arg) => {
   // In real implementation (main process), this would read from disk.
   // For tests, we return null (no history saved).
   return null;

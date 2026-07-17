@@ -349,10 +349,14 @@ export function createPanelLayoutPersistenceMiddleware(): StoreMiddleware {
       // Handle initializeLayout: load history from disk
       if (action.type === initializeLayout.type) {
         const wsId = getWsId(action);
-        if (wsId) {
+        if (wsId && isValidMountedWorkspaceId(wsId)) {
           loadPanelLayoutHistory(wsId).then((data) => {
-            if (data && data.history && Array.isArray(data.history)) {
-              api.dispatch(loadLayoutHistory(wsId, data.history, data.historyIndex));
+            if (data && data.history && Array.isArray(data.history) && typeof data.historyIndex === 'number') {
+              // Check workspace still exists before dispatching (async load may finish after unmount)
+              const currentState = api.getState() as StoreState;
+              if (currentState.panelLayout.byWorkspaceId[wsId]) {
+                api.dispatch(loadLayoutHistory(wsId, data.history, data.historyIndex));
+              }
             }
           }).catch(() => {
             // Non-critical
@@ -363,7 +367,7 @@ export function createPanelLayoutPersistenceMiddleware(): StoreMiddleware {
       // Persist layout to localStorage on mutating actions
       if (PERSIST_ACTIONS.has(action.type)) {
         const wsId = getWsId(action);
-        if (wsId) {
+        if (wsId && isValidMountedWorkspaceId(wsId)) {
           const state = api.getState() as StoreState;
           persistToLocalStorage(state, wsId);
         }
@@ -372,7 +376,7 @@ export function createPanelLayoutPersistenceMiddleware(): StoreMiddleware {
       // Schedule history save on history-affecting actions
       if (HISTORY_ACTIONS.has(action.type)) {
         const wsId = getWsId(action);
-        if (wsId) {
+        if (wsId && isValidMountedWorkspaceId(wsId)) {
           scheduleHistorySave(() => api.getState() as StoreState, wsId);
         }
       }
