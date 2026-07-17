@@ -21,7 +21,6 @@
 import { Logger } from '$shared/logger';
 import type { SuggestedPrompt } from '$shared/types';
 import type { ContentBlock } from '$shared/types/content-block';
-import { isValidWorkspaceId } from '$shared/types/branded-ids';
 
 const logger = new Logger('MessageParser');
 
