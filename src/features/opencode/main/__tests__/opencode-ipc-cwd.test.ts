@@ -48,7 +48,7 @@ vi.mock('../../../backend/main/backend.ipc', () => ({
 }));
 
 describe('opencode IPC - cwd parameter regression', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     mockBackendRequest.mockReset();
     mockResolveOpenCodeCommand.mockReset();
     mockResolveOpenCodeCommand.mockResolvedValue({
@@ -56,6 +56,9 @@ describe('opencode IPC - cwd parameter regression', () => {
       argsPrefix: [],
       usesNpx: false,
     });
+    // Clear ipcMain.handle mock call history to keep tests order-independent
+    const { ipcMain } = await import('electron');
+    vi.mocked(ipcMain.handle).mockClear();
   });
 
   it('does NOT send cwd or workspaceId when fetching models', async () => {
