@@ -2,7 +2,7 @@ import type { Workspace } from '$shared/types';
 
 /**
  * Display status for a workspace, derived from PR/task state.
- * This matches the type exported from WorkspaceStatusIcon.svelte.
+ * Canonical type used by WorkspaceStatusIcon and sidebar grouping.
  */
 export type WorkspaceDisplayStatus =
   | 'not_started'

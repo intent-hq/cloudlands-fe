@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { getWorkspaceGroupingStatus, isWorkspaceRunning } from './workspace-status-grouping';
 import type { Workspace } from '$shared/types';
+import { WorkspaceStatus } from '$shared/types';
 
-function makeWorkspace(activity?: 'idle' | 'agent_running'): Workspace {
+function makeWorkspace(activity?: Workspace['activity']): Workspace {
   return {
     id: 'ws-1',
     title: 'Test Workspace',
@@ -10,7 +11,7 @@ function makeWorkspace(activity?: 'idle' | 'agent_running'): Workspace {
     changesets: [],
     timeline: [],
     conversationInfo: [],
-    status: 'active' as any,
+    status: WorkspaceStatus.Active,
     activity,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',

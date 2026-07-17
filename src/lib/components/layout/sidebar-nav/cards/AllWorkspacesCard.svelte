@@ -15,11 +15,11 @@
   buildRepoPathLookup,
   getGroupKey,
 } from '$lib/components/workspace/utils/workspace-grouping';
-  import type { WorkspaceDisplayStatus } from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
   import {
   getWorkspaceGroupingStatus,
   isWorkspaceRunning,
   type GroupingStatus,
+  type WorkspaceDisplayStatus,
 } from '$lib/components/workspace/utils/workspace-status-grouping';
   import { onMount } from 'svelte';
   import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
