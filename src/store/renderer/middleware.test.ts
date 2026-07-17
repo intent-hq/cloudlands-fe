@@ -310,6 +310,7 @@ vi.mock("./middlewares/external-editors-persistence-service", () => ({
 }));
 vi.mock("./middlewares/zoom-sync-service", () => ({
   createZoomSyncMiddleware: mocks.createZoomSyncMiddleware,
+}));
 vi.mock("./middlewares/workspace-settings-persistence-service", () => ({
   createWorkspaceSettingsPersistenceMiddleware: mocks.createWorkspaceSettingsPersistenceMiddleware,
 }));
