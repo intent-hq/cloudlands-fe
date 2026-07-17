@@ -159,7 +159,7 @@ function invalidateAgentsHydration(wsId: string): void {
 /** Re-fetch the workspace list + recency (mirrors workspaces-seeder, data only). */
 function refreshWorkspaces(): void {
   coalesce("workspaces", async () => {
-    const workspaces = await appClient.workspaces.list();
+    const workspaces = await appClient.workspaces.list({ includeArchived: true });
     appStore.dispatch(replaceWorkspaceList(workspaces));
     appStore.dispatch(setWorkspaceHasLoaded(true));
     const recentViews = await appClient.workspaces.recentViews();

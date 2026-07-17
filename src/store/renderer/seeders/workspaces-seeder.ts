@@ -91,7 +91,7 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.GET, async (arg) => {
 // `WorkspaceClient.list()` already handles both. The legacy `lite` flag is
 // ignored: the daemon's `workspace.list` result is the only shape it serves.
 registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, async () => {
-  const workspaces = await appClient.workspaces.list();
+  const workspaces = await appClient.workspaces.list({ includeArchived: true });
   return { success: true, data: workspaces };
 });
 
@@ -155,7 +155,7 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
 });
 
 registerMockSeeder("workspaces", async ({ store, client }) => {
-  const workspaces = await client.workspaces.list();
+  const workspaces = await client.workspaces.list({ includeArchived: true });
 
   store.dispatch(replaceWorkspaceList(workspaces));
   store.dispatch(setWorkspaceHasLoaded(true));
