@@ -379,18 +379,49 @@ export class LiveGitClient implements GitClient {
   }
 
   // `file-tracking.loadCommits` (PROTOCOL §5.19) returns
-  // `{ commits: CommitWithAttribution[] }` — local commits carrying agent
+  // `{ commits: CommitWithAttribution[], boundarySha: string | null, nextToken: string | null }` — local commits carrying agent
   // provenance (agentId / linkedNoteId) and per-file stats, replacing the
   // attribution-less `git.commits` page for the changes panel.
-  async commits(workspaceId: string): Promise<CommitInfo[]> {
+  // When `includeOlder` is true, returns commits before and including the workspace boundary.
+  async commits(workspaceId: string, includeOlder?: boolean): Promise<CommitInfo[]> {
     try {
-      const result = await backendRequest<{ commits?: unknown[] }>("file-tracking.loadCommits", {
-        workspaceId,
-      });
+      const result = await backendRequest<{ commits?: unknown[]; boundarySha?: string | null; nextToken?: string | null }>(
+        "file-tracking.loadCommits",
+        {
+          workspaceId,
+          ...(includeOlder !== undefined ? { includeOlder } : {}),
+        }
+      );
       const commits = Array.isArray(result?.commits) ? result.commits : [];
       return commits.map(toCommitInfo).filter((c): c is CommitInfo => c !== null);
     } catch {
       return [];
+    }
+  }
+
+  // `file-tracking.loadCommits` with full envelope — returns the boundary SHA
+  // alongside the commits for the Changes panel to render the workspace-start marker.
+  async commitsWithBoundary(workspaceId: string, includeOlder?: boolean): Promise<{
+    commits: CommitInfo[];
+    boundarySha: string | null;
+    nextToken: string | null;
+  }> {
+    try {
+      const result = await backendRequest<{ commits?: unknown[]; boundarySha?: string | null; nextToken?: string | null }>(
+        "file-tracking.loadCommits",
+        {
+          workspaceId,
+          ...(includeOlder !== undefined ? { includeOlder } : {}),
+        }
+      );
+      const commits = Array.isArray(result?.commits) ? result.commits : [];
+      return {
+        commits: commits.map(toCommitInfo).filter((c): c is CommitInfo => c !== null),
+        boundarySha: result?.boundarySha ?? null,
+        nextToken: result?.nextToken ?? null,
+      };
+    } catch {
+      return { commits: [], boundarySha: null, nextToken: null };
     }
   }
 

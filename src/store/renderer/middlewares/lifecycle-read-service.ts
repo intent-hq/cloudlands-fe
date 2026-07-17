@@ -85,12 +85,15 @@ import {
   agentLineStatsRequestFailed,
   agentLineStatsRequestStarted,
   agentLineStatsRequestSucceeded,
+  appendOlderCommits,
+  loadOlderCommitsRequested,
   loadWorkspaceDataRequested,
   refreshRequested,
   requestAgentLineStats,
   setChangesData,
   setCommitsData,
   setHasLoadedInitialData,
+  setLoadingOlderCommits,
   updateAgentStats,
 } from "../slices/changes/changes-slice";
 import { getAgentLineStats } from "$features/line-changes/line-changes.client";
@@ -304,14 +307,30 @@ function refreshPrStatus(wsId: string): void {
  */
 function refreshChanges(wsId: string): void {
   coalesce(`changes:${wsId}`, async () => {
-    const [changes, commits] = await Promise.all([
+    const [changes, commitsEnvelope] = await Promise.all([
       appClient.git.trackedChanges(wsId),
-      appClient.git.commits(wsId),
+      appClient.git.commitsWithBoundary(wsId),
     ]);
     appStore.dispatch(setChangesData(wsId, changes, false, changes.length));
-    const boundarySha = commits.length > 0 ? commits[commits.length - 1].hash : null;
-    appStore.dispatch(setCommitsData(wsId, commits, boundarySha));
+    appStore.dispatch(setCommitsData(wsId, commitsEnvelope.commits, commitsEnvelope.boundarySha));
     appStore.dispatch(setHasLoadedInitialData(wsId, true));
+  });
+}
+
+/**
+ * Load older commits (pre-boundary) for the "show previous" toggle in the
+ * Changes panel. Calls the daemon with `includeOlder: true` and dispatches
+ * the results into `olderCommits`.
+ */
+function loadOlderCommits(wsId: string): void {
+  coalesce(`olderCommits:${wsId}`, async () => {
+    appStore.dispatch(setLoadingOlderCommits(wsId, true));
+    try {
+      const envelope = await appClient.git.commitsWithBoundary(wsId, true);
+      appStore.dispatch(appendOlderCommits(wsId, envelope.commits));
+    } finally {
+      appStore.dispatch(setLoadingOlderCommits(wsId, false));
+    }
   });
 }
 
@@ -480,6 +499,11 @@ export function createLifecycleReadMiddleware(): StoreMiddleware {
         case loadWorkspaceDataRequested.type: {
           const wsId = wsIdOf(action);
           if (wsId) refreshChanges(wsId);
+          break;
+        }
+        case loadOlderCommitsRequested.type: {
+          const wsId = wsIdOf(action);
+          if (wsId) loadOlderCommits(wsId);
           break;
         }
         case requestAgentLineStats.type: {
