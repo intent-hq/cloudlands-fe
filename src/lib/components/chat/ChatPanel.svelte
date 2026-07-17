@@ -2267,7 +2267,7 @@
       }),
     );
 
-    performLocalSendCleanup({
+    void performLocalSendCleanup({
       clearInput: false,
       followBottom: true,
     });
@@ -2454,7 +2454,7 @@
       }),
     );
 
-    performLocalSendCleanup({
+    void performLocalSendCleanup({
       clearInput: true,
       followBottom: true,
       historyText: text,
@@ -2624,7 +2624,7 @@
       }),
     );
 
-    performLocalSendCleanup({
+    void performLocalSendCleanup({
       clearInput: true,
       followBottom: true,
       historyText: text,
