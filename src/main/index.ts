@@ -324,7 +324,6 @@ import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSkillsIPC } from '../features/agent/main/skills.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
-import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
 import {
   registerBackendHandlers,
   disposeBackendClient,
@@ -1807,7 +1806,7 @@ app.on('window-all-closed', async () => {
   // fresh window instead of restoring every window the user just closed.
   // Guard with !isShuttingDown so that an intentional quit (Cmd+Q) — which
   // already saved sessions in before-quit — doesn't lose them.
-  if (process.platform === 'darwin' && !isShuttingDown && !isInstallingUpdate) {
+  if (process.platform === 'darwin' && !isShuttingDown) {
     try {
       const sessionsPath = getWindowSessionsPath();
       if (fs.existsSync(sessionsPath)) {
@@ -1831,7 +1830,7 @@ app.on('window-all-closed', async () => {
   // If the user cancels, re-open a fresh window so the app is still reachable
   // (on Windows/Linux there are no windows left) and return early without
   // tearing anything down or calling app.quit().
-  if (process.platform !== 'darwin' && !isShuttingDown && !isInstallingUpdate) {
+  if (process.platform !== 'darwin' && !isShuttingDown) {
     const proceed = await confirmQuitWithRunningAgents();
     if (!proceed) {
       logger.info('window-all-closed quit cancelled; re-opening a window');

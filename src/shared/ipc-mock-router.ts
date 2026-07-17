@@ -145,15 +145,7 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // affordances surface the folded error message; a shaped failure keeps both
   // paths clean instead of a startup UnbridgedMockIpcChannelError.
   [
-    'auto-update:check',
-    { success: false, error: { message: 'Auto-update is not available in this build' } },
-  ],
-  [
     'auto-update:check-manual',
-    { success: false, error: { message: 'Auto-update is not available in this build' } },
-  ],
-  [
-    'auto-update:download',
     { success: false, error: { message: 'Auto-update is not available in this build' } },
   ],
   [
@@ -253,13 +245,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   [
     'banner:fetch',
     { success: false, error: 'Promotional banners are not available in this build' },
-  ],
-  // The interaction-gated install arm of the auto-updater above. The
-  // installUpdate() client ignores the response; the update UI is unreachable
-  // anyway because auto-update:get-state resolves the shaped failure above.
-  [
-    'auto-update:install',
-    { success: false, error: { message: 'Auto-update is not available in this build' } },
   ],
   // AddRemoteSetupModal's SSH host/key/agent discovery probes (fired when the
   // add-remote modal opens) and its Test Connection action. SSH config, keys

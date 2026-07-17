@@ -27,19 +27,6 @@ const EmptySchema = z.object({}).optional();
 export function setupAutoUpdateIPC(): void {
   logger.info('Setting up auto-update IPC handlers');
 
-  // Check for updates
-  ipcMain.handle(
-    AUTO_UPDATE_CHANNELS.CHECK,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async () => {
-        const state = await autoUpdateService.checkForUpdates();
-        return { success: true, data: state };
-      },
-      AUTO_UPDATE_CHANNELS.CHECK,
-    ),
-  );
-
   // Manual check for updates (triggers "up to date" notification if no updates)
   ipcMain.handle(
     AUTO_UPDATE_CHANNELS.CHECK_MANUAL,
@@ -50,32 +37,6 @@ export function setupAutoUpdateIPC(): void {
         return { success: true, data: state };
       },
       AUTO_UPDATE_CHANNELS.CHECK_MANUAL,
-    ),
-  );
-
-  // Download update
-  ipcMain.handle(
-    AUTO_UPDATE_CHANNELS.DOWNLOAD,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async () => {
-        await autoUpdateService.downloadUpdate();
-        return { success: true };
-      },
-      AUTO_UPDATE_CHANNELS.DOWNLOAD,
-    ),
-  );
-
-  // Install update (quit and install)
-  ipcMain.handle(
-    AUTO_UPDATE_CHANNELS.INSTALL,
-    createSafeValidatedHandler(
-      EmptySchema,
-      async () => {
-        await autoUpdateService.installUpdate();
-        return { success: true };
-      },
-      AUTO_UPDATE_CHANNELS.INSTALL,
     ),
   );
 
