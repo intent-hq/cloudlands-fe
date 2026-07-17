@@ -90,8 +90,7 @@ export class LiveSpecialistsClient implements SpecialistsClient {
     };
     if (workspacePath) params.workspacePath = workspacePath;
 
-    await backendRequest<{ success: true }>("specialist.delete", params);
-    return { success: true };
+    return await backendRequest<{ success: true }>("specialist.delete", params);
   }
 }
 

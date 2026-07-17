@@ -75,8 +75,9 @@ function readBundledSpecialist(id: string): typeof SPECIALISTS[number] | undefin
   return state.specialists?.bundledSpecialists.find((s) => s.id === id);
 }
 
+const MODEL_TIERS = new Set<ModelTier>(["fast", "balanced", "smart"]);
+
 function toModelTier(value: string | undefined): ModelTier | undefined {
-  const MODEL_TIERS = new Set<ModelTier>(["fast", "balanced", "smart"]);
   return value !== undefined && MODEL_TIERS.has(value as ModelTier) ? (value as ModelTier) : undefined;
 }
 
@@ -130,6 +131,11 @@ async function refetchAndDispatch(): Promise<void> {
     appStore.dispatch(setFileSpecialistsLoaded(true));
   } catch (error) {
     logger.error("Failed to refetch specialist list", error);
+    const { showToast } = await import("$lib/components/Toast.svelte");
+    showToast({
+      type: "error",
+      message: "Failed to refresh specialists list after write",
+    });
   }
 }
 
