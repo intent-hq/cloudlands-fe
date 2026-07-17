@@ -119,7 +119,7 @@ const SPECIAL_BLOCK_PATTERNS = {
   navLink:
     /(?:(`{3,})nav-link\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})nav-link\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // Workspace card blocks - @@@workspace sentinel syntax
-  workspaceSentinel: /@@@workspace\s*\n([\s\S]*?)^@@@\s*$/gm,
+  workspaceSentinel: /^@@@workspace[ \t]*\n([\s\S]*?)^@@@[ \t]*$/gm,
   // Agent digest - short summary for display
   agentDigest: /<agent_digest>([\s\S]*?)<\/agent_digest>/g,
   // Detected scripts from background agent
@@ -131,7 +131,7 @@ const SPECIAL_BLOCK_PATTERNS = {
 // Closing fences are line-anchored (^) with multiline flag to prevent matching within content.
 // Separate branches for backtick vs tilde fences to prevent mismatched fence types.
 const COMBINED_SPECIAL_REGEX =
-  /(<augment_code_snippet\s+path="[^"]+"(?:\s+mode="[^"]+")?\s*>\s*(`{4,})\w*\s*\n[\s\S]*?\n\s*\2\s*<\/augment_code_snippet>|(`{4,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{4,}\s*$|(`{3,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{3,}\s*$|(?:`{3,}diff\n[\s\S]*?^`{3,}\s*$|~{3,}diff\n[\s\S]*?^~{3,}\s*$)|<COMMIT_MESSAGE>[\s\S]*?<\/COMMIT_MESSAGE>|(?:`{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^`{3,}\s*$|~{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:patch\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:patch\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:reference\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:reference\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:cli\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:cli\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:agent_action\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:agent_action\s*\n[\s\S]*?^~{3,}\s*$)|@@@workspace\s*\n[\s\S]*?^@@@\s*$|(?:`{3,}nav-link\s*\n[\s\S]*?^`{3,}\s*$|~{3,}nav-link\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}mermaid\s*\n[\s\S]*?^`{3,}\s*$|~{3,}mermaid\s*\n[\s\S]*?^~{3,}\s*$)|<agent_digest>[\s\S]*?<\/agent_digest>|<<<DETECTED_SCRIPTS>>>[\s\S]*?<<<\/DETECTED_SCRIPTS>>>)/gm;
+  /(<augment_code_snippet\s+path="[^"]+"(?:\s+mode="[^"]+")?\s*>\s*(`{4,})\w*\s*\n[\s\S]*?\n\s*\2\s*<\/augment_code_snippet>|(`{4,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{4,}\s*$|(`{3,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{3,}\s*$|(?:`{3,}diff\n[\s\S]*?^`{3,}\s*$|~{3,}diff\n[\s\S]*?^~{3,}\s*$)|<COMMIT_MESSAGE>[\s\S]*?<\/COMMIT_MESSAGE>|(?:`{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^`{3,}\s*$|~{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:patch\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:patch\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:reference\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:reference\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:cli\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:cli\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:agent_action\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:agent_action\s*\n[\s\S]*?^~{3,}\s*$)|^@@@workspace[ \t]*\n[\s\S]*?^@@@[ \t]*$|(?:`{3,}nav-link\s*\n[\s\S]*?^`{3,}\s*$|~{3,}nav-link\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}mermaid\s*\n[\s\S]*?^`{3,}\s*$|~{3,}mermaid\s*\n[\s\S]*?^~{3,}\s*$)|<agent_digest>[\s\S]*?<\/agent_digest>|<<<DETECTED_SCRIPTS>>>[\s\S]*?<<<\/DETECTED_SCRIPTS>>>)/gm;
 
 const WORKSPACE_LINK_PREFIX = 'intent://local/workspace/';
 
@@ -607,7 +607,7 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
 
   // Check @@@workspace sentinel block
   if (blockText.startsWith('@@@workspace')) {
-    const match = blockText.match(/@@@workspace\s*\n([\s\S]*?)^@@@\s*$/m);
+    const match = blockText.match(/^@@@workspace[ \t]*\n([\s\S]*?)^@@@[ \t]*$/m);
     if (match) {
       const workspaceIds = parseWorkspaceCardIds(match[1]);
       if (workspaceIds.length === 0) {
