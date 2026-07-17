@@ -235,6 +235,8 @@ export interface Workspace {
   status: WorkspaceStatus;
   /** User-facing high-level work status message. Distinct from lifecycle status. */
   statusMessage?: string;
+  /** BE-derived in-flight agent state (green dot). Read-only; computed from agent runtime. */
+  activity?: 'idle' | 'agent_running';
   createdAt: string;
   updatedAt: string;
   lastActivity?: string;
