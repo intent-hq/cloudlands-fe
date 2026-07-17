@@ -38,3 +38,7 @@ export const selectManagedInstallStatusByProvider = store.createSelector(
     };
   },
 );
+
+export const selectNpxStatus = store.createSelector(
+  (state) => state.agentAvailability.npxStatus,
+);

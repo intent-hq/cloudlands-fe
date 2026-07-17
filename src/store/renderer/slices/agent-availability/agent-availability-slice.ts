@@ -6,7 +6,12 @@
 
 import { createAction } from '@augmentcode/ag-redux-toolkit/utils/store/create-action';
 import { createReducer } from '@augmentcode/ag-redux-toolkit/utils/store/create-reducer';
-import type { AgentAvailabilityState, ManagedInstallStatus, ProviderStatus } from './agent-availability-types';
+import type {
+  AgentAvailabilityState,
+  ManagedInstallStatus,
+  ProviderStatus,
+} from './agent-availability-types';
+import type { NpxStatus } from '$shared/types/provider-availability';
 
 // ---------------------------------------------------------------------------
 // Initial state
@@ -18,6 +23,7 @@ export const initialState: AgentAvailabilityState = {
   providerUserInfoLoadingMap: {},
   hasCheckedOnce: false,
   watchedTerminalIds: [],
+  npxStatus: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -83,6 +89,11 @@ export const setManagedInstallStatus = createAction<[
   providerId: string,
   status: Partial<ManagedInstallStatus>,
 ]>('agentAvailability/setManagedInstallStatus');
+
+/** Set npx availability status from host.providerDiscovery response. */
+export const setNpxStatus = createAction<[npxStatus: NpxStatus | null]>(
+  'agentAvailability/setNpxStatus',
+);
 
 // ---------------------------------------------------------------------------
 // Reducer
@@ -160,4 +171,8 @@ export const agentAvailabilityReducer = createReducer<AgentAvailabilityState>(in
       ...state,
       watchedTerminalIds: state.watchedTerminalIds.filter((id) => id !== terminalId),
     };
-  });
+  })
+  .with(setNpxStatus, (state, { payload: [npxStatus] }) => ({
+    ...state,
+    npxStatus,
+  }));

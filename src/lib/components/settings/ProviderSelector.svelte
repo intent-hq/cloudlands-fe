@@ -182,16 +182,21 @@
   const providerOptions = $derived.by(() =>
     Object.values(ACP_PROVIDERS)
       .filter((provider) => !providerAvailability?.hiddenProviders?.includes(provider.id))
-      .map((provider) => ({
-        id: provider.id,
-        name: provider.displayName,
-        command: provider.command,
-        available: getProviderAvailable(provider.id),
-        authenticated: getProviderAuthenticated(provider.id),
-        requiresAuth: PROVIDER_METADATA[provider.id]?.requiresAuth ?? false,
-        docsUrl: PROVIDER_METADATA[provider.id]?.docsUrl ?? '',
-        loginDocsUrl: provider.loginDocsUrl,
-      })),
+      .map((provider) => {
+        const statusKey = providerKeyMap[provider.id];
+        const status = statusKey ? providerAvailability?.providers[statusKey] : null;
+        return {
+          id: provider.id,
+          name: provider.displayName,
+          command: provider.command,
+          available: getProviderAvailable(provider.id),
+          authenticated: getProviderAuthenticated(provider.id),
+          requiresAuth: PROVIDER_METADATA[provider.id]?.requiresAuth ?? false,
+          docsUrl: PROVIDER_METADATA[provider.id]?.docsUrl ?? '',
+          loginDocsUrl: provider.loginDocsUrl,
+          hasNpxFallback: status?.hasNpxFallback ?? false,
+        };
+      }),
   );
 
   const piProviderAvailable = $derived.by(() => {
@@ -962,6 +967,23 @@
                     <span>Install</span>
                   {/if}
                 </Button>
+              </div>
+            {/if}
+            {#if provider.hasNpxFallback && !provider.available && providerAvailability?.npx?.resolvedPath === null}
+              <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+                <Fa icon={faTriangleExclamation} class="w-3 h-3" />
+                <span>
+                  Requires Node.js (npx) — <button
+                    type="button"
+                    class="underline hover:no-underline"
+                    onclick={() => shell.open('https://nodejs.org')}
+                  >install from nodejs.org</button>
+                </span>
+              </div>
+            {:else if provider.hasNpxFallback && !provider.available && providerAvailability?.npx?.resolvedPath !== null && providerAvailability?.npx?.versionOk === false}
+              <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+                <Fa icon={faTriangleExclamation} class="w-3 h-3" />
+                <span>npm/npx too old — npm 7+ required</span>
               </div>
             {/if}
           </div>

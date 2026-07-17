@@ -39,6 +39,7 @@
   selectProviderStatusMap,
   selectProviderLoadingMap,
   selectHasCheckedOnce,
+  selectNpxStatus,
 } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import {
   checkSingleProviderSuccess,
@@ -78,6 +79,7 @@
   const providerLoadingMap$ = selectProviderLoadingMap();
   const hasCheckedOnce$ = selectHasCheckedOnce();
   const activeProviderId$ = selectActiveProviderId();
+  const npxStatus$ = selectNpxStatus();
 
   /**
    * Check a single provider via IPC and dispatch the result to Redux.
@@ -209,6 +211,7 @@
           installCommand: meta?.installCommand ?? '',
           loginCommand: meta?.loginCommand ?? '',
           description: PROVIDER_DESCRIPTIONS[p.id] ?? '',
+          hasNpxFallback: status?.hasNpxFallback ?? false,
         };
       });
   });
@@ -431,6 +434,7 @@
         {provider}
         brand={PROVIDER_BRAND_COLORS[provider.id] ?? DEFAULT_BRAND}
         selected={provider.id === selectedProviderId}
+        npxStatus={$npxStatus$}
         {auggieNeedsUpdate}
         {auggieActionInProgress}
         {auggieInstructions}
