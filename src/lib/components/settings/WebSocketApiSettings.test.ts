@@ -51,7 +51,6 @@ describe('WebSocketApiSettings', () => {
     mocks.mockSettingsList.mockResolvedValue([
       { path: 'server.wsApi.enabled', value: false },
       { path: 'server.wsApi.port', value: 5181 },
-      { path: 'server.discovery.enabled', value: false },
     ]);
 
     render(WebSocketApiSettings);
@@ -89,7 +88,6 @@ describe('WebSocketApiSettings', () => {
     mocks.mockSettingsList.mockResolvedValue([
       { path: 'server.wsApi.enabled', value: false },
       { path: 'server.wsApi.port', value: 5181 },
-      { path: 'server.discovery.enabled', value: false },
     ]);
 
     render(WebSocketApiSettings);
@@ -118,7 +116,6 @@ describe('WebSocketApiSettings', () => {
     mocks.mockSettingsList.mockResolvedValue([
       { path: 'server.wsApi.enabled', value: false },
       { path: 'server.wsApi.port', value: 5181 },
-      { path: 'server.discovery.enabled', value: false },
     ]);
 
     render(WebSocketApiSettings);
@@ -134,7 +131,6 @@ describe('WebSocketApiSettings', () => {
     mocks.mockSettingsList.mockResolvedValue([
       { path: 'server.wsApi.enabled', value: false },
       { path: 'server.wsApi.port', value: 5181 },
-      { path: 'server.discovery.enabled', value: false },
     ]);
 
     mocks.mockSettingsUpdate.mockResolvedValueOnce([
