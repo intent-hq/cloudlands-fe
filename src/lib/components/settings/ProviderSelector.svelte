@@ -391,8 +391,9 @@
   async function loadMcpStatus() {
     mcpLoading = true;
     try {
-      // MCP setup channels (auggie:check-mcp-*, pi:check-mcp-adapter) were never
-      // implemented — handlers removed as part of dead-IPC cleanup.
+      // MCP setup channels (auggie:check-mcp-*, auggie:setup-mcp-*) were never
+      // functional in daemon mode — handlers removed as part of dead-IPC cleanup.
+      // Note: pi:check-mcp-adapter still exists and is handled separately via loadPiMcpAdapterStatus().
       // This stub maintains UI flow but always returns false (not configured).
       mcpConfigured = {
         'claude-code': false,
@@ -447,9 +448,12 @@
   async function handleSetupMcp(providerId: string) {
     setupInProgress = { ...setupInProgress, [providerId]: true };
     try {
-      // auggie:setup-mcp-* channels were never implemented — handlers removed.
-      // Stub shows error to prevent user confusion.
-      toast.error(`Context Engine setup not available in this build`);
+      // auggie:setup-mcp-* channels were never functional in daemon mode — handlers removed.
+      // Guide users to configure MCP on the daemon host (via provider CLI).
+      const providerName = ACP_PROVIDERS[providerId].displayName;
+      toast.error(
+        `Context Engine setup not available. Configure MCP for ${providerName} on the daemon host using its CLI.`,
+      );
       track('Enabled Context Engine', {
         provider_id: providerId,
         success: false,
