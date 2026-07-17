@@ -943,6 +943,57 @@ function handleActivityChangedEvent(event: WorkspaceEvent, workspaceId: string):
 }
 
 /**
+ * Reconcile workspace.activity when a missed edge is detected. The daemon only
+ * emits `workspace:activity-changed` on the 0↔1 edge; for coordinator-only
+ * workspaces that edge can fire before the FE bridge subscribed or before the
+ * workspace entity exists, leaving it stuck at `idle` even while the
+ * coordinator is mid-turn. When we observe busy-implying agent events
+ * (`agent:status-changed` with isResponding/isStreaming, `agent:stream:*`)
+ * and the cached entity's activity is not `agent_running`, refetch
+ * `workspace.get` and merge the fresh activity value. On `agent:idle` we
+ * always refetch — the daemon knows if other agents remain busy.
+ */
+async function reconcileWorkspaceActivity(workspaceId: string, impliesBusy: boolean): Promise<void> {
+  const { getItem } = await import('@augmentcode/ag-redux-toolkit/utils/collections/collection-utils');
+  const state = appStore.state as { workspace: { workspaces: unknown } };
+  const current = getItem(state.workspace.workspaces as never, workspaceId as never) as
+    | { activity?: 'idle' | 'agent_running' }
+    | undefined;
+
+  // If the entity doesn't exist yet, or if we see a busy signal and activity
+  // isn't already agent_running, or if we see an idle signal (always refetch
+  // on idle — the daemon's live count is authoritative), fetch workspace.get
+  // and merge the fresh activity.
+  if (!current || (impliesBusy && current.activity !== 'agent_running') || !impliesBusy) {
+    const { backendRequest } = await import('$lib/client/live/backend-transport');
+    try {
+      const response = (await backendRequest('workspace.get', { workspaceId })) as
+        | { workspace?: Workspace }
+        | undefined;
+      const workspace = response?.workspace;
+      if (!workspace) return;
+
+      const fetchedActivity = workspace.activity;
+      if (fetchedActivity !== 'idle' && fetchedActivity !== 'agent_running') return;
+      // Type narrowing: fetchedActivity is now 'idle' | 'agent_running'
+      const activity: 'idle' | 'agent_running' = fetchedActivity;
+
+      // If the entity already exists, use bulkUpdateWorkspaceEntities for a
+      // partial merge. Otherwise, seed the full workspace entity with
+      // setWorkspaceEntity so future events can merge into it.
+      if (current) {
+        appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { activity })]));
+      } else {
+        const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+        appStore.dispatch(setWorkspaceEntity(workspace));
+      }
+    } catch (_error) {
+      // Workspace might have been deleted or transport error; no-op is safe.
+    }
+  }
+}
+
+/**
  * `workspace:updated` (PROTOCOL §6.5 / §7) carries `{ workspaceId, changes }`
  * where `changes` is the applied `WorkspaceUpdate` delta — the fields the
  * caller actually asked to mutate, with `Option::is_none` fields skipped in
@@ -1337,6 +1388,26 @@ function handleNotification(method: string, params: unknown): void {
   // agent list so the sidebar shows live status/last-activity updates.
   if (type === 'agent:status-changed' || type === 'agent:idle') {
     appStore.dispatch(hydrateAgentsRequested(workspaceId));
+  }
+
+  // Activity reconciliation: busy-implying agent events may indicate a missed
+  // `workspace:activity-changed` edge (coordinator-only workspace starting
+  // before the bridge subscribed). On busy signals (status-changed with
+  // isResponding/isStreaming, stream chunk/status), reconcile activity to
+  // agent_running if stale. On agent:idle, always refetch — the daemon knows
+  // if other agents remain busy.
+  if (type === 'agent:status-changed') {
+    const data = (event as { data?: Record<string, unknown> }).data;
+    const isBusy = data?.isResponding === true || data?.isStreaming === true;
+    if (isBusy) {
+      void reconcileWorkspaceActivity(workspaceId, true);
+    }
+  }
+  if (type === 'agent:idle') {
+    void reconcileWorkspaceActivity(workspaceId, false);
+  }
+  if (type === 'agent:stream:chunk' || type === 'agent:stream:status') {
+    void reconcileWorkspaceActivity(workspaceId, true);
   }
 
   // Note domain events (§7 workspace-scoped) live-apply to the
