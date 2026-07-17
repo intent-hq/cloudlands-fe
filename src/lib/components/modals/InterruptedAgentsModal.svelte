@@ -136,7 +136,7 @@
         </div>
 
         <div id={dialogDescriptionId} class="flex-1 overflow-auto px-6 py-5 space-y-4">
-          {#each agentsByWorkspace() as { workspaceId, workspaceName, agents: wsAgents }}
+          {#each agentsByWorkspace() as { workspaceId: _workspaceId, workspaceName, agents: wsAgents }}
             <div class="space-y-2">
               <h3 class="text-sm font-medium text-foreground">{workspaceName}</h3>
               <div class="space-y-1.5 pl-2">

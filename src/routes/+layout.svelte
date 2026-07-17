@@ -1,4 +1,5 @@
 <script lang="ts">
+  /* eslint-disable max-lines */
   import '../app.css';
 
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
@@ -837,7 +838,12 @@
   async function handleResumeSelectedAgents(resumeIds: string[], abandonIds: string[]) {
     const appClient = new LiveAppClient();
     try {
-      const result = await appClient.agents.resolveInterrupted({ resume: resumeIds, abandon: abandonIds });
+      // Omit empty arrays per intentd router contract (PROTOCOL.md)
+      const params: { resume?: string[]; abandon?: string[] } = {};
+      if (resumeIds.length > 0) params.resume = resumeIds;
+      if (abandonIds.length > 0) params.abandon = abandonIds;
+
+      const result = await appClient.agents.resolveInterrupted(params);
       logger.info('Resolved interrupted agents', { result });
       // Import toast lazily
       import('svelte-sonner').then(({ toast }) => {
@@ -859,7 +865,11 @@
   async function handleAbandonAllAgents(abandonIds: string[]) {
     const appClient = new LiveAppClient();
     try {
-      const result = await appClient.agents.resolveInterrupted({ abandon: abandonIds });
+      // Omit empty arrays per intentd router contract (PROTOCOL.md)
+      const params: { abandon?: string[] } = {};
+      if (abandonIds.length > 0) params.abandon = abandonIds;
+
+      const result = await appClient.agents.resolveInterrupted(params);
       logger.info('Abandoned all interrupted agents', { result });
       import('svelte-sonner').then(({ toast }) => {
         toast.info(`Abandoned ${result.abandoned.length} agent${result.abandoned.length !== 1 ? 's' : ''}`);
