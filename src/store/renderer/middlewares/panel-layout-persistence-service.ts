@@ -245,14 +245,16 @@ function persistToLocalStorage(state: StoreState, wsId: string): void {
 // History Debouncing
 // ============================================================================
 
-const pendingHistorySaves = new Map<string, NodeJS.Timeout>();
+const pendingHistorySaves = new Map<string, ReturnType<typeof setTimeout>>();
 
-function scheduleHistorySave(state: StoreState, wsId: string): void {
+function scheduleHistorySave(getState: () => StoreState, wsId: string): void {
   const existing = pendingHistorySaves.get(wsId);
   if (existing) clearTimeout(existing);
 
   const timer = setTimeout(() => {
     pendingHistorySaves.delete(wsId);
+    // Read state at timer execution time to avoid stale data
+    const state = getState();
     const ws = state.panelLayout.byWorkspaceId[wsId];
     if (!ws) return;
 
@@ -324,9 +326,17 @@ export function createPanelLayoutPersistenceMiddleware(): StoreMiddleware {
       if (action.type === workspaceUnmounted.type) {
         const [wsId] = action.payload as [string];
         restoredWorkspaceIds.delete(wsId);
+        // Cancel any pending history save for this workspace
+        const pendingTimer = pendingHistorySaves.get(wsId);
+        if (pendingTimer) {
+          clearTimeout(pendingTimer);
+          pendingHistorySaves.delete(wsId);
+        }
         // Clear adapter entry
         import("$features/layout/panel-layout-adapter").then(({ clearPanelLayoutAdapter }) => {
           clearPanelLayoutAdapter(wsId);
+        }).catch(() => {
+          // Non-critical - module may not be available in all environments
         });
       }
 
@@ -363,8 +373,7 @@ export function createPanelLayoutPersistenceMiddleware(): StoreMiddleware {
       if (HISTORY_ACTIONS.has(action.type)) {
         const wsId = getWsId(action);
         if (wsId) {
-          const state = api.getState() as StoreState;
-          scheduleHistorySave(state, wsId);
+          scheduleHistorySave(() => api.getState() as StoreState, wsId);
         }
       }
 

@@ -16,32 +16,27 @@
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 
-/**
- * Panel layout history entry shape (matches what the middleware stores).
- */
-interface PanelLayoutHistoryEntry {
-  timestamp: number;
-  layout: unknown; // The serialized panel layout state
-}
+
 
 // ── panel-layout:save → stub (no-op for tests) ──
 
 // The save channel writes a layout history entry to disk. In test mode this
 // is a no-op (the reconciliation test just needs the channel to be bridged
 // so it doesn't fail the unbridged-invoke check).
+// Returns boolean like the real main-process handler (true = success).
 registerMockIpcHandler('panel-layout:save', async (_arg) => {
   // In real implementation (main process), this would write to disk.
   // For tests, we just acknowledge the save.
-  return { success: true };
+  return true;
 });
 
 // ── panel-layout:load → stub (empty history for tests) ──
 
 // The load channel reads layout history from disk. In test mode this
-// returns an empty history array (no persisted layouts).
+// returns null (no persisted history), matching the real handler's
+// return type (PanelLayoutHistoryData | null).
 registerMockIpcHandler('panel-layout:load', async (_arg) => {
   // In real implementation (main process), this would read from disk.
-  // For tests, we return empty history (no layouts saved).
-  const emptyHistory: PanelLayoutHistoryEntry[] = [];
-  return { success: true, data: emptyHistory };
+  // For tests, we return null (no history saved).
+  return null;
 });
