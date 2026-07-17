@@ -351,15 +351,7 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
  * the coverage and dead-entry checks; remove an entry when its call site is
  * retired or rewritten as a statically-resolvable invoke.
  */
-const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([
-  // ProviderSelector.svelte handleSetupMcp(): invoke(channelMap[providerId]).
-  ['auggie:setup-mcp-claude-code', 'lib/components/settings/ProviderSelector.svelte'],
-  ['auggie:setup-mcp-codex', 'lib/components/settings/ProviderSelector.svelte'],
-  ['auggie:setup-mcp-cortex', 'lib/components/settings/ProviderSelector.svelte'],
-  ['auggie:setup-mcp-droid', 'lib/components/settings/ProviderSelector.svelte'],
-  ['auggie:setup-mcp-opencode', 'lib/components/settings/ProviderSelector.svelte'],
-  ['auggie:setup-mcp-pi', 'lib/components/settings/ProviderSelector.svelte'],
-]);
+const DYNAMIC_INVOKE_CALL_SITES: ReadonlyMap<string, string> = new Map([]);
 
 /**
  * Live daemon transport — the renderer↔intentd JSON-RPC bridge
