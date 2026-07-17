@@ -5,13 +5,13 @@
  * style, note font style, code font family, activity-log presets, and promo-
  * banner interactions (GAPs 9-15, 17-18).
  *
- * Beta-updates and notification settings are handled by a sibling task and are
- * excluded here to avoid overlap.
+ * Beta-updates and notification settings are handled by sibling middlewares and
+ * are excluded here to avoid overlap.
  *
  * Storage keys match the deleted saga exactly so existing users' stored values
- * are honored. Boot-time hydration for activity-log presets and promo-banner
- * interactions is restored via a first-action read; font and boolean preferences
- * are already hydrated elsewhere or have defaults that work.
+ * are honored. Boot-time hydration reads from localStorage on first action and
+ * dispatches hydration actions for all preferences. Write-after-action persistence
+ * writes to localStorage after the reducer runs.
  *
  * Dependency-light per src/store AGENTS.md: imports only the safe-storage helper
  * and slice actions/types — no selectors (importing them would evaluate
@@ -42,6 +42,7 @@ import {
   type FontStyle,
   type ActivityLogPresetPreference,
   type PromoBannerInteractionRecord,
+  FONT_STYLES,
 } from "../slices/user-preferences/user-preferences-slice";
 
 // Storage keys from the deleted saga — must match exactly for compatibility
@@ -94,19 +95,27 @@ export function createUserPreferencesPersistenceMiddleware(): StoreMiddleware {
 
       // Hydrate agent font style
       const storedAgentFont = safeLocalStorage.getJSON<{ fontStyle: FontStyle }>(AGENT_STORAGE_KEY);
-      if (storedAgentFont && storedAgentFont.fontStyle) {
+      if (
+        storedAgentFont &&
+        typeof storedAgentFont.fontStyle === "string" &&
+        FONT_STYLES.includes(storedAgentFont.fontStyle as FontStyle)
+      ) {
         api.dispatch(setAgentFontStyle(storedAgentFont.fontStyle));
       }
 
       // Hydrate note font style
       const storedNoteFont = safeLocalStorage.getJSON<{ fontStyle: FontStyle }>(NOTE_STORAGE_KEY);
-      if (storedNoteFont && storedNoteFont.fontStyle) {
+      if (
+        storedNoteFont &&
+        typeof storedNoteFont.fontStyle === "string" &&
+        FONT_STYLES.includes(storedNoteFont.fontStyle as FontStyle)
+      ) {
         api.dispatch(setNoteFontStyle(storedNoteFont.fontStyle));
       }
 
       // Hydrate code font family
       const storedCodeFont = safeLocalStorage.getJSON<{ fontFamily: string }>(CODE_STORAGE_KEY);
-      if (storedCodeFont && storedCodeFont.fontFamily) {
+      if (storedCodeFont && typeof storedCodeFont.fontFamily === "string" && storedCodeFont.fontFamily.trim()) {
         api.dispatch(setCodeFontFamily(storedCodeFont.fontFamily));
       }
 
@@ -114,7 +123,16 @@ export function createUserPreferencesPersistenceMiddleware(): StoreMiddleware {
       const storedPresets = safeLocalStorage.getJSON<ActivityLogPresetPreference[]>(
         ACTIVITY_LOG_PRESETS_STORAGE_KEY
       );
-      if (Array.isArray(storedPresets)) {
+      if (
+        Array.isArray(storedPresets) &&
+        storedPresets.every(
+          (p) =>
+            p &&
+            typeof p === "object" &&
+            typeof p.name === "string" &&
+            typeof p.filters === "object"
+        )
+      ) {
         api.dispatch(hydrateActivityLogPresets(storedPresets));
       }
 
@@ -122,7 +140,12 @@ export function createUserPreferencesPersistenceMiddleware(): StoreMiddleware {
       const storedInteractions = safeLocalStorage.getJSON<Record<string, PromoBannerInteractionRecord>>(
         PROMO_BANNER_STORAGE_KEY
       );
-      if (storedInteractions && typeof storedInteractions === "object") {
+      if (
+        storedInteractions &&
+        typeof storedInteractions === "object" &&
+        !Array.isArray(storedInteractions) &&
+        storedInteractions.constructor === Object
+      ) {
         api.dispatch(hydratePromoBannerInteractions(storedInteractions));
       }
     }

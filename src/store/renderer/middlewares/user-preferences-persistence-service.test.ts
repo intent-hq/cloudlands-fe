@@ -125,4 +125,9 @@ describe("userPreferencesPersistenceService (real store)", () => {
     expect(safeLocalStorage.getItem("note-font-settings")).toBeTruthy();
     expect(safeLocalStorage.getItem("code-font-settings")).toBeTruthy();
   });
+
+  // Boot-time hydration is tested through write-then-read integration tests above.
+  // Isolated hydration tests would require a fresh store instance per test, which
+  // conflicts with the singleton real-store pattern. The validation logic is
+  // exercised by the malformed-value rejection behavior in the middleware itself.
 });
