@@ -82,7 +82,7 @@
           <span class="text-sm font-medium text-foreground truncate">{editor.name}</span>
         </div>
         <Toggle
-          variant="switch"
+          variant="indicator"
           pressed={isEditorEnabled(editor.id)}
           onChange={(value) => handleEditorToggle(editor.id, value)}
           size="xs"
