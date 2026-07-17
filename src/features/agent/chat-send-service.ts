@@ -328,21 +328,50 @@ export function createChatSendMiddleware(): StoreMiddleware {
         typeof inner.text === "string" &&
         inner.text.length > 0
       ) {
+        // Capture strings upfront so TypeScript knows they're definitely strings
+        // inside the async closure below.
+        const agentIdStr = agentId;
+        const wsIdStr = inner.wsId;
+        const textStr = inner.text;
         const forceSubmit = inner.forceSubmit === true;
-        void dispatchToLifecycle(
-          agentId,
-          inner.wsId,
-          inner.text,
-          inner.workspaceContextStr,
-          {
-            imageBlocks: inner.imageBlocks,
-            noteIds: inner.noteIds,
-            // STAB-38 fix: set priority: "interrupt" when force-send is active.
-            // The daemon will preempt the in-flight turn per PROTOCOL.md §5.5.
-            priority: forceSubmit ? "interrupt" : undefined,
-          },
-          forceSubmit,
-        );
+        const queuedMessageId = inner.queuedMessageId;
+        const workspaceContextStr = inner.workspaceContextStr;
+        const imageBlocks = inner.imageBlocks;
+        const noteIds = inner.noteIds;
+
+        // STAB-68 fix: when queuedMessageId is present (user clicked "Send now"
+        // on a queued message), remove the queued entry BEFORE dispatching the
+        // lifecycle send, so the daemon queue can't re-deliver the same message
+        // after the interrupt turn. The removal is idempotent (PROTOCOL §5.5),
+        // so failures are logged but do not block the send.
+        void (async () => {
+          if (typeof queuedMessageId === "string" && queuedMessageId.length > 0) {
+            try {
+              await dispatchQueueRemoval(agentIdStr, queuedMessageId);
+            } catch (error) {
+              logger.warn("Queue removal failed; proceeding with send (removal is idempotent)", {
+                agentId: agentIdStr,
+                queuedMessageId,
+                error,
+              });
+            }
+          }
+
+          await dispatchToLifecycle(
+            agentIdStr,
+            wsIdStr,
+            textStr,
+            workspaceContextStr,
+            {
+              imageBlocks,
+              noteIds,
+              // STAB-38 fix: set priority: "interrupt" when force-send is active.
+              // The daemon will preempt the in-flight turn per PROTOCOL.md §5.5.
+              priority: forceSubmit ? "interrupt" : undefined,
+            },
+            forceSubmit,
+          );
+        })();
       }
     } else if ((action as { type?: unknown }).type === removeQueuedMessageRequested.type) {
       const payload = (action as { payload?: unknown }).payload as
