@@ -15,7 +15,7 @@ Releases are built and published by the **Release Beta** workflow in GitHub Acti
 
 ### Required Secrets
 
-The following secrets must be configured in the `intent-hq/cloudlands-fe` repository settings (secret **names** only; never commit secret values):
+The following secrets must be configured in the `intent-hq/cloudlands-fe` repository settings. For the canonical secret inventory and setup details, see [DEPLOYING.md § Required GitHub Secrets](./real/DEPLOYING.md#required-github-secrets). Quick reference:
 
 - **`CLOUDLANDS_MACOS_CERTIFICATE`** - Base64-encoded .p12 Developer ID Application certificate
 - **`CLOUDLANDS_MACOS_CERTIFICATE_PWD`** - Password for the .p12 certificate
@@ -114,15 +114,15 @@ After verifying a beta release, promote it to the stable channel:
    ```
 
 3. **Verify the stable feed**
-   
+
    ```bash
    # Check version
    curl -sL https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml | grep version
-   
-   # Verify the ZIP sha512 matches the versioned release
-   VERSIONED_SHA=$(curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/latest-mac.yml" | grep sha512 | awk '{print $2}')
-   STABLE_SHA=$(curl -sL https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml | grep sha512 | awk '{print $2}')
-   
+
+   # Verify the ZIP sha512 matches the versioned release (extract the top-level sha512 key)
+   VERSIONED_SHA=$(curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/latest-mac.yml" | awk '/^sha512:/{print $2; exit}')
+   STABLE_SHA=$(curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml" | awk '/^sha512:/{print $2; exit}')
+
    if [ "$VERSIONED_SHA" = "$STABLE_SHA" ]; then
      echo "✓ Stable feed matches versioned release"
    else
@@ -162,7 +162,7 @@ Users can switch between beta and stable update channels in the app's Settings s
 
 ## Release History
 
-Recent releases are documented in the workspace spec. For the full release history and changelogs, see:
+For the full release history and changelogs, see:
 
 - [cloudlands-releases repository](https://github.com/intent-hq/cloudlands-releases/releases)
 - [CHANGELOG.md](../CHANGELOG.md) (points to GitHub Releases for 2.x)
