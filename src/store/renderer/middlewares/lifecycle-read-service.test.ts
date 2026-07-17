@@ -28,6 +28,7 @@ vi.mock("$lib/client", () => ({
       prStatus: vi.fn(() => Promise.resolve(null)),
       trackedChanges: vi.fn(() => Promise.resolve([])),
       commits: vi.fn(() => Promise.resolve([])),
+      commitsWithBoundary: vi.fn(() => Promise.resolve({ commits: [], boundarySha: null, nextToken: null })),
     },
   },
 }));
@@ -346,13 +347,13 @@ describe("lifecycleReadService (fake seam, real store)", () => {
       stage: "local",
     };
     gitApi.trackedChanges.mockResolvedValueOnce([change] as never);
-    gitApi.commits.mockResolvedValueOnce([commit] as never);
+    gitApi.commitsWithBoundary.mockResolvedValueOnce({ commits: [commit], boundarySha: "abc123", nextToken: null } as never);
 
     appStore.dispatch(refreshRequested(ws));
     await flush();
 
     expect(gitApi.trackedChanges).toHaveBeenCalledWith(ws);
-    expect(gitApi.commits).toHaveBeenCalledWith(ws);
+    expect(gitApi.commitsWithBoundary).toHaveBeenCalledWith(ws);
     const changesState = appStore.state.changes.byWorkspaceId[ws];
     expect(changesState?.changes).toEqual([change]);
     expect(changesState?.commits).toEqual([commit]);
