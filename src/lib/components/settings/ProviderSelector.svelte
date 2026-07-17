@@ -387,38 +387,20 @@
     }
   }
 
-  /** Track 3: MCP configuration -- fills in Context Engine buttons */
+  /** Track 3: MCP configuration -- STUB (MCP setup surface removed) */
   async function loadMcpStatus() {
     mcpLoading = true;
     try {
-      const hidden = providerAvailability?.hiddenProviders ?? [];
-      const isCortexHidden = hidden.includes('cortex');
-
-      const [
-        checkMcpClaudeCodeResult,
-        checkMcpCodexResult,
-        checkMcpOpenCodeResult,
-        checkMcpDroidResult,
-        checkMcpCortexResult,
-        checkMcpPiResult,
-      ] = await Promise.all([
-        invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CLAUDE_CODE),
-        invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CODEX),
-        invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_OPENCODE),
-        invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_DROID),
-        isCortexHidden
-          ? Promise.resolve({ success: true, configured: false })
-          : invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_CORTEX),
-        invoke<{ success: boolean; configured?: boolean }>(AUGGIE_CHANNELS.CHECK_MCP_PI),
-      ]);
-
+      // MCP setup channels (auggie:check-mcp-*, pi:check-mcp-adapter) were never
+      // implemented — handlers removed as part of dead-IPC cleanup.
+      // This stub maintains UI flow but always returns false (not configured).
       mcpConfigured = {
-        'claude-code': checkMcpClaudeCodeResult?.configured ?? false,
-        codex: checkMcpCodexResult?.configured ?? false,
-        opencode: checkMcpOpenCodeResult?.configured ?? false,
-        droid: checkMcpDroidResult?.configured ?? false,
-        cortex: checkMcpCortexResult?.configured ?? false,
-        pi: checkMcpPiResult?.configured ?? false,
+        'claude-code': false,
+        codex: false,
+        opencode: false,
+        droid: false,
+        cortex: false,
+        pi: false,
       };
     } catch (err) {
       logger.warn('Failed to check MCP status', { error: err });
@@ -465,46 +447,13 @@
   async function handleSetupMcp(providerId: string) {
     setupInProgress = { ...setupInProgress, [providerId]: true };
     try {
-      // Map provider ID to channel
-      const channelMap: Record<string, string> = {
-        'claude-code': AUGGIE_CHANNELS.SETUP_MCP_CLAUDE_CODE,
-        codex: AUGGIE_CHANNELS.SETUP_MCP_CODEX,
-        opencode: AUGGIE_CHANNELS.SETUP_MCP_OPENCODE,
-        droid: AUGGIE_CHANNELS.SETUP_MCP_DROID,
-        cortex: AUGGIE_CHANNELS.SETUP_MCP_CORTEX,
-        pi: AUGGIE_CHANNELS.SETUP_MCP_PI,
-      };
-
-      const channel = channelMap[providerId];
-      if (!channel) {
-        throw new Error(`Unknown provider: ${providerId}`);
-      }
-
-      const result = await invoke<{ success: boolean; error?: string }>(channel);
-
-      if (result?.success) {
-        mcpConfigured = { ...mcpConfigured, [providerId]: true };
-        if (providerId === 'pi') {
-          toast.success(`${ACP_PROVIDERS[providerId].displayName} Context Engine setup complete`, {
-            description:
-              'Install pi-mcp-adapter for Pi to load the Context Engine: npm i -g pi-mcp-adapter',
-          });
-        } else {
-          toast.success(`${ACP_PROVIDERS[providerId].displayName} Context Engine setup complete`);
-        }
-        track('Enabled Context Engine', {
-          provider_id: providerId,
-          success: true,
-        });
-      } else {
-        toast.error(
-          `Failed to setup ${ACP_PROVIDERS[providerId].displayName}: ${result?.error || 'Unknown error'}`,
-        );
-        track('Enabled Context Engine', {
-          provider_id: providerId,
-          success: false,
-        });
-      }
+      // auggie:setup-mcp-* channels were never implemented — handlers removed.
+      // Stub shows error to prevent user confusion.
+      toast.error(`Context Engine setup not available in this build`);
+      track('Enabled Context Engine', {
+        provider_id: providerId,
+        success: false,
+      });
     } catch (err) {
       logger.error(`Failed to setup MCP for ${providerId}:`, err);
       toast.error(`Error setting up ${ACP_PROVIDERS[providerId].displayName}`);
