@@ -52,7 +52,7 @@ type NotificationSettingsState = {
 };
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-let isHydrating = false;
+let isDispatchingHydration = false;
 
 /**
  * Persist notification settings to daemon via settings.update (per-field).
@@ -86,17 +86,23 @@ async function hydrateFromDaemon(dispatch: (action: unknown) => void): Promise<v
     ]);
 
     // Dispatch actions to sync Redux with daemon values
-    if (typeof (enabled as { value?: unknown })?.value === "boolean") {
-      dispatch(setNotificationEnabled((enabled as { value: boolean }).value));
-    }
-    if (typeof (soundEnabled as { value?: unknown })?.value === "boolean") {
-      dispatch(setSoundEnabled((soundEnabled as { value: boolean }).value));
-    }
-    if (typeof (soundOnlyWhenUnfocused as { value?: unknown })?.value === "boolean") {
-      dispatch(setSoundOnlyWhenUnfocused((soundOnlyWhenUnfocused as { value: boolean }).value));
-    }
-    if (typeof (volume as { value?: unknown })?.value === "number") {
-      dispatch(setVolume((volume as { value: number }).value));
+    // Set flag to suppress persistence echo-write for these dispatches
+    isDispatchingHydration = true;
+    try {
+      if (typeof (enabled as { value?: unknown })?.value === "boolean") {
+        dispatch(setNotificationEnabled((enabled as { value: boolean }).value));
+      }
+      if (typeof (soundEnabled as { value?: unknown })?.value === "boolean") {
+        dispatch(setSoundEnabled((soundEnabled as { value: boolean }).value));
+      }
+      if (typeof (soundOnlyWhenUnfocused as { value?: unknown })?.value === "boolean") {
+        dispatch(setSoundOnlyWhenUnfocused((soundOnlyWhenUnfocused as { value: boolean }).value));
+      }
+      if (typeof (volume as { value?: unknown })?.value === "number") {
+        dispatch(setVolume((volume as { value: number }).value));
+      }
+    } finally {
+      isDispatchingHydration = false;
     }
   } catch (error) {
     logger.warn("Failed to hydrate notification settings from daemon", { error });
@@ -124,16 +130,13 @@ export function createUserPreferencesNotificationPersistenceMiddleware(): StoreM
     // Boot-time hydration on first action (real mode only — mock seeder handles it)
     if (!hasHydrated) {
       hasHydrated = true;
-      isHydrating = true;
       // Async hydration (fire and forget, errors logged)
-      void hydrateFromDaemon(api.dispatch).finally(() => {
-        isHydrating = false;
-      });
+      void hydrateFromDaemon(api.dispatch);
     }
 
     const result = next(action);
-    // Skip persistence for actions dispatched during hydration to avoid echo-writes
-    if (action && NOTIFICATION_ACTIONS.has(action.type) && !isHydrating) {
+    // Skip persistence for hydration-dispatched actions to avoid echo-writes
+    if (action && NOTIFICATION_ACTIONS.has(action.type) && !isDispatchingHydration) {
       // Debounce persistence (100ms delay like the saga did)
       if (debounceTimer !== null) {
         clearTimeout(debounceTimer);

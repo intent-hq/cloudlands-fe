@@ -283,7 +283,13 @@ describe("userPreferencesNotificationPersistenceMiddleware", () => {
         return {};
       });
 
+      // Wire mockApi.dispatch to route actions back through the middleware chain
+      // so hydration-dispatched actions actually traverse the middleware
       const chain = freshMiddleware(mockApi)(mockNext);
+      mockApi.dispatch.mockImplementation((action) => {
+        chain(action);
+        return action;
+      });
 
       // Trigger hydration
       chain({ type: "init" });
