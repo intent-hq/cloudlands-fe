@@ -1,6 +1,6 @@
 /**
  * User-preferences beta-updates persistence service — restores the beta updates
- * toggle IPC persistence + channel switch that the removed
+ * toggle channel switch + real-mode boot hydration that the removed
  * `user-preferences/sagas/persistence-saga` → `watchBetaUpdatesPersistence`
  * performed. With no saga listening, setBetaUpdatesEnabled/toggleBetaUpdates
  * dispatched from settings UI has NO EFFECT — the setting is not persisted and
@@ -9,17 +9,15 @@
  * This middleware reconnects the path WITHOUT re-adding a saga and WITHOUT
  * changing any call site:
  *   - Watches setBetaUpdatesEnabled and toggleBetaUpdates actions
- *   - Invokes settings:set with {key:"betaUpdatesEnabled", value}
  *   - Calls autoUpdateClient.setChannel(enabled ? "beta" : "stable")
+ *     (which persists via local-prefs internally)
+ *   - On first action, hydrates betaUpdatesEnabled from autoUpdateClient.getState()
+ *     to ensure Redux reflects the actual channel in real mode
  *
- * Storage key "betaUpdatesEnabled" matches the deleted saga so existing users'
- * stored values are honored.
- *
- * Dependency-light per src/store/renderer AGENTS.md: imports only IPC client,
- * slice actions, auto-update client, and safe logger — no selectors.
+ * Dependency-light per src/store/renderer AGENTS.md: imports only slice actions,
+ * auto-update client, and safe logger — no selectors.
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import { invoke } from "$shared/generated/ipc-client";
 import type { StoreState } from "../types";
 import {
   setBetaUpdatesEnabled,
@@ -30,25 +28,11 @@ import type { UpdateChannel } from "$features/auto-update/types";
 import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("UserPreferencesBetaPersistenceService");
-const BETA_UPDATES_STORAGE_KEY = "betaUpdatesEnabled";
 
 /**
- * Persist beta updates setting to IPC and apply update channel.
+ * Apply update channel (persistence handled inside autoUpdateClient.setChannel).
  */
-async function persistBetaUpdates(enabled: boolean): Promise<void> {
-  // Persist to electron-store
-  try {
-    if (typeof window !== "undefined" && window.electronAPI) {
-      await invoke("settings:set", {
-        key: BETA_UPDATES_STORAGE_KEY,
-        value: enabled,
-      });
-    }
-  } catch (error) {
-    logger.warn("Failed to persist betaUpdatesEnabled", { enabled, error });
-  }
-
-  // Apply update channel
+async function applyUpdateChannel(enabled: boolean): Promise<void> {
   try {
     const channel: UpdateChannel = enabled ? "beta" : "stable";
     await autoUpdateClient.setChannel(channel);
@@ -58,11 +42,29 @@ async function persistBetaUpdates(enabled: boolean): Promise<void> {
 }
 
 /**
- * Middleware giving beta-updates persistence real handlers again.
- * Watches setBetaUpdatesEnabled/toggleBetaUpdates and persists + switches channel.
+ * Middleware giving beta-updates persistence real handlers again, plus real-mode
+ * boot hydration. Watches setBetaUpdatesEnabled/toggleBetaUpdates and switches
+ * channel. On first action, syncs Redux state with main-process channel.
  */
 export function createUserPreferencesBetaPersistenceMiddleware(): StoreMiddleware {
+  let hasHydrated = false;
+
   return (api) => (next) => (action) => {
+    // Boot-time hydration on first action (real mode only — mock seeder handles it)
+    if (!hasHydrated) {
+      hasHydrated = true;
+      // Async hydration (fire and forget, errors logged)
+      void (async () => {
+        try {
+          const autoUpdateState = await autoUpdateClient.getState();
+          const mainProcessBetaEnabled = autoUpdateState.channel === "beta";
+          api.dispatch(setBetaUpdatesEnabled(mainProcessBetaEnabled));
+        } catch (error) {
+          logger.warn("Failed to hydrate betaUpdatesEnabled from main process", { error });
+        }
+      })();
+    }
+
     const result = next(action);
     if (
       action &&
@@ -71,8 +73,8 @@ export function createUserPreferencesBetaPersistenceMiddleware(): StoreMiddlewar
       // Read the updated state after reducer ran
       const state = api.getState() as StoreState;
       const enabled = state.userPreferences.betaUpdatesEnabled ?? false;
-      // Async persist (fire and forget, errors logged)
-      void persistBetaUpdates(enabled);
+      // Async channel switch (fire and forget, errors logged)
+      void applyUpdateChannel(enabled);
     }
     return result;
   };
