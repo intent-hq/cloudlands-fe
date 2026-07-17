@@ -1003,6 +1003,22 @@ export interface SpecialistsClient {
   /** Merged bundled + user + project definitions (`specialist.list`, PROTOCOL §5.11). */
   list(): Promise<SpecialistDef[]>;
   subscribe(handler: SubscriptionHandler<SpecialistDef[]>): Unsubscribe;
+  /**
+   * Create a new specialist definition (`specialist.create`, PROTOCOL §5.11).
+   * Errors if a specialist with the same id already exists in the target scope.
+   */
+  create(id: string, spec: SpecialistDef, scope?: "project" | "user", workspacePath?: string): Promise<SpecialistDef>;
+  /**
+   * Edit an existing specialist definition (`specialist.edit`, PROTOCOL §5.11).
+   * Errors if the specialist does not exist in the target scope.
+   */
+  edit(id: string, spec: SpecialistDef, scope: "project" | "user", workspacePath?: string): Promise<SpecialistDef>;
+  /**
+   * Delete a specialist definition (`specialist.delete`, PROTOCOL §5.11).
+   * Errors if the specialist does not exist in the target scope.
+   * Bundled definitions are read-only and cannot be deleted.
+   */
+  delete(id: string, scope: "project" | "user", workspacePath?: string): Promise<{ success: true }>;
 }
 
 export interface ModelsClient {

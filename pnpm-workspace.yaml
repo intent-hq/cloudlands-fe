@@ -1,3 +1,12 @@
 # Empty workspace file to override parent workspace
 # This makes this directory a standalone project
 packages: []
+allowBuilds:
+  '@parcel/watcher': set this to true or false
+  '@sentry/cli': set this to true or false
+  cpu-features: set this to true or false
+  electron: set this to true or false
+  esbuild: set this to true or false
+  node-pty: set this to true or false
+  sharp: set this to true or false
+  ssh2: set this to true or false
