@@ -290,7 +290,6 @@ setupIPCInterceptor();
 // Import new IPC setup functions
 import { registerAcceptChangesHandlers } from '../features/accept-changes/main/accept-changes.ipc';
 import { registerAgentContextHandlers } from '../features/agent/agent-context.ipc';
-import { setupConfigIPC as setupAgentConfigIPC } from '../features/agent/main/config.ipc';
 import {
   initializeUnifiedBackend,
   shutdownUnifiedBackend,
@@ -1351,7 +1350,6 @@ app.whenReady().then(async () => {
   setupGitHubAuthIPC(); // Needed for GitHub device flow auth
   setupLinearAuthIPC(); // Needed for Linear auth via Augment
   setupSentryAuthIPC(); // Needed for Sentry auth via API token
-  setupAgentConfigIPC(); // Needed for agent config
 
   // Initialize unified agent handlers with the backend adapter
   initializeUnifiedAgentHandlers(); // Migrated to unified handler architecture
