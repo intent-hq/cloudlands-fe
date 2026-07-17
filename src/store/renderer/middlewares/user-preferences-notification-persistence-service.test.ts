@@ -299,6 +299,9 @@ describe("userPreferencesNotificationPersistenceMiddleware", () => {
         expect(backendRequest).toHaveBeenCalledTimes(4);
       });
 
+      // Advance past the debounce window to ensure no echo-write is scheduled
+      await vi.runAllTimersAsync();
+
       // Verify: 4 settings.get calls (hydration), 0 settings.update calls (no echo-write)
       expect(backendRequest).toHaveBeenCalledWith("settings.get", expect.any(Object));
       expect(backendRequest).not.toHaveBeenCalledWith("settings.update", expect.any(Object));
