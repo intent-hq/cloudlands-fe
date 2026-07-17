@@ -52,6 +52,7 @@ type NotificationSettingsState = {
 };
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let isDispatchingHydration = false;
 
 /**
  * Persist notification settings to daemon via settings.update (per-field).
@@ -85,17 +86,23 @@ async function hydrateFromDaemon(dispatch: (action: unknown) => void): Promise<v
     ]);
 
     // Dispatch actions to sync Redux with daemon values
-    if (typeof (enabled as { value?: unknown })?.value === "boolean") {
-      dispatch(setNotificationEnabled((enabled as { value: boolean }).value));
-    }
-    if (typeof (soundEnabled as { value?: unknown })?.value === "boolean") {
-      dispatch(setSoundEnabled((soundEnabled as { value: boolean }).value));
-    }
-    if (typeof (soundOnlyWhenUnfocused as { value?: unknown })?.value === "boolean") {
-      dispatch(setSoundOnlyWhenUnfocused((soundOnlyWhenUnfocused as { value: boolean }).value));
-    }
-    if (typeof (volume as { value?: unknown })?.value === "number") {
-      dispatch(setVolume((volume as { value: number }).value));
+    // Set flag to suppress persistence echo-write for these dispatches
+    isDispatchingHydration = true;
+    try {
+      if (typeof (enabled as { value?: unknown })?.value === "boolean") {
+        dispatch(setNotificationEnabled((enabled as { value: boolean }).value));
+      }
+      if (typeof (soundEnabled as { value?: unknown })?.value === "boolean") {
+        dispatch(setSoundEnabled((soundEnabled as { value: boolean }).value));
+      }
+      if (typeof (soundOnlyWhenUnfocused as { value?: unknown })?.value === "boolean") {
+        dispatch(setSoundOnlyWhenUnfocused((soundOnlyWhenUnfocused as { value: boolean }).value));
+      }
+      if (typeof (volume as { value?: unknown })?.value === "number") {
+        dispatch(setVolume((volume as { value: number }).value));
+      }
+    } finally {
+      isDispatchingHydration = false;
     }
   } catch (error) {
     logger.warn("Failed to hydrate notification settings from daemon", { error });
@@ -128,7 +135,8 @@ export function createUserPreferencesNotificationPersistenceMiddleware(): StoreM
     }
 
     const result = next(action);
-    if (action && NOTIFICATION_ACTIONS.has(action.type)) {
+    // Skip persistence for hydration-dispatched actions to avoid echo-writes
+    if (action && NOTIFICATION_ACTIONS.has(action.type) && !isDispatchingHydration) {
       // Debounce persistence (100ms delay like the saga did)
       if (debounceTimer !== null) {
         clearTimeout(debounceTimer);
