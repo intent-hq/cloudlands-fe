@@ -306,7 +306,7 @@ import { setupFeatureCodesIPC } from '../features/feature-codes/main/feature-cod
 import { setupProviderAvailabilityIPC } from '../features/providers/main/provider-availability.service';
 import { setupConfigIPC, getConfigManager } from '../features/config/main/config.ipc';
 import { setupDiffsIPC } from '../features/diffs/main/diffs.ipc';
-import { setupEditorIPC } from '../features/editor/main/editor.ipc';
+
 import { setupEventsIPC } from '../features/events/main/events.ipc';
 import { registerExternalEditorsHandlers } from '../features/external-editors/main/external-editors.ipc';
 import { setupFileIPC } from '../features/file/main/file.ipc';
@@ -335,7 +335,7 @@ import {
   stopIntentdSidecar,
 } from '../features/backend/main/intentd-sidecar';
 import { setupUserRulesIPC as setupWorkspaceRulesIPC } from '../features/rules/main/user-rules.ipc';
-import { setupSandboxIPC } from '../features/sandbox/main/sandbox.ipc';
+
 import { setupSentryAuthIPC } from '../features/sentry-auth/main/sentry-auth.ipc';
 import { registerScriptsHandlers } from '../features/scripts/main/scripts.ipc';
 import { disposeAllScriptProcessManagers } from '../features/scripts/main/script-process-manager';
@@ -1381,7 +1381,7 @@ app.whenReady().then(async () => {
   registerSetupScriptsHandlers(); // Needed for onboarding setup scripts
   registerScriptsHandlers(); // Needed for workspace script management (CRUD, lifecycle, output)
   registerAcceptChangesHandlers(); // Needed for AcceptChangesPanel on workspace open
-  setupEditorIPC(); // Needed for ReferenceBlock "Open in Editor" button
+
   setupTerminalIPC(); // Needed for CLI blocks in notes (includes get-buffer handler)
   registerChatExportHandlers(); // Needed for chat export functionality
   registerDebugExportHandlers(); // Needed for debug log export functionality
@@ -1419,7 +1419,6 @@ app.whenReady().then(async () => {
     registerAgentContextHandlers();
 
     // setupTerminalIPC(); // Already called in critical IPC setup
-    // setupEditorIPC(); // Already called in critical IPC setup
     setupDiffsIPC();
     setupLogIPC();
     setupTestingIPC();
@@ -1459,8 +1458,6 @@ app.whenReady().then(async () => {
 
     // Setup development-only IPC handlers
     if (process.env.NODE_ENV === 'development') {
-      setupSandboxIPC();
-
       // Debug tools for testing backend-initiated flows
       const { setupDebugIPC } = await import('../features/debug/main/debug.ipc');
       setupDebugIPC();
