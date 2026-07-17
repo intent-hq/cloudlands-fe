@@ -3,7 +3,7 @@
  *
  * Client-side API for interacting with the auto-update service.
  * Provides manual update checks, channel selection, and state queries.
- * Updates download and install automatically in the background.
+ * Updates download automatically; installation occurs on next app restart.
  */
 
 import type { UpdateChannel, UpdateProgress, UpdateState } from './types';

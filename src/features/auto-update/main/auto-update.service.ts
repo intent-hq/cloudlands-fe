@@ -20,14 +20,6 @@ const { autoUpdater } = electronUpdater;
 
 const logger = new Logger('AutoUpdateService');
 
-/**
- * Flag indicating the app is quitting to install an update.
- * NOTE: With autoInstallOnAppQuit=true this is always false because electron-updater
- * installs on next launch rather than via quitAndInstall(), so there's no reliable
- * event to detect update installs. The flag exists for API compatibility but has no effect.
- */
-export let isInstallingUpdate = false;
-
 // Storage key for beta updates setting (must match renderer store)
 const BETA_UPDATES_STORAGE_KEY = 'betaUpdatesEnabled';
 
