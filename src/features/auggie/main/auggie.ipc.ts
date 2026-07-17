@@ -965,8 +965,6 @@ export function setupAuggieIPC() {
     }
   });
 
-  // Setup MCP for Pi
-  //
   // Uninstall MCP from Claude Code
   ipcMain.handle(AUGGIE_CHANNELS.UNINSTALL_MCP_CLAUDE_CODE, async () => {
     try {
