@@ -752,14 +752,7 @@ export const IPC_CHANNELS = {
     CLEAR_CACHE: 'remote-fs:clearCache',
   },
 
-  // Testing
-  TESTING: {
-    RUN_TESTS: 'testing:run-tests',
-    RUN_LINT: 'testing:run-lint',
-    RUN_BUILD: 'testing:run-build',
-    STOP_PROCESS: 'testing:stop-process',
-    GET_PROCESSES: 'testing:get-processes',
-  },
+
 
   // Debug (development only)
   DEBUG: {

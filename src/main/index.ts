@@ -351,7 +351,6 @@ import {
   autoRepairCliSymlink,
 } from '../features/system/main/system.ipc';
 import { cleanupTerminals, setupTerminalIPC } from '../features/terminal/main/terminal.ipc';
-import { setupTestingIPC } from '../features/testing/main/testing.ipc';
 import { setupThirdPartySourcesIPC } from '../features/third-party-sources/main/third-party-sources.ipc';
 import { setupUserActivityIPC } from '../features/user-activity/main/user-activity.ipc';
 import { setupFirstVisitStateIPC } from '../features/workspace/main/first-visit-state.ipc';
@@ -1421,7 +1420,6 @@ app.whenReady().then(async () => {
     // setupTerminalIPC(); // Already called in critical IPC setup
     setupDiffsIPC();
     setupLogIPC();
-    setupTestingIPC();
     // setupAuggieIPC(); // Already called in critical IPC setup
     // setupEventsIPC(); // Already called in critical IPC setup
     // setupGitTrackingIPC(); // Already called in critical IPC setup
