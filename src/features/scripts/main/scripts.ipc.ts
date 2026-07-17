@@ -35,7 +35,6 @@ import {
   upsertScript,
   removeScript,
   readRepoScripts,
-  saveScriptsToRepoConfig,
 } from './scripts-persistence';
 import {
   getScriptProcessManager,
@@ -108,29 +107,6 @@ const ScriptsGetOutputSchema = z.object({
   workspaceId: WorkspaceIdField,
   scriptId: z.string().min(1, 'Script ID is required'),
   lastN: z.number().int().positive().optional(),
-});
-
-/**
- * Repo-level script definition shipped by the renderer. The renderer sources
- * these from the live daemon `script.list` (§5.8) — the legacy local store is
- * NOT consulted (it is empty in daemon builds, and reading it here is what
- * silently clobbered `.intent/config.json` with `scripts: []`). `scripts` is
- * REQUIRED: a payload without it fails validation loudly instead of writing
- * an empty array and reporting success.
- */
-const RepoScriptPayloadSchema = z.object({
-  name: z.string().min(1),
-  command: z.string().min(1),
-  mode: ScriptModeSchema,
-  category: ScriptCategorySchema.optional(),
-  cwd: z.string().optional(),
-  env: z.record(z.string()).optional(),
-  autoStart: z.boolean().optional(),
-});
-
-const ScriptsSaveToRepoSchema = z.object({
-  workspaceId: WorkspaceIdField,
-  scripts: z.array(RepoScriptPayloadSchema),
 });
 
 // ============================================================================
