@@ -294,7 +294,7 @@ describe("userPreferencesNotificationPersistenceMiddleware", () => {
       // Trigger hydration
       chain({ type: "init" });
 
-      // Wait for hydration promise to settle (flush microtasks, not timers)
+      // Wait for hydration to complete (poll until all settings.get calls finish)
       await vi.waitFor(() => {
         expect(backendRequest).toHaveBeenCalledTimes(4);
       });
