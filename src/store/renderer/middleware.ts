@@ -59,6 +59,9 @@ import { createFileContentPruneService } from "./middlewares/file-content-prune-
 import { createTerminalPersistenceMiddleware } from "./middlewares/terminal-persistence-service";
 import { createExternalEditorsPersistenceMiddleware } from "./middlewares/external-editors-persistence-service";
 import { createZoomSyncMiddleware } from "./middlewares/zoom-sync-service";
+import { createWorkspaceSettingsPersistenceMiddleware } from "./middlewares/workspace-settings-persistence-service";
+import { createUserPreferencesBetaPersistenceMiddleware } from "./middlewares/user-preferences-beta-persistence-service";
+import { createUserPreferencesNotificationPersistenceMiddleware } from "./middlewares/user-preferences-notification-persistence-service";
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
 import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
@@ -320,6 +323,25 @@ function buildMiddleware(): StoreMiddleware[] {
     // ipc-saga.ts) so zoom-level changes from the main process (Cmd/Ctrl+Plus/
     // Minus or View menu) dispatch setZoomFactor and reach the Redux store again.
     createZoomSyncMiddleware(),
+    // Give the (post-saga) workspace-settings persistence triggers real handlers
+    // so the auto-commit toggle in CodeChangesPanel.svelte persists via IPC to
+    // main (WORKSPACE_CHANNELS.UPDATE_SETTINGS) + electron-store (SETTINGS_CHANNELS.SET
+    // key:"autoCommit") instead of silently having no effect. Matches deleted
+    // workspace-settings/sagas/persistence-saga.ts behavior.
+    createWorkspaceSettingsPersistenceMiddleware(),
+    // Give the (post-saga) beta-updates persistence triggers real handlers so
+    // setBetaUpdatesEnabled/toggleBetaUpdates from settings UI persists via IPC
+    // (settings:set key:"betaUpdatesEnabled") AND applies the update channel
+    // (autoUpdateClient.setChannel) instead of silently having no effect. Matches
+    // deleted user-preferences/sagas/persistence-saga.ts → watchBetaUpdatesPersistence.
+    createUserPreferencesBetaPersistenceMiddleware(),
+    // Give the (post-saga) notification-settings persistence triggers real handlers
+    // so setNotificationEnabled/setSoundEnabled/setSoundOnlyWhenUnfocused/setVolume/
+    // resetNotificationSettings from settings UI persists via IPC (settings:set
+    // key:"notificationSettings") with 100ms debounce instead of silently having no
+    // effect. Matches deleted user-preferences/sagas/persistence-saga.ts →
+    // watchNotificationSettingsPersistence.
+    createUserPreferencesNotificationPersistenceMiddleware(),
     // Give the (post-saga) theme triggers (`requestThemePreferenceChange` /
     // `selectThemePreset` / `importCustomTheme` / `clearThemeCustomization`)
     // real handlers so the Settings theme toggle and ColorThemeSettings
