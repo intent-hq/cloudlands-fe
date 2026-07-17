@@ -154,7 +154,6 @@ export const mentionIconMap = {
   'agent-active': 'robot',
   'agent-idle': 'robot',
   'agent-busy': 'robot',
-  'agent-memories': 'brain',
 
   // Specialist types
   specialist: 'user-tie',

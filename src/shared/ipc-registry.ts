@@ -613,17 +613,6 @@ export const IPC_CHANNELS = {
     GET_ALL: 'config:getAll',
   },
 
-  // Memories
-  MEMORIES: {
-    LIST: 'memories:list',
-    GET: 'memories:get',
-    CREATE: 'memories:create',
-    UPDATE: 'memories:update',
-    DELETE: 'memories:delete',
-    SEARCH: 'memories:search',
-    GET_CONTEXT: 'memories:get-context',
-  },
-
   // User Activity (note read tracking)
   USER_ACTIVITY: {
     MARK_NOTE_READ: 'user-activity:mark-note-read',

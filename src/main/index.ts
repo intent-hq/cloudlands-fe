@@ -317,7 +317,6 @@ import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout
 import { setupLinearAuthIPC } from '../features/linear-auth/main/linear-auth.ipc';
 import { setupLogIPC } from '../features/log/main/log.ipc';
 import { setupBannerIPC } from '../features/banner/main/banner.ipc';
-import { setupMemoriesIPC } from '../features/memories/main/memories.ipc';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSkillsIPC } from '../features/agent/main/skills.ipc';
@@ -1421,7 +1420,6 @@ app.whenReady().then(async () => {
     // setupEventsIPC(); // Already called in critical IPC setup
     // setupGitTrackingIPC(); // Already called in critical IPC setup
     // registerAcceptChangesHandlers(); // Already called in critical IPC setup
-    setupMemoriesIPC();
     // setupBannerIPC(); // Already called in critical IPC setup
     setupRulesIPC();
     // setupSpecialistsIPC(); // Already called in critical IPC setup
