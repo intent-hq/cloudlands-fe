@@ -47,7 +47,7 @@ export class BackendError extends Error {
   }
 }
 
-function electronAPI(): Window["electronAPI"] | undefined {
+export function electronAPI(): Window["electronAPI"] | undefined {
   return typeof window !== "undefined" ? window.electronAPI : undefined;
 }
 
