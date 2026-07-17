@@ -417,7 +417,6 @@ export class CommandProvider implements Provider {
     const commands = [
       SPECIAL_MENTIONS.USE_DEFAULT_CONTEXT,
       SPECIAL_MENTIONS.CLEAR_CONTEXT,
-      SPECIAL_MENTIONS.AGENT_MEMORIES,
     ];
 
     return commands.filter(

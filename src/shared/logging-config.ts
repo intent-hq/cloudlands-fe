@@ -84,7 +84,6 @@ export const LOGGING_CONFIG: LoggingConfig = {
     AgentContextIPC: isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
     GitTrackingIPC: isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
     ObservabilityIPC: isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
-    MemoriesIPC: isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
     RulesIPC: isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
     LineChangesIPC: isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
     AgentTestingIPC: isDebugMode ? LogLevel.DEBUG : LogLevel.WARN,
