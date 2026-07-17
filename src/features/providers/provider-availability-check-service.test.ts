@@ -26,6 +26,7 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 vi.mock("$lib/electron-bridge", () => ({
   electronAPI: () => (window as any).electronAPI,
   invoke: vi.fn(),
+  isElectron: vi.fn(() => true),
 }));
 
 import { invoke } from "$lib/electron-bridge";

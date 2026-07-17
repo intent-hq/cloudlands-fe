@@ -57,6 +57,8 @@ import { createBrowserPersistenceMiddleware } from "./middlewares/browser-persis
 import { createPanelLayoutPersistenceMiddleware } from "./middlewares/panel-layout-persistence-service";
 import { createFileContentPruneService } from "./middlewares/file-content-prune-service";
 import { createTerminalPersistenceMiddleware } from "./middlewares/terminal-persistence-service";
+import { createExternalEditorsPersistenceMiddleware } from "./middlewares/external-editors-persistence-service";
+import { createZoomSyncMiddleware } from "./middlewares/zoom-sync-service";
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
 import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
@@ -309,6 +311,15 @@ function buildMiddleware(): StoreMiddleware[] {
     // change across sessions via localStorage (GAPs 2-5). Also restores saved
     // state when loadWorkspaceTerminals is dispatched by lifecycle-read-service.
     createTerminalPersistenceMiddleware(),
+    // Give the (post-saga) external-editors persistence triggers real handlers so
+    // Open-In action choices (setOpenAction → localStorage) and hidden-editor
+    // preferences (toggleHiddenEditor → daemon settings) persist across sessions.
+    // Hydrates hidden editor IDs from daemon settings on boot.
+    createExternalEditorsPersistenceMiddleware(),
+    // Restore the window zoom-factor listener (deleted user-preferences/sagas/
+    // ipc-saga.ts) so zoom-level changes from the main process (Cmd/Ctrl+Plus/
+    // Minus or View menu) dispatch setZoomFactor and reach the Redux store again.
+    createZoomSyncMiddleware(),
     // Give the (post-saga) theme triggers (`requestThemePreferenceChange` /
     // `selectThemePreset` / `importCustomTheme` / `clearThemeCustomization`)
     // real handlers so the Settings theme toggle and ColorThemeSettings
