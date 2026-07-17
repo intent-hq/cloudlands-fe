@@ -26,7 +26,6 @@ import {
   loadFileContentRequested,
   loadFileContentSucceeded,
   loadFileContentFailed,
-  updateFileContent,
   applyExternalFileContent,
   saveFileContentRequested,
   saveFileContentSucceeded,
@@ -175,11 +174,13 @@ const PRUNE_TRIGGER_ACTIONS = new Set<string>([
   consumePendingFocus.type,
   clearPanelLayout.type,
   // File actions that can add/modify file-content entries (via upsertFileEntry)
-  // All eight actions that call upsertFileEntry (which can create entries):
+  // NOTE: updateFileContent is intentionally OMITTED — while its reducer calls upsertFileEntry
+  // (which can create entries via the fallback), current usage only dispatches it for files
+  // already loaded in the editor, so it does not change stale-path membership (stale = files.ids
+  // minus open paths). Including it would run computeStalePaths + sort on every keystroke.
   loadFileContentRequested.type,
   loadFileContentSucceeded.type,
   loadFileContentFailed.type,
-  updateFileContent.type,
   applyExternalFileContent.type,
   saveFileContentRequested.type,
   saveFileContentSucceeded.type,
@@ -212,8 +213,17 @@ export function createFileContentPruneService(): StoreMiddleware {
       // Let the action go through first
       const result = next(action);
 
-      // CRITICAL: Skip prune check when the action IS removeFileContentEntry to prevent loops
+      // CRITICAL: When we dispatch removeFileContentEntry ourselves, we must update
+      // previousStalePaths to the post-prune state to avoid desync. If we skip this
+      // and a later action (e.g., loadFileContentSucceeded) re-creates the same stale
+      // entry, the equality check will see no change and skip pruning.
+      // Trade-off: This recomputes (compute + sort) on every remove, so a prune pass
+      // removing n stale paths performs O(n * (m + m log m)) work, where m = total files.
+      // But stale-path sets are typically small and prune passes are rare, so the
+      // correctness benefit outweighs the perf cost.
       if (action.type === removeFileContentEntry.type) {
+        const state = api.getState();
+        previousStalePaths = computeStalePaths(state);
         return result;
       }
 
