@@ -4379,3 +4379,242 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
     expect(ws.activity).toBe('idle');
   });
 });
+
+describe('DaemonEventsBridge — app-UI events', () => {
+  const { gotoSpy, invokeSpy } = vi.hoisted(() => ({
+    gotoSpy: vi.fn(() => Promise.resolve()),
+    invokeSpy: vi.fn(() => Promise.resolve({ success: true })),
+  }));
+
+  vi.mock('$app/navigation', () => ({
+    goto: gotoSpy,
+  }));
+
+  vi.mock('$lib/electron-bridge', () => ({
+    invoke: invokeSpy,
+  }));
+
+  beforeAll(() => appStore.init());
+  beforeEach(() => {
+    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset());
+    __resetDaemonEventsBridgeForTests();
+    gotoSpy.mockClear();
+    invokeSpy.mockClear();
+    backendRequestSpy.mockClear();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => {
+    resetMockIpcRouter();
+  });
+
+  async function primeBridge() {
+    await import('$features/events/daemon-events-bridge');
+    await flush();
+  }
+
+  function appUiNavigateNotification(route: string, highlightId?: string, durationMs?: number) {
+    const data: Record<string, unknown> = { route };
+    if (highlightId) data.highlightId = highlightId;
+    if (durationMs !== undefined) data.durationMs = durationMs;
+    return {
+      method: 'events.event' as const,
+      params: {
+        event: {
+          id: `evt-app-ui-navigate-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'app:ui-navigate',
+          actor: { type: 'agent', id: AGENT },
+          data,
+        },
+      },
+    };
+  }
+
+  function appUiHighlightNotification(id: string, durationMs?: number) {
+    const data: Record<string, unknown> = { id };
+    if (durationMs !== undefined) data.durationMs = durationMs;
+    return {
+      method: 'events.event' as const,
+      params: {
+        event: {
+          id: `evt-app-ui-highlight-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'app:ui-highlight',
+          actor: { type: 'agent', id: AGENT },
+          data,
+        },
+      },
+    };
+  }
+
+  function appWorkspaceOpenNotification(workspaceId: string, openInNewWindow?: boolean) {
+    const data: Record<string, unknown> = { workspaceId };
+    if (openInNewWindow !== undefined) data.openInNewWindow = openInNewWindow;
+    return {
+      method: 'events.event' as const,
+      params: {
+        event: {
+          id: `evt-app-workspace-open-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'app:workspace-open',
+          actor: { type: 'agent', id: AGENT },
+          data,
+        },
+      },
+    };
+  }
+
+  describe('app:ui-navigate', () => {
+    it('navigates to route without highlight', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiNavigateNotification('/settings'));
+      await flush();
+
+      expect(gotoSpy).toHaveBeenCalledWith('/settings');
+    });
+
+    it('navigates to route and dispatches highlight after navigation', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiNavigateNotification('/settings?tab=agents#specialists', 'specialists', 750));
+      await flush();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+      expect(gotoSpy).toHaveBeenCalledWith('/settings?tab=agents#specialists');
+      // Check that requestUiHighlight was dispatched
+      const state = appStore.state as {
+        uiHighlight?: { activeById: Record<string, number>; durationMsById: Record<string, number> };
+      };
+      expect(state.uiHighlight?.activeById['specialists']).toBeGreaterThan(0);
+      expect(state.uiHighlight?.durationMsById['specialists']).toBe(750);
+    });
+
+    it('ignores blank routes', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiNavigateNotification('   '));
+      await flush();
+
+      expect(gotoSpy).not.toHaveBeenCalled();
+    });
+
+    it('handles navigation errors gracefully', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      gotoSpy.mockRejectedValueOnce(new Error('Navigation failed'));
+
+      handler(appUiNavigateNotification('/invalid'));
+      await flush();
+
+      expect(gotoSpy).toHaveBeenCalledWith('/invalid');
+      // Should not throw
+    });
+  });
+
+  describe('app:ui-highlight', () => {
+    it('dispatches highlight action with default duration', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiHighlightNotification('theme'));
+      await flush();
+
+      const state = appStore.state as {
+        uiHighlight?: { activeById: Record<string, number>; durationMsById: Record<string, number> };
+      };
+      expect(state.uiHighlight?.activeById['theme']).toBeGreaterThan(0);
+      expect(state.uiHighlight?.durationMsById['theme']).toBeUndefined();
+    });
+
+    it('dispatches highlight action with custom duration', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiHighlightNotification('mcp-servers', 1500));
+      await flush();
+
+      const state = appStore.state as {
+        uiHighlight?: { activeById: Record<string, number>; durationMsById: Record<string, number> };
+      };
+      expect(state.uiHighlight?.activeById['mcp-servers']).toBeGreaterThan(0);
+      expect(state.uiHighlight?.durationMsById['mcp-servers']).toBe(1500);
+    });
+
+    it('ignores blank highlight IDs', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiHighlightNotification('   '));
+      await flush();
+
+      const state = appStore.state as {
+        uiHighlight?: { activeById: Record<string, number> };
+      };
+      expect(Object.keys(state.uiHighlight?.activeById ?? {})).toHaveLength(0);
+    });
+  });
+
+  describe('app:workspace-open', () => {
+    it('navigates in current window when openInNewWindow is false', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appWorkspaceOpenNotification('ws-123', false));
+      await flush();
+
+      expect(gotoSpy).toHaveBeenCalledWith('/workspace/ws-123');
+      expect(invokeSpy).not.toHaveBeenCalled();
+    });
+
+    it('navigates in current window when openInNewWindow is omitted', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appWorkspaceOpenNotification('ws-456'));
+      await flush();
+
+      expect(gotoSpy).toHaveBeenCalledWith('/workspace/ws-456');
+      expect(invokeSpy).not.toHaveBeenCalled();
+    });
+
+    it('opens in new window when openInNewWindow is true', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appWorkspaceOpenNotification('ws-789', true));
+      await flush();
+
+      expect(invokeSpy).toHaveBeenCalledWith('window:open-new', { route: '/workspace/ws-789' });
+      expect(gotoSpy).not.toHaveBeenCalled();
+    });
+
+    it('falls back to navigation when new window fails', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      invokeSpy.mockRejectedValueOnce(new Error('Window creation failed'));
+
+      handler(appWorkspaceOpenNotification('ws-fallback', true));
+      await flush();
+
+      expect(invokeSpy).toHaveBeenCalledWith('window:open-new', { route: '/workspace/ws-fallback' });
+      expect(gotoSpy).toHaveBeenCalledWith('/workspace/ws-fallback');
+    });
+
+    it('ignores blank workspace IDs', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appWorkspaceOpenNotification('   '));
+      await flush();
+
+      expect(gotoSpy).not.toHaveBeenCalled();
+      expect(invokeSpy).not.toHaveBeenCalled();
+    });
+  });
+});
