@@ -487,44 +487,6 @@
             </section>
           </div>
         </div>
-
-        <!-- Updates -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Updates
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="text-sm font-medium text-foreground">Beta updates</p>
-                  <p class="text-xs text-subtle mt-0.5">
-                    Receive beta releases with new features and early improvements. Beta updates may be less stable than stable releases.
-                  </p>
-                </div>
-                <Toggle
-                  variant="switch"
-                  pressed={$betaUpdatesEnabled$}
-                  onChange={handleBetaUpdatesToggle}
-                  size="sm"
-                  ariaLabel="Enable beta updates"
-                />
-              </div>
-            </section>
-          </div>
-        </div>
-
-        <!-- Open In Apps -->
-        <div class="mb-12">
-          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Open In
-          </h2>
-          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
-            <section class="px-6 py-5">
-              <OpenInAppsSettings />
-            </section>
-          </div>
-        </div>
       {/if}
 
       <!-- Fonts & Colors Tab -->
@@ -635,6 +597,44 @@
 
       <!-- General Tab -->
       {#if activeTab === 'general'}
+        <!-- Updates -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Updates
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium text-foreground">Beta updates</p>
+                  <p class="text-xs text-subtle mt-0.5">
+                    Receive beta releases with new features and early improvements. Beta updates may be less stable than stable releases.
+                  </p>
+                </div>
+                <Toggle
+                  variant="indicator"
+                  pressed={$betaUpdatesEnabled$}
+                  onChange={handleBetaUpdatesToggle}
+                  size="xs"
+                  ariaLabel="Enable beta updates"
+                />
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <!-- Open In Apps -->
+        <div class="mb-12">
+          <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Open In
+          </h2>
+          <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
+            <section class="px-6 py-5">
+              <OpenInAppsSettings />
+            </section>
+          </div>
+        </div>
+
         <!-- Reset -->
         <div class="mb-12">
           <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
