@@ -1555,8 +1555,8 @@ function handleNotification(method: string, params: unknown): void {
   // STAB-22: agent:message events with role="assistant" should trigger a
   // conversation refetch so AgentCard preview updates for watched agents whose
   // tab was never opened. The event payload is { agentId, messageId, role }.
-  // Guard: only load if the session has no messages yet (avoid redundant fetches
-  // for already-hydrated transcripts).
+  // Guard for role="assistant": only load if the session has no messages yet
+  // (avoid redundant fetches for already-hydrated transcripts).
   // QUEUED-MESSAGES: also handle role="user" — if the session is missing or its
   // messages do not contain the messageId, refetch to fold in dequeued and
   // agent-to-agent messages.
