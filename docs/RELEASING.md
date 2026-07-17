@@ -23,10 +23,12 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
 - **`CLOUDLANDS_APPLE_ID`** - Apple ID email for notarization
 - **`CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD`** - App-specific password for notarization
 - **`CLOUDLANDS_APPLE_TEAM_ID`** - Apple Developer Team ID (e.g., `6947A73B2N`)
-- **`RELEASE_PAT`** - Personal Access Token with:
-  - `repo` scope on `intent-hq/cloudlands-fe` and `intent-hq/cloudlands-releases`
-  - `Pull requests: Read and write` permission on `intent-hq/cloudlands-fe`
-- **`INTENTD_READ_PAT`** - Personal Access Token with `Contents: Read` on `intent-hq/intentd`
+- **`RELEASE_PAT`** - Personal Access Token (classic or fine-grained) with:
+  - Classic: `repo` scope on `intent-hq/cloudlands-fe` and `intent-hq/cloudlands-releases`
+  - Fine-grained: `Contents: Read and write` + `Pull requests: Read and write` on both repos
+- **`INTENTD_READ_PAT`** - Personal Access Token with read access to `intent-hq/intentd`:
+  - Classic: `repo` scope (read-only use)
+  - Fine-grained: `Contents: Read-only`
 
 **Important:** If `INTENTD_READ_PAT` expires, the workflow will fail at the "Checkout intentd" step with an authentication error.
 
@@ -70,22 +72,24 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
    ```
 
 5. **Merge the version-bump PR**
-   
+
    The workflow automatically opens a PR to bump `package.json` to the new version. Review and merge it:
-   
+
    ```bash
    # List open PRs
    gh pr list --repo intent-hq/cloudlands-fe
-   
+
    # Review the version-bump PR
    gh pr view <PR-number> --repo intent-hq/cloudlands-fe
-   
+
    # Wait for CI to pass
    gh pr checks <PR-number> --repo intent-hq/cloudlands-fe --watch
-   
-   # Merge the PR
+
+   # Merge the PR (the v<version> tag points to the commit on the release branch, not the merge commit)
    gh pr merge <PR-number> --repo intent-hq/cloudlands-fe --squash --delete-branch
    ```
+
+   **Note:** The `v<version>` tag was created by the workflow and points to the version-bump commit on the release branch (`release/v<version>-version-bump`), not the squashed merge commit on `main`. This is expected — the tag references the exact commit that was built and released.
 
 ## Promoting to Stable
 
@@ -138,11 +142,11 @@ After verifying a beta release, promote it to the stable channel:
 
 **Fix:** The `INTENTD_READ_PAT` token has expired. Regenerate a fine-grained Personal Access Token with `Contents: Read-only` on `intent-hq/intentd` and update the secret in repository settings.
 
-### Version-Bump PR Not Created
+### Version-Bump PR Step Fails
 
-**Symptom:** Workflow succeeds but no PR is opened.
+**Symptom:** "Open version-bump PR to main" step fails with a permissions error, or the workflow completes but no PR is visible.
 
-**Fix:** The `RELEASE_PAT` is missing `Pull requests: Read and write` permission. Update the token's permissions in GitHub settings.
+**Fix:** The `RELEASE_PAT` is missing `Pull requests: Read and write` (fine-grained) or the `repo` scope (classic). Update the token's permissions in GitHub settings. Note: the workflow is idempotent and will re-use an existing PR if the branch already exists.
 
 ### Build Fails During Notarization
 
