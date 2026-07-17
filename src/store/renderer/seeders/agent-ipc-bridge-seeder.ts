@@ -153,7 +153,7 @@ registerMockIpcHandler(AGENT_CHANNELS.CREATE, async (arg) => {
  * Forwarded fields (on top of the required agentId/workspaceId/content):
  *   messageId, imageBlocks, fileBlocks, model, messageMetadata,
  *   contextReferences, noteIds, stdinContext,
- *   assistantMessageId, assistantAppMessageId, userAppMessageId.
+ *   assistantMessageId, assistantAppMessageId, userAppMessageId, priority.
  *
  * The current daemon `agent.sendMessage` router (packages/intentd/crates/
  * intent-transport/src/router.rs) extracts only the required trio plus
@@ -216,6 +216,8 @@ registerMockIpcHandler(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, async (arg) => {
   if (assistantAppMessageId) params.assistantAppMessageId = assistantAppMessageId;
   const userAppMessageId = readString(request, "userAppMessageId");
   if (userAppMessageId) params.userAppMessageId = userAppMessageId;
+  const priority = readString(request, "priority");
+  if (priority === "interrupt") params.priority = priority;
   try {
     return await backendRequest("agent.sendMessage", params);
   } catch (error) {

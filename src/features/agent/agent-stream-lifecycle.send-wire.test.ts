@@ -40,7 +40,8 @@ import {
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { sendMessage as lifecycleSendMessage } from "$features/agent/agent-stream-lifecycle";
 import { AgentStatus } from "$shared/types";
-import type { AgentSession, Workspace } from "$shared/types";
+import type { AgentSession, Workspace, QueuedMessage } from "$shared/types";
+import { selectAgentQueueMessages } from "$store/renderer/slices/agent-queue/agent-queue-selectors";
 
 const WS = "c6df5dce-f8c6-44fe-8a2d-227a8815f2af";
 const AGENT = "agent-373f33d3-0a26-4b8b-9ecf-f114bfa47df4";
@@ -132,6 +133,46 @@ describe("send path wire contract (pending agent, first message)", () => {
     expect(sendCall[1]).toMatchObject({
       agentId: AGENT,
       workspaceId: WS,
+      content: "persist me please",
+    });
+  }, 30000);
+
+  it("handles queued response (auto-queue race) by cleaning up stream and seeding queue", async () => {
+    // Regression test for STAB-XX: when agent.sendMessage returns
+    // { success: true, queued: true, queuedMessage } (auto-queue race during
+    // interrupt), the FE must NOT pretend a stream is starting. It should:
+    // 1. Clean up the just-registered stream handler/placeholder
+    // 2. Reset isStreaming flag
+    // 3. Seed the local queue with queuedMessage (like chat-send-service L167-199)
+    const queuedMessage: QueuedMessage = {
+      id: "queued-msg-1",
+      content: "persist me please",
+      queuedAt: "2026-07-17T14:00:00.000Z",
+      position: 0,
+    };
+
+    backendRequestMock.mockImplementation(async (method: string) => {
+      if (method === "agent.get") return { agent: daemonPendingAgent };
+      if (method === "agent.sendMessage") {
+        // Daemon auto-queued instead of preempting (race during turn startup)
+        return { success: true, queued: true, queuedMessage };
+      }
+      return {};
+    });
+
+    await lifecycleSendMessage(AGENT, "persist me please", workspace(), {
+      priority: "interrupt",
+    });
+
+    // Assert the UI state reflects queued (not streaming)
+    const session = appStore.state.agentSessions?.byAgentId[AGENT];
+    expect(session?.isStreaming).toBe(false);
+
+    // Assert the local queue was seeded with the queuedMessage
+    const queueMessages = selectAgentQueueMessages.select(appStore.state, AGENT);
+    expect(queueMessages).toHaveLength(1);
+    expect(queueMessages[0]).toMatchObject({
+      id: "queued-msg-1",
       content: "persist me please",
     });
   }, 30000);
