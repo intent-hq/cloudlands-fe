@@ -1141,6 +1141,18 @@ export interface EventsClient {
   subscribe(workspaceId: string, handler: SubscriptionHandler<WorkspaceEvent[]>): Unsubscribe;
 }
 
+/** Drafts client for persistent chat input drafts (PROTOCOL §5.16). */
+export interface DraftsClient {
+  /** Get the calling client's draft for (workspaceId, agentId), or null if none */
+  get(workspaceId: string, agentId: string): Promise<{ text: string; updatedAt: string } | null>;
+
+  /** Upsert the calling client's draft (empty text clears it) */
+  set(workspaceId: string, agentId: string, text: string): Promise<{ ok: true; updatedAt: string }>;
+
+  /** Delete the calling client's draft (idempotent) */
+  clear(workspaceId: string, agentId: string): Promise<{ ok: true }>;
+}
+
 /** The aggregate seam exposing every backend domain to the renderer. */
 export interface AppClient {
   workspaces: WorkspacesClient;
@@ -1163,4 +1175,5 @@ export interface AppClient {
   system: SystemClient;
   server: ServerClient;
   events: EventsClient;
+  drafts: DraftsClient;
 }
