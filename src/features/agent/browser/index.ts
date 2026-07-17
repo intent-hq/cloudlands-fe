@@ -163,9 +163,6 @@ export function notifyAgentSubscribers(agentId: string, targetWorkspaceId?: Work
   dispatchCallbacks(agentId, subscribers, session);
 }
 
-// Export the config cache proxy (communicates with main process)
-export { configCache, ConfigCacheProxyService } from './config-cache-proxy.service';
-
 // The former AgentIpcProxy (agent:create/activate/delete-session), agent
 // lifecycle (agent:lifecycle:*), messaging (agent:messaging:*) and
 // persistence (persistence:*) IPC proxies were retired with the legacy agent

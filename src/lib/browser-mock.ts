@@ -125,9 +125,6 @@ function mockInvoke(channel: string, data?: any): any {
   if (channel === 'settings:get' || channel === 'settings:getAll') {
     return { success: true, data: {} };
   }
-  if (channel === 'config:get-model' || channel === 'config:get-all-models') {
-    return { success: true, data: null };
-  }
 
   // Sentry
   if (channel === 'sentry:get-config') {

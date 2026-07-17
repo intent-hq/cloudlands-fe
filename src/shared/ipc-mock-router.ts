@@ -156,24 +156,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     'auto-update:set-channel',
     { success: false, error: { message: 'Auto-update is not available in this build' } },
   ],
-  // Legacy main-process model-config cache (ConfigCacheProxyService). The
-  // service is exported but has no production callers — models load through
-  // the provider seam. Callers fold `success: false` to null / [], the
-  // cache-admin envelopes to a no-op / empty stats.
-  [
-    'config:get-model',
-    { success: false, error: 'Model config cache is not bridged to the daemon' },
-  ],
-  [
-    'config:get-all-models',
-    { success: false, error: 'Model config cache is not bridged to the daemon' },
-  ],
-  ['config:clear-cache', undefined],
-  ['config:invalidate', undefined],
-  [
-    'config:get-stats',
-    { success: false, error: 'Model config cache is not bridged to the daemon' },
-  ],
   // Legacy main-process ConfigManager store (reference config.ipc.ts). The
   // only production caller (acp-official permission-manager) takes its
   // localStorage branch first (`isBrowser` is true in this build), so these
