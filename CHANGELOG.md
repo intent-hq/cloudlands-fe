@@ -1,5 +1,17 @@
 # Changelog
 
+## Releases 2.0.0 and Later
+
+From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases).
+
+See the releases page for detailed changelogs of all 2.x versions.
+
+---
+
+## Historical Releases (0.x)
+
+The entries below document releases prior to 2.0.0.
+
 ## 0.4.0
 
 - Diffs in agent responses now render with the full diff viewer instead of plain code blocks.
