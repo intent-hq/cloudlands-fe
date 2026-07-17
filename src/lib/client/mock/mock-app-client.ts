@@ -33,6 +33,9 @@ function emitOnce<T>(handler: SubscriptionHandler<T>, snapshot: T): Unsubscribe 
   return () => {};
 }
 
+/** In-memory draft store for mock client. */
+const mockDrafts = new Map<string, { text: string; updatedAt: string }>();
+
 export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly chat: AppClient["chat"] = {
     // Mock parity with the §7.1 seq-0 snapshot: an empty transcript is the
@@ -168,5 +171,27 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
     },
     subscribe: (workspaceId, handler) =>
       emitOnce(handler, workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockWorkspaceEvents : []),
+  };
+
+  readonly drafts: AppClient["drafts"] = {
+    async get(workspaceId, agentId) {
+      return mockDrafts.get(`${workspaceId}:${agentId}`) ?? null;
+    },
+
+    async set(workspaceId, agentId, text) {
+      const key = `${workspaceId}:${agentId}`;
+      const updatedAt = new Date().toISOString();
+      if (text) {
+        mockDrafts.set(key, { text, updatedAt });
+      } else {
+        mockDrafts.delete(key);
+      }
+      return { ok: true, updatedAt };
+    },
+
+    async clear(workspaceId, agentId) {
+      mockDrafts.delete(`${workspaceId}:${agentId}`);
+      return { ok: true };
+    },
   };
 }

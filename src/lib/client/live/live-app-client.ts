@@ -21,6 +21,7 @@ import { LiveAgentsClient } from "./live-agents-client";
 import { LiveBrowserClient } from "./live-browser-client";
 import { LiveChatClient } from "./live-chat-client";
 import { LiveCommentsClient } from "./live-comments-client";
+import { LiveDraftsClient } from "./live-drafts-client";
 import { LiveEventsClient } from "./live-events-client";
 import { LiveFilesClient } from "./live-files-client";
 import { LiveGitClient } from "./live-git-client";
@@ -61,4 +62,5 @@ export class LiveAppClient implements AppClient {
   readonly browser = new LiveBrowserClient();
   readonly system = new LiveSystemClient();
   readonly server = new LiveServerClient();
+  readonly drafts = new LiveDraftsClient();
 }
