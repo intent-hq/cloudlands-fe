@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setZoomFactor } from "../slices/user-preferences/user-preferences-slice";
 
 // Use vi.hoisted to ensure mocks are available before module resolution
-const { mockAppStore, mockDispatch } = vi.hoisted(() => {
+const { mockAppStore, mockDispatch, mockIsElectron } = vi.hoisted(() => {
   const mockDispatch = vi.fn();
+  const mockIsElectron = vi.fn(() => true);
   return {
     mockDispatch,
     mockAppStore: { dispatch: mockDispatch },
+    mockIsElectron,
   };
 });
 
@@ -15,7 +17,7 @@ vi.mock("$store/renderer/store", () => ({
 }));
 
 vi.mock("$lib/electron-bridge", () => ({
-  isElectron: vi.fn(() => true),
+  isElectron: mockIsElectron,
 }));
 
 // Import after mocking
