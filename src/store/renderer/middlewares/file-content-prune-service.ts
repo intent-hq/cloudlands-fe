@@ -29,6 +29,8 @@ import {
   updateFileContent,
   applyExternalFileContent,
   saveFileContentRequested,
+  saveFileContentSucceeded,
+  saveFileContentFailed,
 } from "../slices/files/files-slice";
 import { setActiveWorkspaceId } from "../slices/workspace/workspace-slice";
 import {
@@ -173,12 +175,15 @@ const PRUNE_TRIGGER_ACTIONS = new Set<string>([
   consumePendingFocus.type,
   clearPanelLayout.type,
   // File actions that can add/modify file-content entries (via upsertFileEntry)
+  // All eight actions that call upsertFileEntry (which can create entries):
   loadFileContentRequested.type,
   loadFileContentSucceeded.type,
   loadFileContentFailed.type,
   updateFileContent.type,
   applyExternalFileContent.type,
   saveFileContentRequested.type,
+  saveFileContentSucceeded.type,
+  saveFileContentFailed.type,
 ]);
 
 // ============================================================================
