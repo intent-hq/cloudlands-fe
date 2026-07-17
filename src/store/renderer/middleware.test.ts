@@ -62,6 +62,7 @@ const mocks = vi.hoisted(() => {
   const userPreferencesNotificationPersistenceMiddleware = createPassthroughMiddleware();
   const sidebarNavPersistenceMiddleware = createPassthroughMiddleware();
   const browserPersistenceMiddleware = createPassthroughMiddleware();
+  const userPreferencesPersistenceMiddleware = createPassthroughMiddleware();
   const themeMutationMiddleware = createPassthroughMiddleware();
   const autoUpdateMutationMiddleware = createPassthroughMiddleware();
   const specialistsMutationMiddleware = createPassthroughMiddleware();
@@ -128,6 +129,7 @@ const mocks = vi.hoisted(() => {
     ),
     createSidebarNavPersistenceMiddleware: vi.fn(() => sidebarNavPersistenceMiddleware),
     createBrowserPersistenceMiddleware: vi.fn(() => browserPersistenceMiddleware),
+    createUserPreferencesPersistenceMiddleware: vi.fn(() => userPreferencesPersistenceMiddleware),
     createThemeMutationMiddleware: vi.fn(() => themeMutationMiddleware),
     createAutoUpdateMutationMiddleware: vi.fn(() => autoUpdateMutationMiddleware),
     createSpecialistsMutationMiddleware: vi.fn(() => specialistsMutationMiddleware),
@@ -184,6 +186,7 @@ const mocks = vi.hoisted(() => {
     userPreferencesNotificationPersistenceMiddleware,
     sidebarNavPersistenceMiddleware,
     browserPersistenceMiddleware,
+    userPreferencesPersistenceMiddleware,
     themeMutationMiddleware,
     autoUpdateMutationMiddleware,
     specialistsMutationMiddleware,
@@ -328,6 +331,9 @@ vi.mock("./middlewares/sidebar-nav-persistence-service", () => ({
 vi.mock("./middlewares/browser-persistence-service", () => ({
   createBrowserPersistenceMiddleware: mocks.createBrowserPersistenceMiddleware,
 }));
+vi.mock("./middlewares/user-preferences-persistence-service", () => ({
+  createUserPreferencesPersistenceMiddleware: mocks.createUserPreferencesPersistenceMiddleware,
+}));
 vi.mock("$features/theme/theme-service", () => ({
   createThemeMutationMiddleware: mocks.createThemeMutationMiddleware,
 }));
@@ -436,11 +442,13 @@ describe("store middleware Redux logging gating", () => {
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
       mocks.terminalPersistenceMiddleware,
+      mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
       mocks.userPreferencesNotificationPersistenceMiddleware,
+      mocks.userPreferencesPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -501,11 +509,13 @@ describe("store middleware Redux logging gating", () => {
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
       mocks.terminalPersistenceMiddleware,
+      mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
       mocks.userPreferencesNotificationPersistenceMiddleware,
+      mocks.userPreferencesPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -566,11 +576,13 @@ describe("store middleware Redux logging gating", () => {
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
       mocks.terminalPersistenceMiddleware,
+      mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
       mocks.userPreferencesNotificationPersistenceMiddleware,
+      mocks.userPreferencesPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -632,11 +644,13 @@ describe("store middleware Redux logging gating", () => {
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
       mocks.terminalPersistenceMiddleware,
+      mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
       mocks.userPreferencesNotificationPersistenceMiddleware,
+      mocks.userPreferencesPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -715,11 +729,13 @@ describe("store middleware Redux logging gating", () => {
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
       mocks.terminalPersistenceMiddleware,
+      mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
       mocks.workspaceSettingsPersistenceMiddleware,
       mocks.userPreferencesBetaPersistenceMiddleware,
       mocks.userPreferencesNotificationPersistenceMiddleware,
+      mocks.userPreferencesPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,

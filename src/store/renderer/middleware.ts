@@ -62,6 +62,7 @@ import { createZoomSyncMiddleware } from "./middlewares/zoom-sync-service";
 import { createWorkspaceSettingsPersistenceMiddleware } from "./middlewares/workspace-settings-persistence-service";
 import { createUserPreferencesBetaPersistenceMiddleware } from "./middlewares/user-preferences-beta-persistence-service";
 import { createUserPreferencesNotificationPersistenceMiddleware } from "./middlewares/user-preferences-notification-persistence-service";
+import { createUserPreferencesPersistenceMiddleware } from "./middlewares/user-preferences-persistence-service";
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
 import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
@@ -342,6 +343,13 @@ function buildMiddleware(): StoreMiddleware[] {
     // effect. Matches deleted user-preferences/sagas/persistence-saga.ts →
     // watchNotificationSettingsPersistence.
     createUserPreferencesNotificationPersistenceMiddleware(),
+    // Give the (post-saga) user-preferences persistence triggers real handlers
+    // again: spellcheck, showArchived, groupByRepo, hasCompletedProviderSetup,
+    // agent font style, note font style, code font family, activity-log presets,
+    // and promo-banner interactions. Persists to localStorage on action and
+    // hydrates from localStorage on boot (first action). Excludes beta-updates
+    // and notification settings (handled by sibling middlewares above).
+    createUserPreferencesPersistenceMiddleware(),
     // Give the (post-saga) theme triggers (`requestThemePreferenceChange` /
     // `selectThemePreset` / `importCustomTheme` / `clearThemeCustomization`)
     // real handlers so the Settings theme toggle and ColorThemeSettings
