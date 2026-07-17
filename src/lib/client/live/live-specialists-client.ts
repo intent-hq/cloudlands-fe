@@ -41,6 +41,57 @@ export class LiveSpecialistsClient implements SpecialistsClient {
       cancelled = true;
     };
   }
+
+  async create(
+    id: string,
+    spec: SpecialistDef,
+    scope?: "project" | "user",
+    workspacePath?: string,
+  ): Promise<SpecialistDef> {
+    const params: { id: string; spec: SpecialistDef; scope?: string; workspacePath?: string } = {
+      id,
+      spec,
+    };
+    if (scope) params.scope = scope;
+    if (workspacePath) params.workspacePath = workspacePath;
+
+    const result = await backendRequest<{ specialist: SpecialistDef }>(
+      "specialist.create",
+      params,
+    );
+    return result.specialist;
+  }
+
+  async edit(
+    id: string,
+    spec: SpecialistDef,
+    scope: "project" | "user",
+    workspacePath?: string,
+  ): Promise<SpecialistDef> {
+    const params: { id: string; spec: SpecialistDef; scope: string; workspacePath?: string } = {
+      id,
+      spec,
+      scope,
+    };
+    if (workspacePath) params.workspacePath = workspacePath;
+
+    const result = await backendRequest<{ specialist: SpecialistDef }>("specialist.edit", params);
+    return result.specialist;
+  }
+
+  async delete(
+    id: string,
+    scope: "project" | "user",
+    workspacePath?: string,
+  ): Promise<{ success: true }> {
+    const params: { id: string; scope: string; workspacePath?: string } = {
+      id,
+      scope,
+    };
+    if (workspacePath) params.workspacePath = workspacePath;
+
+    return await backendRequest<{ success: true }>("specialist.delete", params);
+  }
 }
 
 // Tied to AppClient["specialists"] so the seam composition catches drift in CI.

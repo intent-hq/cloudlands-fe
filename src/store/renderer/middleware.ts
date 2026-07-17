@@ -56,6 +56,7 @@ import { createSidebarNavPersistenceMiddleware } from "./middlewares/sidebar-nav
 import { createBrowserPersistenceMiddleware } from "./middlewares/browser-persistence-service";
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
+import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
@@ -300,6 +301,14 @@ function buildMiddleware(): StoreMiddleware[] {
     // (checking toast → up-to-date / available / error) instead of silently
     // running the check in main with zero renderer-side events.
     createAutoUpdateMutationMiddleware(),
+    // Give the (post-saga) specialist mutation triggers (`saveFileSpecialist` /
+    // `deleteFileSpecialist` / `exportBuiltinToFile` / `loadFileSpecialists`)
+    // real handlers so Settings specialist writes (model override for all
+    // specialists, per-specialist prompt edits, create-new, delete, reset-to-
+    // default) reach the daemon via `specialist.create`/`edit`/`delete` and
+    // refetch `specialist.list` to update the store — making the "Use for all
+    // specialists" button hide once all specialists use the selected model.
+    createSpecialistsMutationMiddleware(),
   ];
 
   // Debug middlewares need to be added AFTER batching middleware

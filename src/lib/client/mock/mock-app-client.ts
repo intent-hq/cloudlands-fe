@@ -105,6 +105,9 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly specialists: AppClient["specialists"] = {
     list: async () => fx.mockSpecialists,
     subscribe: (handler) => emitOnce(handler, fx.mockSpecialists),
+    create: async (id, spec) => spec,
+    edit: async (id, spec) => spec,
+    delete: async () => ({ success: true }),
   };
 
   readonly models: AppClient["models"] = {
