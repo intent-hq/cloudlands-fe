@@ -198,7 +198,7 @@ describe('useOptimisticState — BE-driven reconciliation', () => {
 
   it('rolls back to the prior BE state when the mock BE response rejects', async () => {
     const optimistic = useOptimisticState<Attrs>();
-    let beAttrs: Attrs = { checked: false };
+    const beAttrs: Attrs = { checked: false };
     const derived = () => optimistic.get('checked') ?? beAttrs.checked;
 
     const beResponse = deferred<{ ok: true }>();
