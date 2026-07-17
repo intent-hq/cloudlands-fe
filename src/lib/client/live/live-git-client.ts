@@ -383,20 +383,10 @@ export class LiveGitClient implements GitClient {
   // provenance (agentId / linkedNoteId) and per-file stats, replacing the
   // attribution-less `git.commits` page for the changes panel.
   // When `includeOlder` is true, returns commits before and including the workspace boundary.
+  // Delegates to `commitsWithBoundary()` to avoid duplicating request/mapping logic.
   async commits(workspaceId: string, includeOlder?: boolean): Promise<CommitInfo[]> {
-    try {
-      const result = await backendRequest<{ commits?: unknown[]; boundarySha?: string | null; nextToken?: string | null }>(
-        "file-tracking.loadCommits",
-        {
-          workspaceId,
-          ...(includeOlder !== undefined ? { includeOlder } : {}),
-        }
-      );
-      const commits = Array.isArray(result?.commits) ? result.commits : [];
-      return commits.map(toCommitInfo).filter((c): c is CommitInfo => c !== null);
-    } catch {
-      return [];
-    }
+    const envelope = await this.commitsWithBoundary(workspaceId, includeOlder);
+    return envelope.commits;
   }
 
   // `file-tracking.loadCommits` with full envelope — returns the boundary SHA
