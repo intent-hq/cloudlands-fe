@@ -320,6 +320,46 @@ describe("workspaces-seeder legacy IPC bridges", () => {
       expect(store.state.tabState.currentTabId).toBe("ws-1");
       expect(store.state.tabState.openTabs["ws-1"]).toBe(true);
     });
+
+    it("skips archived workspaces when auto-selecting on fresh boot", async () => {
+      // Fresh store with no pre-seeded state
+      const store = new Store(reducers, []);
+      store.init();
+
+      // First workspace is archived, second is active
+      mockedAppClient.workspaces.list.mockResolvedValueOnce([
+        {
+          id: "ws-archived",
+          title: "Archived Workspace",
+          branch: "main",
+          status: "Archived",
+          path: "/tmp/ws-archived",
+          repositoryPath: "/tmp/ws-archived",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-02T00:00:00Z",
+        },
+        {
+          id: "ws-active",
+          title: "Active Workspace",
+          branch: "main",
+          status: "Active",
+          path: "/tmp/ws-active",
+          repositoryPath: "/tmp/ws-active",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-02T00:00:00Z",
+        },
+      ]);
+      mockedAppClient.workspaces.recentViews.mockResolvedValueOnce({});
+
+      // Run the seeder
+      await seedMockStore(store, appClient);
+
+      // Assert: skipped archived ws-archived, selected active ws-active instead
+      expect(store.state.workspace.activeWorkspaceId).toBe("ws-active");
+      expect(store.state.tabState.currentTabId).toBe("ws-active");
+      expect(store.state.tabState.openTabs["ws-active"]).toBe(true);
+      expect(store.state.tabState.openTabs["ws-archived"]).toBeUndefined();
+    });
   });
 
   describe("workspace:get → daemon workspace.get", () => {
