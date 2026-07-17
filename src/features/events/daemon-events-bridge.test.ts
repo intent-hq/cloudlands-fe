@@ -3474,15 +3474,61 @@ describe('daemonEventsBridge (STAB-22 — agent:message triggers transcript hydr
     expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('agent:message with role=user does not trigger loadChatTranscript', async () => {
-    seedSession({ messages: [] });
+  it('agent:message with role=user and messageId not in session triggers loadChatTranscript', async () => {
+    // Seed a session with one existing user message
+    const existingMessage: AgentMessage = {
+      id: 'msg-existing',
+      role: 'user',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'existing user message' }],
+    } as AgentMessage;
+    seedSession({ messages: [existingMessage] });
     await primeBridge();
     const handler = capturedHandlers[0]!;
 
+    // New user message with a different messageId (not in transcript)
+    handler(notification('agent:message', { agentId: AGENT, messageId: 'msg-new', role: 'user' }));
+
+    // Should call loadChatTranscript because messageId is not present in session
+    expect(loadChatTranscriptSpy).toHaveBeenCalledWith(AGENT);
+    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('agent:message with role=user and present messageId skips loadChatTranscript', async () => {
+    // Seed a session with a user message that has the same messageId
+    const existingMessage: AgentMessage = {
+      id: 'msg-1',
+      role: 'user',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'existing user message' }],
+    } as AgentMessage;
+    seedSession({ messages: [existingMessage] });
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // User message event with messageId that already exists in transcript
     handler(notification('agent:message', { agentId: AGENT, messageId: 'msg-1', role: 'user' }));
 
-    // Should not call loadChatTranscript for user messages
+    // Should not call loadChatTranscript because messageId is already present
     expect(loadChatTranscriptSpy).not.toHaveBeenCalled();
+  });
+
+  it("agent:message with role=user loads transcript when session doesn't exist yet", async () => {
+    // Don't seed any session - agent doesn't exist in state yet
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(
+      notification('agent:message', {
+        agentId: 'agent-new',
+        messageId: 'msg-1',
+        role: 'user',
+      }),
+    );
+
+    // Should call loadChatTranscript because session doesn't exist (undefined check)
+    expect(loadChatTranscriptSpy).toHaveBeenCalledWith('agent-new');
+    expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
   });
 });
 
