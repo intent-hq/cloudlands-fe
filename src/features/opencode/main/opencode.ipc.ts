@@ -117,19 +117,14 @@ async function executeOpencodeCommand(
     throw new Error('opencode binary not available (host.findBinary returned no result)');
   }
 
-  // Run from user's home directory to ensure config files are found.
-  const cwd = os.homedir();
-
   logger.debug('OpenCode host.exec details', {
     opencodePath: resolved.command,
     usesNpx: resolved.usesNpx,
-    cwd,
     args,
   });
 
   const result = await hostExec(resolved.command, {
     args: [...resolved.argsPrefix, ...args],
-    cwd,
     timeoutMs: timeout,
   });
 

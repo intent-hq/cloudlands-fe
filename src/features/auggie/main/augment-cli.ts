@@ -114,14 +114,13 @@ export class AugmentCLI extends EventEmitter {
     }
   }
 
-  async executeCommand(command: string, args: string[], cwd?: string): Promise<any> {
+  async executeCommand(command: string, args: string[]): Promise<any> {
     // Route through the daemon's buffered one-shot exec (`host.exec`, PROTOCOL
     // §5.14). No local shell, no argv splitting — the daemon owns the process
     // group and honours the enriched PATH the host reports.
     const auggiePath = await this.getAuggiePath();
     const result = await hostExec(auggiePath, {
       args: [command, ...args],
-      ...(cwd ? { cwd } : {}),
     });
     if (result.exitCode !== 0) {
       throw new Error(`Command failed with code ${result.exitCode}: ${result.stderr}`);
