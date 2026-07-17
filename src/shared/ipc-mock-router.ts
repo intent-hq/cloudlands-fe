@@ -197,9 +197,7 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
         'Legacy config store is not bridged to the daemon (renderer persistence uses localStorage)',
     },
   ],
-  // Chat-input context gathering probes the (unported) editor selection
-  // tracker; the caller folds a missing/empty selection to null.
-  ['editor:get-selection', undefined],
+
   // Third-party sources (NotesPanel embeds / drag-drop). Not ported to the
   // daemon; every client method folds failure into { success: false, error }
   // and the UI surfaces the message on the triggering interaction.
