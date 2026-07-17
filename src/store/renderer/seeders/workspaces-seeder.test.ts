@@ -10,6 +10,8 @@
  * `appClient.workspaces.create` directly (see workspace.client.test.ts).
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
+import { reducers } from "../reducer";
 
 // FAKE transport only: the daemon bridge is mocked so no request ever reaches
 // a real daemon. Each test asserts the JSON-RPC method + params the bridge
@@ -21,11 +23,30 @@ vi.mock("$lib/client/live/backend-transport", () => ({
   onBackendNotification: vi.fn(() => () => {}),
 }));
 
+// Mock the AppClient seam for seeder tests and IPC bridges
+vi.mock("$lib/client", () => ({
+  appClient: {
+    workspaces: {
+      list: vi.fn(),
+      get: vi.fn(),
+      recentViews: vi.fn(),
+      removeRecentRepository: vi.fn(),
+    },
+    repos: {
+      list: vi.fn(),
+      remove: vi.fn(),
+    },
+  },
+}));
+
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { mockInvoke, UNBRIDGED_INVOKE_ALLOWLIST } from "$shared/ipc-mock-router";
 import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
+import { seedMockStore } from "../mock-bootstrap";
+import { appClient } from "$lib/client";
 
 const mockedRequest = vi.mocked(backendRequest);
+const mockedAppClient = vi.mocked(appClient);
 
 interface CommandResponse<T> {
   success: boolean;
@@ -46,27 +67,25 @@ describe("workspaces-seeder legacy IPC bridges", () => {
   describe("workspace:list → daemon workspace.list", () => {
     it("forwards to workspace.list and wraps the workspaces in {success, data}", async () => {
       // PROTOCOL §5.1: workspace.list → { workspaces: Workspace[] }.
-      mockedRequest.mockResolvedValueOnce({
-        workspaces: [
-          {
-            id: "11111111-1111-4111-8111-111111111111",
-            title: "Repo A",
-            branch: "main",
-            status: "Active",
-            path: "/tmp/repo-a",
-            repositoryPath: "/tmp/repo-a",
-            createdAt: "2026-07-01T00:00:00Z",
-            updatedAt: "2026-07-02T00:00:00Z",
-          },
-        ],
-      });
+      mockedAppClient.workspaces.list.mockResolvedValueOnce([
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          title: "Repo A",
+          branch: "main",
+          status: "Active",
+          path: "/tmp/repo-a",
+          repositoryPath: "/tmp/repo-a",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-02T00:00:00Z",
+        },
+      ]);
 
       const response = await mockInvoke<CommandResponse<Array<Record<string, unknown>>>>(
         WORKSPACE_CHANNELS.LIST,
         { lite: true },
       );
 
-      expect(mockedRequest).toHaveBeenCalledWith("workspace.list");
+      expect(mockedAppClient.workspaces.list).toHaveBeenCalled();
       expect(response.success).toBe(true);
       expect(response.data).toHaveLength(1);
       expect(response.data![0]).toMatchObject({
@@ -79,7 +98,7 @@ describe("workspaces-seeder legacy IPC bridges", () => {
     });
 
     it("rejects when the daemon read fails so callers see the real error", async () => {
-      mockedRequest.mockRejectedValueOnce(new Error("daemon unreachable"));
+      mockedAppClient.workspaces.list.mockRejectedValueOnce(new Error("daemon unreachable"));
 
       await expect(mockInvoke(WORKSPACE_CHANNELS.LIST, {})).rejects.toThrow(
         "daemon unreachable",
@@ -90,6 +109,7 @@ describe("workspaces-seeder legacy IPC bridges", () => {
   describe("workspace:get-recent-repositories → daemon repo.list", () => {
     it("forwards to repo.list and wraps the KnownRepo[] in {success, data}", async () => {
       // PROTOCOL §5.6: repo.list → { repos: KnownRepo[] } (MRU-first, camelCase).
+      // This handler uses backendRequest directly, not appClient
       mockedRequest.mockResolvedValueOnce({
         repos: [
           {
@@ -187,29 +207,142 @@ describe("workspaces-seeder legacy IPC bridges", () => {
     });
   });
 
-  describe("workspace:get → daemon workspace.get", () => {
-    it("forwards to workspace.get and wraps the workspace in {success, data}", async () => {
-      // PROTOCOL §5.1: workspace.get → { workspace: Workspace }.
-      mockedRequest.mockResolvedValueOnce({
-        workspace: {
-          id: "11111111-1111-4111-8111-111111111111",
-          title: "Repo A",
+  describe("seeder respects existing route-driven state", () => {
+    it("does not override activeWorkspaceId when one is already set", async () => {
+      const { setActiveWorkspaceId } = await import(
+        "../slices/workspace/workspace-slice"
+      );
+
+      // Simulate route loader setting activeWorkspaceId = "ws-2" before seeder runs
+      const store = new Store(reducers, []);
+      store.init();
+      store.dispatch(setActiveWorkspaceId("ws-2"));
+
+      // Mock workspace.list returning ws-1 first, ws-2 second
+      mockedAppClient.workspaces.list.mockResolvedValueOnce([
+        {
+          id: "ws-1",
+          title: "First Workspace",
           branch: "main",
           status: "Active",
-          path: "/tmp/repo-a",
-          repositoryPath: "/tmp/repo-a",
+          path: "/tmp/ws-1",
+          repositoryPath: "/tmp/ws-1",
           createdAt: "2026-07-01T00:00:00Z",
           updatedAt: "2026-07-02T00:00:00Z",
         },
+        {
+          id: "ws-2",
+          title: "Second Workspace",
+          branch: "main",
+          status: "Active",
+          path: "/tmp/ws-2",
+          repositoryPath: "/tmp/ws-2",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-02T00:00:00Z",
+        },
+      ]);
+      mockedAppClient.workspaces.recentViews.mockResolvedValueOnce({ "ws-1": 100, "ws-2": 200 });
+
+      // Run the seeder
+      await seedMockStore(store, appClient);
+
+      // Assert: activeWorkspaceId stays "ws-2", not clobbered to "ws-1"
+      expect(store.state.workspace.activeWorkspaceId).toBe("ws-2");
+    });
+
+    it("does not force-open ws-1 tab when a currentTabId is already set", async () => {
+      const { openWorkspaceTab } = await import(
+        "../slices/tab-state/tab-state-slice"
+      );
+
+      // Simulate route loader opening ws-2 tab before seeder runs
+      const store = new Store(reducers, []);
+      store.init();
+      store.dispatch(openWorkspaceTab("ws-2"));
+
+      // Mock workspace.list returning ws-1 first
+      mockedAppClient.workspaces.list.mockResolvedValueOnce([
+        {
+          id: "ws-1",
+          title: "First Workspace",
+          branch: "main",
+          status: "Active",
+          path: "/tmp/ws-1",
+          repositoryPath: "/tmp/ws-1",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-02T00:00:00Z",
+        },
+        {
+          id: "ws-2",
+          title: "Second Workspace",
+          branch: "main",
+          status: "Active",
+          path: "/tmp/ws-2",
+          repositoryPath: "/tmp/ws-2",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-02T00:00:00Z",
+        },
+      ]);
+      mockedAppClient.workspaces.recentViews.mockResolvedValueOnce({});
+
+      // Run the seeder
+      await seedMockStore(store, appClient);
+
+      // Assert: currentTabId stays "ws-2", not clobbered; ws-1 tab NOT opened
+      expect(store.state.tabState.currentTabId).toBe("ws-2");
+      expect(store.state.tabState.openTabs["ws-1"]).toBeUndefined();
+    });
+
+    it("still auto-selects the first workspace on fresh boot (no route state)", async () => {
+      // Fresh store with no pre-seeded state
+      const store = new Store(reducers, []);
+      store.init();
+
+      mockedAppClient.workspaces.list.mockResolvedValueOnce([
+        {
+          id: "ws-1",
+          title: "First Workspace",
+          branch: "main",
+          status: "Active",
+          path: "/tmp/ws-1",
+          repositoryPath: "/tmp/ws-1",
+          createdAt: "2026-07-01T00:00:00Z",
+          updatedAt: "2026-07-02T00:00:00Z",
+        },
+      ]);
+      mockedAppClient.workspaces.recentViews.mockResolvedValueOnce({});
+
+      // Run the seeder
+      await seedMockStore(store, appClient);
+
+      // Assert: first workspace auto-selected
+      expect(store.state.workspace.activeWorkspaceId).toBe("ws-1");
+      expect(store.state.tabState.currentTabId).toBe("ws-1");
+      expect(store.state.tabState.openTabs["ws-1"]).toBe(true);
+    });
+  });
+
+  describe("workspace:get → daemon workspace.get", () => {
+    it("forwards to workspace.get and wraps the workspace in {success, data}", async () => {
+      // PROTOCOL §5.1: workspace.get → { workspace: Workspace }.
+      mockedAppClient.workspaces.get.mockResolvedValueOnce({
+        id: "11111111-1111-4111-8111-111111111111",
+        title: "Repo A",
+        branch: "main",
+        status: "Active",
+        path: "/tmp/repo-a",
+        repositoryPath: "/tmp/repo-a",
+        createdAt: "2026-07-01T00:00:00Z",
+        updatedAt: "2026-07-02T00:00:00Z",
       });
 
       const response = (await mockInvoke(WORKSPACE_CHANNELS.GET, {
         id: "11111111-1111-4111-8111-111111111111",
       })) as CommandResponse<{ id: string; title: string }>;
 
-      expect(mockedRequest).toHaveBeenCalledWith("workspace.get", {
-        workspaceId: "11111111-1111-4111-8111-111111111111",
-      });
+      expect(mockedAppClient.workspaces.get).toHaveBeenCalledWith(
+        "11111111-1111-4111-8111-111111111111"
+      );
       expect(response.success).toBe(true);
       expect(response.data?.title).toBe("Repo A");
     });
@@ -219,18 +352,18 @@ describe("workspaces-seeder legacy IPC bridges", () => {
         success: false,
         error: "Workspace not found",
       });
-      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(mockedAppClient.workspaces.get).not.toHaveBeenCalled();
 
       // A response without a workspace payload (daemon "not found") folds to
       // {success:false} — the live client's normalization throws and the
       // handler's catch shapes it; the exact message is the client's.
       const validId = "22222222-2222-4222-8222-222222222222";
-      mockedRequest.mockResolvedValueOnce({});
+      mockedAppClient.workspaces.get.mockResolvedValueOnce(null as any);
       expect(await mockInvoke(WORKSPACE_CHANNELS.GET, { id: validId })).toMatchObject({
         success: false,
       });
 
-      mockedRequest.mockRejectedValueOnce(new Error("daemon offline"));
+      mockedAppClient.workspaces.get.mockRejectedValueOnce(new Error("daemon offline"));
       expect(await mockInvoke(WORKSPACE_CHANNELS.GET, { id: validId })).toEqual({
         success: false,
         error: "daemon offline",
