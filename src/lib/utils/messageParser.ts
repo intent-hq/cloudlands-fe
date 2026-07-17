@@ -21,7 +21,6 @@
 import { Logger } from '$shared/logger';
 import type { SuggestedPrompt } from '$shared/types';
 import type { ContentBlock } from '$shared/types/content-block';
-import { isValidWorkspaceId } from '$shared/types/branded-ids';
 
 const logger = new Logger('MessageParser');
 
@@ -116,12 +115,11 @@ const SPECIAL_BLOCK_PATTERNS = {
     /(?:(`{3,})ws-block:agent_action\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})ws-block:agent_action\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // Mermaid diagram blocks - separate patterns for backtick vs tilde
   mermaid: /(?:(`{3,})mermaid\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})mermaid\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
-  // Workspace card blocks - separate patterns for backtick vs tilde
-  workspace:
-    /(?:(`{3,})workspace\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})workspace\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
   // Nav-link blocks - separate patterns for backtick vs tilde
   navLink:
     /(?:(`{3,})nav-link\s*\n([\s\S]*?)^`{3,}\s*$|(~{3,})nav-link\s*\n([\s\S]*?)^~{3,}\s*$)/gm,
+  // Workspace card blocks - @@@workspace sentinel syntax
+  workspaceSentinel: /^@@@workspace[ \t]*\n([\s\S]*?)^@@@[ \t]*$/gm,
   // Agent digest - short summary for display
   agentDigest: /<agent_digest>([\s\S]*?)<\/agent_digest>/g,
   // Detected scripts from background agent
@@ -133,7 +131,7 @@ const SPECIAL_BLOCK_PATTERNS = {
 // Closing fences are line-anchored (^) with multiline flag to prevent matching within content.
 // Separate branches for backtick vs tilde fences to prevent mismatched fence types.
 const COMBINED_SPECIAL_REGEX =
-  /(<augment_code_snippet\s+path="[^"]+"(?:\s+mode="[^"]+")?\s*>\s*(`{4,})\w*\s*\n[\s\S]*?\n\s*\2\s*<\/augment_code_snippet>|(`{4,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{4,}\s*$|(`{3,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{3,}\s*$|(?:`{3,}diff\n[\s\S]*?^`{3,}\s*$|~{3,}diff\n[\s\S]*?^~{3,}\s*$)|<COMMIT_MESSAGE>[\s\S]*?<\/COMMIT_MESSAGE>|(?:`{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^`{3,}\s*$|~{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:patch\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:patch\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:reference\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:reference\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:cli\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:cli\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:agent_action\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:agent_action\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}workspace\s*\n[\s\S]*?^`{3,}\s*$|~{3,}workspace\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}nav-link\s*\n[\s\S]*?^`{3,}\s*$|~{3,}nav-link\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}mermaid\s*\n[\s\S]*?^`{3,}\s*$|~{3,}mermaid\s*\n[\s\S]*?^~{3,}\s*$)|<agent_digest>[\s\S]*?<\/agent_digest>|<<<DETECTED_SCRIPTS>>>[\s\S]*?<<<\/DETECTED_SCRIPTS>>>)/gm;
+  /(<augment_code_snippet\s+path="[^"]+"(?:\s+mode="[^"]+")?\s*>\s*(`{4,})\w*\s*\n[\s\S]*?\n\s*\2\s*<\/augment_code_snippet>|(`{4,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{4,}\s*$|(`{3,})\w*\s+path=[^\s]+(?:\s+mode=[^\s\n]+)?\s*\n[\s\S]*?^`{3,}\s*$|(?:`{3,}diff\n[\s\S]*?^`{3,}\s*$|~{3,}diff\n[\s\S]*?^~{3,}\s*$)|<COMMIT_MESSAGE>[\s\S]*?<\/COMMIT_MESSAGE>|(?:`{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^`{3,}\s*$|~{3,}(?:diagram|ws-block:diagram)\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:patch\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:patch\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:reference\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:reference\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:cli\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:cli\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}ws-block:agent_action\s*\n[\s\S]*?^`{3,}\s*$|~{3,}ws-block:agent_action\s*\n[\s\S]*?^~{3,}\s*$)|^@@@workspace[ \t]*\n[\s\S]*?^@@@[ \t]*$|(?:`{3,}nav-link\s*\n[\s\S]*?^`{3,}\s*$|~{3,}nav-link\s*\n[\s\S]*?^~{3,}\s*$)|(?:`{3,}mermaid\s*\n[\s\S]*?^`{3,}\s*$|~{3,}mermaid\s*\n[\s\S]*?^~{3,}\s*$)|<agent_digest>[\s\S]*?<\/agent_digest>|<<<DETECTED_SCRIPTS>>>[\s\S]*?<<<\/DETECTED_SCRIPTS>>>)/gm;
 
 const WORKSPACE_LINK_PREFIX = 'intent://local/workspace/';
 
@@ -184,101 +182,7 @@ function parseNavLinkBody(body: string): { target: string; label?: string } | nu
   return label ? { target, label } : { target };
 }
 
-function tryExtractWorkspaceIdFromLine(line: string): string | null {
-  let stripped = line.trim();
-  if (!stripped) return null;
-  stripped = stripped.replace(/^(?:[-*+•]|\d+[.)])\s+/, '').trim();
-  const emphasisMatch = stripped.match(/^\*+([^*]+)\*+$/);
-  if (emphasisMatch) stripped = emphasisMatch[1].trim();
-  const backtickMatch = stripped.match(/^`+([\s\S]*?)`+$/);
-  if (backtickMatch) stripped = backtickMatch[1].trim();
-  if (stripped.startsWith(WORKSPACE_LINK_PREFIX)) {
-    stripped = stripped.slice(WORKSPACE_LINK_PREFIX.length).trim();
-  }
-  stripped = stripped.replace(/[.,;:!?]+$/, '').trim();
-  if (!stripped) return null;
-  return isValidWorkspaceId(stripped) ? stripped : null;
-}
 
-type ClassifiedLine =
-  | { kind: 'id'; id: string; raw: string }
-  | { kind: 'prose'; raw: string }
-  | { kind: 'blank'; raw: string };
-
-function classifyLineForWorkspaceCard(line: string): ClassifiedLine {
-  if (!line.trim()) return { kind: 'blank', raw: line };
-  const id = tryExtractWorkspaceIdFromLine(line);
-  if (id !== null) return { kind: 'id', id, raw: line };
-  return { kind: 'prose', raw: line };
-}
-
-function promoteWorkspaceIdListsInTextBlock(content: string): ParsedContent[] {
-  const classified = content.split('\n').map(classifyLineForWorkspaceCard);
-  if (!classified.some((entry) => entry.kind === 'id')) {
-    return [{ type: 'text', content }];
-  }
-
-  const result: ParsedContent[] = [];
-  let proseBuf: string[] = [];
-
-  function flushProse() {
-    if (proseBuf.length === 0) return;
-    const text = proseBuf.join('\n').replace(/^\s+|\s+$/g, '');
-    if (text) result.push({ type: 'text', content: text });
-    proseBuf = [];
-  }
-
-  let i = 0;
-  while (i < classified.length) {
-    const cur = classified[i];
-    if (cur.kind === 'id') {
-      flushProse();
-      const ids: string[] = [];
-      const rawLines: string[] = [];
-      while (i < classified.length) {
-        const c = classified[i];
-        if (c.kind === 'id') {
-          ids.push(c.id);
-          rawLines.push(c.raw);
-          i++;
-          continue;
-        }
-        if (c.kind === 'blank') {
-          let j = i + 1;
-          while (j < classified.length && classified[j].kind === 'blank') j++;
-          if (j < classified.length && classified[j].kind === 'id') {
-            i = j;
-            continue;
-          }
-        }
-        break;
-      }
-      result.push({
-        type: 'workspace_card',
-        content: rawLines.join('\n'),
-        metadata: { workspaceCardData: { workspaceIds: ids } },
-      });
-    } else {
-      proseBuf.push(cur.raw);
-      i++;
-    }
-  }
-  flushProse();
-  return result;
-}
-
-function promoteWorkspaceIdLists(blocks: ParsedContent[]): ParsedContent[] {
-  const result: ParsedContent[] = [];
-  for (const block of blocks) {
-    if (block.type !== 'text') {
-      result.push(block);
-      continue;
-    }
-    const promoted = promoteWorkspaceIdListsInTextBlock(block.content);
-    result.push(...promoted);
-  }
-  return result;
-}
 
 /**
  * Parse a single special block match into a ParsedContent
@@ -321,10 +225,10 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
     }
   }
 
-  // Check 3+ backtick markdown with path (but not diff, diagram, ws-block, workspace, nav-link, or mermaid)
+  // Check 3+ backtick markdown with path (but not diff, diagram, ws-block, nav-link, or mermaid)
   if (
     /^`{3,}/.test(blockText) &&
-    !/^`{3,}(?:diff|diagram|ws-block:|workspace|nav-link|mermaid)/.test(blockText)
+    !/^`{3,}(?:diff|diagram|ws-block:|nav-link|mermaid)/.test(blockText)
   ) {
     const match = blockText.match(
       /(`{3,})(\w+)?\s+path=([^\s]+)(?:\s+mode=([^\s\n]+))?\s*\n([\s\S]*?)^`{3,}\s*$/m,
@@ -701,26 +605,9 @@ function parseSpecialBlock(blockText: string): ParsedContent | null {
     }
   }
 
-  // Check workspace card block - separate patterns for backtick vs tilde
-  if (/^`{3,}workspace/.test(blockText)) {
-    const match = blockText.match(/`{3,}workspace\s*\n([\s\S]*?)^`{3,}\s*$/m);
-    if (match) {
-      const workspaceIds = parseWorkspaceCardIds(match[1]);
-      if (workspaceIds.length === 0) {
-        return { type: 'text', content: blockText };
-      }
-
-      return {
-        type: 'workspace_card',
-        content: match[1],
-        metadata: {
-          workspaceCardData: { workspaceIds },
-        },
-      };
-    }
-  }
-  if (/^~{3,}workspace/.test(blockText)) {
-    const match = blockText.match(/~{3,}workspace\s*\n([\s\S]*?)^~{3,}\s*$/m);
+  // Check @@@workspace sentinel block
+  if (blockText.startsWith('@@@workspace')) {
+    const match = blockText.match(/^@@@workspace[ \t]*\n([\s\S]*?)^@@@[ \t]*$/m);
     if (match) {
       const workspaceIds = parseWorkspaceCardIds(match[1]);
       if (workspaceIds.length === 0) {
@@ -903,8 +790,8 @@ export function parseAgentMessage(content: string): ParsedContent[] {
   // PERF: Build result array directly without placeholder replacement
   // This avoids multiple string.replace() calls which are O(n) each
   if (specialBlocks.length === 0) {
-    // No special blocks - process as regular content, then run workspace-ID promotion.
-    return promoteWorkspaceIdLists(processRegularContent(content));
+    // No special blocks - process as regular content
+    return processRegularContent(content);
   }
 
   // Sort by position (should already be sorted, but ensure)
@@ -936,11 +823,7 @@ export function parseAgentMessage(content: string): ParsedContent[] {
   // Merge consecutive text blocks
   const merged = mergeConsecutiveTextBlocks(result);
 
-  // Promote paragraphs that consist purely of valid workspace IDs to workspace_card blocks.
-  // This handles models that emit bare ID lists without the fenced ```workspace block.
-  const promoted = promoteWorkspaceIdLists(merged);
-
-  return promoted;
+  return merged;
 }
 
 /**
