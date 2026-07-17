@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFileContentPruneService } from "./file-content-prune-service";
-import { removeFileContentEntry } from "../slices/files/files-slice";
+import { removeFileContentEntry, loadFileContentRequested } from "../slices/files/files-slice";
 import { closeTab, initializeLayout } from "../slices/panel-layout/panel-layout-slice";
 import { setActiveWorkspaceId } from "../slices/workspace/workspace-slice";
 import { workspaceMounted } from "../slices/workspace-lifecycle/workspace-lifecycle-slice";
@@ -270,5 +270,31 @@ describe("file-content-prune-service", () => {
     const dispatched = (api as any)._dispatchedActions;
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0]).toEqual(removeFileContentEntry("ws-1", "src/old.ts"));
+  });
+
+  it("prunes entry created via loadFileContentRequested for path not open in any tab", () => {
+    // Start with no files open, no content entries
+    const state = createMockState("ws-1", [], []);
+    const api = createMockAPI(state);
+    const middleware = createFileContentPruneService()(api);
+
+    const next = vi.fn((action) => {
+      // Simulate the reducer upserting a file-content entry on loadFileContentRequested
+      if (action.type === loadFileContentRequested.type) {
+        const newState = createMockState("ws-1", [], ["src/background.ts"]);
+        (api as any)._updateState(newState);
+      }
+      return action;
+    });
+
+    // Load a file that is NOT open in any tab (e.g., background read by FilesReadService)
+    const action = loadFileContentRequested("ws-1", "src/background.ts", "/abs/background.ts");
+    middleware(next)(action);
+
+    expect(next).toHaveBeenCalledWith(action);
+    // The middleware should immediately prune src/background.ts since it's not open in any tab
+    const dispatched = (api as any)._dispatchedActions;
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0]).toEqual(removeFileContentEntry("ws-1", "src/background.ts"));
   });
 });
