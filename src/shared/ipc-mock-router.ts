@@ -246,8 +246,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
     'banner:fetch',
     { success: false, error: 'Promotional banners are not available in this build' },
   ],
-  // The interaction-gated install arm of the auto-updater above. The
-
   // AddRemoteSetupModal's SSH host/key/agent discovery probes (fired when the
   // add-remote modal opens) and its Test Connection action. SSH config, keys
   // and the agent live on the machine running the legacy Electron main
