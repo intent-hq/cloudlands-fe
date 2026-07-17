@@ -1767,39 +1767,7 @@ export const PanelLayoutSaveSchema = z.object({
   }),
 });
 
-// ============================================================================
-// Testing Schemas
-// ============================================================================
 
-export const TestingRunTestsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  testFiles: z.array(z.string()).optional(),
-  testPattern: z.string().optional(),
-  coverage: z.boolean().optional(),
-  watch: z.boolean().optional(),
-  timeout: z.number().optional(),
-});
-
-export const TestingRunLintSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  files: z.array(z.string()).optional(),
-  fix: z.boolean().optional(),
-});
-
-export const TestingRunBuildSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  target: z.string().optional(),
-  watch: z.boolean().optional(),
-  production: z.boolean().optional(),
-});
-
-export const TestingStopProcessSchema = z.object({
-  processId: z.string().min(1, 'Process ID is required'),
-});
-
-export const TestingGetProcessesSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
 
 // ============================================================================
 // Memories Schemas
