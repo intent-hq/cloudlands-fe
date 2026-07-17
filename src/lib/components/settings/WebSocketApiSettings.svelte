@@ -4,12 +4,12 @@
    * WebSocket API Settings Component
    *
    * Restored from commit 27293564, rewired to use AppClient + daemon RPCs:
-   * - settings.update with server.wsApi.enabled / server.discovery.enabled
+   * - settings.update with server.wsApi.enabled
    * - server.pairingInfo for QR code + pairing details
    * - server.rotateToken for token regeneration
    *
    * Handles error states (failed start rolls back setting, INTENTD_AUTH_TOKEN
-   * blocks rotation, -32001 on remote calls). Keeps FE-side discovery countdown.
+   * blocks rotation, -32001 on remote calls).
    *
    * This component directly calls appClient methods per the restored pattern from
    * commit 27293564. The WebSocket API settings are transient UI state that do not
@@ -37,10 +37,6 @@
   let _hostname = $state('');
   let loading = $state(true);
   let regenerating = $state(false);
-  let discoveryEnabled = $state(false);
-  let discoveryCountdown = $state<string | null>(null);
-  let discoveryExpiresAt = $state<number | null>(null);
-  let discoveryCountdownNow = $state<number | null>(null);
 
   // Port editing state
   let persistedPort = $state<number>(5181); // persisted setting value
@@ -51,7 +47,6 @@
   let showQr = $state(false);
   let qrDataUrl = $state('');
   let qrTimer: ReturnType<typeof setTimeout> | null = null;
-  let countdownInterval: ReturnType<typeof setInterval> | null = null;
 
   const maskedToken = $derived(
     token ? '•'.repeat(Math.max(0, token.length - 8)) + token.slice(-8) : '',
@@ -67,10 +62,8 @@
       const settings = await appClient.settings.list();
       const wsApiEnabled = settings.find((s: { path: string; value: unknown }) => s.path === 'server.wsApi.enabled');
       const wsApiPort = settings.find((s: { path: string; value: unknown }) => s.path === 'server.wsApi.port');
-      const discoveryEnabledSetting = settings.find((s: { path: string; value: unknown }) => s.path === 'server.discovery.enabled');
 
       enabled = wsApiEnabled?.value === true;
-      discoveryEnabled = discoveryEnabledSetting?.value === true;
 
       // Load persisted port (always, not only when enabled)
       if (typeof wsApiPort?.value === 'number') {
@@ -181,58 +174,6 @@
     }
   }
 
-  async function handleDiscoveryToggle(checked: boolean) {
-    try {
-      await appClient.settings.update([
-        { path: 'server.discovery.enabled', value: checked },
-      ]);
-      discoveryEnabled = checked;
-      if (checked) {
-        // Start 5-minute countdown
-        discoveryExpiresAt = Date.now() + 5 * 60 * 1000;
-        startCountdown();
-      } else {
-        stopCountdown();
-      }
-    } catch (error) {
-      toast.error(`Failed to toggle discovery: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  function startCountdown() {
-    stopCountdown();
-    discoveryCountdownNow = Date.now();
-    countdownInterval = setInterval(() => {
-      discoveryCountdownNow = Date.now();
-      if (discoveryExpiresAt && discoveryCountdownNow >= discoveryExpiresAt) {
-        stopCountdown();
-        discoveryEnabled = false;
-      }
-    }, 1000);
-  }
-
-  function stopCountdown() {
-    if (countdownInterval) {
-      clearInterval(countdownInterval);
-      countdownInterval = null;
-    }
-    discoveryCountdownNow = null;
-    discoveryExpiresAt = null;
-  }
-
-  $effect(() => {
-    const remaining = discoveryExpiresAt && discoveryCountdownNow
-      ? Math.max(0, Math.ceil((discoveryExpiresAt - discoveryCountdownNow) / 1000))
-      : null;
-    if (remaining !== null) {
-      const minutes = Math.floor(remaining / 60);
-      const seconds = remaining % 60;
-      discoveryCountdown = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    } else {
-      discoveryCountdown = null;
-    }
-  });
-
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(token);
@@ -283,7 +224,6 @@
 
   onDestroy(() => {
     if (qrTimer) clearTimeout(qrTimer);
-    if (countdownInterval) clearInterval(countdownInterval);
   });
 
 </script>
@@ -424,28 +364,6 @@
         <p class="text-xs text-amber-500/90">
           ⚠ Keep this token secret. Anyone with it can access your workspaces.
         </p>
-      </section>
-
-      <!-- Network Discovery -->
-      <section class="px-6 py-5">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-sm font-medium text-foreground">Network discovery</p>
-            <p class="text-xs text-subtle mt-1">
-              Advertise on your local network so mobile apps can find Intent automatically
-              {#if discoveryCountdown}
-                <span class="text-amber-500">· auto-off in {discoveryCountdown}</span>
-              {/if}
-            </p>
-          </div>
-          <Toggle
-            pressed={discoveryEnabled}
-            onclick={() => handleDiscoveryToggle(!discoveryEnabled)}
-            variant="indicator"
-            size="xs"
-            class="mb-auto"
-          />
-        </div>
       </section>
     </div>
   {/if}
