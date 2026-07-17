@@ -59,68 +59,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // getNoteAbsolutePath return null on a missing root and their copy/reveal
   // actions surface a "Could not resolve" toast instead of throwing.
   ['workspace:get-root', undefined],
-  // MCP "is the Context Engine configured in <CLI>?" probes (ProviderSelector
-  // loadMcpStatus, fired on settings-page load). The MCP setup/uninstall flows
-  // are deferred (no daemon arm); the caller folds absence to not-configured
-  // (`result?.configured ?? false`), so the buttons render as "Setup".
-  ['auggie:check-mcp-claude-code', undefined],
-  ['auggie:check-mcp-codex', undefined],
-  ['auggie:check-mcp-cortex', undefined],
-  ['auggie:check-mcp-droid', undefined],
-  ['auggie:check-mcp-opencode', undefined],
-  ['auggie:check-mcp-pi', undefined],
-  // The interaction-gated "Setup Context Engine" actions behind those probes
-  // (ProviderSelector handleSetupMcp). Setup edits another CLI's MCP config on
-  // the host — no daemon surface; the caller folds `success: false` into an
-  // error toast carrying this message.
-  [
-    'auggie:setup-mcp-claude-code',
-    {
-      success: false,
-      error:
-        'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host',
-    },
-  ],
-  [
-    'auggie:setup-mcp-codex',
-    {
-      success: false,
-      error:
-        'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host',
-    },
-  ],
-  [
-    'auggie:setup-mcp-cortex',
-    {
-      success: false,
-      error:
-        'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host',
-    },
-  ],
-  [
-    'auggie:setup-mcp-droid',
-    {
-      success: false,
-      error:
-        'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host',
-    },
-  ],
-  [
-    'auggie:setup-mcp-opencode',
-    {
-      success: false,
-      error:
-        'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host',
-    },
-  ],
-  [
-    'auggie:setup-mcp-pi',
-    {
-      success: false,
-      error:
-        'Context Engine setup is not available in this build — configure the MCP server in the CLI on the daemon host',
-    },
-  ],
   // Analytics identity probe (identifyUser). The daemon has no Augment
   // user/session surface; the caller requires `success && data.id` and
   // try/catches, so identify simply never fires — the same graceful skip as a
