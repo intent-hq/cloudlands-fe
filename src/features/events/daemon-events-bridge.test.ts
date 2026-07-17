@@ -3474,7 +3474,7 @@ describe('daemonEventsBridge (STAB-22 — agent:message triggers transcript hydr
     expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('agent:message with role=user and missing messageId triggers loadChatTranscript', async () => {
+  it('agent:message with role=user and messageId not in session triggers loadChatTranscript', async () => {
     // Seed a session with one existing user message
     const existingMessage: AgentMessage = {
       id: 'msg-existing',
@@ -3489,7 +3489,7 @@ describe('daemonEventsBridge (STAB-22 — agent:message triggers transcript hydr
     // New user message with a different messageId (not in transcript)
     handler(notification('agent:message', { agentId: AGENT, messageId: 'msg-new', role: 'user' }));
 
-    // Should call loadChatTranscript because messageId is not present
+    // Should call loadChatTranscript because messageId is not present in session
     expect(loadChatTranscriptSpy).toHaveBeenCalledWith(AGENT);
     expect(loadChatTranscriptSpy).toHaveBeenCalledTimes(1);
   });

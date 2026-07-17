@@ -1557,7 +1557,7 @@ function handleNotification(method: string, params: unknown): void {
   // tab was never opened. The event payload is { agentId, messageId, role }.
   // Guard: only load if the session has no messages yet (avoid redundant fetches
   // for already-hydrated transcripts).
-  // QUEUED-MESSAGES: also handle role="user" — if the session exists and its
+  // QUEUED-MESSAGES: also handle role="user" — if the session is missing or its
   // messages do not contain the messageId, refetch to fold in dequeued and
   // agent-to-agent messages.
   if (type === 'agent:message') {
