@@ -2,11 +2,10 @@
  * Live AppClient composition.
  *
  * Most domains reach the live intentd daemon via JSON-RPC (`backend:request`/
- * `backend:listen`). Exceptions: `skills` uses the FE-main IPC channel `skills:list`
- * to read from the skills-loader (SKILL.md frontmatter scanning, no daemon surface);
- * `browser` reads/writes `recentUrls` from localStorage (FE-local state per
- * IMPLEMENTATION_SPEC §9 Group C, no daemon persistence); `system` uses JSON-RPC
- * `system.status` and calls `autoUpdateClient` for update state.
+ * `backend:listen`). Exceptions: `browser` reads/writes `recentUrls` from
+ * localStorage (FE-local state per IMPLEMENTATION_SPEC §9 Group C, no daemon
+ * persistence); `system` uses JSON-RPC `system.status` and calls `autoUpdateClient`
+ * for update state.
  *
  * Live domains: `workspaces` (Wave 6.0); `agents`, `notes`, `tasks`, `comments`,
  * `git`, `files` (Wave 6.1); `terminals`, `settings` (Wave 10); `specialists`
@@ -14,7 +13,7 @@
  * `sentry.*`, PROTOCOL §5.27–5.29); `scripts` (`script.*`, PROTOCOL §5.8);
  * `setupScripts` (`workspace.*SetupScript` / `detectProjectType`, PROTOCOL §5.25);
  * `events` (`event.query`, PROTOCOL §5.10); `models` (`models.list`, PROTOCOL §5.30);
- * `system`, `skills`, `browser`, `chat` (INT-14).
+ * `skills` (`skill.list`, PROTOCOL §5.34); `system`, `browser`, `chat` (INT-14).
  */
 import type { AppClient } from "../app-client";
 import { LiveAgentsClient } from "./live-agents-client";
