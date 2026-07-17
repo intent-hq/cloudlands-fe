@@ -21,10 +21,12 @@ const { autoUpdater } = electronUpdater;
 const logger = new Logger('AutoUpdateService');
 
 /**
- * Internal state object to hold the installing flag.
- * Wrapped in an object so the event handler can mutate it.
+ * Flag indicating the app is quitting to install an update.
+ * NOTE: With autoInstallOnAppQuit=true this is always false because electron-updater
+ * installs on next launch rather than via quitAndInstall(), so there's no reliable
+ * event to detect update installs. The flag exists for API compatibility but has no effect.
  */
-const installState = { isInstalling: false };
+export let isInstallingUpdate = false;
 
 // Storage key for beta updates setting (must match renderer store)
 const BETA_UPDATES_STORAGE_KEY = 'betaUpdatesEnabled';
@@ -79,14 +81,6 @@ class AutoUpdateService {
     autoUpdater.autoDownload = true; // Auto-download updates in background
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowDowngrade = false;
-
-    // Track when app quits to install (autoInstallOnAppQuit triggers this via app.quit())
-    app.once('before-quit', () => {
-      // Only set the flag if an update has been downloaded
-      if (this.state.status === 'downloaded') {
-        installState.isInstalling = true;
-      }
-    });
 
     // Load persisted channel setting from electron-store
     await this.loadChannelFromSettings();
@@ -412,9 +406,4 @@ class AutoUpdateService {
 
 export const autoUpdateService = new AutoUpdateService();
 
-/**
- * Check if the app is quitting to install an update.
- * When true, the window-all-closed handler should not delete window-sessions.json.
- * Set by electron-updater's before-quit-for-update event when autoInstallOnAppQuit is true.
- */
-export const isInstallingUpdate = () => installState.isInstalling;
+

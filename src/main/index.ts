@@ -1807,7 +1807,7 @@ app.on('window-all-closed', async () => {
   // fresh window instead of restoring every window the user just closed.
   // Guard with !isShuttingDown so that an intentional quit (Cmd+Q) — which
   // already saved sessions in before-quit — doesn't lose them.
-  if (process.platform === 'darwin' && !isShuttingDown && !isInstallingUpdate()) {
+  if (process.platform === 'darwin' && !isShuttingDown && !isInstallingUpdate) {
     try {
       const sessionsPath = getWindowSessionsPath();
       if (fs.existsSync(sessionsPath)) {
@@ -1831,7 +1831,7 @@ app.on('window-all-closed', async () => {
   // If the user cancels, re-open a fresh window so the app is still reachable
   // (on Windows/Linux there are no windows left) and return early without
   // tearing anything down or calling app.quit().
-  if (process.platform !== 'darwin' && !isShuttingDown && !isInstallingUpdate()) {
+  if (process.platform !== 'darwin' && !isShuttingDown && !isInstallingUpdate) {
     const proceed = await confirmQuitWithRunningAgents();
     if (!proceed) {
       logger.info('window-all-closed quit cancelled; re-opening a window');

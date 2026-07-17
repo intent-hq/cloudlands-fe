@@ -16,7 +16,6 @@ vi.mock('electron', () => ({
     getPath: () => testUserDataPath,
     getVersion: () => '2.0.0',
     on: vi.fn(),
-    once: vi.fn(),
   },
   BrowserWindow: vi.fn(),
   powerMonitor: {

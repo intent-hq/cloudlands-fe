@@ -2,7 +2,8 @@
  * Auto-Update Client
  *
  * Client-side API for interacting with the auto-update service.
- * Used by the renderer process to check for updates, download, and install.
+ * Provides manual update checks, channel selection, and state queries.
+ * Updates download and install automatically in the background.
  */
 
 import type { UpdateChannel, UpdateProgress, UpdateState } from './types';
