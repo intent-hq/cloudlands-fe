@@ -12,6 +12,7 @@ import { ACP_PROVIDERS } from '../../../shared/config/provider-config';
 import { Logger } from '../../../shared/logger';
 import { hostExec } from '../../../shared/main/host-exec';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
+import { getBackendClient } from '../../backend/main/backend.ipc';
 import { findAuggiePathAsync } from '../../auggie/main/auggie.ipc';
 import {
   clearClaudeCodeCache,
@@ -45,11 +46,12 @@ import {
 } from '../../droid/main/droid-resolver';
 import { probeDroidAcp } from '../../droid/main/droid-acp-probe';
 import type {
+  NpxStatus,
   ProviderAvailabilityResult,
   ProviderStatus,
 } from '$shared/types/provider-availability';
 
-export type { ProviderAvailabilityResult, ProviderStatus };
+export type { NpxStatus, ProviderAvailabilityResult, ProviderStatus };
 
 const logger = new Logger('ProviderAvailability');
 
@@ -286,6 +288,45 @@ async function checkProviderAuth(
 }
 
 /**
+ * Discovery response from intentd's host.providerDiscovery (PROTOCOL §5.14)
+ */
+interface ProviderDiscoveryResponse {
+  providers: Array<{
+    id: string;
+    displayName: string;
+    command: string;
+    installed: boolean;
+    resolvedPath?: string | null;
+    gatedOff?: string | null;
+    hasNpxFallback: boolean;
+  }>;
+  npx: {
+    resolvedPath: string | null;
+    version: string | null;
+    versionOk: boolean;
+  };
+}
+
+/**
+ * Call intentd's host.providerDiscovery to get base availability + npx status.
+ * Returns null on RPC failure (the caller degrades to empty/unavailable state).
+ */
+async function callProviderDiscovery(): Promise<ProviderDiscoveryResponse | null> {
+  try {
+    const result = await getBackendClient().request<ProviderDiscoveryResponse>(
+      'host.providerDiscovery',
+      {},
+    );
+    return result;
+  } catch (error) {
+    logger.warn('host.providerDiscovery RPC failed; degrading to empty availability', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
  * Get aggregated availability status for all providers
  */
 export async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
@@ -320,8 +361,35 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
   clearPiCache();
   clearDroidCache();
 
-  // Check all providers in parallel for faster startup
-  // For hidden providers, skip the actual check and return unavailable
+  // Call host.providerDiscovery for base availability + npx status
+  const discoveryResponse = await callProviderDiscovery();
+  const npxStatus: NpxStatus | undefined = discoveryResponse?.npx;
+
+  // Map discovery providers by ID for quick lookup
+  const discoveryById = new Map<string, ProviderDiscoveryResponse['providers'][0]>();
+  if (discoveryResponse?.providers) {
+    for (const p of discoveryResponse.providers) {
+      discoveryById.set(p.id, p);
+    }
+  }
+
+  // Helper to build ProviderStatus from discovery + supplement with local checks
+  const makeProviderStatus = (
+    providerId: string,
+    fallback: () => Promise<ProviderStatus>,
+  ): Promise<ProviderStatus> => {
+    const disc = discoveryById.get(providerId);
+    if (!disc) {
+      return fallback();
+    }
+    // hasNpxFallback from daemon's discovery response
+    return Promise.resolve({
+      available: disc.installed,
+      hasNpxFallback: disc.hasNpxFallback,
+    });
+  };
+
+  // Check all providers in parallel; for hidden providers skip the check entirely
   const isCortexHidden = hiddenProviders.includes('cortex');
   const isMockHidden = hiddenProviders.includes('mock');
   const [
@@ -334,18 +402,18 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     piResult,
     droidResult,
   ] = await Promise.all([
-    checkAuggieAvailability(),
-    checkClaudeCodeAvailability(),
-    checkCodexAvailability(),
+    makeProviderStatus('auggie', checkAuggieAvailability),
+    makeProviderStatus('claude-code', checkClaudeCodeAvailability),
+    makeProviderStatus('codex', checkCodexAvailability),
     isCortexHidden
       ? Promise.resolve({ available: false } as ProviderStatus)
-      : checkCortexAvailability(),
+      : makeProviderStatus('cortex', checkCortexAvailability),
     isMockHidden
       ? Promise.resolve({ available: false } as ProviderStatus)
-      : checkMockAvailability(),
-    checkOpenCodeAvailability(),
-    checkPiAvailability(),
-    checkDroidAvailability(),
+      : checkMockAvailability(), // mock stays local
+    makeProviderStatus('opencode', checkOpenCodeAvailability),
+    makeProviderStatus('pi', checkPiAvailability),
+    makeProviderStatus('droid', checkDroidAvailability),
   ]);
 
   // Run auth checks in parallel for available providers.
@@ -410,6 +478,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       droid: droidResult,
     },
     hiddenProviders,
+    npx: npxStatus,
   };
 
   logger.info('Provider availability check complete', {

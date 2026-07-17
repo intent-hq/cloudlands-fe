@@ -11,6 +11,7 @@
   faArrowUpRightFromSquare,
   faArrowsRotate,
   faPlug,
+  faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { cn } from '$lib/utils';
@@ -36,6 +37,7 @@
     installCommand: string;
     loginCommand: string;
     description: string;
+    hasNpxFallback: boolean;
   }
 
   export interface ProviderBrandColors {
@@ -44,6 +46,8 @@
     isLight?: boolean;
   }
 
+  import type { NpxStatus } from '$shared/types/provider-availability';
+
   interface Props {
     provider: ProviderCardData;
     brand: ProviderBrandColors;
@@ -51,6 +55,8 @@
      *  Only meaningful when the card is ready (installed + authenticated).
      *  Renders a full-card-width "SELECTED" banner across the top of the card. */
     selected?: boolean;
+    /** npx availability status for npx-fallback hint */
+    npxStatus: NpxStatus | null | undefined;
     /** Whether auggie needs a version update */
     auggieNeedsUpdate: boolean;
     /** Whether an auggie action (install/login) is in progress */
@@ -79,6 +85,7 @@
     provider,
     brand,
     selected = false,
+    npxStatus,
     auggieNeedsUpdate,
     auggieActionInProgress,
     auggieInstructions,
@@ -106,6 +113,17 @@
   const cardClickable = $derived(
     (provider.id === 'auggie' && needsAction) ||
       (!ready && !provider.statusLoading && provider.id !== 'auggie' && !!provider.docsUrl),
+  );
+
+  // Show npx hint when: provider has npx fallback, binary not installed, npx missing or too old
+  const showNpxMissingHint = $derived(
+    provider.hasNpxFallback && needsInstall && npxStatus?.resolvedPath === null,
+  );
+  const showNpxOldHint = $derived(
+    provider.hasNpxFallback &&
+      needsInstall &&
+      npxStatus?.resolvedPath !== null &&
+      npxStatus?.versionOk === false,
   );
 
   function openDocs(url: string, e: Event) {
@@ -298,6 +316,26 @@
           {/if}
         </div>
       </div>
+
+      <!-- npx requirement hint for shim providers when binary not installed + npx missing/old -->
+      {#if showNpxMissingHint}
+        <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+          <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
+          <span>
+            Requires Node.js (npx) — <button
+              type="button"
+              class="underline hover:no-underline"
+              onclick={() => shell.open('https://nodejs.org')}
+            >install from nodejs.org</button>
+          </span>
+        </div>
+      {:else if showNpxOldHint}
+        <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+          <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
+          <span>npm/npx too old — npm 7+ required</span>
+        </div>
+      {/if}
+
       <!-- Auggie instructions panel (rendered from IPC data.instructions/data.command) -->
       {#if provider.id === 'auggie' && auggieInstructions && auggieInstructions.length > 0}
         <div class="mt-2">
