@@ -533,4 +533,110 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
     expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("still send");
   });
+
+  // -------------------------------------------------------------------------
+  // STAB-64: queuedMessageId triggers queue removal before the lifecycle send
+  // -------------------------------------------------------------------------
+
+  it("STAB-64: queuedMessageId triggers queue removal BEFORE the lifecycle send (correct wire ordering)", async () => {
+    // Regression test for STAB-64: when user clicks "Send now" on a queued
+    // message, ChatPanel dispatches sendMessage with queuedMessageId. The
+    // middleware MUST remove the queued entry (optimistic local delete +
+    // agent.removeQueuedMessage wire call) and AWAIT it BEFORE dispatching
+    // the lifecycle send with priority: "interrupt". Without the await, the
+    // daemon's interrupt turn completes, queue drains, and the same message
+    // is delivered a second time.
+    const seeded: QueuedMessage[] = [
+      { id: "q-replay", content: "send me now", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
+    ];
+    appStore.dispatch(replaceAgentQueue(AGENT, seeded));
+
+    appStore.dispatch(
+      sendMessage(AGENT, {
+        wsId: WS,
+        text: "send me now",
+        queuedMessageId: "q-replay",
+        forceSubmit: true,
+        skipQueueCheck: true,
+      }),
+    );
+    await flush();
+    await flush();
+
+    // Order assertion: agent.removeQueuedMessage MUST be called BEFORE lifecycle.sendMessage
+    expect(agentsRemoveQueued).toHaveBeenCalledTimes(1);
+    expect(agentsRemoveQueued).toHaveBeenCalledWith(AGENT, "q-replay");
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+
+    // Critical: removal call order MUST be < lifecycle send call order
+    expect(agentsRemoveQueued.mock.invocationCallOrder[0]).toBeLessThan(
+      lifecycleSendMessage.mock.invocationCallOrder[0],
+    );
+
+    // The lifecycle send must still pass priority: "interrupt"
+    const optionsArg = lifecycleSendMessage.mock.calls[0]?.[3] as
+      | { priority?: string }
+      | undefined;
+    expect(optionsArg?.priority).toBe("interrupt");
+
+    // The local queue must be cleared immediately (optimistic removal)
+    expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
+  });
+
+  it("STAB-64: queue removal failure does NOT block the lifecycle send (removal is idempotent)", async () => {
+    // Even if the daemon reports a non-success or the seam throws, the
+    // middleware must log it and proceed with the send — the worst case
+    // matches today's behavior (duplicate delivery), and the BE's idempotency
+    // contract means a failed removal cannot corrupt state.
+    const seeded: QueuedMessage[] = [
+      { id: "q-fail", content: "fail and send", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
+    ];
+    appStore.dispatch(replaceAgentQueue(AGENT, seeded));
+    agentsRemoveQueued.mockImplementationOnce(() =>
+      Promise.resolve({ success: false, error: "not found" }),
+    );
+
+    appStore.dispatch(
+      sendMessage(AGENT, {
+        wsId: WS,
+        text: "fail and send",
+        queuedMessageId: "q-fail",
+        forceSubmit: true,
+        skipQueueCheck: true,
+      }),
+    );
+    await flush();
+    await flush();
+
+    // The removal was attempted
+    expect(agentsRemoveQueued).toHaveBeenCalledWith(AGENT, "q-fail");
+
+    // The lifecycle send MUST still happen
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("fail and send");
+  });
+
+  it("STAB-64: queue removal throwing does NOT block the lifecycle send", async () => {
+    const seeded: QueuedMessage[] = [
+      { id: "q-throw", content: "throw and send", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
+    ];
+    appStore.dispatch(replaceAgentQueue(AGENT, seeded));
+    agentsRemoveQueued.mockImplementationOnce(() => Promise.reject(new Error("ipc boom")));
+
+    appStore.dispatch(
+      sendMessage(AGENT, {
+        wsId: WS,
+        text: "throw and send",
+        queuedMessageId: "q-throw",
+        forceSubmit: true,
+        skipQueueCheck: true,
+      }),
+    );
+    await flush();
+    await flush();
+
+    expect(agentsRemoveQueued).toHaveBeenCalledWith(AGENT, "q-throw");
+    expect(lifecycleSendMessage).toHaveBeenCalledTimes(1);
+    expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("throw and send");
+  });
 });
