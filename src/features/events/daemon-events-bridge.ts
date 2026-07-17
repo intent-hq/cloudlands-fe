@@ -927,6 +927,22 @@ function handlePrEvent(
 }
 
 /**
+ * `workspace:activity-changed` (PROTOCOL §6.5 / §10.1) carries the
+ * self-sufficient payload `{ workspaceId, activity }` — the daemon emits this
+ * only on the `Idle ↔ AgentRunning` edge (count `0 ↔ 1` transitions), so the
+ * FE mirrors the new value directly into the workspace entity without a
+ * follow-up `workspace.get`. The wire value matches the FE type exactly
+ * (`"idle" | "agent_running"`), so no mapping is needed.
+ */
+function handleActivityChangedEvent(event: WorkspaceEvent, workspaceId: string): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const activity = data.activity;
+  if (activity !== 'idle' && activity !== 'agent_running') return;
+  appStore.dispatch(bulkUpdateWorkspaceEntities([updateWorkspaceEntity(workspaceId, { activity })]));
+}
+
+/**
  * `workspace:updated` (PROTOCOL §6.5 / §7) carries `{ workspaceId, changes }`
  * where `changes` is the applied `WorkspaceUpdate` delta — the fields the
  * caller actually asked to mutate, with `Option::is_none` fields skipped in
@@ -1298,6 +1314,12 @@ function handleNotification(method: string, params: unknown): void {
   if (type === 'workspace:updated') {
     handleWorkspaceUpdatedEvent(event, workspaceId);
   }
+  // `workspace:activity-changed` (§6.5 / §10.1) — merge the new activity
+  // value onto the workspace entity so the sidebar running indicator / grouping
+  // updates live without a refetch. Side effect, never an early return.
+  if (type === 'workspace:activity-changed') {
+    handleActivityChangedEvent(event, workspaceId);
+  }
 
   // Legacy mock-IPC re-emit (side effect, never an early return) — components
   // still listening on the legacy channels get the daemon event too.
@@ -1493,6 +1515,10 @@ const BRIDGE_SUBSCRIBE_EVENT_TYPES = [
   // list migrated off FE localStorage; the daemon emits the full new items
   // list so the FE folds it via `hydrateContextItems` in the bridge.
   'workspace:context-changed',
+  // `workspace:activity-changed` (§6.5 / §10.1) — self-sufficient activity
+  // state changes (idle ↔ agent_running) so the FE can update the workspace
+  // entity without a refetch.
+  'workspace:activity-changed',
   'workspace:updated',
   'workspace:created',
   'workspace:deleted',
