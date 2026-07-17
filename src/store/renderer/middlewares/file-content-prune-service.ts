@@ -23,8 +23,12 @@ import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import type { StoreState } from "../types";
 import {
   removeFileContentEntry,
+  loadFileContentRequested,
   loadFileContentSucceeded,
   loadFileContentFailed,
+  updateFileContent,
+  applyExternalFileContent,
+  saveFileContentRequested,
 } from "../slices/files/files-slice";
 import { setActiveWorkspaceId } from "../slices/workspace/workspace-slice";
 import {
@@ -168,9 +172,13 @@ const PRUNE_TRIGGER_ACTIONS = new Set<string>([
   updateFileTabPath.type,
   consumePendingFocus.type,
   clearPanelLayout.type,
-  // File actions that can add new file-content entries
+  // File actions that can add/modify file-content entries (via upsertFileEntry)
+  loadFileContentRequested.type,
   loadFileContentSucceeded.type,
   loadFileContentFailed.type,
+  updateFileContent.type,
+  applyExternalFileContent.type,
+  saveFileContentRequested.type,
 ]);
 
 // ============================================================================
