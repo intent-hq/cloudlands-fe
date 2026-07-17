@@ -323,14 +323,14 @@ function refreshChanges(wsId: string): void {
  * the results into `olderCommits`.
  *
  * @param wsId - Workspace ID
- * @param beforeSha - Optional SHA to use as pagination anchor (from boundarySha or last older commit)
- * @param limit - Optional limit on commit count (defaults to daemon-side default)
+ * @param _beforeSha - Optional SHA to use as pagination anchor (from boundarySha or last older commit) [NOT YET USED]
+ * @param _limit - Optional limit on commit count (defaults to daemon-side default) [NOT YET USED]
  */
-function loadOlderCommits(wsId: string, beforeSha?: string, limit?: number): void {
-  // Note: beforeSha and limit are currently not forwarded to the daemon API
+function loadOlderCommits(wsId: string, _beforeSha?: string, _limit?: number): void {
+  // Note: _beforeSha and _limit are currently not forwarded to the daemon API
   // because the wire shape (§5.19 file-tracking.loadCommits) only supports
   // { workspaceId, includeOlder }. When pagination support is added to the
-  // wire, this handler will forward beforeSha/limit.
+  // wire, this handler will forward these params.
   coalesce(`olderCommits:${wsId}`, async () => {
     appStore.dispatch(setLoadingOlderCommits(wsId, true));
     try {
