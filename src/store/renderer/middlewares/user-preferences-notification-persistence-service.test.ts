@@ -299,6 +299,9 @@ describe("userPreferencesNotificationPersistenceMiddleware", () => {
         expect(backendRequest).toHaveBeenCalledTimes(4);
       });
 
+      // Flush microtasks to ensure Promise.all and dispatches have settled
+      await Promise.resolve();
+
       // Advance past the debounce window to ensure no echo-write is scheduled
       await vi.runAllTimersAsync();
 
