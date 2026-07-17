@@ -54,6 +54,7 @@ import { createUnreadTrackingPersistenceMiddleware } from "./middlewares/unread-
 import { createTabStatePersistenceMiddleware } from "./middlewares/tab-state-persistence-service";
 import { createSidebarNavPersistenceMiddleware } from "./middlewares/sidebar-nav-persistence-service";
 import { createBrowserPersistenceMiddleware } from "./middlewares/browser-persistence-service";
+import { createPanelLayoutPersistenceMiddleware } from "./middlewares/panel-layout-persistence-service";
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
 import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
@@ -287,6 +288,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // hydrate from localStorage on workspace mount and persist on change
     // (`addRecentUrl` / `updateUrlMetadata` / `removeRecentUrl` / `clearRecentUrls`).
     createBrowserPersistenceMiddleware(),
+    // Give the (post-saga) panel-layout persistence triggers real handlers so
+    // per-workspace panel tabs + split layouts hydrate from localStorage on
+    // `workspaceMounted` (once per session), persist on layout-mutating actions,
+    // and save layout history to disk (debounced) via IPC. Retroactively
+    // restores the active workspace's layout on middleware creation.
+    createPanelLayoutPersistenceMiddleware(),
     // Give the (post-saga) theme triggers (`requestThemePreferenceChange` /
     // `selectThemePreset` / `importCustomTheme` / `clearThemeCustomization`)
     // real handlers so the Settings theme toggle and ColorThemeSettings
