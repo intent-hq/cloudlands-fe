@@ -15,7 +15,12 @@
   buildRepoPathLookup,
   getGroupKey,
 } from '$lib/components/workspace/utils/workspace-grouping';
-  import type { WorkspaceDisplayStatus } from '$lib/components/workspace/WorkspaceStatusIcon.svelte';
+  import {
+  getWorkspaceGroupingStatus,
+  isWorkspaceRunning,
+  type GroupingStatus,
+  type WorkspaceDisplayStatus,
+} from '$lib/components/workspace/utils/workspace-status-grouping';
   import { onMount } from 'svelte';
   import { isPRMergeable as checkPRMergeable } from '$lib/utils/pr-status';
   import Header from '$lib/components/ui/Header.svelte';
@@ -188,8 +193,6 @@
     });
   });
 
-  type GroupingStatus = WorkspaceDisplayStatus | 'idle';
-
   const statusLabels: Record<GroupingStatus, string> = {
     idle: 'Idle',
     not_started: 'No Code Changes',
@@ -212,21 +215,9 @@
 
   function getGroupingStatus(ws: Workspace): GroupingStatus {
     const baseStatus = getDisplayStatus(ws);
-
-    // PR states and complete always keep their status, never go to IDLE
-    if (baseStatus === 'pr_merged' || baseStatus === 'pr_open' ||
-        baseStatus === 'pr_ready' || baseStatus === 'complete') {
-      return baseStatus;
-    }
-
-    // For in_progress or not_started: if zero streaming agents, it's IDLE
     void $activeStreamsVersion$;
-    const hasActiveAgents = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id).length > 0;
-    if (!hasActiveAgents && (baseStatus === 'in_progress' || baseStatus === 'not_started')) {
-      return 'idle';
-    }
-
-    return baseStatus;
+    const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
+    return getWorkspaceGroupingStatus(ws, baseStatus, streamingAgentIds);
   }
 
   const groupedByStatus = $derived.by(() => {
@@ -243,7 +234,8 @@
 
   function _isRunning(ws: Workspace): boolean {
     void $activeStreamsVersion$;
-    return activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id).length > 0;
+    const streamingAgentIds = activeStreamsTracker.getStreamingAgentIdsForWorkspace(ws.id);
+    return isWorkspaceRunning(ws, streamingAgentIds);
   }
 
   function _getStreamingIds(ws: Workspace): string[] {

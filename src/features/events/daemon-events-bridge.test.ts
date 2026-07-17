@@ -243,6 +243,7 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
         'settings:changed',
         'workspace:tokenUsage-changed',
         'workspace:context-changed',
+        'workspace:activity-changed',
         'workspace:updated',
         'workspace:created',
         'workspace:deleted',
@@ -1391,6 +1392,7 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
         'settings:changed',
         'workspace:tokenUsage-changed',
         'workspace:context-changed',
+        'workspace:activity-changed',
         'workspace:updated',
         'workspace:created',
         'workspace:deleted',
@@ -3146,6 +3148,163 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
     expect(ws.title).toBe('Renamed');
     // Original seeded status ("Active") is preserved.
     expect(ws.status).toBe('Active');
+  });
+});
+
+describe('daemonEventsBridge (workspace:activity-changed → workspace slice)', () => {
+  const WS_ACT = 'ws-activity-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_ACT,
+        title: 'Activity ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{
+    activity?: 'idle' | 'agent_running';
+  }> {
+    const { getItem } =
+      await import('@augmentcode/ag-redux-toolkit/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_ACT) ?? {}) as never;
+  }
+
+  function activityChangedNotification(activity: 'idle' | 'agent_running') {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-activity-1',
+          workspaceId: WS_ACT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:activity-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_ACT,
+            activity,
+          },
+        },
+      },
+    };
+  }
+
+  it('subscribes to workspace:activity-changed in the bridge firehose filter', async () => {
+    await primeBridge();
+    expect(backendRequestSpy).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: expect.arrayContaining(['workspace:activity-changed']),
+    });
+  });
+
+  it('merges activity=agent_running onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(activityChangedNotification('agent_running'));
+
+    const ws = await readWorkspace();
+    expect(ws.activity).toBe('agent_running');
+  });
+
+  it('merges activity=idle onto the workspace entity', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Set to agent_running first, then idle
+    handler(activityChangedNotification('agent_running'));
+    let ws = await readWorkspace();
+    expect(ws.activity).toBe('agent_running');
+
+    handler(activityChangedNotification('idle'));
+    ws = await readWorkspace();
+    expect(ws.activity).toBe('idle');
+  });
+
+  it('is a no-op when the activity value is invalid', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // First set a valid value
+    handler(activityChangedNotification('idle'));
+    let ws = await readWorkspace();
+    expect(ws.activity).toBe('idle');
+
+    // Try to set an invalid value
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-activity-bad',
+          workspaceId: WS_ACT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:activity-changed',
+          actor: { type: 'system' },
+          data: {
+            workspaceId: WS_ACT,
+            activity: 'invalid_value',
+          },
+        },
+      },
+    });
+
+    // Should still be idle
+    ws = await readWorkspace();
+    expect(ws.activity).toBe('idle');
+  });
+
+  it('is a no-op when data or activity is missing', async () => {
+    await seedWorkspace();
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Set initial activity to idle
+    handler(activityChangedNotification('idle'));
+    let ws = await readWorkspace();
+    expect(ws.activity).toBe('idle');
+
+    // Try to send an event with missing data
+    handler({
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-activity-no-data',
+          workspaceId: WS_ACT,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'workspace:activity-changed',
+          actor: { type: 'system' },
+          data: {},
+        },
+      },
+    });
+
+    // Activity should remain unchanged (still idle)
+    ws = await readWorkspace();
+    expect(ws.activity).toBe('idle');
   });
 });
 

@@ -13,14 +13,7 @@
   draw,
   scale,
 } from 'svelte/transition';
-
-  export type WorkspaceDisplayStatus =
-    | 'not_started'
-    | 'in_progress'
-    | 'complete'
-    | 'pr_ready'
-    | 'pr_open'
-    | 'pr_merged';
+  import type { WorkspaceDisplayStatus } from '$lib/components/workspace/utils/workspace-status-grouping';
 
   let {
     status,
