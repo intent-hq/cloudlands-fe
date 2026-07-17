@@ -83,7 +83,6 @@
 
   import { selectWorkspaceSetupTerminal } from '$store/renderer/slices/terminals/terminals-selectors';
 
-  import { setChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import {
   sendMessage,
   initializeChatRequested,
@@ -102,7 +101,6 @@
   selectChatStatusEvents,
   selectChatStreamingStartTime,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
-  import { selectChatDraft } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { selectWorkspaceNavigationMainPanel } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
   import { appClient } from '$lib/client';
 
@@ -937,39 +935,35 @@
     }
   });
 
-  // Restore draft input from transient store on mount
+  // Restore draft from backend on mount
   let draftRestored = $state(false);
   $effect(() => {
     if (draftRestored || !workspace || !agentId) return;
-    const savedDraft = untrack(() =>
-      selectChatDraft.select(appStore.state, workspace.id, agentId),
-    );
-    if (savedDraft) {
-      // Use untrack to avoid creating a dependency on inputValue
-      const currentInputValue = untrack(() => inputValue);
-      if (!currentInputValue) {
-        inputValue = savedDraft;
-        // Also update the input component if it exists
+
+    untrack(async () => {
+      const draft = await appClient.drafts.get(workspace.id, agentId);
+      if (draft?.text && !inputValue) {
+        inputValue = draft.text;
         setTimeout(() => {
-          inputComponent?.setContent?.(savedDraft);
+          inputComponent?.setContent?.(draft.text);
         }, 50);
       }
-    }
+    });
+
     draftRestored = true;
   });
 
-  // Sync input value to transient store when it changes
-  // Use a non-reactive variable to track previous value (avoids circular dependency)
-  let previousSavedDraft = '';
+  // Save draft to backend (debounced)
+  let saveTimeoutId: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     if (!workspace || !agentId) return;
-    // Read inputValue to track it as a dependency
     const currentValue = inputValue;
-    // Only save if it actually changed from what we last saved
-    if (currentValue !== previousSavedDraft) {
-      previousSavedDraft = currentValue;
-      appStore.dispatch(setChatDraft(workspace.id, agentId, currentValue));
-    }
+
+    if (saveTimeoutId) clearTimeout(saveTimeoutId);
+
+    saveTimeoutId = setTimeout(() => {
+      appClient.drafts.set(workspace.id, agentId, currentValue);
+    }, 500); // 500ms debounce
   });
 
   // Reference to QueuedMessageList for programmatic editing via Up arrow
@@ -2397,7 +2391,7 @@
     resetHistoryNavigation();
   }
 
-  function performLocalSendCleanup(options: {
+  async function performLocalSendCleanup(options: {
     clearInput?: boolean;
     followBottom?: boolean;
     historyText?: string | null;
@@ -2410,6 +2404,10 @@
       contextItems = [];
       inputValue = '';
       inputComponent?.clear();
+      // Clear draft from backend when message is sent
+      if (workspace && agentId) {
+        await appClient.drafts.clear(workspace.id, agentId);
+      }
     }
 
     if (options.followBottom) {
