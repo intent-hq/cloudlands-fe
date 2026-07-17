@@ -12,6 +12,20 @@ export interface ProviderStatus {
    */
   authDetails?: string;
   error?: string;
+  /** Whether this provider supports npx fallback when binary is unresolved. */
+  hasNpxFallback?: boolean;
+}
+
+/**
+ * npx availability status for provider fallback spawning
+ */
+export interface NpxStatus {
+  /** Resolved absolute path to npx, when found. */
+  resolvedPath: string | null;
+  /** Version string from `npx --version`, when successfully probed. */
+  version: string | null;
+  /** Whether the version meets the minimum requirement (major >= 7). */
+  versionOk: boolean;
 }
 
 /**
@@ -31,4 +45,6 @@ export interface ProviderAvailabilityResult {
   };
   /** Provider IDs that are hidden because their required env var or feature code is not set */
   hiddenProviders: string[];
+  /** npx availability status for npx-fallback providers */
+  npx?: NpxStatus;
 }

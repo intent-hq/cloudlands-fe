@@ -5,7 +5,10 @@
  * Safe to import from any process.
  */
 
-import type { ProviderStatus as SharedProviderStatus } from '$shared/types/provider-availability';
+import type {
+  NpxStatus,
+  ProviderStatus as SharedProviderStatus,
+} from '$shared/types/provider-availability';
 
 export type ManagedInstallState = 'not_installed' | 'installing' | 'installed' | 'failed' | 'unsupported';
 
@@ -30,4 +33,6 @@ export type AgentAvailabilityState = {
   hasCheckedOnce: boolean;
   /** Terminal IDs spawned by install-command cards we're watching for refresh. */
   watchedTerminalIds: string[];
+  /** npx availability status for npx-fallback providers. */
+  npxStatus: NpxStatus | null;
 };

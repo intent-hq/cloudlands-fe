@@ -46,8 +46,10 @@ import {
   checkSingleProviderSuccess,
   ensureProvidersChecked,
   setAllProvidersLoading,
+  setNpxStatus,
 } from "$store/renderer/slices/agent-availability/agent-availability-slice";
 import type { ProviderStatus } from "$store/renderer/slices/agent-availability/agent-availability-types";
+import type { ProviderAvailabilityResult } from "$shared/types/provider-availability";
 
 const logger = createLogger("ProviderAvailabilityCheckService");
 
@@ -86,6 +88,21 @@ export function createProviderAvailabilityCheckMiddleware(): StoreMiddleware {
 
     inFlight = (async () => {
       try {
+        // First, call GET_AVAILABILITY to get npx status (plus aggregated
+        // provider availability from the daemon's host.providerDiscovery).
+        try {
+          const aggResult = await invoke<{
+            success: boolean;
+            data?: ProviderAvailabilityResult;
+            error?: string;
+          }>(PROVIDERS_CHANNELS.GET_AVAILABILITY);
+          if (aggResult?.success && aggResult.data?.npx) {
+            appStore.dispatch(setNpxStatus(aggResult.data.npx));
+          }
+        } catch (error) {
+          logger.warn("GET_AVAILABILITY call failed; npx status unavailable", { error });
+        }
+
         // Fan out one probe per provider in parallel and let each dispatch
         // its own success/failure as soon as it settles — fast probes must
         // not wait on slow ones. `allSettled` prevents a single rejection
