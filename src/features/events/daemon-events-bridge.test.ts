@@ -39,8 +39,9 @@ vi.mock('$lib/client/live/backend-transport', () => ({
     };
   },
   backendRequest: (method: string, params?: unknown) => {
-    backendRequestSpy(method, params);
-    return Promise.resolve({ subscriptionId: 'sub-1' });
+    const result = backendRequestSpy(method, params);
+    // Use the spy's return value if configured, otherwise default
+    return result || Promise.resolve({ subscriptionId: 'sub-1' });
   },
 }));
 // Mock the notes-read-service so the bridge's note:* routing is observable
@@ -3986,5 +3987,395 @@ describe('daemonEventsBridge (changes refresh — git:commit/git:pull/changes:tr
       (action) => action.type === 'changes/refreshRequested',
     );
     expect(refreshCalls).toHaveLength(0);
+  });
+});
+
+describe('daemonEventsBridge (activity reconciliation → missed edges)', () => {
+  const WS_RECON = 'ws-reconcile-1';
+
+  beforeAll(() => appStore.init());
+
+  beforeEach(async () => {
+    onBackendNotificationSpy.mockClear();
+    backendRequestSpy.mockClear();
+    backendRequestSpy.mockReset(); // Reset implementation too, not just call history
+    __resetDaemonEventsBridgeForTests();
+    capturedHandlers.length = 0;
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  async function seedWorkspace(activity?: 'idle' | 'agent_running'): Promise<void> {
+    const { setWorkspaceEntity } = await import('$store/renderer/slices/workspace/workspace-slice');
+    const { WorkspaceStatus } = await import('$shared/types');
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: WS_RECON,
+        title: 'Reconcile ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        activity,
+      } as never),
+    );
+  }
+
+  async function readWorkspace(): Promise<{
+    activity?: 'idle' | 'agent_running';
+  }> {
+    const { getItem } =
+      await import('@augmentcode/ag-redux-toolkit/utils/collections/collection-utils');
+    const state = appStore.state as { workspace: { workspaces: unknown } };
+    return (getItem(state.workspace.workspaces as never, WS_RECON) ?? {}) as never;
+  }
+
+  function agentStatusChangedNotification(isResponding: boolean, isStreaming = false) {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-status-1',
+          workspaceId: WS_RECON,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:status-changed',
+          actor: { type: 'system' },
+          data: {
+            agentId: 'agent-1',
+            status: isResponding ? 'responding' : 'idle',
+            previousStatus: 'idle',
+            isResponding,
+            isStreaming,
+            isActive: true,
+            isProcessing: false,
+            activationState: null,
+            stopReason: null,
+          },
+        },
+      },
+    };
+  }
+
+  function agentIdleNotification() {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-idle-1',
+          workspaceId: WS_RECON,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:idle',
+          actor: { type: 'system' },
+          data: {
+            agentId: 'agent-1',
+            agentName: 'Agent 1',
+            reason: 'stream_complete',
+            status: null,
+            isActive: false,
+            isStreaming: false,
+            isProcessing: false,
+            isResponding: false,
+            activationState: null,
+            stopReason: null,
+          },
+        },
+      },
+    };
+  }
+
+  function agentStreamChunkNotification() {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-chunk-1',
+          workspaceId: WS_RECON,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:stream:chunk',
+          actor: { type: 'system' },
+          data: {
+            agentId: 'agent-1',
+            content: 'chunk data',
+            streamId: 'stream-1',
+          },
+        },
+      },
+    };
+  }
+
+  function agentStreamStatusNotification() {
+    return {
+      method: 'events.event',
+      params: {
+        event: {
+          id: 'evt-stream-status-1',
+          workspaceId: WS_RECON,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'agent:stream:status',
+          actor: { type: 'system' },
+          data: {
+            agentId: 'agent-1',
+            phase: 'prompt',
+            message: 'Sent prompt',
+            level: 'info',
+            timestamp: Date.now(),
+          },
+        },
+      },
+    };
+  }
+
+  it('reconciles activity to agent_running when agent:status-changed shows isResponding and entity is idle', async () => {
+    await seedWorkspace('idle');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Mock workspace.get to return agent_running. primeBridge calls events.subscribe and
+    // the agent:status-changed handler also triggers agent.list (hydrateAgentsRequested),
+    // so we need to mock those calls too or use mockResolvedValue to apply to all calls.
+    const { WorkspaceStatus } = await import('$shared/types');
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method === 'workspace.get') {
+        return {
+          workspace: {
+            id: WS_RECON,
+            title: 'Reconcile ws',
+            branch: 'main',
+            status: WorkspaceStatus.Active,
+            changesets: [],
+            timeline: [],
+            conversationInfo: [],
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            activity: 'agent_running',
+          },
+        };
+      }
+      if (method === 'agent.list') {
+        return { agents: [] };
+      }
+      return { subscriptionId: 'sub-1' };
+    });
+
+    handler(agentStatusChangedNotification(true, false));
+
+    // Wait for the async reconciliation to complete (longer for first-time imports)
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS_RECON });
+    const ws = await readWorkspace();
+    expect(ws.activity).toBe('agent_running');
+  });
+
+  it('reconciles activity to agent_running when agent:stream:chunk arrives and entity is idle', async () => {
+    await seedWorkspace('idle');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const { WorkspaceStatus } = await import('$shared/types');
+    backendRequestSpy.mockResolvedValueOnce({
+      workspace: {
+        id: WS_RECON,
+        title: 'Reconcile ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        activity: 'agent_running',
+      },
+    });
+
+    handler(agentStreamChunkNotification());
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS_RECON });
+    const ws = await readWorkspace();
+    expect(ws.activity).toBe('agent_running');
+  });
+
+  it('reconciles activity to agent_running when agent:stream:status arrives and entity is idle', async () => {
+    await seedWorkspace('idle');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const { WorkspaceStatus } = await import('$shared/types');
+    backendRequestSpy.mockResolvedValueOnce({
+      workspace: {
+        id: WS_RECON,
+        title: 'Reconcile ws',
+        branch: 'main',
+        status: WorkspaceStatus.Active,
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        activity: 'agent_running',
+      },
+    });
+
+    handler(agentStreamStatusNotification());
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS_RECON });
+    const ws = await readWorkspace();
+    expect(ws.activity).toBe('agent_running');
+  });
+
+  it('does not refetch when agent:status-changed shows busy and entity is already agent_running', async () => {
+    await seedWorkspace('agent_running');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    handler(agentStatusChangedNotification(true, false));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Should not call workspace.get because activity is already agent_running
+    expect(backendRequestSpy).not.toHaveBeenCalledWith('workspace.get', expect.anything());
+    const ws = await readWorkspace();
+    expect(ws.activity).toBe('agent_running');
+  });
+
+  it('refetches on agent:idle even when other agents may be busy', async () => {
+    await seedWorkspace('agent_running');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Mock workspace.get to return agent_running (another agent still busy)
+    const { WorkspaceStatus } = await import('$shared/types');
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method === 'workspace.get') {
+        return {
+          workspace: {
+            id: WS_RECON,
+            title: 'Reconcile ws',
+            branch: 'main',
+            status: WorkspaceStatus.Active,
+            changesets: [],
+            timeline: [],
+            conversationInfo: [],
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            activity: 'agent_running',
+          },
+        };
+      }
+      if (method === 'agent.list') {
+        return { agents: [] };
+      }
+      return { subscriptionId: 'sub-1' };
+    });
+
+    handler(agentIdleNotification());
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS_RECON });
+    const ws = await readWorkspace();
+    expect(ws.activity).toBe('agent_running');
+  });
+
+  it('updates to idle when agent:idle arrives and no agents remain busy', async () => {
+    await seedWorkspace('agent_running');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Mock workspace.get to return idle (no more busy agents)
+    const { WorkspaceStatus } = await import('$shared/types');
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method === 'workspace.get') {
+        return {
+          workspace: {
+            id: WS_RECON,
+            title: 'Reconcile ws',
+            branch: 'main',
+            status: WorkspaceStatus.Active,
+            changesets: [],
+            timeline: [],
+            conversationInfo: [],
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            activity: 'idle',
+          },
+        };
+      }
+      if (method === 'agent.list') {
+        return { agents: [] };
+      }
+      return { subscriptionId: 'sub-1' };
+    });
+
+    handler(agentIdleNotification());
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS_RECON });
+    const ws = await readWorkspace();
+    expect(ws.activity).toBe('idle');
+  });
+
+  it('seeds entity when busy event arrives before workspace entity exists', async () => {
+    // Do not seed the workspace entity — simulate event arriving before entity exists
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    const { WorkspaceStatus } = await import('$shared/types');
+    backendRequestSpy.mockImplementation(async (method: string) => {
+      if (method === 'workspace.get') {
+        return {
+          workspace: {
+            id: WS_RECON,
+            title: 'Reconcile ws',
+            branch: 'main',
+            status: WorkspaceStatus.Active,
+            changesets: [],
+            timeline: [],
+            conversationInfo: [],
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            activity: 'agent_running',
+          },
+        };
+      }
+      if (method === 'agent.list') {
+        return { agents: [] };
+      }
+      return { subscriptionId: 'sub-1' };
+    });
+
+    handler(agentStatusChangedNotification(true, false));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS_RECON });
+    const ws = await readWorkspace();
+    expect(ws.activity).toBe('agent_running');
+  });
+
+  it('ignores workspace.get errors gracefully', async () => {
+    await seedWorkspace('idle');
+    await primeBridge();
+    const handler = capturedHandlers[0]!;
+
+    // Mock workspace.get to reject (workspace deleted or transport error)
+    backendRequestSpy.mockRejectedValueOnce(new Error('Workspace not found'));
+
+    handler(agentStatusChangedNotification(true, false));
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(backendRequestSpy).toHaveBeenCalledWith('workspace.get', { workspaceId: WS_RECON });
+    // Entity should remain unchanged (still idle)
+    const ws = await readWorkspace();
+    expect(ws.activity).toBe('idle');
   });
 });
