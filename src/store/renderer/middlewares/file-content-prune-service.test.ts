@@ -70,7 +70,7 @@ function createMockState(
 }
 
 function createMockAPI(initialState: Partial<StoreState>): StoreMiddlewareAPI<StoreState> {
-  const dispatchedActions: any[] = [];
+  let dispatchedActions: any[] = [];
   let currentState = initialState;
   return {
     getState: () => currentState as StoreState,
@@ -78,7 +78,12 @@ function createMockAPI(initialState: Partial<StoreState>): StoreMiddlewareAPI<St
       dispatchedActions.push(action);
       return action;
     }),
-    _dispatchedActions: dispatchedActions,
+    get _dispatchedActions() {
+      return dispatchedActions;
+    },
+    _clearDispatched: () => {
+      dispatchedActions = [];
+    },
     _updateState: (newState: Partial<StoreState>) => {
       currentState = newState;
     },
@@ -144,7 +149,7 @@ describe("file-content-prune-service", () => {
   });
 
   it("does not prune when there is no active workspace", () => {
-    const state = createMockState(null, [], ["src/a.ts"]);
+    const state = createMockState(null, [], []);
     const api = createMockAPI(state);
     const middleware = createFileContentPruneService()(api);
     const next = vi.fn((action) => action);
@@ -168,7 +173,7 @@ describe("file-content-prune-service", () => {
     expect(dispatched[0]).toEqual(removeFileContentEntry("ws-1", "src/a.ts"));
 
     // Clear dispatched actions
-    (api as any)._dispatchedActions = [];
+    (api as any)._clearDispatched();
 
     const next = vi.fn((action) => {
       // Simulate the reducer removing the file entry
@@ -201,23 +206,36 @@ describe("file-content-prune-service", () => {
   });
 
   it("does not prune the same paths twice (payload equality check)", () => {
-    const state = createMockState("ws-1", [], ["src/a.ts"]);
+    // Start with NO stale files initially
+    const state = createMockState("ws-1", ["src/a.ts"], ["src/a.ts"]);
     const api = createMockAPI(state);
     const middleware = createFileContentPruneService()(api);
-    const next = vi.fn((action) => action);
 
-    // First action should prune
+    // Middleware creation should NOT prune (no stale files initially)
+    let dispatched = (api as any)._dispatchedActions;
+    expect(dispatched).toHaveLength(0);
+
+    const next = vi.fn((action) => {
+      // Simulate closing the tab on first action
+      if (action === action1) {
+        const newState = createMockState("ws-1", [], ["src/a.ts"]);
+        (api as any)._updateState(newState);
+      }
+      return action;
+    });
+
+    // First action closes the tab, making src/a.ts stale - should prune
     const action1 = closeTab("ws-1", "tab-0");
     middleware(next)(action1);
 
-    let dispatched = (api as any)._dispatchedActions;
+    dispatched = (api as any)._dispatchedActions;
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0]).toEqual(removeFileContentEntry("ws-1", "src/a.ts"));
 
     // Clear dispatched actions
-    (api as any)._dispatchedActions = [];
+    (api as any)._clearDispatched();
 
-    // Second action with same stale paths should NOT prune again
+    // Second action with same stale paths (src/a.ts still stale) should NOT prune again
     const action2 = closeTab("ws-1", "tab-other");
     middleware(next)(action2);
 
