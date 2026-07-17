@@ -56,6 +56,7 @@ import { createSidebarNavPersistenceMiddleware } from "./middlewares/sidebar-nav
 import { createBrowserPersistenceMiddleware } from "./middlewares/browser-persistence-service";
 import { createPanelLayoutPersistenceMiddleware } from "./middlewares/panel-layout-persistence-service";
 import { createFileContentPruneService } from "./middlewares/file-content-prune-service";
+import { createTerminalPersistenceMiddleware } from "./middlewares/terminal-persistence-service";
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
 import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
@@ -302,6 +303,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // saga behavior. Guards against empty payloads, invalid workspace IDs, and
     // self-retrigger loops.
     createFileContentPruneService(),
+    // Give the (post-saga) terminal persistence triggers real handlers so terminal
+    // overlay height, custom terminal names, terminal metadata, and per-workspace
+    // overlay state (isOpen, activeTerminalId) hydrate on boot and persist on
+    // change across sessions via localStorage (GAPs 2-5). Also restores saved
+    // state when loadWorkspaceTerminals is dispatched by lifecycle-read-service.
+    createTerminalPersistenceMiddleware(),
     // Give the (post-saga) theme triggers (`requestThemePreferenceChange` /
     // `selectThemePreset` / `importCustomTheme` / `clearThemeCustomization`)
     // real handlers so the Settings theme toggle and ColorThemeSettings
