@@ -28,6 +28,7 @@ vi.mock("$lib/client", () => ({
       prStatus: vi.fn(() => Promise.resolve(null)),
       trackedChanges: vi.fn(() => Promise.resolve([])),
       commits: vi.fn(() => Promise.resolve([])),
+      commitsWithBoundary: vi.fn(() => Promise.resolve({ commits: [], boundarySha: null, nextToken: null })),
     },
   },
 }));
@@ -52,6 +53,7 @@ import { loadSkillsRequested } from "$store/renderer/slices/skills/skills-slice"
 import { refreshScripts } from "$store/renderer/slices/scripts/scripts-slice";
 import { refreshPRStatusRequested } from "$store/renderer/slices/pr-status/pr-status-slice";
 import {
+  loadOlderCommitsRequested,
   refreshRequested,
   requestAgentLineStats,
 } from "$store/renderer/slices/changes/changes-slice";
@@ -346,18 +348,43 @@ describe("lifecycleReadService (fake seam, real store)", () => {
       stage: "local",
     };
     gitApi.trackedChanges.mockResolvedValueOnce([change] as never);
-    gitApi.commits.mockResolvedValueOnce([commit] as never);
+    gitApi.commitsWithBoundary.mockResolvedValueOnce({ commits: [commit], boundarySha: "abc123", nextToken: null } as never);
 
     appStore.dispatch(refreshRequested(ws));
     await flush();
 
     expect(gitApi.trackedChanges).toHaveBeenCalledWith(ws);
-    expect(gitApi.commits).toHaveBeenCalledWith(ws);
+    expect(gitApi.commitsWithBoundary).toHaveBeenCalledWith(ws);
     const changesState = appStore.state.changes.byWorkspaceId[ws];
     expect(changesState?.changes).toEqual([change]);
     expect(changesState?.commits).toEqual([commit]);
     expect(changesState?.boundarySha).toBe("abc123");
     expect(changesState?.hasLoadedInitialData).toBe(true);
+  });
+
+  it("loadOlderCommitsRequested calls commitsWithBoundary with includeOlder=true and appends to olderCommits", async () => {
+    const ws = "ws-older-1";
+    const olderCommit = {
+      hash: "def456",
+      message: "earlier work",
+      author: "Bob",
+      timestamp: 1749990000000,
+      files: [],
+      stage: "remote",
+    };
+    gitApi.commitsWithBoundary.mockResolvedValueOnce({
+      commits: [olderCommit],
+      boundarySha: null,
+      nextToken: null,
+    } as never);
+
+    appStore.dispatch(loadOlderCommitsRequested(ws, "abc123", 25));
+    await flush();
+
+    expect(gitApi.commitsWithBoundary).toHaveBeenCalledWith(ws, true);
+    const changesState = appStore.state.changes.byWorkspaceId[ws];
+    expect(changesState?.olderCommits).toEqual([olderCommit]);
+    expect(changesState?.loadingOlderCommits).toBe(false);
   });
 
   // §5.20 agent line stats: requestAgentLineStats → metrics.getAgentStats via
