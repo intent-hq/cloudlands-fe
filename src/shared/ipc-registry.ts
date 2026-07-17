@@ -467,12 +467,9 @@ export const IPC_CHANNELS = {
     INSTALL_CLI: 'shell:install-cli',
   },
 
-  // Editor
+  // Editor (browser text selection only)
   EDITOR: {
     GET_SELECTION: 'editor:get-selection',
-    GET_ACTIVE_FILE: 'editor:get-active-file',
-    OPEN_FILE: 'editor:open-file',
-    CLOSE_FILE: 'editor:close-file',
   },
 
   // External Editors (IDEs, terminals, etc.)
@@ -555,24 +552,7 @@ export const IPC_CHANNELS = {
     PERSIST_RENDERER_LOGS: 'log:persist-renderer-logs',
   },
 
-  /**
-   * Activity Log (DEPRECATED)
-   *
-   * These channels are deprecated and no longer have handlers.
-   * The activity log functionality has been replaced by the unified event system.
-   * See: src/features/events/ for the new implementation.
-   * Kept for backward compatibility with any legacy code.
-   *
-   * @deprecated Use EVENTS channels instead
-   */
-  ACTIVITY_LOG: {
-    /** @deprecated Use events:query instead */
-    GET_ENTRIES: 'activity-log:get-entries',
-    /** @deprecated Use events:emit instead */
-    ADD_ENTRY: 'activity-log:add-entry',
-    /** @deprecated Use events:clear instead */
-    CLEAR: 'activity-log:clear',
-  },
+
 
   // User Rules
   USER_RULES: {
@@ -668,12 +648,7 @@ export const IPC_CHANNELS = {
     GET_UNREAD_NOTE_IDS: 'user-activity:get-unread-note-ids',
   },
 
-  // Editor Integration
-  EDITOR_INTEGRATION: {
-    OPEN: 'editor:open',
-    SAVE: 'editor:save',
-    SETTINGS: 'editor:settings',
-  },
+
 
   // Diffs
   DIFFS: {
@@ -885,10 +860,7 @@ export const IPC_CHANNELS = {
     DELETE: 'storage:delete',
   },
 
-  // Sandbox (development only)
-  SANDBOX: {
-    GET_AGENT_RULES: 'sandbox:get-agent-rules',
-  },
+
 
   // Auto-Update
   AUTO_UPDATE: {

@@ -11,16 +11,10 @@ vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: vi.fn(),
 }));
 
-vi.mock('$lib/electron-bridge', () => ({
-  invoke: vi.fn(),
-}));
-
 import * as contextApi from './context-api';
 import { backendRequest } from '$lib/client/live/backend-transport';
-import { invoke } from '$lib/electron-bridge';
 
 const mockBackendRequest = backendRequest as ReturnType<typeof vi.fn>;
-const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 
 describe('context-api', () => {
   beforeEach(() => {
@@ -100,23 +94,7 @@ describe('context-api', () => {
     });
   });
 
-  describe('getEditorSelection', () => {
-    it('returns null on failure — never a fabricated selection', async () => {
-      mockInvoke.mockRejectedValue(new Error('IPC error'));
 
-      const selection = await contextApi.getEditorSelection('ws-1');
-
-      expect(selection).toBeNull();
-    });
-
-    it('returns null when there is no selection', async () => {
-      mockInvoke.mockResolvedValue(null);
-
-      const selection = await contextApi.getEditorSelection('ws-1');
-
-      expect(selection).toBeNull();
-    });
-  });
 
   describe('dead note readers', () => {
     it('no longer exports the legacy notes:* readers', () => {

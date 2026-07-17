@@ -23,15 +23,7 @@ export interface FileSearchResult {
 import type { Note } from '$shared/types';
 export type { Note };
 
-export interface EditorSelection {
-  text: string;
-  file?: string;
-  range?: {
-    start: number;
-    end: number;
-  };
-  language?: string;
-}
+
 
 /**
  * Context item used in rich input for attaching files, notes, selections, etc.
@@ -158,32 +150,7 @@ export async function readFile(path: string, options?: ReadFileOptions): Promise
   }
 }
 
-/**
- * Get current editor selection
- */
-export async function getEditorSelection(workspaceId?: string): Promise<EditorSelection | null> {
-  try {
-    logger.debug('Getting editor selection', { workspaceId });
-    const selection = await invoke<Partial<EditorSelection> | null>('editor:get-selection', {
-      // Pass workspaceId as-is (undefined if not provided) rather than defaulting to empty string
-      workspaceId,
-    });
 
-    if (!selection || !selection.text) {
-      return null;
-    }
-
-    return {
-      text: selection.text,
-      file: selection.file,
-      range: selection.range,
-      language: selection.language,
-    };
-  } catch (error) {
-    logger.debug('No editor selection available', error);
-    return null;
-  }
-}
 
 /**
  * Search for symbols in the workspace via the daemon (`search.codebase`, PROTOCOL §5.15).
@@ -254,29 +221,4 @@ export async function createFileContext(path: string): Promise<any> {
   }
 }
 
-/**
- * Create a context item from editor selection
- */
-export async function createSelectionContext(workspaceId?: string): Promise<any | null> {
-  try {
-    const selection = await getEditorSelection(workspaceId);
-    if (!selection) {
-      return null;
-    }
 
-    return {
-      id: `selection-${Date.now()}`,
-      type: 'selection',
-      label: 'Current Selection',
-      content: selection.text,
-      path: selection.file,
-      range: selection.range,
-      metadata: {
-        language: selection.language,
-      },
-    };
-  } catch (error) {
-    logger.error('Failed to create selection context', error);
-    return null;
-  }
-}
