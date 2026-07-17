@@ -54,6 +54,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
     return session?.isStreaming || session?.isProcessing || false;
   }),
   selectAgentIsWaiting: mocks.selector(() => false),
+  selectAgentProvider: mocks.selector(() => 'auggie'),
 }));
 
 vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-selectors', () => ({
@@ -66,6 +67,10 @@ vi.mock('$store/renderer/slices/workspace-tasks/workspace-tasks-slice', () => ({
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceActivePullRequest: mocks.selector(() => null),
+}));
+
+vi.mock('$lib/components/ui/auggie-avatar/AugieAvatarWithState.svelte', async () => ({
+  default: (await import('./mocks/MockAugieAvatar.svelte')).default,
 }));
 
 import WorkspaceCard from '../WorkspaceCard.svelte';
@@ -119,11 +124,11 @@ describe('WorkspaceCard idle activity behavior', () => {
     mocks.streamingAgentIds.push(agentId);
 
     const { container } = render(WorkspaceCard, {
-      props: { workspace, streamingAgentIds: mocks.streamingAgentIds, isRunning: false },
+      props: { workspace, streamingAgentIds: mocks.streamingAgentIds, isRunning: true },
     });
 
-    // No running-state avatars should render
-    const runningAvatars = container.querySelectorAll('[state="running"]');
+    // No running-state avatars should render (the mocked avatar with data-state="running")
+    const runningAvatars = container.querySelectorAll('[data-state="running"]');
     expect(runningAvatars).toHaveLength(0);
   });
 
@@ -139,7 +144,23 @@ describe('WorkspaceCard idle activity behavior', () => {
       props: { workspace, streamingAgentIds: [], isRunning: false },
     });
 
-    const runningAvatars = container.querySelectorAll('[state="running"]');
+    const runningAvatars = container.querySelectorAll('[data-state="running"]');
     expect(runningAvatars).toHaveLength(0);
+  });
+
+  it('renders running avatars when workspace.activity === "agent_running"', () => {
+    const wsId = createTestWorkspaceId();
+    const agentId = createTestAgentId();
+    const workspace = makeWorkspace({ id: wsId, activity: 'agent_running', agentSummary: { agentIds: [agentId], hasActiveAgents: true } });
+
+    mocks.streamingAgentIds.push(agentId);
+
+    const { container } = render(WorkspaceCard, {
+      props: { workspace, streamingAgentIds: mocks.streamingAgentIds, isRunning: true },
+    });
+
+    // Running avatars should render when workspace is not idle
+    const runningAvatars = container.querySelectorAll('[data-state="running"]');
+    expect(runningAvatars.length).toBeGreaterThan(0);
   });
 });
