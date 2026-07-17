@@ -646,45 +646,5 @@ export function registerScriptsHandlers(): void {
     ),
   );
 
-  // ---- scripts:save-to-repo ----
-  ipcMain.handle(
-    SCRIPTS_CHANNELS.SAVE_TO_REPO,
-    createSafeValidatedHandler(
-      ScriptsSaveToRepoSchema,
-      async (_event, { workspaceId, scripts }) => {
-        try {
-          const { repositoryPath } = await resolveWorkspacePaths(workspaceId);
-          const repoScripts: RepoScript[] = scripts.map(
-            ({ name, command, mode, category, cwd, env, autoStart }) => ({
-              name,
-              command,
-              mode,
-              ...(category !== undefined ? { category } : {}),
-              ...(cwd !== undefined ? { cwd } : {}),
-              ...(env !== undefined ? { env } : {}),
-              ...(autoStart !== undefined ? { autoStart } : {}),
-            }),
-          );
-          const { written } = await saveScriptsToRepoConfig(repositoryPath, repoScripts);
-
-          logger.info('[Scripts] Saved workspace scripts to repo', {
-            workspaceId,
-            count: repoScripts.length,
-            written,
-          });
-
-          return { success: true, written, count: repoScripts.length };
-        } catch (error) {
-          logger.error('[Scripts] Error saving scripts to repo:', error as Error);
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          };
-        }
-      },
-      SCRIPTS_CHANNELS.SAVE_TO_REPO,
-    ),
-  );
-
   logger.info('[Scripts] Scripts IPC handlers registered');
 }

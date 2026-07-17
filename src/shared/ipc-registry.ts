@@ -650,14 +650,6 @@ export const IPC_CHANNELS = {
     GET_ALL: 'config:getAll',
   },
 
-  // Per-Repo Config (.intent/config.json)
-  REPO_CONFIG: {
-    READ: 'repo-config:read',
-    WRITE: 'repo-config:write',
-    HAS_CONFIG: 'repo-config:has-config',
-    ENSURE_INTENT_DIR: 'repo-config:ensure-intent-dir',
-  },
-
   // Memories
   MEMORIES: {
     LIST: 'memories:list',
@@ -963,7 +955,6 @@ export const IPC_CHANNELS = {
     RESTART: 'scripts:restart',
     GET_STATUS: 'scripts:get-status',
     GET_OUTPUT: 'scripts:get-output',
-    SAVE_TO_REPO: 'scripts:save-to-repo',
   },
 
   // Workspace Token Usage (aggregated agent token consumption)
