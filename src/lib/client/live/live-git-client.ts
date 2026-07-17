@@ -407,7 +407,7 @@ export class LiveGitClient implements GitClient {
     nextToken: string | null;
   }> {
     try {
-      const result = await backendRequest<{ commits?: unknown[]; boundarySha?: string | null; nextToken?: string | null }>(
+      const result = await backendRequest<{ commits?: unknown[]; boundarySha?: unknown; nextToken?: unknown }>(
         "file-tracking.loadCommits",
         {
           workspaceId,
@@ -415,10 +415,20 @@ export class LiveGitClient implements GitClient {
         }
       );
       const commits = Array.isArray(result?.commits) ? result.commits : [];
+      // Runtime validation: boundarySha and nextToken must be string | null.
+      // Untrusted payloads from backendRequest could send any shape.
+      const boundarySha =
+        result?.boundarySha === null || typeof result?.boundarySha === "string"
+          ? result.boundarySha
+          : null;
+      const nextToken =
+        result?.nextToken === null || typeof result?.nextToken === "string"
+          ? result.nextToken
+          : null;
       return {
         commits: commits.map(toCommitInfo).filter((c): c is CommitInfo => c !== null),
-        boundarySha: result?.boundarySha ?? null,
-        nextToken: result?.nextToken ?? null,
+        boundarySha,
+        nextToken,
       };
     } catch {
       return { commits: [], boundarySha: null, nextToken: null };

@@ -53,6 +53,7 @@ import { loadSkillsRequested } from "$store/renderer/slices/skills/skills-slice"
 import { refreshScripts } from "$store/renderer/slices/scripts/scripts-slice";
 import { refreshPRStatusRequested } from "$store/renderer/slices/pr-status/pr-status-slice";
 import {
+  loadOlderCommitsRequested,
   refreshRequested,
   requestAgentLineStats,
 } from "$store/renderer/slices/changes/changes-slice";
@@ -359,6 +360,31 @@ describe("lifecycleReadService (fake seam, real store)", () => {
     expect(changesState?.commits).toEqual([commit]);
     expect(changesState?.boundarySha).toBe("abc123");
     expect(changesState?.hasLoadedInitialData).toBe(true);
+  });
+
+  it("loadOlderCommitsRequested calls commitsWithBoundary with includeOlder=true and appends to olderCommits", async () => {
+    const ws = "ws-older-1";
+    const olderCommit = {
+      hash: "def456",
+      message: "earlier work",
+      author: "Bob",
+      timestamp: 1749990000000,
+      files: [],
+      stage: "remote",
+    };
+    gitApi.commitsWithBoundary.mockResolvedValueOnce({
+      commits: [olderCommit],
+      boundarySha: null,
+      nextToken: null,
+    } as never);
+
+    appStore.dispatch(loadOlderCommitsRequested(ws, "abc123", 25));
+    await flush();
+
+    expect(gitApi.commitsWithBoundary).toHaveBeenCalledWith(ws, true);
+    const changesState = appStore.state.changes.byWorkspaceId[ws];
+    expect(changesState?.olderCommits).toEqual([olderCommit]);
+    expect(changesState?.loadingOlderCommits).toBe(false);
   });
 
   // §5.20 agent line stats: requestAgentLineStats → metrics.getAgentStats via

@@ -321,8 +321,16 @@ function refreshChanges(wsId: string): void {
  * Load older commits (pre-boundary) for the "show previous" toggle in the
  * Changes panel. Calls the daemon with `includeOlder: true` and dispatches
  * the results into `olderCommits`.
+ *
+ * @param wsId - Workspace ID
+ * @param beforeSha - Optional SHA to use as pagination anchor (from boundarySha or last older commit)
+ * @param limit - Optional limit on commit count (defaults to daemon-side default)
  */
-function loadOlderCommits(wsId: string): void {
+function loadOlderCommits(wsId: string, beforeSha?: string, limit?: number): void {
+  // Note: beforeSha and limit are currently not forwarded to the daemon API
+  // because the wire shape (§5.19 file-tracking.loadCommits) only supports
+  // { workspaceId, includeOlder }. When pagination support is added to the
+  // wire, this handler will forward beforeSha/limit.
   coalesce(`olderCommits:${wsId}`, async () => {
     appStore.dispatch(setLoadingOlderCommits(wsId, true));
     try {
@@ -502,8 +510,12 @@ export function createLifecycleReadMiddleware(): StoreMiddleware {
           break;
         }
         case loadOlderCommitsRequested.type: {
-          const wsId = wsIdOf(action);
-          if (wsId) loadOlderCommits(wsId);
+          // loadOlderCommitsRequested uses an object payload: { wsId, beforeSha, limit }
+          const payload = (action as { payload?: { wsId?: unknown; beforeSha?: unknown; limit?: unknown } }).payload;
+          const wsId = typeof payload?.wsId === "string" ? payload.wsId : undefined;
+          const beforeSha = typeof payload?.beforeSha === "string" ? payload.beforeSha : undefined;
+          const limit = typeof payload?.limit === "number" ? payload.limit : undefined;
+          if (wsId) loadOlderCommits(wsId, beforeSha, limit);
           break;
         }
         case requestAgentLineStats.type: {
