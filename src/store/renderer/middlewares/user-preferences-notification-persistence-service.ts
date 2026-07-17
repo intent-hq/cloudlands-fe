@@ -52,6 +52,7 @@ type NotificationSettingsState = {
 };
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let isHydrating = false;
 
 /**
  * Persist notification settings to daemon via settings.update (per-field).
@@ -123,12 +124,16 @@ export function createUserPreferencesNotificationPersistenceMiddleware(): StoreM
     // Boot-time hydration on first action (real mode only — mock seeder handles it)
     if (!hasHydrated) {
       hasHydrated = true;
+      isHydrating = true;
       // Async hydration (fire and forget, errors logged)
-      void hydrateFromDaemon(api.dispatch);
+      void hydrateFromDaemon(api.dispatch).finally(() => {
+        isHydrating = false;
+      });
     }
 
     const result = next(action);
-    if (action && NOTIFICATION_ACTIONS.has(action.type)) {
+    // Skip persistence for actions dispatched during hydration to avoid echo-writes
+    if (action && NOTIFICATION_ACTIONS.has(action.type) && !isHydrating) {
       // Debounce persistence (100ms delay like the saga did)
       if (debounceTimer !== null) {
         clearTimeout(debounceTimer);
