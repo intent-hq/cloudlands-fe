@@ -288,7 +288,12 @@ export class LiveAgentsClient implements AgentsClient {
       });
     } catch (error) {
       // -32601 = method not found (older daemon). Fail silently per spec.
-      if (error instanceof Error && error.message.includes("-32601")) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "rpcCode" in error &&
+        error.rpcCode === -32601
+      ) {
         return [];
       }
       throw error;

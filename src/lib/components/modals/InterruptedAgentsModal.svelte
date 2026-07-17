@@ -141,7 +141,7 @@
               <h3 class="text-sm font-medium text-foreground">{workspaceName}</h3>
               <div class="space-y-1.5 pl-2">
                 {#each wsAgents as agent (agent.agentId)}
-                  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                  <!-- svelte-ignore a11y_click_events_have_key_keys a11y_no_static_element_interactions -->
                   <div
                     class="flex items-center gap-3 rounded-lg p-2 hover:bg-muted/40 cursor-pointer"
                     onclick={() => toggleAgent(agent.agentId)}
@@ -150,7 +150,7 @@
                       type="checkbox"
                       checked={checkedAgents.has(agent.agentId)}
                       class="size-4 rounded border-border"
-                      onchange={() => toggleAgent(agent.agentId)}
+                      readonly
                     />
                     <div class="flex-1 min-w-0">
                       <p class="text-sm text-foreground truncate">{agent.agentName}</p>
