@@ -131,11 +131,8 @@ async function refetchAndDispatch(): Promise<void> {
     appStore.dispatch(setFileSpecialistsLoaded(true));
   } catch (error) {
     logger.error("Failed to refetch specialist list", error);
-    const { showToast } = await import("$lib/components/Toast.svelte");
-    showToast({
-      type: "error",
-      message: "Failed to refresh specialists list after write",
-    });
+    const { toast } = await import("$lib/components/ui/toast");
+    toast.error("Failed to refresh specialists list after write");
   }
 }
 
