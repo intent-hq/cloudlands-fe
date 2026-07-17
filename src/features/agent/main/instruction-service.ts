@@ -16,12 +16,14 @@
  * 1. Base system prompt (identity and tools)
  * 2. Specialization rules (common → workspace → agent-specific instructions)
  * 3. User rules (CLAUDE.md, AGENTS.md, .augment/guidelines.md, .augment/rules/)
- * 4. Skills catalog (.agents/skills, .augment/skills, ~/.claude/skills)
- * 5. Agent behavior instructions (specialist role)
- * 6. Parent-only orchestration layers (3.5a-3.8: team context, knobs, specialists, branch naming)
- * 7. Workspace context (open panels + linked references)
- * 8. Runtime context (contextReferences)
- * 9. Mandatory actions footer (includes specialist role reminder for recency)
+ * 4. Agent behavior instructions (specialist role)
+ * 5. Parent-only orchestration layers (3.5a-3.8: team context, knobs, specialists, branch naming)
+ * 6. Workspace context (open panels + linked references)
+ * 7. Runtime context (contextReferences)
+ * 8. Mandatory actions footer (includes specialist role reminder for recency)
+ *
+ * Skills prompt injection is now daemon-owned (PROTOCOL §5.34); intentd injects the
+ * skills catalog into the final system prompt before streaming begins.
  *
  * The role reminder remains at the end for recency reinforcement.
  * Modes (ask, plan, agent) are only used for tool filtering.
@@ -52,7 +54,6 @@ import {
   loadUserRules,
   formatUserRulesForContext,
 } from './rules-loader';
-import { formatSkillsCatalogForPrompt } from './skills-loader';
 import {
   formatSpecialistsForPrompt,
   initSpecialistsService,
@@ -297,21 +298,6 @@ export class InstructionService {
     let isCacheable =
       (!config.contextReferences || config.contextReferences.length === 0) && !hasWorkspaceContext;
 
-    let prefetchedSkillsCatalog: string | null = null;
-    if (isCacheable && config.workspacePath) {
-      try {
-        prefetchedSkillsCatalog = await formatSkillsCatalogForPrompt(config.workspacePath);
-      } catch (error) {
-        logger.warn('Failed to prefetch skills catalog for system prompt cache', {
-          workspacePath: config.workspacePath,
-          error,
-        });
-        // Disable caching: the cache key would hash empty skills, but the prompt
-        // may later retry and include actual skills content, creating a mismatch.
-        isCacheable = false;
-      }
-    }
-
     // Include isInitialAgent and workspaceTitle in cache key since they affect the prompt
     // (initial agents get workspace rename instructions based on title)
     const initialAgentSuffix = config.isInitialAgent ? ':initial' : '';
@@ -325,10 +311,6 @@ export class InstructionService {
 
     const subAgentSuffix = config.isSubAgent ? ':subagent' : '';
     const autoCommitSuffix = config.autoCommitEnabled ? ':autocommit' : '';
-    const skillsCatalogSuffix =
-      isCacheable && config.workspacePath
-        ? `:skills:${this.hashString(prefetchedSkillsCatalog ?? '')}`
-        : '';
     const behaviorPromptSuffix =
       isCacheable && hasBehaviorPrompt
         ? `:behavior:${this.hashString(config.behaviorPrompt ?? '')}`
@@ -338,7 +320,7 @@ export class InstructionService {
         ? `:role:${this.hashString(`${config.specialistName ?? ''}\n${config.roleReminder ?? ''}`)}`
         : '';
     const cacheKey = isCacheable
-      ? `prompt:${config.agentType || 'default'}:${config.workspacePath || 'default'}${initialAgentSuffix}${subAgentSuffix}${autoCommitSuffix}:${titleStatus}${skillsCatalogSuffix}${behaviorPromptSuffix}${roleReminderSuffix}`
+      ? `prompt:${config.agentType || 'default'}:${config.workspacePath || 'default'}${initialAgentSuffix}${subAgentSuffix}${autoCommitSuffix}:${titleStatus}${behaviorPromptSuffix}${roleReminderSuffix}`
       : null;
 
     // Check cache for frequently-used prompts (e.g., bulk task delegation)
@@ -547,40 +529,7 @@ The instructions in <specialist_role> define your primary function. Prioritize t
       }
     };
 
-    const addSkillsLayer = async (): Promise<void> => {
-      // Layer 4.7: Skills catalog (.agents/skills, .augment/skills, ~/.claude/skills)
-      // Available to all agents, including sub-agents, so they can discover execution skills.
-      if (!config.workspacePath) {
-        logger.debug('Layer 4.7: Skipping skills catalog (no workspacePath)');
-        return;
-      }
 
-      try {
-        const skillsCatalog =
-          prefetchedSkillsCatalog ?? (await formatSkillsCatalogForPrompt(config.workspacePath));
-        if (skillsCatalog.trim().length > 0) {
-          parts.push({
-            name: 'skills-catalog',
-            content: skillsCatalog,
-            priority: 3,
-            canTruncate: true,
-          });
-          logger.debug('Layer 4.7: Skills catalog added', {
-            workspacePath: config.workspacePath,
-            length: skillsCatalog.length,
-          });
-        } else {
-          logger.debug('Layer 4.7: No skills catalog found', {
-            workspacePath: config.workspacePath,
-          });
-        }
-      } catch (error) {
-        logger.warn('Failed to load skills catalog', {
-          workspacePath: config.workspacePath,
-          error,
-        });
-      }
-    };
 
     // Layer 2: Base system prompt (identity and tools)
     const basePrompt = this.getBaseSystemPrompt();
@@ -615,7 +564,6 @@ The instructions in <specialist_role> define your primary function. Prioritize t
     }
 
     await addUserRulesLayer();
-    await addSkillsLayer();
     addBehaviorSection('Layer 4.8', 'shared-prefix boundary');
     await addParentOnlyLayers();
 

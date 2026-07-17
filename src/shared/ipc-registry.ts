@@ -865,11 +865,6 @@ export const IPC_CHANNELS = {
     TEST_CONNECTION: 'ssh:test-connection',
   },
 
-  // Agent Skills
-  SKILLS: {
-    LIST: 'skills:list',
-  },
-
   // WebSocket API
   WEBSOCKET_API: {
     GET_STATUS: 'websocket-api:get-status',
