@@ -57,6 +57,9 @@ const mocks = vi.hoisted(() => {
   const terminalPersistenceMiddleware = createPassthroughMiddleware();
   const externalEditorsPersistenceMiddleware = createPassthroughMiddleware();
   const zoomSyncMiddleware = createPassthroughMiddleware();
+  const workspaceSettingsPersistenceMiddleware = createPassthroughMiddleware();
+  const userPreferencesBetaPersistenceMiddleware = createPassthroughMiddleware();
+  const userPreferencesNotificationPersistenceMiddleware = createPassthroughMiddleware();
   const sidebarNavPersistenceMiddleware = createPassthroughMiddleware();
   const browserPersistenceMiddleware = createPassthroughMiddleware();
   const themeMutationMiddleware = createPassthroughMiddleware();
@@ -114,6 +117,15 @@ const mocks = vi.hoisted(() => {
     createTerminalPersistenceMiddleware: vi.fn(() => terminalPersistenceMiddleware),
     createExternalEditorsPersistenceMiddleware: vi.fn(() => externalEditorsPersistenceMiddleware),
     createZoomSyncMiddleware: vi.fn(() => zoomSyncMiddleware),
+    createWorkspaceSettingsPersistenceMiddleware: vi.fn(
+      () => workspaceSettingsPersistenceMiddleware,
+    ),
+    createUserPreferencesBetaPersistenceMiddleware: vi.fn(
+      () => userPreferencesBetaPersistenceMiddleware,
+    ),
+    createUserPreferencesNotificationPersistenceMiddleware: vi.fn(
+      () => userPreferencesNotificationPersistenceMiddleware,
+    ),
     createSidebarNavPersistenceMiddleware: vi.fn(() => sidebarNavPersistenceMiddleware),
     createBrowserPersistenceMiddleware: vi.fn(() => browserPersistenceMiddleware),
     createThemeMutationMiddleware: vi.fn(() => themeMutationMiddleware),
@@ -167,6 +179,9 @@ const mocks = vi.hoisted(() => {
     terminalPersistenceMiddleware,
     externalEditorsPersistenceMiddleware,
     zoomSyncMiddleware,
+    workspaceSettingsPersistenceMiddleware,
+    userPreferencesBetaPersistenceMiddleware,
+    userPreferencesNotificationPersistenceMiddleware,
     sidebarNavPersistenceMiddleware,
     browserPersistenceMiddleware,
     themeMutationMiddleware,
@@ -296,6 +311,17 @@ vi.mock("./middlewares/external-editors-persistence-service", () => ({
 vi.mock("./middlewares/zoom-sync-service", () => ({
   createZoomSyncMiddleware: mocks.createZoomSyncMiddleware,
 }));
+vi.mock("./middlewares/workspace-settings-persistence-service", () => ({
+  createWorkspaceSettingsPersistenceMiddleware: mocks.createWorkspaceSettingsPersistenceMiddleware,
+}));
+vi.mock("./middlewares/user-preferences-beta-persistence-service", () => ({
+  createUserPreferencesBetaPersistenceMiddleware:
+    mocks.createUserPreferencesBetaPersistenceMiddleware,
+}));
+vi.mock("./middlewares/user-preferences-notification-persistence-service", () => ({
+  createUserPreferencesNotificationPersistenceMiddleware:
+    mocks.createUserPreferencesNotificationPersistenceMiddleware,
+}));
 vi.mock("./middlewares/sidebar-nav-persistence-service", () => ({
   createSidebarNavPersistenceMiddleware: mocks.createSidebarNavPersistenceMiddleware,
 }));
@@ -412,6 +438,9 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.workspaceSettingsPersistenceMiddleware,
+      mocks.userPreferencesBetaPersistenceMiddleware,
+      mocks.userPreferencesNotificationPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -474,6 +503,9 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.workspaceSettingsPersistenceMiddleware,
+      mocks.userPreferencesBetaPersistenceMiddleware,
+      mocks.userPreferencesNotificationPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -536,6 +568,9 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.workspaceSettingsPersistenceMiddleware,
+      mocks.userPreferencesBetaPersistenceMiddleware,
+      mocks.userPreferencesNotificationPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -599,6 +634,9 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.workspaceSettingsPersistenceMiddleware,
+      mocks.userPreferencesBetaPersistenceMiddleware,
+      mocks.userPreferencesNotificationPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -679,6 +717,9 @@ describe("store middleware Redux logging gating", () => {
       mocks.terminalPersistenceMiddleware,
       mocks.externalEditorsPersistenceMiddleware,
       mocks.zoomSyncMiddleware,
+      mocks.workspaceSettingsPersistenceMiddleware,
+      mocks.userPreferencesBetaPersistenceMiddleware,
+      mocks.userPreferencesNotificationPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,

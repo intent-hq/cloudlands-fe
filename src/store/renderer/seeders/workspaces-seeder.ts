@@ -131,6 +131,29 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.REMOVE_RECENT_REPOSITORY, async (arg) 
   }
 });
 
+// `workspace:update-settings` — workspace settings persistence middleware
+// writes auto-commit state via this IPC channel. Bridge to the daemon's
+// `workspace.updateSettings` (PROTOCOL §5.1). The middleware fires and forgets
+// (no await), so rejections propagate as uncaught promises; return the legacy
+// success envelope so it doesn't reject.
+registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
+  const payload = arg as { id?: unknown; settings?: unknown } | undefined;
+  const id = typeof payload?.id === "string" ? payload.id : "";
+  const settings = payload?.settings;
+  if (!id || typeof settings !== "object" || settings === null) {
+    return { success: false, error: "id and settings are required" };
+  }
+  try {
+    await backendRequest("workspace.updateSettings", { id, settings });
+    return { success: true, data: {} };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+});
+
 registerMockSeeder("workspaces", async ({ store, client }) => {
   const workspaces = await client.workspaces.list();
 
