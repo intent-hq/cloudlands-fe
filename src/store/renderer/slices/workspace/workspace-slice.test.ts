@@ -728,6 +728,14 @@ describe("workspace selectors", () => {
       expect(state.recency.lastViewedAt["ws-1"]).toBeUndefined();
     });
 
+    it("clears the workspace from pendingCreations map", () => {
+      const ws = makeWorkspace({ id: "ws-1" as WorkspaceId });
+      let state = workspaceReducer(initialState, setPendingCreation(ws));
+      expect(state.pendingCreations["ws-1"]).toBeDefined();
+      state = workspaceReducer(state, workspaceDeleted("ws-1", []));
+      expect(state.pendingCreations["ws-1"]).toBeUndefined();
+    });
+
     it("survives an in-flight replaceWorkspaceList during the undo window", () => {
       const ws1 = makeWorkspace({ id: "ws-1" as WorkspaceId });
       const ws2 = makeWorkspace({ id: "ws-2" as WorkspaceId });
