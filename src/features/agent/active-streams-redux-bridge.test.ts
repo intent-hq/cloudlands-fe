@@ -37,16 +37,31 @@ describe("Active streams → Redux bridge", () => {
       data: [],
     }));
 
+    // Mock electronAPI.on to simulate production environment
+    // so the bridge actually initializes
+    if (typeof window !== "undefined") {
+      (window as any).electronAPI = {
+        on: vi.fn(),
+        off: vi.fn(),
+        invoke: vi.fn(),
+      };
+    }
+
     appStore.init();
 
     // Trigger an action to initialize the bridge middleware
-    // (it initializes on first action dispatch)
+    // (it initializes on first action dispatch when electronAPI.on exists)
     appStore.dispatch({ type: "test/init" });
   });
 
   afterEach(() => {
     vi.clearAllMocks();
     __resetActiveStreamsReduxBridgeForTests();
+
+    // Clean up electronAPI mock
+    if (typeof window !== "undefined") {
+      delete (window as any).electronAPI;
+    }
   });
 
   it("dispatches bumpActiveStreamsVersion when tracker notifies listeners after active-streams update", async () => {

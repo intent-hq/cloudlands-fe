@@ -27,16 +27,13 @@ const logger = createLogger("ActiveStreamsReduxBridge");
 
 let unsubscribe: (() => void) | null = null;
 let hasStartedPolling = false;
-let hasInitialized = false;
 
 export function createActiveStreamsReduxBridge(): StoreMiddleware {
   return () => {
     return (next) => (action) => {
-      // Initialize on first action dispatch (not at middleware creation time)
-      // This ensures tests can reset state between runs
-      if (!hasInitialized) {
-        hasInitialized = true;
-
+      // Boot-time setup: subscribe to tracker updates and start polling once
+      // Guard: only initialize in production Electron context, not in tests
+      if (!unsubscribe && typeof window !== "undefined" && window.electronAPI?.on) {
         // Subscribe to tracker updates and dispatch Redux action when tracker notifies
         unsubscribe = activeStreamsTracker.subscribe(() => {
           logger.debug("Tracker notified — dispatching bumpActiveStreamsVersion");
@@ -66,5 +63,4 @@ export function __resetActiveStreamsReduxBridgeForTests() {
     unsubscribe = null;
   }
   hasStartedPolling = false;
-  hasInitialized = false;
 }
