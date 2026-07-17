@@ -92,10 +92,6 @@ import {
   getWorktreesLocation,
 } from './app-settings.service';
 import {
-  getRepoBranchPrefix,
-  getRepoSetupScript,
-} from './repo-config.service';
-import {
   sshManager,
   type SSHConnectionConfig,
 } from '../../../shared/main/ssh-manager';
@@ -1217,11 +1213,7 @@ export class WorkspaceService {
       }
 
       // Get branch prefix early so we can check for ref namespace conflicts
-      // Check repo-level config first, then fall back to global app setting
-      const repoBranchPrefix = request.repositoryPath
-        ? await getRepoBranchPrefix(request.repositoryPath)
-        : undefined;
-      const branchPrefix = repoBranchPrefix ?? getBranchPrefix();
+      const branchPrefix = getBranchPrefix();
 
       // If we have a repository path, ensure the branch name (which is the workspace ID) doesn't already exist
       // This handles cases where an intent-based slug might conflict with an existing branch
@@ -1790,10 +1782,8 @@ export class WorkspaceService {
         }),
       );
 
-      // Resolve effective setup script: request > repo config > none
-      const effectiveSetupScript =
-        request.setupScript ??
-        (effectiveRepositoryPath ? await getRepoSetupScript(effectiveRepositoryPath) : undefined);
+      // Resolve effective setup script: request or none
+      const effectiveSetupScript = request.setupScript;
 
       logger.info('Workspace created successfully', {
         id,

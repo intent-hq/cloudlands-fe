@@ -63,7 +63,6 @@ import {
   initAgentTeamsService,
 } from './agent-teams.service';
 import { getBranchPrefix } from '../../workspace/main/app-settings.service';
-import { getRepoBranchPrefix } from '../../workspace/main/repo-config.service';
 
 const logger = new Logger('InstructionService');
 
@@ -1013,13 +1012,12 @@ The instructions in <specialist_role> define your primary function. Prioritize t
 
   /**
    * Resolve the effective branch prefix and format it as a prompt section.
-   * Checks repo-level config first (.intent/config.json), then falls back to global app setting.
+   * Falls back to global app setting.
    * Returns null if no branch prefix is configured.
    */
-  private async getBranchPreferenceSection(workspacePath?: string): Promise<string | null> {
-    // Check repo-level config first, then fall back to global app setting
-    const repoBranchPrefix = workspacePath ? await getRepoBranchPrefix(workspacePath) : undefined;
-    const branchPrefix = repoBranchPrefix ?? getBranchPrefix();
+  private async getBranchPreferenceSection(_workspacePath?: string): Promise<string | null> {
+    // Use global app setting (daemon handles repo-level config via rules.rs)
+    const branchPrefix = getBranchPrefix();
 
     if (!branchPrefix) {
       return null;

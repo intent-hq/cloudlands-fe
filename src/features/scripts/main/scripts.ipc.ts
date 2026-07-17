@@ -7,7 +7,6 @@
  */
 
 import { ipcMain } from 'electron';
-import { promises as fs } from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
@@ -23,10 +22,6 @@ import {
   scriptOutput,
 } from '../../../store/main/slices/script-events/script-events-slice';
 import { workspaceService } from '../../workspace/main/workspace.service';
-import {
-  readRepoConfig,
-  writeRepoConfig,
-} from '../../workspace/main/repo-config.service';
 import { createWorkspaceId } from '$shared/types/branded-ids';
 import type { WorkspaceId } from '$shared/types';
 import {
@@ -34,7 +29,6 @@ import {
   writeScripts,
   upsertScript,
   removeScript,
-  readRepoScripts,
 } from './scripts-persistence';
 import {
   getScriptProcessManager,
@@ -50,7 +44,6 @@ import {
 import type { WorkspaceScript, ScriptRuntimeState, ScriptWithState } from '../types';
 import { createDefaultRuntimeState } from '../types';
 import type { OutputLine } from './script-output-buffer';
-import type { RepoScript } from '../../../shared/types/repo-config.types';
 
 const logger = new Logger('ScriptsIPC');
 
@@ -261,61 +254,7 @@ export function registerScriptsHandlers(): void {
       ScriptsListSchema,
       async (_event, { workspaceId }) => {
         try {
-          let scripts = await readScripts(workspaceId);
-
-          // Bootstrap from repo if workspace has no scripts
-          if (scripts.length === 0) {
-            const { repositoryPath } = await resolveWorkspacePaths(workspaceId);
-            const repoConfig = await readRepoConfig(repositoryPath);
-            // Normalize: treat non-array values (null, string, etc.) as undefined
-            const hasExplicitScripts = Array.isArray(repoConfig.scripts);
-            let repoScripts: RepoScript[] = hasExplicitScripts ? (repoConfig.scripts as RepoScript[]) : [];
-
-            // Migrate from old .intent/scripts.json if config.json has no scripts
-            if (!hasExplicitScripts) {
-              const oldScripts = await readRepoScripts(repositoryPath);
-              if (oldScripts.length > 0) {
-                const migratedScripts: RepoScript[] = oldScripts.map((s) => ({
-                  name: s.name,
-                  command: s.command,
-                  mode: s.mode,
-                  category: s.category,
-                  cwd: s.cwd,
-                  env: s.env,
-                  autoStart: s.autoStart,
-                }));
-                await writeRepoConfig(repositoryPath, { ...repoConfig, scripts: migratedScripts });
-                try {
-                  await fs.unlink(path.join(repositoryPath, '.intent', 'scripts.json'));
-                } catch {
-                  // Ignore if already deleted
-                }
-                logger.info('[Scripts] Migrated scripts from .intent/scripts.json to config.json', {
-                  count: migratedScripts.length,
-                });
-                repoScripts = migratedScripts;
-              }
-            }
-
-            if (repoScripts.length > 0) {
-              // Clone with new IDs so each workspace is independent
-              const bootstrapped = repoScripts.map((s) => ({
-                ...s,
-                id: uuidv4(),
-                workspaceId,
-                source: 'user' as const,
-                createdAt: new Date().toISOString(),
-                updatedAt: undefined,
-              }));
-              await writeScripts(workspaceId, bootstrapped);
-              scripts = bootstrapped;
-              logger.info('[Scripts] Bootstrapped workspace scripts from repo', {
-                workspaceId,
-                count: bootstrapped.length,
-              });
-            }
-          }
-
+          const scripts = await readScripts(workspaceId);
           const manager = await getOrCreateManager(workspaceId);
 
           const result: ScriptWithState[] = scripts.map((s) => ({
