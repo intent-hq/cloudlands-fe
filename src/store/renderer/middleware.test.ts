@@ -53,6 +53,7 @@ const mocks = vi.hoisted(() => {
   const unreadTrackingPersistenceMiddleware = createPassthroughMiddleware();
   const tabStatePersistenceMiddleware = createPassthroughMiddleware();
   const panelLayoutPersistenceMiddleware = createPassthroughMiddleware();
+  const fileContentPruneService = createPassthroughMiddleware();
   const sidebarNavPersistenceMiddleware = createPassthroughMiddleware();
   const browserPersistenceMiddleware = createPassthroughMiddleware();
   const themeMutationMiddleware = createPassthroughMiddleware();
@@ -106,6 +107,7 @@ const mocks = vi.hoisted(() => {
     createUnreadTrackingPersistenceMiddleware: vi.fn(() => unreadTrackingPersistenceMiddleware),
     createTabStatePersistenceMiddleware: vi.fn(() => tabStatePersistenceMiddleware),
     createPanelLayoutPersistenceMiddleware: vi.fn(() => panelLayoutPersistenceMiddleware),
+    createFileContentPruneService: vi.fn(() => fileContentPruneService),
     createSidebarNavPersistenceMiddleware: vi.fn(() => sidebarNavPersistenceMiddleware),
     createBrowserPersistenceMiddleware: vi.fn(() => browserPersistenceMiddleware),
     createThemeMutationMiddleware: vi.fn(() => themeMutationMiddleware),
@@ -155,6 +157,7 @@ const mocks = vi.hoisted(() => {
     unreadTrackingPersistenceMiddleware,
     tabStatePersistenceMiddleware,
     panelLayoutPersistenceMiddleware,
+    fileContentPruneService,
     sidebarNavPersistenceMiddleware,
     browserPersistenceMiddleware,
     themeMutationMiddleware,
@@ -272,6 +275,9 @@ vi.mock("./middlewares/tab-state-persistence-service", () => ({
 vi.mock("./middlewares/panel-layout-persistence-service", () => ({
   createPanelLayoutPersistenceMiddleware: mocks.createPanelLayoutPersistenceMiddleware,
 }));
+vi.mock("./middlewares/file-content-prune-service", () => ({
+  createFileContentPruneService: mocks.createFileContentPruneService,
+}));
 vi.mock("./middlewares/sidebar-nav-persistence-service", () => ({
   createSidebarNavPersistenceMiddleware: mocks.createSidebarNavPersistenceMiddleware,
 }));
@@ -384,6 +390,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sidebarNavPersistenceMiddleware,
       mocks.browserPersistenceMiddleware,
       mocks.panelLayoutPersistenceMiddleware,
+      mocks.fileContentPruneService,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -442,6 +449,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sidebarNavPersistenceMiddleware,
       mocks.browserPersistenceMiddleware,
       mocks.panelLayoutPersistenceMiddleware,
+      mocks.fileContentPruneService,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -500,6 +508,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sidebarNavPersistenceMiddleware,
       mocks.browserPersistenceMiddleware,
       mocks.panelLayoutPersistenceMiddleware,
+      mocks.fileContentPruneService,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -559,6 +568,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sidebarNavPersistenceMiddleware,
       mocks.browserPersistenceMiddleware,
       mocks.panelLayoutPersistenceMiddleware,
+      mocks.fileContentPruneService,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -635,6 +645,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.sidebarNavPersistenceMiddleware,
       mocks.browserPersistenceMiddleware,
       mocks.panelLayoutPersistenceMiddleware,
+      mocks.fileContentPruneService,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,

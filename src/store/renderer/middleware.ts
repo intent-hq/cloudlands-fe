@@ -55,6 +55,7 @@ import { createTabStatePersistenceMiddleware } from "./middlewares/tab-state-per
 import { createSidebarNavPersistenceMiddleware } from "./middlewares/sidebar-nav-persistence-service";
 import { createBrowserPersistenceMiddleware } from "./middlewares/browser-persistence-service";
 import { createPanelLayoutPersistenceMiddleware } from "./middlewares/panel-layout-persistence-service";
+import { createFileContentPruneService } from "./middlewares/file-content-prune-service";
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
 import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
@@ -294,6 +295,13 @@ function buildMiddleware(): StoreMiddleware[] {
     // and save layout history to disk (debounced) via IPC. Retroactively
     // restores the active workspace's layout on middleware creation.
     createPanelLayoutPersistenceMiddleware(),
+    // Automatically remove file-content entries from the files slice when their
+    // corresponding file tabs are closed. Reacts when the stale-path computation
+    // changes (not on every action) to prune content entries no longer open in
+    // any panel file tab, matching the deleted `cleanupClosedFileContentEntries`
+    // saga behavior. Guards against empty payloads, invalid workspace IDs, and
+    // self-retrigger loops.
+    createFileContentPruneService(),
     // Give the (post-saga) theme triggers (`requestThemePreferenceChange` /
     // `selectThemePreset` / `importCustomTheme` / `clearThemeCustomization`)
     // real handlers so the Settings theme toggle and ColorThemeSettings
