@@ -17,6 +17,7 @@ This index lists active documentation in `docs/`; obsolete proposal, spike, and 
 - **[IPC_DEBUG_GUIDE.md](./IPC_DEBUG_GUIDE.md)** - IPC debugging guide
 - **[KEYBINDINGS.md](./KEYBINDINGS.md)** - Keyboard shortcuts and bindings reference
 - **[MULTI_ACP_PROVIDER_SPEC.md](./MULTI_ACP_PROVIDER_SPEC.md)** - Multi-provider ACP specification
+- **[RELEASING.md](./RELEASING.md)** - Release process and deployment runbook
 - **[RULES_SYSTEM.md](./RULES_SYSTEM.md)** - Rules and instruction system
 - **[STATE_MANAGEMENT.md](./STATE_MANAGEMENT.md)** - State management orientation and links to the Redux skills as the active architecture source
 - **[TROUBLESHOOTING_GUIDE.md](./TROUBLESHOOTING_GUIDE.md)** - Debugging and common issues
