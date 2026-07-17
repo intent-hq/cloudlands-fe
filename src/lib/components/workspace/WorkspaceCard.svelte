@@ -196,6 +196,10 @@
   });
 
   function getSummaryAgentState(agent: { id: string }): AvatarState {
+    // Treat workspace.activity === 'idle' as authoritative — no running state
+    // when the daemon says idle, even if stale Redux/tracker data remains.
+    if (workspace?.activity === 'idle') return 'idle';
+
     const reduxState = appStore.state;
     const loadedSession = selectAgentSession.select(reduxState, agent.id);
     const isWaiting = loadedSession
@@ -429,7 +433,7 @@
           {workspace.title || 'Untitled'}
         </span>
 
-        {#if isRunning && streamingAgentIds.length > 0}
+        {#if isRunning && streamingAgentIds.length > 0 && workspace?.activity !== 'idle'}
           <div class="wc-secondary flex items-center -space-x-1.5 shrink-0">
             {#each streamingAgentIds.slice(0, 3) as agentId (agentId)}
               <AugieAvatarWithState {agentId} size={14} state="running" />
