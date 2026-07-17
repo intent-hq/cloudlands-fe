@@ -27,6 +27,7 @@ import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import { appClient } from "$lib/client";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import type { KnownRepo } from "$shared/types/known-repo";
+import { WorkspaceStatus } from "$shared/types";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
   loadRecencyData,
@@ -163,7 +164,10 @@ registerMockSeeder("workspaces", async ({ store, client }) => {
   const recentViews = await client.workspaces.recentViews();
   store.dispatch(loadRecencyData({ lastViewedAt: recentViews }));
 
-  const firstWorkspace = workspaces[0];
+  // Auto-select the first non-archived workspace (skip archived since they're hidden by default).
+  // Fall back to workspaces[0] if all are archived (edge case).
+  const firstWorkspace =
+    workspaces.find((w) => w.status !== WorkspaceStatus.Archived) ?? workspaces[0];
   if (firstWorkspace) {
     // Only auto-select the first workspace if BOTH activeWorkspaceId AND currentTabId
     // are unset (fresh boot). If either is already set (e.g. by route loader on reload),
