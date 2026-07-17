@@ -294,7 +294,15 @@ describe("userPreferencesNotificationPersistenceMiddleware", () => {
       // Trigger hydration
       chain({ type: "init" });
 
-      // Wait for hydration to complete
+      // Wait for hydration to complete (poll until all settings.get calls finish)
+      await vi.waitFor(() => {
+        expect(backendRequest).toHaveBeenCalledTimes(4);
+      });
+
+      // Flush microtasks to ensure Promise.all and dispatches have settled
+      await Promise.resolve();
+
+      // Advance past the debounce window to ensure no echo-write is scheduled
       await vi.runAllTimersAsync();
 
       // Verify: 4 settings.get calls (hydration), 0 settings.update calls (no echo-write)
