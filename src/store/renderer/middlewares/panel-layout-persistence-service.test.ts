@@ -13,7 +13,6 @@ import {
   closeTab,
   splitPanel,
   panelLayoutReducer,
-  emptyWorkspaceState,
 } from "$store/renderer/slices/panel-layout/panel-layout-slice";
 import {
   workspaceMounted,
