@@ -29,7 +29,7 @@ interface PanelLayoutHistoryEntry {
 // The save channel writes a layout history entry to disk. In test mode this
 // is a no-op (the reconciliation test just needs the channel to be bridged
 // so it doesn't fail the unbridged-invoke check).
-registerMockIpcHandler('panel-layout:save', async (arg) => {
+registerMockIpcHandler('panel-layout:save', async (_arg) => {
   // In real implementation (main process), this would write to disk.
   // For tests, we just acknowledge the save.
   return { success: true };
