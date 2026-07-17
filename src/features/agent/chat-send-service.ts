@@ -339,7 +339,7 @@ export function createChatSendMiddleware(): StoreMiddleware {
         const imageBlocks = inner.imageBlocks;
         const noteIds = inner.noteIds;
 
-        // STAB-64 fix: when queuedMessageId is present (user clicked "Send now"
+        // STAB-68 fix: when queuedMessageId is present (user clicked "Send now"
         // on a queued message), remove the queued entry BEFORE dispatching the
         // lifecycle send, so the daemon queue can't re-deliver the same message
         // after the interrupt turn. The removal is idempotent (PROTOCOL §5.5),

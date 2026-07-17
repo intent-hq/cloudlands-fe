@@ -535,11 +535,11 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // STAB-64: queuedMessageId triggers queue removal before the lifecycle send
+  // STAB-68: queuedMessageId triggers queue removal before the lifecycle send
   // -------------------------------------------------------------------------
 
-  it("STAB-64: queuedMessageId triggers queue removal BEFORE the lifecycle send (correct wire ordering)", async () => {
-    // Regression test for STAB-64: when user clicks "Send now" on a queued
+  it("STAB-68: queuedMessageId triggers queue removal BEFORE the lifecycle send (correct wire ordering)", async () => {
+    // Regression test for STAB-68: when user clicks "Send now" on a queued
     // message, ChatPanel dispatches sendMessage with queuedMessageId. The
     // middleware MUST remove the queued entry (optimistic local delete +
     // agent.removeQueuedMessage wire call) and AWAIT it BEFORE dispatching
@@ -583,7 +583,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(selectAgentQueueMessages.select(appStore.state, AGENT)).toEqual([]);
   });
 
-  it("STAB-64: queue removal failure does NOT block the lifecycle send (removal is idempotent)", async () => {
+  it("STAB-68: queue removal failure does NOT block the lifecycle send (removal is idempotent)", async () => {
     // Even if the daemon reports a non-success or the seam throws, the
     // middleware must log it and proceed with the send — the worst case
     // matches today's behavior (duplicate delivery), and the BE's idempotency
@@ -616,7 +616,7 @@ describe("chatSendService (fake lifecycle seam, real store)", () => {
     expect(lifecycleSendMessage.mock.calls[0]?.[1]).toBe("fail and send");
   });
 
-  it("STAB-64: queue removal throwing does NOT block the lifecycle send", async () => {
+  it("STAB-68: queue removal throwing does NOT block the lifecycle send", async () => {
     const seeded: QueuedMessage[] = [
       { id: "q-throw", content: "throw and send", position: 0, queuedAt: "2026-01-01T00:00:01.000Z" },
     ];
