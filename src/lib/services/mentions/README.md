@@ -158,7 +158,7 @@ Supported mention types:
 - **Notes**: `note`, `note-range`
 - **Tasks**: `task`
 - **Rules**: `rule`
-- **Commands**: `command`, `user-guidelines`, `agent-memories`
+- **Commands**: `command`, `user-guidelines`
 - **Personalities**: `personality`
 - **External**: `external-source`
 - **VCS**: `branch`, `commit`, `pr`

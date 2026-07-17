@@ -1756,44 +1756,6 @@ export const PanelLayoutSaveSchema = z.object({
 });
 
 
-
-// ============================================================================
-// Memories Schemas
-// ============================================================================
-
-export const MemoriesListSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const MemoriesGetSchema = z.object({
-  id: z.string().min(1, 'Memory ID is required'),
-});
-
-export const MemoriesCreateSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  content: z.string().min(1, 'Content is required'),
-  tags: z.array(z.string()).optional(),
-  metadata: z.record(z.any()).optional(),
-});
-
-export const MemoriesUpdateSchema = z.object({
-  id: z.string().min(1, 'Memory ID is required'),
-  updates: z.record(z.any()),
-});
-
-export const MemoriesDeleteSchema = z.object({
-  id: z.string().min(1, 'Memory ID is required'),
-});
-
-export const MemoriesSearchSchema = z.object({
-  query: z.string().min(1, 'Query is required'),
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
-export const MemoriesGetContextSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-});
-
 // ============================================================================
 // Rules Schemas
 // ============================================================================

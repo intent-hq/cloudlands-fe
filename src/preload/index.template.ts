@@ -396,13 +396,6 @@ const ALLOWED_CHANNELS = [
   'rules:load-workspace',
   'rules:get-context',
   'config:getAll',
-  'memories:list',
-  'memories:get',
-  'memories:create',
-  'memories:update',
-  'memories:delete',
-  'memories:search',
-  'memories:get-context',
   'banner:fetch',
 
   'diffs:list',

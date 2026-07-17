@@ -56,7 +56,6 @@ export type MentionType =
   | 'rule'
   | 'task'
   | 'user-guidelines'
-  | 'agent-memories'
   | 'personality'
   | 'workspace'
   | 'agent'
@@ -218,14 +217,6 @@ export const SPECIAL_MENTIONS = {
     description: 'Include user-defined guidelines',
     icon: '📋',
     uri: 'devspace://user-guidelines/main',
-  },
-  AGENT_MEMORIES: {
-    id: 'agent-memories',
-    type: 'agent-memories' as MentionType,
-    label: 'Agent Memories',
-    description: 'Include AI agent memories',
-    icon: '🧠',
-    uri: 'devspace://agent-memories/current',
   },
 };
 
