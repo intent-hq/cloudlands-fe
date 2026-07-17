@@ -27,40 +27,49 @@ const logger = createLogger("ActiveStreamsReduxBridge");
 
 let unsubscribe: (() => void) | null = null;
 let hasStartedPolling = false;
+// In test environments (when vitest is running), disable the bridge by default.
+// Tests that explicitly want to test the bridge should call __enableActiveStreamsReduxBridgeForTests().
+// In production, this is always false (vitest is not defined), so the bridge runs normally.
+let testModeDisabled = typeof (globalThis as any).vitest !== "undefined";
 
 export function createActiveStreamsReduxBridge(): StoreMiddleware {
-  return () => {
-    return (next) => (action) => {
-      // Boot-time setup: subscribe to tracker updates and start polling once
-      // Guard: only initialize in production Electron context, not in tests
-      if (!unsubscribe && typeof window !== "undefined" && window.electronAPI?.on) {
-        // Subscribe to tracker updates and dispatch Redux action when tracker notifies
-        unsubscribe = activeStreamsTracker.subscribe(() => {
-          logger.debug("Tracker notified — dispatching bumpActiveStreamsVersion");
-          appStore.dispatch(bumpActiveStreamsVersion());
-        });
+  return () => (next) => (action) => {
+    // Boot-time setup: subscribe to tracker updates and start polling once.
+    // Runs on first action dispatch (not at middleware creation time) so the store
+    // is fully constructed before we subscribe.
+    // Skip in test mode unless explicitly enabled via __enableActiveStreamsReduxBridgeForTests()
+    if (!testModeDisabled && !unsubscribe) {
+      // Subscribe to tracker updates and dispatch Redux action when tracker notifies
+      unsubscribe = activeStreamsTracker.subscribe(() => {
+        logger.debug("Tracker notified — dispatching bumpActiveStreamsVersion");
+        appStore.dispatch(bumpActiveStreamsVersion());
+      });
 
-        logger.info("Subscribed to activeStreamsTracker updates");
+      logger.info("Subscribed to activeStreamsTracker updates");
 
-        // Ensure startPolling is called exactly once, independently of component mounting
-        if (!hasStartedPolling) {
-          hasStartedPolling = true;
-          activeStreamsTracker.startPolling();
-          logger.info("Started activeStreamsTracker polling");
-        }
+      // Ensure startPolling is called exactly once, independently of component mounting
+      if (!hasStartedPolling) {
+        hasStartedPolling = true;
+        activeStreamsTracker.startPolling();
+        logger.info("Started activeStreamsTracker polling");
       }
+    }
 
-      const result = next(action);
-      return result;
-    };
+    return next(action);
   };
 }
 
-// Export cleanup for test isolation (optional, but good practice)
+// Export opt-in for tests that explicitly want to test the bridge
+export function __enableActiveStreamsReduxBridgeForTests() {
+  testModeDisabled = false;
+}
+
+// Export cleanup for test isolation
 export function __resetActiveStreamsReduxBridgeForTests() {
   if (unsubscribe) {
     unsubscribe();
     unsubscribe = null;
   }
   hasStartedPolling = false;
+  testModeDisabled = typeof (globalThis as any).vitest !== "undefined";
 }

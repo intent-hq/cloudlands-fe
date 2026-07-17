@@ -15,7 +15,7 @@ import { store as appStore } from "$store/renderer/store";
 import { selectActiveStreamsVersion } from "$store/renderer/slices/sidebar-nav/sidebar-nav-selectors";
 import { activeStreamsTracker } from "./services/active-streams-tracker";
 import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import { __resetActiveStreamsReduxBridgeForTests } from "./active-streams-redux-bridge";
+import { __resetActiveStreamsReduxBridgeForTests, __enableActiveStreamsReduxBridgeForTests } from "./active-streams-redux-bridge";
 
 // Mock electron-bridge to provide on/off functions for event listeners
 vi.mock("$lib/electron-bridge", () => ({
@@ -37,31 +37,19 @@ describe("Active streams → Redux bridge", () => {
       data: [],
     }));
 
-    // Mock electronAPI.on to simulate production environment
-    // so the bridge actually initializes
-    if (typeof window !== "undefined") {
-      (window as any).electronAPI = {
-        on: vi.fn(),
-        off: vi.fn(),
-        invoke: vi.fn(),
-      };
-    }
+    // Enable the bridge for this test (it's disabled by default in test mode)
+    __enableActiveStreamsReduxBridgeForTests();
 
     appStore.init();
 
     // Trigger an action to initialize the bridge middleware
-    // (it initializes on first action dispatch when electronAPI.on exists)
+    // (it initializes on first action dispatch)
     appStore.dispatch({ type: "test/init" });
   });
 
   afterEach(() => {
     vi.clearAllMocks();
     __resetActiveStreamsReduxBridgeForTests();
-
-    // Clean up electronAPI mock
-    if (typeof window !== "undefined") {
-      delete (window as any).electronAPI;
-    }
   });
 
   it("dispatches bumpActiveStreamsVersion when tracker notifies listeners after active-streams update", async () => {
