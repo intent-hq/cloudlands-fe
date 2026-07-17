@@ -92,6 +92,178 @@ describe("LiveSpecialistsClient (fake transport)", () => {
     client.subscribe(handler);
     await vi.waitFor(() => expect(handler).toHaveBeenCalledWith([COORDINATOR_DEF]));
   });
+
+  describe("write methods (create/edit/delete)", () => {
+    it("create forwards specialist.create with id/spec and optional scope/workspacePath", async () => {
+      const newSpec: SpecialistDef = {
+        id: "reviewer",
+        name: "Reviewer",
+        description: "Reviews diffs",
+        modelTier: "high",
+        prompt: "You review code changes.",
+        behaviorPrompt: "You review code changes.",
+        source: "user",
+        isCustomized: true,
+      };
+      mockedRequest.mockResolvedValueOnce({ specialist: newSpec });
+      const client = new LiveSpecialistsClient();
+
+      const result = await client.create("reviewer", newSpec);
+
+      expect(result).toEqual(newSpec);
+      expect(mockedRequest).toHaveBeenCalledWith("specialist.create", {
+        id: "reviewer",
+        spec: newSpec,
+      });
+    });
+
+    it("create includes scope=project when provided", async () => {
+      const newSpec: SpecialistDef = {
+        id: "reviewer",
+        name: "Reviewer",
+        description: "Reviews diffs",
+        prompt: "body",
+        behaviorPrompt: "body",
+        source: "project",
+        isCustomized: true,
+      };
+      mockedRequest.mockResolvedValueOnce({ specialist: newSpec });
+      const client = new LiveSpecialistsClient();
+
+      await client.create("reviewer", newSpec, "project", "/ws/path");
+
+      expect(mockedRequest).toHaveBeenCalledWith("specialist.create", {
+        id: "reviewer",
+        spec: newSpec,
+        scope: "project",
+        workspacePath: "/ws/path",
+      });
+    });
+
+    it("create propagates daemon errors without swallowing (existing id in scope)", async () => {
+      mockedRequest.mockRejectedValueOnce(new Error("specialist already exists in user scope: reviewer"));
+      const client = new LiveSpecialistsClient();
+      const spec: SpecialistDef = {
+        id: "reviewer",
+        name: "Reviewer",
+        description: "d",
+        prompt: "p",
+        behaviorPrompt: "p",
+        source: "user",
+      };
+
+      await expect(client.create("reviewer", spec)).rejects.toThrow(
+        "specialist already exists in user scope: reviewer",
+      );
+    });
+
+    it("edit forwards specialist.edit with id/spec/scope and optional workspacePath", async () => {
+      const editedSpec: SpecialistDef = {
+        id: "reviewer",
+        name: "Reviewer v2",
+        description: "Reviews diffs carefully",
+        prompt: "v2",
+        behaviorPrompt: "v2",
+        source: "user",
+        isCustomized: true,
+      };
+      mockedRequest.mockResolvedValueOnce({ specialist: editedSpec });
+      const client = new LiveSpecialistsClient();
+
+      const result = await client.edit("reviewer", editedSpec, "user");
+
+      expect(result).toEqual(editedSpec);
+      expect(mockedRequest).toHaveBeenCalledWith("specialist.edit", {
+        id: "reviewer",
+        spec: editedSpec,
+        scope: "user",
+      });
+    });
+
+    it("edit includes workspacePath when provided", async () => {
+      const editedSpec: SpecialistDef = {
+        id: "implementor",
+        name: "Implementor",
+        description: "d",
+        prompt: "p",
+        behaviorPrompt: "p",
+        source: "project",
+        isCustomized: true,
+      };
+      mockedRequest.mockResolvedValueOnce({ specialist: editedSpec });
+      const client = new LiveSpecialistsClient();
+
+      await client.edit("implementor", editedSpec, "project", "/ws/path");
+
+      expect(mockedRequest).toHaveBeenCalledWith("specialist.edit", {
+        id: "implementor",
+        spec: editedSpec,
+        scope: "project",
+        workspacePath: "/ws/path",
+      });
+    });
+
+    it("edit propagates daemon errors without swallowing (missing file)", async () => {
+      mockedRequest.mockRejectedValueOnce(new Error("specialist not found in user scope: missing"));
+      const client = new LiveSpecialistsClient();
+      const spec: SpecialistDef = {
+        id: "missing",
+        name: "Missing",
+        description: "d",
+        prompt: "p",
+        behaviorPrompt: "p",
+        source: "user",
+      };
+
+      await expect(client.edit("missing", spec, "user")).rejects.toThrow(
+        "specialist not found in user scope: missing",
+      );
+    });
+
+    it("delete forwards specialist.delete with id/scope and optional workspacePath", async () => {
+      mockedRequest.mockResolvedValueOnce({ success: true });
+      const client = new LiveSpecialistsClient();
+
+      const result = await client.delete("reviewer", "user");
+
+      expect(result).toEqual({ success: true });
+      expect(mockedRequest).toHaveBeenCalledWith("specialist.delete", {
+        id: "reviewer",
+        scope: "user",
+      });
+    });
+
+    it("delete includes workspacePath when provided", async () => {
+      mockedRequest.mockResolvedValueOnce({ success: true });
+      const client = new LiveSpecialistsClient();
+
+      await client.delete("implementor", "project", "/ws/path");
+
+      expect(mockedRequest).toHaveBeenCalledWith("specialist.delete", {
+        id: "implementor",
+        scope: "project",
+        workspacePath: "/ws/path",
+      });
+    });
+
+    it("delete propagates daemon errors without swallowing (bundled is read-only)", async () => {
+      mockedRequest.mockRejectedValueOnce(new Error("bundled specialists are read-only"));
+      const client = new LiveSpecialistsClient();
+
+      await expect(client.delete("implementor", "user")).rejects.toThrow(
+        "bundled specialists are read-only",
+      );
+    });
+
+    it("delete propagates daemon errors when file is missing", async () => {
+      mockedRequest.mockRejectedValueOnce(new Error("specialist not found in user scope: missing"));
+      const client = new LiveSpecialistsClient();
+
+      await expect(client.delete("missing", "user")).rejects.toThrow(
+        "specialist not found in user scope: missing",
+      );
+    });
+  });
 });
 
 describe("misc-ui-events seeder splits specialist.list into the store slices", () => {
