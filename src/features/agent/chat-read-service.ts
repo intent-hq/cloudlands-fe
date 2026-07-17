@@ -9,12 +9,11 @@
  * read path WITHOUT re-adding a saga and WITHOUT changing the dispatch site:
  * `createChatReadMiddleware()` observes every dispatched action and, on
  * `initializeChatRequested`, runs `loadChatTranscript(agentId)` — which fetches
- * the session (`appClient.agents.get`) AND the real transcript via the
- * `chat.subscribe` seq-0 snapshot (PROTOCOL §7.1, `appClient.chat.subscribeSnapshot`).
- * The snapshot merges the newest `agent.getConversation` page with the
- * synthetic in-flight assistant message (`isStreaming: true`) when a turn is
- * currently streaming, so switching away and back to a chat mid-turn rehydrates
- * the interim response instead of clobbering it with persisted-only history.
+ * the session (`appClient.agents.get`) AND the FULL transcript by paging through
+ * `agent.getConversation` (PROTOCOL §5.5, up to 200 messages per page, looping
+ * on `nextToken` until the complete conversation is assembled). The daemon's
+ * AgentLite projection (from `agents.get`) returns only message COUNTS, so
+ * `getConversation` is the sole source of the actual message content.
  * `bulkUpsertSessions` populates the agent-session slice (`byAgentId` + messages
  * = the conversation), and `upsertSession` registers the agent id in the
  * workspace-agents index.
@@ -34,6 +33,7 @@
  * mid-initialization through the middleware chain).
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { AgentMessage } from "$shared/types";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
@@ -49,10 +49,12 @@ const logger = createLogger("ChatReadService");
 const inFlight = new Map<string, Promise<void>>();
 
 /**
- * Fetch a single agent's session AND its real transcript from the seam, then
- * hydrate the store with `{ ...session, messages }`. Errors are swallowed
- * (logged only) so a failed read never clears an existing transcript. Concurrent
- * calls for the same agent share one fetch.
+ * Fetch a single agent's session AND its FULL transcript from the seam, then
+ * hydrate the store with `{ ...session, messages }`. Pages through
+ * agent.getConversation to assemble the complete transcript (the daemon
+ * returns up to 200 messages per page). Errors are swallowed (logged only) so
+ * a failed read never clears an existing transcript. Concurrent calls for the
+ * same agent share one fetch.
  */
 export async function loadChatTranscript(agentId: string): Promise<void> {
   const pending = inFlight.get(agentId);
@@ -60,19 +62,37 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
 
   const run = (async () => {
     try {
-      const [session, snapshot] = await Promise.all([
-        appClient.agents.get(agentId),
-        appClient.chat.subscribeSnapshot(agentId),
-      ]);
-      if (session) {
-        // Render BE state as-is: the daemon is the single source of truth for
-        // streaming/responding flags. If a chat opens with "Thinking", that is
-        // because the daemon snapshot actually reports a turn is in-flight;
-        // any orphan/stale healing belongs in the daemon, not the renderer.
-        const sessionWithMessages = { ...session, messages: snapshot.messages };
-        appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
-        appStore.dispatch(upsertSession(sessionWithMessages));
-      }
+      const session = await appClient.agents.get(agentId);
+      if (!session) return;
+
+      // Fetch the FULL transcript by paging through agent.getConversation.
+      // Request 200 messages per page (daemon max) and loop on nextToken.
+      // This fixes the flicker/truncation bug where chat.subscribeSnapshot
+      // (which returns only the newest ~50 messages) was used for initial
+      // load, causing transcripts with > 50 messages to be truncated.
+      const allMessages: AgentMessage[] = [];
+      let nextToken: string | null = null;
+      const pageLimit = 200;
+
+      do {
+        const page = await appClient.agents.getConversation(
+          agentId,
+          pageLimit,
+          nextToken || undefined,
+        );
+        // getConversation returns oldest→newest within each page, so prepend
+        // each page to maintain overall newest-first order when accumulating.
+        allMessages.unshift(...page.messages);
+        nextToken = page.nextToken;
+      } while (nextToken !== null);
+
+      // Render BE state as-is: the daemon is the single source of truth for
+      // streaming/responding flags. If a chat opens with "Thinking", that is
+      // because the daemon snapshot actually reports a turn is in-flight;
+      // any orphan/stale healing belongs in the daemon, not the renderer.
+      const sessionWithMessages = { ...session, messages: allMessages };
+      appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
+      appStore.dispatch(upsertSession(sessionWithMessages));
     } catch (error) {
       logger.error("Failed to load agent conversation transcript", error);
     } finally {

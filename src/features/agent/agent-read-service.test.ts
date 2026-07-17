@@ -147,4 +147,26 @@ describe("agentReadService (fake seam, real store)", () => {
     ]);
     expect(stored[0].role).toBe("user");
   });
+
+  // Regression: ensureAgentSession must preserve existing messages even when
+  // the existing messages array exists but is empty (e.g., during the window
+  // between session creation and transcript hydration), because agent.get
+  // always returns AgentLite (messages normalized to []).
+  it("preserves existing messages array even when empty", async () => {
+    const agentId = "agent-preserve-empty";
+    appStore.dispatch(
+      bulkUpsertSessions([makeSession({ id: agentId, name: "initial", messages: [] })]),
+    );
+    expect(selectAgentMessages.select(appStore.state, agentId).length).toBe(0);
+
+    agentsApi.get.mockResolvedValueOnce(
+      makeSession({ id: agentId, name: "refreshed", messages: [] }) as never,
+    );
+    await ensureAgentSession(agentId);
+
+    expect(selectAgentSession.select(appStore.state, agentId)?.name).toBe("refreshed");
+    // Empty array should be preserved (not replaced with a different empty array)
+    const stored = selectAgentMessages.select(appStore.state, agentId);
+    expect(stored).toEqual([]);
+  });
 });
