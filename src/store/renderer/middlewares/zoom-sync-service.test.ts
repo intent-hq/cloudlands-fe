@@ -59,8 +59,8 @@ describe("createZoomSyncMiddleware", () => {
     // Get the registered handler
     const handler = mockOn.mock.calls[0][1];
 
-    // Simulate zoom event
-    handler({ payload: { zoomFactor: 1.5 } });
+    // Simulate zoom event (preload passes IPC arg directly, not wrapped)
+    handler({ zoomFactor: 1.5 });
 
     expect(mockDispatch).toHaveBeenCalledWith(setZoomFactor(1.5));
   });
@@ -71,7 +71,7 @@ describe("createZoomSyncMiddleware", () => {
     middleware(apiStub)(next);
 
     const handler = mockOn.mock.calls[0][1];
-    handler({ payload: { zoomFactor: -1 } });
+    handler({ zoomFactor: -1 });
 
     expect(mockDispatch).not.toHaveBeenCalled();
   });
@@ -82,7 +82,7 @@ describe("createZoomSyncMiddleware", () => {
     middleware(apiStub)(next);
 
     const handler = mockOn.mock.calls[0][1];
-    handler({ payload: { zoomFactor: 0 } });
+    handler({ zoomFactor: 0 });
 
     expect(mockDispatch).not.toHaveBeenCalled();
   });
@@ -93,7 +93,7 @@ describe("createZoomSyncMiddleware", () => {
     middleware(apiStub)(next);
 
     const handler = mockOn.mock.calls[0][1];
-    handler({ payload: { zoomFactor: "1.5" as any } });
+    handler({ zoomFactor: "1.5" as any });
 
     expect(mockDispatch).not.toHaveBeenCalled();
   });

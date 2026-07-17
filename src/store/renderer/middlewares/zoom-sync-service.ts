@@ -31,15 +31,15 @@ export function createZoomSyncMiddleware(): StoreMiddleware {
   return () => {
     // Register the listener once on middleware creation
     if (isElectron() && typeof window !== "undefined" && window.electronAPI?.on) {
-      const handler = (event: { payload: ZoomChangedEvent }) => {
-        const data = event.payload;
+      const handler = (data: ZoomChangedEvent) => {
         if (typeof data?.zoomFactor === "number" && data.zoomFactor > 0) {
           appStore.dispatch(setZoomFactor(data.zoomFactor));
         }
       };
 
       window.electronAPI.on("window:zoom-changed", handler);
-      // Note: cleanup would be registered here if the store supported disposal
+      // Note: No cleanup is performed. The listener persists for the lifetime
+      // of the renderer process.
     }
 
     return (next) => (action) => {

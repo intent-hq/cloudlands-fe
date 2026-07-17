@@ -1,27 +1,27 @@
 /**
- * External-editors persistence service — restores the localStorage + settings
- * persistence that the removed `external-editors/sagas/persistence-saga`
- * performed. With no saga listening, Open-In action choices and hidden-editor
- * preferences never persisted across relaunches.
+ * External-editors persistence service — restores the localStorage persistence
+ * that the removed `external-editors/sagas/persistence-saga` performed. With no
+ * saga listening, Open-In action choices and hidden-editor preferences never
+ * persisted across relaunches.
  *
  * This reconnects the path WITHOUT re-adding a saga and WITHOUT changing any
  * call site:
- *   - On creation it hydrates hidden editor IDs from daemon settings once
+ *   - On first dispatch it hydrates hidden editor IDs from localStorage once
  *     (silently ignoring errors).
  *   - After `setOpenAction` it writes the choice to localStorage.
- *   - After `toggleHiddenEditor` it writes the updated set to daemon settings.
+ *   - After `toggleHiddenEditor` it writes the updated set to localStorage.
  *
- * Storage keys and payload shape match the reference saga (see deleted
- * `external-editors/sagas/persistence-saga.ts` at 95d908a2~1) so persisted
- * state remains cross-compatible with the pre-port app.
+ * Storage keys match the app-settings-schema (see
+ * `src/shared/app-settings-schema.ts` openIn.hiddenEditors definition) so
+ * persisted state remains compatible with settings UI and other persistence
+ * paths.
  *
  * Dependency-light per src/store/renderer/AGENTS.md: imports only safe-storage,
- * AppClient seam, configured store, and slice actions — no selectors and no
- * store module.
+ * configured store, and slice actions — no AppClient, no selectors, no store
+ * module.
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
-import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import type { StoreState } from "../types";
 import {
@@ -32,18 +32,19 @@ import {
 } from "../slices/external-editors/external-editors-slice";
 
 const STORAGE_KEY = "open-combo-button-last-action";
-const HIDDEN_OPEN_IN_EDITORS_KEY = "hiddenOpenInEditors";
+const HIDDEN_EDITORS_STORAGE_KEY = "legacy-settings:hiddenOpenInEditors";
 
 let hydrated = false;
 
-/** Hydrate hidden editor IDs from daemon settings (fire-once on first dispatch). */
-async function hydrateHiddenEditorIds(): Promise<void> {
+/** Hydrate hidden editor IDs from localStorage (fire-once on first dispatch). */
+function hydrateHiddenEditorIds(): void {
   if (hydrated) return;
   hydrated = true;
   try {
-    const result = await appClient.settings.get(HIDDEN_OPEN_IN_EDITORS_KEY);
-    if (result?.value !== undefined && result.value !== null) {
-      const normalized = normalizeHiddenEditorIds(result.value);
+    const stored = safeLocalStorage.getItem(HIDDEN_EDITORS_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      const normalized = normalizeHiddenEditorIds(parsed);
       appStore.dispatch(setHiddenEditorIds(normalized));
     }
   } catch {
@@ -51,21 +52,21 @@ async function hydrateHiddenEditorIds(): Promise<void> {
   }
 }
 
-/** Persist hidden editor IDs to daemon settings (fire-and-forget). */
+/** Persist hidden editor IDs to localStorage. */
 function persistHiddenEditorIds(state: StoreState): void {
   const hiddenEditorIds = state.externalEditors.hiddenEditorIds;
-  void appClient.settings
-    .update([{ path: HIDDEN_OPEN_IN_EDITORS_KEY, value: hiddenEditorIds }])
-    .catch(() => {
-      // Ignore save errors.
-    });
+  try {
+    safeLocalStorage.setItem(HIDDEN_EDITORS_STORAGE_KEY, JSON.stringify(hiddenEditorIds));
+  } catch {
+    // Ignore save errors.
+  }
 }
 
 export function createExternalEditorsPersistenceMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     // Hydrate on first dispatch
     if (!hydrated) {
-      void hydrateHiddenEditorIds();
+      hydrateHiddenEditorIds();
     }
 
     const result = next(action);

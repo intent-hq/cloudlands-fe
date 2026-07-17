@@ -5,7 +5,7 @@ import {
 } from "../slices/external-editors/external-editors-slice";
 
 // Use vi.hoisted to ensure mocks are available before module resolution
-const { mockAppStore, mockAppClient, mockSafeLocalStorage } = vi.hoisted(() => {
+const { mockAppStore, mockSafeLocalStorage } = vi.hoisted(() => {
   return {
     mockAppStore: {
       state: {
@@ -15,23 +15,12 @@ const { mockAppStore, mockAppClient, mockSafeLocalStorage } = vi.hoisted(() => {
       },
       dispatch: vi.fn(),
     },
-    mockAppClient: {
-      settings: {
-        get: vi.fn().mockResolvedValue({ value: ["code"] }),
-        update: vi.fn().mockResolvedValue([{ path: "hiddenOpenInEditors", value: ["code", "vscode"] }]),
-      },
-    },
     mockSafeLocalStorage: {
       setItem: vi.fn(),
-      getItem: vi.fn(),
-      getItemWithStatus: vi.fn(() => ({ value: null, hadError: false })),
+      getItem: vi.fn(() => null),
     },
   };
 });
-
-vi.mock("$lib/client", () => ({
-  appClient: mockAppClient,
-}));
 
 vi.mock("$lib/utils/safe-storage", () => ({
   safeLocalStorage: mockSafeLocalStorage,
@@ -65,13 +54,14 @@ describe("createExternalEditorsPersistenceMiddleware", () => {
     expect(next).toHaveBeenCalledWith(action);
   });
 
-  it("persists hidden editor IDs to daemon settings on toggleHiddenEditor", () => {
+  it("persists hidden editor IDs to localStorage on toggleHiddenEditor", () => {
     const action = toggleHiddenEditor("atom");
     middlewareChain(action);
 
-    expect(mockAppClient.settings.update).toHaveBeenCalledWith([
-      { path: "hiddenOpenInEditors", value: ["code", "vscode"] },
-    ]);
+    expect(mockSafeLocalStorage.setItem).toHaveBeenCalledWith(
+      "legacy-settings:hiddenOpenInEditors",
+      JSON.stringify(["code", "vscode"])
+    );
     expect(next).toHaveBeenCalledWith(action);
   });
 
@@ -79,8 +69,8 @@ describe("createExternalEditorsPersistenceMiddleware", () => {
     const action = { type: "unrelated/action" };
     middlewareChain(action);
 
+    // Should have been called once during hydration attempt, but not again
     expect(mockSafeLocalStorage.setItem).not.toHaveBeenCalled();
-    expect(mockAppClient.settings.update).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(action);
   });
 });
