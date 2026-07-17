@@ -50,9 +50,8 @@ const RENDERER_STARTUP_CHANNELS = [
   // Banner — fetched on PromotionalBanner component mount
   'banner:fetch',
 
-  // Auto-update — called after a short delay (2s) but still races
+  // Auto-update — get-state called during +layout.svelte init
   'auto-update:get-state',
-  'auto-update:check',
 
   // Git tracking — called by git tracking init
   'git-tracking:get-state',

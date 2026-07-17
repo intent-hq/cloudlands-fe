@@ -857,10 +857,7 @@ export const IPC_CHANNELS = {
 
   // Auto-Update
   AUTO_UPDATE: {
-    CHECK: 'auto-update:check',
     CHECK_MANUAL: 'auto-update:check-manual',
-    DOWNLOAD: 'auto-update:download',
-    INSTALL: 'auto-update:install',
     GET_STATE: 'auto-update:get-state',
     SET_CHANNEL: 'auto-update:set-channel',
     // Event channels (main → renderer)

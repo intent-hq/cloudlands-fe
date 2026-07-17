@@ -42,10 +42,7 @@ export interface UpdateState {
  */
 export const AUTO_UPDATE_CHANNELS = {
   // Invoke channels (renderer → main)
-  CHECK: 'auto-update:check',
   CHECK_MANUAL: 'auto-update:check-manual',
-  DOWNLOAD: 'auto-update:download',
-  INSTALL: 'auto-update:install',
   GET_STATE: 'auto-update:get-state',
   SET_CHANNEL: 'auto-update:set-channel',
   // Event channels (main → renderer)

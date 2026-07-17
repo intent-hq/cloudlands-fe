@@ -20,17 +20,6 @@ interface AutoUpdateResponse<T> {
  */
 export const autoUpdateClient = {
   /**
-   * Check for available updates
-   */
-  async checkForUpdates(): Promise<UpdateState> {
-    const response = await invokeIpc<AutoUpdateResponse<UpdateState>>(AUTO_UPDATE_CHANNELS.CHECK);
-    if (!response.success) {
-      throw new Error(response.error?.message || 'Failed to check for updates');
-    }
-    return response.data;
-  },
-
-  /**
    * Manually check for updates (triggers "up to date" notification if no updates)
    */
   async checkForUpdatesManual(): Promise<UpdateState> {
@@ -41,24 +30,6 @@ export const autoUpdateClient = {
       throw new Error(response.error?.message || 'Failed to check for updates');
     }
     return response.data;
-  },
-
-  /**
-   * Download the available update
-   */
-  async downloadUpdate(): Promise<void> {
-    const response = await invokeIpc<AutoUpdateResponse<void>>(AUTO_UPDATE_CHANNELS.DOWNLOAD);
-    if (!response.success) {
-      throw new Error(response.error?.message || 'Failed to download update');
-    }
-  },
-
-  /**
-   * Install the downloaded update and restart the app
-   */
-  async installUpdate(): Promise<void> {
-    await invokeIpc(AUTO_UPDATE_CHANNELS.INSTALL);
-    // App will restart, so we don't need to handle the response
   },
 
   /**

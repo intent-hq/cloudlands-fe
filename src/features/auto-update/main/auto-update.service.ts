@@ -14,7 +14,6 @@ import type { UpdateInfo as ElectronUpdateInfo, ProgressInfo } from 'electron-up
 import electronUpdater from 'electron-updater';
 import { DEFAULTS } from '../../../shared/constants';
 import { Logger } from '../../../shared/logger';
-import { saveWindowSessions } from '../../../main/window';
 import type { UpdateChannel, UpdateState, UpdateStatus } from '../types';
 
 const { autoUpdater } = electronUpdater;
@@ -237,7 +236,7 @@ class AutoUpdateService {
     await setLocalPref(BETA_UPDATES_STORAGE_KEY, channel === 'beta');
   }
 
-  async checkForUpdates(): Promise<UpdateState> {
+  private async checkForUpdates(): Promise<UpdateState> {
     // Skip if downloading or already downloaded
     if (this.state.status === 'downloading' || this.state.status === 'downloaded') {
       logger.debug('Skipping update check - already in progress or complete', {
@@ -318,28 +317,7 @@ class AutoUpdateService {
     return this.checkForUpdates();
   }
 
-  async downloadUpdate(): Promise<void> {
-    if (this.state.status !== 'available') {
-      throw new Error('No update available to download');
-    }
 
-    logger.info('Starting update download...');
-    this.updateStatus('downloading');
-    await autoUpdater.downloadUpdate();
-  }
-
-  async installUpdate(): Promise<void> {
-    if (this.state.status !== 'downloaded') {
-      throw new Error('No update downloaded to install');
-    }
-
-    logger.info('Saving window sessions before installing update...');
-    await saveWindowSessions();
-    isInstallingUpdate = true;
-
-    logger.info('Installing update and restarting...');
-    autoUpdater.quitAndInstall(false, true);
-  }
 
   getState(): UpdateState {
     return { ...this.state };
@@ -423,5 +401,6 @@ export const autoUpdateService = new AutoUpdateService();
 /**
  * Flag indicating the app is quitting to install an update.
  * When true, the window-all-closed handler should not delete window-sessions.json.
+ * Note: always false since auto-update:install invoke handler was removed.
  */
-export let isInstallingUpdate = false;
+export const isInstallingUpdate = false;
