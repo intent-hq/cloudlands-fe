@@ -69,7 +69,10 @@ describe("workspace list subscription (mock backend, real store)", () => {
     stop = startWorkspaceListSubscription();
     await flush();
 
-    expect(backend.requests).toContainEqual({ method: "workspace.list", params: undefined });
+    expect(backend.requests).toContainEqual({
+      method: "workspace.list",
+      params: { includeArchived: true },
+    });
     expect(selectWorkspaceItems.select(appStore.state).map((w) => w.title)).toContain("Original");
     expect(selectWorkspaceHasLoaded.select(appStore.state)).toBe(true);
   });

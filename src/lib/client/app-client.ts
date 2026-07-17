@@ -221,7 +221,7 @@ export interface WorkspaceCreateResult extends MutationResult {
 }
 
 export interface WorkspacesClient {
-  list(): Promise<Workspace[]>;
+  list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
   /**
    * Open a workspace by id (route loader entry point). Returns the matching
