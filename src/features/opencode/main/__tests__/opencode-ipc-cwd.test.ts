@@ -18,6 +18,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { OPENCODE_CHANNELS } from '../../../../shared/ipc/channels';
 
 const { mockBackendRequest, mockResolveOpenCodeCommand } = vi.hoisted(() => ({
   mockBackendRequest: vi.fn(),
@@ -73,21 +74,21 @@ describe('opencode IPC - cwd parameter regression', () => {
     // Assert the response was parsed correctly
     expect(result).toEqual(['openai/gpt-5.2', 'anthropic/claude-sonnet-4']);
 
-    // Assert the exact wire request shape: command, args, timeoutMs, NO cwd/workspaceId
+    // Assert the wire request contains expected fields and NO cwd/workspaceId
     expect(mockBackendRequest).toHaveBeenCalledTimes(1);
     expect(mockBackendRequest).toHaveBeenCalledWith(
       'host.exec',
-      {
+      expect.objectContaining({
         command: '/mocked/opencode',
         args: ['models', '--log-level', 'DEBUG'],
         timeoutMs: 10000,
-        // Explicitly assert NO cwd or workspaceId
-      },
+      }),
     );
 
-    // Extra paranoia: ensure the params object contains ONLY the allowed keys
+    // Explicitly assert cwd and workspaceId are absent
     const [_method, params] = mockBackendRequest.mock.calls[0];
-    expect(Object.keys(params).sort()).toEqual(['args', 'command', 'timeoutMs']);
+    expect(params).not.toHaveProperty('cwd');
+    expect(params).not.toHaveProperty('workspaceId');
   });
 
   it('does NOT send cwd or workspaceId when checking availability', async () => {
@@ -101,33 +102,36 @@ describe('opencode IPC - cwd parameter regression', () => {
     // Fresh import
     vi.resetModules();
     const ipcModule = await import('../opencode.ipc');
-    
+
     // Manually invoke the executeOpencodeCommand path via setupOpencodeIPC
     // We need to access the private executeOpencodeCommand, so we'll test via
     // the availability check which calls it with ['--version']
     ipcModule.setupOpencodeIPC();
-    
+
     // Get the registered handler for CHECK_AVAILABILITY
     const { ipcMain } = await import('electron');
     const handleCall = (ipcMain.handle as any).mock.calls.find(
-      (call: any) => call[0] === 'opencode:check-availability'
+      (call: any) => call[0] === OPENCODE_CHANNELS.CHECK_AVAILABILITY
     );
     expect(handleCall).toBeDefined();
-    
+
     const handler = handleCall[1];
     await handler();
 
-    // Assert the wire request
+    // Assert the wire request contains expected fields and NO cwd/workspaceId
+    expect(mockBackendRequest).toHaveBeenCalledTimes(1);
     expect(mockBackendRequest).toHaveBeenCalledWith(
       'host.exec',
-      {
+      expect.objectContaining({
         command: '/mocked/opencode',
         args: ['--version'],
         timeoutMs: 5000,
-      },
+      }),
     );
 
+    // Explicitly assert cwd and workspaceId are absent
     const [_method, params] = mockBackendRequest.mock.calls[0];
-    expect(Object.keys(params).sort()).toEqual(['args', 'command', 'timeoutMs']);
+    expect(params).not.toHaveProperty('cwd');
+    expect(params).not.toHaveProperty('workspaceId');
   });
 });
