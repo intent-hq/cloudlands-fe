@@ -163,4 +163,21 @@ describe('WorkspaceCard idle activity behavior', () => {
     const runningAvatars = container.querySelectorAll('[data-state="running"]');
     expect(runningAvatars.length).toBeGreaterThan(0);
   });
+
+  it('preserves unread-agent icons when workspace.activity === "idle"', () => {
+    const wsId = createTestWorkspaceId();
+    const agentId = createTestAgentId();
+    const workspace = makeWorkspace({ id: wsId, activity: 'idle', agentSummary: { agentIds: [agentId], hasActiveAgents: false } });
+
+    // Agent is idle (not streaming/processing in Redux)
+    mocks.state.agentSessions.byAgentId[agentId] = makeSession(agentId, wsId, { isStreaming: false });
+
+    const { container } = render(WorkspaceCard, {
+      props: { workspace, streamingAgentIds: [], isRunning: false, unreadAgentIds: [agentId] },
+    });
+
+    // Unread agent avatars should still render (even though workspace is idle)
+    const avatars = container.querySelectorAll('[data-agent-id]');
+    expect(avatars.length).toBeGreaterThan(0);
+  });
 });
