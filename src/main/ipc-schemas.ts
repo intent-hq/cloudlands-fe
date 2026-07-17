@@ -534,18 +534,6 @@ export const GitRenameBranchSchema = z.object({
 // Config Schemas
 // ============================================================================
 
-export const ConfigGetModelSchema = z.object({
-  modelId: z.string().min(1, 'Model ID is required'),
-});
-
-export const ConfigGetAllModelsSchema = z.object({});
-
-export const ConfigClearCacheSchema = z.object({});
-
-export const ConfigInvalidateSchema = z.object({
-  key: z.string().min(1, 'Key is required'),
-});
-
 export const ConfigGetSchema = z.object({
   key: z.string().optional(),
 });

@@ -407,11 +407,6 @@ export const IPC_CHANNELS = {
     DELETE: 'config:delete',
     GET_ALL: 'config:get-all',
     RESET: 'config:reset',
-    GET_MODEL: 'config:get-model',
-    GET_ALL_MODELS: 'config:get-all-models',
-    CLEAR_CACHE: 'config:clear-cache',
-    INVALIDATE: 'config:invalidate',
-    GET_STATS: 'config:get-stats',
   },
 
   // Settings (electron-store)
