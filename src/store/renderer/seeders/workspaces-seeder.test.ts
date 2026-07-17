@@ -9,7 +9,7 @@
  * daemon-direct cut-over — `WorkspaceClient.create` now calls
  * `appClient.workspaces.create` directly (see workspace.client.test.ts).
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
 import { reducers } from "../reducer";
 

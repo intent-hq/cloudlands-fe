@@ -26,8 +26,6 @@ vi.mock("$lib/client", () => ({
 import { appClient } from "$lib/client";
 import { selectAgentSession } from "../slices/agent-session/agent-session-selectors";
 import { bulkUpsertSessions } from "../slices/agent-session/agent-session-slice";
-import { selectActiveAgentIdForWorkspace } from "../slices/workspace-agents/workspace-agents-selectors";
-import { registerMockSeeder, clearMockSeeders } from "../mock-bootstrap";
 
 const mockedClient = vi.mocked(appClient);
 
@@ -93,7 +91,7 @@ describe("agents-seeder", () => {
       mockedClient.agents.list.mockResolvedValueOnce([agentLitePayload]);
 
       // Run the seeder directly
-      const seederModule = await import("./agents-seeder");
+      await import("./agents-seeder");
       // The seeder registers via registerMockSeeder, so we can get it from the registry
       const { seedMockStore } = await import("../mock-bootstrap");
       await seedMockStore(store, appClient);
