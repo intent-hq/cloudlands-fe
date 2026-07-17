@@ -317,6 +317,114 @@ describe("LiveGitClient reads (fake transport)", () => {
     expect(await client.commits("ws-1")).toEqual([]);
   });
 
+  it("commits forwards includeOlder parameter when provided", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      commits: [
+        {
+          hash: "older123",
+          message: "older commit",
+          author: "Ada",
+          date: "2025-01-01T00:00:00Z",
+          filesChanged: 1,
+          isPushed: true,
+        },
+      ],
+      boundarySha: "boundary-sha",
+      nextToken: null,
+    });
+    const client = new LiveGitClient();
+
+    const commits = await client.commits("ws-1", true);
+
+    expect(mockedRequest).toHaveBeenCalledWith("file-tracking.loadCommits", {
+      workspaceId: "ws-1",
+      includeOlder: true,
+    });
+    expect(commits).toHaveLength(1);
+    expect(commits[0].hash).toBe("older123");
+  });
+
+  it("commitsWithBoundary returns full envelope with boundarySha and nextToken", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      commits: [
+        {
+          hash: "abc123",
+          message: "workspace commit",
+          author: "Ada",
+          date: "2025-01-02T03:04:05Z",
+          filesChanged: 2,
+          isPushed: false,
+          files: [{ path: "a.ts", additions: 10, deletions: 2, status: "modified" }],
+        },
+      ],
+      boundarySha: "boundary-sha-123",
+      nextToken: "page-2-token",
+    });
+    const client = new LiveGitClient();
+
+    const result = await client.commitsWithBoundary("ws-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("file-tracking.loadCommits", {
+      workspaceId: "ws-1",
+    });
+    expect(result.commits).toHaveLength(1);
+    expect(result.commits[0].hash).toBe("abc123");
+    expect(result.boundarySha).toBe("boundary-sha-123");
+    expect(result.nextToken).toBe("page-2-token");
+  });
+
+  it("commitsWithBoundary returns null boundarySha when daemon returns null", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      commits: [
+        {
+          hash: "abc123",
+          message: "commit",
+          author: "Ada",
+          date: "2025-01-02T03:04:05Z",
+          filesChanged: 1,
+          isPushed: false,
+        },
+      ],
+      boundarySha: null,
+      nextToken: null,
+    });
+    const client = new LiveGitClient();
+
+    const result = await client.commitsWithBoundary("ws-1");
+
+    expect(result.boundarySha).toBeNull();
+    expect(result.nextToken).toBeNull();
+  });
+
+  it("commitsWithBoundary forwards includeOlder parameter", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      commits: [],
+      boundarySha: "boundary-sha",
+      nextToken: null,
+    });
+    const client = new LiveGitClient();
+
+    await client.commitsWithBoundary("ws-1", true);
+
+    expect(mockedRequest).toHaveBeenCalledWith("file-tracking.loadCommits", {
+      workspaceId: "ws-1",
+      includeOlder: true,
+    });
+  });
+
+  it("commitsWithBoundary degrades gracefully on daemon error", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("daemon error"));
+    const client = new LiveGitClient();
+
+    const result = await client.commitsWithBoundary("ws-1");
+
+    expect(result).toEqual({
+      commits: [],
+      boundarySha: null,
+      nextToken: null,
+    });
+  });
+
   // §5.19 `file-tracking.getChanges` returns `{ changes, truncated, totalCount }`
   // where each change mirrors the renderer `TrackedChange` (stage/stats/attribution).
   it("trackedChanges forwards file-tracking.getChanges and carries the §5.19 TrackedChange fields through", async () => {
