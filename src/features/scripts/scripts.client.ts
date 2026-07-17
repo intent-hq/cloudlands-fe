@@ -13,11 +13,10 @@
  * auto-detected scripts — so repeat clicks are no-ops and user scripts are
  * never overwritten. The legacy `scripts:detect` IPC channel is retired.
  *
- * `saveToRepo` is the only remaining IPC surface — it stays on
- * `scripts:save-to-repo`, sourcing its payload from the live daemon
- * `script.list` (the legacy local store is empty in daemon builds, and
- * letting the main handler read it is what silently clobbered
- * `.intent/config.json` with `scripts: []`).
+ * `saveToRepo` uses the daemon `repoConfig.get` / `repoConfig.save` RPC
+ * methods (PROTOCOL §5.33) to persist workspace scripts to the repo
+ * `.intent/config.json`, sourcing its payload from the live daemon
+ * `script.list`.
  */
 
 import type {

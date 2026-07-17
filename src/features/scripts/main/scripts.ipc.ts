@@ -35,7 +35,6 @@ import {
   upsertScript,
   removeScript,
   readRepoScripts,
-  saveScriptsToRepoConfig,
 } from './scripts-persistence';
 import {
   getScriptProcessManager,
@@ -108,29 +107,6 @@ const ScriptsGetOutputSchema = z.object({
   workspaceId: WorkspaceIdField,
   scriptId: z.string().min(1, 'Script ID is required'),
   lastN: z.number().int().positive().optional(),
-});
-
-/**
- * Repo-level script definition shipped by the renderer. The renderer sources
- * these from the live daemon `script.list` (§5.8) — the legacy local store is
- * NOT consulted (it is empty in daemon builds, and reading it here is what
- * silently clobbered `.intent/config.json` with `scripts: []`). `scripts` is
- * REQUIRED: a payload without it fails validation loudly instead of writing
- * an empty array and reporting success.
- */
-const RepoScriptPayloadSchema = z.object({
-  name: z.string().min(1),
-  command: z.string().min(1),
-  mode: ScriptModeSchema,
-  category: ScriptCategorySchema.optional(),
-  cwd: z.string().optional(),
-  env: z.record(z.string()).optional(),
-  autoStart: z.boolean().optional(),
-});
-
-const ScriptsSaveToRepoSchema = z.object({
-  workspaceId: WorkspaceIdField,
-  scripts: z.array(RepoScriptPayloadSchema),
 });
 
 // ============================================================================
@@ -643,46 +619,6 @@ export function registerScriptsHandlers(): void {
         }
       },
       SCRIPTS_CHANNELS.GET_OUTPUT,
-    ),
-  );
-
-  // ---- scripts:save-to-repo ----
-  ipcMain.handle(
-    SCRIPTS_CHANNELS.SAVE_TO_REPO,
-    createSafeValidatedHandler(
-      ScriptsSaveToRepoSchema,
-      async (_event, { workspaceId, scripts }) => {
-        try {
-          const { repositoryPath } = await resolveWorkspacePaths(workspaceId);
-          const repoScripts: RepoScript[] = scripts.map(
-            ({ name, command, mode, category, cwd, env, autoStart }) => ({
-              name,
-              command,
-              mode,
-              ...(category !== undefined ? { category } : {}),
-              ...(cwd !== undefined ? { cwd } : {}),
-              ...(env !== undefined ? { env } : {}),
-              ...(autoStart !== undefined ? { autoStart } : {}),
-            }),
-          );
-          const { written } = await saveScriptsToRepoConfig(repositoryPath, repoScripts);
-
-          logger.info('[Scripts] Saved workspace scripts to repo', {
-            workspaceId,
-            count: repoScripts.length,
-            written,
-          });
-
-          return { success: true, written, count: repoScripts.length };
-        } catch (error) {
-          logger.error('[Scripts] Error saving scripts to repo:', error as Error);
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          };
-        }
-      },
-      SCRIPTS_CHANNELS.SAVE_TO_REPO,
     ),
   );
 

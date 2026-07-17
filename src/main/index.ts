@@ -355,7 +355,6 @@ import { setupTestingIPC } from '../features/testing/main/testing.ipc';
 import { setupThirdPartySourcesIPC } from '../features/third-party-sources/main/third-party-sources.ipc';
 import { setupUserActivityIPC } from '../features/user-activity/main/user-activity.ipc';
 import { setupFirstVisitStateIPC } from '../features/workspace/main/first-visit-state.ipc';
-import { setupRepoConfigIPC } from '../features/workspace/main/repo-config.ipc';
 import {
   initializeChangeDetectorManager,
   setupWorkspaceIPC,
@@ -1431,7 +1430,6 @@ app.whenReady().then(async () => {
     setupMemoriesIPC();
     // setupBannerIPC(); // Already called in critical IPC setup
     setupRulesIPC();
-    setupRepoConfigIPC();
     // setupSpecialistsIPC(); // Already called in critical IPC setup
     setupSkillsIPC();
     // Token usage is daemon-owned (workspace.getTokenUsage, PROTOCOL §5.23);
