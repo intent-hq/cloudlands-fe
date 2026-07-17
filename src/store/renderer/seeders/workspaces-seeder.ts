@@ -142,16 +142,15 @@ registerMockSeeder("workspaces", async ({ store, client }) => {
 
   const firstWorkspace = workspaces[0];
   if (firstWorkspace) {
-    // Only auto-select the first workspace if no active workspace and no current tab
-    // are already set (e.g. by the route loader on a reload).
+    // Only auto-select the first workspace if BOTH activeWorkspaceId AND currentTabId
+    // are unset (fresh boot). If either is already set (e.g. by route loader on reload),
+    // skip auto-selection entirely to avoid clobbering route-driven state.
     const { workspace, tabState } = store.state;
     const hasActiveWorkspace = workspace.activeWorkspaceId !== null;
     const hasCurrentTab = tabState.currentTabId !== null;
 
-    if (!hasActiveWorkspace) {
+    if (!hasActiveWorkspace && !hasCurrentTab) {
       store.dispatch(setActiveWorkspaceId(firstWorkspace.id));
-    }
-    if (!hasCurrentTab) {
       store.dispatch(openWorkspaceTab(firstWorkspace.id));
     }
   }
