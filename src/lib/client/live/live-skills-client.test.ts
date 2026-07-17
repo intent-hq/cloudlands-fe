@@ -106,8 +106,8 @@ describe("LiveSkillsClient", () => {
       unsubscribe();
     });
 
-    it("emits empty array on skills:changed event to signal refetch", async () => {
-      let notificationCallback: ((method: string, params: unknown) => void) | undefined;
+    it("refetches and emits fresh skill list on skills:changed event", async () => {
+      let notificationCallback: ((n: { method: string; params?: unknown }) => void) | undefined;
       vi.spyOn(backendTransport, "onBackendNotification").mockImplementation((cb) => {
         notificationCallback = cb;
         return vi.fn();
@@ -116,18 +116,27 @@ describe("LiveSkillsClient", () => {
         subscriptionId: "sub-456",
       });
 
+      // Mock the refetch response: skill.list returns a fresh skill.
+      const refreshedSkills = [
+        { name: "new-skill", description: "Updated skill", location: "/path/new.md", scope: "user" as const },
+      ];
+      const backendRequestSpy = vi.spyOn(backendTransport, "backendRequest").mockResolvedValue(refreshedSkills);
+
       const handler = vi.fn();
       const unsubscribe = client.subscribe(handler);
 
-      // Initial emit.
+      // Initial emit: empty array.
       expect(handler).toHaveBeenCalledWith([]);
       handler.mockClear();
 
-      // Simulate daemon sending skills:changed event (§6.5).
-      notificationCallback?.("skills:changed", { workspaceId: "ws-test" });
+      // Simulate daemon sending skills:changed event (PROTOCOL §6.5).
+      notificationCallback?.({ method: "skills:changed", params: { workspaceId: "ws-test" } });
 
-      // Handler emits empty array to signal refetch needed.
-      expect(handler).toHaveBeenCalledWith([]);
+      // Wait for the async refetch + handler call.
+      await vi.waitFor(() => {
+        expect(backendRequestSpy).toHaveBeenCalledWith("skill.list", { workspaceId: "ws-test" });
+        expect(handler).toHaveBeenCalledWith(refreshedSkills);
+      });
 
       unsubscribe();
     });

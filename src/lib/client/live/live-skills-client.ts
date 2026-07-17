@@ -54,9 +54,8 @@ export class LiveSkillsClient implements SkillsClient {
   subscribe(handler: SubscriptionHandler<SkillInfo[]>): Unsubscribe {
     // Subscribe to `skills:changed` (§6.5) — emitted when the daemon detects a
     // SKILL.md file create/modify/delete. The event payload carries
-    // `{ workspaceId }`, but the subscription handler here is workspace-agnostic
-    // (it's called from a component that tracks its own workspaceId). On event,
-    // refetch all skills for all workspaces (same pattern as LiveEventsClient).
+    // `{ workspaceId }`. On event, refetch the skill list for the affected workspace
+    // and push the fresh normalized SkillInfo[] to the handler.
     let disposed = false;
     let subscriptionId: string | undefined;
 
@@ -74,13 +73,21 @@ export class LiveSkillsClient implements SkillsClient {
         // Without a daemon subscription we stay with the empty-array fallback.
       });
 
-    // Listen for skills:changed events and emit empty array (same as initial).
-    // The component's own useEffect will call list(workspaceId) to refetch.
+    // Listen for skills:changed events (PROTOCOL §6.5) and refetch the updated
+    // skill roster for the affected workspace, then push it to the handler.
     const removeNotificationListener = onBackendNotification((n) => {
       if (n.method === "skills:changed" && !disposed) {
-        // Emit empty array to signal a refresh is needed; components will call
-        // list(workspaceId) to fetch the updated roster.
-        handler([]);
+        const payload = n.params as { workspaceId?: string } | undefined;
+        const workspaceId = payload?.workspaceId;
+        if (workspaceId) {
+          // Refetch the fresh skill list for this workspace and emit it.
+          void this.list(workspaceId).then((skills) => {
+            if (!disposed) handler(skills);
+          }).catch(() => {
+            // Refetch failed; emit empty array as fallback.
+            if (!disposed) handler([]);
+          });
+        }
       }
     });
 
