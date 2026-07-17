@@ -28,7 +28,6 @@
  * directly off `appStore.state.specialists`.
  */
 import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import type { SpecialistDef } from "$lib/client/app-client";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
