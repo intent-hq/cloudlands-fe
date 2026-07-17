@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFileContentPruneService } from "./file-content-prune-service";
-import { removeFileContentEntry, loadFileContentRequested } from "../slices/files/files-slice";
+import {
+  removeFileContentEntry,
+  loadFileContentRequested,
+  loadFileContentSucceeded,
+} from "../slices/files/files-slice";
 import { closeTab, initializeLayout } from "../slices/panel-layout/panel-layout-slice";
 import { setActiveWorkspaceId } from "../slices/workspace/workspace-slice";
 import { workspaceMounted } from "../slices/workspace-lifecycle/workspace-lifecycle-slice";
@@ -296,5 +300,65 @@ describe("file-content-prune-service", () => {
     const dispatched = (api as any)._dispatchedActions;
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0]).toEqual(removeFileContentEntry("ws-1", "src/background.ts"));
+  });
+
+  it("prunes entry re-created by loadFileContentSucceeded after initial prune (desync regression)", () => {
+    // Start with no files open, no content entries
+    const state = createMockState("ws-1", [], []);
+    const api = createMockAPI(state);
+    const middleware = createFileContentPruneService()(api);
+
+    // Step 1: loadFileContentRequested creates a stale entry
+    let next = vi.fn((action) => {
+      if (action.type === loadFileContentRequested.type) {
+        const newState = createMockState("ws-1", [], ["src/bg.ts"]);
+        (api as any)._updateState(newState);
+      }
+      return action;
+    });
+
+    const requestAction = loadFileContentRequested("ws-1", "src/bg.ts", "/abs/bg.ts");
+    middleware(next)(requestAction);
+
+    // Middleware should have pruned it
+    let dispatched = (api as any)._dispatchedActions;
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0]).toEqual(removeFileContentEntry("ws-1", "src/bg.ts"));
+
+    // Step 2: removeFileContentEntry goes through (clearing the entry)
+    (api as any)._clearDispatched();
+    next = vi.fn((action) => {
+      if (action.type === removeFileContentEntry.type) {
+        const newState = createMockState("ws-1", [], []);
+        (api as any)._updateState(newState);
+      }
+      return action;
+    });
+
+    const removeAction = removeFileContentEntry("ws-1", "src/bg.ts");
+    middleware(next)(removeAction);
+
+    // removeFileContentEntry should NOT trigger new removals, but MUST update previousStalePaths
+    dispatched = (api as any)._dispatchedActions;
+    expect(dispatched).toHaveLength(0);
+
+    // Step 3: loadFileContentSucceeded re-creates the same stale entry
+    (api as any)._clearDispatched();
+    next = vi.fn((action) => {
+      if (action.type === loadFileContentSucceeded.type) {
+        const newState = createMockState("ws-1", [], ["src/bg.ts"]);
+        (api as any)._updateState(newState);
+      }
+      return action;
+    });
+
+    const successAction = loadFileContentSucceeded("ws-1", "src/bg.ts", "/abs/bg.ts", "content", false, false);
+    middleware(next)(successAction);
+
+    // CRITICAL: middleware must prune again (previousStalePaths should have been updated
+    // when removeFileContentEntry ran, so the re-created stale entry is detected as a change)
+    dispatched = (api as any)._dispatchedActions;
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0]).toEqual(removeFileContentEntry("ws-1", "src/bg.ts"));
   });
 });
