@@ -95,6 +95,38 @@ vi.mock('$features/agent/chat-read-service', () => ({
   createChatReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
 }));
 
+// Mock electron-bridge to avoid Electron dependency in tests. Provides stubs
+// for all exports; tests that need specific behavior (e.g., app-UI events suite)
+// can override via mockImplementation/mockReturnValue.
+const { invokeSpy } = vi.hoisted(() => ({
+  invokeSpy: vi.fn(() => Promise.resolve({ success: true })),
+}));
+vi.mock('$lib/electron-bridge', () => ({
+  extractEventData: vi.fn((event: any, fieldName?: string) => {
+    const payload = event?.payload ?? event;
+    return fieldName ? payload?.[fieldName] : payload;
+  }),
+  isWorkspaceEvent: vi.fn(() => false),
+  isElectron: vi.fn(() => false),
+  electronAPI: vi.fn(() => ({})),
+  invoke: invokeSpy,
+  invokeWithTimeout: vi.fn(() => Promise.resolve()),
+  listenSync: vi.fn(() => vi.fn()),
+  listen: vi.fn(() => Promise.resolve(vi.fn())),
+  emit: vi.fn(() => Promise.resolve()),
+  on: vi.fn(() => 'mock-listener-id'),
+  off: vi.fn(),
+  dialog: { open: vi.fn(() => Promise.resolve(null)) },
+  shell: { open: vi.fn(() => Promise.resolve()) },
+  open: vi.fn(() => Promise.resolve(null)),
+  core: { invoke: invokeSpy },
+  event: {
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    emit: vi.fn(() => Promise.resolve()),
+  },
+  IpcTimeoutError: class IpcTimeoutError extends Error {},
+}));
+
 import { store as appStore } from '$store/renderer/store';
 import {
   bulkUpsertSessions,
@@ -107,6 +139,10 @@ import { __resetDaemonEventsBridgeForTests } from '$features/events/daemon-event
 import { selectContextItems } from '$store/renderer/slices/context/context-selectors';
 import { chatReset, chatSendStarted } from '$store/renderer/slices/chat-state/chat-state-slice';
 import type { StatusEvent } from '$store/renderer/slices/chat-state/chat-state-types';
+import {
+  clearUiHighlight,
+  initialState as uiHighlightInitialState,
+} from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
 import {
   clearAgentQueue,
   removeQueuedMessageFromAgentQueue,
@@ -255,6 +291,9 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
         'line-attribution:updated',
         'pr:*',
         'mcp.servers:status-changed',
+        'app:ui-navigate',
+        'app:ui-highlight',
+        'app:workspace-open',
       ],
     });
   });
@@ -1404,6 +1443,9 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
         'line-attribution:updated',
         'pr:*',
         'mcp.servers:status-changed',
+        'app:ui-navigate',
+        'app:ui-highlight',
+        'app:workspace-open',
       ],
     });
   });
@@ -4381,17 +4423,12 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
 });
 
 describe('DaemonEventsBridge — app-UI events', () => {
-  const { gotoSpy, invokeSpy } = vi.hoisted(() => ({
+  const { gotoSpy } = vi.hoisted(() => ({
     gotoSpy: vi.fn(() => Promise.resolve()),
-    invokeSpy: vi.fn(() => Promise.resolve({ success: true })),
   }));
 
   vi.mock('$app/navigation', () => ({
     goto: gotoSpy,
-  }));
-
-  vi.mock('$lib/electron-bridge', () => ({
-    invoke: invokeSpy,
   }));
 
   beforeAll(() => appStore.init());
@@ -4403,16 +4440,19 @@ describe('DaemonEventsBridge — app-UI events', () => {
     invokeSpy.mockClear();
     backendRequestSpy.mockClear();
     capturedHandlers.length = 0;
+    // Directly reset UI highlight state to avoid dispatching actions during setup
+    const state = appStore.state as { uiHighlight?: { activeById: Record<string, number>; durationMsById: Record<string, number> } };
+    if (state.uiHighlight) {
+      state.uiHighlight.activeById = {};
+      state.uiHighlight.durationMsById = {};
+    }
+    seedSession();
   });
 
   afterEach(() => {
     resetMockIpcRouter();
+    vi.clearAllMocks();
   });
-
-  async function primeBridge() {
-    await import('$features/events/daemon-events-bridge');
-    await flush();
-  }
 
   function appUiNavigateNotification(route: string, highlightId?: string, durationMs?: number) {
     const data: Record<string, unknown> = { route };
