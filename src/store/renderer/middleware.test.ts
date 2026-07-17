@@ -55,6 +55,8 @@ const mocks = vi.hoisted(() => {
   const panelLayoutPersistenceMiddleware = createPassthroughMiddleware();
   const fileContentPruneService = createPassthroughMiddleware();
   const terminalPersistenceMiddleware = createPassthroughMiddleware();
+  const externalEditorsPersistenceMiddleware = createPassthroughMiddleware();
+  const zoomSyncMiddleware = createPassthroughMiddleware();
   const sidebarNavPersistenceMiddleware = createPassthroughMiddleware();
   const browserPersistenceMiddleware = createPassthroughMiddleware();
   const themeMutationMiddleware = createPassthroughMiddleware();
@@ -110,6 +112,8 @@ const mocks = vi.hoisted(() => {
     createPanelLayoutPersistenceMiddleware: vi.fn(() => panelLayoutPersistenceMiddleware),
     createFileContentPruneService: vi.fn(() => fileContentPruneService),
     createTerminalPersistenceMiddleware: vi.fn(() => terminalPersistenceMiddleware),
+    createExternalEditorsPersistenceMiddleware: vi.fn(() => externalEditorsPersistenceMiddleware),
+    createZoomSyncMiddleware: vi.fn(() => zoomSyncMiddleware),
     createSidebarNavPersistenceMiddleware: vi.fn(() => sidebarNavPersistenceMiddleware),
     createBrowserPersistenceMiddleware: vi.fn(() => browserPersistenceMiddleware),
     createThemeMutationMiddleware: vi.fn(() => themeMutationMiddleware),
@@ -161,6 +165,8 @@ const mocks = vi.hoisted(() => {
     panelLayoutPersistenceMiddleware,
     fileContentPruneService,
     terminalPersistenceMiddleware,
+    externalEditorsPersistenceMiddleware,
+    zoomSyncMiddleware,
     sidebarNavPersistenceMiddleware,
     browserPersistenceMiddleware,
     themeMutationMiddleware,
@@ -284,6 +290,12 @@ vi.mock("./middlewares/file-content-prune-service", () => ({
 vi.mock("./middlewares/terminal-persistence-service", () => ({
   createTerminalPersistenceMiddleware: mocks.createTerminalPersistenceMiddleware,
 }));
+vi.mock("./middlewares/external-editors-persistence-service", () => ({
+  createExternalEditorsPersistenceMiddleware: mocks.createExternalEditorsPersistenceMiddleware,
+}));
+vi.mock("./middlewares/zoom-sync-service", () => ({
+  createZoomSyncMiddleware: mocks.createZoomSyncMiddleware,
+}));
 vi.mock("./middlewares/sidebar-nav-persistence-service", () => ({
   createSidebarNavPersistenceMiddleware: mocks.createSidebarNavPersistenceMiddleware,
 }));
@@ -398,6 +410,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
       mocks.terminalPersistenceMiddleware,
+      mocks.externalEditorsPersistenceMiddleware,
+      mocks.zoomSyncMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -458,6 +472,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
       mocks.terminalPersistenceMiddleware,
+      mocks.externalEditorsPersistenceMiddleware,
+      mocks.zoomSyncMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -518,6 +534,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
       mocks.terminalPersistenceMiddleware,
+      mocks.externalEditorsPersistenceMiddleware,
+      mocks.zoomSyncMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -579,6 +597,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
       mocks.terminalPersistenceMiddleware,
+      mocks.externalEditorsPersistenceMiddleware,
+      mocks.zoomSyncMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -657,6 +677,8 @@ describe("store middleware Redux logging gating", () => {
       mocks.panelLayoutPersistenceMiddleware,
       mocks.fileContentPruneService,
       mocks.terminalPersistenceMiddleware,
+      mocks.externalEditorsPersistenceMiddleware,
+      mocks.zoomSyncMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
