@@ -12,7 +12,9 @@
   import MessageActions from './MessageActions.svelte';
   import SimpleRichInput from './input/SimpleRichInput.svelte';
   import type { AgentMessage, Workspace } from '$shared/types';
+  import { extractAllContent } from '$shared/types';
   import RulesInspector from './RulesInspector.svelte';
+  import InterruptionNotice from './InterruptionNotice.svelte';
   import { parseStoredMessage } from '$lib/utils/parseStoredMessage';
   import { slide } from 'svelte/transition';
   import type { ContextItem } from './input/context-api';
@@ -1144,6 +1146,9 @@
           </div>
         {/if}
       </div>
+    {:else if role === 'system'}
+      <!-- System Message - render as interruption notice -->
+      <InterruptionNotice message={extractAllContent(message)} />
     {/if}
   </div>
 {/if}

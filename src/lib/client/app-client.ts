@@ -151,6 +151,29 @@ export interface RespondPermissionResult extends MutationResult {
   resolved?: boolean;
 }
 
+/**
+ * Agent interrupted by intentd restart (wire contract in spec).
+ * Returned by `agent.listInterrupted`.
+ */
+export interface InterruptedAgent {
+  agentId: string;
+  workspaceId: string;
+  workspaceName: string;
+  agentName: string;
+  prevStatus: string;
+  interruptedAt: string;
+}
+
+/**
+ * Result of resolving interrupted agents (`agent.resolveInterrupted`).
+ * Carries resumed/abandoned IDs plus any per-agent failures.
+ */
+export interface ResolveInterruptedResult {
+  resumed: string[];
+  abandoned: string[];
+  failed: Array<{ agentId: string; error: string }>;
+}
+
 /** Pull-request summary surfaced by the git domain. */
 export interface PrStatusSummary {
   prNumber?: number;
@@ -339,6 +362,23 @@ export interface AgentsClient {
     requestId: string,
     outcome: PermissionOutcome,
   ): Promise<RespondPermissionResult>;
+  /**
+   * List agents that were interrupted by an intentd restart
+   * (`agent.listInterrupted`, wire contract in spec). Returns agents that were
+   * active/processing/waiting when the daemon last stopped. Supports older
+   * daemons that lack this method (returns empty array on -32601).
+   */
+  listInterrupted(): Promise<InterruptedAgent[]>;
+  /**
+   * Resolve interrupted agents after reconnect (`agent.resolveInterrupted`).
+   * Resume selected agents (deliver continuation turn), abandon the rest
+   * (append interruption marker). Returns resumed/abandoned IDs plus any
+   * failures. Daemon is idempotent — calling with already-resolved IDs is safe.
+   */
+  resolveInterrupted(params: {
+    resume?: string[];
+    abandon?: string[];
+  }): Promise<ResolveInterruptedResult>;
   subscribe(handler: SubscriptionHandler<AgentSession[]>): Unsubscribe;
 }
 

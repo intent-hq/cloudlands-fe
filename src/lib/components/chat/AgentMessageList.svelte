@@ -2,6 +2,7 @@
   import { extractAllContent, type AgentMessage } from '$shared/types';
   import ChatMessage from './ChatMessage.svelte';
   import StreamingMessageContent from './StreamingMessageContent.svelte';
+  import InterruptionNotice from './InterruptionNotice.svelte';
   import { fade } from 'svelte/transition';
 
   interface Props {
@@ -94,6 +95,7 @@
       class:highlighted={message.id === highlightedMessageId}
       class:user-message={message.role === 'user'}
       class:assistant-message={message.role === 'assistant'}
+      class:system-message={message.role === 'system'}
       transition:fade={{ duration: enableTransitions ? animationDuration : 0 }}
     >
       <!-- Fallback path: AgentMessageList does not receive `agentId` via props/context,
@@ -115,6 +117,9 @@
             <ChatMessage {message} onCopy={() => handleCopy(extractAllContent(message))} />
           {/if}
         </div>
+      {:else if message.role === 'system'}
+        <!-- System message - render as interruption notice banner -->
+        <InterruptionNotice message={extractAllContent(message)} />
       {/if}
     </div>
   {/each}
@@ -164,6 +169,10 @@
 
   .message-wrapper.assistant-message {
     align-items: flex-start;
+  }
+
+  .message-wrapper.system-message {
+    align-items: stretch;
   }
 
   .assistant-message-container {
