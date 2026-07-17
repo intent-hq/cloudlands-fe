@@ -20,3 +20,4 @@ import './terminals-scripts-seeder';
 import './settings-integrations-seeder';
 import './settings-legacy-bridge-seeder';
 import './misc-ui-events-seeder';
+import './panel-layout-bridge-seeder';
