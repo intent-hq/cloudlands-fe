@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { store as appStore } from "$store/renderer/store";
 import { selectActiveStreamsVersion } from "$store/renderer/slices/sidebar-nav/sidebar-nav-selectors";
 import { activeStreamsTracker } from "./services/active-streams-tracker";
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
+import { registerMockIpcHandler, unregisterMockIpcHandler } from "$shared/ipc-mock-router";
 import { __resetActiveStreamsReduxBridgeForTests, __enableActiveStreamsReduxBridgeForTests } from "./active-streams-redux-bridge";
 
 // Mock electron-bridge to provide on/off functions for event listeners
@@ -29,13 +29,18 @@ vi.mock("$lib/electron-bridge", () => ({
 }));
 
 describe("Active streams → Redux bridge", () => {
+  let mockHandler: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
-    // Register the mock IPC handler BEFORE initializing the store
-    // because the middleware calls startPolling during initialization
-    registerMockIpcHandler("agent:get-active-streams", async () => ({
+    // Create a spy handler that asserts it's called with no arguments (per PROTOCOL.md §5.5)
+    mockHandler = vi.fn(async () => ({
       success: true,
       data: [],
     }));
+
+    // Register the mock IPC handler BEFORE initializing the store
+    // because the middleware calls startPolling during initialization
+    registerMockIpcHandler("agent:get-active-streams", mockHandler);
 
     // Enable the bridge for this test (it's disabled by default in test mode)
     __enableActiveStreamsReduxBridgeForTests();
@@ -48,18 +53,18 @@ describe("Active streams → Redux bridge", () => {
   });
 
   afterEach(() => {
+    unregisterMockIpcHandler("agent:get-active-streams");
     vi.clearAllMocks();
     __resetActiveStreamsReduxBridgeForTests();
   });
 
   it("dispatches bumpActiveStreamsVersion when tracker notifies listeners after active-streams update", async () => {
-    // Initial version should be 0
+    // Capture initial version (may be >0 if prior tests mutated the singleton)
     const initialVersion = selectActiveStreamsVersion.select(appStore.state);
-    expect(initialVersion).toBe(0);
 
     // Update the mock IPC handler to return streaming data
     // PROTOCOL.md §5.5 shape: { success: boolean, data: ActiveStream[] }
-    registerMockIpcHandler("agent:get-active-streams", async () => ({
+    mockHandler.mockResolvedValueOnce({
       success: true,
       data: [
         {
@@ -69,24 +74,27 @@ describe("Active streams → Redux bridge", () => {
           startTime: Date.parse("2026-07-17T00:00:00.000Z"),
         },
       ],
-    }));
+    });
 
     // Trigger the fetch which will notify listeners
     await activeStreamsTracker.fetchActiveStreams();
 
+    // Assert the wire request was made with no arguments (per PROTOCOL.md §5.5)
+    expect(mockHandler).toHaveBeenCalled();
+    // agent:get-active-streams takes no parameters
+    expect(mockHandler).toHaveBeenCalledWith();
+
     // The Redux version should have incremented synchronously
     // (the dispatch happens in the listener callback, which is synchronous)
     const newVersion = selectActiveStreamsVersion.select(appStore.state);
-    expect(newVersion).toBe(1);
+    expect(newVersion).toBe(initialVersion + 1);
   });
 
   it("increments version multiple times for multiple updates", async () => {
-    // Note: startPolling was already called during middleware init, which fetched
-    // empty data. The version should be 0 initially (no change from init state).
     const versionBefore = selectActiveStreamsVersion.select(appStore.state);
 
     // First change: add agent-1 (different from the empty initial state)
-    registerMockIpcHandler("agent:get-active-streams", async () => ({
+    mockHandler.mockResolvedValueOnce({
       success: true,
       data: [
         {
@@ -96,16 +104,19 @@ describe("Active streams → Redux bridge", () => {
           startTime: Date.parse("2026-07-17T10:00:00.000Z"),
         },
       ],
-    }));
+    });
 
     await activeStreamsTracker.fetchActiveStreams();
+
+    // Assert wire request was made with no arguments
+    expect(mockHandler).toHaveBeenCalledWith();
 
     const versionAfterAdd = selectActiveStreamsVersion.select(appStore.state);
     // This should have incremented because we went from [] to [agent-1]
     expect(versionAfterAdd).toBe(versionBefore + 1);
 
     // Second change: different agent (agent-2 replaces agent-1)
-    registerMockIpcHandler("agent:get-active-streams", async () => ({
+    mockHandler.mockResolvedValueOnce({
       success: true,
       data: [
         {
@@ -115,9 +126,12 @@ describe("Active streams → Redux bridge", () => {
           startTime: Date.parse("2026-07-17T10:05:00.000Z"),
         },
       ],
-    }));
+    });
 
     await activeStreamsTracker.fetchActiveStreams();
+
+    // Assert second wire request
+    expect(mockHandler).toHaveBeenCalledWith();
 
     const versionAfterReplace = selectActiveStreamsVersion.select(appStore.state);
     // This should have incremented because agent-1 was replaced with agent-2
@@ -134,17 +148,23 @@ describe("Active streams → Redux bridge", () => {
       },
     ];
 
-    registerMockIpcHandler("agent:get-active-streams", async () => ({
+    mockHandler.mockResolvedValue({
       success: true,
       data,
-    }));
+    });
 
     await activeStreamsTracker.fetchActiveStreams();
+
+    // Assert wire request with no arguments
+    expect(mockHandler).toHaveBeenCalledWith();
 
     const versionAfterFirst = selectActiveStreamsVersion.select(appStore.state);
 
     // Fetch again with the same data
     await activeStreamsTracker.fetchActiveStreams();
+
+    // Assert second wire request
+    expect(mockHandler).toHaveBeenCalledWith();
 
     const versionAfterSecond = selectActiveStreamsVersion.select(appStore.state);
 
