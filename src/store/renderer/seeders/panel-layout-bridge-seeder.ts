@@ -39,7 +39,7 @@ registerMockIpcHandler('panel-layout:save', async (_arg) => {
 
 // The load channel reads layout history from disk. In test mode this
 // returns an empty history array (no persisted layouts).
-registerMockIpcHandler('panel-layout:load', async (arg) => {
+registerMockIpcHandler('panel-layout:load', async (_arg) => {
   // In real implementation (main process), this would read from disk.
   // For tests, we return empty history (no layouts saved).
   const emptyHistory: PanelLayoutHistoryEntry[] = [];
