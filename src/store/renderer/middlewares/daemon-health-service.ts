@@ -91,14 +91,14 @@ function boot(): void {
   if (!api) return;
 
   // Listen for backend:status events (connection status changes).
-  statusListener = (payload: { status: string }) => {
-    appStore.dispatch(connectionStatusChanged(payload.status));
+  statusListener = (payload: { status: string; transport?: { mode: 'sidecar-uds' | 'external-ws'; target?: string } }) => {
+    appStore.dispatch(connectionStatusChanged(payload.status, payload.transport));
   };
   api.on(BACKEND.STATUS, statusListener);
 
   // Fetch initial connection status.
-  void api.invoke(BACKEND.GET_STATUS).then((result: { status: string }) => {
-    appStore.dispatch(connectionStatusChanged(result.status));
+  void api.invoke(BACKEND.GET_STATUS).then((result: { status: string; transport?: { mode: 'sidecar-uds' | 'external-ws'; target?: string } }) => {
+    appStore.dispatch(connectionStatusChanged(result.status, result.transport));
   });
 
   // Start polling.

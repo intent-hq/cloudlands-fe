@@ -94,9 +94,11 @@ describe('daemonHealthReducer', () => {
         listenMode: 'uds',
         port: null,
         version: '0.1.0',
+        protocolVersion: '2.0',
         uptimeSeconds: 120,
         os: 'macos',
         arch: 'aarch64',
+        transport: undefined,
       });
       expect(next.lastUpdated).toBeTruthy();
       expect(typeof next.lastUpdated).toBe('string');
@@ -131,9 +133,11 @@ describe('daemonHealthReducer', () => {
         listenMode: 'tcp',
         port: 9000,
         version: undefined,
+        protocolVersion: '2.0',
         uptimeSeconds: undefined,
         os: 'linux',
         arch: 'x86_64',
+        transport: undefined,
       });
     });
   });

@@ -54,6 +54,7 @@
   import { selectOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import { selectSidebarSide } from '$store/renderer/slices/ui-layout/ui-layout-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
 
   interface Props {
     workspaceId?: string;
@@ -295,8 +296,11 @@
       <div></div>
     {/if}
 
-    <!-- Right column: Layout controls + sidebar toggle (when sidebar is on right) -->
+    <!-- Right column: Layout controls + daemon status + sidebar toggle (when sidebar is on right) -->
     <div class="flex items-center justify-end pr-4 gap-1">
+      <!-- Daemon status indicator (always visible, not workspace-gated) -->
+      <DaemonStatusIndicator />
+
       {#if isWorkspaceVisible && layoutManager}
         <PanelLayoutControls
           layoutRoot={$layoutRoot$}

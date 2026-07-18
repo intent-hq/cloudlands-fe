@@ -90,6 +90,7 @@ describe('daemon-health-service', () => {
       listenMode: 'uds',
       port: null,
       version: '0.1.0',
+      protocolVersion: '2.0',
       uptimeSeconds: 60,
       os: 'macos',
       arch: 'aarch64',
