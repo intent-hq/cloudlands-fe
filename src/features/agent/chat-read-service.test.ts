@@ -31,8 +31,8 @@ vi.mock("$lib/client", () => ({
 }));
 
 // Mock the seedStreamFromSnapshot function to verify it's called correctly
-vi.mock("$features/events/daemon-events-bridge", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("$features/events/daemon-events-bridge")>();
+vi.mock("$features/events/daemon-events-bridge.client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$features/events/daemon-events-bridge.client")>();
   return {
     ...actual,
     seedStreamFromSnapshot: vi.fn(),
@@ -49,7 +49,7 @@ import {
   selectAgentIsThinking,
 } from "$store/renderer/slices/agent-session/agent-session-selectors";
 import { loadChatTranscript } from "./chat-read-service";
-import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge";
+import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
 
 const agentsApi = appClient.agents as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const chatApi = appClient.chat as unknown as Record<string, ReturnType<typeof vi.fn>>;

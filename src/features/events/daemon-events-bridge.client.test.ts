@@ -95,6 +95,38 @@ vi.mock('$features/agent/chat-read-service', () => ({
   createChatReadMiddleware: () => () => (next: (a: unknown) => unknown) => (a: unknown) => next(a),
 }));
 
+// Mock electron-bridge to avoid Electron dependency in tests. Provides stubs
+// for all exports; tests that need specific behavior (e.g., app-UI events suite)
+// can override via mockImplementation/mockReturnValue.
+const { invokeSpy } = vi.hoisted(() => ({
+  invokeSpy: vi.fn(() => Promise.resolve({ success: true })),
+}));
+vi.mock('$lib/electron-bridge', () => ({
+  extractEventData: vi.fn((event: any, fieldName?: string) => {
+    const payload = event?.payload ?? event;
+    return fieldName ? payload?.[fieldName] : payload;
+  }),
+  isWorkspaceEvent: vi.fn(() => false),
+  isElectron: vi.fn(() => false),
+  electronAPI: vi.fn(() => ({})),
+  invoke: invokeSpy,
+  invokeWithTimeout: vi.fn(() => Promise.resolve()),
+  listenSync: vi.fn(() => vi.fn()),
+  listen: vi.fn(() => Promise.resolve(vi.fn())),
+  emit: vi.fn(() => Promise.resolve()),
+  on: vi.fn(() => 'mock-listener-id'),
+  off: vi.fn(),
+  dialog: { open: vi.fn(() => Promise.resolve(null)) },
+  shell: { open: vi.fn(() => Promise.resolve()) },
+  open: vi.fn(() => Promise.resolve(null)),
+  core: { invoke: invokeSpy },
+  event: {
+    listen: vi.fn(() => Promise.resolve(vi.fn())),
+    emit: vi.fn(() => Promise.resolve()),
+  },
+  IpcTimeoutError: class IpcTimeoutError extends Error {},
+}));
+
 import { store as appStore } from '$store/renderer/store';
 import {
   bulkUpsertSessions,
@@ -103,7 +135,7 @@ import {
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { selectAgentIsResponding } from '$store/renderer/slices/agent-session/agent-session-selectors';
-import { __resetDaemonEventsBridgeForTests } from '$features/events/daemon-events-bridge';
+import { __resetDaemonEventsBridgeForTests } from '$features/events/daemon-events-bridge.client';
 import { selectContextItems } from '$store/renderer/slices/context/context-selectors';
 import { chatReset, chatSendStarted } from '$store/renderer/slices/chat-state/chat-state-slice';
 import type { StatusEvent } from '$store/renderer/slices/chat-state/chat-state-types';
@@ -255,6 +287,9 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
         'line-attribution:updated',
         'pr:*',
         'mcp.servers:status-changed',
+        'app:ui-navigate',
+        'app:ui-highlight',
+        'app:workspace-open',
       ],
     });
   });
@@ -1404,6 +1439,9 @@ describe('daemonEventsBridge (fan-out scope gate — subscriptionId-aware delive
         'line-attribution:updated',
         'pr:*',
         'mcp.servers:status-changed',
+        'app:ui-navigate',
+        'app:ui-highlight',
+        'app:workspace-open',
       ],
     });
   });
@@ -4423,5 +4461,253 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
     // Entity should remain unchanged (still idle)
     const ws = await readWorkspace();
     expect(ws.activity).toBe('idle');
+  });
+});
+
+describe('DaemonEventsBridge — app-UI events', () => {
+  const { navigateToRouteSpy } = vi.hoisted(() => ({
+    navigateToRouteSpy: vi.fn(() => Promise.resolve()),
+  }));
+
+  vi.mock('$lib/utils/navigation.client', () => ({
+    navigateToRoute: navigateToRouteSpy,
+  }));
+
+  beforeAll(() => appStore.init());
+  beforeEach(() => {
+    appStore.dispatch(clearAllSessions());
+    appStore.dispatch(chatReset());
+    __resetDaemonEventsBridgeForTests();
+    navigateToRouteSpy.mockClear();
+    invokeSpy.mockClear();
+    backendRequestSpy.mockClear();
+    capturedHandlers.length = 0;
+    // Reset UI highlight state by replacing with initial state
+    const state = appStore.state as Record<string, unknown>;
+    if (state.uiHighlight) {
+      state.uiHighlight = { activeById: {}, durationMsById: {} };
+    }
+    seedSession();
+  });
+
+  afterEach(() => {
+    resetMockIpcRouter();
+    vi.clearAllMocks();
+  });
+
+  function appUiNavigateNotification(route: string, highlightId?: string, durationMs?: number) {
+    const data: Record<string, unknown> = { route };
+    if (highlightId) data.highlightId = highlightId;
+    if (durationMs !== undefined) data.durationMs = durationMs;
+    return {
+      method: 'events.event' as const,
+      params: {
+        event: {
+          id: `evt-app-ui-navigate-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'app:ui-navigate',
+          actor: { type: 'agent', id: AGENT },
+          data,
+        },
+      },
+    };
+  }
+
+  function appUiHighlightNotification(id: string, durationMs?: number) {
+    const data: Record<string, unknown> = { id };
+    if (durationMs !== undefined) data.durationMs = durationMs;
+    return {
+      method: 'events.event' as const,
+      params: {
+        event: {
+          id: `evt-app-ui-highlight-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'app:ui-highlight',
+          actor: { type: 'agent', id: AGENT },
+          data,
+        },
+      },
+    };
+  }
+
+  function appWorkspaceOpenNotification(workspaceId: string, openInNewWindow?: boolean) {
+    const data: Record<string, unknown> = { workspaceId };
+    if (openInNewWindow !== undefined) data.openInNewWindow = openInNewWindow;
+    return {
+      method: 'events.event' as const,
+      params: {
+        event: {
+          id: `evt-app-workspace-open-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'app:workspace-open',
+          actor: { type: 'agent', id: AGENT },
+          data,
+        },
+      },
+    };
+  }
+
+  describe('app:ui-navigate', () => {
+    it('navigates to route without highlight', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiNavigateNotification('/settings'));
+      await flush();
+
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings');
+    });
+
+    it('navigates to route and dispatches highlight after navigation', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiNavigateNotification('/settings?tab=agents#specialists', 'specialists', 750));
+      await flush();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings?tab=agents#specialists');
+      // Check that requestUiHighlight was dispatched
+      const state = appStore.state as {
+        uiHighlight?: { activeById: Record<string, number>; durationMsById: Record<string, number> };
+      };
+      expect(state.uiHighlight?.activeById['specialists']).toBeGreaterThan(0);
+      expect(state.uiHighlight?.durationMsById['specialists']).toBe(750);
+    });
+
+    it('ignores blank routes', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiNavigateNotification('   '));
+      await flush();
+
+      expect(navigateToRouteSpy).not.toHaveBeenCalled();
+    });
+
+    it('handles navigation errors gracefully', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      navigateToRouteSpy.mockRejectedValueOnce(new Error('Navigation failed'));
+
+      handler(appUiNavigateNotification('/invalid'));
+      await flush();
+
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/invalid');
+      // Should not throw
+    });
+  });
+
+  describe('app:ui-highlight', () => {
+    it('dispatches highlight action with default duration', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiHighlightNotification('theme'));
+      await flush();
+
+      const state = appStore.state as {
+        uiHighlight?: { activeById: Record<string, number>; durationMsById: Record<string, number> };
+      };
+      expect(state.uiHighlight?.activeById['theme']).toBeGreaterThan(0);
+      expect(state.uiHighlight?.durationMsById['theme']).toBeUndefined();
+    });
+
+    it('dispatches highlight action with custom duration', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiHighlightNotification('mcp-servers', 1500));
+      await flush();
+
+      const state = appStore.state as {
+        uiHighlight?: { activeById: Record<string, number>; durationMsById: Record<string, number> };
+      };
+      expect(state.uiHighlight?.activeById['mcp-servers']).toBeGreaterThan(0);
+      expect(state.uiHighlight?.durationMsById['mcp-servers']).toBe(1500);
+    });
+
+    it('ignores blank highlight IDs', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appUiHighlightNotification('   '));
+      await flush();
+
+      const state = appStore.state as {
+        uiHighlight?: { activeById: Record<string, number> };
+      };
+      expect(Object.keys(state.uiHighlight?.activeById ?? {})).toHaveLength(0);
+    });
+  });
+
+  describe('app:workspace-open', () => {
+    it('navigates in current window when openInNewWindow is false', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appWorkspaceOpenNotification('ws-123', false));
+      await flush();
+
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-123');
+      expect(invokeSpy).not.toHaveBeenCalled();
+    });
+
+    it('navigates in current window when openInNewWindow is omitted', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appWorkspaceOpenNotification('ws-456'));
+      await flush();
+
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-456');
+      expect(invokeSpy).not.toHaveBeenCalled();
+    });
+
+    it('opens in new window when openInNewWindow is true', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appWorkspaceOpenNotification('ws-789', true));
+      await flush();
+
+      expect(invokeSpy).toHaveBeenCalledWith('window:open-new', { route: '/workspace/ws-789' });
+      expect(navigateToRouteSpy).not.toHaveBeenCalled();
+    });
+
+    it('falls back to navigation when new window fails', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      invokeSpy.mockRejectedValueOnce(new Error('Window creation failed'));
+
+      handler(appWorkspaceOpenNotification('ws-fallback', true));
+      await flush();
+
+      expect(invokeSpy).toHaveBeenCalledWith('window:open-new', { route: '/workspace/ws-fallback' });
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-fallback');
+    });
+
+    it('ignores blank workspace IDs', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+
+      handler(appWorkspaceOpenNotification('   '));
+      await flush();
+
+      expect(navigateToRouteSpy).not.toHaveBeenCalled();
+      expect(invokeSpy).not.toHaveBeenCalled();
+    });
+
+    it('falls back to navigation when invoke resolves {success:false}', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      invokeSpy.mockResolvedValueOnce({ success: false, error: 'Window creation blocked' });
+
+      handler(appWorkspaceOpenNotification('ws-success-false', true));
+      await flush();
+
+      expect(invokeSpy).toHaveBeenCalledWith('window:open-new', { route: '/workspace/ws-success-false' });
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-success-false');
+    });
   });
 });
