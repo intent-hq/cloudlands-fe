@@ -174,7 +174,7 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
     expect(stored("ws-1")?.status).toBe(WorkspaceStatusEnum.Archived);
   });
 
-  it("bulk-deletes every archived workspace for the pending repo", async () => {
+  it("bulk-deletes every archived workspace sequentially for the pending repo", async () => {
     seed(
       makeWorkspace({ id: "ws-x", status: WorkspaceStatusEnum.Archived }),
       makeWorkspace({ id: "ws-y", status: WorkspaceStatusEnum.Archived }),
@@ -190,6 +190,21 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
     expect(ws.delete).toHaveBeenCalledWith("ws-y");
     expect(ws.delete).not.toHaveBeenCalledWith("ws-active");
     expect(stored("ws-x")).toBeUndefined();
+  });
+
+  it("reports timeouts as 'still deleting' and does not remove entities on timeout", async () => {
+    ws.delete.mockResolvedValueOnce({ ok: false, error: "JSON-RPC request timed out: workspace.delete" } as never);
+    seed(makeWorkspace({ id: "ws-timeout", status: WorkspaceStatusEnum.Archived }));
+
+    appStore.dispatch(openBulkDeleteArchivedConfirm("acme/app"));
+    appStore.dispatch(confirmBulkDeleteArchived());
+    await flush();
+
+    expect(ws.delete).toHaveBeenCalledWith("ws-timeout");
+    // Entity is NOT removed on timeout — the workspace:deleted event will do it.
+    expect(stored("ws-timeout")).toBeDefined();
+    const { toast } = await import("svelte-sonner");
+    expect(vi.mocked(toast.info)).toHaveBeenCalledWith("1 space is still deleting (large checkout)");
   });
 
   describe("remove repo from the known-repos registry", () => {

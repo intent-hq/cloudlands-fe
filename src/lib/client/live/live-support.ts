@@ -57,10 +57,18 @@ export function extractConflict(error: unknown): { current: unknown } | undefine
  * `conflict.current` so callers can reload-to-latest. The seam never throws from
  * a mutation. State convergence is otherwise left to the existing
  * subscribe→refetch loops driven by daemon events.
+ *
+ * `options.timeoutMs` overrides the JSON-RPC client's default 30s timeout for
+ * long-running operations (e.g. `workspace.delete` bulk operations on large
+ * checkouts).
  */
-export async function runMutation(method: string, params?: unknown): Promise<MutationResult> {
+export async function runMutation(
+  method: string,
+  params?: unknown,
+  options?: { timeoutMs?: number },
+): Promise<MutationResult> {
   try {
-    await backendRequest(method, params);
+    await backendRequest(method, params, options);
     return { success: true };
   } catch (error) {
     const conflict = extractConflict(error);
@@ -96,9 +104,13 @@ function extractEntityId(result: unknown): string | undefined {
  * prerequisite task and then linking to it — use this variant; the id is omitted
  * when the response carries none.
  */
-export async function runMutationWithId(method: string, params?: unknown): Promise<MutationResult> {
+export async function runMutationWithId(
+  method: string,
+  params?: unknown,
+  options?: { timeoutMs?: number },
+): Promise<MutationResult> {
   try {
-    const result = await backendRequest(method, params);
+    const result = await backendRequest(method, params, options);
     const id = extractEntityId(result);
     return id !== undefined ? { success: true, id } : { success: true };
   } catch (error) {
