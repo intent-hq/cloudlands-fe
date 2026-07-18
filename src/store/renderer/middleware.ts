@@ -63,6 +63,7 @@ import { createWorkspaceSettingsPersistenceMiddleware } from "./middlewares/work
 import { createUserPreferencesBetaPersistenceMiddleware } from "./middlewares/user-preferences-beta-persistence-service";
 import { createUserPreferencesNotificationPersistenceMiddleware } from "./middlewares/user-preferences-notification-persistence-service";
 import { createUserPreferencesPersistenceMiddleware } from "./middlewares/user-preferences-persistence-service";
+import { createWorkspaceInitializerPersistenceMiddleware } from "./middlewares/workspace-initializer-persistence-service";
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
 import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
@@ -363,6 +364,13 @@ function buildMiddleware(): StoreMiddleware[] {
     // hydrates from localStorage on boot (first action). Excludes beta-updates
     // and notification settings (handled by sibling middlewares above).
     createUserPreferencesPersistenceMiddleware(),
+    // Give the (post-saga) workspace-initializer persistence triggers real
+    // handlers: hydrate from daemon `workspaceInitializer.state` (§5.12) on boot,
+    // persist state bag on mutating actions (compact form, onboarding form,
+    // last repo, recent repos, remote setups, etc.), debounce onboarding form
+    // drafts (300ms), and migrate legacy localStorage keys to daemon setting.
+    // Restores the home-screen repo selector defaulting to the last selected repo.
+    createWorkspaceInitializerPersistenceMiddleware(),
     // Give the (post-saga) theme triggers (`requestThemePreferenceChange` /
     // `selectThemePreset` / `importCustomTheme` / `clearThemeCustomization`)
     // real handlers so the Settings theme toggle and ColorThemeSettings
