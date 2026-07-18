@@ -883,8 +883,9 @@ describe('agent-session-slice reducer', () => {
         } as any),
       );
 
-      // The stopReason should still be the error text
+      // The stopReason and activationState should still be the error values
       expect(state.byAgentId['a1'].stopReason).toBe('Agent spawn failed after 3 retries');
+      expect(state.byAgentId['a1'].activationState).toBe('error');
       expect(state.byAgentId['a1'].status).toBe('error');
       expect(state.byAgentId['a1'].isActive).toBe(false);
     });
