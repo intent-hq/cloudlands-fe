@@ -85,6 +85,11 @@ describe('Active Streams Bridge Seeder', () => {
       'agent:get-active-streams',
     );
 
+    // Assert wire contract: workspace.list was called, then agent.list per workspace
+    expect(backend.requests).toContainEqual({ method: 'workspace.list', params: undefined });
+    expect(backend.requests).toContainEqual({ method: 'agent.list', params: { workspaceId: 'ws1' } });
+    expect(backend.requests).toContainEqual({ method: 'agent.list', params: { workspaceId: 'ws2' } });
+
     expect(result.success).toBe(true);
     expect(Array.isArray(result.data)).toBe(true);
     const streams = result.data as Array<{

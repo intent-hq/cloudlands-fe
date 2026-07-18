@@ -13,7 +13,8 @@
  *
  * `agent:get-active-streams` is bridged to real daemon data in
  * `active-streams-bridge-seeder.ts` (workspace.list → agent.list per workspace,
- * filtered on isStreaming || isResponding).
+ * filtered on isStreaming || isResponding), which is registered via the seeder
+ * barrel before agents-seeder runs.
  */
 import { registerMockSeeder } from "../mock-bootstrap";
 import { bulkUpsertSessions, upsertSession } from "../slices/agent-session/agent-session-slice";
@@ -21,10 +22,6 @@ import {
   setActiveAgentId,
   setAgentsLoaded,
 } from "../slices/workspace-agents/workspace-agents-slice";
-
-// Import the active-streams bridge at module load time so the handler is
-// registered before the tracker's first fetch.
-import "./active-streams-bridge-seeder";
 
 registerMockSeeder("agents", async ({ store, client }) => {
   const workspaces = await client.workspaces.list();

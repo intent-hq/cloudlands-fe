@@ -10,12 +10,15 @@
  *   { agentId, sessionId, workspaceId, startTime }
  * where agentId = sessionId = AgentLite.id, and startTime is Date.parse(updatedAt) or 0.
  *
- * On any failure, returns { success: false, error, data: [] } — never throws
- * and never leaves the channel unbridged (the tracker reads result.success).
+ * Per-workspace agent.list failures are swallowed (returning [] for that
+ * workspace) and the overall result is still { success: true, data }. Only
+ * workspace.list failure returns { success: false, error, data: [] }. Never
+ * throws; the channel is always bridged (the tracker reads result.success).
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { AGENT_CHANNELS } from '$shared/ipc/channels';
 import { backendRequest } from '$lib/client/live/backend-transport';
+import type { ActiveStream } from '$features/agent/services/active-streams-tracker';
 
 interface WorkspaceListResult {
   workspaces?: Array<{ id?: unknown; workspaceId?: unknown }>;
@@ -28,13 +31,6 @@ interface AgentListResult {
     isResponding?: boolean;
     updatedAt?: string;
   }>;
-}
-
-interface ActiveStream {
-  agentId: string;
-  sessionId: string;
-  workspaceId: string;
-  startTime: number;
 }
 
 /**
