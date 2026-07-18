@@ -17,7 +17,8 @@
  * @returns Promise that resolves when navigation completes
  */
 export async function navigateToRoute(route: string): Promise<void> {
-  // @ts-expect-error - $app/navigation is a SvelteKit renderer-only module
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-expect-error - $app/navigation is a SvelteKit renderer-only module (not available in main process)
   const { goto } = await import('$app/navigation');
   return goto(route);
 }
