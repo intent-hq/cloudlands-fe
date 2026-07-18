@@ -48,6 +48,9 @@ import type {
   WorkspaceInitializerOnboardingFormState,
   WorkspaceInitializerRecentRepo,
   WorkspaceInitializerRemoteSetup,
+  WorkspaceInitializerRepoSelection,
+  CompactWorkspaceInitializerFormState,
+  WorkspaceInitializerAgentSettings,
 } from "../slices/workspace-initializer/workspace-initializer-types";
 import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 
@@ -125,14 +128,14 @@ async function hydrateOnce(): Promise<void> {
       const lastSubmittedAgent = safeLocalStorage.getJSON(LAST_SUBMITTED_AGENT_KEY);
 
       const migratedBag: WorkspaceInitializerHydrationState = {
-        compactFormState: compactFormState ?? null,
-        onboardingFormState: onboardingFormState ?? null,
-        lastSelectedRepo: lastSelectedRepo ?? null,
+        compactFormState: (compactFormState && Object.keys(compactFormState).length > 0 ? compactFormState : null) as CompactWorkspaceInitializerFormState | null,
+        onboardingFormState: (onboardingFormState && Object.keys(onboardingFormState).length > 0 ? onboardingFormState : null) as WorkspaceInitializerOnboardingFormState | null,
+        lastSelectedRepo: (lastSelectedRepo && Object.keys(lastSelectedRepo).length > 0 ? lastSelectedRepo : null) as WorkspaceInitializerRepoSelection | null,
         branchByRepo,
         defaultParentPath: defaultParentPath ?? undefined,
         recentRepos,
         remoteSetups,
-        lastSubmittedAgent: lastSubmittedAgent ?? null,
+        lastSubmittedAgent: (lastSubmittedAgent && Object.keys(lastSubmittedAgent).length > 0 ? lastSubmittedAgent : null) as WorkspaceInitializerAgentSettings | null,
       };
 
       appStore.dispatch(hydrateWorkspaceInitializer(migratedBag));
@@ -146,15 +149,15 @@ async function hydrateOnce(): Promise<void> {
 
     // Parse daemon bag and dispatch hydration
     const hydrationState: WorkspaceInitializerHydrationState = {
-      compactFormState: daemonBag.compactFormState ?? null,
-      onboardingFormState: daemonBag.onboardingFormState ?? null,
-      lastSelectedRepo: daemonBag.lastSelectedRepo ?? null,
+      compactFormState: (daemonBag.compactFormState && Object.keys(daemonBag.compactFormState).length > 0 ? daemonBag.compactFormState : null) as CompactWorkspaceInitializerFormState | null,
+      onboardingFormState: (daemonBag.onboardingFormState && Object.keys(daemonBag.onboardingFormState).length > 0 ? daemonBag.onboardingFormState : null) as WorkspaceInitializerOnboardingFormState | null,
+      lastSelectedRepo: (daemonBag.lastSelectedRepo && Object.keys(daemonBag.lastSelectedRepo).length > 0 ? daemonBag.lastSelectedRepo : null) as WorkspaceInitializerRepoSelection | null,
       branchByRepo: stringRecord(daemonBag.branchByRepo),
       defaultParentPath:
         typeof daemonBag.defaultParentPath === "string" ? daemonBag.defaultParentPath : undefined,
       recentRepos: objectArray<WorkspaceInitializerRecentRepo>(daemonBag.recentRepos),
       remoteSetups: objectArray<WorkspaceInitializerRemoteSetup>(daemonBag.remoteSetups),
-      lastSubmittedAgent: daemonBag.lastSubmittedAgent ?? null,
+      lastSubmittedAgent: (daemonBag.lastSubmittedAgent && Object.keys(daemonBag.lastSubmittedAgent).length > 0 ? daemonBag.lastSubmittedAgent : null) as WorkspaceInitializerAgentSettings | null,
     };
 
     appStore.dispatch(hydrateWorkspaceInitializer(hydrationState));

@@ -21,12 +21,9 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 }));
 
 import { store as appStore } from "$store/renderer/store";
-import { safeLocalStorage } from "$lib/utils/safe-storage";
 import {
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerOnboardingFormState,
-  debounceWorkspaceInitializerOnboardingFormState,
-  cancelWorkspaceInitializerOnboardingFormStateDebounce,
   setWorkspaceInitializerLastSelectedRepo,
   setWorkspaceInitializerRecentRepos,
   upsertWorkspaceInitializerRemoteSetup,

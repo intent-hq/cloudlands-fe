@@ -65,6 +65,7 @@ const mocks = vi.hoisted(() => {
   const sidebarNavPersistenceMiddleware = createPassthroughMiddleware();
   const browserPersistenceMiddleware = createPassthroughMiddleware();
   const userPreferencesPersistenceMiddleware = createPassthroughMiddleware();
+  const workspaceInitializerPersistenceMiddleware = createPassthroughMiddleware();
   const themeMutationMiddleware = createPassthroughMiddleware();
   const autoUpdateMutationMiddleware = createPassthroughMiddleware();
   const specialistsMutationMiddleware = createPassthroughMiddleware();
@@ -134,6 +135,7 @@ const mocks = vi.hoisted(() => {
     createSidebarNavPersistenceMiddleware: vi.fn(() => sidebarNavPersistenceMiddleware),
     createBrowserPersistenceMiddleware: vi.fn(() => browserPersistenceMiddleware),
     createUserPreferencesPersistenceMiddleware: vi.fn(() => userPreferencesPersistenceMiddleware),
+    createWorkspaceInitializerPersistenceMiddleware: vi.fn(() => workspaceInitializerPersistenceMiddleware),
     createThemeMutationMiddleware: vi.fn(() => themeMutationMiddleware),
     createAutoUpdateMutationMiddleware: vi.fn(() => autoUpdateMutationMiddleware),
     createSpecialistsMutationMiddleware: vi.fn(() => specialistsMutationMiddleware),
@@ -193,6 +195,7 @@ const mocks = vi.hoisted(() => {
     sidebarNavPersistenceMiddleware,
     browserPersistenceMiddleware,
     userPreferencesPersistenceMiddleware,
+    workspaceInitializerPersistenceMiddleware,
     themeMutationMiddleware,
     autoUpdateMutationMiddleware,
     specialistsMutationMiddleware,
@@ -346,6 +349,9 @@ vi.mock("./middlewares/browser-persistence-service", () => ({
 vi.mock("./middlewares/user-preferences-persistence-service", () => ({
   createUserPreferencesPersistenceMiddleware: mocks.createUserPreferencesPersistenceMiddleware,
 }));
+vi.mock("./middlewares/workspace-initializer-persistence-service", () => ({
+  createWorkspaceInitializerPersistenceMiddleware: mocks.createWorkspaceInitializerPersistenceMiddleware,
+}));
 vi.mock("$features/theme/theme-service", () => ({
   createThemeMutationMiddleware: mocks.createThemeMutationMiddleware,
 }));
@@ -462,6 +468,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.userPreferencesBetaPersistenceMiddleware,
       mocks.userPreferencesNotificationPersistenceMiddleware,
       mocks.userPreferencesPersistenceMiddleware,
+      mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -530,6 +537,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.userPreferencesBetaPersistenceMiddleware,
       mocks.userPreferencesNotificationPersistenceMiddleware,
       mocks.userPreferencesPersistenceMiddleware,
+      mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -598,6 +606,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.userPreferencesBetaPersistenceMiddleware,
       mocks.userPreferencesNotificationPersistenceMiddleware,
       mocks.userPreferencesPersistenceMiddleware,
+      mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -667,6 +676,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.userPreferencesBetaPersistenceMiddleware,
       mocks.userPreferencesNotificationPersistenceMiddleware,
       mocks.userPreferencesPersistenceMiddleware,
+      mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
@@ -753,6 +763,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.userPreferencesBetaPersistenceMiddleware,
       mocks.userPreferencesNotificationPersistenceMiddleware,
       mocks.userPreferencesPersistenceMiddleware,
+      mocks.workspaceInitializerPersistenceMiddleware,
       mocks.themeMutationMiddleware,
       mocks.autoUpdateMutationMiddleware,
       mocks.specialistsMutationMiddleware,
