@@ -40,9 +40,15 @@ async function pollStatus(): Promise<void> {
   try {
     const result = await backendRequest<SystemStatusWirePayload>('system.status');
     appStore.dispatch(systemStatusSuccess(result));
-  } catch (error) {
+  } catch (_error) {
     // Poll failure — heartbeat/health-check failure while connected, or connection already down.
     // Dispatch failure action and, if we're still supposedly connected, also dispatch heartbeatFailed.
+    //
+    // V1 degraded-state derivation: we infer 'degraded' from a system.status poll failure while
+    // the connection status is 'connected'. This is correct: the poll IS the application-level
+    // health check. The main-process JSON-RPC client tears down the UDS socket on transport-level
+    // heartbeat timeout, which lands us in the 'down' state via the backend:status disconnected event.
+    // A poll failure while connected therefore means the daemon is reachable but slow/degraded.
     appStore.dispatch(systemStatusFailure());
     // Check current health state: if 'healthy', the poll failure is the first sign of degradation.
     const currentHealth = appStore.state.daemonHealth.health;

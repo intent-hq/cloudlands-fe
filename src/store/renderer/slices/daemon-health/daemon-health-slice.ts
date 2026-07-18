@@ -9,7 +9,6 @@
 import { createAction } from '@augmentcode/ag-redux-toolkit/utils/store/create-action';
 import { createReducer } from '@augmentcode/ag-redux-toolkit/utils/store/create-reducer';
 import type {
-  DaemonHealth,
   DaemonHealthState,
   DaemonHealthStats,
   SystemStatusWirePayload,
