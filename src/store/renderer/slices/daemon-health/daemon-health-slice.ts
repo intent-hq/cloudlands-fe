@@ -12,6 +12,7 @@ import type {
   DaemonHealthState,
   DaemonHealthStats,
   SystemStatusWirePayload,
+  BackendTransportInfo,
 } from './daemon-health-types';
 
 // ---------------------------------------------------------------------------
@@ -32,8 +33,9 @@ export const initialState: DaemonHealthState = {
 /**
  * Backend connection status changed (from backend:status IPC events).
  * Payload is ConnectionStatus from json-rpc-client.ts: 'connecting' | 'connected' | 'disconnected'.
+ * Optional transport info is additively included when available.
  */
-export const connectionStatusChanged = createAction<[status: string]>(
+export const connectionStatusChanged = createAction<[status: string, transport?: BackendTransportInfo]>(
   'daemonHealth/connectionStatusChanged',
 );
 
@@ -71,10 +73,15 @@ export const systemStatusFailure = createAction(
 // ---------------------------------------------------------------------------
 
 export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState)
-  .with(connectionStatusChanged, (state, { payload: [status] }) => {
+  .with(connectionStatusChanged, (state, { payload: [status, transport] }) => {
     if (status === 'connected') {
       // Connection established — health moves to 'healthy'.
-      return { ...state, health: 'healthy' };
+      // Update transport info if present (additive).
+      return {
+        ...state,
+        health: 'healthy',
+        stats: transport && state.stats ? { ...state.stats, transport } : state.stats,
+      };
     } else if (status === 'disconnected' || status === 'connecting') {
       // Connection down or reconnecting — health moves to 'down'.
       return { ...state, health: 'down' };
@@ -97,9 +104,11 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
       listenMode: wirePayload.listenMode,
       port: wirePayload.port ?? null,
       version: wirePayload.version,
+      protocolVersion: wirePayload.protocolVersion,
       uptimeSeconds: wirePayload.uptimeSeconds,
       os: wirePayload.host.os,
       arch: wirePayload.host.arch,
+      transport: state.stats?.transport,
     };
     return {
       ...state,

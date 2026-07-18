@@ -127,6 +127,11 @@ export class JsonRpcClient extends EventEmitter {
     return this.status;
   }
 
+  /** Connection config (transport type and target). */
+  getConfig(): BackendConnectionConfig {
+    return this.config;
+  }
+
   /** Begin connecting (idempotent). */
   start(): void {
     if (this.disposed) return;
