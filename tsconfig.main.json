@@ -8,6 +8,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "skipDefaultLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "moduleResolution": "bundler",
@@ -38,7 +39,7 @@
     "src/store/utils/**/*.ts",
     "src/shared/**/*.ts",
     "src/features/**/*.ipc.ts",
-    "src/features/**/*.service.ts",
+    "src/features/*/main/**/*.service.ts",
     "src/features/ipc/**/*.ts",
     "src/features/mcp/**/*.ts",
     "src/features/observability/event-storage.ts",
@@ -61,9 +62,15 @@
     "src/features/agent/agent.service.ts",
     "src/features/agent/services/unified-agent-creator.ts",
     "src/features/agent/services/batch-operations.service.ts",
-    "src/features/**/*.client.ts",
+    "src/features/agent/chat-read-service.ts",
+    "src/features/agent/chat-send-service.ts",
+    "src/features/agent/agent-subscription-read-service.ts",
+    "src/features/settings/settings-hydration-service.ts",
+    "**/*.client.ts",
     "src/features/**/*.store.svelte.ts",
     "src/features/**/browser/**",
-    "src/lib/**"
+    "src/lib/**",
+    "src/store/renderer/**",
+    "src/shared/ipc-mock-router.ts"
   ]
 }

@@ -179,7 +179,7 @@ import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
-import { navigateToRoute } from '$lib/utils/navigation';
+import { navigateToRoute } from '$lib/utils/navigation.client';
 import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
