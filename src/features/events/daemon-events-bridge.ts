@@ -179,6 +179,7 @@ import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
+import { goto } from '$app/navigation';
 import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -1322,18 +1323,19 @@ function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
       ? data.durationMs
       : undefined;
 
-  try {
-    window.location.href = route;
-    if (highlightId) {
-      // Defer the highlight dispatch slightly so the target element has time
-      // to render after navigation completes.
-      requestAnimationFrame(() => {
-        appStore.dispatch(requestUiHighlight(highlightId, durationMs ? { durationMs } : undefined));
-      });
-    }
-  } catch (error: unknown) {
-    logger.warn('[app:ui-navigate] Navigation failed', { route, error });
-  }
+  void goto(route)
+    .then(() => {
+      if (highlightId) {
+        // Defer the highlight dispatch slightly so the target element has time
+        // to render after navigation completes.
+        requestAnimationFrame(() => {
+          appStore.dispatch(requestUiHighlight(highlightId, durationMs ? { durationMs } : undefined));
+        });
+      }
+    })
+    .catch((error: unknown) => {
+      logger.warn('[app:ui-navigate] Navigation failed', { route, error });
+    });
 }
 
 /**
@@ -1381,17 +1383,15 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
           workspaceId,
           error,
         });
-        window.location.href = route;
+        return goto(route);
       })
       .catch(() => {
-        // Ignore final navigation failure - already logged
+        // Ignore final goto failure - already logged
       });
   } else {
-    try {
-      window.location.href = route;
-    } catch (error: unknown) {
+    void goto(route).catch((error: unknown) => {
       logger.warn('[app:workspace-open] Navigation failed', { workspaceId, error });
-    }
+    });
   }
 }
 

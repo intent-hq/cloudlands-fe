@@ -140,6 +140,10 @@ import { selectContextItems } from '$store/renderer/slices/context/context-selec
 import { chatReset, chatSendStarted } from '$store/renderer/slices/chat-state/chat-state-slice';
 import type { StatusEvent } from '$store/renderer/slices/chat-state/chat-state-types';
 import {
+  clearUiHighlight,
+  initialState as uiHighlightInitialState,
+} from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
+import {
   clearAgentQueue,
   removeQueuedMessageFromAgentQueue,
 } from '$store/renderer/slices/agent-queue/agent-queue-slice';
