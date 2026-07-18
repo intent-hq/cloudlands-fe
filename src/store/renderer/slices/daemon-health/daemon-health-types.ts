@@ -48,6 +48,7 @@ export interface DaemonHealthStats {
   listenMode: string;
   port?: number | null;
   version?: string;
+  protocolVersion: string;
   uptimeSeconds?: number;
   os: string;
   arch: string;

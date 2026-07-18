@@ -153,6 +153,12 @@
               </div>
             {/if}
 
+            <!-- Protocol version -->
+            <div class="flex justify-between text-xs">
+              <span class="text-subtle">Protocol</span>
+              <span class="font-mono text-xs">{$stats$.protocolVersion}</span>
+            </div>
+
             <!-- Uptime -->
             {#if $stats$.uptimeSeconds !== undefined}
               <div class="flex justify-between text-xs">

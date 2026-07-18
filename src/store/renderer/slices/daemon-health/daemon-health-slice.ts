@@ -97,6 +97,7 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
       listenMode: wirePayload.listenMode,
       port: wirePayload.port ?? null,
       version: wirePayload.version,
+      protocolVersion: wirePayload.protocolVersion,
       uptimeSeconds: wirePayload.uptimeSeconds,
       os: wirePayload.host.os,
       arch: wirePayload.host.arch,
