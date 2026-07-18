@@ -57,7 +57,8 @@ export interface DaemonHealthStats {
   listenMode: string;
   port?: number | null;
   version?: string;
-  protocolVersion: string;
+  /** Optional for backward compatibility with older daemons. */
+  protocolVersion?: string;
   uptimeSeconds?: number;
   os: string;
   arch: string;

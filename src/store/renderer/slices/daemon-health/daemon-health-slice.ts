@@ -108,6 +108,7 @@ export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState
       uptimeSeconds: wirePayload.uptimeSeconds,
       os: wirePayload.host.os,
       arch: wirePayload.host.arch,
+      transport: state.stats?.transport,
     };
     return {
       ...state,

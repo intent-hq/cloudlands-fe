@@ -6,7 +6,6 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { DaemonHealthState } from '$store/renderer/slices/daemon-health/daemon-health-types';
 import type { StoreState } from '$store/renderer/types';
 
 // Create state holder
@@ -123,10 +122,9 @@ describe('DaemonStatusIndicator', () => {
   });
 
   describe('dropdown interaction', () => {
-    it('dispatches pollSystemStatus when dropdown opens (line 76)', async () => {
-      // This test verifies the handleOpenChange function at line 76
-      // which dispatches pollSystemStatus when the dropdown opens
-      const module = await import('./DaemonStatusIndicator.svelte');
+    it('dispatches pollSystemStatus when dropdown opens ($effect at line 72)', async () => {
+      // This test verifies the $effect at line 72
+      // which dispatches pollSystemStatus when dropdownOpen becomes true
       const { pollSystemStatus } = await import('$store/renderer/slices/daemon-health/daemon-health-slice');
 
       // Verify the component can trigger the action
@@ -141,16 +139,16 @@ describe('DaemonStatusIndicator', () => {
 
   describe('transport field rendering', () => {
     it('shows "sidecar (UDS)" when mode is sidecar-uds', async () => {
-      const { BackendTransportInfo } = await import('$store/renderer/slices/daemon-health/daemon-health-types');
+      type BackendTransportInfo = import('$store/renderer/slices/daemon-health/daemon-health-types').BackendTransportInfo;
       // Transport info should render as "sidecar (UDS)" for sidecar mode
-      const transport: typeof BackendTransportInfo = { mode: 'sidecar-uds' };
+      const transport: BackendTransportInfo = { mode: 'sidecar-uds' };
       expect(transport.mode).toBe('sidecar-uds');
     });
 
     it('shows "external (URL)" when mode is external-ws with target', async () => {
-      const { BackendTransportInfo } = await import('$store/renderer/slices/daemon-health/daemon-health-types');
+      type BackendTransportInfo = import('$store/renderer/slices/daemon-health/daemon-health-types').BackendTransportInfo;
       // Transport info should render as "external (ws://...)" for external mode
-      const transport: typeof BackendTransportInfo = { mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws' };
+      const transport: BackendTransportInfo = { mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws' };
       expect(transport.mode).toBe('external-ws');
       expect(transport.target).toBe('ws://127.0.0.1:5181/ws');
     });

@@ -70,12 +70,11 @@
   }
 
   // Trigger stats refresh when menu opens
-  function handleOpenChange(open: boolean) {
-    dropdownOpen = open;
-    if (open) {
+  $effect(() => {
+    if (dropdownOpen) {
       appStore.dispatch(pollSystemStatus());
     }
-  }
+  });
 </script>
 
 <DropdownMenu align="end" side="bottom" bind:open={dropdownOpen} contentClass="px-0" portal={true}>
@@ -94,7 +93,7 @@
     </Tooltip>
   {/snippet}
 
-  {#snippet content({ close }: { close: () => void })}
+  {#snippet content()}
     <div class="w-56">
       <Header class="px-3 pt-1.5 pb-1" size={6}>Daemon Status</Header>
 
@@ -154,10 +153,12 @@
             {/if}
 
             <!-- Protocol version -->
-            <div class="flex justify-between text-xs">
-              <span class="text-subtle">Protocol</span>
-              <span class="font-mono text-xs">{$stats$.protocolVersion}</span>
-            </div>
+            {#if $stats$.protocolVersion !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">Protocol</span>
+                <span class="font-mono text-xs">{$stats$.protocolVersion}</span>
+              </div>
+            {/if}
 
             <!-- Uptime -->
             {#if $stats$.uptimeSeconds !== undefined}
