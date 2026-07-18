@@ -76,6 +76,7 @@ import { settingsProposalHistoryReducer } from "./slices/settings-proposal-histo
 import { specialistProposalHistoryReducer } from "./slices/specialist-proposal-history/specialist-proposal-history-slice";
 import { proposalLifecycleReducer } from "./slices/proposal-lifecycle/proposal-lifecycle-slice";
 import { prBranchLookupReducer } from "./slices/pr-branch-lookup/pr-branch-lookup-slice";
+import { daemonHealthReducer } from "./slices/daemon-health/daemon-health-slice";
 
 export const reducers = {
   providerSettings: providerSettingsReducer,
@@ -156,4 +157,5 @@ export const reducers = {
   specialistProposalHistory: specialistProposalHistoryReducer,
   proposalLifecycle: proposalLifecycleReducer,
   prBranchLookup: prBranchLookupReducer,
+  daemonHealth: daemonHealthReducer,
 } as const;

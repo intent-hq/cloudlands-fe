@@ -77,9 +77,9 @@ if (typeof window !== 'undefined') {
     })),
   });
 
-  // Mock localStorage
+  // Mock localStorage (getItem must return null for missing keys per Web Storage API spec)
   const localStorageMock = {
-    getItem: vi.fn(),
+    getItem: vi.fn(() => null),
     setItem: vi.fn(),
     removeItem: vi.fn(),
     clear: vi.fn(),

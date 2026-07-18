@@ -67,6 +67,7 @@ import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
 import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
 import { createActiveStreamsReduxBridge } from "$features/agent/active-streams-redux-bridge";
+import { createDaemonHealthMiddleware } from "./middlewares/daemon-health-service";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
@@ -146,6 +147,10 @@ function buildMiddleware(): StoreMiddleware[] {
     // `isResponding` flags on `agent:idle` — without this the "Thinking"
     // spinner stays stuck after a turn ends.
     createDaemonEventsBridgeMiddleware(),
+    // Poll system.status periodically (~10s) and listen to backend:status
+    // connection events to derive tri-state daemon health (healthy/degraded/down)
+    // plus stats payload for the health indicator UI.
+    createDaemonHealthMiddleware(),
     // Bridge activeStreamsTracker updates into Redux so sidebar workspace cards
     // re-render when active-stream data arrives after mount (app refresh case).
     // Subscribes once at boot and dispatches `bumpActiveStreamsVersion` when
