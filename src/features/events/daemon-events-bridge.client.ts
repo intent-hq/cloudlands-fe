@@ -179,7 +179,6 @@ import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
-import { navigateToRoute } from '$lib/utils/navigation.client';
 import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -1344,8 +1343,10 @@ function debouncedChangesRefresh(workspaceId: string): void {
 function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
-  const route = data.route;
-  if (typeof route !== 'string' || route.trim().length === 0) return;
+  const rawRoute = data.route;
+  if (typeof rawRoute !== 'string') return;
+  const route = rawRoute.trim();
+  if (route.length === 0) return;
 
   const highlightId = typeof data.highlightId === 'string' ? data.highlightId.trim() : '';
   const durationMs =
@@ -1353,7 +1354,8 @@ function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
       ? data.durationMs
       : undefined;
 
-  void navigateToRoute(route)
+  import('$lib/utils/navigation.client')
+    .then(({ navigateToRoute }) => navigateToRoute(route))
     .then(() => {
       if (highlightId) {
         // Defer the highlight dispatch slightly so the target element has time
@@ -1399,8 +1401,10 @@ function handleAppUiHighlightEvent(event: WorkspaceEvent): void {
 function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
-  const workspaceId = data.workspaceId;
-  if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) return;
+  const rawWorkspaceId = data.workspaceId;
+  if (typeof rawWorkspaceId !== 'string') return;
+  const workspaceId = rawWorkspaceId.trim();
+  if (workspaceId.length === 0) return;
 
   const openInNewWindow = data.openInNewWindow === true;
   const route = `/workspace/${workspaceId}`;
@@ -1408,20 +1412,34 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
   if (openInNewWindow) {
     // Try to open in new window via IPC, fall back to navigation if it fails
     invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route })
-      .catch((error: unknown) => {
-        logger.warn('[app:workspace-open] New window open failed, navigating instead', {
+      .then(async (result: unknown) => {
+        // window:open-new resolves {success: false, error} on failure
+        if (typeof result === 'object' && result !== null && 'success' in result && result.success === false) {
+          logger.warn('[app:workspace-open] New window open returned failure, navigating instead', {
+            workspaceId,
+            error: 'error' in result ? result.error : undefined,
+          });
+          const { navigateToRoute } = await import('$lib/utils/navigation.client');
+          return navigateToRoute(route);
+        }
+      })
+      .catch(async (error: unknown) => {
+        logger.warn('[app:workspace-open] New window open rejected, navigating instead', {
           workspaceId,
           error,
         });
+        const { navigateToRoute } = await import('$lib/utils/navigation.client');
         return navigateToRoute(route);
       })
       .catch(() => {
         // Ignore final goto failure - already logged
       });
   } else {
-    void navigateToRoute(route).catch((error: unknown) => {
-      logger.warn('[app:workspace-open] Navigation failed', { workspaceId, error });
-    });
+    import('$lib/utils/navigation.client')
+      .then(({ navigateToRoute }) => navigateToRoute(route))
+      .catch((error: unknown) => {
+        logger.warn('[app:workspace-open] Navigation failed', { workspaceId, error });
+      });
   }
 }
 

@@ -4482,11 +4482,10 @@ describe('DaemonEventsBridge — app-UI events', () => {
     invokeSpy.mockClear();
     backendRequestSpy.mockClear();
     capturedHandlers.length = 0;
-    // Directly reset UI highlight state to avoid dispatching actions during setup
-    const state = appStore.state as { uiHighlight?: { activeById: Record<string, number>; durationMsById: Record<string, number> } };
+    // Reset UI highlight state by replacing with initial state
+    const state = appStore.state as Record<string, unknown>;
     if (state.uiHighlight) {
-      state.uiHighlight.activeById = {};
-      state.uiHighlight.durationMsById = {};
+      state.uiHighlight = { activeById: {}, durationMsById: {} };
     }
     seedSession();
   });
@@ -4697,6 +4696,18 @@ describe('DaemonEventsBridge — app-UI events', () => {
 
       expect(navigateToRouteSpy).not.toHaveBeenCalled();
       expect(invokeSpy).not.toHaveBeenCalled();
+    });
+
+    it('falls back to navigation when invoke resolves {success:false}', async () => {
+      await primeBridge();
+      const handler = capturedHandlers[0]!;
+      invokeSpy.mockResolvedValueOnce({ success: false, error: 'Window creation blocked' });
+
+      handler(appWorkspaceOpenNotification('ws-success-false', true));
+      await flush();
+
+      expect(invokeSpy).toHaveBeenCalledWith('window:open-new', { route: '/workspace/ws-success-false' });
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-success-false');
     });
   });
 });
