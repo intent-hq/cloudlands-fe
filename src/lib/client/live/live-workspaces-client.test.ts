@@ -98,7 +98,7 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     const client = new LiveWorkspacesClient();
 
     expect(await client.setActive("ws-1")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.setActive", { workspaceId: "ws-1" }, undefined);
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.setActive", { workspaceId: "ws-1" });
   });
 
   it("maps a daemon error to a failed MutationResult without throwing", async () => {
@@ -145,7 +145,7 @@ describe("LiveWorkspacesClient update/archive/unarchive (PROTOCOL §5.1, fake tr
     const client = new LiveWorkspacesClient();
 
     expect(await client.archive("ws-1")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.archive", { workspaceId: "ws-1" }, undefined);
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.archive", { workspaceId: "ws-1" });
   });
 
   it("unarchive forwards workspace.unarchive with the workspaceId (archive undo)", async () => {
@@ -153,7 +153,7 @@ describe("LiveWorkspacesClient update/archive/unarchive (PROTOCOL §5.1, fake tr
     const client = new LiveWorkspacesClient();
 
     expect(await client.unarchive("ws-1")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.unarchive", { workspaceId: "ws-1" }, undefined);
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.unarchive", { workspaceId: "ws-1" });
   });
 });
 
