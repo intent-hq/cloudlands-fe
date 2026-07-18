@@ -78,6 +78,26 @@ export function installInterruptedAgentsService(
     return () => {};
   }
 
+  // Catch-up: check if backend is already connected when we install.
+  // The main process may have connected before the renderer mounted this
+  // service (typical on app launch), so the initial "connected" event
+  // was already broadcast. Query current status and check immediately if needed.
+  void (async () => {
+    try {
+      const statusResult = (await api.invoke(BACKEND.GET_STATUS)) as
+        | { status?: string }
+        | undefined;
+      if (statusResult?.status === "connected") {
+        connectionEpoch += 1;
+        const epoch = connectionEpoch;
+        logger.debug("Backend already connected on install (catch-up)", { epoch });
+        void checkInterruptedAgents(appClient, epoch);
+      }
+    } catch (error) {
+      logger.warn("Failed to query backend status on install", { error });
+    }
+  })();
+
   // Listen for initial connection
   const initialListenerId = api.on(
     BACKEND.STATUS,
