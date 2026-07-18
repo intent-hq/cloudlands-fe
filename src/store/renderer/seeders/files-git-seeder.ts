@@ -74,8 +74,10 @@ registerMockSeeder("files-git", async ({ store, client }) => {
     }
 
     // ── Changes (tracked changes + commit history) ──
-    const changes = await client.git.trackedChanges(wsId);
-    const { commits, boundarySha } = await client.git.commitsWithBoundary(wsId);
+    const [changes, { commits, boundarySha }] = await Promise.all([
+      client.git.trackedChanges(wsId),
+      client.git.commitsWithBoundary(wsId),
+    ]);
     store.dispatch(setChangesData(wsId, changes, false, changes.length));
     store.dispatch(setCommitsData(wsId, commits, boundarySha));
     store.dispatch(setHasLoadedInitialData(wsId, true));
