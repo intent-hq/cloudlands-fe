@@ -4469,7 +4469,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
     navigateToRouteSpy: vi.fn(() => Promise.resolve()),
   }));
 
-  vi.mock('$lib/utils/navigation', () => ({
+  vi.mock('$lib/utils/navigation.client', () => ({
     navigateToRoute: navigateToRouteSpy,
   }));
 
