@@ -106,6 +106,14 @@ function persistStateBag(): void {
     .catch((error) => logger.error(`Failed to persist ${SETTINGS_PATH}`, { error }));
 }
 
+/**
+ * Type-safe read with guard: returns typed T when value is a non-empty record, null otherwise.
+ * Used for migration reads from localStorage where empty objects should be treated as missing.
+ */
+function parseNonEmptyRecordOrNull<T>(value: unknown): T | null {
+  return isRecord(value) && Object.keys(value).length > 0 ? (value as T) : null;
+}
+
 /** Boot-time hydration: read daemon setting, try localStorage migration, dispatch hydration. */
 async function hydrateOnce(): Promise<void> {
   try {
@@ -114,9 +122,15 @@ async function hydrateOnce(): Promise<void> {
 
     // If daemon bag is empty and legacy localStorage keys exist, migrate
     if (Object.keys(daemonBag).length === 0) {
-      const compactFormState = safeLocalStorage.getJSON(COMPACT_FORM_STATE_KEY);
-      const onboardingFormState = safeLocalStorage.getJSON(ONBOARDING_FORM_STATE_KEY);
-      const lastSelectedRepo = safeLocalStorage.getJSON(LAST_SELECTED_REPO_KEY);
+      const compactFormState = parseNonEmptyRecordOrNull<CompactWorkspaceInitializerFormState>(
+        safeLocalStorage.getJSON<CompactWorkspaceInitializerFormState>(COMPACT_FORM_STATE_KEY),
+      );
+      const onboardingFormState = parseNonEmptyRecordOrNull<WorkspaceInitializerOnboardingFormState>(
+        safeLocalStorage.getJSON<WorkspaceInitializerOnboardingFormState>(ONBOARDING_FORM_STATE_KEY),
+      );
+      const lastSelectedRepo = parseNonEmptyRecordOrNull<WorkspaceInitializerRepoSelection>(
+        safeLocalStorage.getJSON<WorkspaceInitializerRepoSelection>(LAST_SELECTED_REPO_KEY),
+      );
       const branchByRepo = stringRecord(safeLocalStorage.getJSON(BRANCH_BY_REPO_KEY));
       const defaultParentPath = safeLocalStorage.getItem(DEFAULT_PARENT_PATH_KEY);
       const recentRepos = objectArray<WorkspaceInitializerRecentRepo>(
@@ -125,17 +139,19 @@ async function hydrateOnce(): Promise<void> {
       const remoteSetups = objectArray<WorkspaceInitializerRemoteSetup>(
         safeLocalStorage.getJSON(REMOTE_SETUPS_KEY),
       );
-      const lastSubmittedAgent = safeLocalStorage.getJSON(LAST_SUBMITTED_AGENT_KEY);
+      const lastSubmittedAgent = parseNonEmptyRecordOrNull<WorkspaceInitializerAgentSettings>(
+        safeLocalStorage.getJSON<WorkspaceInitializerAgentSettings>(LAST_SUBMITTED_AGENT_KEY),
+      );
 
       const migratedBag: WorkspaceInitializerHydrationState = {
-        compactFormState: (compactFormState && Object.keys(compactFormState).length > 0 ? compactFormState : null) as CompactWorkspaceInitializerFormState | null,
-        onboardingFormState: (onboardingFormState && Object.keys(onboardingFormState).length > 0 ? onboardingFormState : null) as WorkspaceInitializerOnboardingFormState | null,
-        lastSelectedRepo: (lastSelectedRepo && Object.keys(lastSelectedRepo).length > 0 ? lastSelectedRepo : null) as WorkspaceInitializerRepoSelection | null,
+        compactFormState,
+        onboardingFormState,
+        lastSelectedRepo,
         branchByRepo,
         defaultParentPath: defaultParentPath ?? undefined,
         recentRepos,
         remoteSetups,
-        lastSubmittedAgent: (lastSubmittedAgent && Object.keys(lastSubmittedAgent).length > 0 ? lastSubmittedAgent : null) as WorkspaceInitializerAgentSettings | null,
+        lastSubmittedAgent,
       };
 
       appStore.dispatch(hydrateWorkspaceInitializer(migratedBag));
@@ -147,17 +163,26 @@ async function hydrateOnce(): Promise<void> {
       return;
     }
 
-    // Parse daemon bag and dispatch hydration
+    // Parse daemon bag with tolerant guards (settings.get returns value: unknown).
+    // Don't filter empty objects here - the daemon bag already has well-formed data.
     const hydrationState: WorkspaceInitializerHydrationState = {
-      compactFormState: (daemonBag.compactFormState && Object.keys(daemonBag.compactFormState).length > 0 ? daemonBag.compactFormState : null) as CompactWorkspaceInitializerFormState | null,
-      onboardingFormState: (daemonBag.onboardingFormState && Object.keys(daemonBag.onboardingFormState).length > 0 ? daemonBag.onboardingFormState : null) as WorkspaceInitializerOnboardingFormState | null,
-      lastSelectedRepo: (daemonBag.lastSelectedRepo && Object.keys(daemonBag.lastSelectedRepo).length > 0 ? daemonBag.lastSelectedRepo : null) as WorkspaceInitializerRepoSelection | null,
+      compactFormState: isRecord(daemonBag.compactFormState)
+        ? (daemonBag.compactFormState as unknown as CompactWorkspaceInitializerFormState)
+        : null,
+      onboardingFormState: isRecord(daemonBag.onboardingFormState)
+        ? (daemonBag.onboardingFormState as unknown as WorkspaceInitializerOnboardingFormState)
+        : null,
+      lastSelectedRepo: isRecord(daemonBag.lastSelectedRepo)
+        ? (daemonBag.lastSelectedRepo as unknown as WorkspaceInitializerRepoSelection)
+        : null,
       branchByRepo: stringRecord(daemonBag.branchByRepo),
       defaultParentPath:
         typeof daemonBag.defaultParentPath === "string" ? daemonBag.defaultParentPath : undefined,
       recentRepos: objectArray<WorkspaceInitializerRecentRepo>(daemonBag.recentRepos),
       remoteSetups: objectArray<WorkspaceInitializerRemoteSetup>(daemonBag.remoteSetups),
-      lastSubmittedAgent: (daemonBag.lastSubmittedAgent && Object.keys(daemonBag.lastSubmittedAgent).length > 0 ? daemonBag.lastSubmittedAgent : null) as WorkspaceInitializerAgentSettings | null,
+      lastSubmittedAgent: isRecord(daemonBag.lastSubmittedAgent)
+        ? (daemonBag.lastSubmittedAgent as unknown as WorkspaceInitializerAgentSettings)
+        : null,
     };
 
     appStore.dispatch(hydrateWorkspaceInitializer(hydrationState));
@@ -185,11 +210,11 @@ function removeOnboardingPromptSessionStorage(): void {
   }
 }
 
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingOnboardingFormState: WorkspaceInitializerOnboardingFormState | null = null;
-
 export function createWorkspaceInitializerPersistenceMiddleware(): StoreMiddleware {
   let hasHydrated = false;
+  // Per-instance debounce state (was module-scope, now closure-scoped to avoid cross-store leakage)
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingOnboardingFormState: WorkspaceInitializerOnboardingFormState | null = null;
 
   return () => (next) => (action) => {
     // Boot-time hydration on first action

@@ -24,6 +24,8 @@ import { store as appStore } from "$store/renderer/store";
 import {
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerOnboardingFormState,
+  debounceWorkspaceInitializerOnboardingFormState,
+  cancelWorkspaceInitializerOnboardingFormStateDebounce,
   setWorkspaceInitializerLastSelectedRepo,
   setWorkspaceInitializerRecentRepos,
   upsertWorkspaceInitializerRemoteSetup,
@@ -74,6 +76,19 @@ describe("workspace-initializer-persistence-service (PROTOCOL §5.12 workspaceIn
   beforeAll(() => {
     installMemoryLocalStorage();
     installMemorySessionStorage();
+
+    // Set up daemon bag for hydration BEFORE store.init()
+    const mockDaemonBag = {
+      lastSelectedRepo: { path: "/daemon/repo", type: "local" },
+      compactFormState: { repoPath: "/compact" },
+    };
+    getSpy.mockResolvedValue({
+      definition: { path: "workspaceInitializer.state", type: "object" },
+      value: mockDaemonBag,
+    });
+    updateSpy.mockResolvedValue({ applied: [{ path: "workspaceInitializer.state", value: {} }] });
+
+    // Store.init() triggers hydration on first dispatched action
     appStore.init();
   });
 
@@ -81,29 +96,42 @@ describe("workspace-initializer-persistence-service (PROTOCOL §5.12 workspaceIn
     await flush();
     mem.clear();
     memSession.clear();
-    getSpy.mockReset();
-    updateSpy.mockReset();
-    updateSpy.mockResolvedValue({ applied: [{ path: "workspaceInitializer.state", value: {} }] });
+    updateSpy.mockClear();
   });
 
   afterEach(() => {
     vi.clearAllTimers();
   });
 
-  // Note: Hydration runs on first action after store init. The getSpy setup happens
-  // too late to mock the boot hydration, so we focus on testing the persistence writes.
+  it("hydrates from daemon on store init and asserts settings.get request shape", async () => {
+    // Dispatch an action to trigger hydration (middleware hydrates on first action)
+    appStore.dispatch(setCompactWorkspaceInitializerFormState({ repoPath: "/init-test" }));
+    await flush();
+    await flush(); // Double flush to ensure async hydration completes
+
+    // Assert settings.get was called with correct params (PROTOCOL §5.12)
+    expect(getSpy).toHaveBeenCalledWith({ path: "workspaceInitializer.state" });
+
+    // Verify hydration applied daemon values (compactFormState overwritten by the trigger action)
+    expect(appStore.state.workspaceInitializer.hydrated).toBe(true);
+    expect(appStore.state.workspaceInitializer.lastSelectedRepo).toEqual({
+      path: "/daemon/repo",
+      type: "local",
+    });
+  });
+
+  // Note: Migration and daemon-failure-fallback scenarios would require separate store instances
+  // to test properly, since the middleware's hasHydrated flag is closure-scoped and hydration runs
+  // once per store lifetime. Those code paths exist and are type-safe but are not easily testable
+  // in isolation within a single appStore test suite.
 
   it("persists state to daemon after actions", async () => {
-    // Trigger hydration by dispatching any action
     appStore.dispatch(
       setWorkspaceInitializerLastSelectedRepo({ path: "/test/repo", type: "local" }),
     );
     await flush();
 
-    // After the action, hydration completes and state is hydrated
-    expect(appStore.state.workspaceInitializer.hydrated).toBe(true);
-
-    // Verify persistence worked
+    // Verify persistence worked (PROTOCOL §5.12 wire contract)
     expect(updateSpy).toHaveBeenCalledWith({
       changes: [
         {
@@ -261,5 +289,109 @@ describe("workspace-initializer-persistence-service (PROTOCOL §5.12 workspaceIn
         },
       ],
     });
+  });
+
+  it("debounces onboarding form drafts for 300ms before applying", async () => {
+    getSpy.mockResolvedValue({
+      definition: { path: "workspaceInitializer.state", type: "object" },
+      value: {},
+    });
+
+    vi.useFakeTimers();
+    updateSpy.mockClear();
+
+    appStore.dispatch(
+      debounceWorkspaceInitializerOnboardingFormState({
+        projectSelection: { type: "local", repoPath: "/draft1" },
+        step: "project",
+      }),
+    );
+
+    // No immediate persistence
+    expect(updateSpy).not.toHaveBeenCalled();
+
+    // Advance 299ms — still not persisted
+    await vi.advanceTimersByTimeAsync(299);
+    expect(updateSpy).not.toHaveBeenCalled();
+
+    // Advance 1ms more (total 300ms) — now persisted
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [
+        {
+          path: "workspaceInitializer.state",
+          value: expect.objectContaining({
+            onboardingFormState: {
+              projectSelection: { type: "local", repoPath: "/draft1" },
+              step: "project",
+            },
+          }),
+        },
+      ],
+    });
+
+    vi.useRealTimers();
+  });
+
+  it("cancels debounced onboarding draft on cancelWorkspaceInitializerOnboardingFormStateDebounce", async () => {
+    getSpy.mockResolvedValue({
+      definition: { path: "workspaceInitializer.state", type: "object" },
+      value: {},
+    });
+
+    vi.useFakeTimers();
+    updateSpy.mockClear();
+
+    appStore.dispatch(
+      debounceWorkspaceInitializerOnboardingFormState({
+        projectSelection: { type: "local", repoPath: "/draft" },
+        step: "project",
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(100);
+    appStore.dispatch(cancelWorkspaceInitializerOnboardingFormStateDebounce());
+    await vi.advanceTimersByTimeAsync(300);
+
+    // Draft was cancelled — no persistence
+    expect(updateSpy).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+  it("cancels debounced onboarding draft on resetOnboarding and persists null", async () => {
+    getSpy.mockResolvedValue({
+      definition: { path: "workspaceInitializer.state", type: "object" },
+      value: {},
+    });
+
+    vi.useFakeTimers();
+    updateSpy.mockClear();
+
+    appStore.dispatch(
+      debounceWorkspaceInitializerOnboardingFormState({
+        projectSelection: { type: "local", repoPath: "/draft" },
+        step: "project",
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(100);
+    appStore.dispatch(resetOnboarding());
+    await vi.advanceTimersByTimeAsync(10);
+
+    // Draft cancelled, onboarding form cleared and persisted as null
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [
+        {
+          path: "workspaceInitializer.state",
+          value: expect.objectContaining({
+            onboardingFormState: null,
+          }),
+        },
+      ],
+    });
+
+    vi.useRealTimers();
   });
 });
