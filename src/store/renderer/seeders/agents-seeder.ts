@@ -11,30 +11,17 @@
  * `provider-status-bridge-seeder.ts` — this module no longer seeds fake
  * provider status.
  *
- * `agent:get-active-streams` is registered here for the
- * unregistered-channel class of bug: `ActiveStreamsTracker.fetchActiveStreams`
- * fires on WindowTitleBar mount and the undefined fallback produced a recurring
- * "Failed to fetch active streams" warning (`Cannot read properties of
- * undefined (reading 'success')`). A no-streams default keeps the tracker quiet
- * until the daemon owns this surface.
+ * `agent:get-active-streams` is bridged to real daemon data in
+ * `active-streams-bridge-seeder.ts` (workspace.list → agent.list per workspace,
+ * filtered on isStreaming || isResponding), which is registered via the seeder
+ * barrel before agents-seeder runs.
  */
-import { registerMockIpcHandler } from "$shared/ipc-mock-router";
-import { AGENT_CHANNELS } from "$shared/ipc/channels";
 import { registerMockSeeder } from "../mock-bootstrap";
 import { bulkUpsertSessions, upsertSession } from "../slices/agent-session/agent-session-slice";
 import {
   setActiveAgentId,
   setAgentsLoaded,
 } from "../slices/workspace-agents/workspace-agents-slice";
-
-// ActiveStreamsTracker.fetchActiveStreams reads `result.success` /
-// `result.data`, so an undefined fallback would TypeError on every poll.
-// No mock streams: an empty list keeps the tracker idle (matches the seam,
-// where mock agents are surfaced via `client.agents.list`, not via streams).
-registerMockIpcHandler(AGENT_CHANNELS.GET_ACTIVE_STREAMS, async () => ({
-  success: true,
-  data: [],
-}));
 
 registerMockSeeder("agents", async ({ store, client }) => {
   const workspaces = await client.workspaces.list();
