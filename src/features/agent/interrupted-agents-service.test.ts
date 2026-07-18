@@ -24,9 +24,11 @@ describe("interrupted-agents-service", () => {
   };
   let showHandler: ReturnType<typeof vi.fn>;
   let listenerIdCounter: number;
+  let dispose: (() => void) | null;
 
   beforeEach(() => {
     listenerIdCounter = 0;
+    dispose = null;
 
     mockAppClient = {
       agents: {
@@ -52,6 +54,10 @@ describe("interrupted-agents-service", () => {
   });
 
   afterEach(() => {
+    if (dispose) {
+      dispose();
+      dispose = null;
+    }
     vi.clearAllMocks();
     delete (global as any).window;
   });
@@ -67,7 +73,7 @@ describe("interrupted-agents-service", () => {
     };
     mockAppClient.agents.listInterrupted.mockResolvedValueOnce([interruptedAgent]);
 
-    installInterruptedAgentsService(mockAppClient, showHandler);
+    dispose = installInterruptedAgentsService(mockAppClient, showHandler);
 
     // Wait for async catch-up
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -80,7 +86,7 @@ describe("interrupted-agents-service", () => {
   it("does not check on install if backend is not connected", async () => {
     mockElectronAPI.invoke.mockResolvedValueOnce({ status: "disconnected" });
 
-    installInterruptedAgentsService(mockAppClient, showHandler);
+    dispose = installInterruptedAgentsService(mockAppClient, showHandler);
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -92,7 +98,7 @@ describe("interrupted-agents-service", () => {
   it("handles errors during status query gracefully", async () => {
     mockElectronAPI.invoke.mockRejectedValueOnce(new Error("IPC error"));
 
-    installInterruptedAgentsService(mockAppClient, showHandler);
+    dispose = installInterruptedAgentsService(mockAppClient, showHandler);
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -112,7 +118,7 @@ describe("interrupted-agents-service", () => {
     };
     mockAppClient.agents.listInterrupted.mockResolvedValue([interruptedAgent]);
 
-    installInterruptedAgentsService(mockAppClient, showHandler);
+    dispose = installInterruptedAgentsService(mockAppClient, showHandler);
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -132,7 +138,7 @@ describe("interrupted-agents-service", () => {
     expect(showHandler).toHaveBeenCalledWith([interruptedAgent]);
   });
 
-  it("deduplicates checks for the same epoch (rapid double events)", async () => {
+  it("allows checks for different epochs (sequential connections)", async () => {
     mockElectronAPI.invoke.mockResolvedValueOnce({ status: "connected" });
     const interruptedAgent: InterruptedAgent = {
       sessionId: "agent-3",
@@ -143,7 +149,7 @@ describe("interrupted-agents-service", () => {
     };
     mockAppClient.agents.listInterrupted.mockResolvedValue([interruptedAgent]);
 
-    installInterruptedAgentsService(mockAppClient, showHandler);
+    dispose = installInterruptedAgentsService(mockAppClient, showHandler);
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -178,7 +184,7 @@ describe("interrupted-agents-service", () => {
     };
     mockAppClient.agents.listInterrupted.mockResolvedValue([interruptedAgent]);
 
-    installInterruptedAgentsService(mockAppClient, showHandler);
+    dispose = installInterruptedAgentsService(mockAppClient, showHandler);
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -204,11 +210,11 @@ describe("interrupted-agents-service", () => {
   it("cleans up listeners on dispose", async () => {
     mockElectronAPI.invoke.mockResolvedValueOnce({ status: "disconnected" });
 
-    const dispose = installInterruptedAgentsService(mockAppClient, showHandler);
+    const localDispose = installInterruptedAgentsService(mockAppClient, showHandler);
 
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    dispose();
+    localDispose();
 
     expect(mockElectronAPI.offById).toHaveBeenCalled();
   });

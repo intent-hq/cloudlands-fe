@@ -78,6 +78,9 @@ export function installInterruptedAgentsService(
     return () => {};
   }
 
+  // Disposed flag prevents async catch-up from invoking handlers after teardown.
+  let disposed = false;
+
   // Catch-up: check if backend is already connected when we install.
   // The main process may have connected before the renderer mounted this
   // service (typical on app launch), so the initial "connected" event
@@ -87,6 +90,7 @@ export function installInterruptedAgentsService(
       const statusResult = (await api.invoke(BACKEND.GET_STATUS)) as
         | { status?: string }
         | undefined;
+      if (disposed) return;
       if (statusResult?.status === "connected") {
         connectionEpoch += 1;
         const epoch = connectionEpoch;
@@ -94,6 +98,7 @@ export function installInterruptedAgentsService(
         void checkInterruptedAgents(appClient, epoch);
       }
     } catch (error) {
+      if (disposed) return;
       logger.warn("Failed to query backend status on install", { error });
     }
   })();
@@ -122,6 +127,7 @@ export function installInterruptedAgentsService(
   logger.info("Interrupted-agents service installed");
 
   return () => {
+    disposed = true;
     api.offById(BACKEND.STATUS, initialListenerId);
     offReconnect();
     onShowInterruptedAgents = null;
