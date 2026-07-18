@@ -4423,12 +4423,12 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
 });
 
 describe('DaemonEventsBridge — app-UI events', () => {
-  const { gotoSpy } = vi.hoisted(() => ({
-    gotoSpy: vi.fn(() => Promise.resolve()),
+  const { navigateToRouteSpy } = vi.hoisted(() => ({
+    navigateToRouteSpy: vi.fn(() => Promise.resolve()),
   }));
 
-  vi.mock('$app/navigation', () => ({
-    goto: gotoSpy,
+  vi.mock('$lib/utils/navigation', () => ({
+    navigateToRoute: navigateToRouteSpy,
   }));
 
   beforeAll(() => appStore.init());
@@ -4436,7 +4436,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
     appStore.dispatch(clearAllSessions());
     appStore.dispatch(chatReset());
     __resetDaemonEventsBridgeForTests();
-    gotoSpy.mockClear();
+    navigateToRouteSpy.mockClear();
     invokeSpy.mockClear();
     backendRequestSpy.mockClear();
     capturedHandlers.length = 0;
@@ -4514,7 +4514,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
       handler(appUiNavigateNotification('/settings'));
       await flush();
 
-      expect(gotoSpy).toHaveBeenCalledWith('/settings');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings');
     });
 
     it('navigates to route and dispatches highlight after navigation', async () => {
@@ -4525,7 +4525,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
       await flush();
       await new Promise((resolve) => requestAnimationFrame(resolve));
 
-      expect(gotoSpy).toHaveBeenCalledWith('/settings?tab=agents#specialists');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/settings?tab=agents#specialists');
       // Check that requestUiHighlight was dispatched
       const state = appStore.state as {
         uiHighlight?: { activeById: Record<string, number>; durationMsById: Record<string, number> };
@@ -4541,18 +4541,18 @@ describe('DaemonEventsBridge — app-UI events', () => {
       handler(appUiNavigateNotification('   '));
       await flush();
 
-      expect(gotoSpy).not.toHaveBeenCalled();
+      expect(navigateToRouteSpy).not.toHaveBeenCalled();
     });
 
     it('handles navigation errors gracefully', async () => {
       await primeBridge();
       const handler = capturedHandlers[0]!;
-      gotoSpy.mockRejectedValueOnce(new Error('Navigation failed'));
+      navigateToRouteSpy.mockRejectedValueOnce(new Error('Navigation failed'));
 
       handler(appUiNavigateNotification('/invalid'));
       await flush();
 
-      expect(gotoSpy).toHaveBeenCalledWith('/invalid');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/invalid');
       // Should not throw
     });
   });
@@ -4608,7 +4608,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
       handler(appWorkspaceOpenNotification('ws-123', false));
       await flush();
 
-      expect(gotoSpy).toHaveBeenCalledWith('/workspace/ws-123');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-123');
       expect(invokeSpy).not.toHaveBeenCalled();
     });
 
@@ -4619,7 +4619,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
       handler(appWorkspaceOpenNotification('ws-456'));
       await flush();
 
-      expect(gotoSpy).toHaveBeenCalledWith('/workspace/ws-456');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-456');
       expect(invokeSpy).not.toHaveBeenCalled();
     });
 
@@ -4631,7 +4631,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
       await flush();
 
       expect(invokeSpy).toHaveBeenCalledWith('window:open-new', { route: '/workspace/ws-789' });
-      expect(gotoSpy).not.toHaveBeenCalled();
+      expect(navigateToRouteSpy).not.toHaveBeenCalled();
     });
 
     it('falls back to navigation when new window fails', async () => {
@@ -4643,7 +4643,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
       await flush();
 
       expect(invokeSpy).toHaveBeenCalledWith('window:open-new', { route: '/workspace/ws-fallback' });
-      expect(gotoSpy).toHaveBeenCalledWith('/workspace/ws-fallback');
+      expect(navigateToRouteSpy).toHaveBeenCalledWith('/workspace/ws-fallback');
     });
 
     it('ignores blank workspace IDs', async () => {
@@ -4653,7 +4653,7 @@ describe('DaemonEventsBridge — app-UI events', () => {
       handler(appWorkspaceOpenNotification('   '));
       await flush();
 
-      expect(gotoSpy).not.toHaveBeenCalled();
+      expect(navigateToRouteSpy).not.toHaveBeenCalled();
       expect(invokeSpy).not.toHaveBeenCalled();
     });
   });

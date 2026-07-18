@@ -179,7 +179,7 @@ import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
-import { goto } from '$app/navigation';
+import { navigateToRoute } from '$lib/utils/navigation';
 import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
 import { invoke } from '$lib/electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -1323,7 +1323,7 @@ function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
       ? data.durationMs
       : undefined;
 
-  void goto(route)
+  void navigateToRoute(route)
     .then(() => {
       if (highlightId) {
         // Defer the highlight dispatch slightly so the target element has time
@@ -1383,13 +1383,13 @@ function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
           workspaceId,
           error,
         });
-        return goto(route);
+        return navigateToRoute(route);
       })
       .catch(() => {
         // Ignore final goto failure - already logged
       });
   } else {
-    void goto(route).catch((error: unknown) => {
+    void navigateToRoute(route).catch((error: unknown) => {
       logger.warn('[app:workspace-open] Navigation failed', { workspaceId, error });
     });
   }
