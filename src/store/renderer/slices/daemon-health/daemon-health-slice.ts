@@ -1,0 +1,115 @@
+/**
+ * Daemon Health Slice
+ *
+ * Actions and reducer for tracking daemon connection + health state.
+ * Combines backend:status connection events with periodic system.status polls
+ * into a tri-state health value (healthy/degraded/down) plus stats payload.
+ */
+
+import { createAction } from '@augmentcode/ag-redux-toolkit/utils/store/create-action';
+import { createReducer } from '@augmentcode/ag-redux-toolkit/utils/store/create-reducer';
+import type {
+  DaemonHealth,
+  DaemonHealthState,
+  DaemonHealthStats,
+  SystemStatusWirePayload,
+} from './daemon-health-types';
+
+// ---------------------------------------------------------------------------
+// Initial state
+// ---------------------------------------------------------------------------
+
+export const initialState: DaemonHealthState = {
+  health: 'down',
+  stats: null,
+  lastUpdated: null,
+  polling: false,
+};
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+
+/**
+ * Backend connection status changed (from backend:status IPC events).
+ * Payload is ConnectionStatus from json-rpc-client.ts: 'connecting' | 'connected' | 'disconnected'.
+ */
+export const connectionStatusChanged = createAction<[status: string]>(
+  'daemonHealth/connectionStatusChanged',
+);
+
+/**
+ * Heartbeat health check failed while connected (heartbeat timeout/error).
+ * This transitions health to 'degraded' while status stays 'connected'.
+ */
+export const heartbeatFailed = createAction(
+  'daemonHealth/heartbeatFailed',
+);
+
+/**
+ * Poll system.status for stats (middleware trigger).
+ */
+export const pollSystemStatus = createAction(
+  'daemonHealth/pollSystemStatus',
+);
+
+/**
+ * system.status poll succeeded.
+ */
+export const systemStatusSuccess = createAction<[payload: SystemStatusWirePayload]>(
+  'daemonHealth/systemStatusSuccess',
+);
+
+/**
+ * system.status poll failed.
+ */
+export const systemStatusFailure = createAction(
+  'daemonHealth/systemStatusFailure',
+);
+
+// ---------------------------------------------------------------------------
+// Reducer
+// ---------------------------------------------------------------------------
+
+export const daemonHealthReducer = createReducer<DaemonHealthState>(initialState)
+  .with(connectionStatusChanged, (state, { payload: [status] }) => {
+    if (status === 'connected') {
+      // Connection established — health moves to 'healthy'.
+      return { ...state, health: 'healthy' };
+    } else if (status === 'disconnected' || status === 'connecting') {
+      // Connection down or reconnecting — health moves to 'down'.
+      return { ...state, health: 'down' };
+    }
+    return state;
+  })
+  .with(heartbeatFailed, (state) => {
+    // Heartbeat failed while connected — health moves to 'degraded'.
+    return { ...state, health: 'degraded' };
+  })
+  .with(pollSystemStatus, (state) => {
+    return { ...state, polling: true };
+  })
+  .with(systemStatusSuccess, (state, { payload: [wirePayload] }) => {
+    // Extract stats payload, treating new fields as optional.
+    const stats: DaemonHealthStats = {
+      clients: wirePayload.clients,
+      agents: wirePayload.agents,
+      maxAgents: wirePayload.maxAgents,
+      listenMode: wirePayload.listenMode,
+      port: wirePayload.port ?? null,
+      version: wirePayload.version,
+      uptimeSeconds: wirePayload.uptimeSeconds,
+      os: wirePayload.host.os,
+      arch: wirePayload.host.arch,
+    };
+    return {
+      ...state,
+      polling: false,
+      stats,
+      lastUpdated: new Date().toISOString(),
+    };
+  })
+  .with(systemStatusFailure, (state) => {
+    // Health may already be 'down' from connection loss; leave it as-is.
+    return { ...state, polling: false };
+  });
