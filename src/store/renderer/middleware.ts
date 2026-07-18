@@ -21,7 +21,7 @@ import { createAgentSubscriptionReadMiddleware } from "$features/agent/agent-sub
 import { createChatReadMiddleware } from "$features/agent/chat-read-service";
 import { createChatSendMiddleware } from "$features/agent/chat-send-service";
 import { createPermissionResponseMiddleware } from "$features/permission/permission-response-service";
-import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge";
+import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge.client";
 import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
 import { createModelSelectionPersistenceMiddleware } from "$features/settings/model-selection-persistence-service";
 import { createModelReloadMiddleware } from "$features/settings/model-reload-service";

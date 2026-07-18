@@ -28,7 +28,7 @@ import {
   setAgentStreaming,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { chatReset } from "$store/renderer/slices/chat-state/chat-state-slice";
-import { __resetDaemonEventsBridgeForTests } from "$features/events/daemon-events-bridge";
+import { __resetDaemonEventsBridgeForTests } from "$features/events/daemon-events-bridge.client";
 import { AgentStatus } from "$shared/types/agent.types";
 import type { AgentMessage, AgentSession } from "$shared/types";
 import type { StatusEvent } from "$store/renderer/slices/chat-state/chat-state-types";
