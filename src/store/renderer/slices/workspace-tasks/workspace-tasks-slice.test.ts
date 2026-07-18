@@ -128,10 +128,16 @@ describe("workspaceTasksReducer", () => {
       expect(state.byWorkspaceId[WS]).toBeUndefined();
     });
 
-    it("clears workspace state on workspaceUnmounted", () => {
-      const state = workspaceTasksReducer(loadedState([makeTask("t1")]), workspaceUnmounted(WS));
+    it("retains workspace state on workspaceUnmounted to avoid sidebar status flicker", () => {
+      const stats: WorkspaceTaskStats = { total: 3, completed: 3, inProgress: 0 };
+      const loaded = loadedState([makeTask("t1", "complete")], stats);
+      const state = workspaceTasksReducer(loaded, workspaceUnmounted(WS));
 
-      expect(state.byWorkspaceId[WS]).toBeUndefined();
+      // Task state must survive unmount so sidebar can still compute 'complete' status.
+      // Clearing on unmount caused complete→idle flicker when navigating workspaces.
+      expect(state.byWorkspaceId[WS]).toBeDefined();
+      expect(state.byWorkspaceId[WS].stats).toEqual(stats);
+      expect(state.byWorkspaceId[WS].initialized).toBe(true);
     });
 
     it("clears workspace state on removeWorkspaceEntity", () => {
