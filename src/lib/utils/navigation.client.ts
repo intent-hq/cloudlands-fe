@@ -18,7 +18,7 @@
  */
 export async function navigateToRoute(route: string): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-expect-error - $app/navigation is a SvelteKit renderer-only module (not available in main process)
+  // @ts-ignore - $app/navigation is a SvelteKit renderer-only module (not available in main process)
   const { goto } = await import('$app/navigation');
   return goto(route);
 }
