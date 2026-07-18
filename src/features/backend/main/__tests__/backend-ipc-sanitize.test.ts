@@ -5,36 +5,7 @@
  * - Wire contract: BACKEND.GET_STATUS response shape includes { status, transport? }
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ipcMain } from 'electron';
-import { IPC_CHANNELS } from '$shared/ipc-registry';
-
-// Mock Electron IPC
-vi.mock('electron', () => ({
-  ipcMain: {
-    handle: vi.fn(),
-  },
-  app: {
-    isPackaged: false,
-  },
-  BrowserWindow: {
-    getAllWindows: vi.fn(() => []),
-  },
-}));
-
-// Mock backend client
-const mockGetStatus = vi.fn();
-const mockGetConfig = vi.fn();
-vi.mock('../json-rpc-client', () => ({
-  JsonRpcClient: vi.fn(),
-}));
-vi.mock('$shared/logger', () => ({
-  Logger: class {
-    info = vi.fn();
-    warn = vi.fn();
-    error = vi.fn();
-  },
-}));
+import { describe, it, expect } from 'vitest';
 
 // Access the internal sanitize function by importing the module and
 // using formatTransportInfo indirectly
