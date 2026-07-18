@@ -23,6 +23,15 @@ import { backendRequest } from "./backend-transport";
 import { createDeltaSubscription } from "./delta-subscription";
 import { extractConflict, newIdempotencyKey, runMutation } from "./live-support";
 
+/**
+ * Transport timeout for `workspace.delete` (PROTOCOL §5.1). Longer than the
+ * daemon's per-workspace cleanup bound (measured ~5–15s per workspace in
+ * production) so deletes of large checkouts (multi-GB worktrees) and bulk
+ * operations under the per-repo lock don't falsely time out client-side while
+ * the daemon is still working. Matches the `git.pull`-style override pattern.
+ */
+const DELETE_TIMEOUT_MS = 120_000;
+
 /** Daemon status strings → renderer WorkspaceStatus enum. */
 function toWorkspaceStatus(value: unknown): WorkspaceStatus {
   switch (String(value).toLowerCase()) {
@@ -167,7 +176,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
   }
 
   async delete(id: string): Promise<MutationResult> {
-    return runMutation("workspace.delete", { workspaceId: id });
+    return runMutation("workspace.delete", { workspaceId: id }, { timeoutMs: DELETE_TIMEOUT_MS });
   }
 
   async archive(id: string): Promise<MutationResult> {

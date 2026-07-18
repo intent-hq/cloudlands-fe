@@ -343,7 +343,17 @@ export async function bulkArchive(): Promise<void> {
   }
 }
 
-/** Permanently delete every archived workspace for a repo, converging the store. */
+/**
+ * Permanently delete every archived workspace for a repo, converging the store.
+ *
+ * Runs deletes sequentially (not in parallel) so the daemon's per-repo
+ * worktree lock doesn't force all requests to start their 120s timeout clocks
+ * at t=0 while each workspace waits for the previous one's cleanup to finish
+ * under the lock. On timeout (request exceeds 120s), the FE reports it as "still
+ * deleting" rather than a hard failure, and relies on the `workspace:deleted`
+ * event (emitted when the daemon finishes) to purge the row from the list — so
+ * the UI converges correctly even when the cleanup outlives the timeout.
+ */
 async function performBulkDeleteArchived(repoKey: string): Promise<void> {
   const toast = await getToast();
   const toDelete = getArchivedWorkspacesForRepo(repoKey, readWorkspaces());
@@ -352,26 +362,32 @@ async function performBulkDeleteArchived(repoKey: string): Promise<void> {
     return;
   }
 
-  const results = await Promise.allSettled(
-    toDelete.map((workspace) =>
-      workspaceClient.delete(workspace.id).then((result) => ({ id: workspace.id, result }))
-    )
-  );
-
   let deleteCount = 0;
+  let timeoutCount = 0;
   let failCount = 0;
-  for (const settled of results) {
-    if (settled.status === "fulfilled" && settled.value.result.ok) {
+
+  for (const workspace of toDelete) {
+    const result = await workspaceClient.delete(workspace.id);
+    if (result.ok) {
       deleteCount++;
-      appStore.dispatch(removeWorkspaceEntity(settled.value.id));
-      continue;
+      appStore.dispatch(removeWorkspaceEntity(workspace.id));
+    } else if (result.error?.includes("timed out")) {
+      timeoutCount++;
+      // Do NOT remove the entity — leave it for the workspace:deleted event to
+      // purge when the daemon finishes.
+    } else {
+      failCount++;
     }
-    failCount++;
   }
 
   if (deleteCount > 0) {
     toast.success(
       `Permanently deleted ${deleteCount} archived space${deleteCount === 1 ? "" : "s"}`
+    );
+  }
+  if (timeoutCount > 0) {
+    toast.info(
+      `${timeoutCount} space${timeoutCount === 1 ? " is" : "s are"} still deleting (large checkout${timeoutCount === 1 ? "" : "s"})`
     );
   }
   if (failCount > 0) {
