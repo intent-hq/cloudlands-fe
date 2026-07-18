@@ -81,12 +81,16 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     expect(firstKey).not.toEqual(secondKey);
   });
 
-  it("delete forwards workspace.delete with the workspaceId", async () => {
+  it("delete forwards workspace.delete with the workspaceId and 120s timeout override", async () => {
     mockedRequest.mockResolvedValueOnce({ id: "ws-1" });
     const client = new LiveWorkspacesClient();
 
     expect(await client.delete("ws-1")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.delete", { workspaceId: "ws-1" });
+    expect(mockedRequest).toHaveBeenCalledWith(
+      "workspace.delete",
+      { workspaceId: "ws-1" },
+      { timeoutMs: 120_000 }
+    );
   });
 
   it("setActive forwards workspace.setActive with the workspaceId", async () => {
@@ -94,7 +98,7 @@ describe("LiveWorkspacesClient mutations (fake transport)", () => {
     const client = new LiveWorkspacesClient();
 
     expect(await client.setActive("ws-1")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.setActive", { workspaceId: "ws-1" });
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.setActive", { workspaceId: "ws-1" }, undefined);
   });
 
   it("maps a daemon error to a failed MutationResult without throwing", async () => {
@@ -141,7 +145,7 @@ describe("LiveWorkspacesClient update/archive/unarchive (PROTOCOL §5.1, fake tr
     const client = new LiveWorkspacesClient();
 
     expect(await client.archive("ws-1")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.archive", { workspaceId: "ws-1" });
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.archive", { workspaceId: "ws-1" }, undefined);
   });
 
   it("unarchive forwards workspace.unarchive with the workspaceId (archive undo)", async () => {
@@ -149,7 +153,7 @@ describe("LiveWorkspacesClient update/archive/unarchive (PROTOCOL §5.1, fake tr
     const client = new LiveWorkspacesClient();
 
     expect(await client.unarchive("ws-1")).toEqual({ success: true });
-    expect(mockedRequest).toHaveBeenCalledWith("workspace.unarchive", { workspaceId: "ws-1" });
+    expect(mockedRequest).toHaveBeenCalledWith("workspace.unarchive", { workspaceId: "ws-1" }, undefined);
   });
 });
 
