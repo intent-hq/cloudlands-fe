@@ -456,4 +456,82 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
       expect(result).toEqual({ ok: false, error: 'Transport failure' });
     });
   });
+
+  describe('stopReason normalization', () => {
+    it('normalizes agent.get payload with stopReason field', async () => {
+      backend.onRequest('agent.get', () => ({
+        agent: {
+          id: 'agent-123',
+          workspaceId: 'ws-1',
+          name: 'error-agent',
+          status: 'error',
+          stopReason: 'Agent spawn failed after 3 retries',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+      }));
+      const client = new LiveAgentsClient();
+
+      const session = await client.get('agent-123');
+
+      expect(session).not.toBeNull();
+      expect(session?.id).toBe('agent-123');
+      expect(session?.status).toBe('error');
+      expect(session?.stopReason).toBe('Agent spawn failed after 3 retries');
+    });
+
+    it('normalizes agent.list payload with stopReason field', async () => {
+      backend.onRequest('agent.list', () => ({
+        agents: [
+          {
+            id: 'agent-1',
+            workspaceId: 'ws-1',
+            name: 'completed-agent',
+            status: 'completed',
+            stopReason: 'end_turn',
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          },
+          {
+            id: 'agent-2',
+            workspaceId: 'ws-1',
+            name: 'error-agent',
+            status: 'error',
+            stopReason: 'timeout',
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-01T00:00:00.000Z',
+          },
+        ],
+      }));
+      const client = new LiveAgentsClient();
+
+      const sessions = await client.list('ws-1');
+
+      expect(sessions).toHaveLength(2);
+      expect(sessions[0].stopReason).toBe('end_turn');
+      expect(sessions[1].stopReason).toBe('timeout');
+    });
+
+    it('normalizes agent.get payload without stopReason field', async () => {
+      backend.onRequest('agent.get', () => ({
+        agent: {
+          id: 'agent-456',
+          workspaceId: 'ws-1',
+          name: 'pending-agent',
+          status: 'pending',
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+      }));
+      const client = new LiveAgentsClient();
+
+      const session = await client.get('agent-456');
+
+      expect(session).not.toBeNull();
+      expect(session?.id).toBe('agent-456');
+      expect(session?.status).toBe('pending');
+      // stopReason should be undefined when not present in the payload
+      expect(session?.stopReason).toBeUndefined();
+    });
+  });
 });
