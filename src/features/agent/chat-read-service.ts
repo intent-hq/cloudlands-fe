@@ -42,7 +42,7 @@ import {
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { createLogger } from "$lib/utils/client-logger";
-import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge";
+import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
 
 const logger = createLogger("ChatReadService");
 

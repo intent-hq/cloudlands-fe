@@ -269,15 +269,28 @@ function canonicalSessionUpdates(
   fields: CanonicalAgentStatusWithSummary,
 ): CanonicalAgentSessionUpdates {
   const updates: CanonicalAgentSessionUpdates = {};
-  if (fields.status !== null) updates.status = fields.status as AgentSession['status'];
-  if (fields.activationState !== null) {
+  if (fields.status !== null && fields.status !== undefined) {
+    updates.status = fields.status as AgentSession['status'];
+  }
+  if (fields.activationState !== null && fields.activationState !== undefined) {
     updates.activationState = fields.activationState as AgentSession['activationState'];
   }
-  if (fields.isActive !== null) updates.isActive = fields.isActive;
-  if (fields.isStreaming !== null) updates.isStreaming = fields.isStreaming;
-  if (fields.isProcessing !== null) updates.isProcessing = fields.isProcessing;
-  if (fields.isResponding !== null) updates.isResponding = fields.isResponding;
-  updates.stopReason = fields.stopReason;
+  if (fields.isActive !== null && fields.isActive !== undefined) updates.isActive = fields.isActive;
+  if (fields.isStreaming !== null && fields.isStreaming !== undefined) {
+    updates.isStreaming = fields.isStreaming;
+  }
+  if (fields.isProcessing !== null && fields.isProcessing !== undefined) {
+    updates.isProcessing = fields.isProcessing;
+  }
+  if (fields.isResponding !== null && fields.isResponding !== undefined) {
+    updates.isResponding = fields.isResponding;
+  }
+  // Only update stopReason when the key exists on the payload to avoid
+  // clobbering a previously-set error text from agent:failed when
+  // agent:status-changed arrives without a stopReason field.
+  if (Object.prototype.hasOwnProperty.call(fields, 'stopReason')) {
+    updates.stopReason = fields.stopReason;
+  }
   if (typeof fields.lastResponseSummary === 'string' && fields.lastResponseSummary.trim()) {
     updates.lastAgentResponse = fields.lastResponseSummary;
   }

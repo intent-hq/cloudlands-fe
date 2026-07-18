@@ -145,6 +145,17 @@ describe('StreamingStatus rendered UI', () => {
     expect(screen.queryByTestId('error-title')).toBeNull();
     expect(screen.getByTestId('streaming-status-thinking').textContent).toBe('Thinking');
   });
+
+  it('applies text-destructive-foreground class to error title for contrast compliance', () => {
+    render(StreamingStatus, {
+      props: {
+        error: 'Stream timeout',
+      },
+    });
+
+    const errorTitle = screen.getByTestId('error-title');
+    expect(errorTitle.className).toContain('text-destructive-foreground');
+  });
 });
 
 describe('StreamingStatus utilities', () => {

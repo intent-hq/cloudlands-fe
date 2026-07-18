@@ -295,7 +295,7 @@ export class InstructionService {
       config.workspaceContext &&
       (config.workspaceContext.openPanels.length > 0 ||
         config.workspaceContext.linkedReferences.length > 0);
-    let isCacheable =
+    const isCacheable =
       (!config.contextReferences || config.contextReferences.length === 0) && !hasWorkspaceContext;
 
     // Include isInitialAgent and workspaceTitle in cache key since they affect the prompt
