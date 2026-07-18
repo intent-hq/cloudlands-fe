@@ -3825,6 +3825,28 @@ describe('daemonEventsBridge (RESUB-1 — daemon-restart replay + coarse-state r
       // When no explicit error is provided, the reducer supplies a default message
       expect(chatState?.error).toBe('The response was interrupted. Please try again.');
     });
+
+    it('dispatches chatSendFailed even when no stream state exists for the agent', async () => {
+      const agentId = 'agent-failed-no-stream';
+      const errorMsg = 'Agent spawn failed before streaming started';
+
+      appStore.dispatch(upsertSession({ id: agentId, name: 'Test Agent', workspaceId: WS }));
+      await primeBridge();
+      const handler = capturedHandlers[0];
+
+      // Send agent:failed WITHOUT any prior stream chunks
+      handler!(
+        notification('agent:failed', {
+          agentId,
+          error: errorMsg,
+          status: 'error',
+        }),
+      );
+
+      const chatState = appStore.state.chatState.byAgentId[agentId];
+      expect(chatState).toBeDefined();
+      expect(chatState.error).toBe(errorMsg);
+    });
   });
 });
 

@@ -561,13 +561,16 @@ function handleAgentFailedStream(event: WorkspaceEvent): void {
   const agentId = data?.agentId;
   const error = data?.error;
   if (typeof agentId !== 'string') return;
+
   const state = streamsByAgent.get(agentId);
-  if (!state) return;
-  dispatchStreamUpdate(agentId, state, 'error');
-  streamsByAgent.delete(agentId);
+  if (state) {
+    dispatchStreamUpdate(agentId, state, 'error');
+    streamsByAgent.delete(agentId);
+  }
 
   // Set chat error when agent:failed arrives so the StreamingStatus component
-  // displays the failure message and Retry button
+  // displays the failure message and Retry button. Dispatch this even when no
+  // stream state exists (e.g., agent spawn failed before streaming started).
   if (typeof error === 'string' && error.length > 0) {
     appStore.dispatch(chatSendFailed(agentId, error));
   }
