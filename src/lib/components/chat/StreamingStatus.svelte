@@ -282,9 +282,9 @@
             > is not available
           </span>
         {:else if status === 'error' && error}
-          <Fa icon={faExclamationTriangle} class="text-destructive/70 shrink-0" />
+          <Fa icon={faExclamationTriangle} class="text-destructive-foreground/70 shrink-0" />
           <div class="flex flex-col gap-0.5">
-            <span class="text-destructive text-sm font-medium" data-testid="error-title">Response failed</span>
+            <span class="text-destructive-foreground text-sm font-medium" data-testid="error-title">Response failed</span>
             <span class="text-destructive-foreground text-sm" data-testid="error-message">{statusMessage}</span>
           </div>
         {:else}
@@ -294,7 +294,7 @@
           {#if showDetails && sortedStatusEvents.length > 0 && latestEvent}
             <button
               onclick={() => sortedStatusEvents.length > 1 && (expanded = !expanded)}
-              class="flex items-center gap-1.5 text-xs {latestEvent.level === 'warn' ? 'text-amber-500' : latestEvent.level === 'error' ? 'text-destructive' : 'text-ghost'} {sortedStatusEvents.length > 1 ? 'hover:text-subtle cursor-pointer' : 'cursor-default'}"
+              class="flex items-center gap-1.5 text-xs {latestEvent.level === 'warn' ? 'text-amber-500' : latestEvent.level === 'error' ? 'text-destructive-foreground' : 'text-ghost'} {sortedStatusEvents.length > 1 ? 'hover:text-subtle cursor-pointer' : 'cursor-default'}"
             >
               <span class="text-ghost/30">·</span>
               <span>{latestEvent.message}</span>
@@ -332,7 +332,7 @@
     {#if showDetails && expanded && completedEventsWithDurations.length > 0}
       <div class="flex flex-col gap-0.5 mt-1 ml-6" transition:fade={{ duration: 200, easing: cubicOut }}>
         {#each completedEventsWithDurations as { event, duration }}
-          <div class="flex items-center gap-1.5 text-xs {event.level === 'warn' ? 'text-amber-500' : event.level === 'error' ? 'text-destructive' : 'text-ghost'}">
+          <div class="flex items-center gap-1.5 text-xs {event.level === 'warn' ? 'text-amber-500' : event.level === 'error' ? 'text-destructive-foreground' : 'text-ghost'}">
             <span class="w-3 text-ghost/30">│</span>
             <span>{event.message}</span>
             <span class="text-ghost/60">took {duration}</span>
