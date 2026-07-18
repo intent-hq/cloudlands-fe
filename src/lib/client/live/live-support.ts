@@ -68,7 +68,10 @@ export async function runMutation(
   options?: { timeoutMs?: number },
 ): Promise<MutationResult> {
   try {
-    await backendRequest(method, params, options);
+    // Only forward options when defined to preserve 2-arg wire protocol shape
+    await (options !== undefined
+      ? backendRequest(method, params, options)
+      : backendRequest(method, params));
     return { success: true };
   } catch (error) {
     const conflict = extractConflict(error);
@@ -110,7 +113,10 @@ export async function runMutationWithId(
   options?: { timeoutMs?: number },
 ): Promise<MutationResult> {
   try {
-    const result = await backendRequest(method, params, options);
+    // Only forward options when defined to preserve 2-arg wire protocol shape
+    const result = await (options !== undefined
+      ? backendRequest(method, params, options)
+      : backendRequest(method, params));
     const id = extractEntityId(result);
     return id !== undefined ? { success: true, id } : { success: true };
   } catch (error) {
