@@ -319,7 +319,6 @@ import { setupLogIPC } from '../features/log/main/log.ipc';
 import { setupBannerIPC } from '../features/banner/main/banner.ipc';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
-import { setupSkillsIPC } from '../features/agent/main/skills.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
 import {
@@ -1423,7 +1422,6 @@ app.whenReady().then(async () => {
     // setupBannerIPC(); // Already called in critical IPC setup
     setupRulesIPC();
     // setupSpecialistsIPC(); // Already called in critical IPC setup
-    setupSkillsIPC();
     // Token usage is daemon-owned (workspace.getTokenUsage, PROTOCOL §5.23);
     // the renderer reads it directly over the JSON-RPC bridge.
     // setupWorkspaceRulesIPC(); // Already called in critical IPC setup

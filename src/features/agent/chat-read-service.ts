@@ -42,6 +42,7 @@ import {
   upsertSession,
 } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { createLogger } from "$lib/utils/client-logger";
+import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge";
 
 const logger = createLogger("ChatReadService");
 
@@ -86,11 +87,48 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
         nextToken = page.nextToken;
       } while (nextToken !== null);
 
+      // REJOIN-STREAM FIX: chat.subscribe snapshot merges the live-turn slot
+      // (CS-0 D5), while agent.getConversation returns persisted-only. Fetch
+      // the snapshot and merge any in-flight assistant message into the hydrated
+      // transcript so reopening a mid-turn chat shows the partial response
+      // immediately instead of waiting for the next chunk/tool-call.
+      const snapshot = await appClient.chat.subscribeSnapshot(agentId);
+      const inFlightMessage = snapshot.messages.find(
+        (m) =>
+          m.role === "assistant" &&
+          typeof m.isStreaming === "boolean" &&
+          m.isStreaming === true,
+      );
+
+      // Merge in-flight message when present: dedup by message id, persisted
+      // copy wins (the snapshot's in-flight entry may carry stale metadata
+      // but fresher content blocks). If the persisted set already contains
+      // the same message id, skip the snapshot's copy to preserve finalized
+      // metadata.
+      let finalMessages = allMessages;
+      if (inFlightMessage && typeof inFlightMessage.id === "string") {
+        const persistedIds = new Set(
+          allMessages.map((m) => (typeof m.id === "string" ? m.id : null)).filter(Boolean),
+        );
+        if (!persistedIds.has(inFlightMessage.id)) {
+          // Append in-flight message (allMessages is oldest-first after the
+          // unshift-per-page accumulation, so the newest in-flight assistant
+          // goes at the end).
+          finalMessages = [...allMessages, inFlightMessage];
+          // Seed the bridge stream accumulator so subsequent agent:stream:chunk
+          // events build on the hydrated prefix instead of starting empty
+          // (which would fail the regression guard until the candidate outgrows
+          // the partial). The snapshot's in-flight assistant carries the full
+          // content-blocks array built by chat_snapshot's CS-0 D5 merge.
+          seedStreamFromSnapshot(agentId, inFlightMessage, session.workspaceId);
+        }
+      }
+
       // Render BE state as-is: the daemon is the single source of truth for
       // streaming/responding flags. If a chat opens with "Thinking", that is
       // because the daemon snapshot actually reports a turn is in-flight;
       // any orphan/stale healing belongs in the daemon, not the renderer.
-      const sessionWithMessages = { ...session, messages: allMessages };
+      const sessionWithMessages = { ...session, messages: finalMessages };
       appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
       appStore.dispatch(upsertSession(sessionWithMessages));
     } catch (error) {

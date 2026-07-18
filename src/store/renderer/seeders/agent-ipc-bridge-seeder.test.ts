@@ -193,6 +193,65 @@ describe("agent-ipc-bridge-seeder", () => {
       expect(response.messageId).toBe("msg-2");
     });
 
+    it("forwards priority='interrupt' to agent.sendMessage for interrupt delivery (PROTOCOL §5.5)", async () => {
+      // STAB-38: force-send while a turn is in-flight must carry
+      // `priority: "interrupt"` on the wire so the daemon preempts the
+      // current turn keep-alive (instead of queueing the message). This
+      // test asserts the bridge passes through the "interrupt" value
+      // when supplied by the caller (FE force-send path).
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-int" });
+      const request = {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "stop and answer this",
+        messageId: "msg-int",
+        priority: "interrupt" as const,
+      };
+      await mockInvoke(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, request);
+
+      expect(mockedRequest).toHaveBeenCalledWith("agent.sendMessage", {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "stop and answer this",
+        messageId: "msg-int",
+        priority: "interrupt",
+      });
+    });
+
+    it("omits priority when not supplied by the caller (normal send-message)", async () => {
+      // Regression guard: when the caller does NOT set priority (normal send
+      // without force), the bridge must NOT include it in the JSON-RPC params
+      // so the daemon treats it as normal queue-vs-stream delivery.
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-no-pri" });
+      await mockInvoke(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "normal message",
+      });
+      const call = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(call).toEqual({
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "normal message",
+      });
+      expect(call.priority).toBeUndefined();
+    });
+
+    it("strips non-interrupt priority values (schema validation for daemon)", async () => {
+      // Only "interrupt" is a valid priority value per PROTOCOL §5.5. If a
+      // caller somehow passes a different string, the bridge must NOT forward
+      // it (the daemon would reject or ignore it). Assert it is stripped.
+      mockedRequest.mockResolvedValueOnce({ success: true, queued: false, messageId: "msg-bad" });
+      await mockInvoke(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, {
+        agentId: "agent-7",
+        workspaceId: WORKSPACE_ID,
+        content: "hello",
+        priority: "high" as any, // Invalid value
+      });
+      const call = mockedRequest.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(call.priority).toBeUndefined();
+    });
+
     it("returns {success:false} when agentId or workspaceId is missing (no daemon call)", async () => {
       const response = await mockInvoke<{ success: boolean }>(
         AGENT_BACKEND_CHANNELS.STREAM_MESSAGE,

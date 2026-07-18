@@ -27,6 +27,7 @@ import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import { appClient } from "$lib/client";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import type { KnownRepo } from "$shared/types/known-repo";
+import { WorkspaceStatus } from "$shared/types";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
   loadRecencyData,
@@ -91,7 +92,7 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.GET, async (arg) => {
 // `WorkspaceClient.list()` already handles both. The legacy `lite` flag is
 // ignored: the daemon's `workspace.list` result is the only shape it serves.
 registerMockIpcHandler(WORKSPACE_CHANNELS.LIST, async () => {
-  const workspaces = await appClient.workspaces.list();
+  const workspaces = await appClient.workspaces.list({ includeArchived: true });
   return { success: true, data: workspaces };
 });
 
@@ -155,7 +156,7 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
 });
 
 registerMockSeeder("workspaces", async ({ store, client }) => {
-  const workspaces = await client.workspaces.list();
+  const workspaces = await client.workspaces.list({ includeArchived: true });
 
   store.dispatch(replaceWorkspaceList(workspaces));
   store.dispatch(setWorkspaceHasLoaded(true));
@@ -163,7 +164,10 @@ registerMockSeeder("workspaces", async ({ store, client }) => {
   const recentViews = await client.workspaces.recentViews();
   store.dispatch(loadRecencyData({ lastViewedAt: recentViews }));
 
-  const firstWorkspace = workspaces[0];
+  // Auto-select the first non-archived workspace (skip archived since they're hidden by default).
+  // Fall back to workspaces[0] if all are archived (edge case).
+  const firstWorkspace =
+    workspaces.find((w) => w.status !== WorkspaceStatus.Archived) ?? workspaces[0];
   if (firstWorkspace) {
     // Only auto-select the first workspace if BOTH activeWorkspaceId AND currentTabId
     // are unset (fresh boot). If either is already set (e.g. by route loader on reload),

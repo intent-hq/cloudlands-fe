@@ -66,6 +66,7 @@ import { createUserPreferencesPersistenceMiddleware } from "./middlewares/user-p
 import { createThemeMutationMiddleware } from "$features/theme/theme-service";
 import { createAutoUpdateMutationMiddleware } from "$features/auto-update/auto-update-mutation-service";
 import { createSpecialistsMutationMiddleware } from "$features/specialists/specialists-mutation-service";
+import { createActiveStreamsReduxBridge } from "$features/agent/active-streams-redux-bridge";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 
 const isDevBuild = (): boolean => Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
@@ -145,6 +146,13 @@ function buildMiddleware(): StoreMiddleware[] {
     // `isResponding` flags on `agent:idle` — without this the "Thinking"
     // spinner stays stuck after a turn ends.
     createDaemonEventsBridgeMiddleware(),
+    // Bridge activeStreamsTracker updates into Redux so sidebar workspace cards
+    // re-render when active-stream data arrives after mount (app refresh case).
+    // Subscribes once at boot and dispatches `bumpActiveStreamsVersion` when
+    // the tracker notifies listeners, triggering sidebar deriveds to recompute.
+    // Also ensures `activeStreamsTracker.startPolling()` is called independently
+    // of WindowTitleBar mounting.
+    createActiveStreamsReduxBridge(),
     // Boot-hydrate the BE-owned settings slices (providers, background-agents,
     // MCP, model overrides) by calling `settings.list` once on first dispatched
     // action, then keep them in sync via the `settings:changed` routing the

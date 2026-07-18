@@ -85,12 +85,15 @@ import {
   agentLineStatsRequestFailed,
   agentLineStatsRequestStarted,
   agentLineStatsRequestSucceeded,
+  appendOlderCommits,
+  loadOlderCommitsRequested,
   loadWorkspaceDataRequested,
   refreshRequested,
   requestAgentLineStats,
   setChangesData,
   setCommitsData,
   setHasLoadedInitialData,
+  setLoadingOlderCommits,
   updateAgentStats,
 } from "../slices/changes/changes-slice";
 import { getAgentLineStats } from "$features/line-changes/line-changes.client";
@@ -159,7 +162,7 @@ function invalidateAgentsHydration(wsId: string): void {
 /** Re-fetch the workspace list + recency (mirrors workspaces-seeder, data only). */
 function refreshWorkspaces(): void {
   coalesce("workspaces", async () => {
-    const workspaces = await appClient.workspaces.list();
+    const workspaces = await appClient.workspaces.list({ includeArchived: true });
     appStore.dispatch(replaceWorkspaceList(workspaces));
     appStore.dispatch(setWorkspaceHasLoaded(true));
     const recentViews = await appClient.workspaces.recentViews();
@@ -304,14 +307,38 @@ function refreshPrStatus(wsId: string): void {
  */
 function refreshChanges(wsId: string): void {
   coalesce(`changes:${wsId}`, async () => {
-    const [changes, commits] = await Promise.all([
+    const [changes, commitsEnvelope] = await Promise.all([
       appClient.git.trackedChanges(wsId),
-      appClient.git.commits(wsId),
+      appClient.git.commitsWithBoundary(wsId),
     ]);
     appStore.dispatch(setChangesData(wsId, changes, false, changes.length));
-    const boundarySha = commits.length > 0 ? commits[commits.length - 1].hash : null;
-    appStore.dispatch(setCommitsData(wsId, commits, boundarySha));
+    appStore.dispatch(setCommitsData(wsId, commitsEnvelope.commits, commitsEnvelope.boundarySha));
     appStore.dispatch(setHasLoadedInitialData(wsId, true));
+  });
+}
+
+/**
+ * Load older commits (pre-boundary) for the "show previous" toggle in the
+ * Changes panel. Calls the daemon with `includeOlder: true` and dispatches
+ * the results into `olderCommits`.
+ *
+ * @param wsId - Workspace ID
+ * @param _beforeSha - Optional SHA to use as pagination anchor (from boundarySha or last older commit) [NOT YET USED]
+ * @param _limit - Optional limit on commit count (defaults to daemon-side default) [NOT YET USED]
+ */
+function loadOlderCommits(wsId: string, _beforeSha?: string, _limit?: number): void {
+  // Note: _beforeSha and _limit are currently not forwarded to the daemon API
+  // because the wire shape (§5.19 file-tracking.loadCommits) only supports
+  // { workspaceId, includeOlder }. When pagination support is added to the
+  // wire, this handler will forward these params.
+  coalesce(`olderCommits:${wsId}`, async () => {
+    appStore.dispatch(setLoadingOlderCommits(wsId, true));
+    try {
+      const envelope = await appClient.git.commitsWithBoundary(wsId, true);
+      appStore.dispatch(appendOlderCommits(wsId, envelope.commits));
+    } finally {
+      appStore.dispatch(setLoadingOlderCommits(wsId, false));
+    }
   });
 }
 
@@ -480,6 +507,15 @@ export function createLifecycleReadMiddleware(): StoreMiddleware {
         case loadWorkspaceDataRequested.type: {
           const wsId = wsIdOf(action);
           if (wsId) refreshChanges(wsId);
+          break;
+        }
+        case loadOlderCommitsRequested.type: {
+          // loadOlderCommitsRequested uses an object payload: { wsId, beforeSha, limit }
+          const payload = (action as { payload?: { wsId?: unknown; beforeSha?: unknown; limit?: unknown } }).payload;
+          const wsId = typeof payload?.wsId === "string" ? payload.wsId : undefined;
+          const beforeSha = typeof payload?.beforeSha === "string" ? payload.beforeSha : undefined;
+          const limit = typeof payload?.limit === "number" ? payload.limit : undefined;
+          if (wsId) loadOlderCommits(wsId, beforeSha, limit);
           break;
         }
         case requestAgentLineStats.type: {

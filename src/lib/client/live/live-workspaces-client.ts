@@ -84,8 +84,11 @@ function isContextItem(item: unknown): item is ContextItem {
 }
 
 export class LiveWorkspacesClient implements WorkspacesClient {
-  async list(): Promise<Workspace[]> {
-    const result = await backendRequest<{ workspaces?: unknown[] }>("workspace.list");
+  async list(options?: { includeArchived?: boolean }): Promise<Workspace[]> {
+    const result = await backendRequest<{ workspaces?: unknown[] }>(
+      "workspace.list",
+      options?.includeArchived ? { includeArchived: true } : undefined,
+    );
     const workspaces = Array.isArray(result?.workspaces) ? result.workspaces : [];
     return workspaces.map((w) => normalizeWorkspace(w as Record<string, unknown>));
   }
@@ -233,7 +236,7 @@ export class LiveWorkspacesClient implements WorkspacesClient {
     return createDeltaSubscription<Workspace>({
       eventTypes: ["workspace:created", "workspace:updated", "workspace:deleted"],
       matchLegacyEvent: (method, params) => isWorkspaceEvent(method, params),
-      fetchAll: () => this.list(),
+      fetchAll: () => this.list({ includeArchived: true }),
       getId: (raw) => String(raw.id ?? raw.workspaceId ?? ""),
       normalize: (raw) => normalizeWorkspace(raw),
       handler,

@@ -1873,11 +1873,3 @@ export const AuggieMcpCheckCodexSchema = z.object({}).strict();
 export const AuggieMcpCheckOpenCodeSchema = z.object({}).strict();
 
 export const AuggieMcpCheckDroidSchema = z.object({}).strict();
-
-// ============================================================================
-// Skills Schemas
-// ============================================================================
-
-export const SkillsListSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-});

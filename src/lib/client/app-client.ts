@@ -221,7 +221,7 @@ export interface WorkspaceCreateResult extends MutationResult {
 }
 
 export interface WorkspacesClient {
-  list(): Promise<Workspace[]>;
+  list(options?: { includeArchived?: boolean }): Promise<Workspace[]>;
   get(id: string): Promise<Workspace | null>;
   /**
    * Open a workspace by id (route loader entry point). Returns the matching
@@ -614,7 +614,20 @@ export interface GitClient {
    */
   diffs(workspaceId: string, options?: GitDiffsOptions): Promise<DiffChunk[]>;
   trackedChanges(workspaceId: string): Promise<TrackedChange[]>;
-  commits(workspaceId: string): Promise<CommitInfo[]>;
+  /**
+   * `file-tracking.loadCommits` — workspace commits with agent attribution.
+   * When `includeOlder` is true, fetches commits before and including the workspace boundary.
+   */
+  commits(workspaceId: string, includeOlder?: boolean): Promise<CommitInfo[]>;
+  /**
+   * `file-tracking.loadCommits` with full envelope — returns commits, boundarySha, and nextToken.
+   * The `boundarySha` is the workspace boundary commit SHA or null when no boundary exists.
+   * When `includeOlder` is true, fetches commits before and including the workspace boundary.
+   */
+  commitsWithBoundary(
+    workspaceId: string,
+    includeOlder?: boolean
+  ): Promise<{ commits: CommitInfo[]; boundarySha: string | null; nextToken: string | null }>;
   /**
    * `git.commitDetails` — metadata + per-file `(additions, deletions)` for one
    * commit. Returns `null` on transport failure so callers degrade gracefully.

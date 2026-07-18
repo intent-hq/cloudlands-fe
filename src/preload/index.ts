@@ -565,7 +565,6 @@ const ALLOWED_CHANNELS = [
   "ssh:list-keys",
   "ssh:get-agent-status",
   "ssh:test-connection",
-  "skills:list",
   "websocket-api:get-status",
   "websocket-api:set-enabled",
   "websocket-api:regenerate-token",

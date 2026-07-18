@@ -305,16 +305,8 @@ describe('InstructionService', () => {
       expect(prompt).toContain('File: src/main.ts');
     });
 
-    it('should include the skills catalog between user rules and workspace context', async () => {
+    it('should include user rules and workspace context in correct order', async () => {
       await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
-
-      const skillDir = path.join(workspacePath, '.agents', 'skills', 'test-skill');
-      await fs.mkdir(skillDir, { recursive: true });
-      const skillFile = path.join(skillDir, 'SKILL.md');
-      await fs.writeFile(
-        skillFile,
-        `---\nname: test-skill\ndescription: A test skill for prompt injection.\n---\n# Test Skill\nUse this skill for test tasks.\n`,
-      );
 
       const prompt = await service.buildSystemPrompt({
         agentType: 'debug',
@@ -326,26 +318,16 @@ describe('InstructionService', () => {
       });
 
       const userRulesIndex = prompt.indexOf('## User Rules & Guidelines');
-      const skillsIndex = prompt.indexOf('<available_skills>');
       const workspaceIndex = prompt.indexOf('## Workspace Context');
 
       expect(userRulesIndex).toBeGreaterThanOrEqual(0);
-      expect(skillsIndex).toBeGreaterThan(userRulesIndex);
-      expect(workspaceIndex).toBeGreaterThan(skillsIndex);
-      expect(prompt).toContain('<name>test-skill</name>');
-      expect(prompt).toContain('<description>A test skill for prompt injection.</description>');
-      expect(prompt).toContain(`<location>${skillFile}</location>`);
+      expect(workspaceIndex).toBeGreaterThan(userRulesIndex);
+      // Skills catalog is now daemon-owned (PROTOCOL §5.34), not in FE prompt.
+      expect(prompt).not.toContain('<available_skills>');
     });
 
     it('should place behavior instructions after shared layers by default', async () => {
       await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
-
-      const skillDir = path.join(workspacePath, '.agents', 'skills', 'ordering-skill');
-      await fs.mkdir(skillDir, { recursive: true });
-      await fs.writeFile(
-        path.join(skillDir, 'SKILL.md'),
-        `---\nname: ordering-skill\ndescription: Verifies prompt order.\n---\n# Ordering Skill\nUse this skill for ordering tests.\n`,
-      );
 
       const specializationRules = await service.getSpecializationRules('task-loop', workspacePath);
       const specializationMarker = specializationRules.split('\n')[0];
@@ -366,27 +348,20 @@ describe('InstructionService', () => {
       const baseIndex = prompt.indexOf('Augment Agent');
       const specializationIndex = prompt.indexOf(specializationMarker);
       const userRulesIndex = prompt.indexOf('## User Rules & Guidelines');
-      const skillsIndex = prompt.indexOf('<available_skills>');
       const behaviorIndex = prompt.indexOf(behaviorMarker);
       const workspaceIndex = prompt.indexOf('## Workspace Context');
 
       expect(baseIndex).toBeGreaterThanOrEqual(0);
       expect(specializationIndex).toBeGreaterThan(baseIndex);
       expect(userRulesIndex).toBeGreaterThan(specializationIndex);
-      expect(skillsIndex).toBeGreaterThan(userRulesIndex);
-      expect(behaviorIndex).toBeGreaterThan(skillsIndex);
+      expect(behaviorIndex).toBeGreaterThan(userRulesIndex);
       expect(workspaceIndex).toBeGreaterThan(behaviorIndex);
+      // Skills catalog is now daemon-owned (PROTOCOL §5.34), not in FE prompt.
+      expect(prompt).not.toContain('<available_skills>');
     });
 
     it('should share an identical parent/sub-agent prefix up to the behavior boundary', async () => {
       await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
-
-      const skillDir = path.join(workspacePath, '.agents', 'skills', 'prefix-test-skill');
-      await fs.mkdir(skillDir, { recursive: true });
-      await fs.writeFile(
-        path.join(skillDir, 'SKILL.md'),
-        `---\nname: prefix-test-skill\ndescription: Verifies prompt prefix consistency.\n---\n# Prefix Test Skill\nUse this skill for prefix consistency tests.\n`,
-      );
 
       const parentPrompt = await service.buildSystemPrompt({
         agentType: 'task-loop',
@@ -416,7 +391,8 @@ describe('InstructionService', () => {
       expect(parentPrefix).toBe(subAgentPrefix);
       expect(parentPrefix).toContain('Augment Agent');
       expect(parentPrefix).toContain('## User Rules & Guidelines');
-      expect(parentPrefix).toContain('<available_skills>');
+      // Skills catalog is now daemon-owned (PROTOCOL §5.34), not in FE prompt.
+      expect(parentPrefix).not.toContain('<available_skills>');
     });
 
     describe('prompt prefix consistency', () => {
@@ -432,13 +408,6 @@ describe('InstructionService', () => {
 
       it('should keep the full parent/sub-agent prefix identical until the behavior prompts begin', async () => {
         await fs.writeFile(path.join(workspacePath, 'AGENTS.md'), '# Project Rules\n\nAlways test changes.');
-
-        const skillDir = path.join(workspacePath, '.agents', 'skills', 'integration-prefix-skill');
-        await fs.mkdir(skillDir, { recursive: true });
-        await fs.writeFile(
-          path.join(skillDir, 'SKILL.md'),
-          `---\nname: integration-prefix-skill\ndescription: Verifies prompt prefix consistency.\n---\n# Integration Prefix Skill\nUse this skill for prompt prefix consistency tests.\n`,
-        );
 
         const agentType = 'task-loop';
         const specializationRules = await service.getSpecializationRules(agentType, workspacePath);
@@ -481,27 +450,22 @@ describe('InstructionService', () => {
         expect(commonPrefix).toContain('Augment Agent');
         expect(commonPrefix).toContain(specializationMarker!);
         expect(commonPrefix).toContain('## User Rules & Guidelines');
-        expect(commonPrefix).toContain('<available_skills>');
+        // Skills catalog is now daemon-owned (PROTOCOL §5.34), not in FE prompt.
+        expect(commonPrefix).not.toContain('<available_skills>');
       });
 
     });
 
-    it('should include the skills catalog for sub-agents', async () => {
-      const skillDir = path.join(workspacePath, '.agents', 'skills', 'subagent-skill');
-      await fs.mkdir(skillDir, { recursive: true });
-      await fs.writeFile(
-        path.join(skillDir, 'SKILL.md'),
-        `---\nname: subagent-skill\ndescription: Available to delegated agents.\n---\n# Sub-agent Skill\nUse this skill when delegated.\n`,
-      );
-
+    it('should not include skills catalog (daemon-owned)', async () => {
       const prompt = await service.buildSystemPrompt({
         agentType: 'task-loop',
         workspacePath,
         isSubAgent: true,
       });
 
-      expect(prompt).toContain('<available_skills>');
-      expect(prompt).toContain('<name>subagent-skill</name>');
+      // Skills catalog is now daemon-owned (PROTOCOL §5.34), not in FE prompt.
+      expect(prompt).not.toContain('<available_skills>');
+      expect(prompt).toContain('Augment Agent');
     });
 
     it('should handle missing agentType gracefully', async () => {
@@ -514,43 +478,13 @@ describe('InstructionService', () => {
       expect(prompt.length).toBeGreaterThan(0);
     });
 
-    it('should skip the skills catalog when workspacePath is missing', async () => {
+    it('should not include skills catalog (daemon-owned)', async () => {
       const prompt = await service.buildSystemPrompt({
         agentType: 'debug',
       });
 
+      // Skills catalog is now daemon-owned (PROTOCOL §5.34), not in FE prompt.
       expect(prompt).not.toContain('<available_skills>');
-    });
-
-    it('should refresh a cacheable prompt when the skills catalog changes', async () => {
-      const skillDir = path.join(workspacePath, '.agents', 'skills', 'cache-skill');
-      await fs.mkdir(skillDir, { recursive: true });
-      const skillFile = path.join(skillDir, 'SKILL.md');
-
-      await fs.writeFile(
-        skillFile,
-        `---\nname: cache-skill\ndescription: First version.\n---\n# Cache Skill\nInitial content.\n`,
-      );
-
-      const firstPrompt = await service.buildSystemPrompt({
-        agentType: 'debug',
-        workspacePath,
-      });
-
-      expect(firstPrompt).toContain('<description>First version.</description>');
-
-      await fs.writeFile(
-        skillFile,
-        `---\nname: cache-skill\ndescription: Updated version.\n---\n# Cache Skill\nUpdated content.\n`,
-      );
-
-      const secondPrompt = await service.buildSystemPrompt({
-        agentType: 'debug',
-        workspacePath,
-      });
-
-      expect(secondPrompt).toContain('<description>Updated version.</description>');
-      expect(secondPrompt).not.toContain('<description>First version.</description>');
     });
 
     it('should format layers with proper separators', async () => {

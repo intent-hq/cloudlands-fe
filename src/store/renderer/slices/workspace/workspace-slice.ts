@@ -8,6 +8,7 @@ import {
   openTerminalOverlay,
   toggleTerminalOverlay,
 } from "../terminals/terminals-slice";
+import { workspaceDeleted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
 import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import {
@@ -439,6 +440,34 @@ export const workspaceReducer = createReducer<WorkspaceState>(initialState)
       ...state,
       activeWorkspaceId: state.activeWorkspaceId === wsId ? null : state.activeWorkspaceId,
       workspaces: removeItem(state.workspaces, wsId as Workspace["id"]),
+    };
+  })
+  .with(workspaceDeleted, (state, { payload: [wsId] }) => {
+    const existsInCollection = !!getWorkspaceById(state.workspaces, wsId);
+    const hasPendingState =
+      state.pendingDeletions[wsId] ||
+      state.pendingArchives[wsId] ||
+      state.pendingCreations[wsId] ||
+      state.recency.lastViewedAt[wsId] !== undefined ||
+      state.activeWorkspaceId === wsId;
+
+    // No-op if workspace has no trace in state
+    if (!existsInCollection && !hasPendingState) return state;
+
+    const { [wsId]: _removedDeletion, ...nextPendingDeletions } = state.pendingDeletions;
+    const { [wsId]: _removedArchive, ...nextPendingArchives } = state.pendingArchives;
+    const { [wsId]: _removedCreation, ...nextPendingCreations } = state.pendingCreations;
+    const { [wsId]: _removedRecency, ...nextLastViewedAt } = state.recency.lastViewedAt;
+    return {
+      ...state,
+      activeWorkspaceId: state.activeWorkspaceId === wsId ? null : state.activeWorkspaceId,
+      workspaces: existsInCollection ? removeItem(state.workspaces, wsId as Workspace["id"]) : state.workspaces,
+      pendingDeletions: nextPendingDeletions,
+      pendingArchives: nextPendingArchives,
+      pendingCreations: nextPendingCreations,
+      recency: {
+        lastViewedAt: nextLastViewedAt,
+      },
     };
   })
   .with(recordWorkspaceView, (state, { payload: [wsId, viewedAt] }) => {

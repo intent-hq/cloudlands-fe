@@ -279,6 +279,36 @@ function ensureStream(agentId: string, messageId: string, workspaceId: string): 
   return fresh;
 }
 
+/**
+ * REJOIN-STREAM SEEDING: prime the stream accumulator with the content blocks
+ * from a chat.subscribe snapshot's in-flight assistant message so subsequent
+ * agent:stream:chunk events pass the regression guard (resolveStreamContentBlocks
+ * → hasActiveStreamRegression) instead of being suppressed. Called by
+ * chat-read-service after merging the snapshot's partial assistant into the
+ * hydrated transcript; the snapshot carries the full prefix built by the
+ * daemon's CS-0 D5 merge. NO-OP when the message has no content blocks or when
+ * a different message id already holds the stream slot.
+ */
+export function seedStreamFromSnapshot(
+  agentId: string,
+  inFlightMessage: { id?: string; contentBlocks?: ContentBlock[] },
+  workspaceId: string,
+): void {
+  const messageId =
+    typeof inFlightMessage.id === 'string' && inFlightMessage.id.length > 0
+      ? inFlightMessage.id
+      : null;
+  if (!messageId) return;
+  const existing = streamsByAgent.get(agentId);
+  if (existing && existing.messageId !== messageId) return;
+  const blocks = Array.isArray(inFlightMessage.contentBlocks) ? inFlightMessage.contentBlocks : [];
+  if (blocks.length === 0) return;
+  const state = ensureStream(agentId, messageId, workspaceId);
+  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
+    state.blocksByIndex.set(blockIndex, blocks[blockIndex]);
+  }
+}
+
 function buildContentBlocks(state: StreamState): ContentBlock[] {
   const sortedKeys = [...state.blocksByIndex.keys()].sort((a, b) => a - b);
   const result: ContentBlock[] = [];
@@ -1637,14 +1667,25 @@ function handleNotification(method: string, params: unknown): void {
   // STAB-22: agent:message events with role="assistant" should trigger a
   // conversation refetch so AgentCard preview updates for watched agents whose
   // tab was never opened. The event payload is { agentId, messageId, role }.
-  // Guard: only load if the session has no messages yet (avoid redundant fetches
-  // for already-hydrated transcripts).
+  // Guard for role="assistant": only load if the session has no messages yet
+  // (avoid redundant fetches for already-hydrated transcripts).
+  // QUEUED-MESSAGES: also handle role="user" — if the session is missing or its
+  // messages do not contain the messageId, refetch to fold in dequeued and
+  // agent-to-agent messages.
   if (type === 'agent:message') {
-    const { agentId, role } = event.data ?? {};
-    if (typeof agentId === 'string' && role === 'assistant') {
-      const session = appStore.state.agentSessions.byAgentId[agentId];
-      if (!session || session.messages.length === 0) {
-        void loadChatTranscript(agentId);
+    const { agentId, messageId, role } = event.data ?? {};
+    if (typeof agentId === 'string') {
+      if (role === 'assistant') {
+        const session = appStore.state.agentSessions.byAgentId[agentId];
+        if (!session || session.messages.length === 0) {
+          void loadChatTranscript(agentId);
+        }
+      } else if (role === 'user' && typeof messageId === 'string') {
+        const session = appStore.state.agentSessions.byAgentId[agentId];
+        // Trigger refetch if session doesn't exist OR messageId is not present
+        if (!session || !session.messages.some((m) => m.id === messageId)) {
+          void loadChatTranscript(agentId);
+        }
       }
     }
   }

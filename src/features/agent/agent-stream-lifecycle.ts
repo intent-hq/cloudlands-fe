@@ -14,7 +14,7 @@ import { createMessageId } from '$shared/types/branded-ids';
 import { invoke } from '$lib/electron-bridge';
 import { AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 import { createLogger } from '$lib/utils/client-logger';
-import type { Workspace, ContentBlock, AgentMessage, AgentSession } from '$shared/types';
+import type { Workspace, ContentBlock, AgentMessage, AgentSession, QueuedMessage } from '$shared/types';
 import { AgentStatus } from '$shared/types';
 import {
   buildOrderedContentBlocks,
@@ -44,6 +44,8 @@ import {
 } from './browser/services/error-recovery.service';
 import { IN_FLIGHT_PROMPT_DROPPED_ERROR } from '$shared/constants/agent-streaming';
 import { assertStreamingInvariant } from './utils/streaming-invariants';
+import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queue-slice';
+import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
 
 import * as streamRegistry from './utils/stream-handler-registry';
 import { track } from '$lib/services/analytics';
@@ -1475,6 +1477,45 @@ export async function sendMessage(
                             ? rawError
                             : (rawError as { message?: string } | undefined)?.message;
                         throw new Error(errorMessage || 'Failed to send message to backend');
+                      }
+
+                      // Handle queued responses (auto-queue race when priority: "interrupt"
+                      // arrives during turn startup). The daemon returns { success: true,
+                      // queued: true, queuedMessage } instead of preempting. Clean up the
+                      // just-registered stream handler/placeholder and surface the queued
+                      // state (seed local queue from queuedMessage like chat-send-service
+                      // does in L167-199) instead of leaving the UI in "Thinking".
+                      if (
+                        'queued' in response &&
+                        response.queued === true &&
+                        'queuedMessage' in response
+                      ) {
+                        logger.info('sendMessage auto-queued by daemon (race during turn startup)', {
+                          agentId,
+                          sessionId: session.id,
+                          queuedMessageId: (response.queuedMessage as QueuedMessage | undefined)?.id,
+                        });
+
+                        // Clean up the just-registered stream handler and placeholder
+                        flushPendingChunkUpdate();
+                        streamRegistry.cleanupStreamHandler(agentId);
+
+                        // Reset streaming flag so UI doesn't stay in "Thinking"
+                        dispatchRedux(setAgentStreaming(session.id, false));
+
+                        // Seed the local queue from queuedMessage (like chat-send-service
+                        // queue-on-send path does) so the UI immediately shows queued state
+                        const queuedMessage = response.queuedMessage as QueuedMessage | undefined;
+                        if (queuedMessage) {
+                          const existing = selectAgentQueueMessages.select(appStore.state, agentId);
+                          const next = existing.some((m) => m.id === queuedMessage.id)
+                            ? existing
+                            : [...existing, queuedMessage];
+                          dispatchRedux(replaceAgentQueue(agentId, next));
+                        }
+
+                        // Exit early — no stream is starting
+                        return;
                       }
                     }
                     // NOTE: no undefined/null-response guard is needed here —

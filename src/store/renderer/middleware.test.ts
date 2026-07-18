@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
   const chatSendMiddleware = createPassthroughMiddleware();
   const permissionResponseMiddleware = createPassthroughMiddleware();
   const daemonEventsBridgeMiddleware = createPassthroughMiddleware();
+  const activeStreamsReduxBridgeMiddleware = createPassthroughMiddleware();
   const settingsHydrationMiddleware = createPassthroughMiddleware();
   const modelSelectionPersistenceMiddleware = createPassthroughMiddleware();
   const providerSettingsPersistenceMiddleware = createPassthroughMiddleware();
@@ -82,6 +83,7 @@ const mocks = vi.hoisted(() => {
     createChatSendMiddleware: vi.fn(() => chatSendMiddleware),
     createPermissionResponseMiddleware: vi.fn(() => permissionResponseMiddleware),
     createDaemonEventsBridgeMiddleware: vi.fn(() => daemonEventsBridgeMiddleware),
+    createActiveStreamsReduxBridge: vi.fn(() => activeStreamsReduxBridgeMiddleware),
     createSettingsHydrationMiddleware: vi.fn(() => settingsHydrationMiddleware),
     createModelSelectionPersistenceMiddleware: vi.fn(() => modelSelectionPersistenceMiddleware),
     createProviderSettingsPersistenceMiddleware: vi.fn(() => providerSettingsPersistenceMiddleware),
@@ -147,6 +149,7 @@ const mocks = vi.hoisted(() => {
     chatSendMiddleware,
     permissionResponseMiddleware,
     daemonEventsBridgeMiddleware,
+    activeStreamsReduxBridgeMiddleware,
     settingsHydrationMiddleware,
     modelSelectionPersistenceMiddleware,
     providerSettingsPersistenceMiddleware,
@@ -209,6 +212,9 @@ vi.mock("$features/permission/permission-response-service", () => ({
 }));
 vi.mock("$features/events/daemon-events-bridge", () => ({
   createDaemonEventsBridgeMiddleware: mocks.createDaemonEventsBridgeMiddleware,
+}));
+vi.mock("$features/agent/active-streams-redux-bridge", () => ({
+  createActiveStreamsReduxBridge: mocks.createActiveStreamsReduxBridge,
 }));
 vi.mock("$features/settings/settings-hydration-service", () => ({
   createSettingsHydrationMiddleware: mocks.createSettingsHydrationMiddleware,
@@ -408,6 +414,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.providerSettingsPersistenceMiddleware,
@@ -474,6 +481,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.providerSettingsPersistenceMiddleware,
@@ -540,6 +548,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.providerSettingsPersistenceMiddleware,
@@ -607,6 +616,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.providerSettingsPersistenceMiddleware,
@@ -691,6 +701,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.chatSendMiddleware,
       mocks.permissionResponseMiddleware,
       mocks.daemonEventsBridgeMiddleware,
+      mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
       mocks.providerSettingsPersistenceMiddleware,
