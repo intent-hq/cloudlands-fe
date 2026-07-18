@@ -7,7 +7,6 @@ import {
   updateItem,
 } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
-import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import { removeWorkspaceEntity } from "../workspace/workspace-slice";
 import type { WorkspaceTasksState, WorkspaceTasksWorkspaceState } from "./workspace-tasks-types";
 
@@ -125,6 +124,5 @@ export const workspaceTasksReducer = createReducer<WorkspaceTasksState>(initialS
   .with(clearWorkspaceTasks, (state, { payload: [workspaceId] }) =>
     clearWorkspaceState(state, workspaceId)
   )
-  .with(workspaceUnmounted, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId))
   .with(removeWorkspaceEntity, (state, { payload: [wsId] }) => clearWorkspaceState(state, wsId));
 
