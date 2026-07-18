@@ -8,6 +8,7 @@ import {
   openTerminalOverlay,
   toggleTerminalOverlay,
 } from "../terminals/terminals-slice";
+import { workspaceDeleted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
 import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
 import {
@@ -439,6 +440,25 @@ export const workspaceReducer = createReducer<WorkspaceState>(initialState)
       ...state,
       activeWorkspaceId: state.activeWorkspaceId === wsId ? null : state.activeWorkspaceId,
       workspaces: removeItem(state.workspaces, wsId as Workspace["id"]),
+    };
+  })
+  .with(workspaceDeleted, (state, { payload: [wsId] }) => {
+    const workspace = getWorkspaceById(state.workspaces, wsId);
+    const hasPendingDeletion = wsId in state.pendingDeletions;
+    const hasPendingArchive = wsId in state.pendingArchives;
+    const hasPendingCreation = wsId in state.pendingCreations;
+
+    if (!workspace && !hasPendingDeletion && !hasPendingArchive && !hasPendingCreation) {
+      return state;
+    }
+
+    return {
+      ...state,
+      activeWorkspaceId: state.activeWorkspaceId === wsId ? null : state.activeWorkspaceId,
+      workspaces: workspace ? removeItem(state.workspaces, wsId as Workspace["id"]) : state.workspaces,
+      pendingDeletions: clearBooleanMapEntry(state.pendingDeletions, wsId),
+      pendingArchives: clearBooleanMapEntry(state.pendingArchives, wsId),
+      pendingCreations: clearPendingCreationEntry(state.pendingCreations, wsId),
     };
   })
   .with(recordWorkspaceView, (state, { payload: [wsId, viewedAt] }) => {

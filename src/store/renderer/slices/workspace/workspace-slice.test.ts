@@ -9,6 +9,7 @@ import {
   openTerminalOverlay,
   toggleTerminalOverlay,
 } from "../terminals/terminals-slice";
+import { workspaceDeleted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import {
   createCollection,
   getItem,
@@ -484,6 +485,61 @@ describe("workspaceReducer", () => {
       state = workspaceReducer(state, removeWorkspaceEntity("ws-1"));
       expect(state.workspaces.ids).toEqual([]);
       expect(state.activeWorkspaceId).toBeNull();
+    });
+  });
+
+  describe("workspaceDeleted", () => {
+    it("removes workspace and clears all pending state when workspace is active", () => {
+      const ws = makeWorkspace({ id: "ws-1" });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(ws));
+      state = workspaceReducer(state, setActiveWorkspaceId("ws-1"));
+      state = workspaceReducer(state, markWorkspacePendingDeletion("ws-1"));
+      state = { ...state, pendingArchives: { "ws-1": true } };
+
+      state = workspaceReducer(state, workspaceDeleted("ws-1", []));
+
+      expect(getItem(state.workspaces, "ws-1")).toBeUndefined();
+      expect(state.activeWorkspaceId).toBeNull();
+      expect(state.pendingDeletions["ws-1"]).toBeUndefined();
+      expect(state.pendingArchives["ws-1"]).toBeUndefined();
+    });
+
+    it("removes workspace but preserves activeWorkspaceId when it is not the active one", () => {
+      const ws1 = makeWorkspace({ id: "ws-1" });
+      const ws2 = makeWorkspace({ id: "ws-2" });
+      let state = workspaceReducer(initialState, setWorkspaceEntity(ws1));
+      state = workspaceReducer(state, setWorkspaceEntity(ws2));
+      state = workspaceReducer(state, setActiveWorkspaceId("ws-2"));
+
+      state = workspaceReducer(state, workspaceDeleted("ws-1", []));
+
+      expect(getItem(state.workspaces, "ws-1")).toBeUndefined();
+      expect(state.activeWorkspaceId).toBe("ws-2");
+    });
+
+    it("clears pending maps even when workspace is absent", () => {
+      let state = { ...initialState };
+      state = workspaceReducer(state, markWorkspacePendingDeletion("ws-ghost"));
+      state = { ...state, pendingArchives: { "ws-ghost": true } };
+
+      state = workspaceReducer(state, workspaceDeleted("ws-ghost", []));
+
+      expect(state.pendingDeletions["ws-ghost"]).toBeUndefined();
+      expect(state.pendingArchives["ws-ghost"]).toBeUndefined();
+    });
+
+    it("clears pendingCreations when present", () => {
+      const ws = makeWorkspace({ id: "ws-1" });
+      let state = workspaceReducer(initialState, setPendingCreation(ws));
+
+      state = workspaceReducer(state, workspaceDeleted("ws-1", []));
+
+      expect(state.pendingCreations["ws-1"]).toBeUndefined();
+    });
+
+    it("is a no-op when workspace is absent and no pending state exists", () => {
+      const state = workspaceReducer(initialState, workspaceDeleted("ws-missing", []));
+      expect(state).toBe(initialState);
     });
   });
 
