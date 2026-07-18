@@ -12,7 +12,7 @@
 
 import type { StoreMiddleware } from '@augmentcode/ag-redux-toolkit/types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { backendRequest, electronAPI } from '$lib/client/live/backend-transport';
+import { backendRequest } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';
 import {
   connectionStatusChanged,
@@ -87,7 +87,7 @@ function boot(): void {
   if (booted) return;
   booted = true;
 
-  const api = electronAPI();
+  const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
   if (!api) return;
 
   // Listen for backend:status events (connection status changes).
@@ -122,7 +122,7 @@ export function createDaemonHealthMiddleware(): StoreMiddleware {
  */
 export function disposeDaemonHealthService(): void {
   stopPolling();
-  const api = electronAPI();
+  const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
   if (api && statusListener) {
     api.off(BACKEND.STATUS, statusListener);
     statusListener = null;
