@@ -36,7 +36,7 @@ describe("interrupted-agents-service", () => {
 
     mockElectronAPI = {
       invoke: vi.fn(),
-      on: vi.fn((channel: string, handler: (payload: any) => void) => {
+      on: vi.fn((_channel: string, _handler: (payload: any) => void) => {
         listenerIdCounter += 1;
         return `listener-${listenerIdCounter}`;
       }),
