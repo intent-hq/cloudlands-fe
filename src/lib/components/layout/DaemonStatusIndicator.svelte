@@ -173,6 +173,27 @@
               <span class="font-mono text-xs">{$stats$.os}/{$stats$.arch}</span>
             </div>
 
+            <!-- FE connection mode -->
+            {#if $stats$.transport}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">Connection</span>
+                <span class="font-mono text-xs">
+                  {#if $stats$.transport.mode === 'sidecar-uds'}
+                    sidecar (UDS)
+                  {:else if $stats$.transport.target}
+                    external ({$stats$.transport.target})
+                  {:else}
+                    external (WebSocket)
+                  {/if}
+                </span>
+              </div>
+            {:else}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">Connection</span>
+                <span class="font-mono text-xs text-subtle">unknown</span>
+              </div>
+            {/if}
+
             <div class="h-px bg-border my-1"></div>
 
             <!-- Last updated -->

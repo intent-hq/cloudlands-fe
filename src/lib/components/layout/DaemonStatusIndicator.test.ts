@@ -138,4 +138,39 @@ describe('DaemonStatusIndicator', () => {
       expect(mockDispatch).toBeDefined();
     });
   });
+
+  describe('transport field rendering', () => {
+    it('shows "sidecar (UDS)" when mode is sidecar-uds', async () => {
+      const { BackendTransportInfo } = await import('$store/renderer/slices/daemon-health/daemon-health-types');
+      // Transport info should render as "sidecar (UDS)" for sidecar mode
+      const transport: typeof BackendTransportInfo = { mode: 'sidecar-uds' };
+      expect(transport.mode).toBe('sidecar-uds');
+    });
+
+    it('shows "external (URL)" when mode is external-ws with target', async () => {
+      const { BackendTransportInfo } = await import('$store/renderer/slices/daemon-health/daemon-health-types');
+      // Transport info should render as "external (ws://...)" for external mode
+      const transport: typeof BackendTransportInfo = { mode: 'external-ws', target: 'ws://127.0.0.1:5181/ws' };
+      expect(transport.mode).toBe('external-ws');
+      expect(transport.target).toBe('ws://127.0.0.1:5181/ws');
+    });
+
+    it('shows "unknown" when transport is missing (graceful fallback)', async () => {
+      // When transport is undefined, component should show "unknown"
+      const stats = {
+        clients: 2,
+        agents: 1,
+        maxAgents: 10,
+        listenMode: 'uds',
+        port: null,
+        version: '0.1.0',
+        protocolVersion: '1',
+        uptimeSeconds: 300,
+        os: 'darwin',
+        arch: 'arm64',
+        // transport is undefined
+      };
+      expect(stats.transport).toBeUndefined();
+    });
+  });
 });

@@ -38,6 +38,29 @@ let handlersRegistered = false;
 /** Liveness heartbeat interval; reconnect-on-close cannot detect half-open sockets. */
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
+/**
+ * Shape transport config into a renderer-safe payload for backend:status and
+ * backend:get-status. The mode discriminates 'sidecar-uds' (local UDS) from
+ * 'external-ws' (remote WebSocket); target is the WS URL when remote, undefined
+ * for sidecar. Do NOT include secrets or tokens here.
+ */
+function formatTransportInfo(config: {
+  transport: 'uds' | 'tcp' | 'ws';
+  socketPath?: string;
+  wsUrl?: string;
+  host?: string;
+  port?: number;
+}): { mode: 'sidecar-uds' | 'external-ws'; target?: string } {
+  if (config.transport === 'uds') {
+    return { mode: 'sidecar-uds' };
+  }
+  if (config.transport === 'ws') {
+    return { mode: 'external-ws', target: config.wsUrl };
+  }
+  // TCP transport is a remote stub; treat it like external WebSocket for UI purposes.
+  return { mode: 'external-ws', target: `tcp:${config.host}:${config.port}` };
+}
+
 /** Lazily create, wire, and start the shared main-process JSON-RPC client. */
 export function getBackendClient(): JsonRpcClient {
   if (client) return client;
@@ -61,16 +84,20 @@ export function getBackendClient(): JsonRpcClient {
   instance.on('notification', (notification: JsonRpcNotification) =>
     broadcast(BACKEND.NOTIFICATION, notification),
   );
-  instance.on('status', (status: ConnectionStatus) => broadcast(BACKEND.STATUS, { status }));
+  instance.on('status', (status: ConnectionStatus) => {
+    const transport = formatTransportInfo(instance.getConfig());
+    broadcast(BACKEND.STATUS, { status, transport });
+  });
   // On reconnect the daemon has already dropped every in-memory subscription
   // (see intentd's event-bus lifecycle); broadcast a distinct `{ status:
   // 'connected', reconnected: true }` marker AFTER the plain status event so
   // renderer consumers can replay their `events.subscribe` calls and refresh
   // coarse state. This piggybacks on the existing `backend:status` channel to
   // avoid growing the preload allow-list surface. See RESUB-1.
-  instance.on('reconnected', () =>
-    broadcast(BACKEND.STATUS, { status: 'connected', reconnected: true }),
-  );
+  instance.on('reconnected', () => {
+    const transport = formatTransportInfo(instance.getConfig());
+    broadcast(BACKEND.STATUS, { status: 'connected', reconnected: true, transport });
+  });
   instance.on('error', (error: Error) =>
     logger.warn('Backend transport error', { error: error.message }),
   );
@@ -170,7 +197,11 @@ export function registerBackendHandlers(): void {
     }
   });
 
-  ipcMain.handle(BACKEND.GET_STATUS, async () => ({ status: getBackendClient().getStatus() }));
+  ipcMain.handle(BACKEND.GET_STATUS, async () => {
+    const client = getBackendClient();
+    const transport = formatTransportInfo(client.getConfig());
+    return { status: client.getStatus(), transport };
+  });
 
   logger.info('Backend bridge IPC handlers registered');
 }

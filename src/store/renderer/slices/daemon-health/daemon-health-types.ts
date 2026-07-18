@@ -39,6 +39,15 @@ export interface SystemStatusWirePayload {
 }
 
 /**
+ * FE connection mode to the intentd daemon.
+ * Additive transport info from backend:get-status and backend:status.
+ */
+export interface BackendTransportInfo {
+  mode: 'sidecar-uds' | 'external-ws';
+  target?: string;
+}
+
+/**
  * Stats payload exposed by selectors for the health dropdown menu.
  */
 export interface DaemonHealthStats {
@@ -52,6 +61,8 @@ export interface DaemonHealthStats {
   uptimeSeconds?: number;
   os: string;
   arch: string;
+  /** FE connection mode (sidecar UDS vs external WebSocket). Optional for backward compatibility. */
+  transport?: BackendTransportInfo;
 }
 
 /**

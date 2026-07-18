@@ -18,7 +18,12 @@ const BACKEND = IPC_CHANNELS.BACKEND;
  * Mock backend status — default to connected for most tests.
  * Tests can override by calling `registerMockIpcHandler(BACKEND.GET_STATUS, ...)`
  * after this seeder has run.
+ *
+ * Transport info is additively included (sidecar-uds for tests by default).
  */
 registerMockIpcHandler(BACKEND.GET_STATUS, async () => {
-  return { status: "connected" };
+  return {
+    status: "connected",
+    transport: { mode: "sidecar-uds" as const },
+  };
 });
