@@ -843,6 +843,48 @@ describe('agent-session-slice reducer', () => {
       expect(state.byAgentId['a1'].status).toBe('error');
       expect(state.byAgentId['a1'].stopReason).toBe('Spawn timeout');
     });
+
+    it('preserves stopReason from agent:failed when agent:status-changed arrives without stopReason', () => {
+      let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+
+      // First, agent:failed sets the error text in stopReason
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-failed-3',
+          type: 'agent:failed',
+          timestamp: '2024-01-01T00:00:01.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            error: 'Agent spawn failed after 3 retries',
+          },
+        } as any),
+      );
+
+      expect(state.byAgentId['a1'].stopReason).toBe('Agent spawn failed after 3 retries');
+
+      // Then agent:status-changed arrives without stopReason (undefined)
+      state = agentSessionReducer(
+        state,
+        eventReceived('ws-1', {
+          id: 'evt-status-1',
+          type: 'agent:status-changed',
+          timestamp: '2024-01-01T00:00:02.000Z',
+          workspaceId: 'ws-1',
+          data: {
+            agentId: 'a1',
+            status: 'error',
+            isActive: false,
+          },
+        } as any),
+      );
+
+      // The stopReason should still be the error text
+      expect(state.byAgentId['a1'].stopReason).toBe('Agent spawn failed after 3 retries');
+      expect(state.byAgentId['a1'].status).toBe('error');
+      expect(state.byAgentId['a1'].isActive).toBe(false);
+    });
   });
 
   describe('updateAgentDigest', () => {

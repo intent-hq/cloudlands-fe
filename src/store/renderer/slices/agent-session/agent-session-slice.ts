@@ -277,7 +277,12 @@ function canonicalSessionUpdates(
   if (fields.isStreaming !== null) updates.isStreaming = fields.isStreaming;
   if (fields.isProcessing !== null) updates.isProcessing = fields.isProcessing;
   if (fields.isResponding !== null) updates.isResponding = fields.isResponding;
-  updates.stopReason = fields.stopReason;
+  // Only update stopReason when explicitly present (not undefined) to avoid
+  // clobbering a previously-set error text from agent:failed when
+  // agent:status-changed arrives without a stopReason field.
+  if ('stopReason' in fields) {
+    updates.stopReason = fields.stopReason;
+  }
   if (typeof fields.lastResponseSummary === 'string' && fields.lastResponseSummary.trim()) {
     updates.lastAgentResponse = fields.lastResponseSummary;
   }
