@@ -248,11 +248,10 @@ describe("provider-availability-check-service", () => {
   it("backend connected event triggers bulk re-check and flips state from unavailable to available", async () => {
     // The middleware factory runs when appStore.init() is called in beforeAll, which
     // should register a BACKEND.STATUS listener via window.electronAPI.on().
-    // Select the most recently registered handler to avoid order-dependencies across suites.
+    // Multiple middlewares may register handlers (e.g., daemon-health-service), so
+    // call all of them to simulate a real event broadcast.
     const backendStatusHandlers = (window as any).electronAPI._getRegisteredHandlers("backend:status");
     expect(backendStatusHandlers.length).toBeGreaterThan(0);
-    const backendStatusListener = backendStatusHandlers[backendStatusHandlers.length - 1];
-    expect(typeof backendStatusListener).toBe("function");
 
     // Clear the spy to measure only reconnect-triggered calls.
     checkSingleSpy.mockClear();
@@ -271,11 +270,13 @@ describe("provider-availability-check-service", () => {
       }),
     });
 
-    // Simulate backend connected event by calling the captured listener.
+    // Simulate backend connected event by calling all registered listeners.
     // This could be either initial connect (no reconnected flag) or reconnect
     // (reconnected: true). Both should trigger a bulk re-check.
     // Test the initial-connect case (reconnected undefined) to prove the startup race fix.
-    backendStatusListener({ status: "connected" });
+    for (const listener of backendStatusHandlers) {
+      listener({ status: "connected" });
+    }
 
     // Flush several rounds to let the async bulk check settle.
     await flush();
