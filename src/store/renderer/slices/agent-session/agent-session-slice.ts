@@ -280,7 +280,7 @@ function canonicalSessionUpdates(
   // Only update stopReason when the key exists on the payload to avoid
   // clobbering a previously-set error text from agent:failed when
   // agent:status-changed arrives without a stopReason field.
-  if ('stopReason' in fields) {
+  if (Object.prototype.hasOwnProperty.call(fields, 'stopReason')) {
     updates.stopReason = fields.stopReason;
   }
   if (typeof fields.lastResponseSummary === 'string' && fields.lastResponseSummary.trim()) {
