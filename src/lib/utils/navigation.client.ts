@@ -1,9 +1,9 @@
-// @ts-nocheck - Renderer-only file importing $app/navigation (SvelteKit). Excluded from main-process build.
 /**
  * Navigation utilities
  *
  * Thin wrapper around SvelteKit's goto() for use in non-route code.
- * Uses dynamic import to avoid TypeScript resolution errors in the main process build.
+ * This is a renderer-only module importing $app/navigation (SvelteKit).
+ * The main-process build excludes this via tsconfig.main.json patterns.
  */
 
 /**
@@ -17,6 +17,7 @@
  * @returns Promise that resolves when navigation completes
  */
 export async function navigateToRoute(route: string): Promise<void> {
+  // @ts-expect-error - $app/navigation is a SvelteKit renderer-only module
   const { goto } = await import('$app/navigation');
   return goto(route);
 }
