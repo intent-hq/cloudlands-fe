@@ -13,6 +13,7 @@ vi.mock("$lib/client/live/backend-transport", () => ({
   backendUnsubscribe: () => Promise.resolve(),
   onBackendNotification: () => () => {},
   onBackendReconnected: () => () => {},
+  electronAPI: () => window.electronAPI,
 }));
 
 import { store as appStore } from "$store/renderer/store";
