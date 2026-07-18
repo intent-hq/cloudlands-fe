@@ -210,7 +210,7 @@ vi.mock("$features/agent/chat-send-service", () => ({ createChatSendMiddleware: 
 vi.mock("$features/permission/permission-response-service", () => ({
   createPermissionResponseMiddleware: mocks.createPermissionResponseMiddleware,
 }));
-vi.mock("$features/events/daemon-events-bridge", () => ({
+vi.mock("$features/events/daemon-events-bridge.client", () => ({
   createDaemonEventsBridgeMiddleware: mocks.createDaemonEventsBridgeMiddleware,
 }));
 vi.mock("$features/agent/active-streams-redux-bridge", () => ({

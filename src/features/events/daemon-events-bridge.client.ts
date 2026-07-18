@@ -179,6 +179,9 @@ import { loadChatTranscript } from '$features/agent/chat-read-service';
 import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { WorkspaceEvent } from '$features/events/types';
 import { createLogger } from '$lib/utils/client-logger';
+import { requestUiHighlight } from '$store/renderer/slices/ui-highlight/ui-highlight-slice';
+import { invoke } from '$lib/electron-bridge';
+import { IPC_CHANNELS } from '$shared/ipc-registry';
 
 const logger = createLogger('DaemonEventsBridge');
 
@@ -1333,6 +1336,116 @@ function debouncedChangesRefresh(workspaceId: string): void {
   changesRefreshTimersByWorkspace.set(workspaceId, timer);
 }
 
+/**
+ * `app:ui-navigate` (§6.5 Chief-workspace UI navigation) — carries
+ * `{ route, workspaceId?, highlightId?, durationMs? }`. Navigate the app UI to
+ * the specified route and optionally pulse the highlight target with the given
+ * duration. If highlightId is present, dispatch requestUiHighlight after
+ * navigation settles.
+ */
+function handleAppUiNavigateEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const rawRoute = data.route;
+  if (typeof rawRoute !== 'string') return;
+  const route = rawRoute.trim();
+  if (route.length === 0) return;
+
+  const highlightId = typeof data.highlightId === 'string' ? data.highlightId.trim() : '';
+  const durationMs =
+    typeof data.durationMs === 'number' && Number.isFinite(data.durationMs) && data.durationMs > 0
+      ? data.durationMs
+      : undefined;
+
+  import('$lib/utils/navigation.client')
+    .then(({ navigateToRoute }) => navigateToRoute(route))
+    .then(() => {
+      if (highlightId) {
+        // Defer the highlight dispatch slightly so the target element has time
+        // to render after navigation completes.
+        requestAnimationFrame(() => {
+          appStore.dispatch(requestUiHighlight(highlightId, durationMs ? { durationMs } : undefined));
+        });
+      }
+    })
+    .catch((error: unknown) => {
+      logger.warn('[app:ui-navigate] Navigation failed', { route, error });
+    });
+}
+
+/**
+ * `app:ui-highlight` (§6.5 Chief-workspace UI highlight) — carries
+ * `{ id, workspaceId?, durationMs? }`. Pulse the specified highlight target
+ * with the given duration. Dispatches requestUiHighlight action to the
+ * ui-highlight slice.
+ */
+function handleAppUiHighlightEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const id = data.id;
+  if (typeof id !== 'string' || id.trim().length === 0) return;
+
+  const highlightId = id.trim();
+  const durationMs =
+    typeof data.durationMs === 'number' && Number.isFinite(data.durationMs) && data.durationMs > 0
+      ? data.durationMs
+      : undefined;
+
+  appStore.dispatch(requestUiHighlight(highlightId, durationMs ? { durationMs } : undefined));
+}
+
+/**
+ * `app:workspace-open` (§6.5 Chief-workspace workspace-open) — carries
+ * `{ workspaceId, openInNewWindow? }`. Open the specified workspace in the
+ * current window (navigate to /workspace/:id) or in a new window if
+ * openInNewWindow is true. Uses the IPC window.open-new channel when
+ * openInNewWindow is set, falling back to in-window navigation on failure.
+ */
+function handleAppWorkspaceOpenEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  const rawWorkspaceId = data.workspaceId;
+  if (typeof rawWorkspaceId !== 'string') return;
+  const workspaceId = rawWorkspaceId.trim();
+  if (workspaceId.length === 0) return;
+
+  const openInNewWindow = data.openInNewWindow === true;
+  const route = `/workspace/${workspaceId}`;
+
+  if (openInNewWindow) {
+    // Try to open in new window via IPC, fall back to navigation if it fails
+    invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route })
+      .then(async (result: unknown) => {
+        // window:open-new resolves {success: false, error} on failure
+        if (typeof result === 'object' && result !== null && 'success' in result && result.success === false) {
+          logger.warn('[app:workspace-open] New window open returned failure, navigating instead', {
+            workspaceId,
+            error: 'error' in result ? result.error : undefined,
+          });
+          const { navigateToRoute } = await import('$lib/utils/navigation.client');
+          return navigateToRoute(route);
+        }
+      })
+      .catch(async (error: unknown) => {
+        logger.warn('[app:workspace-open] New window open rejected, navigating instead', {
+          workspaceId,
+          error,
+        });
+        const { navigateToRoute } = await import('$lib/utils/navigation.client');
+        return navigateToRoute(route);
+      })
+      .catch(() => {
+        // Ignore final goto failure - already logged
+      });
+  } else {
+    import('$lib/utils/navigation.client')
+      .then(({ navigateToRoute }) => navigateToRoute(route))
+      .catch((error: unknown) => {
+        logger.warn('[app:workspace-open] Navigation failed', { workspaceId, error });
+      });
+  }
+}
+
 function handleNotification(method: string, params: unknown): void {
   if (method !== 'events.event') return;
   // Fan-out scope gate (see file header): drop notifications delivered through
@@ -1352,6 +1465,23 @@ function handleNotification(method: string, params: unknown): void {
   // expected, so it must be routed BEFORE the workspace-id gate below.
   if (type === 'settings:changed') {
     handleSettingsChangedEvent(event);
+    return;
+  }
+
+  // Chief-workspace app-UI events (§6.5) — global control events emitted when
+  // Chief agents call ws.app.ui.navigate/highlight or ws.app.workspaces.open.
+  // These are routed before the workspace-id gate because they carry their
+  // workspaceId inside `data` (if present) rather than in the event envelope.
+  if (type === 'app:ui-navigate') {
+    handleAppUiNavigateEvent(event);
+    return;
+  }
+  if (type === 'app:ui-highlight') {
+    handleAppUiHighlightEvent(event);
+    return;
+  }
+  if (type === 'app:workspace-open') {
+    handleAppWorkspaceOpenEvent(event);
     return;
   }
 
@@ -1653,6 +1783,13 @@ const BRIDGE_SUBSCRIBE_EVENT_TYPES = [
   'line-attribution:updated',
   'pr:*',
   'mcp.servers:status-changed',
+  // Chief-workspace app-UI control events (§6.5 daemon emission) — the daemon
+  // emits these when Chief agents call ws.app.ui.navigate/highlight or
+  // ws.app.workspaces.open, bridged here into the FE's routing + highlight
+  // systems. Without the subscription the FE never sees them.
+  'app:ui-navigate',
+  'app:ui-highlight',
+  'app:workspace-open',
 ] as const;
 
 /**
