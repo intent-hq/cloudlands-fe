@@ -277,7 +277,7 @@ function canonicalSessionUpdates(
   if (fields.isStreaming !== null) updates.isStreaming = fields.isStreaming;
   if (fields.isProcessing !== null) updates.isProcessing = fields.isProcessing;
   if (fields.isResponding !== null) updates.isResponding = fields.isResponding;
-  // Only update stopReason when explicitly present (not undefined) to avoid
+  // Only update stopReason when the key exists on the payload to avoid
   // clobbering a previously-set error text from agent:failed when
   // agent:status-changed arrives without a stopReason field.
   if ('stopReason' in fields) {

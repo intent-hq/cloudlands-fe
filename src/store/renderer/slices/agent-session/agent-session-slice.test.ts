@@ -864,7 +864,10 @@ describe('agent-session-slice reducer', () => {
 
       expect(state.byAgentId['a1'].stopReason).toBe('Agent spawn failed after 3 retries');
 
-      // Then agent:status-changed arrives without stopReason (undefined)
+      // Then agent:status-changed arrives without stopReason field
+      // (reflects non-canonical daemon payload observed in the wild; see incident
+      // analysis in PR #147 — this coverage prevents future "fixes" that
+      // re-canonicalize the fixture and remove the regression check)
       state = agentSessionReducer(
         state,
         eventReceived('ws-1', {
