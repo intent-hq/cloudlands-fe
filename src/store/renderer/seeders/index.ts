@@ -6,6 +6,7 @@
  * wave appends its own seeder import below; never remove existing entries.
  */
 import './workspaces-seeder';
+import './active-streams-bridge-seeder';
 import './agents-seeder';
 import './agent-ipc-bridge-seeder';
 import './host-bridge-seeder';
