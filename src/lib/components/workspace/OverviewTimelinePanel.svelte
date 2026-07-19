@@ -180,9 +180,6 @@
     // In coordinator mode, exclude all agents that are delegated under any agent in the workspace
     return others.filter((a) => !delegatedAgentIds.has(a.id));
   });
-  let runningOtherCount = $derived(
-    otherAgents.filter((a) => a.state === 'running' || a.state === 'responding').length,
-  );
   // Count of all delegated descendants of the primary agent (including grandchildren, etc.)
   let delegatedCount = $derived(allDescendantsOfPrimary.size);
 
