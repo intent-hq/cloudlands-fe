@@ -105,25 +105,54 @@ jobs:
               --prerelease=false
           fi
 
-      - name: Delete old stable assets
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-        run: |
-          echo "Cleaning up old assets from rolling stable release"
-          gh release view stable --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
-            if [ -n "$asset" ]; then
-              echo "Deleting old asset: $asset"
-              gh release delete-asset stable "$asset" --repo intent-hq/cloudlands-releases --yes || true
-            fi
-          done
-
       - name: Upload new assets to stable
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          VERSION: ${{ inputs.version }}
         run: |
           cd /tmp/release-assets
-          gh release upload stable --repo intent-hq/cloudlands-releases -- \
-            ./*.dmg ./*.zip ./*.blockmap latest-mac.yml
+
+          # Build explicit file list to avoid glob failures
+          UPLOAD_FILES=()
+          for pattern in "*.dmg" "*.zip" "*.blockmap"; do
+            for file in $pattern; do
+              if [ -f "$file" ]; then
+                UPLOAD_FILES+=("$file")
+              fi
+            done
+          done
+
+          # Require latest-mac.yml
+          if [ ! -f "latest-mac.yml" ]; then
+            echo "::error::Missing required latest-mac.yml"
+            exit 1
+          fi
+
+          # Upload versioned assets first (no collision with existing stable assets)
+          if [ ${#UPLOAD_FILES[@]} -gt 0 ]; then
+            echo "Uploading versioned assets: ${UPLOAD_FILES[*]}"
+            gh release upload stable --repo intent-hq/cloudlands-releases -- "${UPLOAD_FILES[@]}"
+          fi
+
+          # Replace latest-mac.yml last with --clobber (atomic switch of auto-updater feed)
+          echo "Replacing latest-mac.yml (auto-updater feed)"
+          gh release upload stable --repo intent-hq/cloudlands-releases --clobber -- latest-mac.yml
+
+      - name: Delete previous version assets
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          # Now that new assets are live, clean up old version's artifacts
+          # List current assets and delete any that aren't from this promotion
+          echo "Cleaning up old versioned assets from stable release"
+          gh release view stable --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
+            if [ -n "$asset" ] && [ "$asset" != "latest-mac.yml" ]; then
+              # Delete old versioned files (previous .dmg/.zip/.blockmap)
+              # This step runs after new assets are live, so failure here is safe to surface
+              echo "Deleting old asset: $asset"
+              gh release delete-asset stable "$asset" --repo intent-hq/cloudlands-releases --yes
+            fi
+          done
 
       - name: Verify stable feed matches versioned release
         env:
@@ -131,7 +160,7 @@ jobs:
         run: |
           # shellcheck disable=SC2086
           # Fetch versioned release sha512
-          VERSIONED_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/latest-mac.yml" | awk '/^sha512:/{print $2; exit}')
+          VERSIONED_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/latest-mac.yml" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
           if [ -z "$VERSIONED_SHA" ]; then
             echo "::error::Failed to fetch or parse sha512 from versioned release v${VERSION}"
             exit 1
@@ -141,7 +170,7 @@ jobs:
           MAX_RETRIES=5
           RETRY_DELAY=2
           for i in $(seq 1 "$MAX_RETRIES"); do
-            STABLE_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml?t=$(date +%s)" | awk '/^sha512:/{print $2; exit}')
+            STABLE_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml?t=$(date +%s)" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
 
             if [ -z "$STABLE_SHA" ]; then
               echo "::warning::Retry $i/$MAX_RETRIES: Failed to fetch or parse sha512 from stable release"
@@ -196,6 +225,20 @@ jobs:
             # First validate prevStable exists in the list
             if ! grep -qFx "$PREV_STABLE" /tmp/all-versions.txt; then
               echo "::error::Previous stable version $PREV_STABLE not found in release list"
+              exit 1
+            fi
+
+            # Validate VERSION exists in the list
+            if ! grep -qFx "$VERSION" /tmp/all-versions.txt; then
+              echo "::error::Target version $VERSION not found in release list - ensure v$VERSION release exists"
+              exit 1
+            fi
+
+            # Validate VERSION > PREV_STABLE using semver sort
+            SORTED_PAIR=$(printf "%s\n%s" "$PREV_STABLE" "$VERSION" | sort -V)
+            OLDER=$(echo "$SORTED_PAIR" | head -n1)
+            if [ "$OLDER" != "$PREV_STABLE" ]; then
+              echo "::error::Target version $VERSION is not greater than previous stable $PREV_STABLE - cannot promote an older version to stable"
               exit 1
             fi
 
