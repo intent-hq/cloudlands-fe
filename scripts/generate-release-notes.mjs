@@ -40,13 +40,41 @@ function parseArgs() {
 }
 
 /**
+ * Resolve a git ref (tag, branch, or SHA) to a commit SHA
+ * @param {string} owner
+ * @param {string} repo
+ * @param {string} ref
+ * @param {string} token
+ * @returns {Promise<string>}
+ */
+async function resolveCommitSha(owner, repo, ref, token) {
+  const url = `https://api.github.com/repos/${owner}/${repo}/commits/${ref}`;
+
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'intent-release-notes-generator',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub API error resolving ${ref}: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.sha;
+}
+
+/**
  * Fetch commits from GitHub compare API
  * @param {string} owner
  * @param {string} repo
  * @param {string} base
  * @param {string} head
  * @param {string} token
- * @returns {Promise<Array<{ commit: { message: string } }>>}
+ * @returns {Promise<Array<{ commit: { message: string }, sha: string }>>}
  */
 async function fetchCommits(owner, repo, base, head, token) {
   const commits = [];
@@ -55,11 +83,12 @@ async function fetchCommits(owner, repo, base, head, token) {
 
   while (true) {
     const url = `https://api.github.com/repos/${owner}/${repo}/compare/${base}...${head}?per_page=${perPage}&page=${page}`;
-    
+
     const response = await fetch(url, {
       headers: {
-        'Authorization': `token ${token}`,
-        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
         'User-Agent': 'intent-release-notes-generator',
       },
     });
@@ -69,13 +98,19 @@ async function fetchCommits(owner, repo, base, head, token) {
     }
 
     const data = await response.json();
-    
+
     if (data.commits && data.commits.length > 0) {
       commits.push(...data.commits);
-    }
 
-    // GitHub compare API returns all commits in one response, not paginated
-    break;
+      // If we got fewer commits than requested, we've reached the end
+      if (data.commits.length < perPage) {
+        break;
+      }
+
+      page++;
+    } else {
+      break;
+    }
   }
 
   return commits;
@@ -137,14 +172,21 @@ async function main() {
 
   // Write manifest if requested
   if (args['manifest-out']) {
+    // Resolve refs to actual commit SHAs
+    console.log('Resolving commit SHAs for manifest...');
+    const [feSha, intentdSha] = await Promise.all([
+      resolveCommitSha('intent-hq', 'cloudlands-fe', args['fe-head'], token),
+      resolveCommitSha('intent-hq', 'intentd', args['intentd-head'], token),
+    ]);
+
     const manifest = {
       version: args.version,
       feTag: args['fe-head'],
-      feSha: feCommits.length > 0 ? feCommits[feCommits.length - 1].sha : args['fe-head'],
-      intentdSha: args['intentd-head'],
+      feSha,
+      intentdSha,
       generatedAt: new Date().toISOString(),
     };
-    
+
     writeFileSync(args['manifest-out'], JSON.stringify(manifest, null, 2) + '\n');
     console.log(`✅ Manifest written to ${args['manifest-out']}`);
   }

@@ -46,13 +46,12 @@ export function shouldSkipCommit(parsed) {
     return true;
   }
   
-  // Skip version bump commits (common patterns)
+  // Skip version bump commits (common patterns in subject line)
   const versionBumpPatterns = [
     /^bump version to/i,
-    /^chore: bump version/i,
     /^version \d+\.\d+\.\d+/i,
   ];
-  
+
   return versionBumpPatterns.some(pattern => pattern.test(parsed.subject));
 }
 
