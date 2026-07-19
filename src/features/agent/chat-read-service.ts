@@ -36,7 +36,11 @@ import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
 import type { AgentMessage } from "$shared/types";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
-import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  initializeChatRequested,
+  transcriptHydrationStarted,
+  transcriptHydrationSettled,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
 import {
   bulkUpsertSessions,
   upsertSession,
@@ -60,6 +64,10 @@ const inFlight = new Map<string, Promise<void>>();
 export async function loadChatTranscript(agentId: string): Promise<void> {
   const pending = inFlight.get(agentId);
   if (pending) return pending;
+
+  // Dispatch loading status BEFORE setting inFlight to ensure status is
+  // marked loading even for coalesced requests
+  appStore.dispatch(transcriptHydrationStarted(agentId));
 
   const run = (async () => {
     try {
@@ -134,6 +142,8 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
     } catch (error) {
       logger.error("Failed to load agent conversation transcript", error);
     } finally {
+      // Always mark as settled, whether success or error (errors are swallowed)
+      appStore.dispatch(transcriptHydrationSettled(agentId));
       inFlight.delete(agentId);
     }
   })();

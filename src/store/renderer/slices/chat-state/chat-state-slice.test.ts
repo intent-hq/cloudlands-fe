@@ -26,12 +26,15 @@ import {
   chatRebindEnded,
   chatTrackedWorkspaceSet,
   streamStatusReceived,
+  transcriptHydrationStarted,
+  transcriptHydrationSettled,
 } from './chat-state-slice';
 import {
   selectChatAgentState,
   selectChatError,
   selectChatIsStalled,
   selectChatLastMessageTime,
+  selectTranscriptHydration,
 } from './chat-state-selectors';
 import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -550,6 +553,38 @@ describe('chatState selectors', () => {
 
   it('selectChatLastMessageTime returns 0 by default', () => {
     expect(selectChatLastMessageTime.select(asStoreState(initialState), AGENT)).toBe(0);
+  });
+
+  // Transcript hydration tests
+  it('transcriptHydrationStarted sets status to loading', () => {
+    const state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
+    expect(state.byAgentId[AGENT].transcriptHydration).toBe('loading');
+  });
+
+  it('transcriptHydrationSettled sets status to settled', () => {
+    const loadingState = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
+    const settledState = chatStateReducer(loadingState, transcriptHydrationSettled(AGENT));
+    expect(settledState.byAgentId[AGENT].transcriptHydration).toBe('settled');
+  });
+
+  it('transcriptHydrationSettled works even if never started (error path)', () => {
+    const state = chatStateReducer(initialState, transcriptHydrationSettled(AGENT));
+    expect(state.byAgentId[AGENT].transcriptHydration).toBe('settled');
+  });
+
+  it('selectTranscriptHydration returns undefined by default', () => {
+    expect(selectTranscriptHydration.select(asStoreState(initialState), AGENT)).toBeUndefined();
+  });
+
+  it('selectTranscriptHydration returns loading after start', () => {
+    const state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
+    expect(selectTranscriptHydration.select(asStoreState(state), AGENT)).toBe('loading');
+  });
+
+  it('selectTranscriptHydration returns settled after completion', () => {
+    const loadingState = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
+    const settledState = chatStateReducer(loadingState, transcriptHydrationSettled(AGENT));
+    expect(selectTranscriptHydration.select(asStoreState(settledState), AGENT)).toBe('settled');
   });
 
 });

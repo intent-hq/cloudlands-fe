@@ -100,6 +100,7 @@
   selectChatReceivedFirstChunk,
   selectChatStatusEvents,
   selectChatStreamingStartTime,
+  selectTranscriptHydration,
 } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { selectWorkspaceNavigationMainPanel } from '$store/renderer/slices/workspace-navigation/workspace-navigation-selectors';
   import { appClient } from '$lib/client';
@@ -317,6 +318,7 @@
   const agentIsResponding$ = selectAgentIsResponding(agentIdStore);
   // Canonical "agent is running" gate for idle-only affordances (next-steps links).
   const agentIsRunning$ = selectAgentIsRunning(agentIdStore);
+  const transcriptHydration$ = selectTranscriptHydration(agentIdStore);
   const isDelegatedBackgroundTaskAgent = $derived(
     isDelegatedBackgroundTaskSession($agentSession$),
   );
@@ -2870,7 +2872,7 @@
         </a>
       {/if}
 
-      {#if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt}
+      {#if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled'}
         {#if isChiefWorkspace}
           <ChiefChatEmptyState onSelect={handleSelectSuggestedPrompt} />
         {:else}
@@ -2902,7 +2904,7 @@
             skipWorktree={onboardingContext.skipWorktree}
           />
         </div>
-      {:else if !$agentSession$ && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
+      {:else if (!$agentSession$ || $transcriptHydration$ !== 'settled') && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
         <!-- Show setup card even while session is loading -->
         {#if isInitialWorkspaceAgent && onboardingContext}
           <div class="pt-16 pb-6">
@@ -2929,7 +2931,7 @@
             />
           </div>
         {/if}
-        <!-- Skeleton loading state when session is not yet initialized -->
+        <!-- Skeleton loading state when session is not yet initialized or transcript is loading -->
         <div class="flex flex-col gap-4 p-4 w-full">
           <!-- User message skeleton -->
           <div class="flex justify-end">

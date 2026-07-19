@@ -48,6 +48,7 @@ import {
   selectAgentIsResponding,
   selectAgentIsThinking,
 } from "$store/renderer/slices/agent-session/agent-session-selectors";
+import { selectTranscriptHydration } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import { loadChatTranscript } from "./chat-read-service";
 import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
 
@@ -521,4 +522,69 @@ describe("chatReadService (fake seam, real store)", () => {
     // seedStreamFromSnapshot should not be called when no in-flight message.
     expect(seedStreamFromSnapshot).not.toHaveBeenCalled();
   });
+
+  // Transcript hydration status tracking tests
+  it("dispatches loading→settled on successful load", async () => {
+    const agentId = "agent-hydration-success";
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
+    agentsApi.getConversation.mockResolvedValueOnce(
+      conversation([makeMessage("m1", "hello")]) as never,
+    );
+
+    // Before load starts, status is undefined
+    expect(selectTranscriptHydration.select(appStore.state, agentId)).toBeUndefined();
+
+    const loadPromise = loadChatTranscript(agentId);
+
+    // Immediately after call (synchronously), status should be 'loading'
+    expect(selectTranscriptHydration.select(appStore.state, agentId)).toBe("loading");
+
+    await loadPromise;
+
+    // After completion, status should be 'settled'
+    expect(selectTranscriptHydration.select(appStore.state, agentId)).toBe("settled");
+  });
+
+  it("dispatches loading→settled even on error (errors are swallowed)", async () => {
+    const agentId = "agent-hydration-error";
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
+    agentsApi.getConversation.mockRejectedValueOnce(new Error("network failure") as never);
+
+    expect(selectTranscriptHydration.select(appStore.state, agentId)).toBeUndefined();
+
+    const loadPromise = loadChatTranscript(agentId);
+    expect(selectTranscriptHydration.select(appStore.state, agentId)).toBe("loading");
+
+    await loadPromise;
+
+    // Even on error, status should be 'settled' (errors are swallowed in finally)
+    expect(selectTranscriptHydration.select(appStore.state, agentId)).toBe("settled");
+  });
+
+  it("coalesced loads share hydration status correctly", async () => {
+    const agentId = "agent-hydration-coalesced";
+    agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
+    agentsApi.getConversation.mockResolvedValue(
+      conversation([makeMessage("c1", "shared")]) as never,
+    );
+
+    expect(selectTranscriptHydration.select(appStore.state, agentId)).toBeUndefined();
+
+    const [p1, p2, p3] = [
+      loadChatTranscript(agentId),
+      loadChatTranscript(agentId),
+      loadChatTranscript(agentId),
+    ];
+
+    // All see loading status immediately
+    expect(selectTranscriptHydration.select(appStore.state, agentId)).toBe("loading");
+
+    await Promise.all([p1, p2, p3]);
+
+    // All complete with settled status
+    expect(selectTranscriptHydration.select(appStore.state, agentId)).toBe("settled");
+    // Only one network call happened (coalesced)
+    expect(agentsApi.getConversation).toHaveBeenCalledTimes(1);
+  });
 });
+

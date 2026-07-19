@@ -40,6 +40,12 @@ export interface SendMessageOptions {
 export type SerializableContextItem = Omit<ChatInputContextItem, 'file'>;
 
 /**
+ * Transcript hydration status: 'loading' when a transcript fetch is in flight,
+ * 'settled' when it completes (success or error). Defaults to undefined (not yet started).
+ */
+export type TranscriptHydrationStatus = 'loading' | 'settled';
+
+/**
  * Serializable per-agent chat state stored in Redux.
  * Serializable per-agent chat state without non-serializable fields
  * (those stay in the saga).
@@ -71,6 +77,13 @@ export interface ChatAgentState {
    * clear the fresh turn's streaming flags. Consumed once by handleAgentIdle.
    */
   idleReconcileSuppressed: boolean;
+  /**
+   * Transcript hydration status for this agent. Undefined means hydration has not
+   * started; 'loading' means a fetch is in flight; 'settled' means the fetch completed
+   * (success or error). Gates the welcome page: skeleton shows while loading, welcome
+   * shows only when settled with zero messages.
+   */
+  transcriptHydration?: TranscriptHydrationStatus;
 }
 
 /**
