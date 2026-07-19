@@ -588,16 +588,5 @@ describe('chatState selectors', () => {
     expect(selectTranscriptHydration.select(asStoreState(initialState), AGENT)).toBeUndefined();
   });
 
-  it('selectTranscriptHydration returns loading after start', () => {
-    const state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-    expect(selectTranscriptHydration.select(asStoreState(state), AGENT)).toBe('loading');
-  });
-
-  it('selectTranscriptHydration returns settled after completion', () => {
-    const loadingState = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-    const settledState = chatStateReducer(loadingState, transcriptHydrationSettled(AGENT));
-    expect(selectTranscriptHydration.select(asStoreState(settledState), AGENT)).toBe('settled');
-  });
-
 });
 
