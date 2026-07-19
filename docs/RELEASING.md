@@ -72,8 +72,8 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
    # Inspect the release manifest (captures intentd SHA and version)
    curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/release-manifest.json" | jq .
 
-   # Verify intentd tag was created
-   gh api "repos/intent-hq/intentd/git/refs/tags/v${VERSION}" --jq '.object.sha'
+   # Verify intentd tag was created and view the tag reference
+   gh api "repos/intent-hq/intentd/git/refs/tags/v${VERSION}" --jq '.ref'
    ```
 
 4. **Verify the rolling beta channel**
@@ -216,7 +216,7 @@ If the automated **Release Stable** workflow fails and cannot be fixed by re-run
 
    # Upload new assets to stable (latest-mac.yml last for atomic switch)
    gh release upload stable --repo intent-hq/cloudlands-releases --clobber \
-     *.dmg *.zip *.blockmap
+     *.dmg *.zip *.blockmap release-manifest.json
    gh release upload stable --repo intent-hq/cloudlands-releases --clobber \
      latest-mac.yml
    ```
