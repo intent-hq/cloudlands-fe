@@ -261,7 +261,7 @@
   {#if !$hasLoaded$}
     <!-- Show skeleton placeholders while loading -->
     <div class="pt-2">
-      {#each Array(3) as _, i (i)}
+      {#each Array(5) as _, i (i)}
         <WorkspaceCardSkeleton />
       {/each}
     </div>
