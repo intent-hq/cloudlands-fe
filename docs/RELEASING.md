@@ -44,7 +44,7 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
 
    Enter the version number in semver format (e.g., `2.0.5`). The workflow validates the format and checks that the tag doesn't already exist.
 
-   **Optional:** For the **first-ever release** (when no previous versioned releases exist), provide the `intentd_base_sha` workflow input. This is the baseline intentd commit SHA for computing release notes (e.g., the intentd SHA from the last manual beta or a chosen starting point). After the first release, the workflow auto-resolves the base SHA using the previous intentd tag or the `release-manifest.json` asset from the prior release.
+   **Optional:** Provide the `intentd_base_sha` workflow input when the previous release has no intentd tag and no `release-manifest.json` (e.g., first automated release after manual releases, or a gap in the release sequence). This is the baseline intentd commit SHA for computing release notes. The workflow auto-resolves the base SHA from: (1) intentd tag matching the previous cloudlands-fe release, (2) `release-manifest.json` from the previous release, or (3) the `intentd_base_sha` input. If all three fail, the workflow errors with a clear message requiring the input.
 
 2. **Wait for the build**
 
@@ -120,7 +120,8 @@ After verifying a beta release, promote it to the stable channel using the **Rel
 
    The workflow automatically:
    - Downloads all assets from the versioned release `v{VERSION}`
-   - Uploads them to the rolling `stable` release tag (replacing old assets atomically)
+   - Uploads new assets to the rolling `stable` release tag with `--clobber` (versioned assets first, then `latest-mac.yml` last for atomic feed switch)
+   - Deletes old versioned assets from the previous stable promotion (only after new assets are uploaded and live)
    - Verifies the `sha512` hash in `latest-mac.yml` matches the versioned release (with retries for CDN propagation)
    - Aggregates release notes from all versions in the range `(prevStable, VERSION]`
    - Updates the stable release body with the aggregated notes
@@ -181,9 +182,9 @@ Update the token's permissions in GitHub settings. Note: the workflow is idempot
 
 ### Release Notes Generation Fails
 
-**Symptom:** "Cannot resolve intentd base SHA" error on the first release.
+**Symptom:** Workflow fails with "Could not resolve intentd base SHA. This is the first release and requires the intentd_base_sha workflow input."
 
-**Fix:** The workflow requires the `intentd_base_sha` input for the first release. Re-run with a baseline intentd commit SHA (e.g., the intentd SHA from the last manual beta or a chosen starting point). After the first release, the workflow auto-resolves the base using the previous intentd tag or `release-manifest.json`.
+**Fix:** The workflow cannot find an intentd tag matching the previous cloudlands-fe release, and the previous release has no `release-manifest.json` asset, and no `intentd_base_sha` input was provided. Re-run the workflow and provide the `intentd_base_sha` input — the baseline intentd commit SHA for computing release notes (e.g., the intentd SHA from the last manual beta or the intentd commit used in the previous release). Future releases will auto-resolve the base from the intentd tag or manifest.
 
 ### Stable Promotion SHA Mismatch
 
