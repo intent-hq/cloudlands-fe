@@ -247,14 +247,19 @@
                     class="flex items-center gap-1 text-warning text-xs shrink-0"
                     title="Failed — will retry"
                   >
-                    <Fa icon={faRotateRight} class="w-3 h-3" />
+                    <div aria-hidden="true">
+                      <Fa icon={faRotateRight} class="w-3 h-3" />
+                    </div>
+                    <span class="sr-only">Failed — will retry</span>
                   </div>
                 {/if}
                 <button
                   class="flex-1 text-left truncate cursor-pointer"
                   transition:slide={{ axis: 'y', duration: 200 }}
-                  onclick={() => startEdit(message)}>{message.content}</button
+                  onclick={() => startEdit(message)}
                 >
+                  {message.requeuedAfterFailure ? '(Failed — will retry) ' : ''}{message.content}
+                </button>
                 {#if !disabled}
                   <div
                     class="flex items-center gap-1 opacity-30 group-hover:opacity-100 transition-opacity"
