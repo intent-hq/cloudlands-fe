@@ -79,9 +79,9 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   try {
     appStore.dispatch(transcriptHydrationStarted(agentId));
   } catch (error) {
-    // If dispatch throws, clean up inFlight and resolve the promise
+    // If dispatch throws, clean up inFlight but do NOT resolve the promise
+    // (coalesced callers should see the failure, not a fake success)
     inFlight.delete(agentId);
-    resolveRun();
     throw error;
   }
 

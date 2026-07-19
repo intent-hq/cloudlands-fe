@@ -1,0 +1,3 @@
+**Re: Skeleton persistence guard (discussion_r3610798861)**
+
+Fixed in ac81987b. Now checking `auggieSessionId !== undefined` in the skeleton branch condition. When backendSessionId exists (session has had messages), the skeleton remains visible even if hydration settled with zero messages, avoiding an incorrect blank/welcome UI on failed hydration.
