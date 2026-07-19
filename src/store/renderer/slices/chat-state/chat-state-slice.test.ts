@@ -26,12 +26,15 @@ import {
   chatRebindEnded,
   chatTrackedWorkspaceSet,
   streamStatusReceived,
+  transcriptHydrationStarted,
+  transcriptHydrationSettled,
 } from './chat-state-slice';
 import {
   selectChatAgentState,
   selectChatError,
   selectChatIsStalled,
   selectChatLastMessageTime,
+  selectTranscriptHydration,
 } from './chat-state-selectors';
 import { agentStreamUpdateReceived } from '../workspace-agents/workspace-agents-slice';
 import { workspaceDeleted } from '../workspace-lifecycle/workspace-lifecycle-slice';
@@ -550,6 +553,39 @@ describe('chatState selectors', () => {
 
   it('selectChatLastMessageTime returns 0 by default', () => {
     expect(selectChatLastMessageTime.select(asStoreState(initialState), AGENT)).toBe(0);
+  });
+
+  // Transcript hydration tests
+  it('selectTranscriptHydration returns loading after transcriptHydrationStarted', () => {
+    const state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
+    expect(selectTranscriptHydration.select(asStoreState(state), AGENT)).toBe('loading');
+  });
+
+  it('transcriptHydrationStarted creates agent entry with correct agentId', () => {
+    const state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
+    const agentState = selectChatAgentState.select(asStoreState(state), AGENT);
+    expect(agentState.agentId).toBe(AGENT);
+  });
+
+  it('selectTranscriptHydration returns settled after transcriptHydrationSettled', () => {
+    const loadingState = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
+    const settledState = chatStateReducer(loadingState, transcriptHydrationSettled(AGENT));
+    expect(selectTranscriptHydration.select(asStoreState(settledState), AGENT)).toBe('settled');
+  });
+
+  it('transcriptHydrationSettled works even if never started (error path)', () => {
+    const state = chatStateReducer(initialState, transcriptHydrationSettled(AGENT));
+    expect(selectTranscriptHydration.select(asStoreState(state), AGENT)).toBe('settled');
+  });
+
+  it('transcriptHydrationSettled creates agent entry with correct agentId', () => {
+    const state = chatStateReducer(initialState, transcriptHydrationSettled(AGENT));
+    const agentState = selectChatAgentState.select(asStoreState(state), AGENT);
+    expect(agentState.agentId).toBe(AGENT);
+  });
+
+  it('selectTranscriptHydration returns undefined by default', () => {
+    expect(selectTranscriptHydration.select(asStoreState(initialState), AGENT)).toBeUndefined();
   });
 
 });
