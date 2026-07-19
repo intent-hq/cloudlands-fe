@@ -7,6 +7,10 @@ on:
         description: 'Version number (e.g., 1.0.0)'
         required: true
         type: string
+      intentd_base_sha:
+        description: 'Bootstrap: intentd base commit SHA for first release (when no previous tag/manifest exists)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -55,7 +59,7 @@ jobs:
       - name: Check for duplicate version tag
         run: |
           VERSION="${{ inputs.version }}"
-          if git ls-remote --tags origin | grep -q "refs/tags/v${VERSION}$"; then
+          if git ls-remote --tags origin | grep -qF "refs/tags/v${VERSION}"; then
             echo "::error::Tag v${VERSION} already exists on origin. Use a different version number."
             exit 1
           fi
@@ -92,6 +96,23 @@ jobs:
           ref: main
           token: ${{ secrets.INTENTD_READ_PAT }}
           path: intentd-repo
+
+      - name: Capture intentd SHA and check for duplicate tag
+        id: intentd_info
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          cd intentd-repo
+          INTENTD_SHA=$(git rev-parse HEAD)
+          echo "sha=${INTENTD_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Captured intentd SHA: ${INTENTD_SHA}"
+
+          # Check if tag already exists on intentd
+          if git ls-remote --tags origin | grep -qF "refs/tags/v${VERSION}"; then
+            echo "::error::Tag v${VERSION} already exists on intent-hq/intentd. Use a different version number."
+            exit 1
+          fi
+          echo "Tag v${VERSION} does not exist on intentd, proceeding"
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -156,6 +177,173 @@ jobs:
           echo "Built artifacts:"
           find dist-electron -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" -o -name "latest-mac.yml" \) -exec ls -lh {} \;
 
+      - name: Find previous release
+        id: prev_release
+        env:
+          GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          # Find the previous versioned release (highest vX.Y.Z tag strictly less than current version)
+          # Node.js performs portable semver comparison (BSD sort lacks -V)
+          # Capture grep output first to handle potential empty results, then pipe to node
+          TAGS=$(gh release list --repo intent-hq/cloudlands-releases --limit 100 --json tagName --jq '.[].tagName' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || echo "")
+
+          if [ -z "$TAGS" ]; then
+            PREV_RELEASE=""
+          else
+            PREV_RELEASE=$(echo "$TAGS" | node -e '
+                const versionStr = process.env.VERSION;
+                const currentMatch = versionStr.match(/^(\d+)\.(\d+)\.(\d+)/);
+                if (!currentMatch) {
+                  console.error("::error::Invalid VERSION format: " + versionStr);
+                  process.exit(1);
+                }
+                const current = [+currentMatch[1], +currentMatch[2], +currentMatch[3]];
+                const lines = require("fs").readFileSync(0, "utf-8").trim().split("\n").filter(Boolean);
+                const candidates = lines
+                  .map(tag => {
+                    const match = tag.match(/^v(\d+)\.(\d+)\.(\d+)$/);
+                    if (!match) return null;
+                    return { tag, version: [+match[1], +match[2], +match[3]] };
+                  })
+                  .filter(Boolean)
+                  .filter(({version: [maj, min, pat]}) => {
+                    if (maj < current[0]) return true;
+                    if (maj > current[0]) return false;
+                    if (min < current[1]) return true;
+                    if (min > current[1]) return false;
+                    return pat < current[2];
+                  })
+                  .sort((a, b) => {
+                    for (let i = 0; i < 3; i++) {
+                      if (b.version[i] !== a.version[i]) return b.version[i] - a.version[i];
+                    }
+                    return 0;
+                  });
+                console.log(candidates[0]?.tag || "");
+              ')
+          fi
+
+          if [ -z "$PREV_RELEASE" ]; then
+            echo "No previous versioned release found"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Previous versioned release: ${PREV_RELEASE}"
+            echo "tag=${PREV_RELEASE}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve intentd base SHA for release notes
+        id: intentd_base
+        env:
+          GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
+          VERSION: ${{ inputs.version }}
+          INTENTD_BASE_SHA_INPUT: ${{ inputs.intentd_base_sha }}
+          PREV_RELEASE: ${{ steps.prev_release.outputs.tag }}
+        run: |
+          set -e
+
+          if [ -z "$PREV_RELEASE" ]; then
+            echo "No previous versioned release found on cloudlands-releases"
+            INTENTD_BASE=""
+          else
+            echo "Previous versioned release: ${PREV_RELEASE}"
+
+            # Resolution order: intentd tag v{prev} → manifest → input
+
+            # Try 1: Check if intentd has a matching tag
+            cd intentd-repo
+            if git ls-remote --tags origin | grep -qF "refs/tags/${PREV_RELEASE}"; then
+              echo "Found intentd tag ${PREV_RELEASE}"
+              INTENTD_BASE="${PREV_RELEASE}"
+            else
+              echo "No intentd tag ${PREV_RELEASE}, trying manifest..."
+              cd ..
+
+              # Try 2: Download release-manifest.json from previous release using gh API
+              if gh release download "${PREV_RELEASE}" --repo intent-hq/cloudlands-releases \
+                  --pattern release-manifest.json --dir . 2>/dev/null; then
+                INTENTD_BASE=$(jq -r '.intentdSha // empty' release-manifest.json)
+                if [ -n "$INTENTD_BASE" ]; then
+                  echo "Found intentd SHA in manifest: ${INTENTD_BASE}"
+                else
+                  echo "Manifest exists but has no intentdSha field"
+                  INTENTD_BASE=""
+                fi
+              else
+                echo "No manifest found for ${PREV_RELEASE}"
+                INTENTD_BASE=""
+              fi
+            fi
+          fi
+
+          # Fallback to workflow input if no base found
+          if [ -z "$INTENTD_BASE" ] && [ -n "$INTENTD_BASE_SHA_INPUT" ]; then
+            echo "Using intentd_base_sha input: ${INTENTD_BASE_SHA_INPUT}"
+            INTENTD_BASE="$INTENTD_BASE_SHA_INPUT"
+          fi
+
+          # Fail if still no base
+          if [ -z "$INTENTD_BASE" ]; then
+            echo "::error::Could not resolve intentd base SHA. This is the first release and requires the intentd_base_sha workflow input."
+            echo "::error::Please re-run the workflow with an intentd base commit SHA (e.g., the intentd SHA from the previous beta release)."
+            exit 1
+          fi
+
+          echo "intentd_base=${INTENTD_BASE}" >> "$GITHUB_OUTPUT"
+          echo "✅ Resolved intentd base: ${INTENTD_BASE}"
+
+      - name: Generate release notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
+          GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
+          VERSION: ${{ inputs.version }}
+          PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
+          INTENTD_BASE: ${{ steps.intentd_base.outputs.intentd_base }}
+          INTENTD_HEAD: ${{ steps.intentd_info.outputs.sha }}
+        run: |
+          if [ -z "$PREV_FE_TAG" ]; then
+            echo "::error::No previous versioned release found on cloudlands-releases. Cannot generate release notes."
+            exit 1
+          fi
+
+          # FE head uses the current commit SHA, not the tag (which hasn't been pushed yet)
+          FE_HEAD_SHA=$(git rev-parse HEAD)
+
+          echo "Generating release notes: ${PREV_FE_TAG}...v${VERSION}"
+          echo "  FE: ${PREV_FE_TAG}...${FE_HEAD_SHA}"
+          echo "  intentd: ${INTENTD_BASE}...${INTENTD_HEAD}"
+
+          node scripts/generate-release-notes.mjs \
+            --version "${VERSION}" \
+            --fe-base "${PREV_FE_TAG}" \
+            --fe-head "${FE_HEAD_SHA}" \
+            --intentd-base "${INTENTD_BASE}" \
+            --intentd-head "${INTENTD_HEAD}" \
+            --out release-notes.md \
+            --manifest-out release-manifest.json
+
+          echo "Generated release notes:"
+          cat release-notes.md
+
+      - name: Push intentd tag
+        env:
+          RELEASE_PAT: ${{ steps.token.outputs.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          cd intentd-repo
+
+          # Set git identity for annotated tag
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Configure extraheader auth (avoids token in URL logs)
+          git config http.https://github.com/.extraheader "AUTHORIZATION: Bearer ${RELEASE_PAT}"
+
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          git push origin "refs/tags/v${VERSION}"
+          echo "✅ Pushed tag v${VERSION} to intent-hq/intentd"
+
       - name: Publish to GitHub Releases (versioned tag)
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
@@ -165,13 +353,14 @@ jobs:
           gh release create "v${VERSION}" \
             --repo intent-hq/cloudlands-releases \
             --title "Intent v${VERSION}" \
-            --notes "Intent beta release v${VERSION}" \
+            --notes-file release-notes.md \
             --draft=false \
             --prerelease \
             dist-electron/*.dmg \
             dist-electron/*.zip \
             dist-electron/*.blockmap \
-            dist-electron/latest-mac.yml
+            dist-electron/latest-mac.yml \
+            release-manifest.json
 
       - name: Publish to GitHub Releases (rolling beta tag)
         env:
@@ -202,6 +391,10 @@ jobs:
             dist-electron/*.zip \
             dist-electron/*.blockmap \
             dist-electron/latest-mac.yml
+
+          # Update beta release body to match versioned release notes
+          gh release edit beta --repo intent-hq/cloudlands-releases \
+            --notes-file release-notes.md
 
       - name: Push tag to cloudlands-fe
         run: |
