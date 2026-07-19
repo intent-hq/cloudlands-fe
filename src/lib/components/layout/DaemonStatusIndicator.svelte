@@ -65,8 +65,13 @@
     if (!lastUpdated) return uptimeSeconds;
 
     const lastUpdateTime = new Date(lastUpdated).getTime();
+    if (isNaN(lastUpdateTime)) {
+      console.warn('Invalid lastUpdated timestamp:', lastUpdated);
+      return uptimeSeconds; // Fallback to base uptime
+    }
+
     const now = Date.now();
-    const elapsedSeconds = Math.floor((now - lastUpdateTime) / 1000);
+    const elapsedSeconds = Math.max(0, Math.floor((now - lastUpdateTime) / 1000));
 
     return uptimeSeconds + elapsedSeconds;
   }
@@ -89,7 +94,10 @@
         liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$);
       }, 1000);
 
-      return () => clearInterval(interval);
+      return () => {
+        clearInterval(interval);
+        liveUptimeSeconds = undefined;
+      };
     } else {
       liveUptimeSeconds = undefined;
     }
@@ -183,7 +191,7 @@
             {#if liveUptimeSeconds !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">Uptime</span>
-                <span class="font-mono text-xs">{formatUptime(liveUptimeSeconds)}</span>
+                <span class="font-mono text-xs" aria-live="off">{formatUptime(liveUptimeSeconds)}</span>
               </div>
             {/if}
 
