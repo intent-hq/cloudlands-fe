@@ -2873,6 +2873,7 @@
       {/if}
 
       {#if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && $agentSession$.backendSessionId === null}
+        <!-- Welcome page: settled hydration + zero messages + never-used session (backendSessionId === null) -->
         {#if isChiefWorkspace}
           <ChiefChatEmptyState onSelect={handleSelectSuggestedPrompt} />
         {:else}
@@ -2905,7 +2906,7 @@
           />
         </div>
       {:else if (!$agentSession$ || $transcriptHydration$ !== 'settled' || $agentSession$.backendSessionId !== null) && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
-        <!-- Show setup card even while session is loading -->
+        <!-- Skeleton: hydration not settled OR existing session (covers failed-hydration case: settled + empty + backendSessionId !== null) -->
         {#if isInitialWorkspaceAgent && onboardingContext}
           <div class="pt-16 pb-6">
             <WorkspaceSetupCard
