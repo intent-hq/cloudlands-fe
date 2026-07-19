@@ -223,6 +223,20 @@ describe('Zod Schemas', () => {
       };
       expect(() => AgentSessionSchema.parse(session)).not.toThrow();
     });
+
+    it('should accept null model for default model case', () => {
+      const session = {
+        id: 'agent-123',
+        workspaceId: '550e8400-e29b-41d4-a716-446655440000',
+        messages: [],
+        status: 'active',
+        model: null,
+      };
+      expect(() => AgentSessionSchema.parse(session)).not.toThrow();
+      expect(() => validateAgentSession(session)).not.toThrow();
+      const validated = validateAgentSession(session);
+      expect(validated.model).toBe(null);
+    });
   });
 
   describe('Validation Functions', () => {

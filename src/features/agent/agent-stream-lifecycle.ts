@@ -1428,12 +1428,13 @@ export async function sendMessage(
                       },
                     );
 
+                    const wireModel = (options.model ?? options.modelId ?? session.model) ?? undefined;
                     const response = await invoke<any>(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, {
                       agentId,
                       sessionId: session.id,
                       content,
                       workspaceId: workspace.id,
-                      model: options.model || options.modelId || session.model,
+                      model: wireModel,
                       contextReferences: options.contextReferences,
                       imageBlocks: options.imageBlocks,
                       fileBlocks: options.fileBlocks,
