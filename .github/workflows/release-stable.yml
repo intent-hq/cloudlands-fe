@@ -129,24 +129,46 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
+          # shellcheck disable=SC2086
+          # Fetch versioned release sha512
           VERSIONED_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/latest-mac.yml" | awk '/^sha512:/{print $2; exit}')
           if [ -z "$VERSIONED_SHA" ]; then
             echo "::error::Failed to fetch or parse sha512 from versioned release v${VERSION}"
             exit 1
           fi
 
-          STABLE_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml" | awk '/^sha512:/{print $2; exit}')
-          if [ -z "$STABLE_SHA" ]; then
-            echo "::error::Failed to fetch or parse sha512 from stable release"
-            exit 1
-          fi
+          # Retry stable feed fetch with exponential backoff (CDN propagation can take a few seconds)
+          MAX_RETRIES=5
+          RETRY_DELAY=2
+          for i in $(seq 1 "$MAX_RETRIES"); do
+            STABLE_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml?t=$(date +%s)" | awk '/^sha512:/{print $2; exit}')
 
-          if [ "$VERSIONED_SHA" = "$STABLE_SHA" ]; then
-            echo "✓ Stable feed sha512 matches versioned release ($VERSIONED_SHA)"
-          else
-            echo "::error::sha512 mismatch - versioned: $VERSIONED_SHA, stable: $STABLE_SHA"
-            exit 1
-          fi
+            if [ -z "$STABLE_SHA" ]; then
+              echo "::warning::Retry $i/$MAX_RETRIES: Failed to fetch or parse sha512 from stable release"
+              if [ "$i" -lt "$MAX_RETRIES" ]; then
+                sleep "$RETRY_DELAY"
+                RETRY_DELAY=$((RETRY_DELAY * 2))
+                continue
+              else
+                echo "::error::Failed to fetch stable sha512 after $MAX_RETRIES retries"
+                exit 1
+              fi
+            fi
+
+            if [ "$VERSIONED_SHA" = "$STABLE_SHA" ]; then
+              echo "✓ Stable feed sha512 matches versioned release ($VERSIONED_SHA) [attempt $i]"
+              break
+            else
+              echo "::warning::Retry $i/$MAX_RETRIES: sha512 mismatch - versioned: $VERSIONED_SHA, stable: $STABLE_SHA (likely CDN propagation delay)"
+              if [ "$i" -lt "$MAX_RETRIES" ]; then
+                sleep "$RETRY_DELAY"
+                RETRY_DELAY=$((RETRY_DELAY * 2))
+              else
+                echo "::error::sha512 mismatch after $MAX_RETRIES retries - versioned: $VERSIONED_SHA, stable: $STABLE_SHA"
+                exit 1
+              fi
+            fi
+          done
 
       - name: Build aggregated release notes
         env:
@@ -155,8 +177,8 @@ jobs:
           PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
           IS_FIRST: ${{ steps.stable_version.outputs.is_first_promotion }}
         run: |
-          # List all stable versioned releases (vX.Y.Z only, no prerelease/build)
-          gh release list --repo intent-hq/cloudlands-releases --limit 1000 --json tagName,isPrerelease \
+          # List all stable versioned releases (vX.Y.Z only, filtered by tag pattern)
+          gh release list --repo intent-hq/cloudlands-releases --limit 1000 --json tagName \
             --jq '.[] | select(.tagName | test("^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")) | .tagName' \
             | sed 's/^v//' \
             | sort -V -r > /tmp/all-versions.txt
