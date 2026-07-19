@@ -2872,7 +2872,7 @@
         </a>
       {/if}
 
-      {#if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled'}
+      {#if !isInitialWorkspaceAgent && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && $agentSession$ && !pendingInitialPrompt && $transcriptHydration$ === 'settled' && auggieSessionId === undefined}
         {#if isChiefWorkspace}
           <ChiefChatEmptyState onSelect={handleSelectSuggestedPrompt} />
         {:else}
@@ -2904,7 +2904,7 @@
             skipWorktree={onboardingContext.skipWorktree}
           />
         </div>
-      {:else if (!$agentSession$ || $transcriptHydration$ !== 'settled') && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
+      {:else if (!$agentSession$ || $transcriptHydration$ !== 'settled' || auggieSessionId !== undefined) && $agentMessages$.length === 0 && !$agentSessionIsStreaming$ && !pendingInitialPrompt}
         <!-- Show setup card even while session is loading -->
         {#if isInitialWorkspaceAgent && onboardingContext}
           <div class="pt-16 pb-6">

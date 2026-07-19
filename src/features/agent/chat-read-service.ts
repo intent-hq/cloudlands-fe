@@ -75,7 +75,15 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   inFlight.set(agentId, runPromise);
 
   // Dispatch loading status synchronously now that we're registered
-  appStore.dispatch(transcriptHydrationStarted(agentId));
+  // Wrap in try/catch to ensure cleanup if dispatch throws
+  try {
+    appStore.dispatch(transcriptHydrationStarted(agentId));
+  } catch (error) {
+    // If dispatch throws, clean up inFlight and resolve the promise
+    inFlight.delete(agentId);
+    resolveRun();
+    throw error;
+  }
 
   // Actually perform the work
   (async () => {
@@ -153,9 +161,14 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       // Errors are swallowed (don't reject the promise)
     } finally {
       // Always mark as settled, whether success or error (errors are swallowed)
-      appStore.dispatch(transcriptHydrationSettled(agentId));
-      inFlight.delete(agentId);
-      resolveRun();
+      // Wrap cleanup in try/finally to ensure inFlight.delete and resolveRun
+      // run even if the dispatch throws
+      try {
+        appStore.dispatch(transcriptHydrationSettled(agentId));
+      } finally {
+        inFlight.delete(agentId);
+        resolveRun();
+      }
     }
   })();
 

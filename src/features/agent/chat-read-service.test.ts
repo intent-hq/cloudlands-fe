@@ -586,5 +586,30 @@ describe("chatReadService (fake seam, real store)", () => {
     // Only one network call happened (coalesced)
     expect(agentsApi.getConversation).toHaveBeenCalledTimes(1);
   });
+
+  it("failed hydration for existing conversation marks settled with empty messages", async () => {
+    const agentId = "agent-existing-failed-hydration";
+    // Session exists (backendSessionId would be non-null) but hydration fails
+    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
+    agentsApi.getConversation.mockRejectedValueOnce(new Error("fetch failed") as never);
+
+    expect(selectTranscriptHydration.select(appStore.state, agentId)).toBeUndefined();
+
+    const loadPromise = loadChatTranscript(agentId);
+    expect(selectTranscriptHydration.select(appStore.state, agentId)).toBe("loading");
+
+    await loadPromise;
+
+    // After failure, status is 'settled' (errors are swallowed)
+    expect(selectTranscriptHydration.select(appStore.state, agentId)).toBe("settled");
+
+    // Messages remain empty (no upsert happened due to error)
+    const messages = selectAgentMessages.select(appStore.state, agentId);
+    expect(messages).toHaveLength(0);
+
+    // This is the case where ChatPanel should show skeleton (not welcome)
+    // because backendSessionId !== null (session exists) even though
+    // messages.length === 0 and transcriptHydration === 'settled'
+  });
 });
 
