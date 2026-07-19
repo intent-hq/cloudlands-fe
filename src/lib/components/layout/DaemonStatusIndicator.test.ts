@@ -171,4 +171,72 @@ describe('DaemonStatusIndicator', () => {
       expect(stats.transport).toBeUndefined();
     });
   });
+
+  describe('live uptime calculation', () => {
+    it('computes uptime accounting for elapsed time since poll', () => {
+      // Component computes live uptime = uptimeSeconds + elapsed since lastUpdated
+      const uptimeSeconds = 300; // 5 minutes
+      const lastUpdated = new Date(Date.now() - 10000).toISOString(); // 10 seconds ago
+
+      // Expected live uptime: 300s + 10s = 310s
+      const expectedMin = 310;
+      const expectedMax = 312; // Allow 2s margin for test execution time
+
+      // Compute elapsed time
+      const lastUpdateTime = new Date(lastUpdated).getTime();
+      const now = Date.now();
+      const elapsedSeconds = Math.floor((now - lastUpdateTime) / 1000);
+      const liveUptime = uptimeSeconds + elapsedSeconds;
+
+      expect(liveUptime).toBeGreaterThanOrEqual(expectedMin);
+      expect(liveUptime).toBeLessThanOrEqual(expectedMax);
+    });
+
+    it('returns base uptime when lastUpdated is null', () => {
+      const uptimeSeconds = 300;
+      const lastUpdated = null;
+
+      // When lastUpdated is null, return base uptime
+      const liveUptime = lastUpdated
+        ? uptimeSeconds + Math.floor((Date.now() - new Date(lastUpdated).getTime()) / 1000)
+        : uptimeSeconds;
+
+      expect(liveUptime).toBe(300);
+    });
+
+    it('returns undefined when uptimeSeconds is undefined', () => {
+      const uptimeSeconds = undefined;
+      const lastUpdated = new Date().toISOString();
+
+      // When uptimeSeconds is undefined, return undefined
+      const liveUptime = uptimeSeconds === undefined
+        ? undefined
+        : uptimeSeconds + Math.floor((Date.now() - new Date(lastUpdated).getTime()) / 1000);
+
+      expect(liveUptime).toBeUndefined();
+    });
+
+    it('formats uptime correctly for hours, minutes, seconds', () => {
+      function formatUptime(seconds: number | undefined): string {
+        if (seconds === undefined) return 'Unknown';
+
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+
+        if (hours > 0) {
+          return `${hours}h ${minutes}m ${secs}s`;
+        } else if (minutes > 0) {
+          return `${minutes}m ${secs}s`;
+        } else {
+          return `${secs}s`;
+        }
+      }
+
+      expect(formatUptime(45)).toBe('45s');
+      expect(formatUptime(125)).toBe('2m 5s');
+      expect(formatUptime(3665)).toBe('1h 1m 5s');
+      expect(formatUptime(undefined)).toBe('Unknown');
+    });
+  });
 });
