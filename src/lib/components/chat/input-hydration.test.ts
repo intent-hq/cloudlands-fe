@@ -8,7 +8,7 @@ import { resolveHydratedInputModel } from './input-hydration';
 
 describe('resolveHydratedInputModel', () => {
   it('prefers the restored session model over the fallback agent model', () => {
-    expect(resolveHydratedInputModel({ model: 'codex:gpt-5-codex' } as any, 'gpt5.4')).toBe(
+    expect(resolveHydratedInputModel({ model: 'codex:gpt-5-codex' }, 'gpt5.4')).toBe(
       'codex:gpt-5-codex',
     );
   });
@@ -18,10 +18,10 @@ describe('resolveHydratedInputModel', () => {
   });
 
   it('returns undefined when session has no persisted model (no client-side fallback)', () => {
-    expect(resolveHydratedInputModel({ model: undefined } as any, 'gpt5.4')).toBeUndefined();
+    expect(resolveHydratedInputModel({ model: undefined }, 'gpt5.4')).toBeUndefined();
   });
 
   it('returns session.model when it is null (BE persisted null)', () => {
-    expect(resolveHydratedInputModel({ model: null } as any, 'gpt5.4')).toBeNull();
+    expect(resolveHydratedInputModel({ model: null }, 'gpt5.4')).toBeNull();
   });
 });

@@ -633,7 +633,7 @@ export class UnifiedAgentFactory {
         agent_id: agent.id,
         workspace_id: agent.workspaceId,
         agent_name: agent.name,
-        agent_model: agent.model,
+        agent_model: agent.model ?? undefined,
         source: normalized.source,
       });
 

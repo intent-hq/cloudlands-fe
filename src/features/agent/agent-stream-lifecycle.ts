@@ -724,7 +724,7 @@ export async function sendMessage(
         workspace_id: workspace.id,
         message_length: content.length,
         agent_name: session.name,
-        agent_model: session.model,
+        agent_model: session.model ?? undefined,
       });
 
       // Store turn start time and current tool call count for duration/delta tracking
@@ -1140,7 +1140,7 @@ export async function sendMessage(
                             track('Agent Turn Completed', {
                               agent_id: agentId,
                               agent_name: session.name,
-                              agent_model: session.model,
+                              agent_model: session.model ?? undefined,
                               duration_ms: durationMs,
                             });
                             track('Agent Outcome Received', {
@@ -1153,7 +1153,7 @@ export async function sendMessage(
                                   : 'completed',
                               finish_reason: sendMsgOutcomeReason,
                               agent_name: session.name,
-                              agent_model: session.model,
+                              agent_model: session.model ?? undefined,
                               source: 'renderer',
                             });
                           } catch (trackingError) {
