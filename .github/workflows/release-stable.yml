@@ -139,6 +139,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
+          set -o pipefail
           cd /tmp/release-assets
 
           # Build allowlist of assets we just uploaded (don't delete these)
@@ -224,6 +225,7 @@ jobs:
           PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
           IS_FIRST: ${{ steps.stable_version.outputs.is_first_promotion }}
         run: |
+          set -o pipefail
           # List all stable versioned releases (vX.Y.Z only, filtered by tag pattern)
           gh release list --repo intent-hq/cloudlands-releases --limit 1000 --json tagName \
             --jq '.[] | select(.tagName | test("^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")) | .tagName' \
