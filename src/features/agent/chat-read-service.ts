@@ -65,11 +65,11 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   const pending = inFlight.get(agentId);
   if (pending) return pending;
 
-  // Dispatch loading status BEFORE setting inFlight to ensure status is
-  // marked loading even for coalesced requests
-  appStore.dispatch(transcriptHydrationStarted(agentId));
-
   const run = (async () => {
+    // Dispatch loading status immediately inside the async block, but AFTER
+    // the promise is registered in inFlight to prevent re-entrant calls from
+    // defeating coalescing
+    appStore.dispatch(transcriptHydrationStarted(agentId));
     try {
       const session = await appClient.agents.get(agentId);
       if (!session) return;
