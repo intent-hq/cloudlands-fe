@@ -156,29 +156,39 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
 });
 
 registerMockSeeder("workspaces", async ({ store, client }) => {
-  const workspaces = await client.workspaces.list({ includeArchived: true });
+  try {
+    const workspaces = await client.workspaces.list({ includeArchived: true });
 
-  store.dispatch(replaceWorkspaceList(workspaces));
-  store.dispatch(setWorkspaceHasLoaded(true));
+    store.dispatch(replaceWorkspaceList(workspaces));
 
-  const recentViews = await client.workspaces.recentViews();
-  store.dispatch(loadRecencyData({ lastViewedAt: recentViews }));
+    const recentViews = await client.workspaces.recentViews();
+    store.dispatch(loadRecencyData({ lastViewedAt: recentViews }));
 
-  // Auto-select the first non-archived workspace (skip archived since they're hidden by default).
-  // Fall back to workspaces[0] if all are archived (edge case).
-  const firstWorkspace =
-    workspaces.find((w) => w.status !== WorkspaceStatus.Archived) ?? workspaces[0];
-  if (firstWorkspace) {
-    // Only auto-select the first workspace if BOTH activeWorkspaceId AND currentTabId
-    // are unset (fresh boot). If either is already set (e.g. by route loader on reload),
-    // skip auto-selection entirely to avoid clobbering route-driven state.
-    const { workspace, tabState } = store.state;
-    const hasActiveWorkspace = workspace.activeWorkspaceId !== null;
-    const hasCurrentTab = tabState.currentTabId !== null;
+    // Auto-select the first non-archived workspace (skip archived since they're hidden by default).
+    // Fall back to workspaces[0] if all are archived (edge case).
+    const firstWorkspace =
+      workspaces.find((w) => w.status !== WorkspaceStatus.Archived) ?? workspaces[0];
+    if (firstWorkspace) {
+      // Only auto-select the first workspace if BOTH activeWorkspaceId AND currentTabId
+      // are unset (fresh boot). If either is already set (e.g. by route loader on reload),
+      // skip auto-selection entirely to avoid clobbering route-driven state.
+      const { workspace, tabState } = store.state;
+      const hasActiveWorkspace = workspace.activeWorkspaceId !== null;
+      const hasCurrentTab = tabState.currentTabId !== null;
 
-    if (!hasActiveWorkspace && !hasCurrentTab) {
-      store.dispatch(setActiveWorkspaceId(firstWorkspace.id));
-      store.dispatch(openWorkspaceTab(firstWorkspace.id));
+      if (!hasActiveWorkspace && !hasCurrentTab) {
+        store.dispatch(setActiveWorkspaceId(firstWorkspace.id));
+        store.dispatch(openWorkspaceTab(firstWorkspace.id));
+      }
     }
+  } catch (error) {
+    // Log the error but do not re-throw: keep the UI functional with an empty
+    // workspace list rather than blocking the entire app when the daemon is down.
+    console.error("Workspaces seeder failed:", error);
+  } finally {
+    // Always dispatch hasLoaded=true to unblock the sidebar skeleton, even when
+    // the daemon is unreachable. An empty workspace list with the "No workspaces yet"
+    // state is better than infinite skeletons.
+    store.dispatch(setWorkspaceHasLoaded(true));
   }
 });
