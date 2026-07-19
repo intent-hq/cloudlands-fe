@@ -26,7 +26,13 @@ export interface InitialRepoFormState {
   pendingPreviousWorkspace?: { id: string; title: string } | null;
 }
 
-export type LastSelectedRepoHydrationAction = 'wait' | 'skip' | 'restore';
+export type LastSelectedRepoHydrationAction = 'wait' | 'skip' | 'restore' | 'restore-recent';
+
+export interface WorkspaceInitializerRecentRepo {
+  path: string;
+  type: 'local' | 'github' | 'remote';
+  name: string;
+}
 
 export interface LastSelectedRepoHydrationInput {
   isHydrated: boolean;
@@ -35,6 +41,7 @@ export interface LastSelectedRepoHydrationInput {
   isFormPersistenceEnabled: boolean;
   currentRepoPath?: string;
   hasLastSelectedRepo: boolean;
+  recentRepos: WorkspaceInitializerRecentRepo[];
 }
 
 /**
@@ -92,9 +99,12 @@ export function getLastSelectedRepoHydrationAction({
   isFormPersistenceEnabled,
   currentRepoPath,
   hasLastSelectedRepo,
+  recentRepos,
 }: LastSelectedRepoHydrationInput): LastSelectedRepoHydrationAction {
   if (!isHydrated || alreadyHandled || hasPrefillData) return 'wait';
   if (!isFormPersistenceEnabled || currentRepoPath) return 'skip';
-  if (!hasLastSelectedRepo) return 'wait';
-  return 'restore';
+  if (hasLastSelectedRepo) return 'restore';
+  // Fall back to the most recent repo when lastSelectedRepo is unset
+  if (recentRepos.length > 0) return 'restore-recent';
+  return 'wait';
 }
