@@ -155,11 +155,13 @@
 
   // Get all descendants of the primary agent (transitive closure over parentAgentId)
   let allDescendantsOfPrimary = $derived.by(() => {
-    if (!primaryAgent) return new Set<string>();
+    // Short-circuit: only used in coordinator branch
+    if (!isCoordinator || !primaryAgent) return new Set<string>();
     const descendants = new Set<string>();
     const queue = [primaryAgent.id];
-    while (queue.length > 0) {
-      const parentId = queue.shift()!;
+    // Use index-based iteration to avoid O(n) shift() operations
+    for (let i = 0; i < queue.length; i++) {
+      const parentId = queue[i];
       for (const a of agents) {
         if (a.parentAgentId === parentId && !descendants.has(a.id)) {
           descendants.add(a.id);
@@ -187,6 +189,11 @@
   // All agents that are descendants of the primary agent (for avatar preview)
   let delegatedAgents = $derived(
     agents.filter((a) => a !== primaryAgent && allDescendantsOfPrimary.has(a.id)),
+  );
+
+  // Count of running/responding delegated agents
+  let runningDelegatedCount = $derived(
+    delegatedAgents.filter((a) => a.state === 'running' || a.state === 'responding').length,
   );
 
   // Spec note
@@ -303,8 +310,8 @@
               </div>
               <span class="text-subtle text-xs">
                 {delegatedCount} delegated agent{delegatedCount !== 1 ? 's' : ''}
-                {#if runningOtherCount > 0}
-                  <span class="text-emerald-500 font-medium">· {runningOtherCount} working</span>
+                {#if runningDelegatedCount > 0}
+                  <span class="text-emerald-500 font-medium">· {runningDelegatedCount} working</span>
                 {/if}
               </span>
             </button>

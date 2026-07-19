@@ -58,11 +58,14 @@ function getTopLevelAgents(agents: OverviewAgent[]): OverviewAgent[] {
 
 function getAllDescendantsOfPrimary(agents: OverviewAgent[]): Set<string> {
   const primary = getPrimaryAgent(agents);
-  if (!primary) return new Set();
+  const isCoordinator = primary?.specialist === 'spec-writer';
+  // Short-circuit: only used in coordinator branch
+  if (!isCoordinator || !primary) return new Set();
   const descendants = new Set<string>();
   const queue = [primary.id];
-  while (queue.length > 0) {
-    const parentId = queue.shift()!;
+  // Use index-based iteration to avoid O(n) shift() operations
+  for (let i = 0; i < queue.length; i++) {
+    const parentId = queue[i];
     for (const a of agents) {
       if (a.parentAgentId === parentId && !descendants.has(a.id)) {
         descendants.add(a.id);
@@ -85,6 +88,12 @@ function getOtherAgents(agents: OverviewAgent[]): OverviewAgent[] {
 
 function getDelegatedCount(agents: OverviewAgent[]): number {
   return getAllDescendantsOfPrimary(agents).size;
+}
+
+function getRunningDelegatedCount(agents: OverviewAgent[]): number {
+  const descendants = getAllDescendantsOfPrimary(agents);
+  const delegatedAgents = agents.filter((a) => descendants.has(a.id));
+  return delegatedAgents.filter((a) => a.state === 'running' || a.state === 'responding').length;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
@@ -233,14 +242,14 @@ describe('OverviewTimelinePanel – persistence across workspace switches', () =
         specialist: 'implementor',
         isBackground: true, // Background child
         isActive: true,
-        state: 'running',
+        state: 'idle', // Idle child
       }),
       makeAgent('fg-grandchild', {
         parentAgentId: 'bg-child', // Parent is the background child
         specialist: 'verifier',
         isBackground: false, // Foreground grandchild
         isActive: true,
-        state: 'running',
+        state: 'running', // Running grandchild
       }),
       makeAgent('independent', {
         parentAgentId: null, // Not delegated
@@ -266,6 +275,10 @@ describe('OverviewTimelinePanel – persistence across workspace switches', () =
     // Delegated count: includes both child and grandchild (transitive)
     const count = getDelegatedCount(agents);
     expect(count).toBe(2); // bg-child + fg-grandchild
+
+    // Running delegated count: only the running grandchild (idle child excluded)
+    const runningCount = getRunningDelegatedCount(agents);
+    expect(runningCount).toBe(1); // Only fg-grandchild is running
   });
 
   it('orphaned agents (parent not in workspace) still appear top-level', () => {
