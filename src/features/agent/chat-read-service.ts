@@ -66,11 +66,9 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   if (pending) return pending;
 
   // Create a placeholder promise that we'll resolve once the actual work is done
-  let resolveRun: () => void;
-  let rejectRun: (error: unknown) => void;
-  const runPromise = new Promise<void>((resolve, reject) => {
+  let resolveRun!: () => void;
+  const runPromise = new Promise<void>((resolve) => {
     resolveRun = resolve;
-    rejectRun = reject;
   });
 
   // Register in inFlight BEFORE dispatching to prevent re-entrant calls
