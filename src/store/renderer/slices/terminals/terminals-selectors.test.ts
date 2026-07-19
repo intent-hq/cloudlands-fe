@@ -6,10 +6,7 @@ import {
 import type { StoreState } from "../../types";
 import { createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
 import type { TerminalOverlayState, TerminalTab } from "./terminals-slice";
-import {
-  selectWorkspaceHasSetupTerminal,
-  selectWorkspaceSetupTerminal,
-} from "./terminals-selectors";
+import { selectWorkspaceSetupTerminal } from "./terminals-selectors";
 
 const WS = "ws-1";
 
@@ -37,28 +34,14 @@ function stateWith(terminals: TerminalTab[]): StoreState {
 }
 
 describe("terminals selectors", () => {
-  describe("selectWorkspaceHasSetupTerminal", () => {
-    it("returns true when the workspace has a setup terminal by name", () => {
+  describe("selectWorkspaceSetupTerminal", () => {
+    it("returns the setup terminal when one exists by name", () => {
       const state = stateWith([{ id: "term-1", name: "Setup" }]);
 
-      expect(selectWorkspaceHasSetupTerminal.select(state, WS)).toBe(true);
+      expect(selectWorkspaceSetupTerminal.select(state, WS)).toEqual({ id: "term-1", name: "Setup" });
     });
 
-    it("returns true when the workspace has a setup terminal by custom name", () => {
-      const state = stateWith([{ id: "term-1", name: "Terminal", customName: "Setup" }]);
-
-      expect(selectWorkspaceHasSetupTerminal.select(state, WS)).toBe(true);
-    });
-
-    it("returns false when the workspace has no setup terminal", () => {
-      const state = stateWith([{ id: "term-1", name: "Terminal" }]);
-
-      expect(selectWorkspaceHasSetupTerminal.select(state, WS)).toBe(false);
-    });
-  });
-
-  describe("selectWorkspaceSetupTerminal", () => {
-    it("returns the setup terminal item for component event handlers", () => {
+    it("returns the setup terminal when one exists by custom name", () => {
       const setupTerminal = { id: "term-setup", name: "Terminal", customName: "Setup" };
       const state = stateWith([
         { id: "term-1", name: "Terminal" },
@@ -66,6 +49,12 @@ describe("terminals selectors", () => {
       ]);
 
       expect(selectWorkspaceSetupTerminal.select(state, WS)).toBe(setupTerminal);
+    });
+
+    it("returns undefined when the workspace has no setup terminal", () => {
+      const state = stateWith([{ id: "term-1", name: "Terminal" }]);
+
+      expect(selectWorkspaceSetupTerminal.select(state, WS)).toBeUndefined();
     });
   });
 });
