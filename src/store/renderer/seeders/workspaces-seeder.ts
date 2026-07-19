@@ -27,6 +27,7 @@ import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import { appClient } from "$lib/client";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import type { KnownRepo } from "$shared/types/known-repo";
+import type { Workspace } from "$shared/types";
 import { WorkspaceStatus } from "$shared/types";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
