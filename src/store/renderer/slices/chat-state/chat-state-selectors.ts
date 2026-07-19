@@ -6,6 +6,7 @@ import type {
   StatusEvent,
   LastAttemptedMessage,
   ModelUnavailableInfo,
+  TranscriptHydrationStatus,
 } from './chat-state-types';
 
 // ============================================================================
@@ -123,6 +124,16 @@ export const selectChatLastChunkReceivedAt = store.createSelector(
 export const selectChatStateOrDefault = store.createSelector(
   (state, agentId: string): ChatAgentState =>
     getAgentChatState(state, agentId),
+);
+
+/**
+ * Select transcript hydration status for the given agent.
+ * Returns undefined if hydration has not started, 'loading' if in flight,
+ * 'settled' if completed (success or error).
+ */
+export const selectTranscriptHydration = store.createSelector(
+  (state, agentId: string): TranscriptHydrationStatus | undefined =>
+    getAgentChatState(state, agentId).transcriptHydration,
 );
 
 
