@@ -48,6 +48,9 @@
   $effect(() => {
     if (open) {
       isExpanded = true;
+      // Apply any prefill data from sessionStorage before focusing
+      // This ensures repo quick-starts and draft prompts land in the modal form
+      initializerRef?.applyPrefill();
       // Wait for the CompactWorkspaceInitializer and its RichTextarea to fully mount
       setTimeout(() => {
         initializerRef?.focusAndSelectAll();
