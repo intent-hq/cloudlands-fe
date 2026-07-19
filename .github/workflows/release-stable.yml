@@ -133,11 +133,20 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          VERSIONED_SHA=$(curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/latest-mac.yml" | awk '/^sha512:/{print $2; exit}')
-          STABLE_SHA=$(curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml" | awk '/^sha512:/{print $2; exit}')
+          VERSIONED_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/latest-mac.yml" | awk '/^sha512:/{print $2; exit}')
+          if [ -z "$VERSIONED_SHA" ]; then
+            echo "::error::Failed to fetch or parse sha512 from versioned release v${VERSION}"
+            exit 1
+          fi
+
+          STABLE_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml" | awk '/^sha512:/{print $2; exit}')
+          if [ -z "$STABLE_SHA" ]; then
+            echo "::error::Failed to fetch or parse sha512 from stable release"
+            exit 1
+          fi
 
           if [ "$VERSIONED_SHA" = "$STABLE_SHA" ]; then
-            echo "✓ Stable feed sha512 matches versioned release"
+            echo "✓ Stable feed sha512 matches versioned release ($VERSIONED_SHA)"
           else
             echo "::error::sha512 mismatch - versioned: $VERSIONED_SHA, stable: $STABLE_SHA"
             exit 1
@@ -151,8 +160,9 @@ jobs:
           IS_FIRST: ${{ steps.stable_version.outputs.is_first_promotion }}
         run: |
           # List all versioned releases and extract versions in semver order
+          # Match vX.Y.Z with optional prerelease/build metadata
           gh release list --repo intent-hq/cloudlands-releases --limit 1000 --json tagName,isPrerelease \
-            --jq '.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+")) | .tagName' \
+            --jq '.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+(-[a-zA-Z0-9.-]+)?(\\+[a-zA-Z0-9.-]+)?$")) | .tagName' \
             | sed 's/^v//' \
             | sort -V -r > /tmp/all-versions.txt
 
@@ -166,8 +176,8 @@ jobs:
               BEGIN { found_target=0; found_prev=0; }
               {
                 if ($1 == target) found_target=1;
-                if (found_target && !found_prev) print $1;
                 if ($1 == prev) found_prev=1;
+                if (found_target && !found_prev) print $1;
               }
             ' /tmp/all-versions.txt > /tmp/range-versions.txt
           fi
