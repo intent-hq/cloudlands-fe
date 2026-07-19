@@ -97,8 +97,24 @@ function loadStoredPinnedWorkspaceIds(): string[] | undefined {
 }
 
 function loadStoredViewMode(): AllSpacesViewMode | undefined {
-  const stored = safeLocalStorage.getJSON<unknown>(VIEW_MODE_KEY);
+  // Read raw and parse locally: legacy builds wrote the view mode as a raw
+  // string (e.g. `repo`), which safeLocalStorage.getJSON would warn on and drop.
+  const raw = safeLocalStorage.getItem(VIEW_MODE_KEY);
+  if (raw === null) return undefined;
+
+  let stored: unknown;
+  let isLegacyRawString = false;
+  try {
+    stored = JSON.parse(raw);
+  } catch {
+    stored = raw;
+    isLegacyRawString = true;
+  }
+
   if (stored !== "recent" && stored !== "repo" && stored !== "status") return undefined;
+  if (isLegacyRawString) {
+    safeLocalStorage.setJSON(VIEW_MODE_KEY, stored);
+  }
   return stored;
 }
 
