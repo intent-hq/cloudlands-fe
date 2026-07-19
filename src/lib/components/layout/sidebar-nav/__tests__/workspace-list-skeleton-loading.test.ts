@@ -159,9 +159,11 @@ describe('AllWorkspacesCard skeleton loading state', () => {
       skeletonElements.forEach((el) => {
         const classList = Array.from(el.classList);
         // Should have bg-secondary for visibility in both light and dark themes
-        expect(classList.some((c) => c.includes('bg-secondary'))).toBe(true);
+        expect(classList).toContain('bg-secondary');
         // Should have animate-pulse for the loading animation
-        expect(classList.some((c) => c.includes('animate-pulse'))).toBe(true);
+        expect(classList).toContain('animate-pulse');
+        // Should NOT have the old bg-muted class
+        expect(classList.some((c) => c.includes('bg-muted'))).toBe(false);
       });
     });
   });
