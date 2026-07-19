@@ -56,12 +56,35 @@ function getTopLevelAgents(agents: OverviewAgent[]): OverviewAgent[] {
   return agents.filter((a) => !a.isBackground && !delegatedIds.has(a.id));
 }
 
+function getAllDescendantsOfPrimary(agents: OverviewAgent[]): Set<string> {
+  const primary = getPrimaryAgent(agents);
+  if (!primary) return new Set();
+  const descendants = new Set<string>();
+  const queue = [primary.id];
+  while (queue.length > 0) {
+    const parentId = queue.shift()!;
+    for (const a of agents) {
+      if (a.parentAgentId === parentId && !descendants.has(a.id)) {
+        descendants.add(a.id);
+        queue.push(a.id);
+      }
+    }
+  }
+  return descendants;
+}
+
 function getOtherAgents(agents: OverviewAgent[]): OverviewAgent[] {
   const primary = getPrimaryAgent(agents);
   const isCoordinator = primary?.specialist === 'spec-writer';
   const others = agents.filter((a) => a !== primary && !a.isBackground);
   if (!isCoordinator || !primary) return others;
-  return others.filter((a) => a.parentAgentId !== primary.id);
+  // In coordinator mode, exclude all agents that are delegated under any agent in the workspace
+  const delegatedIds = getDelegatedAgentIds(agents);
+  return others.filter((a) => !delegatedIds.has(a.id));
+}
+
+function getDelegatedCount(agents: OverviewAgent[]): number {
+  return getAllDescendantsOfPrimary(agents).size;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
@@ -192,5 +215,93 @@ describe('OverviewTimelinePanel – persistence across workspace switches', () =
     const others = getOtherAgents(agents);
     expect(others.map((a) => a.id)).not.toContain('bg-agent');
     expect(others.map((a) => a.id)).toContain('fg-agent');
+  });
+
+  // ── Regression: 2nd-tier agent filtering ────────────────────────────────
+
+  it('grandchildren (2nd-tier delegated agents) do not appear as top-level agents', () => {
+    // Coordinator → background child → foreground grandchild
+    const agents = [
+      makeAgent('coordinator', {
+        isInitialAgent: true,
+        specialist: 'spec-writer',
+        isActive: true,
+        state: 'running',
+      }),
+      makeAgent('bg-child', {
+        parentAgentId: 'coordinator',
+        specialist: 'implementor',
+        isBackground: true, // Background child
+        isActive: true,
+        state: 'running',
+      }),
+      makeAgent('fg-grandchild', {
+        parentAgentId: 'bg-child', // Parent is the background child
+        specialist: 'verifier',
+        isBackground: false, // Foreground grandchild
+        isActive: true,
+        state: 'running',
+      }),
+      makeAgent('independent', {
+        parentAgentId: null, // Not delegated
+        isBackground: false,
+        isActive: true,
+        state: 'idle',
+      }),
+    ];
+
+    // Top-level agents: coordinator and independent only (not grandchild)
+    const topLevel = getTopLevelAgents(agents);
+    expect(topLevel.map((a) => a.id)).toContain('coordinator');
+    expect(topLevel.map((a) => a.id)).toContain('independent');
+    expect(topLevel.map((a) => a.id)).not.toContain('bg-child'); // delegated
+    expect(topLevel.map((a) => a.id)).not.toContain('fg-grandchild'); // 2nd-tier delegated
+
+    // Other agents: independent only (grandchild excluded from "Your Agents")
+    const others = getOtherAgents(agents);
+    expect(others.map((a) => a.id)).toContain('independent');
+    expect(others.map((a) => a.id)).not.toContain('bg-child'); // delegated
+    expect(others.map((a) => a.id)).not.toContain('fg-grandchild'); // 2nd-tier delegated
+
+    // Delegated count: includes both child and grandchild (transitive)
+    const count = getDelegatedCount(agents);
+    expect(count).toBe(2); // bg-child + fg-grandchild
+  });
+
+  it('orphaned agents (parent not in workspace) still appear top-level', () => {
+    // Agent with parentAgentId pointing to a non-existent agent
+    const agents = [
+      makeAgent('coord', { isInitialAgent: true, specialist: 'spec-writer' }),
+      makeAgent('orphan', { parentAgentId: 'non-existent-id' }),
+    ];
+
+    const delegatedIds = getDelegatedAgentIds(agents);
+    expect(delegatedIds.has('orphan')).toBe(false); // Not delegated (parent not in workspace)
+
+    const topLevel = getTopLevelAgents(agents);
+    expect(topLevel.map((a) => a.id)).toContain('coord');
+    expect(topLevel.map((a) => a.id)).toContain('orphan'); // Should appear as top-level
+  });
+
+  it('3rd-tier and deeper descendants are excluded from top-level', () => {
+    // Coordinator → child → grandchild → great-grandchild
+    const agents = [
+      makeAgent('coord', { isInitialAgent: true, specialist: 'spec-writer' }),
+      makeAgent('child', { parentAgentId: 'coord' }),
+      makeAgent('grandchild', { parentAgentId: 'child' }),
+      makeAgent('great-grandchild', { parentAgentId: 'grandchild' }),
+    ];
+
+    const topLevel = getTopLevelAgents(agents);
+    expect(topLevel.map((a) => a.id)).toContain('coord');
+    expect(topLevel.map((a) => a.id)).not.toContain('child');
+    expect(topLevel.map((a) => a.id)).not.toContain('grandchild');
+    expect(topLevel.map((a) => a.id)).not.toContain('great-grandchild');
+
+    const others = getOtherAgents(agents);
+    expect(others).toHaveLength(0); // All are descendants of coordinator
+
+    const count = getDelegatedCount(agents);
+    expect(count).toBe(3); // child + grandchild + great-grandchild
   });
 });

@@ -153,20 +153,40 @@
     agents.filter((a) => !a.isBackground && !delegatedAgentIds.has(a.id)),
   );
 
-  // Other agents: when coordinator, only show agents that are NOT delegated by coordinator
+  // Get all descendants of the primary agent (transitive closure over parentAgentId)
+  let allDescendantsOfPrimary = $derived.by(() => {
+    if (!primaryAgent) return new Set<string>();
+    const descendants = new Set<string>();
+    const queue = [primaryAgent.id];
+    while (queue.length > 0) {
+      const parentId = queue.shift()!;
+      for (const a of agents) {
+        if (a.parentAgentId === parentId && !descendants.has(a.id)) {
+          descendants.add(a.id);
+          queue.push(a.id);
+        }
+      }
+    }
+    return descendants;
+  });
+
+  // Other agents: when coordinator, only show agents that are NOT delegated under any agent
   // and NOT background
   let otherAgents = $derived.by(() => {
     const others = agents.filter((a) => a !== primaryAgent && !a.isBackground);
     if (!isCoordinator || !primaryAgent) return others;
-    // In coordinator mode, only show agents NOT delegated by the coordinator
-    return others.filter((a) => a.parentAgentId !== primaryAgent.id);
+    // In coordinator mode, exclude all agents that are delegated under any agent in the workspace
+    return others.filter((a) => !delegatedAgentIds.has(a.id));
   });
   let runningOtherCount = $derived(
     otherAgents.filter((a) => a.state === 'running' || a.state === 'responding').length,
   );
-  // Count of all delegated agents (for coordinator display)
-  let delegatedCount = $derived(
-    agents.filter((a) => a !== primaryAgent && a.parentAgentId === primaryAgent?.id).length,
+  // Count of all delegated descendants of the primary agent (including grandchildren, etc.)
+  let delegatedCount = $derived(allDescendantsOfPrimary.size);
+
+  // All agents that are descendants of the primary agent (for avatar preview)
+  let delegatedAgents = $derived(
+    agents.filter((a) => a !== primaryAgent && allDescendantsOfPrimary.has(a.id)),
   );
 
   // Spec note
@@ -272,9 +292,7 @@
               onclick={() => onSwitchTab?.('agents')}
             >
               <div class="flex -space-x-1.5 shrink-0">
-                {#each agents
-                  .filter((a) => a !== primaryAgent && a.parentAgentId === primaryAgent?.id)
-                  .slice(0, 5) as agent}
+                {#each delegatedAgents.slice(0, 5) as agent}
                   <AugieAvatarWithState
                     agentId={agent.id}
                     state={agent.state}
