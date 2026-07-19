@@ -8,7 +8,7 @@
    */
 </script>
 
-<div class="workspace-card-skeleton px-3 py-1.5 flex items-center gap-2 min-w-0" data-testid="workspace-card-skeleton">
+<div class="workspace-card-skeleton px-3 py-1.5 flex items-center gap-2 min-w-0" data-testid="workspace-card-skeleton" aria-hidden="true">
   <!-- Avatar skeleton (circle) -->
   <div class="size-6 rounded-full bg-muted/20 shrink-0 animate-pulse"></div>
 

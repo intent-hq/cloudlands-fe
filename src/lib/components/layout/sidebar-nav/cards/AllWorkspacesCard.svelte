@@ -363,7 +363,7 @@
     </div>
   </div>
 
-  {#if expanded && allWorkspaces.length > 3}
+  {#if $hasLoaded$ && expanded && allWorkspaces.length > 3}
     <div class="px-3 pb-2">
       <input
         bind:this={searchInputEl}

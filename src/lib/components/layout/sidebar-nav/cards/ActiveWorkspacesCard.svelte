@@ -254,7 +254,8 @@
   class="flex flex-col pb-2 outline-none"
   onkeydown={handleSearchKeydown}
   onmousemove={handleMouseMove}
-  role="listbox"
+  role={$hasLoaded$ ? 'listbox' : undefined}
+  aria-busy={!$hasLoaded$}
   tabindex="0"
 >
   {#if !$hasLoaded$}

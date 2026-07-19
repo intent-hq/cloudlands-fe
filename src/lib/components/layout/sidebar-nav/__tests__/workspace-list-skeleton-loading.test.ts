@@ -5,16 +5,18 @@
  * of the "No workspaces yet" empty state or a partial workspace list. Once loaded,
  * the normal rendering (empty state, search, workspace cards) should appear.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
 import {
   setWorkspaceEntity,
   setWorkspaceHasLoaded,
   replaceWorkspaceList,
+  resetWorkspaceState,
 } from '$store/renderer/slices/workspace/workspace-slice';
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
+import ActiveWorkspacesCardHarness from './mocks/ActiveWorkspacesCardHarness.svelte';
 
 vi.mock('$lib/components/workspace/WorkspaceCard.svelte', async () => ({
   default: (await import('./mocks/MockWorkspaceCard.svelte')).default,
@@ -48,6 +50,11 @@ function makeWorkspace(id: string, title: string): Workspace {
 const ws1 = makeWorkspace('ws-1', 'Workspace One');
 
 describe('AllWorkspacesCard skeleton loading state', () => {
+  beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(resetWorkspaceState());
+  });
+
   it('shows skeleton placeholders when hasLoaded is false and no workspaces', async () => {
     render(AllWorkspacesCardHarness, {
       props: {
@@ -125,5 +132,48 @@ describe('AllWorkspacesCard skeleton loading state', () => {
     // No skeletons, no workspace cards
     expect(screen.queryByTestId('workspace-card-skeleton')).toBeNull();
     expect(screen.queryByTestId('workspace-card')).toBeNull();
+  });
+});
+
+describe('ActiveWorkspacesCard skeleton loading state', () => {
+  beforeEach(() => {
+    appStore.init();
+    appStore.dispatch(resetWorkspaceState());
+  });
+
+  it('shows skeleton placeholders when hasLoaded is false', async () => {
+    render(ActiveWorkspacesCardHarness, {
+      props: {
+        setup: () => {
+          // hasLoaded defaults to false (no action needed)
+        },
+        expanded: true,
+      },
+    });
+
+    await waitFor(() => {
+      const skeletons = screen.getAllByTestId('workspace-card-skeleton');
+      expect(skeletons.length).toBeGreaterThan(0);
+    });
+
+    // Should NOT show the "No active workspaces" empty state
+    expect(screen.queryByText('No active workspaces')).toBeNull();
+  });
+
+  it('hides skeletons and shows content after hasLoaded is true', async () => {
+    render(ActiveWorkspacesCardHarness, {
+      props: {
+        setup: () => {
+          appStore.dispatch(setWorkspaceEntity(ws1));
+          appStore.dispatch(replaceWorkspaceList([ws1.id]));
+          appStore.dispatch(setWorkspaceHasLoaded(true));
+        },
+        expanded: true,
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('workspace-card-skeleton')).toBeNull();
+    });
   });
 });
