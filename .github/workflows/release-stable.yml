@@ -67,6 +67,10 @@ jobs:
           HTTP_CODE=$(curl -sL -w "%{http_code}" -o /tmp/stable-latest-mac.yml "$STABLE_YML_URL")
           if [ "$HTTP_CODE" = "200" ]; then
             PREV_STABLE=$(awk '/^version:/{print $2; exit}' /tmp/stable-latest-mac.yml | tr -d '\r')
+            if [ -z "$PREV_STABLE" ]; then
+              echo "::error::Fetched stable latest-mac.yml but could not parse version"
+              exit 1
+            fi
             echo "Previous stable version: $PREV_STABLE"
           elif [ "$HTTP_CODE" = "404" ]; then
             echo "No prior stable release found (first promotion)"
@@ -170,8 +174,18 @@ jobs:
           if [ "$IS_FIRST" = "true" ]; then
             # First promotion: only include the target version
             echo "$VERSION" > /tmp/range-versions.txt
+          elif [ "$PREV_STABLE" = "$VERSION" ]; then
+            # Idempotent re-run: same version promoted again, use just this version
+            echo "Re-promoting same version $VERSION (idempotent)"
+            echo "$VERSION" > /tmp/range-versions.txt
           else
             # Steady-state: include all versions > prevStable and <= version
+            # First validate prevStable exists in the list
+            if ! grep -qFx "$PREV_STABLE" /tmp/all-versions.txt; then
+              echo "::error::Previous stable version $PREV_STABLE not found in release list"
+              exit 1
+            fi
+
             awk -v prev="$PREV_STABLE" -v target="$VERSION" '
               BEGIN { found_target=0; found_prev=0; }
               {
@@ -180,6 +194,12 @@ jobs:
                 if (found_target && !found_prev) print $1;
               }
             ' /tmp/all-versions.txt > /tmp/range-versions.txt
+          fi
+
+          # Validate we have at least one version in the range
+          if [ ! -s /tmp/range-versions.txt ]; then
+            echo "::error::No versions in range (prevStable, version] - this should not happen"
+            exit 1
           fi
 
           echo "Versions to include in aggregated notes:"
