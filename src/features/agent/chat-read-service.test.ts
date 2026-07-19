@@ -536,10 +536,7 @@ describe("chatReadService (fake seam, real store)", () => {
 
     const loadPromise = loadChatTranscript(agentId);
 
-    // Wait for microtask queue to drain so the async dispatch runs
-    await Promise.resolve();
-
-    // After async dispatch, status should be 'loading'
+    // After call (synchronously), status should be 'loading'
     expect(selectTranscriptHydration.select(appStore.state, agentId)).toBe("loading");
 
     await loadPromise;
@@ -556,10 +553,6 @@ describe("chatReadService (fake seam, real store)", () => {
     expect(selectTranscriptHydration.select(appStore.state, agentId)).toBeUndefined();
 
     const loadPromise = loadChatTranscript(agentId);
-
-    // Wait for microtask queue to drain so the async dispatch runs
-    await Promise.resolve();
-
     expect(selectTranscriptHydration.select(appStore.state, agentId)).toBe("loading");
 
     await loadPromise;
@@ -583,10 +576,7 @@ describe("chatReadService (fake seam, real store)", () => {
       loadChatTranscript(agentId),
     ];
 
-    // Wait for microtask queue to drain so the async dispatch runs
-    await Promise.resolve();
-
-    // All see loading status after dispatch
+    // All see loading status immediately (synchronous)
     expect(selectTranscriptHydration.select(appStore.state, agentId)).toBe("loading");
 
     await Promise.all([p1, p2, p3]);

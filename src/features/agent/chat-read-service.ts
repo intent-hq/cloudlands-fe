@@ -65,11 +65,22 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   const pending = inFlight.get(agentId);
   if (pending) return pending;
 
-  const run = (async () => {
-    // Dispatch loading status immediately inside the async block, but AFTER
-    // the promise is registered in inFlight to prevent re-entrant calls from
-    // defeating coalescing
-    appStore.dispatch(transcriptHydrationStarted(agentId));
+  // Create a placeholder promise that we'll resolve once the actual work is done
+  let resolveRun: () => void;
+  let rejectRun: (error: unknown) => void;
+  const runPromise = new Promise<void>((resolve, reject) => {
+    resolveRun = resolve;
+    rejectRun = reject;
+  });
+
+  // Register in inFlight BEFORE dispatching to prevent re-entrant calls
+  inFlight.set(agentId, runPromise);
+
+  // Dispatch loading status synchronously now that we're registered
+  appStore.dispatch(transcriptHydrationStarted(agentId));
+
+  // Actually perform the work
+  (async () => {
     try {
       const session = await appClient.agents.get(agentId);
       if (!session) return;
@@ -141,15 +152,16 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       appStore.dispatch(upsertSession(sessionWithMessages));
     } catch (error) {
       logger.error("Failed to load agent conversation transcript", error);
+      // Errors are swallowed (don't reject the promise)
     } finally {
       // Always mark as settled, whether success or error (errors are swallowed)
       appStore.dispatch(transcriptHydrationSettled(agentId));
       inFlight.delete(agentId);
+      resolveRun();
     }
   })();
 
-  inFlight.set(agentId, run);
-  return run;
+  return runPromise;
 }
 
 /**
