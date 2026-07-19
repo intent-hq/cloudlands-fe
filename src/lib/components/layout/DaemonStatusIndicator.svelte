@@ -85,7 +85,7 @@
       {/snippet}
       <button
         onclick={toggle}
-        class="flex items-center justify-center w-6 h-6 hover:bg-muted/50 rounded transition-colors"
+        class="flex items-center justify-center w-6 h-6 hover:bg-muted/50 rounded transition-colors cursor-pointer"
         aria-label={healthLabels[$health$]}
       >
         <div class={cn('w-2 h-2 rounded-full', healthColors[$health$])}></div>
