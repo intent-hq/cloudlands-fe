@@ -6,7 +6,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
-import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  setWorkspaceEntity,
+  setWorkspaceHasLoaded,
+} from '$store/renderer/slices/workspace/workspace-slice';
 import { togglePinWorkspace, setPinnedWorkspaceIds } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { WorkspaceStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
@@ -68,6 +71,7 @@ describe('AllWorkspacesCard pinned-first ordering (Recent view)', () => {
       props: {
         setup: () => {
           seedWorkspaces();
+          appStore.dispatch(setWorkspaceHasLoaded(true));
           appStore.dispatch(togglePinWorkspace('ws-oldest'));
         },
       },
@@ -79,7 +83,15 @@ describe('AllWorkspacesCard pinned-first ordering (Recent view)', () => {
   });
 
   it('moves a workspace to the top when pinned, and back when unpinned', async () => {
-    render(AllWorkspacesCardHarness, { props: { setup: seedWorkspaces, expanded: true } });
+    render(AllWorkspacesCardHarness, {
+      props: {
+        setup: () => {
+          seedWorkspaces();
+          appStore.dispatch(setWorkspaceHasLoaded(true));
+        },
+        expanded: true,
+      },
+    });
 
     await waitFor(() => {
       expect(renderedOrder()).toEqual(['ws-newest', 'ws-middle', 'ws-oldest']);
