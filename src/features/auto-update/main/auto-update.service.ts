@@ -14,6 +14,7 @@ import type { UpdateInfo as ElectronUpdateInfo, ProgressInfo } from 'electron-up
 import electronUpdater from 'electron-updater';
 import { DEFAULTS } from '../../../shared/constants';
 import { Logger } from '../../../shared/logger';
+import { saveWindowSessions } from '../../../main/window';
 import type { UpdateChannel, UpdateState, UpdateStatus } from '../types';
 
 const { autoUpdater } = electronUpdater;
@@ -317,7 +318,28 @@ class AutoUpdateService {
     return this.checkForUpdates();
   }
 
+  async downloadUpdate(): Promise<void> {
+    if (this.state.status !== 'available') {
+      throw new Error('No update available to download');
+    }
 
+    logger.info('Starting update download...');
+    this.updateStatus('downloading');
+    await autoUpdater.downloadUpdate();
+  }
+
+  async installUpdate(): Promise<void> {
+    if (this.state.status !== 'downloaded') {
+      throw new Error('No update downloaded to install');
+    }
+
+    logger.info('Saving window sessions before installing update...');
+    await saveWindowSessions();
+    isInstallingUpdate = true;
+
+    logger.info('Installing update and restarting...');
+    autoUpdater.quitAndInstall(false, true);
+  }
 
   getState(): UpdateState {
     return { ...this.state };
@@ -398,4 +420,8 @@ class AutoUpdateService {
 
 export const autoUpdateService = new AutoUpdateService();
 
-
+/**
+ * Flag indicating the app is quitting to install an update.
+ * When true, the window-all-closed handler should not delete window-sessions.json.
+ */
+export let isInstallingUpdate = false;

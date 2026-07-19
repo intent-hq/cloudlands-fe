@@ -25,6 +25,8 @@ import { autoUpdateClient } from "./auto-update.client";
 import { store as appStore } from "$store/renderer/store";
 import {
   initAutoUpdate,
+  downloadUpdate,
+  installUpdate,
   setUpdateState,
   setProgress,
   setUpdateError,
@@ -99,10 +101,44 @@ async function handleInitAutoUpdate(): Promise<void> {
 }
 
 /**
- * Middleware that gives the `initAutoUpdate` trigger a real handler: after the
- * action passes through the (no-op) reducer, it routes to `handleInitAutoUpdate`
- * which registers IPC listeners once and fetches initial state. Errors inside
- * the handler are caught and logged so the dispatch chain itself never throws.
+ * Download the available update. Failures surface as a slice error so the
+ * UpdateToast error branch renders (e.g. "No update available to download").
+ */
+async function handleDownloadUpdate(): Promise<void> {
+  try {
+    await autoUpdateClient.downloadUpdate();
+    // Status transitions (downloading → downloaded) arrive via the
+    // status-changed / progress IPC events registered in handleInitAutoUpdate.
+  } catch (error) {
+    logger.error("Failed to download update", error);
+    appStore.dispatch(
+      setUpdateError(error instanceof Error ? error.message : "Failed to download update"),
+    );
+  }
+}
+
+/**
+ * Install the downloaded update. On success the app quits and restarts, so
+ * there is nothing to dispatch; failures are surfaced as a slice error.
+ */
+async function handleInstallUpdate(): Promise<void> {
+  try {
+    await autoUpdateClient.installUpdate();
+  } catch (error) {
+    logger.error("Failed to install update", error);
+    appStore.dispatch(
+      setUpdateError(error instanceof Error ? error.message : "Failed to install update"),
+    );
+  }
+}
+
+/**
+ * Middleware that gives the orphaned auto-update triggers real handlers: after
+ * an action passes through the (no-op) reducer, `initAutoUpdate` routes to
+ * `handleInitAutoUpdate` (registers IPC listeners once and fetches initial
+ * state), and `downloadUpdate` / `installUpdate` route to the corresponding
+ * IPC invokes. Errors inside the handlers are caught and logged so the
+ * dispatch chain itself never throws.
  */
 export function createAutoUpdateMutationMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
@@ -111,6 +147,10 @@ export function createAutoUpdateMutationMiddleware(): StoreMiddleware {
     const type = (action as { type?: unknown }).type;
     if (type === initAutoUpdate.type) {
       void handleInitAutoUpdate();
+    } else if (type === downloadUpdate.type) {
+      void handleDownloadUpdate();
+    } else if (type === installUpdate.type) {
+      void handleInstallUpdate();
     }
     return result;
   };

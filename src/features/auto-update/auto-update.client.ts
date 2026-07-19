@@ -34,6 +34,24 @@ export const autoUpdateClient = {
   },
 
   /**
+   * Download the available update
+   */
+  async downloadUpdate(): Promise<void> {
+    const response = await invokeIpc<AutoUpdateResponse<void>>(AUTO_UPDATE_CHANNELS.DOWNLOAD);
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Failed to download update');
+    }
+  },
+
+  /**
+   * Install the downloaded update and restart the app
+   */
+  async installUpdate(): Promise<void> {
+    await invokeIpc(AUTO_UPDATE_CHANNELS.INSTALL);
+    // App will restart, so we don't need to handle the response
+  },
+
+  /**
    * Get the current update state
    */
   async getState(): Promise<UpdateState> {

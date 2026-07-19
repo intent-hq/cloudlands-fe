@@ -78,22 +78,10 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
         'Pi MCP adapter install is not available in this build — run "npm i -g pi-mcp-adapter" on the daemon host',
     },
   ],
-  // Electron main-process auto-updater — not a daemon surface. +layout.svelte
-  // reads the state on startup with `.catch(() => null)`, and the settings
-  // affordances surface the folded error message; a shaped failure keeps both
-  // paths clean instead of a startup UnbridgedMockIpcChannelError.
-  [
-    'auto-update:check-manual',
-    { success: false, error: { message: 'Auto-update is not available in this build' } },
-  ],
-  [
-    'auto-update:get-state',
-    { success: false, error: { message: 'Auto-update is not available in this build' } },
-  ],
-  [
-    'auto-update:set-channel',
-    { success: false, error: { message: 'Auto-update is not available in this build' } },
-  ],
+  // (auto-update:* invoke channels are bridged to window.electronAPI.invoke
+  // in auto-update-bridge-seeder.ts — the Electron main process owns the
+  // auto-updater; bridge-less builds get the shaped not-available failure
+  // from the seeder handler itself.)
   // Legacy main-process ConfigManager store (reference config.ipc.ts). The
   // only production caller (acp-official permission-manager) takes its
   // localStorage branch first (`isBrowser` is true in this build), so these
