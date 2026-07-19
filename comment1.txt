@@ -1,3 +1,0 @@
-**Re: Welcome page guard (discussion_r3610798854)**
-
-Fixed in ac81987b. Now checking `auggieSessionId === undefined` (i.e., backendSessionId is null) before showing the welcome page. This ensures the welcome page only appears for new sessions, not existing sessions with failed hydration.

@@ -48,6 +48,7 @@ import {
   selectAgentIsResponding,
   selectAgentIsThinking,
 } from "$store/renderer/slices/agent-session/agent-session-selectors";
+import { upsertSession } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { selectTranscriptHydration } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import { loadChatTranscript } from "./chat-read-service";
 import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
@@ -589,8 +590,14 @@ describe("chatReadService (fake seam, real store)", () => {
 
   it("failed hydration for existing conversation marks settled with empty messages", async () => {
     const agentId = "agent-existing-failed-hydration";
-    // Session exists (backendSessionId would be non-null) but hydration fails
-    agentsApi.get.mockResolvedValueOnce(makeSession({ id: agentId }) as never);
+    // Session exists (backend would have returned backendSessionId !== null)
+    // but hydration fails leaving messages empty in the FE store
+    const existingSession = makeSession({
+      id: agentId,
+      backendSessionId: "sess_existing123", // Non-null indicates prior messages exist on backend
+    });
+
+    agentsApi.get.mockResolvedValueOnce(existingSession as never);
     agentsApi.getConversation.mockRejectedValueOnce(new Error("fetch failed") as never);
 
     expect(selectTranscriptHydration.select(appStore.state, agentId)).toBeUndefined();
@@ -607,9 +614,11 @@ describe("chatReadService (fake seam, real store)", () => {
     const messages = selectAgentMessages.select(appStore.state, agentId);
     expect(messages).toHaveLength(0);
 
-    // This is the case where ChatPanel should show skeleton (not welcome)
-    // because backendSessionId !== null (session exists) even though
-    // messages.length === 0 and transcriptHydration === 'settled'
+    // The returned session from agents.get had a non-null backendSessionId,
+    // which is the signal ChatPanel uses to distinguish "new session (never
+    // had messages)" from "existing session (hydration failed)". This test
+    // exercises the service-level hydration lifecycle; the ChatPanel guard
+    // logic is tested separately in component tests.
   });
 });
 
