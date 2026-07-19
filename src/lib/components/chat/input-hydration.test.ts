@@ -17,7 +17,11 @@ describe('resolveHydratedInputModel', () => {
     expect(resolveHydratedInputModel(undefined, 'codex:gpt-5-codex')).toBeUndefined();
   });
 
-  it('falls back only after a session exists but has no persisted model', () => {
-    expect(resolveHydratedInputModel({ model: undefined } as any, 'gpt5.4')).toBe('gpt5.4');
+  it('returns undefined when session has no persisted model (no client-side fallback)', () => {
+    expect(resolveHydratedInputModel({ model: undefined } as any, 'gpt5.4')).toBeUndefined();
+  });
+
+  it('returns session.model when it is null (BE persisted null)', () => {
+    expect(resolveHydratedInputModel({ model: null } as any, 'gpt5.4')).toBeNull();
   });
 });
