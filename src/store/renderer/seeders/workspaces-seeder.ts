@@ -156,10 +156,13 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
 });
 
 registerMockSeeder("workspaces", async ({ store, client }) => {
+  let hasLoadedDispatched = false;
   try {
     const workspaces = await client.workspaces.list({ includeArchived: true });
 
     store.dispatch(replaceWorkspaceList(workspaces));
+    store.dispatch(setWorkspaceHasLoaded(true));
+    hasLoadedDispatched = true;
 
     const recentViews = await client.workspaces.recentViews();
     store.dispatch(loadRecencyData({ lastViewedAt: recentViews }));
@@ -189,6 +192,8 @@ registerMockSeeder("workspaces", async ({ store, client }) => {
     // Always dispatch hasLoaded=true to unblock the sidebar skeleton, even when
     // the daemon is unreachable. An empty workspace list with the "No workspaces yet"
     // state is better than infinite skeletons.
-    store.dispatch(setWorkspaceHasLoaded(true));
+    if (!hasLoadedDispatched) {
+      store.dispatch(setWorkspaceHasLoaded(true));
+    }
   }
 });
