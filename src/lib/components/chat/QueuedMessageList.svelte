@@ -14,6 +14,7 @@
   faTimes,
   faListOl,
   faPaperPlane,
+  faRotateRight,
 } from '@fortawesome/free-solid-svg-icons';
   import {
   fly,
@@ -240,7 +241,15 @@
               </div>
             {:else}
               <!-- Display mode -->
-              <div class="col-span-full row-span-full flex flex-1 min-w-0">
+              <div class="col-span-full row-span-full flex flex-1 min-w-0 gap-2">
+                {#if message.requeuedAfterFailure}
+                  <div
+                    class="flex items-center gap-1 text-warning text-xs shrink-0"
+                    title="Failed — will retry"
+                  >
+                    <Fa icon={faRotateRight} class="w-3 h-3" />
+                  </div>
+                {/if}
                 <button
                   class="flex-1 text-left truncate cursor-pointer"
                   transition:slide={{ axis: 'y', duration: 200 }}
