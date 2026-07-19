@@ -54,6 +54,13 @@ export interface QueuedMessage {
    * and skips it during queue drain. Only included in responses when true.
    */
   editing?: boolean;
+  /**
+   * Optional terminal-failure requeue marker (STAB-112). When true, this message
+   * was requeued after a terminal provider failure and should be visually distinguished
+   * from normal queued messages (e.g., "failed — will retry" indicator). Backward-compatible:
+   * field is only present when true.
+   */
+  requeuedAfterFailure?: boolean;
 }
 
 /**
