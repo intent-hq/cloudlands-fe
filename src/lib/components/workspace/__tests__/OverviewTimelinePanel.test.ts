@@ -60,7 +60,7 @@ function getAllDescendantsOfPrimary(agents: OverviewAgent[]): Set<string> {
   const primary = getPrimaryAgent(agents);
   const isCoordinator = primary?.specialist === 'spec-writer';
   // Short-circuit: only used in coordinator branch
-  if (!isCoordinator || !primary) return new Set();
+  if (!isCoordinator || !primary) return new Set<string>();
   const descendants = new Set<string>();
   const queue = [primary.id];
   // Use index-based iteration to avoid O(n) shift() operations
@@ -91,8 +91,10 @@ function getDelegatedCount(agents: OverviewAgent[]): number {
 }
 
 function getRunningDelegatedCount(agents: OverviewAgent[]): number {
+  const primary = getPrimaryAgent(agents);
   const descendants = getAllDescendantsOfPrimary(agents);
-  const delegatedAgents = agents.filter((a) => descendants.has(a.id));
+  // Exclude primary agent to mirror production code
+  const delegatedAgents = agents.filter((a) => a !== primary && descendants.has(a.id));
   return delegatedAgents.filter((a) => a.state === 'running' || a.state === 'responding').length;
 }
 
