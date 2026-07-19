@@ -382,7 +382,7 @@ describe("workspaces-seeder legacy IPC bridges", () => {
         expect(store.state.workspace.workspaces.ids.length).toBe(0);
         // Console.error was called with the error
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          "Workspaces seeder failed:",
+          "Workspaces seeder: client.workspaces.list() failed:",
           expect.any(Error),
         );
       } finally {
