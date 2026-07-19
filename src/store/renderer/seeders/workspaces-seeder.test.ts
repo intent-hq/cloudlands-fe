@@ -360,6 +360,35 @@ describe("workspaces-seeder legacy IPC bridges", () => {
       expect(store.state.tabState.openTabs["ws-active"]).toBe(true);
       expect(store.state.tabState.openTabs["ws-archived"]).toBeUndefined();
     });
+
+    it("sets hasLoaded=true even when workspaces.list rejects (daemon down)", async () => {
+      // Fresh store with no pre-seeded state
+      const store = new Store(reducers, []);
+      store.init();
+
+      // Mock workspaces.list rejecting (daemon unreachable)
+      mockedAppClient.workspaces.list.mockRejectedValueOnce(new Error("daemon unreachable"));
+
+      // Suppress console.error for this test
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      try {
+        // Run the seeder
+        await seedMockStore(store, appClient);
+
+        // Assert: hasLoaded is true despite the error, preventing infinite skeletons
+        expect(store.state.workspace.hasLoaded).toBe(true);
+        // Workspace list remains empty (collection initialized but no items added)
+        expect(store.state.workspace.workspaces.ids.length).toBe(0);
+        // Console.error was called with the error
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          "Workspaces seeder: client.workspaces.list() failed:",
+          expect.any(Error),
+        );
+      } finally {
+        consoleErrorSpy.mockRestore();
+      }
+    });
   });
 
   describe("workspace:get → daemon workspace.get", () => {

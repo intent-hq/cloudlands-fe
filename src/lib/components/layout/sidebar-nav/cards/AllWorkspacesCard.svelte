@@ -5,6 +5,7 @@
   import {
   selectWorkspaceItems,
   selectWorkspaceActivePullRequest,
+  selectWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
   WorkspaceStatusEnum,
@@ -48,6 +49,7 @@
 } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
   import WorkspaceCard from '$lib/components/workspace/WorkspaceCard.svelte';
+  import WorkspaceCardSkeleton from '../WorkspaceCardSkeleton.svelte';
   import {
   selectWorkspaceTaskProgress,
   selectWorkspaceTasksByWorkspaceId,
@@ -59,6 +61,7 @@
   }
 
   const workspaceItems = selectWorkspaceItems();
+  const hasLoaded$ = selectWorkspaceHasLoaded();
   const activeStreamsVersion$ = selectActiveStreamsVersion();
   const unreadAgentIds$ = selectUnreadAgentIds();
   const pinnedIds$ = selectPinnedWorkspaceIds();
@@ -360,7 +363,7 @@
     </div>
   </div>
 
-  {#if expanded && allWorkspaces.length > 3}
+  {#if $hasLoaded$ && expanded && allWorkspaces.length > 3}
     <div class="px-3 pb-2">
       <input
         bind:this={searchInputEl}
@@ -372,7 +375,14 @@
     </div>
   {/if}
 
-  {#if allWorkspaces.length === 0}
+  {#if !$hasLoaded$}
+    <!-- Show skeleton placeholders while loading -->
+    <div class="pb-2">
+      {#each Array(3) as _, i (i)}
+        <WorkspaceCardSkeleton />
+      {/each}
+    </div>
+  {:else if allWorkspaces.length === 0}
     <div class="px-3 pb-3 text-xs text-subtle">No workspaces yet</div>
   {:else}
     <div class="overflow-y-auto flex-1 min-h-0 pb-2">
