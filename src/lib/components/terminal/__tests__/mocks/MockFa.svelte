@@ -6,7 +6,7 @@
     size?: string;
   }
 
-  let { icon, class: className, size }: Props = $props();
+  let { icon: _icon, class: className, size }: Props = $props();
 </script>
 
 <span class="mock-fa {className}" data-size={size}></span>
