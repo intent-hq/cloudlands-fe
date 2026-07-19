@@ -183,12 +183,35 @@ jobs:
           GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
           VERSION: ${{ inputs.version }}
         run: |
-          # Find the previous versioned release (latest v* tag on cloudlands-releases, excluding current version)
+          # Find the previous versioned release (highest vX.Y.Z tag strictly less than current version)
+          # Node.js performs portable semver comparison (BSD sort lacks -V)
           PREV_RELEASE=$(gh release list --repo intent-hq/cloudlands-releases --limit 100 --json tagName --jq '.[].tagName' \
             | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-            | grep -v "^v${VERSION}$" \
-            | sort -V -r \
-            | head -n 1) || true
+            | node -e '
+                const current = process.env.VERSION.split(".").map(Number);
+                const lines = require("fs").readFileSync(0, "utf-8").trim().split("\n").filter(Boolean);
+                const candidates = lines
+                  .map(tag => {
+                    const match = tag.match(/^v(\d+)\.(\d+)\.(\d+)$/);
+                    if (!match) return null;
+                    return { tag, version: [+match[1], +match[2], +match[3]] };
+                  })
+                  .filter(Boolean)
+                  .filter(({version: [maj, min, pat]}) => {
+                    if (maj < current[0]) return true;
+                    if (maj > current[0]) return false;
+                    if (min < current[1]) return true;
+                    if (min > current[1]) return false;
+                    return pat < current[2];
+                  })
+                  .sort((a, b) => {
+                    for (let i = 0; i < 3; i++) {
+                      if (b.version[i] !== a.version[i]) return b.version[i] - a.version[i];
+                    }
+                    return 0;
+                  });
+                console.log(candidates[0]?.tag || "");
+              ') || true
 
           if [ -z "$PREV_RELEASE" ]; then
             echo "No previous versioned release found"
@@ -268,7 +291,7 @@ jobs:
           INTENTD_HEAD: ${{ steps.intentd_info.outputs.sha }}
         run: |
           if [ -z "$PREV_FE_TAG" ]; then
-            echo "::error::No previous cloudlands-fe release found. Cannot generate release notes."
+            echo "::error::No previous versioned release found on cloudlands-releases. Cannot generate release notes."
             exit 1
           fi
 
