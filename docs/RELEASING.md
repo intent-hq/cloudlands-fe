@@ -30,9 +30,9 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
 - **`RELEASE_PAT`** - Personal Access Token (classic or fine-grained) with:
   - Classic: `repo` scope on `intent-hq/cloudlands-fe`, `intent-hq/cloudlands-releases`, and `intent-hq/intentd`
   - Fine-grained: `Contents: Read and write` + `Pull requests: Read and write`, with repository access to `cloudlands-fe`, `cloudlands-releases`, and `intentd` (PR permissions unused for intentd)
-- **`INTENTD_READ_PAT`** - Personal Access Token with read access to `intent-hq/intentd`:
+- **`INTENTD_READ_PAT`** - Personal Access Token with read access to `intent-hq/intentd`, `intent-hq/cloudlands-fe`, and `intent-hq/cloudlands-releases`:
   - Classic: `repo` scope (read-only use)
-  - Fine-grained: `Contents: Read-only`
+  - Fine-grained: `Contents: Read-only` with repository access to all three repos (used for generating release notes and downloading release manifests)
 
 **Important:** If `INTENTD_READ_PAT` expires, the workflow will fail at the "Checkout intentd" step with an authentication error.
 
