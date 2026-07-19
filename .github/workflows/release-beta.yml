@@ -101,7 +101,6 @@ jobs:
         id: intentd_info
         env:
           VERSION: ${{ inputs.version }}
-          GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
         run: |
           cd intentd-repo
           INTENTD_SHA=$(git rev-parse HEAD)
@@ -178,20 +177,36 @@ jobs:
           echo "Built artifacts:"
           find dist-electron -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.blockmap" -o -name "latest-mac.yml" \) -exec ls -lh {} \;
 
+      - name: Find previous release
+        id: prev_release
+        env:
+          GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          # Find the previous versioned release (latest v* tag on cloudlands-releases, excluding current version)
+          PREV_RELEASE=$(gh release list --repo intent-hq/cloudlands-releases --limit 100 --json tagName --jq '.[].tagName' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -v "^v${VERSION}$" \
+            | sort -V -r \
+            | head -n 1) || true
+
+          if [ -z "$PREV_RELEASE" ]; then
+            echo "No previous versioned release found"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Previous versioned release: ${PREV_RELEASE}"
+            echo "tag=${PREV_RELEASE}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Resolve intentd base SHA for release notes
         id: intentd_base
         env:
           GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
           VERSION: ${{ inputs.version }}
           INTENTD_BASE_SHA_INPUT: ${{ inputs.intentd_base_sha }}
+          PREV_RELEASE: ${{ steps.prev_release.outputs.tag }}
         run: |
           set -e
-
-          # Find the previous versioned release (latest v* tag on cloudlands-releases)
-          PREV_RELEASE=$(gh release list --repo intent-hq/cloudlands-releases --limit 100 \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' \
-            | head -n 1 \
-            | awk '{print $1}') || true
 
           if [ -z "$PREV_RELEASE" ]; then
             echo "No previous versioned release found on cloudlands-releases"
@@ -210,10 +225,10 @@ jobs:
               echo "No intentd tag ${PREV_RELEASE}, trying manifest..."
               cd ..
 
-              # Try 2: Download release-manifest.json from previous release
-              MANIFEST_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/${PREV_RELEASE}/release-manifest.json"
-              if curl -sfL -H "Authorization: Bearer ${GH_TOKEN}" "${MANIFEST_URL}" -o prev-manifest.json 2>/dev/null; then
-                INTENTD_BASE=$(jq -r '.intentdSha // empty' prev-manifest.json)
+              # Try 2: Download release-manifest.json from previous release using gh API
+              if gh release download "${PREV_RELEASE}" --repo intent-hq/cloudlands-releases \
+                  --pattern release-manifest.json --dir . 2>/dev/null; then
+                INTENTD_BASE=$(jq -r '.intentdSha // empty' release-manifest.json)
                 if [ -n "$INTENTD_BASE" ]; then
                   echo "Found intentd SHA in manifest: ${INTENTD_BASE}"
                 else
@@ -248,15 +263,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
           GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
           VERSION: ${{ inputs.version }}
+          PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
           INTENTD_BASE: ${{ steps.intentd_base.outputs.intentd_base }}
           INTENTD_HEAD: ${{ steps.intentd_info.outputs.sha }}
         run: |
-          # Determine FE base: find the previous versioned release tag
-          PREV_FE_TAG=$(gh release list --repo intent-hq/cloudlands-releases --limit 100 \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' \
-            | head -n 1 \
-            | awk '{print $1}') || true
-
           if [ -z "$PREV_FE_TAG" ]; then
             echo "::error::No previous cloudlands-fe release found. Cannot generate release notes."
             exit 1
