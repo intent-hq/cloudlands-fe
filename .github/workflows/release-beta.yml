@@ -188,7 +188,13 @@ jobs:
           PREV_RELEASE=$(gh release list --repo intent-hq/cloudlands-releases --limit 100 --json tagName --jq '.[].tagName' \
             | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
             | node -e '
-                const current = process.env.VERSION.split(".").map(Number);
+                const versionStr = process.env.VERSION;
+                const currentMatch = versionStr.match(/^(\d+)\.(\d+)\.(\d+)/);
+                if (!currentMatch) {
+                  console.error("Invalid VERSION format: " + versionStr);
+                  process.exit(1);
+                }
+                const current = [+currentMatch[1], +currentMatch[2], +currentMatch[3]];
                 const lines = require("fs").readFileSync(0, "utf-8").trim().split("\n").filter(Boolean);
                 const candidates = lines
                   .map(tag => {
@@ -321,12 +327,12 @@ jobs:
         run: |
           cd intentd-repo
 
-          # Reconfigure remote to use write-capable token
-          git remote set-url origin "https://x-access-token:${RELEASE_PAT}@github.com/intent-hq/intentd.git"
-
           # Set git identity for annotated tag
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Configure extraheader auth (avoids token in URL logs)
+          git config http.https://github.com/.extraheader "AUTHORIZATION: Bearer ${RELEASE_PAT}"
 
           git tag -a "v${VERSION}" -m "Release v${VERSION}"
           git push origin "refs/tags/v${VERSION}"
