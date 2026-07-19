@@ -129,9 +129,10 @@ jobs:
           fi
 
           # Upload versioned assets first (no collision with existing stable assets)
+          # Use --clobber for idempotency (re-running same version is safe)
           if [ ${#UPLOAD_FILES[@]} -gt 0 ]; then
             echo "Uploading versioned assets: ${UPLOAD_FILES[*]}"
-            gh release upload stable --repo intent-hq/cloudlands-releases -- "${UPLOAD_FILES[@]}"
+            gh release upload stable --repo intent-hq/cloudlands-releases --clobber -- "${UPLOAD_FILES[@]}"
           fi
 
           # Replace latest-mac.yml last with --clobber (atomic switch of auto-updater feed)
