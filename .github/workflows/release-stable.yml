@@ -110,23 +110,21 @@ jobs:
         run: |
           cd /tmp/release-assets
 
-          # Build explicit file list to avoid glob failures
-          UPLOAD_FILES=()
-          for pattern in "*.dmg" "*.zip" "*.blockmap"; do
-            for file in $pattern; do
-              if [ -f "$file" ]; then
-                UPLOAD_FILES+=("$file")
-              fi
-            done
-          done
-
           # Require latest-mac.yml
           if [ ! -f "latest-mac.yml" ]; then
             echo "::error::Missing required latest-mac.yml"
             exit 1
           fi
 
-          # Upload versioned assets first (no collision with existing stable assets)
+          # Build list of all downloaded assets except latest-mac.yml
+          UPLOAD_FILES=()
+          for file in *; do
+            if [ -f "$file" ] && [ "$file" != "latest-mac.yml" ]; then
+              UPLOAD_FILES+=("$file")
+            fi
+          done
+
+          # Upload all versioned assets first (no collision with existing stable assets)
           # Use --clobber for idempotency (re-running same version is safe)
           if [ ${#UPLOAD_FILES[@]} -gt 0 ]; then
             echo "Uploading versioned assets: ${UPLOAD_FILES[*]}"
@@ -145,14 +143,11 @@ jobs:
 
           # Build allowlist of assets we just uploaded (don't delete these)
           PROMOTED_ASSETS=()
-          for pattern in "*.dmg" "*.zip" "*.blockmap"; do
-            for file in $pattern; do
-              if [ -f "$file" ]; then
-                PROMOTED_ASSETS+=("$file")
-              fi
-            done
+          for file in *; do
+            if [ -f "$file" ]; then
+              PROMOTED_ASSETS+=("$file")
+            fi
           done
-          PROMOTED_ASSETS+=("latest-mac.yml")
 
           # Clean up old versioned assets from stable release
           echo "Cleaning up old versioned assets (keeping newly promoted files)"
