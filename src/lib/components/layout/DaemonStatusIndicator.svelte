@@ -24,6 +24,7 @@
   const lastUpdated$ = selectDaemonHealthLastUpdated();
 
   let dropdownOpen = $state(false);
+  let liveUptimeSeconds = $state<number | undefined>(undefined);
 
   // Color mapping for health states
   const healthColors: Record<DaemonHealth, string> = {
@@ -41,7 +42,7 @@
   // Format uptime from seconds to human-readable string
   function formatUptime(seconds: number | undefined): string {
     if (seconds === undefined) return 'Unknown';
-    
+
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = Math.floor(seconds % 60);
@@ -55,24 +56,42 @@
     }
   }
 
-  // Format last updated timestamp
-  function formatLastUpdated(timestamp: string | null): string {
-    if (!timestamp) return 'Never';
-    
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffSec = Math.floor(diffMs / 1000);
+  // Compute live uptime: base uptime + elapsed time since lastUpdated
+  function computeLiveUptime(
+    uptimeSeconds: number | undefined,
+    lastUpdated: string | null
+  ): number | undefined {
+    if (uptimeSeconds === undefined) return undefined;
+    if (!lastUpdated) return uptimeSeconds;
 
-    if (diffSec < 60) return `${diffSec}s ago`;
-    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-    return `${Math.floor(diffSec / 3600)}h ago`;
+    const lastUpdateTime = new Date(lastUpdated).getTime();
+    const now = Date.now();
+    const elapsedSeconds = Math.floor((now - lastUpdateTime) / 1000);
+
+    return uptimeSeconds + elapsedSeconds;
   }
 
   // Trigger stats refresh when menu opens
   $effect(() => {
     if (dropdownOpen) {
       appStore.dispatch(pollSystemStatus());
+    }
+  });
+
+  // Tick live uptime every second while dropdown is open
+  $effect(() => {
+    if (dropdownOpen) {
+      // Initialize live uptime
+      liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$);
+
+      // Update every second
+      const interval = setInterval(() => {
+        liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$);
+      }, 1000);
+
+      return () => clearInterval(interval);
+    } else {
+      liveUptimeSeconds = undefined;
     }
   });
 </script>
@@ -161,10 +180,10 @@
             {/if}
 
             <!-- Uptime -->
-            {#if $stats$.uptimeSeconds !== undefined}
+            {#if liveUptimeSeconds !== undefined}
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">Uptime</span>
-                <span class="font-mono text-xs">{formatUptime($stats$.uptimeSeconds)}</span>
+                <span class="font-mono text-xs">{formatUptime(liveUptimeSeconds)}</span>
               </div>
             {/if}
 
@@ -195,13 +214,6 @@
               </div>
             {/if}
 
-            <div class="h-px bg-border my-1"></div>
-
-            <!-- Last updated -->
-            <div class="flex justify-between text-xs">
-              <span class="text-subtle">Last updated</span>
-              <span class="text-xs text-subtle">{formatLastUpdated($lastUpdated$)}</span>
-            </div>
           {:else}
             <div class="h-px bg-border my-1"></div>
             <div class="text-xs text-subtle text-center py-2">
