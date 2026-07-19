@@ -588,6 +588,17 @@ function applySessionUpsert(
       finalSession.isStreaming = false;
       finalSession.isProcessing = false;
     }
+
+    // Guard: if a live event (agent:failed/agent:idle) already set stopReason,
+    // don't let an older hydration snapshot lacking the field clobber it.
+    // Only update stopReason when the key exists on the incoming session.
+    // This mirrors the canonicalSessionUpdates guard from Phase 1.
+    if (
+      existing.stopReason !== undefined &&
+      !Object.prototype.hasOwnProperty.call(session, 'stopReason')
+    ) {
+      finalSession.stopReason = existing.stopReason;
+    }
   }
 
   const alreadyIndexed = (state.agentIdsByWorkspace[wsId] ?? []).includes(agentId);

@@ -3870,3 +3870,114 @@ describe('fixture regression: agent-b93c1222-corrupted.json', () => {
     ]);
   });
 });
+
+// ============================================================================
+// stopReason hydration tests (Phase 2)
+// ============================================================================
+
+describe('stopReason hydration', () => {
+  it('hydrates stopReason from daemon agent.list/agent.get snapshot via bulkUpsertSessions', () => {
+    // Simulate daemon sending a session with status=error and stopReason set
+    const errorSession = makeSession('a1', 'ws-1', {
+      status: 'error',
+      activationState: 'error',
+      isActive: false,
+      isStreaming: false,
+      isProcessing: false,
+      stopReason: 'Agent spawn failed after 3 retries',
+    });
+
+    const state = agentSessionReducer(initialState, bulkUpsertSessions([errorSession]));
+
+    expect(state.byAgentId['a1']).toBeDefined();
+    expect(state.byAgentId['a1'].status).toBe('error');
+    expect(state.byAgentId['a1'].stopReason).toBe('Agent spawn failed after 3 retries');
+  });
+
+  it('does not clobber live-event stopReason with older hydration snapshot lacking one', () => {
+    // Step 1: Live event sets stopReason
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+    state = agentSessionReducer(
+      state,
+      eventReceived('ws-1', {
+        id: 'evt-failed',
+        type: 'agent:failed',
+        timestamp: '2024-01-01T00:00:01.000Z',
+        workspaceId: 'ws-1',
+        data: {
+          agentId: 'a1',
+          error: 'Live error message',
+        },
+      } as any),
+    );
+
+    expect(state.byAgentId['a1'].stopReason).toBe('Live error message');
+
+    // Step 2: Older snapshot from daemon without stopReason arrives
+    const olderSnapshot = makeSession('a1', 'ws-1', {
+      status: 'error',
+      activationState: 'error',
+      isActive: false,
+      // stopReason intentionally omitted — simulates older snapshot
+    });
+
+    state = agentSessionReducer(state, bulkUpsertSessions([olderSnapshot]));
+
+    // The live-event stopReason should be preserved
+    expect(state.byAgentId['a1'].stopReason).toBe('Live error message');
+  });
+
+  it('correctly applies explicit stopReason: null from clearing agent:status-changed', () => {
+    // Step 1: Set a stopReason
+    let state = agentSessionReducer(initialState, upsertSession(makeSession('a1')));
+    state = agentSessionReducer(
+      state,
+      eventReceived('ws-1', {
+        id: 'evt-failed',
+        type: 'agent:failed',
+        timestamp: '2024-01-01T00:00:01.000Z',
+        workspaceId: 'ws-1',
+        data: {
+          agentId: 'a1',
+          error: 'Initial error',
+        },
+      } as any),
+    );
+
+    expect(state.byAgentId['a1'].stopReason).toBe('Initial error');
+
+    // Step 2: Explicit null clears it
+    state = agentSessionReducer(
+      state,
+      eventReceived('ws-1', {
+        id: 'evt-clear',
+        type: 'agent:status-changed',
+        timestamp: '2024-01-01T00:00:02.000Z',
+        workspaceId: 'ws-1',
+        data: {
+          agentId: 'a1',
+          status: 'idle',
+          stopReason: null,
+        },
+      } as any),
+    );
+
+    expect(state.byAgentId['a1'].stopReason).toBe(null);
+  });
+
+  it('hydrates stopReason from completed agent snapshot', () => {
+    const completedSession = makeSession('a1', 'ws-1', {
+      status: 'completed',
+      activationState: null,
+      isActive: false,
+      isStreaming: false,
+      isProcessing: false,
+      stopReason: 'end_turn',
+    });
+
+    const state = agentSessionReducer(initialState, bulkUpsertSessions([completedSession]));
+
+    expect(state.byAgentId['a1'].status).toBe('completed');
+    expect(state.byAgentId['a1'].stopReason).toBe('end_turn');
+  });
+});
