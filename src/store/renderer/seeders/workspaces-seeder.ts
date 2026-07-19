@@ -27,6 +27,7 @@ import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import { appClient } from "$lib/client";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import type { KnownRepo } from "$shared/types/known-repo";
+import type { Workspace } from "$shared/types";
 import { WorkspaceStatus } from "$shared/types";
 import { registerMockSeeder } from "../mock-bootstrap";
 import {
@@ -156,12 +157,33 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
 });
 
 registerMockSeeder("workspaces", async ({ store, client }) => {
-  const workspaces = await client.workspaces.list({ includeArchived: true });
+  let workspaces: Workspace[] = [];
+  let recentViews: Record<string, number> = {};
+
+  // Narrow error swallowing to the RPC boundaries only: if the daemon is down,
+  // keep the UI functional with an empty list. Let unexpected in-process bugs
+  // (reducer errors, bad data shapes) throw so they fail fast in tests/dev.
+  try {
+    workspaces = await client.workspaces.list({ includeArchived: true });
+  } catch (error) {
+    console.error("Workspaces seeder: client.workspaces.list() failed:", error);
+    // Clear any stale workspaces from a previous seeding attempt (dev/HMR/tests)
+    store.dispatch(replaceWorkspaceList([]));
+    store.dispatch(setWorkspaceHasLoaded(true));
+    return;
+  }
 
   store.dispatch(replaceWorkspaceList(workspaces));
   store.dispatch(setWorkspaceHasLoaded(true));
 
-  const recentViews = await client.workspaces.recentViews();
+  try {
+    recentViews = await client.workspaces.recentViews();
+  } catch (error) {
+    console.error("Workspaces seeder: client.workspaces.recentViews() failed:", error);
+    // Continue with empty recency data — the list is already loaded
+    recentViews = {};
+  }
+
   store.dispatch(loadRecencyData({ lastViewedAt: recentViews }));
 
   // Auto-select the first non-archived workspace (skip archived since they're hidden by default).

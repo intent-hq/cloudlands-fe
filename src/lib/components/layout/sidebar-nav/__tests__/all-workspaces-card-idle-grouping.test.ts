@@ -10,7 +10,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
-import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  setWorkspaceEntity,
+  setWorkspaceHasLoaded,
+} from '$store/renderer/slices/workspace/workspace-slice';
 import { setAllSpacesViewMode } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { WorkspaceStatus, PullRequestStatus, type Workspace, type WorkspaceId } from '$shared/types';
 import AllWorkspacesCardHarness from './mocks/AllWorkspacesCardHarness.svelte';
@@ -81,6 +84,7 @@ describe('AllWorkspacesCard IDLE grouping (Status view)', () => {
         setup: () => {
           appStore.dispatch(setWorkspaceEntity(wsIdle1));
           appStore.dispatch(setWorkspaceEntity(wsIdle2));
+          appStore.dispatch(setWorkspaceHasLoaded(true));
           // No streaming agents for these workspaces (map defaults to empty)
           appStore.dispatch(setAllSpacesViewMode('status'));
         },
@@ -103,6 +107,7 @@ describe('AllWorkspacesCard IDLE grouping (Status view)', () => {
         setup: () => {
           appStore.dispatch(setWorkspaceEntity(wsIdle1));
           appStore.dispatch(setWorkspaceEntity(wsIdle2));
+          appStore.dispatch(setWorkspaceHasLoaded(true));
           // No streaming agents (map defaults to empty) -> IDLE
           appStore.dispatch(setAllSpacesViewMode('status'));
         },
@@ -129,6 +134,7 @@ describe('AllWorkspacesCard IDLE grouping (Status view)', () => {
         setup: () => {
           appStore.dispatch(setWorkspaceEntity(wsPrOpen));
           appStore.dispatch(setWorkspaceEntity(wsNoChanges));
+          appStore.dispatch(setWorkspaceHasLoaded(true));
 
           // Zero streaming agents for both (map defaults to empty)
           // PR workspace should show in PR Open, not IDLE
