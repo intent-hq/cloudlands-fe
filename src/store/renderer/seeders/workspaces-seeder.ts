@@ -156,7 +156,6 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
 });
 
 registerMockSeeder("workspaces", async ({ store, client }) => {
-  let hasLoadedDispatched = false;
   let workspaces;
   let recentViews;
 
@@ -173,7 +172,6 @@ registerMockSeeder("workspaces", async ({ store, client }) => {
 
   store.dispatch(replaceWorkspaceList(workspaces));
   store.dispatch(setWorkspaceHasLoaded(true));
-  hasLoadedDispatched = true;
 
   try {
     recentViews = await client.workspaces.recentViews();
