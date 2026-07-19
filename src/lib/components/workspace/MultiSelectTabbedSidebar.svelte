@@ -1015,7 +1015,7 @@
             {#key workspaceId}
               <div class="h-full pt-2 pb-6">
                 {#if tabId === 'overview'}
-                  {@const overviewAgents = $foregroundWorkspaceAgents.map((agent) => {
+                  {@const overviewAgents = $allWorkspaceAgents.map((agent) => {
                     const state = getLiveAgentAvatarState(agent);
                     const specialist = (agent.metadata?.specialist as string) || null;
                     const validSpecialist =
