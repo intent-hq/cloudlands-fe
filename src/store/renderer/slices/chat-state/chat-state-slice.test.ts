@@ -556,30 +556,32 @@ describe('chatState selectors', () => {
   });
 
   // Transcript hydration tests
-  it('transcriptHydrationStarted sets status to loading', () => {
+  it('selectTranscriptHydration returns loading after transcriptHydrationStarted', () => {
     const state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-    expect(state.byAgentId[AGENT].transcriptHydration).toBe('loading');
+    expect(selectTranscriptHydration.select(asStoreState(state), AGENT)).toBe('loading');
   });
 
-  it('transcriptHydrationStarted sets agentId even when no prior entry exists', () => {
+  it('transcriptHydrationStarted creates agent entry with correct agentId', () => {
     const state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
-    expect(state.byAgentId[AGENT].agentId).toBe(AGENT);
+    const agentState = selectChatAgentState.select(asStoreState(state), AGENT);
+    expect(agentState.agentId).toBe(AGENT);
   });
 
-  it('transcriptHydrationSettled sets status to settled', () => {
+  it('selectTranscriptHydration returns settled after transcriptHydrationSettled', () => {
     const loadingState = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
     const settledState = chatStateReducer(loadingState, transcriptHydrationSettled(AGENT));
-    expect(settledState.byAgentId[AGENT].transcriptHydration).toBe('settled');
+    expect(selectTranscriptHydration.select(asStoreState(settledState), AGENT)).toBe('settled');
   });
 
   it('transcriptHydrationSettled works even if never started (error path)', () => {
     const state = chatStateReducer(initialState, transcriptHydrationSettled(AGENT));
-    expect(state.byAgentId[AGENT].transcriptHydration).toBe('settled');
+    expect(selectTranscriptHydration.select(asStoreState(state), AGENT)).toBe('settled');
   });
 
-  it('transcriptHydrationSettled sets agentId even when no prior entry exists', () => {
+  it('transcriptHydrationSettled creates agent entry with correct agentId', () => {
     const state = chatStateReducer(initialState, transcriptHydrationSettled(AGENT));
-    expect(state.byAgentId[AGENT].agentId).toBe(AGENT);
+    const agentState = selectChatAgentState.select(asStoreState(state), AGENT);
+    expect(agentState.agentId).toBe(AGENT);
   });
 
   it('selectTranscriptHydration returns undefined by default', () => {
