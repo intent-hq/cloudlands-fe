@@ -11,7 +11,10 @@
   import { goto } from '$app/navigation';
   import { openWorkspaceInNewWindow } from '../utils/openWorkspaceInNewWindow';
   import { activeStreamsTracker } from '$features/agent/services/active-streams-tracker';
-  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectWorkspaceItems,
+    selectWorkspaceHasLoaded,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { WorkspaceStatusEnum } from '$shared/types';
   import { onMount } from 'svelte';
   import Header from '$lib/components/ui/Header.svelte';
@@ -36,8 +39,10 @@
 } from '$shared/utils/workspace-activity-time';
   import { store as appStore } from '$store/renderer/store';
   import WorkspaceCard from '$lib/components/workspace/WorkspaceCard.svelte';
+  import WorkspaceCardSkeleton from '../WorkspaceCardSkeleton.svelte';
 
   const workspaceItems = selectWorkspaceItems();
+  const hasLoaded$ = selectWorkspaceHasLoaded();
   const activeStreamsVersion$ = selectActiveStreamsVersion();
   const unreadAgentIds$ = selectUnreadAgentIds();
   const pinnedIds$ = selectPinnedWorkspaceIds();
@@ -252,7 +257,14 @@
   role="listbox"
   tabindex="0"
 >
-  {#if totalCount === 0}
+  {#if !$hasLoaded$}
+    <!-- Show skeleton placeholders while loading -->
+    <div class="pt-2">
+      {#each Array(3) as _, i (i)}
+        <WorkspaceCardSkeleton />
+      {/each}
+    </div>
+  {:else if totalCount === 0}
     <div class="px-3 py-4">
       <p class="text-sm text-subtle">No active workspaces</p>
       <p class="text-sm text-subtle mt-1 leading-tight">
