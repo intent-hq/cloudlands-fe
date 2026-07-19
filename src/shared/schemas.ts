@@ -555,7 +555,7 @@ export const AgentSessionSchema = z.object({
   agentInfo: z.any().optional(),
   isInitialAgent: z.boolean().optional(),
   isBackground: z.boolean().optional(),
-  model: z.string().optional(),
+  model: z.string().nullable().optional(),
   provider: z.string().optional(), // ACP provider ID (e.g., "auggie", "claude-code", "opencode")
   systemPrompt: z.string().optional(),
   status: z.nativeEnum(AgentStatus),

@@ -724,7 +724,7 @@ export async function sendMessage(
         workspace_id: workspace.id,
         message_length: content.length,
         agent_name: session.name,
-        agent_model: session.model,
+        agent_model: session.model ?? undefined,
       });
 
       // Store turn start time and current tool call count for duration/delta tracking
@@ -1140,7 +1140,7 @@ export async function sendMessage(
                             track('Agent Turn Completed', {
                               agent_id: agentId,
                               agent_name: session.name,
-                              agent_model: session.model,
+                              agent_model: session.model ?? undefined,
                               duration_ms: durationMs,
                             });
                             track('Agent Outcome Received', {
@@ -1153,7 +1153,7 @@ export async function sendMessage(
                                   : 'completed',
                               finish_reason: sendMsgOutcomeReason,
                               agent_name: session.name,
-                              agent_model: session.model,
+                              agent_model: session.model ?? undefined,
                               source: 'renderer',
                             });
                           } catch (trackingError) {
@@ -1428,12 +1428,13 @@ export async function sendMessage(
                       },
                     );
 
+                    const wireModel = (options.model ?? options.modelId ?? session.model) ?? undefined;
                     const response = await invoke<any>(AGENT_BACKEND_CHANNELS.STREAM_MESSAGE, {
                       agentId,
                       sessionId: session.id,
                       content,
                       workspaceId: workspace.id,
-                      model: options.model || options.modelId || session.model,
+                      model: wireModel,
                       contextReferences: options.contextReferences,
                       imageBlocks: options.imageBlocks,
                       fileBlocks: options.fileBlocks,
