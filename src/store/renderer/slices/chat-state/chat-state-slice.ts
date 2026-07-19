@@ -465,10 +465,10 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
     updateAgent(state, agentId, { trackedWorkspaceId: trackedWsId }),
   )
   .with(transcriptHydrationStarted, (state, { payload: [agentId] }) =>
-    updateAgent(state, agentId, { transcriptHydration: 'loading' }),
+    updateAgent(state, agentId, { agentId, transcriptHydration: 'loading' }),
   )
   .with(transcriptHydrationSettled, (state, { payload: [agentId] }) =>
-    updateAgent(state, agentId, { transcriptHydration: 'settled' }),
+    updateAgent(state, agentId, { agentId, transcriptHydration: 'settled' }),
   )
   .with(workspaceDeleted, (state, { payload: [, agentIds] }) => {
     if (agentIds.length === 0) return state;

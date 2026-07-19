@@ -561,6 +561,11 @@ describe('chatState selectors', () => {
     expect(state.byAgentId[AGENT].transcriptHydration).toBe('loading');
   });
 
+  it('transcriptHydrationStarted sets agentId even when no prior entry exists', () => {
+    const state = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
+    expect(state.byAgentId[AGENT].agentId).toBe(AGENT);
+  });
+
   it('transcriptHydrationSettled sets status to settled', () => {
     const loadingState = chatStateReducer(initialState, transcriptHydrationStarted(AGENT));
     const settledState = chatStateReducer(loadingState, transcriptHydrationSettled(AGENT));
@@ -570,6 +575,11 @@ describe('chatState selectors', () => {
   it('transcriptHydrationSettled works even if never started (error path)', () => {
     const state = chatStateReducer(initialState, transcriptHydrationSettled(AGENT));
     expect(state.byAgentId[AGENT].transcriptHydration).toBe('settled');
+  });
+
+  it('transcriptHydrationSettled sets agentId even when no prior entry exists', () => {
+    const state = chatStateReducer(initialState, transcriptHydrationSettled(AGENT));
+    expect(state.byAgentId[AGENT].agentId).toBe(AGENT);
   });
 
   it('selectTranscriptHydration returns undefined by default', () => {
