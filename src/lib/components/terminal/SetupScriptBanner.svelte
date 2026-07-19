@@ -34,11 +34,11 @@
 } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
   import { selectIsSetupScriptBannerDismissed } from '$store/renderer/slices/setup-scripts/setup-scripts-selectors';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
-  import { selectWorkspaceHasSetupTerminal } from '$store/renderer/slices/terminals/terminals-selectors';
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { toast } from 'svelte-sonner';
   import { createLogger } from '$lib/utils/client-logger';
   import { store as appStore } from '$store/renderer/store';
+  import { appClient } from '$lib/client';
 
   const logger = createLogger('SetupScriptBanner');
 
@@ -56,7 +56,6 @@
   });
   const workspaceById = selectWorkspaceById(workspaceIdStore);
   const isDismissedStore = selectIsSetupScriptBannerDismissed(workspaceIdStore);
-  const hasSetupTerminalStore = selectWorkspaceHasSetupTerminal(workspaceIdStore);
 
   // State
   let isOpen = $state(true); // persisted dismissal is owned by setup-scripts Redux state
@@ -66,6 +65,7 @@
   let bannerEl = $state<HTMLDivElement | null>(null);
   let panelWidth = $state(640); // default ~40em
   let isResizing = $state(false);
+  let repoHasSetupScript = $state<boolean | null>(null); // null = pending check
 
   // Detect Windows platform for script generation and editor language
   const isWindows =
@@ -101,14 +101,34 @@
   const workspace = $derived($workspaceById);
   const repoPath = $derived(workspace?.repositoryPath || '');
 
-  // Check if this workspace was started with a setup script
-  // When a setup script runs during creation, it creates a terminal titled "Setup"
-  const wasStartedWithSetupScript = $derived($hasSetupTerminalStore);
-
   const isDismissed = $derived($isDismissedStore);
 
   // Should show the banner?
-  const shouldShow = $derived(isOpen && !isDismissed && !wasStartedWithSetupScript);
+  // Hide while the setup-script check is pending (avoid flash) and when a non-empty script exists
+  const shouldShow = $derived(
+    isOpen && !isDismissed && repoHasSetupScript === false,
+  );
+
+  // Check for existing setup script on mount and when workspaceId changes
+  $effect(() => {
+    const currentWorkspaceId = workspaceId;
+    repoHasSetupScript = null; // reset to pending on workspaceId change
+
+    void (async () => {
+      try {
+        const record = await appClient.setupScripts.get(currentWorkspaceId);
+        // Only update if workspaceId hasn't changed while we were waiting
+        if (currentWorkspaceId === workspaceId) {
+          repoHasSetupScript = !!(record?.script && record.script.trim());
+        }
+      } catch {
+        // On RPC failure, fall back to showing the banner (current behavior)
+        if (currentWorkspaceId === workspaceId) {
+          repoHasSetupScript = false;
+        }
+      }
+    })();
+  });
 
   // Get recent commands from all terminals in this workspace
   const recentCommands = $derived.by(() => {
