@@ -71,19 +71,22 @@ vi.mock('$features/terminal/terminal-history-tracker', () => ({
 }));
 
 // Mock CodeEditor component to avoid monaco-editor imports
-vi.mock('$lib/components/editor/CodeEditor.svelte', () => ({
-  default: vi.fn(),
-}));
+vi.mock('$lib/components/editor/CodeEditor.svelte', async () => {
+  const { default: MockCodeEditor } = await import('./mocks/MockCodeEditor.svelte');
+  return { default: MockCodeEditor };
+});
 
 // Mock all FA icons
-vi.mock('svelte-fa', () => ({
-  default: vi.fn(),
-}));
+vi.mock('svelte-fa', async () => {
+  const { default: MockFa } = await import('./mocks/MockFa.svelte');
+  return { default: MockFa };
+});
 
 // Mock button component
-vi.mock('$lib/components/ui/button', () => ({
-  Button: vi.fn(),
-}));
+vi.mock('$lib/components/ui/button', async () => {
+  const { default: MockButton } = await import('./mocks/MockButton.svelte');
+  return { Button: MockButton };
+});
 
 // Mock svelte transitions
 vi.mock('svelte/transition', () => ({
@@ -157,9 +160,13 @@ describe('SetupScriptBanner wire contract', () => {
 
     const { container } = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
 
+    // Wait for request to complete and state to settle
     await waitFor(() => {
       expect(backendRequestMock).toHaveBeenCalled();
     });
+
+    // Wait an additional tick for the effect to complete and DOM to update
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     // Banner should not be visible
     expect(container.querySelector('.setup-script-banner')).toBeNull();
@@ -176,12 +183,15 @@ describe('SetupScriptBanner wire contract', () => {
 
     const { container } = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
 
+    // Wait for request to complete and state to settle
     await waitFor(() => {
       expect(backendRequestMock).toHaveBeenCalled();
     });
 
-    // Banner should be visible
-    expect(container.querySelector('.setup-script-banner')).toBeTruthy();
+    // Wait for the banner element to appear after the async effect completes
+    await waitFor(() => {
+      expect(container.querySelector('.setup-script-banner')).toBeTruthy();
+    });
   });
 
   it('shows the banner when the daemon returns null (no script)', async () => {
@@ -189,12 +199,15 @@ describe('SetupScriptBanner wire contract', () => {
 
     const { container } = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
 
+    // Wait for request to complete
     await waitFor(() => {
       expect(backendRequestMock).toHaveBeenCalled();
     });
 
-    // Banner should be visible
-    expect(container.querySelector('.setup-script-banner')).toBeTruthy();
+    // Wait for the banner element to appear after the async effect completes
+    await waitFor(() => {
+      expect(container.querySelector('.setup-script-banner')).toBeTruthy();
+    });
   });
 
   it('shows the banner on RPC failure (fallback behavior)', async () => {
@@ -202,11 +215,14 @@ describe('SetupScriptBanner wire contract', () => {
 
     const { container } = render(SetupScriptBanner, { props: { workspaceId: 'ws-test' } });
 
+    // Wait for request to complete (rejection)
     await waitFor(() => {
       expect(backendRequestMock).toHaveBeenCalled();
     });
 
-    // Banner should be visible as fallback
-    expect(container.querySelector('.setup-script-banner')).toBeTruthy();
+    // Wait for the banner element to appear after the async effect handles the failure
+    await waitFor(() => {
+      expect(container.querySelector('.setup-script-banner')).toBeTruthy();
+    });
   });
 });
