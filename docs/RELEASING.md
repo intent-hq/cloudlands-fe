@@ -29,7 +29,7 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
 - **`CLOUDLANDS_APPLE_TEAM_ID`** - Apple Developer Team ID (e.g., `6947A73B2N`)
 - **`RELEASE_PAT`** - Personal Access Token (classic or fine-grained) with:
   - Classic: `repo` scope on `intent-hq/cloudlands-fe`, `intent-hq/cloudlands-releases`, and `intent-hq/intentd`
-  - Fine-grained: `Contents: Read and write` + `Pull requests: Read and write` on `cloudlands-fe` and `cloudlands-releases`; `Contents: Read and write` on `intentd` (for pushing version tags)
+  - Fine-grained: `Contents: Read and write` + `Pull requests: Read and write`, with repository access to `cloudlands-fe`, `cloudlands-releases`, and `intentd` (PR permissions unused for intentd)
 - **`INTENTD_READ_PAT`** - Personal Access Token with read access to `intent-hq/intentd`:
   - Classic: `repo` scope (read-only use)
   - Fine-grained: `Contents: Read-only`
@@ -58,20 +58,22 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
    Once the workflow completes successfully:
 
    ```bash
+   VERSION="<version>"
+
    # View the release
-   gh release view v<version> --repo intent-hq/cloudlands-releases
+   gh release view "v${VERSION}" --repo intent-hq/cloudlands-releases
 
    # Check assets (should include DMG, ZIP, two .blockmap files, latest-mac.yml, and release-manifest.json)
-   gh release view v<version> --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name'
+   gh release view "v${VERSION}" --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name'
 
    # Verify the version in latest-mac.yml
-   curl -sL https://github.com/intent-hq/cloudlands-releases/releases/download/v<version>/latest-mac.yml | grep version
+   curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/latest-mac.yml" | grep version
 
    # Inspect the release manifest (captures intentd SHA and version)
-   curl -sL https://github.com/intent-hq/cloudlands-releases/releases/download/v<version>/release-manifest.json | jq .
+   curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/release-manifest.json" | jq .
 
    # Verify intentd tag was created
-   gh api repos/intent-hq/intentd/git/refs/tags/v<version> --jq '.object.sha'
+   gh api "repos/intent-hq/intentd/git/refs/tags/v${VERSION}" --jq '.object.sha'
    ```
 
 4. **Verify the rolling beta channel**
