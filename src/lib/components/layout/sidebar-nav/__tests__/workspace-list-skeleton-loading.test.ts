@@ -5,7 +5,7 @@
  * of the "No workspaces yet" empty state or a partial workspace list. Once loaded,
  * the normal rendering (empty state, search, workspace cards) should appear.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
 import {
