@@ -133,6 +133,38 @@ describe('AllWorkspacesCard skeleton loading state', () => {
     expect(screen.queryByTestId('workspace-card-skeleton')).toBeNull();
     expect(screen.queryByTestId('workspace-card')).toBeNull();
   });
+
+  it('skeleton elements have visible background styling (regression: dark mode invisible skeletons)', async () => {
+    render(AllWorkspacesCardHarness, {
+      props: {
+        setup: () => {
+          // hasLoaded defaults to false
+        },
+      },
+    });
+
+    await waitFor(() => {
+      const skeletons = screen.getAllByTestId('workspace-card-skeleton');
+      expect(skeletons.length).toBeGreaterThan(0);
+
+      // Verify the skeleton container exists and has the expected structure
+      const firstSkeleton = skeletons[0];
+      expect(firstSkeleton).toBeDefined();
+
+      // Find the Skeleton child elements (they should have data-slot="skeleton")
+      const skeletonElements = firstSkeleton.querySelectorAll('[data-slot="skeleton"]');
+      expect(skeletonElements.length).toBeGreaterThan(0);
+
+      // Verify each skeleton element has the bg-secondary class (not bg-muted/50)
+      skeletonElements.forEach((el) => {
+        const classList = Array.from(el.classList);
+        // Should have bg-secondary for visibility in both light and dark themes
+        expect(classList.some((c) => c.includes('bg-secondary'))).toBe(true);
+        // Should have animate-pulse for the loading animation
+        expect(classList.some((c) => c.includes('animate-pulse'))).toBe(true);
+      });
+    });
+  });
 });
 
 describe('ActiveWorkspacesCard skeleton loading state', () => {
