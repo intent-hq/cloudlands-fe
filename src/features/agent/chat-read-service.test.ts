@@ -48,7 +48,6 @@ import {
   selectAgentIsResponding,
   selectAgentIsThinking,
 } from "$store/renderer/slices/agent-session/agent-session-selectors";
-import { upsertSession } from "$store/renderer/slices/agent-session/agent-session-slice";
 import { selectTranscriptHydration } from "$store/renderer/slices/chat-state/chat-state-selectors";
 import { loadChatTranscript } from "./chat-read-service";
 import { seedStreamFromSnapshot } from "$features/events/daemon-events-bridge.client";
