@@ -120,7 +120,7 @@ export interface MutationResult {
 export interface AgentCreateRequest {
   workspaceId: string;
   prompt?: string;
-  model?: string | null;
+  model?: string;
   specialist?: string | null;
   name?: string;
   agentId?: string;
