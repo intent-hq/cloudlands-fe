@@ -1,0 +1,222 @@
+name: Release Stable
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to promote to stable (e.g., 2.0.7)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Never cancel a release in progress
+concurrency:
+  group: cloudlands-stable-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote-to-stable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Validate version format
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$ ]]; then
+            echo "::error::Invalid version format '$VERSION'. Expected semver (e.g., 2.0.7 or 2.0.7-beta.1)"
+            exit 1
+          fi
+          echo "Version $VERSION is valid"
+
+      - name: Configure release token
+        id: token
+        env:
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+        run: |
+          if [ -n "$RELEASE_PAT" ]; then
+            echo "token=$RELEASE_PAT" >> "$GITHUB_OUTPUT"
+            echo "Using RELEASE_PAT for release operations"
+          else
+            echo "::error::RELEASE_PAT secret is required for this workflow"
+            exit 1
+          fi
+
+      - name: Verify versioned release exists
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! gh release view "v${VERSION}" --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
+            echo "::error::Versioned release v${VERSION} does not exist on intent-hq/cloudlands-releases"
+            exit 1
+          fi
+          echo "Versioned release v${VERSION} exists"
+
+      - name: Read current stable version
+        id: stable_version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # Attempt to fetch latest-mac.yml from stable; tolerate 404 (first promotion)
+          STABLE_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml"
+          PREV_STABLE=""
+          
+          HTTP_CODE=$(curl -sL -w "%{http_code}" -o /tmp/stable-latest-mac.yml "$STABLE_YML_URL")
+          if [ "$HTTP_CODE" = "200" ]; then
+            PREV_STABLE=$(awk '/^version:/{print $2; exit}' /tmp/stable-latest-mac.yml | tr -d '\r')
+            echo "Previous stable version: $PREV_STABLE"
+          elif [ "$HTTP_CODE" = "404" ]; then
+            echo "No prior stable release found (first promotion)"
+          else
+            echo "::error::Unexpected HTTP code $HTTP_CODE fetching stable latest-mac.yml"
+            exit 1
+          fi
+          
+          echo "prev_stable=$PREV_STABLE" >> "$GITHUB_OUTPUT"
+          if [ -z "$PREV_STABLE" ]; then
+            echo "is_first_promotion=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_first_promotion=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download versioned release assets
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p /tmp/release-assets
+          cd /tmp/release-assets
+          gh release download "v${VERSION}" --repo intent-hq/cloudlands-releases
+          echo "Downloaded assets:"
+          ls -lh
+
+      - name: Ensure stable release exists
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          # Check if 'stable' release already exists
+          if gh release view stable --repo intent-hq/cloudlands-releases >/dev/null 2>&1; then
+            echo "Rolling 'stable' release already exists"
+          else
+            echo "Creating rolling 'stable' release"
+            gh release create stable \
+              --repo intent-hq/cloudlands-releases \
+              --title "Intent Stable Channel (Rolling)" \
+              --notes "Rolling stable channel - points to the latest stable release. Auto-updater uses this." \
+              --draft=false
+          fi
+
+      - name: Delete old stable assets
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          echo "Cleaning up old assets from rolling stable release"
+          gh release view stable --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
+            if [ -n "$asset" ]; then
+              echo "Deleting old asset: $asset"
+              gh release delete-asset stable "$asset" --repo intent-hq/cloudlands-releases --yes || true
+            fi
+          done
+
+      - name: Upload new assets to stable
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          cd /tmp/release-assets
+          gh release upload stable --repo intent-hq/cloudlands-releases -- \
+            ./*.dmg ./*.zip ./*.blockmap latest-mac.yml
+
+      - name: Verify stable feed matches versioned release
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          VERSIONED_SHA=$(curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/latest-mac.yml" | awk '/^sha512:/{print $2; exit}')
+          STABLE_SHA=$(curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml" | awk '/^sha512:/{print $2; exit}')
+
+          if [ "$VERSIONED_SHA" = "$STABLE_SHA" ]; then
+            echo "✓ Stable feed sha512 matches versioned release"
+          else
+            echo "::error::sha512 mismatch - versioned: $VERSIONED_SHA, stable: $STABLE_SHA"
+            exit 1
+          fi
+
+      - name: Build aggregated release notes
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          VERSION: ${{ inputs.version }}
+          PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
+          IS_FIRST: ${{ steps.stable_version.outputs.is_first_promotion }}
+        run: |
+          # List all versioned releases and extract versions in semver order
+          gh release list --repo intent-hq/cloudlands-releases --limit 1000 --json tagName,isPrerelease \
+            --jq '.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+")) | .tagName' \
+            | sed 's/^v//' \
+            | sort -V -r > /tmp/all-versions.txt
+
+          # Determine range: (prevStable, version]
+          if [ "$IS_FIRST" = "true" ]; then
+            # First promotion: only include the target version
+            echo "$VERSION" > /tmp/range-versions.txt
+          else
+            # Steady-state: include all versions > prevStable and <= version
+            awk -v prev="$PREV_STABLE" -v target="$VERSION" '
+              BEGIN { found_target=0; found_prev=0; }
+              {
+                if ($1 == target) found_target=1;
+                if (found_target && !found_prev) print $1;
+                if ($1 == prev) found_prev=1;
+              }
+            ' /tmp/all-versions.txt > /tmp/range-versions.txt
+          fi
+
+          echo "Versions to include in aggregated notes:"
+          cat /tmp/range-versions.txt
+
+          # Fetch body for each version and aggregate
+          {
+            while IFS= read -r ver; do
+              echo "## v${ver}"
+              echo ""
+              gh release view "v${ver}" --repo intent-hq/cloudlands-releases --json body --jq '.body // ""'
+              echo ""
+            done < /tmp/range-versions.txt
+          } > /tmp/aggregated-notes.md
+
+          echo "Aggregated notes preview (first 20 lines):"
+          head -n 20 /tmp/aggregated-notes.md
+
+      - name: Update stable release notes
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          gh release edit stable --repo intent-hq/cloudlands-releases --notes-file /tmp/aggregated-notes.md
+          echo "✓ Stable release notes updated"
+
+      - name: Post summary
+        env:
+          VERSION: ${{ inputs.version }}
+          PREV_STABLE: ${{ steps.stable_version.outputs.prev_stable }}
+          IS_FIRST: ${{ steps.stable_version.outputs.is_first_promotion }}
+        run: |
+          {
+            echo "## Stable Promotion"
+            echo ""
+            echo "**Promoted version:** v$VERSION"
+            if [ "$IS_FIRST" = "true" ]; then
+              echo "**Previous stable:** (none - first promotion)"
+            else
+              echo "**Previous stable:** v$PREV_STABLE"
+            fi
+            echo ""
+            echo "### Download URLs"
+            echo "- [Rolling stable channel](https://github.com/intent-hq/cloudlands-releases/releases/tag/stable)"
+            echo "- [Auto-updater feed](https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml)"
+            echo ""
+            echo "### Verification"
+            echo "- ✓ Assets copied from versioned release v$VERSION"
+            echo "- ✓ sha512 verification passed"
+            echo "- ✓ Aggregated release notes updated"
+          } >> "$GITHUB_STEP_SUMMARY"
