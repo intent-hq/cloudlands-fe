@@ -48,8 +48,6 @@ jobs:
 
       - name: Read current stable version
         id: stable_version
-        env:
-          VERSION: ${{ inputs.version }}
         run: |
           # Attempt to fetch latest-mac.yml from stable; tolerate 404 (first promotion)
           STABLE_YML_URL="https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml"
@@ -142,7 +140,6 @@ jobs:
       - name: Delete previous version assets
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-          VERSION: ${{ inputs.version }}
         run: |
           cd /tmp/release-assets
 
