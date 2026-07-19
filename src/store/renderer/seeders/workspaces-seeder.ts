@@ -156,8 +156,8 @@ registerMockIpcHandler(WORKSPACE_CHANNELS.UPDATE_SETTINGS, async (arg) => {
 });
 
 registerMockSeeder("workspaces", async ({ store, client }) => {
-  let workspaces;
-  let recentViews;
+  let workspaces: Workspace[] = [];
+  let recentViews: Record<string, number> = {};
 
   // Narrow error swallowing to the RPC boundaries only: if the daemon is down,
   // keep the UI functional with an empty list. Let unexpected in-process bugs
@@ -166,6 +166,8 @@ registerMockSeeder("workspaces", async ({ store, client }) => {
     workspaces = await client.workspaces.list({ includeArchived: true });
   } catch (error) {
     console.error("Workspaces seeder: client.workspaces.list() failed:", error);
+    // Clear any stale workspaces from a previous seeding attempt (dev/HMR/tests)
+    store.dispatch(replaceWorkspaceList([]));
     store.dispatch(setWorkspaceHasLoaded(true));
     return;
   }
