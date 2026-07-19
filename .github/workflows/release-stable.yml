@@ -142,16 +142,42 @@ jobs:
       - name: Delete previous version assets
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          VERSION: ${{ inputs.version }}
         run: |
-          # Now that new assets are live, clean up old version's artifacts
-          # List current assets and delete any that aren't from this promotion
-          echo "Cleaning up old versioned assets from stable release"
+          cd /tmp/release-assets
+
+          # Build allowlist of assets we just uploaded (don't delete these)
+          PROMOTED_ASSETS=()
+          for pattern in "*.dmg" "*.zip" "*.blockmap"; do
+            for file in $pattern; do
+              if [ -f "$file" ]; then
+                PROMOTED_ASSETS+=("$file")
+              fi
+            done
+          done
+          PROMOTED_ASSETS+=("latest-mac.yml")
+
+          # Clean up old versioned assets from stable release
+          echo "Cleaning up old versioned assets (keeping newly promoted files)"
           gh release view stable --repo intent-hq/cloudlands-releases --json assets --jq '.assets[].name' | while read -r asset; do
-            if [ -n "$asset" ] && [ "$asset" != "latest-mac.yml" ]; then
-              # Delete old versioned files (previous .dmg/.zip/.blockmap)
-              # This step runs after new assets are live, so failure here is safe to surface
+            if [ -z "$asset" ]; then
+              continue
+            fi
+
+            # Check if this asset is in our promoted list
+            KEEP=false
+            for promoted in "${PROMOTED_ASSETS[@]}"; do
+              if [ "$asset" = "$promoted" ]; then
+                KEEP=true
+                break
+              fi
+            done
+
+            if [ "$KEEP" = "false" ]; then
               echo "Deleting old asset: $asset"
               gh release delete-asset stable "$asset" --repo intent-hq/cloudlands-releases --yes
+            else
+              echo "Keeping promoted asset: $asset"
             fi
           done
 
@@ -159,7 +185,6 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          # shellcheck disable=SC2086
           # Fetch versioned release sha512
           VERSIONED_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/v${VERSION}/latest-mac.yml" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
           if [ -z "$VERSIONED_SHA" ]; then
@@ -171,7 +196,7 @@ jobs:
           MAX_RETRIES=5
           RETRY_DELAY=2
           for i in $(seq 1 "$MAX_RETRIES"); do
-            STABLE_SHA=$(curl -sfL "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml?t=$(date +%s)" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
+            STABLE_SHA=$(curl -sL "https://github.com/intent-hq/cloudlands-releases/releases/download/stable/latest-mac.yml?t=$(date +%s)" | awk '/^sha512:/{print $2; exit}' | tr -d '\r')
 
             if [ -z "$STABLE_SHA" ]; then
               echo "::warning::Retry $i/$MAX_RETRIES: Failed to fetch or parse sha512 from stable release"
