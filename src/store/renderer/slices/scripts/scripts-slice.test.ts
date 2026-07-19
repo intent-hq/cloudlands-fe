@@ -25,8 +25,10 @@ import {
   selectRunningScripts,
   selectScriptEntries,
   selectScriptRuntime,
+  selectScriptsInitialized,
   selectWorkspaceScriptEntries,
   selectWorkspaceScriptRuntime,
+  selectWorkspaceScriptsInitialized,
 } from './scripts-selectors';
 
 const WS = 'ws-1';
@@ -204,5 +206,49 @@ describe('scripts selectors', () => {
     expect(selectScriptRuntime.select(state, 'legacy-1')).toEqual(makeRuntime());
     expect(selectWorkspaceScriptRuntime.select(state, WS, 'missing')).toEqual(makeRuntime());
     expect(selectRunningScripts.select(state)).toEqual([]);
+  });
+
+  it('selects scripts initialized state', () => {
+    // uninitialized state
+    const uninitState = {
+      workspace: { activeWorkspaceId: WS },
+      scripts: {
+        byWorkspaceId: {
+          [WS]: {
+            ...emptyWorkspaceState,
+            initialized: false,
+            scripts: {},
+          },
+        },
+      },
+    };
+    expect(selectScriptsInitialized.select(uninitState)).toBe(false);
+    expect(selectWorkspaceScriptsInitialized.select(uninitState, WS)).toBe(false);
+
+    // initialized state
+    const initState = {
+      workspace: { activeWorkspaceId: WS },
+      scripts: {
+        byWorkspaceId: {
+          [WS]: {
+            ...emptyWorkspaceState,
+            initialized: true,
+            scripts: {},
+          },
+        },
+      },
+    };
+    expect(selectScriptsInitialized.select(initState)).toBe(true);
+    expect(selectWorkspaceScriptsInitialized.select(initState, WS)).toBe(true);
+
+    // no workspace state defaults to false
+    const noWsState = {
+      workspace: { activeWorkspaceId: WS },
+      scripts: {
+        byWorkspaceId: {},
+      },
+    };
+    expect(selectScriptsInitialized.select(noWsState)).toBe(false);
+    expect(selectWorkspaceScriptsInitialized.select(noWsState, WS)).toBe(false);
   });
 });
