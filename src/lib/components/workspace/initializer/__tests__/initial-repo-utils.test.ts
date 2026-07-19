@@ -139,23 +139,63 @@ describe('getLastSelectedRepoHydrationAction', () => {
     isFormPersistenceEnabled: true,
     currentRepoPath: '',
     hasLastSelectedRepo: true,
+    recentRepos: [],
   };
 
-  it('waits for both Redux hydration and lastSelectedRepo readiness', () => {
+  it('waits for Redux hydration', () => {
     expect(getLastSelectedRepoHydrationAction({ ...readyInput, isHydrated: false })).toBe('wait');
-    expect(getLastSelectedRepoHydrationAction({ ...readyInput, hasLastSelectedRepo: false })).toBe('wait');
   });
 
-  it('restores only when hydration is ready and no repo has been selected', () => {
+  it('waits for prefill data to be consumed', () => {
+    expect(getLastSelectedRepoHydrationAction({ ...readyInput, hasPrefillData: true })).toBe('wait');
+  });
+
+  it('waits when already handled', () => {
+    expect(getLastSelectedRepoHydrationAction({ ...readyInput, alreadyHandled: true })).toBe('wait');
+  });
+
+  it('restores lastSelectedRepo when available and no repo has been selected', () => {
     expect(getLastSelectedRepoHydrationAction(readyInput)).toBe('restore');
   });
 
-  it('skips replay when persistence is disabled or current form state already has a repo', () => {
+  it('falls back to recent repo when lastSelectedRepo is unset but recentRepos exist', () => {
+    const recentRepos = [
+      { path: '/home/user/recent-repo', type: 'local' as const, name: 'recent-repo' },
+    ];
+    expect(
+      getLastSelectedRepoHydrationAction({ ...readyInput, hasLastSelectedRepo: false, recentRepos }),
+    ).toBe('restore-recent');
+  });
+
+  it('waits forever when neither lastSelectedRepo nor recentRepos are available', () => {
+    expect(
+      getLastSelectedRepoHydrationAction({ ...readyInput, hasLastSelectedRepo: false, recentRepos: [] }),
+    ).toBe('wait');
+  });
+
+  it('skips when persistence is disabled', () => {
     expect(
       getLastSelectedRepoHydrationAction({ ...readyInput, isFormPersistenceEnabled: false }),
     ).toBe('skip');
+  });
+
+  it('skips when current form state already has a repo', () => {
     expect(
       getLastSelectedRepoHydrationAction({ ...readyInput, currentRepoPath: '/typed' }),
     ).toBe('skip');
+  });
+
+  it('prefers recent repo over waiting when lastSelectedRepo is unset', () => {
+    const recentRepos = [
+      { path: '/home/user/repo1', type: 'local' as const, name: 'repo1' },
+      { path: '/home/user/repo2', type: 'local' as const, name: 'repo2' },
+    ];
+    expect(
+      getLastSelectedRepoHydrationAction({
+        ...readyInput,
+        hasLastSelectedRepo: false,
+        recentRepos,
+      }),
+    ).toBe('restore-recent');
   });
 });
