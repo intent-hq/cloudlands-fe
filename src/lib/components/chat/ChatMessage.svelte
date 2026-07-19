@@ -121,7 +121,7 @@
     /** Called when user wants to edit and resend the message */
     onEditSubmit?: (newText: string, model?: string) => void;
     /** Model to pre-select in the model picker when editing */
-    editModel?: string;
+    editModel?: string | null;
     /** Called when user wants to regenerate the assistant response */
     onRegenerate?: () => void;
     /** Called when user wants to fork the conversation from this message */
@@ -184,7 +184,7 @@
   let isEditing = $state(false);
   let editValue = $state('');
   let editContextItems = $state<ContextItem[]>([]);
-  let editSelectedModel = $state<string | undefined>(undefined);
+  let editSelectedModel = $state<string | null | undefined>(undefined);
 
   let role = $derived(
     message
@@ -834,7 +834,7 @@
     // Send just the edited user message text.
     // Context is managed separately by the chat service when re-sending.
     // Pass the selected model so regeneration uses the same (or user-changed) model.
-    onEditSubmit?.(newText, editSelectedModel);
+    onEditSubmit?.(newText, editSelectedModel ?? undefined);
     editValue = '';
     editContextItems = [];
     editSelectedModel = undefined;

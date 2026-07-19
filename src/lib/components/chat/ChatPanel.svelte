@@ -2533,7 +2533,7 @@
     logger.info('Changing agent specialist', { agentId, specialistId });
 
     let behaviorPrompt: string | undefined;
-    let newModel: string | undefined;
+    let newModel: string | null | undefined;
     let specialistName: string | undefined;
 
     if (specialistId) {
@@ -3372,8 +3372,7 @@
                             onEditSubmit={(newText, model) =>
                               handleEditMessage(message.id, newText, model)}
                             editModel={turn.assistantMessages[0]?.metadata?.model ??
-                              hydratedInputModel ??
-                              agentModel}
+                              hydratedInputModel}
                             enableSticky={shouldEnableSticky}
                             onScrollToPrevious={() => scrollToPreviousUserMessage(message.id)}
                             backendSessionId={auggieSessionId}
@@ -3640,7 +3639,7 @@
       {workspace}
       currentContext={currentMainPanelContext}
       {agentId}
-      selectedModel={hydratedInputModel ?? agentModel}
+      selectedModel={hydratedInputModel}
       compactMode={isCompactMode}
       editorClassName={isChiefWorkspace ? 'px-1.5!' : 'px-2!'}
       isProviderChangeLocked={!canChangeProvider}

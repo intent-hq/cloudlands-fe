@@ -77,7 +77,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     contextItems?: ContextItem[];
     currentContext?: MainPanelContext | null;
     editorSelection?: string | null;
-    selectedModel?: string;
+    selectedModel?: string | null;
     isModelLocked?: boolean;
     providerId?: string;
     isProviderChangeLocked?: boolean;
@@ -396,10 +396,10 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   let isAutoExpand = $derived(containerHeight === null);
 
   // Model selection
-  let selectedModel = $state<string | undefined>(propSelectedModel);
+  let selectedModel = $state<string | null | undefined>(propSelectedModel);
 
   // Track the last notified model to prevent infinite loops
-  let lastNotifiedModel: string | undefined = propSelectedModel;
+  let lastNotifiedModel: string | null | undefined = propSelectedModel;
 
   // Track if user has made a local change that should take precedence over props
   let userChangedModel = $state(false);
@@ -556,7 +556,7 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         await onenhance();
       } else {
         // No handler provided: enhance through the daemon (agent.enhancePrompt, PROTOCOL §5.31)
-        const result = await enhancePrompt(value, { model: selectedModel });
+        const result = await enhancePrompt(value, { model: selectedModel ?? undefined });
 
         // Check if THIS request was cancelled before applying result
         if (currentRequestId === cancelledRequestId) {

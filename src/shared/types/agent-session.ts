@@ -122,8 +122,8 @@ export interface AgentSession {
   /** Whether the name was explicitly set via setAgentName API */
   nameExplicitlySet?: boolean;
 
-  /** Model identifier (e.g., "sonnet-3.5", "gpt-4") */
-  model?: string;
+  /** Model identifier (e.g., "sonnet-3.5", "gpt-4"). Null when using provider/settings default (persisted from backend). Undefined when omitted. */
+  model?: string | null;
 
   /** ACP provider ID (e.g., "auggie", "claude-code", "opencode"). Mutable only until first real session use, then locked. */
   provider?: string;
