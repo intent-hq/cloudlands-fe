@@ -59,7 +59,7 @@ jobs:
       - name: Check for duplicate version tag
         run: |
           VERSION="${{ inputs.version }}"
-          if git ls-remote --tags origin | grep -q "refs/tags/v${VERSION}$"; then
+          if git ls-remote --tags origin | grep -qF "refs/tags/v${VERSION}"; then
             echo "::error::Tag v${VERSION} already exists on origin. Use a different version number."
             exit 1
           fi
@@ -108,7 +108,7 @@ jobs:
           echo "Captured intentd SHA: ${INTENTD_SHA}"
 
           # Check if tag already exists on intentd
-          if git ls-remote --tags origin | grep -q "refs/tags/v${VERSION}$"; then
+          if git ls-remote --tags origin | grep -qF "refs/tags/v${VERSION}"; then
             echo "::error::Tag v${VERSION} already exists on intent-hq/intentd. Use a different version number."
             exit 1
           fi
@@ -185,13 +185,18 @@ jobs:
         run: |
           # Find the previous versioned release (highest vX.Y.Z tag strictly less than current version)
           # Node.js performs portable semver comparison (BSD sort lacks -V)
-          PREV_RELEASE=$(gh release list --repo intent-hq/cloudlands-releases --limit 100 --json tagName --jq '.[].tagName' \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-            | node -e '
+          # Capture grep output first to handle potential empty results, then pipe to node
+          TAGS=$(gh release list --repo intent-hq/cloudlands-releases --limit 100 --json tagName --jq '.[].tagName' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || echo "")
+
+          if [ -z "$TAGS" ]; then
+            PREV_RELEASE=""
+          else
+            PREV_RELEASE=$(echo "$TAGS" | node -e '
                 const versionStr = process.env.VERSION;
                 const currentMatch = versionStr.match(/^(\d+)\.(\d+)\.(\d+)/);
                 if (!currentMatch) {
-                  console.error("Invalid VERSION format: " + versionStr);
+                  console.error("::error::Invalid VERSION format: " + versionStr);
                   process.exit(1);
                 }
                 const current = [+currentMatch[1], +currentMatch[2], +currentMatch[3]];
@@ -217,7 +222,8 @@ jobs:
                     return 0;
                   });
                 console.log(candidates[0]?.tag || "");
-              ') || true
+              ')
+          fi
 
           if [ -z "$PREV_RELEASE" ]; then
             echo "No previous versioned release found"
@@ -247,7 +253,7 @@ jobs:
 
             # Try 1: Check if intentd has a matching tag
             cd intentd-repo
-            if git ls-remote --tags origin | grep -q "refs/tags/${PREV_RELEASE}$"; then
+            if git ls-remote --tags origin | grep -qF "refs/tags/${PREV_RELEASE}"; then
               echo "Found intentd tag ${PREV_RELEASE}"
               INTENTD_BASE="${PREV_RELEASE}"
             else
