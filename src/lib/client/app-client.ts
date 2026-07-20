@@ -21,6 +21,8 @@ import type {
   GitStatus,
   Note,
   NoteVersion,
+  PullRequestInfo,
+  PullRequestStatus,
   QueuedMessage,
   TaskStatus,
   UpdateWorkspaceRequest,
@@ -179,6 +181,20 @@ export interface PrStatusSummary {
   prNumber?: number;
   url?: string;
   state?: string;
+}
+
+/**
+ * Post-refresh linkage state returned by `pr.refresh` (PROTOCOL §5.7
+ * extension). `prNumber`/`prUrl`/`prStatus` are absent when no PR is linked
+ * after the refresh; `pullRequests` is always an array (possibly empty) —
+ * the daemon-owned per-branch PR list.
+ */
+export interface PrRefreshResult {
+  outcome: "skipped" | "unchanged" | "linked" | "updated" | "unlinked";
+  prNumber?: number;
+  prUrl?: string;
+  prStatus?: PullRequestStatus;
+  pullRequests: PullRequestInfo[];
 }
 
 /**
@@ -634,6 +650,13 @@ export interface GitClient {
    */
   commitDetails(workspaceId: string, commitHash: string): Promise<CommitDetailsResult | null>;
   prStatus(workspaceId: string): Promise<PrStatusSummary | null>;
+  /**
+   * `pr.refresh` (§5.7) — forces the daemon's PR discovery/refresh (link,
+   * relink-after-merge, stale-link clearing) for one workspace on demand and
+   * returns the post-refresh linkage state. Unlike `pr.status` it does NOT
+   * require an active PR. Errors fold to `null`.
+   */
+  prRefresh(workspaceId: string): Promise<PrRefreshResult | null>;
   /**
    * Path-based branch listing (`git.getBranches`, §5.6). Used by the
    * workspace initializer to populate the branch picker against an arbitrary
