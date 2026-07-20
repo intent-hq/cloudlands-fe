@@ -81,11 +81,23 @@ describe('codex-acp-manager', () => {
       'linux-x64',
       'win32-x64',
     ]);
+    const expectedPlatformIntegrities: Record<PlatformKey, string> = {
+      'darwin-arm64':
+        'sha512-2AmbWsc/+Mpn6U8UOIlPLvgwGsGOr/LFpgcvrnjcCT9V1yY92MLrqzjMX82+VjTrRLRuXvc25SB5Z1++4Pw29g==',
+      'darwin-x64':
+        'sha512-QCWggk0s4GTPLCR7eznyx29Dls4gzUKvp4MjZ4nzPX5gDL/02PGY+oCV1WsQOsnzWRK0RxM+GlK19rG1qzqplw==',
+      'linux-x64':
+        'sha512-xs5zZBLpJuciEbZNx6ZSNL0qCa9h3i/zWpj40sp6QtF+L4Ow/7qzHdBzboGhHdcz1jrLedfZeRFDA2Elj8TLMA==',
+      'win32-x64':
+        'sha512-ZriI/ay5E3DCg8s22LZykIRI2XzQL6sZg/t81K+6qc86ldscaSWQSOT6KSnRcv31QJCMfBlFxMj22pZiGSVjQA==',
+    };
     for (const key of Object.keys(nativePackageNames) as PlatformKey[]) {
       expect(manager.MANAGED_CODEX_ACP_INTEGRITY.platforms[key].packageName).toBe(
         nativePackageNames[key],
       );
-      expect(manager.MANAGED_CODEX_ACP_INTEGRITY.platforms[key].integrity).toMatch(/^sha512-/);
+      expect(manager.MANAGED_CODEX_ACP_INTEGRITY.platforms[key].integrity).toBe(
+        expectedPlatformIntegrities[key],
+      );
     }
   });
 
