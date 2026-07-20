@@ -25,7 +25,7 @@ export interface RemoteEnvProfile {
     persistentSystem: boolean;
     /** Has pod-init.d style boot scripts */
     hasBootScripts: boolean;
-    /** Shared user (not per-user like DevPod's 'devuser') */
+    /** Login user is shared by everyone (e.g. DevPod's 'devuser') rather than per-person */
     sharedUser: boolean;
   };
   /** Path to test repository on remote */
