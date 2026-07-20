@@ -23,11 +23,11 @@
  * store is still initializing through the middleware chain, and so this
  * middleware-reachable module never statically pulls in `$app/*` navigation.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import {
   getItem,
   getItems,
-} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+} from "$lib/store-shim/utils/collections/collection-utils";
 import { WorkspaceStatusEnum, type Workspace } from "$shared/types";
 import type { WorkspaceId } from "$shared/types/branded-ids";
 import { store as appStore } from "$store/renderer/store";

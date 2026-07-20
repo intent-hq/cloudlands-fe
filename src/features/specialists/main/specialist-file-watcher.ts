@@ -1,6 +1,6 @@
 /**
  * File watcher for specialist directories.
- * Watches both user (~/.augment/specialists/) and project (<repo>/.augment/specialists/)
+ * Watches both user (~/.intent/specialists/) and project (<repo>/.intent/specialists/)
  * directories for changes, invalidates the cache, and notifies the renderer.
  */
 import type { FSWatcher } from 'chokidar';

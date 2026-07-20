@@ -109,10 +109,6 @@ vi.mock('$features/git/git-cache', () => ({
   gitCache: { invalidate: vi.fn(), invalidateWorkspace: vi.fn(), set: vi.fn() },
 }));
 
-vi.mock('$lib/services/analytics', () => ({
-  track: vi.fn(),
-  trackGitOp: vi.fn(),
-}));
 
 vi.mock('$lib/utils/client-logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },

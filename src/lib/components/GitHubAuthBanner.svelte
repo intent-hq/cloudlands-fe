@@ -26,7 +26,7 @@
   selectGitHubAuthIsAuthenticating,
   selectGitHubAuthOauthUrl,
   selectGitHubAuthError,
-  selectGitHubAuthRequiresAugmentAuth,
+  selectGitHubAuthRequiresDaemonAuth,
 } from '$store/renderer/slices/github-auth/github-auth-selectors';
   import { store as appStore } from '$store/renderer/store';
 
@@ -52,7 +52,7 @@
   const isAuthenticating$ = selectGitHubAuthIsAuthenticating();
   const oauthUrl$ = selectGitHubAuthOauthUrl();
   const error$ = selectGitHubAuthError();
-  const requiresAugmentAuth$ = selectGitHubAuthRequiresAugmentAuth();
+  const requiresDaemonAuth$ = selectGitHubAuthRequiresDaemonAuth();
 
   let authStartedHere = $state(false);
   let isCheckingAuth = $state(false);
@@ -187,10 +187,10 @@
         <span>Try Again</span>
       </Button>
     </div>
-  {:else if $requiresAugmentAuth$}
-    <!-- Augment auth required state -->
+  {:else if $requiresDaemonAuth$}
+    <!-- Daemon auth required state -->
     <div class="py-2 px-2 space-y-1" transition:slide={{ axis: 'y', duration: 200 }}>
-      <p class="text-xs text-subtle">Please authenticate with Augment first.</p>
+      <p class="text-xs text-subtle">Please authenticate with the daemon first.</p>
       <p class="text-xs text-subtle">
         Run <code class="bg-muted px-1 rounded">auggie login</code> in your terminal.
       </p>

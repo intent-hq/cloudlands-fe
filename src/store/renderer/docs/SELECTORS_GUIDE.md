@@ -1,12 +1,7 @@
 # Redux Selectors Guide
 
-This project guide is a concise companion to the Redux selector skills. The active rules live in:
-
-- `.agents/skills/ag-redux-toolkit/svelte/selectors/SKILL.md`
-- `.agents/skills/ag-redux-toolkit/svelte/selector-lifecycle/SKILL.md`
-- `.agents/skills/ag-redux-toolkit/core/selector-channels/SKILL.md`
-
-Use those skills for selector API details. This file only records the Intent-app conventions that are easy to forget.
+This project guide is a concise companion to the local store shim
+(`src/lib/store-shim/`). Use the shim source for selector API details. This file only records the Intent-app conventions that are easy to forget.
 
 ## Create selectors from the configured Store
 
@@ -14,7 +9,7 @@ App-local selectors should be created from the configured app Store so state inf
 
 ```typescript
 import { store } from "$store/renderer/store";
-import { getItem, getItems } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem, getItems } from "$lib/store-shim/utils/collections/collection-utils";
 
 export const selectTodosCollection = store.createSelector((state) => state.todos.collection);
 export const selectTodo = store.createSelector((state, id: string) => getItem(selectTodosCollection.select(state), id));
@@ -47,10 +42,6 @@ function archiveActiveTodo() {
 ```
 
 Never call the readable form after `await`, inside handlers, inside callbacks, inside tests, or inside another selector.
-
-## Saga reactions to selector changes
-
-For continuous reactions, use the package selector-channel helpers documented by the selector-channel skill. For one-shot waits, use `waitFor` as documented in [waitFor Saga Utility Guide](./WAITFOR_SAGA_GUIDE.md). Do not duplicate selector-channel tutorial code in this app guide.
 
 ## See also
 

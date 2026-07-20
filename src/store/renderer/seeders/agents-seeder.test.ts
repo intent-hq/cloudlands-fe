@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../slices/agent-session/agent-session-types";
-import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
+import { Store } from "$lib/store-shim/svelte-store";
 import { reducers } from "../reducer";
 
 // Mock the AppClient seam

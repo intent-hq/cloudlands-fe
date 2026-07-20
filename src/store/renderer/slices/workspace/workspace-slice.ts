@@ -9,8 +9,8 @@ import {
   toggleTerminalOverlay,
 } from "../terminals/terminals-slice";
 import { workspaceDeleted } from "../workspace-lifecycle/workspace-lifecycle-slice";
-import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
 import {
   addItem,
   createCollection,
@@ -19,7 +19,7 @@ import {
   removeItem,
   updateItem,
   upsertItem,
-} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+} from "$lib/store-shim/utils/collections/collection-utils";
 
 export type WorkspaceUpdatedEvent = {
   workspaceId: string;

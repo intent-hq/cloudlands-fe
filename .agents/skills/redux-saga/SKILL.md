@@ -22,7 +22,7 @@ triggers:
 
 > Source: official redux-saga API Reference, https://redux-saga.js.org/docs/api, retrieved 2026-05-15.
 
-Use this skill for generic redux-saga API behavior. When editing this repository's`ag-redux-toolkit` code, also follow the package-specific skills under`.agent/skills/ag-redux-toolkit/core/`, especially the `typed-redux-saga` `yield*`conventions and canonical watcher ownership rules.
+Use this skill for generic redux-saga API behavior.
 
 ## Agent Preflight Compliance Contract
 
@@ -290,6 +290,4 @@ expect(generator.next(mockTask).value).toEqual(cancel(mockTask));
 
 ## See also
 
-- `.agent/skills/ag-redux-toolkit/core/sagas/SKILL.md` — repository-specific typed-redux-saga conventions.
-- `.agent/skills/ag-redux-toolkit/core/channel-effects/SKILL.md` — package-provided channel consumer wrappers and when they add cleanup value.
-- `.agent/skills/ag-redux-toolkit/core/testing/SKILL.md` — repository-specific saga test patterns and mocks.
+- Official redux-saga API Reference: https://redux-saga.js.org/docs/api

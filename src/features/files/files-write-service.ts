@@ -21,8 +21,8 @@
  * while the store module is still mid-initialization through the middleware
  * chain). State reads use the raw `appStore.state` shape instead.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import type { StoreMiddleware } from "$lib/store-shim/types";
+import { getItem } from "$lib/store-shim/utils/collections/collection-utils";
 import { appClient } from "$lib/client";
 import type { MutationResult } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";

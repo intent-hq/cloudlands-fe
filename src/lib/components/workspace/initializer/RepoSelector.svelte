@@ -7,7 +7,6 @@
   import Input from '$lib/components/ui/input/input.svelte';
   import { Select } from '$lib/components/ui/select';
   import { debugConfig } from '$lib/config/debug';
-  import { track } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
   import { handleError } from '$lib/utils/error-handling';
   import { performanceMonitor } from '$lib/utils/performance';
@@ -106,7 +105,6 @@
 
   function onchangeWithTracking(detail: RepoChangeDetail) {
     if (!onchange) return;
-    track('Changed Repo', { repo_type: activeTab });
     onchange(new CustomEvent('change', { detail }));
   }
 
@@ -356,9 +354,6 @@
 
   // Handle dropdown open - set correct tab when opening
   function handleDropdownOpen() {
-    // Track that user opened the repo selector (workspace creation funnel)
-    track('Opened Repo Selector', {});
-
     // Clear search term when opening so all repos show
     searchTerm = '';
 

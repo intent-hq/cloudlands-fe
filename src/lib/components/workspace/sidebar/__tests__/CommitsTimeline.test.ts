@@ -133,11 +133,6 @@ vi.mock('$features/navigation/link-handler', () => ({
   handleLink: vi.fn(),
 }));
 
-vi.mock('$lib/services/analytics', () => ({
-  track: vi.fn(),
-  trackGitOp: vi.fn(),
-  getFileExtension: (p: string) => p.split('.').pop() ?? '',
-}));
 
 vi.mock('$lib/utils/client-logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },

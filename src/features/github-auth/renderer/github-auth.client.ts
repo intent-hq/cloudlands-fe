@@ -10,7 +10,7 @@ import type {
 
 export const githubAuthClient = {
   /**
-   * Check if user is authenticated with GitHub via Augment
+   * Check if user is authenticated with GitHub via the daemon
    */
   async isAuthenticated(): Promise<boolean> {
     try {
@@ -21,7 +21,7 @@ export const githubAuthClient = {
   },
 
   /**
-   * Get GitHub user info (may be null if not available from Augment API)
+   * Get GitHub user info (may be null if not available from daemon API)
    */
   async getUser(): Promise<GitHubUser | null> {
     try {
@@ -73,14 +73,14 @@ export const githubAuthClient = {
     } catch {
       return {
         isAuthenticated: false,
-        requiresAugmentAuth: true,
+        requiresDaemonAuth: true,
         user: null,
       };
     }
   },
 
   /**
-   * Get GitHub status from Augment API
+   * Get GitHub status from daemon API
    */
   async getStatus(): Promise<GitHubAuthStatus> {
     try {

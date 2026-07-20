@@ -37,7 +37,7 @@ describe("LiveSkillsClient", () => {
         {
           name: "example-skill",
           description: "A test skill",
-          location: "/workspace/.augment/skills/example/SKILL.md",
+          location: "/workspace/.intent/skills/example/SKILL.md",
           scope: "project",
           allowedTools: "*",
           compatibility: "typescript",
@@ -45,7 +45,7 @@ describe("LiveSkillsClient", () => {
         {
           name: "python-expert",
           description: "Python specialist",
-          location: "/Users/user/.augment/skills/python-expert/SKILL.md",
+          location: "/Users/user/.intent/skills/python-expert/SKILL.md",
           scope: "user",
         },
       ]);
@@ -56,13 +56,13 @@ describe("LiveSkillsClient", () => {
         {
           name: "example-skill",
           description: "A test skill",
-          location: "/workspace/.augment/skills/example/SKILL.md",
+          location: "/workspace/.intent/skills/example/SKILL.md",
           scope: "project",
         },
         {
           name: "python-expert",
           description: "Python specialist",
-          location: "/Users/user/.augment/skills/python-expert/SKILL.md",
+          location: "/Users/user/.intent/skills/python-expert/SKILL.md",
           scope: "user",
         },
       ]);

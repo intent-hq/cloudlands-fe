@@ -16,7 +16,7 @@
   selectGitHubAuthOauthUrl,
   selectGitHubAuthUser,
   selectGitHubAuthError,
-  selectGitHubAuthRequiresAugmentAuth,
+  selectGitHubAuthRequiresDaemonAuth,
 } from '$store/renderer/slices/github-auth/github-auth-selectors';
 
   interface Props {
@@ -32,7 +32,7 @@
   const isAuthenticating$ = selectGitHubAuthIsAuthenticating();
   const user$ = selectGitHubAuthUser();
   const error$ = selectGitHubAuthError();
-  const requiresAugmentAuth$ = selectGitHubAuthRequiresAugmentAuth();
+  const requiresDaemonAuth$ = selectGitHubAuthRequiresDaemonAuth();
 
   onMount(() => {
     if (!skipInitialize) {
@@ -117,7 +117,7 @@
       >
         {isDisconnectingGitHub ? 'Disconnecting...' : 'Disconnect'}
       </button>
-    {:else if !$requiresAugmentAuth$}
+    {:else if !$requiresDaemonAuth$}
       <button
         type="button"
         class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
@@ -126,7 +126,7 @@
         Connect
       </button>
     {:else}
-      <span class="text-xs text-subtle">Requires Augment authentication</span>
+      <span class="text-xs text-subtle">Requires daemon authentication</span>
     {/if}
   </div>
 </div>

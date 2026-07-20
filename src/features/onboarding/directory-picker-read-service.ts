@@ -20,7 +20,7 @@
  * READ-ONLY: this module never invokes a mutation. Refreshes are coalesced per
  * requested path so rapid dispatches collapse into a single fetch.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { store as appStore } from "$store/renderer/store";
 import { createLogger } from "$lib/utils/client-logger";

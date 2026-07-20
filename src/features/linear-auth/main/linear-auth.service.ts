@@ -27,7 +27,7 @@ interface LinearAuthStatusResponse {
  * Linear Authentication Service
  *
  * Talks to the intentd daemon's `linear.*` namespace (PROTOCOL §5.28) via the
- * shared JSON-RPC client — no Augment cloud. v1 Linear auth is env-key based
+ * shared JSON-RPC client — no external cloud. v1 Linear auth is env-key based
  * (`LINEAR_API_KEY`): there is no OAuth/connect/revoke wire method, so "connect"
  * is "set the key and restart" and "revoke" is a local forget. Status and issue
  * reads (`linear.authStatus` / `linear.listIssues` / `linear.searchIssues`)
@@ -157,7 +157,7 @@ export class LinearAuthService {
     const status = await this.getLinearStatus(forceRefresh);
     return {
       isAuthenticated: status.isConfigured,
-      requiresAugmentAuth: false,
+      requiresDaemonAuth: false,
       oauthUrl: status.oauthUrl,
     };
   }

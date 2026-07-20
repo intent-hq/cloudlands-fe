@@ -103,10 +103,6 @@ vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
 }));
 
-vi.mock('$lib/services/analytics', () => ({
-  track: vi.fn(),
-}));
-
 function createChange(overrides: Partial<TrackedChange> = {}): TrackedChange {
   return {
     id: 'change-1',

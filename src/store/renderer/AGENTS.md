@@ -1,13 +1,12 @@
 # Redux Store — Agent Directives
 
 > **Architecture update — Redux and the saga runtime have been removed.**
-> The `redux`, `redux-saga`, `typed-redux-saga`, `redux-saga-test-plan`, and
-> `@augmentcode/ag-redux-toolkit` packages are no longer installed. The in-use
-> toolkit subpaths now resolve to a local, redux/saga-free shim at
-> `src/lib/store-shim/` (aliased in `tsconfig*.json`, `vite.config.mjs`, and
-> `vitest.config.ts`; rewritten for main/preload by `scripts/fix-esm-imports.ts`).
-> Keep importing the `@augmentcode/ag-redux-toolkit/...` specifiers as before —
-> only resolution changed. The app is mock-driven via `AppClient`. There is no
+> The `redux`, `redux-saga`, `typed-redux-saga`, and `redux-saga-test-plan`
+> packages are no longer installed. The in-use store surface is a local,
+> redux/saga-free shim at `src/lib/store-shim/`, imported directly via
+> `$lib/store-shim/...` (`scripts/fix-esm-imports.ts` rewrites `$lib/...`
+> specifiers to relative paths in the emitted main/preload output).
+> The app is mock-driven via `AppClient`. There is no
 > saga runtime: `store.runSaga(sagaFn)` is a no-op, `startAllAppSagas` no longer
 > starts anything, and `selector.effect(...)` throws. Use
 > `selector.select(state, ...args)` for reads and `store.dispatch(action)` for
@@ -18,9 +17,9 @@ Use these rules when creating or editing code in `src/store/renderer/` so Redux 
 
 ## Source of Truth
 
-- Primary active Redux architecture guidance lives in `.agents/skills/ag-redux-toolkit/**`; read the applicable skill files before changing Redux state, selectors, sagas, component wiring, or migration docs.
-- This file is a repository-local companion checklist for `src/store/renderer/`. Keep it concise and defer to the Redux skills for current architecture rules, API details, migration workflow, and verifier expectations.
-- If this file appears to conflict with the Redux skills, follow the skills and report the instruction drift instead of extending local guidance.
+- The shim modules under `src/lib/store-shim/` are the source of truth for the store API surface.
+- This file is a repository-local companion checklist for `src/store/renderer/`. Keep it concise.
+- If this file appears to conflict with the shim's actual behavior, follow the shim and report the instruction drift instead of extending local guidance.
 
 ## 1. Import Boundaries
 
@@ -44,22 +43,21 @@ Use these rules when creating or editing code in `src/store/renderer/` so Redux 
 - If entities need ID-based lookup, store them as `Collection<T, K>`, not `T[]`.
 - Do not use `.find()`, `.findIndex()`, or `.some()` over entity arrays in reducers/selectors when `getItem()` can do O(1) lookup.
 - Use `getItem(collection, id)` for lookup and `getItems(collection)` when you need the ordered list.
-- In slice files, import package-owned collection helpers from `ag-redux-toolkit/utils/collections/collection-utils`.
+- In slice files, import shim collection helpers from `$lib/store-shim/utils/collections/collection-utils`.
 
 ```ts
-import { createCollection, getItem, getItems } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { createCollection, getItem, getItems } from "$lib/store-shim/utils/collections/collection-utils";
 ```
 
-- Reference: package export `ag-redux-toolkit/utils/collections/collection-utils`.
+- Reference: shim export `$lib/store-shim/utils/collections/collection-utils`.
 
 ## 4. Use Existing Utilities (Don't Reinvent)
 
 - `createWorkspaceScopedHelpers(emptyState)` from `../../utils/workspace-scoped` — standard `byWorkspaceId` get/set/clear helpers.
-- `createBooleanPreference({ sliceName, field, ... })` from `ag-redux-toolkit/utils/store/boolean-preference` — generates consistent boolean set/toggle actions and reducer wiring.
+- `createBooleanPreference({ sliceName, field, ... })` from `$lib/store-shim/utils/store/boolean-preference` — generates consistent boolean set/toggle actions and reducer wiring.
 - `takeEveryFromElectronChannel` / `takeEveryFromWindowEvent` from `../../../utils/ipc-channel` in saga files — standard IPC and window listener loops with cleanup.
 - `getLocalStorageJSON` / `setLocalStorageJSON` from `../../../utils/safe-local-storage-saga` in saga files — safe persistence helpers for sagas.
-- `createCollection` / `addItem` / `removeItem` / `updateItem` / `getItem` / `getItems` from `ag-redux-toolkit/utils/collections/collection-utils` — immutable collection CRUD and lookup.
-- `debounceSaga` / `debounceWithKeySaga` from `ag-redux-toolkit/utils/sagas/debounce-saga` in saga files — debounce wrapper actions instead of hand-rolled timers.
+- `createCollection` / `addItem` / `removeItem` / `updateItem` / `getItem` / `getItems` from `$lib/store-shim/utils/collections/collection-utils` — immutable collection CRUD and lookup.
 - If a prompt says `getAllItems`, use `getItems` here; `getItems` is the real helper in this codebase.
 
 ## 5. Selector Lifecycle Rules
@@ -86,11 +84,11 @@ const value = selectWorkspaceThing.select(appStore.state, workspaceId);
 ## 7. Action Naming
 
 - Always namespace action types as `"sliceName/actionName"`.
-- Use `createAction` from `ag-redux-toolkit/utils/store/create-action` in renderer slice files.
+- Use `createAction` from `$lib/store-shim/utils/store/create-action` in renderer slice files.
 - For multiple arguments, use tuple types instead of untyped arrays or object payloads by default.
 
 ```ts
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
 export const setEnabled = createAction<[wsId: string, value: boolean]>("example/setEnabled");
 ```
 

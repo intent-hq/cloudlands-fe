@@ -41,13 +41,13 @@ describe('integrations-bridge-seeder', () => {
   afterEach(() => vi.clearAllMocks());
 
   describe('linear-auth:* → daemon linear.* (PROTOCOL §5.28 — bare results)', () => {
-    it('get-auth-state reports the linear.authStatus probe (env-key model: no oauth, no Augment auth)', async () => {
+    it('get-auth-state reports the linear.authStatus probe (env-key model: no oauth, no daemon auth)', async () => {
       mockedRequest.mockResolvedValueOnce({ authenticated: true, login: 'Ada', scopes: [] });
 
       const state = await mockInvoke(LINEAR_AUTH_CHANNELS.GET_AUTH_STATE, true);
 
       expect(mockedRequest).toHaveBeenCalledWith('linear.authStatus');
-      expect(state).toEqual({ isAuthenticated: true, requiresAugmentAuth: false });
+      expect(state).toEqual({ isAuthenticated: true, requiresDaemonAuth: false });
     });
 
     it('get-auth-state folds a failed probe (key absent → -32603) to unauthenticated', async () => {
@@ -55,7 +55,7 @@ describe('integrations-bridge-seeder', () => {
 
       expect(await mockInvoke(LINEAR_AUTH_CHANNELS.GET_AUTH_STATE)).toEqual({
         isAuthenticated: false,
-        requiresAugmentAuth: false,
+        requiresDaemonAuth: false,
       });
     });
 
@@ -147,7 +147,7 @@ describe('integrations-bridge-seeder', () => {
       expect(mockedRequest).toHaveBeenNthCalledWith(2, 'github.getUser');
       expect(state).toEqual({
         isAuthenticated: true,
-        requiresAugmentAuth: false,
+        requiresDaemonAuth: false,
         user: {
           login: 'octocat',
           name: null,

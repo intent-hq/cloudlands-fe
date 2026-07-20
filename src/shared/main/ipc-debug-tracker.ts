@@ -42,7 +42,7 @@ class IPCDebugTracker {
 
     // Initialize file paths
     const userDataPath = app?.getPath('userData') || process.cwd();
-    this.debugDir = path.join(userDataPath, '.augment', 'ipc-debug');
+    this.debugDir = path.join(userDataPath, '.intent', 'ipc-debug');
 
     // Ensure directory exists
     if (!fs.existsSync(this.debugDir)) {

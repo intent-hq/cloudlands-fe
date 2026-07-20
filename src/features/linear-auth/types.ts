@@ -2,7 +2,7 @@
  * Linear Integration Types
  *
  * This module contains types for Linear authentication and future API operations.
- * Authentication is managed through Augment's OAuth flow.
+ * Authentication is managed through the daemon's OAuth flow.
  */
 
 // =============================================================================
@@ -25,16 +25,16 @@ export interface StartAuthResult {
  * Full Linear authentication state for the UI
  */
 export interface LinearAuthState {
-  /** Whether user is authenticated with Linear via Augment */
+  /** Whether user is authenticated with Linear via the daemon */
   isAuthenticated: boolean;
-  /** Whether user needs to authenticate with Augment first */
-  requiresAugmentAuth: boolean;
+  /** Whether user needs to authenticate with the daemon first */
+  requiresDaemonAuth: boolean;
   /** OAuth URL for authentication */
   oauthUrl?: string;
 }
 
 /**
- * Linear auth status from Augment API
+ * Linear auth status from the daemon API
  */
 export interface LinearAuthStatus {
   /** Whether Linear is configured/connected */

@@ -35,7 +35,6 @@
 } from '$shared/config/provider-config';
   import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { track } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import { selectGitHubAuthIsAuthenticated } from '$store/renderer/slices/github-auth/github-auth-selectors';
@@ -329,7 +328,6 @@
 
   function selectTeamMode() {
     if (isTeamMode) return;
-    track('Toggled Agent Mode', { mode: 'team' });
     // Save single-agent state
     lastSingleAgent = {
       model: selectedModel,
@@ -354,7 +352,6 @@
 
   function selectSingleAgentMode() {
     if (isTeamMode) {
-      track('Toggled Agent Mode', { mode: 'single' });
       // Save team mode state
       lastTeamMode = {
         model: selectedModel,

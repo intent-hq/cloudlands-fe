@@ -102,7 +102,7 @@ describe('browser-mock DEV gate', () => {
     );
 
     warnSpy.mockClear();
-    await api.invoke('banner:fetch');
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/\[BrowserMock\].*'banner:fetch'/));
+    await api.invoke('skills:list');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/\[BrowserMock\].*'skills:list'/));
   });
 });

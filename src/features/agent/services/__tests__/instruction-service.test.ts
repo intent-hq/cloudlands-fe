@@ -120,7 +120,7 @@ describe('InstructionService', () => {
 
       expect(prompt).toBeDefined();
       expect(prompt.length).toBeGreaterThan(0);
-      expect(prompt).toContain('Augment Agent'); // Base system prompt should mention Augment Agent
+      expect(prompt).toContain('Intent Agent'); // Base system prompt should mention Intent Agent
     });
 
     it('should append EndUserRulesManager override (base-system-prompt type) to bundled default', () => {
@@ -132,7 +132,7 @@ describe('InstructionService', () => {
       const prompt = service.getBaseSystemPrompt();
 
       // Should contain both bundled default AND user customization
-      expect(prompt).toContain('Augment Agent'); // Bundled default
+      expect(prompt).toContain('Intent Agent'); // Bundled default
       expect(prompt).toContain(customPrompt); // User customization appended
     });
 
@@ -145,7 +145,7 @@ describe('InstructionService', () => {
       const prompt = service.getBaseSystemPrompt();
 
       // Should contain both bundled default AND legacy customization
-      expect(prompt).toContain('Augment Agent'); // Bundled default
+      expect(prompt).toContain('Intent Agent'); // Bundled default
       expect(prompt).toContain(legacyPrompt); // Legacy customization appended
     });
 
@@ -160,7 +160,7 @@ describe('InstructionService', () => {
       const prompt = service.getBaseSystemPrompt();
 
       // Should contain bundled default + both customizations
-      expect(prompt).toContain('Augment Agent'); // Bundled default
+      expect(prompt).toContain('Intent Agent'); // Bundled default
       expect(prompt).toContain(newPrompt); // base-system-prompt appended
       expect(prompt).toContain(legacyPrompt); // system type appended
     });
@@ -345,7 +345,7 @@ describe('InstructionService', () => {
         },
       });
 
-      const baseIndex = prompt.indexOf('Augment Agent');
+      const baseIndex = prompt.indexOf('Intent Agent');
       const specializationIndex = prompt.indexOf(specializationMarker);
       const userRulesIndex = prompt.indexOf('## User Rules & Guidelines');
       const behaviorIndex = prompt.indexOf(behaviorMarker);
@@ -389,7 +389,7 @@ describe('InstructionService', () => {
       expect(parentBehaviorIndex).toBeGreaterThanOrEqual(0);
       expect(subAgentBehaviorIndex).toBeGreaterThanOrEqual(0);
       expect(parentPrefix).toBe(subAgentPrefix);
-      expect(parentPrefix).toContain('Augment Agent');
+      expect(parentPrefix).toContain('Intent Agent');
       expect(parentPrefix).toContain('## User Rules & Guidelines');
       // Skills catalog is now daemon-owned (PROTOCOL §5.34), not in FE prompt.
       expect(parentPrefix).not.toContain('<available_skills>');
@@ -447,7 +447,7 @@ describe('InstructionService', () => {
         expect(parentPrefix).toBe(subAgentPrefix);
         expect(commonPrefix).toBe(parentPrefix);
         expect(commonPrefix.length).toBeGreaterThan(1000);
-        expect(commonPrefix).toContain('Augment Agent');
+        expect(commonPrefix).toContain('Intent Agent');
         expect(commonPrefix).toContain(specializationMarker!);
         expect(commonPrefix).toContain('## User Rules & Guidelines');
         // Skills catalog is now daemon-owned (PROTOCOL §5.34), not in FE prompt.
@@ -465,7 +465,7 @@ describe('InstructionService', () => {
 
       // Skills catalog is now daemon-owned (PROTOCOL §5.34), not in FE prompt.
       expect(prompt).not.toContain('<available_skills>');
-      expect(prompt).toContain('Augment Agent');
+      expect(prompt).toContain('Intent Agent');
     });
 
     it('should handle missing agentType gracefully', async () => {

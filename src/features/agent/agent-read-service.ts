@@ -31,7 +31,7 @@
  * them would evaluate `store.createSelector` while the store module is still
  * mid-initialization through the middleware chain).
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { ensureAgentSessionLoaded } from "$store/renderer/slices/workspace-agents/workspace-agents-slice";

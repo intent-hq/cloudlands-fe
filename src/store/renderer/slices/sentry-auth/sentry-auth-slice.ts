@@ -4,8 +4,8 @@
  * Actions and reducer for Sentry authentication and issue state.
  */
 
-import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
 import type { SentryAuthState } from "./sentry-auth-types";
 import type { SentryIssueResult, SentryProject } from "$features/sentry-auth/types";
 import type { SentryIssueStatusType } from "$features/sentry-auth/constants";

@@ -154,15 +154,15 @@ describe('getGroupKey', () => {
 
   it('resolves path-only workspace via lookup (PR #439 regression)', () => {
     const lookup = new Map<string, RepoGithubInfo>([
-      ['/home/user/intent', { owner: 'augmentcode', name: 'intent' }],
+      ['/home/user/intent', { owner: 'example-org', name: 'example-repo' }],
     ]);
     const ws = makeWorkspace({ repositoryPath: '/home/user/intent' });
     const result = getGroupKey(ws, lookup);
     expect(result).toEqual({
-      key: 'augmentcode/intent',
-      label: 'augmentcode/intent',
+      key: 'example-org/example-repo',
+      label: 'example-org/example-repo',
       isGithub: true,
-      owner: 'augmentcode',
+      owner: 'example-org',
     });
   });
 
@@ -230,8 +230,8 @@ describe('workspace grouping integration', () => {
     const wsA = makeWorkspace({
       id: 'ws-full',
       repositoryPath: '/home/user/intent',
-      repositoryOwner: 'augmentcode',
-      repositoryName: 'intent',
+      repositoryOwner: 'example-org',
+      repositoryName: 'example-repo',
     });
     const wsB = makeWorkspace({
       id: 'ws-path-only',
@@ -244,8 +244,8 @@ describe('workspace grouping integration', () => {
     const keyB = getGroupKey(wsB, lookup);
 
     // Both should resolve to the same group
-    expect(keyA.key).toBe('augmentcode/intent');
-    expect(keyB.key).toBe('augmentcode/intent');
+    expect(keyA.key).toBe('example-org/example-repo');
+    expect(keyB.key).toBe('example-org/example-repo');
     expect(keyA.key).toBe(keyB.key);
   });
 

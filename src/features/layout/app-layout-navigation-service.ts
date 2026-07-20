@@ -24,7 +24,7 @@
  * through the middleware chain). The agent name is read straight off the
  * already-typed store state instead.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { store as appStore } from "$store/renderer/store";
 import { openAgentTabRequested } from "$store/renderer/slices/app-layout/app-layout-slice";
 import type { OpenAgentTabDetail } from "$store/renderer/slices/app-layout/app-layout-types";

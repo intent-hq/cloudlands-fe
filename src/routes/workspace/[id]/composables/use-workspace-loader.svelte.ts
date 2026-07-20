@@ -10,7 +10,6 @@ import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspac
 
 import { createLogger } from '$lib/utils/client-logger';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import { track } from '$lib/services/analytics';
 
 import { workspaceMounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import {
@@ -153,7 +152,6 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
     // However, this caused a bug where change detection monitoring wouldn't start on revisits.
     // The backend open() call is idempotent and fast if monitoring is already running, so we always call it
     // to ensure the change detector is properly initialized.
-    // See: https://github.com/augmentcode/augment/issues/XXXX
 
     logger.info('Opening workspace to ensure backend initialization', {
       workspaceId,
@@ -207,12 +205,6 @@ export function useWorkspaceLoader(options: UseWorkspaceLoaderOptions) {
       logger.info('Workspace opened successfully, monitoring started', {
         workspaceId,
         worktreePath: ws.worktreePath,
-      });
-
-      // Track workspace opened event
-      track('Opened Workspace', {
-        workspace_id: workspaceId,
-        workspace_title: ws.title,
       });
     } else {
       const errorMsg = !openResult.ok && 'error' in openResult ? openResult.error : 'Unknown error';

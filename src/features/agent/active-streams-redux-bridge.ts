@@ -16,7 +16,7 @@
  * Dependency-light per src/store/renderer/AGENTS.md: imports only the tracker
  * and the slice action — no selectors, no store import.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { bumpActiveStreamsVersion } from "$store/renderer/slices/sidebar-nav/sidebar-nav-slice";
 import { activeStreamsTracker } from "./services/active-streams-tracker";
 import { createLogger } from "$lib/utils/client-logger";

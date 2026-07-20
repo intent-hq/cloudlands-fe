@@ -110,9 +110,9 @@ export const mockScripts: ScriptWithState[] = [
 
 export const mockSkills: SkillInfo[] = [
   {
-    name: "ag-redux-toolkit",
-    description: "Redux + redux-saga conventions for this codebase.",
-    location: ".agents/skills/ag-redux-toolkit/SKILL.md",
+    name: "store-shim",
+    description: "Local store shim conventions for this codebase.",
+    location: ".agents/skills/store-shim/SKILL.md",
     scope: "project",
   },
   {
@@ -193,7 +193,7 @@ export const mockSpecialists: SpecialistDef[] = [
     behaviorPrompt: "",
     source: "user",
     isCustomized: true,
-    path: "/home/mock/.augment/specialists/spec-mock-1.md",
+    path: "/home/mock/.intent/specialists/spec-mock-1.md",
   },
 ];
 
@@ -265,7 +265,6 @@ export const mockUserPreferences: UserPreferencesState = {
   soundOnlyWhenUnfocused: true,
   volume: 0.5,
   activityLogPresets: [],
-  promoBannerInteractions: {},
 };
 
 /** Configured MCP servers for the MCP settings panel. */

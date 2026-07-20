@@ -3,10 +3,10 @@ import type { LinearIssueResult } from "$features/linear-auth/renderer/linear-au
 export type LinearIssueFilter = 'assigned' | 'created' | 'subscribed' | 'team' | 'all';
 
 export type LinearAuthSliceState = {
-  /** Whether user is authenticated with Linear via Augment */
+  /** Whether user is authenticated with Linear via the daemon */
   isAuthenticated: boolean;
-  /** Whether user needs to authenticate with Augment first */
-  requiresAugmentAuth: boolean;
+  /** Whether user needs to authenticate with the daemon first */
+  requiresDaemonAuth: boolean;
   /** Whether authentication is in progress */
   isAuthenticating: boolean;
   /** OAuth URL for authentication (shown to user) */

@@ -369,7 +369,7 @@ registerMockIpcHandler(PROVIDERS_CHANNELS.CHECK_SINGLE, async (arg) => {
 });
 
 /** `auggie:status` payload consumed by AuggieSetupGate / ProviderSelector /
- * AgentGrid / PromotionalBanner. `binaryInstallAvailable` /
+ * AgentGrid. `binaryInstallAvailable` /
  * `managedBinaryInstalled` remain for renderer compatibility but are always
  * false — install is a manual step (AUGGIE_CHANNELS.INSTALL instructions). */
 interface AuggieStatusPayload {

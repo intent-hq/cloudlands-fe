@@ -8,7 +8,7 @@ const logger = new Logger('LinearAuthIPC');
 export function setupLinearAuthIPC(): void {
   logger.info('Setting up Linear Auth IPC handlers');
 
-  // Check if user is authenticated with Linear via Augment
+  // Check if user is authenticated with Linear via the daemon
   ipcMain.handle(LINEAR_AUTH_CHANNELS.IS_AUTHENTICATED, async () => linearAuthService.isAuthenticated());
 
   // Start Linear authentication flow
@@ -37,7 +37,7 @@ export function setupLinearAuthIPC(): void {
   // Args: [forceRefresh?: boolean]
   ipcMain.handle(LINEAR_AUTH_CHANNELS.GET_AUTH_STATE, async (_event, forceRefresh?: boolean) => linearAuthService.getAuthState(forceRefresh ?? false));
 
-  // Get Linear status from Augment API
+  // Get Linear status from daemon API
   ipcMain.handle(LINEAR_AUTH_CHANNELS.GET_STATUS, async () => linearAuthService.getLinearStatus(true));
 
   // Fetch issues based on filter type

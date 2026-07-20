@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   writeFile: vi.fn(),
   unlink: vi.fn(),
   renameWithRetry: vi.fn(),
-  trackMain: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -48,14 +47,6 @@ vi.mock('../../../system/main/system.ipc', () => ({
 
 vi.mock('../../../../shared/main/file-sync-utils', () => ({
   renameWithRetry: mocks.renameWithRetry,
-}));
-
-vi.mock('$lib/services/analytics/main', () => ({
-  trackMain: mocks.trackMain,
-}));
-
-vi.mock('$lib/services/analytics/utils', () => ({
-  getFileExtension: vi.fn(() => '.ts'),
 }));
 
 import { FILE_CHANNELS } from '../../../../shared/ipc/channels';
