@@ -24,6 +24,7 @@ import { createPermissionResponseMiddleware } from "$features/permission/permiss
 import { createDaemonEventsBridgeMiddleware } from "$features/events/daemon-events-bridge.client";
 import { createSettingsHydrationMiddleware } from "$features/settings/settings-hydration-service";
 import { createModelSelectionPersistenceMiddleware } from "$features/settings/model-selection-persistence-service";
+import { createBackgroundAgentSettingsPersistenceMiddleware } from "$features/settings/background-agent-settings-persistence-service";
 import { createModelReloadMiddleware } from "$features/settings/model-reload-service";
 import { createProviderSettingsPersistenceMiddleware } from "$features/settings/provider-settings-persistence-service";
 import { createProviderAvailabilityCheckMiddleware } from "$features/providers/provider-availability-check-service";
@@ -171,6 +172,13 @@ function buildMiddleware(): StoreMiddleware[] {
     // `model.workspaceOverrides`, PROTOCOL §5.12) so the selection survives a
     // reload — the hydration middleware above reads the same paths on boot.
     createModelSelectionPersistenceMiddleware(),
+    // Persist background-agent settings (default model + per-type overrides)
+    // to the daemon settings catalog (`backgroundAgents.defaultModel` /
+    // `backgroundAgents.typeOverrides`, PROTOCOL §5.12) on every mutation
+    // (setDefaultModel / setTypeOverride / clearTypeOverride / resetSettings)
+    // so the values survive restart. The settings-hydration middleware above
+    // reads and dispatches them on boot and on settings:changed events.
+    createBackgroundAgentSettingsPersistenceMiddleware(),
     // Give the (post-saga) `setActiveProvider` trigger a real handler so
     // switching providers writes `providers.active` (PROTOCOL §5.12) back
     // through the `appClient.settings` seam. Without this the pick lives only
