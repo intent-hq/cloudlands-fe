@@ -12,9 +12,10 @@
  * `appClient.settings.get` on first action and dispatches `hydrateWorkspaceInitializer`
  * so `state.hydrated` becomes true. Write-after-action persistence writes the updated
  * bag via `settings.update` after each mutating reducer runs. Persists that fire while
- * hydration is still in flight are deferred and flushed once hydration settles, so
- * pre-hydration default state (empty recentRepos, null lastSelectedRepo, …) can never
- * overwrite the previously persisted daemon bag. Debounce logic for
+ * hydration is still in flight are deferred and flushed once after hydration succeeds
+ * (dropped when the daemon read failed), so pre-hydration default state (empty
+ * recentRepos, null lastSelectedRepo, …) never overwrites the previously persisted
+ * daemon bag from boot-time dispatches. Debounce logic for
  * `debounceWorkspaceInitializerOnboardingFormState` mimics the deleted saga's race-based
  * cancellation (resetOnboarding / cancelDebounce kill the pending write).
  *
@@ -117,11 +118,21 @@ function parseNonEmptyRecordOrNull<T>(value: unknown): T | null {
   return isRecord(value) && Object.keys(value).length > 0 ? (value as T) : null;
 }
 
-/** Boot-time hydration: read daemon setting, try localStorage migration, dispatch hydration. */
-async function hydrateOnce(): Promise<void> {
+/**
+ * Boot-time hydration: read daemon setting, try localStorage migration, dispatch hydration.
+ * Resolves `true` when hydration landed real data (daemon bag or migration), `false` when
+ * the daemon read failed and only defaults were dispatched.
+ */
+async function hydrateOnce(): Promise<boolean> {
   try {
     const setting = await appClient.settings.get(SETTINGS_PATH);
-    const daemonBag = isRecord(setting?.value) ? setting.value : {};
+    // The settings seam swallows transport errors into null; a known path always has a
+    // definition (PROTOCOL §5.12, default {}), so null means the read failed. Bail before
+    // the migration branch so a transient failure cannot trigger a daemon write either.
+    if (setting === null) {
+      throw new Error(`settings.get(${SETTINGS_PATH}) returned null — daemon read failed`);
+    }
+    const daemonBag = isRecord(setting.value) ? setting.value : {};
 
     // If daemon bag is empty and legacy localStorage keys exist, migrate
     if (Object.keys(daemonBag).length === 0) {
@@ -163,7 +174,7 @@ async function hydrateOnce(): Promise<void> {
       void appClient.settings
         .update([{ path: SETTINGS_PATH, value: migratedBag }])
         .catch((error) => logger.error("Failed to write migrated bag to daemon", { error }));
-      return;
+      return true;
     }
 
     // Parse daemon bag with tolerant guards (settings.get returns value: unknown).
@@ -189,6 +200,7 @@ async function hydrateOnce(): Promise<void> {
     };
 
     appStore.dispatch(hydrateWorkspaceInitializer(hydrationState));
+    return true;
   } catch (error) {
     logger.error("Hydration failed; dispatching defaults so UI is not blocked", { error });
     // Daemon read failure still dispatches hydration with defaults so the UI is not blocked
@@ -199,6 +211,7 @@ async function hydrateOnce(): Promise<void> {
         lastSelectedRepo: null,
       }),
     );
+    return false;
   }
 }
 
@@ -224,7 +237,9 @@ export function createWorkspaceInitializerPersistenceMiddleware(): StoreMiddlewa
   // Defer persists until hydration settles: a persist that runs before hydrateOnce()
   // resolves would serialize default Redux state (lastSelectedRepo: null, recentRepos: [])
   // over the previously saved daemon bag. Queued persists flush once, after hydration,
-  // when the state reflects the merged daemon values.
+  // when the state reflects the merged daemon values. If hydration failed (daemon read
+  // error), the queued persist is dropped instead — the state holds defaults, and writing
+  // them would clobber the persisted bag exactly like the pre-hydration race.
   const schedulePersist = (): void => {
     if (!hydrationSettled) {
       persistQueued = true;
@@ -237,13 +252,14 @@ export function createWorkspaceInitializerPersistenceMiddleware(): StoreMiddlewa
     // Boot-time hydration on first action
     if (!hydrationStarted) {
       hydrationStarted = true;
-      void hydrateOnce().finally(() => {
-        hydrationSettled = true;
-        if (persistQueued) {
+      void hydrateOnce()
+        .catch(() => false)
+        .then((hydrated) => {
+          hydrationSettled = true;
+          const shouldFlush = persistQueued && hydrated;
           persistQueued = false;
-          persistStateBag();
-        }
-      });
+          if (shouldFlush) persistStateBag();
+        });
     }
 
     const result = next(action);
