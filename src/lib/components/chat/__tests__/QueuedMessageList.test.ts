@@ -104,6 +104,22 @@ describe('QueuedMessageList', () => {
     expect(buttonTooltips(container)).not.toContain('Edit');
   });
 
+  it('falls back to text parsing when metadata events items are malformed', () => {
+    render(QueuedMessageList, {
+      props: {
+        messages: [
+          queued({
+            content: WAKE_TEXT,
+            // events is an array, but its items lack the expected `data` object
+            messageMetadata: { type: 'event_notification', events: ['agent:idle'] },
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
+  });
+
   it('keeps the requeued-after-failure indicator on event wake rows', () => {
     const { container } = render(QueuedMessageList, {
       props: { messages: [queued({ content: WAKE_TEXT, requeuedAfterFailure: true })] },

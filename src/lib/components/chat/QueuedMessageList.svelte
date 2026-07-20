@@ -187,15 +187,29 @@
     return message.content.startsWith('[WORKSPACE EVENTS]');
   }
 
-  /** Short human label + muted report preview for an event-notification wake. */
-  function eventWakeSummary(message: QueuedMessage): { label: string; preview?: string } {
-    // Only forward metadata when it actually carries an events array —
-    // messageMetadata is opaque, so an unexpected shape falls back to
-    // parseAgentEvents' legacy text parsing instead of erroring.
+  /**
+   * Parse agent events resiliently: messageMetadata is opaque, so an
+   * unexpected shape (no events array, or malformed event items) falls back
+   * to parseAgentEvents' legacy text parsing instead of erroring.
+   */
+  function safeParseAgentEvents(message: QueuedMessage): ReturnType<typeof parseAgentEvents> {
     const metadata = Array.isArray(message.messageMetadata?.events)
       ? (message.messageMetadata as Parameters<typeof parseAgentEvents>[1])
       : undefined;
-    const events = parseAgentEvents(message.content, metadata);
+    try {
+      return parseAgentEvents(message.content, metadata);
+    } catch {
+      try {
+        return metadata ? parseAgentEvents(message.content) : [];
+      } catch {
+        return [];
+      }
+    }
+  }
+
+  /** Short human label + muted report preview for an event-notification wake. */
+  function eventWakeSummary(message: QueuedMessage): { label: string; preview?: string } {
+    const events = safeParseAgentEvents(message);
     const idle = events.filter((e) => e.type === 'agent:idle');
     const created = events.filter((e) => e.type === 'agent:created');
     const parts: string[] = [];
