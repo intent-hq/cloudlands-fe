@@ -19,9 +19,9 @@ vi.mock('../../../../shared/main/async-utils', () => ({
   execFileAsync: mocks.execFileAsync,
 }));
 
-vi.mock('../codex-acp-manager', () => ({
+vi.mock('../codex-acp-manager', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../codex-acp-manager')>()),
   ensureManagedCodexAcp: vi.fn(),
-  MANAGED_CODEX_ACP_VERSION: '0.13.0',
 }));
 
 import { findBinary } from '../../../../shared/main/find-binary';

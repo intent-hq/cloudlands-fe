@@ -26,9 +26,9 @@ vi.mock('../../../../shared/main/find-binary', () => ({
   getCommonNpmPaths: vi.fn(() => []),
 }));
 
-vi.mock('../../../codex/main/codex-acp-manager', () => ({
+vi.mock('../../../codex/main/codex-acp-manager', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../codex/main/codex-acp-manager')>()),
   ensureManagedCodexAcp: mocks.ensureManagedCodexAcp,
-  MANAGED_CODEX_ACP_VERSION: '0.13.0',
 }));
 
 describe('provider availability service', () => {
