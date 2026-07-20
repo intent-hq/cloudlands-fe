@@ -29,6 +29,8 @@
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import { isImageBlock } from '$shared/types/content-block.guards';
   import type { ContentBlock } from '$shared/types/content-block';
+  import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
+  import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
@@ -201,6 +203,12 @@
       suppressCoordinationStoppedIndicator,
     });
   });
+
+  // Sender attribution for agent-to-agent messages (metadata-first, null when
+  // metadata is absent or malformed so plain user messages render unchanged).
+  let agentAttribution = $derived(
+    role === 'user' ? getAgentMessageAttribution(message?.metadata) : null,
+  );
 
   // Local state
   let messageElement: HTMLDivElement;
@@ -928,8 +936,10 @@
         <!-- Full expanded version - uses negative margin to overlap the sticky header in ChatPanel -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          class="relative bg-sidebar rounded-xs px-2 pt-2 pb-2 cursor-pointer overflow-hidden z-20"
-          ondblclick={() => onEditSubmit && handleStartEdit()}
+          class="relative bg-sidebar rounded-xs px-2 pt-2 pb-2 {onEditSubmit && !agentAttribution
+            ? 'cursor-pointer'
+            : 'cursor-default'} overflow-hidden z-20"
+          ondblclick={() => onEditSubmit && !agentAttribution && handleStartEdit()}
         >
           <!-- Actions -->
           <div
@@ -948,13 +958,19 @@
             </div>
           </div>
 
+          <!-- Sender attribution header for agent-to-agent messages -->
+          {#if agentAttribution}
+            <AgentMessageAttributionHeader attribution={agentAttribution} class="mb-1.5" />
+          {/if}
+
           <!-- Message content - line-clamp-6 -->
           <div
-            class="leading-normal text-subtle whitespace-pre-wrap select-text line-clamp-6 {onEditSubmit
+            class="leading-normal text-subtle whitespace-pre-wrap select-text line-clamp-6 {onEditSubmit &&
+            !agentAttribution
               ? 'cursor-pointer'
               : 'cursor-text'}"
             onclick={(e) => {
-              if (onEditSubmit) {
+              if (onEditSubmit && !agentAttribution) {
                 e.preventDefault();
                 e.stopPropagation();
                 handleStartEdit();
