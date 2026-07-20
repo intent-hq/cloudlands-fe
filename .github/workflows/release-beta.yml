@@ -350,18 +350,21 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Configure extraheader auth (avoids token in URL logs). Git-over-HTTPS on
-          # github.com requires Basic auth (same format actions/checkout persists);
-          # a Bearer header is rejected with "invalid credentials".
+          # Git-over-HTTPS on github.com requires Basic auth (same format
+          # actions/checkout persists); a Bearer header is rejected with
+          # "invalid credentials". Build the header from the PAT (masked in logs)
+          # and scope it to the single push via `git -c` so the write-capable
+          # credential never persists on disk. The read-only INTENTD_READ_PAT
+          # header persisted by checkout must be removed first: git sends every
+          # configured extraheader value, and a second AUTHORIZATION header
+          # would break auth. No later step performs git operations here.
           AUTH_B64=$(printf 'x-access-token:%s' "${RELEASE_PAT}" | base64 | tr -d '\n')
           echo "::add-mask::${AUTH_B64}"
-          git config http.https://github.com/.extraheader "AUTHORIZATION: basic ${AUTH_B64}"
+          git config --unset-all http.https://github.com/.extraheader || true
 
           git tag -a "v${VERSION}" -m "Release v${VERSION}"
-          git push origin "refs/tags/v${VERSION}"
-
-          # Drop the write-capable credential from this read-only checkout
-          git config --unset http.https://github.com/.extraheader
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic ${AUTH_B64}" \
+            push origin "refs/tags/v${VERSION}"
           echo "✅ Pushed tag v${VERSION} to intent-hq/intentd"
 
       - name: Publish to GitHub Releases (versioned tag)
