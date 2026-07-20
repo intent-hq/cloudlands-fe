@@ -45,7 +45,7 @@ describe('repo-config-bridge-seeder', () => {
 
     expect(mockedRequest).toHaveBeenCalledWith('host.exec', {
       command: 'cat',
-      args: ['/Users/dev/repo/.intent/config.json'],
+      args: ['--', '/Users/dev/repo/.intent/config.json'],
       timeoutMs: 10_000,
     });
     expect(result).toEqual({ success: true, data: { content } });
@@ -77,6 +77,15 @@ describe('repo-config-bridge-seeder', () => {
     const result = await mockInvoke(IPC_CHANNELS.SETUP_SCRIPTS.READ_REPO_CONFIG, {});
 
     expect(mockedRequest).not.toHaveBeenCalled();
-    expect(result).toEqual({ success: false, error: 'repoPath is required' });
+    expect(result).toEqual({ success: false, error: 'repoPath must be an absolute path' });
+  });
+
+  it('rejects a non-absolute repoPath with a shaped error', async () => {
+    const result = await mockInvoke(IPC_CHANNELS.SETUP_SCRIPTS.READ_REPO_CONFIG, {
+      repoPath: '~/repo',
+    });
+
+    expect(mockedRequest).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false, error: 'repoPath must be an absolute path' });
   });
 });

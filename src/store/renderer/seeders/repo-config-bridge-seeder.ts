@@ -44,17 +44,18 @@ function errorMessage(error: unknown): string {
 
 registerMockIpcHandler(IPC_CHANNELS.SETUP_SCRIPTS.READ_REPO_CONFIG, async (arg) => {
   const repoPath = asRecord(arg).repoPath;
-  if (typeof repoPath !== 'string' || !repoPath) {
-    return { success: false, error: 'repoPath is required' };
+  if (typeof repoPath !== 'string' || !repoPath.startsWith('/')) {
+    return { success: false, error: 'repoPath must be an absolute path' };
   }
   try {
     // Path-based (`cat`): the initializer probes repos that predate any
     // workspace, so no workspace cwd guard applies. Daemon hosts are POSIX;
     // if the command is unavailable the failure folds to "no config" at the
-    // call site, same as a missing file.
+    // call site, same as a missing file. `--` guards against the path ever
+    // being parsed as an option.
     const result = await backendRequest<HostExecResult>('host.exec', {
       command: 'cat',
-      args: [`${repoPath}/.intent/config.json`],
+      args: ['--', `${repoPath}/.intent/config.json`],
       timeoutMs: READ_TIMEOUT_MS,
     });
     if (result.exitCode !== 0) {
