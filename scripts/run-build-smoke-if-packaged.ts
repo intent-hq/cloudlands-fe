@@ -10,10 +10,10 @@ function findPackagedApp(): string | undefined {
 
   const root = process.cwd();
   const candidates = process.platform === 'win32'
-    ? [join(root, 'dist-electron', 'win-unpacked', 'Intent by Augment.exe')]
+    ? [join(root, 'dist-electron', 'win-unpacked', 'Intent.exe')]
     : [
-      join(root, 'dist-electron', 'mac-arm64', 'Intent by Augment.app', 'Contents', 'MacOS', 'Intent by Augment'),
-      join(root, 'dist-electron', 'mac', 'Intent by Augment.app', 'Contents', 'MacOS', 'Intent by Augment'),
+      join(root, 'dist-electron', 'mac-arm64', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
+      join(root, 'dist-electron', 'mac', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
     ];
 
   return candidates.find((candidate) => existsSync(candidate));
