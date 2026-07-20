@@ -47,7 +47,6 @@ class RendererLogger {
   constructor() {
     this.#baseLogger = new BaseLogger('Renderer', {
       enableConsole: true,
-      enableStorage: true,
     });
 
     // Check if IPC is available (window.electronAPI)

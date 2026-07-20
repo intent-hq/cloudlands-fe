@@ -388,8 +388,8 @@ export async function installIntentCli(): Promise<{
         try {
           // Use osascript to run ln command with admin privileges
           const command = `ln -sf "${cliScriptPath}" "${symlinkPath}"`;
-          // Escape double quotes for AppleScript
-          const escapedCommand = command.replace(/"/g, '\\"');
+          // Escape backslashes first, then double quotes, for AppleScript
+          const escapedCommand = command.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
           const osascriptCmd = `osascript -e 'do shell script "${escapedCommand}" with administrator privileges'`;
 
           // LOCAL-GUI: shows the macOS admin-auth prompt on the client host to
@@ -1186,35 +1186,34 @@ export function setupSystemIPC() {
                         try {
                           logger.info(`Found VSCode binary at: ${vscodeBinary}`);
 
-                          // Build the command with proper escaping
-                          const escapedBinary = vscodeBinary.replace(/ /g, '\\ ');
-                          const escapedFilePath = validated.filePath.replace(/ /g, '\\ ');
-
-                          let command: string;
+                          // Pass arguments directly to execFile — no shell, no escaping needed
+                          // Include --skip-add-to-recently-opened to prevent GitLens tracking
+                          const vscodeArgs = ['-n', '--skip-add-to-recently-opened'];
                           if (validated.workspacePath) {
-                            const escapedWorkspacePath = validated.workspacePath.replace(
-                              / /g,
-                              '\\ ',
-                            );
-                            // Include --skip-add-to-recently-opened to prevent GitLens tracking
-                            command = `${escapedBinary} -n --skip-add-to-recently-opened ${escapedWorkspacePath} -g ${escapedFilePath}`;
-                          } else {
-                            // Include --skip-add-to-recently-opened to prevent GitLens tracking
-                            command = `${escapedBinary} -n --skip-add-to-recently-opened -g ${escapedFilePath}`;
+                            vscodeArgs.push(validated.workspacePath);
                           }
+                          vscodeArgs.push('-g', validated.filePath);
 
-                          logger.info('Executing VSCode command:', { command });
+                          logger.info('Executing VSCode command:', {
+                            binary: vscodeBinary,
+                            args: vscodeArgs,
+                          });
 
                           // LOCAL-GUI: launches the user's VSCode binary on the
                           // client host to open a file; not workspace execution.
-                          const { exec: execCommand } = require('child_process');
-                          execCommand(command, { windowsHide: true }, (error: any) => {
-                            if (error) {
-                              logger.error('Failed to execute VSCode binary:', error as Error);
-                            } else {
-                              logger.info('Successfully launched VSCode via binary');
-                            }
-                          });
+                          const { execFile: execFileCommand } = require('child_process');
+                          execFileCommand(
+                            vscodeBinary,
+                            vscodeArgs,
+                            { windowsHide: true },
+                            (error: any) => {
+                              if (error) {
+                                logger.error('Failed to execute VSCode binary:', error as Error);
+                              } else {
+                                logger.info('Successfully launched VSCode via binary');
+                              }
+                            },
+                          );
 
                           return;
                         } catch (binaryErr) {

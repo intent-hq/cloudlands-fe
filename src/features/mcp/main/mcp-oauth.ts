@@ -15,6 +15,16 @@ import { Logger } from '$shared/logger';
 
 const logger = new Logger('McpOAuth');
 
+/** Escape HTML meta-characters so text can be safely interpolated into markup. */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Store pending OAuth states (for PKCE verification)
 const pendingAuthStates = new Map<
   string,
@@ -262,7 +272,7 @@ function createCallbackServer(
               <body style="font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0;">
                 <div style="text-align: center;">
                   <h1>✗ Authentication Failed</h1>
-                  <p>${error instanceof Error ? error.message : 'Unknown error'}</p>
+                  <p>${escapeHtml(error instanceof Error ? error.message : 'Unknown error')}</p>
                 </div>
               </body>
             </html>

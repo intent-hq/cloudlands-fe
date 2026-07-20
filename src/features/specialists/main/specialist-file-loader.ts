@@ -190,14 +190,24 @@ async function loadSpecialistFilesFromDirectory(
 /**
  * Unescape a YAML string value.
  * Handles escaped quotes, backslashes, and common escape sequences.
+ * Uses a single pass so already-unescaped output is never re-interpreted
+ * (avoids double-unescaping, e.g. `\\n` must yield `\n` literally, not a newline).
  */
 function unescapeYamlValue(value: string): string {
-  return value
-    .replace(/\\"/g, '"')
-    .replace(/\\'/g, "'")
-    .replace(/\\\\/g, '\\')
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t');
+  return value.replace(/\\(.)/g, (match, char: string) => {
+    switch (char) {
+      case 'n':
+        return '\n';
+      case 't':
+        return '\t';
+      case '"':
+      case "'":
+      case '\\':
+        return char;
+      default:
+        return match;
+    }
+  });
 }
 
 /**
