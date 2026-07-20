@@ -131,4 +131,46 @@ describe('provider availability service', () => {
 
     expect(result.providers.claudeCode.warning).toBeUndefined();
   });
+
+  it('reports claude-code unavailable when discovery says installed but the claude CLI is missing', async () => {
+    // The daemon reports npx-only providers as installed from npx presence
+    // alone; the claude CLI prerequisite is FE-checked, so its absence must
+    // override the discovery result.
+    mocks.backendRequest.mockResolvedValue({
+      ...EMPTY_DISCOVERY,
+      providers: EMPTY_DISCOVERY.providers.map((p) =>
+        p.id === 'claude-code'
+          ? { ...p, installed: true, resolvedPath: '/usr/local/bin/npx' }
+          : p,
+      ),
+      npx: { resolvedPath: '/usr/local/bin/npx', version: '10.0.0', versionOk: true },
+    });
+
+    const { getProviderAvailability } = await import('../provider-availability.service');
+    const result = await getProviderAvailability();
+
+    expect(result.providers.claudeCode.available).toBe(false);
+    expect(result.providers.claudeCode.warning).toBeUndefined();
+  });
+
+  it('keeps claude-code available when discovery says installed and the claude CLI is present', async () => {
+    mocks.backendRequest.mockResolvedValue({
+      ...EMPTY_DISCOVERY,
+      providers: EMPTY_DISCOVERY.providers.map((p) =>
+        p.id === 'claude-code'
+          ? { ...p, installed: true, resolvedPath: '/usr/local/bin/npx' }
+          : p,
+      ),
+      npx: { resolvedPath: '/usr/local/bin/npx', version: '10.0.0', versionOk: true },
+    });
+    mocks.findBinary.mockImplementation(async (name: string) =>
+      name === 'claude' ? '/usr/local/bin/claude' : null,
+    );
+
+    const { getProviderAvailability } = await import('../provider-availability.service');
+    const result = await getProviderAvailability();
+
+    expect(result.providers.claudeCode.available).toBe(true);
+    expect(result.providers.claudeCode.warning).toBeUndefined();
+  });
 });
