@@ -32,7 +32,7 @@ export function getAgentMessageAttribution(metadata: unknown): AgentMessageAttri
   const rawName = typeof md.fromAgentName === 'string' ? md.fromAgentName.trim() : '';
   const name = rawName || 'Agent';
   const displayName =
-    name.length > MAX_NAME_LENGTH ? name.slice(0, MAX_NAME_LENGTH - 2) + '…' : name;
+    name.length > MAX_NAME_LENGTH ? name.slice(0, MAX_NAME_LENGTH - 1) + '…' : name;
 
   return { fromAgentId, displayName };
 }
