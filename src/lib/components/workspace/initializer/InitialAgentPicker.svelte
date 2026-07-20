@@ -5,7 +5,7 @@
   import {
   selectSpecialists,
   selectCustomSpecialistsLoaded,
-  selectUserOverrides,
+  selectFileSpecialistsLoaded,
   selectEffectiveModel,
   selectEffectiveCodingAgent,
   filterSpecialistsByGitHubAuth,
@@ -15,6 +15,7 @@
   selectSelectedModel,
   selectAvailableModels,
 } from '$store/renderer/slices/model/model-selectors';
+  import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
   faPlus,
@@ -29,11 +30,9 @@
   import {
   ACP_PROVIDERS,
   getDefaultProviderId,
-  getDefaultModelForProvider,
-  PROVIDER_MODEL_TIERS,
   parseCompoundModelId,
 } from '$shared/config/provider-config';
-  import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
+  import { resolveEffectiveModelForSpecialist } from '$lib/utils/effective-model-resolution';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -47,7 +46,8 @@
     filterSpecialistsByGitHubAuth($specialists$, $isGitHubAuth$),
   );
   const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
-  const userOverrides$ = selectUserOverrides();
+  const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();
+  const initializerHydrated$ = selectWorkspaceInitializerHydrated();
   const activeProviderId$ = selectActiveProviderId();
   const availableModels$ = selectAvailableModels();
   const selectedModel$ = selectSelectedModel();
@@ -140,21 +140,11 @@
     }
   });
 
-  onMount(async () => {
-    // Clear stale model overrides from saved state.
-    // When the user changes specialist defaults in Settings (e.g., spec-writer → sonnet4.5),
-    // the form may still have a saved selectedModel (e.g., "opus4.6") marked as overridden
-    // from a previous session when that was the default. Detect and clear this staleness
-    // so the current specialist default is shown instead.
-    if (modelWasOverridden && selectedModel) {
-      const currentDefault = isTeamMode ? teamModeModel : singleAgentModel;
-      if (currentDefault && selectedModel !== currentDefault) {
-        selectedModel = undefined;
-        modelWasOverridden = false;
-        onModelChange?.(undefined);
-      }
-    }
+  // Tracks whether the user explicitly picked a model during this session.
+  // Session overrides are genuine and must never be cleared by the stale-override check.
+  let modelOverriddenThisSession = $state(false);
 
+  onMount(async () => {
     // Fetch provider availability — the $effect above handles auto-selection
     // once providerAvailability is set. This avoids duplicating fallback logic
     // and ensures the user's explicit provider choice is respected consistently.
@@ -224,53 +214,25 @@
   });
 
   // Helper to resolve the effective model for a given specialist.
-  // When the form's selectedProvider matches the specialist's effective coding agent
-  // from Redux, delegate to selectEffectiveModel so the displayed model matches
-  // Settings > Agents exactly.  When the user has changed the provider within
-  // this form to something different, fall back to local tier resolution.
-  function resolveEffectiveModel(specialist: string | null): string {
-    const values = $availableModels$.map((m) => m.value);
-    const valuesSet = new Set(values);
-
-    if (specialist) {
-      const state = appStore.state;
-      const effectiveCodingAgent = selectEffectiveCodingAgent.select(state, specialist);
-
-      // If the form's provider matches the specialist's effective coding agent,
-      // use the Redux selector directly — this mirrors Settings > Agents exactly.
-      if (selectedProvider === effectiveCodingAgent) {
-        const reduxModel = selectEffectiveModel.select(state, specialist);
-        if (reduxModel && valuesSet.has(reduxModel)) return reduxModel;
-      }
-
-      // User changed provider within the form — fall back to local tier resolution
-      // User override takes priority
-      const override = $userOverrides$.modelOverrides[specialist];
-      if (override) return override;
-
-      // Resolve model tier using the locally-selected provider
-      const info = $specialists$.find((s) => s.id === specialist);
-      if (info?.defaultModelTier && selectedProvider in PROVIDER_MODEL_TIERS) {
-        const baseModel = getDefaultModelForProvider(selectedProvider, info.defaultModelTier);
-        const defaultProviderId = getDefaultProviderId();
-        const resolvedModel =
-          selectedProvider !== defaultProviderId ? `${selectedProvider}:${baseModel}` : baseModel;
-        // Validate the tier-resolved model exists in the available models.
-        // PROVIDER_MODEL_TIERS may have hardcoded model names that don't match
-        // the actual models returned by the provider (e.g. opencode CLI).
-        if (valuesSet.has(resolvedModel)) {
-          return resolvedModel;
-        }
-        // Tier model not available — fall through to fallback below
-      }
-
-      // Fallback to hardcoded defaultModel (custom specialists, etc.)
-      if (info?.defaultModel) {
-        return info.defaultModel;
-      }
-    }
-    const fallback = resolvePreferredDefaultModel(values, $selectedModel$) ?? values[0];
-    return fallback;
+  // Delegates to the shared resolveEffectiveModelForSpecialist utility (also used
+  // by the CompactWorkspaceInitializer submit path) so the displayed model always
+  // matches the model the created agent gets. When the form's selectedProvider
+  // matches the specialist's effective coding agent from Redux, the Redux-resolved
+  // model wins (mirrors Settings > Agents exactly); when the user has changed the
+  // provider within this form, it falls back to local tier resolution.
+  function resolveEffectiveModel(specialist: string | null): string | undefined {
+    const state = appStore.state;
+    return resolveEffectiveModelForSpecialist({
+      specialistId: specialist,
+      selectedProvider,
+      availableModelValues: $availableModels$.map((m) => m.value),
+      globalSelectedModel: $selectedModel$,
+      effectiveCodingAgent: specialist
+        ? selectEffectiveCodingAgent.select(state, specialist)
+        : undefined,
+      effectiveModel: specialist ? selectEffectiveModel.select(state, specialist) : undefined,
+      specialistInfo: specialist ? $specialists$.find((s) => s.id === specialist) : undefined,
+    });
   }
 
   // Effective model for the team mode card (based on actual selectedSpecialist)
@@ -278,6 +240,42 @@
 
   // Effective model for the single-agent card (based on displayedSpecialist to preserve across mode switches)
   const singleAgentModel = $derived.by(() => resolveEffectiveModel(displayedSpecialist));
+
+  // Clear stale model overrides restored from saved state.
+  // When the user changes specialist defaults in Settings (e.g., spec-writer → sonnet4.5),
+  // the form may still have a saved selectedModel (e.g., "opus4.6") marked as overridden
+  // from a previous session when that was the default. This runs reactively (not onMount)
+  // so it waits until file specialists, available models, and the parent's persisted form
+  // state are all loaded — comparing before then is meaningless — and re-runs if hydration
+  // re-applies a stale override after mount. A persisted "override" that matches the
+  // current specialist default is not a real override; one that differs is stale. Either
+  // way it is cleared so the current specialist default drives the picker. Overrides the
+  // user made in this session are never cleared.
+  $effect(() => {
+    const dataReady =
+      $fileSpecialistsLoaded$ && $availableModels$.length > 0 && $initializerHydrated$;
+    if (!dataReady || modelOverriddenThisSession) return;
+    // Degenerate persisted state: overridden flag set with no model. Normalize
+    // so the invariant `modelWasOverridden ⇒ selectedModel set` holds.
+    if (modelWasOverridden && !selectedModel) {
+      logger.debug('Normalizing degenerate model-override state (flag set, no model)');
+      modelWasOverridden = false;
+      onModelChange?.(undefined);
+      return;
+    }
+    if (modelWasOverridden && selectedModel) {
+      const currentDefault = isTeamMode ? teamModeModel : singleAgentModel;
+      if (currentDefault) {
+        logger.debug('Clearing stale persisted model override:', {
+          selectedModel,
+          currentDefault,
+        });
+        selectedModel = undefined;
+        modelWasOverridden = false;
+        onModelChange?.(undefined);
+      }
+    }
+  });
 
 
 
@@ -397,6 +395,7 @@
   function handleModelChange(model: string | undefined) {
     selectedModel = model;
     modelWasOverridden = true;
+    modelOverriddenThisSession = true;
 
     // Update provider to match the selected model's provider
     if (model) {
