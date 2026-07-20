@@ -22,7 +22,7 @@ describe('agentAvailabilityReducer managed install status', () => {
       initialState,
       setManagedInstallStatus('codex', {
         managedInstallState: 'installing',
-        version: '0.13.0',
+        version: '0.16.0',
         downloadProgress: 0.25,
       }),
     );
@@ -30,7 +30,7 @@ describe('agentAvailabilityReducer managed install status', () => {
     expect(installing.providerStatusMap.codex).toMatchObject({
       available: false,
       managedInstallState: 'installing',
-      version: '0.13.0',
+      version: '0.16.0',
       downloadProgress: 0.25,
     });
 
@@ -45,7 +45,7 @@ describe('agentAvailabilityReducer managed install status', () => {
 
     expect(selectManagedInstallStatusByProvider.select(storeWith(installed), 'codex')).toEqual({
       managedInstallState: 'installed',
-      version: '0.13.0',
+      version: '0.16.0',
       downloadProgress: 1,
       error: undefined,
       usingFallback: undefined,

@@ -11,7 +11,7 @@ import * as path from 'path';
 import { pipeline } from 'stream/promises';
 import { hostExec } from '../../../shared/main/host-exec';
 
-export const MANAGED_CODEX_ACP_VERSION = '0.13.0';
+export const MANAGED_CODEX_ACP_VERSION = '0.16.0';
 const CODEX_ACP_APPLE_TEAM_ID = 'MQ55VZLNZQ';
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 const SPAWN_TIMEOUT_MS = 30_000;
@@ -30,33 +30,33 @@ export const MANAGED_CODEX_ACP_INTEGRITY: {
 } = {
   wrapper: {
     packageName: '@zed-industries/codex-acp',
-    tarballUrl: 'https://registry.npmjs.org/@zed-industries/codex-acp/-/codex-acp-0.13.0.tgz',
-    integrity: 'sha512-Ep3gINMVB8qQL3kozJxEzG4YP7NmWUb5s+8yu8tQ7YSPfaIPXBIQQmO5sQk2Uu2av+gIC2EchbwaSSG3Mo17YQ==',
+    tarballUrl: 'https://registry.npmjs.org/@zed-industries/codex-acp/-/codex-acp-0.16.0.tgz',
+    integrity: 'sha512-XKzqztT5R8Wg1BVFnk6/U4JVx5GNUaZgxpf9gP2Cw6BsknvJWh3aefcAGZQljgdMivRqczjNKYL4F6H65dc5vA==',
   },
   platforms: {
     'darwin-arm64': {
       packageName: '@zed-industries/codex-acp-darwin-arm64',
       tarballUrl:
-        'https://registry.npmjs.org/@zed-industries/codex-acp-darwin-arm64/-/codex-acp-darwin-arm64-0.13.0.tgz',
-      integrity: 'sha512-SNJbpxOD1b98pK1Qw2pZjFJbfYBICheRs3mYvLMgHABehdypaeYKnEmEGp3Bu/gUT6JFAtOPRtaU+sfxKzgCvw==',
+        'https://registry.npmjs.org/@zed-industries/codex-acp-darwin-arm64/-/codex-acp-darwin-arm64-0.16.0.tgz',
+      integrity: 'sha512-2AmbWsc/+Mpn6U8UOIlPLvgwGsGOr/LFpgcvrnjcCT9V1yY92MLrqzjMX82+VjTrRLRuXvc25SB5Z1++4Pw29g==',
     },
     'darwin-x64': {
       packageName: '@zed-industries/codex-acp-darwin-x64',
       tarballUrl:
-        'https://registry.npmjs.org/@zed-industries/codex-acp-darwin-x64/-/codex-acp-darwin-x64-0.13.0.tgz',
-      integrity: 'sha512-R5CQi2mmi9Nk2P6t48T5JoOQx0jWnP9DzLf5jcTnCLqk1tsg9XtASpLBtsedll9MesBax6aflDvz+0dyWW+3Mw==',
+        'https://registry.npmjs.org/@zed-industries/codex-acp-darwin-x64/-/codex-acp-darwin-x64-0.16.0.tgz',
+      integrity: 'sha512-QCWggk0s4GTPLCR7eznyx29Dls4gzUKvp4MjZ4nzPX5gDL/02PGY+oCV1WsQOsnzWRK0RxM+GlK19rG1qzqplw==',
     },
     'linux-x64': {
       packageName: '@zed-industries/codex-acp-linux-x64',
       tarballUrl:
-        'https://registry.npmjs.org/@zed-industries/codex-acp-linux-x64/-/codex-acp-linux-x64-0.13.0.tgz',
-      integrity: 'sha512-sWNfyeuwEHPo6DSbcjklnBr7M8+MWd2b9oVbIqgwxryTPpm0ZPF3U28PWR3/vGxS5UmhGiZIShe9tqx8FsvvBg==',
+        'https://registry.npmjs.org/@zed-industries/codex-acp-linux-x64/-/codex-acp-linux-x64-0.16.0.tgz',
+      integrity: 'sha512-xs5zZBLpJuciEbZNx6ZSNL0qCa9h3i/zWpj40sp6QtF+L4Ow/7qzHdBzboGhHdcz1jrLedfZeRFDA2Elj8TLMA==',
     },
     'win32-x64': {
       packageName: '@zed-industries/codex-acp-win32-x64',
       tarballUrl:
-        'https://registry.npmjs.org/@zed-industries/codex-acp-win32-x64/-/codex-acp-win32-x64-0.13.0.tgz',
-      integrity: 'sha512-675+tZlhzDMBJUrgiTnbcCMB15MQ8B0Ih/GmzB9MqW/FDFJqOFjXe4P+M7joePzQqa7QYwf36le50sDokXDrew==',
+        'https://registry.npmjs.org/@zed-industries/codex-acp-win32-x64/-/codex-acp-win32-x64-0.16.0.tgz',
+      integrity: 'sha512-ZriI/ay5E3DCg8s22LZykIRI2XzQL6sZg/t81K+6qc86ldscaSWQSOT6KSnRcv31QJCMfBlFxMj22pZiGSVjQA==',
     },
   },
 };

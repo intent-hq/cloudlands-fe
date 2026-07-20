@@ -70,10 +70,10 @@ describe('codex-acp-manager', () => {
   it('pins the real wrapper and supported native package integrities', async () => {
     const manager = await import('../codex-acp-manager');
 
-    expect(manager.MANAGED_CODEX_ACP_VERSION).toBe('0.13.0');
+    expect(manager.MANAGED_CODEX_ACP_VERSION).toBe('0.16.0');
     expect(manager.MANAGED_CODEX_ACP_INTEGRITY.wrapper).toMatchObject({
       packageName: wrapperPackageName,
-      integrity: 'sha512-Ep3gINMVB8qQL3kozJxEzG4YP7NmWUb5s+8yu8tQ7YSPfaIPXBIQQmO5sQk2Uu2av+gIC2EchbwaSSG3Mo17YQ==',
+      integrity: 'sha512-XKzqztT5R8Wg1BVFnk6/U4JVx5GNUaZgxpf9gP2Cw6BsknvJWh3aefcAGZQljgdMivRqczjNKYL4F6H65dc5vA==',
     });
     expect(Object.keys(manager.MANAGED_CODEX_ACP_INTEGRITY.platforms).sort()).toEqual([
       'darwin-arm64',
@@ -107,7 +107,7 @@ describe('codex-acp-manager', () => {
     expect(first).toEqual(second);
     expect(mocks.httpsGet).toHaveBeenCalledTimes(2);
     expect(first.wrapperPath).toContain(
-      path.join('runtimes', 'codex-acp', '0.13.0', 'node_modules', '@zed-industries', 'codex-acp'),
+      path.join('runtimes', 'codex-acp', '0.16.0', 'node_modules', '@zed-industries', 'codex-acp'),
     );
     await expect(fs.access(first.wrapperPath)).resolves.toBeUndefined();
     expect(mocks.backendRequest).toHaveBeenCalledWith(
@@ -142,7 +142,7 @@ describe('codex-acp-manager', () => {
     const baseDir = path.join(mocks.userData, 'runtimes', 'codex-acp');
     const entries = await fs.readdir(baseDir).catch(() => []);
     expect(entries.filter((entry) => entry.startsWith('.tmp-'))).toEqual([]);
-    expect(entries).not.toContain('0.13.0');
+    expect(entries).not.toContain('0.16.0');
   });
 
   it('cleans stale temp directories before installing', async () => {
@@ -181,7 +181,7 @@ describe('codex-acp-manager', () => {
     await manager.ensureManagedCodexAcp();
 
     const entries = (await fs.readdir(baseDir)).sort();
-    expect(entries).toEqual(['0.12.0', '0.13.0']);
+    expect(entries).toEqual(['0.12.0', '0.16.0']);
   });
 
   it('rejects unsupported platform and arch combinations without downloading', async () => {

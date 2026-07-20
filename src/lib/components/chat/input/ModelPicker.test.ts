@@ -553,7 +553,7 @@ describe('ModelPicker multi-provider mode', () => {
   it('shows a transient Codex setup notice while managed install is running', async () => {
     codexManagedInstallStatus$.set({
       managedInstallState: 'installing',
-      version: '0.13.0',
+      version: '0.16.0',
       downloadProgress: 0.42,
     });
     enabledProviderIds$.set(['codex']);
