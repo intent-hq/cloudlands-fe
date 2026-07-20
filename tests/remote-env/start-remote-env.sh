@@ -62,14 +62,14 @@ case $PROFILE in
         echo "Standard:  ssh -p 2222 testuser@localhost  (password: testuser)"
         ;;
     devpod)
-        echo "DevPod:    ssh -p 22022 augment@localhost  (password: augment)"
+        echo "DevPod:    ssh -p 22022 devuser@localhost  (password: devuser)"
         ;;
     minimal)
         echo "Minimal:   ssh -p 2223 minuser@localhost   (password: minuser)"
         ;;
     all)
         echo "Standard:  ssh -p 2222 testuser@localhost  (password: testuser)"
-        echo "DevPod:    ssh -p 22022 augment@localhost  (password: augment)"
+        echo "DevPod:    ssh -p 22022 devuser@localhost  (password: devuser)"
         echo "Minimal:   ssh -p 2223 minuser@localhost   (password: minuser)"
         ;;
 esac
