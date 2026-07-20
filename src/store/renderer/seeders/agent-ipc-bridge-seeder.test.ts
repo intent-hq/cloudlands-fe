@@ -597,8 +597,11 @@ describe("agent-ipc-bridge-seeder", () => {
   describe("agent:backend:get-queue → daemon agent.getQueue", () => {
     it("end-to-end: unifiedOrchestrator.getQueue sends {agentId} and returns the daemon {success,queue:[QueuedMessage]} body", async () => {
       // PROTOCOL §5.5: `{ success, queue: QueuedMessage[] }`. Entries may
-      // carry optional opaque `messageMetadata` (e.g. event wakes tagged
-      // `{ type: "event_notification", ... }`) — passed through untouched.
+      // additionally carry optional opaque `messageMetadata` (e.g. event
+      // wakes tagged `{ type: "event_notification", ... }`) — passed through
+      // untouched. Note: `messageMetadata` on queue entries is pending
+      // contract documentation (the intentd half will add it to PROTOCOL
+      // §5.5); until then this asserts the FE bridge is forward-compatible.
       const queue = [
         { id: "q-1", content: "a", position: 0, queuedAt: "2026-01-01T00:00:00Z" },
         { id: "q-2", content: "b", position: 1, queuedAt: "2026-01-01T00:00:01Z" },

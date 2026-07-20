@@ -88,6 +88,31 @@ describe('QueuedMessageList', () => {
     expect(buttonTooltips(container)).not.toContain('Edit');
   });
 
+  it('falls back to text parsing when messageMetadata has an unexpected shape', () => {
+    const { container } = render(QueuedMessageList, {
+      props: {
+        messages: [
+          queued({
+            content: WAKE_TEXT,
+            messageMetadata: { type: 'event_notification', events: 'not-an-array' },
+          }),
+        ],
+      },
+    });
+
+    expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
+    expect(buttonTooltips(container)).not.toContain('Edit');
+  });
+
+  it('keeps the requeued-after-failure indicator on event wake rows', () => {
+    const { container } = render(QueuedMessageList, {
+      props: { messages: [queued({ content: WAKE_TEXT, requeuedAfterFailure: true })] },
+    });
+
+    expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
+    expect(container.querySelector('[title="Failed — will retry"]')).toBeTruthy();
+  });
+
   it('keeps regular messages unchanged when mixed with an event wake', () => {
     const { container } = render(QueuedMessageList, {
       props: {

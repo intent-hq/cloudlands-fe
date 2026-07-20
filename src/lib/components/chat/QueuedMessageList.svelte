@@ -189,10 +189,13 @@
 
   /** Short human label + muted report preview for an event-notification wake. */
   function eventWakeSummary(message: QueuedMessage): { label: string; preview?: string } {
-    const events = parseAgentEvents(
-      message.content,
-      message.messageMetadata as Parameters<typeof parseAgentEvents>[1],
-    );
+    // Only forward metadata when it actually carries an events array —
+    // messageMetadata is opaque, so an unexpected shape falls back to
+    // parseAgentEvents' legacy text parsing instead of erroring.
+    const metadata = Array.isArray(message.messageMetadata?.events)
+      ? (message.messageMetadata as Parameters<typeof parseAgentEvents>[1])
+      : undefined;
+    const events = parseAgentEvents(message.content, metadata);
     const idle = events.filter((e) => e.type === 'agent:idle');
     const created = events.filter((e) => e.type === 'agent:created');
     const parts: string[] = [];
@@ -283,6 +286,17 @@
               <!-- System event-notification wake: compact row, no edit -->
               {@const wake = eventWakeSummary(message)}
               <div class="col-span-full row-span-full flex flex-1 min-w-0 items-center gap-2">
+                {#if message.requeuedAfterFailure}
+                  <div
+                    class="flex items-center gap-1 text-warning text-xs shrink-0"
+                    title="Failed — will retry"
+                  >
+                    <div aria-hidden="true">
+                      <Fa icon={faRotateRight} class="w-3 h-3" />
+                    </div>
+                    <span class="sr-only">Failed — will retry</span>
+                  </div>
+                {/if}
                 <div aria-hidden="true" class="shrink-0">
                   <Fa icon={faBell} class="w-3 h-3" />
                 </div>
