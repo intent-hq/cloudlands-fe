@@ -50,7 +50,7 @@ describe('codex-resolver', () => {
   it('resolves session command to managed codex-acp before user-installed and npx candidates', async () => {
     vi.mocked(ensureManagedCodexAcp).mockResolvedValue({
       wrapperPath: '/managed/codex-acp.js',
-      version: '0.13.0',
+      version: '0.16.0',
     });
 
     const result = await resolveCodexCommand();
@@ -92,7 +92,7 @@ describe('codex-resolver', () => {
   it('prepends the official codex app-server candidate when a recent CLI is available', async () => {
     vi.mocked(ensureManagedCodexAcp).mockResolvedValue({
       wrapperPath: '/managed/codex-acp.js',
-      version: '0.13.0',
+      version: '0.16.0',
     });
     vi.mocked(findBinary).mockImplementation(async (name) => {
       if (name === 'codex') return '/opt/homebrew/bin/codex';
@@ -190,7 +190,7 @@ describe('codex-resolver', () => {
   it('orders model-listing candidates as managed, codex-acp, then npx bridge for old CLIs', async () => {
     vi.mocked(ensureManagedCodexAcp).mockResolvedValue({
       wrapperPath: '/managed/codex-acp.js',
-      version: '0.13.0',
+      version: '0.16.0',
     });
     vi.mocked(findBinary).mockImplementation(async (name) => {
       if (name === 'codex-acp') return '/usr/local/bin/codex-acp';
