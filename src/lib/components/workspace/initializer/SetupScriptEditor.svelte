@@ -222,11 +222,19 @@
       const script = scriptMap.get(selectedScriptId);
       if (script) {
         const contentChanged = newValue !== script.content;
-        if (contentChanged && selectedScriptId.startsWith('template-')) {
-          // User edited a template — fork into a new saved script
-          const templateName = script.label;
+        if (
+          contentChanged &&
+          (selectedScriptId.startsWith('template-') || selectedScriptId === REPO_CONFIG_SCRIPT_ID)
+        ) {
+          // User edited a template or the repo-config entry — fork into a new
+          // saved script (the repo config stays untouched; the fork gets a
+          // distinct name so it isn't confused with the committed script)
+          const forkName =
+            selectedScriptId === REPO_CONFIG_SCRIPT_ID
+              ? `${REPO_CONFIG_SCRIPT_NAME} (edited)`
+              : script.label;
           const savedScript = saveOrUpdateScript({
-            name: templateName,
+            name: forkName,
             content: newValue,
             repoPath,
             projectType: projectType || 'generic',

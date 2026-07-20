@@ -1147,8 +1147,9 @@
     }
 
     // Probe the repo's committed `.intent/config.json` for a setup script.
-    // Only local paths — GitHub/remote repos have no local checkout to read.
-    if (!path || type !== 'local' || (!path.startsWith('/') && !path.startsWith('~'))) return;
+    // Only absolute local paths — GitHub/remote repos have no local checkout,
+    // and `~` never expands in host.exec argv (no shell).
+    if (!path || type !== 'local' || !path.startsWith('/')) return;
     const scriptAtFetchStart = untrack(() => setupScript);
     (async () => {
       const script = await fetchRepoConfigSetupScript(path);
@@ -1158,8 +1159,11 @@
       repoConfigScriptRepo = path;
       if (!script) return;
       // Repo config has top priority, but never clobber restored form state,
-      // user edits, or anything changed while the read was in flight
+      // user edits, an open setup-script modal (it snapshots parent values on
+      // open and would commit stale ones on Done), or anything changed while
+      // the read was in flight
       if (preservedRestoredState) return;
+      if (untrack(() => showSetupScript)) return;
       if (untrack(() => isCustomSetupScript)) return;
       if (untrack(() => setupScript) !== scriptAtFetchStart) return;
       setupScript = script;
@@ -1904,8 +1908,15 @@
       // has data on the very first render frame (before sagas/effects run).
       appStore.dispatch(setWorkspaceEntity(workspace));
 
-      // Save the setup script to the store for future reuse
-      if (setupScript.trim()) {
+      // Save the setup script to the store for future reuse.
+      // Skip the unedited repo-config script — the committed .intent/config.json
+      // is its source of truth, and saving a copy would both duplicate it in the
+      // saved list and shadow future repo-config changes as the last-used default.
+      const isUneditedRepoConfigScript =
+        setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
+        repoConfigScriptRepo === repoPath &&
+        setupScript.trim() === (repoConfigScript ?? '').trim();
+      if (setupScript.trim() && !isUneditedRepoConfigScript) {
         const now = new Date().toISOString();
         const scriptToSave = {
           id: uuidv4(),
