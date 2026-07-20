@@ -30,32 +30,28 @@ export const MANAGED_CODEX_ACP_INTEGRITY: {
 } = {
   wrapper: {
     packageName: '@zed-industries/codex-acp',
-    tarballUrl: 'https://registry.npmjs.org/@zed-industries/codex-acp/-/codex-acp-0.16.0.tgz',
+    tarballUrl: `https://registry.npmjs.org/@zed-industries/codex-acp/-/codex-acp-${MANAGED_CODEX_ACP_VERSION}.tgz`,
     integrity: 'sha512-XKzqztT5R8Wg1BVFnk6/U4JVx5GNUaZgxpf9gP2Cw6BsknvJWh3aefcAGZQljgdMivRqczjNKYL4F6H65dc5vA==',
   },
   platforms: {
     'darwin-arm64': {
       packageName: '@zed-industries/codex-acp-darwin-arm64',
-      tarballUrl:
-        'https://registry.npmjs.org/@zed-industries/codex-acp-darwin-arm64/-/codex-acp-darwin-arm64-0.16.0.tgz',
+      tarballUrl: `https://registry.npmjs.org/@zed-industries/codex-acp-darwin-arm64/-/codex-acp-darwin-arm64-${MANAGED_CODEX_ACP_VERSION}.tgz`,
       integrity: 'sha512-2AmbWsc/+Mpn6U8UOIlPLvgwGsGOr/LFpgcvrnjcCT9V1yY92MLrqzjMX82+VjTrRLRuXvc25SB5Z1++4Pw29g==',
     },
     'darwin-x64': {
       packageName: '@zed-industries/codex-acp-darwin-x64',
-      tarballUrl:
-        'https://registry.npmjs.org/@zed-industries/codex-acp-darwin-x64/-/codex-acp-darwin-x64-0.16.0.tgz',
+      tarballUrl: `https://registry.npmjs.org/@zed-industries/codex-acp-darwin-x64/-/codex-acp-darwin-x64-${MANAGED_CODEX_ACP_VERSION}.tgz`,
       integrity: 'sha512-QCWggk0s4GTPLCR7eznyx29Dls4gzUKvp4MjZ4nzPX5gDL/02PGY+oCV1WsQOsnzWRK0RxM+GlK19rG1qzqplw==',
     },
     'linux-x64': {
       packageName: '@zed-industries/codex-acp-linux-x64',
-      tarballUrl:
-        'https://registry.npmjs.org/@zed-industries/codex-acp-linux-x64/-/codex-acp-linux-x64-0.16.0.tgz',
+      tarballUrl: `https://registry.npmjs.org/@zed-industries/codex-acp-linux-x64/-/codex-acp-linux-x64-${MANAGED_CODEX_ACP_VERSION}.tgz`,
       integrity: 'sha512-xs5zZBLpJuciEbZNx6ZSNL0qCa9h3i/zWpj40sp6QtF+L4Ow/7qzHdBzboGhHdcz1jrLedfZeRFDA2Elj8TLMA==',
     },
     'win32-x64': {
       packageName: '@zed-industries/codex-acp-win32-x64',
-      tarballUrl:
-        'https://registry.npmjs.org/@zed-industries/codex-acp-win32-x64/-/codex-acp-win32-x64-0.16.0.tgz',
+      tarballUrl: `https://registry.npmjs.org/@zed-industries/codex-acp-win32-x64/-/codex-acp-win32-x64-${MANAGED_CODEX_ACP_VERSION}.tgz`,
       integrity: 'sha512-ZriI/ay5E3DCg8s22LZykIRI2XzQL6sZg/t81K+6qc86ldscaSWQSOT6KSnRcv31QJCMfBlFxMj22pZiGSVjQA==',
     },
   },
