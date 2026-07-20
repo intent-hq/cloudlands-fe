@@ -32,6 +32,7 @@ import {
   getPiPath,
   isPiMcpAdapterInstalled,
   installPiMcpAdapter,
+  PI_ACP_NPX_PACKAGE,
 } from '../pi-resolver';
 import { ACP_PROVIDERS } from '../../../../shared/config/provider-config';
 
@@ -42,7 +43,7 @@ describe('pi-resolver', () => {
   });
 
   describe('resolvePiCommand()', () => {
-    it('always returns npx -y pi-acp when npx is found', async () => {
+    it('always returns npx -y pi-acp@<pinned> when npx is found', async () => {
       vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'npx') return '/usr/local/bin/npx';
         return null;
@@ -52,7 +53,11 @@ describe('pi-resolver', () => {
       expect(result).not.toBeNull();
       expect(result!.usesNpx).toBe(true);
       expect(result!.command).toBe('/usr/local/bin/npx');
-      expect(result!.argsPrefix).toEqual(['-y', 'pi-acp']);
+      expect(result!.argsPrefix).toEqual(['-y', PI_ACP_NPX_PACKAGE]);
+    });
+
+    it('pins the pi-acp npx package to an explicit version', () => {
+      expect(PI_ACP_NPX_PACKAGE).toMatch(/^pi-acp@\d+\.\d+\.\d+$/);
     });
 
     it('returns null when npx is not available', async () => {
