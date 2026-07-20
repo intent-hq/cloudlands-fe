@@ -30,7 +30,8 @@ vi.mock('../../../../shared/main/find-binary', () => ({
   getCommonNpmPaths: vi.fn(() => []),
 }));
 
-vi.mock('../../../codex/main/codex-acp-manager', () => ({
+vi.mock('../../../codex/main/codex-acp-manager', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../codex/main/codex-acp-manager')>()),
   ensureManagedCodexAcp: mocks.ensureManagedCodexAcp,
 }));
 
