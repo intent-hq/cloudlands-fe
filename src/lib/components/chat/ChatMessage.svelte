@@ -937,7 +937,7 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="relative bg-sidebar rounded-xs px-2 pt-2 pb-2 cursor-pointer overflow-hidden z-20"
-          ondblclick={() => onEditSubmit && handleStartEdit()}
+          ondblclick={() => onEditSubmit && !agentAttribution && handleStartEdit()}
         >
           <!-- Actions -->
           <div
@@ -963,11 +963,12 @@
 
           <!-- Message content - line-clamp-6 -->
           <div
-            class="leading-normal text-subtle whitespace-pre-wrap select-text line-clamp-6 {onEditSubmit
+            class="leading-normal text-subtle whitespace-pre-wrap select-text line-clamp-6 {onEditSubmit &&
+            !agentAttribution
               ? 'cursor-pointer'
               : 'cursor-text'}"
             onclick={(e) => {
-              if (onEditSubmit) {
+              if (onEditSubmit && !agentAttribution) {
                 e.preventDefault();
                 e.stopPropagation();
                 handleStartEdit();

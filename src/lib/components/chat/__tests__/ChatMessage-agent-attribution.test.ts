@@ -58,6 +58,12 @@ vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => ({
   default: (await import('./mocks/AuggieAvatar.svelte')).default,
 }));
 
+// Stub the edit-mode input; its real dependency tree (ModelPicker → useAgentSession)
+// needs live store context that these rendering tests don't exercise.
+vi.mock('../input/SimpleRichInput.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+
 import ChatMessage from '../ChatMessage.svelte';
 
 function userMessage(metadata?: Record<string, unknown>): AgentMessage {
@@ -149,5 +155,37 @@ describe('ChatMessage agent-to-agent sender attribution', () => {
     });
 
     expect(screen.queryByTestId('agent-message-attribution')).toBeNull();
+  });
+
+  it('does not enter edit mode when clicking an attributed message body', async () => {
+    const onEditSubmit = vi.fn();
+    render(ChatMessage, {
+      props: {
+        message: userMessage({
+          type: 'agent_message',
+          fromAgentId: 'agent-sender-1',
+          fromAgentName: 'Builder',
+        }),
+        onEditSubmit,
+      },
+    });
+
+    await fireEvent.click(screen.getByText('hello from another agent'));
+
+    // Still rendering the message (no edit input swapped in)
+    expect(screen.getByText('hello from another agent')).toBeTruthy();
+    expect(screen.getByTestId('agent-message-attribution')).toBeTruthy();
+  });
+
+  it('keeps click-to-edit for plain user messages', async () => {
+    const onEditSubmit = vi.fn();
+    render(ChatMessage, {
+      props: { message: userMessage(), onEditSubmit },
+    });
+
+    await fireEvent.click(screen.getByText('hello from another agent'));
+
+    // Edit mode replaces the message body view
+    expect(screen.queryByText('hello from another agent')).toBeNull();
   });
 });

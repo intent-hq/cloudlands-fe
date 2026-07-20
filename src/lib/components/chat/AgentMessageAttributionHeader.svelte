@@ -46,6 +46,7 @@
   type="button"
   class="flex items-center gap-1.5 rounded-md text-xs cursor-pointer transition-colors hover:bg-accent/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring {className}"
   onclick={handleClick}
+  ondblclick={(e) => e.stopPropagation()}
   title="Open agent {attribution.displayName}"
   data-testid="agent-message-attribution"
 >
