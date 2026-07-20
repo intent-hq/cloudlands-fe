@@ -108,8 +108,15 @@ function applyOne(change: AppliedSettingChange): void {
 
 /** Background-agent settings cross three dotted paths; reconcile them in one dispatch. */
 function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
-  const defaultModel = byPath.get("backgroundAgents.defaultModel");
-  const typeOverrides = byPath.get("backgroundAgents.typeOverrides");
+  // A settings:changed delta may only include ONE of defaultModel / typeOverrides.
+  // Fall back to current slice state for missing keys so partial updates don't drop values.
+  const currentState = appStore.state.backgroundAgentSettings;
+  const defaultModel =
+    (byPath.get("backgroundAgents.defaultModel") as string | undefined) ?? currentState.defaultModel;
+  const typeOverrides =
+    (byPath.get("backgroundAgents.typeOverrides") as Record<BackgroundAgentType, string> | undefined) ??
+    currentState.typeOverrides;
+
   if (typeof defaultModel === "string" && defaultModel.length > 0) {
     const fallback: Record<BackgroundAgentType, string> = {
       commit: "",

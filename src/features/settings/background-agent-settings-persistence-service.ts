@@ -30,11 +30,18 @@ import {
 
 const logger = createLogger("BackgroundAgentSettingsPersistenceService");
 
-/** Persist one settings path (fire-and-forget; failures only log). */
-function persist(path: string, value: unknown): void {
+/**
+ * Persist both backgroundAgents paths atomically in one settings.update call
+ * (fire-and-forget; failures only log). Atomic updates avoid partial
+ * settings:changed deltas and reduce redundant IPC traffic.
+ */
+function persistBackgroundAgentSettings(defaultModel: string, typeOverrides: Record<string, string>): void {
   void appClient.settings
-    .update([{ path, value }])
-    .catch((error) => logger.error(`Failed to persist ${path}`, { error }));
+    .update([
+      { path: "backgroundAgents.defaultModel", value: defaultModel },
+      { path: "backgroundAgents.typeOverrides", value: typeOverrides },
+    ])
+    .catch((error) => logger.error("Failed to persist background agent settings", error));
 }
 
 export function createBackgroundAgentSettingsPersistenceMiddleware(): StoreMiddleware {
@@ -47,11 +54,10 @@ export function createBackgroundAgentSettingsPersistenceMiddleware(): StoreMiddl
         case clearTypeOverride.type:
         case resetSettings.type: {
           // After the reducer runs, persist the authoritative slice state to
-          // the daemon settings catalog. Deliberately skip hydrateSettings
-          // (the daemon's echo-back) to avoid a write loop.
+          // the daemon settings catalog in one atomic update. Deliberately skip
+          // hydrateSettings (the daemon's echo-back) to avoid a write loop.
           const state = appStore.state.backgroundAgentSettings;
-          persist("backgroundAgents.defaultModel", state.defaultModel);
-          persist("backgroundAgents.typeOverrides", state.typeOverrides);
+          persistBackgroundAgentSettings(state.defaultModel, state.typeOverrides);
           break;
         }
         case hydrateSettings.type:
