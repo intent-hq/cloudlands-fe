@@ -13,6 +13,7 @@ import './backend-status-bridge-seeder';
 import './host-bridge-seeder';
 import './git-bridge-seeder';
 import './file-bridge-seeder';
+import './repo-config-bridge-seeder';
 import './provider-status-bridge-seeder';
 import './model-catalog-bridge-seeder';
 import './integrations-bridge-seeder';

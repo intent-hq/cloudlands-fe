@@ -12,6 +12,8 @@
     open?: boolean;
     repoPath?: string;
     projectType?: ProjectType;
+    /** Setup script committed in the repo's `.intent/config.json`, if any */
+    repoConfigScript?: string | null;
     value?: string;
     scriptName?: string;
     isCustomScript?: boolean;
@@ -23,6 +25,7 @@
     open = $bindable(false),
     repoPath = '',
     projectType = undefined,
+    repoConfigScript = null,
     value = $bindable(''),
     scriptName = $bindable('Custom'),
     isCustomScript = $bindable(false),
@@ -74,6 +77,7 @@
     bind:this={editorRef}
     {repoPath}
     {projectType}
+    {repoConfigScript}
     bind:value={localValue}
     bind:expanded={editorExpanded}
     bind:scriptName={localScriptName}
