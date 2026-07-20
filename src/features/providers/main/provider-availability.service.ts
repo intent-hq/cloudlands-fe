@@ -426,9 +426,15 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
 
   // claude-code runs its ACP adapter exclusively via npx (pinned version):
   // when the claude CLI is installed but npx is missing, surface an explicit
-  // warning instead of a silently broken provider. The discovery path carries
-  // the daemon's npx probe; the local fallback already sets the warning.
-  if (claudeCodeResult.available && !claudeCodeResult.warning && npxStatus?.resolvedPath === null) {
+  // warning instead of a silently broken provider. On the discovery path the
+  // daemon reports claude-code as not installed when npx is absent (npx-only
+  // provider), so key the warning on the claude CLI itself; the local
+  // fallback already sets the warning.
+  if (
+    !claudeCodeResult.warning &&
+    npxStatus?.resolvedPath === null &&
+    (await isClaudeCodeInstalled())
+  ) {
     claudeCodeResult.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
   }
 

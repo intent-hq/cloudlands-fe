@@ -18,4 +18,4 @@ export const CLAUDE_AGENT_ACP_NPX_SPEC = `${CLAUDE_AGENT_ACP_PACKAGE}@${CLAUDE_A
 
 /** User-facing warning when the claude CLI is present but npx is not. */
 export const CLAUDE_CODE_NPX_MISSING_WARNING =
-  'npx not found — install Node.js 18+ to use Claude Code';
+  'npx not found — install Node.js (with npm) to use Claude Code';

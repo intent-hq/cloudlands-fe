@@ -18,6 +18,7 @@
   import ProviderIcon from '$lib/components/ui/ProviderIcon.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { shell } from '$lib/electron-bridge';
+  import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
   import AuggieInstructionsPanel from '$lib/components/AuggieInstructionsPanel.svelte';
 
   import { selectProviderLoadingMap } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
@@ -343,11 +344,13 @@
         <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>
-            {provider.warning} — <button
-              type="button"
-              class="underline hover:no-underline"
-              onclick={() => void shell.open('https://nodejs.org')}
-            >nodejs.org</button>
+            {provider.warning}{#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
+              — <button
+                type="button"
+                class="underline hover:no-underline"
+                onclick={() => void shell.open('https://nodejs.org')}
+              >nodejs.org</button>
+            {/if}
           </span>
         </div>
       {/if}
