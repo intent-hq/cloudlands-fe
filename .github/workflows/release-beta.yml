@@ -350,8 +350,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Configure extraheader auth (avoids token in URL logs)
-          git config http.https://github.com/.extraheader "AUTHORIZATION: Bearer ${RELEASE_PAT}"
+          # Configure extraheader auth (avoids token in URL logs). Git-over-HTTPS on
+          # github.com requires Basic auth (same format actions/checkout persists);
+          # a Bearer header is rejected with "invalid credentials".
+          AUTH_B64=$(printf 'x-access-token:%s' "${RELEASE_PAT}" | base64 | tr -d '\n')
+          git config http.https://github.com/.extraheader "AUTHORIZATION: basic ${AUTH_B64}"
 
           git tag -a "v${VERSION}" -m "Release v${VERSION}"
           git push origin "refs/tags/v${VERSION}"
