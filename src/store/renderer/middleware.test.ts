@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => {
   const activeStreamsReduxBridgeMiddleware = createPassthroughMiddleware();
   const settingsHydrationMiddleware = createPassthroughMiddleware();
   const modelSelectionPersistenceMiddleware = createPassthroughMiddleware();
+  const backgroundAgentSettingsPersistenceMiddleware = createPassthroughMiddleware();
   const providerSettingsPersistenceMiddleware = createPassthroughMiddleware();
   const modelReloadMiddleware = createPassthroughMiddleware();
   const providerAvailabilityCheckMiddleware = createPassthroughMiddleware();
@@ -89,6 +90,7 @@ const mocks = vi.hoisted(() => {
     createActiveStreamsReduxBridge: vi.fn(() => activeStreamsReduxBridgeMiddleware),
     createSettingsHydrationMiddleware: vi.fn(() => settingsHydrationMiddleware),
     createModelSelectionPersistenceMiddleware: vi.fn(() => modelSelectionPersistenceMiddleware),
+    createBackgroundAgentSettingsPersistenceMiddleware: vi.fn(() => backgroundAgentSettingsPersistenceMiddleware),
     createProviderSettingsPersistenceMiddleware: vi.fn(() => providerSettingsPersistenceMiddleware),
     createModelReloadMiddleware: vi.fn(() => modelReloadMiddleware),
     createProviderAvailabilityCheckMiddleware: vi.fn(() => providerAvailabilityCheckMiddleware),
@@ -157,6 +159,7 @@ const mocks = vi.hoisted(() => {
     activeStreamsReduxBridgeMiddleware,
     settingsHydrationMiddleware,
     modelSelectionPersistenceMiddleware,
+    backgroundAgentSettingsPersistenceMiddleware,
     providerSettingsPersistenceMiddleware,
     modelReloadMiddleware,
     providerAvailabilityCheckMiddleware,
@@ -230,6 +233,9 @@ vi.mock("$features/settings/settings-hydration-service", () => ({
 }));
 vi.mock("$features/settings/model-selection-persistence-service", () => ({
   createModelSelectionPersistenceMiddleware: mocks.createModelSelectionPersistenceMiddleware,
+}));
+vi.mock("$features/settings/background-agent-settings-persistence-service", () => ({
+  createBackgroundAgentSettingsPersistenceMiddleware: mocks.createBackgroundAgentSettingsPersistenceMiddleware,
 }));
 vi.mock("$features/settings/provider-settings-persistence-service", () => ({
   createProviderSettingsPersistenceMiddleware: mocks.createProviderSettingsPersistenceMiddleware,
@@ -430,6 +436,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
+      mocks.backgroundAgentSettingsPersistenceMiddleware,
       mocks.providerSettingsPersistenceMiddleware,
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
@@ -499,6 +506,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
+      mocks.backgroundAgentSettingsPersistenceMiddleware,
       mocks.providerSettingsPersistenceMiddleware,
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
@@ -568,6 +576,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
+      mocks.backgroundAgentSettingsPersistenceMiddleware,
       mocks.providerSettingsPersistenceMiddleware,
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
@@ -638,6 +647,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
+      mocks.backgroundAgentSettingsPersistenceMiddleware,
       mocks.providerSettingsPersistenceMiddleware,
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
@@ -725,6 +735,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.activeStreamsReduxBridgeMiddleware,
       mocks.settingsHydrationMiddleware,
       mocks.modelSelectionPersistenceMiddleware,
+      mocks.backgroundAgentSettingsPersistenceMiddleware,
       mocks.providerSettingsPersistenceMiddleware,
       mocks.modelReloadMiddleware,
       mocks.providerAvailabilityCheckMiddleware,
