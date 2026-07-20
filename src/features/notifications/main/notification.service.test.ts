@@ -12,7 +12,7 @@ import {
 } from 'electron';
 import { NotificationService, __resetNotificationCacheForTesting } from './notification.service';
 // workspace-event-bus was deleted; notifications are now driven by Redux sagas
-import { getWindowIdsForWorkspace } from '../../system/main/system.ipc';
+import { getWindowIdsForWorkspace, sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import type { AgentIdleEvent } from '../../events/types';
 
 vi.mock('../../../shared/logger', () => ({
@@ -26,27 +26,71 @@ vi.mock('../../../shared/logger', () => ({
   },
 }));
 
-// Method-aware daemon-client stub: routes `settings.get` to a hydrated
-// notifications-enabled response and `agent.list` to a configurable
-// PROTOCOL.md §5.5-shaped AgentLite[] fixture (defaults to empty).
-const { requestMock, agentListResponse } = vi.hoisted(() => {
+// Method-aware daemon-client stub: routes `settings.get` to a configurable
+// per-path `notifications.*` fixture, `agent.list` to a configurable
+// PROTOCOL.md §5.5-shaped AgentLite[] fixture (defaults to empty), and
+// `events.subscribe` / `events.unsubscribe` to §6.1/§6.2-shaped responses.
+// `clientOn` captures the `notification` listener the service attaches so
+// tests can push PROTOCOL.md §6.3-shaped `events.event` notifications.
+const {
+  requestMock,
+  agentListResponse,
+  settingsValues,
+  clientOn,
+  clientOff,
+  notificationListeners,
+  reconnectHandlers,
+} = vi.hoisted(() => {
   const agentListResponse: {
-    agents: Array<{ id?: string; isStreaming?: boolean; isResponding?: boolean }>;
+    agents: Array<{
+      id?: string;
+      isStreaming?: boolean;
+      isResponding?: boolean;
+      metadata?: { isBackground?: boolean; specialist?: string };
+    }>;
   } = { agents: [] };
-  const requestMock = vi.fn(async (method: string) => {
+  const settingsValues: Record<string, unknown> = {};
+  const requestMock = vi.fn(async (method: string, params?: unknown) => {
     if (method === 'settings.get') {
-      return { path: 'notifications.enabled', value: true };
+      const path = (params as { path?: string } | undefined)?.path ?? '';
+      return { path, value: settingsValues[path] ?? true };
     }
     if (method === 'agent.list') {
       return agentListResponse;
     }
+    if (method === 'events.subscribe') {
+      return { subscriptionId: 'ws-sub-1' };
+    }
+    if (method === 'events.unsubscribe') {
+      return { success: true };
+    }
     return {};
   });
-  return { requestMock, agentListResponse };
+  const notificationListeners: Array<(n: { method: string; params?: unknown }) => void> = [];
+  const reconnectHandlers: Array<() => void> = [];
+  const clientOn = vi.fn((event: string, listener: (n: never) => void) => {
+    if (event === 'notification') {
+      notificationListeners.push(listener as (n: { method: string; params?: unknown }) => void);
+    }
+  });
+  const clientOff = vi.fn();
+  return {
+    requestMock,
+    agentListResponse,
+    settingsValues,
+    clientOn,
+    clientOff,
+    notificationListeners,
+    reconnectHandlers,
+  };
 });
 
 vi.mock('../../backend/main/backend.ipc', () => ({
-  getBackendClient: () => ({ request: requestMock }),
+  getBackendClient: () => ({ request: requestMock, on: clientOn, off: clientOff }),
+  onBackendReconnected: (handler: () => void) => {
+    reconnectHandlers.push(handler);
+    return vi.fn();
+  },
 }));
 
 const { mockNotificationIsSupported, mockNotificationInstances, mockShowShouldThrow } = vi.hoisted(() => ({
@@ -107,22 +151,301 @@ vi.mock('../../workspace/main/workspace.service', () => ({
   },
 }));
 
-describe('NotificationService start lifecycle', () => {
+/** Let queued microtasks (promise chains) settle. */
+async function flush(times = 5) {
+  for (let i = 0; i < times; i++) {
+    await new Promise((r) => setTimeout(r, 0));
+  }
+}
+
+/** PROTOCOL.md §6.3-shaped `events.event` push for an agent:idle event. */
+function buildEventsEventNotification(
+  overrides: Partial<{
+    subscriptionId: string;
+    workspaceId: string;
+    data: Record<string, unknown>;
+  }> = {},
+) {
+  return {
+    method: 'events.event',
+    params: {
+      subscriptionId: overrides.subscriptionId ?? 'ws-sub-1',
+      event: {
+        id: 'evt-1',
+        type: 'agent:idle',
+        workspaceId: overrides.workspaceId ?? 'workspace-1',
+        timestamp: new Date().toISOString(),
+        data: {
+          agentId: 'agent-self',
+          agentName: 'Self Agent',
+          ...overrides.data,
+        },
+      },
+    },
+  };
+}
+
+describe('NotificationService daemon agent:idle subscription', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetNotificationCacheForTesting();
+    mockNotificationIsSupported.value = true;
+    mockNotificationInstances.length = 0;
+    agentListResponse.agents = [];
+    notificationListeners.length = 0;
+    reconnectHandlers.length = 0;
+    for (const key of Object.keys(settingsValues)) delete settingsValues[key];
   });
 
-  it('start() is a no-op (saga-driven)', () => {
-    const service = new NotificationService('workspace-1');
-    // start() should not throw; it's a no-op now (events delivered via Redux sagas)
-    expect(() => service.start()).not.toThrow();
+  afterEach(() => {
+    mockNotificationIsSupported.value = false;
+    agentListResponse.agents = [];
   });
 
-  it('stop() is a no-op (saga-driven)', () => {
+  it('start() issues events.subscribe for agent:idle scoped to the workspace (PROTOCOL.md §6.1)', async () => {
     const service = new NotificationService('workspace-1');
     service.start();
-    // stop() should not throw; it's a no-op now
-    expect(() => service.stop()).not.toThrow();
+    await flush();
+
+    // Assert exact on-wire request shape (PROTOCOL.md §6.1).
+    expect(requestMock).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: ['agent:idle'],
+      workspaceId: 'workspace-1',
+    });
+    // A `notification` listener was attached to the daemon client.
+    expect(clientOn).toHaveBeenCalledWith('notification', expect.any(Function));
+    service.stop();
+  });
+
+  it('shows a notification when a §6.3-shaped agent:idle events.event arrives', async () => {
+    const service = new NotificationService('workspace-1');
+    service.start();
+    await flush();
+
+    expect(notificationListeners.length).toBe(1);
+    notificationListeners[0](buildEventsEventNotification());
+    await flush();
+
+    expect(mockNotificationInstances.length).toBe(1);
+    service.stop();
+  });
+
+  it('ignores events.event pushes for other subscription ids', async () => {
+    const service = new NotificationService('workspace-1');
+    service.start();
+    await flush();
+
+    notificationListeners[0](
+      buildEventsEventNotification({ subscriptionId: 'renderer-sub-99' }),
+    );
+    await flush();
+
+    expect(mockNotificationInstances.length).toBe(0);
+    service.stop();
+  });
+
+  it('ignores agent:idle events for other workspaces', async () => {
+    const service = new NotificationService('workspace-1');
+    service.start();
+    await flush();
+
+    notificationListeners[0](buildEventsEventNotification({ workspaceId: 'workspace-2' }));
+    await flush();
+
+    expect(mockNotificationInstances.length).toBe(0);
+    service.stop();
+  });
+
+  it('suppresses notifications for background agents flagged via agent.list metadata', async () => {
+    agentListResponse.agents = [
+      { id: 'agent-self', metadata: { isBackground: true, specialist: 'implementor' } },
+    ];
+
+    const service = new NotificationService('workspace-1');
+    service.start();
+    await flush();
+
+    notificationListeners[0](buildEventsEventNotification());
+    await flush();
+
+    expect(mockNotificationInstances.length).toBe(0);
+    service.stop();
+  });
+
+  it('re-issues events.subscribe after backend reconnect', async () => {
+    const service = new NotificationService('workspace-1');
+    service.start();
+    await flush();
+
+    expect(reconnectHandlers.length).toBe(1);
+    const subscribeCalls = () =>
+      requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
+    expect(subscribeCalls()).toHaveLength(1);
+
+    reconnectHandlers[0]();
+    await flush();
+
+    expect(subscribeCalls()).toHaveLength(2);
+    expect(subscribeCalls()[1][1]).toEqual({
+      eventTypes: ['agent:idle'],
+      workspaceId: 'workspace-1',
+    });
+    service.stop();
+  });
+
+  it('stop() detaches the listener and unsubscribes (PROTOCOL.md §6.2)', async () => {
+    const service = new NotificationService('workspace-1');
+    service.start();
+    await flush();
+
+    service.stop();
+    await flush();
+
+    expect(clientOff).toHaveBeenCalledWith('notification', expect.any(Function));
+    expect(requestMock).toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'ws-sub-1',
+    });
+  });
+
+  it('discards and releases a subscribe that resolves after stop() (no stale subscriptionId)', async () => {
+    // Make events.subscribe hang until we resolve it manually. Restore the
+    // default implementation afterwards (clearAllMocks does not do this).
+    const defaultImpl = requestMock.getMockImplementation();
+    let resolveSubscribe!: (v: { subscriptionId: string }) => void;
+    requestMock.mockImplementation(async (method: string, params?: unknown) => {
+      if (method === 'events.subscribe') {
+        return new Promise((r) => {
+          resolveSubscribe = r;
+        });
+      }
+      if (method === 'settings.get') {
+        const path = (params as { path?: string } | undefined)?.path ?? '';
+        return { path, value: settingsValues[path] ?? true };
+      }
+      if (method === 'agent.list') return agentListResponse;
+      if (method === 'events.unsubscribe') return { success: true };
+      return {};
+    });
+
+    const service = new NotificationService('workspace-1');
+    service.start();
+    await flush();
+
+    // stop() runs while events.subscribe is still in flight.
+    service.stop();
+    await flush();
+
+    // The stale subscribe resolves after teardown.
+    resolveSubscribe({ subscriptionId: 'stale-sub-1' });
+    await flush();
+
+    // The stale id must be released, not adopted.
+    expect(requestMock).toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'stale-sub-1',
+    });
+
+    // Events for the stale id must not trigger notifications.
+    notificationListeners[0](
+      buildEventsEventNotification({ subscriptionId: 'stale-sub-1' }),
+    );
+    await flush();
+    expect(mockNotificationInstances.length).toBe(0);
+
+    requestMock.mockImplementation(defaultImpl!);
+  });
+});
+
+describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
+  function buildIdleEvent(): AgentIdleEvent {
+    return {
+      type: 'agent:idle',
+      workspaceId: 'workspace-1',
+      timestamp: new Date().toISOString(),
+      data: {
+        agentId: 'agent-self',
+        agentName: 'Self Agent',
+        isBackground: false,
+      },
+    } as AgentIdleEvent;
+  }
+
+  function installFocusedWindow(isFocused: boolean) {
+    const mockWindow = {
+      id: 1,
+      webContents: { send: vi.fn(), isDestroyed: () => false },
+      focus: vi.fn(),
+      show: vi.fn(),
+      restore: vi.fn(),
+      isMinimized: () => false,
+      isFocused: () => isFocused,
+      isDestroyed: () => false,
+    };
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([mockWindow.id]);
+    vi.mocked(BrowserWindow.fromId).mockImplementation((id: number) =>
+      (id === mockWindow.id ? mockWindow : null) as never,
+    );
+    return mockWindow;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetNotificationCacheForTesting();
+    mockNotificationIsSupported.value = true;
+    mockNotificationInstances.length = 0;
+    agentListResponse.agents = [];
+    for (const key of Object.keys(settingsValues)) delete settingsValues[key];
+  });
+
+  afterEach(() => {
+    mockNotificationIsSupported.value = false;
+    agentListResponse.agents = [];
+  });
+
+  it('suppresses the OS banner but still sends notification:show when focused and soundOnlyWhenUnfocused=true', async () => {
+    settingsValues['notifications.soundOnlyWhenUnfocused'] = true;
+    installFocusedWindow(true);
+
+    const service = new NotificationService('workspace-1');
+    await service.handleAgentIdle(buildIdleEvent());
+
+    // OS banner suppressed…
+    expect(mockNotificationInstances.length).toBe(0);
+    // …but the renderer sound event is still delivered.
+    expect(sendToWorkspaceWindows).toHaveBeenCalledWith(
+      'workspace-1',
+      'notification:show',
+      expect.objectContaining({ title: expect.any(String), body: expect.any(String) }),
+    );
+  });
+
+  it('shows the OS banner even when focused if soundOnlyWhenUnfocused=false', async () => {
+    settingsValues['notifications.soundOnlyWhenUnfocused'] = false;
+    installFocusedWindow(true);
+
+    const service = new NotificationService('workspace-1');
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(mockNotificationInstances.length).toBe(1);
+    expect(sendToWorkspaceWindows).toHaveBeenCalledWith(
+      'workspace-1',
+      'notification:show',
+      expect.objectContaining({ title: expect.any(String), body: expect.any(String) }),
+    );
+  });
+
+  it('shows the OS banner when unfocused regardless of soundOnlyWhenUnfocused', async () => {
+    settingsValues['notifications.soundOnlyWhenUnfocused'] = true;
+    installFocusedWindow(false);
+
+    const service = new NotificationService('workspace-1');
+    await service.handleAgentIdle(buildIdleEvent());
+
+    expect(mockNotificationInstances.length).toBe(1);
+    expect(sendToWorkspaceWindows).toHaveBeenCalledWith(
+      'workspace-1',
+      'notification:show',
+      expect.objectContaining({ title: expect.any(String), body: expect.any(String) }),
+    );
   });
 });
 
