@@ -931,7 +931,7 @@
                   {provider.warning} — <button
                     type="button"
                     class="underline hover:no-underline"
-                    onclick={() => shell.open('https://nodejs.org')}
+                    onclick={() => void shell.open('https://nodejs.org')}
                   >nodejs.org</button>
                 </span>
               </div>
