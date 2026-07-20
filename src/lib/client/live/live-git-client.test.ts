@@ -98,6 +98,81 @@ describe("LiveGitClient reads (fake transport)", () => {
     expect(await client.prStatus("ws-1")).toBeNull();
   });
 
+  it("prRefresh forwards pr.refresh and maps outcome/prNumber/prUrl/prStatus/pullRequests", async () => {
+    const pullRequests = [
+      {
+        number: 299,
+        title: "Old merged PR",
+        url: "https://example.test/pr/299",
+        status: "Merged",
+        createdAt: "2026-07-01T00:00:00Z",
+        updatedAt: "2026-07-02T00:00:00Z",
+      },
+      {
+        number: 300,
+        title: "New PR",
+        url: "https://example.test/pr/300",
+        status: "Open",
+        createdAt: "2026-07-03T00:00:00Z",
+        updatedAt: "2026-07-03T00:00:00Z",
+      },
+    ];
+    mockedRequest.mockResolvedValueOnce({
+      outcome: "linked",
+      prNumber: 300,
+      prUrl: "https://example.test/pr/300",
+      prStatus: "Open",
+      pullRequests,
+    });
+    const client = new LiveGitClient();
+
+    const result = await client.prRefresh("ws-1");
+
+    expect(mockedRequest).toHaveBeenCalledWith("pr.refresh", { workspaceId: "ws-1" });
+    expect(result).toEqual({
+      outcome: "linked",
+      prNumber: 300,
+      prUrl: "https://example.test/pr/300",
+      prStatus: "Open",
+      pullRequests,
+    });
+  });
+
+  it("prRefresh maps a no-PR refresh (outcome without linkage fields) to an empty-list result", async () => {
+    mockedRequest.mockResolvedValueOnce({
+      outcome: "unchanged",
+      prNumber: null,
+      prUrl: null,
+      prStatus: null,
+      pullRequests: [],
+    });
+    const client = new LiveGitClient();
+
+    const result = await client.prRefresh("ws-1");
+
+    expect(result).toEqual({
+      outcome: "unchanged",
+      prNumber: undefined,
+      prUrl: undefined,
+      prStatus: undefined,
+      pullRequests: [],
+    });
+  });
+
+  it("prRefresh resolves null when the daemon errors", async () => {
+    mockedRequest.mockRejectedValueOnce(new Error("boom"));
+    const client = new LiveGitClient();
+
+    expect(await client.prRefresh("ws-1")).toBeNull();
+  });
+
+  it("prRefresh folds an out-of-contract outcome value to null", async () => {
+    mockedRequest.mockResolvedValueOnce({ outcome: "exploded", pullRequests: [] });
+    const client = new LiveGitClient();
+
+    expect(await client.prRefresh("ws-1")).toBeNull();
+  });
+
   it("diffs forwards git.diffs and maps path/hunks/lines into DiffChunk[]", async () => {
     mockedRequest.mockResolvedValueOnce([
       {

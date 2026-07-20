@@ -26,6 +26,8 @@ vi.mock("$lib/client", () => ({
     agents: { list: vi.fn(() => Promise.resolve([])) },
     git: {
       prStatus: vi.fn(() => Promise.resolve(null)),
+      // Default to a benign no-PR refresh result; null means transport failure.
+      prRefresh: vi.fn(() => Promise.resolve({ outcome: "unchanged", pullRequests: [] })),
       trackedChanges: vi.fn(() => Promise.resolve([])),
       commits: vi.fn(() => Promise.resolve([])),
       commitsWithBoundary: vi.fn(() => Promise.resolve({ commits: [], boundarySha: null, nextToken: null })),
@@ -295,15 +297,36 @@ describe("lifecycleReadService (fake seam, real store)", () => {
     expect(appStore.state.scripts.byWorkspaceId[ws]?.initialized).toBe(true);
   });
 
-  it("refreshPRStatusRequested re-runs the PR status read and clears the refreshing flag", async () => {
+  it("refreshPRStatusRequested forces a daemon pr.refresh and clears the refreshing flag", async () => {
     const ws = "ws-pr-1";
+    gitApi.prRefresh.mockResolvedValueOnce({
+      outcome: "unchanged",
+      pullRequests: [],
+    } as never);
     appStore.dispatch(refreshPRStatusRequested(ws, true, true));
     await flush();
 
-    expect(gitApi.prStatus).toHaveBeenCalledWith(ws);
+    expect(gitApi.prRefresh).toHaveBeenCalledWith(ws);
+    expect(gitApi.prStatus).not.toHaveBeenCalled();
     const prState = appStore.state.prStatus.byWorkspaceId[ws];
     expect(prState?.isRefreshing).toBe(false);
     expect(prState?.lastRefreshTime).not.toBeNull();
+    expect(prState?.lastError).toBeNull();
+  });
+
+  it("refreshPRStatusRequested reports failure when the seam folds an error to null", async () => {
+    const ws = "ws-pr-fail";
+    // Seam contract: null = transport/daemon failure (a no-PR refresh still
+    // returns a result), so the refresh must not look successful.
+    gitApi.prRefresh.mockResolvedValueOnce(null as never);
+    appStore.dispatch(refreshPRStatusRequested(ws, true, true));
+    await flush();
+
+    expect(gitApi.prRefresh).toHaveBeenCalledWith(ws);
+    const prState = appStore.state.prStatus.byWorkspaceId[ws];
+    expect(prState?.isRefreshing).toBe(false);
+    expect(prState?.lastRefreshTime).toBeNull();
+    expect(prState?.lastError).toBe("pr.refresh failed");
   });
 
   it("coalesces rapid refreshes for the same workspace into a single fetch", async () => {

@@ -20,7 +20,14 @@
  * `MutationResult`.
  */
 import { GitFileStatus, LineType } from "$shared/types";
-import type { DiffChunk, DiffLine, FileStatus, GitStatus } from "$shared/types";
+import type {
+  DiffChunk,
+  DiffLine,
+  FileStatus,
+  GitStatus,
+  PullRequestInfo,
+  PullRequestStatus,
+} from "$shared/types";
 import { ChangeStage } from "$features/file-tracking/types";
 import type {
   CommitFile,
@@ -37,6 +44,7 @@ import type {
   GitCommitParams,
   GitDiffsOptions,
   MutationResult,
+  PrRefreshResult,
   PrStatusSummary,
   SubscriptionHandler,
   Unsubscribe,
@@ -496,6 +504,35 @@ export class LiveGitClient implements GitClient {
         prNumber: typeof result.prNumber === "number" ? result.prNumber : undefined,
         url: typeof result.url === "string" ? result.url : undefined,
         state: typeof result.state === "string" ? result.state : undefined,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // `pr.refresh` (§5.7 extension) forces the daemon's PR discovery/refresh for
+  // one workspace and returns the post-refresh linkage state. Unlike
+  // `pr.status` it does not require an active PR; transport/daemon errors fold
+  // to `null` so a failed refresh leaves store state intact. `outcome` is
+  // narrowed against the documented closed set (an unknown value is a contract
+  // divergence, folded to null like any malformed response); the BE-owned
+  // `prStatus`/`pullRequests` payloads pass through unhealed per the
+  // thin-presenter rules.
+  async prRefresh(workspaceId: string): Promise<PrRefreshResult | null> {
+    try {
+      const result = await backendRequest<Record<string, unknown>>("pr.refresh", { workspaceId });
+      if (!result || typeof result !== "object" || typeof result.outcome !== "string") return null;
+      const outcomes: readonly string[] = ["skipped", "unchanged", "linked", "updated", "unlinked"];
+      if (!outcomes.includes(result.outcome)) return null;
+      return {
+        outcome: result.outcome as PrRefreshResult["outcome"],
+        prNumber: typeof result.prNumber === "number" ? result.prNumber : undefined,
+        prUrl: typeof result.prUrl === "string" ? result.prUrl : undefined,
+        prStatus:
+          typeof result.prStatus === "string" ? (result.prStatus as PullRequestStatus) : undefined,
+        pullRequests: Array.isArray(result.pullRequests)
+          ? (result.pullRequests as PullRequestInfo[])
+          : [],
       };
     } catch {
       return null;
