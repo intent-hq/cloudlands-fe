@@ -246,6 +246,25 @@ describe("provider-status-bridge-seeder", () => {
       });
     });
 
+    it("does not warn when the npx probe itself fails (unknown, not confirmed absence)", async () => {
+      routeDaemon({
+        "host.findBinary": (params) => {
+          const { name } = params as { name: string };
+          if (name === "claude") return { available: true, path: "/usr/local/bin/claude" };
+          throw new Error("transport down");
+        },
+        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "claude-code");
+
+      expect(response).toEqual({
+        success: true,
+        providerId: "claude-code",
+        data: { available: true, authenticated: true },
+      });
+    });
+
     it("rechecks claude-code without a warning when npx is present", async () => {
       routeDaemon({
         "host.findBinary": (params) => {

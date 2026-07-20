@@ -299,11 +299,12 @@ async function checkSingleProvider(providerId: string): Promise<ProviderStatus> 
 
   if (providerId === "claude-code") {
     // Adapter runs exclusively via npx — surface the same warning as main
-    // when the claude CLI is installed but npx is missing.
+    // when the claude CLI is installed but npx is missing. A failed probe
+    // (RPC error) is an unknown, not a confirmed absence — no warning then.
     const npx = await backendRequest<HostCheckResult>("host.findBinary", { name: "npx" }).catch(
       () => undefined,
     );
-    if (npx?.available !== true) {
+    if (npx && npx.available !== true) {
       status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
     }
     return withAuth(
