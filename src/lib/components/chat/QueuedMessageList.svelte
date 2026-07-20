@@ -267,6 +267,7 @@
 
       <div class="space-y-px">
         {#each messages as message (message.id)}
+          {@const agentAttr = queuedAgentAttribution(message)}
           <div
             class="group flex items-start gap-2 px-2.5 py-1 text-subtle text-sm grid {message.editing ? 'opacity-60' : ''}"
             transition:fly={{ y: 10, duration: 200 }}
@@ -362,59 +363,56 @@
                   </div>
                 {/if}
               </div>
-            {:else if queuedAgentAttribution(message)}
+            {:else if agentAttr}
               <!-- Agent-to-agent message: compact attribution row, no edit -->
-              {@const attr = queuedAgentAttribution(message)}
-              {#if attr}
-                <div class="col-span-full row-span-full flex flex-1 min-w-0 items-center gap-2">
-                  {#if message.requeuedAfterFailure}
-                    <div
-                      class="flex items-center gap-1 text-warning text-xs shrink-0"
-                      title="Failed — will retry"
-                    >
-                      <div aria-hidden="true">
-                        <Fa icon={faRotateRight} class="w-3 h-3" />
-                      </div>
-                      <span class="sr-only">Failed — will retry</span>
-                    </div>
-                  {/if}
-                  <div class="shrink-0" data-testid="queued-agent-message-avatar">
-                    <AuggieAvatar agentId={attr.fromAgentId} size={14} />
-                  </div>
+              <div class="col-span-full row-span-full flex flex-1 min-w-0 items-center gap-2">
+                {#if message.requeuedAfterFailure}
                   <div
-                    class="flex-1 min-w-0 truncate"
-                    transition:slide={{ axis: 'y', duration: 200 }}
-                    title={message.content}
+                    class="flex items-center gap-1 text-warning text-xs shrink-0"
+                    title="Failed — will retry"
                   >
-                    <span class="text-foreground font-medium">{attr.displayName}</span>
-                    <span class="text-xs opacity-70"> — {message.content}</span>
-                  </div>
-                  {#if !disabled}
-                    <div
-                      class="flex items-center gap-1 opacity-30 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        class="-my-1"
-                        onclick={() => onsendnow?.(message.id)}
-                        tooltip="Send now (interrupts current stream)"
-                      >
-                        <Fa icon={faPaperPlane} class="w-3 h-3" />
-                      </Button>
-                      <Button
-                        variant="ghost-light"
-                        size="icon-xs"
-                        class="-my-1"
-                        onclick={() => handleRemove(message.id)}
-                        tooltip="Remove"
-                      >
-                        <Fa icon={faTrash} class="w-3 h-3" />
-                      </Button>
+                    <div aria-hidden="true">
+                      <Fa icon={faRotateRight} class="w-3 h-3" />
                     </div>
-                  {/if}
+                    <span class="sr-only">Failed — will retry</span>
+                  </div>
+                {/if}
+                <div class="shrink-0" data-testid="queued-agent-message-avatar">
+                  <AuggieAvatar agentId={agentAttr.fromAgentId} size={14} />
                 </div>
-              {/if}
+                <div
+                  class="flex-1 min-w-0 truncate"
+                  transition:slide={{ axis: 'y', duration: 200 }}
+                  title={message.content}
+                >
+                  <span class="text-foreground font-medium">{agentAttr.displayName}</span>
+                  <span class="text-xs opacity-70"> — {message.content}</span>
+                </div>
+                {#if !disabled}
+                  <div
+                    class="flex items-center gap-1 opacity-30 group-hover:opacity-100 transition-opacity"
+                  >
+                    <Button
+                      variant="ghost-light"
+                      size="icon-xs"
+                      class="-my-1"
+                      onclick={() => onsendnow?.(message.id)}
+                      tooltip="Send now (interrupts current stream)"
+                    >
+                      <Fa icon={faPaperPlane} class="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="ghost-light"
+                      size="icon-xs"
+                      class="-my-1"
+                      onclick={() => handleRemove(message.id)}
+                      tooltip="Remove"
+                    >
+                      <Fa icon={faTrash} class="w-3 h-3" />
+                    </Button>
+                  </div>
+                {/if}
+              </div>
             {:else}
               <!-- Display mode -->
               <div class="col-span-full row-span-full flex flex-1 min-w-0 gap-2">
