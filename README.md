@@ -1,6 +1,6 @@
 # cloudlands-fe
 
-Electron + SvelteKit + TypeScript desktop frontend for **Intent**, talking to
+Electron + SvelteKit + TypeScript desktop frontend for **Intent** that talks to
 the `intentd` daemon. It is consumed as the `packages/cloudlands-fe` git
 submodule of [intent-hq/monorepo](https://github.com/intent-hq/monorepo).
 
