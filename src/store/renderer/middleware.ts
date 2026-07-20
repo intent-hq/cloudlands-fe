@@ -30,6 +30,7 @@ import { createProviderAvailabilityCheckMiddleware } from "$features/providers/p
 import { createAgentStreamMiddleware } from "$features/agent/agent-stream-service";
 import { createAgentCreationMiddleware } from "$features/agent/agent-creation-service";
 import { createAgentMutationMiddleware } from "$features/agent/agent-mutation-service";
+import { createEditRegenerateMiddleware } from "$features/agent/edit-regenerate-service";
 import { createContextMutationMiddleware } from "$features/context/context-mutation-service";
 import { createTaskAgentAssociationsMutationMiddleware } from "$features/tasks/task-agent-associations-mutation-service";
 import { createAppLayoutNavigationMiddleware } from "$features/layout/app-layout-navigation-service";
@@ -214,6 +215,12 @@ function buildMiddleware(): StoreMiddleware[] {
     // via `appClient.agents.get`; activate marks the session ACTIVE and
     // refetches; save is a no-op on the mock seam (Redux IS the state).
     createAgentMutationMiddleware(),
+    // Give the (post-saga) `agentSessionEditAndRegenerateRequested` trigger a
+    // real handler so editing a past user message forwards to
+    // `agent.editAndRegenerate` (PROTOCOL §5.5 extensions) — truncating the
+    // transcript at the edited message and regenerating from there — instead
+    // of being a no-op.
+    createEditRegenerateMiddleware(),
     // Give the (post-saga) context slice's `addContextItem` /
     // `removeContextItem` / `updateContextItem` triggers a real write handler
     // so chat-context edits forward to `workspace.updateContext` (PROTOCOL
