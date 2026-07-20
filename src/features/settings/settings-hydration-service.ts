@@ -96,6 +96,13 @@ function applyOne(change: AppliedSettingChange): void {
       }
       return;
     }
+    case "backgroundAgents.defaultModel":
+    case "backgroundAgents.typeOverrides":
+      // These are bundled and applied via applyBackgroundAgentBundle at the
+      // end of applySettingsChanges, so we don't dispatch here to avoid
+      // duplicate/partial hydration. Individual path changes still trigger
+      // the bundle logic.
+      return;
   }
 }
 
