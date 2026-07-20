@@ -1,8 +1,10 @@
 /**
  * Claude Code command resolution
  *
- * Resolves the Claude Code ACP adapter command, preferring a direct binary
- * and falling back to npx with auto-approve if needed.
+ * Resolves the Claude Code ACP adapter command. The adapter always runs via
+ * npx with a pinned package version so every install executes the same,
+ * release-cadence-controlled adapter — direct claude-agent-acp binaries are
+ * intentionally not probed. The 'claude' CLI remains a prerequisite.
  */
 
 import * as os from 'os';
@@ -12,8 +14,16 @@ import {
   findBinary,
   getCommonNpmPaths,
 } from '../../../shared/main/find-binary';
+import { CLAUDE_AGENT_ACP_NPX_SPEC } from '../../../shared/constants/claude-code';
 
 const logger = new Logger('ClaudeCodeResolver');
+
+export {
+  CLAUDE_AGENT_ACP_NPX_SPEC,
+  CLAUDE_AGENT_ACP_PACKAGE,
+  CLAUDE_AGENT_ACP_VERSION,
+  CLAUDE_CODE_NPX_MISSING_WARNING,
+} from '../../../shared/constants/claude-code';
 
 // Common paths to look for the 'claude' CLI binary (prerequisite for claude-agent-acp)
 const CLAUDE_CLI_PATHS = [
@@ -35,27 +45,7 @@ const CLAUDE_CLI_PATHS = [
   ] : []),
 ];
 
-// Common paths to look for claude-agent-acp binary
-const CLAUDE_AGENT_ACP_PATHS = [
-  '/usr/local/bin/claude-agent-acp',
-  '/usr/bin/claude-agent-acp',
-  '/opt/homebrew/bin/claude-agent-acp',
-  path.join(os.homedir(), '.local/bin/claude-agent-acp'),
-  path.join(os.homedir(), '.bun/bin/claude-agent-acp'),
-  path.join(os.homedir(), '.npm-global/bin/claude-agent-acp'),
-  // Windows paths
-  ...(process.platform === 'win32' ? [
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'claude-agent-acp.cmd'),
-    path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'claude-agent-acp'),
-    path.join(os.homedir(), 'AppData', 'Local', 'Volta', 'bin', 'claude-agent-acp.exe'),
-    path.join(os.homedir(), 'scoop', 'shims', 'claude-agent-acp.exe'),
-    path.join(os.homedir(), '.local', 'bin', 'claude-agent-acp.exe'),
-    path.join(os.homedir(), '.local', 'bin', 'claude-agent-acp.cmd'),
-    path.join(os.homedir(), '.local', 'bin', 'claude-agent-acp'),
-  ] : []),
-];
-
-// Common paths to look for npx (fallback runner)
+// Common paths to look for npx (the adapter always runs through npx)
 const NPX_PATHS = [
   '/usr/local/bin/npx',
   '/usr/bin/npx',
@@ -77,7 +67,6 @@ const NPX_PATHS = [
 ];
 
 let cachedClaudeCodePath: string | null = null;
-let cachedClaudeAgentAcpPath: string | null = null;
 let cachedNpxPath: string | null = null;
 
 /**
@@ -86,7 +75,6 @@ let cachedNpxPath: string | null = null;
  */
 export function clearClaudeCodeCache(): void {
   cachedClaudeCodePath = null;
-  cachedClaudeAgentAcpPath = null;
   cachedNpxPath = null;
 }
 
@@ -133,34 +121,19 @@ async function findClaudeCLIPath(): Promise<string | null> {
   return result;
 }
 
-/**
- * Find the claude-agent-acp executable path
- */
-async function findClaudeAgentAcpPath(): Promise<string | null> {
-  if (cachedClaudeAgentAcpPath) {
-    return cachedClaudeAgentAcpPath;
-  }
-
-  const result = await findBinary('claude-agent-acp', {
-    commonPaths: [...CLAUDE_AGENT_ACP_PATHS, ...getCommonNpmPaths('claude-agent-acp')],
-    cache: false,
-    timeout: 3000,
-    useEnhancedPath: false,
-    useLoginShell: false,
-  });
-
-  if (result) {
-    cachedClaudeAgentAcpPath = result;
-  }
-
-  return result;
-}
-
 export type ClaudeCodeResolvedCommand = {
   command: string;
   argsPrefix: string[];
   usesNpx: boolean;
 };
+
+/**
+ * Detailed resolution result so callers can distinguish "claude CLI missing"
+ * from "npx missing" and surface the right user-facing warning.
+ */
+export type ClaudeCodeResolution =
+  | { ok: true; resolved: ClaudeCodeResolvedCommand }
+  | { ok: false; reason: 'claude-cli-missing' | 'npx-missing' };
 
 /**
  * Check if the 'claude' CLI is installed (prerequisite for claude-agent-acp).
@@ -180,34 +153,48 @@ export async function getClaudeCodePath(): Promise<string | null> {
 }
 
 /**
- * Resolve the command to run Claude Code ACP.
- * The 'claude' CLI must be installed as a prerequisite.
- * Prefer a direct claude-agent-acp binary, fall back to npx with auto-approve.
+ * Check whether npx is available for running the Claude Code ACP adapter.
  */
-export async function resolveClaudeCodeCommand(): Promise<ClaudeCodeResolvedCommand | null> {
+export async function isNpxAvailableForClaudeCode(): Promise<boolean> {
+  return (await findNpxPath()) !== null;
+}
+
+/**
+ * Resolve the command to run Claude Code ACP with an explicit failure reason.
+ * The 'claude' CLI must be installed as a prerequisite; the adapter itself
+ * always runs via `npx -y <package>@<pinned version>` — direct binaries are
+ * never used, so every install runs the pinned adapter release.
+ */
+export async function resolveClaudeCodeCommandDetailed(): Promise<ClaudeCodeResolution> {
   // Check if 'claude' CLI is installed (prerequisite)
   const claudeCLIPath = await findClaudeCLIPath();
   if (!claudeCLIPath) {
     logger.warn('Claude CLI not found - claude-agent-acp requires the claude CLI to be installed');
-    return null;
+    return { ok: false, reason: 'claude-cli-missing' };
   }
 
-  // Prefer direct binary
-  const agentAcpPath = await findClaudeAgentAcpPath();
-  if (agentAcpPath) {
-    return { command: agentAcpPath, argsPrefix: [], usesNpx: false };
-  }
-
-  // Fall back to npx
   const npxPath = await findNpxPath();
-  if (npxPath) {
-    return {
-      command: npxPath,
-      argsPrefix: ['-y', '@agentclientprotocol/claude-agent-acp'],
-      usesNpx: true,
-    };
+  if (!npxPath) {
+    logger.warn('npx not found - cannot run claude-agent-acp');
+    return { ok: false, reason: 'npx-missing' };
   }
 
-  logger.warn('npx not found - cannot run claude-agent-acp');
-  return null;
+  return {
+    ok: true,
+    resolved: {
+      command: npxPath,
+      argsPrefix: ['-y', CLAUDE_AGENT_ACP_NPX_SPEC],
+      usesNpx: true,
+    },
+  };
+}
+
+/**
+ * Resolve the command to run Claude Code ACP.
+ * Returns null when the claude CLI or npx is missing; use
+ * `resolveClaudeCodeCommandDetailed()` when the failure reason matters.
+ */
+export async function resolveClaudeCodeCommand(): Promise<ClaudeCodeResolvedCommand | null> {
+  const resolution = await resolveClaudeCodeCommandDetailed();
+  return resolution.ok ? resolution.resolved : null;
 }

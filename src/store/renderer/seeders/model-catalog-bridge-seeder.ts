@@ -39,6 +39,7 @@ import {
   PI_CHANNELS,
 } from "$shared/ipc/channels";
 import { getCodexModelList } from "$shared/config/open-ai-codex-models";
+import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
 import { backendRequest } from "$lib/client/live/backend-transport";
 
 /** Daemon `host.checkAuggie` / `host.findBinary` result shape. */
@@ -290,6 +291,12 @@ registerMockIpcHandler(CLAUDE_CODE_CHANNELS.GET_MODELS, async (): Promise<GetMod
   const found = await findBinary("claude");
   if (!found.available) {
     return { success: true, data: [], warning: "Claude Code not available" };
+  }
+  // The ACP adapter runs exclusively via npx (pinned version) — mirror main's
+  // npx-missing warning instead of silently returning an empty picker.
+  const npx = await findBinary("npx");
+  if (!npx.available) {
+    return { success: true, data: [], warning: CLAUDE_CODE_NPX_MISSING_WARNING };
   }
   return {
     success: true,

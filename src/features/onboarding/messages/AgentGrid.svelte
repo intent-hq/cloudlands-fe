@@ -224,6 +224,8 @@
           loginCommand: meta?.loginCommand ?? '',
           description: PROVIDER_DESCRIPTIONS[p.id] ?? '',
           hasNpxFallback: status?.hasNpxFallback ?? false,
+          /** Status warning surfaced by the availability check (e.g. npx missing). */
+          warning: status?.warning,
         };
       });
   });

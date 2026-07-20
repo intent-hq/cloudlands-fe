@@ -17,6 +17,7 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { mockInvoke } from "$shared/ipc-mock-router";
 import { getCodexModelList } from "$shared/config/open-ai-codex-models";
+import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
 
 const mockedRequest = vi.mocked(backendRequest);
 
@@ -205,6 +206,24 @@ describe("model-catalog-bridge-seeder", () => {
       expect(response.success).toBe(true);
       expect(response.data).toEqual([]);
       expect(response.warning).toBe("Claude Code not available");
+    });
+
+    it("returns empty data + npx-missing warning when claude is installed but npx is not", async () => {
+      routeDaemon({
+        "host.findBinary": (params: unknown) => {
+          const { name } = params as { name: string };
+          return name === "claude"
+            ? { available: true, path: "/usr/local/bin/claude" }
+            : { available: false };
+        },
+      });
+
+      const response = await mockInvoke<Envelope>("claude-code:get-models");
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "npx" });
+      expect(response.success).toBe(true);
+      expect(response.data).toEqual([]);
+      expect(response.warning).toBe(CLAUDE_CODE_NPX_MISSING_WARNING);
     });
 
     it("always serves the Default (Pi) entry, mirroring the main handler's fallback", async () => {

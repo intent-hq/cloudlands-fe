@@ -12,6 +12,12 @@ export interface ProviderStatus {
    */
   authDetails?: string;
   error?: string;
+  /**
+   * User-facing warning about a degraded-but-detectable state (e.g. the
+   * claude CLI is installed but npx is missing, so the ACP adapter cannot
+   * run). Rendered in the provider status UI.
+   */
+  warning?: string;
   /** Whether this provider supports npx fallback when binary is unresolved. */
   hasNpxFallback?: boolean;
 }
