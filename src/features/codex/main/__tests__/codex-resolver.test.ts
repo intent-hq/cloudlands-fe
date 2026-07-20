@@ -21,6 +21,7 @@ vi.mock('../../../../shared/main/async-utils', () => ({
 
 vi.mock('../codex-acp-manager', () => ({
   ensureManagedCodexAcp: vi.fn(),
+  MANAGED_CODEX_ACP_VERSION: '0.13.0',
 }));
 
 import { findBinary } from '../../../../shared/main/find-binary';
@@ -28,8 +29,11 @@ import { execFileAsync } from '../../../../shared/main/async-utils';
 import { ensureManagedCodexAcp } from '../codex-acp-manager';
 import {
   clearCodexCache,
+  CODEX_ACP_NPX_PACKAGE,
+  CODEX_CLI_NPX_PACKAGE,
   MINIMUM_CODEX_APP_SERVER_VERSION,
   resolveCodexCommand,
+  resolveCodexMcpCommand,
   resolveCodexModelListCommands,
 } from '../codex-resolver';
 
@@ -68,6 +72,21 @@ describe('codex-resolver', () => {
 
     const result = await resolveCodexCommand();
     expect(result).toEqual({ command: '/usr/local/bin/codex-acp', argsPrefix: [], usesNpx: false });
+  });
+
+  it('pins the npx codex-acp fallback to the managed runtime version', async () => {
+    vi.mocked(findBinary).mockImplementation(async (name) => {
+      if (name === 'npx') return '/usr/local/bin/npx';
+      return null;
+    });
+
+    const result = await resolveCodexCommand();
+    expect(result).toEqual({
+      command: '/usr/local/bin/npx',
+      argsPrefix: ['-y', '@zed-industries/codex-acp@0.13.0'],
+      usesNpx: true,
+    });
+    expect(CODEX_ACP_NPX_PACKAGE).toMatch(/^@zed-industries\/codex-acp@\d+\.\d+\.\d+$/);
   });
 
   it('prepends the official codex app-server candidate when a recent CLI is available', async () => {
@@ -197,7 +216,7 @@ describe('codex-resolver', () => {
       { command: '/usr/local/bin/codex-acp', argsPrefix: [], usesNpx: false, source: 'codex-acp' },
       {
         command: '/usr/local/bin/npx',
-        argsPrefix: ['-y', '@zed-industries/codex-acp'],
+        argsPrefix: ['-y', '@zed-industries/codex-acp@0.13.0'],
         usesNpx: true,
         source: 'npx-codex-acp',
       },
@@ -239,6 +258,21 @@ describe('codex-resolver', () => {
       { command: '/usr/local/bin/codex-acp', argsPrefix: [], usesNpx: false, source: 'codex-acp' },
     ]);
     expect(execFileAsync).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a pinned @openai/codex npx package for the MCP server', async () => {
+    vi.mocked(findBinary).mockImplementation(async (name) => {
+      if (name === 'npx') return '/usr/local/bin/npx';
+      return null;
+    });
+
+    const result = await resolveCodexMcpCommand();
+    expect(result).toEqual({
+      command: '/usr/local/bin/npx',
+      args: ['-y', CODEX_CLI_NPX_PACKAGE, 'mcp-server'],
+      usesNpx: true,
+    });
+    expect(CODEX_CLI_NPX_PACKAGE).toMatch(/^@openai\/codex@\d+\.\d+\.\d+$/);
   });
 
   it('retries the app-server version probe after failed attempts', async () => {

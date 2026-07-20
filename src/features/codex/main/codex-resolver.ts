@@ -12,7 +12,22 @@ import {
   getCommonNpmPaths,
 } from '../../../shared/main/find-binary';
 import { execFileAsync } from '../../../shared/main/async-utils';
-import { ensureManagedCodexAcp } from './codex-acp-manager';
+import { ensureManagedCodexAcp, MANAGED_CODEX_ACP_VERSION } from './codex-acp-manager';
+
+/**
+ * Pinned npx fallback for the Codex ACP adapter. Reuses the managed runtime
+ * version so the last-resort npx path runs the same adapter release as the
+ * managed install. intentd pins the same package/version in
+ * `intent-providers/src/config.rs`.
+ */
+export const CODEX_ACP_NPX_PACKAGE = `@zed-industries/codex-acp@${MANAGED_CODEX_ACP_VERSION}`;
+
+/**
+ * Pinned Codex CLI version for the npx MCP-server fallback. Bumping it is a
+ * deliberate code change.
+ */
+export const CODEX_CLI_NPX_VERSION = '0.144.6';
+export const CODEX_CLI_NPX_PACKAGE = `@openai/codex@${CODEX_CLI_NPX_VERSION}`;
 
 // Common paths to look for codex-acp
 const CODEX_PATHS = [
@@ -347,7 +362,7 @@ export async function resolveCodexCommand(): Promise<CodexResolvedCommand | null
   if (npxPath) {
     return {
       command: npxPath,
-      argsPrefix: ['-y', '@zed-industries/codex-acp'],
+      argsPrefix: ['-y', CODEX_ACP_NPX_PACKAGE],
       usesNpx: true,
     };
   }
@@ -394,7 +409,7 @@ export async function resolveCodexModelListCommands(): Promise<CodexResolvedMode
   if (npxPath) {
     candidates.push({
       command: npxPath,
-      argsPrefix: ['-y', '@zed-industries/codex-acp'],
+      argsPrefix: ['-y', CODEX_ACP_NPX_PACKAGE],
       usesNpx: true,
       source: 'npx-codex-acp',
     });
@@ -428,7 +443,7 @@ export async function resolveCodexMcpCommand(): Promise<CodexResolvedMcpCommand 
   if (npxPath) {
     return {
       command: npxPath,
-      args: ['-y', '@openai/codex', 'mcp-server'],
+      args: ['-y', CODEX_CLI_NPX_PACKAGE, 'mcp-server'],
       usesNpx: true,
     };
   }
