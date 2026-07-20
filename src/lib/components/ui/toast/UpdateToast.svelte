@@ -27,7 +27,7 @@
   selectAutoUpdateCurrentVersion,
   selectAutoUpdateError,
 } from '$store/renderer/slices/auto-update/auto-update-selectors';
-  import { installUpdate } from '$store/renderer/slices/auto-update/auto-update-slice';
+  import { downloadUpdate, installUpdate } from '$store/renderer/slices/auto-update/auto-update-slice';
   import { store as appStore } from '$store/renderer/store';
 
   interface Props {
@@ -68,6 +68,10 @@
     appStore.dispatch(installUpdate());
   }
 
+  function handleDownload() {
+    appStore.dispatch(downloadUpdate());
+  }
+
   // Auto-dismiss when up-to-date or error after a delay
   $effect(() => {
     if (($status$ === 'not-available' || $status$ === 'error') && onDismiss) {
@@ -100,10 +104,14 @@
       <div class="icon downloading">
         <Fa icon={faDownload} class="animate-pulse" />
       </div>
-      <div class="text">
+      <div class="text flex-1">
         <div class="title">Update {$updateInfo$?.version || ''} available</div>
-        <div class="description">Preparing download...</div>
+        <div class="description">Ready to download</div>
       </div>
+      <button class="action-btn success" onclick={handleDownload}>
+        <Fa icon={faDownload} class="mr-1" />
+        Download
+      </button>
     </div>
   {:else if $status$ === 'downloading'}
     <div class="flex flex-col gap-2">

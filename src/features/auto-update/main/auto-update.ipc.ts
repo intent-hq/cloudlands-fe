@@ -40,6 +40,32 @@ export function setupAutoUpdateIPC(): void {
     ),
   );
 
+  // Download update
+  ipcMain.handle(
+    AUTO_UPDATE_CHANNELS.DOWNLOAD,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async () => {
+        await autoUpdateService.downloadUpdate();
+        return { success: true };
+      },
+      AUTO_UPDATE_CHANNELS.DOWNLOAD,
+    ),
+  );
+
+  // Install update (quit and install)
+  ipcMain.handle(
+    AUTO_UPDATE_CHANNELS.INSTALL,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async () => {
+        await autoUpdateService.installUpdate();
+        return { success: true };
+      },
+      AUTO_UPDATE_CHANNELS.INSTALL,
+    ),
+  );
+
   // Get current state
   ipcMain.handle(
     AUTO_UPDATE_CHANNELS.GET_STATE,
