@@ -113,17 +113,49 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
   };
 }
 
-/** Refetch `specialist.list` and dispatch the bundled/file split. */
+/**
+ * Refetch `specialist.list` and dispatch the bundled/file split.
+ *
+ * CRITICAL: The daemon returns tier-merged results where user files SHADOW bundled
+ * definitions (higher tier wins per ID). When any ID has a user file, it comes back
+ * with source="user" ONLY — its bundled definition is absent from the response.
+ * To preserve all built-in identities regardless of which IDs currently have user
+ * overrides, the bundled set must be reconstructed from the SPECIALISTS constant
+ * (authoritative list of all built-ins) overlaid with any daemon-returned bundled
+ * entries (in case the daemon adds new bundled specialists in the future).
+ */
 async function refetchAndDispatch(): Promise<void> {
   try {
     const defs = await appClient.specialists.list();
     const bundledDefs = defs.filter((def) => def.source === "bundled");
     const fileDefs = defs.filter((def) => def.source === "user" || def.source === "project");
-    appStore.dispatch(
-      setBundledSpecialists(
-        bundledDefs.length > 0 ? bundledDefs.map(toBundledSpecialist) : SPECIALISTS,
-      ),
-    );
+
+    // Reconstruct the bundled set: start with SPECIALISTS (all built-ins), then
+    // overlay daemon-returned bundled entries by ID (in case new bundled specialists
+    // are added). This ensures that built-in IDs shadowed by user files (which come
+    // back as source="user" and are absent from bundledDefs) retain their bundled
+    // identity in the store.
+    const bundledById = new Map(bundledDefs.map((def) => [def.id, toBundledSpecialist(def)]));
+    const reconstructedBundled = SPECIALISTS.map((builtin) => {
+      const fromDaemon = bundledById.get(builtin.id);
+      if (fromDaemon) {
+        return fromDaemon;
+      }
+      // The SPECIALISTS constant entry doesn't have source="bundled" set, but we
+      // know it's bundled. Ensure source is set for store consumers (e.g., selectIsBuiltIn).
+      return { ...builtin, source: "bundled" as const };
+    });
+
+    // Add any daemon-returned bundled IDs not in SPECIALISTS (future-proof if the
+    // daemon adds new bundled specialists).
+    const builtinIds = new Set(SPECIALISTS.map((s) => s.id));
+    for (const def of bundledDefs) {
+      if (!builtinIds.has(def.id)) {
+        reconstructedBundled.push(toBundledSpecialist(def));
+      }
+    }
+
+    appStore.dispatch(setBundledSpecialists(reconstructedBundled));
     appStore.dispatch(setBundledSpecialistsLoaded(true));
     appStore.dispatch(setOverridesLoaded(true));
     appStore.dispatch(setCustomSpecialistsLoaded(true));
