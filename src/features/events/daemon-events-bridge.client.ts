@@ -102,7 +102,7 @@
  * mirrors the same fan-out dedupe `live-terminals-client.ts` applies to
  * `terminal:*` deliveries.
  */
-import type { StoreMiddleware } from '@augmentcode/ag-redux-toolkit/types';
+import type { StoreMiddleware } from '$lib/store-shim/types';
 import type {
   ContentBlock,
   PullRequestInfo,
@@ -990,7 +990,7 @@ function handleActivityChangedEvent(event: WorkspaceEvent, workspaceId: string):
  * always refetch — the daemon knows if other agents remain busy.
  */
 async function reconcileWorkspaceActivity(workspaceId: string, impliesBusy: boolean): Promise<void> {
-  const { getItem } = await import('@augmentcode/ag-redux-toolkit/utils/collections/collection-utils');
+  const { getItem } = await import('$lib/store-shim/utils/collections/collection-utils');
   const state = appStore.state as { workspace: { workspaces: unknown } };
   const current = getItem(state.workspace.workspaces as never, workspaceId as never) as
     | { activity?: 'idle' | 'agent_running' }

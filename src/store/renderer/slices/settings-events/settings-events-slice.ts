@@ -8,7 +8,7 @@
  * `src/store/renderer/AGENTS.md` §8 a trigger-only slice deliberately omits
  * its reducer entry to keep the state tree free of empty branches.
  */
-import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
 import type { AppliedSettingChange } from "$lib/client/app-client";
 
 /**

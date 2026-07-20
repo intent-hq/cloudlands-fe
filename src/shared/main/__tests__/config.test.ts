@@ -46,11 +46,13 @@ describe('WorkspaceConfig', () => {
     mockExistsSync.mockReturnValue(false);
     // Reset env vars
     delete process.env.WORKSPACES_BASE_DIR;
+    delete process.env.INTENT_WORKSPACES_ROOT;
     delete process.env.AUGMENT_WORKSPACES_ROOT;
   });
 
   afterEach(() => {
     delete process.env.WORKSPACES_BASE_DIR;
+    delete process.env.INTENT_WORKSPACES_ROOT;
     delete process.env.AUGMENT_WORKSPACES_ROOT;
   });
 
@@ -64,9 +66,20 @@ describe('WorkspaceConfig', () => {
       expect(WorkspaceConfig.WORKSPACE_ROOT).toBe('/custom/path');
     });
 
-    it('should respect AUGMENT_WORKSPACES_ROOT env override', () => {
-      process.env.AUGMENT_WORKSPACES_ROOT = '/another/path';
+    it('should respect INTENT_WORKSPACES_ROOT env override', () => {
+      process.env.INTENT_WORKSPACES_ROOT = '/another/path';
       expect(WorkspaceConfig.WORKSPACE_ROOT).toBe('/another/path');
+    });
+
+    it('should respect AUGMENT_WORKSPACES_ROOT env override (legacy fallback)', () => {
+      process.env.AUGMENT_WORKSPACES_ROOT = '/legacy/path';
+      expect(WorkspaceConfig.WORKSPACE_ROOT).toBe('/legacy/path');
+    });
+
+    it('should prefer INTENT_WORKSPACES_ROOT over AUGMENT_WORKSPACES_ROOT', () => {
+      process.env.INTENT_WORKSPACES_ROOT = '/intent/path';
+      process.env.AUGMENT_WORKSPACES_ROOT = '/augment/path';
+      expect(WorkspaceConfig.WORKSPACE_ROOT).toBe('/intent/path');
     });
 
     it('should ignore empty env overrides', () => {

@@ -334,6 +334,7 @@ describe('Workspace Isolation', () => {
 
     it('should fallback to home directory when env var not set', () => {
       delete process.env.WORKSPACES_BASE_DIR;
+      delete process.env.INTENT_WORKSPACES_ROOT;
       delete process.env.AUGMENT_WORKSPACES_ROOT;
       const fallback = process.env.HOME || '/tmp';
 

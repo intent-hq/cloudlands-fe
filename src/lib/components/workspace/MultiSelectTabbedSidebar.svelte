@@ -18,10 +18,6 @@
   import { Button } from '$lib/components/ui/button';
   import OpenComboButton from '$lib/components/ui/OpenComboButton.svelte';
   import { faNote } from '$lib/icons/faNote';
-  import {
-  getFileExtension,
-  track,
-} from '$lib/services/analytics';
 
   import {
   markNoteRead,
@@ -591,12 +587,6 @@
       closable: true,
       filePath,
       workspaceId,
-    });
-
-    track('Opened File', {
-      workspace_id: workspaceId,
-      file_extension: getFileExtension(filePath),
-      source: 'sidebar',
     });
   }
 

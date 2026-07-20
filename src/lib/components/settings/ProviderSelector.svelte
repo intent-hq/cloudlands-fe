@@ -36,7 +36,6 @@
 } from '$shared/ipc/channels';
   import { MINIMUM_AUGGIE_VERSION } from '$shared/constants/auggie';
   import { createLogger } from '$lib/utils/client-logger';
-  import { track } from '$lib/services/analytics';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
   faCheck,
@@ -179,6 +178,7 @@
 
   // Provider options for display - dynamically generated from ACP_PROVIDERS
   // Filter out providers that are hidden (env var gated and not enabled)
+  // Alphabetically sorted by display name for provider neutrality
   const providerOptions = $derived.by(() =>
     Object.values(ACP_PROVIDERS)
       .filter((provider) => !providerAvailability?.hiddenProviders?.includes(provider.id))
@@ -196,7 +196,8 @@
           loginDocsUrl: provider.loginDocsUrl,
           hasNpxFallback: status?.hasNpxFallback ?? false,
         };
-      }),
+      })
+      .sort((a, b) => a.name.localeCompare(b.name)),
   );
 
   const piProviderAvailable = $derived.by(() => {
@@ -454,10 +455,6 @@
       toast.error(
         `Context Engine setup not available. Configure MCP for ${providerName} on the daemon host using its CLI.`,
       );
-      track('Enabled Context Engine', {
-        provider_id: providerId,
-        success: false,
-      });
     } catch (err) {
       logger.error(`Failed to setup MCP for ${providerId}:`, err);
       toast.error(`Error setting up ${ACP_PROVIDERS[providerId].displayName}`);
@@ -488,18 +485,10 @@
       if (result?.success) {
         mcpConfigured = { ...mcpConfigured, [providerId]: false };
         toast.success(`${ACP_PROVIDERS[providerId].displayName} Context Engine removed`);
-        track('Disabled Context Engine', {
-          provider_id: providerId,
-          success: true,
-        });
       } else {
         toast.error(
           `Failed to remove ${ACP_PROVIDERS[providerId].displayName}: ${result?.error || 'Unknown error'}`,
         );
-        track('Disabled Context Engine', {
-          provider_id: providerId,
-          success: false,
-        });
       }
     } catch (err) {
       logger.error(`Failed to uninstall MCP for ${providerId}:`, err);
@@ -618,12 +607,6 @@
       appStore.dispatch(setActiveProvider(providerId));
       appStore.dispatch(reloadModelsForProvider());
       toast.success(`Switched to ${ACP_PROVIDERS[providerId]?.displayName || providerId}`);
-
-      // Track provider selection
-      track('Selected Provider', {
-        provider_id: providerId,
-        previous_provider_id: previousProviderId,
-      });
     } finally {
       selectingProviderId = null;
     }

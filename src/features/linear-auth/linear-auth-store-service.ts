@@ -24,7 +24,7 @@
  * client, the AppClient seam, the configured store, the slice actions, and the
  * logger (NOT selectors).
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { linearAuthClient } from "$features/linear-auth/renderer/linear-auth.client";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";

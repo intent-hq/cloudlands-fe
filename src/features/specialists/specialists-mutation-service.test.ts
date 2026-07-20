@@ -51,7 +51,7 @@ const USER_DEF: SpecialistDef = {
   prompt: "You review.",
   behaviorPrompt: "You review.",
   source: "user",
-  path: "/home/u/.augment/specialists/reviewer.md",
+  path: "/home/u/.intent/specialists/reviewer.md",
 };
 
 describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
@@ -105,7 +105,7 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
         description: "Reviews",
         model: "opus4.5",
         behaviorPrompt: "You review.",
-        filePath: "/home/u/.augment/specialists/reviewer.md",
+        filePath: "/home/u/.intent/specialists/reviewer.md",
         source: "user",
       };
       edit.mockResolvedValue(USER_DEF);

@@ -20,7 +20,7 @@
  * client, slice actions/types — no selectors, reads state via api.getState().
  */
 
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 import type { StoreState } from "../types";
 import {

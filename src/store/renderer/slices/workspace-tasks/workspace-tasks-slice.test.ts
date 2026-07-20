@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
-import { getItem, getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem, getItems } from "$lib/store-shim/utils/collections/collection-utils";
 import { workspaceUnmounted } from "../workspace-lifecycle/workspace-lifecycle-slice";
 import { removeWorkspaceEntity } from "../workspace/workspace-slice";
 import {

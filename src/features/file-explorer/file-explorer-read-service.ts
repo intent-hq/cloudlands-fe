@@ -25,9 +25,9 @@
  * the logger (NOT selectors — importing them would evaluate `store.createSelector`
  * while the store module is still mid-initialization through the middleware chain).
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import type { FileNode } from "$shared/types";
-import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem } from "$lib/store-shim/utils/collections/collection-utils";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { stripWorkspacePrefix } from "$lib/utils/file-utils";

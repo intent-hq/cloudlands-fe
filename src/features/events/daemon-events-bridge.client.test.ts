@@ -2753,7 +2753,7 @@ describe('daemonEventsBridge (task:status-changed → applyTaskStatusChanged)', 
     });
 
     const { getItem } =
-      await import('@augmentcode/ag-redux-toolkit/utils/collections/collection-utils');
+      await import('$lib/store-shim/utils/collections/collection-utils');
     const state = appStore.state as {
       workspaceTasks: {
         byWorkspaceId: Record<string, { tasks: unknown }>;
@@ -2897,7 +2897,7 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     activePullRequest?: unknown;
   }> {
     const { getItem } =
-      await import('@augmentcode/ag-redux-toolkit/utils/collections/collection-utils');
+      await import('$lib/store-shim/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     return (getItem(state.workspace.workspaces as never, PR_WS) ?? {}) as never;
   }
@@ -3070,7 +3070,7 @@ describe('daemonEventsBridge (workspace:updated → workspace slice)', () => {
 
   async function readWorkspace(): Promise<Record<string, unknown>> {
     const { getItem } =
-      await import('@augmentcode/ag-redux-toolkit/utils/collections/collection-utils');
+      await import('$lib/store-shim/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     return (getItem(state.workspace.workspaces as never, WS_UPD) ?? {}) as never;
   }
@@ -3226,7 +3226,7 @@ describe('daemonEventsBridge (workspace:activity-changed → workspace slice)', 
     activity?: 'idle' | 'agent_running';
   }> {
     const { getItem } =
-      await import('@augmentcode/ag-redux-toolkit/utils/collections/collection-utils');
+      await import('$lib/store-shim/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     return (getItem(state.workspace.workspaces as never, WS_ACT) ?? {}) as never;
   }
@@ -4134,7 +4134,7 @@ describe('daemonEventsBridge (activity reconciliation → missed edges)', () => 
     activity?: 'idle' | 'agent_running';
   }> {
     const { getItem } =
-      await import('@augmentcode/ag-redux-toolkit/utils/collections/collection-utils');
+      await import('$lib/store-shim/utils/collections/collection-utils');
     const state = appStore.state as { workspace: { workspaces: unknown } };
     return (getItem(state.workspace.workspaces as never, WS_RECON) ?? {}) as never;
   }

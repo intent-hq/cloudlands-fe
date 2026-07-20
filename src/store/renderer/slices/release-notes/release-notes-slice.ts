@@ -4,8 +4,8 @@
  * Manages state for fetching and displaying release notes after an app update.
  */
 
-import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
 import type { ReleaseNotes, ReleaseNotesState } from "./release-notes-types";
 
 // ---------------------------------------------------------------------------

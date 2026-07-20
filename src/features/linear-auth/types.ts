@@ -2,7 +2,7 @@
  * Linear Integration Types
  *
  * This module contains types for Linear authentication and future API operations.
- * Authentication is managed through Augment's OAuth flow.
+ * Authentication is managed through the daemon's OAuth flow.
  */
 
 // =============================================================================

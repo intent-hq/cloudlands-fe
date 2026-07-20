@@ -32,7 +32,6 @@
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import Tooltip from '$lib/components/ui/tooltip/Tooltip.svelte';
   import { toast } from '$lib/components/ui/toast';
-  import { trackGitOp } from '$lib/services/analytics';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
   faCheck,
@@ -190,7 +189,6 @@
       const commitResult = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
         commitMessage: commitMessage.trim(),
       });
-      trackGitOp('commit', { workspaceId, success: commitResult.success, trigger: 'manual' });
       if (!commitResult.success) {
         toast.error(commitResult.error || 'Failed to commit staged changes');
         return;
@@ -205,8 +203,6 @@
         rebaseFirst: options?.rebaseFirst,
         localOnly: options?.localOnly,
       });
-
-      trackGitOp('merge', { workspaceId, success: result.success, trigger: 'manual' });
 
       if (result.success) {
         dispatchPostMergeUpdate({
@@ -247,7 +243,6 @@
         }
       }
     } catch {
-      trackGitOp('merge', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to merge to trunk');
     } finally {
       isMergingToTrunk = false;
@@ -262,11 +257,6 @@
     mergeOptions.mergingPR = true;
     try {
       const result = await AcceptChangesClient.mergePR(workspaceId as WorkspaceId, openPR.number, {
-        mergeMethod: options?.mergeMethod || (mergeOptions.squash ? 'squash' : 'merge'),
-      });
-      trackGitOp('merge-pr', {
-        workspaceId, success: result.success, trigger: 'manual',
-        prNumber: openPR.number,
         mergeMethod: options?.mergeMethod || (mergeOptions.squash ? 'squash' : 'merge'),
       });
       if (result.success) {
@@ -288,7 +278,6 @@
         toast.error(result.error || 'Failed to merge PR on GitHub');
       }
     } catch {
-      trackGitOp('merge-pr', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to merge PR on GitHub');
     } finally {
       mergeOptions.mergingPR = false;

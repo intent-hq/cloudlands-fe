@@ -10,7 +10,7 @@
  * hydration) and listens to backend:status to transition health state.
  */
 
-import type { StoreMiddleware } from '@augmentcode/ag-redux-toolkit/types';
+import type { StoreMiddleware } from '$lib/store-shim/types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { store as appStore } from '$store/renderer/store';

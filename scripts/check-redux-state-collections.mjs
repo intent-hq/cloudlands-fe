@@ -20,7 +20,6 @@ const SKIP_DIRS = new Set([
   '.svelte-kit',
   '.git',
   'cdp-mcp-server',
-  'parallel-runner',
   'playwright-report',
   'sagas',
 ]);

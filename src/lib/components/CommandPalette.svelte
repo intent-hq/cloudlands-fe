@@ -77,7 +77,6 @@
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
   import { extractContentFromBlocks } from '$shared/types/agent-message.conversion';
-  import { track } from '$lib/services/analytics';
   import {
   compareWorkspaceActivityDisplayTimeDesc,
   getWorkspaceActivityDisplayTime,
@@ -629,26 +628,6 @@
         queueMicrotask(() => inputRef?.focus());
       }
       return;
-    }
-
-    // Track command palette usage
-    try {
-      let actionType: string;
-      if (item.type) {
-        actionType = item.type; // 'agent', 'note', 'change', 'terminal', 'browser', 'file'
-      } else if ('_workspace' in item) {
-        actionType = 'workspace';
-      } else if (item.path) {
-        actionType = 'file';
-      } else {
-        actionType = 'command';
-      }
-      track('Used Command Palette', {
-        action_type: actionType,
-        query_length: searchQuery.length,
-      });
-    } catch (e) {
-      logger.error('Failed to track command palette usage:', e);
     }
 
     let shouldClose = true;

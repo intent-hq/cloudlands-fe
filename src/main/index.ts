@@ -6,12 +6,7 @@
 
 // CRITICAL: Import build-time config FIRST
 // These values are baked in at build time from .env (see scripts/generate-build-config.cjs)
-// This ensures Sentry config is available in production builds without shipping .env
 import { BUILD_CONFIG } from './build-config.generated.js';
-
-// CRITICAL: Initialize Sentry SECOND, before anything else
-// This ensures we capture all errors from the very start
-import * as Sentry from '@sentry/electron/main';
 
 // Import electron early to check app.isPackaged for reliable environment detection
 // We need createRequire for CommonJS compatibility with electron
@@ -42,71 +37,6 @@ if (devUserDataSegment) {
 import { setupConsoleLogCapture } from './logging/console-log-capture.js';
 setupConsoleLogCapture();
 
-// Use app.isPackaged for reliable production detection
-// This is true when running from a packaged app (dmg, exe), false in development
-const isProduction = app.isPackaged;
-const environment = isProduction ? 'production' : 'development';
-
-/**
- * Check if a Sentry exception should be filtered out before sending.
- * Filters known benign errors that don't need to be reported.
- */
-function shouldFilterMainProcessException(exception: { type?: string; value?: string }): boolean {
-  const { type, value } = exception;
-
-  // Filter "Canceled" errors - these are benign cancellation signals
-  if (type === 'Canceled' || value === 'Canceled' || value?.includes('Canceled: Canceled')) {
-    return true;
-  }
-
-  // Filter EPIPE errors - these are benign broken pipe errors that occur when
-  // a child process exits before its stdin/stdout pipe is fully consumed.
-  // This is a normal race condition in process lifecycle management.
-  if (value?.includes('EPIPE')) {
-    return true;
-  }
-
-  // Filter minified bits-ui/Svelte 5 snippet call errors from renderer process.
-  // In @sentry/electron, renderer events may be forwarded through the main process SDK.
-  // The renderer's beforeSend should catch these, but this is a safety net.
-  // See: https://github.com/huntabyte/bits-ui/discussions/1302
-  if (type === 'TypeError' && value && /^[a-zA-Z_$]{1,3}\.call is not a function$/.test(value)) {
-    return true;
-  }
-
-  return false;
-}
-
-Sentry.init({
-  dsn: BUILD_CONFIG.SENTRY_DSN,
-  environment,
-  release: BUILD_CONFIG.SENTRY_RELEASE,
-  tracesSampleRate: isProduction ? 0.25 : 1.0,
-  enabled: !!BUILD_CONFIG.SENTRY_DSN,
-  debug: !isProduction, // Only enable debug in development
-  // Filter out known benign errors
-  beforeSend: (event) => {
-    const exceptions = event.exception?.values || [];
-    for (const ex of exceptions) {
-      if (shouldFilterMainProcessException(ex)) {
-        return null; // Drop the event
-      }
-    }
-    return event;
-  },
-});
-
-// Log Sentry initialization status
-if (BUILD_CONFIG.SENTRY_DSN) {
-  console.log('[Sentry] Initialized', {
-    environment,
-    release: BUILD_CONFIG.SENTRY_RELEASE,
-    isPackaged: app.isPackaged,
-  });
-} else {
-  console.warn('[Sentry] Not initialized - SENTRY_DSN not set');
-}
-
 // Set app name early - in dev mode, show custom name or "Intent [Dev N]" in dock/menu bar
 const isDev = process.env.NODE_ENV === 'development';
 app.setName(resolveAppTitle());
@@ -135,20 +65,6 @@ Object.defineProperty(ipcMain, 'handle', {
   writable: false,
   configurable: true,
 });
-
-// Register Sentry config IPC handler EARLY so renderer can get config
-// Uses BUILD_CONFIG for DSN/release, and app.isPackaged for environment detection
-ipcMain.handle('sentry:get-config', () => ({
-  dsn: BUILD_CONFIG.SENTRY_DSN,
-  environment, // Uses the environment variable defined above (based on app.isPackaged)
-  release: BUILD_CONFIG.SENTRY_RELEASE,
-}));
-
-// Register Analytics (Segment) config IPC handler EARLY so renderer can initialize
-ipcMain.handle('analytics:get-config', () => ({
-  writeKey: BUILD_CONFIG.SEGMENT_WRITE_KEY || null,
-  enabled: !!BUILD_CONFIG.SEGMENT_WRITE_KEY,
-}));
 
 // Log handler count summary after startup
 setTimeout(() => {
@@ -316,7 +232,6 @@ import { registerIDEHandlers } from '../features/ide/main/ide.ipc';
 import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout-history.ipc';
 import { setupLinearAuthIPC } from '../features/linear-auth/main/linear-auth.ipc';
 import { setupLogIPC } from '../features/log/main/log.ipc';
-import { setupBannerIPC } from '../features/banner/main/banner.ipc';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
@@ -357,7 +272,6 @@ import {
 import { setupWorkspaceSummaryIPC } from '../features/workspace/main/workspace-summary.ipc';
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
-import { claimDownloadAttribution } from './download-attribution';
 import { listRespondingAgents } from './running-agents';
 import { prefetchProviderModelCaches } from './utils/model-pool';
 
@@ -408,7 +322,6 @@ process.on('uncaughtException', (error) => {
   if (errMsg.includes('GUEST_VIEW_MANAGER_CALL') && errMsg.includes('ERR_ABORTED')) {
     return; // Silently ignore webview navigation abort errors
   }
-  Sentry.captureException(error, { tags: { type: 'uncaughtException' } });
   logger.error('Uncaught Exception', error);
 });
 
@@ -418,7 +331,6 @@ process.on('unhandledRejection', (reason, promise) => {
   if (errMsg.includes('GUEST_VIEW_MANAGER_CALL') && errMsg.includes('ERR_ABORTED')) {
     return; // Silently ignore webview navigation abort errors
   }
-  Sentry.captureException(reason, { tags: { type: 'unhandledRejection' } });
   logger.error('Unhandled Rejection', reason as Error, { promise });
 });
 
@@ -591,7 +503,7 @@ app.whenReady().then(async () => {
   const aboutPanelInfo = {
     applicationName: appName,
     applicationVersion: versionWithCommit,
-    copyright: '\u00A9 2026 Augment Code',
+    copyright: '\u00A9 2026 Intent Contributors',
     providerVersion: '',
   };
 
@@ -1384,7 +1296,6 @@ app.whenReady().then(async () => {
   const configManager = getConfigManager();
   await setupWorkspaceRulesIPC(configManager || undefined); // Needed for initial agent system prompt
   setupGitTrackingIPC(); // Needed for renderer git tracking on startup
-  setupBannerIPC(); // Needed for promotional banner CDN fetch
   setupSpecialistsIPC(); // Needed for specialist selection on startup
   setupAutoUpdateIPC(); // Needed for auto-update IPC on startup
 
@@ -1419,7 +1330,6 @@ app.whenReady().then(async () => {
     // setupEventsIPC(); // Already called in critical IPC setup
     // setupGitTrackingIPC(); // Already called in critical IPC setup
     // registerAcceptChangesHandlers(); // Already called in critical IPC setup
-    // setupBannerIPC(); // Already called in critical IPC setup
     setupRulesIPC();
     // setupSpecialistsIPC(); // Already called in critical IPC setup
     // Token usage is daemon-owned (workspace.getTokenUsage, PROTOCOL §5.23);
@@ -1467,7 +1377,7 @@ app.whenReady().then(async () => {
       logger.warn('Error migrating workspaces on startup', { error });
     }
 
-    // Clean up stale temp files from ~/.augment/tmp (from crashed/killed agents)
+    // Clean up stale temp files from ~/.intent/tmp (from crashed/killed agents)
     try {
       const result = await cleanupStaleTempFiles();
       if (result.removed > 0) {
@@ -1489,11 +1399,6 @@ app.whenReady().then(async () => {
 
     startupMetrics.end('secondaryIPC');
     logger.info('All secondary IPC handlers registered successfully');
-
-    // Best-effort download attribution claim (fire-and-forget, non-blocking)
-    claimDownloadAttribution().catch(() => {
-      // Errors already logged inside claimDownloadAttribution
-    });
 
     // PERF: Start memory monitoring to detect and prevent GC pauses
     memoryMonitor.start();

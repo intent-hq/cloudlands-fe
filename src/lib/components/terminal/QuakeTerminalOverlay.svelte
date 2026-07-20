@@ -80,7 +80,6 @@
 } from '$lib/components/ui/tooltip';
   import Button from '$lib/components/ui/button/button.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
-  import { track } from '$lib/services/analytics';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -581,7 +580,6 @@
     if (!$isOpen) {
       appStore.dispatch(openTerminalOverlay(workspaceId, newId));
     }
-    track('Opened Terminal', { workspace_id: workspaceId, source: 'bottom-bar' });
     // Focus the overlay container immediately so keyboard shortcuts
     // (Cmd+T, Cmd+W) route to the terminal before xterm is ready
     requestAnimationFrame(() => {

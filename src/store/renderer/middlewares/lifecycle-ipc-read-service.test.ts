@@ -73,7 +73,7 @@ import { refreshAcceptChangesStatus } from "$store/renderer/slices/changes/chang
 import { setPostMergeState } from "$store/renderer/slices/git/git-slice";
 import { workspaceMounted } from "$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice";
 import type { WorkspaceGitStatus } from "$features/accept-changes/types";
-import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { getItems } from "$lib/store-shim/utils/collections/collection-utils";
 
 type Fn = ReturnType<typeof vi.fn>;
 const reposApi = githubAuthClient as unknown as { listRepos: Fn };

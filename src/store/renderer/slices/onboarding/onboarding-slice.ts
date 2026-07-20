@@ -5,8 +5,8 @@
  * No saga needed — this is pure synchronous UI state.
  */
 
-import { createAction } from '@augmentcode/ag-redux-toolkit/utils/store/create-action';
-import { createReducer } from '@augmentcode/ag-redux-toolkit/utils/store/create-reducer';
+import { createAction } from '$lib/store-shim/utils/store/create-action';
+import { createReducer } from '$lib/store-shim/utils/store/create-reducer';
 import type { OnboardingState, OnboardingStep, ProjectConfig, AgentStatus } from './onboarding-types';
 import { STEP_ORDER } from './onboarding-types';
 

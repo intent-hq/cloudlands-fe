@@ -3,7 +3,7 @@
   defines order of execution
 */
 
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import {
   REDUX_DEBUG_LS_KEY,
   REDUX_DEBUG_LS_KEY_STATE_REFS_KEY,
@@ -11,7 +11,6 @@ import {
 } from "./constants";
 import { createBatchingMiddleware } from "./middlewares/batch";
 import { createLoggerMiddleware } from "./middlewares/logger";
-import { createSentryBreadcrumbsMiddleware } from "./middlewares/sentry-breadcrumbs";
 import { createReferenceChangeDetectorMiddleware } from "./middlewares/state-reference-checks";
 import { createStructuredCloneCheckerMiddleware } from "./middlewares/structured-clone-checker";
 import { createStoreGuardMiddleware } from "../../store/utils/store-guard-middleware";
@@ -109,8 +108,6 @@ function buildMiddleware(): StoreMiddleware[] {
     createStoreGuardMiddleware("renderer"),
     // No action types to batch yet — add action types here as slices are added
     createBatchingMiddleware([]),
-    // Add Sentry breadcrumbs middleware to track Redux actions
-    createSentryBreadcrumbsMiddleware(),
     // Give the (post-saga) `loadGitStatus` action a real read handler so the
     // ~13 dispatch sites refresh git status on demand again.
     createGitReadMiddleware(),

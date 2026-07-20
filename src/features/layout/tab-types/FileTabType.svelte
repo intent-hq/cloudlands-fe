@@ -63,10 +63,6 @@
   faCode,
 } from '@fortawesome/free-solid-svg-icons';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
-  import {
-  track,
-  getFileExtension,
-} from '$lib/services/analytics';
   import { writable } from 'svelte/store';
   import { store as appStore } from '$store/renderer/store';
 
@@ -284,10 +280,6 @@
         // Close the tab
         appStore.dispatch(closeTab(workspaceId, tab.id));
         dispatchWindowEvent('file:changed', { workspaceId, type: 'delete', filePath });
-        track('Deleted File', {
-          workspace_id: workspaceId,
-          file_extension: getFileExtension(filePath),
-        });
       },
       async () => {
         // Undo action — re-create the file with saved content (immediate write).

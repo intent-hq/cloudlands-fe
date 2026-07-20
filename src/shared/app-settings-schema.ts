@@ -666,17 +666,6 @@ export const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'read-only' },
   },
   {
-    path: 'promoBanners.interactions',
-    label: 'Promo banner interactions',
-    description: 'Dismissal and completion state for in-app promo banners.',
-    category: 'per-feature',
-    type: 'object',
-    source: 'local-storage',
-    storageKey: 'promoBannerInteractions',
-    defaultValue: {},
-    apply: { kind: 'read-only' },
-  },
-  {
     path: 'keybindings.shortcuts',
     label: 'Keyboard shortcuts',
     description: 'Built-in keyboard shortcut catalog. Custom keybindings are not persisted yet.',

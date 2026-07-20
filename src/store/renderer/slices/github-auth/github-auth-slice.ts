@@ -1,6 +1,6 @@
 import type { GitHubUser } from "$features/github-auth/types";
-import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
 import type { GitHubAuthState } from "./github-auth-types";
 
 // ============================================================================

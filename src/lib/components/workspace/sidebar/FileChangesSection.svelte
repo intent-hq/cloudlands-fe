@@ -39,11 +39,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   import Toggle from '$lib/components/ui/toggle/toggle.svelte';
   import { toast } from '$lib/components/ui/toast';
   import { faNote } from '$lib/icons/faNote';
-  import {
-  track,
-  trackGitOp,
-  getFileExtension,
-} from '$lib/services/analytics';
   import { logger } from '$lib/utils/client-logger';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
@@ -327,11 +322,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       filePath: relativePath,
       workspaceId,
     });
-    track('Opened File', {
-      workspace_id: workspaceId,
-      file_extension: getFileExtension(relativePath),
-      source: 'sidebar',
-    });
   }
 
   // --- Stage/Unstage/Revert handlers ---
@@ -502,7 +492,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
         commitMessage,
       });
-      trackGitOp('commit', { workspaceId, success: result.success, trigger: 'manual' });
       if (result.success) {
         try {
           await Promise.all([
@@ -516,7 +505,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
         toast.error('Commit failed', { description: result.error || 'Unknown error' });
       }
     } catch (error) {
-      trackGitOp('commit', { workspaceId, success: false, trigger: 'manual' });
       logger.error('Failed to commit agent group', error as Error);
       toast.error('Commit failed', {
         description: error instanceof Error ? error.message : 'Unknown error',
@@ -586,7 +574,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'commit', {
         commitMessage: message,
       });
-      trackGitOp('commit', { workspaceId, success: result.success, trigger: 'manual' });
       if (!result.success) {
         throw new Error(result.error || 'Commit failed');
       }

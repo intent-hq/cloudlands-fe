@@ -236,11 +236,6 @@ export const IPC_CHANNELS = {
     GET_MODELS: 'droid:get-models',
   },
 
-  // Promotional Banner
-  BANNER: {
-    FETCH: 'banner:fetch',
-  },
-
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',
@@ -840,16 +835,6 @@ export const IPC_CHANNELS = {
     SHOW_TOAST: 'auto-update:show-toast',
   },
 
-  // Sentry (error tracking)
-  SENTRY: {
-    GET_CONFIG: 'sentry:get-config',
-  },
-
-  // Analytics (Segment)
-  ANALYTICS: {
-    GET_CONFIG: 'analytics:get-config',
-  },
-
   // Picture-in-Picture Windows
   PIP: {
     OPEN: 'pip:open',
@@ -1067,8 +1052,6 @@ export const EVENT_CHANNELS = [
   'browser:open-tab',
   // MCP server error events (main → renderer)
   'mcp:server-error',
-  // Analytics bridge (main → renderer)
-  'analytics:track-from-main',
   // Script events (main → renderer)
   'script:started',
   'script:stopped',

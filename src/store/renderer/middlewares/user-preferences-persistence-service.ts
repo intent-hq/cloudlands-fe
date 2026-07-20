@@ -2,8 +2,8 @@
  * User-preferences persistence service — restores the localStorage read/write
  * that the removed `user-preferences/sagas/persistence-saga` performed for
  * spellcheck, showArchived, groupByRepo, hasCompletedProviderSetup, agent font
- * style, note font style, code font family, activity-log presets, and promo-
- * banner interactions (GAPs 9-15, 17-18).
+ * style, note font style, code font family, and activity-log presets
+ * (GAPs 9-15, 17).
  *
  * Beta-updates and notification settings are handled by sibling middlewares and
  * are excluded here to avoid overlap.
@@ -17,7 +17,7 @@
  * and slice actions/types — no selectors (importing them would evaluate
  * `store.createSelector` mid store-init) and no store module.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 import {
   setSpellcheckEnabled,
@@ -35,13 +35,9 @@ import {
   setCodeFontFamily,
   saveActivityLogPreset,
   deleteActivityLogPreset,
-  recordPromoBannerInteraction,
-  dismissPromoBanner,
   hydrateActivityLogPresets,
-  hydratePromoBannerInteractions,
   type FontStyle,
   type ActivityLogPresetPreference,
-  type PromoBannerInteractionRecord,
   FONT_STYLES,
 } from "../slices/user-preferences/user-preferences-slice";
 
@@ -54,7 +50,6 @@ const AGENT_STORAGE_KEY = "agent-font-settings";
 const NOTE_STORAGE_KEY = "note-font-settings";
 const CODE_STORAGE_KEY = "code-font-settings";
 const ACTIVITY_LOG_PRESETS_STORAGE_KEY = "activityLogPresets";
-const PROMO_BANNER_STORAGE_KEY = "promoBannerInteractions";
 
 /**
  * Middleware giving the restored user-preferences persistence triggers real handlers
@@ -135,19 +130,6 @@ export function createUserPreferencesPersistenceMiddleware(): StoreMiddleware {
       ) {
         api.dispatch(hydrateActivityLogPresets(storedPresets));
       }
-
-      // Hydrate promo-banner interactions
-      const storedInteractions = safeLocalStorage.getJSON<Record<string, PromoBannerInteractionRecord>>(
-        PROMO_BANNER_STORAGE_KEY
-      );
-      if (
-        storedInteractions &&
-        typeof storedInteractions === "object" &&
-        !Array.isArray(storedInteractions) &&
-        storedInteractions.constructor === Object
-      ) {
-        api.dispatch(hydratePromoBannerInteractions(storedInteractions));
-      }
     }
 
     const result = next(action);
@@ -214,14 +196,6 @@ export function createUserPreferencesPersistenceMiddleware(): StoreMiddleware {
         case deleteActivityLogPreset.type: {
           const state = api.getState().userPreferences;
           safeLocalStorage.setJSON(ACTIVITY_LOG_PRESETS_STORAGE_KEY, state.activityLogPresets);
-          break;
-        }
-
-        // Promo banner interactions persistence
-        case recordPromoBannerInteraction.type:
-        case dismissPromoBanner.type: {
-          const state = api.getState().userPreferences;
-          safeLocalStorage.setJSON(PROMO_BANNER_STORAGE_KEY, state.promoBannerInteractions);
           break;
         }
       }

@@ -1,5 +1,5 @@
 import type { ContentBlock } from '$shared/types';
-import { createAction } from '@augmentcode/ag-redux-toolkit/utils/store/create-action';
+import { createAction } from '$lib/store-shim/utils/store/create-action';
 
 export interface AgentStreamUpdatePayload {
   workspaceId?: string;

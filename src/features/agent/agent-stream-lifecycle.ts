@@ -48,7 +48,6 @@ import { replaceAgentQueue } from '$store/renderer/slices/agent-queue/agent-queu
 import { selectAgentQueueMessages } from '$store/renderer/slices/agent-queue/agent-queue-selectors';
 
 import * as streamRegistry from './utils/stream-handler-registry';
-import { track } from '$lib/services/analytics';
 import {
   errorHandler,
   AgentError,
@@ -213,17 +212,6 @@ function dispatchStreamStatusEvent(params: {
 
 // Persist stream handler references for HMR
 streamRegistry.persistForHmr();
-
-// ---------------------------------------------------------------------------
-// Per-agent analytics tracking state
-// ---------------------------------------------------------------------------
-
-interface AgentAnalyticsState {
-  turnStartTime: number;
-  prevToolCallCount: number;
-}
-
-const agentAnalyticsState = new Map<string, AgentAnalyticsState>();
 
 // ---------------------------------------------------------------------------
 // Stream handler delegation to registry
@@ -718,29 +706,6 @@ export async function sendMessage(
       }
       session = { ...session, isStreaming: session.isStreaming ?? false };
 
-      // Track message sent (privacy-safe: only length, not content)
-      track('Sent Agent Message', {
-        agent_id: agentId,
-        workspace_id: workspace.id,
-        message_length: content.length,
-        agent_name: session.name,
-        agent_model: session.model,
-      });
-
-      // Store turn start time and current tool call count for duration/delta tracking
-      let prevToolCallCount = 0;
-      if (session.messages) {
-        for (const msg of session.messages) {
-          if (msg.role === 'assistant' && msg.toolCalls) {
-            prevToolCallCount += msg.toolCalls.length;
-          }
-        }
-      }
-      agentAnalyticsState.set(agentId, {
-        turnStartTime: Date.now(),
-        prevToolCallCount,
-      });
-
       {
         // Activate pending session if needed
         // Skip activation if agent already has a backendSessionId or is already active
@@ -1120,49 +1085,6 @@ export async function sendMessage(
                               streamId: data.streamId,
                             }),
                           );
-                          try {
-                            const analyticsState = agentAnalyticsState.get(agentId);
-                            const durationMs = analyticsState?.turnStartTime
-                              ? Date.now() - analyticsState.turnStartTime
-                              : undefined;
-                            const sendMsgOutcomeReason = data.finishReason || 'unknown';
-                            const sendMsgIsStop = [
-                              'cancelled',
-                              'provider_stopped',
-                              'workspace_deleted',
-                              'process_died',
-                              'process_null',
-                            ].includes(sendMsgOutcomeReason);
-                            const sendMsgIsError =
-                              sendMsgOutcomeReason === 'timeout' ||
-                              sendMsgOutcomeReason === 'error';
-
-                            track('Agent Turn Completed', {
-                              agent_id: agentId,
-                              agent_name: session.name,
-                              agent_model: session.model,
-                              duration_ms: durationMs,
-                            });
-                            track('Agent Outcome Received', {
-                              agent_id: agentId,
-                              workspace_id: workspace.id,
-                              outcome: sendMsgIsStop
-                                ? 'stopped'
-                                : sendMsgIsError
-                                  ? 'errored'
-                                  : 'completed',
-                              finish_reason: sendMsgOutcomeReason,
-                              agent_name: session.name,
-                              agent_model: session.model,
-                              source: 'renderer',
-                            });
-                          } catch (trackingError) {
-                            logger.warn('Failed to track Agent Turn Completed event', {
-                              error: trackingError,
-                              agentId,
-                            });
-                          }
-
                           // Clean up the stream listener
                           // Use registry for targeted IPC cleanup
                           logger.debug('Cleaning up stream handler after complete event', {
@@ -1202,15 +1124,6 @@ export async function sendMessage(
                         errorHandler.track(error);
                         logger.error('Stream error', { agentId, error: data.data });
                         flushPendingChunkUpdate();
-
-                        // Track that renderer received the agent error outcome
-                        track('Agent Outcome Received', {
-                          agent_id: agentId,
-                          workspace_id: workspace.id,
-                          outcome: 'errored',
-                          finish_reason: 'error',
-                          source: 'renderer',
-                        });
 
                         dispatchRedux(
                           agentStreamUpdateReceived({

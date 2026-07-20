@@ -44,10 +44,6 @@
 } from '$store/renderer/slices/ui-layout/ui-layout-slice';
 
   import { toast } from '$lib/components/ui/toast';
-  import {
-  track,
-  getFileExtension,
-} from '$lib/services/analytics';
   import Fa from 'svelte-fa';
   import {
   faFile,
@@ -215,32 +211,6 @@
     };
   });
 
-  /** Map TrackedChange status to analytics change_type */
-  function getChangeType(change: TrackedChange): 'modified' | 'added' | 'deleted' | 'renamed' {
-    return change.status || 'modified';
-  }
-
-  // Track when diff tab is viewed (deduped by diffPath to avoid rapid re-fires)
-  let lastTrackedDiffPath = $state<string | null>(null);
-
-  $effect(() => {
-    // Only track when tab becomes active and we have a valid diff path
-    if (!isActive || !tab.diffPath) return;
-    // Deduplicate: don't track the same diff path if we just tracked it
-    if (lastTrackedDiffPath === tab.diffPath) return;
-
-    try {
-      track('Viewed Diff', {
-        file_extension: getFileExtension(tab.diffPath),
-        change_type: getChangeType(change),
-        is_staged: change.stage === ChangeStage.Staged,
-      });
-      lastTrackedDiffPath = tab.diffPath;
-    } catch {
-      // Analytics should never break the app
-    }
-  });
-
   // Open the diff file in the editor
   function handleGoToFile(e?: MouseEvent) {
     if (!tab.diffPath) return;
@@ -286,8 +256,6 @@
     const result = await gitClient.stageHunk(WorkspaceId(workspaceId), filePath, hunkPatch);
     if (result.ok) {
       toast.success('Hunk staged');
-      // Track hunk staging event
-      track('Staged Changes', { method: 'hunk' });
       gitCache.invalidateWorkspace(workspaceId);
       appStore.dispatch(loadGitStatus(workspaceId, true));
       // Refresh file tracking to update the changes panel and diff viewer

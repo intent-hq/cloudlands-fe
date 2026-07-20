@@ -265,38 +265,38 @@
         if (isMod && (e.key === 'w' || e.key === 'W')) {
           e.preventDefault();
           e.stopPropagation();
-          console.log('__AUGMENT_CLOSE_TAB__');
+          console.log('__INTENT_CLOSE_TAB__');
         }
         // Cmd+R / Ctrl+R / F5 - refresh browser
         if (e.key === 'F5' || (isMod && (e.key === 'r' || e.key === 'R'))) {
           e.preventDefault();
           e.stopPropagation();
-          console.log('__AUGMENT_REFRESH__');
+          console.log('__INTENT_REFRESH__');
         }
         // Cmd+[ / Ctrl+[ - go back
         if (isMod && e.key === '[') {
           e.preventDefault();
           e.stopPropagation();
-          console.log('__AUGMENT_GO_BACK__');
+          console.log('__INTENT_GO_BACK__');
         }
         // Cmd+] / Ctrl+] - go forward
         if (isMod && e.key === ']') {
           e.preventDefault();
           e.stopPropagation();
-          console.log('__AUGMENT_GO_FORWARD__');
+          console.log('__INTENT_GO_FORWARD__');
         }
         // Cmd+Shift+C / Ctrl+Shift+C - copy current browser URL
         if (isMod && e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C')) {
           e.preventDefault();
           e.stopPropagation();
-          console.log('__AUGMENT_COPY_URL__');
+          console.log('__INTENT_COPY_URL__');
         }
         // Cmd+Option+I / Ctrl+Shift+I - open devtools
         if ((e.metaKey && e.altKey && (e.key === 'i' || e.key === 'I')) ||
             (e.ctrlKey && e.shiftKey && (e.key === 'i' || e.key === 'I'))) {
           e.preventDefault();
           e.stopPropagation();
-          console.log('__AUGMENT_DEVTOOLS__');
+          console.log('__INTENT_DEVTOOLS__');
         }
       }, true);
     })();
@@ -585,7 +585,7 @@
     // when keyboard shortcuts are pressed inside the webview
     addWebviewListener('console-message', (e: any) => {
       const message = e.message;
-      if (message === '__AUGMENT_CLOSE_TAB__') {
+      if (message === '__INTENT_CLOSE_TAB__') {
         // Cmd+W was pressed - dispatch synthetic event for the panel system to handle
         const syntheticEvent = new KeyboardEvent('keydown', {
           key: 'w',
@@ -596,19 +596,19 @@
           cancelable: true,
         });
         window.dispatchEvent(syntheticEvent);
-      } else if (message === '__AUGMENT_REFRESH__') {
+      } else if (message === '__INTENT_REFRESH__') {
         // Cmd+R/F5 was pressed inside webview - refresh the browser
         refresh();
-      } else if (message === '__AUGMENT_GO_BACK__') {
+      } else if (message === '__INTENT_GO_BACK__') {
         // Cmd+[ was pressed - navigate back in browser history
         goBack();
-      } else if (message === '__AUGMENT_GO_FORWARD__') {
+      } else if (message === '__INTENT_GO_FORWARD__') {
         // Cmd+] was pressed - navigate forward in browser history
         goForward();
-      } else if (message === '__AUGMENT_COPY_URL__') {
+      } else if (message === '__INTENT_COPY_URL__') {
         // Cmd+Shift+C / Ctrl+Shift+C was pressed - copy current browser URL
         void copyCurrentUrl();
-      } else if (message === '__AUGMENT_DEVTOOLS__') {
+      } else if (message === '__INTENT_DEVTOOLS__') {
         // Cmd+Option+I / Ctrl+Shift+I was pressed - toggle devtools
         toggleDevTools();
       }

@@ -34,11 +34,6 @@ vi.mock('../../../../notes/utils/task-block-parser', () => ({
   hasTaskBlocks: vi.fn().mockReturnValue(false),
 }));
 
-// Mock analytics
-vi.mock('$lib/services/analytics/main', () => ({
-  trackMain: vi.fn(),
-}));
-
 describe('ws.task API', () => {
   const workspaceId = 'test-workspace';
   const workspacePath = '/tmp/test-workspace';

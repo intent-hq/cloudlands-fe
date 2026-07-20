@@ -63,12 +63,6 @@
 
   import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
   import { workspaceUnmounted } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
-  import {
-  track,
-  setAnalyticsContextProvider,
-  getFileExtension,
-} from '$lib/services/analytics';
-
 
   import { setOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 
@@ -88,7 +82,6 @@
   // Utils
   import { createLogger } from '$lib/utils/client-logger';
 
-  import { selectSidebarActiveTab } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { setSidebarActiveTab } from '$store/renderer/slices/transient-ui/transient-ui-slice';
   import {
   createAgentRequested,
@@ -486,23 +479,6 @@
     appStore.dispatch(setPanelVisibility(workspaceId, key, value));
   }
 
-  // Register analytics context provider for dynamic UI context on all events
-  $effect(() => {
-    if (workspaceId && workspaceState) {
-      setAnalyticsContextProvider(() => ({
-        routeName: 'workspace',
-        mainPanelType: workspaceState?.state?.mainPanel?.type ?? null,
-        sidebarActiveTab: selectSidebarActiveTab.select(appStore.state, workspaceId),
-        workspaceTitle: $workspace?.title ?? null,
-      }));
-
-      // Clear the context provider when workspace changes or component unmounts
-      return () => {
-        setAnalyticsContextProvider(null);
-      };
-    }
-  });
-
   // ============================================================================
   // Tab Management
   // ============================================================================
@@ -614,18 +590,6 @@
     });
     try {
       workspaceState?.handleFileRenamed(oldPath, newPath);
-      try {
-        const oldExt = getFileExtension(oldPath);
-        const newExt = getFileExtension(newPath);
-        track('Renamed File', {
-          workspace_id: $workspace?.id || workspaceId,
-          old_extension: oldExt,
-          new_extension: newExt,
-          extension_changed: oldExt !== newExt,
-        });
-      } catch {
-        // Analytics should not break file renaming
-      }
     } catch (error) {
       logger.error('Error calling handleFileRenamed', error as Error);
     }

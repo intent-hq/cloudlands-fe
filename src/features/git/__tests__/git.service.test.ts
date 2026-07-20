@@ -223,36 +223,36 @@ describe('GitService', () => {
       expect(result[3].staged).toBe(true);
     });
 
-    it('should NOT filter out .augment/ files (git is the source of truth for ignore rules)', () => {
-      // If git status reports .augment/ files, it means they are NOT gitignored
-      // (e.g., the user's .gitignore has negation patterns like !.augment/skills/)
+    it('should NOT filter out .intent/ files (git is the source of truth for ignore rules)', () => {
+      // If git status reports .intent/ files, it means they are NOT gitignored
+      // (e.g., the user's .gitignore has negation patterns like !.intent/skills/)
       // The app should trust git and show these files.
-      const output = '?? .augment/skills/cognitive-complexity/README.md\n';
+      const output = '?? .intent/skills/cognitive-complexity/README.md\n';
       const result = (gitService as any).parseStatusOutput(output);
 
       expect(result).toHaveLength(1);
-      expect(result[0].path).toBe('.augment/skills/cognitive-complexity/README.md');
+      expect(result[0].path).toBe('.intent/skills/cognitive-complexity/README.md');
       expect(result[0].status).toBe('?');
     });
 
-    it('should show .augment/ files alongside regular files', () => {
+    it('should show .intent/ files alongside regular files', () => {
       const output =
-        ' M src/app.ts\n?? .augment/skills/cognitive-complexity/index.ts\nM  package.json\n';
+        ' M src/app.ts\n?? .intent/skills/cognitive-complexity/index.ts\nM  package.json\n';
       const result = (gitService as any).parseStatusOutput(output);
 
       expect(result).toHaveLength(3);
       expect(result[0].path).toBe('src/app.ts');
-      expect(result[1].path).toBe('.augment/skills/cognitive-complexity/index.ts');
+      expect(result[1].path).toBe('.intent/skills/cognitive-complexity/index.ts');
       expect(result[1].status).toBe('?');
       expect(result[2].path).toBe('package.json');
     });
 
-    it('should handle staged .augment/ files', () => {
-      const output = 'A  .augment/skills/my-skill/config.json\n';
+    it('should handle staged .intent/ files', () => {
+      const output = 'A  .intent/skills/my-skill/config.json\n';
       const result = (gitService as any).parseStatusOutput(output);
 
       expect(result).toHaveLength(1);
-      expect(result[0].path).toBe('.augment/skills/my-skill/config.json');
+      expect(result[0].path).toBe('.intent/skills/my-skill/config.json');
       expect(result[0].status).toBe('A');
       expect(result[0].staged).toBe(true);
     });

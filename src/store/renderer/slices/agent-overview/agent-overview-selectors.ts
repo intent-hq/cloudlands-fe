@@ -35,7 +35,7 @@ import {
   extractTaskChangesFromMessages,
   extractDelegationBatchMap,
 } from "$lib/components/agent-overview/graph-helpers";
-import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { getItems } from "$lib/store-shim/utils/collections/collection-utils";
 import type { AgentSession,
   Note } from "$shared/types";
 import { selectAllWorkspaceAgents } from "$store/renderer/slices/workspace-agents/workspace-agents-selectors";

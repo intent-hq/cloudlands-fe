@@ -41,8 +41,8 @@
  *   via the line-changes client — the daemon owns aggregation; the FE only
  *   reads.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import type { StoreMiddleware } from "$lib/store-shim/types";
+import { getItem } from "$lib/store-shim/utils/collections/collection-utils";
 import type { Workspace } from "$shared/types";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";

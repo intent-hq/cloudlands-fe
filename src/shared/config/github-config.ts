@@ -1,12 +1,9 @@
 /**
  * GitHub OAuth Configuration
  *
- * GitHub authentication is now managed through Augment's backend API.
- * The user authenticates via Augment's OAuth flow, and all GitHub API
- * operations are proxied through Augment's backend.
- *
- * The session.json file in ~/.augment/ contains the Augment access token
- * which is used to authenticate API calls.
+ * GitHub authentication is managed through the daemon's GitHub integration.
+ * The user authenticates via the daemon's OAuth flow, and all GitHub API
+ * operations are proxied through the daemon.
  */
 
 export const GITHUB_CONFIG = {

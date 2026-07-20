@@ -54,7 +54,7 @@ const USER_DEF: SpecialistDef = {
   behaviorPrompt: "You review code changes…",
   source: "user",
   isCustomized: true,
-  path: "/home/u/.augment/specialists/reviewer.md",
+  path: "/home/u/.intent/specialists/reviewer.md",
 };
 
 describe("LiveSpecialistsClient (fake transport)", () => {
@@ -297,7 +297,7 @@ describe("misc-ui-events seeder splits specialist.list into the store slices", (
         modelTier: undefined,
         behaviorPrompt: "You review code changes…",
         roleReminder: undefined,
-        filePath: "/home/u/.augment/specialists/reviewer.md",
+        filePath: "/home/u/.intent/specialists/reviewer.md",
         source: "user",
       },
     ]);

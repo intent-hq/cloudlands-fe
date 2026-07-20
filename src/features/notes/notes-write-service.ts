@@ -32,11 +32,11 @@
  * chain). State reads use the raw `appStore.state.workspaceNotes` shape via
  * the `readWorkspaceNotes` / `readNoteById` helpers below.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import {
   getItem,
   getItems,
-} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+} from "$lib/store-shim/utils/collections/collection-utils";
 import { appClient } from "$lib/client";
 import type { MutationResult, NoteMetadataPatch } from "$lib/client";
 import { toast } from "svelte-sonner";

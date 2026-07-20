@@ -12,7 +12,6 @@ const SKIP_DIRS = new Set([
   '.svelte-kit',
   '.git',
   'cdp-mcp-server',
-  'parallel-runner',
 ]);
 const NONDET_RE =
   /\b(?:Date\.now|Math\.random|crypto\.randomUUID|randomUUID)\s*\(|\bnew\s+Date\s*\(\s*\)/g;

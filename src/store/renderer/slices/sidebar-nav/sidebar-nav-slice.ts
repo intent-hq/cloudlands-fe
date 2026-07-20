@@ -4,9 +4,9 @@
  * Actions and reducer for the sidebar navigation state.
  */
 
-import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
-import { createBooleanPreference } from "@augmentcode/ag-redux-toolkit/utils/store/boolean-preference";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createBooleanPreference } from "$lib/store-shim/utils/store/boolean-preference";
 import type { SidebarNavState, SidebarNavItem, AllSpacesViewMode } from "./sidebar-nav-types";
 
 // ── localStorage keys ──

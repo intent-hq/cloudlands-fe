@@ -189,8 +189,8 @@ async function registerClient(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        client_name: 'Augment Code',
-        client_uri: 'https://augmentcode.com',
+        client_name: 'Intent',
+        client_uri: 'https://intentapp.dev',
         redirect_uris: [redirectUri],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],

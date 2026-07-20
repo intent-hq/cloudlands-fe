@@ -20,7 +20,7 @@
  * configured store, and slice actions — no AppClient, no selectors, no store
  * module.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 import { store as appStore } from "$store/renderer/store";
 import type { StoreState } from "../types";

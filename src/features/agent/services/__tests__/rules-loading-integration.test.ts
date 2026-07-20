@@ -32,8 +32,8 @@ describe('Rules Loading Integration', () => {
   });
 
   it('should create user rules in workspace directory', async () => {
-    // Create .augment/rules directory
-    const rulesDir = path.join(workspacePath, '.augment', 'rules');
+    // Create .intent/rules directory
+    const rulesDir = path.join(workspacePath, '.intent', 'rules');
     await fs.mkdir(rulesDir, { recursive: true });
 
     // Create user.md file

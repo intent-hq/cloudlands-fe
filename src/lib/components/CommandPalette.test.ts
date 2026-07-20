@@ -19,7 +19,6 @@ const {
   gotoMock,
   navigateToSettingsMock,
   invokeMock,
-  trackMock,
   workspaceItemsState,
   sessionSessions,
   reduxDispatchMock,
@@ -43,7 +42,6 @@ const {
     gotoMock: vi.fn(),
     navigateToSettingsMock: vi.fn(),
     invokeMock: vi.fn().mockResolvedValue({ files: [] }),
-    trackMock: vi.fn(),
     workspaceItemsState: { value: [] as any[] },
     sessionSessions: { value: [] as any[] },
     reduxDispatchMock: vi.fn(),
@@ -104,7 +102,6 @@ vi.mock('$features/terminal/terminal-history-tracker', () => ({
 vi.mock('$shared/types/agent-message.conversion', () => ({
   extractContentFromBlocks: vi.fn(() => ''),
 }));
-vi.mock('$lib/services/analytics', () => ({ track: trackMock }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));

@@ -14,8 +14,7 @@ const logger = new Logger('GitHubAuthService');
  * GitHub Authentication Service
  *
  * Derives GitHub auth state from the daemon's `github.authStatus` method
- * (`isConfigured`). In the PAT-from-env model there is no Augment session
- * file, so auth state no longer depends on `~/.augment/session.json`.
+ * (`isConfigured`). Uses daemon-managed OAuth flow and PAT handling.
  *
  * Flow:
  * 1. Call `github.authStatus` to check GitHub configuration status
@@ -240,12 +239,12 @@ export class GitHubAuthService {
   /**
    * Get a validated access token for git operations.
    *
-   * Note: With the Augment API integration, we don't have direct access to the
-   * GitHub token. All GitHub API operations go through Augment's backend proxy.
+   * Note: With the daemon integration, we don't have direct access to the
+   * GitHub token. All GitHub API operations go through the daemon's proxy.
    * For git push/pull operations, users need to configure their own git credentials
    * (SSH keys or git credential manager).
    *
-   * @returns null - Token is not directly accessible with Augment API integration
+   * @returns null - Token is not directly accessible with daemon integration
    */
   async getValidatedAccessToken(): Promise<string | null> {
     logger.debug(

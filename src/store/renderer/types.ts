@@ -1,8 +1,8 @@
-import type { Store } from '@augmentcode/ag-redux-toolkit/svelte-store';
+import type { Store } from '$lib/store-shim/svelte-store';
 import type {
   PreloadedStoreState as ToolkitPreloadedStoreState,
   StoreState as ToolkitStoreState,
-} from '@augmentcode/ag-redux-toolkit/types';
+} from '$lib/store-shim/types';
 import type { store as configuredStore } from './configured-store';
 
 // ============================================================================

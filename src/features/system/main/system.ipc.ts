@@ -2198,7 +2198,7 @@ export function setupSystemIPC() {
       async () => {
         const os = require('os');
         const path = require('path');
-        const override = process.env.WORKSPACES_BASE_DIR || process.env.AUGMENT_WORKSPACES_ROOT;
+        const override = process.env.WORKSPACES_BASE_DIR || process.env.INTENT_WORKSPACES_ROOT || process.env.AUGMENT_WORKSPACES_ROOT;
         const workspaceRoot =
           override && override.trim().length > 0 ? override : path.join(os.homedir(), 'intent');
         return { success: true, data: workspaceRoot };

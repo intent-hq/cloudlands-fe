@@ -247,7 +247,7 @@ describe('RuleProvider', () => {
 
   it('should have correct properties', () => {
     expect(provider.id).toBe('rule');
-    expect(provider.triggers).toEqual(['@rule', '@augment']);
+    expect(provider.triggers).toEqual(['@rule', '@intent']);
   });
 
   it('should return rule files', async () => {
@@ -273,7 +273,7 @@ describe('RuleProvider', () => {
     const results = await provider.search('', context);
 
     expect(results[0].meta?.path).toBeDefined();
-    expect(results[0].meta?.path).toContain('.augment/rules/');
+    expect(results[0].meta?.path).toContain('.intent/rules/');
   });
 });
 

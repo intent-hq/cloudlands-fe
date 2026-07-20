@@ -12,7 +12,6 @@
   mapInitialRepoToFormState,
 } from './initializer/initial-repo-utils';
   import { goto } from '$app/navigation';
-  import { track } from '$lib/services/analytics';
   import {
   SETUP_SCRIPT_TEMPLATES,
   getTemplateContent,
@@ -2358,7 +2357,6 @@
   async function handleEnhancePrompt() {
     if (!initialPrompt.trim() || isEnhancing) return;
 
-    track('Used Prompt Enhance', { prompt_length: initialPrompt.trim().length });
     isEnhancing = true;
     const currentRequestId = ++enhanceRequestId;
 
@@ -2418,7 +2416,6 @@
     onclick={(event) => {
       if (event.isTrusted && !hasFiredClick) {
         hasFiredClick = true;
-        track('Clicked Workspace Prompt', {});
       }
     }}
     role="region"
@@ -2460,7 +2457,6 @@
               event.key === 'Unidentified';
             if (isTyping) {
               hasFiredType = true;
-              track('Typed Workspace Prompt', {});
             }
           }
         }}

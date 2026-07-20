@@ -9,7 +9,7 @@ import { closeTab, initializeLayout } from "../slices/panel-layout/panel-layout-
 import { setActiveWorkspaceId } from "../slices/workspace/workspace-slice";
 import { workspaceMounted } from "../slices/workspace-lifecycle/workspace-lifecycle-slice";
 import type { StoreState } from "../types";
-import type { StoreMiddlewareAPI } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddlewareAPI } from "$lib/store-shim/types";
 
 function createMockState(
   activeWsId: string | null,

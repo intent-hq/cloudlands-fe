@@ -20,7 +20,7 @@
  * the configured store, the slice actions, and the logger. No selector modules;
  * state is read directly off `appStore.state` if needed.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { autoUpdateClient } from "./auto-update.client";
 import { store as appStore } from "$store/renderer/store";
 import {

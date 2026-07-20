@@ -2,7 +2,6 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import { stripJSONC } from '$lib/utils/vscode-theme-parser';
   import { themePresets } from '$lib/utils/theme-presets';
-  import { track } from '$lib/services/analytics';
   import Fa from 'svelte-fa';
   import { faUpload } from '@fortawesome/free-solid-svg-icons';
   import {
@@ -48,26 +47,12 @@
     const preset = themePresets.find((p) => p.id === presetId);
     if (!preset) return;
 
-    const previousPreset = $activePresetId ? themePresets.find((p) => p.id === $activePresetId) : null;
-    const previousTheme = previousPreset?.label ?? ($hasCustomTheme ? $customThemeName : 'Default');
     appStore.dispatch(selectThemePreset(presetId));
-    track('Changed Theme', {
-      theme: preset.label,
-      previous_theme: previousTheme ?? undefined,
-      source: 'preset',
-    });
   }
 
   function selectDefault() {
     clearThemeErrorMessage();
-    const previousPreset = $activePresetId ? themePresets.find((p) => p.id === $activePresetId) : null;
-    const previousTheme = previousPreset?.label ?? ($hasCustomTheme ? $customThemeName : 'Default');
     appStore.dispatch(clearThemeCustomization());
-    track('Changed Theme', {
-      theme: 'Default',
-      previous_theme: previousTheme ?? undefined,
-      source: 'reset',
-    });
   }
 
   function handleImportClick() {

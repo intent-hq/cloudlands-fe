@@ -59,7 +59,7 @@ const DYNAMIC_PREFIX_ALLOWLIST = new Set([
 const FILE_EXTS = new Set(['.ts', '.tsx', '.svelte', '.js', '.jsx', '.mjs']);
 const SKIP_DIRS = new Set([
   'node_modules', 'dist', 'build', '.svelte-kit', '.git',
-  'cdp-mcp-server', 'parallel-runner', 'playwright-report',
+  'cdp-mcp-server', 'playwright-report',
 ]);
 
 async function* walk(dir) {

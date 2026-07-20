@@ -425,10 +425,6 @@ vi.mock('$store/renderer/slices/workspace/workspace-slice', async (importOrigina
   setWorkspaceEntity: vi.fn((...args: any[]) => ({ type: 'workspace/setWorkspaceEntity', payload: args })),
 }));
 
-vi.mock('$lib/services/analytics', () => ({
-  track: vi.fn(),
-  getFileExtension: vi.fn().mockReturnValue('.ts'),
-}));
 
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({

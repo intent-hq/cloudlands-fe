@@ -27,7 +27,7 @@
  * `store.createSelector` during middleware-chain construction); state is read
  * directly off `appStore.state.specialists`.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import type { SpecialistDef } from "$lib/client/app-client";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";

@@ -5,7 +5,7 @@ import {
   it,
 } from "vitest";
 import type { StoreState } from "../../types";
-import { createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
 import { initialState } from "./known-repos-slice";
 import {
   selectKnownRepos,

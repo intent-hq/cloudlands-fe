@@ -40,7 +40,6 @@
   import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
   import { createLogger } from '$lib/utils/client-logger';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
-  import { track } from '$lib/services/analytics';
 
   import { fade } from 'svelte/transition';
   import {
@@ -263,9 +262,6 @@
           terminalId: result.id,
           closable: true,
         });
-
-        // Track terminal creation
-        track('Opened Terminal', { workspace_id: workspaceId, source: 'tab-bar' });
       } else if (!result.success) {
         logger.error('Failed to create terminal', { error: result.error });
       }
