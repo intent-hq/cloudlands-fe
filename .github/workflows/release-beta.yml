@@ -354,10 +354,14 @@ jobs:
           # github.com requires Basic auth (same format actions/checkout persists);
           # a Bearer header is rejected with "invalid credentials".
           AUTH_B64=$(printf 'x-access-token:%s' "${RELEASE_PAT}" | base64 | tr -d '\n')
+          echo "::add-mask::${AUTH_B64}"
           git config http.https://github.com/.extraheader "AUTHORIZATION: basic ${AUTH_B64}"
 
           git tag -a "v${VERSION}" -m "Release v${VERSION}"
           git push origin "refs/tags/v${VERSION}"
+
+          # Drop the write-capable credential from this read-only checkout
+          git config --unset http.https://github.com/.extraheader
           echo "✅ Pushed tag v${VERSION} to intent-hq/intentd"
 
       - name: Publish to GitHub Releases (versioned tag)
