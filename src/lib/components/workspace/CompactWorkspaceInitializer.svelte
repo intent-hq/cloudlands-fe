@@ -120,7 +120,6 @@
   const logger = createLogger('CompactWorkspaceInitializer');
 
   // Constants
-  const AGENT_ID_KEY = 'compact-workspace-initializer-agent-id';
   const FORM_STATE_KEY = 'compact-workspace-initializer-state';
   const PREFILL_KEY = 'workspace-prefill';
 
@@ -384,17 +383,6 @@
       }
     }
   }
-
-  // Generate or retrieve agent ID
-  function getOrCreateAgentId(): string {
-    let storedAgentId = sessionStorage.getItem(AGENT_ID_KEY);
-    if (!storedAgentId) {
-      storedAgentId = unifiedIdService.generateAgentId();
-      sessionStorage.setItem(AGENT_ID_KEY, storedAgentId);
-    }
-    return storedAgentId;
-  }
-  let initialAgentId = $state(getOrCreateAgentId());
 
   const workspaceInitializerHydrated$ = selectWorkspaceInitializerHydrated();
   const compactFormState$ = selectCompactWorkspaceInitializerFormState();
@@ -1806,8 +1794,11 @@
         }
       }
 
+      // Generate a fresh agent ID for every create attempt. Reusing an ID from
+      // a previous (failed) attempt makes the daemon reject the duplicate
+      // agent_session.id, permanently poisoning retries.
       const initialAgent = {
-        agentId: String(initialAgentId),
+        agentId: unifiedIdService.generateAgentId(),
         name: agentName,
         model: resolvedModel,
         specialist: specialistId, // Now accepts any specialist ID (not restricted to enum)
@@ -1953,7 +1944,6 @@
         ui: { hasInitialized: false },
       };
       appStore.dispatch(hydrateWorkspaceNavigation(workspace.id, initialState));
-      // Note: Agent ID regeneration is now handled in clearForm() to prevent ID reuse in "stay on page" mode
 
       if (stayOnHomePage) {
         // Update the workspace in the store with agentSummary so the agent shows immediately
@@ -2071,12 +2061,6 @@
       cleanedState.scopeRepoPath = scope ? repoPath : undefined;
     }
     appStore.dispatch(setCompactWorkspaceInitializerFormState(cleanedState));
-
-    // Generate a new agent ID for the next workspace creation
-    // This is critical for "stay on page" mode to prevent agent ID reuse
-    const newAgentId = unifiedIdService.generateAgentId();
-    sessionStorage.setItem(AGENT_ID_KEY, newAgentId);
-    initialAgentId = newAgentId;
   }
 
   function handleIssueSelect(_text: string, metadata?: IssueSelectionData) {
