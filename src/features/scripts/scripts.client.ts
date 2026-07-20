@@ -13,10 +13,11 @@
  * auto-detected scripts — so repeat clicks are no-ops and user scripts are
  * never overwritten. The legacy `scripts:detect` IPC channel is retired.
  *
- * `saveToRepo` uses the daemon `repoConfig.get` / `repoConfig.save` RPC
- * methods (PROTOCOL §5.33) to persist workspace scripts to the repo
- * `.intent/config.json`, sourcing its payload from the live daemon
- * `script.list`.
+ * `saveToRepo` uses the daemon `repoConfig.save` RPC method (PROTOCOL §5.33)
+ * to persist workspace scripts to the repo `.intent/config.json`, sourcing its
+ * payload from the live daemon `script.list`. `repoConfig.save` has merge
+ * semantics (present keys overwrite, absent keys are preserved, explicit null
+ * clears), so the payload carries only the `scripts` field.
  */
 
 import type {
@@ -289,11 +290,13 @@ export const scriptsClient = {
   /**
    * Save workspace scripts to the repo-level `.intent/config.json`.
    *
-   * Routes through the daemon's `repoConfig.get` / `repoConfig.save` surface
-   * (PROTOCOL §5.33). Reads the live `script.list`, fetches the existing repo
-   * config, merges `scripts[]` preserving all non-script keys, and persists
-   * the result. An empty live list is a no-op (never clobbers a populated repo
-   * config with `[]`).
+   * Routes through the daemon's `repoConfig.save` surface (PROTOCOL §5.33).
+   * Reads the live `script.list` and persists ONLY the `scripts` field —
+   * `repoConfig.save` merges the patch into the on-disk config (present keys
+   * overwrite, absent keys are preserved, explicit null clears), so sending a
+   * minimal object guarantees other fields (`setupScript`, `branchPrefix`, …)
+   * are never reverted from a stale renderer-side read. An empty live list is
+   * a no-op (never clobbers a populated repo config with `[]`).
    */
   async saveToRepo(workspaceId: string): Promise<CommandResponse<void>> {
     try {
@@ -314,20 +317,11 @@ export const scriptsClient = {
         return { success: true };
       }
 
-      // Fetch the existing repo config from the daemon.
-      const getResult = await backendRequest<{ config?: unknown }>('repoConfig.get', {
-        workspaceId,
-      });
-      const existingConfig =
-        getResult?.config && typeof getResult.config === 'object' ? getResult.config : {};
-
-      // Merge scripts[] into the config, preserving all other keys.
-      const updatedConfig = { ...existingConfig, scripts: payload };
-
-      // Persist via repoConfig.save.
+      // Persist only the changed field; the daemon merges it into the
+      // on-disk config and preserves everything else.
       await backendRequest<{ config?: unknown }>('repoConfig.save', {
         workspaceId,
-        config: updatedConfig,
+        config: { scripts: payload },
       });
 
       logger.info('Saved scripts to repo config via daemon', {
