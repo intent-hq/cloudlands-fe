@@ -23,6 +23,8 @@
 } from 'svelte/transition';
   import type { QueuedMessage } from '$shared/types';
   import Button from '../ui/button/button.svelte';
+  import AuggieAvatar from '$lib/components/ui/auggie-avatar/AuggieAvatar.svelte';
+  import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
   import { parseAgentEvents } from './EventWakeupBanner.svelte';
 
   interface Props {
@@ -229,14 +231,25 @@
   }
 
   /**
+   * Sender attribution for a queued agent-to-agent message
+   * (`messageMetadata.type === 'agent_message'`). Returns null when the
+   * metadata is absent or malformed so the entry renders as a normal
+   * queued message.
+   */
+  function queuedAgentAttribution(message: QueuedMessage) {
+    return getAgentMessageAttribution(message.messageMetadata);
+  }
+
+  /**
    * Exposed function for parent components to programmatically start editing
    * the last queued message (e.g., when user presses Up arrow in chat input).
-   * Skips system event-notification wakes (not user-editable).
+   * Skips system event-notification wakes and agent-to-agent messages
+   * (not user-editable).
    * Returns true if editing was started, false if no messages to edit.
    */
   export function editLastMessage(): boolean {
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (isEventNotification(messages[i])) continue;
+      if (isEventNotification(messages[i]) || queuedAgentAttribution(messages[i])) continue;
       startEdit(messages[i]);
       editStartedProgrammatically = true;
       return true;
@@ -349,6 +362,59 @@
                   </div>
                 {/if}
               </div>
+            {:else if queuedAgentAttribution(message)}
+              <!-- Agent-to-agent message: compact attribution row, no edit -->
+              {@const attr = queuedAgentAttribution(message)}
+              {#if attr}
+                <div class="col-span-full row-span-full flex flex-1 min-w-0 items-center gap-2">
+                  {#if message.requeuedAfterFailure}
+                    <div
+                      class="flex items-center gap-1 text-warning text-xs shrink-0"
+                      title="Failed — will retry"
+                    >
+                      <div aria-hidden="true">
+                        <Fa icon={faRotateRight} class="w-3 h-3" />
+                      </div>
+                      <span class="sr-only">Failed — will retry</span>
+                    </div>
+                  {/if}
+                  <div class="shrink-0" data-testid="queued-agent-message-avatar">
+                    <AuggieAvatar agentId={attr.fromAgentId} size={14} />
+                  </div>
+                  <div
+                    class="flex-1 min-w-0 truncate"
+                    transition:slide={{ axis: 'y', duration: 200 }}
+                    title={message.content}
+                  >
+                    <span class="text-foreground font-medium">{attr.displayName}</span>
+                    <span class="text-xs opacity-70"> — {message.content}</span>
+                  </div>
+                  {#if !disabled}
+                    <div
+                      class="flex items-center gap-1 opacity-30 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Button
+                        variant="ghost-light"
+                        size="icon-xs"
+                        class="-my-1"
+                        onclick={() => onsendnow?.(message.id)}
+                        tooltip="Send now (interrupts current stream)"
+                      >
+                        <Fa icon={faPaperPlane} class="w-3 h-3" />
+                      </Button>
+                      <Button
+                        variant="ghost-light"
+                        size="icon-xs"
+                        class="-my-1"
+                        onclick={() => handleRemove(message.id)}
+                        tooltip="Remove"
+                      >
+                        <Fa icon={faTrash} class="w-3 h-3" />
+                      </Button>
+                    </div>
+                  {/if}
+                </div>
+              {/if}
             {:else}
               <!-- Display mode -->
               <div class="col-span-full row-span-full flex flex-1 min-w-0 gap-2">

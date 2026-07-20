@@ -29,6 +29,8 @@
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
   import { isImageBlock } from '$shared/types/content-block.guards';
   import type { ContentBlock } from '$shared/types/content-block';
+  import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
+  import { getAgentMessageAttribution } from '$lib/utils/agent-message-attribution';
 
   import { WorkspaceId } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
@@ -201,6 +203,12 @@
       suppressCoordinationStoppedIndicator,
     });
   });
+
+  // Sender attribution for agent-to-agent messages (metadata-first, null when
+  // metadata is absent or malformed so plain user messages render unchanged).
+  let agentAttribution = $derived(
+    role === 'user' ? getAgentMessageAttribution(message?.metadata) : null,
+  );
 
   // Local state
   let messageElement: HTMLDivElement;
@@ -947,6 +955,11 @@
               />
             </div>
           </div>
+
+          <!-- Sender attribution header for agent-to-agent messages -->
+          {#if agentAttribution}
+            <AgentMessageAttributionHeader attribution={agentAttribution} class="mb-1.5" />
+          {/if}
 
           <!-- Message content - line-clamp-6 -->
           <div

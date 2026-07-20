@@ -65,7 +65,9 @@ export interface QueuedMessage {
    * Optional opaque metadata attached by the daemon and echoed on read.
    * System event wakes carry `{ type: 'event_notification', eventCount,
    * eventTypes, events? }` so the UI can render them as system notifications
-   * instead of raw `[WORKSPACE EVENTS]` text.
+   * instead of raw `[WORKSPACE EVENTS]` text. Agent-to-agent messages carry
+   * `{ type: 'agent_message', fromAgentId, fromAgentName? }` so the UI can
+   * render sender attribution.
    */
   messageMetadata?: Record<string, unknown>;
 }
