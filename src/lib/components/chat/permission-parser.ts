@@ -22,7 +22,7 @@ export interface PermissionDisplay {
  */
 function cleanToolName(name: string): string {
   // Handle MCP URL formats
-  const mcpMatch = name.match(/(?:\/\/local\/mcp\/|workspaces\.augmentcode\.com\/mcp\/)(.+)$/);
+  const mcpMatch = name.match(/\/\/local\/mcp\/(.+)$/);
   if (mcpMatch) name = mcpMatch[1];
 
   // Strip common prefixes/suffixes
@@ -34,8 +34,6 @@ function cleanToolName(name: string): string {
     .replace(/_Browser_MCP$/, '')
     .replace(/_Context_7$/, '')
     .replace(/_svelte$/, '')
-    .replace(/_augment$/, '')
-    .replace(/-augment$/, '')
     .replace(/_npx$/, '');
 }
 
