@@ -166,6 +166,13 @@ describe("LiveGitClient reads (fake transport)", () => {
     expect(await client.prRefresh("ws-1")).toBeNull();
   });
 
+  it("prRefresh folds an out-of-contract outcome value to null", async () => {
+    mockedRequest.mockResolvedValueOnce({ outcome: "exploded", pullRequests: [] });
+    const client = new LiveGitClient();
+
+    expect(await client.prRefresh("ws-1")).toBeNull();
+  });
+
   it("diffs forwards git.diffs and maps path/hunks/lines into DiffChunk[]", async () => {
     mockedRequest.mockResolvedValueOnce([
       {

@@ -2921,7 +2921,7 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
             workspaceId: PR_WS,
             prNumber: 42,
             prUrl: 'https://example.com/pr/42',
-            prStatus: 'open',
+            prStatus: 'Open',
             activePullRequest: { number: 42, url: 'https://example.com/pr/42' },
             pullRequests: [
               { number: 41, status: 'Merged' },
@@ -2935,7 +2935,7 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     const ws = await readWorkspace();
     expect(ws.prNumber).toBe(42);
     expect(ws.prUrl).toBe('https://example.com/pr/42');
-    expect(ws.prStatus).toBe('open');
+    expect(ws.prStatus).toBe('Open');
     expect(ws.activePullRequest).toMatchObject({ number: 42 });
     // §6.5: the daemon-owned per-branch PR list is folded verbatim, including
     // merged/closed history alongside the newly linked PR.
@@ -2964,7 +2964,7 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
             workspaceId: PR_WS,
             prNumber: 42,
             prUrl: 'https://example.com/pr/42',
-            prStatus: 'open',
+            prStatus: 'Open',
             activePullRequest: { number: 42 },
           },
         },
@@ -2983,7 +2983,7 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
           data: {
             workspaceId: PR_WS,
             prNumber: 42,
-            prStatus: 'merged',
+            prStatus: 'Merged',
             activePullRequest: { number: 42, merged: true },
             pullRequests: [{ number: 42, status: 'Merged' }],
           },
@@ -2992,7 +2992,7 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     });
 
     const ws = await readWorkspace();
-    expect(ws.prStatus).toBe('merged');
+    expect(ws.prStatus).toBe('Merged');
     // prUrl was not in the pr:updated payload; the merge must retain it.
     expect(ws.prUrl).toBe('https://example.com/pr/42');
     // pullRequests from the pr:updated payload replaces the previous list.
@@ -3017,7 +3017,7 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
             workspaceId: PR_WS,
             prNumber: 42,
             prUrl: 'https://example.com/pr/42',
-            prStatus: 'open',
+            prStatus: 'Open',
             activePullRequest: { number: 42 },
             pullRequests: [{ number: 42, status: 'Open' }],
           },

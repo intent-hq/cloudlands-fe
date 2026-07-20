@@ -513,11 +513,17 @@ export class LiveGitClient implements GitClient {
   // `pr.refresh` (§5.7 extension) forces the daemon's PR discovery/refresh for
   // one workspace and returns the post-refresh linkage state. Unlike
   // `pr.status` it does not require an active PR; transport/daemon errors fold
-  // to `null` so a failed refresh leaves store state intact.
+  // to `null` so a failed refresh leaves store state intact. `outcome` is
+  // narrowed against the documented closed set (an unknown value is a contract
+  // divergence, folded to null like any malformed response); the BE-owned
+  // `prStatus`/`pullRequests` payloads pass through unhealed per the
+  // thin-presenter rules.
   async prRefresh(workspaceId: string): Promise<PrRefreshResult | null> {
     try {
       const result = await backendRequest<Record<string, unknown>>("pr.refresh", { workspaceId });
       if (!result || typeof result !== "object" || typeof result.outcome !== "string") return null;
+      const outcomes: readonly string[] = ["skipped", "unchanged", "linked", "updated", "unlinked"];
+      if (!outcomes.includes(result.outcome)) return null;
       return {
         outcome: result.outcome as PrRefreshResult["outcome"],
         prNumber: typeof result.prNumber === "number" ? result.prNumber : undefined,

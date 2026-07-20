@@ -289,6 +289,13 @@ function refreshPrStatus(wsId: string): void {
     appStore.dispatch(prStatusRefreshStarted(wsId));
     try {
       const refresh = await appClient.git.prRefresh(wsId);
+      // The seam folds transport/daemon errors to null (a no-PR refresh still
+      // returns a result with empty linkage fields), so null means the refresh
+      // itself failed — report it instead of a phantom success.
+      if (refresh === null) {
+        appStore.dispatch(prStatusRefreshCompleted(wsId, false, "pr.refresh failed"));
+        return;
+      }
       appStore.dispatch(prStatusRefreshCompleted(wsId, true));
       const workspace = getItem(appStore.state.workspace.workspaces, wsId as Workspace["id"]);
       const owner = workspace?.repositoryOwner;
