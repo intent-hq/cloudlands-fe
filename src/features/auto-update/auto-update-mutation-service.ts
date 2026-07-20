@@ -103,6 +103,12 @@ async function handleInitAutoUpdate(): Promise<void> {
 /**
  * Download the available update. Failures surface as a slice error so the
  * UpdateToast error branch renders (e.g. "No update available to download").
+ *
+ * Race guard: with autoDownload enabled the main process may flip to
+ * downloading/downloaded before the user's Download click arrives, making the
+ * service reject even though the download is genuinely in progress. When the
+ * slice already reflects that, swallow the rejection instead of flashing a
+ * misleading error toast.
  */
 async function handleDownloadUpdate(): Promise<void> {
   try {
@@ -110,6 +116,11 @@ async function handleDownloadUpdate(): Promise<void> {
     // Status transitions (downloading → downloaded) arrive via the
     // status-changed / progress IPC events registered in handleInitAutoUpdate.
   } catch (error) {
+    const status = appStore.state.autoUpdate?.status;
+    if (status === "downloading" || status === "downloaded") {
+      logger.debug("Download trigger raced an in-progress download, ignoring", { status });
+      return;
+    }
     logger.error("Failed to download update", error);
     appStore.dispatch(
       setUpdateError(error instanceof Error ? error.message : "Failed to download update"),

@@ -197,4 +197,18 @@ describe("auto-update-mutation-service", () => {
     expect(state?.status).toBe("error");
     expect(state?.error).toBe("No update available to download");
   });
+
+  it("should surface an install failure as a slice error (shaped failure must not be swallowed)", async () => {
+    registerMockIpcHandler(AUTO_UPDATE_CHANNELS.INSTALL, async () => ({
+      success: false,
+      error: { message: "No update downloaded to install" },
+    }));
+
+    appStore.dispatch(installUpdate());
+    await flush();
+
+    const state = appStore.state.autoUpdate;
+    expect(state?.status).toBe("error");
+    expect(state?.error).toBe("No update downloaded to install");
+  });
 });

@@ -37,10 +37,12 @@ const NOT_AVAILABLE = {
 /** Register the auto-update invoke bridge handlers. Idempotent. */
 export function registerAutoUpdateBridge(): void {
   for (const channel of AUTO_UPDATE_INVOKE_CHANNELS) {
-    registerMockIpcHandler(channel, async (...args: unknown[]) => {
+    // Forward exactly one payload argument — the real preload bridge signature
+    // is `invoke(channel, data?)`, so extra args would be silently dropped.
+    registerMockIpcHandler(channel, async (payload?: unknown) => {
       const bridge = typeof window !== "undefined" ? window.electronAPI : undefined;
       if (bridge && typeof bridge.invoke === "function") {
-        return bridge.invoke(channel, ...args);
+        return bridge.invoke(channel, payload);
       }
       return NOT_AVAILABLE;
     });

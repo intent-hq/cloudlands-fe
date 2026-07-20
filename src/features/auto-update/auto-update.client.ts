@@ -44,11 +44,16 @@ export const autoUpdateClient = {
   },
 
   /**
-   * Install the downloaded update and restart the app
+   * Install the downloaded update and restart the app.
+   * On success the app restarts, so the response may never arrive; a shaped
+   * failure (bridge-less build, or no update downloaded) must still throw so
+   * callers can surface it.
    */
   async installUpdate(): Promise<void> {
-    await invokeIpc(AUTO_UPDATE_CHANNELS.INSTALL);
-    // App will restart, so we don't need to handle the response
+    const response = await invokeIpc<AutoUpdateResponse<void>>(AUTO_UPDATE_CHANNELS.INSTALL);
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Failed to install update');
+    }
   },
 
   /**
