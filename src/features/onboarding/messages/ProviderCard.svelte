@@ -38,6 +38,8 @@
     loginCommand: string;
     description: string;
     hasNpxFallback: boolean;
+    /** Status warning from the availability check (e.g. npx missing for claude-code). */
+    warning?: string;
   }
 
   export interface ProviderBrandColors {
@@ -333,6 +335,20 @@
         <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
           <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
           <span>npm/npx too old — npm 7+ required</span>
+        </div>
+      {/if}
+
+      <!-- Provider status warning (e.g. claude-code installed but npx missing) -->
+      {#if provider.warning && !provider.statusLoading}
+        <div class="mt-2 flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+          <Fa icon={faTriangleExclamation} class="w-3 h-3 mt-0.5 flex-shrink-0" />
+          <span>
+            {provider.warning} — <button
+              type="button"
+              class="underline hover:no-underline"
+              onclick={() => shell.open('https://nodejs.org')}
+            >nodejs.org</button>
+          </span>
         </div>
       {/if}
 

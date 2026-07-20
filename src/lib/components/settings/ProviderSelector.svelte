@@ -195,6 +195,7 @@
           docsUrl: PROVIDER_METADATA[provider.id]?.docsUrl ?? '',
           loginDocsUrl: provider.loginDocsUrl,
           hasNpxFallback: status?.hasNpxFallback ?? false,
+          warning: status?.warning,
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name)),
@@ -920,6 +921,19 @@
               <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
                 <Fa icon={faTriangleExclamation} class="w-3 h-3" />
                 <span>npm/npx too old — npm 7+ required</span>
+              </div>
+            {/if}
+            <!-- Provider status warning (e.g. claude-code installed but npx missing) -->
+            {#if provider.warning}
+              <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+                <Fa icon={faTriangleExclamation} class="w-3 h-3" />
+                <span>
+                  {provider.warning} — <button
+                    type="button"
+                    class="underline hover:no-underline"
+                    onclick={() => shell.open('https://nodejs.org')}
+                  >nodejs.org</button>
+                </span>
               </div>
             {/if}
           </div>

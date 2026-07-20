@@ -15,9 +15,11 @@ import { featureCodesService } from '../../feature-codes/main/feature-codes.serv
 import { getBackendClient } from '../../backend/main/backend.ipc';
 import { findAuggiePathAsync } from '../../auggie/main/auggie.ipc';
 import {
+  CLAUDE_CODE_NPX_MISSING_WARNING,
   clearClaudeCodeCache,
   getClaudeCodePath,
   isClaudeCodeInstalled,
+  isNpxAvailableForClaudeCode,
 } from '../../claude-code/main/claude-code-resolver';
 import {
   clearCodexCache,
@@ -71,12 +73,18 @@ async function checkAuggieAvailability(): Promise<ProviderStatus> {
 
 /**
  * Check if claude-code is available by checking if the claude CLI is installed.
- * Does not fall back to npx - we want accurate "is installed" status.
+ * The ACP adapter itself always runs via npx (pinned version); when the CLI is
+ * installed but npx is missing, the status carries an explicit warning so the
+ * UI can tell the user the adapter cannot run.
  */
 async function checkClaudeCodeAvailability(): Promise<ProviderStatus> {
   try {
     const installed = await isClaudeCodeInstalled();
-    return { available: installed };
+    const status: ProviderStatus = { available: installed };
+    if (installed && !(await isNpxAvailableForClaudeCode())) {
+      status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
+    }
+    return status;
   } catch (error) {
     return { available: false, error: (error as Error).message };
   }
@@ -415,6 +423,14 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     makeProviderStatus('pi', checkPiAvailability),
     makeProviderStatus('droid', checkDroidAvailability),
   ]);
+
+  // claude-code runs its ACP adapter exclusively via npx (pinned version):
+  // when the claude CLI is installed but npx is missing, surface an explicit
+  // warning instead of a silently broken provider. The discovery path carries
+  // the daemon's npx probe; the local fallback already sets the warning.
+  if (claudeCodeResult.available && !claudeCodeResult.warning && npxStatus?.resolvedPath === null) {
+    claudeCodeResult.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
+  }
 
   // Run auth checks in parallel for available providers.
   // Auggie uses `model list`; model listing is the stable auth gate.
