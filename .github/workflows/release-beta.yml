@@ -56,6 +56,15 @@ jobs:
           ref: main
           token: ${{ steps.token.outputs.token }}
 
+      # Captured before the version-bump commit is created so release notes can use a SHA
+      # that exists on origin (the local bump commit is unpushed and 404s on the compare API)
+      - name: Capture fe SHA for release notes
+        id: fe_info
+        run: |
+          FE_SHA=$(git rev-parse HEAD)
+          echo "sha=${FE_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Captured fe SHA (pre version-bump): ${FE_SHA}"
+
       - name: Check for duplicate version tag
         run: |
           VERSION="${{ inputs.version }}"
@@ -301,14 +310,16 @@ jobs:
           PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
           INTENTD_BASE: ${{ steps.intentd_base.outputs.intentd_base }}
           INTENTD_HEAD: ${{ steps.intentd_info.outputs.sha }}
+          FE_HEAD_SHA: ${{ steps.fe_info.outputs.sha }}
         run: |
           if [ -z "$PREV_FE_TAG" ]; then
             echo "::error::No previous versioned release found on cloudlands-releases. Cannot generate release notes."
             exit 1
           fi
 
-          # FE head uses the current commit SHA, not the tag (which hasn't been pushed yet)
-          FE_HEAD_SHA=$(git rev-parse HEAD)
+          # FE head is the pre-version-bump SHA captured at checkout: it exists on origin
+          # (unlike the local bump commit, which 404s on the compare API) and keeps the
+          # version-bump commit out of the notes
 
           echo "Generating release notes: ${PREV_FE_TAG}...v${VERSION}"
           echo "  FE: ${PREV_FE_TAG}...${FE_HEAD_SHA}"
