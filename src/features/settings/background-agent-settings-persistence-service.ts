@@ -35,7 +35,10 @@ const logger = createLogger("BackgroundAgentSettingsPersistenceService");
  * (fire-and-forget; failures only log). Atomic updates avoid partial
  * settings:changed deltas and reduce redundant IPC traffic.
  */
-function persistBackgroundAgentSettings(defaultModel: string, typeOverrides: Record<string, string>): void {
+function persistBackgroundAgentSettings(
+  defaultModel: string,
+  typeOverrides: Record<BackgroundAgentType, string>,
+): void {
   void appClient.settings
     .update([
       { path: "backgroundAgents.defaultModel", value: defaultModel },

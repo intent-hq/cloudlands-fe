@@ -106,7 +106,10 @@ function applyOne(change: AppliedSettingChange): void {
   }
 }
 
-/** Background-agent settings cross three dotted paths; reconcile them in one dispatch. */
+/**
+ * Background-agent settings reconcile two dotted paths in one dispatch.
+ * Only called when the delta actually includes at least one backgroundAgents.* key.
+ */
 function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
   // A settings:changed delta may only include ONE of defaultModel / typeOverrides.
   // Fall back to current slice state for missing keys so partial updates don't drop values.
@@ -146,11 +149,18 @@ function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
 export function applySettingsChanges(changes: readonly AppliedSettingChange[]): void {
   if (changes.length === 0) return;
   const bundle = new Map<string, unknown>();
+  let hasBackgroundAgentPaths = false;
   for (const change of changes) {
     applyOne(change);
     bundle.set(change.path, change.value);
+    if (change.path.startsWith("backgroundAgents.")) {
+      hasBackgroundAgentPaths = true;
+    }
   }
-  applyBackgroundAgentBundle(bundle);
+  // Only reconcile background-agent bundle when the delta contains at least one backgroundAgents.* key
+  if (hasBackgroundAgentPaths) {
+    applyBackgroundAgentBundle(bundle);
+  }
   appStore.dispatch(settingsChanged([...changes]));
 }
 
