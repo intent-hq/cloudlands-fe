@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { QueuedMessage } from '$shared/types';
 
@@ -143,5 +144,34 @@ describe('QueuedMessageList', () => {
     expect(screen.getByText('Child agent Foo completed')).toBeTruthy();
     // Exactly one Edit button (the normal message's)
     expect(buttonTooltips(container).filter((t) => t === 'Edit')).toHaveLength(1);
+  });
+
+  it('editLastMessage() skips a trailing event wake and edits the last user message', async () => {
+    const { component, container } = render(QueuedMessageList, {
+      props: {
+        messages: [
+          queued({ id: 'q-1', content: 'normal message', position: 0 }),
+          queued({ id: 'q-2', content: WAKE_TEXT, position: 1 }),
+        ],
+      },
+    });
+
+    expect(component.editLastMessage()).toBe(true);
+    await tick();
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+    expect(textarea?.value).toBe('normal message');
+  });
+
+  it('editLastMessage() returns false when the queue only holds event wakes', async () => {
+    const { component, container } = render(QueuedMessageList, {
+      props: { messages: [queued({ content: WAKE_TEXT })] },
+    });
+
+    expect(component.editLastMessage()).toBe(false);
+    await tick();
+
+    expect(container.querySelector('textarea')).toBeNull();
   });
 });
