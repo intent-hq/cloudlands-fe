@@ -32,6 +32,7 @@ import {
 
 vi.mock("$lib/utils/safe-storage", () => ({
   safeLocalStorage: {
+    getItem: vi.fn(),
     getJSON: vi.fn(),
     setJSON: vi.fn(),
   },
@@ -44,6 +45,7 @@ describe("sidebar-nav-persistence-service", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(safeLocalStorage.getItem).mockReturnValue(null);
     dispatchSpy = vi.fn();
     mockApi = {
       dispatch: dispatchSpy,
@@ -70,9 +72,12 @@ describe("sidebar-nav-persistence-service", () => {
     });
 
     it("dispatches hydrateSidebarNav with all stored fields", () => {
+      vi.mocked(safeLocalStorage.getItem).mockImplementation((key) => {
+        if (key === VIEW_MODE_KEY) return JSON.stringify("repo");
+        return null;
+      });
       vi.mocked(safeLocalStorage.getJSON).mockImplementation((key) => {
         if (key === PINNED_WORKSPACES_KEY) return ["ws-1"];
-        if (key === VIEW_MODE_KEY) return "repo";
         if (key === PANEL_WIDTH_KEY) return 320;
         if (key === PANEL_ITEM_KEY) return "chief";
         if (key === CARD_PINNED_KEY) return true;
@@ -107,9 +112,12 @@ describe("sidebar-nav-persistence-service", () => {
     });
 
     it("tolerates corrupt JSON by skipping invalid fields", () => {
+      vi.mocked(safeLocalStorage.getItem).mockImplementation((key) => {
+        if (key === VIEW_MODE_KEY) return JSON.stringify("invalid-mode");
+        return null;
+      });
       vi.mocked(safeLocalStorage.getJSON).mockImplementation((key) => {
         if (key === PINNED_WORKSPACES_KEY) return "not-an-array";
-        if (key === VIEW_MODE_KEY) return "invalid-mode";
         if (key === PANEL_WIDTH_KEY) return "not-a-number";
         if (key === CARD_PINNED_KEY) return "not-a-boolean";
         return undefined;
@@ -119,6 +127,52 @@ describe("sidebar-nav-persistence-service", () => {
       middleware(mockApi);
 
       expect(dispatchSpy).not.toHaveBeenCalled();
+    });
+
+    it("hydrates from a legacy raw-string view mode and migrates it to JSON", () => {
+      vi.mocked(safeLocalStorage.getItem).mockImplementation((key) => {
+        if (key === VIEW_MODE_KEY) return "repo";
+        return null;
+      });
+      vi.mocked(safeLocalStorage.getJSON).mockReturnValue(undefined);
+
+      const middleware = createSidebarNavPersistenceMiddleware();
+      middleware(mockApi);
+
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        hydrateSidebarNav({ allSpacesViewMode: "repo" })
+      );
+      expect(safeLocalStorage.setJSON).toHaveBeenCalledWith(VIEW_MODE_KEY, "repo");
+    });
+
+    it("does not rewrite an already-JSON view mode value", () => {
+      vi.mocked(safeLocalStorage.getItem).mockImplementation((key) => {
+        if (key === VIEW_MODE_KEY) return JSON.stringify("status");
+        return null;
+      });
+      vi.mocked(safeLocalStorage.getJSON).mockReturnValue(undefined);
+
+      const middleware = createSidebarNavPersistenceMiddleware();
+      middleware(mockApi);
+
+      expect(dispatchSpy).toHaveBeenCalledWith(
+        hydrateSidebarNav({ allSpacesViewMode: "status" })
+      );
+      expect(safeLocalStorage.setJSON).not.toHaveBeenCalled();
+    });
+
+    it("ignores a legacy raw-string value that is not a valid view mode", () => {
+      vi.mocked(safeLocalStorage.getItem).mockImplementation((key) => {
+        if (key === VIEW_MODE_KEY) return "bogus";
+        return null;
+      });
+      vi.mocked(safeLocalStorage.getJSON).mockReturnValue(undefined);
+
+      const middleware = createSidebarNavPersistenceMiddleware();
+      middleware(mockApi);
+
+      expect(dispatchSpy).not.toHaveBeenCalled();
+      expect(safeLocalStorage.setJSON).not.toHaveBeenCalled();
     });
 
     it("filters non-string ids from pinnedWorkspaceIds array", () => {
