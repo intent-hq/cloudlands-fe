@@ -25,7 +25,7 @@
     e.stopPropagation();
 
     // Get source panel ID for same-panel navigation
-    const panelElement = (e.target as HTMLElement)?.closest('[data-panel-id]');
+    const panelElement = (e.currentTarget as HTMLElement | null)?.closest('[data-panel-id]');
     const sourcePanelId = panelElement?.getAttribute('data-panel-id') ?? undefined;
     const openInAdjacentPanel = e.metaKey || e.ctrlKey;
 
