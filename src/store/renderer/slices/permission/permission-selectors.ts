@@ -2,7 +2,7 @@ import { store } from "../../store";
 import {
   getItems,
   type Collection,
-} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+} from "$lib/store-shim/utils/collections/collection-utils";
 import type { PermissionRequest } from "./permission-slice";
 
 export const selectPermissionRequestsCollection = store.createSelector(

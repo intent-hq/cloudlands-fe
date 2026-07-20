@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
+import type { Store } from "$lib/store-shim/svelte-store";
 import { createBackgroundAgentSettingsPersistenceMiddleware } from "./background-agent-settings-persistence-service";
 import { appClient } from "$lib/client";
 import {

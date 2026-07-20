@@ -10,7 +10,7 @@
  * calling `registerMockSeeder()` from their own modules, so this file never has
  * to grow into one giant bootstrap.
  */
-import type { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
+import type { Store } from "$lib/store-shim/svelte-store";
 
 import type { AppClient } from "$lib/client";
 import { appClient } from "$lib/client";

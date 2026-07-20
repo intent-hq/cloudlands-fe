@@ -1,30 +1,21 @@
 # Redux Architecture Guide
 
-> Concise app-specific companion to the Redux skills. This file is **not** the
-> source of truth for Redux APIs or implementation rules.
+> Concise app-specific companion. This file is **not** the source of truth for
+> store APIs or implementation rules.
 
 ## Source of Truth
 
-Active Redux architecture rules live in the agent skills. When this guide and a
-skill disagree, follow the skill and report the drift.
-
-| Need | Primary source |
-| --- | --- |
-| Routing and always-on Redux policy | `.agents/skills/ag-redux-toolkit/SKILL.md` |
-| Action creators and async actions | `.agents/skills/ag-redux-toolkit/core/actions/SKILL.md` |
-| Reducer purity and state shape | `.agents/skills/ag-redux-toolkit/core/reducers/SKILL.md` |
-| Store-bound selectors and call modes | `.agents/skills/ag-redux-toolkit/svelte/selectors/SKILL.md` |
-| Component setup, dispatch, and lifecycle | `.agents/skills/ag-redux-toolkit/svelte/component-integration/SKILL.md` |
-| Saga startup, lifecycle, and side effects | `.agents/skills/ag-redux-toolkit/core/sagas/SKILL.md` |
-| Package-owned saga crash/restart behavior | `.agents/skills/ag-redux-toolkit/core/saga-manager/SKILL.md` |
-| Store migration planning | `.agents/skills/ag-redux-toolkit/svelte/migration/SKILL.md` |
+The store API surface is the local redux/saga-free shim at
+`src/lib/store-shim/`, imported via `$lib/store-shim/...`. When this guide and
+the shim disagree, follow the shim and report the drift.
 
 The shorter topic docs in this directory are secondary companions. Prefer the
-skills above for current mechanics, import paths, and verification expectations.
+shim source for current mechanics, import paths, and verification expectations.
 
 ## Current App Wiring
 
-The renderer app uses one configured `ag-redux-toolkit` `Store` instance.
+The renderer app uses one configured `Store` instance from
+`$lib/store-shim/svelte-store`.
 These files are the repository-specific map for how that instance is assembled:
 
 | File | Role |
@@ -48,7 +39,7 @@ Keep this shape aligned with the skills:
 
 ## Store-First Usage Rules
 
-Use the configured Store and skill-owned primitives instead of local wrappers:
+Use the configured Store and shim-owned primitives instead of local wrappers:
 
 - Create app selectors with `store.createSelector(...)` from the configured Store.
 - In Svelte component initialization, call selector readables at top level.
@@ -75,12 +66,12 @@ if (activeWorkspaceId) {
 ```
 
 For full action, reducer, selector, saga, collection, channel, and testing
-examples, use the skills listed above rather than expanding this guide.
+examples, read the shim source rather than expanding this guide.
 
 ## Adding or Changing Redux Domains
 
-Before changing Redux code, start from the skill routing workflow and then use
-the app map above to find the repository owner files.
+Before changing Redux code, use the app map above to find the repository owner
+files.
 
 1. Confirm whether the state is shared/domain state. If yes, Redux owns it; if it
    is purely component-local UI state, keep it local.

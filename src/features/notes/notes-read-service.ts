@@ -25,8 +25,8 @@
  * is still mid-initialization through the middleware chain). State reads use
  * the raw `appStore.state.workspaceNotes` shape.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import type { StoreMiddleware } from "$lib/store-shim/types";
+import { getItem } from "$lib/store-shim/utils/collections/collection-utils";
 import { SPEC_NOTE_ID } from "$shared/constants/notes";
 import { appClient } from "$lib/client";
 import type { Note } from "$shared/types";

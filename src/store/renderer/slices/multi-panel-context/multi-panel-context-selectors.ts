@@ -2,7 +2,7 @@ import { store } from "../../store";
 import {
   getItems,
   type Collection,
-} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+} from "$lib/store-shim/utils/collections/collection-utils";
 import type { PanelContextItem, SelectionContextItem } from "./multi-panel-context-slice";
 
 const selectPanelsCollection = store.createSelector(

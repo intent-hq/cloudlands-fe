@@ -32,16 +32,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Create .env file
-        shell: bash
-        run: |
-          cat > .env << 'EOF'
-          SENTRY_DSN=""
-          SENTRY_RELEASE="test"
-          SENTRY_AUTH_TOKEN=""
-          SEGMENT_WRITE_KEY=""
-          EOF
-
       # ── DigiCert signing setup (official action) ──────────────────────
       - name: Check integrated signing configuration
         id: integrated_signing

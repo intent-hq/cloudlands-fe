@@ -32,7 +32,6 @@
 } from '$store/renderer/slices/model/model-slice';
 
 
-  import { identifyUser } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
 
   import {
@@ -120,6 +119,16 @@
 
   const DEFAULT_BRAND: ProviderBrandColors = { color1: '#555', color2: '#555' };
 
+  /** Fisher-Yates shuffle for provider list randomization */
+  function shuffleArray<T>(array: T[]): T[] {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  }
+
   /** Short descriptions for each provider */
   const PROVIDER_DESCRIPTIONS: Record<string, string> = {
     auggie:
@@ -172,6 +181,9 @@
     },
   };
 
+  /** Randomized provider order computed once per component mount */
+  const randomizedProviderOrder = shuffleArray(Object.values(ACP_PROVIDERS));
+
   /** Visible providers (not hidden by env var / feature code gates) */
   const visibleProviders = $derived.by(() => {
     const state = appStore.state;
@@ -179,7 +191,7 @@
     const statusMap = $providerStatusMap$;
     const loadingMap = $providerLoadingMap$;
     const hasCheckedOnce = $hasCheckedOnce$;
-    return Object.values(ACP_PROVIDERS)
+    return randomizedProviderOrder
       .filter((p) => {
         // Client-side feature code gate — never show if the feature code isn't activated
         if (p.requiresFeatureCode && !selectIsFeatureEnabled.select(state, p.requiresFeatureCode)) {
@@ -293,10 +305,9 @@
     auggieCommand = null;
   }
 
-  /** Called after auggie is detected as ready to refresh models + analytics. */
+  /** Called after auggie is detected as ready to refresh models. */
   async function onAuggieReady() {
     clearAuggieInstructions();
-    identifyUser({ force: true }).catch(() => {});
     appStore.dispatch(retryLoadModels());
   }
 

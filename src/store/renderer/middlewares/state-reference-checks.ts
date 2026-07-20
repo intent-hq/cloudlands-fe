@@ -1,4 +1,4 @@
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 
 /**
  * Debug middleware that checks for unexpected state reference changes.

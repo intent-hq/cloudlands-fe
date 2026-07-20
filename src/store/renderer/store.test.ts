@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import type { Readable } from "svelte/store";
 import { readable } from "svelte/store";
-import type { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
+import type { Store } from "$lib/store-shim/svelte-store";
 import {
   beforeEach,
   describe,
@@ -23,7 +23,7 @@ import {
 } from "./renderer-store-bridge";
 import { store as configuredStore } from "./configured-store";
 import { reducers } from "./reducer";
-import type { GenericAction } from "@augmentcode/ag-redux-toolkit/types";
+import type { GenericAction } from "$lib/store-shim/types";
 import type { StoreState } from "./types";
 
 function createFakeStoreRuntime(initialState = {} as StoreState) {

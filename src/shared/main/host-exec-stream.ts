@@ -3,7 +3,7 @@
  * PROTOCOL.md §5.14).
  *
  * The buffered `hostExec` (§5.14) fits one-shot fire-and-forget calls, but
- * `augment-cli`-style flows need a live stdout/stderr feed **and** a stdin
+ * streaming CLI flows need a live stdout/stderr feed **and** a stdin
  * channel (initial payload + follow-up writes with an explicit EOF). Those go
  * through `host.execStream`, which returns `{ requestId }` immediately and
  * publishes:

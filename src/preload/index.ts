@@ -3,11 +3,6 @@
  *
  * Clean, secure bridge between renderer and main process.
  * Uses contextBridge for security.
- *
- * Note: Sentry is NOT initialized here. The preload runs in a special isolated context
- * that is not compatible with @sentry/electron/renderer. Errors in the main process
- * are captured by Sentry in src/main/index.ts, and renderer errors are captured
- * by Sentry in the renderer process initialization.
  */
 
 import {
@@ -209,7 +204,6 @@ const ALLOWED_CHANNELS = [
   "pi:install-mcp-adapter",
   "droid:check-availability",
   "droid:get-models",
-  "banner:fetch",
   "providers:get-availability",
   "providers:get-paths",
   "providers:check-single",
@@ -559,8 +553,6 @@ const ALLOWED_CHANNELS = [
   "auto-update:error",
   "auto-update:up-to-date",
   "auto-update:show-toast",
-  "sentry:get-config",
-  "analytics:get-config",
   "pip:open",
   "pip:close",
   "pip:close-all-for-workspace",
@@ -734,7 +726,6 @@ const ALLOWED_CHANNELS = [
   "browser:list-tabs-request",
   "browser:open-tab",
   "mcp:server-error",
-  "analytics:track-from-main",
   "script:started",
   "script:stopped",
   "script:output",
@@ -913,7 +904,6 @@ const EVENT_CHANNELS = [
   "browser:list-tabs-request",
   "browser:open-tab",
   "mcp:server-error",
-  "analytics:track-from-main",
   "script:started",
   "script:stopped",
   "script:output",
@@ -970,27 +960,8 @@ function generateListenerId(): string {
   return `l${Date.now()}_${listenerIdCounter}`;
 }
 
-// Sentry config cache - populated via IPC from main process
-let sentryConfigCache: { dsn?: string; environment?: string; release?: string } | null = null;
-
 // Define the API exposed to the renderer
 const electronAPI = {
-  // Sentry configuration - fetched from main process via IPC
-  // The main process has the env vars loaded via dotenv
-  getSentryConfig: () => sentryConfigCache,
-
-  // Async version that fetches from main process (call this on app init)
-  fetchSentryConfig: async () => {
-    if (sentryConfigCache) return sentryConfigCache;
-    try {
-      sentryConfigCache = await ipcRenderer.invoke('sentry:get-config');
-      return sentryConfigCache;
-    } catch (error) {
-      console.warn('[Preload] Failed to fetch Sentry config:', error);
-      return null;
-    }
-  },
-
   // IPC invoke (request/response)
   invoke: (channel: string, data?: any) => {
     // Use generated allowed channels for security

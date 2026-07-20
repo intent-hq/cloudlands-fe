@@ -19,14 +19,14 @@ describe('RepoAndBranchPicker', () => {
     render(RepoAndBranchPicker, {
       props: {
         repoType: 'github',
-        githubUrl: 'https://github.com/augmentcode/intent',
+        githubUrl: 'https://github.com/example-org/example-repo',
         repoPath: '',
         presentation: 'metadata',
         field: 'repo',
       },
     });
 
-    expect(screen.getByTestId('repo-selector').textContent).toContain('augmentcode/intent');
+    expect(screen.getByTestId('repo-selector').textContent).toContain('example-org/example-repo');
     expect(screen.queryByText('Select a repository')).toBeNull();
   });
 

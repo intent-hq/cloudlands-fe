@@ -609,7 +609,7 @@ describe('WorkspaceJsApiTool integration', () => {
   it('normalizes existing workspace-create request fields for proposal previews', () => {
     const fields = normalizeWorkspaceCreateFields({
       repositoryPath: '/repo/x',
-      githubUrl: 'https://github.com/augmentcode/intent',
+      githubUrl: 'https://github.com/example-org/example-repo',
       branch: 'feature/x',
       clonePath: '/tmp/intent',
       isNewRepo: true,
@@ -625,7 +625,7 @@ describe('WorkspaceJsApiTool integration', () => {
       initialPrompt: 'Build the feature',
       repoPath: '/repo/x',
       repoType: 'github',
-      githubUrl: 'https://github.com/augmentcode/intent',
+      githubUrl: 'https://github.com/example-org/example-repo',
       branch: 'feature/x',
       clonePath: '/tmp/intent',
       isNewRepo: true,
@@ -636,7 +636,7 @@ describe('WorkspaceJsApiTool integration', () => {
 
   it('normalizes Chief-style workspace-create params with GitHub repository shorthand', () => {
     const fields = normalizeWorkspaceCreateFields({
-      repository: 'augmentcode/intent',
+      repository: 'example-org/example-repo',
       initialMessage: 'Review PR #647',
       specialist: 'implementor',
     });
@@ -644,7 +644,7 @@ describe('WorkspaceJsApiTool integration', () => {
     expect(fields).toMatchObject({
       initialPrompt: 'Review PR #647',
       repoType: 'github',
-      githubUrl: 'https://github.com/augmentcode/intent',
+      githubUrl: 'https://github.com/example-org/example-repo',
       branch: 'main',
       isNewRepo: false,
       specialist: 'implementor',
@@ -653,8 +653,8 @@ describe('WorkspaceJsApiTool integration', () => {
 
   it('normalizes Chief-style workspace-create params with separate GitHub owner and repository name', () => {
     const fields = normalizeWorkspaceCreateFields({
-      repositoryOwner: 'augmentcode',
-      repositoryName: 'intent',
+      repositoryOwner: 'example-org',
+      repositoryName: 'example-repo',
       initialMessage: 'Review PR #648',
       specialist: 'pr-reviewer',
     });
@@ -662,7 +662,7 @@ describe('WorkspaceJsApiTool integration', () => {
     expect(fields).toMatchObject({
       initialPrompt: 'Review PR #648',
       repoType: 'github',
-      githubUrl: 'https://github.com/augmentcode/intent',
+      githubUrl: 'https://github.com/example-org/example-repo',
       branch: 'main',
       specialist: 'pr-reviewer',
     });
@@ -670,12 +670,12 @@ describe('WorkspaceJsApiTool integration', () => {
 
   it('normalizes Chief-style workspace-create params with GitHub PR URL context', () => {
     const fields = normalizeWorkspaceCreateFields({
-      prUrl: 'https://github.com/augmentcode/intent/pull/648',
+      prUrl: 'https://github.com/example-org/example-repo/pull/648',
     });
 
     expect(fields).toMatchObject({
       repoType: 'github',
-      githubUrl: 'https://github.com/augmentcode/intent',
+      githubUrl: 'https://github.com/example-org/example-repo',
       prNumber: 648,
       branch: 'main',
     });
@@ -685,29 +685,29 @@ describe('WorkspaceJsApiTool integration', () => {
     expect(
       normalizeWorkspaceCreateFields({
         githubUrl: 'https://github.com/explicit/repo',
-        repository: 'augmentcode/repository-shorthand',
-        repositoryOwner: 'augmentcode',
+        repository: 'example-org/repository-shorthand',
+        repositoryOwner: 'example-org',
         repositoryName: 'owner-name',
-        prUrl: 'https://github.com/augmentcode/pr-url/pull/648',
+        prUrl: 'https://github.com/example-org/pr-url/pull/648',
       }),
     ).toMatchObject({ githubUrl: 'https://github.com/explicit/repo', prNumber: 648 });
 
     expect(
       normalizeWorkspaceCreateFields({
-        repository: 'augmentcode/repository-shorthand',
-        repositoryOwner: 'augmentcode',
+        repository: 'example-org/repository-shorthand',
+        repositoryOwner: 'example-org',
         repositoryName: 'owner-name',
-        prUrl: 'https://github.com/augmentcode/pr-url/pull/648',
+        prUrl: 'https://github.com/example-org/pr-url/pull/648',
       }),
-    ).toMatchObject({ githubUrl: 'https://github.com/augmentcode/repository-shorthand' });
+    ).toMatchObject({ githubUrl: 'https://github.com/example-org/repository-shorthand' });
 
     expect(
       normalizeWorkspaceCreateFields({
-        repositoryOwner: 'augmentcode',
+        repositoryOwner: 'example-org',
         repositoryName: 'owner-name',
-        prUrl: 'https://github.com/augmentcode/pr-url/pull/648',
+        prUrl: 'https://github.com/example-org/pr-url/pull/648',
       }),
-    ).toMatchObject({ githubUrl: 'https://github.com/augmentcode/owner-name' });
+    ).toMatchObject({ githubUrl: 'https://github.com/example-org/owner-name' });
   });
 
   it('normalizes mixed workspace-create params with local repository fallback defaults', () => {
@@ -748,10 +748,10 @@ describe('WorkspaceJsApiTool integration', () => {
     // `https://github.com/owner/repo/pull/651` literally.
     expect(
       normalizeWorkspaceCreateFields({
-        githubUrl: 'https://github.com/augmentcode/intent/pull/651',
+        githubUrl: 'https://github.com/example-org/example-repo/pull/651',
       }),
     ).toMatchObject({
-      githubUrl: 'https://github.com/augmentcode/intent',
+      githubUrl: 'https://github.com/example-org/example-repo',
       prNumber: 651,
       repoType: 'github',
     });
@@ -764,12 +764,12 @@ describe('WorkspaceJsApiTool integration', () => {
     expect(
       normalizeWorkspaceCreateFields({
         repositoryPath: '/Users/me/repos/intent',
-        githubUrl: 'https://github.com/augmentcode/intent',
+        githubUrl: 'https://github.com/example-org/example-repo',
       }),
     ).toMatchObject({
       repoPath: '/Users/me/repos/intent',
       clonePath: '/Users/me/repos/intent',
-      githubUrl: 'https://github.com/augmentcode/intent',
+      githubUrl: 'https://github.com/example-org/example-repo',
     });
   });
 
@@ -787,7 +787,7 @@ describe('WorkspaceJsApiTool integration', () => {
         title: 'Review PR #651: Chief of Staff',
         repositoryPath: '/Users/me/repos/intent',
         branch: 'add-chief-of-staff-assistant',
-        githubUrl: 'https://github.com/augmentcode/intent/pull/651',
+        githubUrl: 'https://github.com/example-org/example-repo/pull/651',
         specialist: 'pr-reviewer',
         initialPrompt: 'Review PR #651 end-to-end.',
       }),
@@ -796,7 +796,7 @@ describe('WorkspaceJsApiTool integration', () => {
       repoPath: '/Users/me/repos/intent',
       clonePath: '/Users/me/repos/intent',
       repoType: 'github',
-      githubUrl: 'https://github.com/augmentcode/intent',
+      githubUrl: 'https://github.com/example-org/example-repo',
       prNumber: 651,
       branch: 'add-chief-of-staff-assistant',
       specialist: 'pr-reviewer',
@@ -809,7 +809,7 @@ describe('WorkspaceJsApiTool integration', () => {
       payload: {
         operation: 'workspace.create',
         params: {
-          repository: 'augmentcode/intent',
+          repository: 'example-org/example-repo',
           initialMessage: 'Create a workspace for Intent',
           specialist: 'implementor',
         },
@@ -829,7 +829,7 @@ describe('WorkspaceJsApiTool integration', () => {
     expect(hydrated.preview.workspaceCreate).toMatchObject({
       initialPrompt: 'Create a workspace for Intent',
       repoType: 'local',
-      githubUrl: 'https://github.com/augmentcode/intent',
+      githubUrl: 'https://github.com/example-org/example-repo',
       branch: 'main',
       specialist: 'reviewer',
     });
@@ -838,26 +838,26 @@ describe('WorkspaceJsApiTool integration', () => {
 
   describe('lookupKnownRepoLocalPath', () => {
     const repos = [
-      { path: '/Users/me/code/intent', owner: 'augmentcode', name: 'intent' },
-      { path: '/Users/me/.clones/foo', owner: 'augmentcode', name: 'cached' },
+      { path: '/Users/me/code/intent', owner: 'example-org', name: 'example-repo' },
+      { path: '/Users/me/.clones/foo', owner: 'example-org', name: 'cached' },
       { path: '/Users/me/code/other', owner: 'someone', name: 'other' },
     ];
 
     it('returns the local path for a github URL whose owner/name is in the registry', () => {
       expect(
-        lookupKnownRepoLocalPath('https://github.com/augmentcode/intent', () => repos),
+        lookupKnownRepoLocalPath('https://github.com/example-org/example-repo', () => repos),
       ).toBe('/Users/me/code/intent');
     });
 
     it('matches case-insensitively and ignores trailing .git', () => {
       expect(
-        lookupKnownRepoLocalPath('https://github.com/AugmentCode/Intent.git', () => repos),
+        lookupKnownRepoLocalPath('https://github.com/Example-Org/Example-Repo.git', () => repos),
       ).toBe('/Users/me/code/intent');
     });
 
     it('skips the legacy .clones cache directory', () => {
       expect(
-        lookupKnownRepoLocalPath('https://github.com/augmentcode/cached', () => repos),
+        lookupKnownRepoLocalPath('https://github.com/example-org/cached', () => repos),
       ).toBeUndefined();
     });
 
@@ -868,7 +868,7 @@ describe('WorkspaceJsApiTool integration', () => {
       expect(lookupKnownRepoLocalPath('not a url', () => repos)).toBeUndefined();
       expect(lookupKnownRepoLocalPath(undefined, () => repos)).toBeUndefined();
       expect(
-        lookupKnownRepoLocalPath('https://github.com/augmentcode/intent', () => {
+        lookupKnownRepoLocalPath('https://github.com/example-org/example-repo', () => {
           throw new Error('registry not ready');
         }),
       ).toBeUndefined();
@@ -877,13 +877,13 @@ describe('WorkspaceJsApiTool integration', () => {
     it('falls back to a name-only match when the entry has no owner populated', () => {
       // Realistic case: many registry entries were added from local-path-only
       // workspace creates, so `owner` is undefined on disk even though the
-      // local clone really is `augmentcode/intent`.
+      // local clone really is `example-org/example-repo`.
       const ownerlessRepos = [
-        { path: '/Users/me/code/intent', name: 'intent' },
+        { path: '/Users/me/code/intent', name: 'example-repo' },
         { path: '/Users/me/code/other', name: 'other' },
       ];
       expect(
-        lookupKnownRepoLocalPath('https://github.com/augmentcode/intent', () => ownerlessRepos),
+        lookupKnownRepoLocalPath('https://github.com/example-org/example-repo', () => ownerlessRepos),
       ).toBe('/Users/me/code/intent');
     });
 
@@ -891,21 +891,21 @@ describe('WorkspaceJsApiTool integration', () => {
       // Ambiguous: two ownerless clones both named `intent` could belong to
       // different orgs, so we must not guess.
       const ambiguousRepos = [
-        { path: '/Users/me/code/intent', name: 'intent' },
-        { path: '/Users/me/forks/intent', name: 'intent' },
+        { path: '/Users/me/code/intent', name: 'example-repo' },
+        { path: '/Users/me/forks/intent', name: 'example-repo' },
       ];
       expect(
-        lookupKnownRepoLocalPath('https://github.com/augmentcode/intent', () => ambiguousRepos),
+        lookupKnownRepoLocalPath('https://github.com/example-org/example-repo', () => ambiguousRepos),
       ).toBeUndefined();
     });
 
     it('prefers a strict owner+name match over a name-only fallback', () => {
       const mixedRepos = [
-        { path: '/Users/me/forks/intent', name: 'intent' },
-        { path: '/Users/me/code/intent', owner: 'augmentcode', name: 'intent' },
+        { path: '/Users/me/forks/intent', name: 'example-repo' },
+        { path: '/Users/me/code/intent', owner: 'example-org', name: 'example-repo' },
       ];
       expect(
-        lookupKnownRepoLocalPath('https://github.com/augmentcode/intent', () => mixedRepos),
+        lookupKnownRepoLocalPath('https://github.com/example-org/example-repo', () => mixedRepos),
       ).toBe('/Users/me/code/intent');
     });
 
@@ -913,11 +913,11 @@ describe('WorkspaceJsApiTool integration', () => {
       // The unowned `intent` entry is the only ownerless name-match, so the
       // unrelated `someone/other` entry should not block it.
       const repos = [
-        { path: '/Users/me/code/intent', name: 'intent' },
+        { path: '/Users/me/code/intent', name: 'example-repo' },
         { path: '/Users/me/code/other', owner: 'someone', name: 'other' },
       ];
       expect(
-        lookupKnownRepoLocalPath('https://github.com/augmentcode/intent', () => repos),
+        lookupKnownRepoLocalPath('https://github.com/example-org/example-repo', () => repos),
       ).toBe('/Users/me/code/intent');
     });
 
@@ -926,21 +926,21 @@ describe('WorkspaceJsApiTool integration', () => {
       // end up with `name: 'Unknown'` in the registry, but the basename of the
       // path still reliably identifies the repo.
       const repos = [
-        { path: '/Users/me/code/intent', name: 'Unknown' },
+        { path: '/Users/me/code/example-repo', name: 'Unknown' },
         { path: '/Users/me/code/elsewhere', name: 'Unknown' },
       ];
       expect(
-        lookupKnownRepoLocalPath('https://github.com/augmentcode/intent', () => repos),
-      ).toBe('/Users/me/code/intent');
+        lookupKnownRepoLocalPath('https://github.com/example-org/example-repo', () => repos),
+      ).toBe('/Users/me/code/example-repo');
     });
 
     it('does not basename-fallback when multiple ownerless paths share the same basename', () => {
       const repos = [
-        { path: '/Users/me/code/intent', name: 'Unknown' },
-        { path: '/Users/me/forks/intent', name: 'Unknown' },
+        { path: '/Users/me/code/example-repo', name: 'Unknown' },
+        { path: '/Users/me/forks/example-repo', name: 'Unknown' },
       ];
       expect(
-        lookupKnownRepoLocalPath('https://github.com/augmentcode/intent', () => repos),
+        lookupKnownRepoLocalPath('https://github.com/example-org/example-repo', () => repos),
       ).toBeUndefined();
     });
 
@@ -948,11 +948,11 @@ describe('WorkspaceJsApiTool integration', () => {
       // Both kinds of fallback can hit at once; the name field is the more
       // explicit signal so it wins when present.
       const repos = [
-        { path: '/Users/me/explicit-name/dir', name: 'intent' },
-        { path: '/Users/me/code/intent', name: 'Unknown' },
+        { path: '/Users/me/explicit-name/dir', name: 'example-repo' },
+        { path: '/Users/me/code/example-repo', name: 'Unknown' },
       ];
       expect(
-        lookupKnownRepoLocalPath('https://github.com/augmentcode/intent', () => repos),
+        lookupKnownRepoLocalPath('https://github.com/example-org/example-repo', () => repos),
       ).toBe('/Users/me/explicit-name/dir');
     });
   });
@@ -962,17 +962,17 @@ describe('WorkspaceJsApiTool integration', () => {
       kind: 'workspace-create',
       payload: {
         operation: 'workspace.create',
-        params: { repository: 'augmentcode/intent' },
+        params: { repository: 'example-org/example-repo' },
       },
       preview: { title: 'Create Intent workspace' },
     };
 
     const result = await buildWsAppProposalApi(undefined, () => [
-      { path: '/Users/me/code/intent', owner: 'augmentcode', name: 'intent' },
+      { path: '/Users/me/code/intent', owner: 'example-org', name: 'example-repo' },
     ]).show(proposal);
 
     expect(result.proposal.preview.workspaceCreate).toMatchObject({
-      githubUrl: 'https://github.com/augmentcode/intent',
+      githubUrl: 'https://github.com/example-org/example-repo',
       repoPath: '/Users/me/code/intent',
       clonePath: '/Users/me/code/intent',
       repoType: 'github',
@@ -985,7 +985,7 @@ describe('WorkspaceJsApiTool integration', () => {
       payload: {
         operation: 'workspace.create',
         params: {
-          repository: 'augmentcode/intent',
+          repository: 'example-org/example-repo',
           repositoryPath: '/explicit/path',
         },
       },
@@ -993,7 +993,7 @@ describe('WorkspaceJsApiTool integration', () => {
     };
 
     const result = await buildWsAppProposalApi(undefined, () => [
-      { path: '/Users/me/code/intent', owner: 'augmentcode', name: 'intent' },
+      { path: '/Users/me/code/intent', owner: 'example-org', name: 'example-repo' },
     ]).show(proposal);
 
     // Caller-provided repoPath wins over the registry match. clonePath
@@ -1042,9 +1042,9 @@ describe('WorkspaceJsApiTool integration', () => {
       payload: {
         operation: 'workspace.create',
         params: {
-          prUrl: 'https://github.com/augmentcode/intent/pull/652',
-          repositoryOwner: 'augmentcode',
-          repositoryName: 'intent',
+          prUrl: 'https://github.com/example-org/example-repo/pull/652',
+          repositoryOwner: 'example-org',
+          repositoryName: 'example-repo',
           specialist: 'pr-reviewer',
           initialMessage: 'Review PR #652',
         },
@@ -1055,7 +1055,7 @@ describe('WorkspaceJsApiTool integration', () => {
           initialPrompt: 'Review PR #652',
           repoPath: undefined,
           clonePath: undefined,
-          githubUrl: 'https://github.com/augmentcode/intent',
+          githubUrl: 'https://github.com/example-org/example-repo',
           repoType: 'github',
           prNumber: 652,
           branch: 'main',
@@ -1066,13 +1066,13 @@ describe('WorkspaceJsApiTool integration', () => {
     };
 
     const result = await buildWsAppProposalApi(undefined, () => [
-      { path: '/Users/me/code/intent', owner: 'augmentcode', name: 'intent' },
+      { path: '/Users/me/code/intent', owner: 'example-org', name: 'example-repo' },
     ]).show(proposal);
 
     expect(result.proposal.preview.workspaceCreate).toMatchObject({
       repoPath: '/Users/me/code/intent',
       clonePath: '/Users/me/code/intent',
-      githubUrl: 'https://github.com/augmentcode/intent',
+      githubUrl: 'https://github.com/example-org/example-repo',
       prNumber: 652,
       repoType: 'github',
       specialist: 'pr-reviewer',

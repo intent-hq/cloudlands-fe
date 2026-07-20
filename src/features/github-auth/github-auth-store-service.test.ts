@@ -36,7 +36,7 @@ describe("githubAuthStoreService (fake seam, real store)", () => {
   it("initialize fetches auth state via the seam and hydrates the store", async () => {
     api.getAuthState.mockResolvedValueOnce({
       isAuthenticated: true,
-      requiresAugmentAuth: false,
+      requiresDaemonAuth: false,
       user: { login: "octocat", name: null, email: null, avatar_url: "" },
       needsScopeUpdate: false,
       oauthUrl: null,

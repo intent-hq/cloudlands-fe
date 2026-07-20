@@ -18,7 +18,7 @@
  * Dependency-light per src/store/renderer AGENTS.md: imports only IPC client,
  * slice actions, and safe logger — no selectors, no module-scope state reads.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { invoke } from "$shared/generated/ipc-client";
 import { WORKSPACE_CHANNELS, SETTINGS_CHANNELS } from "$shared/ipc/channels";
 import type { StoreState } from "../types";

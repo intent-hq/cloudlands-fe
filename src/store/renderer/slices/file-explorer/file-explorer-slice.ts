@@ -5,9 +5,9 @@ import {
   getItem,
   getItems,
   type Collection,
-} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
-import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
+} from "$lib/store-shim/utils/collections/collection-utils";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import type {
   FileExplorerWorkspaceState,
@@ -15,7 +15,7 @@ import type {
   FileExplorerTreeNode,
 } from "./file-explorer-types";
 import { sortNodesRecursive } from "./file-explorer-utils";
-import type { StoreAction } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreAction } from "$lib/store-shim/types";
 
 export type { FileExplorerWorkspaceState, FileExplorerState };
 

@@ -19,7 +19,7 @@
  * creator + payload type, and the logger. No new IPC, no selectors, no new
  * slice/state.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import type { AgentMessage, AgentSession } from "$shared/types";
 import { store as appStore } from "$store/renderer/store";
 import {

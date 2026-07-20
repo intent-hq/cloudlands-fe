@@ -60,7 +60,7 @@ acp-official/
   "params": {
     "protocolVersion": 1,
     "clientInfo": {
-      "name": "Intent by Augment",
+      "name": "Intent",
       "version": "1.0.0"
     }
   },
@@ -73,7 +73,7 @@ acp-official/
   "result": {
     "protocolVersion": 1,
     "agentInfo": {
-      "name": "Augment Agent",
+      "name": "Intent Agent",
       "version": "1.0.0"
     },
     "capabilities": {

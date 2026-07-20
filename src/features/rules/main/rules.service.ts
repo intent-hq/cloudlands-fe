@@ -70,6 +70,8 @@ export class RulesService {
 
       // Common rule file names to look for
       const ruleFiles = [
+        '.intent/rules.md',
+        '.intent/guidelines.md',
         '.augment/rules.md',
         '.augment/guidelines.md',
         'CONTRIBUTING.md',
@@ -97,6 +99,8 @@ export class RulesService {
             category = 'Contributing';
           } else if (ruleFile.includes('CODE_OF_CONDUCT')) {
             category = 'Code of Conduct';
+          } else if (ruleFile.includes('.intent')) {
+            category = 'Intent Rules';
           } else if (ruleFile.includes('.augment')) {
             category = 'Augment Rules';
           } else if (ruleFile.includes('guidelines')) {
@@ -108,7 +112,7 @@ export class RulesService {
             title,
             content,
             category,
-            priority: ruleFile.includes('.augment') ? 'high' : 'medium',
+            priority: ruleFile.includes('.intent') || ruleFile.includes('.augment') ? 'high' : 'medium',
             workspaceId: projectPath,
             filePath,
             createdAt: new Date(),
@@ -123,9 +127,9 @@ export class RulesService {
         }
       }
 
-      // Also check for .augment/config.json for additional rules
+      // Also check for .intent/config.json for additional rules
       try {
-        const configPath = path.join(projectPath, '.augment', 'config.json');
+        const configPath = path.join(projectPath, '.intent', 'config.json');
         const configContent = await fs.readFile(configPath, 'utf-8');
         const config = JSON.parse(configContent);
 
@@ -147,7 +151,7 @@ export class RulesService {
           }
         }
       } catch  {
-        logger.debug('No .augment/config.json found');
+        logger.debug('No .intent/config.json found');
       }
 
       return {

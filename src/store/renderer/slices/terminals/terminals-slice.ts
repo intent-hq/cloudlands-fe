@@ -1,5 +1,5 @@
-import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
 import {
   createCollection,
   addItem,
@@ -8,7 +8,7 @@ import {
   getItem,
   getItemIndex,
   type Collection,
-} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+} from "$lib/store-shim/utils/collections/collection-utils";
 
 // ============================================================================
 // Constants

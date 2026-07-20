@@ -273,16 +273,16 @@ export class ExternalSourceProvider implements Provider {
 // Rule Provider
 export class RuleProvider implements Provider {
   id = 'rule';
-  triggers = ['@rule', '@augment'];
+  triggers = ['@rule', '@intent'];
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async search(query: string, context: SearchContext): Promise<MentionCandidate[]> {
     const rules = [
-      { path: '.augment/rules/cli.md', label: 'CLI Rules' },
-      { path: '.augment/rules/frontend.md', label: 'Frontend Rules' },
-      { path: '.augment/rules/python.md', label: 'Python Rules' },
-      { path: '.augment/rules/sidecar.md', label: 'Sidecar Rules' },
-      { path: '.augment/rules/systems.md', label: 'Systems Rules' },
+      { path: '.intent/rules/cli.md', label: 'CLI Rules' },
+      { path: '.intent/rules/frontend.md', label: 'Frontend Rules' },
+      { path: '.intent/rules/python.md', label: 'Python Rules' },
+      { path: '.intent/rules/sidecar.md', label: 'Sidecar Rules' },
+      { path: '.intent/rules/systems.md', label: 'Systems Rules' },
     ];
 
     return rules

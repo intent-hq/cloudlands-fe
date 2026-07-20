@@ -9,7 +9,7 @@ import ignore from "ignore";
 import {
   getItem,
   type Collection,
-} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+} from "$lib/store-shim/utils/collections/collection-utils";
 
 // ---------------------------------------------------------------------------
 // Constants

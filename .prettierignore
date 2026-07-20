@@ -11,8 +11,6 @@ build/
 # Test outputs
 test-reports/
 logs/
-parallel-runner/logs/
-parallel-runner/report/
 
 # Generated files
 *.min.js
@@ -23,9 +21,6 @@ docs-archive-*/
 
 # CDP MCP Server dist
 cdp-mcp-server/dist/
-
-# Parallel runner dependencies
-parallel-runner/node_modules/
 
 # Other
 *.log

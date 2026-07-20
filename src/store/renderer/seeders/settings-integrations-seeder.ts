@@ -137,7 +137,7 @@ registerMockSeeder("settings-integrations", async ({ store, client }) => {
   store.dispatch(
     setGitHubAuthState({
       isAuthenticated: githubUser !== null,
-      requiresAugmentAuth: false,
+      requiresDaemonAuth: false,
       user: githubUser,
       needsScopeUpdate: false,
       oauthUrl: null,

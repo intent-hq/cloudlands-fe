@@ -4,14 +4,12 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
-import { sentryVitePlugin } from '@sentry/vite-plugin';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Read version from package.json for Sentry release
+// Read version from package.json for __APP_VERSION__
 const packageJson = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8'));
-const sentryRelease = `intent@${packageJson.version}`;
 
 // Node modules that should be excluded from browser bundle
 // These are dependencies of electron-store that use Node.js APIs
@@ -220,23 +218,6 @@ const excludeNodeModules = () => ({
   },
 });
 
-// Build Sentry plugin for source map uploads (production builds only)
-const sentryPlugin = process.env.SENTRY_AUTH_TOKEN
-  ? sentryVitePlugin({
-    org: 'sutterhill',
-    project: 'augment-intent',
-    authToken: process.env.SENTRY_AUTH_TOKEN,
-    release: {
-      name: sentryRelease,
-    },
-    sourcemaps: {
-      // Upload all source maps from the build output
-      filesToDeleteAfterUpload: ['./dist/**/*.map'],
-    },
-    debug: true,
-  })
-  : null;
-
 export default defineConfig({
   // Plugin order:
   // 1. devHealthProbeSilencer() - dev-only: absorbs /health probes from the MCP bridge scanner before SvelteKit sees them
@@ -244,14 +225,12 @@ export default defineConfig({
   // 3. sveltekit() - SvelteKit's virtual modules and SSR handling
   // 4. handleUnhandledSvelteKitModules() - catches any __sveltekit/* modules not handled by SvelteKit
   // 5. excludeNodeModules() - excludes Node.js-only code from browser bundle
-  // 6. sentryPlugin - uploads source maps to Sentry (production only, when SENTRY_AUTH_TOKEN is set)
   plugins: [
     devHealthProbeSilencer(),
     preventSvelteKitRegenHMR(),
     sveltekit(),
     handleUnhandledSvelteKitModules(),
     excludeNodeModules(),
-    sentryPlugin,
   ].filter(Boolean),
 
   // Electron-specific configuration
@@ -265,7 +244,7 @@ export default defineConfig({
   },
 
   build: {
-    // Generate sourcemaps: 'hidden' in production (for Sentry upload, not exposed publicly),
+    // Generate sourcemaps: 'hidden' in production (not exposed publicly),
     // true in development for debugging
     sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden',
     rollupOptions: {
@@ -373,34 +352,6 @@ export default defineConfig({
 
   resolve: {
     alias: [
-      // App-local redux/saga-free shim for the in-use ag-redux-toolkit subpaths.
-      // Anchored ($) so non-aliased subpaths (saga, streaming-store, etc.) still
-      // resolve to the real installed package.
-      {
-        find: /^(@augmentcode\/)?ag-redux-toolkit\/types$/,
-        replacement: join(__dirname, './src/lib/store-shim/types.ts'),
-      },
-      {
-        find: /^(@augmentcode\/)?ag-redux-toolkit\/svelte-store$/,
-        replacement: join(__dirname, './src/lib/store-shim/svelte-store.ts'),
-      },
-      {
-        find: /^(@augmentcode\/)?ag-redux-toolkit\/utils\/store\/create-action$/,
-        replacement: join(__dirname, './src/lib/store-shim/utils/store/create-action.ts'),
-      },
-      {
-        find: /^(@augmentcode\/)?ag-redux-toolkit\/utils\/store\/create-reducer$/,
-        replacement: join(__dirname, './src/lib/store-shim/utils/store/create-reducer.ts'),
-      },
-      {
-        find: /^(@augmentcode\/)?ag-redux-toolkit\/utils\/store\/boolean-preference$/,
-        replacement: join(__dirname, './src/lib/store-shim/utils/store/boolean-preference.ts'),
-      },
-      {
-        find: /^(@augmentcode\/)?ag-redux-toolkit\/utils\/collections\/collection-utils$/,
-        replacement: join(__dirname, './src/lib/store-shim/utils/collections/collection-utils.ts'),
-      },
-
       // Path aliases for cleaner imports
       { find: '$lib', replacement: join(__dirname, './src/lib') },
       { find: '$store', replacement: join(__dirname, './src/store') },
@@ -474,7 +425,7 @@ export default defineConfig({
       // Diff viewer
       '@pierre/diffs',
       // D3 visualization
-      'd3', 'd3-delaunay',
+      'd3',
       // Mermaid diagram rendering (dynamically imported, must be pre-bundled to avoid reload)
       'mermaid',
       // FontAwesome icons

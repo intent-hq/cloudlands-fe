@@ -1,17 +1,13 @@
 # State Management Guide
 
 > **Architecture update — Redux and the saga runtime have been removed.**
-> The `redux`, `redux-saga`, `typed-redux-saga`, and `@augmentcode/ag-redux-toolkit`
-> packages are no longer dependencies. The in-use toolkit subpaths
-> (`.../svelte-store`, `.../types`, `.../utils/store/create-action`,
-> `.../utils/store/create-reducer`, `.../utils/store/boolean-preference`,
-> `.../utils/collections/collection-utils`) now resolve to a local, redux/saga-free
-> shim at `src/lib/store-shim/`. The shim is wired through aliases in
-> `tsconfig.json`, `tsconfig.main.json`, `tsconfig.preload.json`, `vite.config.mjs`,
-> and `vitest.config.ts`; the main/preload bundles additionally rewrite the
-> specifiers to the emitted shim in `scripts/fix-esm-imports.ts`. Slice/selector
-> source keeps importing the `@augmentcode/ag-redux-toolkit/...` specifiers
-> unchanged — only resolution changed.
+> The `redux`, `redux-saga`, and `typed-redux-saga` packages are no longer
+> dependencies. The in-use store surface (`svelte-store`, `types`,
+> `utils/store/create-action`, `utils/store/create-reducer`,
+> `utils/store/boolean-preference`, `utils/collections/collection-utils`)
+> lives in a local, redux/saga-free shim at `src/lib/store-shim/`, imported
+> directly via `$lib/store-shim/...`; the main/preload bundles rewrite the
+> `$lib/...` specifiers to relative paths in `scripts/fix-esm-imports.ts`.
 >
 > The app is now mock-driven via the `AppClient` (`src/lib/client/`). The saga
 > runtime no longer exists: `startAllAppSagas`, `startAllMainSagas`, and
@@ -21,31 +17,24 @@
 > below to saga registries, `store.runSaga`, and the real npm package describe the
 > historical architecture and are retained only for context.
 
-This is the project entrypoint for state-management orientation. Active Redux
-architecture rules live in the agent skills, not in this companion doc:
+This is the project entrypoint for state-management orientation. The store API
+surface is the local shim at `src/lib/store-shim/`; app-specific companion
+notes live under `src/store/renderer/docs/`.
 
-- [`ag-redux-toolkit`](../.agents/skills/ag-redux-toolkit/SKILL.md) — root routing index and always-on Redux policy.
-- [`core-policy`](../.agents/skills/ag-redux-toolkit/core/core-policy/SKILL.md) — shared-state ownership, serializability, canonical state, Svelte-store deprecation, and utility reuse rules.
-- [`import-boundaries`](../.agents/skills/ag-redux-toolkit/core/import-boundaries/SKILL.md) — component/service/saga import boundaries and current public package subpaths.
-- [`component-integration`](../.agents/skills/ag-redux-toolkit/svelte/component-integration/SKILL.md) — configured `Store` setup, Store-first dispatch/state reads, selector call modes, and `store.runSaga(sagaFn)` startup.
-- [`streaming/store`](../.agents/skills/ag-redux-toolkit/streaming/store/SKILL.md) — main-process `StreamingStore` import, initialization, and lifecycle guidance.
-- [`streaming/selectors`](../.agents/skills/ag-redux-toolkit/streaming/selectors/SKILL.md) — main-process selector guidance for configured `store.createSelector(...)` selectors.
-- [`svelte/migration`](../.agents/skills/ag-redux-toolkit/svelte/migration/SKILL.md) — migration playbook for remaining Svelte stores.
-
-If this doc conflicts with the skills, follow the skills and report the drift.
+If this doc conflicts with the shim implementation, follow the shim and report
+the drift.
 
 ## Repository orientation
 
 Renderer shared/domain state lives under `src/store/renderer/` and uses the
-configured `Store` from `ag-redux-toolkit/svelte-store`. Svelte store modules
+configured `Store` from `$lib/store-shim/svelte-store`. Svelte store modules
 (`*.store.svelte.ts`) are deprecated migration targets; do not create new ones or
 expand existing ones.
 
-Electron main-process shared/domain state lives under `src/store/main/` and uses
-the configured `StreamingStore` from `ag-redux-toolkit/streaming-store`. Main
-selectors should be created directly from that configured store with
-`store.createSelector(...)`; do not add an app-local cached selector wrapper or
-import streaming selector internals directly.
+Electron main-process shared/domain state lives under `src/store/main/` and
+previously used a configured `StreamingStore` (since removed). The remaining
+modules there are neutralized no-op shims kept for type compatibility; do not
+add new main-process store state.
 
 The current app-specific map is:
 
@@ -59,15 +48,10 @@ The current app-specific map is:
   sagas.
 - `src/store/renderer/utils/` — app-local helpers that are not package-owned exports,
   such as workspace scoping, IPC channels, and safe localStorage saga helpers.
-- `src/store/main/configured-store.ts` — configured main-process `StreamingStore`,
-  reducer registration, and main middleware wiring.
-- `src/store/main/sagas.ts` — main-process saga registry plus
-  `startAllMainSagas(store)`, which starts each saga with `store.runSaga(sagaFn)`.
-- `src/store/main/slices/**` — main-process slice state, actions, selectors, and
-  sagas. Selector modules import `src/store/main/configured-store.ts` and call
-  `store.createSelector(...)` directly.
-- `src/store/main/redux-store-bridge.ts` — main-process-only bridge for services
-  that need the initialized configured `StreamingStore`.
+- `src/store/main/slices/**` — historical main-process slice state, actions, and
+  selectors (the main-process store itself has been removed).
+- `src/store/main/redux-store-bridge.ts` — neutralized no-op bridge retained so
+  main-process services continue to type-check.
 
 ## Local rules worth remembering
 

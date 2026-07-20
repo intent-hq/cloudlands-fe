@@ -50,7 +50,6 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
   faTrash,
 } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
-  import { track } from '$lib/services/analytics';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('NoteTabType');
@@ -173,29 +172,12 @@ import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-s
     }
     const noteIdToDelete = tab.noteId;
 
-    // Get note info for tracking before deletion
-    const noteToDelete = selectNoteById.select(
-      appStore.state,
-      workspaceId,
-      noteIdToDelete,
-    );
-    const noteType = noteToDelete?.metadata?.task ? 'task' : 'regular';
-    let noteAgeDays: number | undefined;
-    if (noteToDelete?.createdAt) {
-      const createdDate = new Date(noteToDelete.createdAt);
-      const now = new Date();
-      noteAgeDays = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
-    }
-
     const savedNote = $note ? { ...$note } : null;
     const noteTitle = $note?.title || 'Note';
     isNoteDeleting = true;
     try {
       appStore.dispatch(closeTab(workspaceId, tab.id));
       void deleteNote(workspaceId, noteIdToDelete);
-
-      // Track deletion (optimistic — deleteNote handles IPC + errors/rollback)
-      track('Deleted Note', { note_type: noteType, note_age_days: noteAgeDays });
 
       // Show undo toast
       const { toast } = await import('svelte-sonner');

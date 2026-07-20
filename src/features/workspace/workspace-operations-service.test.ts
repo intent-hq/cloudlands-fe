@@ -43,7 +43,7 @@ import { invoke } from "$lib/electron-bridge";
 import { WORKSPACE_CHANNELS } from "$shared/ipc/channels";
 import type { KnownRepo } from "$shared/types/known-repo";
 import { store as appStore } from "$store/renderer/store";
-import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem } from "$lib/store-shim/utils/collections/collection-utils";
 import {
   resetWorkspaceState,
   setWorkspaceEntity,

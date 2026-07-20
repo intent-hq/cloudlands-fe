@@ -77,7 +77,6 @@
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { hydrateWorkspaceNavigation } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import { track } from '$lib/services/analytics';
   import { createLogger } from '$lib/utils/client-logger';
   import { cn } from '$lib/utils';
 
@@ -387,14 +386,12 @@
   function handleOnboardingFocus() {
     if (!hasFiredOnboardingClick) {
       hasFiredOnboardingClick = true;
-      track('Clicked Workspace Prompt', {});
     }
   }
 
   function handleOnboardingKeydown() {
     if (!hasFiredOnboardingType) {
       hasFiredOnboardingType = true;
-      track('Typed Workspace Prompt', {});
     }
     // Suggestion navigation is handled via capture-phase listener (handleSuggestionKeydownCapture)
     // so it fires before ProseMirror can insert a newline on Enter.
@@ -568,7 +565,6 @@
   async function handleOnboardingEnhancePrompt() {
     if (!onboardingInputValue.trim() || isOnboardingEnhancing) return;
     isOnboardingEnhancing = true;
-    track('Used Prompt Enhance', { prompt_length: onboardingInputValue.trim().length });
     try {
       // Daemon-side enhancement (agent.enhancePrompt, PROTOCOL §5.31)
       const result = await enhancePrompt(onboardingInputValue);

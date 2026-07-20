@@ -46,8 +46,8 @@
  * evaluate `store.createSelector` while the store module is still mid-init
  * through the middleware chain).
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import type { StoreMiddleware } from "$lib/store-shim/types";
+import { getItems } from "$lib/store-shim/utils/collections/collection-utils";
 import { githubAuthClient } from "$features/github-auth/renderer/github-auth.client";
 import type { GithubRepo } from "$features/github-auth/types";
 import { externalEditorsClient } from "$features/external-editors/external-editors.client";

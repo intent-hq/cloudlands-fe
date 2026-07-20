@@ -32,13 +32,13 @@ export const linearAuthClient = {
     } catch {
       return {
         isAuthenticated: false,
-        requiresAugmentAuth: true,
+        requiresDaemonAuth: true,
       };
     }
   },
 
   /**
-   * Get Linear status from Augment API
+   * Get Linear status from daemon API
    */
   async getStatus(): Promise<LinearAuthStatus> {
     try {

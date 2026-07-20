@@ -256,7 +256,7 @@ export function createTempRepo(): { repoPath: string; cleanup: () => void } {
  * Clone a remote repository into a temp directory and check out a fresh branch.
  *
  * Used for e2e tests that need to push commits and open PRs against a real
- * remote (e.g. `augmentcode/intent-e2e-test`).
+ * remote (e.g. `example-org/example-repo`).
  *
  * Requires `INTENT_SMOKE_TEST` env var for authentication.  The branch name includes
  * a timestamp and random suffix to avoid collisions between concurrent runs.
@@ -267,7 +267,7 @@ export function createTempRepo(): { repoPath: string; cleanup: () => void } {
  *   - Removes the local directory
  */
 export function createTempRepoFromRemote(options?: {
-  /** GitHub repo in "owner/repo" format. Default: augmentcode/intent-e2e-test */
+  /** GitHub repo in "owner/repo" format. Default: example-org/example-repo */
   repo?: string;
   /** PAT token for auth. Default: process.env.INTENT_SMOKE_TEST */
   token?: string;
@@ -276,7 +276,7 @@ export function createTempRepoFromRemote(options?: {
   branchName: string;
   cleanup: () => void;
 } {
-  const repo = options?.repo ?? 'augmentcode/intent-e2e-test';
+  const repo = options?.repo ?? 'example-org/example-repo';
   const token = options?.token ?? process.env.INTENT_SMOKE_TEST;
   if (!token) {
     throw new Error('INTENT_SMOKE_TEST env var is required for createTempRepoFromRemote');

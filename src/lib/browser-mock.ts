@@ -126,14 +126,6 @@ function mockInvoke(channel: string, data?: any): any {
     return { success: true, data: {} };
   }
 
-  // Sentry
-  if (channel === 'sentry:get-config') {
-    return null;
-  }
-  if (channel === 'analytics:get-config') {
-    return { success: true, data: {} };
-  }
-
   // Auto-update
   if (channel === 'auto-update:get-state') {
     return { success: true, data: { channel: 'stable', status: 'idle' } };
@@ -185,11 +177,6 @@ function mockInvoke(channel: string, data?: any): any {
 
   // Log channels
   if (channel.startsWith('log:')) {
-    return { success: true, data: null };
-  }
-
-  // Banner
-  if (channel === 'banner:fetch') {
     return { success: true, data: null };
   }
 
@@ -280,10 +267,6 @@ const browserElectronAPI = {
 
    
   getPathForFile: (_file: File): string => '',
-
-  getSentryConfig: () => null,
-
-  fetchSentryConfig: async () => null,
 
   platform: 'darwin' as string,
   arch: 'arm64' as string,

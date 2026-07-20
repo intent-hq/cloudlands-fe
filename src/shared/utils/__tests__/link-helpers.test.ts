@@ -18,9 +18,9 @@ describe('link-helpers', () => {
   });
 
   it('detects github hosts and subdomains', () => {
-    expect(isGitHubUrl('https://github.com/augmentcode/intent')).toBe(true);
-    expect(isGitHubUrl('https://api.github.com/repos/augmentcode/intent')).toBe(true);
-    expect(isGitHubUrl('https://gitlab.com/augmentcode/intent')).toBe(false);
+    expect(isGitHubUrl('https://github.com/example-org/example-repo')).toBe(true);
+    expect(isGitHubUrl('https://api.github.com/repos/example-org/example-repo')).toBe(true);
+    expect(isGitHubUrl('https://gitlab.com/example-org/example-repo')).toBe(false);
   });
 
   it('uses metaKey on mac platforms', () => {

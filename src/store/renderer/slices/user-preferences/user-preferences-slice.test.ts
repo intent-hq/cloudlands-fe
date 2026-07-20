@@ -7,12 +7,9 @@ import {
   cycleFontStyle,
   cycleNoteFontStyle,
   deleteActivityLogPreset,
-  dismissPromoBanner,
   hydrateActivityLogPresets,
-  hydratePromoBannerInteractions,
   initialState,
   loadBetaUpdatesSettings,
-  recordPromoBannerInteraction,
   resetNotificationSettings,
   saveActivityLogPreset,
   setAgentFontStyle,
@@ -54,8 +51,6 @@ import {
   selectNoteFontStyleLabel,
   selectNotificationEnabled,
   selectNotificationVolume,
-  selectPromoBannerInteractionRecord,
-  selectPromoBannerInteractions,
   selectShowArchived,
   selectSoundEnabled,
   selectSoundOnlyWhenUnfocused,
@@ -317,35 +312,6 @@ describe("userPreferencesReducer", () => {
       expect(deleted.activityLogPresets.map((item) => item.name)).toEqual(["All"]);
     });
 
-    it("hydrates, records, and dismisses promotional banner interactions", () => {
-      const hydrated = userPreferencesReducer(
-        initialState,
-        hydratePromoBannerInteractions({ bannerA: { dismissed: false, interactions: [] } })
-      );
-      const recorded = userPreferencesReducer(
-        hydrated,
-        recordPromoBannerInteraction("bannerA", {
-          type: "button_click",
-          buttonText: "Install",
-          actionType: "setDefaultAgent",
-          result: "success",
-          timestamp: "2026-04-29T00:00:00.000Z",
-        })
-      );
-      const dismissed = userPreferencesReducer(
-        recorded,
-        dismissPromoBanner("bannerA", "2026-04-29T00:01:00.000Z", true)
-      );
-
-      expect(recorded.promoBannerInteractions.bannerA.interactions).toHaveLength(1);
-      expect(dismissed.promoBannerInteractions.bannerA).toMatchObject({
-        dismissed: true,
-        dismissedAt: "2026-04-29T00:01:00.000Z",
-        completedAllSteps: true,
-      });
-      const interactions = dismissed.promoBannerInteractions.bannerA.interactions;
-      expect(interactions[interactions.length - 1]?.type).toBe("dismiss");
-    });
   });
 
   describe("selectors", () => {
@@ -409,20 +375,12 @@ describe("userPreferencesReducer", () => {
         userPreferences: {
           ...initialState,
           activityLogPresets: [{ name: "Errors", filters: {} }],
-          promoBannerInteractions: { bannerA: { dismissed: true, interactions: [] } },
         },
       } as any;
 
       expect(selectActivityLogPresets.select(preferenceState)).toEqual([
         { name: "Errors", filters: {} },
       ]);
-      expect(selectPromoBannerInteractions.select(preferenceState)).toEqual({
-        bannerA: { dismissed: true, interactions: [] },
-      });
-      expect(selectPromoBannerInteractionRecord.select(preferenceState, "bannerA")).toEqual({
-        dismissed: true,
-        interactions: [],
-      });
     });
 
   });

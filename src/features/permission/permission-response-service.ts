@@ -28,8 +28,8 @@
  * AppClient seam, the configured store, permission-slice actions, the
  * collection helper for the request lookup, and the logger.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import { getItem } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import type { StoreMiddleware } from "$lib/store-shim/types";
+import { getItem } from "$lib/store-shim/utils/collections/collection-utils";
 import { appClient, type PermissionOutcome } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { createLogger } from "$lib/utils/client-logger";

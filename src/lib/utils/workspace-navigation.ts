@@ -23,7 +23,6 @@ import { Logger } from '$shared/logger';
 import { get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { page } from '$app/stores';
-import { track } from '$lib/services/analytics';
 import { dispatchWindowEvent } from './window-events';
 import { closeWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
 import { selectCurrentWorkspaceTabId } from '$store/renderer/slices/tab-state/tab-state-selectors';
@@ -336,9 +335,6 @@ export async function navigateToSettings(options?: SettingsNavigationOptions): P
   if (typeof sessionStorage !== 'undefined' && typeof window !== 'undefined') {
     sessionStorage.setItem(SETTINGS_PREV_PATH_KEY, window.location.pathname);
   }
-
-  // Track settings opened
-  track('Opened Settings', {});
 
   // Build the target URL using the URL API for safe construction
   const targetUrl = new URL('/settings', window.location.origin);

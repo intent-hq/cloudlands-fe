@@ -29,10 +29,6 @@
   import { pathsMatch as filePathsMatch } from '$lib/utils/file-utils';
   import { deleteWithUndo } from '$lib/utils/reversible-actions';
   import {
-  track,
-  getFileExtension,
-} from '$lib/services/analytics';
-  import {
   getPanelLayoutManager,
   hasPanelLayoutManager,
 } from '$features/layout/panel-layout-adapter';
@@ -744,10 +740,6 @@
           layoutManager.closeTabsByType('file', 'filePath', filePath);
         }
         dispatchWindowEvent('file:changed', { workspaceId, type: 'delete', filePath });
-        track('Deleted File', {
-          workspace_id: workspaceId || '',
-          file_extension: getFileExtension(filePath),
-        });
       },
       async () => {
         await invoke('file:write', {

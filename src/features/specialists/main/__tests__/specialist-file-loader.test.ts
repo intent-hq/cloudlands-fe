@@ -299,6 +299,38 @@ Body`;
         expect(result.frontmatter.name).toBe('Test: With Colon');
       }
     });
+
+    it('should unescape escape sequences in double-quoted values', () => {
+      const content = `---
+name: "Quote \\" Backslash \\\\ Newline \\n Tab \\t"
+description: "A test"
+---
+
+Body`;
+
+      const result = parseSpecialistFile('/path/to/escapes.md', content);
+      expect('error' in result).toBe(false);
+      if (!('error' in result)) {
+        expect(result.frontmatter.name).toBe('Quote " Backslash \\ Newline \n Tab \t');
+      }
+    });
+
+    it('should not double-unescape backslash sequences', () => {
+      // \\n in the source is an escaped backslash followed by "n" — it must
+      // unescape to a literal backslash + n, never to a newline.
+      const content = `---
+name: "literal \\\\n stays"
+description: "A test"
+---
+
+Body`;
+
+      const result = parseSpecialistFile('/path/to/double-escape.md', content);
+      expect('error' in result).toBe(false);
+      if (!('error' in result)) {
+        expect(result.frontmatter.name).toBe('literal \\n stays');
+      }
+    });
   });
 
   describe('YAML block scalars', () => {

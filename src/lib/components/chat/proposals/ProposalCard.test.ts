@@ -546,7 +546,7 @@ describe('ProposalCard', () => {
         proposal: makeWorkspaceProposal(
           {},
           {
-            repository: 'augmentcode/intent',
+            repository: 'example-org/example-repo',
             initialMessage: 'Review and summarize PR #647',
             specialist: 'implementor',
           },
@@ -561,7 +561,7 @@ describe('ProposalCard', () => {
 
     expect(prompt.value).toBe('Review and summarize PR #647');
     expect(repoPicker.textContent).toContain('github');
-    expect(repoPicker.textContent).toContain('https://github.com/augmentcode/intent');
+    expect(repoPicker.textContent).toContain('https://github.com/example-org/example-repo');
     expect(branchPicker.textContent).toContain('main');
     expect(screen.getByTestId('mock-specialist-dropdown').textContent).toContain('implementor');
   });
@@ -574,9 +574,9 @@ describe('ProposalCard', () => {
           payload: {
             operation: 'workspace.create',
             params: {
-              prUrl: 'https://github.com/augmentcode/intent/pull/648',
-              repositoryName: 'intent',
-              repositoryOwner: 'augmentcode',
+              prUrl: 'https://github.com/example-org/example-repo/pull/648',
+              repositoryName: 'example-repo',
+              repositoryOwner: 'example-org',
               specialist: 'pr-reviewer',
               initialMessage: 'Review PR #648 ...',
             },
@@ -591,7 +591,7 @@ describe('ProposalCard', () => {
     const [repoPicker, branchPicker] = screen.getAllByTestId('mock-repo-and-branch-picker');
     const repoRow = screen.getByTestId('proposal-repo-picker');
 
-    expect(repoRow.textContent).toContain('augmentcode/intent');
+    expect(repoRow.textContent).toContain('example-org/example-repo');
     expect(repoPicker.textContent).toContain('github');
     expect(branchPicker.textContent).toContain('main');
     expect(screen.queryByText('Select a repository')).toBeNull();
@@ -610,7 +610,7 @@ describe('ProposalCard', () => {
         proposal: makeWorkspaceProposal(
           {},
           {
-            prUrl: 'https://github.com/augmentcode/intent/pull/648',
+            prUrl: 'https://github.com/example-org/example-repo/pull/648',
             initialMessage: 'Review PR #648',
           },
         ),
@@ -618,8 +618,8 @@ describe('ProposalCard', () => {
     });
 
     const expectedAction = requestPrBranchLookup({
-      owner: 'augmentcode',
-      repo: 'intent',
+      owner: 'example-org',
+      repo: 'example-repo',
       prNumber: 648,
     });
     await waitFor(() => expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(expectedAction));
@@ -642,7 +642,7 @@ describe('ProposalCard', () => {
         proposal: makeWorkspaceProposal(
           {},
           {
-            prUrl: 'https://github.com/augmentcode/intent/pull/648',
+            prUrl: 'https://github.com/example-org/example-repo/pull/648',
             initialMessage: 'Review PR #648',
           },
         ),
@@ -654,8 +654,8 @@ describe('ProposalCard', () => {
       ?.addEventListener('proposalapply', applyListener as EventListener);
 
     const expectedAction = requestPrBranchLookup({
-      owner: 'augmentcode',
-      repo: 'intent',
+      owner: 'example-org',
+      repo: 'example-repo',
       prNumber: 648,
     });
     await waitFor(() => expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(expectedAction));
@@ -686,7 +686,7 @@ describe('ProposalCard', () => {
         proposal: makeWorkspaceProposal(
           {},
           {
-            prUrl: 'https://github.com/augmentcode/intent/pull/648',
+            prUrl: 'https://github.com/example-org/example-repo/pull/648',
             initialMessage: 'Review PR #648',
           },
         ),
@@ -694,8 +694,8 @@ describe('ProposalCard', () => {
     });
 
     const expectedAction = requestPrBranchLookup({
-      owner: 'augmentcode',
-      repo: 'intent',
+      owner: 'example-org',
+      repo: 'example-repo',
       prNumber: 648,
     });
     await waitFor(() => expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(expectedAction));
@@ -719,7 +719,7 @@ describe('ProposalCard', () => {
 
     render(ProposalCard, {
       props: {
-        proposal: makeWorkspaceProposal({}, { repository: 'augmentcode/intent' }),
+        proposal: makeWorkspaceProposal({}, { repository: 'example-org/example-repo' }),
       },
     });
 
@@ -738,7 +738,7 @@ describe('ProposalCard', () => {
         proposal: makeWorkspaceProposal(
           {},
           {
-            prUrl: 'https://github.com/augmentcode/intent/pull/648',
+            prUrl: 'https://github.com/example-org/example-repo/pull/648',
             branch: 'feature/foo',
           },
         ),
@@ -760,7 +760,7 @@ describe('ProposalCard', () => {
         proposal: makeWorkspaceProposal(
           {},
           {
-            prUrl: 'https://github.com/augmentcode/intent/pull/648',
+            prUrl: 'https://github.com/example-org/example-repo/pull/648',
           },
         ),
       },
@@ -783,7 +783,7 @@ describe('ProposalCard', () => {
         proposal: makeWorkspaceProposal(
           {},
           {
-            prUrl: 'https://github.com/augmentcode/intent/pull/648',
+            prUrl: 'https://github.com/example-org/example-repo/pull/648',
             initialMessage: 'Review PR #648',
           },
         ),
@@ -791,8 +791,8 @@ describe('ProposalCard', () => {
     });
 
     const expectedAction = requestPrBranchLookup({
-      owner: 'augmentcode',
-      repo: 'intent',
+      owner: 'example-org',
+      repo: 'example-repo',
       prNumber: 648,
     });
     await waitFor(() => expect(prBranchLookupState.dispatch).toHaveBeenCalledWith(expectedAction));

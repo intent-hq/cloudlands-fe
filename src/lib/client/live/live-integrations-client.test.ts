@@ -233,7 +233,7 @@ describe("settings-integrations seeder hydrates the connections slices from the 
 
     expect(actionOf(dispatch, setGitHubAuthState.type)?.payload).toEqual({
       isAuthenticated: true,
-      requiresAugmentAuth: false,
+      requiresDaemonAuth: false,
       user: {
         login: "octocat",
         name: null,
@@ -245,7 +245,7 @@ describe("settings-integrations seeder hydrates the connections slices from the 
     });
     expect(actionOf(dispatch, setLinearAuthState.type)?.payload).toEqual({
       isAuthenticated: true,
-      requiresAugmentAuth: false,
+      requiresDaemonAuth: false,
       oauthUrl: null,
     });
     expect(actionOf(dispatch, setLinearIssues.type)?.payload).toEqual([[LINEAR_ISSUE]]);

@@ -20,7 +20,7 @@
  * `store.createSelector` mid-middleware-init).
  */
 import type { CommentV2 } from "$features/comments/comment-types-v2";
-import { getItem, getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { getItem, getItems } from "$lib/store-shim/utils/collections/collection-utils";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import {

@@ -668,10 +668,10 @@ Extraction rules:
 
 Do not populate title or status message fields for workspace-create proposals. Do not set \`applyLabel\` for workspace-create proposals (other proposal types still must).
 
-Example for "Review PR #648 on augmentcode/intent":
+Example for "Review PR #648 on example-org/example-repo":
 \`\`\`json
 {
-  "prUrl": "https://github.com/augmentcode/intent/pull/648",
+  "prUrl": "https://github.com/example-org/example-repo/pull/648",
   "repositoryOwner": "augmentcode",
   "repositoryName": "intent",
   "specialist": "pr-reviewer",

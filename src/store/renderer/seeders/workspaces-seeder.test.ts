@@ -10,7 +10,7 @@
  * `appClient.workspaces.create` directly (see workspace.client.test.ts).
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { Store } from "@augmentcode/ag-redux-toolkit/svelte-store";
+import { Store } from "$lib/store-shim/svelte-store";
 import { reducers } from "../reducer";
 
 // FAKE transport only: the daemon bridge is mocked so no request ever reaches

@@ -19,8 +19,8 @@
  * and the logger. No selector modules (importing them would evaluate
  * `store.createSelector` during middleware-chain construction).
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
-import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import type { StoreMiddleware } from "$lib/store-shim/types";
+import { getItems } from "$lib/store-shim/utils/collections/collection-utils";
 import type { ContextItem } from "$features/context/types";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";

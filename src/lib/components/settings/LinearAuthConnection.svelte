@@ -14,7 +14,7 @@
   selectLinearIsAuthenticated,
   selectLinearIsAuthenticating,
   selectLinearError,
-  selectLinearRequiresAugmentAuth,
+  selectLinearRequiresDaemonAuth,
 } from '$store/renderer/slices/linear-auth/linear-auth-selectors';
   import {
   initializeLinearAuth,
@@ -33,7 +33,7 @@
   const isAuthenticated$ = selectLinearIsAuthenticated();
   const isAuthenticating$ = selectLinearIsAuthenticating();
   const error$ = selectLinearError();
-  const requiresAugmentAuth$ = selectLinearRequiresAugmentAuth();
+  const requiresDaemonAuth$ = selectLinearRequiresDaemonAuth();
 
   let isDisconnectingLinear = $state(false);
   let issueFilter = $state<LinearIssueFilter>('all');
@@ -138,7 +138,7 @@
         >
           {isDisconnectingLinear ? 'Disconnecting...' : 'Disconnect'}
         </button>
-      {:else if !$requiresAugmentAuth$}
+      {:else if !$requiresDaemonAuth$}
         <button
           type="button"
           class="text-primary hover:text-primary/80 cursor-pointer transition-colors font-medium"
@@ -147,7 +147,7 @@
           Connect
         </button>
       {:else}
-        <span class="text-xs text-subtle">Requires Augment authentication</span>
+        <span class="text-xs text-subtle">Requires daemon authentication</span>
       {/if}
     </div>
   </div>

@@ -95,7 +95,6 @@ import {
   sshManager,
   type SSHConnectionConfig,
 } from '../../../shared/main/ssh-manager';
-import { trackMain } from '$lib/services/analytics/main';
 import { githubService } from '../../git-tracking/main/github.service';
 
 /**
@@ -3030,18 +3029,6 @@ export class WorkspaceService {
 
       logger.info('Starting deletion of workspace', { workspaceId: id });
 
-      // Get workspace info before deletion for tracking
-      const trackingWorkspaceResult = await this.getWorkspace(id as WorkspaceId);
-      let workspaceTitle: string | undefined;
-      let ageInDays: number | undefined;
-      if (trackingWorkspaceResult.ok) {
-        workspaceTitle = trackingWorkspaceResult.data.title;
-        ageInDays = Math.floor(
-          (Date.now() - new Date(trackingWorkspaceResult.data.createdAt).getTime()) /
-            (1000 * 60 * 60 * 24),
-        );
-      }
-
       // Emit pre-delete event to allow cleanup
       mainDispatch(
         workspaceDeleting({
@@ -3127,13 +3114,6 @@ export class WorkspaceService {
           workspaceId: id,
         }),
       );
-
-      // Track workspace deletion
-      trackMain('Deleted Workspace', {
-        workspace_id: id,
-        workspace_title: workspaceTitle,
-        age_in_days: ageInDays,
-      });
 
       logger.info('Workspace deleted successfully', { workspaceId: id });
 

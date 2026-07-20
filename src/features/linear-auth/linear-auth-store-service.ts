@@ -24,7 +24,7 @@
  * client, the AppClient seam, the configured store, the slice actions, and the
  * logger (NOT selectors).
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { linearAuthClient } from "$features/linear-auth/renderer/linear-auth.client";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
@@ -50,7 +50,7 @@ export async function initializeLinearAuthFlow(): Promise<void> {
   try {
     const authState = await linearAuthClient.getAuthState(true);
     appStore.dispatch(
-      setLinearAuthState(authState.isAuthenticated, authState.requiresAugmentAuth, null),
+      setLinearAuthState(authState.isAuthenticated, authState.requiresDaemonAuth, null),
     );
   } catch (error) {
     logger.error("initialize error", error);
@@ -111,7 +111,7 @@ export async function logoutLinearFlow(): Promise<void> {
   try {
     const authState = await linearAuthClient.getAuthState(true);
     appStore.dispatch(
-      setLinearAuthState(authState.isAuthenticated, authState.requiresAugmentAuth, null),
+      setLinearAuthState(authState.isAuthenticated, authState.requiresDaemonAuth, null),
     );
     if (authState.isAuthenticated) {
       appStore.dispatch(

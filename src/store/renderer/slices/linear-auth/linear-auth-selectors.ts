@@ -4,8 +4,8 @@ export const selectLinearIsAuthenticated = store.createSelector(
   (state) => state.linearAuth.isAuthenticated,
 );
 
-export const selectLinearRequiresAugmentAuth = store.createSelector(
-  (state) => state.linearAuth.requiresAugmentAuth,
+export const selectLinearRequiresDaemonAuth = store.createSelector(
+  (state) => state.linearAuth.requiresDaemonAuth,
 );
 
 export const selectLinearIsAuthenticating = store.createSelector(
