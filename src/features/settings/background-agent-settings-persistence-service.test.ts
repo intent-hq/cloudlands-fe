@@ -54,7 +54,8 @@ describe("BackgroundAgentSettingsPersistenceService", () => {
         mockState.backgroundAgentSettings.typeOverrides[action.payload[0]] = "";
         break;
       case "backgroundAgentSettings/resetSettings":
-        mockState.backgroundAgentSettings.defaultModel = "";
+        // Match real reducer: reset to DEFAULT_BACKGROUND_MODEL ("test-model" in mock), not empty string
+        mockState.backgroundAgentSettings.defaultModel = "test-model";
         mockState.backgroundAgentSettings.typeOverrides = { commit: "", pr: "", review: "", fast: "" };
         break;
       case "backgroundAgentSettings/hydrateSettings": {
@@ -123,8 +124,9 @@ describe("BackgroundAgentSettingsPersistenceService", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(appClient.settings.update).toHaveBeenCalledTimes(1);
+    // After reset, defaultModel goes back to "test-model" (the mocked DEFAULT_BACKGROUND_MODEL)
     expect(appClient.settings.update).toHaveBeenCalledWith([
-      { path: "backgroundAgents.defaultModel", value: "" },
+      { path: "backgroundAgents.defaultModel", value: "test-model" },
       { path: "backgroundAgents.typeOverrides", value: { commit: "", pr: "", review: "", fast: "" } },
     ]);
   });
