@@ -85,10 +85,6 @@ vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateToSettings: vi.fn(),
 }));
 
-vi.mock('$lib/utils/provider-model-selection', () => ({
-  resolvePreferredDefaultModel: (values: string[]) => values[0],
-}));
-
 vi.mock('$lib/components/chat/input/ModelPicker.svelte', async () => ({
   default: (await import('./mocks/MockModelPicker.svelte')).default,
 }));

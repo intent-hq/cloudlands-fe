@@ -6,7 +6,6 @@
   selectSpecialists,
   selectCustomSpecialistsLoaded,
   selectFileSpecialistsLoaded,
-  selectUserOverrides,
   selectEffectiveModel,
   selectEffectiveCodingAgent,
   filterSpecialistsByGitHubAuth,
@@ -31,11 +30,9 @@
   import {
   ACP_PROVIDERS,
   getDefaultProviderId,
-  getDefaultModelForProvider,
-  PROVIDER_MODEL_TIERS,
   parseCompoundModelId,
 } from '$shared/config/provider-config';
-  import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
+  import { resolveEffectiveModelForSpecialist } from '$lib/utils/effective-model-resolution';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
@@ -51,7 +48,6 @@
   const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
   const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();
   const initializerHydrated$ = selectWorkspaceInitializerHydrated();
-  const userOverrides$ = selectUserOverrides();
   const activeProviderId$ = selectActiveProviderId();
   const availableModels$ = selectAvailableModels();
   const selectedModel$ = selectSelectedModel();
@@ -218,53 +214,25 @@
   });
 
   // Helper to resolve the effective model for a given specialist.
-  // When the form's selectedProvider matches the specialist's effective coding agent
-  // from Redux, delegate to selectEffectiveModel so the displayed model matches
-  // Settings > Agents exactly.  When the user has changed the provider within
-  // this form to something different, fall back to local tier resolution.
-  function resolveEffectiveModel(specialist: string | null): string {
-    const values = $availableModels$.map((m) => m.value);
-    const valuesSet = new Set(values);
-
-    if (specialist) {
-      const state = appStore.state;
-      const effectiveCodingAgent = selectEffectiveCodingAgent.select(state, specialist);
-
-      // If the form's provider matches the specialist's effective coding agent,
-      // use the Redux selector directly — this mirrors Settings > Agents exactly.
-      if (selectedProvider === effectiveCodingAgent) {
-        const reduxModel = selectEffectiveModel.select(state, specialist);
-        if (reduxModel && valuesSet.has(reduxModel)) return reduxModel;
-      }
-
-      // User changed provider within the form — fall back to local tier resolution
-      // User override takes priority
-      const override = $userOverrides$.modelOverrides[specialist];
-      if (override) return override;
-
-      // Resolve model tier using the locally-selected provider
-      const info = $specialists$.find((s) => s.id === specialist);
-      if (info?.defaultModelTier && selectedProvider in PROVIDER_MODEL_TIERS) {
-        const baseModel = getDefaultModelForProvider(selectedProvider, info.defaultModelTier);
-        const defaultProviderId = getDefaultProviderId();
-        const resolvedModel =
-          selectedProvider !== defaultProviderId ? `${selectedProvider}:${baseModel}` : baseModel;
-        // Validate the tier-resolved model exists in the available models.
-        // PROVIDER_MODEL_TIERS may have hardcoded model names that don't match
-        // the actual models returned by the provider (e.g. opencode CLI).
-        if (valuesSet.has(resolvedModel)) {
-          return resolvedModel;
-        }
-        // Tier model not available — fall through to fallback below
-      }
-
-      // Fallback to hardcoded defaultModel (custom specialists, etc.)
-      if (info?.defaultModel) {
-        return info.defaultModel;
-      }
-    }
-    const fallback = resolvePreferredDefaultModel(values, $selectedModel$) ?? values[0];
-    return fallback;
+  // Delegates to the shared resolveEffectiveModelForSpecialist utility (also used
+  // by the CompactWorkspaceInitializer submit path) so the displayed model always
+  // matches the model the created agent gets. When the form's selectedProvider
+  // matches the specialist's effective coding agent from Redux, the Redux-resolved
+  // model wins (mirrors Settings > Agents exactly); when the user has changed the
+  // provider within this form, it falls back to local tier resolution.
+  function resolveEffectiveModel(specialist: string | null): string | undefined {
+    const state = appStore.state;
+    return resolveEffectiveModelForSpecialist({
+      specialistId: specialist,
+      selectedProvider,
+      availableModelValues: $availableModels$.map((m) => m.value),
+      globalSelectedModel: $selectedModel$,
+      effectiveCodingAgent: specialist
+        ? selectEffectiveCodingAgent.select(state, specialist)
+        : undefined,
+      effectiveModel: specialist ? selectEffectiveModel.select(state, specialist) : undefined,
+      specialistInfo: specialist ? $specialists$.find((s) => s.id === specialist) : undefined,
+    });
   }
 
   // Effective model for the team mode card (based on actual selectedSpecialist)
