@@ -11,7 +11,10 @@
  * Boot-time hydration reads `workspaceInitializer.state` from the daemon via
  * `appClient.settings.get` on first action and dispatches `hydrateWorkspaceInitializer`
  * so `state.hydrated` becomes true. Write-after-action persistence writes the updated
- * bag via `settings.update` after each mutating reducer runs. Debounce logic for
+ * bag via `settings.update` after each mutating reducer runs. Persists that fire while
+ * hydration is still in flight are deferred and flushed once hydration settles, so
+ * pre-hydration default state (empty recentRepos, null lastSelectedRepo, …) can never
+ * overwrite the previously persisted daemon bag. Debounce logic for
  * `debounceWorkspaceInitializerOnboardingFormState` mimics the deleted saga's race-based
  * cancellation (resetOnboarding / cancelDebounce kill the pending write).
  *
@@ -211,16 +214,36 @@ function removeOnboardingPromptSessionStorage(): void {
 }
 
 export function createWorkspaceInitializerPersistenceMiddleware(): StoreMiddleware {
-  let hasHydrated = false;
+  let hydrationStarted = false;
+  let hydrationSettled = false;
+  let persistQueued = false;
   // Per-instance debounce state (was module-scope, now closure-scoped to avoid cross-store leakage)
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingOnboardingFormState: WorkspaceInitializerOnboardingFormState | null = null;
 
+  // Defer persists until hydration settles: a persist that runs before hydrateOnce()
+  // resolves would serialize default Redux state (lastSelectedRepo: null, recentRepos: [])
+  // over the previously saved daemon bag. Queued persists flush once, after hydration,
+  // when the state reflects the merged daemon values.
+  const schedulePersist = (): void => {
+    if (!hydrationSettled) {
+      persistQueued = true;
+      return;
+    }
+    persistStateBag();
+  };
+
   return () => (next) => (action) => {
     // Boot-time hydration on first action
-    if (!hasHydrated) {
-      hasHydrated = true;
-      void hydrateOnce();
+    if (!hydrationStarted) {
+      hydrationStarted = true;
+      void hydrateOnce().finally(() => {
+        hydrationSettled = true;
+        if (persistQueued) {
+          persistQueued = false;
+          persistStateBag();
+        }
+      });
     }
 
     const result = next(action);
@@ -238,7 +261,7 @@ export function createWorkspaceInitializerPersistenceMiddleware(): StoreMiddlewa
         case upsertWorkspaceInitializerRemoteSetup.type:
         case removeWorkspaceInitializerRemoteSetup.type:
         case setWorkspaceInitializerLastSubmittedAgent.type:
-          persistStateBag();
+          schedulePersist();
           break;
 
         // Debounced onboarding form state persistence
@@ -272,7 +295,7 @@ export function createWorkspaceInitializerPersistenceMiddleware(): StoreMiddlewa
 
         // Immediate persistence triggered by the debounced action applying the state
         case setWorkspaceInitializerOnboardingFormState.type:
-          persistStateBag();
+          schedulePersist();
           break;
       }
     }

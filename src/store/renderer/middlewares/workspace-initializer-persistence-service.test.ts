@@ -73,19 +73,20 @@ function installMemorySessionStorage(): void {
 }
 
 describe("workspace-initializer-persistence-service (PROTOCOL §5.12 workspaceInitializer.state)", () => {
+  // Deferred hydration gate: hydration blocks on this promise regardless of which early
+  // action triggers it, so the first (regression) test owns the in-flight window and
+  // resolves it manually with the daemon bag the rest of the suite expects.
+  let resolveHydration!: (value: unknown) => void;
+  const hydrationGate = new Promise((resolve) => {
+    resolveHydration = resolve;
+  });
+
   beforeAll(() => {
     installMemoryLocalStorage();
     installMemorySessionStorage();
 
     // Set up daemon bag for hydration BEFORE store.init()
-    const mockDaemonBag = {
-      lastSelectedRepo: { path: "/daemon/repo", type: "local" },
-      compactFormState: { repoPath: "/compact" },
-    };
-    getSpy.mockResolvedValue({
-      definition: { path: "workspaceInitializer.state", type: "object" },
-      value: mockDaemonBag,
-    });
+    getSpy.mockImplementation(() => hydrationGate);
     updateSpy.mockResolvedValue({ applied: [{ path: "workspaceInitializer.state", value: {} }] });
 
     // Store.init() triggers hydration on first dispatched action
@@ -101,6 +102,46 @@ describe("workspace-initializer-persistence-service (PROTOCOL §5.12 workspaceIn
 
   afterEach(() => {
     vi.clearAllTimers();
+  });
+
+  // MUST run first: hydration is one-shot per store lifetime, and this test resolves the
+  // hydration gate that every later test depends on.
+  it("defers persists that race boot hydration and flushes the hydrated bag afterwards (regression)", async () => {
+    // Persist-triggering dispatch while hydration is in flight — an empty recentRepos
+    // during boot (e.g. RepoSelector loadRecentRepos) must not clobber the previously
+    // persisted daemon bag with defaults.
+    appStore.dispatch(setWorkspaceInitializerRecentRepos([]));
+    await flush();
+
+    // While hydration is in flight, no settings.update may reach the daemon.
+    expect(appStore.state.workspaceInitializer.hydrated).toBe(false);
+    expect(updateSpy).not.toHaveBeenCalled();
+
+    resolveHydration({
+      definition: { path: "workspaceInitializer.state", type: "object" },
+      value: {
+        lastSelectedRepo: { path: "/daemon/repo", type: "local" },
+        compactFormState: { repoPath: "/compact" },
+        recentRepos: [{ path: "/daemon/repo", type: "local", name: "repo" }],
+      },
+    });
+    await flush();
+    await flush();
+
+    // The deferred persist flushes once after hydration and retains the previously
+    // persisted lastSelectedRepo/recentRepos instead of pre-hydration defaults.
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [
+        {
+          path: "workspaceInitializer.state",
+          value: expect.objectContaining({
+            lastSelectedRepo: { path: "/daemon/repo", type: "local" },
+            recentRepos: [{ path: "/daemon/repo", type: "local", name: "repo" }],
+          }),
+        },
+      ],
+    });
   });
 
   it("hydrates from daemon on store init and asserts settings.get request shape", async () => {
