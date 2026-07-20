@@ -2895,6 +2895,7 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     prUrl?: string;
     prStatus?: string;
     activePullRequest?: unknown;
+    pullRequests?: Array<{ number: number; status?: string }>;
   }> {
     const { getItem } =
       await import('@augmentcode/ag-redux-toolkit/utils/collections/collection-utils');
@@ -2902,7 +2903,7 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     return (getItem(state.workspace.workspaces as never, PR_WS) ?? {}) as never;
   }
 
-  it('pr:linked writes prNumber / prUrl / prStatus / activePullRequest onto the workspace entity', async () => {
+  it('pr:linked writes prNumber / prUrl / prStatus / activePullRequest / pullRequests onto the workspace entity', async () => {
     await seedWorkspace();
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -2920,8 +2921,12 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
             workspaceId: PR_WS,
             prNumber: 42,
             prUrl: 'https://example.com/pr/42',
-            prStatus: 'open',
+            prStatus: 'Open',
             activePullRequest: { number: 42, url: 'https://example.com/pr/42' },
+            pullRequests: [
+              { number: 41, status: 'Merged' },
+              { number: 42, status: 'Open' },
+            ],
           },
         },
       },
@@ -2930,8 +2935,14 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     const ws = await readWorkspace();
     expect(ws.prNumber).toBe(42);
     expect(ws.prUrl).toBe('https://example.com/pr/42');
-    expect(ws.prStatus).toBe('open');
+    expect(ws.prStatus).toBe('Open');
     expect(ws.activePullRequest).toMatchObject({ number: 42 });
+    // §6.5: the daemon-owned per-branch PR list is folded verbatim, including
+    // merged/closed history alongside the newly linked PR.
+    expect(ws.pullRequests).toEqual([
+      { number: 41, status: 'Merged' },
+      { number: 42, status: 'Open' },
+    ]);
   });
 
   it('pr:updated merges the changed fields without a full replace', async () => {
@@ -2953,7 +2964,7 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
             workspaceId: PR_WS,
             prNumber: 42,
             prUrl: 'https://example.com/pr/42',
-            prStatus: 'open',
+            prStatus: 'Open',
             activePullRequest: { number: 42 },
           },
         },
@@ -2972,20 +2983,23 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
           data: {
             workspaceId: PR_WS,
             prNumber: 42,
-            prStatus: 'merged',
+            prStatus: 'Merged',
             activePullRequest: { number: 42, merged: true },
+            pullRequests: [{ number: 42, status: 'Merged' }],
           },
         },
       },
     });
 
     const ws = await readWorkspace();
-    expect(ws.prStatus).toBe('merged');
+    expect(ws.prStatus).toBe('Merged');
     // prUrl was not in the pr:updated payload; the merge must retain it.
     expect(ws.prUrl).toBe('https://example.com/pr/42');
+    // pullRequests from the pr:updated payload replaces the previous list.
+    expect(ws.pullRequests).toEqual([{ number: 42, status: 'Merged' }]);
   });
 
-  it("pr:unlinked clears the workspace's PR fields", async () => {
+  it("pr:unlinked clears the active-PR fields but retains the pullRequests list", async () => {
     await seedWorkspace();
     await primeBridge();
     const handler = capturedHandlers[0]!;
@@ -3003,8 +3017,9 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
             workspaceId: PR_WS,
             prNumber: 42,
             prUrl: 'https://example.com/pr/42',
-            prStatus: 'open',
+            prStatus: 'Open',
             activePullRequest: { number: 42 },
+            pullRequests: [{ number: 42, status: 'Open' }],
           },
         },
       },
@@ -3029,6 +3044,9 @@ describe('daemonEventsBridge (pr:linked / pr:updated / pr:unlinked → workspace
     expect(ws.prUrl).toBeUndefined();
     expect(ws.prStatus).toBeUndefined();
     expect(ws.activePullRequest).toBeNull();
+    // The daemon owns the per-branch PR list and retains merged/closed history
+    // across unlinks (§6.5) — pr:unlinked must not clear it.
+    expect(ws.pullRequests).toEqual([{ number: 42, status: 'Open' }]);
   });
 });
 

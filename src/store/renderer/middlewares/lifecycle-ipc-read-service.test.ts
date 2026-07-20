@@ -41,7 +41,11 @@ vi.mock("$lib/client", () => ({
     events: { list: vi.fn(() => Promise.resolve([])) },
     skills: { list: vi.fn(() => Promise.resolve([])) },
     scripts: { list: vi.fn(() => Promise.resolve([])) },
-    git: { prStatus: vi.fn(() => Promise.resolve(null)) },
+    git: {
+      prStatus: vi.fn(() => Promise.resolve(null)),
+      // Default to a benign no-PR refresh result; null means transport failure.
+      prRefresh: vi.fn(() => Promise.resolve({ outcome: "unchanged", pullRequests: [] })),
+    },
     agents: { list: vi.fn(() => Promise.resolve([])) },
     terminals: { list: vi.fn(() => Promise.resolve([])) },
     files: {
@@ -314,7 +318,7 @@ describe("lifecycleIpcReadService (fake seams, real store)", () => {
     const eventsApi = appClient.events as unknown as { list: Fn };
     const skillsApi = appClient.skills as unknown as { list: Fn };
     const scriptsApi = appClient.scripts as unknown as { list: Fn };
-    const gitApi = appClient.git as unknown as { prStatus: Fn };
+    const gitApi = appClient.git as unknown as { prStatus: Fn; prRefresh: Fn };
     const agentsApi = appClient.agents as unknown as { list: Fn };
     const terminalsApi = appClient.terminals as unknown as { list: Fn };
     const filesApi = appClient.files as unknown as {
@@ -337,7 +341,7 @@ describe("lifecycleIpcReadService (fake seams, real store)", () => {
     expect(acceptApi.getStatus).toHaveBeenCalledWith(wsId);
     expect(scriptsApi.list).toHaveBeenCalledWith(wsId);
     expect(skillsApi.list).toHaveBeenCalledWith(wsId);
-    expect(gitApi.prStatus).toHaveBeenCalledWith(wsId);
+    expect(gitApi.prRefresh).toHaveBeenCalledWith(wsId);
     expect(agentsApi.list).toHaveBeenCalledWith(wsId);
     expect(terminalsApi.list).toHaveBeenCalledWith(wsId);
     expect(filesApi.explorerTree).toHaveBeenCalledWith(wsId);
