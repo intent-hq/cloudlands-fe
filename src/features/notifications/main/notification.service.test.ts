@@ -306,6 +306,53 @@ describe('NotificationService daemon agent:idle subscription', () => {
       subscriptionId: 'ws-sub-1',
     });
   });
+
+  it('discards and releases a subscribe that resolves after stop() (no stale subscriptionId)', async () => {
+    // Make events.subscribe hang until we resolve it manually. Restore the
+    // default implementation afterwards (clearAllMocks does not do this).
+    const defaultImpl = requestMock.getMockImplementation();
+    let resolveSubscribe!: (v: { subscriptionId: string }) => void;
+    requestMock.mockImplementation(async (method: string, params?: unknown) => {
+      if (method === 'events.subscribe') {
+        return new Promise((r) => {
+          resolveSubscribe = r;
+        });
+      }
+      if (method === 'settings.get') {
+        const path = (params as { path?: string } | undefined)?.path ?? '';
+        return { path, value: settingsValues[path] ?? true };
+      }
+      if (method === 'agent.list') return agentListResponse;
+      if (method === 'events.unsubscribe') return { success: true };
+      return {};
+    });
+
+    const service = new NotificationService('workspace-1');
+    service.start();
+    await flush();
+
+    // stop() runs while events.subscribe is still in flight.
+    service.stop();
+    await flush();
+
+    // The stale subscribe resolves after teardown.
+    resolveSubscribe({ subscriptionId: 'stale-sub-1' });
+    await flush();
+
+    // The stale id must be released, not adopted.
+    expect(requestMock).toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'stale-sub-1',
+    });
+
+    // Events for the stale id must not trigger notifications.
+    notificationListeners[0](
+      buildEventsEventNotification({ subscriptionId: 'stale-sub-1' }),
+    );
+    await flush();
+    expect(mockNotificationInstances.length).toBe(0);
+
+    requestMock.mockImplementation(defaultImpl!);
+  });
 });
 
 describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {

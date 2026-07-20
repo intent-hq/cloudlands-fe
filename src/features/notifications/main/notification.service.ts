@@ -113,6 +113,8 @@ export class NotificationService {
 
   private started = false;
   private subscriptionId?: string;
+  /** Guards against stale in-flight `events.subscribe` calls (bumped on stop/reconnect). */
+  private subscribeEpoch = 0;
   private notificationListener?: (n: JsonRpcNotification) => void;
   private reconnectDisposer?: () => void;
   private activeNotifications = new Set<Notification>();
@@ -141,6 +143,8 @@ export class NotificationService {
    */
   stop(): void {
     this.started = false;
+    // Invalidate any in-flight subscribe so it can't resurrect a stale id.
+    this.subscribeEpoch++;
     this.reconnectDisposer?.();
     this.reconnectDisposer = undefined;
     const listener = this.notificationListener;
@@ -193,7 +197,9 @@ export class NotificationService {
       client.on('notification', listener);
       this.reconnectDisposer = onBackendReconnected(() => {
         // The daemon dropped every in-memory subscription on reconnect; the
-        // stale id belonged to the previous connection. Re-issue subscribe.
+        // stale id belonged to the previous connection. Invalidate any
+        // in-flight subscribe from before the reconnect and re-issue.
+        this.subscribeEpoch++;
         this.subscriptionId = undefined;
         if (!this.started) return;
         void this.subscribeToIdleEvents();
@@ -209,12 +215,25 @@ export class NotificationService {
 
   /** Issue `events.subscribe` for `agent:idle` scoped to this workspace (§6.1). */
   private async subscribeToIdleEvents(): Promise<void> {
+    const epoch = this.subscribeEpoch;
     try {
       const result = (await getBackendClient().request('events.subscribe', {
         eventTypes: ['agent:idle'],
         workspaceId: this.workspaceId,
       })) as { subscriptionId?: string } | undefined;
-      this.subscriptionId = result?.subscriptionId;
+      const subscriptionId = result?.subscriptionId;
+      if (epoch !== this.subscribeEpoch || !this.started) {
+        // stop() or a reconnect ran while subscribe was in flight; this id
+        // belongs to a torn-down generation. Best-effort release it instead
+        // of overwriting the current one.
+        if (subscriptionId) {
+          void getBackendClient()
+            .request('events.unsubscribe', { subscriptionId })
+            .catch(() => {});
+        }
+        return;
+      }
+      this.subscriptionId = subscriptionId;
     } catch (error) {
       logger.warn('events.subscribe for agent:idle failed; notifications will not fire', {
         workspaceId: this.workspaceId,
