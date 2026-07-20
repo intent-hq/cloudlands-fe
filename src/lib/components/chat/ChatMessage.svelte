@@ -936,7 +936,9 @@
         <!-- Full expanded version - uses negative margin to overlap the sticky header in ChatPanel -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
-          class="relative bg-sidebar rounded-xs px-2 pt-2 pb-2 cursor-pointer overflow-hidden z-20"
+          class="relative bg-sidebar rounded-xs px-2 pt-2 pb-2 {onEditSubmit && !agentAttribution
+            ? 'cursor-pointer'
+            : 'cursor-default'} overflow-hidden z-20"
           ondblclick={() => onEditSubmit && !agentAttribution && handleStartEdit()}
         >
           <!-- Actions -->
