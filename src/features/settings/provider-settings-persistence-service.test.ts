@@ -18,8 +18,12 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 import { store as appStore } from "$store/renderer/store";
 import {
   hydrateActiveProvider,
+  loadEnabledProvidersFromStorage,
   setActiveProvider,
+  setProviderEnabled,
+  toggleProvider,
 } from "$store/renderer/slices/provider-settings/provider-settings-slice";
+import { ClientLogger } from "$lib/utils/client-logger";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -56,5 +60,79 @@ describe("provider-settings-persistence-service (PROTOCOL §5.12 settings.update
     await flush();
 
     expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  // Each enabled-providers test seeds the slice to a known map via the
+  // hydration action first (never persisted by the middleware — asserted
+  // below), so the tests are self-contained and order-independent.
+  const seedEnabledProviders = async (map: Record<string, boolean>) => {
+    appStore.dispatch(loadEnabledProvidersFromStorage(map));
+    await flush();
+    updateSpy.mockClear();
+  };
+
+  it("persists the full providers.enabled map when a provider is toggled on", async () => {
+    await seedEnabledProviders({});
+
+    appStore.dispatch(toggleProvider("opencode"));
+    await flush();
+
+    expect(appStore.state.providerSettings.enabledProviders.opencode).toBe(true);
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [{ path: "providers.enabled", value: { opencode: true } }],
+    });
+  });
+
+  it("persists the full providers.enabled map when a provider is toggled off", async () => {
+    await seedEnabledProviders({ opencode: true });
+
+    appStore.dispatch(toggleProvider("opencode"));
+    await flush();
+
+    expect(appStore.state.providerSettings.enabledProviders.opencode).toBe(false);
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [{ path: "providers.enabled", value: { opencode: false } }],
+    });
+  });
+
+  it("persists providers.enabled on setProviderEnabled (settings-proposal path)", async () => {
+    await seedEnabledProviders({ opencode: false });
+
+    appStore.dispatch(setProviderEnabled({ providerId: "codex", enabled: true }));
+    await flush();
+
+    expect(appStore.state.providerSettings.enabledProviders.codex).toBe(true);
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [
+        { path: "providers.enabled", value: { opencode: false, codex: true } },
+      ],
+    });
+  });
+
+  it("does NOT write back on loadEnabledProvidersFromStorage (no hydration loop)", async () => {
+    appStore.dispatch(loadEnabledProvidersFromStorage({ opencode: true, codex: false }));
+    await flush();
+
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it("logs (not throws) when the providers.enabled write fails", async () => {
+    await seedEnabledProviders({});
+    const errorSpy = vi
+      .spyOn(ClientLogger.prototype, "error")
+      .mockImplementation(() => {});
+    updateSpy.mockRejectedValue(new Error("daemon unavailable"));
+
+    expect(() => appStore.dispatch(toggleProvider("opencode"))).not.toThrow();
+    await flush();
+
+    expect(updateSpy).toHaveBeenCalledWith({
+      changes: [{ path: "providers.enabled", value: expect.any(Object) }],
+    });
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Failed to persist enabled providers",
+      expect.objectContaining({ error: expect.anything() }),
+    );
+    errorSpy.mockRestore();
   });
 });

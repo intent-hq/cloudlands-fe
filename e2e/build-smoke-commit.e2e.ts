@@ -71,12 +71,12 @@ test.describe('Build Smoke — Local Commit', () => {
       await new Promise((r) => setTimeout(r, 2_000));
       try {
         if (process.platform === 'win32') {
-          execSync('taskkill /F /IM "Intent by Augment.exe"', {
+          execSync('taskkill /F /IM "Intent.exe"', {
             stdio: 'ignore',
             windowsHide: true,
           });
         } else {
-          execSync('pkill -f "Intent by Augment" || true', { stdio: 'ignore' });
+          execSync('pkill -f "Intent\\.app/Contents/MacOS/Intent" || true', { stdio: 'ignore' });
         }
       } catch {
         // no matching processes

@@ -1,8 +1,8 @@
 /**
  * Tests for claude-code-resolver module and provider-config validation.
  *
- * Ensures the migration from claude-code-acp to claude-agent-acp is correct
- * and guards against regression.
+ * The ACP adapter always runs via npx with a pinned package version; direct
+ * claude-agent-acp binaries are never probed. Guards against regression.
  */
 
 import {
@@ -20,9 +20,13 @@ vi.mock('../../../../shared/main/find-binary', () => ({
 
 import { findBinary } from '../../../../shared/main/find-binary';
 import {
+  CLAUDE_AGENT_ACP_NPX_SPEC,
+  CLAUDE_AGENT_ACP_VERSION,
   resolveClaudeCodeCommand,
+  resolveClaudeCodeCommandDetailed,
   clearClaudeCodeCache,
   isClaudeCodeInstalled,
+  isNpxAvailableForClaudeCode,
   getClaudeCodePath,
 } from '../claude-code-resolver';
 import { ACP_PROVIDERS } from '../../../../shared/config/provider-config';
@@ -41,24 +45,9 @@ describe('claude-code-resolver', () => {
       expect(result).toBeNull();
     });
 
-    it('returns direct binary when claude-agent-acp is found', async () => {
+    it('always resolves via npx with the pinned adapter version', async () => {
       vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/usr/local/bin/claude';
-        if (name === 'claude-agent-acp') return '/usr/local/bin/claude-agent-acp';
-        return null;
-      });
-
-      const result = await resolveClaudeCodeCommand();
-      expect(result).not.toBeNull();
-      expect(result!.usesNpx).toBe(false);
-      expect(result!.command).toBe('/usr/local/bin/claude-agent-acp');
-      expect(result!.argsPrefix).toEqual([]);
-    });
-
-    it('falls back to npx when no direct binary is available', async () => {
-      vi.mocked(findBinary).mockImplementation(async (name) => {
-        if (name === 'claude') return '/usr/local/bin/claude';
-        if (name === 'claude-agent-acp') return null;
         if (name === 'npx') return '/usr/local/bin/npx';
         return null;
       });
@@ -67,10 +56,29 @@ describe('claude-code-resolver', () => {
       expect(result).not.toBeNull();
       expect(result!.usesNpx).toBe(true);
       expect(result!.command).toBe('/usr/local/bin/npx');
-      expect(result!.argsPrefix).toContain('@agentclientprotocol/claude-agent-acp');
+      expect(result!.argsPrefix).toEqual(['-y', CLAUDE_AGENT_ACP_NPX_SPEC]);
+      expect(CLAUDE_AGENT_ACP_NPX_SPEC).toBe(
+        `@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}`,
+      );
     });
 
-    it('returns null when neither direct binary nor npx is available', async () => {
+    it('never probes for a direct claude-agent-acp binary', async () => {
+      vi.mocked(findBinary).mockImplementation(async (name) => {
+        if (name === 'claude') return '/usr/local/bin/claude';
+        if (name === 'claude-agent-acp') return '/usr/local/bin/claude-agent-acp';
+        if (name === 'npx') return '/usr/local/bin/npx';
+        return null;
+      });
+
+      const result = await resolveClaudeCodeCommand();
+      expect(result).not.toBeNull();
+      expect(result!.usesNpx).toBe(true);
+      expect(result!.command).toBe('/usr/local/bin/npx');
+      const probedNames = vi.mocked(findBinary).mock.calls.map(([name]) => name);
+      expect(probedNames).not.toContain('claude-agent-acp');
+    });
+
+    it('returns null when npx is not available', async () => {
       vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/usr/local/bin/claude';
         return null;
@@ -81,8 +89,59 @@ describe('claude-code-resolver', () => {
     });
   });
 
+  describe('resolveClaudeCodeCommandDetailed()', () => {
+    it("reports 'claude-cli-missing' when the claude CLI is not found", async () => {
+      vi.mocked(findBinary).mockResolvedValue(null);
+
+      const resolution = await resolveClaudeCodeCommandDetailed();
+      expect(resolution).toEqual({ ok: false, reason: 'claude-cli-missing' });
+    });
+
+    it("reports 'npx-missing' when the claude CLI is present but npx is not", async () => {
+      vi.mocked(findBinary).mockImplementation(async (name) => {
+        if (name === 'claude') return '/usr/local/bin/claude';
+        return null;
+      });
+
+      const resolution = await resolveClaudeCodeCommandDetailed();
+      expect(resolution).toEqual({ ok: false, reason: 'npx-missing' });
+    });
+
+    it('resolves the pinned npx command when both are present', async () => {
+      vi.mocked(findBinary).mockImplementation(async (name) => {
+        if (name === 'claude') return '/usr/local/bin/claude';
+        if (name === 'npx') return '/usr/local/bin/npx';
+        return null;
+      });
+
+      const resolution = await resolveClaudeCodeCommandDetailed();
+      expect(resolution.ok).toBe(true);
+      if (resolution.ok) {
+        expect(resolution.resolved.command).toBe('/usr/local/bin/npx');
+        expect(resolution.resolved.argsPrefix).toEqual(['-y', CLAUDE_AGENT_ACP_NPX_SPEC]);
+        expect(resolution.resolved.usesNpx).toBe(true);
+      }
+    });
+  });
+
+  describe('isNpxAvailableForClaudeCode()', () => {
+    it('returns true when npx is found', async () => {
+      vi.mocked(findBinary).mockImplementation(async (name) => {
+        if (name === 'npx') return '/usr/local/bin/npx';
+        return null;
+      });
+
+      expect(await isNpxAvailableForClaudeCode()).toBe(true);
+    });
+
+    it('returns false when npx is not found', async () => {
+      vi.mocked(findBinary).mockResolvedValue(null);
+      expect(await isNpxAvailableForClaudeCode()).toBe(false);
+    });
+  });
+
   describe('package name verification (regression guard)', () => {
-    it('npx fallback uses new package name @agentclientprotocol/claude-agent-acp', async () => {
+    it('npx spec uses @agentclientprotocol/claude-agent-acp with a pinned version', async () => {
       vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/usr/local/bin/claude';
         if (name === 'npx') return '/usr/local/bin/npx';
@@ -91,35 +150,35 @@ describe('claude-code-resolver', () => {
 
       const result = await resolveClaudeCodeCommand();
       expect(result).not.toBeNull();
-      expect(result!.argsPrefix).toContain('@agentclientprotocol/claude-agent-acp');
-      // Must NOT reference deprecated package names
+      expect(result!.argsPrefix.join(' ')).toContain('@agentclientprotocol/claude-agent-acp@');
+      // Must NOT reference deprecated package names or float on latest
       expect(result!.argsPrefix.join(' ')).not.toContain('claude-code-acp');
       expect(result!.argsPrefix.join(' ')).not.toContain('@zed-industries/');
+      expect(result!.argsPrefix.join(' ')).not.toContain('@latest');
     });
   });
 
   describe('clearClaudeCodeCache()', () => {
     it('clears all cached paths so re-detection uses new values', async () => {
-      // First call: claude + agent-acp found
       vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/first/claude';
-        if (name === 'claude-agent-acp') return '/first/claude-agent-acp';
+        if (name === 'npx') return '/first/npx';
         return null;
       });
 
       const first = await resolveClaudeCodeCommand();
-      expect(first!.command).toBe('/first/claude-agent-acp');
+      expect(first!.command).toBe('/first/npx');
 
       // Clear cache and change mock
       clearClaudeCodeCache();
       vi.mocked(findBinary).mockImplementation(async (name) => {
         if (name === 'claude') return '/second/claude';
-        if (name === 'claude-agent-acp') return '/second/claude-agent-acp';
+        if (name === 'npx') return '/second/npx';
         return null;
       });
 
       const second = await resolveClaudeCodeCommand();
-      expect(second!.command).toBe('/second/claude-agent-acp');
+      expect(second!.command).toBe('/second/npx');
     });
   });
 

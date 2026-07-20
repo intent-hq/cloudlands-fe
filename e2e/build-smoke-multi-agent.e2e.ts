@@ -70,12 +70,12 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
       try {
         const { execSync } = await import('child_process');
         if (process.platform === 'win32') {
-          execSync('taskkill /F /IM "Intent by Augment.exe"', {
+          execSync('taskkill /F /IM "Intent.exe"', {
             stdio: 'ignore',
             windowsHide: true,
           });
         } else {
-          execSync('pkill -f "Intent by Augment" || true', { stdio: 'ignore' });
+          execSync('pkill -f "Intent\\.app/Contents/MacOS/Intent" || true', { stdio: 'ignore' });
         }
       } catch {
         // No matching processes

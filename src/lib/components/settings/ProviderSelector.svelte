@@ -35,6 +35,7 @@
   PROVIDERS_CHANNELS,
 } from '$shared/ipc/channels';
   import { MINIMUM_AUGGIE_VERSION } from '$shared/constants/auggie';
+  import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
   import { createLogger } from '$lib/utils/client-logger';
   import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
   import {
@@ -195,6 +196,7 @@
           docsUrl: PROVIDER_METADATA[provider.id]?.docsUrl ?? '',
           loginDocsUrl: provider.loginDocsUrl,
           hasNpxFallback: status?.hasNpxFallback ?? false,
+          warning: status?.warning,
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name)),
@@ -920,6 +922,21 @@
               <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
                 <Fa icon={faTriangleExclamation} class="w-3 h-3" />
                 <span>npm/npx too old — npm 7+ required</span>
+              </div>
+            {/if}
+            <!-- Provider status warning (e.g. claude-code installed but npx missing) -->
+            {#if provider.warning}
+              <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
+                <Fa icon={faTriangleExclamation} class="w-3 h-3" />
+                <span>
+                  {provider.warning}{#if provider.warning === CLAUDE_CODE_NPX_MISSING_WARNING}
+                    — <button
+                      type="button"
+                      class="underline hover:no-underline"
+                      onclick={() => void shell.open('https://nodejs.org')}
+                    >nodejs.org</button>
+                  {/if}
+                </span>
               </div>
             {/if}
           </div>

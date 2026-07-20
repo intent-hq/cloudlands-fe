@@ -1,8 +1,8 @@
 /**
  * Utility to generate `intent://create` deep link URLs for external services.
  *
- * Used by Augment's GitHub app (and similar integrations) to create
- * "Fix in Intent" links that open Intent with a pre-filled workspace.
+ * Used by GitHub-app-style integrations to create "Fix in Intent" links
+ * that open Intent with a pre-filled workspace.
  */
 
 // ---------------------------------------------------------------------------

@@ -65,12 +65,12 @@ test.describe('Build Smoke — Chat History Navigation', () => {
       try {
         const { execSync } = await import('child_process');
         if (process.platform === 'win32') {
-          execSync('taskkill /F /IM "Intent by Augment.exe"', {
+          execSync('taskkill /F /IM "Intent.exe"', {
             stdio: 'ignore',
             windowsHide: true,
           });
         } else {
-          execSync('pkill -9 -f "Intent by Augment"', { stdio: 'ignore' });
+          execSync('pkill -9 -f "Intent\\.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
         }
       } catch {
         // No matching processes

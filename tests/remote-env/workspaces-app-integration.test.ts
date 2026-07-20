@@ -88,7 +88,7 @@ describe(`Intent App SSH Integration - ${profile.name}`, () => {
     });
 
     it('should have user-specific paths', () => {
-      expect(DEVPOD_PROFILE.testRepoPath).toBe('/home/augment/repos/test-repo');
+      expect(DEVPOD_PROFILE.testRepoPath).toBe('/home/devuser/repos/test-repo');
       expect(STANDARD_PROFILE.testRepoPath).toBe('/home/testuser/repos/test-repo');
     });
   });

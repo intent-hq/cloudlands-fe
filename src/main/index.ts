@@ -355,14 +355,14 @@ async function gracefulShutdown() {
 
   try {
     // Cleanup terminals gracefully - this properly cleans up PTY processes
-    // to prevent Napi::Error crashes during shutdown (AUGMENT-INTENT-8)
+    // to prevent Napi::Error crashes during shutdown
     await cleanupTerminals();
 
     // Allow native conpty threads to complete their exit callbacks
     // before tearing down the Node environment. The conpty.cc background thread
     // calls tsfn.BlockingCall() then tsfn.Release() after the PTY process exits;
     // if the environment is torn down too quickly, the assertion at conpty.cc:110
-    // fires. This delay gives those threads time to finish. (AUGMENT-INTENT-9)
+    // fires. This delay gives those threads time to finish.
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     // Stop all running workspace scripts (spawned via child_process.spawn)
@@ -1656,15 +1656,17 @@ async function confirmQuitWithRunningAgents(): Promise<boolean> {
     agentIds: respondingAgents.map((s) => s.agentId),
   });
 
-  // Daemon agents SURVIVE app quit: gracefulShutdown only closes the daemon
-  // socket, the agents keep working inside intentd. So this dialog informs
-  // rather than blocks — quitting loses no progress, and Quit is the default.
+  // The intentd daemon runs as a sidecar and shuts down with the app, so
+  // quitting stops running agents mid-turn. The daemon captures those agents
+  // as interrupted records on shutdown (PROTOCOL §6.6), and the app offers to
+  // resume them on next launch — so quitting pauses rather than loses work,
+  // and Quit remains the default.
   const result = await dialog.showMessageBox({
     type: 'info',
     title: 'Agents Still Working',
     message: `${respondingAgents.length} agent${respondingAgents.length > 1 ? 's are' : ' is'} still working.`,
     detail:
-      'Agents keep running in the background after the app closes. Their results will be waiting when you reopen. Quit now?',
+      'Quitting will shut down running agents. You can resume them when the app reopens. Quit now?',
     buttons: ['Quit', 'Cancel'],
     defaultId: 0,
     cancelId: 1,
@@ -1777,7 +1779,7 @@ app.on('window-all-closed', async () => {
   // Terminal cleanup is NOT done here — app.quit() (line 2692) triggers
   // before-quit → gracefulShutdown() which already calls cleanupTerminals()
   // with a proper settling delay. Calling it here too caused a double-cleanup
-  // race that could crash conpty's native thread (AUGMENT-INTENT-8).
+  // race that could crash conpty's native thread.
 
   // Cleanup IPC debug tracker
   ipcDebugTracker.dispose();

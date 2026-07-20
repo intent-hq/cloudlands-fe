@@ -29,8 +29,8 @@ import { basename, join, resolve } from 'path';
  *
  * Resolution order:
  *  1. PACKAGED_APP_PATH env var (explicit override)
- *  2. dist-electron/mac-arm64/Intent by Augment.app/Contents/MacOS/Intent by Augment
- *  3. dist-electron/mac/Intent by Augment.app/Contents/MacOS/Intent by Augment
+ *  2. dist-electron/mac-arm64/Intent.app/Contents/MacOS/Intent
+ *  3. dist-electron/mac/Intent.app/Contents/MacOS/Intent
  *
  * Throws if no binary is found.
  */
@@ -46,26 +46,10 @@ export function findPackagedApp(): string {
   const root = process.cwd();
   const candidates =
     process.platform === 'win32'
-      ? [join(root, 'dist-electron', 'win-unpacked', 'Intent by Augment.exe')]
+      ? [join(root, 'dist-electron', 'win-unpacked', 'Intent.exe')]
       : [
-          join(
-            root,
-            'dist-electron',
-            'mac-arm64',
-            'Intent by Augment.app',
-            'Contents',
-            'MacOS',
-            'Intent by Augment',
-          ),
-          join(
-            root,
-            'dist-electron',
-            'mac',
-            'Intent by Augment.app',
-            'Contents',
-            'MacOS',
-            'Intent by Augment',
-          ),
+          join(root, 'dist-electron', 'mac-arm64', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
+          join(root, 'dist-electron', 'mac', 'Intent.app', 'Contents', 'MacOS', 'Intent'),
         ];
 
   for (const candidate of candidates) {
@@ -85,30 +69,25 @@ export function findPackagedApp(): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Kill any running "Intent by Augment" processes to release the single instance lock.
+ * Kill any running packaged "Intent" processes to release the single instance lock.
  * The packaged app uses app.requestSingleInstanceLock() which prevents a second
  * instance from launching.
  */
 async function killExistingPackagedApp(): Promise<void> {
-  console.log('⚠️  Killing existing "Intent by Augment" processes for clean test launch...');
+  console.log('⚠️  Killing existing packaged "Intent" processes for clean test launch...');
   if (process.platform === 'win32') {
     try {
-      execSync('taskkill /F /IM "Intent by Augment.exe"', { stdio: 'ignore', windowsHide: true });
+      execSync('taskkill /F /IM "Intent.exe"', { stdio: 'ignore', windowsHide: true });
     } catch {
       // No matching processes — that's fine
     }
   } else {
+    // Match the packaged binary path so unrelated processes (e.g. intentd)
+    // are never touched.
     try {
-      // Kill the main process
-      execSync('pkill -f "Intent by Augment"', { stdio: 'ignore' });
+      execSync('pkill -f "Intent\\.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
     } catch {
       // No matching processes — that's fine
-    }
-    // Also try killing by app bundle name (macOS)
-    try {
-      execSync('pkill -f "Intent by Augment.app"', { stdio: 'ignore' });
-    } catch {
-      // No matching processes
     }
   }
   // Wait for processes to fully terminate and release the lock file
