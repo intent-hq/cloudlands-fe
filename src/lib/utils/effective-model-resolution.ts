@@ -118,7 +118,9 @@ export function resolveEffectiveModelForSpecialist(
 /**
  * Resolve the model to use when creating the initial agent from the Home
  * screen: an explicit user override always wins; otherwise use the same
- * effective-model resolution the picker displays.
+ * effective-model resolution the picker displays. A degenerate persisted
+ * state (overridden flag set with no model) falls through to the
+ * specialist/default resolution instead of returning undefined.
  */
 export function resolveSubmitModel(
   input: EffectiveSpecialistModelInput & {
@@ -126,6 +128,6 @@ export function resolveSubmitModel(
     overriddenModel?: string;
   },
 ): string | undefined {
-  if (input.modelWasOverridden) return input.overriddenModel;
+  if (input.modelWasOverridden && input.overriddenModel) return input.overriddenModel;
   return resolveEffectiveModelForSpecialist(input);
 }

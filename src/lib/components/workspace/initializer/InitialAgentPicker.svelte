@@ -255,6 +255,14 @@
     const dataReady =
       $fileSpecialistsLoaded$ && $availableModels$.length > 0 && $initializerHydrated$;
     if (!dataReady || modelOverriddenThisSession) return;
+    // Degenerate persisted state: overridden flag set with no model. Normalize
+    // so the invariant `modelWasOverridden ⇒ selectedModel set` holds.
+    if (modelWasOverridden && !selectedModel) {
+      logger.debug('Normalizing degenerate model-override state (flag set, no model)');
+      modelWasOverridden = false;
+      onModelChange?.(undefined);
+      return;
+    }
     if (modelWasOverridden && selectedModel) {
       const currentDefault = isTeamMode ? teamModeModel : singleAgentModel;
       if (currentDefault) {

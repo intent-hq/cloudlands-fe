@@ -207,6 +207,30 @@ describe('InitialAgentPicker stale model override clearing', () => {
     expect(teamPickerSelected()).toBe('user-picked-model');
   });
 
+  it('normalizes a degenerate persisted state (override flag set with no model) once data is ready', async () => {
+    mocks.availableModels$.set([FABLE]);
+    mocks.fileSpecialistsLoaded$.set(true);
+
+    const onModelChange = vi.fn();
+    const { rerender } = render(InitialAgentPicker, {
+      props: {
+        selectedSpecialist: 'spec-writer',
+        isTeamMode: true,
+        selectedModel: undefined,
+        modelWasOverridden: true,
+        onModelChange,
+      },
+    });
+
+    await waitFor(() => expect(onModelChange).toHaveBeenCalledWith(undefined));
+
+    // The flag was cleared: a later selectedModel without the override flag
+    // must not be treated as an override by the picker display.
+    await rerender({ selectedModel: 'opus4.6' });
+    await flush();
+    expect(teamPickerSelected()).toBe('');
+  });
+
   it('clears a stale override re-applied after mount (parent hydration)', async () => {
     mocks.availableModels$.set([FABLE]);
     mocks.fileSpecialistsLoaded$.set(true);

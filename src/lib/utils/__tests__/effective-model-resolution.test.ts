@@ -134,6 +134,22 @@ describe('resolveSubmitModel', () => {
     ).toBe('fable-5');
   });
 
+  it('falls back to specialist resolution when the override flag is set but no model is present (degenerate persisted state)', () => {
+    expect(
+      resolveSubmitModel({
+        modelWasOverridden: true,
+        overriddenModel: undefined,
+        specialistId: 'spec-writer',
+        selectedProvider: 'auggie',
+        availableModelValues: ['fable-5', 'sonnet4.5'],
+        globalSelectedModel: 'sonnet4.5',
+        effectiveCodingAgent: 'auggie',
+        effectiveModel: 'fable-5',
+        specialistInfo: { defaultModelTier: 'smart' },
+      }),
+    ).toBe('fable-5');
+  });
+
   it('returns the overridden model even when it is not in the available list (validated by the caller)', () => {
     expect(
       resolveSubmitModel({
