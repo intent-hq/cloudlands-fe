@@ -27,6 +27,7 @@
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
   import ImageLightbox from '$lib/components/ui/ImageLightbox.svelte';
+  import EditRegenerateConfirmDialog from './EditRegenerateConfirmDialog.svelte';
   import { isImageBlock } from '$shared/types/content-block.guards';
   import type { ContentBlock } from '$shared/types/content-block';
   import AgentMessageAttributionHeader from './AgentMessageAttributionHeader.svelte';
@@ -187,6 +188,8 @@
   let editValue = $state('');
   let editContextItems = $state<ContextItem[]>([]);
   let editSelectedModel = $state<string | null | undefined>(undefined);
+  // Go/no-go confirmation gate before the destructive edit-and-regenerate.
+  let showEditConfirm = $state(false);
 
   let role = $derived(
     message
@@ -837,15 +840,15 @@
     editSelectedModel = undefined;
   }
 
-  function handleSaveEdit(newText: string) {
-    isEditing = false;
-    // Send just the edited user message text.
-    // Context is managed separately by the chat service when re-sending.
-    // Pass the selected model so regeneration uses the same (or user-changed) model.
-    onEditSubmit?.(newText, editSelectedModel ?? undefined);
-    editValue = '';
-    editContextItems = [];
-    editSelectedModel = undefined;
+  // Editing regenerates from this message onward — a destructive daemon-side
+  // truncation (agent.editAndRegenerate, PROTOCOL §5.5) — so gate the dispatch
+  // behind an explicit confirmation; cancel keeps edit mode + draft intact.
+  // Confirm sends just the edited text + selected model (context is re-managed
+  // by the chat service on re-send), then handleCancelEdit exits edit mode.
+  function handleConfirmEditSubmit() {
+    showEditConfirm = false;
+    onEditSubmit?.(editValue, editSelectedModel ?? undefined);
+    handleCancelEdit();
   }
 
   // Register element reference
@@ -928,7 +931,7 @@
             selectedModel={editSelectedModel}
             onmodelChange={(model) => (editSelectedModel = model)}
             placeholder="Edit your message..."
-            onsubmit={() => handleSaveEdit(editValue)}
+            onsubmit={() => (showEditConfirm = true)}
             oncancel={handleCancelEdit}
           />
         </div>
@@ -1182,4 +1185,11 @@
   imageUrl={lightboxImageUrl}
   imageName={lightboxImageName}
   openerElement={lightboxOpenerElement}
+/>
+
+<!-- Destructive-truncation confirmation before edit-and-regenerate -->
+<EditRegenerateConfirmDialog
+  open={showEditConfirm}
+  onConfirm={handleConfirmEditSubmit}
+  onCancel={() => (showEditConfirm = false)}
 />

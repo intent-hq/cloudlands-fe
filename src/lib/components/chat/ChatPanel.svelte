@@ -2633,18 +2633,22 @@
     });
   }
 
-  // Handle editing a user message and regenerating
+  // Handle editing a user message and regenerating. The confirmation gate
+  // lives in ChatMessage (the edit UI) — by the time this runs the user has
+  // already confirmed the destructive truncation.
   function handleEditMessage(messageId: string, newText: string, model?: string) {
     if (!workspace) return;
-    appStore.dispatch(
-      agentSessionEditAndRegenerateRequested(
-        agentId,
-        workspace.id,
-        messageId,
-        newText,
-        model ? { model } : undefined,
-      ),
+    const action = agentSessionEditAndRegenerateRequested(
+      agentId,
+      workspace.id,
+      messageId,
+      newText,
+      model ? { model } : undefined,
     );
+    appStore.dispatch(action);
+    // Failures are surfaced via toast by the edit-regenerate middleware;
+    // swallow the rejection here to avoid an unhandled-rejection warning.
+    action.promise.catch(() => {});
   }
 
   // Handle regenerating from a specific assistant message

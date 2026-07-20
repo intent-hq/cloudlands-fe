@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => {
   const agentStreamMiddleware = createPassthroughMiddleware();
   const agentCreationMiddleware = createPassthroughMiddleware();
   const agentMutationMiddleware = createPassthroughMiddleware();
+  const editRegenerateMiddleware = createPassthroughMiddleware();
   const contextMutationMiddleware = createPassthroughMiddleware();
   const taskAgentAssociationsMutationMiddleware = createPassthroughMiddleware();
   const appLayoutNavigationMiddleware = createPassthroughMiddleware();
@@ -96,6 +97,7 @@ const mocks = vi.hoisted(() => {
     createAgentStreamMiddleware: vi.fn(() => agentStreamMiddleware),
     createAgentCreationMiddleware: vi.fn(() => agentCreationMiddleware),
     createAgentMutationMiddleware: vi.fn(() => agentMutationMiddleware),
+    createEditRegenerateMiddleware: vi.fn(() => editRegenerateMiddleware),
     createContextMutationMiddleware: vi.fn(() => contextMutationMiddleware),
     createTaskAgentAssociationsMutationMiddleware: vi.fn(
       () => taskAgentAssociationsMutationMiddleware,
@@ -165,6 +167,7 @@ const mocks = vi.hoisted(() => {
     agentStreamMiddleware,
     agentCreationMiddleware,
     agentMutationMiddleware,
+    editRegenerateMiddleware,
     contextMutationMiddleware,
     taskAgentAssociationsMutationMiddleware,
     appLayoutNavigationMiddleware,
@@ -254,6 +257,9 @@ vi.mock("$features/agent/agent-creation-service", () => ({
 }));
 vi.mock("$features/agent/agent-mutation-service", () => ({
   createAgentMutationMiddleware: mocks.createAgentMutationMiddleware,
+}));
+vi.mock("$features/agent/edit-regenerate-service", () => ({
+  createEditRegenerateMiddleware: mocks.createEditRegenerateMiddleware,
 }));
 vi.mock("$features/context/context-mutation-service", () => ({
   createContextMutationMiddleware: mocks.createContextMutationMiddleware,
@@ -442,6 +448,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
+      mocks.editRegenerateMiddleware,
       mocks.contextMutationMiddleware,
       mocks.taskAgentAssociationsMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
@@ -512,6 +519,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
+      mocks.editRegenerateMiddleware,
       mocks.contextMutationMiddleware,
       mocks.taskAgentAssociationsMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
@@ -582,6 +590,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
+      mocks.editRegenerateMiddleware,
       mocks.contextMutationMiddleware,
       mocks.taskAgentAssociationsMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
@@ -653,6 +662,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
+      mocks.editRegenerateMiddleware,
       mocks.contextMutationMiddleware,
       mocks.taskAgentAssociationsMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,
@@ -741,6 +751,7 @@ describe("store middleware Redux logging gating", () => {
       mocks.agentStreamMiddleware,
       mocks.agentCreationMiddleware,
       mocks.agentMutationMiddleware,
+      mocks.editRegenerateMiddleware,
       mocks.contextMutationMiddleware,
       mocks.taskAgentAssociationsMutationMiddleware,
       mocks.appLayoutNavigationMiddleware,

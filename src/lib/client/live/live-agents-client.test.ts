@@ -216,6 +216,78 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     expect(result.error).toContain('ipc boom');
   });
 
+  it('editAndRegenerate forwards agent.editAndRegenerate with §5.5 params (model omitted when absent)', async () => {
+    // PROTOCOL §5.5 (catalog-parity extension): agent.editAndRegenerate takes
+    // { agentId, messageId, content, workspaceId, model? } and returns
+    // { success, queued: false, messageId, truncatedCount }. The seam folds the
+    // body into a uniform MutationResult and must NOT send an explicit
+    // `model: undefined` the daemon would reject.
+    backend.onRequest('agent.editAndRegenerate', () => ({
+      success: true,
+      queued: false,
+      messageId: 'user-msg-new',
+      truncatedCount: 3,
+    }));
+    const client = new LiveAgentsClient();
+
+    const result = await client.editAndRegenerate({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'msg-edit-1',
+      content: 'edited text',
+    });
+    expect(result).toEqual({ success: true });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.editAndRegenerate',
+      params: {
+        agentId: 'agent-1',
+        workspaceId: 'ws-1',
+        messageId: 'msg-edit-1',
+        content: 'edited text',
+      },
+    });
+  });
+
+  it('editAndRegenerate forwards the per-request model override when supplied', async () => {
+    backend.onRequest('agent.editAndRegenerate', () => ({
+      success: true,
+      queued: false,
+      messageId: 'user-msg-new',
+      truncatedCount: 1,
+    }));
+    const client = new LiveAgentsClient();
+
+    await client.editAndRegenerate({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'msg-edit-1',
+      content: 'edited text',
+      model: 'opus',
+    });
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.editAndRegenerate',
+      params: expect.objectContaining({ model: 'opus' }),
+    });
+  });
+
+  it('editAndRegenerate surfaces a daemon rejection as a non-success MutationResult (no throw)', async () => {
+    // Unknown / non-user messageIds are rejected with -32602 BEFORE any state
+    // changes (transcript untouched) per the §5.5 contract.
+    backend.onRequest('agent.editAndRegenerate', () => {
+      throw new Error('Invalid params: messageId does not reference a user message');
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.editAndRegenerate({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      messageId: 'msg-not-user',
+      content: 'edited text',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('messageId does not reference a user message');
+  });
+
   it('stop forwards agent.stop with §5.5 params and folds the ack into success', async () => {
     // PROTOCOL §5.5: agent.stop takes `{ agentId }` and acks `{ success: true }`
     // — the daemon cancels the in-flight stream and emits the terminal
