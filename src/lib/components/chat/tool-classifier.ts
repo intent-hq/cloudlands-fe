@@ -102,8 +102,6 @@ const CLEAN_SUFFIXES_TO_STRIP = [
   '_browser_mcp',
   '_context_7',
   '_svelte',
-  '_augment',
-  '-augment',
   '_npx',
   '_sequential_thinking',
   '_figma',
@@ -121,7 +119,7 @@ function cleanToolName(name: string | undefined | null): string {
   if (!name) return '';
 
   // Handle MCP URL formats
-  const mcpMatch = name.match(/(?:\/\/local\/mcp\/|workspaces\.augmentcode\.com\/mcp\/)(.+)$/);
+  const mcpMatch = name.match(/\/\/local\/mcp\/(.+)$/);
   if (mcpMatch) name = mcpMatch[1];
 
   // Strip MCP prefixes like "mcp__workspace-mcp__" or "mcp__some-server__"
@@ -211,8 +209,6 @@ const MCP_SUFFIX_MAP: Array<{ suffix: string; source: string }> = [
   { suffix: '_notion', source: 'notion' },
   { suffix: '_jira', source: 'jira' },
   { suffix: '_svelte', source: 'svelte' },
-  { suffix: '_augment', source: 'augment' },
-  { suffix: '-augment', source: 'augment' },
   { suffix: '_npx', source: 'npx' },
 ];
 
@@ -296,9 +292,7 @@ export function extractMcpSource(rawName: string | undefined | null): string | u
   if (!rawName) return undefined;
 
   // Handle MCP URL formats first
-  const mcpUrlMatch = rawName.match(
-    /(?:\/\/local\/mcp\/|workspaces\.augmentcode\.com\/mcp\/)(.+)$/,
-  );
+  const mcpUrlMatch = rawName.match(/\/\/local\/mcp\/(.+)$/);
   if (mcpUrlMatch) rawName = mcpUrlMatch[1];
 
   // Check for mcp__<server>__ prefix (dynamic extraction)
@@ -433,7 +427,7 @@ const CONTEXT_ENGINE_TOOLS_UNDERSCORE = [
 ];
 
 /**
- * Check if a tool is powered by Augment's Context Engine
+ * Check if a tool is an Augment Context Engine tool
  */
 export function isContextEngineTool(toolName: string | undefined | null): boolean {
   if (!toolName) return false;

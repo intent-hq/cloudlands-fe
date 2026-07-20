@@ -167,10 +167,10 @@ Check out the [spec](intent://local/note/spec) for requirements.
 Future URL formats might look like:
 
 ```
-intent://augment-org/note/spec
-intent://augment-org/file/src/main.ts
-intent://augment-org/agent/session-123
-intent://augment-org/note/spec#section-2
+intent://example-org/note/spec
+intent://example-org/file/src/main.ts
+intent://example-org/agent/session-123
+intent://example-org/note/spec#section-2
 ```
 
 ## Design Decisions

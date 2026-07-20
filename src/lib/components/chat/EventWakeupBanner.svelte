@@ -252,7 +252,7 @@
   });
 
   // Get agent events with IDs for displaying cards
-  // IMPORTANT: Deduplicate by agentId to prevent each_key_duplicate errors (AUGMENT-INTENT-2A)
+  // IMPORTANT: Deduplicate by agentId to prevent each_key_duplicate errors
   // Later events for the same agent override earlier ones (matching parseAgentEvents behavior)
   const agentEvents = $derived.by(() => {
     const agentMap = new Map<

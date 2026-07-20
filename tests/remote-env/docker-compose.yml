@@ -26,14 +26,14 @@ services:
       context: .
       args:
         SSH_PORT: 22022
-        SSH_USER: augment
+        SSH_USER: devuser
         INSTALL_NODEJS: "true"
         INSTALL_PYTHON: "true"
         MINIMAL_INSTALL: "false"
     ports:
       - "22022:22022"
     volumes:
-      - devpod-home:/home/augment
+      - devpod-home:/home/devuser
     profiles:
       - devpod
       - all
