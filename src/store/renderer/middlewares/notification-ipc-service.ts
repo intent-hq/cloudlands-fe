@@ -20,7 +20,7 @@
  * lazily like the deleted saga did.
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
-import { goto } from "$app/navigation";
+import { navigateToRoute } from "$lib/utils/navigation.client";
 import { store as appStore } from "$store/renderer/store";
 import type { StoreState } from "../types";
 import { isElectron } from "$lib/electron-bridge";
@@ -66,7 +66,7 @@ async function handleNotificationNavigate(data?: NotificationNavigateEvent): Pro
   }
 
   try {
-    await goto(`/workspace/${data.workspaceId}`);
+    await navigateToRoute(`/workspace/${data.workspaceId}`);
   } catch (error) {
     logger.warn("Failed to navigate from notification click", {
       workspaceId: data.workspaceId,

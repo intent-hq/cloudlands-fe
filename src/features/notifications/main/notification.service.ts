@@ -2,13 +2,15 @@
  * Notification Service
  *
  * Main process service that shows desktop notifications when agents complete.
- * Subscribes to workspace event bus for agent:idle events and displays native OS notifications.
+ * Holds a long-lived daemon `events.subscribe` subscription for `agent:idle`
+ * events (PROTOCOL.md §6.1–§6.3) scoped to the workspace and displays native
+ * OS notifications.
  *
  * Persisted notification preferences live on the daemon under `notifications.*`
  * (PROTOCOL.md §5.12); the legacy `notificationSettings` electron-store bag is
- * retired. The renderer already syncs `notifications.enabled` to Redux from the
- * daemon-backed settings catalog; here we hydrate a small cache at process
- * start and refresh on demand.
+ * retired. Preferences are re-fetched on each idle event so settings toggles
+ * take effect without a relaunch; the last-known values are kept as a fallback
+ * when the daemon is unreachable.
  */
 
 import {
@@ -18,6 +20,8 @@ import {
 } from 'electron';
 import { Logger } from '../../../shared/logger';
 import type { AgentIdleEvent } from '../../events/types';
+import type { JsonRpcNotification } from '../../backend/main/json-rpc-client';
+import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
 import {
   getWindowIdsForWorkspace,
   sendToWorkspaceWindows,
@@ -28,37 +32,55 @@ const logger = new Logger('NotificationService');
 /** Daemon setting path for the notifications-enabled toggle (§5.12). */
 const SETTING_PATH_ENABLED = 'notifications.enabled';
 
-/** Cached notification-enabled preference, hydrated lazily from the daemon. */
-let cachedEnabled: boolean | null = null;
-let hydrationPromise: Promise<void> | null = null;
+/** Daemon setting path for the "only when unfocused" toggle (§5.12). */
+const SETTING_PATH_SOUND_ONLY_WHEN_UNFOCUSED = 'notifications.soundOnlyWhenUnfocused';
 
-async function fetchEnabled(): Promise<boolean> {
-  const { getBackendClient } = await import('../../backend/main/backend.ipc');
-  const result = (await getBackendClient().request('settings.get', {
-    path: SETTING_PATH_ENABLED,
-  })) as { value?: unknown } | null;
-  const value = result?.value;
-  // Default to enabled when the setting is unset or malformed (matches the
-  // daemon catalog default and the legacy electron-store default).
-  return value === false ? false : true;
+/** Daemon-owned notification preferences consulted per idle event. */
+interface NotificationPrefs {
+  enabled: boolean;
+  soundOnlyWhenUnfocused: boolean;
 }
 
-/** Hydrate `cachedEnabled` once from the daemon; safe to call repeatedly. */
-async function hydrate(): Promise<void> {
-  if (cachedEnabled !== null) return;
-  if (hydrationPromise) return hydrationPromise;
-  hydrationPromise = (async () => {
-    try {
-      cachedEnabled = await fetchEnabled();
-    } catch (error) {
-      logger.warn('Failed to hydrate notifications.enabled from daemon', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      // Default open — same as the daemon catalog default.
-      cachedEnabled = true;
-    }
-  })();
-  return hydrationPromise;
+/** Daemon catalog defaults — also the fallback when the daemon is unreachable. */
+const DEFAULT_PREFS: NotificationPrefs = {
+  enabled: true,
+  soundOnlyWhenUnfocused: true,
+};
+
+/** Last-known preferences, used as a fallback when a refresh fails. */
+let cachedPrefs: NotificationPrefs | null = null;
+
+async function fetchBoolSetting(path: string, defaultValue: boolean): Promise<boolean> {
+  const result = (await getBackendClient().request('settings.get', {
+    path,
+  })) as { value?: unknown } | null;
+  const value = result?.value;
+  // Fall back to the daemon catalog default when unset or malformed.
+  return typeof value === 'boolean' ? value : defaultValue;
+}
+
+/**
+ * Fetch fresh `notifications.*` preferences from the daemon. On failure the
+ * last-known values (or the catalog defaults) are returned so notifications
+ * stay default-open, matching the legacy electron-store behavior.
+ */
+async function refreshPrefs(): Promise<NotificationPrefs> {
+  try {
+    const [enabled, soundOnlyWhenUnfocused] = await Promise.all([
+      fetchBoolSetting(SETTING_PATH_ENABLED, DEFAULT_PREFS.enabled),
+      fetchBoolSetting(
+        SETTING_PATH_SOUND_ONLY_WHEN_UNFOCUSED,
+        DEFAULT_PREFS.soundOnlyWhenUnfocused,
+      ),
+    ]);
+    cachedPrefs = { enabled, soundOnlyWhenUnfocused };
+  } catch (error) {
+    logger.warn('Failed to fetch notifications.* settings from daemon', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    cachedPrefs = cachedPrefs ?? { ...DEFAULT_PREFS };
+  }
+  return cachedPrefs;
 }
 
 /**
@@ -89,44 +111,132 @@ interface NotificationContent {
 export class NotificationService {
   private workspaceId: string;
 
-  private unsubscribe?: () => void;
+  private started = false;
+  private subscriptionId?: string;
+  private notificationListener?: (n: JsonRpcNotification) => void;
+  private reconnectDisposer?: () => void;
   private activeNotifications = new Set<Notification>();
 
   constructor(workspaceId: string) {
     this.workspaceId = workspaceId;
-    // Kick off hydration eagerly; the first `handleAgentIdle` awaits it.
-    void hydrate();
+    // Warm the preferences cache eagerly; each `handleAgentIdle` re-fetches.
+    void refreshPrefs();
   }
 
   /**
-   * Start the notification service (no-op; events are now delivered via sagas).
+   * Start the notification service: attach a long-lived daemon `agent:idle`
+   * subscription for this workspace (PROTOCOL.md §6.1) and re-issue it on
+   * backend reconnect (RESUB-1).
    */
   start(): void {
-    logger.info('NotificationService started (saga-driven)', { workspaceId: this.workspaceId });
+    if (this.started) return;
+    this.started = true;
+    logger.info('NotificationService started', { workspaceId: this.workspaceId });
+    void this.attachIdleSubscription();
   }
 
   /**
-   * Stop the notification service (no-op; events are now delivered via sagas).
+   * Stop the notification service: detach the daemon notification listener
+   * and best-effort unsubscribe the `agent:idle` subscription.
    */
   stop(): void {
+    this.started = false;
+    this.reconnectDisposer?.();
+    this.reconnectDisposer = undefined;
+    const listener = this.notificationListener;
+    this.notificationListener = undefined;
+    const subscriptionId = this.subscriptionId;
+    this.subscriptionId = undefined;
+    void (async () => {
+      try {
+        const client = getBackendClient();
+        if (listener) client.off('notification', listener);
+        if (subscriptionId) {
+          await client.request('events.unsubscribe', { subscriptionId });
+        }
+      } catch (error) {
+        logger.debug('Failed to tear down agent:idle subscription', {
+          workspaceId: this.workspaceId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    })();
     logger.info('NotificationService stopped', { workspaceId: this.workspaceId });
   }
 
   /**
-   * Handle agent:idle event.
-   * Called by event-triggered-sagas when an agent:idle workspace event is accepted.
+   * Attach the daemon notification listener and issue the initial
+   * `events.subscribe`. Mirrors the terminal-registry / script-manager
+   * long-lived subscription pattern: the listener persists across reconnects
+   * (same singleton client); only the subscription id is re-issued.
+   */
+  private async attachIdleSubscription(): Promise<void> {
+    try {
+      const client = getBackendClient();
+      const listener = (n: JsonRpcNotification): void => {
+        if (n.method !== 'events.event') return;
+        const params = n.params as { subscriptionId?: unknown; event?: unknown } | undefined;
+        const subId =
+          typeof params?.subscriptionId === 'string' ? params.subscriptionId : undefined;
+        // Strict match: the shared client also carries notifications for
+        // renderer-proxied subscriptions; only our own subscription's events
+        // may trigger a desktop notification.
+        if (!this.subscriptionId || subId !== this.subscriptionId) return;
+        const event = params?.event as { type?: unknown; workspaceId?: unknown } | undefined;
+        if (!event || event.type !== 'agent:idle') return;
+        if (typeof event.workspaceId === 'string' && event.workspaceId !== this.workspaceId) {
+          return;
+        }
+        void this.handleAgentIdle(event as unknown as AgentIdleEvent);
+      };
+      this.notificationListener = listener;
+      client.on('notification', listener);
+      this.reconnectDisposer = onBackendReconnected(() => {
+        // The daemon dropped every in-memory subscription on reconnect; the
+        // stale id belonged to the previous connection. Re-issue subscribe.
+        this.subscriptionId = undefined;
+        if (!this.started) return;
+        void this.subscribeToIdleEvents();
+      });
+      await this.subscribeToIdleEvents();
+    } catch (error) {
+      logger.warn('Failed to attach agent:idle subscription', {
+        workspaceId: this.workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /** Issue `events.subscribe` for `agent:idle` scoped to this workspace (§6.1). */
+  private async subscribeToIdleEvents(): Promise<void> {
+    try {
+      const result = (await getBackendClient().request('events.subscribe', {
+        eventTypes: ['agent:idle'],
+        workspaceId: this.workspaceId,
+      })) as { subscriptionId?: string } | undefined;
+      this.subscriptionId = result?.subscriptionId;
+    } catch (error) {
+      logger.warn('events.subscribe for agent:idle failed; notifications will not fire', {
+        workspaceId: this.workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Handle agent:idle event delivered by the daemon subscription.
    */
   async handleAgentIdle(event: AgentIdleEvent): Promise<void> {
     try {
-      // Ensure the enabled flag is hydrated before we consult it.
-      await hydrate();
+      // Fresh read so settings toggles take effect without a relaunch.
+      const prefs = await refreshPrefs();
 
-      if (cachedEnabled === false) {
+      if (!prefs.enabled) {
         logger.debug('Notifications disabled', { workspaceId: this.workspaceId });
         return;
       }
 
-      // Skip background agents - only notify for user-facing agents
+      // Fast path: explicit background flag on the event payload.
       if (event.data.isBackground === true) {
         logger.debug('Skipping notification for background agent', {
           workspaceId: this.workspaceId,
@@ -135,34 +245,33 @@ export class NotificationService {
         return;
       }
 
-      // Check if any workspace window is focused. The legacy
-      // `showWhenFocused` electron-store field had no writer and no daemon
-      // peer, so its effective value was always `false` — preserve that
-      // behavior: skip notifications when a workspace window is focused.
-      const workspaceWindowIds = getWindowIdsForWorkspace(this.workspaceId);
-      const workspaceWindows = workspaceWindowIds
-        .map((id) => BrowserWindow.fromId(id))
-        .filter((w): w is BrowserWindow => w !== null && !w.isDestroyed());
-      const anyFocused = workspaceWindows.some((w) => w.isFocused());
-      if (anyFocused) {
-        logger.debug('Workspace window is focused, skipping notification', {
+      // `agent.list` (PROTOCOL.md §5.5) serves two purposes: AgentLite
+      // `metadata` carries `isBackground`/`specialist` (absent from the
+      // daemon idle payload), and `isStreaming`/`isResponding` feed the
+      // other-agents-active suppression gate below.
+      const agentList = (await getBackendClient().request('agent.list', {
+        workspaceId: this.workspaceId,
+      })) as {
+        agents?: Array<{
+          id?: string;
+          isStreaming?: boolean;
+          isResponding?: boolean;
+          metadata?: { isBackground?: boolean; specialist?: string };
+        }>;
+      } | undefined;
+      const agents = agentList?.agents ?? [];
+      const idleAgent = agents.find((agent) => agent.id === event.data.agentId);
+
+      // Skip background agents — delegated child completions stay quiet.
+      if (idleAgent?.metadata?.isBackground === true) {
+        logger.debug('Skipping notification for background agent (metadata)', {
           workspaceId: this.workspaceId,
           agentName: event.data.agentName,
         });
         return;
       }
 
-      // Check if any other agents are still streaming in this workspace.
-      // Routed through the daemon (PROTOCOL.md §5.5 `agent.list`): AgentLite
-      // carries `isStreaming`/`isResponding` verbatim, and only `id` feeds the
-      // suppression gate below.
-      const { getBackendClient } = await import('../../backend/main/backend.ipc');
-      const agentList = (await getBackendClient().request('agent.list', {
-        workspaceId: this.workspaceId,
-      })) as {
-        agents?: Array<{ id?: string; isStreaming?: boolean; isResponding?: boolean }>;
-      } | undefined;
-      const otherActiveAgents = (agentList?.agents ?? []).filter(
+      const otherActiveAgents = agents.filter(
         (agent) =>
           (agent.isStreaming === true || agent.isResponding === true) &&
           agent.id !== event.data.agentId,
@@ -177,8 +286,33 @@ export class NotificationService {
         return;
       }
 
-      // Build notification content with specialist type and task title
-      const content = await this.buildNotificationContent(event);
+      // Build notification content with specialist type and task title;
+      // enrich with `metadata.specialist` when the payload lacks it.
+      const content = await this.buildNotificationContent({
+        ...event,
+        data: {
+          ...event.data,
+          specialist: event.data.specialist ?? idleAgent?.metadata?.specialist,
+        },
+      } as AgentIdleEvent);
+
+      // Focus gate for the OS banner: `soundOnlyWhenUnfocused` ON suppresses
+      // the banner while a workspace window is focused; OFF shows it even
+      // when focused. The `notification:show` renderer event is ALWAYS sent
+      // regardless of focus so the renderer sound gate decides on its own.
+      const workspaceWindowIds = getWindowIdsForWorkspace(this.workspaceId);
+      const workspaceWindows = workspaceWindowIds
+        .map((id) => BrowserWindow.fromId(id))
+        .filter((w): w is BrowserWindow => w !== null && !w.isDestroyed());
+      const anyFocused = workspaceWindows.some((w) => w.isFocused());
+      if (anyFocused && prefs.soundOnlyWhenUnfocused) {
+        logger.debug('Workspace window is focused, suppressing OS banner', {
+          workspaceId: this.workspaceId,
+          agentName: event.data.agentName,
+        });
+        this.sendShowEvent(content);
+        return;
+      }
 
       // Show notification — pick first workspace window for click-to-focus
       const focusWindow = workspaceWindows[0] ?? BrowserWindow.getAllWindows()[0];
@@ -234,6 +368,18 @@ export class NotificationService {
   }
 
   /**
+   * Send the `notification:show` renderer event so the renderer can play the
+   * notification sound. Sent regardless of window focus or banner suppression.
+   */
+  private sendShowEvent(content: NotificationContent): void {
+    sendToWorkspaceWindows(this.workspaceId, 'notification:show', {
+      title: content.title,
+      body: content.body,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  /**
    * Show a desktop notification
    */
   private showNotification(content: NotificationContent, mainWindow?: BrowserWindow, workspaceId?: string): void {
@@ -242,11 +388,7 @@ export class NotificationService {
       if (!Notification.isSupported()) {
         logger.warn('Desktop notifications are not supported on this platform');
         // Still send the sound event even if notifications aren't supported
-        sendToWorkspaceWindows(this.workspaceId, 'notification:show', {
-          title: content.title,
-          body: content.body,
-          timestamp: new Date().toISOString(),
-        });
+        this.sendShowEvent(content);
         return;
       }
 
@@ -300,11 +442,7 @@ export class NotificationService {
       }
 
       // Send notification:show event to workspace windows for sound playback
-      sendToWorkspaceWindows(this.workspaceId, 'notification:show', {
-        title: content.title,
-        body: content.body,
-        timestamp: new Date().toISOString(),
-      });
+      this.sendShowEvent(content);
 
       logger.info('Notification shown', {
         workspaceId: this.workspaceId,
@@ -373,11 +511,10 @@ export function disposeNotificationService(workspaceId: string): void {
 }
 
 /**
- * Test-only: reset the cached daemon-hydrated preference so tests can
+ * Test-only: reset the cached daemon-hydrated preferences so tests can
  * re-hydrate against a fresh mock. Not exported for production use.
  * @internal
  */
 export function __resetNotificationCacheForTesting(): void {
-  cachedEnabled = null;
-  hydrationPromise = null;
+  cachedPrefs = null;
 }
