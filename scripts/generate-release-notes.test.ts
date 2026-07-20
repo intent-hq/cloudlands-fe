@@ -164,6 +164,8 @@ describe('generate-release-notes CLI', () => {
       '--manifest-out', manifestFile,
     ];
     const savedGithubToken = process.env.GITHUB_TOKEN;
+    const savedFeToken = process.env.FE_TOKEN;
+    const savedIntentdToken = process.env.INTENTD_TOKEN;
     delete process.env.GITHUB_TOKEN;
     process.env.FE_TOKEN = 'fe-token';
     process.env.INTENTD_TOKEN = 'intentd-token';
@@ -193,8 +195,10 @@ describe('generate-release-notes CLI', () => {
       expect(manifest.feSha).toBe('fe-resolved-sha');
       expect(manifest.intentdSha).toBe('intentd-resolved-sha');
     } finally {
-      delete process.env.FE_TOKEN;
-      delete process.env.INTENTD_TOKEN;
+      if (savedFeToken !== undefined) process.env.FE_TOKEN = savedFeToken;
+      else delete process.env.FE_TOKEN;
+      if (savedIntentdToken !== undefined) process.env.INTENTD_TOKEN = savedIntentdToken;
+      else delete process.env.INTENTD_TOKEN;
       if (savedGithubToken !== undefined) process.env.GITHUB_TOKEN = savedGithubToken;
     }
   });
