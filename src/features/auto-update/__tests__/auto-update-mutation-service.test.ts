@@ -22,7 +22,11 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 
 import { AUTO_UPDATE_CHANNELS } from "$features/auto-update/types";
 import { store as appStore } from "$store/renderer/store";
-import { initAutoUpdate } from "$store/renderer/slices/auto-update/auto-update-slice";
+import {
+  initAutoUpdate,
+  downloadUpdate,
+  installUpdate,
+} from "$store/renderer/slices/auto-update/auto-update-slice";
 import type { UpdateState } from "$features/auto-update/types";
 import {
   registerMockIpcHandler,
@@ -148,5 +152,63 @@ describe("auto-update-mutation-service", () => {
     expect(state?.status).toBe("not-available");
     expect(state?.currentVersion).toBe("2.0.2");
     expect(state?.toastVisible).toBe(true);
+  });
+
+  // Regression: PR #108 removed the auto-update:download / auto-update:install
+  // IPC surface while the renderer still dispatches the downloadUpdate /
+  // installUpdate trigger actions (UpdateToast Install button, settings footer
+  // "Update available" button). The triggers must reach the main process again.
+  it("should invoke auto-update:download when downloadUpdate is dispatched", async () => {
+    const downloadSpy = vi.fn();
+    registerMockIpcHandler(AUTO_UPDATE_CHANNELS.DOWNLOAD, async () => {
+      downloadSpy();
+      return { success: true };
+    });
+
+    appStore.dispatch(downloadUpdate());
+    await flush();
+
+    expect(downloadSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("should invoke auto-update:install when installUpdate is dispatched", async () => {
+    const installSpy = vi.fn();
+    registerMockIpcHandler(AUTO_UPDATE_CHANNELS.INSTALL, async () => {
+      installSpy();
+      return { success: true };
+    });
+
+    appStore.dispatch(installUpdate());
+    await flush();
+
+    expect(installSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("should surface a download failure as a slice error", async () => {
+    registerMockIpcHandler(AUTO_UPDATE_CHANNELS.DOWNLOAD, async () => ({
+      success: false,
+      error: { message: "No update available to download" },
+    }));
+
+    appStore.dispatch(downloadUpdate());
+    await flush();
+
+    const state = appStore.state.autoUpdate;
+    expect(state?.status).toBe("error");
+    expect(state?.error).toBe("No update available to download");
+  });
+
+  it("should surface an install failure as a slice error (shaped failure must not be swallowed)", async () => {
+    registerMockIpcHandler(AUTO_UPDATE_CHANNELS.INSTALL, async () => ({
+      success: false,
+      error: { message: "No update downloaded to install" },
+    }));
+
+    appStore.dispatch(installUpdate());
+    await flush();
+
+    const state = appStore.state.autoUpdate;
+    expect(state?.status).toBe("error");
+    expect(state?.error).toBe("No update downloaded to install");
   });
 });

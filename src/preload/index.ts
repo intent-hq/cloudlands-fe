@@ -549,6 +549,8 @@ const ALLOWED_CHANNELS = [
   "storage:save",
   "storage:delete",
   "auto-update:check-manual",
+  "auto-update:download",
+  "auto-update:install",
   "auto-update:get-state",
   "auto-update:set-channel",
   "auto-update:status-changed",
