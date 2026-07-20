@@ -26,7 +26,7 @@ export const CODEX_ACP_NPX_PACKAGE = `@zed-industries/codex-acp@${MANAGED_CODEX_
  * Pinned Codex CLI version for the npx MCP-server fallback. Bumping it is a
  * deliberate code change.
  */
-export const CODEX_CLI_NPX_VERSION = '0.144.6';
+const CODEX_CLI_NPX_VERSION = '0.144.6';
 export const CODEX_CLI_NPX_PACKAGE = `@openai/codex@${CODEX_CLI_NPX_VERSION}`;
 
 // Common paths to look for codex-acp
