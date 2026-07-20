@@ -49,6 +49,7 @@ import {
 } from "$shared/ipc/channels";
 import { ACP_PROVIDERS } from "$shared/config/provider-config";
 import { MINIMUM_AUGGIE_VERSION, MINIMUM_NODE_VERSION } from "$shared/constants/auggie";
+import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import type {
   ProviderAvailabilityResult,
@@ -214,8 +215,9 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     checkAuggie().catch(() => ({ available: false }) as HostCheckResult),
     backendRequest<HostToolAvailabilityResult>("host.toolAvailability", {
       // `codex` (the real CLI) rides along for the codex auth probe —
-      // availability itself keys off the `codex-acp` adapter.
-      tools: [...Object.values(PROVIDER_BINARIES), "codex"],
+      // availability itself keys off the `codex-acp` adapter. `npx` rides
+      // along for the claude-code adapter check (it always runs via npx).
+      tools: [...Object.values(PROVIDER_BINARIES), "codex", "npx"],
     }).catch(() => ({ tools: {} }) as HostToolAvailabilityResult),
   ]);
   const tools = toolsResult?.tools ?? {};
@@ -225,6 +227,11 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const claudeCode: ProviderStatus = {
     available: tool(PROVIDER_BINARIES["claude-code"]).available === true,
   };
+  // claude-code's ACP adapter always runs via npx (pinned version) — mirror
+  // main's warning when the claude CLI is present but npx is not.
+  if (claudeCode.available && tool("npx").available !== true) {
+    claudeCode.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
+  }
   const codex: ProviderStatus = { available: tool(PROVIDER_BINARIES.codex).available === true };
   const opencode: ProviderStatus = {
     available: tool(PROVIDER_BINARIES.opencode).available === true,
@@ -291,6 +298,15 @@ async function checkSingleProvider(providerId: string): Promise<ProviderStatus> 
   if (!status.available) return status;
 
   if (providerId === "claude-code") {
+    // Adapter runs exclusively via npx — surface the same warning as main
+    // when the claude CLI is installed but npx is missing. A failed probe
+    // (RPC error) is an unknown, not a confirmed absence — no warning then.
+    const npx = await backendRequest<HostCheckResult>("host.findBinary", { name: "npx" }).catch(
+      () => undefined,
+    );
+    if (npx && npx.available !== true) {
+      status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
+    }
     return withAuth(
       status,
       await probeExitCodeAuth(found?.path, ACP_PROVIDERS["claude-code"].authCheckArgs ?? []),

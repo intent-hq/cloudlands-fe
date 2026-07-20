@@ -18,6 +18,7 @@ import { backendRequest } from "$lib/client/live/backend-transport";
 import { mockInvoke } from "$shared/ipc-mock-router";
 import { AUGGIE_CHANNELS, PROVIDERS_CHANNELS } from "$shared/ipc/channels";
 import { MINIMUM_AUGGIE_VERSION } from "$shared/constants/auggie";
+import { CLAUDE_CODE_NPX_MISSING_WARNING } from "$shared/constants/claude-code";
 import type { ProviderAvailabilityResult } from "$shared/types/provider-availability";
 
 const mockedRequest = vi.mocked(backendRequest);
@@ -41,6 +42,7 @@ const NO_TOOLS = {
     pi: { available: false },
     droid: { available: false },
     codex: { available: false },
+    npx: { available: false },
   },
 };
 
@@ -69,7 +71,7 @@ describe("provider-status-bridge-seeder", () => {
 
       expect(mockedRequest).toHaveBeenCalledWith("host.checkAuggie");
       expect(mockedRequest).toHaveBeenCalledWith("host.toolAvailability", {
-        tools: ["claude", "codex-acp", "opencode", "pi", "droid", "codex"],
+        tools: ["claude", "codex-acp", "opencode", "pi", "droid", "codex", "npx"],
       });
       expect(response.success).toBe(true);
       expect(response.data?.hasAnyProvider).toBe(false);
@@ -146,6 +148,7 @@ describe("provider-status-bridge-seeder", () => {
             claude: { available: true, path: "/usr/local/bin/claude" },
             "codex-acp": { available: true, path: "/usr/local/bin/codex-acp" },
             codex: { available: true, path: "/usr/local/bin/codex" },
+            npx: { available: true, path: "/usr/local/bin/npx" },
           },
         },
         "host.exec": (params: unknown) => {
@@ -177,6 +180,29 @@ describe("provider-status-bridge-seeder", () => {
       });
       expect(response.data?.providers.codex).toEqual({ available: true, authenticated: false });
     });
+
+    it("warns when the claude CLI is installed but npx is missing (adapter runs via npx)", async () => {
+      routeDaemon({
+        "host.checkAuggie": { available: false },
+        "host.toolAvailability": {
+          tools: {
+            ...NO_TOOLS.tools,
+            claude: { available: true, path: "/usr/local/bin/claude" },
+          },
+        },
+        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+
+      expect(response.data?.providers.claudeCode).toEqual({
+        available: true,
+        authenticated: true,
+        warning: CLAUDE_CODE_NPX_MISSING_WARNING,
+      });
+    });
   });
 
   describe("providers:check-single → host.checkAuggie / host.findBinary", () => {
@@ -191,6 +217,70 @@ describe("provider-status-bridge-seeder", () => {
       expect(response).toEqual({
         success: true,
         providerId: "auggie",
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it("rechecks claude-code with an npx probe — warning set when npx is missing", async () => {
+      routeDaemon({
+        "host.findBinary": (params) => {
+          const { name } = params as { name: string };
+          return name === "claude"
+            ? { available: true, path: "/usr/local/bin/claude" }
+            : { available: false };
+        },
+        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "claude-code");
+
+      expect(mockedRequest).toHaveBeenCalledWith("host.findBinary", { name: "npx" });
+      expect(response).toEqual({
+        success: true,
+        providerId: "claude-code",
+        data: {
+          available: true,
+          authenticated: true,
+          warning: CLAUDE_CODE_NPX_MISSING_WARNING,
+        },
+      });
+    });
+
+    it("does not warn when the npx probe itself fails (unknown, not confirmed absence)", async () => {
+      routeDaemon({
+        "host.findBinary": (params) => {
+          const { name } = params as { name: string };
+          if (name === "claude") return { available: true, path: "/usr/local/bin/claude" };
+          throw new Error("transport down");
+        },
+        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "claude-code");
+
+      expect(response).toEqual({
+        success: true,
+        providerId: "claude-code",
+        data: { available: true, authenticated: true },
+      });
+    });
+
+    it("rechecks claude-code without a warning when npx is present", async () => {
+      routeDaemon({
+        "host.findBinary": (params) => {
+          const { name } = params as { name: string };
+          if (name === "claude") return { available: true, path: "/usr/local/bin/claude" };
+          if (name === "npx") return { available: true, path: "/usr/local/bin/npx" };
+          return { available: false };
+        },
+        "host.exec": { stdout: "Logged in", stderr: "", exitCode: 0 },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, "claude-code");
+
+      expect(response).toEqual({
+        success: true,
+        providerId: "claude-code",
         data: { available: true, authenticated: true },
       });
     });
