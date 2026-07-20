@@ -96,7 +96,6 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
   await addFirstExistingFile(
     [
       path.join(homeDir, '.intent', '.intent', 'memory', 'memory-events.jsonl'),
-      path.join(homeDir, '.intent', 'memory', 'memory-events.jsonl'),
       path.join(homeDir, '.augment', 'memory', 'memory-events.jsonl'),
     ],
     'logs/memory-events.jsonl',
@@ -110,12 +109,13 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
     await addDirectory(path.join(homeDir, '.augment', 'ipc-debug'), 'ipc-debug');
   }
 
-  // Error tracking (dev only): written under <root>/.intent/errors (see
+  // Error tracking (dev only): written under <root>/.intent/errors where <root>
+  // is userData for packaged apps or ~/.intent as a fallback (see
   // agent-error-tracker); older builds used ~/.augment
   await addFirstExistingFile(
     [
       path.join(userDataPath, '.intent', 'errors', 'tracked-errors.json'),
-      path.join(homeDir, '.intent', 'errors', 'tracked-errors.json'),
+      path.join(homeDir, '.intent', '.intent', 'errors', 'tracked-errors.json'),
       path.join(homeDir, '.augment', 'errors', 'tracked-errors.json'),
     ],
     'logs/tracked-errors.json',
