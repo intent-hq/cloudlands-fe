@@ -61,7 +61,8 @@
   import {
   selectSpecialists,
   selectEffectiveBehaviorPrompt,
-  selectUserOverrides,
+  selectEffectiveModel,
+  selectEffectiveCodingAgent,
 } from '$store/renderer/slices/specialists/specialists-selectors';
   import { createLogger } from '$lib/utils/client-logger';
   import {
@@ -103,13 +104,8 @@
   import SetupScriptModal from '../modals/SetupScriptModal.svelte';
   import { noteUrl } from '$shared/constants/intent-links';
   import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import {
-  getDefaultModelForProvider,
-  getDefaultProviderId,
-  PROVIDER_MODEL_TIERS,
-  parseCompoundModelId,
-} from '$shared/config/provider-config';
-  import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
+  import { parseCompoundModelId } from '$shared/config/provider-config';
+  import { resolveSubmitModel } from '$lib/utils/effective-model-resolution';
   import { store as appStore } from '$store/renderer/store';
   import type { ContextItem } from '$lib/components/chat/input/context-api';
   import AttachmentPreview from '$lib/components/chat/AttachmentPreview.svelte';
@@ -1728,48 +1724,33 @@
 
       // Resolve the model for the selected specialist + provider so the agent is created
       // with the correct compound model ID (e.g., 'codex:gpt-5.3-codex').
+      // Uses the same shared effective-model resolution the InitialAgentPicker displays,
+      // so the created agent gets exactly the model shown in the picker. An explicit
+      // user override (modelWasOverridden) always wins.
       // Without this, model would be undefined and the backend falls back to DEFAULT_AGENT_MODEL
       // (an auggie model), which breaks provider inheritance when the coordinator delegates.
-      let resolvedModel: string | undefined;
-      if (modelWasOverridden) {
-        resolvedModel = selectedModel;
-      } else if (selectedSpecialist) {
-        // Check for user model override first (from specialist settings)
-        const reduxState = appStore.state;
-        const specialistOverride =
-          selectUserOverrides.select(reduxState).modelOverrides[selectedSpecialist];
-        if (specialistOverride) {
-          resolvedModel = specialistOverride;
-          logger.info('Using specialist model override', {
-            specialistId: selectedSpecialist,
-            override: specialistOverride,
-          });
-        } else {
-          const specialist = selectSpecialists
-            .select(reduxState)
-            .find((s) => s.id === selectedSpecialist);
-          if (specialist?.defaultModelTier && selectedProvider in PROVIDER_MODEL_TIERS) {
-            const baseModel = getDefaultModelForProvider(
-              selectedProvider,
-              specialist.defaultModelTier,
-            );
-            const defaultProviderId = getDefaultProviderId();
-            resolvedModel =
-              selectedProvider !== defaultProviderId
-                ? `${selectedProvider}:${baseModel}`
-                : baseModel;
-          } else if (specialist?.defaultModel) {
-            resolvedModel = specialist.defaultModel;
-          }
-        }
-      } else {
-        // No specialist selected (General/blank agent) and user didn't override the model.
-        // Resolve using the same preference list that the UI model picker displays,
-        // so the model the user sees matches the model actually used.
-        // Fall back to the global store selection when models haven't loaded yet.
-        const availableValues = $availableModels$.map((m) => m.value);
-        resolvedModel =
-          resolvePreferredDefaultModel(availableValues, $selectedModel$) ?? $selectedModel$;
+      const reduxState = appStore.state;
+      let resolvedModel = resolveSubmitModel({
+        modelWasOverridden,
+        overriddenModel: selectedModel,
+        specialistId: selectedSpecialist,
+        selectedProvider,
+        availableModelValues: $availableModels$.map((m) => m.value),
+        globalSelectedModel: $selectedModel$,
+        effectiveCodingAgent: selectedSpecialist
+          ? selectEffectiveCodingAgent.select(reduxState, selectedSpecialist)
+          : undefined,
+        effectiveModel: selectedSpecialist
+          ? selectEffectiveModel.select(reduxState, selectedSpecialist)
+          : undefined,
+        specialistInfo: selectedSpecialist
+          ? selectSpecialists.select(reduxState).find((s) => s.id === selectedSpecialist)
+          : undefined,
+      });
+      // No specialist selected (General/blank agent) and user didn't override the model:
+      // fall back to the global store selection when models haven't loaded yet.
+      if (!resolvedModel && !modelWasOverridden && !selectedSpecialist) {
+        resolvedModel = $selectedModel$;
       }
 
       // Validate resolvedModel against available models. Tier-mapped model IDs
