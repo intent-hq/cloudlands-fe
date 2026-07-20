@@ -142,7 +142,7 @@ async function refetchAndDispatch(): Promise<void> {
         return fromDaemon;
       }
       // The SPECIALISTS constant entry doesn't have source="bundled" set, but we
-      // know it's bundled. Ensure source is set for store consumers (e.g., selectIsBuiltIn).
+      // know it's bundled. Ensure source is set for store consumers (e.g., UI source labels).
       return { ...builtin, source: "bundled" as const };
     });
 

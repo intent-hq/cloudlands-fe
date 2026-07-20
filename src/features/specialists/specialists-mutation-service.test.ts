@@ -286,8 +286,8 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
       // Verify the bundled list is empty before the reset (all shadowed by user files).
       {
         const state = appStore.state as { specialists?: { bundledSpecialists?: typeof SPECIALISTS } };
-        // The refetch should have reconstructed the bundled set from SPECIALISTS even
-        // though the daemon returned zero bundled entries, preserving all built-in identities.
+        // The refetch should have reconstructed the bundled set from SPECIALISTS. Even
+        // though the daemon returned zero entries with source="bundled", all 9 built-ins are present.
         expect(state.specialists?.bundledSpecialists).toHaveLength(9);
         expect(state.specialists?.bundledSpecialists?.map((s) => s.id).sort()).toEqual(
           SPECIALISTS.map((s) => s.id).sort(),
