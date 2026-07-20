@@ -9,7 +9,7 @@ import type { GitHubAuthState } from "./github-auth-types";
 
 export const initialState: GitHubAuthState = {
   isAuthenticated: false,
-  requiresAugmentAuth: false,
+  requiresDaemonAuth: false,
   user: null,
   isAuthenticating: false,
   oauthUrl: null,
@@ -41,7 +41,7 @@ export const setGitHubAuthState = createAction(
   "githubAuth/setAuthState",
   (params: {
     isAuthenticated: boolean;
-    requiresAugmentAuth: boolean;
+    requiresDaemonAuth: boolean;
     user: GitHubUser | null;
     needsScopeUpdate: boolean;
     oauthUrl: string | null;
@@ -90,7 +90,7 @@ export const githubAuthReducer = createReducer<GitHubAuthState>(initialState)
   .with(setGitHubAuthState, (state, { payload }) => ({
     ...state,
     isAuthenticated: payload.isAuthenticated,
-    requiresAugmentAuth: payload.requiresAugmentAuth,
+    requiresDaemonAuth: payload.requiresDaemonAuth,
     user: payload.user,
     needsScopeUpdate: payload.needsScopeUpdate,
     oauthUrl: payload.oauthUrl,

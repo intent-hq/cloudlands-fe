@@ -36,10 +36,10 @@ function toConsumerRepo(repo: DaemonGithubRepo): GithubRepo {
 export function setupGitHubAuthIPC(): void {
   logger.info('Setting up GitHub Auth IPC handlers');
 
-  // Check if user is authenticated with GitHub via Augment
+  // Check if user is authenticated with GitHub via the daemon
   ipcMain.handle(GITHUB_AUTH_CHANNELS.IS_AUTHENTICATED, async () => githubAuthService.isAuthenticated());
 
-  // Get GitHub user info (may be null if not available from Augment API)
+  // Get GitHub user info (may be null if not available from daemon API)
   ipcMain.handle(GITHUB_AUTH_CHANNELS.GET_USER, async () => githubAuthService.getUser());
 
   // Start GitHub authentication - opens OAuth URL in browser
@@ -88,7 +88,7 @@ export function setupGitHubAuthIPC(): void {
   // Get full authentication state for UI
   ipcMain.handle(GITHUB_AUTH_CHANNELS.GET_AUTH_STATE, async () => githubAuthService.getAuthState());
 
-  // Get GitHub status from Augment API
+  // Get GitHub status from daemon API
   ipcMain.handle(GITHUB_AUTH_CHANNELS.GET_STATUS, async () => githubAuthService.getGitHubStatus(true));
 
   // List GitHub repositories for the authenticated user.

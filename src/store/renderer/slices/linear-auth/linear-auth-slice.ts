@@ -5,7 +5,7 @@ import type { LinearAuthSliceState, LinearIssueFilter } from "./linear-auth-type
 
 export const initialState: LinearAuthSliceState = {
   isAuthenticated: false,
-  requiresAugmentAuth: false,
+  requiresDaemonAuth: false,
   isAuthenticating: false,
   oauthUrl: null,
   error: null,
@@ -52,9 +52,9 @@ export const searchLinearIssues = createAction<[query: string]>(
 /** Set auth state from IPC response */
 export const setLinearAuthState = createAction(
   "linearAuth/setAuthState",
-  (isAuthenticated: boolean, requiresAugmentAuth: boolean, oauthUrl: string | null) => ({
+  (isAuthenticated: boolean, requiresDaemonAuth: boolean, oauthUrl: string | null) => ({
     isAuthenticated,
-    requiresAugmentAuth,
+    requiresDaemonAuth,
     oauthUrl,
   }),
 );
@@ -85,7 +85,7 @@ export const linearAuthReducer = createReducer<LinearAuthSliceState>(initialStat
   .with(setLinearAuthState, (state, { payload }) => ({
     ...state,
     isAuthenticated: payload.isAuthenticated,
-    requiresAugmentAuth: payload.requiresAugmentAuth,
+    requiresDaemonAuth: payload.requiresDaemonAuth,
     oauthUrl: payload.oauthUrl,
   }))
   .with(setLinearIsAuthenticating, (state, { payload: [value] }) => ({

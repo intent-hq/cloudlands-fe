@@ -60,7 +60,7 @@ export async function initializeGitHubAuthFlow(): Promise<void> {
     appStore.dispatch(
       setGitHubAuthState({
         isAuthenticated: authState.isAuthenticated,
-        requiresAugmentAuth: authState.requiresAugmentAuth,
+        requiresDaemonAuth: authState.requiresDaemonAuth,
         user: authState.user,
         needsScopeUpdate: authState.needsScopeUpdate ?? false,
         oauthUrl: authState.oauthUrl ?? null,

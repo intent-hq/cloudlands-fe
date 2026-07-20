@@ -73,7 +73,7 @@ acp-official/
   "result": {
     "protocolVersion": 1,
     "agentInfo": {
-      "name": "Augment Agent",
+      "name": "Intent Agent",
       "version": "1.0.0"
     },
     "capabilities": {

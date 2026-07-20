@@ -649,7 +649,7 @@ export const IPC_CHANNELS = {
     GET_PR_REVIEWS: 'git-tracking:get-pr-reviews',
   },
 
-  // GitHub Auth (via Augment API OAuth)
+  // GitHub Auth (via daemon API OAuth)
   GITHUB_AUTH: {
     IS_AUTHENTICATED: 'github-auth:is-authenticated',
     GET_USER: 'github-auth:get-user',
@@ -663,7 +663,7 @@ export const IPC_CHANNELS = {
     SEARCH_REPOS: 'github-auth:search-repos',
   },
 
-  // Linear Auth (via Augment API OAuth)
+  // Linear Auth (via daemon API OAuth)
   LINEAR_AUTH: {
     IS_AUTHENTICATED: 'linear-auth:is-authenticated',
     START_AUTH: 'linear-auth:start-auth',

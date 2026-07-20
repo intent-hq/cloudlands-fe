@@ -50,7 +50,7 @@ export async function initializeLinearAuthFlow(): Promise<void> {
   try {
     const authState = await linearAuthClient.getAuthState(true);
     appStore.dispatch(
-      setLinearAuthState(authState.isAuthenticated, authState.requiresAugmentAuth, null),
+      setLinearAuthState(authState.isAuthenticated, authState.requiresDaemonAuth, null),
     );
   } catch (error) {
     logger.error("initialize error", error);
@@ -111,7 +111,7 @@ export async function logoutLinearFlow(): Promise<void> {
   try {
     const authState = await linearAuthClient.getAuthState(true);
     appStore.dispatch(
-      setLinearAuthState(authState.isAuthenticated, authState.requiresAugmentAuth, null),
+      setLinearAuthState(authState.isAuthenticated, authState.requiresDaemonAuth, null),
     );
     if (authState.isAuthenticated) {
       appStore.dispatch(

@@ -69,11 +69,11 @@ describe('LinearAuthService (live daemon linear.*)', () => {
     expect(request).toHaveBeenCalledWith('linear.authStatus');
   });
 
-  it('getAuthState maps status and never requires Augment auth', async () => {
+  it('getAuthState maps status and never requires daemon auth', async () => {
     request.mockResolvedValueOnce({ authenticated: true, scopes: [] });
     expect(await service.getAuthState(true)).toEqual({
       isAuthenticated: true,
-      requiresAugmentAuth: false,
+      requiresDaemonAuth: false,
       oauthUrl: '',
     });
   });
@@ -159,7 +159,7 @@ describe('LinearAuthService (live daemon linear.*)', () => {
     request.mockResolvedValueOnce({ authenticated: false, scopes: [] });
     expect(await linearAuthService.getAuthState(true)).toEqual({
       isAuthenticated: false,
-      requiresAugmentAuth: false,
+      requiresDaemonAuth: false,
       oauthUrl: '',
     });
   });

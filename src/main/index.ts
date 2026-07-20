@@ -1259,7 +1259,7 @@ app.whenReady().then(async () => {
   await setupConfigIPC();
   setupGitIPC(); // Needed for git operations
   setupGitHubAuthIPC(); // Needed for GitHub device flow auth
-  setupLinearAuthIPC(); // Needed for Linear auth via Augment
+  setupLinearAuthIPC(); // Needed for Linear auth via the daemon
   setupSentryAuthIPC(); // Needed for Sentry auth via API token
 
   // Initialize unified agent handlers with the backend adapter
