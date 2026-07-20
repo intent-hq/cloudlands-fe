@@ -171,7 +171,11 @@ describe('generate-release-notes CLI', () => {
     try {
       vi.resetModules();
       await import('./generate-release-notes.mjs?t=' + Date.now());
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Poll for the output files instead of a fixed sleep to avoid CI flakiness
+      await vi.waitFor(() => {
+        readFileSync(outFile, 'utf8');
+        readFileSync(manifestFile, 'utf8');
+      }, { timeout: 5000 });
 
       // Every cloudlands-fe API call used FE_TOKEN; every intentd call used INTENTD_TOKEN
       const feCalls = authByUrl.filter(c => c.url.includes('/repos/intent-hq/cloudlands-fe/'));
