@@ -9,7 +9,11 @@ import * as os from 'os';
 import { CLAUDE_CODE_CHANNELS } from '../../../shared/ipc/channels';
 import { Logger } from '../../../shared/logger';
 import { startAcpChildStream } from '../../../shared/main/acp-child-stream';
-import { resolveClaudeCodeCommand } from './claude-code-resolver';
+import {
+  CLAUDE_CODE_NPX_MISSING_WARNING,
+  resolveClaudeCodeCommand,
+  resolveClaudeCodeCommandDetailed,
+} from './claude-code-resolver';
 import { createProviderModelCache } from '../../../main/utils/provider-model-cache';
 
 const logger = new Logger('ClaudeCodeIPC');
@@ -253,18 +257,23 @@ async function fetchClaudeCodeModelsViaAcp(): Promise<ClaudeCodeModel[]> {
 }
 
 export function setupClaudeCodeIPC() {
-  // Check if claude-agent-acp is available
+  // Check if the claude-agent-acp adapter can run (claude CLI + npx present)
   ipcMain.handle(CLAUDE_CODE_CHANNELS.CHECK_AVAILABILITY, async () => {
     try {
       logger.debug('Checking claude-agent-acp availability');
-      const resolved = await resolveClaudeCodeCommand();
-      const isAvailable = !!resolved;
+      const resolution = await resolveClaudeCodeCommandDetailed();
       logger.info('Claude Code availability check', {
-        isAvailable,
-        command: resolved?.command,
-        usesNpx: resolved?.usesNpx,
+        isAvailable: resolution.ok,
+        command: resolution.ok ? resolution.resolved.command : undefined,
+        reason: resolution.ok ? undefined : resolution.reason,
       });
-      return { success: true, available: isAvailable };
+      if (resolution.ok) {
+        return { success: true, available: true };
+      }
+      if (resolution.reason === 'npx-missing') {
+        return { success: true, available: false, warning: CLAUDE_CODE_NPX_MISSING_WARNING };
+      }
+      return { success: true, available: false };
     } catch (error) {
       logger.info('Claude Code not available', { error: (error as Error).message });
       return { success: true, available: false };
@@ -279,14 +288,21 @@ export function setupClaudeCodeIPC() {
         return { success: true, data: models };
       }
 
-      const resolved = await resolveClaudeCodeCommand();
-      if (!resolved) {
-        return { success: true, data: [], warning: 'Claude Code not available' };
+      const resolution = await resolveClaudeCodeCommandDetailed();
+      if (!resolution.ok) {
+        return {
+          success: true,
+          data: [],
+          warning:
+            resolution.reason === 'npx-missing'
+              ? CLAUDE_CODE_NPX_MISSING_WARNING
+              : 'Claude Code not available',
+        };
       }
 
       logger.info('Falling back to Claude Code default model list', {
-        command: resolved.command,
-        usesNpx: resolved.usesNpx,
+        command: resolution.resolved.command,
+        usesNpx: resolution.resolved.usesNpx,
       });
       return {
         success: true,
