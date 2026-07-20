@@ -730,6 +730,7 @@ export const IPC_CHANNELS = {
   // Setup Scripts
   SETUP_SCRIPTS: {
     GENERATE: 'setup-scripts:generate',
+    READ_REPO_CONFIG: 'setup-scripts:read-repo-config',
     DETECT_TYPE: 'setup-scripts:detect-type',
     GENERATE_WITH_AGENT: 'setup-scripts:generate-with-agent',
     STOP_AGENT: 'setup-scripts:stop-agent',

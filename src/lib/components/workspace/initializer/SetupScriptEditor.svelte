@@ -18,6 +18,8 @@
   SETUP_SCRIPT_TEMPLATES,
   SETUP_SCRIPT_VARIABLES,
   getTemplateContent,
+  REPO_CONFIG_SCRIPT_ID,
+  REPO_CONFIG_SCRIPT_NAME,
   type ProjectType,
 } from '$features/setup-scripts';
   import { v4 as uuidv4 } from 'uuid';
@@ -42,6 +44,8 @@
   interface Props {
     repoPath?: string;
     projectType?: ProjectType;
+    /** Setup script committed in the repo's `.intent/config.json`, if any */
+    repoConfigScript?: string | null;
     value?: string;
     expanded?: boolean;
     scriptName?: string;
@@ -58,6 +62,7 @@
   let {
     repoPath = '',
     projectType = undefined,
+    repoConfigScript = null,
     value = $bindable(''),
     expanded = $bindable(false),
     scriptName = $bindable('Custom'),
@@ -163,6 +168,10 @@
   const scriptMap = $derived.by(() => {
     const map = new Map<string, { content: string; label: string }>();
 
+    if (repoConfigScript) {
+      map.set(REPO_CONFIG_SCRIPT_ID, { content: repoConfigScript, label: REPO_CONFIG_SCRIPT_NAME });
+    }
+
     recentScripts.forEach((s) => {
       map.set(s.id, { content: s.content, label: s.name });
     });
@@ -213,11 +222,19 @@
       const script = scriptMap.get(selectedScriptId);
       if (script) {
         const contentChanged = newValue !== script.content;
-        if (contentChanged && selectedScriptId.startsWith('template-')) {
-          // User edited a template — fork into a new saved script
-          const templateName = script.label;
+        if (
+          contentChanged &&
+          (selectedScriptId.startsWith('template-') || selectedScriptId === REPO_CONFIG_SCRIPT_ID)
+        ) {
+          // User edited a template or the repo-config entry — fork into a new
+          // saved script (the repo config stays untouched; the fork gets a
+          // distinct name so it isn't confused with the committed script)
+          const forkName =
+            selectedScriptId === REPO_CONFIG_SCRIPT_ID
+              ? `${REPO_CONFIG_SCRIPT_NAME} (edited)`
+              : script.label;
           const savedScript = saveOrUpdateScript({
-            name: templateName,
+            name: forkName,
             content: newValue,
             repoPath,
             projectType: projectType || 'generic',
@@ -290,7 +307,11 @@
     if (!hasUserEdited || !value.trim()) return;
 
     // If a non-template saved script is selected, update it in place
-    const isExistingSaved = selectedScriptId && !selectedScriptId.startsWith('template-');
+    // (the repo-config entry is not a saved script — edits fork into a new one)
+    const isExistingSaved =
+      selectedScriptId &&
+      !selectedScriptId.startsWith('template-') &&
+      selectedScriptId !== REPO_CONFIG_SCRIPT_ID;
     if (isExistingSaved) {
       const now = new Date().toISOString();
       appStore.dispatch(updateScriptContent(selectedScriptId, value, now));
@@ -349,7 +370,7 @@
   let previousRepoPath = $state<string | null>(null);
 
   // Auto-select script when repoPath changes or on mount
-  // Fallback order: 1. Last used for this repo, 2. "Copy config files only"
+  // Fallback order: 1. Repo config (.intent/config.json), 2. Last used for this repo, 3. "Copy config files only"
   // BUT: If value is already set (e.g., from restored form state), treat it as user-edited
   $effect(() => {
     // Read repoPath to create dependency
@@ -391,7 +412,8 @@
       return;
     }
 
-    // Try to find last used script for this repo
+    // Priority: repo-committed config script, then last used script for this repo
+    const hasRepoConfig = !!repoConfigScript;
     const lastUsed = currentRepo ? selectLastUsedScriptForRepo.select(appStore.state, currentRepo) : undefined;
 
     // Use untrack only for internal state mutations to avoid infinite loops
@@ -400,7 +422,11 @@
       hasUserEdited = false;
       isProgrammaticChange = true;
 
-      if (lastUsed) {
+      if (hasRepoConfig) {
+        // Use the script committed in the repo's .intent/config.json
+        selectedScriptId = REPO_CONFIG_SCRIPT_ID;
+        customName = REPO_CONFIG_SCRIPT_NAME;
+      } else if (lastUsed) {
         // Use last used script for this repo
         selectedScriptId = lastUsed.id;
         customName = lastUsed.name; // Set to last used script's name
@@ -415,7 +441,10 @@
     });
 
     // Set value outside untrack so it triggers reactive updates
-    if (lastUsed) {
+    if (hasRepoConfig && repoConfigScript) {
+      value = repoConfigScript;
+      onchange?.(value);
+    } else if (lastUsed) {
       value = lastUsed.content;
       onchange?.(value);
     } else if (COPY_CONFIG_TEMPLATE_ID) {
@@ -525,6 +554,20 @@
           </Button>
         {/if}
       </div>
+
+      <!-- Repo-committed script from .intent/config.json -->
+      {#if repoConfigScript}
+        <div class="mb-4">
+          <h4 class="text-ui font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 px-2">Repo config</h4>
+          <button
+            class="w-full text-left px-2 py-1.5 rounded-md cursor-pointer transition-colors {selectedScriptId === REPO_CONFIG_SCRIPT_ID ? 'bg-background text-foreground ring-1 ring-border' : 'text-muted-foreground hover:bg-muted/30 hover:text-foreground'}"
+            onclick={() => handleScriptSelect(REPO_CONFIG_SCRIPT_ID)}
+          >
+            <span class="text-sm">{REPO_CONFIG_SCRIPT_NAME}</span>
+            <p class="text-xs text-subtle mt-0.5 line-clamp-1">Committed in .intent/config.json</p>
+          </button>
+        </div>
+      {/if}
 
       <!-- Saved scripts for this repo -->
       {#if repoScripts.length > 0}

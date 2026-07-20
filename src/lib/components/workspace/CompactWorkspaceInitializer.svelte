@@ -15,6 +15,9 @@
   import {
   SETUP_SCRIPT_TEMPLATES,
   getTemplateContent,
+  chooseDefaultSetupScript,
+  fetchRepoConfigSetupScript,
+  REPO_CONFIG_SCRIPT_NAME,
 } from '$features/setup-scripts';
   import { v4 as uuidv4 } from 'uuid';
   import { saveScript } from '$store/renderer/slices/setup-scripts/setup-scripts-slice';
@@ -466,29 +469,29 @@
   let setupScriptName = $state(savedState?.setupScriptName ?? 'Custom');
   let isCustomSetupScript = $state(savedState?.isCustomSetupScript ?? false);
 
-  // Helper to restore the last used setup script for a repo
-  // If no saved script exists for the repo, falls back to the generic "Copy config files only" template
+  // Repo-committed setup script from <repo>/.intent/config.json (local repos only).
+  // Cached alongside the repo it was fetched for so stale results are never applied.
+  let repoConfigScript = $state<string | null>(null);
+  let repoConfigScriptRepo = $state<string | null>(null);
+
+  // Helper to restore the default setup script for a repo.
+  // Priority: repo-committed `.intent/config.json` setupScript > last used for
+  // this repo > generic "Copy config files only" template.
   function restoreLastUsedSetupScript(repo: string) {
     const lastUsed = repo
       ? selectLastUsedScriptForRepo.select(appStore.state, repo)
       : undefined;
-    if (lastUsed) {
-      setupScript = lastUsed.content;
-      setupScriptName = lastUsed.name;
-      isCustomSetupScript = false;
-    } else {
-      // No saved script for this repo — use the generic template as default
-      // This ensures env files are copied even if the user never opens the setup script editor
-      const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
-      if (genericTemplate) {
-        setupScript = getTemplateContent(genericTemplate);
-        setupScriptName = genericTemplate.name;
-      } else {
-        setupScript = '';
-        setupScriptName = 'Custom';
-      }
-      isCustomSetupScript = false;
-    }
+    const genericTemplate = SETUP_SCRIPT_TEMPLATES.find((t) => t.id === 'generic');
+    const choice = chooseDefaultSetupScript({
+      repoConfigScript: repo && repo === repoConfigScriptRepo ? repoConfigScript : null,
+      lastUsed,
+      genericTemplate: genericTemplate
+        ? { name: genericTemplate.name, content: getTemplateContent(genericTemplate) }
+        : undefined,
+    });
+    setupScript = choice.content;
+    setupScriptName = choice.name;
+    isCustomSetupScript = false;
   }
 
   // Skip worktree toggle
@@ -1118,23 +1121,54 @@
   let previousSetupScriptRepo = $state<string | null>(null);
   $effect(() => {
     const path = repoPath;
+    const type = repoType;
     // Only run when repo actually changes
     if (path === previousSetupScriptRepo) return;
     const isInitialMount = previousSetupScriptRepo === null;
     previousSetupScriptRepo = path;
 
+    // Repo changed — invalidate any cached repo-config script
+    repoConfigScript = null;
+    repoConfigScriptRepo = null;
+
     // On initial mount, don't override if there's already a setup script set
     // (e.g., from restored form state). On repo switches, always restore.
-    if (isInitialMount && setupScript.trim()) return;
-
-    // Restore last used script for this repo (or clear if no saved script exists)
-    if (path) {
-      restoreLastUsedSetupScript(path);
-    } else {
-      setupScript = '';
-      setupScriptName = 'Custom';
-      isCustomSetupScript = false;
+    const preservedRestoredState = isInitialMount && !!setupScript.trim();
+    if (!preservedRestoredState) {
+      // Restore last used script for this repo (or clear if no saved script exists)
+      if (path) {
+        restoreLastUsedSetupScript(path);
+      } else {
+        setupScript = '';
+        setupScriptName = 'Custom';
+        isCustomSetupScript = false;
+      }
     }
+
+    // Probe the repo's committed `.intent/config.json` for a setup script.
+    // Only absolute local paths — GitHub/remote repos have no local checkout,
+    // and `~` never expands in host.exec argv (no shell).
+    if (!path || type !== 'local' || !path.startsWith('/')) return;
+    const scriptAtFetchStart = untrack(() => setupScript);
+    (async () => {
+      const script = await fetchRepoConfigSetupScript(path);
+      // Staleness guard: user switched repos while the read was in flight
+      if (untrack(() => repoPath) !== path) return;
+      repoConfigScript = script;
+      repoConfigScriptRepo = path;
+      if (!script) return;
+      // Repo config has top priority, but never clobber restored form state,
+      // user edits, an open setup-script modal (it snapshots parent values on
+      // open and would commit stale ones on Done), or anything changed while
+      // the read was in flight
+      if (preservedRestoredState) return;
+      if (untrack(() => showSetupScript)) return;
+      if (untrack(() => isCustomSetupScript)) return;
+      if (untrack(() => setupScript) !== scriptAtFetchStart) return;
+      setupScript = script;
+      setupScriptName = REPO_CONFIG_SCRIPT_NAME;
+      isCustomSetupScript = false;
+    })();
   });
 
   // Derived validation
@@ -1873,8 +1907,15 @@
       // has data on the very first render frame (before sagas/effects run).
       appStore.dispatch(setWorkspaceEntity(workspace));
 
-      // Save the setup script to the store for future reuse
-      if (setupScript.trim()) {
+      // Save the setup script to the store for future reuse.
+      // Skip the unedited repo-config script — the committed .intent/config.json
+      // is its source of truth, and saving a copy would both duplicate it in the
+      // saved list and shadow future repo-config changes as the last-used default.
+      const isUneditedRepoConfigScript =
+        setupScriptName === REPO_CONFIG_SCRIPT_NAME &&
+        repoConfigScriptRepo === repoPath &&
+        setupScript.trim() === (repoConfigScript ?? '').trim();
+      if (setupScript.trim() && !isUneditedRepoConfigScript) {
         const now = new Date().toISOString();
         const scriptToSave = {
           id: uuidv4(),
@@ -2737,6 +2778,7 @@
           <SetupScriptModal
             bind:open={showSetupScript}
             {repoPath}
+            repoConfigScript={repoConfigScriptRepo === repoPath ? repoConfigScript : null}
             bind:value={setupScript}
             bind:scriptName={setupScriptName}
             bind:isCustomScript={isCustomSetupScript}

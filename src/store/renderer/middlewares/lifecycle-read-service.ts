@@ -275,22 +275,37 @@ function refreshWorkspaceScripts(wsId: string): void {
   });
 }
 
-/** Re-fetch PR status + branch lookup (mirrors files-git-seeder PR section). */
+/**
+ * Force daemon-side PR discovery/refresh + branch lookup (`pr.refresh`,
+ * PROTOCOL §5.7 extension). Unlike the bare `pr.status` read this used to
+ * issue, `pr.refresh` runs the daemon's shared refresh path (discovery by head
+ * branch, relink-after-merge, stale-link clearing), so a refresh click
+ * surfaces newly created PRs. The daemon emits `pr:linked` / `pr:updated` /
+ * `pr:unlinked` on change; the events bridge folds those into the workspace
+ * entity — this handler only reports completion and the branch lookup.
+ */
 function refreshPrStatus(wsId: string): void {
   coalesce(`prStatus:${wsId}`, async () => {
     appStore.dispatch(prStatusRefreshStarted(wsId));
     try {
-      const prStatus = await appClient.git.prStatus(wsId);
+      const refresh = await appClient.git.prRefresh(wsId);
+      // The seam folds transport/daemon errors to null (a no-PR refresh still
+      // returns a result with empty linkage fields), so null means the refresh
+      // itself failed — report it instead of a phantom success.
+      if (refresh === null) {
+        appStore.dispatch(prStatusRefreshCompleted(wsId, false, "pr.refresh failed"));
+        return;
+      }
       appStore.dispatch(prStatusRefreshCompleted(wsId, true));
       const workspace = getItem(appStore.state.workspace.workspaces, wsId as Workspace["id"]);
       const owner = workspace?.repositoryOwner;
       const repo = workspace?.repositoryName;
-      if (prStatus?.prNumber != null && owner && repo) {
+      if (refresh?.prNumber != null && owner && repo) {
         const payload: PrBranchLookupPayload = {
           owner,
           repo,
-          prNumber: prStatus.prNumber,
-          key: `${owner}/${repo}#${prStatus.prNumber}`,
+          prNumber: refresh.prNumber,
+          key: `${owner}/${repo}#${refresh.prNumber}`,
         };
         appStore.dispatch(prBranchLookupSucceeded(payload, workspace.branch));
       }
