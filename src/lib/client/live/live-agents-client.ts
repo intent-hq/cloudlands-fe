@@ -178,6 +178,29 @@ export class LiveAgentsClient implements AgentsClient {
     const messageId = newIdempotencyKey();
     return runMutation("agent.sendMessage", { agentId, content: message, workspaceId, messageId });
   }
+  async editAndRegenerate(params: {
+    agentId: string;
+    workspaceId: string;
+    messageId: string;
+    content: string;
+    model?: string;
+  }): Promise<MutationResult> {
+    // `agent.editAndRegenerate` (§5.5 catalog-parity extension) edits a past
+    // user message and regenerates from that point. The daemon truncates the
+    // transcript to just before the edited message and emits `agent:updated`
+    // with `{ truncatedCount, remainingCount }`; the fresh turn then follows
+    // the normal `agent:message` / `agent:stream:*` lifecycle. `model` is only
+    // forwarded when the caller supplied it so the daemon sees an omitted
+    // param rather than an explicit null it would reject.
+    const rpcParams: Record<string, unknown> = {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      messageId: params.messageId,
+      content: params.content,
+    };
+    if (params.model !== undefined) rpcParams.model = params.model;
+    return runMutation("agent.editAndRegenerate", rpcParams);
+  }
   async queue(agentId: string, message: string): Promise<MutationResult> {
     // `agent.queueMessage` returns `{ success, queuedMessage }` (§5.5); we
     // surface `queuedMessage` on the MutationResult so callers can render the

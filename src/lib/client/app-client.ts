@@ -325,6 +325,24 @@ export interface AgentsClient {
    */
   create(request: AgentCreateRequest): Promise<AgentSession>;
   send(agentId: string, message: string): Promise<MutationResult>;
+  /**
+   * Edit a past **user** message and regenerate from that point
+   * (`agent.editAndRegenerate`, §5.5 catalog-parity extension). The daemon
+   * validates `messageId` first (unknown / non-user ids reject with `-32602`,
+   * transcript untouched), stops any in-flight turn, optionally switches the
+   * session model, truncates the transcript to just BEFORE the edited message
+   * (destructive — emits `agent:updated` with `{ truncatedCount,
+   * remainingCount }`), and sends `content` as a fresh user message (normal
+   * `agent:message` / `agent:stream:*` events follow). Transport / daemon
+   * errors fold into `{ success: false, error }`.
+   */
+  editAndRegenerate(params: {
+    agentId: string;
+    workspaceId: string;
+    messageId: string;
+    content: string;
+    model?: string;
+  }): Promise<MutationResult>;
   queue(agentId: string, message: string): Promise<MutationResult>;
   /**
    * Remove a queued message (`agent.removeQueuedMessage`, §5.5). The daemon is
