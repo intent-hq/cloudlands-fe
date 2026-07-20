@@ -81,12 +81,12 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
       try {
         const { execSync } = await import('child_process');
         if (process.platform === 'win32') {
-          execSync('taskkill /F /IM "Intent by Augment.exe"', {
+          execSync('taskkill /F /IM "Intent.exe"', {
             stdio: 'ignore',
             windowsHide: true,
           });
         } else {
-          execSync('pkill -f "Intent by Augment" || true', { stdio: 'ignore' });
+          execSync('pkill -f "Intent.app/Contents/MacOS/Intent" || true', { stdio: 'ignore' });
         }
       } catch {
         // No matching processes

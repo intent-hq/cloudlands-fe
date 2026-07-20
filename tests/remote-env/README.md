@@ -18,7 +18,7 @@ remote environment configurations.
 
 ### DevPod
 - SSH on port 22022 (non-standard)
-- Shared `augment` user
+- Shared `devuser` user
 - Persistent home, ephemeral system
 - Boot scripts in `~/.config/pod-init.d/`
 

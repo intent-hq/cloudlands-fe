@@ -25,7 +25,7 @@ export interface RemoteEnvProfile {
     persistentSystem: boolean;
     /** Has pod-init.d style boot scripts */
     hasBootScripts: boolean;
-    /** Shared user (not per-user like DevPod's 'augment') */
+    /** Shared user (not per-user like DevPod's 'devuser') */
     sharedUser: boolean;
   };
   /** Path to test repository on remote */
@@ -53,14 +53,14 @@ export const STANDARD_PROFILE: RemoteEnvProfile = {
   testRepoPath: '/home/testuser/repos/test-repo',
 };
 
-/** DevPod-like environment - simulates Augment's DevPod setup */
+/** DevPod-like environment - simulates a DevPod-style remote setup */
 export const DEVPOD_PROFILE: RemoteEnvProfile = {
   name: 'devpod',
   description: 'DevPod-like environment (non-standard port, shared user, ephemeral system)',
   host: 'localhost',
   port: 22022,
-  username: 'augment',
-  password: 'augment', // pragma: allowlist secret
+  username: 'devuser',
+  password: 'devuser', // pragma: allowlist secret
   characteristics: {
     hasNodejs: true,
     hasPython: true,
@@ -69,9 +69,9 @@ export const DEVPOD_PROFILE: RemoteEnvProfile = {
     persistentHome: true,
     persistentSystem: false, // System resets on reboot
     hasBootScripts: true, // pod-init.d
-    sharedUser: true, // All users share 'augment'
+    sharedUser: true, // All users share 'devuser'
   },
-  testRepoPath: '/home/augment/repos/test-repo',
+  testRepoPath: '/home/devuser/repos/test-repo',
 };
 
 /** Minimal environment - tests graceful degradation */

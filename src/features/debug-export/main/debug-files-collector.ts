@@ -38,6 +38,23 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
     }
   }
 
+  // Helper to add the first existing file among several candidate locations
+  // (e.g. current .intent path first, then legacy .augment fallback)
+  async function addFirstExistingFile(candidates: string[], relativePath: string) {
+    for (const sourcePath of candidates) {
+      try {
+        const stats = await fs.stat(sourcePath);
+        if (stats.isFile()) {
+          files.push({ sourcePath, relativePath });
+          return;
+        }
+      } catch {
+        // try the next candidate
+      }
+    }
+    logger.debug('No candidate file found', { candidates });
+  }
+
   // Helper to safely add directory contents
   async function addDirectory(sourcePath: string, relativePath: string) {
     try {
@@ -74,17 +91,33 @@ export async function collectDebugFiles(workspaceId?: string): Promise<DebugFile
 
   // Global logs
   await addDirectory(path.join(userDataPath, 'logs'), 'logs');
-  await addFile(
-    path.join(homeDir, '.augment', 'memory', 'memory-events.jsonl'),
+  // Memory events: packaged apps use ~/.intent as the base dir and write under
+  // <base>/.intent/memory (see memory-event-logger); older builds used ~/.augment
+  await addFirstExistingFile(
+    [
+      path.join(homeDir, '.intent', '.intent', 'memory', 'memory-events.jsonl'),
+      path.join(homeDir, '.intent', 'memory', 'memory-events.jsonl'),
+      path.join(homeDir, '.augment', 'memory', 'memory-events.jsonl'),
+    ],
     'logs/memory-events.jsonl',
   );
 
-  // IPC debug files
-  await addDirectory(path.join(homeDir, '.augment', 'ipc-debug'), 'ipc-debug');
+  // IPC debug files: written under userData/.intent/ipc-debug (see ipc-debug-tracker);
+  // older builds used ~/.augment
+  const ipcDebugCount = files.length;
+  await addDirectory(path.join(userDataPath, '.intent', 'ipc-debug'), 'ipc-debug');
+  if (files.length === ipcDebugCount) {
+    await addDirectory(path.join(homeDir, '.augment', 'ipc-debug'), 'ipc-debug');
+  }
 
-  // Error tracking (dev only)
-  await addFile(
-    path.join(homeDir, '.augment', 'errors', 'tracked-errors.json'),
+  // Error tracking (dev only): written under <root>/.intent/errors (see
+  // agent-error-tracker); older builds used ~/.augment
+  await addFirstExistingFile(
+    [
+      path.join(userDataPath, '.intent', 'errors', 'tracked-errors.json'),
+      path.join(homeDir, '.intent', 'errors', 'tracked-errors.json'),
+      path.join(homeDir, '.augment', 'errors', 'tracked-errors.json'),
+    ],
     'logs/tracked-errors.json',
   );
 

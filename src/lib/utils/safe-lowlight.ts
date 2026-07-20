@@ -1,7 +1,7 @@
 /**
  * Safe lowlight instance that gracefully handles unregistered languages.
  *
- * Fixes Sentry error "Unknown language: `http` is not registered" (AUGMENT-INTENT-59)
+ * Fixes the "Unknown language: `http` is not registered" runtime error
  * by wrapping the `highlight` method to fall back to `highlightAuto` when a language
  * is not registered, instead of throwing.
  */
