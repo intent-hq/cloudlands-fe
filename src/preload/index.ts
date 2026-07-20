@@ -505,6 +505,7 @@ const ALLOWED_CHANNELS = [
   "debug:trigger-backend-resume",
   "debug:list-agents",
   "setup-scripts:generate",
+  "setup-scripts:read-repo-config",
   "setup-scripts:detect-type",
   "setup-scripts:generate-with-agent",
   "setup-scripts:stop-agent",
