@@ -304,8 +304,10 @@ jobs:
 
       - name: Generate release notes
         env:
-          GITHUB_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
-          GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
+          # Per-repo tokens: INTENTD_READ_PAT is scoped to intent-hq/intentd and 404s on
+          # cloudlands-fe API calls, so the fe side uses the workflow's default token
+          FE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INTENTD_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
           VERSION: ${{ inputs.version }}
           PREV_FE_TAG: ${{ steps.prev_release.outputs.tag }}
           INTENTD_BASE: ${{ steps.intentd_base.outputs.intentd_base }}
