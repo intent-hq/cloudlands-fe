@@ -43,7 +43,8 @@ vi.mock("$lib/client", () => ({
     scripts: { list: vi.fn(() => Promise.resolve([])) },
     git: {
       prStatus: vi.fn(() => Promise.resolve(null)),
-      prRefresh: vi.fn(() => Promise.resolve(null)),
+      // Default to a benign no-PR refresh result; null means transport failure.
+      prRefresh: vi.fn(() => Promise.resolve({ outcome: "unchanged", pullRequests: [] })),
     },
     agents: { list: vi.fn(() => Promise.resolve([])) },
     terminals: { list: vi.fn(() => Promise.resolve([])) },

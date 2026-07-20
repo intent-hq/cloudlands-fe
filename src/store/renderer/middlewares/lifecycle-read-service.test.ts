@@ -26,7 +26,8 @@ vi.mock("$lib/client", () => ({
     agents: { list: vi.fn(() => Promise.resolve([])) },
     git: {
       prStatus: vi.fn(() => Promise.resolve(null)),
-      prRefresh: vi.fn(() => Promise.resolve(null)),
+      // Default to a benign no-PR refresh result; null means transport failure.
+      prRefresh: vi.fn(() => Promise.resolve({ outcome: "unchanged", pullRequests: [] })),
       trackedChanges: vi.fn(() => Promise.resolve([])),
       commits: vi.fn(() => Promise.resolve([])),
       commitsWithBoundary: vi.fn(() => Promise.resolve({ commits: [], boundarySha: null, nextToken: null })),
