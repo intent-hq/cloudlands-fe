@@ -925,10 +925,13 @@ function handleCommentEvent(
 
 /**
  * `pr:linked` (§7.6) carries `{ workspaceId, prNumber, prUrl, prStatus,
- * activePullRequest }`; `pr:updated` carries the same shape minus `prUrl`; and
- * `pr:unlinked` carries only `{ workspaceId }`. All three converge into a
- * single `updateWorkspaceEntity` dispatch so the sidebar PR pill / progress
- * card refresh live without waiting for the workspace list to refetch. This
+ * activePullRequest, pullRequests }`; `pr:updated` carries the same shape
+ * minus `prUrl`; and `pr:unlinked` carries only `{ workspaceId }`. All three
+ * converge into a single `updateWorkspaceEntity` dispatch so the sidebar PR
+ * pill / PR list / progress card refresh live without waiting for the
+ * workspace list to refetch. `pullRequests` is the daemon-owned per-branch PR
+ * list (§6.5) folded verbatim; `pr:unlinked` does not touch it — the daemon
+ * owns the array and retains merged/closed history across unlinks. This
  * replaces the legacy `relayLegacyIpcEvent` `workspace:updated` re-emit for
  * PR events — Redux is now the single source of truth for PR pill state.
  */
@@ -953,6 +956,9 @@ function handlePrEvent(
     if (typeof data.prStatus === 'string') changes.prStatus = data.prStatus as PullRequestStatus;
     if (data.activePullRequest !== undefined) {
       changes.activePullRequest = data.activePullRequest as PullRequestInfo | null;
+    }
+    if (Array.isArray(data.pullRequests)) {
+      changes.pullRequests = data.pullRequests as PullRequestInfo[];
     }
     if (Object.keys(changes).length === 0) return;
   }
