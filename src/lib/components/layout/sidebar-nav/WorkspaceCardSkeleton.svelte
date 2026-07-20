@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Skeleton } from '$lib/components/ui/skeleton';
+
   /**
    * WorkspaceCardSkeleton - Indeterminate loading placeholder for workspace cards.
    *
@@ -10,14 +12,14 @@
 
 <div class="workspace-card-skeleton px-3 py-1.5 flex items-center gap-2 min-w-0" data-testid="workspace-card-skeleton" aria-hidden="true">
   <!-- Avatar skeleton (circle) -->
-  <div class="size-6 rounded-full bg-muted/20 shrink-0 animate-pulse"></div>
+  <Skeleton class="size-6 rounded-full shrink-0" />
 
   <!-- Title and metadata skeleton -->
   <div class="flex-1 min-w-0 flex flex-col gap-1">
     <!-- Title bar -->
-    <div class="h-3.5 bg-muted/20 rounded animate-pulse" style="width: 70%;"></div>
+    <Skeleton class="h-3.5" style="width: 70%;" />
     <!-- Metadata/subtitle bar (shorter) -->
-    <div class="h-2.5 bg-muted/15 rounded animate-pulse" style="width: 50%;"></div>
+    <Skeleton class="h-2.5" style="width: 50%;" />
   </div>
 </div>
 

@@ -18,6 +18,12 @@ function getWs(state: StoreState, wsId: string) {
   return state.scripts.byWorkspaceId[wsId] ?? emptyWorkspaceState;
 }
 
+/** Scripts initialized state (active workspace). */
+export const selectScriptsInitialized = store.createSelector((state): boolean => {
+  const ws = getActiveWs(state);
+  return ws.initialized;
+});
+
 /** All stored script entries (active workspace). */
 export const selectScriptEntries = store.createSelector((state): ScriptWithState[] => {
   const ws = getActiveWs(state);

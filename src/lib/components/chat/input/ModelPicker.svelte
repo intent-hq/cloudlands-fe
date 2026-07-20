@@ -96,7 +96,7 @@
   const codexManagedInstallStatus$ = selectManagedInstallStatusByProvider('codex');
 
   interface Props {
-    selectedModel?: string;
+    selectedModel?: string | null;
     onModelChange?: (model: string) => void;
     providerId?: string;
     isCompact?: boolean;
@@ -404,10 +404,10 @@
 
   const USE_DEFAULT_VALUE = '__use_default__';
 
-  // undefined means "use default" and shows "Default model" instead of falling back to store
-  let localModel = $state<string | undefined>(untrack(() => selectedModel));
+  // undefined/null means "use default" and shows "Default model" instead of falling back to store
+  let localModel = $state<string | null | undefined>(untrack(() => selectedModel));
   let userChangedModel = $state(false);
-  let propModelAtLocalChange = $state<string | undefined>(undefined);
+  let propModelAtLocalChange = $state<string | null | undefined>(undefined);
 
   // Keep a local user selection until the parent prop catches up to localModel.
   $effect(() => {
@@ -509,6 +509,7 @@
   // Also treat the literal string "undefined" as no selection (can happen from bad String(undefined) conversion)
   const hasExplicitModel = $derived(
     localModel !== undefined &&
+      localModel !== null &&
       localModel !== USE_DEFAULT_VALUE &&
       localModel !== 'undefined' &&
       parseCompoundModelId(localModel).modelId !== 'default',

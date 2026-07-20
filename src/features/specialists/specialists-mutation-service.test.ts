@@ -246,4 +246,136 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
       expect(list).toHaveBeenCalled();
     });
   });
+
+  describe("STAB-117 regression: bundled specialists shadowed by user files", () => {
+    /**
+     * CRITICAL regression test for S2: "Reset on a single specialist resets all specialists."
+     *
+     * Scenario: All 9 built-ins have user files (mtime Jul 20 08:30). User clicks Reset
+     * on one specialist → daemon `specialist.delete` succeeds. The FE refetches
+     * `specialist.list`, which returns tier-merged results: the reset ID comes back
+     * with source="bundled", but the other 8 still have user files and come back as
+     * source="user". Their bundled definitions are ABSENT from the response (higher
+     * tier wins per ID).
+     *
+     * Bug: the old `refetchAndDispatch()` filtered `defs` by source="bundled", got a
+     * 1-element array (the reset specialist), and replaced the bundled list with
+     * just that entry. The other 8 lost their bundled identity (`selectIsBuiltIn` →
+     * false), so Reset buttons/default prompts/models appeared reset/broken across
+     * ALL specialists.
+     *
+     * Fix: `refetchAndDispatch()` reconstructs the bundled set from SPECIALISTS
+     * constant union daemon-returned bundled entries, preserving all built-in
+     * identities regardless of which IDs have user overrides.
+     */
+    it("preserves all built-in identities when daemon returns only one bundled entry", async () => {
+      // All 9 built-ins have user files initially (daemon returns all as source="user").
+      const all9AsUser: SpecialistDef[] = SPECIALISTS.map((s) => ({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        model: "fable-5",
+        behaviorPrompt: s.defaultBehaviorPrompt,
+        source: "user" as const,
+        path: `/home/u/.augment/specialists/${s.id}.md`,
+      }));
+      list.mockResolvedValue(all9AsUser);
+      appStore.dispatch(loadFileSpecialists());
+      await flush();
+
+      // Verify the bundled list is empty before the reset (all shadowed by user files).
+      {
+        const state = appStore.state as { specialists?: { bundledSpecialists?: typeof SPECIALISTS } };
+        // The refetch should have reconstructed the bundled set from SPECIALISTS. Even
+        // though the daemon returned zero entries with source="bundled", all 9 built-ins are present.
+        expect(state.specialists?.bundledSpecialists).toHaveLength(9);
+        expect(state.specialists?.bundledSpecialists?.map((s) => s.id).sort()).toEqual(
+          SPECIALISTS.map((s) => s.id).sort(),
+        );
+      }
+
+      // User clicks Reset on spec-writer → daemon deletes the user file. The daemon
+      // now returns spec-writer with source="bundled" (no longer shadowed), but the
+      // other 8 still have user files and come back as source="user".
+      const afterReset: SpecialistDef[] = [
+        {
+          id: "spec-writer",
+          name: "Coordinator",
+          description: "Plans work",
+          modelTier: "smart",
+          prompt: "You plan.",
+          behaviorPrompt: "You plan.",
+          source: "bundled" as const,
+        },
+        ...all9AsUser.filter((s) => s.id !== "spec-writer"),
+      ];
+      list.mockResolvedValue(afterReset);
+
+      // Trigger the refetch (simulating the delete path).
+      appStore.dispatch(deleteFileSpecialist({ id: "spec-writer", scope: "user" }));
+      await flush();
+
+      // ASSERTION: All 9 built-ins must retain their bundled identity (selectIsBuiltIn
+      // → true), with correct default prompts/models. The other 8 must NOT lose their
+      // bundled state even though the daemon returned them as source="user".
+      const state = appStore.state as { specialists?: { bundledSpecialists?: typeof SPECIALISTS } };
+      const bundled = state.specialists?.bundledSpecialists ?? [];
+      expect(bundled).toHaveLength(9);
+
+      // Check that all built-in IDs are present.
+      const bundledIds = new Set(bundled.map((s) => s.id));
+      for (const builtin of SPECIALISTS) {
+        expect(bundledIds.has(builtin.id), `bundled set missing ${builtin.id}`).toBe(true);
+      }
+
+      // Verify that the bundled set has correct default values for each built-in
+      // (not corrupted by the user overrides in the daemon response).
+      for (const builtin of SPECIALISTS) {
+        const bundledEntry = bundled.find((s) => s.id === builtin.id);
+        expect(bundledEntry, `bundled entry for ${builtin.id} missing`).toBeDefined();
+        // The bundled entry should have the built-in's default prompt/model (from
+        // SPECIALISTS constant or the daemon-returned bundled def if fresher).
+        // For spec-writer (the reset one), the daemon returned it with source="bundled",
+        // so it should overlay the SPECIALISTS entry. For the others, they should
+        // fall back to SPECIALISTS.
+        if (builtin.id === "spec-writer") {
+          // This one was returned by the daemon with source="bundled", so it should
+          // match the daemon response (overlaid onto SPECIALISTS).
+          expect(bundledEntry?.name).toBe("Coordinator");
+        } else {
+          // These were returned with source="user", so the bundled set should use
+          // the SPECIALISTS constant entry (not the user override).
+          expect(bundledEntry?.id).toBe(builtin.id);
+          expect(bundledEntry?.source).toBe("bundled");
+        }
+      }
+    });
+
+    it("adds daemon-returned bundled IDs not in SPECIALISTS (future-proof)", async () => {
+      // The daemon returns a new bundled specialist not in SPECIALISTS (simulating
+      // a future daemon update that adds a new built-in).
+      const newBundled: SpecialistDef = {
+        id: "future-specialist",
+        name: "Future Specialist",
+        description: "A new bundled specialist",
+        modelTier: "balanced",
+        prompt: "You specialize.",
+        behaviorPrompt: "You specialize.",
+        source: "bundled",
+      };
+      list.mockResolvedValue([COORDINATOR_DEF, newBundled]);
+
+      appStore.dispatch(loadFileSpecialists());
+      await flush();
+
+      const state = appStore.state as { specialists?: { bundledSpecialists?: typeof SPECIALISTS } };
+      const bundled = state.specialists?.bundledSpecialists ?? [];
+
+      // The bundled set should include all 9 built-ins plus the new one.
+      expect(bundled.length).toBeGreaterThanOrEqual(10);
+      const futureEntry = bundled.find((s) => s.id === "future-specialist");
+      expect(futureEntry).toBeDefined();
+      expect(futureEntry?.name).toBe("Future Specialist");
+    });
+  });
 });

@@ -1,6 +1,6 @@
 {
   "name": "intent",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "description": "Intent",
   "type": "module",
   "main": "dist/main/index.js",
@@ -34,7 +34,7 @@
     "release:patch": "npm run version:patch && pnpm run dist:mac",
     "release:minor": "npm run version:minor && pnpm run dist:mac",
     "release:major": "npm run version:major && pnpm run dist:mac",
-    "generate:release-notes": "tsx scripts/generate-release-notes.ts",
+    "generate:release-notes": "node scripts/generate-release-notes.mjs",
     "reset-onboarding": "bash scripts/reset-onboarding.sh",
     "reset-onboarding:restore": "bash scripts/reset-onboarding.sh restore",
     "test:diff-viewer": "tsx test/test-diff-viewer.ts",

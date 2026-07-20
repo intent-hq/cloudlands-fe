@@ -107,4 +107,38 @@ describe("settings-hydration-service (boot read + applySettingsChanges)", () => 
       applySettingsChanges([{ path: "completely.unknown.path", value: 42 }]),
     ).not.toThrow();
   });
+
+  it("preserves sibling backgroundAgents keys when partial delta contains only one", () => {
+    // First hydrate with both keys
+    applySettingsChanges([
+      { path: "backgroundAgents.defaultModel", value: "claude-sonnet" },
+      { path: "backgroundAgents.typeOverrides", value: { commit: "fast-1", pr: "pr-model", review: "", fast: "" } },
+    ]);
+
+    const stateBefore = appStore.state as {
+      backgroundAgentSettings: {
+        defaultModel: string;
+        typeOverrides: Record<string, string>;
+      };
+    };
+    expect(stateBefore.backgroundAgentSettings.defaultModel).toBe("claude-sonnet");
+    expect(stateBefore.backgroundAgentSettings.typeOverrides.pr).toBe("pr-model");
+
+    // Now apply a partial delta with ONLY defaultModel (simulates daemon echo-back of a single-field update)
+    applySettingsChanges([
+      { path: "backgroundAgents.defaultModel", value: "new-model" },
+    ]);
+
+    const stateAfter = appStore.state as {
+      backgroundAgentSettings: {
+        defaultModel: string;
+        typeOverrides: Record<string, string>;
+      };
+    };
+
+    // defaultModel should update
+    expect(stateAfter.backgroundAgentSettings.defaultModel).toBe("new-model");
+    // typeOverrides should NOT be dropped — it should fall back to the current slice state
+    expect(stateAfter.backgroundAgentSettings.typeOverrides.pr).toBe("pr-model");
+  });
 });

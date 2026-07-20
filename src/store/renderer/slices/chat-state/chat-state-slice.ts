@@ -303,6 +303,18 @@ export const chatTrackedWorkspaceSet = createAction<[agentId: string, trackedWsI
   'chatState/trackedWorkspaceSet',
 );
 
+// --- Transcript hydration tracking actions ---
+
+/** Transcript load started for an agent */
+export const transcriptHydrationStarted = createAction<[agentId: string]>(
+  'chatState/transcriptHydrationStarted',
+);
+
+/** Transcript load completed (success or error) for an agent */
+export const transcriptHydrationSettled = createAction<[agentId: string]>(
+  'chatState/transcriptHydrationSettled',
+);
+
 // --- Initialize chat saga trigger (no reducer state change) ---
 
 /** Trigger the initialize-chat saga. Dispatched from ChatPanel to start chat initialization. */
@@ -451,6 +463,12 @@ export const chatStateReducer = createReducer<ChatStateSlice>(initialState)
   )
   .with(chatTrackedWorkspaceSet, (state, { payload: [agentId, trackedWsId] }) =>
     updateAgent(state, agentId, { trackedWorkspaceId: trackedWsId }),
+  )
+  .with(transcriptHydrationStarted, (state, { payload: [agentId] }) =>
+    updateAgent(state, agentId, { agentId, transcriptHydration: 'loading' }),
+  )
+  .with(transcriptHydrationSettled, (state, { payload: [agentId] }) =>
+    updateAgent(state, agentId, { agentId, transcriptHydration: 'settled' }),
   )
   .with(workspaceDeleted, (state, { payload: [, agentIds] }) => {
     if (agentIds.length === 0) return state;

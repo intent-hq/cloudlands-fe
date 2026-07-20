@@ -96,14 +96,33 @@ function applyOne(change: AppliedSettingChange): void {
       }
       return;
     }
+    case "backgroundAgents.defaultModel":
+    case "backgroundAgents.typeOverrides":
+      // These are bundled and applied via applyBackgroundAgentBundle at the
+      // end of applySettingsChanges, so we don't dispatch here to avoid
+      // duplicate/partial hydration. Individual path changes still trigger
+      // the bundle logic.
+      return;
   }
 }
 
-/** Background-agent settings cross three dotted paths; reconcile them in one dispatch. */
+/**
+ * Background-agent settings reconcile two dotted paths in one dispatch.
+ * Only called when the delta actually includes at least one backgroundAgents.* key.
+ */
 function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
-  const defaultModel = byPath.get("backgroundAgents.defaultModel");
-  const typeOverrides = byPath.get("backgroundAgents.typeOverrides");
-  if (typeof defaultModel === "string" && defaultModel.length > 0) {
+  // A settings:changed delta may only include ONE of defaultModel / typeOverrides.
+  // Fall back to current slice state for missing keys so partial updates don't drop values.
+  const currentState = appStore.state.backgroundAgentSettings;
+  const defaultModel =
+    (byPath.get("backgroundAgents.defaultModel") as string | undefined) ?? currentState.defaultModel;
+  const typeOverrides =
+    (byPath.get("backgroundAgents.typeOverrides") as Record<BackgroundAgentType, string> | undefined) ??
+    currentState.typeOverrides;
+
+  // Always dispatch when defaultModel is a string (even if empty) so typeOverrides can hydrate.
+  // The reducer normalizes empty defaultModel to DEFAULT_BACKGROUND_MODEL.
+  if (typeof defaultModel === "string") {
     const fallback: Record<BackgroundAgentType, string> = {
       commit: "",
       pr: "",
@@ -132,11 +151,18 @@ function applyBackgroundAgentBundle(byPath: Map<string, unknown>): void {
 export function applySettingsChanges(changes: readonly AppliedSettingChange[]): void {
   if (changes.length === 0) return;
   const bundle = new Map<string, unknown>();
+  let hasBackgroundAgentPaths = false;
   for (const change of changes) {
     applyOne(change);
     bundle.set(change.path, change.value);
+    if (change.path.startsWith("backgroundAgents.")) {
+      hasBackgroundAgentPaths = true;
+    }
   }
-  applyBackgroundAgentBundle(bundle);
+  // Only reconcile background-agent bundle when the delta contains at least one backgroundAgents.* key
+  if (hasBackgroundAgentPaths) {
+    applyBackgroundAgentBundle(bundle);
+  }
   appStore.dispatch(settingsChanged([...changes]));
 }
 

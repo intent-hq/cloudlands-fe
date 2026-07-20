@@ -29,6 +29,7 @@
   selectWorkspaceInitializerHydrated,
   selectWorkspaceInitializerLastSelectedRepo,
   selectWorkspaceInitializerLastSubmittedAgent,
+  selectWorkspaceInitializerRecentRepos,
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import type {
     CompactWorkspaceInitializerFormState,
@@ -396,6 +397,7 @@
   const compactFormState$ = selectCompactWorkspaceInitializerFormState();
   const lastSelectedRepo$ = selectWorkspaceInitializerLastSelectedRepo();
   const lastSubmittedAgent$ = selectWorkspaceInitializerLastSubmittedAgent();
+  const recentRepos$ = selectWorkspaceInitializerRecentRepos();
 
   const savedState = $compactFormState$;
   const lastSubmittedAgent = $lastSubmittedAgent$;
@@ -568,6 +570,7 @@
 
   $effect(() => {
     const lastSelectedRepo = $lastSelectedRepo$;
+    const recentRepos = $recentRepos$;
     const hydrationAction = getLastSelectedRepoHydrationAction({
       isHydrated: $workspaceInitializerHydrated$,
       alreadyHandled: didApplyHydratedLastSelectedRepo,
@@ -575,6 +578,7 @@
       isFormPersistenceEnabled: debugConfig.get('enableFormPersistence'),
       currentRepoPath: repoPath,
       hasLastSelectedRepo: !!lastSelectedRepo,
+      recentRepos,
     });
 
     if (hydrationAction === 'wait') return;
@@ -582,6 +586,14 @@
     didApplyHydratedLastSelectedRepo = true;
     if (hydrationAction === 'restore' && lastSelectedRepo) {
       applyLastSelectedRepo(lastSelectedRepo);
+    } else if (hydrationAction === 'restore-recent' && recentRepos.length > 0) {
+      // Fall back to the most recently used repository
+      const mostRecentRepo = recentRepos[0];
+      applyLastSelectedRepo({
+        path: mostRecentRepo.path,
+        type: mostRecentRepo.type,
+        isValidPath: true,
+      });
     }
   });
 

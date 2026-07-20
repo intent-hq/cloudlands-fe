@@ -62,6 +62,7 @@
   selectScriptEntries,
   selectScriptById,
   selectScriptRuntime,
+  selectScriptsInitialized,
 } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
   refreshScripts,
@@ -102,6 +103,7 @@
   const activeTerminalId = selectActiveTerminalId();
   const terminals = selectTerminals();
   const scriptEntries$ = selectScriptEntries();
+  const scriptsInitialized$ = selectScriptsInitialized();
 
   // Workspace ID from props (required)
   const workspaceId = $derived(propWorkspaceId);
@@ -1146,7 +1148,7 @@
 
       <!-- Right Actions -->
       <div class="flex items-center gap-1">
-        {#if isRealWorkspace && $scriptEntries$.length === 0}
+        {#if isRealWorkspace && $scriptsInitialized$ && $scriptEntries$.length === 0}
           <Button
             variant="ghost-light"
             size="sm"

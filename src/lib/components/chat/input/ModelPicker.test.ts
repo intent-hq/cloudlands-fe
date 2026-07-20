@@ -649,6 +649,19 @@ describe('ModelPicker multi-provider mode', () => {
     expect(screen.getByRole('button').textContent).toContain('Model 1');
   });
 
+  it('shows default model option when selectedModel is null (BE-persisted unset)', async () => {
+    render(ModelPicker, {
+      props: {
+        selectedModel: null,
+        portal: false,
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button').textContent).toContain('Default model');
+    });
+  });
+
   it('does not silently switch when the selected model is a compound default-provider ID matching a bare dropdown entry', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
     const { toast } = await import('svelte-sonner');

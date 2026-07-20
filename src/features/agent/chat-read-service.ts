@@ -36,7 +36,11 @@ import type { StoreMiddleware } from "$lib/store-shim/types";
 import type { AgentMessage } from "$shared/types";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
-import { initializeChatRequested } from "$store/renderer/slices/chat-state/chat-state-slice";
+import {
+  initializeChatRequested,
+  transcriptHydrationStarted,
+  transcriptHydrationSettled,
+} from "$store/renderer/slices/chat-state/chat-state-slice";
 import {
   bulkUpsertSessions,
   upsertSession,
@@ -61,7 +65,28 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
   const pending = inFlight.get(agentId);
   if (pending) return pending;
 
-  const run = (async () => {
+  // Create a placeholder promise that we'll resolve once the actual work is done
+  let resolveRun!: () => void;
+  const runPromise = new Promise<void>((resolve) => {
+    resolveRun = resolve;
+  });
+
+  // Register in inFlight BEFORE dispatching to prevent re-entrant calls
+  inFlight.set(agentId, runPromise);
+
+  // Dispatch loading status synchronously now that we're registered
+  // Wrap in try/catch to ensure cleanup if dispatch throws
+  try {
+    appStore.dispatch(transcriptHydrationStarted(agentId));
+  } catch (error) {
+    // If dispatch throws, clean up inFlight but do NOT resolve the promise
+    // (coalesced callers should see the failure, not a fake success)
+    inFlight.delete(agentId);
+    throw error;
+  }
+
+  // Actually perform the work
+  (async () => {
     try {
       const session = await appClient.agents.get(agentId);
       if (!session) return;
@@ -133,13 +158,21 @@ export async function loadChatTranscript(agentId: string): Promise<void> {
       appStore.dispatch(upsertSession(sessionWithMessages));
     } catch (error) {
       logger.error("Failed to load agent conversation transcript", error);
+      // Errors are swallowed (don't reject the promise)
     } finally {
-      inFlight.delete(agentId);
+      // Always mark as settled, whether success or error (errors are swallowed)
+      // Wrap cleanup in try/finally to ensure inFlight.delete and resolveRun
+      // run even if the dispatch throws
+      try {
+        appStore.dispatch(transcriptHydrationSettled(agentId));
+      } finally {
+        inFlight.delete(agentId);
+        resolveRun();
+      }
     }
   })();
 
-  inFlight.set(agentId, run);
-  return run;
+  return runPromise;
 }
 
 /**

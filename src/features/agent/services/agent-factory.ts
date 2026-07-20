@@ -737,7 +737,7 @@ export class UnifiedAgentFactory {
         workspacePath,
         name: agent.name,
         agentId: String(agent.id), // Daemon adopts FE-supplied id verbatim
-        model: agent.model,
+        model: agent.model ?? undefined, // Coerce null to undefined for wire format
         provider, // Provider ID (e.g., 'auggie', 'claude-code', 'codex') from activeProviderStore
         agentType: agent.metadata?.agentType, // Daemon builds system prompt from this
         prompt: behaviorPrompt, // Maps to wire `behaviorPrompt` (AgentCreateRequest.prompt)
