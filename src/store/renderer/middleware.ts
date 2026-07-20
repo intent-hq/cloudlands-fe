@@ -59,6 +59,7 @@ import { createFileContentPruneService } from "./middlewares/file-content-prune-
 import { createTerminalPersistenceMiddleware } from "./middlewares/terminal-persistence-service";
 import { createExternalEditorsPersistenceMiddleware } from "./middlewares/external-editors-persistence-service";
 import { createZoomSyncMiddleware } from "./middlewares/zoom-sync-service";
+import { createNotificationIpcMiddleware } from "./middlewares/notification-ipc-service";
 import { createWorkspaceSettingsPersistenceMiddleware } from "./middlewares/workspace-settings-persistence-service";
 import { createUserPreferencesBetaPersistenceMiddleware } from "./middlewares/user-preferences-beta-persistence-service";
 import { createUserPreferencesNotificationPersistenceMiddleware } from "./middlewares/user-preferences-notification-persistence-service";
@@ -343,6 +344,11 @@ function buildMiddleware(): StoreMiddleware[] {
     // ipc-saga.ts) so zoom-level changes from the main process (Cmd/Ctrl+Plus/
     // Minus or View menu) dispatch setZoomFactor and reach the Redux store again.
     createZoomSyncMiddleware(),
+    // Restore the notification IPC listeners (deleted ui-notifications/sagas/
+    // ui-notifications-saga.ts) so `notification:show` plays the notification
+    // sound per the sound settings and `notification:navigate` (notification
+    // click) navigates to the emitting workspace again.
+    createNotificationIpcMiddleware(),
     // Give the (post-saga) workspace-settings persistence triggers real handlers
     // so the auto-commit toggle in CodeChangesPanel.svelte persists via IPC to
     // main (WORKSPACE_CHANNELS.UPDATE_SETTINGS) + electron-store (SETTINGS_CHANNELS.SET

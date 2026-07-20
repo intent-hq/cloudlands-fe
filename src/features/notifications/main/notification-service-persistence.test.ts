@@ -3,17 +3,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 /**
  * Wire-contract tests for the NotificationService rewire (PROTOCOL.md §5.12).
  * The legacy `notificationSettings` electron-store bag is retired; the
- * `enabled` flag now reads from the daemon-owned `notifications.enabled`
- * setting via `settings.get`. Every legacy `settings` store instantiation
- * in this file is grep-proof gone.
+ * `enabled` and `soundOnlyWhenUnfocused` flags now read from the daemon-owned
+ * `notifications.*` settings via `settings.get`. Every legacy `settings`
+ * store instantiation in this file is grep-proof gone.
  */
 
 const requestMock = vi.hoisted(() =>
-  vi.fn(async () => ({ path: 'notifications.enabled', value: true })),
+  vi.fn(async (method: string, params?: unknown) => {
+    if (method === 'settings.get') {
+      const path = (params as { path?: string } | undefined)?.path ?? '';
+      return { path, value: true };
+    }
+    return {};
+  }),
 );
 
 vi.mock('../../backend/main/backend.ipc', () => ({
-  getBackendClient: () => ({ request: requestMock }),
+  getBackendClient: () => ({ request: requestMock, on: vi.fn(), off: vi.fn() }),
+  onBackendReconnected: () => vi.fn(),
 }));
 
 vi.mock('../../../shared/logger', () => ({
@@ -107,14 +114,21 @@ describe('NotificationService ↔ daemon settings.notifications.enabled', () => 
   });
 
   it('honors notifications.enabled=false from the daemon', async () => {
-    requestMock.mockResolvedValueOnce({ path: 'notifications.enabled', value: false });
+    // Each handleAgentIdle re-fetches prefs (fresh read so settings toggles
+    // take effect without a relaunch); serve enabled=false on every read.
+    requestMock.mockImplementation(async (method: string, params?: unknown) => {
+      if (method === 'settings.get') {
+        const path = (params as { path?: string } | undefined)?.path ?? '';
+        return { path, value: path !== 'notifications.enabled' };
+      }
+      return {};
+    });
     const { NotificationService, __resetNotificationCacheForTesting } = await import(
       './notification.service'
     );
     __resetNotificationCacheForTesting();
     const svc = new NotificationService('workspace-1');
     await flush();
-    // handleAgentIdle should return early without further daemon calls.
     requestMock.mockClear();
     await svc.handleAgentIdle({
       data: {
@@ -124,7 +138,9 @@ describe('NotificationService ↔ daemon settings.notifications.enabled', () => 
         isBackground: false,
       },
     } as never);
-    // No additional requests should be made after the disabled check.
-    expect(requestMock).not.toHaveBeenCalled();
+    // The disabled check short-circuits before any daemon call other than
+    // the settings.get preference reads themselves.
+    const nonSettingsCalls = requestMock.mock.calls.filter(([m]) => m !== 'settings.get');
+    expect(nonSettingsCalls).toHaveLength(0);
   });
 });
