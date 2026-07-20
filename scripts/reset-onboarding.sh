@@ -60,7 +60,7 @@ do_reset() {
   fi
 
   # Check app is not running (packaged or dev)
-  if pgrep -f "Intent by Augment" >/dev/null 2>&1 \
+  if pgrep -f "Intent\.app/Contents/MacOS/Intent" >/dev/null 2>&1 \
     || pgrep -f "Electron.*intent" >/dev/null 2>&1 \
     || pgrep -f "electron.*intent" >/dev/null 2>&1 \
     || pgrep -f "dev:electron" >/dev/null 2>&1; then
@@ -98,7 +98,7 @@ do_restore() {
     exit 1
   fi
 
-  if pgrep -f "Intent by Augment" >/dev/null 2>&1 \
+  if pgrep -f "Intent\.app/Contents/MacOS/Intent" >/dev/null 2>&1 \
     || pgrep -f "Electron.*intent" >/dev/null 2>&1 \
     || pgrep -f "electron.*intent" >/dev/null 2>&1 \
     || pgrep -f "dev:electron" >/dev/null 2>&1; then

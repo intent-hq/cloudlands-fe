@@ -10,6 +10,10 @@ vi.mock('../../ui/button/button.svelte', async () => ({
   default: (await import('./mocks/Button.svelte')).default,
 }));
 
+vi.mock('$lib/components/ui/auggie-avatar/AuggieAvatar.svelte', async () => ({
+  default: (await import('./mocks/AuggieAvatar.svelte')).default,
+}));
+
 import QueuedMessageList from '../QueuedMessageList.svelte';
 
 const WAKE_TEXT =
@@ -173,5 +177,106 @@ describe('QueuedMessageList', () => {
     await tick();
 
     expect(container.querySelector('textarea')).toBeNull();
+  });
+
+  describe('agent-to-agent messages (messageMetadata.type === "agent_message")', () => {
+    const AGENT_MESSAGE_METADATA = {
+      type: 'agent_message',
+      fromAgentId: 'agent-sender-1',
+      fromAgentName: 'Builder',
+    };
+
+    it('renders avatar + sender name attribution without Edit, keeping Remove and Send now', () => {
+      const { container } = render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({ content: 'please review my PR', messageMetadata: AGENT_MESSAGE_METADATA }),
+          ],
+        },
+      });
+
+      expect(screen.getByText('Builder')).toBeTruthy();
+      expect(screen.getByText(/please review my PR/)).toBeTruthy();
+      const avatar = screen.getByTestId('auggie-avatar');
+      expect(avatar.getAttribute('data-agent-id')).toBe('agent-sender-1');
+
+      const tooltips = buttonTooltips(container);
+      expect(tooltips).not.toContain('Edit');
+      expect(tooltips).toContain('Remove');
+      expect(tooltips.some((t) => t.startsWith('Send now'))).toBe(true);
+    });
+
+    it('falls back to "Agent" when fromAgentName is absent', () => {
+      render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              content: 'hello',
+              messageMetadata: { type: 'agent_message', fromAgentId: 'agent-sender-2' },
+            }),
+          ],
+        },
+      });
+
+      expect(screen.getByText('Agent')).toBeTruthy();
+    });
+
+    it('renders as a normal editable message when metadata is malformed', () => {
+      const { container } = render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              content: 'hello',
+              // agent_message without a usable fromAgentId
+              messageMetadata: { type: 'agent_message', fromAgentId: 42 },
+            }),
+          ],
+        },
+      });
+
+      expect(screen.getByText('hello')).toBeTruthy();
+      expect(screen.queryByTestId('queued-agent-message-avatar')).toBeNull();
+      expect(buttonTooltips(container)).toContain('Edit');
+    });
+
+    it('editLastMessage() skips a trailing agent message and edits the last user message', async () => {
+      const { component, container } = render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({ id: 'q-1', content: 'normal message', position: 0 }),
+            queued({
+              id: 'q-2',
+              content: 'agent says hi',
+              position: 1,
+              messageMetadata: AGENT_MESSAGE_METADATA,
+            }),
+          ],
+        },
+      });
+
+      expect(component.editLastMessage()).toBe(true);
+      await tick();
+
+      const textarea = container.querySelector('textarea');
+      expect(textarea).toBeTruthy();
+      expect(textarea?.value).toBe('normal message');
+    });
+
+    it('keeps the requeued-after-failure indicator on agent message rows', () => {
+      const { container } = render(QueuedMessageList, {
+        props: {
+          messages: [
+            queued({
+              content: 'hello',
+              messageMetadata: AGENT_MESSAGE_METADATA,
+              requeuedAfterFailure: true,
+            }),
+          ],
+        },
+      });
+
+      expect(screen.getByText('Builder')).toBeTruthy();
+      expect(container.querySelector('[title="Failed — will retry"]')).toBeTruthy();
+    });
   });
 });

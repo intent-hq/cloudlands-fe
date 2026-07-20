@@ -18,8 +18,8 @@ describe('Workspace Isolation', () => {
   describe('Path Validation', () => {
     it('should detect app source directory patterns', () => {
       const dangerousPaths = [
-        '/Users/ameilawattenberger/repos/augment/experimental/amelia/workspaces',
-        '/home/user/projects/augment/experimental/amelia/workspaces',
+        '/Users/testuser/repos/example/experimental/amelia/workspaces',
+        '/home/user/projects/example/experimental/amelia/workspaces',
         '/var/workspace/experimental/amelia/workspaces/src',
         '/opt/app/experimental/amelia/workspaces/lib',
       ];
@@ -33,7 +33,7 @@ describe('Workspace Isolation', () => {
     it('should accept valid workspace paths', () => {
       const validPaths = [
         '/home/user/intent/abc-123/worktree',
-        '/Users/ameilawattenberger/intent/553a31a7-a3be-42e0-973d-35b340c84f50/wattenberger-2023__workspace-553a31a7',
+        '/Users/testuser/intent/553a31a7-a3be-42e0-973d-35b340c84f50/example-repo__workspace-553a31a7',
         '/var/workspaces/project-xyz/repo',
         '/tmp/workspace-temp',
       ];
@@ -63,9 +63,8 @@ describe('Workspace Isolation', () => {
 
   describe('Security Boundaries', () => {
     it('workspace paths should be outside app source', () => {
-      const appSourcePath =
-        '/Users/ameilawattenberger/repos/augment/experimental/amelia/workspaces';
-      const workspacePath = '/Users/ameilawattenberger/intent/553a31a7-a3be-42e0-973d-35b340c84f50';
+      const appSourcePath = '/Users/testuser/repos/example/experimental/amelia/workspaces';
+      const workspacePath = '/Users/testuser/intent/553a31a7-a3be-42e0-973d-35b340c84f50';
 
       // Workspace path should not be a subdirectory of app source
       expect(workspacePath.startsWith(appSourcePath)).toBe(false);
@@ -172,8 +171,8 @@ describe('Workspace Isolation', () => {
 
     it('should deny access to app source code', () => {
       const appSourcePaths = [
-        '/Users/user/repos/augment/experimental/amelia/workspaces/src/features',
-        '/home/user/projects/augment/experimental/amelia/workspaces/package.json',
+        '/Users/user/repos/example/experimental/amelia/workspaces/src/features',
+        '/home/user/projects/example/experimental/amelia/workspaces/package.json',
       ];
 
       for (const filePath of appSourcePaths) {
