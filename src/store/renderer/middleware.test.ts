@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => {
   };
 
   const batchingMiddleware = createPassthroughMiddleware();
-  const sentryMiddleware = createPassthroughMiddleware();
   const gitReadMiddleware = createPassthroughMiddleware();
   const agentReadMiddleware = createPassthroughMiddleware();
   const agentSubscriptionReadMiddleware = createPassthroughMiddleware();
@@ -77,7 +76,6 @@ const mocks = vi.hoisted(() => {
 
   return {
     createBatchingMiddleware: vi.fn(() => batchingMiddleware),
-    createSentryBreadcrumbsMiddleware: vi.fn(() => sentryMiddleware),
     createGitReadMiddleware: vi.fn(() => gitReadMiddleware),
     createAgentReadMiddleware: vi.fn(() => agentReadMiddleware),
     createAgentSubscriptionReadMiddleware: vi.fn(() => agentSubscriptionReadMiddleware),
@@ -146,7 +144,6 @@ const mocks = vi.hoisted(() => {
     createStructuredCloneCheckerMiddleware: vi.fn(() => structuredCloneMiddleware),
     createStoreGuardMiddleware: vi.fn(() => storeGuardMiddleware),
     batchingMiddleware,
-    sentryMiddleware,
     gitReadMiddleware,
     agentReadMiddleware,
     agentSubscriptionReadMiddleware,
@@ -369,9 +366,6 @@ vi.mock("$features/specialists/specialists-mutation-service", () => ({
 }));
 vi.mock("./middlewares/batch", () => ({ createBatchingMiddleware: mocks.createBatchingMiddleware }));
 vi.mock("./middlewares/logger", () => ({ createLoggerMiddleware: mocks.createLoggerMiddleware }));
-vi.mock("./middlewares/sentry-breadcrumbs", () => ({
-  createSentryBreadcrumbsMiddleware: mocks.createSentryBreadcrumbsMiddleware,
-}));
 vi.mock("./middlewares/state-reference-checks", () => ({
   createReferenceChangeDetectorMiddleware: mocks.createReferenceChangeDetectorMiddleware,
 }));
@@ -423,7 +417,6 @@ describe("store middleware Redux logging gating", () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
-      mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
       mocks.agentSubscriptionReadMiddleware,
@@ -493,7 +486,6 @@ describe("store middleware Redux logging gating", () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
-      mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
       mocks.agentSubscriptionReadMiddleware,
@@ -563,7 +555,6 @@ describe("store middleware Redux logging gating", () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
-      mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
       mocks.agentSubscriptionReadMiddleware,
@@ -634,7 +625,6 @@ describe("store middleware Redux logging gating", () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
-      mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
       mocks.agentSubscriptionReadMiddleware,
@@ -722,7 +712,6 @@ describe("store middleware Redux logging gating", () => {
     expect(middleware).toEqual([
       mocks.storeGuardMiddleware,
       mocks.batchingMiddleware,
-      mocks.sentryMiddleware,
       mocks.gitReadMiddleware,
       mocks.agentReadMiddleware,
       mocks.agentSubscriptionReadMiddleware,

@@ -1,12 +1,6 @@
 # Svelte Store → Redux Slice Migration Guide
 
-This project guide is a concise companion to the migration skills. The active migration playbook lives in:
-
-- `.agents/skills/ag-redux-toolkit/svelte/migration/SKILL.md`
-- `.agents/skills/ag-redux-toolkit/svelte/migration/**`
-- `.agents/skills/ag-redux-toolkit/**`
-
-Use those skills for the step-by-step mapping. This file records the Intent-app migration checkpoints and repository paths.
+This project guide records the Intent-app migration checkpoints and repository paths for moving Svelte stores (`*.store.svelte.ts`) into Redux-style slices built on the local store shim (`src/lib/store-shim/`).
 
 ## Migration policy
 
@@ -51,5 +45,4 @@ All migration-specific searches should return no active references unless the ta
 
 - [Reducers Guide](./REDUCERS_GUIDE.md)
 - [Selectors Guide](./SELECTORS_GUIDE.md)
-- [waitFor Saga Utility Guide](./WAITFOR_SAGA_GUIDE.md)
 - `src/store/renderer/AGENTS.md`

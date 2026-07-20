@@ -62,7 +62,6 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { toast } from '$lib/components/ui/toast';
 
-  import { trackGitOp } from '$lib/services/analytics';
   import { syncWorkspaceSettings } from '$store/renderer/slices/workspace-settings/workspace-settings-slice';
   import { logger } from '$lib/utils/client-logger';
   import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
@@ -837,12 +836,6 @@
         workspaceId: wsId,
         commitMessage: commitMessage.trim(),
       });
-      // Track analytics event for both success and failure
-      trackGitOp('commit', {
-        workspaceId: wsId,
-        success: result.success,
-        trigger: 'manual',
-      });
 
       if (result.success) {
         commitMessage = '';
@@ -852,7 +845,6 @@
         toast.error(result.error || 'Failed to commit');
       }
     } catch {
-      trackGitOp('commit', { workspaceId: wsId, success: false, trigger: 'manual' });
       toast.error('Failed to commit');
     } finally {
       isCommitting = false;

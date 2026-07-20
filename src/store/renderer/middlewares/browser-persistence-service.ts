@@ -15,7 +15,7 @@
  * and slice actions — no selectors and no store module (state is read through the
  * middleware `api.getState()`).
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 import type { StoreState } from "../types";
 import type { RecentUrl } from "../slices/browser/browser-types";

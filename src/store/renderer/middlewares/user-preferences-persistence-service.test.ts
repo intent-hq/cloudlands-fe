@@ -15,7 +15,6 @@ import {
   setNoteFontStyle,
   setCodeFontFamily,
   saveActivityLogPreset,
-  dismissPromoBanner,
   type ActivityLogPresetPreference,
 } from "../slices/user-preferences/user-preferences-slice";
 
@@ -93,12 +92,6 @@ describe("userPreferencesPersistenceService (real store)", () => {
     appStore.dispatch(saveActivityLogPreset(preset));
     const stored = safeLocalStorage.getJSON<ActivityLogPresetPreference[]>("activityLogPresets");
     expect(stored).toContainEqual(preset);
-  });
-
-  it("persists promo-banner interactions on dismissPromoBanner", () => {
-    appStore.dispatch(dismissPromoBanner("test-banner", "2024-01-01T00:00:00Z", true));
-    const stored = safeLocalStorage.getJSON("promoBannerInteractions");
-    expect(stored).toHaveProperty("test-banner");
   });
 
   it("uses legacy spellcheck storage key", () => {

@@ -28,7 +28,7 @@
  * Dependency-light per src/store AGENTS.md: imports only the safe-storage
  * helper and slice actions/serializer — no selectors and no store module.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 import type { StoreState } from "../types";
 import {

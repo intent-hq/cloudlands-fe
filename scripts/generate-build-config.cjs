@@ -7,8 +7,8 @@
  *
  * WHY THIS EXISTS:
  * ----------------
- * The .env file is NOT shipped with the built Electron app. To include secrets
- * like SENTRY_DSN in the production build, we "bake" them into the code at
+ * The .env file is NOT shipped with the built Electron app. To include
+ * build-time values in the production build, we "bake" them into the code at
  * build time. This is more secure than shipping a plain .env file.
  *
  * HOW IT WORKS:
@@ -38,7 +38,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-// Load .env file manually (can't use dotenv in .cjs easily with ESM project)
+// Load .env file manually
 const envPath = path.join(__dirname, '..', '.env');
 const env = {};
 
@@ -61,11 +61,6 @@ if (fs.existsSync(envPath)) {
   });
 }
 
-// Get package version for release tag
-const packageJsonPath = path.join(__dirname, '..', 'package.json');
-const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-const version = packageJson.version;
-
 // Get git commit hash
 let gitCommitHash = '';
 try {
@@ -78,13 +73,8 @@ try {
 // Add new build-time config here
 // Note: Environment detection now uses app.isPackaged at runtime (see src/main/index.ts)
 const CONFIG = {
-  // Sentry error tracking
-  SENTRY_DSN: env.SENTRY_DSN || '',
-  SENTRY_RELEASE: env.SENTRY_RELEASE || `intent@${version}`,
   // Git commit hash for version identification
   GIT_COMMIT_HASH: gitCommitHash,
-  // Segment analytics
-  SEGMENT_WRITE_KEY: env.SEGMENT_WRITE_KEY || '',
 };
 
 // Generate the TypeScript file
@@ -109,28 +99,10 @@ const content = `/**
 
 export const BUILD_CONFIG = {
   /**
-   * Sentry DSN for error tracking
-   * Set SENTRY_DSN in .env to enable error reporting
-   */
-  SENTRY_DSN: ${JSON.stringify(CONFIG.SENTRY_DSN)},
-
-  /**
-   * Sentry release version (e.g., "intent@0.1.5")
-   * Auto-synced from package.json version via SENTRY_RELEASE in .env
-   */
-  SENTRY_RELEASE: ${JSON.stringify(CONFIG.SENTRY_RELEASE)},
-
-  /**
    * Git commit hash (short form) at build time
    * Used for version identification in About dialog
    */
   GIT_COMMIT_HASH: ${JSON.stringify(CONFIG.GIT_COMMIT_HASH)},
-
-  /**
-   * Segment write key for analytics
-   * Set SEGMENT_WRITE_KEY in .env to enable analytics
-   */
-  SEGMENT_WRITE_KEY: ${JSON.stringify(CONFIG.SEGMENT_WRITE_KEY)},
 } as const;
 
 export type BuildConfig = typeof BUILD_CONFIG;
@@ -139,7 +111,4 @@ export type BuildConfig = typeof BUILD_CONFIG;
 fs.writeFileSync(outputPath, content);
 
 console.log('✅ Generated build config:', outputPath);
-console.log('   SENTRY_DSN:', CONFIG.SENTRY_DSN ? '(set)' : '(not set)');
-console.log('   SENTRY_RELEASE:', CONFIG.SENTRY_RELEASE);
 console.log('   GIT_COMMIT_HASH:', CONFIG.GIT_COMMIT_HASH || '(not available)');
-console.log('   SEGMENT_WRITE_KEY:', CONFIG.SEGMENT_WRITE_KEY ? '(set)' : '(not set)');

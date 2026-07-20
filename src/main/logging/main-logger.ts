@@ -53,7 +53,7 @@ export function setupMainLogger() {
   }
 
   // Log system info
-  log.info('[SYSTEM] Starting Intent by Augment');
+  log.info('[SYSTEM] Starting Intent');
   log.info('[SYSTEM] Electron version:', process.versions.electron);
   log.info('[SYSTEM] Node version:', process.versions.node);
   log.info('[SYSTEM] Chrome version:', process.versions.chrome);

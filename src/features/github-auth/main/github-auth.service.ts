@@ -14,8 +14,7 @@ const logger = new Logger('GitHubAuthService');
  * GitHub Authentication Service
  *
  * Derives GitHub auth state from the daemon's `github.authStatus` method
- * (`isConfigured`). In the PAT-from-env model there is no Augment session
- * file, so auth state no longer depends on `~/.augment/session.json`.
+ * (`isConfigured`). Uses daemon-managed OAuth flow and PAT handling.
  *
  * Flow:
  * 1. Call `github.authStatus` to check GitHub configuration status
@@ -29,7 +28,7 @@ export class GitHubAuthService {
   private readonly CACHE_TTL = 30000; // 30 seconds
 
   /**
-   * Check if user is authenticated with GitHub via Augment
+   * Check if user is authenticated with GitHub via the daemon
    *
    * Note: We consider the user authenticated if `is_configured=true`, even if
    * `configured_but_needs_update=true`. The "needs update" flag typically means
@@ -50,7 +49,7 @@ export class GitHubAuthService {
   }
 
   /**
-   * Get the current GitHub authentication status from Augment API
+   * Get the current GitHub authentication status from the daemon API
    */
   async getGitHubStatus(forceRefresh = false): Promise<GitHubAuthStatus> {
     // Return cached status if still valid
@@ -92,7 +91,7 @@ export class GitHubAuthService {
   /**
    * Get the current GitHub user info
    * Note: This requires the GitHub token which we may not have direct access to.
-   * The user info might need to come from a different Augment API endpoint.
+   * The user info might need to come from a different daemon API endpoint.
    */
   async getUser(): Promise<GitHubUser | null> {
     if (this.cachedUser) {
@@ -100,8 +99,8 @@ export class GitHubAuthService {
     }
 
     // For now, we don't have direct access to the GitHub token
-    // The user info would need to come from an Augment API endpoint
-    // TODO: Add an Augment API endpoint to get GitHub user info
+    // The user info would need to come from a daemon API endpoint
+    // TODO: Add a daemon API endpoint to get GitHub user info
     return null;
   }
 
@@ -110,7 +109,7 @@ export class GitHubAuthService {
    * Returns the OAuth URL for the user to visit
    */
   async startAuth(): Promise<StartAuthResult> {
-    logger.info('Starting GitHub authentication via Augment');
+    logger.info('Starting GitHub authentication via the daemon');
 
     // Get the OAuth URL from the daemon
     const status = await this.getGitHubStatus(true);
@@ -131,10 +130,10 @@ export class GitHubAuthService {
     }
 
     if (!status.oauthUrl) {
-      logger.error('No OAuth URL available from Augment API');
+      logger.error('No OAuth URL available from daemon API');
       return {
         success: false,
-        error: 'Could not get GitHub OAuth URL from Augment API',
+        error: 'Could not get GitHub OAuth URL from daemon API',
       };
     }
 
@@ -229,7 +228,7 @@ export class GitHubAuthService {
 
     return {
       isAuthenticated: status.isConfigured,
-      requiresAugmentAuth: false,
+      requiresDaemonAuth: false,
       needsScopeUpdate: status.configuredButNeedsUpdate,
       updatedScopes: status.updatedScopes,
       oauthUrl: status.oauthUrl,
@@ -240,18 +239,18 @@ export class GitHubAuthService {
   /**
    * Get a validated access token for git operations.
    *
-   * Note: With the Augment API integration, we don't have direct access to the
-   * GitHub token. All GitHub API operations go through Augment's backend proxy.
+   * Note: With the daemon integration, we don't have direct access to the
+   * GitHub token. All GitHub API operations go through the daemon's proxy.
    * For git push/pull operations, users need to configure their own git credentials
    * (SSH keys or git credential manager).
    *
-   * @returns null - Token is not directly accessible with Augment API integration
+   * @returns null - Token is not directly accessible with daemon integration
    */
   async getValidatedAccessToken(): Promise<string | null> {
     logger.debug(
-      'getValidatedAccessToken called - token not available with Augment API integration',
+      'getValidatedAccessToken called - token not available with daemon API integration',
     );
-    // With Augment API integration, we don't have direct access to the GitHub token.
+    // With daemon API integration, we don't have direct access to the GitHub token.
     // Git operations should use the user's configured git credentials (SSH or credential manager).
     return null;
   }

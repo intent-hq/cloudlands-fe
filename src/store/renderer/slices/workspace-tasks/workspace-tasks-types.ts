@@ -1,5 +1,5 @@
 import type { WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
-import type { Collection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import type { Collection } from "$lib/store-shim/utils/collections/collection-utils";
 
 /** Per-workspace canonical task state. */
 export interface WorkspaceTasksWorkspaceState {

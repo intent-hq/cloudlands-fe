@@ -73,7 +73,7 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.GET_AUTH_STATE, async (): Promise<Gi
   const user = isConfigured ? await liveIntegrations.githubUser() : null;
   return {
     isAuthenticated: isConfigured && user !== null,
-    requiresAugmentAuth: false,
+    requiresDaemonAuth: false,
     user,
     needsScopeUpdate: status?.configuredButNeedsUpdate === true,
     oauthUrl: undefined,
@@ -364,11 +364,11 @@ async function linearAuthenticated(): Promise<boolean> {
 registerMockIpcHandler(LINEAR_AUTH_CHANNELS.IS_AUTHENTICATED, () => linearAuthenticated());
 
 // There is no Linear OAuth flow in the env-key model (§5.28): `oauthUrl` is
-// omitted and `requiresAugmentAuth` is always false — connect = set
+// omitted and `requiresDaemonAuth` is always false — connect = set
 // LINEAR_API_KEY and restart.
 registerMockIpcHandler(LINEAR_AUTH_CHANNELS.GET_AUTH_STATE, async () => ({
   isAuthenticated: await linearAuthenticated(),
-  requiresAugmentAuth: false,
+  requiresDaemonAuth: false,
 }));
 
 registerMockIpcHandler(LINEAR_AUTH_CHANNELS.GET_STATUS, async () => ({

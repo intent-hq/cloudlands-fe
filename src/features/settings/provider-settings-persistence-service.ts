@@ -23,7 +23,7 @@
  * AppClient seam, the slice trigger action, and the logger (no selectors —
  * the value is on the action payload).
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { appClient } from "$lib/client";
 import { createLogger } from "$lib/utils/client-logger";
 import { setActiveProvider } from "$store/renderer/slices/provider-settings/provider-settings-slice";

@@ -3,7 +3,7 @@ import {
   expect,
   it,
 } from "vitest";
-import { createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
 import { resetWorkspaceState } from "../workspace/workspace-slice";
 import {
   closeSwitcher,

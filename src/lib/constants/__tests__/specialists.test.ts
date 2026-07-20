@@ -8,7 +8,7 @@ describe('SPECIALISTS', () => {
 
     expect(chief?.defaultBehaviorPrompt).toContain('When the user names a branch');
     expect(chief?.defaultBehaviorPrompt).toContain('prUrl');
-    expect(chief?.defaultBehaviorPrompt).toContain('augmentcode/intent/pull/648');
+    expect(chief?.defaultBehaviorPrompt).toContain('example-org/example-repo/pull/648');
   });
 
   // Regression: the agent was emitting a multi-ID workspace block followed by a

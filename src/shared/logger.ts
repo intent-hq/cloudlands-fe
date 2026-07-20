@@ -34,7 +34,6 @@ export interface LoggerOptions {
   level?: LogLevel;
   enableConsole?: boolean;
   enableFile?: boolean;
-  enableStorage?: boolean;
 }
 
 export class Logger {
@@ -42,7 +41,6 @@ export class Logger {
   private level: LogLevel;
   private enableConsole: boolean;
   private enableFile: boolean;
-  private enableStorage: boolean;
   private logs: LogEntry[] = [];
   private maxEntries: number = 1000;
 
@@ -60,7 +58,6 @@ export class Logger {
 
     this.enableConsole = options.enableConsole !== false;
     this.enableFile = options.enableFile ?? false;
-    this.enableStorage = options.enableStorage ?? false;
   }
 
   private shouldLog(level: LogLevel): boolean {
@@ -85,20 +82,6 @@ export class Logger {
     this.logs.push(entry);
     if (this.logs.length > this.maxEntries) {
       this.logs = this.logs.slice(-this.maxEntries);
-    }
-
-    if (this.enableStorage && typeof globalThis !== 'undefined' && globalThis.localStorage) {
-      try {
-        const stored = globalThis.localStorage.getItem('app_logs') || '[]';
-        const allLogs = JSON.parse(stored);
-        allLogs.push(entry);
-        if (allLogs.length > this.maxEntries) {
-          allLogs.splice(0, allLogs.length - this.maxEntries);
-        }
-        globalThis.localStorage.setItem('app_logs', JSON.stringify(allLogs));
-      } catch {
-        // Storage error, continue without persistence
-      }
     }
   }
 
@@ -380,7 +363,6 @@ export class Logger {
       level: this.level,
       enableConsole: this.enableConsole,
       enableFile: this.enableFile,
-      enableStorage: this.enableStorage,
     });
   }
 
@@ -416,5 +398,4 @@ export class Logger {
 // Default logger instance
 export const logger = new Logger('App', {
   enableConsole: true,
-  enableStorage: typeof globalThis !== 'undefined' && globalThis.localStorage !== undefined,
 });

@@ -6,7 +6,6 @@ import { sendToWorkspaceWindows } from '../../../system/main/system.ipc';
 import { getProvenanceContextManager } from '$features/workspace/main/provenance/provenance-context-manager';
 import { hasTaskBlocks } from '../../../notes/utils/task-block-parser';
 import { getBackendClient } from '$features/backend/main/backend.ipc';
-import { trackMain } from '$lib/services/analytics/main';
 import {
   noteLink,
   noteUrl,
@@ -500,12 +499,6 @@ export function buildNoteApi(workspaceManager: any, workspaceId: string, call: T
             metadata: { author: { id: 'agent', name: 'Agent', type: 'agent' } },
           });
           if (!note) throw new Error('Failed to create note: no note returned from workspace manager');
-
-          try {
-            trackMain('Created Note', { note_type: note.metadata?.task ? 'task' : 'regular' });
-          } catch {
-            // Ignore analytics failures.
-          }
 
           sendToWorkspaceWindows(workspaceId, 'note:created', {
             workspaceId,

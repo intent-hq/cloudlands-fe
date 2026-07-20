@@ -41,7 +41,7 @@
  * sibling `agent-stream-service.ts`. The toast library is imported lazily
  * inside handlers so the static graph stays light.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import type { AgentSession } from "$shared/types";
 import { AgentStatus } from "$shared/types";
 import { AgentActivationState } from "$shared/types/agent-session";

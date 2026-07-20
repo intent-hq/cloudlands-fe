@@ -134,8 +134,6 @@ vi.mock('$features/layout/panel-layout-adapter', () => ({
 
 vi.mock('$features/navigation/link-handler', () => ({ handleLink: vi.fn() }));
 
-vi.mock('$lib/services/analytics', () => ({ track: vi.fn(), trackGitOp: vi.fn(), getFileExtension: () => '.ts' }));
-
 vi.mock('$lib/utils/client-logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
   createLogger: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })),

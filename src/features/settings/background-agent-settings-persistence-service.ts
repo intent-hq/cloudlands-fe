@@ -16,7 +16,7 @@
  * seam, the configured store, backgroundAgentSettings-slice actions, and the
  * logger (no selectors — state is read directly off `appStore.state`).
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { createLogger } from "$lib/utils/client-logger";

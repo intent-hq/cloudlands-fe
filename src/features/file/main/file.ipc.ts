@@ -42,8 +42,6 @@ import {
 } from '../../../main/ipc-schemas';
 import { execAsync } from '../../../shared/git/git-env';
 import { renameWithRetry } from '../../../shared/main/file-sync-utils';
-import { trackMain } from '$lib/services/analytics/main';
-import { getFileExtension } from '$lib/services/analytics/utils';
 
 const logger = new Logger('FileIPC');
 
@@ -252,16 +250,6 @@ export function setupFileIPC() {
           // Local-only after P3-5.1; remote writes no longer route through RPC.
           const expandedPath = expandPath(validated.path);
 
-          // Check if file exists before writing (to track creation vs modification)
-          let fileExisted = false;
-          try {
-            await fs.access(expandedPath);
-            fileExisted = true;
-          } catch {
-            // File doesn't exist, will be created
-            fileExisted = false;
-          }
-
           // Create directory if it doesn't exist
           const dir = path.dirname(expandedPath);
           logger.debug('Creating directory if needed', { dir });
@@ -302,14 +290,6 @@ export function setupFileIPC() {
               } catch (e) {
                 logger.warn('Failed to refresh specialist cache after file save', { error: (e as Error).message });
               }
-            }
-
-            // Track file creation if this is a new file
-            if (!fileExisted && validated.workspaceId) {
-              trackMain('Created File', {
-                workspace_id: validated.workspaceId,
-                file_extension: getFileExtension(validated.path),
-              });
             }
 
             // Emit file change event for immediate UI update if workspaceId provided
@@ -467,14 +447,6 @@ export function setupFileIPC() {
         try {
           const expandedPath = expandPath(validated.path);
           await fs.unlink(expandedPath);
-
-          // Track file deletion
-          if (validated.workspaceId) {
-            trackMain('Deleted File', {
-              workspace_id: validated.workspaceId,
-              file_extension: getFileExtension(validated.path),
-            });
-          }
 
           return { success: true, data: undefined };
         } catch (error) {

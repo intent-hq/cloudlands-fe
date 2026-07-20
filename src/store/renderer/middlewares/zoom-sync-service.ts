@@ -18,7 +18,7 @@
  * Dependency-light per src/store/renderer/AGENTS.md: imports only the configured
  * store and the setZoomFactor action — no selectors and no store module.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { store as appStore } from "$store/renderer/store";
 import { setZoomFactor } from "../slices/user-preferences/user-preferences-slice";
 import { isElectron } from "$lib/electron-bridge";

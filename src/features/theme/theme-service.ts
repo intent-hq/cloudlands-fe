@@ -29,7 +29,7 @@
  * directly off the ThemeManager snapshot, mirroring the sibling
  * `settings-hydration-service.ts` / `agent-mutation-service.ts`.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { store as appStore } from "$store/renderer/store";
 import { ThemeManager } from "$lib/utils/theme";
 import { themePresets } from "$lib/utils/theme-presets";

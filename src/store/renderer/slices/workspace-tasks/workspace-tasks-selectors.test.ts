@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StoreState } from "../../types";
 import type { WorkspaceTask, WorkspaceTaskStats } from "$shared/types";
-import { createCollection } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { createCollection } from "$lib/store-shim/utils/collections/collection-utils";
 import {
   selectWorkspaceTaskDisplayList,
   selectWorkspaceTaskProgress,

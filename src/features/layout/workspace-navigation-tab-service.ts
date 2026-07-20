@@ -34,7 +34,7 @@
  * and the slice actions/types — not selectors. Note/tab-panel lookups read
  * directly off `appStore.state`.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { store as appStore } from "$store/renderer/store";
 import {
   openWorkspaceCommitChangeset,

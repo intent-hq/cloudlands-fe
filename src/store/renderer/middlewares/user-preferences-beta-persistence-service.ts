@@ -17,7 +17,7 @@
  * Dependency-light per src/store/renderer AGENTS.md: imports only slice actions,
  * auto-update client, and safe logger — no selectors.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import type { StoreState } from "../types";
 import {
   setBetaUpdatesEnabled,

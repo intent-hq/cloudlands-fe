@@ -5,7 +5,7 @@
  * Actions: note:created/updated/deleted, line-attribution:updated, comment:*
  */
 
-import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
 import type {
   DomainEvent,
   DomainEventPayloads,

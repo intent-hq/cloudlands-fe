@@ -1,19 +1,14 @@
 # Redux Reducers Guide
 
-This project guide is a concise companion to the Redux skills. The active reducer rules live in:
-
-- `.agents/skills/ag-redux-toolkit/core/reducers/SKILL.md`
-- `.agents/skills/ag-redux-toolkit/core/state-serialization/SKILL.md`
-- `.agents/skills/ag-redux-toolkit/core/collections/SKILL.md`
-
-Use those skills for API details and implementation examples. Keep this file focused on Intent-app conventions.
+This project guide is a concise companion to the local store shim
+(`src/lib/store-shim/`). Use the shim source for API details and implementation examples. Keep this file focused on Intent-app conventions.
 
 ## Project conventions
 
 - Put stateful slice reducers in `src/store/renderer/slices/<domain>/<domain>-slice.ts`.
 - Register stateful reducers in `src/store/renderer/reducer.ts`; saga-only slices do not need empty reducer entries.
-- Use `createAction` and `createReducer` from `ag-redux-toolkit/utils/store/*`.
-- Use collection helpers from `ag-redux-toolkit/utils/collections/collection-utils` for normalized entity state.
+- Use `createAction` and `createReducer` from `$lib/store-shim/utils/store/*`.
+- Use collection helpers from `$lib/store-shim/utils/collections/collection-utils` for normalized entity state.
 - Keep Redux state JSON-serializable: no `Date`, `Map`, `Set`, class instances, functions, DOM objects, promises, or runtime handles.
 - Keep reducer state canonical. Derived values, sorted views, counts, and display labels belong in selectors.
 
@@ -29,9 +24,9 @@ Use those skills for API details and implementation examples. Keep this file foc
 ## Current import pattern
 
 ```typescript
-import { createAction } from "ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "ag-redux-toolkit/utils/store/create-reducer";
-import { addItem, createCollection } from "ag-redux-toolkit/utils/collections/collection-utils";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { addItem, createCollection } from "$lib/store-shim/utils/collections/collection-utils";
 ```
 
 ## Tests

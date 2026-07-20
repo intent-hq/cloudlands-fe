@@ -19,7 +19,6 @@ import { AGENT_BACKEND_CHANNELS } from '$shared/ipc/channels';
 import { appClient } from '$lib/client';
 import { generateAgentNameFromText } from '$lib/utils/agent-name-generator';
 import { DEFAULT_AGENT_MODEL } from '$shared/constants/agent-services';
-import { track } from '$lib/services/analytics';
 import {
   addMessage,
   replaceMessages,
@@ -627,15 +626,6 @@ export class UnifiedAgentFactory {
       }
 
       // Success - agent created
-
-      // Track agent creation
-      track('Created Agent', {
-        agent_id: agent.id,
-        workspace_id: agent.workspaceId,
-        agent_name: agent.name,
-        agent_model: agent.model ?? undefined,
-        source: normalized.source,
-      });
 
       return {
         success: true,

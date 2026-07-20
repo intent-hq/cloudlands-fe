@@ -16,7 +16,7 @@ import { getSafeHomeDir } from './utils';
 export class WorkspaceConfig extends WorkspaceConfigConstants {
   // Root directory for NEW workspaces (dynamic; can be overridden via env for tests)
   static get WORKSPACE_ROOT(): string {
-    const override = process.env.WORKSPACES_BASE_DIR || process.env.AUGMENT_WORKSPACES_ROOT;
+    const override = process.env.WORKSPACES_BASE_DIR || process.env.INTENT_WORKSPACES_ROOT || process.env.AUGMENT_WORKSPACES_ROOT;
     return override && override.trim().length > 0
       ? override
       : path.join(getSafeHomeDir(), 'intent');

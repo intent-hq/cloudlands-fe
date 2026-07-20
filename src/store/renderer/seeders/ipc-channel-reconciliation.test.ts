@@ -221,9 +221,9 @@ describe('IPC channel reconciliation (renderer invoke surface vs bridged channel
     // Guard against the scanner silently matching nothing after a refactor.
     // (Threshold rebased from 200 after IPC batch 8 retired the caller-less
     // legacy clients — lib/api/{client,mcp-client,ssh-client}.ts and
-    // panel-layout-history.client.ts — and their ~25 channels; the scan now
-    // resolves ~175 channels.)
-    expect(invoked.size).toBeGreaterThan(150);
+    // panel-layout-history.client.ts — and their ~25 channels; rebased again
+    // from 150 after telemetry removal shrank the scan to ~150 channels.)
+    expect(invoked.size).toBeGreaterThan(140);
     // git:status moved to the daemon (backendRequest('git.status'), 4C-3) and
     // git:show-file followed with D2 (backendRequest('git.showFile'));
     // git:numstat remains a local-IPC invoke (bridged via git-bridge-seeder).

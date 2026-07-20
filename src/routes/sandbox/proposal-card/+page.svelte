@@ -115,7 +115,7 @@
         payload: {
           operation: 'workspace.create',
           params: {
-            prUrl: 'https://github.com/augmentcode/intent/pull/648',
+            prUrl: 'https://github.com/example-org/example-repo/pull/648',
             repositoryName: 'intent',
             repositoryOwner: 'augmentcode',
             specialist: 'pr-reviewer',

@@ -236,4 +236,4 @@ When contributing to the MCP system:
 
 ## License
 
-Part of the Intent by Augment project.
+Part of the Intent project.

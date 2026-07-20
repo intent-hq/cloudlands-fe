@@ -52,7 +52,7 @@ describe("linearAuthStoreService (fake seams, real store)", () => {
   it("initialize fetches auth state (force-refresh) and hydrates the store", async () => {
     api.getAuthState.mockResolvedValueOnce({
       isAuthenticated: true,
-      requiresAugmentAuth: false,
+      requiresDaemonAuth: false,
     });
 
     await initializeLinearAuthFlow();
@@ -62,7 +62,7 @@ describe("linearAuthStoreService (fake seams, real store)", () => {
   });
 
   it("connect stores the key under linear.token (daemon secrets-file path) and re-probes", async () => {
-    api.getAuthState.mockResolvedValueOnce({ isAuthenticated: true, requiresAugmentAuth: false });
+    api.getAuthState.mockResolvedValueOnce({ isAuthenticated: true, requiresDaemonAuth: false });
 
     await connectLinearFlow("lin_api_abc123");
 
@@ -76,7 +76,7 @@ describe("linearAuthStoreService (fake seams, real store)", () => {
   });
 
   it("connect surfaces a rejected key when the probe stays unauthenticated", async () => {
-    api.getAuthState.mockResolvedValueOnce({ isAuthenticated: false, requiresAugmentAuth: false });
+    api.getAuthState.mockResolvedValueOnce({ isAuthenticated: false, requiresDaemonAuth: false });
 
     await connectLinearFlow("lin_api_bad");
 
@@ -104,7 +104,7 @@ describe("linearAuthStoreService (fake seams, real store)", () => {
 
   it("logout resets linear.token and reflects the re-probe result", async () => {
     appStore.dispatch(setLinearAuthState(true, false, null));
-    api.getAuthState.mockResolvedValueOnce({ isAuthenticated: false, requiresAugmentAuth: false });
+    api.getAuthState.mockResolvedValueOnce({ isAuthenticated: false, requiresDaemonAuth: false });
 
     await logoutLinearFlow();
 
@@ -113,7 +113,7 @@ describe("linearAuthStoreService (fake seams, real store)", () => {
   });
 
   it("logout warns when the daemon env key still authenticates after the clear", async () => {
-    api.getAuthState.mockResolvedValueOnce({ isAuthenticated: true, requiresAugmentAuth: false });
+    api.getAuthState.mockResolvedValueOnce({ isAuthenticated: true, requiresDaemonAuth: false });
 
     await logoutLinearFlow();
 
@@ -131,7 +131,7 @@ describe("linearAuthStoreService (fake seams, real store)", () => {
   });
 
   it("dispatching connectLinear invokes the flow (middleware wiring)", async () => {
-    api.getAuthState.mockResolvedValue({ isAuthenticated: true, requiresAugmentAuth: false });
+    api.getAuthState.mockResolvedValue({ isAuthenticated: true, requiresDaemonAuth: false });
 
     appStore.dispatch(connectLinear("lin_api_via_action"));
     await flush();
@@ -142,7 +142,7 @@ describe("linearAuthStoreService (fake seams, real store)", () => {
   });
 
   it("dispatching logoutLinear invokes the flow (middleware wiring)", async () => {
-    api.getAuthState.mockResolvedValue({ isAuthenticated: false, requiresAugmentAuth: false });
+    api.getAuthState.mockResolvedValue({ isAuthenticated: false, requiresDaemonAuth: false });
 
     appStore.dispatch(logoutLinear());
     await flush();

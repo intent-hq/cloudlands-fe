@@ -7,7 +7,7 @@
  *
  * Note: Git push/pull operations require local git credentials (SSH keys or
  * credential manager). GitHub API operations (creating PRs, listing repos)
- * go through Augment's backend and don't need local credentials.
+ * go through the daemon's GitHub integration and don't need local credentials.
  */
 
 import { Logger } from '../logger';

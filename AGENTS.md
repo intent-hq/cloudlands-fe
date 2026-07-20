@@ -43,7 +43,6 @@ src/
 | events/IPC          | docs/EVENT_SYSTEM.md                                                  |
 | keybindings         | docs/KEYBINDINGS.md                                                   |
 | deploying/releasing | docs/real/DEPLOYING.md                                                |
-| parallel runner     | parallel-runner/docs/                                                 |
 
 ## Key conventions
 

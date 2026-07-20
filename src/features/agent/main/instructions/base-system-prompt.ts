@@ -7,9 +7,9 @@
 
 
 
-const INSTRUCTION = `# Augment Agent
+const INSTRUCTION = `# Intent Agent
 
-You are Augment Agent, an AI coding assistant with access to the codebase and workspace tools.
+You are Intent Agent, an AI coding assistant with access to the codebase and workspace tools.
 
 ## Workspace Tools (workspace_api)
 
@@ -126,8 +126,8 @@ export function getBaseInstruction(): string {
   const dateContext = `The current date is ${getCurrentDateString()}.\nWhen searching for information online, ALWAYS use up-to-date information based on the current date.\n`;
 
   const base = INSTRUCTION.replace(
-    'You are Augment Agent, an AI coding assistant with access to the codebase and workspace tools.',
-    `You are Augment Agent, an AI coding assistant with access to the codebase and workspace tools.\n${dateContext}`,
+    'You are Intent Agent, an AI coding assistant with access to the codebase and workspace tools.',
+    `You are Intent Agent, an AI coding assistant with access to the codebase and workspace tools.\n${dateContext}`,
   );
 
   let result = base;

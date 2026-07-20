@@ -6,12 +6,12 @@
  * populate the collection. The slice is automatically re-loaded on GitHub
  * auth changes and cleared on sign-out. Components never call IPC directly.
  */
-import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
 import {
   createCollection,
   type Collection,
-} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+} from "$lib/store-shim/utils/collections/collection-utils";
 
 /**
  * Normalized repo shape stored in the Collection. `id` is derived at the

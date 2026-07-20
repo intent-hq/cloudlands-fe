@@ -18,7 +18,7 @@
  * and slice actions/types — no selectors (importing them would evaluate
  * `store.createSelector` mid store-init) and no store module.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
 import {
   hydrateCollapsiblePanelCollapsed,

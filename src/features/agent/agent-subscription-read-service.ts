@@ -44,7 +44,7 @@
  * Dependency-light per src/store AGENTS.md: imports only the live transport,
  * the configured store, slice actions/types, and the logger (NOT selectors).
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { backendRequest } from "$lib/client/live/backend-transport";
 import { store as appStore } from "$store/renderer/store";
 import {

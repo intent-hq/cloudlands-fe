@@ -88,7 +88,6 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
 }));
 vi.mock('$lib/icons/faNote', () => ({ faNote: { iconName: 'note' } }));
 vi.mock('$lib/electron-bridge', () => ({ invoke: vi.fn(async () => '/tmp/ws-1') }));
-vi.mock('$lib/services/analytics', () => ({ track: vi.fn() }));
 vi.mock('$lib/utils/client-logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));

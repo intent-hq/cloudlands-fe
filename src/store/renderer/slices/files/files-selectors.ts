@@ -2,7 +2,7 @@ import { store } from "../../store";
 import {
   getItem,
   getItems,
-} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+} from "$lib/store-shim/utils/collections/collection-utils";
 import { emptyFilesWorkspaceState } from "./files-slice";
 import type { FileContentEntry, FilesWorkspaceState } from "./files-types";
 

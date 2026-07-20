@@ -110,7 +110,6 @@ vi.mock('$store/renderer/store', async () => {
     dispatch: mocks.reduxDispatch,
   });
 });
-vi.mock('$lib/services/analytics', () => ({ track: vi.fn() }));
 vi.mock('$features/agent/services/error-handler', () => ({
   errorHandler: { handleError: vi.fn(), track: vi.fn() },
   AgentError: class extends Error {},

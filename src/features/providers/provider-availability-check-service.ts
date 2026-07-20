@@ -28,7 +28,7 @@
  * client (cache-invalidation only), the configured store, slice actions, and
  * the logger (no selectors).
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { invoke } from "$lib/electron-bridge";
 import { createLogger } from "$lib/utils/client-logger";
 import { IPC_CHANNELS } from "$shared/ipc-registry";

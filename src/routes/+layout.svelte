@@ -1,11 +1,8 @@
 <script lang="ts">
-  /* eslint-disable max-lines */
   import '../app.css';
 
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { track, setAnalyticsContextProvider } from '$lib/services/analytics';
-  import type { AnalyticsUIContext } from '$lib/services/analytics';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
 
   import {
@@ -267,43 +264,6 @@
 
   // Terminal overlay state is now persisted per-workspace via Redux terminal-overlay slice
   // No need to close it here - the store handles saving/restoring state when switching workspaces
-
-  // Analytics context provider for non-workspace routes
-  // Workspace pages set their own provider with full UI context; this handles home, settings, agent routes
-  $effect(() => {
-    const routeId = $page.route.id;
-    const pathname = $page.url.pathname;
-
-    // Skip if on workspace page - it sets its own context provider with full UI context
-    if (pathname.startsWith('/workspace/') && !pathname.startsWith('/workspace/creating')) {
-      return;
-    }
-
-    // Derive route name from current route
-    const routeName: AnalyticsUIContext['routeName'] =
-      routeId === '/'
-        ? 'home'
-        : pathname.startsWith('/settings')
-          ? 'settings'
-          : pathname.startsWith('/agent/')
-            ? 'agent'
-            : pathname.startsWith('/workspace/creating')
-              ? 'creating'
-              : null;
-
-    // Set analytics context for non-workspace routes
-    setAnalyticsContextProvider(() => ({
-      routeName,
-      mainPanelType: null,
-      sidebarActiveTab: null,
-      workspaceTitle: null,
-    }));
-
-    return () => {
-      // Clear context when leaving this route
-      setAnalyticsContextProvider(null);
-    };
-  });
 
   // Expose goto function globally for new windows
   if (typeof window !== 'undefined') {
@@ -990,32 +950,6 @@
         appStore.dispatch(loadWorkspacesRequested());
       }
     }
-  });
-
-  // Track page views for analytics
-  afterNavigate(({ to }) => {
-    if (!to) return;
-
-    const pathname = to.url.pathname;
-    let pageName: 'home' | 'workspace' | 'settings' | 'agent' | 'creating';
-
-    if (pathname === '/') {
-      pageName = 'home';
-    } else if (pathname.startsWith('/workspace/new')) {
-      pageName = 'creating';
-    } else if (pathname.startsWith('/workspace/')) {
-      pageName = 'workspace';
-    } else if (pathname.startsWith('/settings')) {
-      pageName = 'settings';
-    } else {
-      // Don't track unknown pages
-      return;
-    }
-
-    track('Viewed Page', {
-      page_name: pageName,
-      page_type: 'app',
-    });
   });
 
   // Notify main process about workspace state for menu enabling/disabling

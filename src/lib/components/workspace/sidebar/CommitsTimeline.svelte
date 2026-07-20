@@ -51,11 +51,6 @@
   import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
   import { toast } from '$lib/components/ui/toast';
   import { invoke } from '$lib/electron-bridge';
-  import {
-  track,
-  trackGitOp,
-  getFileExtension,
-} from '$lib/services/analytics';
   import { logger } from '$lib/utils/client-logger';
   import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
   import type { WorkspaceId } from '$shared/types/branded-ids';
@@ -79,7 +74,6 @@
   openWorkspaceDiff,
 } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import {
-  getCommitsToPushCount,
   getCommitsToUndoCount,
   getLocalCommitsToUndoCount,
   getPushTooltip as getPushTooltipUtil,
@@ -152,11 +146,6 @@
       closable: true,
       filePath: relativePath,
       workspaceId,
-    });
-    track('Opened File', {
-      workspace_id: workspaceId,
-      file_extension: getFileExtension(relativePath),
-      source: 'sidebar',
     });
   }
 
@@ -418,9 +407,6 @@
   }
 
   // Push/undo tooltip helpers
-  function getCommitsToPushCount_(commitIndex: number): number {
-    return getCommitsToPushCount(allCommits, commitIndex);
-  }
   function getCommitsToUndoCount_(commitIndex: number): number {
     return getCommitsToUndoCount(allCommits, commitIndex);
   }
@@ -485,11 +471,6 @@
         targetBranch: $workspace?.branch,
         upToCommitHash: commit.hash,
       });
-      const commitCount = getCommitsToPushCount_(commitIndex);
-      trackGitOp('push', {
-        workspaceId, success: result.success, trigger: 'manual',
-        commitCount, hasPr: pullRequestCount > 0,
-      });
       if (result.success) {
         gitCache.invalidate(`git-status-${workspaceId}`);
         try {
@@ -511,7 +492,6 @@
         }
       }
     } catch {
-      trackGitOp('push', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to push commits');
     } finally {
       appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', false));
@@ -541,7 +521,6 @@
       const result = await AcceptChangesClient.execute(workspaceId as WorkspaceId, 'undo-push', {
         upToCommitHash: resetToHash,
       });
-      trackGitOp('undo-push', { workspaceId, success: result.success, trigger: 'manual' });
       if (result.success) {
         const commitWord = commitCount === 1 ? 'commit' : 'commits';
         toast.warning(`${commitCount} ${commitWord} removed from remote`);
@@ -554,7 +533,6 @@
         toast.error(result.error || 'Failed to undo push');
       }
     } catch {
-      trackGitOp('undo-push', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to undo push');
     } finally {
       undoState.undoing = false;
@@ -597,10 +575,6 @@
         upToCommitHash: resetToHash,
         undoCommitsMetadata,
       });
-      trackGitOp('undo-commit', {
-        workspaceId, success: result.success, trigger: 'manual',
-        commitCountUndone: commitCount,
-      });
       if (result.success) {
         const commitWord = commitCount === 1 ? 'commit' : 'commits';
         toast.warning(`${commitCount} ${commitWord} undone - changes moved to staging`);
@@ -613,7 +587,6 @@
         toast.error(result.error || 'Failed to undo commit');
       }
     } catch {
-      trackGitOp('undo-commit', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to undo commit');
     } finally {
       undoState.undoingCommit = false;

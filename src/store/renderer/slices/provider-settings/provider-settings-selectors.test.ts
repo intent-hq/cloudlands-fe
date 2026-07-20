@@ -58,9 +58,9 @@ describe("provider-settings selectors", () => {
       expect(selectIsProviderEnabled.select(state, "claude-code")).toBe(false);
     });
 
-    it("should always return true for non-disableable providers", () => {
+    it("should return false for unset disableable providers (auggie)", () => {
       const state = mockState({});
-      expect(selectIsProviderEnabled.select(state, "auggie")).toBe(true);
+      expect(selectIsProviderEnabled.select(state, "auggie")).toBe(false);
     });
 
     it("should always include non-disableable providers", () => {

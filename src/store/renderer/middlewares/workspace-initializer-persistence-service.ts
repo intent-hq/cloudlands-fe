@@ -26,7 +26,7 @@
  * the configured store, slice actions/types, and safeLocalStorage — no selectors
  * (importing them would evaluate `store.createSelector` mid store-init).
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { appClient } from "$lib/client";
 import { store as appStore } from "$store/renderer/store";
 import { safeLocalStorage } from "$lib/utils/safe-storage";
@@ -56,7 +56,7 @@ import type {
   CompactWorkspaceInitializerFormState,
   WorkspaceInitializerAgentSettings,
 } from "../slices/workspace-initializer/workspace-initializer-types";
-import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { getItems } from "$lib/store-shim/utils/collections/collection-utils";
 
 const logger = createLogger("WorkspaceInitializerPersistenceService");
 

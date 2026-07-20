@@ -139,6 +139,7 @@ const IGNORE_PATTERNS: string[] = [
   '.git/worktrees',
   '.git/modules',
   '.augment',
+  '.intent',
   '.workspace-notes',
   '.workspace-notes.backup',
   '.workspace',

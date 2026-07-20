@@ -218,9 +218,6 @@ export const DEFAULTS = {
   /** Default remote */
   GIT_REMOTE: 'origin',
 
-  /** Default API URL */
-  API_URL: 'https://api.augmentcode.com',
-
   /** Auto-update base URL (GitHub Releases) */
   AUTO_UPDATE_URL: 'https://github.com/intent-hq/cloudlands-releases/releases/download',
 } as const;

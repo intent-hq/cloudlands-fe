@@ -37,7 +37,6 @@ const SRC_ROOT = path.resolve(__dirname, '..', '..');
  * Channels the renderer invokes during startup (init sagas, layout mounts,
  * store initialization). Gathered by auditing:
  * - src/store/renderer/slices/specialists/sagas/init-saga.ts
- * - src/lib/services/promotional-banner.ts (called from PromotionalBanner.svelte)
  * - src/store/renderer/slices/auto-update/sagas/auto-update-saga.ts
  * - src/store/renderer/slices/workspace-settings/sagas/init-saga.ts
  */
@@ -46,9 +45,6 @@ const RENDERER_STARTUP_CHANNELS = [
   'specialists:list-bundled',
   'specialists:list-files',
   'specialists:get-folder-path',
-
-  // Banner — fetched on PromotionalBanner component mount
-  'banner:fetch',
 
   // Auto-update — get-state called during +layout.svelte init
   'auto-update:get-state',
@@ -105,7 +101,6 @@ describe('IPC Startup Race Condition', () => {
 
     // Verify known critical functions (moved from secondary to fix race conditions)
     expect(criticalFunctions.has('setupSpecialistsIPC')).toBe(true);
-    expect(criticalFunctions.has('setupBannerIPC')).toBe(true);
     expect(criticalFunctions.has('setupAutoUpdateIPC')).toBe(true);
     expect(criticalFunctions.has('setupGitTrackingIPC')).toBe(true);
   });
@@ -126,7 +121,7 @@ describe('IPC Startup Race Condition', () => {
       }
     }
 
-    // We should find channels in the specialists and banner IPC files
+    // We should find channels in the specialists IPC file
     const specialistsFile = Object.keys(secondaryChannelMap).find((f) =>
       f.includes('specialists.ipc.ts'),
     );
@@ -252,7 +247,7 @@ function extractRegisteredChannels(fileContent: string): string[] {
   }
 
   // Pattern 2: Channel constant references like SPECIALISTS_CHANNELS.LIST_FILES
-  // or IPC_CHANNELS.BANNER.FETCH
+  // or IPC_CHANNELS.SPECIALISTS.LIST_FILES
   const constPattern = /ipcMain\.handle\(\s*(\w+(?:\.\w+)+)/g;
   while ((match = constPattern.exec(fileContent)) !== null) {
     const resolved = resolveChannelConstant(match[1]);
