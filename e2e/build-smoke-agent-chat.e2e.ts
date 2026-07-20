@@ -74,7 +74,7 @@ test.describe('Build Smoke — Agent Chat UI', () => {
             windowsHide: true,
           });
         } else {
-          execSync('pkill -9 -f "Intent.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
+          execSync('pkill -9 -f "Intent\\.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
         }
       } catch {
         // No matching processes

@@ -76,7 +76,7 @@ test.describe('Build Smoke — Local Commit', () => {
             windowsHide: true,
           });
         } else {
-          execSync('pkill -f "Intent.app/Contents/MacOS/Intent" || true', { stdio: 'ignore' });
+          execSync('pkill -f "Intent\\.app/Contents/MacOS/Intent" || true', { stdio: 'ignore' });
         }
       } catch {
         // no matching processes

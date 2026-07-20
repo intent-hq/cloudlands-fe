@@ -85,7 +85,7 @@ async function killExistingPackagedApp(): Promise<void> {
     // Match the packaged binary path so unrelated processes (e.g. intentd)
     // are never touched.
     try {
-      execSync('pkill -f "Intent.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
+      execSync('pkill -f "Intent\\.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
     } catch {
       // No matching processes — that's fine
     }

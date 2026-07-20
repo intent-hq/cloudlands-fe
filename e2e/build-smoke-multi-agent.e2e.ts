@@ -75,7 +75,7 @@ test.describe('Build Smoke — Multi-Agent Orchestration UI', () => {
             windowsHide: true,
           });
         } else {
-          execSync('pkill -f "Intent.app/Contents/MacOS/Intent" || true', { stdio: 'ignore' });
+          execSync('pkill -f "Intent\\.app/Contents/MacOS/Intent" || true', { stdio: 'ignore' });
         }
       } catch {
         // No matching processes

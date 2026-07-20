@@ -86,7 +86,7 @@ test.describe('Build Smoke — Follow-up Message Flow (2 rounds)', () => {
             windowsHide: true,
           });
         } else {
-          execSync('pkill -f "Intent.app/Contents/MacOS/Intent" || true', { stdio: 'ignore' });
+          execSync('pkill -f "Intent\\.app/Contents/MacOS/Intent" || true', { stdio: 'ignore' });
         }
       } catch {
         // No matching processes

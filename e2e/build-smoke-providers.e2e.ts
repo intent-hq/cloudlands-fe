@@ -144,7 +144,7 @@ test.describe('Build Smoke — Provider Verification', () => {
             windowsHide: true,
           });
         } else {
-          execSync('pkill -9 -f "Intent.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
+          execSync('pkill -9 -f "Intent\\.app/Contents/MacOS/Intent"', { stdio: 'ignore' });
         }
       } catch {
         // No matching processes — already exited cleanly
