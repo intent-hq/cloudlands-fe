@@ -61,6 +61,13 @@ export interface QueuedMessage {
    * field is only present when true.
    */
   requeuedAfterFailure?: boolean;
+  /**
+   * Optional opaque metadata attached by the daemon and echoed on read.
+   * System event wakes carry `{ type: 'event_notification', eventCount,
+   * eventTypes, events? }` so the UI can render them as system notifications
+   * instead of raw `[WORKSPACE EVENTS]` text.
+   */
+  messageMetadata?: Record<string, unknown>;
 }
 
 /**

@@ -596,10 +596,23 @@ describe("agent-ipc-bridge-seeder", () => {
 
   describe("agent:backend:get-queue → daemon agent.getQueue", () => {
     it("end-to-end: unifiedOrchestrator.getQueue sends {agentId} and returns the daemon {success,queue:[QueuedMessage]} body", async () => {
-      // PROTOCOL §5.5: `{ success, queue: QueuedMessage[] }`.
+      // PROTOCOL §5.5: `{ success, queue: QueuedMessage[] }`. Entries may
+      // carry optional opaque `messageMetadata` (e.g. event wakes tagged
+      // `{ type: "event_notification", ... }`) — passed through untouched.
       const queue = [
         { id: "q-1", content: "a", position: 0, queuedAt: "2026-01-01T00:00:00Z" },
         { id: "q-2", content: "b", position: 1, queuedAt: "2026-01-01T00:00:01Z" },
+        {
+          id: "q-3",
+          content: "[WORKSPACE EVENTS] You have been woken up by 1 subscribed event(s)",
+          position: 2,
+          queuedAt: "2026-01-01T00:00:02Z",
+          messageMetadata: {
+            type: "event_notification",
+            eventCount: 1,
+            eventTypes: ["agent:idle"],
+          },
+        },
       ];
       mockedRequest.mockResolvedValueOnce({ success: true, queue });
 
@@ -608,9 +621,17 @@ describe("agent-ipc-bridge-seeder", () => {
       expect(mockedRequest).toHaveBeenCalledWith("agent.getQueue", { agentId: "agent-7" });
       expect(result).toEqual({ success: true, queue });
       // QueuedMessage round-trip — the queued-message UI binds per-field.
-      expect(result.queue).toHaveLength(2);
+      expect(result.queue).toHaveLength(3);
       expect(result.queue?.[0]?.id).toBe("q-1");
       expect(result.queue?.[1]?.position).toBe(1);
+      // messageMetadata survives the bridge unmodified (and stays absent
+      // on entries the daemon sent without it).
+      expect(result.queue?.[2]?.messageMetadata).toEqual({
+        type: "event_notification",
+        eventCount: 1,
+        eventTypes: ["agent:idle"],
+      });
+      expect(result.queue?.[0]?.messageMetadata).toBeUndefined();
     });
   });
 
