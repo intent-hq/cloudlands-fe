@@ -5,6 +5,7 @@
   import {
   selectSpecialists,
   selectCustomSpecialistsLoaded,
+  selectFileSpecialistsLoaded,
   selectUserOverrides,
   selectEffectiveModel,
   selectEffectiveCodingAgent,
@@ -15,6 +16,7 @@
   selectSelectedModel,
   selectAvailableModels,
 } from '$store/renderer/slices/model/model-selectors';
+  import { selectWorkspaceInitializerHydrated } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import {
   faPlus,
@@ -47,6 +49,8 @@
     filterSpecialistsByGitHubAuth($specialists$, $isGitHubAuth$),
   );
   const customSpecialistsLoaded$ = selectCustomSpecialistsLoaded();
+  const fileSpecialistsLoaded$ = selectFileSpecialistsLoaded();
+  const initializerHydrated$ = selectWorkspaceInitializerHydrated();
   const userOverrides$ = selectUserOverrides();
   const activeProviderId$ = selectActiveProviderId();
   const availableModels$ = selectAvailableModels();
@@ -140,21 +144,11 @@
     }
   });
 
-  onMount(async () => {
-    // Clear stale model overrides from saved state.
-    // When the user changes specialist defaults in Settings (e.g., spec-writer → sonnet4.5),
-    // the form may still have a saved selectedModel (e.g., "opus4.6") marked as overridden
-    // from a previous session when that was the default. Detect and clear this staleness
-    // so the current specialist default is shown instead.
-    if (modelWasOverridden && selectedModel) {
-      const currentDefault = isTeamMode ? teamModeModel : singleAgentModel;
-      if (currentDefault && selectedModel !== currentDefault) {
-        selectedModel = undefined;
-        modelWasOverridden = false;
-        onModelChange?.(undefined);
-      }
-    }
+  // Tracks whether the user explicitly picked a model during this session.
+  // Session overrides are genuine and must never be cleared by the stale-override check.
+  let modelOverriddenThisSession = $state(false);
 
+  onMount(async () => {
     // Fetch provider availability — the $effect above handles auto-selection
     // once providerAvailability is set. This avoids duplicating fallback logic
     // and ensures the user's explicit provider choice is respected consistently.
@@ -279,6 +273,34 @@
   // Effective model for the single-agent card (based on displayedSpecialist to preserve across mode switches)
   const singleAgentModel = $derived.by(() => resolveEffectiveModel(displayedSpecialist));
 
+  // Clear stale model overrides restored from saved state.
+  // When the user changes specialist defaults in Settings (e.g., spec-writer → sonnet4.5),
+  // the form may still have a saved selectedModel (e.g., "opus4.6") marked as overridden
+  // from a previous session when that was the default. This runs reactively (not onMount)
+  // so it waits until file specialists, available models, and the parent's persisted form
+  // state are all loaded — comparing before then is meaningless — and re-runs if hydration
+  // re-applies a stale override after mount. A persisted "override" that matches the
+  // current specialist default is not a real override; one that differs is stale. Either
+  // way it is cleared so the current specialist default drives the picker. Overrides the
+  // user made in this session are never cleared.
+  $effect(() => {
+    const dataReady =
+      $fileSpecialistsLoaded$ && $availableModels$.length > 0 && $initializerHydrated$;
+    if (!dataReady || modelOverriddenThisSession) return;
+    if (modelWasOverridden && selectedModel) {
+      const currentDefault = isTeamMode ? teamModeModel : singleAgentModel;
+      if (currentDefault) {
+        logger.debug('Clearing stale persisted model override:', {
+          selectedModel,
+          currentDefault,
+        });
+        selectedModel = undefined;
+        modelWasOverridden = false;
+        onModelChange?.(undefined);
+      }
+    }
+  });
+
 
 
   // Specialist dropdown state
@@ -397,6 +419,7 @@
   function handleModelChange(model: string | undefined) {
     selectedModel = model;
     modelWasOverridden = true;
+    modelOverriddenThisSession = true;
 
     // Update provider to match the selected model's provider
     if (model) {
