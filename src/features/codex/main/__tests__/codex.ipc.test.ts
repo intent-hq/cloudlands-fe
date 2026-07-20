@@ -79,7 +79,7 @@ describe('codex IPC model listing', () => {
     mocks.resolveCodexModelListCommands.mockReset();
     mocks.startAcpChildStream.mockReset();
     mocks.webContentsSend.mockReset();
-    mocks.getManagedCodexAcpStatus.mockReturnValue({ state: 'not_installed', version: '0.13.0' });
+    mocks.getManagedCodexAcpStatus.mockReturnValue({ state: 'not_installed', version: '0.16.0' });
   });
 
   // AUDIT-R1c: the FE probes route through the daemon (`host.execStream`)
