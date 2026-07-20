@@ -124,4 +124,82 @@ describe('generate-release-notes CLI', () => {
       expect(headers?.['X-GitHub-Api-Version']).toBe('2022-11-28');
     }
   });
+
+  it('uses per-repo tokens (FE_TOKEN / INTENTD_TOKEN) when provided', async () => {
+    // Track the Authorization header used for each URL
+    const authByUrl: Array<{ url: string; auth: string | undefined }> = [];
+    const mockFetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      const headers = init?.headers as Record<string, string> | undefined;
+      authByUrl.push({ url: urlStr, auth: headers?.['Authorization'] });
+
+      if (urlStr.includes('/repos/intent-hq/cloudlands-fe/compare/')) {
+        return Response.json({ commits: [{ commit: { message: 'feat: fe feature (#1)' }, sha: 'abc123' }] });
+      }
+      if (urlStr.includes('/repos/intent-hq/intentd/compare/')) {
+        return Response.json({ commits: [{ commit: { message: 'fix: intentd fix (#10)' }, sha: 'ghi789' }] });
+      }
+      if (urlStr.includes('/repos/intent-hq/cloudlands-fe/commits/')) {
+        return Response.json({ sha: 'fe-resolved-sha' });
+      }
+      if (urlStr.includes('/repos/intent-hq/intentd/commits/')) {
+        return Response.json({ sha: 'intentd-resolved-sha' });
+      }
+      throw new Error(`Unexpected fetch URL: ${urlStr}`);
+    });
+    globalThis.fetch = mockFetch as unknown as typeof globalThis.fetch;
+
+    const outFile = join(tempDir, 'notes.md');
+    const manifestFile = join(tempDir, 'manifest.json');
+
+    process.argv = [
+      'node',
+      'generate-release-notes.mjs',
+      '--version', '1.0.0',
+      '--fe-base', 'v0.9.0',
+      '--fe-head', 'fe-head-sha',
+      '--intentd-base', 'intentd-base',
+      '--intentd-head', 'intentd-head',
+      '--out', outFile,
+      '--manifest-out', manifestFile,
+    ];
+    const savedGithubToken = process.env.GITHUB_TOKEN;
+    const savedFeToken = process.env.FE_TOKEN;
+    const savedIntentdToken = process.env.INTENTD_TOKEN;
+    delete process.env.GITHUB_TOKEN;
+    process.env.FE_TOKEN = 'fe-token';
+    process.env.INTENTD_TOKEN = 'intentd-token';
+
+    try {
+      vi.resetModules();
+      await import('./generate-release-notes.mjs?t=' + Date.now());
+      // Poll for the output files instead of a fixed sleep to avoid CI flakiness
+      await vi.waitFor(() => {
+        readFileSync(outFile, 'utf8');
+        readFileSync(manifestFile, 'utf8');
+      }, { timeout: 5000 });
+
+      // Every cloudlands-fe API call used FE_TOKEN; every intentd call used INTENTD_TOKEN
+      const feCalls = authByUrl.filter(c => c.url.includes('/repos/intent-hq/cloudlands-fe/'));
+      const intentdCalls = authByUrl.filter(c => c.url.includes('/repos/intent-hq/intentd/'));
+      expect(feCalls.length).toBeGreaterThanOrEqual(2); // compare + manifest SHA resolution
+      expect(intentdCalls.length).toBeGreaterThanOrEqual(2);
+      expect(feCalls.every(c => c.auth === 'Bearer fe-token')).toBe(true);
+      expect(intentdCalls.every(c => c.auth === 'Bearer intentd-token')).toBe(true);
+
+      // Output still generated end-to-end
+      const markdown = readFileSync(outFile, 'utf8');
+      expect(markdown).toContain('fe feature');
+      expect(markdown).toContain('intentd fix');
+      const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'));
+      expect(manifest.feSha).toBe('fe-resolved-sha');
+      expect(manifest.intentdSha).toBe('intentd-resolved-sha');
+    } finally {
+      if (savedFeToken !== undefined) process.env.FE_TOKEN = savedFeToken;
+      else delete process.env.FE_TOKEN;
+      if (savedIntentdToken !== undefined) process.env.INTENTD_TOKEN = savedIntentdToken;
+      else delete process.env.INTENTD_TOKEN;
+      if (savedGithubToken !== undefined) process.env.GITHUB_TOKEN = savedGithubToken;
+    }
+  });
 });

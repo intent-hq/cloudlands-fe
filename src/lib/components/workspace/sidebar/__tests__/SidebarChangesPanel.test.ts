@@ -754,6 +754,40 @@ describe('SidebarChangesPanel', () => {
       });
     });
 
+    it('renders both a merged historical PR and a newly opened PR from workspace.pullRequests', async () => {
+      // Post-refresh shape: pr.refresh / pr:linked fold the daemon-owned
+      // per-branch list, which retains merged history alongside the new PR.
+      const workspace = makeWorkspace({
+        pullRequests: [
+          {
+            number: 299,
+            title: 'Old merged PR',
+            url: 'https://github.com/testorg/testrepo/pull/299',
+            status: 'Merged',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          {
+            number: 300,
+            title: 'Newly discovered PR',
+            url: 'https://github.com/testorg/testrepo/pull/300',
+            status: 'Open',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      });
+      mockWorkspaceStore.findById.mockReturnValue(workspace);
+
+      const { container } = await renderPanel();
+
+      await waitFor(() => {
+        const text = container.textContent;
+        expect(text).toContain('Old merged PR');
+        expect(text).toContain('Newly discovered PR');
+      });
+    });
+
     it('renders PR section with draft PR', async () => {
       const workspace = makeWorkspace({
         pullRequests: [

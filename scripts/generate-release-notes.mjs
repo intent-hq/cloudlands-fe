@@ -12,6 +12,11 @@
  *     --intentd-base <sha> --intentd-head <sha> \
  *     --out release-notes.md \
  *     --manifest-out release-manifest.json
+ *
+ * Tokens:
+ *   FE_TOKEN      — token for intent-hq/cloudlands-fe API calls
+ *   INTENTD_TOKEN — token for intent-hq/intentd API calls
+ *   GITHUB_TOKEN  — fallback for either when the repo-specific token is unset
  */
 
 import { writeFileSync } from 'fs';
@@ -131,9 +136,16 @@ async function main() {
     }
   }
 
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    console.error('Missing GITHUB_TOKEN environment variable');
+  // Per-repo tokens: a token scoped to one private repo (e.g. INTENTD_READ_PAT) 404s
+  // on the other repo's API, so each repo gets its own token with GITHUB_TOKEN as fallback
+  const feToken = process.env.FE_TOKEN || process.env.GITHUB_TOKEN;
+  const intentdToken = process.env.INTENTD_TOKEN || process.env.GITHUB_TOKEN;
+  if (!feToken) {
+    console.error('Missing FE_TOKEN (or GITHUB_TOKEN fallback) environment variable');
+    process.exit(1);
+  }
+  if (!intentdToken) {
+    console.error('Missing INTENTD_TOKEN (or GITHUB_TOKEN fallback) environment variable');
     process.exit(1);
   }
 
@@ -141,11 +153,11 @@ async function main() {
 
   // Fetch commits from both repos
   console.log(`Fetching cloudlands-fe commits (${args['fe-base']}...${args['fe-head']})...`);
-  const feCommits = await fetchCommits('intent-hq', 'cloudlands-fe', args['fe-base'], args['fe-head'], token);
+  const feCommits = await fetchCommits('intent-hq', 'cloudlands-fe', args['fe-base'], args['fe-head'], feToken);
   console.log(`  Found ${feCommits.length} commits\n`);
 
   console.log(`Fetching intentd commits (${args['intentd-base']}...${args['intentd-head']})...`);
-  const intentdCommits = await fetchCommits('intent-hq', 'intentd', args['intentd-base'], args['intentd-head'], token);
+  const intentdCommits = await fetchCommits('intent-hq', 'intentd', args['intentd-base'], args['intentd-head'], intentdToken);
   console.log(`  Found ${intentdCommits.length} commits\n`);
 
   // Parse and filter commits
@@ -175,8 +187,8 @@ async function main() {
     // Resolve refs to actual commit SHAs
     console.log('Resolving commit SHAs for manifest...');
     const [feSha, intentdSha] = await Promise.all([
-      resolveCommitSha('intent-hq', 'cloudlands-fe', args['fe-head'], token),
-      resolveCommitSha('intent-hq', 'intentd', args['intentd-head'], token),
+      resolveCommitSha('intent-hq', 'cloudlands-fe', args['fe-head'], feToken),
+      resolveCommitSha('intent-hq', 'intentd', args['intentd-head'], intentdToken),
     ]);
 
     const manifest = {
