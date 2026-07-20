@@ -15,6 +15,7 @@
   faListOl,
   faPaperPlane,
   faRotateRight,
+  faBell,
 } from '@fortawesome/free-solid-svg-icons';
   import {
   fly,
@@ -22,6 +23,7 @@
 } from 'svelte/transition';
   import type { QueuedMessage } from '$shared/types';
   import Button from '../ui/button/button.svelte';
+  import { parseAgentEvents } from './EventWakeupBanner.svelte';
 
   interface Props {
     messages: QueuedMessage[];
@@ -175,16 +177,71 @@
   }
 
   /**
+   * Whether a queued message is a system-generated event notification wake.
+   * Metadata-first (`messageMetadata.type === 'event_notification'`), with the
+   * `[WORKSPACE EVENTS]` content prefix as fallback for daemons that don't
+   * send queue metadata yet.
+   */
+  function isEventNotification(message: QueuedMessage): boolean {
+    if (message.messageMetadata?.type === 'event_notification') return true;
+    return message.content.startsWith('[WORKSPACE EVENTS]');
+  }
+
+  /**
+   * Parse agent events resiliently: messageMetadata is opaque, so an
+   * unexpected shape (no events array, or malformed event items) falls back
+   * to parseAgentEvents' legacy text parsing instead of erroring.
+   */
+  function safeParseAgentEvents(message: QueuedMessage): ReturnType<typeof parseAgentEvents> {
+    const metadata = Array.isArray(message.messageMetadata?.events)
+      ? (message.messageMetadata as Parameters<typeof parseAgentEvents>[1])
+      : undefined;
+    try {
+      return parseAgentEvents(message.content, metadata);
+    } catch {
+      try {
+        return metadata ? parseAgentEvents(message.content) : [];
+      } catch {
+        return [];
+      }
+    }
+  }
+
+  /** Short human label + muted report preview for an event-notification wake. */
+  function eventWakeSummary(message: QueuedMessage): { label: string; preview?: string } {
+    const events = safeParseAgentEvents(message);
+    const idle = events.filter((e) => e.type === 'agent:idle');
+    const created = events.filter((e) => e.type === 'agent:created');
+    const parts: string[] = [];
+    if (idle.length === 1) {
+      parts.push(`Child agent ${idle[0].agentName ?? idle[0].agentId} completed`);
+    } else if (idle.length > 1) {
+      parts.push(`${idle.length} child agents completed`);
+    }
+    if (created.length === 1) {
+      parts.push(`Child agent ${created[0].agentName ?? created[0].agentId} created`);
+    } else if (created.length > 1) {
+      parts.push(`${created.length} child agents created`);
+    }
+    const label = parts.length > 0 ? parts.join(' · ') : 'Workspace events';
+    const withReport = idle.find((e) => e.completionReport || e.lastResponseSummary);
+    return { label, preview: withReport?.completionReport ?? withReport?.lastResponseSummary };
+  }
+
+  /**
    * Exposed function for parent components to programmatically start editing
    * the last queued message (e.g., when user presses Up arrow in chat input).
+   * Skips system event-notification wakes (not user-editable).
    * Returns true if editing was started, false if no messages to edit.
    */
   export function editLastMessage(): boolean {
-    if (messages.length === 0) return false;
-    const lastMessage = messages[messages.length - 1];
-    startEdit(lastMessage);
-    editStartedProgrammatically = true;
-    return true;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (isEventNotification(messages[i])) continue;
+      startEdit(messages[i]);
+      editStartedProgrammatically = true;
+      return true;
+    }
+    return false;
   }
 </script>
 
@@ -238,6 +295,59 @@
                 >
                   <Fa icon={faTimes} class="w-3 h-3" />
                 </Button>
+              </div>
+            {:else if isEventNotification(message)}
+              <!-- System event-notification wake: compact row, no edit -->
+              {@const wake = eventWakeSummary(message)}
+              <div class="col-span-full row-span-full flex flex-1 min-w-0 items-center gap-2">
+                {#if message.requeuedAfterFailure}
+                  <div
+                    class="flex items-center gap-1 text-warning text-xs shrink-0"
+                    title="Failed — will retry"
+                  >
+                    <div aria-hidden="true">
+                      <Fa icon={faRotateRight} class="w-3 h-3" />
+                    </div>
+                    <span class="sr-only">Failed — will retry</span>
+                  </div>
+                {/if}
+                <div aria-hidden="true" class="shrink-0">
+                  <Fa icon={faBell} class="w-3 h-3" />
+                </div>
+                <div
+                  class="flex-1 min-w-0 truncate"
+                  transition:slide={{ axis: 'y', duration: 200 }}
+                  title={message.content}
+                >
+                  <span>{wake.label}</span>
+                  {#if wake.preview}
+                    <span class="text-xs opacity-70"> — {wake.preview}</span>
+                  {/if}
+                </div>
+                {#if !disabled}
+                  <div
+                    class="flex items-center gap-1 opacity-30 group-hover:opacity-100 transition-opacity"
+                  >
+                    <Button
+                      variant="ghost-light"
+                      size="icon-xs"
+                      class="-my-1"
+                      onclick={() => onsendnow?.(message.id)}
+                      tooltip="Send now (interrupts current stream)"
+                    >
+                      <Fa icon={faPaperPlane} class="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="ghost-light"
+                      size="icon-xs"
+                      class="-my-1"
+                      onclick={() => handleRemove(message.id)}
+                      tooltip="Remove"
+                    >
+                      <Fa icon={faTrash} class="w-3 h-3" />
+                    </Button>
+                  </div>
+                {/if}
               </div>
             {:else}
               <!-- Display mode -->
