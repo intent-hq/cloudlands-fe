@@ -26,6 +26,7 @@ import {
   clearTypeOverride,
   resetSettings,
   hydrateSettings,
+  type BackgroundAgentType,
 } from "$store/renderer/slices/background-agent-settings/background-agent-settings-slice";
 
 const logger = createLogger("BackgroundAgentSettingsPersistenceService");
