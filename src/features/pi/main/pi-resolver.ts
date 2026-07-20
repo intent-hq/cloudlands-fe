@@ -2,9 +2,9 @@
  * Pi command resolution
  *
  * Detects the installed `pi` engine binary (availability keys off `pi`, not
- * `pi-acp`). The adapter is always run via `npx -y pi-acp` (the adapter's
- * recommended zero-install path; `pi-acp` requires `pi` on PATH anyway), so we
- * do not require a globally-installed `pi-acp` binary.
+ * `pi-acp`). The adapter is always run via `npx -y pi-acp@<PI_ACP_VERSION>`
+ * (the adapter's recommended zero-install path; `pi-acp` requires `pi` on PATH
+ * anyway), so we do not require a globally-installed `pi-acp` binary.
  */
 
 import * as os from 'os';
@@ -44,6 +44,14 @@ let cachedNpxPath: string | null = null;
 
 const PI_MCP_ADAPTER_PACKAGE = 'pi-mcp-adapter';
 const PI_MCP_ADAPTER_INSTALL_SOURCE = `npm:${PI_MCP_ADAPTER_PACKAGE}`;
+
+/**
+ * Pinned pi-acp adapter version for the npx launch path. The adapter is always
+ * run via npx, so this pin controls the adapter release cadence — bumping it
+ * is a deliberate code change.
+ */
+const PI_ACP_VERSION = '0.0.31';
+export const PI_ACP_NPX_PACKAGE = `pi-acp@${PI_ACP_VERSION}`;
 
 type PiSettings = {
   packages?: unknown;
@@ -210,15 +218,15 @@ export type PiResolvedCommand = {
 
 /**
  * Resolve the command to run the Pi adapter.
- * Always runs the adapter via `npx -y pi-acp`. Returns null only when npx
- * cannot be resolved.
+ * Always runs the adapter via `npx -y pi-acp@<PI_ACP_VERSION>`. Returns null
+ * only when npx cannot be resolved.
  */
 export async function resolvePiCommand(): Promise<PiResolvedCommand | null> {
   const npxPath = await findNpxPath();
   if (npxPath) {
     return {
       command: npxPath,
-      argsPrefix: ['-y', 'pi-acp'],
+      argsPrefix: ['-y', PI_ACP_NPX_PACKAGE],
       usesNpx: true,
     };
   }
