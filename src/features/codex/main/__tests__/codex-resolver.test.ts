@@ -83,7 +83,7 @@ describe('codex-resolver', () => {
     const result = await resolveCodexCommand();
     expect(result).toEqual({
       command: '/usr/local/bin/npx',
-      argsPrefix: ['-y', '@zed-industries/codex-acp@0.13.0'],
+      argsPrefix: ['-y', CODEX_ACP_NPX_PACKAGE],
       usesNpx: true,
     });
     expect(CODEX_ACP_NPX_PACKAGE).toMatch(/^@zed-industries\/codex-acp@\d+\.\d+\.\d+$/);
@@ -216,7 +216,7 @@ describe('codex-resolver', () => {
       { command: '/usr/local/bin/codex-acp', argsPrefix: [], usesNpx: false, source: 'codex-acp' },
       {
         command: '/usr/local/bin/npx',
-        argsPrefix: ['-y', '@zed-industries/codex-acp@0.13.0'],
+        argsPrefix: ['-y', CODEX_ACP_NPX_PACKAGE],
         usesNpx: true,
         source: 'npx-codex-acp',
       },
