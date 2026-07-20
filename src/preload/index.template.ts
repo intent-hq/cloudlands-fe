@@ -3,11 +3,6 @@
  *
  * Clean, secure bridge between renderer and main process.
  * Uses contextBridge for security.
- *
- * Note: Sentry is NOT initialized here. The preload runs in a special isolated context
- * that is not compatible with @sentry/electron/renderer. Errors in the main process
- * are captured by Sentry in src/main/index.ts, and renderer errors are captured
- * by Sentry in the renderer process initialization.
  */
 
 import {
@@ -396,7 +391,6 @@ const ALLOWED_CHANNELS = [
   'rules:load-workspace',
   'rules:get-context',
   'config:getAll',
-  'banner:fetch',
 
   'diffs:list',
   'diffs:create',
@@ -721,27 +715,8 @@ function generateListenerId(): string {
   return `l${Date.now()}_${listenerIdCounter}`;
 }
 
-// Sentry config cache - populated via IPC from main process
-let sentryConfigCache: { dsn?: string; environment?: string; release?: string } | null = null;
-
 // Define the API exposed to the renderer
 const electronAPI = {
-  // Sentry configuration - fetched from main process via IPC
-  // The main process has the env vars loaded via dotenv
-  getSentryConfig: () => sentryConfigCache,
-
-  // Async version that fetches from main process (call this on app init)
-  fetchSentryConfig: async () => {
-    if (sentryConfigCache) return sentryConfigCache;
-    try {
-      sentryConfigCache = await ipcRenderer.invoke('sentry:get-config');
-      return sentryConfigCache;
-    } catch (error) {
-      console.warn('[Preload] Failed to fetch Sentry config:', error);
-      return null;
-    }
-  },
-
   // IPC invoke (request/response)
   invoke: (channel: string, data?: any) => {
     // Use generated allowed channels for security

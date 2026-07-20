@@ -4,8 +4,8 @@ export const selectGitHubAuthIsAuthenticated = store.createSelector(
   (state) => state.githubAuth.isAuthenticated,
 );
 
-export const selectGitHubAuthRequiresAugmentAuth = store.createSelector(
-  (state) => state.githubAuth.requiresAugmentAuth,
+export const selectGitHubAuthRequiresDaemonAuth = store.createSelector(
+  (state) => state.githubAuth.requiresDaemonAuth,
 );
 
 export const selectGitHubAuthUser = store.createSelector(

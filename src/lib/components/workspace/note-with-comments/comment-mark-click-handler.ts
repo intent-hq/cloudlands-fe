@@ -1,5 +1,5 @@
 import type { Editor } from '@tiptap/core';
-import type { Store } from '@augmentcode/ag-redux-toolkit/svelte-store';
+import type { Store } from '$lib/store-shim/svelte-store';
 import { selectCommentAction } from '$store/renderer/slices/comments/comments-slice';
 
 import type { LoggerLike } from './logger.types';

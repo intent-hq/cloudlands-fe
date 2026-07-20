@@ -1,6 +1,6 @@
-import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
-import { createBooleanPreference } from "@augmentcode/ag-redux-toolkit/utils/store/boolean-preference";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
+import { createBooleanPreference } from "$lib/store-shim/utils/store/boolean-preference";
 
 export const SYSTEM_DEFAULT_FONT =
   "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
@@ -32,21 +32,6 @@ export interface ActivityLogPresetPreference {
   filters: ActivityLogFiltersPreference;
 }
 
-export interface PromoBannerInteraction {
-  type: "button_click" | "dismiss";
-  buttonText?: string;
-  actionType?: string;
-  result: "success" | "error" | "navigated_to_settings";
-  timestamp: string;
-}
-
-export interface PromoBannerInteractionRecord {
-  dismissed: boolean;
-  dismissedAt?: string;
-  completedAllSteps?: boolean;
-  interactions: PromoBannerInteraction[];
-}
-
 export type UserPreferencesState = {
   betaUpdatesEnabled: boolean;
   spellcheckEnabled: boolean;
@@ -63,7 +48,6 @@ export type UserPreferencesState = {
   soundOnlyWhenUnfocused: boolean;
   volume: number;
   activityLogPresets: ActivityLogPresetPreference[];
-  promoBannerInteractions: Record<string, PromoBannerInteractionRecord>;
 };
 
 export type FontSettingsState = Pick<
@@ -100,7 +84,6 @@ export const initialState: UserPreferencesState = {
   ...fontSettingsInitialState,
   ...notificationSettingsInitialState,
   activityLogPresets: [],
-  promoBannerInteractions: {},
 };
 
 const betaUpdatesPreference = createBooleanPreference<UserPreferencesState>({
@@ -182,21 +165,6 @@ export const saveActivityLogPreset = createAction<[preset: ActivityLogPresetPref
 export const deleteActivityLogPreset = createAction<[index: number]>(
   "userPreferences/deleteActivityLogPreset"
 );
-
-export const hydratePromoBannerInteractions = createAction<[
-  interactions: Record<string, PromoBannerInteractionRecord>,
-]>("userPreferences/hydratePromoBannerInteractions");
-
-export const recordPromoBannerInteraction = createAction<[
-  bannerId: string,
-  interaction: PromoBannerInteraction,
-]>("userPreferences/recordPromoBannerInteraction");
-
-export const dismissPromoBanner = createAction<[
-  bannerId: string,
-  dismissedAt: string,
-  completedAllSteps: boolean,
-]>("userPreferences/dismissPromoBanner");
 
 const showArchivedPreference = createBooleanPreference<UserPreferencesState>({
   sliceName: "userPreferences",
@@ -304,37 +272,4 @@ export const userPreferencesReducer = hasCompletedProviderSetupPreference.regist
   .with(deleteActivityLogPreset, (state, { payload: [index] }) => ({
     ...state,
     activityLogPresets: state.activityLogPresets.filter((_, i) => i !== index),
-  }))
-  .with(hydratePromoBannerInteractions, (state, { payload: [interactions] }) => ({
-    ...state,
-    promoBannerInteractions: interactions,
-  }))
-  .with(recordPromoBannerInteraction, (state, { payload: [bannerId, interaction] }) => {
-    const record = state.promoBannerInteractions[bannerId] ?? { dismissed: false, interactions: [] };
-    return {
-      ...state,
-      promoBannerInteractions: {
-        ...state.promoBannerInteractions,
-        [bannerId]: { ...record, interactions: [...record.interactions, interaction] },
-      },
-    };
-  })
-  .with(dismissPromoBanner, (state, { payload: [bannerId, dismissedAt, completedAllSteps] }) => {
-    const record = state.promoBannerInteractions[bannerId] ?? { dismissed: false, interactions: [] };
-    return {
-      ...state,
-      promoBannerInteractions: {
-        ...state.promoBannerInteractions,
-        [bannerId]: {
-          ...record,
-          dismissed: true,
-          dismissedAt,
-          completedAllSteps,
-          interactions: [
-            ...record.interactions,
-            { type: "dismiss", result: "success", timestamp: dismissedAt },
-          ],
-        },
-      },
-    };
-  });
+  }));

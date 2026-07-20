@@ -38,7 +38,7 @@
  * they are never evaluated while the store is still initializing through the
  * middleware chain.
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import type { AgentSession, Workspace } from "$shared/types";
 import { AgentStatus } from "$shared/types";
 import { createAgentTypeId, parseAgentTypeId } from "$shared/types/agent.types";

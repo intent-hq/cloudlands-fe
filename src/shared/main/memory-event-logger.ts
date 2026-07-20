@@ -5,8 +5,8 @@
  * Writes JSONL format for easy querying with DuckDB/grep.
  *
  * Query examples:
- *   duckdb -c "SELECT * FROM read_json_auto('.augment/memory/memory-events.jsonl') ORDER BY ts DESC LIMIT 20"
- *   duckdb -c "SELECT event, avg(heapUsedMB) as avgHeap, avg(deltaMB) as avgDelta FROM read_json_auto('.augment/memory/memory-events.jsonl') GROUP BY event"
+ *   duckdb -c "SELECT * FROM read_json_auto('.intent/memory/memory-events.jsonl') ORDER BY ts DESC LIMIT 20"
+ *   duckdb -c "SELECT event, avg(heapUsedMB) as avgHeap, avg(deltaMB) as avgDelta FROM read_json_auto('.intent/memory/memory-events.jsonl') GROUP BY event"
  */
 
 import * as fs from 'fs';
@@ -83,7 +83,7 @@ function getLogFilePath(): string {
     }
   }
 
-  const memoryDir = path.join(baseDir, '.augment', 'memory');
+  const memoryDir = path.join(baseDir, '.intent', 'memory');
   if (!fs.existsSync(memoryDir)) {
     fs.mkdirSync(memoryDir, { recursive: true });
   }

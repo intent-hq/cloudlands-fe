@@ -1,16 +1,11 @@
 # Redux Documentation Index
 
-This directory contains app-specific Redux companion notes. Current architecture
-rules, API guidance, and migration procedures are owned by the skills:
+This directory contains app-specific Redux companion notes. The store API
+surface is the local redux/saga-free shim at `src/lib/store-shim/`, imported
+via `$lib/store-shim/...`.
 
-- [`ag-redux-toolkit`](../../../../.agents/skills/ag-redux-toolkit/SKILL.md)
-- [`core-policy`](../../../../.agents/skills/ag-redux-toolkit/core/core-policy/SKILL.md)
-- [`import-boundaries`](../../../../.agents/skills/ag-redux-toolkit/core/import-boundaries/SKILL.md)
-- [`component-integration`](../../../../.agents/skills/ag-redux-toolkit/svelte/component-integration/SKILL.md)
-- [`svelte/migration`](../../../../.agents/skills/ag-redux-toolkit/svelte/migration/SKILL.md)
-
-If a guide here disagrees with those skills, treat the skill as current and fix
-or remove the stale companion text.
+If a guide here disagrees with the shim implementation, treat the shim as
+current and fix or remove the stale companion text.
 
 ## Retained companion notes
 
@@ -20,10 +15,8 @@ or remove the stale companion text.
    that complement the reducer and core-policy skills.
 3. [Selectors Guide](./SELECTORS_GUIDE.md) — repository-specific selector notes
    that complement the selector and selector-lifecycle skills.
-4. [waitFor Saga Utility Guide](./WAITFOR_SAGA_GUIDE.md) — app notes for waiting
-   on Store conditions from sagas.
-5. [Migration Guide](./MIGRATION_GUIDE.md) — app-specific Svelte-store cleanup
-   checklist that complements the migration skill.
+4. [Migration Guide](./MIGRATION_GUIDE.md) — app-specific Svelte-store cleanup
+   checklist.
 
 ## Related architecture notes
 

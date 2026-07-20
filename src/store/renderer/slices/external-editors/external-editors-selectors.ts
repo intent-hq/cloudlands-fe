@@ -2,7 +2,7 @@ import { store } from "../../store";
 import {
   getItems,
   type Collection,
-} from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+} from "$lib/store-shim/utils/collections/collection-utils";
 import type { InstalledEditor, OpenAction } from "./external-editors-slice";
 
 /** Select the selected open action */

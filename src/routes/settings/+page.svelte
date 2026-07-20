@@ -57,7 +57,6 @@
   import { Select } from '$lib/components/ui/select';
 
   import { isMacPlatform } from '$lib/utils/shortcuts';
-  import { track } from '$lib/services/analytics';
   import {
   getSettingsPreviousPath,
   navigateBackFromSettings,
@@ -173,9 +172,6 @@
     return 'Back';
   });
 
-  // Interface & System state
-  let sentryTestStatus = $state('');
-
   // Component refs for reset functionality
   let gitWorkspaceSettingsRef: GitWorkspaceSettings | undefined = $state();
   let colorThemeSettingsRef: ColorThemeSettings | undefined = $state();
@@ -272,13 +268,7 @@
 
   function handleThemeChange(newTheme: string | boolean) {
     const theme = newTheme as ThemePreference;
-    const previousTheme = $themePreference;
     appStore.dispatch(requestThemePreferenceChange(theme));
-    track('Changed Theme', {
-      theme: theme,
-      previous_theme: previousTheme,
-      source: 'toggle',
-    });
   }
 
   async function handleBetaUpdatesToggle(enabled: string | boolean) {
@@ -292,22 +282,6 @@
     } catch (error) {
       logger.error('Failed to set update channel', error);
       // On failure, toggle state remains unchanged in Redux
-    }
-  }
-
-  async function handleTestSentryError() {
-    sentryTestStatus = 'Sending test error to Sentry...';
-    try {
-      const Sentry = await import('@sentry/electron/renderer');
-      const testError = new Error(
-        `[Test] Sentry test error from Settings page at ${new Date().toISOString()}`,
-      );
-      Sentry.captureException(testError);
-      sentryTestStatus = '✅ Test error sent to Sentry! Check your Sentry dashboard.';
-      logger.info('[Settings] Sentry test error sent');
-    } catch (error) {
-      sentryTestStatus = `❌ Failed to send test error: ${error}`;
-      logger.error('[Settings] Failed to send Sentry test error:', error);
     }
   }
 
@@ -665,16 +639,6 @@
             </h2>
             <div class="flex flex-col bg-card rounded-xl divide-y divide-border">
               <section class="px-6 py-5">
-                <div class="flex items-center gap-4">
-                  <Button variant="destructive" size="sm" onclick={handleTestSentryError}>
-                    Test Sentry Error
-                  </Button>
-                  {#if sentryTestStatus}
-                    <span class="text-sm text-subtle">{sentryTestStatus}</span>
-                  {/if}
-                </div>
-              </section>
-              <section class="px-6 py-5">
                 <div class="flex flex-col gap-2">
                   <span class="text-sm font-medium">Update Toast Simulation</span>
                   <div class="flex items-center gap-2">
@@ -749,7 +713,7 @@
   <div class="px-6 py-4 border-t border-border bg-sidebar">
     <div class="max-w-5xl mx-auto px-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
       <div class="text-sm text-subtle">
-        <strong class="text-foreground">Intent by Augment</strong>
+        <strong class="text-foreground">Intent</strong>
         <span class="ml-2">
           v{appVersion || '...'}
           {#if $isReadyToInstall$}

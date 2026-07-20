@@ -82,7 +82,7 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     mcpConfigFlag: '--mcp-config',
     quietFlag: '--quiet',
     isDefault: true,
-    canBeDisabled: false,
+    canBeDisabled: true,
     ipcChannelPrefix: 'auggie',
     authErrorPatterns: ['authentication required', 'auggie login', 'please run `auggie login`'],
     loginCommandHint: 'auggie login',

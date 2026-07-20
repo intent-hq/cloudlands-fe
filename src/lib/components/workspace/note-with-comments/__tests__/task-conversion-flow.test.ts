@@ -22,7 +22,6 @@ import {
 
 const {
   mockInvoke,
-  mockTrack,
   mockLogger,
   constantReadable,
   currentNoteReadable,
@@ -34,7 +33,6 @@ const {
 } = vi.hoisted(() => {
   const mockDispatch = vi.fn();
   const mockInvoke = vi.fn();
-  const mockTrack = vi.fn();
   const mockLogger = {
     debug: vi.fn(),
     info: vi.fn(),
@@ -99,7 +97,6 @@ const {
   return {
     mockDispatch,
     mockInvoke,
-    mockTrack,
     mockLogger,
     constantReadable,
     currentNoteReadable,
@@ -251,10 +248,6 @@ vi.mock('$lib/utils/client-logger', () => ({
 
 vi.mock('$lib/electron-bridge', () => ({
   invoke: mockInvoke,
-}));
-
-vi.mock('$lib/services/analytics', () => ({
-  track: mockTrack,
 }));
 
 vi.mock('$store/renderer/store', async () => {

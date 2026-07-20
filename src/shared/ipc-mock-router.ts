@@ -138,22 +138,6 @@ export const UNBRIDGED_INVOKE_ALLOWLIST: ReadonlyMap<string, unknown> = new Map<
   // stay hidden until a daemon surface exists.
   ['git:get-auto-commit-status', undefined],
   // ── IPC batch 8: the remaining frozen audit debt, dispositioned ──
-  // Analytics config read (fetchAnalyticsConfig, fired on EVERY page load via
-  // hooks.client.ts initAnalytics). The Segment write key lived in the
-  // Electron main process; there is no daemon analytics surface. The caller
-  // folds an absent config into "analytics disabled" (debug log only), which
-  // is the correct dev-analytics mode — events echo to the console via the
-  // track() dev fallback. Allowlisting (vs the previous rejection) removes
-  // the boot console error. app:get-version / auggie:get-user-info above are
-  // the same boot family.
-  ['analytics:get-config', undefined],
-  // Promotional-banner CDN fetch (PromotionalBanner on layout mount). The
-  // fetch ran in the Electron main process; the caller requires
-  // `success && data` and folds this shaped failure to "no banners".
-  [
-    'banner:fetch',
-    { success: false, error: 'Promotional banners are not available in this build' },
-  ],
   // AddRemoteSetupModal's SSH host/key/agent discovery probes (fired when the
   // add-remote modal opens) and its Test Connection action. SSH config, keys
   // and the agent live on the machine running the legacy Electron main

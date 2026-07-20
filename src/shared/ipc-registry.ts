@@ -236,11 +236,6 @@ export const IPC_CHANNELS = {
     GET_MODELS: 'droid:get-models',
   },
 
-  // Promotional Banner
-  BANNER: {
-    FETCH: 'banner:fetch',
-  },
-
   // Provider Availability (aggregates all ACP providers)
   PROVIDERS: {
     GET_AVAILABILITY: 'providers:get-availability',
@@ -654,7 +649,7 @@ export const IPC_CHANNELS = {
     GET_PR_REVIEWS: 'git-tracking:get-pr-reviews',
   },
 
-  // GitHub Auth (via Augment API OAuth)
+  // GitHub Auth (via daemon API OAuth)
   GITHUB_AUTH: {
     IS_AUTHENTICATED: 'github-auth:is-authenticated',
     GET_USER: 'github-auth:get-user',
@@ -668,7 +663,7 @@ export const IPC_CHANNELS = {
     SEARCH_REPOS: 'github-auth:search-repos',
   },
 
-  // Linear Auth (via Augment API OAuth)
+  // Linear Auth (via daemon API OAuth)
   LINEAR_AUTH: {
     IS_AUTHENTICATED: 'linear-auth:is-authenticated',
     START_AUTH: 'linear-auth:start-auth',
@@ -841,16 +836,6 @@ export const IPC_CHANNELS = {
     ERROR: 'auto-update:error',
     UP_TO_DATE: 'auto-update:up-to-date',
     SHOW_TOAST: 'auto-update:show-toast',
-  },
-
-  // Sentry (error tracking)
-  SENTRY: {
-    GET_CONFIG: 'sentry:get-config',
-  },
-
-  // Analytics (Segment)
-  ANALYTICS: {
-    GET_CONFIG: 'analytics:get-config',
   },
 
   // Picture-in-Picture Windows
@@ -1070,8 +1055,6 @@ export const EVENT_CHANNELS = [
   'browser:open-tab',
   // MCP server error events (main → renderer)
   'mcp:server-error',
-  // Analytics bridge (main → renderer)
-  'analytics:track-from-main',
   // Script events (main → renderer)
   'script:started',
   'script:stopped',

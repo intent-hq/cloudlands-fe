@@ -14,7 +14,6 @@ export interface AppConfig {
     minimap: boolean;
   };
   ai: {
-    apiUrl: string;
     apiToken: string;
     model: string;
     temperature: number;
@@ -74,7 +73,6 @@ const DEFAULT_CONFIG: AppConfig = {
     minimap: false,
   },
   ai: {
-    apiUrl: 'https://api.augmentcode.com',
     apiToken: '',
     model: 'opus4.5', // Short model ID format
     temperature: 0.7,
@@ -173,10 +171,6 @@ export class ConfigManager extends EventEmitter {
       ai: {
         type: 'object',
         properties: {
-          apiUrl: {
-            type: 'string',
-            format: 'uri',
-          },
           apiToken: {
             type: 'string',
           },

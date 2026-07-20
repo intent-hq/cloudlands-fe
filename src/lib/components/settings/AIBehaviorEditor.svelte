@@ -39,7 +39,6 @@
   import type { AIBehaviorView } from './AIBehaviorSidebar.svelte';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
-  import { track } from '$lib/services/analytics';
   import { toast } from 'svelte-sonner';
   import { parseCompoundModelId } from '$shared/config/provider-config';
   import { generateUniqueSpecialistId } from '$shared/specialist-file-types';
@@ -345,7 +344,6 @@
     // Capture values before deletion since currentSpecialist is a $derived
     // that will become null once the specialist is removed from the store
     const specialistId = currentSpecialist.id;
-    const specialistName = currentSpecialist.name;
     const fileSpec = selectGetFileSpecialist.select(appStore.state, specialistId);
     appStore.dispatch(
       deleteFileSpecialistAction({
@@ -355,10 +353,6 @@
       }),
     );
     onSpecialistDeleted?.();
-    track('Deleted Specialist', {
-      specialist_id: specialistId,
-      specialist_name: specialistName,
-    });
   }
 
   function createSpecialist() {
@@ -378,11 +372,6 @@
         scope: 'user',
       }),
     );
-    track('Created Specialist', {
-      specialist_name: newName.trim(),
-      has_custom_prompt: newPrompt.trim().length > 0,
-    });
-
     // Show success toast with file path
     const folderPath = $specialistsFolderPath;
     const expectedPath = folderPath ? `${folderPath}/${createdId}.md` : `~/.augment/specialists/${createdId}.md`;
@@ -449,7 +438,6 @@
                   }),
                 );
               }
-              track('Used Model for All Specialists', { model_id: $selectedModel });
             }}
             class="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer whitespace-nowrap"
           >

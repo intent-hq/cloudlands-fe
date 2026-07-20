@@ -1,4 +1,4 @@
-import type { Collection } from '@augmentcode/ag-redux-toolkit/utils/collections/collection-utils';
+import type { Collection } from '$lib/store-shim/utils/collections/collection-utils';
 
 export type FileContentSource = 'agent' | 'external' | 'user';
 

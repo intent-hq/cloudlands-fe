@@ -122,17 +122,17 @@ describe("providerSettingsReducer", () => {
       expect(state.enabledProviders).toEqual(providers);
     });
 
-    it("should keep non-disableable providers unchanged", () => {
+    it("should set enabled state for auggie (disableable)", () => {
       const state = providerSettingsReducer(
         initialState,
         setProviderEnabled({ providerId: "auggie", enabled: false })
       );
-      expect(state).toBe(initialState);
+      expect(state.enabledProviders["auggie"]).toBe(false);
     });
 
-    it("should not toggle non-disableable providers", () => {
+    it("should toggle auggie (disableable)", () => {
       const state = providerSettingsReducer(initialState, toggleProvider("auggie"));
-      expect(state).toBe(initialState);
+      expect(state.enabledProviders["auggie"]).toBe(true);
     });
   });
 });

@@ -103,7 +103,6 @@
   import { openWorkspaceFile } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
   import { selectIsRawNoteViewEnabled } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import { createTiptapTaskListMarked } from '$lib/utils/tiptap-task-list-extension';
-  import { track } from '$lib/services/analytics';
   import { dispatchWindowEvent } from '$lib/utils/window-events';
   import { store as appStore } from '$store/renderer/store';
 
@@ -524,7 +523,6 @@
   // Track content updates
   let isUpdatingFromExternal = false;
   let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastEditTrackTime = 0;
   let isUserTyping = false;
   let userTypingTimeout: ReturnType<typeof setTimeout> | null = null;
   let isRecoverySave = false;
@@ -796,18 +794,6 @@
         const note = selectNoteById.select(appStore.state, workspace.id, noteId);
         if (note) {
           updateNoteContent(workspace.id, noteId, markdownContent, { immediate });
-
-          // Track note edit (throttled to at most once every 30s during continuous editing)
-          try {
-            const now = Date.now();
-            if (now - lastEditTrackTime >= 30_000) {
-              lastEditTrackTime = now;
-              const noteType = note.metadata?.task ? 'task' : 'regular';
-              track('Edited Note', { note_type: noteType, note_id: noteId });
-            }
-          } catch {
-            // Analytics tracking should not break note editing
-          }
         }
       }
 

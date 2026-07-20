@@ -1,5 +1,5 @@
 #!/bin/bash
-# intent - Open Intent by Augment with a directory pre-populated
+# intent - Open Intent with a directory pre-populated
 #
 # Usage:
 #   intent [directory]

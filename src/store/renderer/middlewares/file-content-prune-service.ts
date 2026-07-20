@@ -19,7 +19,7 @@
  * imports; reads state via api.getState(); inlines the stale-path computation.
  */
 
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import type { StoreState } from "../types";
 import {
   removeFileContentEntry,

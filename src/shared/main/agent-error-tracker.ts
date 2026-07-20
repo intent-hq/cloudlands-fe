@@ -2,7 +2,7 @@
  * Agent Error Tracking System for Intent App
  *
  * Captures and persists errors to help AI agents understand and debug issues.
- * Errors are saved to .augment/errors/tracked-errors.json which is gitignored.
+ * Errors are saved to .intent/errors/tracked-errors.json which is gitignored.
  */
 
 import * as fs from 'fs';
@@ -80,7 +80,7 @@ export class AgentErrorTracker {
 
     // Determine the correct path based on environment
     const rootDir = this.findWorkspaceRoot();
-    const errorDir = path.join(rootDir, '.augment', 'errors');
+    const errorDir = path.join(rootDir, '.intent', 'errors');
     this.errorFilePath = path.join(errorDir, 'tracked-errors.json');
 
     this.initialize();

@@ -256,26 +256,26 @@ D  src/staged-deleted.ts
       expect(status.untracked).toHaveLength(0);
     });
 
-    it('should NOT filter out .augment/ files (git is the source of truth)', () => {
-      // When git reports .augment/ files in status, they are not gitignored
-      // (e.g., .gitignore has negation like !.augment/skills/)
-      const stdout = '?? .augment/skills/cognitive-complexity/README.md';
+    it('should NOT filter out .intent/ files (git is the source of truth)', () => {
+      // When git reports .intent/ files in status, they are not gitignored
+      // (e.g., .gitignore has negation like !.intent/skills/)
+      const stdout = '?? .intent/skills/cognitive-complexity/README.md';
       const status = parseGitStatusOutput(stdout);
 
-      expect(status.untracked).toContain('.augment/skills/cognitive-complexity/README.md');
+      expect(status.untracked).toContain('.intent/skills/cognitive-complexity/README.md');
       expect(status.untracked).toHaveLength(1);
     });
 
-    it('should handle .augment/ files in mixed status output', () => {
-      const stdout = `A  .augment/skills/my-skill/config.json
+    it('should handle .intent/ files in mixed status output', () => {
+      const stdout = `A  .intent/skills/my-skill/config.json
  M src/app.ts
-?? .augment/skills/my-skill/index.ts
+?? .intent/skills/my-skill/index.ts
 M  package.json`;
       const status = parseGitStatusOutput(stdout);
 
-      expect(status.stagedAdded).toContain('.augment/skills/my-skill/config.json');
+      expect(status.stagedAdded).toContain('.intent/skills/my-skill/config.json');
       expect(status.unstaged).toContain('src/app.ts');
-      expect(status.untracked).toContain('.augment/skills/my-skill/index.ts');
+      expect(status.untracked).toContain('.intent/skills/my-skill/index.ts');
       expect(status.staged).toContain('package.json');
     });
   });

@@ -2,6 +2,9 @@
 node_modules
 .pnpm-store
 
+# npm lockfile (pnpm-lock.yaml is the source of truth)
+package-lock.json
+
 # Build outputs
 dist
 dist-electron
@@ -90,7 +93,6 @@ test-harness-report.json
 [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]/
 # Simpler pattern for UUID directories
 *-*-*-*-*/
-!.agents/skills/ag-redux-toolkit/
 trace.json
 
 native/IntentDynamicIsland/.build

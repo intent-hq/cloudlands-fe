@@ -8,10 +8,6 @@
   import { DiffViewer } from '$lib/components/ui/diff';
   import type { DiffAction } from '$lib/components/ui/diff';
   import { toast } from 'svelte-sonner';
-  import {
-  track,
-  getFileExtension,
-} from '$lib/services/analytics';
 
   interface Props {
     diff: string;
@@ -24,17 +20,11 @@
   let { diff, filePath, language, onApply, onReject }: Props = $props();
 
   function handleApply() {
-    track('Applied Chat Diff', {
-      file_extension: getFileExtension(filePath),
-    });
     onApply?.();
     toast.success('Diff applied successfully');
   }
 
   function handleReject() {
-    track('Rejected Chat Diff', {
-      file_extension: getFileExtension(filePath),
-    });
     onReject?.();
     toast.info('Diff rejected');
   }

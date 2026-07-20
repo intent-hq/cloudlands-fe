@@ -39,7 +39,6 @@
   import Fa from 'svelte-fa';
   import { faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
   import { Skeleton } from '$lib/components/ui/skeleton';
-  import { track } from '$lib/services/analytics';
   import { store as appStore } from '$store/renderer/store';
 
   const logger = createLogger('TrackedChangeDiffViewer');
@@ -939,8 +938,6 @@
     const patch = generateLinePatch(selectedLines.start, selectedLines.end, selectedLines.side);
     if (patch && onStageHunk) {
       onStageHunk(effectiveFilePath, patch);
-      // Track line staging event
-      track('Staged Changes', { method: 'lines' });
       selectedLines = null; // Clear selection after staging
     }
   }

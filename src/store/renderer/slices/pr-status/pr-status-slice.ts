@@ -6,8 +6,8 @@
  * tracks refresh metadata (loading, rate-limiting, errors).
  */
 
-import { createAction } from "@augmentcode/ag-redux-toolkit/utils/store/create-action";
-import { createReducer } from "@augmentcode/ag-redux-toolkit/utils/store/create-reducer";
+import { createAction } from "$lib/store-shim/utils/store/create-action";
+import { createReducer } from "$lib/store-shim/utils/store/create-reducer";
 import { createWorkspaceScopedHelpers } from "../../utils/workspace-scoped";
 import type { PRStatusWorkspaceState, PRStatusState } from "./pr-status-types";
 

@@ -60,11 +60,6 @@
   import { Textarea } from '$lib/components/ui/textarea';
   import { toast } from '$lib/components/ui/toast';
   import BranchSelector from '$lib/components/workspace/initializer/BranchSelector.svelte';
-  import {
-  track,
-  trackGitOp,
-  getFileExtension,
-} from '$lib/services/analytics';
   import { logger } from '$lib/utils/client-logger';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import {
@@ -277,11 +272,6 @@
       filePath: relativePath,
       workspaceId,
     });
-    track('Opened File', {
-      workspace_id: workspaceId,
-      file_extension: getFileExtension(relativePath),
-      source: 'sidebar',
-    });
   }
 
   // --- PR Handlers ---
@@ -343,7 +333,6 @@
         targetBranch: opts?.targetBranch ?? targetBranch,
         hasStaged,
       });
-      trackGitOp('create-pr', { workspaceId: wsId, success: result.success, trigger: 'manual' });
       if (result.success) {
         prTitle = '';
         prDescription = '';
@@ -356,7 +345,6 @@
         toast.error(result.error || 'Failed to create pull request');
       }
     } catch {
-      trackGitOp('create-pr', { workspaceId: wsId, success: false, trigger: 'manual' });
       toast.error('Failed to create pull request');
     } finally {
       isCreatingPR = false;
@@ -423,10 +411,6 @@
         targetBranch: $workspace$?.branch,
         upToCommitHash: newestUnpushedHash,
       });
-      trackGitOp('push', {
-        workspaceId, success: result.success, trigger: 'manual',
-        commitCount: commits.length, hasPr: pullRequests.length > 0,
-      });
       if (result.success) {
         gitCache.invalidate(`git-status-${workspaceId}`);
         try {
@@ -439,7 +423,6 @@
         toast.error(result.error || 'Failed to push');
       }
     } catch {
-      trackGitOp('push', { workspaceId, success: false, trigger: 'manual' });
       toast.error('Failed to push commits');
     } finally {
       appStore.dispatch(setGitOperationFlag(workspaceId, 'isPushing', false));
@@ -636,12 +619,8 @@
             ? 'No staged changes or commits to create PR from'
             : ''}
           onclick={() => {
-            const wasOpen = prDrawerOpen;
             prDrawerOpen = !prDrawerOpen;
             if (prDrawerOpen) onMergeDrawerToggle(false);
-            if (!wasOpen) {
-              track('Opened PR Creator', { workspace_id: workspaceId });
-            }
           }}
           expanded={prDrawerOpen}
           disabled={!hasStaged && !hasCommits}

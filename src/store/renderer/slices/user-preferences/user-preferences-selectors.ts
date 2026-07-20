@@ -126,11 +126,3 @@ export const selectNotificationVolume = store.createSelector((state) => {
 export const selectActivityLogPresets = store.createSelector((state) => {
   return state.userPreferences.activityLogPresets;
 });
-
-export const selectPromoBannerInteractions = store.createSelector((state) => {
-  return state.userPreferences.promoBannerInteractions;
-});
-
-export const selectPromoBannerInteractionRecord = store.createSelector((state, bannerId: string) => {
-  return state.userPreferences.promoBannerInteractions[bannerId] ?? null;
-});

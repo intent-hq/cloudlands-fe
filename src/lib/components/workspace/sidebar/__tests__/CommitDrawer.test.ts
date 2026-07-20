@@ -60,10 +60,6 @@ vi.mock('$store/renderer/slices/background-agent-executor/background-agent-execu
   cancelExecution: vi.fn((...args: unknown[]) => ({ type: 'backgroundAgentExecutor/cancel', payload: args })),
 }));
 
-vi.mock('$lib/services/analytics', () => ({
-  track: vi.fn(),
-}));
-
 vi.mock('$lib/components/ui/toast', () => ({
   toast: { error: vi.fn(), success: vi.fn(), custom: vi.fn(), info: vi.fn() },
 }));

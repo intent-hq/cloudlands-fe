@@ -1,10 +1,10 @@
 import type { GitHubUser } from "$features/github-auth/types";
 
 export type GitHubAuthState = {
-  /** Whether user is authenticated with GitHub via Augment */
+  /** Whether user is authenticated with GitHub via the daemon */
   isAuthenticated: boolean;
-  /** Whether user needs to authenticate with Augment first */
-  requiresAugmentAuth: boolean;
+  /** Whether user needs to authenticate with the daemon first */
+  requiresDaemonAuth: boolean;
   /** GitHub user info (if available) */
   user: GitHubUser | null;
   /** Whether authentication is in progress */

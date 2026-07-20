@@ -12,7 +12,7 @@
  * Dependency-light per src/store AGENTS.md: imports only the renderer auth client,
  * the configured store, the slice actions, and the logger (NOT selectors).
  */
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 import { sentryAuthClient } from "$features/sentry-auth/renderer/sentry-auth.client";
 import { store as appStore } from "$store/renderer/store";
 import {

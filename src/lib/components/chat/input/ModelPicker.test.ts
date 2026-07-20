@@ -142,7 +142,7 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
           id: 'auggie',
           displayName: 'Augment Auggie',
           command: 'auggie',
-          canBeDisabled: false,
+          canBeDisabled: true,
           loginCommandHint: 'auggie login',
         },
         codex: {
@@ -190,10 +190,10 @@ vi.mock('$shared/config/provider-config', async (importOriginal) => {
     },
     resolvePreferredModel: () => undefined,
     getAlwaysEnabledProviders: () => [
-      { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: false },
+      { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: true },
     ],
     ACP_PROVIDERS: {
-      auggie: { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: false },
+      auggie: { id: 'auggie', displayName: 'Augment Auggie', canBeDisabled: true },
       codex: { id: 'codex', displayName: 'OpenAI Codex', canBeDisabled: true },
       'claude-code': {
         id: 'claude-code',

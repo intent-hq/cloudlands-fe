@@ -4,7 +4,6 @@
   import { Button } from '$lib/components/ui/button';
   import { toast } from '$lib/components/ui/toast';
   import { invoke, shell } from '$lib/electron-bridge';
-  import { identifyUser } from '$lib/services/analytics';
   import { selectManagedInstallStatusByProvider } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
   import { retryLoadModels } from '$store/renderer/slices/model/model-slice';
   import AuggieInstructionsPanel from '$lib/components/AuggieInstructionsPanel.svelte';
@@ -101,7 +100,6 @@
         minimumVersion: MINIMUM_AUGGIE_VERSION,
       };
       if (status?.installed && status?.versionOk && status?.authenticated) {
-        identifyUser({ force: true }).catch(() => {});
         appStore.dispatch(retryLoadModels());
       }
     } catch (err) {
@@ -313,7 +311,7 @@
         </svg>
       </div>
       <p class="text-subtle">
-        An experimental workspace for parallel agents, from <em> Augment Code</em>.
+        An experimental workspace for parallel agents.
       </p>
     </section>
 

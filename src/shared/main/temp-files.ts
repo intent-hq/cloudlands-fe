@@ -4,7 +4,7 @@
  * Extracted from the deleted features/agent/main/agent-providers/acp-provider.ts
  * as part of G2 (delete acp-provider + spawn machinery) so the startup path
  * can still sweep the on-disk temp files that crashed/killed agents may have
- * left behind in ~/.augment/tmp.
+ * left behind in ~/.intent/tmp.
  */
 
 import * as fs from 'fs';
@@ -16,11 +16,11 @@ import { Logger } from '$shared/logger';
 const logger = new Logger('TempFiles');
 
 function getGlobalTmpDir(): string {
-  return path.join(os.homedir(), '.augment', 'tmp');
+  return path.join(os.homedir(), '.intent', 'tmp');
 }
 
 /**
- * Cleanup stale temp files from ~/.augment/tmp on Intent startup.
+ * Cleanup stale temp files from ~/.intent/tmp on Intent startup.
  *
  * Removes agent-rules-*.md and mcp-config-*.json files older than the
  * specified max age (default 1 hour).

@@ -18,7 +18,7 @@ vi.mock("$lib/client/live/backend-transport", () => ({
 }));
 
 import { store as appStore } from "$store/renderer/store";
-import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { getItems } from "$lib/store-shim/utils/collections/collection-utils";
 import {
   reloadModelsForProvider,
   setAvailableModels,

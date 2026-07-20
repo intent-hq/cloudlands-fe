@@ -1,7 +1,7 @@
 /**
  * Specialist File Loader
  *
- * Backend service for discovering and loading specialist files from ~/.augment/specialists/
+ * Backend service for discovering and loading specialist files from ~/.intent/specialists/
  * Specialists are markdown files with YAML frontmatter that define agent behavior.
  *
  * File format:
@@ -48,11 +48,11 @@ const logger = new Logger('SpecialistFileLoader');
  * Get the path to the user's specialists directory
  */
 export function getSpecialistsDirectory(): string {
-  return path.join(getSafeHomeDir(), '.augment', SPECIALISTS_FOLDER);
+  return path.join(getSafeHomeDir(), '.intent', SPECIALISTS_FOLDER);
 }
 
 export function getProjectSpecialistsDirectory(workspacePath: string): string {
-  return path.join(workspacePath, '.augment', SPECIALISTS_FOLDER);
+  return path.join(workspacePath, '.intent', SPECIALISTS_FOLDER);
 }
 
 /**
@@ -190,14 +190,24 @@ async function loadSpecialistFilesFromDirectory(
 /**
  * Unescape a YAML string value.
  * Handles escaped quotes, backslashes, and common escape sequences.
+ * Uses a single pass so already-unescaped output is never re-interpreted
+ * (avoids double-unescaping, e.g. `\\n` must yield `\n` literally, not a newline).
  */
 function unescapeYamlValue(value: string): string {
-  return value
-    .replace(/\\"/g, '"')
-    .replace(/\\'/g, "'")
-    .replace(/\\\\/g, '\\')
-    .replace(/\\n/g, '\n')
-    .replace(/\\t/g, '\t');
+  return value.replace(/\\(.)/g, (match, char: string) => {
+    switch (char) {
+      case 'n':
+        return '\n';
+      case 't':
+        return '\t';
+      case '"':
+      case "'":
+      case '\\':
+        return char;
+      default:
+        return match;
+    }
+  });
 }
 
 /**

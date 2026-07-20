@@ -48,10 +48,10 @@ export interface StartAuthResult {
  * Full GitHub authentication state for the UI
  */
 export interface GitHubAuthState {
-  /** Whether user is authenticated with GitHub via Augment */
+  /** Whether user is authenticated with GitHub via the daemon */
   isAuthenticated: boolean;
-  /** Whether user needs to authenticate with Augment first */
-  requiresAugmentAuth: boolean;
+  /** Whether user needs to authenticate with the daemon first */
+  requiresDaemonAuth: boolean;
   /** GitHub user info (if available) */
   user: GitHubUser | null;
   /** Whether GitHub is configured but needs scope update */
@@ -80,7 +80,7 @@ export interface StartDeviceFlowResult {
   expiresIn: number;
 }
 
-/** @deprecated No longer used - auth is managed by Augment */
+/** @deprecated No longer used - auth is managed by the daemon */
 export interface StoredAuth {
   accessToken: string;
   user: GitHubUser;

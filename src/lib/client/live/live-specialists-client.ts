@@ -2,8 +2,8 @@
  * Live specialists domain backed by the intentd daemon (PROTOCOL §5.11).
  *
  * `specialist.list` is global (no workspaceId) and returns the resolved
- * 3-tier view — project (`.augment/specialists/`) overrides user
- * (`~/.augment/specialists/`) overrides bundled — as `{ specialists:
+ * 3-tier view — project (`.intent/specialists/`) overrides user
+ * (`~/.intent/specialists/`) overrides bundled — as `{ specialists:
  * SpecialistDef[] }`. The defs are surfaced verbatim; splitting bundled vs
  * file-backed entries into their store slices happens in the seeder. Reads
  * fold transport failures to an empty list so the specialist picker falls

@@ -9,7 +9,7 @@
 import { store } from "../../store";
 import type { WorkspaceTask } from "$shared/types";
 import { EXCLUDED_STATUSES, IN_PROGRESS_STATUSES } from "$shared/utils/task-stats";
-import { getItems } from "@augmentcode/ag-redux-toolkit/utils/collections/collection-utils";
+import { getItems } from "$lib/store-shim/utils/collections/collection-utils";
 import { emptyWorkspaceTaskStats, emptyWorkspaceTasksState } from "./workspace-tasks-slice";
 import type { WorkspaceTaskProgress, WorkspaceTasksWorkspaceState } from "./workspace-tasks-types";
 

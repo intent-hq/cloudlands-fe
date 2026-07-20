@@ -1,4 +1,4 @@
-import type { StoreMiddleware } from "@augmentcode/ag-redux-toolkit/types";
+import type { StoreMiddleware } from "$lib/store-shim/types";
 
 function isPrimitive(value: unknown): value is string | number | bigint | boolean | symbol | null | undefined {
   return value === null || (typeof value !== "object" && typeof value !== "function");

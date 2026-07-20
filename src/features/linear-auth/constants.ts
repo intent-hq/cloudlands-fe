@@ -16,7 +16,7 @@ export const LINEAR_AUTH_CHANNELS = {
   LOGOUT: 'linear-auth:logout',
   /** Get full authentication state */
   GET_AUTH_STATE: 'linear-auth:get-auth-state',
-  /** Get Linear status from Augment API */
+  /** Get Linear status from the daemon API */
   GET_STATUS: 'linear-auth:get-status',
   /** Fetch issues assigned to current user */
   FETCH_MY_ISSUES: 'linear-auth:fetch-my-issues',
@@ -25,7 +25,7 @@ export const LINEAR_AUTH_CHANNELS = {
 } as const;
 
 /**
- * Remote Tool ID for Linear in Augment's API
+ * Remote Tool ID for Linear in the legacy remote-tools API
  * From: clients/sidecar/libs/src/tools/tool-types.ts
  */
 export const LINEAR_REMOTE_TOOL_ID = 12;
