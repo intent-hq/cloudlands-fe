@@ -42,6 +42,7 @@ const NO_TOOLS = {
     opencode: { available: false },
     pi: { available: false },
     droid: { available: false },
+    grok: { available: false },
     "codex-acp": { available: false },
     npx: { available: false },
   },
@@ -72,7 +73,7 @@ describe("provider-status-bridge-seeder", () => {
 
       expect(mockedRequest).toHaveBeenCalledWith("host.checkAuggie");
       expect(mockedRequest).toHaveBeenCalledWith("host.toolAvailability", {
-        tools: ["claude", "codex", "opencode", "pi", "droid", "codex-acp", "npx"],
+        tools: ["claude", "codex", "opencode", "pi", "droid", "grok", "codex-acp", "npx"],
       });
       expect(response.success).toBe(true);
       expect(response.data?.hasAnyProvider).toBe(false);

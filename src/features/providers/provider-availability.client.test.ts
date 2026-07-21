@@ -52,7 +52,9 @@ function createAvailabilityResult(
       mock: { available: availableProviders.mock ?? false },
       opencode: { available: availableProviders.opencode ?? false },
       cortex: { available: availableProviders.cortex ?? false },
+      pi: { available: availableProviders.pi ?? false },
       droid: { available: availableProviders.droid ?? false },
+      grok: { available: availableProviders.grok ?? false },
     },
     hiddenProviders,
   };

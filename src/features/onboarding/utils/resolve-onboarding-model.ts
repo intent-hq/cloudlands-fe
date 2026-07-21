@@ -76,7 +76,9 @@ function getProviderStatus(
     cortex: availability.providers.cortex,
     opencode: availability.providers.opencode,
     droid: availability.providers.droid,
+    grok: availability.providers.grok,
     mock: availability.providers.mock,
+    pi: availability.providers.pi,
   };
   return map[providerId];
 }
@@ -109,7 +111,9 @@ function getUsableProviderIds(availability: ProviderAvailabilityResult): string[
   if (isProviderUsable(availability, 'codex')) ids.push('codex');
   if (isProviderUsable(availability, 'opencode')) ids.push('opencode');
   if (isProviderUsable(availability, 'droid')) ids.push('droid');
+  if (isProviderUsable(availability, 'grok')) ids.push('grok');
   if (isProviderUsable(availability, 'cortex')) ids.push('cortex');
+  if (isProviderUsable(availability, 'pi')) ids.push('pi');
   return ids;
 }
 

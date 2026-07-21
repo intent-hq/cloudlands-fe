@@ -13,6 +13,7 @@ import { Logger } from '../../../shared/logger';
 import { hostExec } from '../../../shared/main/host-exec';
 import { featureCodesService } from '../../feature-codes/main/feature-codes.service';
 import { getBackendClient } from '../../backend/main/backend.ipc';
+import { findBinary } from '../../../shared/main/find-binary';
 import { findAuggiePathAsync } from '../../auggie/main/auggie.ipc';
 import {
   CLAUDE_CODE_NPX_MISSING_WARNING,
@@ -150,6 +151,22 @@ async function checkDroidAvailability(): Promise<ProviderStatus> {
   try {
     const installed = await isDroidInstalled();
     return { available: installed };
+  } catch (error) {
+    return { available: false, error: (error as Error).message };
+  }
+}
+
+/**
+ * Check if grok is available by resolving its binary on the daemon host.
+ * Grok has no FE-side resolver/probe module: availability comes from the
+ * daemon's provider discovery (aggregate path) and from `host.findBinary`
+ * (single-recheck path). Readiness is owned by the daemon, so auth stays
+ * undefined here.
+ */
+async function checkGrokAvailability(): Promise<ProviderStatus> {
+  try {
+    const grokPath = await findBinary('grok');
+    return { available: grokPath !== null };
   } catch (error) {
     return { available: false, error: (error as Error).message };
   }
@@ -409,6 +426,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     opencodeResult,
     piResult,
     droidResult,
+    grokResult,
   ] = await Promise.all([
     makeProviderStatus('auggie', checkAuggieAvailability),
     makeProviderStatus('claude-code', checkClaudeCodeAvailability),
@@ -422,6 +440,10 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     makeProviderStatus('opencode', checkOpenCodeAvailability),
     makeProviderStatus('pi', checkPiAvailability),
     makeProviderStatus('droid', checkDroidAvailability),
+    // Grok availability comes from the daemon's provider discovery; the
+    // host.findBinary fallback covers the RPC-degraded path. Readiness is
+    // not probed FE-side (no grok-acp-probe here), so auth stays undefined.
+    makeProviderStatus('grok', checkGrokAvailability),
   ]);
 
   // claude-code runs its ACP adapter exclusively via npx (pinned version).
@@ -488,7 +510,8 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       mockResult.available ||
       opencodeResult.available ||
       piResult.available ||
-      droidResult.available,
+      droidResult.available ||
+      grokResult.available,
     providers: {
       auggie: auggieResult,
       claudeCode: claudeCodeResult,
@@ -498,6 +521,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
       opencode: opencodeResult,
       pi: piResult,
       droid: droidResult,
+      grok: grokResult,
     },
     hiddenProviders,
     npx: npxStatus,
@@ -513,6 +537,7 @@ export async function getProviderAvailability(): Promise<ProviderAvailabilityRes
     opencode: opencodeResult.available,
     pi: piResult.available,
     droid: droidResult.available,
+    grok: grokResult.available,
     auggieAuth: auggieResult.authenticated,
     claudeCodeAuth: claudeCodeResult.authenticated,
     codexAuth: codexResult.authenticated,
@@ -652,6 +677,11 @@ export function setupProviderAvailabilityIPC(): void {
               const droidPath = await getDroidPath();
               authenticated = await checkDroidReady(droidPath);
             }
+            break;
+          case 'grok':
+            // Grok readiness is owned by the daemon; the FE only surfaces
+            // installed/not-installed here (auth stays undefined).
+            status = await checkGrokAvailability();
             break;
           case 'mock':
             status = await checkMockAvailability();

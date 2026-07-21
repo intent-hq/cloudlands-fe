@@ -17,6 +17,10 @@ const mockState = vi.hoisted(() => ({
       codex: { available: false, authenticated: undefined as boolean | undefined },
       cortex: { available: false, authenticated: undefined as boolean | undefined },
       opencode: { available: false, authenticated: undefined as boolean | undefined },
+      droid: { available: false, authenticated: undefined as boolean | undefined },
+      grok: { available: false, authenticated: undefined as boolean | undefined },
+      mock: { available: false, authenticated: undefined as boolean | undefined },
+      pi: { available: false, authenticated: undefined as boolean | undefined },
     },
     hiddenProviders: [] as string[],
   } as ProviderAvailabilityResult,
@@ -111,6 +115,10 @@ function setAvailability(
     codex: { available: false, authenticated: undefined },
     cortex: { available: false, authenticated: undefined },
     opencode: { available: false, authenticated: undefined },
+    droid: { available: false, authenticated: undefined },
+    grok: { available: false, authenticated: undefined },
+    mock: { available: false, authenticated: undefined },
+    pi: { available: false, authenticated: undefined },
   };
   for (const [key, value] of Object.entries(overrides)) {
     base[key as keyof typeof base] = value;

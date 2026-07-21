@@ -195,6 +195,27 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     loginDocsUrl: 'https://docs.factory.ai/cli/getting-started/overview',
   },
 
+  grok: {
+    id: 'grok',
+    displayName: 'Grok Build',
+    command: 'grok',
+    baseArgs: ['agent', 'stdio'],
+    // Grok's ACP stdio mode selects models after session creation via
+    // `session/set_model`, so there is no CLI model flag here.
+    supportsAuthenticate: false,
+    supportsSetMode: false,
+    supportsMcpConfig: false,
+    supportsRulesFile: false,
+    isDefault: false,
+    canBeDisabled: true,
+    ipcChannelPrefix: 'grok',
+    loginCommandHint: 'grok login',
+    // `grok models` prints auth/readiness details to stdout; the Grok feature
+    // module parses that output instead of using ACP `authenticate`.
+    authCheckArgs: ['models'],
+    loginDocsUrl: 'https://docs.x.ai/build/enterprise#authentication',
+  },
+
   mock: {
     id: 'mock',
     displayName: 'Mock (E2E)',
@@ -288,6 +309,7 @@ export const PROVIDER_AVAILABILITY_KEY_TO_ID: Record<string, string> = {
   pi: 'pi',
   cortex: 'cortex',
   droid: 'droid',
+  grok: 'grok',
 };
 
 /**
@@ -428,8 +450,8 @@ export const PROVIDER_MODEL_TIERS: Record<
   },
   codex: { fast: 'gpt-5.3-codex/medium', balanced: 'gpt-5.3-codex/high', smart: 'gpt-5.3-codex/xhigh' },
   cortex: { fast: 'claude-sonnet-4-5', balanced: 'claude-opus-4-5', smart: 'claude-opus-4-5' },
-  // Note: opencode and droid models are dynamic and fetched from the CLI at runtime.
-  // Do NOT add hardcoded opencode/droid entries here — model names change frequently.
+  // Note: opencode, droid, and grok models are dynamic and fetched from the CLI at runtime.
+  // Do NOT add hardcoded opencode/droid/grok entries here — model names change frequently.
   // Tier resolution for these providers falls back to using the parent agent's model.
 };
 
