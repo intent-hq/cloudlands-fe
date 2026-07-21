@@ -18,6 +18,8 @@ import { githubAuthClient } from "$features/github-auth/renderer/github-auth.cli
 import { store as appStore } from "$store/renderer/store";
 import {
   githubAuthChanged,
+  setAuthenticating,
+  setDeviceFlowInfo,
   startGitHubAuth,
 } from "$store/renderer/slices/github-auth/github-auth-slice";
 import {
@@ -216,6 +218,31 @@ describe("githubAuthStoreService (fake seam, real store)", () => {
 
     expect(ghState().deviceFlow).toBeNull();
     expect(api.checkAuthComplete).not.toHaveBeenCalled();
+  });
+
+  it("initialize clears stale in-flight UI state when the daemon has no pending flow", async () => {
+    appStore.dispatch(setAuthenticating(true));
+    appStore.dispatch(
+      setDeviceFlowInfo({
+        userCode: "STAL-0000",
+        verificationUri: "https://github.com/login/device",
+        expiresIn: 1,
+        interval: 5,
+      }),
+    );
+    api.getAuthState.mockResolvedValueOnce({
+      isAuthenticated: false,
+      requiresDaemonAuth: false,
+      user: null,
+      needsScopeUpdate: false,
+      oauthUrl: null,
+      deviceFlow: null,
+    });
+
+    await initializeGitHubAuthFlow();
+
+    expect(ghState().deviceFlow).toBeNull();
+    expect(ghState().isAuthenticating).toBe(false);
   });
 
   it("auth-changed authorized with a null identity re-hydrates via the boot path", async () => {

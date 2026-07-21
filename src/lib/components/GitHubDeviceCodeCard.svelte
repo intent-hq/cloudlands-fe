@@ -25,7 +25,7 @@
   }
 </script>
 
-<div class="space-y-2 {compact ? '' : 'space-y-3'}">
+<div class={compact ? 'space-y-2' : 'space-y-3'}>
   <div
     class="flex items-center justify-center gap-1 bg-muted rounded {compact
       ? 'py-1.5 px-2'

@@ -17,6 +17,7 @@
  * still mid-initialization through the middleware chain).
  */
 import type { StoreMiddleware } from "$lib/store-shim/types";
+import type { GitHubUser } from "$features/github-auth/types";
 import { githubAuthClient } from "$features/github-auth/renderer/github-auth.client";
 import { store as appStore } from "$store/renderer/store";
 import {
@@ -87,6 +88,12 @@ export async function initializeGitHubAuthFlow(): Promise<void> {
       );
       const pollMs = Math.max((pending.interval || 5) * 1000, AUTH_POLL_INTERVAL);
       void pollForGitHubAuthCompletion(pollMs);
+    } else if (appStore.state.githubAuth.deviceFlow !== null) {
+      // No pending flow daemon-side: clear stale in-flight UI state so the
+      // client does not stay stuck on a code card from a prior attempt.
+      cancelActivePoll();
+      appStore.dispatch(setDeviceFlowInfo(null));
+      appStore.dispatch(setAuthenticating(false));
     }
   } catch (error) {
     logger.error("initialize error", error);
@@ -213,12 +220,18 @@ export async function handleGitHubAuthChanged(
   switch (status) {
     case "authorized": {
       cancelActivePoll();
-      const user = await githubAuthClient.getUser();
+      // getUser() folds failures to null, but guard anyway so a rejection
+      // cannot strand the flow with the poll already cancelled.
+      let user: GitHubUser | null = null;
+      try {
+        user = await githubAuthClient.getUser();
+      } catch (error) {
+        logger.error("getUser after authorized failed", error);
+      }
       appStore.dispatch(authCompleted(user));
       if (user === null) {
-        // getUser() folds transient failures to null; re-hydrate through the
-        // boot path so the identity converges instead of rendering a
-        // half-hydrated "connected" state.
+        // Re-hydrate through the boot path so the identity converges instead
+        // of rendering a half-hydrated "connected" state.
         void initializeGitHubAuthFlow();
       }
       break;

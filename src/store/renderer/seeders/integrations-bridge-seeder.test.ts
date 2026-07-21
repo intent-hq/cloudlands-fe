@@ -324,6 +324,23 @@ describe('integrations-bridge-seeder', () => {
       });
     });
 
+    it('start rejects a partial github.connect payload (missing expiresIn/interval) as a wire divergence', async () => {
+      mockedRequest
+        .mockRejectedValueOnce(new Error('GitHub is not configured.'))
+        .mockResolvedValueOnce({
+          ok: true,
+          userCode: 'ABCD-1234',
+          verificationUri: 'https://github.com/login/device',
+        });
+
+      const result = await mockInvoke<{ success: boolean; error: string }>(
+        GITHUB_AUTH_CHANNELS.START_AUTH,
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('GitHub device flow could not be started.');
+    });
+
     it('poll completes as soon as authStatus validates, carrying the derived identity', async () => {
       mockedRequest
         .mockResolvedValueOnce({

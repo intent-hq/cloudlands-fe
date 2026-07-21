@@ -131,15 +131,17 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (): Promise<StartA
     if (
       result?.ok === true &&
       typeof result.userCode === 'string' &&
-      typeof result.verificationUri === 'string'
+      typeof result.verificationUri === 'string' &&
+      typeof result.expiresIn === 'number' &&
+      typeof result.interval === 'number'
     ) {
       return {
         success: true,
         oauthUrl: result.verificationUri,
         userCode: result.userCode,
         verificationUri: result.verificationUri,
-        expiresIn: typeof result.expiresIn === 'number' ? result.expiresIn : undefined,
-        interval: typeof result.interval === 'number' ? result.interval : undefined,
+        expiresIn: result.expiresIn,
+        interval: result.interval,
       };
     }
     // §5.27: connect either succeeds with all fields or errors -32603 (the
