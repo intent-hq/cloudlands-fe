@@ -6,6 +6,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("$features/github-auth/renderer/github-auth.client", () => ({
   githubAuthClient: {
     getAuthState: vi.fn(),
+    getUser: vi.fn(),
     startAuth: vi.fn(),
     checkAuthComplete: vi.fn(),
     cancelAuth: vi.fn(),
@@ -15,10 +16,14 @@ vi.mock("$features/github-auth/renderer/github-auth.client", () => ({
 
 import { githubAuthClient } from "$features/github-auth/renderer/github-auth.client";
 import { store as appStore } from "$store/renderer/store";
-import { startGitHubAuth } from "$store/renderer/slices/github-auth/github-auth-slice";
+import {
+  githubAuthChanged,
+  startGitHubAuth,
+} from "$store/renderer/slices/github-auth/github-auth-slice";
 import {
   cancelGitHubAuthFlow,
   checkGitHubAuthStatusOnce,
+  handleGitHubAuthChanged,
   initializeGitHubAuthFlow,
   logoutGitHubFlow,
   pollForGitHubAuthCompletion,
@@ -134,5 +139,83 @@ describe("githubAuthStoreService (fake seam, real store)", () => {
     await flush();
 
     expect(api.startAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("startAuth stores the device-flow codes from github.connect (§5.27)", async () => {
+    api.startAuth.mockResolvedValueOnce({
+      success: true,
+      oauthUrl: "https://github.com/login/device",
+      userCode: "ABCD-1234",
+      verificationUri: "https://github.com/login/device",
+      expiresIn: 899,
+      interval: 5,
+    });
+    api.checkAuthComplete.mockResolvedValueOnce({
+      success: true,
+      data: { user: null, isComplete: true },
+    });
+
+    await startGitHubAuthFlow();
+
+    expect(ghState().isAuthenticated).toBe(true);
+    // Terminal transition clears the codes.
+    expect(ghState().deviceFlow).toBeNull();
+  });
+
+  it("auth-changed authorized fetches identity and completes (§6.5)", async () => {
+    api.getUser.mockResolvedValueOnce({
+      login: "eventuser",
+      name: null,
+      email: null,
+      avatar_url: "",
+    });
+
+    await handleGitHubAuthChanged("authorized");
+
+    expect(api.getUser).toHaveBeenCalledTimes(1);
+    expect(ghState().isAuthenticated).toBe(true);
+    expect(ghState().user?.login).toBe("eventuser");
+    expect(ghState().deviceFlow).toBeNull();
+  });
+
+  it("auth-changed expired surfaces an error and clears the flow", async () => {
+    await handleGitHubAuthChanged("expired");
+
+    expect(ghState().error).toContain("expired");
+    expect(ghState().isAuthenticating).toBe(false);
+    expect(ghState().deviceFlow).toBeNull();
+  });
+
+  it("auth-changed denied surfaces an error", async () => {
+    await handleGitHubAuthChanged("denied");
+
+    expect(ghState().error).toContain("denied");
+    expect(ghState().isAuthenticating).toBe(false);
+  });
+
+  it("auth-changed revoked resets to signed-out", async () => {
+    api.getUser.mockResolvedValueOnce({ login: "x", name: null, email: null, avatar_url: "" });
+    await handleGitHubAuthChanged("authorized");
+    expect(ghState().isAuthenticated).toBe(true);
+
+    await handleGitHubAuthChanged("revoked");
+
+    expect(ghState().isAuthenticated).toBe(false);
+    expect(ghState().user).toBeNull();
+  });
+
+  it("dispatching githubAuthChanged routes through the middleware", async () => {
+    api.getUser.mockResolvedValueOnce({
+      login: "mwuser",
+      name: null,
+      email: null,
+      avatar_url: "",
+    });
+
+    appStore.dispatch(githubAuthChanged("authorized"));
+    await flush();
+
+    expect(api.getUser).toHaveBeenCalledTimes(1);
+    expect(ghState().user?.login).toBe("mwuser");
   });
 });

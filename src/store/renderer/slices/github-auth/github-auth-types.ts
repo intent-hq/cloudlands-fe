@@ -1,5 +1,17 @@
 import type { GitHubUser } from "$features/github-auth/types";
 
+/** In-flight device-flow codes shown to the user (PROTOCOL §5.27). */
+export type GitHubDeviceFlowInfo = {
+  /** Code the user enters at `verificationUri`. */
+  userCode: string;
+  /** Where the user enters the code (usually https://github.com/login/device). */
+  verificationUri: string;
+  /** Seconds until the codes expire (snapshot at start). */
+  expiresIn: number;
+  /** Polling-cadence hint in seconds. */
+  interval: number;
+};
+
 export type GitHubAuthState = {
   /** Whether user is authenticated with GitHub via the daemon */
   isAuthenticated: boolean;
@@ -11,6 +23,8 @@ export type GitHubAuthState = {
   isAuthenticating: boolean;
   /** OAuth URL for authentication (shown to user) */
   oauthUrl: string | null;
+  /** Device-flow codes while a flow is pending (null otherwise) */
+  deviceFlow: GitHubDeviceFlowInfo | null;
   /** Whether GitHub is configured but needs scope update */
   needsScopeUpdate: boolean;
   /** Error message if any */

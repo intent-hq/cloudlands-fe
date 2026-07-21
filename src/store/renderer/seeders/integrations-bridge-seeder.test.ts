@@ -215,13 +215,14 @@ describe('integrations-bridge-seeder', () => {
     });
   });
 
-  describe('github-auth OAuth triggers → PAT-from-env model (§5.27: connect/revoke are no-ops)', () => {
-    it('start reports alreadyAuthenticated when the env PAT validates', async () => {
+  describe('github-auth OAuth triggers → daemon device flow (§5.27 connect/cancelAuth/revoke)', () => {
+    it('start reports alreadyAuthenticated when a token is already configured', async () => {
       mockedRequest.mockResolvedValueOnce({
         isConfigured: true,
         oauthUrl: '',
         configuredButNeedsUpdate: false,
         updatedScopes: '',
+        deviceFlow: null,
       });
 
       const result = await mockInvoke(GITHUB_AUTH_CHANNELS.START_AUTH);
@@ -234,22 +235,47 @@ describe('integrations-bridge-seeder', () => {
       });
     });
 
-    it('start surfaces the github.connect guidance when unconfigured (no OAuth flow to open)', async () => {
+    it('start forwards to github.connect and carries the device-flow codes (§5.27)', async () => {
       mockedRequest
         .mockResolvedValueOnce({
           isConfigured: false,
           oauthUrl: '',
           configuredButNeedsUpdate: false,
           updatedScopes: '',
+          deviceFlow: null,
         })
-        .mockResolvedValueOnce({ ok: false, guidance: 'Set GITHUB_TOKEN and restart the daemon.' });
+        .mockResolvedValueOnce({
+          ok: true,
+          userCode: 'ABCD-1234',
+          verificationUri: 'https://github.com/login/device',
+          expiresIn: 899,
+          interval: 5,
+        });
+
+      const result = await mockInvoke(GITHUB_AUTH_CHANNELS.START_AUTH);
+
+      expect(mockedRequest).toHaveBeenCalledWith('github.connect');
+      expect(result).toEqual({
+        success: true,
+        oauthUrl: 'https://github.com/login/device',
+        userCode: 'ABCD-1234',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 899,
+        interval: 5,
+      });
+    });
+
+    it('start folds a github.connect failure to the error envelope', async () => {
+      mockedRequest
+        .mockRejectedValueOnce(new Error('GitHub is not configured.'))
+        .mockRejectedValueOnce(new Error('device flow start failed'));
 
       const result = await mockInvoke(GITHUB_AUTH_CHANNELS.START_AUTH);
 
       expect(mockedRequest).toHaveBeenCalledWith('github.connect');
       expect(result).toEqual({
         success: false,
-        error: 'Set GITHUB_TOKEN and restart the daemon.',
+        error: 'device flow start failed',
       });
     });
 
@@ -288,17 +314,15 @@ describe('integrations-bridge-seeder', () => {
       });
     });
 
-    it('cancel is a successful local no-op (nothing in flight in the PAT model)', async () => {
+    it('cancel forwards to github.cancelAuth (§5.27)', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true, cancelled: true });
       expect(await mockInvoke(GITHUB_AUTH_CHANNELS.CANCEL_AUTH)).toEqual({ success: true });
-      expect(mockedRequest).not.toHaveBeenCalled();
+      expect(mockedRequest).toHaveBeenCalledWith('github.cancelAuth');
     });
 
-    it('logout forwards to the github.revoke no-op and returns its envelope', async () => {
-      mockedRequest.mockResolvedValueOnce({ ok: false, guidance: 'Token is environment-owned.' });
-      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.LOGOUT)).toEqual({
-        ok: false,
-        guidance: 'Token is environment-owned.',
-      });
+    it('logout forwards to github.revoke and returns its envelope', async () => {
+      mockedRequest.mockResolvedValueOnce({ ok: true });
+      expect(await mockInvoke(GITHUB_AUTH_CHANNELS.LOGOUT)).toEqual({ ok: true });
       expect(mockedRequest).toHaveBeenCalledWith('github.revoke');
     });
   });

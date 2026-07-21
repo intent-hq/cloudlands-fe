@@ -24,11 +24,13 @@ import {
   authCompleted,
   cancelGitHubAuth,
   checkGitHubAuthStatus,
+  githubAuthChanged,
   initializeGitHubAuth,
   logoutCompleted,
   logoutGitHub,
   refreshGitHubAuth,
   setAuthenticating,
+  setDeviceFlowInfo,
   setGitHubAuthError,
   setGitHubAuthState,
   setOAuthInfo,
@@ -38,10 +40,13 @@ import { createLogger } from "$lib/utils/client-logger";
 
 const logger = createLogger("GitHubAuthService");
 
-/** Polling interval for checking auth completion (1 second). */
-const AUTH_POLL_INTERVAL = 1000;
-/** Maximum time to poll for auth completion (5 minutes). */
-const AUTH_POLL_TIMEOUT = 300000;
+/** Fallback polling interval for checking auth completion (5 seconds — the
+ * device-flow default cadence; `github:auth-changed` events are the primary
+ * completion signal, polling only covers a missed event). */
+const AUTH_POLL_INTERVAL = 5000;
+/** Maximum time to poll for auth completion (15 minutes — device codes are
+ * valid for ~15 minutes per §5.27 `expiresIn`). */
+const AUTH_POLL_TIMEOUT = 900000;
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -111,7 +116,7 @@ export async function pollForGitHubAuthCompletion(
   if (activePoll === token) activePoll = null;
 }
 
-/** Start the OAuth flow: open the URL, then poll for completion. */
+/** Start the device flow: surface the user code, then poll as event fallback. */
 export async function startGitHubAuthFlow(): Promise<void> {
   appStore.dispatch(setAuthenticating(true));
   try {
@@ -125,7 +130,20 @@ export async function startGitHubAuthFlow(): Promise<void> {
       return;
     }
     appStore.dispatch(setOAuthInfo(result.oauthUrl ?? null, result.needsScopeUpdate ?? false));
-    await pollForGitHubAuthCompletion();
+    if (result.userCode && result.verificationUri) {
+      appStore.dispatch(
+        setDeviceFlowInfo({
+          userCode: result.userCode,
+          verificationUri: result.verificationUri,
+          expiresIn: result.expiresIn ?? 0,
+          interval: result.interval ?? 5,
+        }),
+      );
+    }
+    // `github:auth-changed` is the primary completion signal; this poll is
+    // the fallback for a missed event, at the daemon's suggested cadence.
+    const pollMs = Math.max((result.interval ?? 5) * 1000, AUTH_POLL_INTERVAL);
+    await pollForGitHubAuthCompletion(pollMs);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     appStore.dispatch(
@@ -167,6 +185,41 @@ export async function logoutGitHubFlow(): Promise<void> {
 }
 
 /**
+ * Handle a `github:auth-changed` terminal transition pushed by the daemon
+ * (PROTOCOL §6.5). `authorized` completes the flow (fetching the derived
+ * identity); the failure statuses surface an error; `revoked` resets to
+ * signed-out.
+ */
+export async function handleGitHubAuthChanged(
+  status: "authorized" | "expired" | "denied" | "error" | "revoked",
+): Promise<void> {
+  switch (status) {
+    case "authorized": {
+      cancelActivePoll();
+      const user = await githubAuthClient.getUser();
+      appStore.dispatch(authCompleted(user));
+      break;
+    }
+    case "expired":
+      cancelActivePoll();
+      appStore.dispatch(setGitHubAuthError("The device code expired. Please try again."));
+      break;
+    case "denied":
+      cancelActivePoll();
+      appStore.dispatch(setGitHubAuthError("Authorization was denied on GitHub."));
+      break;
+    case "error":
+      cancelActivePoll();
+      appStore.dispatch(setGitHubAuthError("GitHub authorization failed. Please try again."));
+      break;
+    case "revoked":
+      cancelActivePoll();
+      appStore.dispatch(logoutCompleted());
+      break;
+  }
+}
+
+/**
  * Middleware that gives the GitHub auth triggers a real handler. Fire-and-forget
  * — dispatch stays synchronous and never throws.
  */
@@ -190,6 +243,12 @@ export function createGitHubAuthMiddleware(): StoreMiddleware {
       case logoutGitHub.type:
         void logoutGitHubFlow();
         break;
+      case githubAuthChanged.type: {
+        const [status] = (action as { payload: [Parameters<typeof handleGitHubAuthChanged>[0]] })
+          .payload;
+        void handleGitHubAuthChanged(status);
+        break;
+      }
     }
     return result;
   };

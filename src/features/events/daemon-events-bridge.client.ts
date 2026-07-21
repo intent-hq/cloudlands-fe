@@ -174,6 +174,7 @@ import {
   setServerStatus,
 } from '$store/renderer/slices/mcp-settings/mcp-settings-slice';
 import type { McpServerStatus } from '$store/renderer/slices/mcp-settings/mcp-settings-types';
+import { githubAuthChanged } from '$store/renderer/slices/github-auth/github-auth-slice';
 import {
   backendRequest,
   onBackendNotification,
@@ -1315,6 +1316,27 @@ function mapDaemonMcpState(state: unknown): McpServerStatus | null {
   }
 }
 
+/**
+ * `github:auth-changed` (§6.5) carries `data = { status }` on device-flow
+ * terminal transitions and `github.revoke`. Global (empty `workspaceId`),
+ * never carries a token or code. The github-auth middleware turns the
+ * dispatched action into the state updates (fetch identity on `authorized`,
+ * error on `expired`/`denied`/`error`, signed-out on `revoked`).
+ */
+function handleGithubAuthChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  const status = data?.status;
+  if (
+    status === 'authorized' ||
+    status === 'expired' ||
+    status === 'denied' ||
+    status === 'error' ||
+    status === 'revoked'
+  ) {
+    appStore.dispatch(githubAuthChanged(status));
+  }
+}
+
 function handleMcpServerStatusChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
@@ -1557,6 +1579,13 @@ function handleNotification(method: string, params: unknown): void {
   // — so it must also run before the workspace-id gate below.
   if (type === 'mcp.servers:status-changed') {
     handleMcpServerStatusChangedEvent(event);
+    return;
+  }
+
+  // `github:auth-changed` (§6.5) is global — no `workspaceId` envelope — so
+  // it must also run before the workspace-id gate below.
+  if (type === 'github:auth-changed') {
+    handleGithubAuthChangedEvent(event);
     return;
   }
 
@@ -1837,6 +1866,9 @@ const BRIDGE_SUBSCRIBE_EVENT_TYPES = [
   'line-attribution:updated',
   'pr:*',
   'mcp.servers:status-changed',
+  // `github:auth-changed` (§6.5) — device-flow terminal transitions and
+  // `github.revoke`; global, so the connect UX converges without polling.
+  'github:auth-changed',
   // Chief-workspace app-UI control events (§6.5 daemon emission) — the daemon
   // emits these when Chief agents call ws.app.ui.navigate/highlight or
   // ws.app.workspaces.open, bridged here into the FE's routing + highlight

@@ -76,7 +76,9 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.GET_AUTH_STATE, async (): Promise<Gi
     requiresDaemonAuth: false,
     user,
     needsScopeUpdate: status?.configuredButNeedsUpdate === true,
-    oauthUrl: undefined,
+    // While a device flow is live, `authStatus.oauthUrl` carries the
+    // verification URI (§5.27); empty otherwise.
+    oauthUrl: status?.oauthUrl || undefined,
   };
 });
 
@@ -88,14 +90,26 @@ registerMockIpcHandler(
       oauthUrl: '',
       configuredButNeedsUpdate: false,
       updatedScopes: '',
+      deviceFlow: null,
     },
 );
 
-// The OAuth-flow channels map onto the PAT-from-env model (§5.27 auth &
-// identity): there is no device/OAuth flow to start, poll, or cancel, so
-// "start" reports the daemon's `github.connect` guidance when the env PAT is
-// absent, "poll" completes as soon as `github.authStatus` validates, and
-// logout surfaces the `github.revoke` no-op (the token is environment-owned).
+// The OAuth-flow channels map onto the daemon-owned device flow (§5.27):
+// `github.connect` starts (or returns the still-pending) flow — the daemon
+// polls GitHub in the background and pushes terminal transitions as
+// `github:auth-changed` (§6.5) — so "start" carries the user-facing codes,
+// "poll" is the event fallback that completes when `github.authStatus`
+// validates, cancel maps to `github.cancelAuth`, and logout to
+// `github.revoke` (token deleted daemon-side; never crosses the wire).
+
+/** `github.connect` success payload (§5.27) — user-facing codes only. */
+interface GithubConnectWire {
+  ok?: boolean;
+  userCode?: string;
+  verificationUri?: string;
+  expiresIn?: number;
+  interval?: number;
+}
 
 registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (): Promise<StartAuthResult> => {
   const status = await githubAuthStatus();
@@ -107,13 +121,22 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (): Promise<StartA
     };
   }
   try {
-    const result = await backendRequest<{ ok?: boolean; guidance?: string }>('github.connect');
-    return {
-      success: false,
-      error:
-        result?.guidance ??
-        'GitHub is not configured — set GITHUB_TOKEN in the daemon environment.',
-    };
+    const result = await backendRequest<GithubConnectWire>('github.connect');
+    if (
+      result?.ok === true &&
+      typeof result.userCode === 'string' &&
+      typeof result.verificationUri === 'string'
+    ) {
+      return {
+        success: true,
+        oauthUrl: result.verificationUri,
+        userCode: result.userCode,
+        verificationUri: result.verificationUri,
+        expiresIn: typeof result.expiresIn === 'number' ? result.expiresIn : undefined,
+        interval: typeof result.interval === 'number' ? result.interval : undefined,
+      };
+    }
+    return { success: false, error: 'GitHub device flow could not be started.' };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
@@ -126,8 +149,17 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.POLL_FOR_TOKEN, async () => {
   return { success: true, data: { user, isComplete } };
 });
 
-// Nothing is in flight in the PAT model — cancel is a successful no-op.
-registerMockIpcHandler(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, async () => ({ success: true }));
+// `github.cancelAuth` (§5.27) — cancels the pending flow; the daemon's poll
+// task exits cooperatively. Always `ok: true`, `cancelled` reports whether a
+// pending flow was actually removed.
+registerMockIpcHandler(GITHUB_AUTH_CHANNELS.CANCEL_AUTH, async () => {
+  try {
+    await backendRequest('github.cancelAuth');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+});
 
 registerMockIpcHandler(GITHUB_AUTH_CHANNELS.LOGOUT, async () => {
   try {

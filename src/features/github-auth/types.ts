@@ -6,6 +6,26 @@ export interface GitHubUser {
 }
 
 /**
+ * Where the daemon-owned device flow stands (PROTOCOL §5.27 `deviceFlow.status`).
+ * `pending` = waiting for the user to enter the code; the rest are terminal.
+ */
+export type GitHubDeviceFlowStatus = 'pending' | 'expired' | 'denied' | 'error';
+
+/**
+ * The `deviceFlow` object embedded in `github.authStatus` (§5.27) — the
+ * user-facing codes only, never the `device_code` or a token.
+ */
+export interface GitHubDeviceFlow {
+  status: GitHubDeviceFlowStatus;
+  userCode: string;
+  verificationUri: string;
+  /** Seconds until the codes expire. */
+  expiresIn: number;
+  /** Polling-cadence hint in seconds. */
+  interval: number;
+}
+
+/**
  * GitHub OAuth/PAT configuration status as reported by the daemon.
  */
 export interface GitHubAuthStatus {
@@ -13,6 +33,8 @@ export interface GitHubAuthStatus {
   oauthUrl: string;
   configuredButNeedsUpdate: boolean;
   updatedScopes: string;
+  /** In-flight (or last-terminal) device flow; null when none (§5.27). */
+  deviceFlow?: GitHubDeviceFlow | null;
 }
 
 /**
@@ -42,6 +64,14 @@ export interface StartAuthResult {
   needsScopeUpdate?: boolean;
   /** New scopes that need to be authorized */
   updatedScopes?: string;
+  /** Device-flow code the user enters at `verificationUri` (§5.27 `github.connect`). */
+  userCode?: string;
+  /** Where the user enters `userCode` (usually https://github.com/login/device). */
+  verificationUri?: string;
+  /** Seconds until the codes expire. */
+  expiresIn?: number;
+  /** Polling-cadence hint in seconds. */
+  interval?: number;
 }
 
 /**

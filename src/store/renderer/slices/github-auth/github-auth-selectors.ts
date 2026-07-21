@@ -20,6 +20,10 @@ export const selectGitHubAuthOauthUrl = store.createSelector(
   (state) => state.githubAuth.oauthUrl,
 );
 
+export const selectGitHubAuthDeviceFlow = store.createSelector(
+  (state) => state.githubAuth.deviceFlow,
+);
+
 export const selectGitHubAuthError = store.createSelector(
   (state) => state.githubAuth.error,
 );
