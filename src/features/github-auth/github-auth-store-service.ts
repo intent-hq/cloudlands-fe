@@ -74,7 +74,8 @@ export async function initializeGitHubAuthFlow(): Promise<void> {
     );
     // Resume a still-pending device flow after a client refresh (§5.27:
     // "the flow survives client refreshes") — restore the code card and
-    // restart the fallback poll at the daemon-suggested cadence.
+    // restart the fallback poll at the daemon-suggested interval, clamped
+    // to no faster than AUTH_POLL_INTERVAL.
     const pending = authState.deviceFlow;
     if (!authState.isAuthenticated && pending?.status === "pending") {
       appStore.dispatch(setAuthenticating(true));
@@ -86,7 +87,7 @@ export async function initializeGitHubAuthFlow(): Promise<void> {
           interval: pending.interval,
         }),
       );
-      const pollMs = Math.max((pending.interval || 5) * 1000, AUTH_POLL_INTERVAL);
+      const pollMs = Math.max(pending.interval * 1000, AUTH_POLL_INTERVAL);
       void pollForGitHubAuthCompletion(pollMs);
     } else if (appStore.state.githubAuth.deviceFlow !== null) {
       // No pending flow daemon-side: clear stale in-flight UI state so the
@@ -168,7 +169,8 @@ export async function startGitHubAuthFlow(): Promise<void> {
       );
     }
     // `github:auth-changed` is the primary completion signal; this poll is
-    // the fallback for a missed event, at the daemon's suggested cadence.
+    // the fallback for a missed event, at the daemon's suggested interval
+    // clamped to no faster than AUTH_POLL_INTERVAL.
     const pollMs = Math.max((result.interval ?? 5) * 1000, AUTH_POLL_INTERVAL);
     await pollForGitHubAuthCompletion(pollMs);
   } catch (error) {
