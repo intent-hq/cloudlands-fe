@@ -42,9 +42,13 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
   });
 
   afterEach(async () => {
-    // Restore the active provider even when an assertion fails mid-test so
-    // ordering-dependent state never leaks into later tests.
+    // Restore the active provider and clear the model-selection slices even
+    // when an assertion fails mid-test — the suite shares one live store, so
+    // leaked state would make later tests ordering-dependent. The hydration
+    // actions are already asserted to not trigger persistence writes.
     appStore.dispatch(setActiveProvider(getDefaultProviderId()));
+    appStore.dispatch(loadProviderModelsFromStorage({}));
+    appStore.dispatch(loadWorkspaceModelsFromStorage({}));
     await flush();
   });
 
