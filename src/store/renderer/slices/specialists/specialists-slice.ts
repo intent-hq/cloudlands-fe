@@ -123,7 +123,7 @@ export const setProviderModelOverrides = createAction<[overrides: Record<string,
 
 // ── DEPRECATED (Wave 2) ───────────────────────────────────────────────
 // Override actions are deprecated. Overrides are now persisted as user
-// specialist files (~/.augment/specialists/{id}.md) via saveFileSpecialist.
+// specialist files (~/.intent/specialists/{id}.md) via saveFileSpecialist.
 // These actions still update in-memory state for backward compatibility
 // but are no longer persisted to electron-store.
 /** @deprecated Use saveFileSpecialist instead */
