@@ -13,6 +13,8 @@
 } from '$store/renderer/slices/background-agent-executor/background-agent-executor-slice';
   import {
   ChangeStage,
+  type CommitFile,
+  type CommitInfo,
   type TrackedChange,
 } from '$features/file-tracking/types';
   import {
@@ -206,10 +208,71 @@
   // Panel layout manager
   const panelLayoutManager = $derived(getPanelLayoutManager(workspaceId));
 
-  // PR files derived from pushed commits
-  const prFiles = $derived(aggregatePRFiles(pushedCommits));
+  // PR files derived from pushed commits. The commit list payload is
+  // metadata-only (`file-tracking.loadCommits` skips per-commit tree diffs,
+  // PROTOCOL §5.19), so per-commit files are fetched via `git.commitDetails`
+  // (§5.6) on first PR expand and merged into the aggregation. `null` marks an
+  // in-flight fetch; it is cleared on failure so a later expand retries. Reset
+  // on workspace switch so the cache doesn't leak across workspaces.
+  let prCommitFileCache = $state<Record<string, CommitFile[] | null>>({});
+  let prCacheWorkspaceId = workspaceId;
+  $effect(() => {
+    if (workspaceId !== prCacheWorkspaceId) {
+      prCacheWorkspaceId = workspaceId;
+      prCommitFileCache = {};
+      expandedPRs = new Set();
+    }
+  });
+
+  const resolvedPushedCommits = $derived(
+    (pushedCommits as CommitInfo[]).map((c) => {
+      const cached = prCommitFileCache[c.hash];
+      return c.files || !cached ? c : { ...c, files: cached };
+    }),
+  );
+  const prFiles = $derived(aggregatePRFiles(resolvedPushedCommits));
+  // Whether any pushed commit's file list is still unknown (metadata-only and
+  // not yet fetched, or fetch in flight) — the expand chevron stays visible
+  // until we know the PR has no files.
+  const prFilesUnknown = $derived(
+    (pushedCommits as CommitInfo[]).some((c) => !c.files && !prCommitFileCache[c.hash]),
+  );
   const prTotalAdditions = $derived(prFiles.reduce((sum, f) => sum + f.additions, 0));
   const prTotalDeletions = $derived(prFiles.reduce((sum, f) => sum + f.deletions, 0));
+
+  function clearPRCommitFileMarker(hash: string) {
+    if (prCommitFileCache[hash] === null) {
+      const { [hash]: _, ...rest } = prCommitFileCache;
+      prCommitFileCache = rest;
+    }
+  }
+
+  function fetchPRCommitFilesIfNeeded() {
+    if (!workspaceId) return;
+    for (const commit of pushedCommits as CommitInfo[]) {
+      if (commit.files || prCommitFileCache[commit.hash] !== undefined) continue;
+      prCommitFileCache = { ...prCommitFileCache, [commit.hash]: null };
+      // `commitDetails` folds transport errors to `null`; the drawer simply
+      // shows no rows for that commit and a later expand retries.
+      appClient.git
+        .commitDetails(workspaceId, commit.hash)
+        .then((result) => {
+          if (!result) {
+            clearPRCommitFileMarker(commit.hash);
+            return;
+          }
+          const files: CommitFile[] =
+            result.fileDetails.length > 0
+              ? result.fileDetails
+              : result.files.map((f) => ({ path: f, additions: 0, deletions: 0 }));
+          prCommitFileCache = { ...prCommitFileCache, [commit.hash]: files };
+        })
+        .catch((error) => {
+          logger.error('Failed to fetch commit details for PR files', { hash: commit.hash, error });
+          clearPRCommitFileMarker(commit.hash);
+        });
+    }
+  }
 
   // Local state
   let prDrawerOpen = $state(false);
@@ -561,6 +624,7 @@
       newSet.delete(prNumber);
     } else {
       newSet.add(prNumber);
+      fetchPRCommitFilesIfNeeded();
     }
     expandedPRs = newSet;
   }
@@ -920,7 +984,7 @@
               {@const statusIcon =
                 pr.status === 'merged' ? faCodeMerge : faCodePullRequest}
               {@const isPRExpanded = expandedPRs.has(pr.number)}
-              {@const hasPRFiles = prFiles.length > 0}
+              {@const hasPRFiles = prFiles.length > 0 || prFilesUnknown}
               <div>
                 <!-- PR header -->
                 <div

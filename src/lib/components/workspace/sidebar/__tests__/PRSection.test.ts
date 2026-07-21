@@ -125,7 +125,13 @@ vi.mock('$features/git/git-cache', () => ({
 }));
 
 vi.mock('$features/git/git.client', () => ({
-  gitClient: { fetch: vi.fn().mockResolvedValue({ ok: true }), push: vi.fn().mockResolvedValue({ ok: true }) },
+  gitClient: { fetch: vi.fn().mockResolvedValue({ ok: true }), push: vi.fn().mockResolvedValue({ ok: true }), showFile: vi.fn().mockResolvedValue({ ok: true, data: '' }) },
+}));
+
+// PROTOCOL §5.6 — lazy per-commit file fetch for the metadata-only list payload.
+const mockCommitDetails = vi.hoisted(() => vi.fn());
+vi.mock('$lib/client', () => ({
+  appClient: { git: { commitDetails: mockCommitDetails, pull: vi.fn().mockResolvedValue({}) } },
 }));
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
@@ -197,11 +203,32 @@ async function renderPR(overrides: Partial<Record<string, unknown>> = {}) {
   return { ...r, onMergeDrawerToggle };
 }
 
+const testPR = {
+  number: 7,
+  title: 'feat: something',
+  url: 'https://github.com/o/r/pull/7',
+  htmlUrl: 'https://github.com/o/r/pull/7',
+  status: 'open',
+};
+
+function makePushedCommit(hash: string, overrides: Record<string, unknown> = {}) {
+  return {
+    hash,
+    message: `commit ${hash}`,
+    author: 'Test',
+    timestamp: Date.now(),
+    stage: 'pushed',
+    isPushed: true,
+    ...overrides,
+  };
+}
+
 describe('PRSection', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mockCreatePR.mockClear();
     mockCreatePR.mockResolvedValue({ success: true });
+    mockCommitDetails.mockReset();
     mocks.state.githubAuthed = true;
     mocks.state.acceptChanges.prTitle = '';
     mocks.state.acceptChanges.prDescription = '';
@@ -247,5 +274,110 @@ describe('PRSection', () => {
     const connectBtn = buttons.find((b) => b.textContent?.includes('Connect Remote'));
     await fireEvent.click(connectBtn!);
     await waitFor(() => expect(container.textContent).toContain('Add a git remote'));
+  });
+
+  it('PR expand lazily fetches git.commitDetails for metadata-only pushed commits', async () => {
+    mockCommitDetails.mockResolvedValue({
+      commitHash: 'abc',
+      author: 'Test',
+      authorEmail: 't@example.com',
+      date: '2026-07-21T00:00:00Z',
+      message: 'commit abc',
+      files: ['src/a.ts'],
+      fileDetails: [{ path: 'src/a.ts', additions: 3, deletions: 1 }],
+    });
+    const { container } = await renderPR({
+      hasPRs: true,
+      hasOpenPR: true,
+      pullRequests: [testPR],
+      pushedCommits: [makePushedCommit('abc')],
+      hasPushedCommits: true,
+    });
+    const toggle = await waitFor(() => {
+      const btn = Array.from(container.querySelectorAll('button')).find(
+        (b) => b.getAttribute('title') === 'Toggle file list',
+      );
+      expect(btn).toBeDefined();
+      return btn as HTMLButtonElement;
+    });
+    await fireEvent.click(toggle);
+
+    expect(mockCommitDetails).toHaveBeenCalledWith('ws-1', 'abc');
+    await waitFor(() => {
+      const fileRow = container.querySelector('[data-testid="file-row"]');
+      expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');
+    });
+
+    // Collapse + re-expand does not refetch (cache by hash).
+    await fireEvent.click(toggle);
+    await fireEvent.click(toggle);
+    expect(mockCommitDetails).toHaveBeenCalledTimes(1);
+  });
+
+  it('PR expand does not fetch details when pushed commits already carry files', async () => {
+    const { container } = await renderPR({
+      hasPRs: true,
+      hasOpenPR: true,
+      pullRequests: [testPR],
+      pushedCommits: [
+        makePushedCommit('abc', { files: [{ path: 'src/a.ts', additions: 2, deletions: 0 }] }),
+      ],
+      hasPushedCommits: true,
+    });
+    const toggle = await waitFor(() => {
+      const btn = Array.from(container.querySelectorAll('button')).find(
+        (b) => b.getAttribute('title') === 'Toggle file list',
+      );
+      expect(btn).toBeDefined();
+      return btn as HTMLButtonElement;
+    });
+    await fireEvent.click(toggle);
+    await waitFor(() => {
+      const fileRow = container.querySelector('[data-testid="file-row"]');
+      expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');
+    });
+    expect(mockCommitDetails).not.toHaveBeenCalled();
+  });
+
+  it('a failed lazy PR details fetch is retried on the next expand', async () => {
+    // `commitDetails` folds transport errors to `null` — the marker must be
+    // cleared so a later expand refetches instead of getting stuck.
+    mockCommitDetails.mockResolvedValueOnce(null).mockResolvedValue({
+      commitHash: 'abc',
+      author: 'Test',
+      authorEmail: 't@example.com',
+      date: '2026-07-21T00:00:00Z',
+      message: 'commit abc',
+      files: ['src/a.ts'],
+      fileDetails: [{ path: 'src/a.ts', additions: 3, deletions: 1 }],
+    });
+    const { container } = await renderPR({
+      hasPRs: true,
+      hasOpenPR: true,
+      pullRequests: [testPR],
+      pushedCommits: [makePushedCommit('abc')],
+      hasPushedCommits: true,
+    });
+    const toggle = await waitFor(() => {
+      const btn = Array.from(container.querySelectorAll('button')).find(
+        (b) => b.getAttribute('title') === 'Toggle file list',
+      );
+      expect(btn).toBeDefined();
+      return btn as HTMLButtonElement;
+    });
+    await fireEvent.click(toggle);
+    expect(mockCommitDetails).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="file-row"]')).toBeNull();
+    });
+
+    // Collapse + re-expand retries and succeeds this time.
+    await fireEvent.click(toggle);
+    await fireEvent.click(toggle);
+    expect(mockCommitDetails).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      const fileRow = container.querySelector('[data-testid="file-row"]');
+      expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');
+    });
   });
 });
