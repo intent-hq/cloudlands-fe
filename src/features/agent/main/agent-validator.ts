@@ -79,7 +79,7 @@ export class AgentValidator {
       errors.push(
         `System prompt exceeds maximum length of ${AgentValidator.MAX_PROMPT_LENGTH} characters ` +
           `(current: ${config.systemPrompt.length}, ${percentOver}% over limit). ` +
-          'This may be caused by large user rules files (.augment/rules/, CLAUDE.md) or many context references. ' +
+          'This may be caused by large user rules files (.intent/rules/, CLAUDE.md) or many context references. ' +
           'Try reducing the size of custom rules or removing some context references.',
       );
       logger.warn('System prompt validation failed - too long', {
