@@ -25,7 +25,7 @@ Release workflows require the following secrets configured on `intent-hq/cloudla
 
 **Repository access:**
 - `RELEASE_PAT` — Personal access token with `repo` scope on `cloudlands-fe` + `cloudlands-releases`
-- `INTENTD_READ_PAT` — Personal access token with read-only access to `intent-hq/intentd`
+- `INTENTD_READ_PAT` — Personal access token with read-only access to `intent-hq/intentd` (used to download the pinned intentd release assets while the repo is private)
 
 ## Beta Release Workflow
 
@@ -43,18 +43,18 @@ The beta release workflow is defined in `.github/workflows/release-beta.yml`.
 4. Sets up pnpm and Node.js 22 with pnpm cache
 5. Installs frontend dependencies with pnpm
 6. Validates `INTENTD_READ_PAT` is configured
-7. Checks out `intent-hq/intentd` (main branch)
-8. Sets up Rust toolchain and caches Rust dependencies
-9. Builds the `intentd` sidecar binary (arm64)
-10. Bumps version in `package.json`
-11. Commits version bump and creates git tag `v{version}`
-12. Imports macOS code signing certificate into a temporary keychain
-13. Builds and packages the macOS app (`.dmg` + `.zip` + `.blockmap` + `latest-mac.yml`)
-14. Signs and notarizes the app via `scripts/notarize.js` afterSign hook
+7. Reads the pinned intentd version from `intentd.version`
+8. Fetches the pinned intentd release asset via `scripts/fetch-sidecar.cjs` (sha256-verified, staged at `resources/sidecar/intentd`); fails fast if the pinned release or its assets don't exist on `intent-hq/intentd`
+9. Bumps version in `package.json`
+10. Commits version bump and creates git tag `v{version}`
+11. Imports macOS code signing certificate into a temporary keychain
+12. Builds and packages the macOS app (`.dmg` + `.zip` + `.blockmap` + `latest-mac.yml`)
+13. Signs and notarizes the app via `scripts/notarize.js` afterSign hook (the staged sidecar is signed by the `scripts/sign-sidecar.js` afterPack hook)
+14. Generates release notes from the fe commit range; the intentd section references the pinned intentd release
 15. Publishes artifacts to `intent-hq/cloudlands-releases`:
     - Creates immutable versioned release: `v{version}`
     - Updates rolling `beta` release tag (clobbers existing assets)
-16. Atomically pushes the version commit and tag to `cloudlands-fe`
+16. Atomically pushes the version commit and tag to `cloudlands-fe` (no tags are pushed to `intent-hq/intentd` — it releases on its own cycle)
 17. Posts workflow summary with download URLs
 
 **Output:**
@@ -85,23 +85,21 @@ Windows and Linux builds will follow the same GitHub Releases model but ship uns
 
 ## Manual Local Build (Development / Testing)
 
-To build the app locally for manual testing:
+To build the app locally for manual testing with the pinned intentd release:
 
 ```bash
-# Clone and build intentd sidecar (if not already available)
-# In a sibling directory or separate location:
-git clone https://github.com/intent-hq/intentd.git
-cd intentd
-cargo build --release --target aarch64-apple-darwin
-INTENTD_BIN="$(pwd)/target/aarch64-apple-darwin/release/intentd"
+# Fetch the pinned intentd sidecar (see intentd.version); set INTENTD_READ_PAT
+# (or GH_TOKEN/GITHUB_TOKEN) while the intentd repo is private
+node scripts/fetch-sidecar.cjs
 
-# Return to cloudlands-fe repo root
-cd /path/to/cloudlands-fe
-
-# Build the frontend and package (set INTENTD_BIN to the built binary path)
+# Build the frontend and package (point INTENTD_BIN at the staged sidecar)
 pnpm run build
-INTENTD_BIN="$INTENTD_BIN" pnpm run dist:mac
+INTENTD_BIN="$(pwd)/resources/sidecar/intentd" pnpm run dist:mac
 ```
+
+To build against a locally built intentd instead, point `INTENTD_BIN` at your
+`cargo build --release` output (or omit it in the monorepo, where
+`scripts/copy-sidecar.cjs` defaults to `packages/intentd/target/release`).
 
 The packaged `.dmg` and `.zip` will be in `dist-electron/`.
 

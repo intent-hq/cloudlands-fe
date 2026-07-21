@@ -41,21 +41,9 @@ describe('generate-release-notes CLI', () => {
         });
       }
 
-      // Mock compare endpoint for intentd
-      if (urlStr.includes('/repos/intent-hq/intentd/compare/')) {
-        return Response.json({
-          commits: [
-            { commit: { message: 'perf: improve performance (#10)' }, sha: 'ghi789' },
-          ],
-        });
-      }
-
       // Mock commits endpoint for SHA resolution
       if (urlStr.includes('/commits/v1.0.0')) {
         return Response.json({ sha: 'fe-resolved-sha' });
-      }
-      if (urlStr.includes('/commits/intentd-head')) {
-        return Response.json({ sha: 'intentd-resolved-sha' });
       }
 
       throw new Error(`Unexpected fetch URL: ${urlStr}`);
@@ -72,15 +60,14 @@ describe('generate-release-notes CLI', () => {
       '--version', '1.0.0',
       '--fe-base', 'v0.9.0',
       '--fe-head', 'v1.0.0',
-      '--intentd-base', 'intentd-base',
-      '--intentd-head', 'intentd-head',
+      '--intentd-version', '0.9.0',
       '--out', outFile,
       '--manifest-out', manifestFile,
     ];
     process.env.GITHUB_TOKEN = 'fake-token';
 
     // Dynamically import and run the script
-    const scriptModule = await import('./generate-release-notes.mjs?t=' + Date.now());
+    await import('./generate-release-notes.mjs?t=' + Date.now());
 
     // Wait a bit for async operations to complete
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -96,9 +83,10 @@ describe('generate-release-notes CLI', () => {
     expect(markdown).toContain('### Bug Fixes');
     expect(markdown).toContain('fix bug');
     expect(markdown).toContain('[#2](https://github.com/intent-hq/cloudlands-fe/pull/2)');
-    expect(markdown).toContain('### Performance');
-    expect(markdown).toContain('improve performance');
-    expect(markdown).toContain('[#10](https://github.com/intent-hq/intentd/pull/10)');
+    // intentd section references the pinned release instead of a commit range
+    expect(markdown).toContain(
+      '[intentd v0.9.0](https://github.com/intent-hq/intentd/releases/tag/v0.9.0)',
+    );
     expect(markdown).not.toContain('bump version');
 
     // Verify manifest output
@@ -106,14 +94,14 @@ describe('generate-release-notes CLI', () => {
     expect(manifest.version).toBe('1.0.0');
     expect(manifest.feTag).toBe('v1.0.0');
     expect(manifest.feSha).toBe('fe-resolved-sha');
-    expect(manifest.intentdSha).toBe('intentd-resolved-sha');
+    expect(manifest.intentdVersion).toBe('0.9.0');
+    expect(manifest.intentdSha).toBeUndefined();
     expect(manifest.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
-    // Verify GitHub API calls were made
+    // Verify GitHub API calls were made — fe only, no intentd API traffic
     expect(fetchCalls.some(url => url.includes('/repos/intent-hq/cloudlands-fe/compare/'))).toBe(true);
-    expect(fetchCalls.some(url => url.includes('/repos/intent-hq/intentd/compare/'))).toBe(true);
     expect(fetchCalls.some(url => url.includes('/commits/v1.0.0'))).toBe(true);
-    expect(fetchCalls.some(url => url.includes('/commits/intentd-head'))).toBe(true);
+    expect(fetchCalls.some(url => url.includes('/repos/intent-hq/intentd/'))).toBe(false);
 
     // Verify correct headers were used (Bearer token, API version)
     expect(mockFetch).toHaveBeenCalled();
@@ -125,7 +113,7 @@ describe('generate-release-notes CLI', () => {
     }
   });
 
-  it('uses per-repo tokens (FE_TOKEN / INTENTD_TOKEN) when provided', async () => {
+  it('normalizes a v-prefixed --intentd-version and uses FE_TOKEN when provided', async () => {
     // Track the Authorization header used for each URL
     const authByUrl: Array<{ url: string; auth: string | undefined }> = [];
     const mockFetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
@@ -136,14 +124,8 @@ describe('generate-release-notes CLI', () => {
       if (urlStr.includes('/repos/intent-hq/cloudlands-fe/compare/')) {
         return Response.json({ commits: [{ commit: { message: 'feat: fe feature (#1)' }, sha: 'abc123' }] });
       }
-      if (urlStr.includes('/repos/intent-hq/intentd/compare/')) {
-        return Response.json({ commits: [{ commit: { message: 'fix: intentd fix (#10)' }, sha: 'ghi789' }] });
-      }
       if (urlStr.includes('/repos/intent-hq/cloudlands-fe/commits/')) {
         return Response.json({ sha: 'fe-resolved-sha' });
-      }
-      if (urlStr.includes('/repos/intent-hq/intentd/commits/')) {
-        return Response.json({ sha: 'intentd-resolved-sha' });
       }
       throw new Error(`Unexpected fetch URL: ${urlStr}`);
     });
@@ -158,17 +140,14 @@ describe('generate-release-notes CLI', () => {
       '--version', '1.0.0',
       '--fe-base', 'v0.9.0',
       '--fe-head', 'fe-head-sha',
-      '--intentd-base', 'intentd-base',
-      '--intentd-head', 'intentd-head',
+      '--intentd-version', 'v0.9.0',
       '--out', outFile,
       '--manifest-out', manifestFile,
     ];
     const savedGithubToken = process.env.GITHUB_TOKEN;
     const savedFeToken = process.env.FE_TOKEN;
-    const savedIntentdToken = process.env.INTENTD_TOKEN;
     delete process.env.GITHUB_TOKEN;
     process.env.FE_TOKEN = 'fe-token';
-    process.env.INTENTD_TOKEN = 'intentd-token';
 
     try {
       vi.resetModules();
@@ -179,26 +158,25 @@ describe('generate-release-notes CLI', () => {
         readFileSync(manifestFile, 'utf8');
       }, { timeout: 5000 });
 
-      // Every cloudlands-fe API call used FE_TOKEN; every intentd call used INTENTD_TOKEN
+      // Every cloudlands-fe API call used FE_TOKEN; no intentd API calls were made
       const feCalls = authByUrl.filter(c => c.url.includes('/repos/intent-hq/cloudlands-fe/'));
       const intentdCalls = authByUrl.filter(c => c.url.includes('/repos/intent-hq/intentd/'));
       expect(feCalls.length).toBeGreaterThanOrEqual(2); // compare + manifest SHA resolution
-      expect(intentdCalls.length).toBeGreaterThanOrEqual(2);
+      expect(intentdCalls.length).toBe(0);
       expect(feCalls.every(c => c.auth === 'Bearer fe-token')).toBe(true);
-      expect(intentdCalls.every(c => c.auth === 'Bearer intentd-token')).toBe(true);
 
-      // Output still generated end-to-end
+      // Output still generated end-to-end; leading `v` is stripped from the pin
       const markdown = readFileSync(outFile, 'utf8');
       expect(markdown).toContain('fe feature');
-      expect(markdown).toContain('intentd fix');
+      expect(markdown).toContain(
+        '[intentd v0.9.0](https://github.com/intent-hq/intentd/releases/tag/v0.9.0)',
+      );
       const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'));
       expect(manifest.feSha).toBe('fe-resolved-sha');
-      expect(manifest.intentdSha).toBe('intentd-resolved-sha');
+      expect(manifest.intentdVersion).toBe('0.9.0');
     } finally {
       if (savedFeToken !== undefined) process.env.FE_TOKEN = savedFeToken;
       else delete process.env.FE_TOKEN;
-      if (savedIntentdToken !== undefined) process.env.INTENTD_TOKEN = savedIntentdToken;
-      else delete process.env.INTENTD_TOKEN;
       if (savedGithubToken !== undefined) process.env.GITHUB_TOKEN = savedGithubToken;
     }
   });

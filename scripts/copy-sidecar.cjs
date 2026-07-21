@@ -33,7 +33,15 @@ const destBin = path.join(destDir, `intentd${ext}`);
 if (!fs.existsSync(sourceBin)) {
   console.error(`Error: intentd binary not found at ${sourceBin}`);
   console.error("Build it first: cd packages/intentd && cargo build --release");
+  console.error("Or fetch the pinned release: node scripts/fetch-sidecar.cjs");
   process.exit(1);
+}
+
+// Release CI stages the pinned sidecar via fetch-sidecar.cjs and points INTENTD_BIN at
+// the staging path itself; copying a file onto itself would truncate it, so skip.
+if (path.resolve(sourceBin) === path.resolve(destBin)) {
+  console.log(`intentd binary already staged at ${destBin} — nothing to copy`);
+  process.exit(0);
 }
 
 fs.mkdirSync(destDir, { recursive: true });
