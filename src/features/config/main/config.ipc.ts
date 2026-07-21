@@ -5,7 +5,7 @@
  * Kept minimal and read-mostly for safety.
  *
  * P3-4: the legacy `workspace-config` electron-store is retired. Daemon-owned
- * sub-keys of `AppConfig` (ai.*, permissions.rules, userRules, workspaceRules)
+ * sub-keys of `AppConfig` (permissions.rules, userRules, workspaceRules)
  * are hydrated from and pushed to the daemon settings catalog via
  * `settings.get` / `settings.update` (PROTOCOL.md §5.12). FE-local sub-keys
  * (`appearance`, `editor`, `shortcuts`, `experimental`, `workspace.*`) are

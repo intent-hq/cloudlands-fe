@@ -24,11 +24,6 @@ vi.mock('../../../../shared/logger', () => ({
 
 function makeConfigManagerStub() {
   const state: Record<string, unknown> = {
-    'ai.apiUrl': 'https://api.example',
-    'ai.model': 'opus-x',
-    'ai.temperature': 0.5,
-    'ai.maxTokens': 1024,
-    'ai.streamingSpeed': 20,
     'permissions.rules': [{ pattern: 'ls', action: 'allow' }],
     userRules: { enabled: true, rules: [] },
     workspaceRules: { enabled: true, content: '', updatedAt: 't' },
@@ -61,11 +56,10 @@ describe('config-daemon-sync ↔ daemon settings.* (PROTOCOL.md §5.12)', () => 
     expect(getCalls.map((c) => (c[1] as { path: string }).path).sort()).toEqual(
       [...NON_SECRET_DAEMON_KEYS].sort(),
     );
-    expect(cm.__state['ai.apiUrl']).toBe('hydrated:ai.apiUrl');
     expect(cm.__state['userRules']).toBe('hydrated:userRules');
   });
 
-  it('hydrateFromDaemon never reads the sensitive ai.apiToken (no plaintext in FE)', async () => {
+  it('hydrateFromDaemon never reads any retired ai.* key (the group is removed)', async () => {
     requestMock.mockImplementation(async (_method: string, params: { path: string }) => ({
       path: params.path,
       value: null,
@@ -73,14 +67,14 @@ describe('config-daemon-sync ↔ daemon settings.* (PROTOCOL.md §5.12)', () => 
     const { hydrateFromDaemon } = await import('../config-daemon-sync');
     await hydrateFromDaemon(makeConfigManagerStub());
     const paths = requestMock.mock.calls.map((c) => (c[1] as { path: string }).path);
-    expect(paths).not.toContain('ai.apiToken');
+    expect(paths.some((p) => p.startsWith('ai.'))).toBe(false);
   });
 
   it('pushDaemonKey forwards a single-change batch to settings.update', async () => {
     const { pushDaemonKey } = await import('../config-daemon-sync');
-    await pushDaemonKey('ai.apiToken', 'dummy-token');
+    await pushDaemonKey('userRules', { enabled: true, rules: [] });
     expect(requestMock).toHaveBeenCalledWith('settings.update', {
-      changes: [{ path: 'ai.apiToken', value: 'dummy-token' }],
+      changes: [{ path: 'userRules', value: { enabled: true, rules: [] } }],
     });
   });
 
@@ -102,9 +96,10 @@ describe('config-daemon-sync ↔ daemon settings.* (PROTOCOL.md §5.12)', () => 
 
   it('isDaemonOwnedKey identifies the routed sub-keys', async () => {
     const { isDaemonOwnedKey } = await import('../config-daemon-sync');
-    expect(isDaemonOwnedKey('ai.apiToken')).toBe(true);
     expect(isDaemonOwnedKey('permissions.rules')).toBe(true);
     expect(isDaemonOwnedKey('userRules')).toBe(true);
+    expect(isDaemonOwnedKey('ai.apiToken')).toBe(false);
+    expect(isDaemonOwnedKey('ai.apiUrl')).toBe(false);
     expect(isDaemonOwnedKey('appearance.theme')).toBe(false);
     expect(isDaemonOwnedKey('editor.tabSize')).toBe(false);
   });
