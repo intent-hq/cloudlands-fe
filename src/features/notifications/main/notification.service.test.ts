@@ -85,6 +85,12 @@ const {
     }
   });
   const clientOff = vi.fn((event: string, listener: (n: never) => void) => {
+    if (event === 'notification') {
+      const idx = notificationListeners.indexOf(
+        listener as (n: { method: string; params?: unknown }) => void,
+      );
+      if (idx !== -1) notificationListeners.splice(idx, 1);
+    }
     if (event === 'status') {
       const idx = statusListeners.indexOf(listener as (status: string) => void);
       if (idx !== -1) statusListeners.splice(idx, 1);
@@ -362,11 +368,9 @@ describe('NotificationService daemon agent:idle subscription', () => {
       subscriptionId: 'stale-sub-1',
     });
 
-    // Events for the stale id must not trigger notifications.
-    notificationListeners[0](
-      buildEventsEventNotification({ subscriptionId: 'stale-sub-1' }),
-    );
-    await flush();
+    // stop() detached the notification listener, so stale-id events can no
+    // longer reach the service at all.
+    expect(notificationListeners).toHaveLength(0);
     expect(mockNotificationInstances.length).toBe(0);
 
     requestMock.mockImplementation(defaultImpl!);
@@ -508,6 +512,17 @@ describe('syncNotificationServices lifecycle diff (window-workspace-state-change
   });
 
   it('disposes (events.unsubscribe §6.2) services for workspaces no longer open anywhere', async () => {
+    // Return workspace-specific subscription ids so the unsubscribe assertion
+    // proves it targets the disposed workspace's subscription, not just any.
+    const defaultImpl = requestMock.getMockImplementation();
+    requestMock.mockImplementation(async (method: string, params?: unknown) => {
+      if (method === 'events.subscribe') {
+        const wsId = (params as { workspaceId?: string } | undefined)?.workspaceId;
+        return { subscriptionId: `sub-${wsId}` };
+      }
+      return defaultImpl!(method, params);
+    });
+
     syncNotificationServices(['sync-ws-a', 'sync-ws-b']);
     await flush();
 
@@ -515,7 +530,10 @@ describe('syncNotificationServices lifecycle diff (window-workspace-state-change
     await flush();
 
     expect(requestMock).toHaveBeenCalledWith('events.unsubscribe', {
-      subscriptionId: 'ws-sub-1',
+      subscriptionId: 'sub-sync-ws-a',
+    });
+    expect(requestMock).not.toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'sub-sync-ws-b',
     });
     // The disposed instance is dropped: re-opening starts a fresh service.
     requestMock.mockClear();
@@ -525,6 +543,7 @@ describe('syncNotificationServices lifecycle diff (window-workspace-state-change
       eventTypes: ['agent:idle'],
       workspaceId: 'sync-ws-a',
     });
+    requestMock.mockImplementation(defaultImpl!);
   });
 
   it('getNotificationService/disposeNotificationService manage the same singleton map', async () => {
