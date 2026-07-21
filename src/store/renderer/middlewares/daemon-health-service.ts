@@ -31,12 +31,15 @@ const POLL_INTERVAL_MS = 10_000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let statusListener: ((payload: { status: string }) => void) | null = null;
 let booted = false;
+let pollInFlight = false;
 
 /**
  * Poll system.status and dispatch success/failure.
+ * Guards against overlapping in-flight polls (e.g. rapid pollSystemStatus dispatches).
  */
 async function pollStatus(): Promise<void> {
-  appStore.dispatch(pollSystemStatus());
+  if (pollInFlight) return;
+  pollInFlight = true;
   try {
     const result = await backendRequest<SystemStatusWirePayload>('system.status');
     appStore.dispatch(systemStatusSuccess(result));
@@ -55,18 +58,22 @@ async function pollStatus(): Promise<void> {
     if (currentHealth === 'healthy') {
       appStore.dispatch(heartbeatFailed());
     }
+  } finally {
+    pollInFlight = false;
   }
 }
 
 /**
  * Start periodic polling (idempotent).
+ * Polls are routed through the pollSystemStatus action so the reducer's polling
+ * flag and the middleware's poll trigger stay in sync.
  */
 function startPolling(): void {
   if (pollTimer) return;
   // Immediate poll on start, then periodic.
-  void pollStatus();
+  appStore.dispatch(pollSystemStatus());
   pollTimer = setInterval(() => {
-    void pollStatus();
+    appStore.dispatch(pollSystemStatus());
   }, POLL_INTERVAL_MS);
 }
 
@@ -112,7 +119,11 @@ export function createDaemonHealthMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     if (!booted) boot();
     const result = next(action);
-    // pollSystemStatus is already handled by the boot-time interval; no per-action routing needed.
+    // React to pollSystemStatus (from the interval or e.g. the status dropdown)
+    // with an immediate poll; pollStatus() guards against overlapping polls.
+    if (action.type === pollSystemStatus.type) {
+      void pollStatus();
+    }
     return result;
   };
 }
@@ -128,4 +139,5 @@ export function disposeDaemonHealthService(): void {
     statusListener = null;
   }
   booted = false;
+  pollInFlight = false;
 }

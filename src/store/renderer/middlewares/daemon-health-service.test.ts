@@ -9,6 +9,7 @@ import { registerMockIpcHandler, mockInvoke, resetMockIpcRouter } from '$shared/
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { store as appStore } from '$store/renderer/store';
 import { disposeDaemonHealthService } from './daemon-health-service';
+import { pollSystemStatus } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import type { SystemStatusWirePayload } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
 const BACKEND = IPC_CHANNELS.BACKEND;
@@ -47,6 +48,8 @@ describe('daemon-health-service', () => {
       maxAgents: 8,
       version: '0.1.0',
       uptimeSeconds: 60,
+      cpuPercent: 3.5,
+      memoryBytes: 52428800,
       fingerprint: null,
       protocolVersion: '2.0',
       host: {
@@ -92,8 +95,100 @@ describe('daemon-health-service', () => {
       version: '0.1.0',
       protocolVersion: '2.0',
       uptimeSeconds: 60,
+      cpuPercent: 3.5,
+      memoryBytes: 52428800,
       os: 'macos',
       arch: 'aarch64',
+    });
+  });
+
+  it('triggers an immediate poll when pollSystemStatus is dispatched', async () => {
+    let pollCount = 0;
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'connected' }));
+    registerMockIpcHandler(BACKEND.REQUEST, async (payload: { method?: string }) => {
+      if (payload.method === 'system.status') {
+        pollCount++;
+        return {
+          ok: true,
+          result: {
+            running: true,
+            listenMode: 'uds',
+            transports: ['uds'],
+            port: null,
+            clients: 0,
+            agents: 0,
+            protocolVersion: '2.0',
+            host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
+          } as SystemStatusWirePayload,
+        };
+      }
+      return { ok: false, error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' } };
+    });
+
+    // Boot (dispatches the initial pollSystemStatus).
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.waitFor(() => {
+      expect(pollCount).toBe(1);
+    });
+
+    // Dispatching pollSystemStatus triggers an immediate poll without waiting
+    // for the 10s background interval.
+    appStore.dispatch(pollSystemStatus());
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.waitFor(() => {
+      expect(pollCount).toBe(2);
+    });
+  });
+
+  it('guards against overlapping in-flight polls', async () => {
+    let pollCount = 0;
+    let resolvePoll: ((value: unknown) => void) | null = null;
+    registerMockIpcHandler(BACKEND.GET_STATUS, async () => ({ status: 'connected' }));
+    registerMockIpcHandler(BACKEND.REQUEST, async (payload: { method?: string }) => {
+      if (payload.method === 'system.status') {
+        pollCount++;
+        // Hold the poll open until the test resolves it.
+        await new Promise((resolve) => {
+          resolvePoll = resolve;
+        });
+        return {
+          ok: true,
+          result: {
+            running: true,
+            listenMode: 'uds',
+            transports: ['uds'],
+            port: null,
+            clients: 0,
+            agents: 0,
+            protocolVersion: '2.0',
+            host: { os: 'macos', arch: 'aarch64', hasDisplay: true, locality: 'local' },
+          } as SystemStatusWirePayload,
+        };
+      }
+      return { ok: false, error: { code: 'METHOD_NOT_FOUND', message: 'unknown method' } };
+    });
+
+    appStore.dispatch({ type: '__BOOT__' });
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.waitFor(() => {
+      expect(pollCount).toBe(1);
+    });
+
+    // Dispatch more pollSystemStatus actions while the first poll is in flight —
+    // they must not start overlapping requests.
+    appStore.dispatch(pollSystemStatus());
+    appStore.dispatch(pollSystemStatus());
+    await vi.advanceTimersByTimeAsync(100);
+    expect(pollCount).toBe(1);
+
+    // Complete the in-flight poll; a subsequent dispatch polls again.
+    resolvePoll!(undefined);
+    await vi.advanceTimersByTimeAsync(100);
+    appStore.dispatch(pollSystemStatus());
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.waitFor(() => {
+      expect(pollCount).toBe(2);
     });
   });
 

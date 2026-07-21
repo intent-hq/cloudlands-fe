@@ -74,6 +74,8 @@ describe('daemonHealthReducer', () => {
         maxAgents: 8,
         version: '0.1.0',
         uptimeSeconds: 120,
+        cpuPercent: 12.34,
+        memoryBytes: 104857600,
         fingerprint: 'abc123',
         protocolVersion: '2.0',
         host: {
@@ -96,6 +98,8 @@ describe('daemonHealthReducer', () => {
         version: '0.1.0',
         protocolVersion: '2.0',
         uptimeSeconds: 120,
+        cpuPercent: 12.34,
+        memoryBytes: 104857600,
         os: 'macos',
         arch: 'aarch64',
         transport: undefined,
@@ -112,7 +116,7 @@ describe('daemonHealthReducer', () => {
         port: 9000,
         clients: 1,
         agents: 0,
-        // maxAgents, version, uptimeSeconds missing (older daemon)
+        // maxAgents, version, uptimeSeconds, cpuPercent, memoryBytes missing (older daemon)
         fingerprint: null,
         protocolVersion: '2.0',
         host: {
@@ -135,6 +139,8 @@ describe('daemonHealthReducer', () => {
         version: undefined,
         protocolVersion: '2.0',
         uptimeSeconds: undefined,
+        cpuPercent: undefined,
+        memoryBytes: undefined,
         os: 'linux',
         arch: 'x86_64',
         transport: undefined,

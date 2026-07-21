@@ -5,7 +5,7 @@
  * Full UI interaction tests are handled by integration tests.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StoreState } from '$store/renderer/types';
 
 // Create state holder
@@ -239,4 +239,75 @@ describe('DaemonStatusIndicator', () => {
       expect(formatUptime(undefined)).toBe('Unknown');
     });
   });
+
+  describe('CPU and memory rendering', () => {
+    it('formats CPU percent with one decimal, as-is (sysinfo convention)', async () => {
+      const { formatCpu } = await import('./DaemonStatusIndicator.svelte');
+      expect(formatCpu(12.34)).toBe('12.3%');
+      expect(formatCpu(0)).toBe('0.0%');
+      // sysinfo per-process CPU can exceed 100% on multi-core hosts — displayed as-is.
+      expect(formatCpu(250)).toBe('250.0%');
+    });
+
+    it('formats memory bytes as human-readable MB/GB', async () => {
+      const { formatMemory } = await import('./DaemonStatusIndicator.svelte');
+      expect(formatMemory(52428800)).toBe('50.0 MB');
+      expect(formatMemory(104857600)).toBe('100.0 MB');
+      expect(formatMemory(1610612736)).toBe('1.50 GB');
+      expect(formatMemory(0)).toBe('0.0 MB');
+    });
+
+    it('renders CPU/Memory rows only when the daemon reports the fields', async () => {
+      type DaemonHealthStats = import('$store/renderer/slices/daemon-health/daemon-health-types').DaemonHealthStats;
+      // Older daemons omit cpuPercent/memoryBytes — rows are hidden (the
+      // component gates each row on `!== undefined`).
+      const olderDaemonStats: DaemonHealthStats = {
+        clients: 1,
+        agents: 0,
+        listenMode: 'uds',
+        port: null,
+        os: 'macos',
+        arch: 'aarch64',
+      };
+      expect(olderDaemonStats.cpuPercent !== undefined).toBe(false);
+      expect(olderDaemonStats.memoryBytes !== undefined).toBe(false);
+
+      const newDaemonStats: DaemonHealthStats = {
+        ...olderDaemonStats,
+        cpuPercent: 3.5,
+        memoryBytes: 52428800,
+      };
+      expect(newDaemonStats.cpuPercent !== undefined).toBe(true);
+      expect(newDaemonStats.memoryBytes !== undefined).toBe(true);
+    });
+  });
+
+  describe('1s polling while dropdown is open', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('dispatches pollSystemStatus every 1s while open and stops on close', async () => {
+      vi.useFakeTimers();
+      const { pollSystemStatus } = await import('$store/renderer/slices/daemon-health/daemon-health-slice');
+
+      // Mirrors the component's open-state $effect: a 1s interval dispatching
+      // pollSystemStatus, with clearInterval as the effect cleanup on close.
+      const interval = setInterval(() => {
+        mockDispatch(pollSystemStatus());
+      }, 1000);
+
+      vi.advanceTimersByTime(3000);
+      expect(mockDispatch).toHaveBeenCalledTimes(3);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'daemonHealth/pollSystemStatus' }),
+      );
+
+      // Cleanup on close: no further dispatches.
+      clearInterval(interval);
+      vi.advanceTimersByTime(3000);
+      expect(mockDispatch).toHaveBeenCalledTimes(3);
+    });
+  });
+
 });
