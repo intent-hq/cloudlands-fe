@@ -277,7 +277,7 @@ describe("SpecialistsMutationMiddleware (fake seam, real store)", () => {
         model: "fable-5",
         behaviorPrompt: s.defaultBehaviorPrompt,
         source: "user" as const,
-        path: `/home/u/.augment/specialists/${s.id}.md`,
+        path: `/home/u/.intent/specialists/${s.id}.md`,
       }));
       list.mockResolvedValue(all9AsUser);
       appStore.dispatch(loadFileSpecialists());
