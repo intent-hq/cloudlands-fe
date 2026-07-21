@@ -150,13 +150,22 @@ describe("githubAuthStoreService (fake seam, real store)", () => {
       expiresIn: 899,
       interval: 5,
     });
-    api.checkAuthComplete.mockResolvedValueOnce({
-      success: true,
-      data: { user: null, isComplete: true },
+    // Capture the state as the first poll fires — the codes must already be
+    // stored while the flow is pending.
+    let deviceFlowDuringPoll: unknown = "unset";
+    api.checkAuthComplete.mockImplementationOnce(async () => {
+      deviceFlowDuringPoll = ghState().deviceFlow;
+      return { success: true, data: { user: null, isComplete: true } };
     });
 
     await startGitHubAuthFlow();
 
+    expect(deviceFlowDuringPoll).toEqual({
+      userCode: "ABCD-1234",
+      verificationUri: "https://github.com/login/device",
+      expiresIn: 899,
+      interval: 5,
+    });
     expect(ghState().isAuthenticated).toBe(true);
     // Terminal transition clears the codes.
     expect(ghState().deviceFlow).toBeNull();

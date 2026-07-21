@@ -21,7 +21,7 @@ export type GitHubAuthState = {
   user: GitHubUser | null;
   /** Whether authentication is in progress */
   isAuthenticating: boolean;
-  /** OAuth URL for authentication (shown to user) */
+  /** Verification URI while a device flow is pending (§5.27); null otherwise */
   oauthUrl: string | null;
   /** Device-flow codes while a flow is pending (null otherwise) */
   deviceFlow: GitHubDeviceFlowInfo | null;

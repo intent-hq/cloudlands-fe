@@ -1323,7 +1323,7 @@ function mapDaemonMcpState(state: unknown): McpServerStatus | null {
  * dispatched action into the state updates (fetch identity on `authorized`,
  * error on `expired`/`denied`/`error`, signed-out on `revoked`).
  */
-function handleGithubAuthChangedEvent(event: WorkspaceEvent): void {
+function handleGitHubAuthChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   const status = data?.status;
   if (
@@ -1585,7 +1585,7 @@ function handleNotification(method: string, params: unknown): void {
   // `github:auth-changed` (§6.5) is global — no `workspaceId` envelope — so
   // it must also run before the workspace-id gate below.
   if (type === 'github:auth-changed') {
-    handleGithubAuthChangedEvent(event);
+    handleGitHubAuthChangedEvent(event);
     return;
   }
 

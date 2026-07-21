@@ -16,10 +16,6 @@ export const selectGitHubAuthIsAuthenticating = store.createSelector(
   (state) => state.githubAuth.isAuthenticating,
 );
 
-export const selectGitHubAuthOauthUrl = store.createSelector(
-  (state) => state.githubAuth.oauthUrl,
-);
-
 export const selectGitHubAuthDeviceFlow = store.createSelector(
   (state) => state.githubAuth.deviceFlow,
 );

@@ -150,6 +150,7 @@ export const githubAuthReducer = createReducer<GitHubAuthState>(initialState)
   .with(logoutCompleted, (state) => ({
     ...state,
     isAuthenticated: false,
+    isAuthenticating: false,
     user: null,
     oauthUrl: null,
     deviceFlow: null,
