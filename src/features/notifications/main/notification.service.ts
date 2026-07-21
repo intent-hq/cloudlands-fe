@@ -179,6 +179,11 @@ export class NotificationService {
    * `events.subscribe`. Mirrors the terminal-registry / script-manager
    * long-lived subscription pattern: the listener persists across reconnects
    * (same singleton client); only the subscription id is re-issued.
+   *
+   * The notification listener and reconnect disposer are attached
+   * synchronously (before the first `await`), so a later `stop()` always
+   * observes and detaches them — it can never interleave with a
+   * half-attached state.
    */
   private async attachIdleSubscription(): Promise<void> {
     try {
@@ -242,10 +247,13 @@ export class NotificationService {
       this.subscriptionId = subscriptionId;
       this.clearStatusRetry();
     } catch (error) {
-      logger.warn('events.subscribe for agent:idle failed; will retry on connect', {
-        workspaceId: this.workspaceId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logger.warn(
+        'events.subscribe for agent:idle failed; will retry on the next connected transition',
+        {
+          workspaceId: this.workspaceId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
       // Initial-connect gap (RESUB-1 covers reconnects only): when start()
       // runs before the daemon client's FIRST successful connect, this
       // subscribe fails and `reconnected` never fires (it requires an
