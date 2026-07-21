@@ -183,7 +183,9 @@ async function main() {
 
     const manifest = {
       version: args.version,
-      feTag: args['fe-head'],
+      // fe-head may be a raw SHA (the workflow passes the pre-bump commit), so derive
+      // the tag name from the release version; feSha stays the precise identifier
+      feTag: `v${args.version}`,
       feSha,
       intentdVersion,
       generatedAt: new Date().toISOString(),

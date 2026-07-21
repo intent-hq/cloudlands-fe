@@ -54,7 +54,7 @@ The beta release workflow is defined in `.github/workflows/release-beta.yml`.
 15. Publishes artifacts to `intent-hq/cloudlands-releases`:
     - Creates immutable versioned release: `v{version}`
     - Updates rolling `beta` release tag (clobbers existing assets)
-16. Atomically pushes the version commit and tag to `cloudlands-fe` (no tags are pushed to `intent-hq/intentd` — it releases on its own cycle)
+16. Pushes the tag `v{version}` to `cloudlands-fe`, then force-pushes the version-bump commit to a `release/v{version}-version-bump` branch and opens a PR to main (no tags are pushed to `intent-hq/intentd` — it releases on its own cycle)
 17. Posts workflow summary with download URLs
 
 **Output:**

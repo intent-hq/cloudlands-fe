@@ -163,7 +163,9 @@ jobs:
       - name: Find previous release
         id: prev_release
         env:
-          GH_TOKEN: ${{ secrets.INTENTD_READ_PAT }}
+          # RELEASE_PAT has repo scope on cloudlands-releases; keeps INTENTD_READ_PAT
+          # scoped to downloading intentd release assets only
+          GH_TOKEN: ${{ steps.token.outputs.token }}
           VERSION: ${{ inputs.version }}
         run: |
           # Find the previous versioned release (highest vX.Y.Z tag strictly less than current version)

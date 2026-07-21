@@ -39,7 +39,18 @@ if (!fs.existsSync(sourceBin)) {
 
 // Release CI stages the pinned sidecar via fetch-sidecar.cjs and points INTENTD_BIN at
 // the staging path itself; copying a file onto itself would truncate it, so skip.
-if (path.resolve(sourceBin) === path.resolve(destBin)) {
+// Compare dev/ino rather than path strings so case-insensitive filesystems (Windows,
+// default macOS) and aliased paths can't defeat the guard.
+const isSameFile = (a, b) => {
+  try {
+    const sa = fs.statSync(a);
+    const sb = fs.statSync(b);
+    return sa.dev === sb.dev && sa.ino === sb.ino;
+  } catch {
+    return false;
+  }
+};
+if (isSameFile(sourceBin, destBin)) {
   console.log(`intentd binary already staged at ${destBin} — nothing to copy`);
   process.exit(0);
 }

@@ -172,6 +172,8 @@ describe('generate-release-notes CLI', () => {
         '[intentd v0.9.0](https://github.com/intent-hq/intentd/releases/tag/v0.9.0)',
       );
       const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'));
+      // feTag is derived from --version even when --fe-head is a raw SHA
+      expect(manifest.feTag).toBe('v1.0.0');
       expect(manifest.feSha).toBe('fe-resolved-sha');
       expect(manifest.intentdVersion).toBe('0.9.0');
     } finally {
