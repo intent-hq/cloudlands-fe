@@ -58,7 +58,11 @@ export interface StartAuthResult {
   error?: string;
   /** True if user is already authenticated with GitHub */
   alreadyAuthenticated?: boolean;
-  /** OAuth URL to redirect user to for authentication */
+  /**
+   * Device-flow verification URI (§5.27) — where the user enters `userCode`
+   * (usually https://github.com/login/device). Not a browser-redirect OAuth
+   * URL; mirrors `verificationUri` for FE shape parity.
+   */
   oauthUrl?: string;
   /** True if GitHub is configured but needs scope update */
   needsScopeUpdate?: boolean;
@@ -88,7 +92,11 @@ export interface GitHubAuthState {
   needsScopeUpdate?: boolean;
   /** New scopes that need to be authorized */
   updatedScopes?: string;
-  /** OAuth URL for authentication */
+  /**
+   * While a device flow is pending this carries the verification URI where
+   * the user enters the code (§5.27 `authStatus.oauthUrl`); empty otherwise.
+   * Not a browser-redirect OAuth URL.
+   */
   oauthUrl?: string;
   /**
    * Still-pending device flow from `github.authStatus` (§5.27) so a
