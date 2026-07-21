@@ -57,6 +57,8 @@ vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
     select: vi.fn(() => []),
   }),
   selectEffectiveBehaviorPrompt: { select: vi.fn(() => undefined) },
+  selectEffectiveModel: { select: vi.fn(() => undefined) },
+  selectEffectiveCodingAgent: { select: vi.fn(() => undefined) },
   selectUserOverrides: { select: vi.fn(() => ({ modelOverrides: {} })) },
 }));
 

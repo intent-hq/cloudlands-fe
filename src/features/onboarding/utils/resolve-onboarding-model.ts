@@ -38,7 +38,7 @@ import {
   getDefaultProviderId,
   parseCompoundModelId,
 } from '$shared/config/provider-config';
-import { resolvePreferredDefaultModel } from '$lib/utils/provider-model-selection';
+import { resolvePreferredDefaultModel } from '$lib/utils/effective-model-resolution';
 import { getModelsForProvider } from '$store/renderer/slices/model/model-utils';
 import { reloadModelsForProvider } from '$store/renderer/slices/model/model-slice';
 import {
