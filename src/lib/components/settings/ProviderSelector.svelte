@@ -42,7 +42,6 @@
   faCheck,
   faCircleNotch,
   faTerminal,
-  faXmark,
   faTriangleExclamation,
 } from '@fortawesome/free-solid-svg-icons';
   import NodeVersionWarning from '$lib/components/NodeVersionWarning.svelte';
@@ -93,16 +92,7 @@
   let auggieCommand = $state<string | null>(null);
 
   // MCP state
-  let mcpLoading = $state(true);
-  let mcpConfigured = $state<Record<string, boolean>>({
-    'claude-code': false,
-    codex: false,
-    opencode: false,
-    droid: false,
-    cortex: false,
-  });
   let setupInProgress = $state<Record<string, boolean>>({});
-  let uninstallInProgress = $state<Record<string, boolean>>({});
   let piMcpAdapterInstalled: boolean | null = $state(null);
   let piMcpAdapterLoading = $state(false);
   let piMcpAdapterChecked = $state(false);
@@ -314,16 +304,12 @@
   }
 
   /**
-   * Kick off all three loading tracks concurrently.
+   * Kick off both loading tracks concurrently.
    * Each track updates its own state slice and unblocks its own UI section.
    */
   async function checkProviderAvailability(refreshModels = false) {
     checkError = null;
-    await Promise.all([
-      loadAuggieStatus(),
-      loadProviderAvailability(refreshModels),
-      loadMcpStatus(),
-    ]);
+    await Promise.all([loadAuggieStatus(), loadProviderAvailability(refreshModels)]);
   }
 
   /** Silent recheck — updates data without showing loading spinners */
@@ -390,29 +376,6 @@
     }
   }
 
-  /** Track 3: MCP configuration -- STUB (MCP setup surface removed) */
-  async function loadMcpStatus() {
-    mcpLoading = true;
-    try {
-      // MCP setup channels (auggie:check-mcp-*, auggie:setup-mcp-*) were never
-      // functional in daemon mode — handlers removed as part of dead-IPC cleanup.
-      // Note: pi:check-mcp-adapter still exists and is handled separately via loadPiMcpAdapterStatus().
-      // This stub maintains UI flow but always returns false (not configured).
-      mcpConfigured = {
-        'claude-code': false,
-        codex: false,
-        opencode: false,
-        droid: false,
-        cortex: false,
-        pi: false,
-      };
-    } catch (err) {
-      logger.warn('Failed to check MCP status', { error: err });
-    } finally {
-      mcpLoading = false;
-    }
-  }
-
   async function loadPiMcpAdapterStatus() {
     piMcpAdapterLoading = true;
     try {
@@ -445,58 +408,6 @@
       });
     } finally {
       setupInProgress = { ...setupInProgress, pi: false };
-    }
-  }
-
-  async function handleSetupMcp(providerId: string) {
-    setupInProgress = { ...setupInProgress, [providerId]: true };
-    try {
-      // auggie:setup-mcp-* channels were never functional in daemon mode — handlers removed.
-      // Guide users to configure MCP on the daemon host (via provider CLI).
-      const providerName = ACP_PROVIDERS[providerId].displayName;
-      toast.error(
-        `Context Engine setup not available. Configure MCP for ${providerName} on the daemon host using its CLI.`,
-      );
-    } catch (err) {
-      logger.error(`Failed to setup MCP for ${providerId}:`, err);
-      toast.error(`Error setting up ${ACP_PROVIDERS[providerId].displayName}`);
-    } finally {
-      setupInProgress = { ...setupInProgress, [providerId]: false };
-    }
-  }
-
-  async function handleUninstallMcp(providerId: string) {
-    uninstallInProgress = { ...uninstallInProgress, [providerId]: true };
-    try {
-      const channelMap: Record<string, string> = {
-        'claude-code': AUGGIE_CHANNELS.UNINSTALL_MCP_CLAUDE_CODE,
-        codex: AUGGIE_CHANNELS.UNINSTALL_MCP_CODEX,
-        opencode: AUGGIE_CHANNELS.UNINSTALL_MCP_OPENCODE,
-        droid: AUGGIE_CHANNELS.UNINSTALL_MCP_DROID,
-        cortex: AUGGIE_CHANNELS.UNINSTALL_MCP_CORTEX,
-        pi: AUGGIE_CHANNELS.UNINSTALL_MCP_PI,
-      };
-
-      const channel = channelMap[providerId];
-      if (!channel) {
-        throw new Error(`Unknown provider: ${providerId}`);
-      }
-
-      const result = await invoke<{ success: boolean; error?: string }>(channel);
-
-      if (result?.success) {
-        mcpConfigured = { ...mcpConfigured, [providerId]: false };
-        toast.success(`${ACP_PROVIDERS[providerId].displayName} Context Engine removed`);
-      } else {
-        toast.error(
-          `Failed to remove ${ACP_PROVIDERS[providerId].displayName}: ${result?.error || 'Unknown error'}`,
-        );
-      }
-    } catch (err) {
-      logger.error(`Failed to uninstall MCP for ${providerId}:`, err);
-      toast.error(`Error removing ${ACP_PROVIDERS[providerId].displayName} Context Engine`);
-    } finally {
-      uninstallInProgress = { ...uninstallInProgress, [providerId]: false };
     }
   }
 
@@ -624,11 +535,6 @@
           <span class="text-sm text-foreground">{ACP_PROVIDERS.auggie.displayName}</span>
           <div class="h-3 w-16 bg-muted/50 rounded animate-pulse"></div>
         </div>
-        <ul class="list-disc pl-12 text-xs text-subtle">
-          <li><p>Real-time codebase understanding with Context Engine</p></li>
-          <li><p>Github, Linear, and Sentry workflow integration</p></li>
-          <li><p>Multiple AI model provider selection & use</p></li>
-        </ul>
       </div>
       <div class="h-4 w-20 bg-muted/50 rounded animate-pulse"></div>
     </div>
@@ -662,7 +568,7 @@
   {#if !loading || hasLoadedOnce}
     <!-- Auggie provider row -->
     {#if auggieLoading}
-      {@render skeleton('auggie', true)}
+      {@render skeleton('auggie')}
     {:else}
       {@const auggieProvider = providerOptions.find((p) => p.id === 'auggie')}
       {@const isAuggieActive = $activeProviderId === 'auggie'}
@@ -694,17 +600,6 @@
                 </span>
               {/if}
             </div>
-            <ul class="list-disc pl-12 text-xs text-subtle">
-              <li>
-                <p>Real-time codebase understanding with Context Engine</p>
-              </li>
-              <li>
-                <p>Github, Linear, and Sentry workflow integration</p>
-              </li>
-              <li>
-                <p>Multiple AI model provider selection & use</p>
-              </li>
-            </ul>
             {#if needsUpdate}
               <p class="text-xs text-amber-500">
                 v{auggieStatus?.version} installed (needs {MINIMUM_AUGGIE_VERSION}+)
@@ -845,47 +740,6 @@
                   onPathChange={(path) => handlePathChange(provider.id, path)}
                 />
               </div>
-              {#if provider.available && (auggieLoading || mcpLoading)}
-                <div class="h-3 w-16 bg-muted/50 rounded animate-pulse"></div>
-              {:else if provider.available && auggieStatus?.installed && auggieStatus?.authenticated}
-                <!-- MCP button for auggie-enabled providers -->
-                {#if setupInProgress[provider.id]}
-                  <Button size="xs" variant="ghost" class="flex items-center gap-1">
-                    <Fa icon={faCircleNotch} class="w-3 h-3 text-ghost animate-spin" />
-                    <span class="text-xs text-subtle">Setting up...</span>
-                  </Button>
-                {:else if uninstallInProgress[provider.id]}
-                  <Button size="xs" variant="ghost" class="flex items-center gap-1">
-                    <Fa icon={faCircleNotch} class="w-3 h-3 text-ghost animate-spin" />
-                    <span class="text-xs text-subtle">Removing...</span>
-                  </Button>
-                {:else if mcpConfigured[provider.id]}
-                  <Button
-                    onclick={() => handleUninstallMcp(provider.id)}
-                    title="Remove Auggie Context Engine MCP from {provider.name}"
-                    size="xs"
-                    variant="ghost"
-                    class="group"
-                  >
-                    <Logo width={11} />
-                    <span>Context Engine</span>
-                    <Fa
-                      icon={faXmark}
-                      class="w-2.5 h-2.5 text-destructive-foreground hidden group-hover:inline"
-                    />
-                  </Button>
-                {:else}
-                  <Button
-                    onclick={() => handleSetupMcp(provider.id)}
-                    size="xs"
-                    variant="outline"
-                    title="Add Auggie Context Engine MCP to {provider.name}"
-                  >
-                    <Logo width={11} class="group-hover:hidden" />
-                    <span>Enable Context Engine</span>
-                  </Button>
-                {/if}
-              {/if}
             </div>
             {#if provider.id === 'pi' && provider.available && piMcpAdapterInstalled === false}
               <div class="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
@@ -1106,7 +960,7 @@
   </span>
 {/snippet}
 
-{#snippet skeleton(providerid: string, showDescription = false)}
+{#snippet skeleton(providerid: string)}
   <div class="flex items-start justify-between gap-4">
     <div class="space-y-1">
       <div class="flex items-center gap-2 h-7">
@@ -1114,13 +968,6 @@
         <span class="text-sm text-foreground">{ACP_PROVIDERS[providerid].displayName}</span>
         <div class="h-3 w-16 bg-muted/50 rounded animate-pulse"></div>
       </div>
-      {#if showDescription && providerid === 'auggie'}
-        <ul class="list-disc pl-12 text-xs text-subtle">
-          <li><p>Real-time codebase understanding with Context Engine</p></li>
-          <li><p>Github, Linear, and Sentry workflow integration</p></li>
-          <li><p>Multiple AI model provider selection & use</p></li>
-        </ul>
-      {/if}
     </div>
     <div class="h-4 w-20 bg-muted/50 rounded animate-pulse"></div>
   </div>
