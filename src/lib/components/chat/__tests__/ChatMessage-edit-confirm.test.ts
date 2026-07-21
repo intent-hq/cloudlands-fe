@@ -77,7 +77,7 @@ function userMessage(): AgentMessage {
 
 /** Render, enter edit mode, and press save — the confirm dialog should open. */
 async function renderAndSave(onEditSubmit: (text: string, model?: string) => void) {
-  render(ChatMessage, { props: { message: userMessage(), onEditSubmit } });
+  const rendered = render(ChatMessage, { props: { message: userMessage(), onEditSubmit } });
 
   // Click the message body to enter edit mode.
   await fireEvent.click(screen.getByText('original text'));
@@ -86,6 +86,8 @@ async function renderAndSave(onEditSubmit: (text: string, model?: string) => voi
   // Save the edit — this must open the confirmation dialog, not submit.
   await fireEvent.click(screen.getByTestId('mock-input-submit'));
   await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+
+  return rendered;
 }
 
 describe('ChatMessage edit-and-regenerate confirm gate', () => {
@@ -120,5 +122,49 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     // Edit mode (the mock input) is still mounted with the draft value.
     const input = screen.getByTestId('mock-rich-input');
     expect(input.getAttribute('data-value')).toBe('original text');
+  });
+
+  it('renders the dialog portaled to the document body, not inline in the message', async () => {
+    const { container } = await renderAndSave(vi.fn());
+
+    const dialog = screen.getByRole('dialog');
+    // Portaled out of the ChatMessage subtree (where ancestor overflow/
+    // transforms clip the fixed overlay) into the body-level portal root.
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog.closest('.portal-container')?.parentElement).toBe(document.body);
+    // Full overlay modal with both actions visible.
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Edit & regenerate' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+    // Focus moves into the dialog on open — the wiring Escape relies on.
+    await waitFor(() => expect(document.activeElement).toBe(dialog));
+  });
+
+  it('Escape cancels back to edit mode with the draft intact', async () => {
+    const onEditSubmit = vi.fn();
+    await renderAndSave(onEditSubmit);
+
+    await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(onEditSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
+      'original text',
+    );
+  });
+
+  it('backdrop click cancels back to edit mode with the draft intact', async () => {
+    const onEditSubmit = vi.fn();
+    await renderAndSave(onEditSubmit);
+
+    const backdrop = screen.getByRole('dialog').parentElement!;
+    expect(backdrop.getAttribute('role')).toBe('presentation');
+    await fireEvent.click(backdrop);
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(onEditSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('mock-rich-input').getAttribute('data-value')).toBe(
+      'original text',
+    );
   });
 });
