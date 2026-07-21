@@ -151,7 +151,7 @@ function getArchivedWorkspacesForRepo(repoKey: string, workspaces: Workspace[]):
 
 /**
  * Pending workspace deletions awaiting commit, keyed by workspaceId. Transient,
- * UI-only state (never Redux, per src/store AGENTS.md) — mirrors the
+ * UI-only state (never Redux, per src/store/renderer/AGENTS.md §2) — mirrors the
  * soft-hide-then-commit registry in `agent-mutation-service`. Each entry holds
  * the armed undo timer plus the commit closure so the unload flush below can
  * fire the wire call before the renderer (and its 15s setTimeout) dies.
