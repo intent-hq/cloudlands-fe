@@ -32,11 +32,11 @@ The following secrets must be configured in the `intent-hq/cloudlands-fe` reposi
 - **`RELEASE_PAT`** - Personal Access Token (classic or fine-grained) with:
   - Classic: `repo` scope on `intent-hq/cloudlands-fe` and `intent-hq/cloudlands-releases`
   - Fine-grained: `Contents: Read and write` + `Pull requests: Read and write`, with repository access to `cloudlands-fe` and `cloudlands-releases`
-- **`INTENTD_READ_PAT`** - Personal Access Token with read-only access to `intent-hq/intentd` (used by `scripts/fetch-sidecar.cjs` to download the pinned intentd release assets while the repo is private):
-  - Classic: `repo` scope (read-only use)
-  - Fine-grained: `Contents: Read-only` with repository access to `intentd`
+- **`INTENTD_READ_PAT`** - Personal Access Token used by `scripts/fetch-sidecar.cjs` to download the pinned intentd release assets while the repo is private:
+  - Fine-grained (preferred): `Contents: Read-only` with repository access to `intent-hq/intentd`
+  - Classic: `repo` scope (classic scopes are write-capable; only read access is exercised — prefer fine-grained)
 
-**Important:** If `INTENTD_READ_PAT` expires, the workflow will fail at the "Fetch pinned intentd sidecar" step with a release-not-found error.
+**Important:** If `INTENTD_READ_PAT` is invalid or expired, the workflow fails at the "Fetch pinned intentd sidecar" step — either with "Release v{X.Y.Z} not found" (GitHub returns 404 for private repos the token cannot read) or with "GitHub API error fetching release … HTTP 401/403" for bad credentials.
 
 ## Cutting a Beta Release
 
@@ -153,11 +153,14 @@ After verifying a beta release, promote it to the stable channel using the **Rel
 
 ## Troubleshooting
 
-### Pinned intentd Release Not Found
+### Pinned intentd Release Fetch Fails
 
-**Symptom:** "Fetch pinned intentd sidecar" step fails with "Release v{X.Y.Z} not found in intent-hq/intentd" (or a missing-asset/missing-checksum error).
+**Symptom:** "Fetch pinned intentd sidecar" step fails with one of:
+- "Release v{X.Y.Z} not found in intent-hq/intentd" — the pinned release doesn't exist, **or** the token cannot read the private repo (GitHub returns 404 in both cases)
+- "GitHub API error fetching release … HTTP 401/403" — invalid or expired credentials
+- A missing-asset / missing-checksum error — the release exists but lacks the per-target binary or sha256 assets
 
-**Fix:** Either the release for the version pinned in `intentd.version` hasn't been published on `intent-hq/intentd` (or lacks the per-target binary + sha256 assets), or `INTENTD_READ_PAT` has expired/lacks read access to the private repo. Publish the pinned intentd release, or update the `intentd.version` pin to an existing release via a PR to main. If the token expired, regenerate a fine-grained Personal Access Token with `Contents: Read-only` on `intent-hq/intentd` and update the secret in repository settings.
+**Fix:** For a genuinely missing release or assets, publish the pinned intentd release (with per-target binary + sha256 assets), or update the `intentd.version` pin to an existing release via a PR to main. For token issues (401/403, or 404 on a release that does exist), regenerate a fine-grained Personal Access Token with `Contents: Read-only` on `intent-hq/intentd` and update the `INTENTD_READ_PAT` secret in repository settings.
 
 ### RELEASE_PAT Permissions
 
