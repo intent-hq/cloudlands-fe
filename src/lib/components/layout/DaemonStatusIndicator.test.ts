@@ -5,7 +5,8 @@
  * Full UI interaction tests are handled by integration tests.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import type { StoreState } from '$store/renderer/types';
 
 // Create state holder
@@ -24,24 +25,11 @@ vi.mock('svelte-fa', () => ({
   default: () => null,
 }));
 
-// Mock tooltip
-vi.mock('$lib/components/ui/tooltip', () => ({
-  Tooltip: ({ children }: any) => children,
-}));
-
-// Mock dropdown menu - return a simple container
-vi.mock('$lib/components/ui/dropdown-menu.svelte', () => ({
-  default: ({ trigger, content }: any) => {
-    const toggle = () => {};
-    const close = () => {};
-    return { trigger: trigger?.({ toggle }), content: content?.({ close }) };
-  },
-}));
-
-// Mock Header component
-vi.mock('$lib/components/ui/Header.svelte', () => ({
-  default: ({ children }: any) => children,
-}));
+// Mock tooltip with a passthrough component so the real dropdown can render
+vi.mock('$lib/components/ui/tooltip', async () => {
+  const Tooltip = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockTooltip.svelte')).default;
+  return { Tooltip };
+});
 
 // Mock the store module
 vi.mock('$store/renderer/store', async () => {
@@ -239,4 +227,133 @@ describe('DaemonStatusIndicator', () => {
       expect(formatUptime(undefined)).toBe('Unknown');
     });
   });
+
+  describe('CPU and memory rendering', () => {
+    it('formats CPU percent with one decimal, as-is (sysinfo convention)', async () => {
+      const { formatCpu } = await import('./DaemonStatusIndicator.svelte');
+      expect(formatCpu(12.34)).toBe('12.3%');
+      expect(formatCpu(0)).toBe('0.0%');
+      // sysinfo per-process CPU can exceed 100% on multi-core hosts — displayed as-is.
+      expect(formatCpu(250)).toBe('250.0%');
+    });
+
+    it('formats memory bytes as human-readable MB/GB', async () => {
+      const { formatMemory } = await import('./DaemonStatusIndicator.svelte');
+      expect(formatMemory(52428800)).toBe('50.0 MB');
+      expect(formatMemory(104857600)).toBe('100.0 MB');
+      expect(formatMemory(1610612736)).toBe('1.50 GB');
+      expect(formatMemory(0)).toBe('0.0 MB');
+    });
+
+    it('renders CPU/Memory rows in the dropdown when the daemon reports the fields', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            cpuPercent: 3.5,
+            memoryBytes: 52428800,
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      expect(screen.getByText('CPU')).toBeTruthy();
+      expect(screen.getByText('3.5%')).toBeTruthy();
+      expect(screen.getByText('Memory')).toBeTruthy();
+      expect(screen.getByText('50.0 MB')).toBeTruthy();
+    });
+
+    it('hides CPU/Memory rows when an older daemon omits the fields', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: {
+            clients: 2,
+            agents: 1,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            // No cpuPercent / memoryBytes — pre-CPU/memory daemon.
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      // Other stats rows render, but CPU/Memory rows are absent.
+      expect(screen.getByText('WSS clients')).toBeTruthy();
+      expect(screen.queryByText('CPU')).toBeNull();
+      expect(screen.queryByText('Memory')).toBeNull();
+    });
+  });
+
+  describe('1s polling while dropdown is open', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('dispatches pollSystemStatus every 1s while open and stops on close', async () => {
+      vi.useFakeTimers();
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            uptimeSeconds: 300,
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+      };
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      const pollCalls = () =>
+        mockDispatch.mock.calls.filter(
+          ([action]) => action?.type === 'daemonHealth/pollSystemStatus',
+        ).length;
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      await fireEvent.click(trigger);
+
+      // Opening dispatches an immediate poll.
+      const baseline = pollCalls();
+      expect(baseline).toBeGreaterThanOrEqual(1);
+
+      // Every 1s while open: one more poll per second.
+      vi.advanceTimersByTime(3000);
+      expect(pollCalls()).toBe(baseline + 3);
+
+      // Closing stops the interval: no further dispatches.
+      await fireEvent.click(trigger);
+      const afterClose = pollCalls();
+      vi.advanceTimersByTime(3000);
+      expect(pollCalls()).toBe(afterClose);
+    });
+  });
+
 });

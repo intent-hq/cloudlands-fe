@@ -31,16 +31,25 @@ const POLL_INTERVAL_MS = 10_000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let statusListener: ((payload: { status: string }) => void) | null = null;
 let booted = false;
+let pollInFlight = false;
+// Bumped on dispose so a poll that resolves after a dispose(+reboot) cycle
+// cannot clear the in-flight flag or dispatch stale results.
+let pollGeneration = 0;
 
 /**
  * Poll system.status and dispatch success/failure.
+ * Guards against overlapping in-flight polls (e.g. rapid pollSystemStatus dispatches).
  */
 async function pollStatus(): Promise<void> {
-  appStore.dispatch(pollSystemStatus());
+  if (pollInFlight) return;
+  pollInFlight = true;
+  const generation = pollGeneration;
   try {
     const result = await backendRequest<SystemStatusWirePayload>('system.status');
+    if (generation !== pollGeneration) return;
     appStore.dispatch(systemStatusSuccess(result));
   } catch (_error) {
+    if (generation !== pollGeneration) return;
     // Poll failure — heartbeat/health-check failure while connected, or connection already down.
     // Dispatch failure action and, if we're still supposedly connected, also dispatch heartbeatFailed.
     //
@@ -55,18 +64,28 @@ async function pollStatus(): Promise<void> {
     if (currentHealth === 'healthy') {
       appStore.dispatch(heartbeatFailed());
     }
+  } finally {
+    if (generation === pollGeneration) {
+      pollInFlight = false;
+    }
   }
 }
 
 /**
  * Start periodic polling (idempotent).
+ * Polls are routed through the pollSystemStatus action so the reducer's polling
+ * flag and the middleware's poll trigger stay in sync.
  */
 function startPolling(): void {
   if (pollTimer) return;
   // Immediate poll on start, then periodic.
-  void pollStatus();
+  // Note: boot() runs inside the middleware before next(action), so this first
+  // dispatch is re-entrant on the very first action. The store shim processes
+  // nested dispatches synchronously, which is safe today — revisit if the shim's
+  // dispatch semantics change.
+  appStore.dispatch(pollSystemStatus());
   pollTimer = setInterval(() => {
-    void pollStatus();
+    appStore.dispatch(pollSystemStatus());
   }, POLL_INTERVAL_MS);
 }
 
@@ -112,7 +131,11 @@ export function createDaemonHealthMiddleware(): StoreMiddleware {
   return () => (next) => (action) => {
     if (!booted) boot();
     const result = next(action);
-    // pollSystemStatus is already handled by the boot-time interval; no per-action routing needed.
+    // React to pollSystemStatus (from the interval or e.g. the status dropdown)
+    // with an immediate poll; pollStatus() guards against overlapping polls.
+    if (action.type === pollSystemStatus.type) {
+      void pollStatus();
+    }
     return result;
   };
 }
@@ -128,4 +151,8 @@ export function disposeDaemonHealthService(): void {
     statusListener = null;
   }
   booted = false;
+  // Invalidate any in-flight poll so its late resolution can't dispatch stale
+  // results or clear the flag for a rebooted service.
+  pollGeneration++;
+  pollInFlight = false;
 }
