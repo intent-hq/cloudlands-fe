@@ -17,7 +17,7 @@
  * still mid-initialization through the middleware chain).
  */
 import type { StoreMiddleware } from '$lib/store-shim/types';
-import type { GitHubUser } from '$features/github-auth/types';
+import type { GitHubDeviceFlow, GitHubUser } from '$features/github-auth/types';
 import { githubAuthClient } from '$features/github-auth/renderer/github-auth.client';
 import { store as appStore } from '$store/renderer/store';
 import {
@@ -76,8 +76,27 @@ export async function initializeGitHubAuthFlow(): Promise<void> {
     // "the flow survives client refreshes") — restore the code card and
     // restart the fallback poll at the daemon-suggested interval, clamped
     // to no faster than AUTH_POLL_INTERVAL.
-    const pending = authState.deviceFlow;
-    if (!authState.isAuthenticated && pending?.status === 'pending') {
+    // A pending flow carries all device-flow fields (§5.27). Do not default
+    // missing ones — a partial payload is a wire divergence, so fail closed
+    // (fall through to the clear path below) instead of resuming with
+    // undefined codes or a NaN poll interval.
+    let pending: GitHubDeviceFlow | null = null;
+    if (authState.deviceFlow?.status === 'pending') {
+      const candidate = authState.deviceFlow;
+      if (
+        candidate.userCode &&
+        candidate.verificationUri &&
+        Number.isFinite(candidate.expiresIn) &&
+        Number.isFinite(candidate.interval)
+      ) {
+        pending = candidate;
+      } else {
+        logger.error('getAuthState returned a malformed pending deviceFlow', {
+          keys: Object.keys(candidate),
+        });
+      }
+    }
+    if (!authState.isAuthenticated && pending !== null) {
       appStore.dispatch(setAuthenticating(true));
       appStore.dispatch(
         setDeviceFlowInfo({

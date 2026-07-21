@@ -122,6 +122,15 @@
     }
   }
 
+  // A device flow resumed by the store after a reload (§5.27: the flow
+  // survives client refreshes) should render here too — adopt it so the code
+  // card, cancel, and check-now affordances come back.
+  $effect(() => {
+    if (!authStartedHere && $isAuthenticating$ && $deviceFlow$) {
+      authStartedHere = true;
+    }
+  });
+
   // Watch for auth state changes from the store (when polling succeeds)
   $effect(() => {
     if (authStartedHere && $isAuthenticated$) {

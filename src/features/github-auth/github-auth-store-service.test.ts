@@ -284,6 +284,38 @@ describe('githubAuthStoreService (fake seam, real store)', () => {
     expect(api.checkAuthComplete).not.toHaveBeenCalled();
   });
 
+  it('initialize fails closed on a malformed pending device flow (wire divergence)', async () => {
+    appStore.dispatch(setAuthenticating(true));
+    appStore.dispatch(
+      setDeviceFlowInfo({
+        userCode: 'STAL-0000',
+        verificationUri: 'https://github.com/login/device',
+        expiresIn: 1,
+        interval: 5,
+      }),
+    );
+    api.getAuthState.mockResolvedValueOnce({
+      isAuthenticated: false,
+      requiresDaemonAuth: false,
+      user: null,
+      needsScopeUpdate: false,
+      oauthUrl: 'https://github.com/login/device',
+      // Missing expiresIn/interval — resuming would poll at NaN cadence.
+      deviceFlow: {
+        status: 'pending',
+        userCode: 'RSME-4321',
+        verificationUri: 'https://github.com/login/device',
+      },
+    });
+
+    await initializeGitHubAuthFlow();
+    await flush();
+
+    expect(ghState().deviceFlow).toBeNull();
+    expect(ghState().isAuthenticating).toBe(false);
+    expect(api.checkAuthComplete).not.toHaveBeenCalled();
+  });
+
   it('initialize clears stale in-flight UI state when the daemon has no pending flow', async () => {
     appStore.dispatch(setAuthenticating(true));
     appStore.dispatch(
