@@ -121,6 +121,12 @@ vi.mock('$features/git/git.client', () => ({
   gitClient: { showFile: mockShowFile },
 }));
 
+// PROTOCOL §5.6 — lazy per-commit file fetch for the metadata-only list payload.
+const mockCommitDetails = vi.hoisted(() => vi.fn());
+vi.mock('$lib/client', () => ({
+  appClient: { git: { commitDetails: mockCommitDetails } },
+}));
+
 vi.mock('$features/git/git-cache', () => ({
   gitCache: { invalidate: vi.fn(), invalidateWorkspace: vi.fn(), set: vi.fn() },
 }));
@@ -187,13 +193,13 @@ vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => {
   });
 });
 
+// Metadata-only list entry (PROTOCOL §5.19): no `files`/`filesChanged`.
 function makeCommit(hash: string, message: string, overrides: Partial<CommitInfo> = {}): CommitInfo {
   return {
     hash,
     message,
     author: 'Test',
     timestamp: Date.now(),
-    files: [],
     stage: 'local',
     isPushed: false,
     ...overrides,
@@ -219,6 +225,7 @@ describe('CommitsTimeline', () => {
     mockWorkspaceUpdate.mockReset().mockResolvedValue({ ok: true, data: mocks.workspaceEntity });
     mockInvoke.mockReset();
     mockShowFile.mockReset();
+    mockCommitDetails.mockReset().mockResolvedValue(null);
     mocks.ftCommits.splice(0, mocks.ftCommits.length);
     mocks.workspaceEntity.baseCommitSha = '';
     mocks.postMergeState.hasRemote = true;
@@ -340,7 +347,7 @@ describe('CommitsTimeline', () => {
   it('toggleCommitExpanded shows file list for commit when commit has files', async () => {
     mocks.ftCommits.push(
       makeCommit('abc', 'feat: one', {
-        files: [{ path: 'src/a.ts', additions: 1, deletions: 0 } as unknown as CommitInfo['files'][number]],
+        files: [{ path: 'src/a.ts', additions: 1, deletions: 0 }],
       }),
     );
     const { container } = await renderTimeline();
@@ -356,12 +363,113 @@ describe('CommitsTimeline', () => {
       expect(fileRow).toBeTruthy();
       expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');
     });
+    // Files already present — no lazy details fetch.
+    expect(mockCommitDetails).not.toHaveBeenCalled();
+  });
+
+  it('expansion lazily fetches git.commitDetails for metadata-only commits', async () => {
+    mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
+    mockCommitDetails.mockResolvedValue({
+      hash: 'abc',
+      author: 'Test',
+      email: 't@example.com',
+      date: '2026-07-21T00:00:00Z',
+      message: 'feat: one',
+      files: ['src/a.ts'],
+      fileDetails: [{ path: 'src/a.ts', additions: 3, deletions: 1 }],
+    });
+
+    const { container } = await renderTimeline();
+    const toggle = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.getAttribute('title') === 'Toggle file list',
+    ) as HTMLButtonElement;
+    expect(toggle).toBeDefined();
+    await fireEvent.click(toggle);
+
+    expect(mockCommitDetails).toHaveBeenCalledWith('ws-1', 'abc');
+    await waitFor(() => {
+      const fileRow = container.querySelector('[data-testid="file-row"]');
+      expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');
+    });
+
+    // Collapse + re-expand does not refetch (cache by hash).
+    await fireEvent.click(toggle);
+    await fireEvent.click(toggle);
+    expect(mockCommitDetails).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed lazy details fetch is retried on the next expand', async () => {
+    mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
+    // `commitDetails` folds transport errors to `null` — the marker must be
+    // cleared so a later expand refetches instead of getting stuck.
+    mockCommitDetails.mockResolvedValueOnce(null).mockResolvedValue({
+      hash: 'abc',
+      author: 'Test',
+      email: 't@example.com',
+      date: '2026-07-21T00:00:00Z',
+      message: 'feat: one',
+      files: ['src/a.ts'],
+      fileDetails: [{ path: 'src/a.ts', additions: 3, deletions: 1 }],
+    });
+
+    const { container } = await renderTimeline();
+    const toggle = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.getAttribute('title') === 'Toggle file list',
+    ) as HTMLButtonElement;
+    await fireEvent.click(toggle);
+    expect(mockCommitDetails).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="file-row"]')).toBeNull();
+    });
+
+    // Collapse + re-expand retries and succeeds this time.
+    await fireEvent.click(toggle);
+    await fireEvent.click(toggle);
+    expect(mockCommitDetails).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      const fileRow = container.querySelector('[data-testid="file-row"]');
+      expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');
+    });
+  });
+
+  it('undo-commit resolves file paths via git.commitDetails for metadata-only commits', async () => {
+    mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
+    mocks.workspaceEntity.baseCommitSha = 'base';
+    mockExecute.mockResolvedValue({ success: true });
+    mockCommitDetails.mockResolvedValue({
+      hash: 'abc',
+      author: 'Test',
+      email: 't@example.com',
+      date: '2026-07-21T00:00:00Z',
+      message: 'feat: one',
+      files: ['src/a.ts'],
+      fileDetails: [{ path: 'src/a.ts', additions: 3, deletions: 1 }],
+    });
+
+    const { container } = await renderTimeline();
+    const buttons = Array.from(container.querySelectorAll('button[data-slot="button"]'));
+    const undoBtn = buttons.find((b) => b.querySelector('[data-icon="rotate-left"]')) as HTMLButtonElement;
+    expect(undoBtn).toBeDefined();
+    await fireEvent.click(undoBtn);
+
+    await waitFor(() =>
+      expect(mockExecute).toHaveBeenCalledWith(
+        'ws-1',
+        'undo-commit',
+        expect.objectContaining({
+          upToCommitHash: 'base',
+          undoCommitsMetadata: [
+            expect.objectContaining({ hash: 'abc', files: ['src/a.ts'] }),
+          ],
+        }),
+      ),
+    );
   });
 
   it('handleCommitFileClick: fetches file contents and dispatches openWorkspaceDiff', async () => {
     mocks.ftCommits.push(
       makeCommit('abc', 'feat: one', {
-        files: [{ path: 'src/a.ts', additions: 1, deletions: 0 } as unknown as CommitInfo['files'][number]],
+        files: [{ path: 'src/a.ts', additions: 1, deletions: 0 }],
       }),
     );
     mockShowFile.mockImplementation(async (_wsId: string, _filePath: string, ref: string) => ({

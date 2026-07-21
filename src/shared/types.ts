@@ -1117,7 +1117,11 @@ export interface CommitInfo {
   email: string;
   date: string;
   message: string;
-  files: string[];
+  /**
+   * Omitted by the metadata-only `git.commits` list payload (PROTOCOL §5.6);
+   * fetched on demand via `git.commitDetails`.
+   */
+  files?: string[];
   /** Agent ID if this commit was made by an agent (e.g., via auto-commit) */
   agentId?: string;
   /** Linked note ID for the task the agent was working on */
