@@ -530,6 +530,14 @@ export class UnifiedAgentFactory {
       const hasInitialMessage = !!normalized.initialMessage?.trim();
       const hasContextReferences = (normalized.contextReferences?.length ?? 0) > 0;
       const hasImageBlocks = (normalized.imageBlocks?.length ?? 0) > 0;
+      // Mint the logical app-message id ONCE so the optimistic user message
+      // (Step 10) and the wire send (Step 11) share the same identity — the
+      // daemon-echoed canonical message then merges with the optimistic one
+      // via appMessageId dedup instead of rendering a duplicate first message.
+      const initialUserAppMessageId =
+        hasInitialMessage || hasContextReferences || hasImageBlocks
+          ? (normalized.appMessageId ?? createAppMessageId())
+          : undefined;
 
       if ((hasInitialMessage || hasContextReferences || hasImageBlocks) && !isBackend) {
         const store = appStore;
@@ -543,7 +551,7 @@ export class UnifiedAgentFactory {
 
           const userMessage = {
             id: createMessageId(`msg_${uuidv4()}`),
-            appMessageId: createAppMessageId(),
+            appMessageId: initialUserAppMessageId,
             role: 'user' as const,
             contentBlocks: [
               ...(messageText ? [{ type: 'text' as const, text: messageText }] : []),
@@ -590,6 +598,7 @@ export class UnifiedAgentFactory {
           messageToSend,
           normalized.contextReferences,
           normalized.imageBlocks,
+          initialUserAppMessageId,
         ).catch((error) => {
           logger.error('Failed to send initial message', error);
         });
@@ -676,6 +685,7 @@ export class UnifiedAgentFactory {
       model: config.model, // Don't set default here - createAgent handles provider-aware defaults
       provider: config.provider, // Preserve provider for propagation to session
       initialMessage: config.initialMessage,
+      appMessageId: config.appMessageId,
       contextReferences: config.contextReferences || [],
       imageBlocks: config.imageBlocks || [],
       metadata: config.metadata || {},
@@ -776,6 +786,7 @@ export class UnifiedAgentFactory {
     message: string,
     contextReferences?: any[],
     imageBlocks?: Array<{ type: 'image'; data: string; mimeType: string }>,
+    userAppMessageId?: string,
   ): Promise<void> {
     logger.info('sendInitialMessage called', {
       agentId: agent?.id,
@@ -850,6 +861,7 @@ export class UnifiedAgentFactory {
         systemPrompt: agent.systemPrompt || '',
         contextReferences: contextReferences || [],
         imageBlocks,
+        userAppMessageId,
       };
 
       logger.info('Sending initial message to backend', {

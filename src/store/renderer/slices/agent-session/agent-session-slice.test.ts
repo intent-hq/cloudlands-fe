@@ -47,6 +47,7 @@ import {
   selectAgentSessionIsStreaming,
   selectAgentSessionStreamingContent,
   selectAgentSessionWorkspaceId,
+  selectAgentActivationWaitComplete,
   selectAgentQueuedMessages,
   selectAgentIsResponding,
   selectAgentIsThinking,
@@ -1387,6 +1388,41 @@ describe('agent-session selectors', () => {
     const state = storeWith({ byAgentId: { a1: session } });
     expect(selectAgentSessionExists.select(state, 'a1')).toBe(true);
     expect(selectAgentSessionExists.select(state, 'unknown')).toBe(false);
+  });
+
+  describe('selectAgentActivationWaitComplete', () => {
+    // Upstream #709 guard: an ACTIVE activation is terminal even when the
+    // backendSessionId hasn't landed yet — re-waiting would strand the first
+    // send of a never-messaged initial coordinator.
+    it('treats ACTIVE activation as complete without backendSessionId', () => {
+      const session = makeSession('a1', 'ws-1', {
+        backendSessionId: null,
+        activationState: 'active' as any,
+        status: 'pending' as any,
+      });
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentActivationWaitComplete.select(state, 'a1')).toBe(true);
+    });
+
+    it('keeps never-activated pending sessions incomplete until activation finishes', () => {
+      const session = makeSession('a1', 'ws-1', {
+        backendSessionId: null,
+        activationState: undefined,
+        status: 'pending' as any,
+      });
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentActivationWaitComplete.select(state, 'a1')).toBe(false);
+    });
+
+    it('treats ERROR activation as terminal so callers can surface the error', () => {
+      const session = makeSession('a1', 'ws-1', {
+        backendSessionId: null,
+        activationState: 'error' as any,
+        status: 'pending' as any,
+      });
+      const state = storeWith({ byAgentId: { a1: session } });
+      expect(selectAgentActivationWaitComplete.select(state, 'a1')).toBe(true);
+    });
   });
 
   it('selectAgentSessionIsStreaming returns the raw streaming flag', () => {

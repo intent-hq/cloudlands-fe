@@ -230,6 +230,9 @@ export const selectAgentActivationWaitComplete = store.createSelector(
     const session = state.agentSessions?.byAgentId[agentId];
     if (!session) return false;
     if (session.activationState === AgentActivationState.ERROR) return true;
+    // ACTIVE is terminal even when backendSessionId hasn't landed yet —
+    // re-waiting here would strand the first send (upstream #709 guard).
+    if (session.activationState === AgentActivationState.ACTIVE) return true;
     return session.status !== AgentStatus.Pending && !!session.backendSessionId;
   },
 );
