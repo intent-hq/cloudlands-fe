@@ -69,8 +69,13 @@ export interface LocalCommitInfo {
   message: string;
   author: string;
   date: string;
-  filesChanged: number;
+  /**
+   * Changed-file count. Omitted by `accept-changes.getStatus` (metadata-only
+   * commit walk); fetch per-file data on demand via `git.commitDetails`.
+   */
+  filesChanged?: number;
   isPushed: boolean;
+  /** Omitted by `accept-changes.getStatus`; see `filesChanged`. */
   files?: CommitFile[];
   /** Agent ID if this commit was made by an agent (e.g., via auto-commit) */
   agentId?: string;
