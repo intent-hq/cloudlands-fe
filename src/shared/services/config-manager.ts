@@ -13,13 +13,6 @@ export interface AppConfig {
     lineNumbers: boolean;
     minimap: boolean;
   };
-  ai: {
-    apiToken: string;
-    model: string;
-    temperature: number;
-    maxTokens: number;
-    streamingSpeed: number;
-  };
   workspace: {
     defaultPath: string;
     autoSave: boolean;
@@ -71,13 +64,6 @@ const DEFAULT_CONFIG: AppConfig = {
     wordWrap: true,
     lineNumbers: true,
     minimap: false,
-  },
-  ai: {
-    apiToken: '',
-    model: 'opus4.5', // Short model ID format
-    temperature: 0.7,
-    maxTokens: 4096,
-    streamingSpeed: 15,
   },
   workspace: {
     defaultPath: '',
@@ -168,32 +154,6 @@ export class ConfigManager extends EventEmitter {
           },
         },
       },
-      ai: {
-        type: 'object',
-        properties: {
-          apiToken: {
-            type: 'string',
-          },
-          model: {
-            type: 'string',
-          },
-          temperature: {
-            type: 'number',
-            minimum: 0,
-            maximum: 2,
-          },
-          maxTokens: {
-            type: 'number',
-            minimum: 1,
-            maximum: 32000,
-          },
-          streamingSpeed: {
-            type: 'number',
-            minimum: 1,
-            maximum: 100,
-          },
-        },
-      },
       workspace: {
         type: 'object',
         properties: {
@@ -248,11 +208,6 @@ export class ConfigManager extends EventEmitter {
   private validateConfig(): void {
     // Additional validation beyond schema
     const config = this.config;
-
-    // Ensure API token exists for AI features
-    if (!config.ai.apiToken) {
-      this.logger.warn('No API token configured for AI features');
-    }
 
     // Validate workspace paths
     if (config.workspace.recentWorkspaces.length > config.workspace.maxRecentWorkspaces) {

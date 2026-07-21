@@ -34,6 +34,7 @@ import {
   setSelectedModel,
   setWorkspaceModel,
 } from "$store/renderer/slices/model/model-slice";
+import { parseCompoundModelId } from "$shared/config/provider-config";
 
 const logger = createLogger("ModelSelectionPersistenceService");
 
@@ -51,12 +52,20 @@ export function createModelSelectionPersistenceMiddleware(): StoreMiddleware {
       const payload = Array.isArray(action.payload) ? action.payload : [];
       switch (action.type) {
         case selectModel.type: {
-          // Trigger → concrete per-provider selection for the active provider.
-          // The re-dispatched setSelectedModel comes back through this
-          // middleware, which is where the persistence write happens.
+          // Trigger → concrete per-provider selection. Compound ids carry
+          // their provider (`opencode:model`); bare ids — and malformed ids
+          // with an empty prefix (`:model`) — fall back to the active
+          // provider. The re-dispatched setSelectedModel comes back through
+          // this middleware, which is where the persistence write happens.
           const model = payload[0];
           if (typeof model === "string" && model.length > 0) {
-            const providerId = appStore.state.providerSettings.activeProviderId;
+            const compoundProviderId = model.includes(":")
+              ? parseCompoundModelId(model).providerId
+              : "";
+            const providerId =
+              compoundProviderId.length > 0
+                ? compoundProviderId
+                : appStore.state.providerSettings.activeProviderId;
             appStore.dispatch(setSelectedModel({ providerId, model }));
           }
           break;
