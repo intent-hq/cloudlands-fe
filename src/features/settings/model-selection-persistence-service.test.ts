@@ -99,6 +99,21 @@ describe("model-selection-persistence-service (PROTOCOL §5.12 settings.update w
     });
   });
 
+  it("falls back to the active provider for a malformed compound id with an empty prefix", async () => {
+    const defaultProviderId = getDefaultProviderId();
+    appStore.dispatch(loadProviderModelsFromStorage({}));
+    await flush();
+    updateSpy.mockClear();
+
+    appStore.dispatch(selectModel(":orphan-model"));
+    await flush();
+
+    expect(appStore.state.model.providerModels[""]).toBeUndefined();
+    // The model slice normalizes the compound form when storing; the point
+    // here is the attribution: no empty-string provider bucket is created.
+    expect(appStore.state.model.providerModels[defaultProviderId]).toBe("orphan-model");
+  });
+
   it("persists model.providerDefaults on a direct per-provider selection", async () => {
     appStore.dispatch(setSelectedModel({ providerId: "codex", model: "gpt-test-2" }));
     await flush();

@@ -10,9 +10,11 @@
  * The former `workspace-config` electron-store held the entire `AppConfig`
  * blob; this module is the successor for the daemon-owned subset. Non-secret
  * sub-keys are hydrated into `ConfigManager` on startup so callers see the
- * daemon-authoritative value. Secret keys are never hydrated in plaintext
- * (the daemon only ever exposes a redacted placeholder on read); writes push
- * through to the daemon secret store.
+ * daemon-authoritative value. `SECRET_DAEMON_KEYS` is currently empty (the
+ * retired `ai.apiToken` was the only entry); if a secret key returns, its
+ * reads must never hydrate plaintext — the daemon only ever exposes a
+ * redacted placeholder — while writes push through to the daemon secret
+ * store.
  *
  * FE-local `AppConfig` sub-keys (`appearance`, `editor`, `shortcuts`,
  * `experimental`, and the `workspace.*` UI knobs) are intentionally NOT
