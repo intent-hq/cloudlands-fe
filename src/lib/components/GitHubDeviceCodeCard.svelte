@@ -10,18 +10,15 @@
     userCode: string;
     /** Where the user enters the code (usually https://github.com/login/device). */
     verificationUri: string;
-    /** Called after the verification URI is opened in the browser. */
-    onOpen?: () => void;
     /** Compact layout for tight surfaces like the sidebar banner. */
     compact?: boolean;
   }
 
-  let { userCode, verificationUri, onOpen, compact = false }: Props = $props();
+  let { userCode, verificationUri, compact = false }: Props = $props();
 
   function handleOpenGitHub() {
     // GitHub URLs always route to the external browser via the link handler.
     void handleLink(verificationUri, {});
-    onOpen?.();
   }
 </script>
 

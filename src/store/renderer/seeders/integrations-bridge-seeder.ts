@@ -109,7 +109,7 @@ registerMockIpcHandler(
 // `github.revoke` (token deleted daemon-side; never crosses the wire).
 
 /** `github.connect` success payload (§5.27) — user-facing codes only. */
-interface GithubConnectWire {
+interface GitHubConnectWire {
   ok?: boolean;
   userCode?: string;
   verificationUri?: string;
@@ -127,7 +127,7 @@ registerMockIpcHandler(GITHUB_AUTH_CHANNELS.START_AUTH, async (): Promise<StartA
     };
   }
   try {
-    const result = await backendRequest<GithubConnectWire>('github.connect');
+    const result = await backendRequest<GitHubConnectWire>('github.connect');
     if (
       result?.ok === true &&
       typeof result.userCode === 'string' &&
