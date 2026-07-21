@@ -71,6 +71,10 @@ async function pollStatus(): Promise<void> {
 function startPolling(): void {
   if (pollTimer) return;
   // Immediate poll on start, then periodic.
+  // Note: boot() runs inside the middleware before next(action), so this first
+  // dispatch is re-entrant on the very first action. The store shim processes
+  // nested dispatches synchronously, which is safe today — revisit if the shim's
+  // dispatch semantics change.
   appStore.dispatch(pollSystemStatus());
   pollTimer = setInterval(() => {
     appStore.dispatch(pollSystemStatus());

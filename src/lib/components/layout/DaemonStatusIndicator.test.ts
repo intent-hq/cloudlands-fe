@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import type { StoreState } from '$store/renderer/types';
 
 // Create state holder
@@ -24,24 +25,11 @@ vi.mock('svelte-fa', () => ({
   default: () => null,
 }));
 
-// Mock tooltip
-vi.mock('$lib/components/ui/tooltip', () => ({
-  Tooltip: ({ children }: any) => children,
-}));
-
-// Mock dropdown menu - return a simple container
-vi.mock('$lib/components/ui/dropdown-menu.svelte', () => ({
-  default: ({ trigger, content }: any) => {
-    const toggle = () => {};
-    const close = () => {};
-    return { trigger: trigger?.({ toggle }), content: content?.({ close }) };
-  },
-}));
-
-// Mock Header component
-vi.mock('$lib/components/ui/Header.svelte', () => ({
-  default: ({ children }: any) => children,
-}));
+// Mock tooltip with a passthrough component so the real dropdown can render
+vi.mock('$lib/components/ui/tooltip', async () => {
+  const Tooltip = (await import('$lib/components/workspace/sidebar/__tests__/mocks/MockTooltip.svelte')).default;
+  return { Tooltip };
+});
 
 // Mock the store module
 vi.mock('$store/renderer/store', async () => {
@@ -257,28 +245,63 @@ describe('DaemonStatusIndicator', () => {
       expect(formatMemory(0)).toBe('0.0 MB');
     });
 
-    it('renders CPU/Memory rows only when the daemon reports the fields', async () => {
-      type DaemonHealthStats = import('$store/renderer/slices/daemon-health/daemon-health-types').DaemonHealthStats;
-      // Older daemons omit cpuPercent/memoryBytes — rows are hidden (the
-      // component gates each row on `!== undefined`).
-      const olderDaemonStats: DaemonHealthStats = {
-        clients: 1,
-        agents: 0,
-        listenMode: 'uds',
-        port: null,
-        os: 'macos',
-        arch: 'aarch64',
+    it('renders CPU/Memory rows in the dropdown when the daemon reports the fields', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            cpuPercent: 3.5,
+            memoryBytes: 52428800,
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
       };
-      expect(olderDaemonStats.cpuPercent !== undefined).toBe(false);
-      expect(olderDaemonStats.memoryBytes !== undefined).toBe(false);
 
-      const newDaemonStats: DaemonHealthStats = {
-        ...olderDaemonStats,
-        cpuPercent: 3.5,
-        memoryBytes: 52428800,
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      expect(screen.getByText('CPU')).toBeTruthy();
+      expect(screen.getByText('3.5%')).toBeTruthy();
+      expect(screen.getByText('Memory')).toBeTruthy();
+      expect(screen.getByText('50.0 MB')).toBeTruthy();
+    });
+
+    it('hides CPU/Memory rows when an older daemon omits the fields', async () => {
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: {
+            clients: 2,
+            agents: 1,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            // No cpuPercent / memoryBytes — pre-CPU/memory daemon.
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
       };
-      expect(newDaemonStats.cpuPercent !== undefined).toBe(true);
-      expect(newDaemonStats.memoryBytes !== undefined).toBe(true);
+
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
+
+      await fireEvent.click(screen.getByRole('button', { name: 'intentd: healthy' }));
+
+      // Other stats rows render, but CPU/Memory rows are absent.
+      expect(screen.getByText('WSS clients')).toBeTruthy();
+      expect(screen.queryByText('CPU')).toBeNull();
+      expect(screen.queryByText('Memory')).toBeNull();
     });
   });
 
@@ -289,24 +312,47 @@ describe('DaemonStatusIndicator', () => {
 
     it('dispatches pollSystemStatus every 1s while open and stops on close', async () => {
       vi.useFakeTimers();
-      const { pollSystemStatus } = await import('$store/renderer/slices/daemon-health/daemon-health-slice');
+      mockStoreState = {
+        daemonHealth: {
+          health: 'healthy',
+          stats: {
+            clients: 1,
+            agents: 0,
+            listenMode: 'uds',
+            port: null,
+            os: 'macos',
+            arch: 'aarch64',
+            uptimeSeconds: 300,
+          },
+          lastUpdated: new Date().toISOString(),
+          polling: false,
+        },
+      };
 
-      // Mirrors the component's open-state $effect: a 1s interval dispatching
-      // pollSystemStatus, with clearInterval as the effect cleanup on close.
-      const interval = setInterval(() => {
-        mockDispatch(pollSystemStatus());
-      }, 1000);
+      const DaemonStatusIndicator = (await import('./DaemonStatusIndicator.svelte')).default;
+      render(DaemonStatusIndicator);
 
+      const pollCalls = () =>
+        mockDispatch.mock.calls.filter(
+          ([action]) => action?.type === 'daemonHealth/pollSystemStatus',
+        ).length;
+
+      const trigger = screen.getByRole('button', { name: 'intentd: healthy' });
+      await fireEvent.click(trigger);
+
+      // Opening dispatches an immediate poll.
+      const baseline = pollCalls();
+      expect(baseline).toBeGreaterThanOrEqual(1);
+
+      // Every 1s while open: one more poll per second.
       vi.advanceTimersByTime(3000);
-      expect(mockDispatch).toHaveBeenCalledTimes(3);
-      expect(mockDispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'daemonHealth/pollSystemStatus' }),
-      );
+      expect(pollCalls()).toBe(baseline + 3);
 
-      // Cleanup on close: no further dispatches.
-      clearInterval(interval);
+      // Closing stops the interval: no further dispatches.
+      await fireEvent.click(trigger);
+      const afterClose = pollCalls();
       vi.advanceTimersByTime(3000);
-      expect(mockDispatch).toHaveBeenCalledTimes(3);
+      expect(pollCalls()).toBe(afterClose);
     });
   });
 

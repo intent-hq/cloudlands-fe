@@ -111,9 +111,13 @@
       // Initialize live uptime
       liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$);
 
-      // Update every second
+      // Update every second. Skip the stats poll while the daemon is down —
+      // the dropdown shows the "Not running" placeholder and each poll would
+      // just fail; the 10s background interval still detects recovery.
       const interval = setInterval(() => {
-        appStore.dispatch(pollSystemStatus());
+        if ($health$ !== 'down') {
+          appStore.dispatch(pollSystemStatus());
+        }
         liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$);
       }, 1000);
 
