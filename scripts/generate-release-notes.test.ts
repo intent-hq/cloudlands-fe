@@ -69,8 +69,11 @@ describe('generate-release-notes CLI', () => {
     // Dynamically import and run the script
     await import('./generate-release-notes.mjs?t=' + Date.now());
 
-    // Wait a bit for async operations to complete
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Poll for the output files instead of a fixed sleep to avoid CI flakiness
+    await vi.waitFor(() => {
+      readFileSync(outFile, 'utf8');
+      readFileSync(manifestFile, 'utf8');
+    }, { timeout: 5000 });
 
     // Verify markdown output
     const markdown = readFileSync(outFile, 'utf8');
