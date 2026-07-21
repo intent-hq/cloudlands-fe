@@ -164,12 +164,10 @@ async function checkDroidAvailability(): Promise<ProviderStatus> {
  * undefined here.
  */
 async function checkGrokAvailability(): Promise<ProviderStatus> {
-  try {
-    const grokPath = await findBinary('grok');
-    return { available: grokPath !== null };
-  } catch (error) {
-    return { available: false, error: (error as Error).message };
-  }
+  // findBinary never throws (it folds RPC errors to null), so no try/catch;
+  // skip its local cache so a fresh install is picked up on recheck.
+  const grokPath = await findBinary('grok', { cache: false });
+  return { available: grokPath !== null };
 }
 
 /**

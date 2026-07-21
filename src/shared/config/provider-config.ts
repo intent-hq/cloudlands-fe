@@ -210,8 +210,8 @@ export const ACP_PROVIDERS: Record<string, ACPProviderConfig> = {
     canBeDisabled: true,
     ipcChannelPrefix: 'grok',
     loginCommandHint: 'grok login',
-    // `grok models` prints auth/readiness details to stdout; the Grok feature
-    // module parses that output instead of using ACP `authenticate`.
+    // `grok models` prints auth/readiness details to stdout. Unused in this
+    // build (readiness is owned by the daemon); kept for upstream parity.
     authCheckArgs: ['models'],
     loginDocsUrl: 'https://docs.x.ai/build/enterprise#authentication',
   },
