@@ -1,3 +1,25 @@
+<script lang="ts" module>
+  /**
+   * Format raw sysinfo CPU percent (may exceed 100% on multi-core hosts)
+   * with one decimal, e.g. `12.3%`.
+   */
+  export function formatCpu(percent: number): string {
+    return `${percent.toFixed(1)}%`;
+  }
+
+  /**
+   * Format a byte count as human-readable MB/GB, e.g. `512.0 MB` or `1.25 GB`.
+   */
+  export function formatMemory(bytes: number): string {
+    const GB = 1024 ** 3;
+    const MB = 1024 ** 2;
+    if (bytes >= GB) {
+      return `${(bytes / GB).toFixed(2)} GB`;
+    }
+    return `${(bytes / MB).toFixed(1)} MB`;
+  }
+</script>
+
 <script lang="ts">
   /**
    * DaemonStatusIndicator - Colored status dot + dropdown menu for daemon health
@@ -76,21 +98,28 @@
     return uptimeSeconds + elapsedSeconds;
   }
 
-  // Trigger stats refresh when menu opens
+  // Trigger stats refresh when menu opens. Intentionally not gated on health:
+  // this is a single poll per open (not a repeating interval) and doubles as an
+  // immediate recovery check when the daemon was down.
   $effect(() => {
     if (dropdownOpen) {
       appStore.dispatch(pollSystemStatus());
     }
   });
 
-  // Tick live uptime every second while dropdown is open
+  // Tick live uptime and refresh stats every second while dropdown is open
   $effect(() => {
     if (dropdownOpen) {
       // Initialize live uptime
       liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$);
 
-      // Update every second
+      // Update every second. Skip the stats poll while the daemon is down —
+      // the dropdown shows the "Not running" placeholder and each poll would
+      // just fail; the 10s background interval still detects recovery.
       const interval = setInterval(() => {
+        if ($health$ !== 'down') {
+          appStore.dispatch(pollSystemStatus());
+        }
         liveUptimeSeconds = computeLiveUptime($stats$?.uptimeSeconds, $lastUpdated$);
       }, 1000);
 
@@ -192,6 +221,22 @@
               <div class="flex justify-between text-xs">
                 <span class="text-subtle">Uptime</span>
                 <span class="font-mono text-xs" aria-live="off">{formatUptime(liveUptimeSeconds)}</span>
+              </div>
+            {/if}
+
+            <!-- CPU (only when the daemon reports it) -->
+            {#if $stats$.cpuPercent !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">CPU</span>
+                <span class="font-mono text-xs" aria-live="off">{formatCpu($stats$.cpuPercent)}</span>
+              </div>
+            {/if}
+
+            <!-- Memory (only when the daemon reports it) -->
+            {#if $stats$.memoryBytes !== undefined}
+              <div class="flex justify-between text-xs">
+                <span class="text-subtle">Memory</span>
+                <span class="font-mono text-xs" aria-live="off">{formatMemory($stats$.memoryBytes)}</span>
               </div>
             {/if}
 

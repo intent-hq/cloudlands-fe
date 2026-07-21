@@ -28,6 +28,10 @@ export interface SystemStatusWirePayload {
   version?: string;
   /** New in PR #244, may be missing on older daemons. */
   uptimeSeconds?: number;
+  /** Daemon process CPU usage in percent (sysinfo convention, may exceed 100%). May be missing on older daemons. */
+  cpuPercent?: number;
+  /** Daemon process resident memory (RSS) in bytes. May be missing on older daemons. */
+  memoryBytes?: number;
   fingerprint?: string | null;
   protocolVersion: string;
   host: {
@@ -60,6 +64,10 @@ export interface DaemonHealthStats {
   /** Optional for backward compatibility with older daemons. */
   protocolVersion?: string;
   uptimeSeconds?: number;
+  /** Daemon process CPU usage in percent (sysinfo convention, may exceed 100%). Optional for older daemons. */
+  cpuPercent?: number;
+  /** Daemon process resident memory (RSS) in bytes. Optional for older daemons. */
+  memoryBytes?: number;
   os: string;
   arch: string;
   /** FE connection mode (sidecar UDS vs external WebSocket). Optional for backward compatibility. */
