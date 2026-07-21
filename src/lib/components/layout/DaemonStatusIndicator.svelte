@@ -98,7 +98,9 @@
     return uptimeSeconds + elapsedSeconds;
   }
 
-  // Trigger stats refresh when menu opens
+  // Trigger stats refresh when menu opens. Intentionally not gated on health:
+  // this is a single poll per open (not a repeating interval) and doubles as an
+  // immediate recovery check when the daemon was down.
   $effect(() => {
     if (dropdownOpen) {
       appStore.dispatch(pollSystemStatus());
