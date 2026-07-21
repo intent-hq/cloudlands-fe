@@ -2,9 +2,10 @@
  * Notification Service
  *
  * Main process service that shows desktop notifications when agents complete.
- * Holds a long-lived daemon `events.subscribe` subscription for `agent:idle`
- * events (PROTOCOL.md §6.1–§6.3) scoped to the workspace and displays native
- * OS notifications.
+ * Holds ONE app-wide long-lived daemon `events.subscribe` subscription for
+ * `agent:idle` events (PROTOCOL.md §6.1–§6.3) with `workspaceId` omitted so
+ * events are delivered across ALL workspaces, and displays native OS
+ * notifications routed per-event by `event.workspaceId`.
  *
  * Persisted notification preferences live on the daemon under `notifications.*`
  * (PROTOCOL.md §5.12); the legacy `notificationSettings` electron-store bag is
@@ -26,6 +27,7 @@ import type {
 } from '../../backend/main/json-rpc-client';
 import { getBackendClient, onBackendReconnected } from '../../backend/main/backend.ipc';
 import {
+  getFocusedWindowWorkspaceId,
   getWindowIdsForWorkspace,
   sendToWorkspaceWindows,
 } from '../../system/main/system.ipc';
@@ -112,8 +114,6 @@ interface NotificationContent {
 }
 
 export class NotificationService {
-  private workspaceId: string;
-
   private started = false;
   private subscriptionId?: string;
   /** Guards against stale in-flight `events.subscribe` calls (bumped on stop/reconnect). */
@@ -124,21 +124,20 @@ export class NotificationService {
   private statusRetryDisposer?: () => void;
   private activeNotifications = new Set<Notification>();
 
-  constructor(workspaceId: string) {
-    this.workspaceId = workspaceId;
+  constructor() {
     // Warm the preferences cache eagerly; each `handleAgentIdle` re-fetches.
     void refreshPrefs();
   }
 
   /**
-   * Start the notification service: attach a long-lived daemon `agent:idle`
-   * subscription for this workspace (PROTOCOL.md §6.1) and re-issue it on
-   * backend reconnect (RESUB-1).
+   * Start the notification service: attach ONE long-lived daemon `agent:idle`
+   * subscription covering all workspaces (PROTOCOL.md §6.1, `workspaceId`
+   * omitted) and re-issue it on backend reconnect (RESUB-1).
    */
   start(): void {
     if (this.started) return;
     this.started = true;
-    logger.info('NotificationService started', { workspaceId: this.workspaceId });
+    logger.info('NotificationService started');
     void this.attachIdleSubscription();
   }
 
@@ -166,12 +165,11 @@ export class NotificationService {
         }
       } catch (error) {
         logger.debug('Failed to tear down agent:idle subscription', {
-          workspaceId: this.workspaceId,
           error: error instanceof Error ? error.message : String(error),
         });
       }
     })();
-    logger.info('NotificationService stopped', { workspaceId: this.workspaceId });
+    logger.info('NotificationService stopped');
   }
 
   /**
@@ -199,9 +197,10 @@ export class NotificationService {
         if (!this.subscriptionId || subId !== this.subscriptionId) return;
         const event = params?.event as { type?: unknown; workspaceId?: unknown } | undefined;
         if (!event || event.type !== 'agent:idle') return;
-        if (typeof event.workspaceId === 'string' && event.workspaceId !== this.workspaceId) {
-          return;
-        }
+        // Per-event routing (suppression, prefs, focus gating, sound/click
+        // delivery) keys off the event's workspaceId; an event without one
+        // cannot be routed.
+        if (typeof event.workspaceId !== 'string') return;
         void this.handleAgentIdle(event as unknown as AgentIdleEvent);
       };
       this.notificationListener = listener;
@@ -218,19 +217,21 @@ export class NotificationService {
       await this.subscribeToIdleEvents();
     } catch (error) {
       logger.warn('Failed to attach agent:idle subscription', {
-        workspaceId: this.workspaceId,
         error: error instanceof Error ? error.message : String(error),
       });
     }
   }
 
-  /** Issue `events.subscribe` for `agent:idle` scoped to this workspace (§6.1). */
+  /**
+   * Issue `events.subscribe` for `agent:idle` across ALL workspaces —
+   * `workspaceId` is deliberately omitted (§6.1) so completions in
+   * workspaces without an open window/tab still notify.
+   */
   private async subscribeToIdleEvents(): Promise<void> {
     const epoch = this.subscribeEpoch;
     try {
       const result = (await getBackendClient().request('events.subscribe', {
         eventTypes: ['agent:idle'],
-        workspaceId: this.workspaceId,
       })) as { subscriptionId?: string } | undefined;
       const subscriptionId = result?.subscriptionId;
       if (epoch !== this.subscribeEpoch || !this.started) {
@@ -250,7 +251,6 @@ export class NotificationService {
       logger.warn(
         'events.subscribe for agent:idle failed; will retry on the next connected transition',
         {
-          workspaceId: this.workspaceId,
           error: error instanceof Error ? error.message : String(error),
         },
       );
@@ -287,22 +287,25 @@ export class NotificationService {
   }
 
   /**
-   * Handle agent:idle event delivered by the daemon subscription.
+   * Handle an agent:idle event delivered by the daemon subscription. All
+   * per-workspace behavior (suppression, focus gating, sound and click
+   * routing) keys off `event.workspaceId`.
    */
   async handleAgentIdle(event: AgentIdleEvent): Promise<void> {
     try {
+      const workspaceId = event.workspaceId;
       // Fresh read so settings toggles take effect without a relaunch.
       const prefs = await refreshPrefs();
 
       if (!prefs.enabled) {
-        logger.debug('Notifications disabled', { workspaceId: this.workspaceId });
+        logger.debug('Notifications disabled', { workspaceId });
         return;
       }
 
       // Fast path: explicit background flag on the event payload.
       if (event.data.isBackground === true) {
         logger.debug('Skipping notification for background agent', {
-          workspaceId: this.workspaceId,
+          workspaceId,
           agentName: event.data.agentName,
         });
         return;
@@ -313,7 +316,7 @@ export class NotificationService {
       // daemon idle payload), and `isStreaming`/`isResponding` feed the
       // other-agents-active suppression gate below.
       const agentList = (await getBackendClient().request('agent.list', {
-        workspaceId: this.workspaceId,
+        workspaceId,
       })) as {
         agents?: Array<{
           id?: string;
@@ -328,7 +331,7 @@ export class NotificationService {
       // Skip background agents — delegated child completions stay quiet.
       if (idleAgent?.metadata?.isBackground === true) {
         logger.debug('Skipping notification for background agent (metadata)', {
-          workspaceId: this.workspaceId,
+          workspaceId,
           agentName: event.data.agentName,
         });
         return;
@@ -342,7 +345,7 @@ export class NotificationService {
 
       if (otherActiveAgents.length > 0) {
         logger.debug('Other agents still active, skipping notification', {
-          workspaceId: this.workspaceId,
+          workspaceId,
           agentName: event.data.agentName,
           otherActiveCount: otherActiveAgents.length,
         });
@@ -360,26 +363,32 @@ export class NotificationService {
       } as AgentIdleEvent);
 
       // Focus gate for the OS banner: `soundOnlyWhenUnfocused` ON suppresses
-      // the banner while a workspace window is focused; OFF shows it even
-      // when focused. The `notification:show` renderer event is ALWAYS sent
-      // regardless of focus so the renderer sound gate decides on its own.
-      const workspaceWindowIds = getWindowIdsForWorkspace(this.workspaceId);
+      // the banner only while the focused window is VIEWING the event's own
+      // workspace; OFF shows it even when focused. The `notification:show`
+      // renderer event is ALWAYS sent regardless of focus so the renderer
+      // sound gate decides on its own.
+      const workspaceWindowIds = getWindowIdsForWorkspace(workspaceId);
       const workspaceWindows = workspaceWindowIds
         .map((id) => BrowserWindow.fromId(id))
         .filter((w): w is BrowserWindow => w !== null && !w.isDestroyed());
-      const anyFocused = workspaceWindows.some((w) => w.isFocused());
-      if (anyFocused && prefs.soundOnlyWhenUnfocused) {
-        logger.debug('Workspace window is focused, suppressing OS banner', {
-          workspaceId: this.workspaceId,
+      const focusedViewingWorkspace = getFocusedWindowWorkspaceId() === workspaceId;
+      if (focusedViewingWorkspace && prefs.soundOnlyWhenUnfocused) {
+        logger.debug('Focused window is viewing the workspace, suppressing OS banner', {
+          workspaceId,
           agentName: event.data.agentName,
         });
-        this.sendShowEvent(content);
+        this.sendShowEvent(content, workspaceId);
         return;
       }
 
-      // Show notification — pick first workspace window for click-to-focus
-      const focusWindow = workspaceWindows[0] ?? BrowserWindow.getAllWindows()[0];
-      this.showNotification(content, focusWindow, this.workspaceId);
+      // Show notification — prefer a window with the workspace open for
+      // click-to-focus; otherwise fall back to the focused (or any) window,
+      // which navigates to the workspace on click.
+      const focusWindow =
+        workspaceWindows[0] ??
+        BrowserWindow.getFocusedWindow() ??
+        BrowserWindow.getAllWindows()[0];
+      this.showNotification(content, focusWindow ?? undefined, workspaceId);
     } catch (error) {
       logger.error('Failed to handle agent:idle event', error as Error);
     }
@@ -399,7 +408,7 @@ export class NotificationService {
     let workspaceTitle: string | undefined;
     try {
       const { workspaceService } = await import('../../workspace/main/workspace.service');
-      const workspaceResult = await workspaceService.getWorkspace(this.workspaceId as any);
+      const workspaceResult = await workspaceService.getWorkspace(event.workspaceId as any);
       if (workspaceResult.ok && workspaceResult.data?.title) {
         workspaceTitle = workspaceResult.data.title;
       }
@@ -433,13 +442,29 @@ export class NotificationService {
   /**
    * Send the `notification:show` renderer event so the renderer can play the
    * notification sound. Sent regardless of window focus or banner suppression.
+   * Delivered to windows with the event's workspace open; when none exist
+   * (workspace not open anywhere) it falls back to the focused (or any)
+   * window so the sound still plays.
    */
-  private sendShowEvent(content: NotificationContent): void {
-    sendToWorkspaceWindows(this.workspaceId, 'notification:show', {
+  private sendShowEvent(content: NotificationContent, workspaceId?: string): void {
+    const payload = {
       title: content.title,
       body: content.body,
       timestamp: new Date().toISOString(),
-    });
+    };
+    if (workspaceId && getWindowIdsForWorkspace(workspaceId).length > 0) {
+      sendToWorkspaceWindows(workspaceId, 'notification:show', payload);
+      return;
+    }
+    const fallbackWindow =
+      BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    if (
+      fallbackWindow &&
+      !fallbackWindow.isDestroyed() &&
+      !fallbackWindow.webContents.isDestroyed()
+    ) {
+      fallbackWindow.webContents.send('notification:show', payload);
+    }
   }
 
   /**
@@ -451,7 +476,7 @@ export class NotificationService {
       if (!Notification.isSupported()) {
         logger.warn('Desktop notifications are not supported on this platform');
         // Still send the sound event even if notifications aren't supported
-        this.sendShowEvent(content);
+        this.sendShowEvent(content, workspaceId);
         return;
       }
 
@@ -505,10 +530,10 @@ export class NotificationService {
       }
 
       // Send notification:show event to workspace windows for sound playback
-      this.sendShowEvent(content);
+      this.sendShowEvent(content, workspaceId);
 
       logger.info('Notification shown', {
-        workspaceId: this.workspaceId,
+        workspaceId,
         title: content.title,
         body: content.body,
       });
@@ -532,10 +557,8 @@ export class NotificationService {
         };
       }
 
-      const wsWindowIds = getWindowIdsForWorkspace(this.workspaceId);
-      const focusWindow = wsWindowIds.length > 0
-        ? BrowserWindow.fromId(wsWindowIds[0]) ?? undefined
-        : BrowserWindow.getAllWindows()[0];
+      const focusWindow =
+        BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
 
       this.showNotification({ title: 'Agent', body: 'Test notification' }, focusWindow ?? undefined);
       return { success: true };
@@ -547,49 +570,18 @@ export class NotificationService {
   }
 }
 
-// Singleton instances per workspace
-const instances = new Map<string, NotificationService>();
+// App-wide singleton — one global agent:idle subscription for all workspaces.
+let instance: NotificationService | null = null;
 
 /**
- * Get or create a NotificationService for a workspace
+ * Get (or lazily create) the app-wide NotificationService. Started once at
+ * app boot; there is no per-workspace lifecycle.
  */
-export function getNotificationService(workspaceId: string): NotificationService {
-  let service = instances.get(workspaceId);
-  if (!service) {
-    service = new NotificationService(workspaceId);
-    instances.set(workspaceId, service);
+export function getNotificationService(): NotificationService {
+  if (!instance) {
+    instance = new NotificationService();
   }
-  return service;
-}
-
-/**
- * Dispose of a workspace's notification service
- */
-export function disposeNotificationService(workspaceId: string): void {
-  const service = instances.get(workspaceId);
-  if (service) {
-    service.stop();
-    instances.delete(workspaceId);
-  }
-}
-
-/**
- * Reconcile running notification services against the set of workspaces open
- * in any Electron window (current view + background tabs). Called from the
- * `window-workspace-state-changed` app event — the successor trigger to the
- * dead legacy `workspace:open` IPC path. Starts a service for every open
- * workspace and disposes services for workspaces no longer open anywhere.
- */
-export function syncNotificationServices(openWorkspaceIds: string[]): void {
-  const open = new Set(openWorkspaceIds);
-  for (const workspaceId of open) {
-    getNotificationService(workspaceId).start();
-  }
-  for (const workspaceId of [...instances.keys()]) {
-    if (!open.has(workspaceId)) {
-      disposeNotificationService(workspaceId);
-    }
-  }
+  return instance;
 }
 
 /**

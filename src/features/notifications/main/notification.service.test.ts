@@ -14,11 +14,13 @@ import {
   NotificationService,
   __resetNotificationCacheForTesting,
   getNotificationService,
-  disposeNotificationService,
-  syncNotificationServices,
 } from './notification.service';
 // workspace-event-bus was deleted; notifications are now driven by Redux sagas
-import { getWindowIdsForWorkspace, sendToWorkspaceWindows } from '../../system/main/system.ipc';
+import {
+  getFocusedWindowWorkspaceId,
+  getWindowIdsForWorkspace,
+  sendToWorkspaceWindows,
+} from '../../system/main/system.ipc';
 import type { AgentIdleEvent } from '../../events/types';
 
 vi.mock('../../../shared/logger', () => ({
@@ -136,6 +138,7 @@ vi.mock('electron', () => ({
   },
   BrowserWindow: {
     getAllWindows: vi.fn(() => []),
+    getFocusedWindow: vi.fn(() => null),
     fromId: vi.fn(() => null),
   },
   Notification: class {
@@ -164,6 +167,7 @@ vi.mock('electron', () => ({
 // workspace-event-bus mock removed — module was deleted
 
 vi.mock('../../system/main/system.ipc', () => ({
+  getFocusedWindowWorkspaceId: vi.fn(() => null),
   getWindowIdsForWorkspace: vi.fn(() => []),
   sendToWorkspaceWindows: vi.fn(),
 }));
@@ -226,15 +230,15 @@ describe('NotificationService daemon agent:idle subscription', () => {
     agentListResponse.agents = [];
   });
 
-  it('start() issues events.subscribe for agent:idle scoped to the workspace (PROTOCOL.md §6.1)', async () => {
-    const service = new NotificationService('workspace-1');
+  it('start() issues ONE events.subscribe for agent:idle with workspaceId omitted (PROTOCOL.md §6.1, all workspaces)', async () => {
+    const service = new NotificationService();
     service.start();
     await flush();
 
-    // Assert exact on-wire request shape (PROTOCOL.md §6.1).
+    // Assert exact on-wire request shape (PROTOCOL.md §6.1) — workspaceId is
+    // deliberately absent so the subscription covers every workspace.
     expect(requestMock).toHaveBeenCalledWith('events.subscribe', {
       eventTypes: ['agent:idle'],
-      workspaceId: 'workspace-1',
     });
     // A `notification` listener was attached to the daemon client.
     expect(clientOn).toHaveBeenCalledWith('notification', expect.any(Function));
@@ -242,7 +246,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
   });
 
   it('shows a notification when a §6.3-shaped agent:idle events.event arrives', async () => {
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     service.start();
     await flush();
 
@@ -255,7 +259,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
   });
 
   it('ignores events.event pushes for other subscription ids', async () => {
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     service.start();
     await flush();
 
@@ -268,12 +272,37 @@ describe('NotificationService daemon agent:idle subscription', () => {
     service.stop();
   });
 
-  it('ignores agent:idle events for other workspaces', async () => {
-    const service = new NotificationService('workspace-1');
+  it('handles agent:idle events from ANY workspace via the single global subscription', async () => {
+    const service = new NotificationService();
     service.start();
     await flush();
 
     notificationListeners[0](buildEventsEventNotification({ workspaceId: 'workspace-2' }));
+    await flush();
+
+    // Per-event routing: agent.list targets the EVENT's workspace.
+    expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-2' });
+    expect(mockNotificationInstances.length).toBe(1);
+    service.stop();
+  });
+
+  it('drops agent:idle events without a workspaceId (cannot be routed)', async () => {
+    const service = new NotificationService();
+    service.start();
+    await flush();
+
+    notificationListeners[0]({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'ws-sub-1',
+        event: {
+          id: 'evt-x',
+          type: 'agent:idle',
+          timestamp: new Date().toISOString(),
+          data: { agentId: 'agent-self', agentName: 'Self Agent' },
+        },
+      },
+    });
     await flush();
 
     expect(mockNotificationInstances.length).toBe(0);
@@ -285,7 +314,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
       { id: 'agent-self', metadata: { isBackground: true, specialist: 'implementor' } },
     ];
 
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     service.start();
     await flush();
 
@@ -297,7 +326,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
   });
 
   it('re-issues events.subscribe after backend reconnect', async () => {
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     service.start();
     await flush();
 
@@ -312,13 +341,12 @@ describe('NotificationService daemon agent:idle subscription', () => {
     expect(subscribeCalls()).toHaveLength(2);
     expect(subscribeCalls()[1][1]).toEqual({
       eventTypes: ['agent:idle'],
-      workspaceId: 'workspace-1',
     });
     service.stop();
   });
 
   it('stop() detaches the listener and unsubscribes (PROTOCOL.md §6.2)', async () => {
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     service.start();
     await flush();
 
@@ -351,7 +379,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
       return {};
     });
 
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     service.start();
     await flush();
 
@@ -391,7 +419,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
       return defaultImpl!(method, params);
     });
 
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     service.start();
     await flush();
 
@@ -410,7 +438,6 @@ describe('NotificationService daemon agent:idle subscription', () => {
     expect(subscribeCalls()).toHaveLength(2);
     expect(subscribeCalls()[1][1]).toEqual({
       eventTypes: ['agent:idle'],
-      workspaceId: 'workspace-1',
     });
     expect(service['subscriptionId']).toBe('ws-sub-1');
     // The retry listener detached itself after the connected transition.
@@ -426,7 +453,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
   });
 
   it('does not double-subscribe when a connected transition arrives after a successful subscribe', async () => {
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     service.start();
     await flush();
 
@@ -446,7 +473,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
       return defaultImpl!(method, params);
     });
 
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     service.start();
     await flush();
     expect(statusListeners.length).toBe(1);
@@ -468,7 +495,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
   });
 });
 
-describe('syncNotificationServices lifecycle diff (window-workspace-state-changed)', () => {
+describe('getNotificationService app-wide singleton', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     __resetNotificationCacheForTesting();
@@ -482,82 +509,24 @@ describe('syncNotificationServices lifecycle diff (window-workspace-state-change
   });
 
   afterEach(() => {
-    // Tear down any services left running so suites stay isolated.
-    syncNotificationServices([]);
     mockNotificationIsSupported.value = false;
   });
 
-  it('starts a service (events.subscribe §6.1) for every newly open workspace', async () => {
-    syncNotificationServices(['sync-ws-a', 'sync-ws-b']);
-    await flush();
-
-    expect(requestMock).toHaveBeenCalledWith('events.subscribe', {
-      eventTypes: ['agent:idle'],
-      workspaceId: 'sync-ws-a',
-    });
-    expect(requestMock).toHaveBeenCalledWith('events.subscribe', {
-      eventTypes: ['agent:idle'],
-      workspaceId: 'sync-ws-b',
-    });
+  it('returns the same instance on every call', () => {
+    const service = getNotificationService();
+    expect(getNotificationService()).toBe(service);
   });
 
-  it('is idempotent — re-syncing the same set does not re-subscribe', async () => {
-    syncNotificationServices(['sync-ws-a']);
+  it('start() is idempotent — calling twice issues only one events.subscribe', async () => {
+    const service = getNotificationService();
+    service.start();
     await flush();
-    syncNotificationServices(['sync-ws-a']);
+    service.start();
     await flush();
 
     const subscribeCalls = requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
     expect(subscribeCalls).toHaveLength(1);
-  });
-
-  it('disposes (events.unsubscribe §6.2) services for workspaces no longer open anywhere', async () => {
-    // Return workspace-specific subscription ids so the unsubscribe assertion
-    // proves it targets the disposed workspace's subscription, not just any.
-    const defaultImpl = requestMock.getMockImplementation();
-    requestMock.mockImplementation(async (method: string, params?: unknown) => {
-      if (method === 'events.subscribe') {
-        const wsId = (params as { workspaceId?: string } | undefined)?.workspaceId;
-        return { subscriptionId: `sub-${wsId}` };
-      }
-      return defaultImpl!(method, params);
-    });
-
-    syncNotificationServices(['sync-ws-a', 'sync-ws-b']);
-    await flush();
-
-    syncNotificationServices(['sync-ws-b']);
-    await flush();
-
-    expect(requestMock).toHaveBeenCalledWith('events.unsubscribe', {
-      subscriptionId: 'sub-sync-ws-a',
-    });
-    expect(requestMock).not.toHaveBeenCalledWith('events.unsubscribe', {
-      subscriptionId: 'sub-sync-ws-b',
-    });
-    // The disposed instance is dropped: re-opening starts a fresh service.
-    requestMock.mockClear();
-    syncNotificationServices(['sync-ws-a', 'sync-ws-b']);
-    await flush();
-    expect(requestMock).toHaveBeenCalledWith('events.subscribe', {
-      eventTypes: ['agent:idle'],
-      workspaceId: 'sync-ws-a',
-    });
-    requestMock.mockImplementation(defaultImpl!);
-  });
-
-  it('getNotificationService/disposeNotificationService manage the same singleton map', async () => {
-    const service = getNotificationService('sync-ws-c');
-    expect(getNotificationService('sync-ws-c')).toBe(service);
-
-    // sync with the workspace open keeps (and starts) the existing instance.
-    syncNotificationServices(['sync-ws-c']);
-    await flush();
-    expect(getNotificationService('sync-ws-c')).toBe(service);
-
-    disposeNotificationService('sync-ws-c');
-    expect(getNotificationService('sync-ws-c')).not.toBe(service);
-    disposeNotificationService('sync-ws-c');
+    service.stop();
   });
 });
 
@@ -575,7 +544,12 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
     } as AgentIdleEvent;
   }
 
-  function installFocusedWindow(isFocused: boolean) {
+  /**
+   * Install a window with workspace-1 open. `viewingFocused` controls whether
+   * the app's focused window is currently VIEWING workspace-1 (the new gate:
+   * getFocusedWindowWorkspaceId() === event.workspaceId).
+   */
+  function installFocusedWindow(viewingFocused: boolean) {
     const mockWindow = {
       id: 1,
       webContents: { send: vi.fn(), isDestroyed: () => false },
@@ -583,10 +557,13 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
       show: vi.fn(),
       restore: vi.fn(),
       isMinimized: () => false,
-      isFocused: () => isFocused,
+      isFocused: () => viewingFocused,
       isDestroyed: () => false,
     };
     vi.mocked(getWindowIdsForWorkspace).mockReturnValue([mockWindow.id]);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(
+      viewingFocused ? 'workspace-1' : null,
+    );
     vi.mocked(BrowserWindow.fromId).mockImplementation((id: number) =>
       (id === mockWindow.id ? mockWindow : null) as never,
     );
@@ -607,11 +584,11 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
     agentListResponse.agents = [];
   });
 
-  it('suppresses the OS banner but still sends notification:show when focused and soundOnlyWhenUnfocused=true', async () => {
+  it('suppresses the OS banner but still sends notification:show when the focused window views the workspace and soundOnlyWhenUnfocused=true', async () => {
     settingsValues['notifications.soundOnlyWhenUnfocused'] = true;
     installFocusedWindow(true);
 
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
     // OS banner suppressed…
@@ -628,7 +605,7 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
     settingsValues['notifications.soundOnlyWhenUnfocused'] = false;
     installFocusedWindow(true);
 
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
     expect(mockNotificationInstances.length).toBe(1);
@@ -639,11 +616,11 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
     );
   });
 
-  it('shows the OS banner when unfocused regardless of soundOnlyWhenUnfocused', async () => {
+  it('shows the OS banner when the focused window is NOT viewing the workspace regardless of soundOnlyWhenUnfocused', async () => {
     settingsValues['notifications.soundOnlyWhenUnfocused'] = true;
     installFocusedWindow(false);
 
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
     expect(mockNotificationInstances.length).toBe(1);
@@ -697,7 +674,7 @@ describe('NotificationService showNotification click behavior', () => {
    * then trigger the click handler on the created Notification.
    */
   function triggerNotificationClick(workspaceId: string, mockWindow: any) {
-    const service = new NotificationService(workspaceId);
+    const service = new NotificationService();
     // Access private method via bracket notation
     (service as any).showNotification(
       { title: 'Test', body: 'Test notification' },
@@ -744,7 +721,7 @@ describe('NotificationService showNotification click behavior', () => {
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow]);
 
     // Use showTestNotification which calls showNotification without workspaceId
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     service.showTestNotification();
 
     expect(mockNotificationInstances.length).toBeGreaterThan(0);
@@ -782,7 +759,7 @@ describe('NotificationService showNotification click behavior', () => {
 
   it('stores notification in activeNotifications set and removes after click', () => {
     const mockWindow = createMockWindow(false);
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
 
     (service as any).showNotification(
       { title: 'Test', body: 'Test notification' },
@@ -803,7 +780,7 @@ describe('NotificationService showNotification click behavior', () => {
 
   it('removes notification from activeNotifications set after close', () => {
     const mockWindow = createMockWindow(false);
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
 
     (service as any).showNotification(
       { title: 'Test', body: 'Test notification' },
@@ -822,7 +799,7 @@ describe('NotificationService showNotification click behavior', () => {
 
   it('removes notification from activeNotifications set after failed event', () => {
     const mockWindow = createMockWindow(false);
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
 
     (service as any).showNotification(
       { title: 'Test', body: 'Test notification' },
@@ -840,7 +817,7 @@ describe('NotificationService showNotification click behavior', () => {
 
   it('removes notification from activeNotifications set when show() throws', () => {
     const mockWindow = createMockWindow(false);
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
 
     mockShowShouldThrow.value = true;
     try {
@@ -933,7 +910,7 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
       { id: 'agent-other', isStreaming: true, isResponding: false },
     ];
 
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
     // Assert exact on-wire request shape (PROTOCOL.md §5.5).
@@ -947,7 +924,7 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
       { id: 'agent-self', isStreaming: true, isResponding: false },
     ];
 
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
     expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
@@ -959,11 +936,95 @@ describe('NotificationService handleAgentIdle suppression via agent.list', () =>
   it('does not suppress when agent.list returns an empty list', async () => {
     agentListResponse.agents = [];
 
-    const service = new NotificationService('workspace-1');
+    const service = new NotificationService();
     await service.handleAgentIdle(buildIdleEvent());
 
     expect(requestMock).toHaveBeenCalledWith('agent.list', { workspaceId: 'workspace-1' });
     expect(mockNotificationInstances.length).toBe(1);
+  });
+});
+
+describe('NotificationService fallbacks for workspaces with no open window', () => {
+  function buildIdleEvent(workspaceId = 'workspace-closed'): AgentIdleEvent {
+    return {
+      type: 'agent:idle',
+      workspaceId,
+      timestamp: new Date().toISOString(),
+      data: {
+        agentId: 'agent-self',
+        agentName: 'Self Agent',
+        isBackground: false,
+      },
+    } as AgentIdleEvent;
+  }
+
+  function createMockWindow(id: number) {
+    return {
+      id,
+      webContents: { send: vi.fn(), isDestroyed: () => false },
+      focus: vi.fn(),
+      show: vi.fn(),
+      restore: vi.fn(),
+      isMinimized: () => false,
+      isFocused: () => false,
+      isDestroyed: () => false,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetNotificationCacheForTesting();
+    mockNotificationIsSupported.value = true;
+    mockNotificationInstances.length = 0;
+    agentListResponse.agents = [];
+    for (const key of Object.keys(settingsValues)) delete settingsValues[key];
+    // The event's workspace is not open in ANY window, and no focused window
+    // is viewing it.
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([]);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(null);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(null as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([] as never);
+  });
+
+  afterEach(() => {
+    mockNotificationIsSupported.value = false;
+    agentListResponse.agents = [];
+  });
+
+  it('sound fallback: notification:show is sent to the focused window when the workspace has no open window', async () => {
+    const focusedWindow = createMockWindow(11);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(focusedWindow as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([focusedWindow] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent());
+
+    // No workspace-targeted delivery — the workspace has no open window…
+    expect(sendToWorkspaceWindows).not.toHaveBeenCalled();
+    // …so the renderer sound event falls back to the focused window.
+    expect(focusedWindow.webContents.send).toHaveBeenCalledWith(
+      'notification:show',
+      expect.objectContaining({ title: expect.any(String), body: expect.any(String) }),
+    );
+  });
+
+  it('navigation fallback: click targets getFocusedWindow() ?? getAllWindows()[0] and sends notification:navigate with the event workspaceId', async () => {
+    // No focused window → the ?? branch picks getAllWindows()[0].
+    const onlyWindow = createMockWindow(12);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(null as never);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([onlyWindow] as never);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('workspace-closed'));
+
+    expect(mockNotificationInstances.length).toBe(1);
+    mockNotificationInstances[0].handlers['click']();
+
+    expect(onlyWindow.show).toHaveBeenCalled();
+    expect(onlyWindow.focus).toHaveBeenCalled();
+    expect(onlyWindow.webContents.send).toHaveBeenCalledWith('notification:navigate', {
+      workspaceId: 'workspace-closed',
+    });
   });
 });
 
