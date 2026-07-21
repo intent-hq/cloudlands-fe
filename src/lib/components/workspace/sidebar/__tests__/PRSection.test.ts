@@ -131,7 +131,7 @@ vi.mock('$features/git/git.client', () => ({
 // PROTOCOL §5.6 — lazy per-commit file fetch for the metadata-only list payload.
 const mockCommitDetails = vi.hoisted(() => vi.fn());
 vi.mock('$lib/client', () => ({
-  appClient: { git: { commitDetails: mockCommitDetails, pull: vi.fn().mockResolvedValue({}) } },
+  appClient: { git: { commitDetails: mockCommitDetails, pull: vi.fn().mockResolvedValue({ success: true }) } },
 }));
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
@@ -337,6 +337,47 @@ describe('PRSection', () => {
       expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');
     });
     expect(mockCommitDetails).not.toHaveBeenCalled();
+  });
+
+  it('pushed commits arriving while a PR is expanded get their files fetched too', async () => {
+    mockCommitDetails.mockImplementation((_ws: string, hash: string) =>
+      Promise.resolve({
+        commitHash: hash,
+        author: 'Test',
+        authorEmail: 't@example.com',
+        date: '2026-07-21T00:00:00Z',
+        message: `commit ${hash}`,
+        files: [`src/${hash}.ts`],
+        fileDetails: [{ path: `src/${hash}.ts`, additions: 1, deletions: 0 }],
+      }),
+    );
+    const { container, rerender } = await renderPR({
+      hasPRs: true,
+      hasOpenPR: true,
+      pullRequests: [testPR],
+      pushedCommits: [makePushedCommit('abc')],
+      hasPushedCommits: true,
+    });
+    const toggle = await waitFor(() => {
+      const btn = Array.from(container.querySelectorAll('button')).find(
+        (b) => b.getAttribute('title') === 'Toggle file list',
+      );
+      expect(btn).toBeDefined();
+      return btn as HTMLButtonElement;
+    });
+    await fireEvent.click(toggle);
+    await waitFor(() => expect(mockCommitDetails).toHaveBeenCalledWith('ws-1', 'abc'));
+
+    // A new push lands while the PR stays expanded — the new commit's files
+    // are fetched without another expand interaction.
+    await rerender({ pushedCommits: [makePushedCommit('abc'), makePushedCommit('def')] });
+    await waitFor(() => expect(mockCommitDetails).toHaveBeenCalledWith('ws-1', 'def'));
+    await waitFor(() => {
+      const paths = Array.from(container.querySelectorAll('[data-testid="file-row"]')).map((r) =>
+        r.getAttribute('data-file-path'),
+      );
+      expect(paths).toEqual(expect.arrayContaining(['src/abc.ts', 'src/def.ts']));
+    });
   });
 
   it('a failed lazy PR details fetch is retried on the next expand', async () => {

@@ -41,17 +41,12 @@
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
   import { handleLink } from '$features/navigation/link-handler';
 
-
-
   import {
   selectSidebarCreatePRWhenReady,
   selectAcceptChangesState,
 } from '$store/renderer/slices/changes/changes-selectors';
 
-
-
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-
   import { workspaceClient } from '$store/renderer/slices/workspace/utils/workspace.client';
 
   import GitHubAuthBanner from '$lib/components/GitHubAuthBanner.svelte';
@@ -78,7 +73,7 @@
   faSpinner,
   faStop,
 } from '@fortawesome/free-solid-svg-icons';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import {
   readable,
   writable,
@@ -211,9 +206,9 @@
   // PR files derived from pushed commits. The commit list payload is
   // metadata-only (`file-tracking.loadCommits` skips per-commit tree diffs,
   // PROTOCOL §5.19), so per-commit files are fetched via `git.commitDetails`
-  // (§5.6) on first PR expand and merged into the aggregation. `null` marks an
-  // in-flight fetch; it is cleared on failure so a later expand retries. Reset
-  // on workspace switch so the cache doesn't leak across workspaces.
+  // (§5.6) on first PR expand and merged into the aggregation. `null` marks
+  // an in-flight fetch (cleared on failure so a later expand retries); the
+  // cache resets on workspace switch so it can't leak across workspaces.
   let prCommitFileCache = $state<Record<string, CommitFile[] | null>>({});
   let prCacheWorkspaceId = workspaceId;
   $effect(() => {
@@ -231,9 +226,8 @@
     }),
   );
   const prFiles = $derived(aggregatePRFiles(resolvedPushedCommits));
-  // Whether any pushed commit's file list is still unknown (metadata-only and
-  // not yet fetched, or fetch in flight) — the expand chevron stays visible
-  // until we know the PR has no files.
+  // Whether any pushed commit's file list is still unknown (unfetched or in
+  // flight) — the chevron stays visible until we know the PR has no files.
   const prFilesUnknown = $derived(
     (pushedCommits as CommitInfo[]).some((c) => !c.files && !prCommitFileCache[c.hash]),
   );
@@ -249,14 +243,17 @@
 
   function fetchPRCommitFilesIfNeeded() {
     if (!workspaceId) return;
+    const requestWorkspaceId = workspaceId;
     for (const commit of pushedCommits as CommitInfo[]) {
       if (commit.files || prCommitFileCache[commit.hash] !== undefined) continue;
       prCommitFileCache = { ...prCommitFileCache, [commit.hash]: null };
-      // `commitDetails` folds transport errors to `null`; the drawer simply
-      // shows no rows for that commit and a later expand retries.
+      // `commitDetails` folds transport errors to `null` (no rows; a later
+      // expand retries). In-flight results are dropped if the workspace
+      // switched mid-request so they can't repopulate the reset cache.
       appClient.git
-        .commitDetails(workspaceId, commit.hash)
+        .commitDetails(requestWorkspaceId, commit.hash)
         .then((result) => {
+          if (workspaceId !== requestWorkspaceId) return;
           if (!result) {
             clearPRCommitFileMarker(commit.hash);
             return;
@@ -269,10 +266,21 @@
         })
         .catch((error) => {
           logger.error('Failed to fetch commit details for PR files', { hash: commit.hash, error });
+          if (workspaceId !== requestWorkspaceId) return;
           clearPRCommitFileMarker(commit.hash);
         });
     }
   }
+
+  // Pushed commits arriving while a PR is already expanded (a push landing
+  // mid-view) get their files fetched too. Gated on user interaction; the
+  // cache reads are untracked so cleared failure markers don't auto-refetch —
+  // retries stay tied to an explicit re-expand.
+  $effect(() => {
+    if (expandedPRs.size > 0 && pushedCommits.length > 0) {
+      untrack(() => fetchPRCommitFilesIfNeeded());
+    }
+  });
 
   // Local state
   let prDrawerOpen = $state(false);
