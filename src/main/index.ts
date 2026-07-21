@@ -233,7 +233,7 @@ import { setupPanelLayoutHistoryIPC } from '../features/layout/main/panel-layout
 import { setupLinearAuthIPC } from '../features/linear-auth/main/linear-auth.ipc';
 import { setupLogIPC } from '../features/log/main/log.ipc';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
-import { syncNotificationServices } from '../features/notifications/main/notification.service';
+import { getNotificationService } from '../features/notifications/main/notification.service';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
 import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
@@ -1200,15 +1200,6 @@ app.whenReady().then(async () => {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    // Reconcile desktop-notification agent:idle subscriptions with the set of
-    // open workspaces (successor to the dead legacy workspace:open trigger).
-    try {
-      syncNotificationServices(openWorkspaceIds);
-    } catch (error) {
-      logger.warn('Failed to sync notification services', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
     rebuildMenu();
   });
 
@@ -1349,6 +1340,17 @@ app.whenReady().then(async () => {
 
     // Setup notification IPC handlers
     setupNotificationIPC();
+
+    // Start the app-wide notification service — one global agent:idle
+    // subscription covering all workspaces (PROTOCOL.md §6.1: omitting
+    // workspaceId subscribes to events from every workspace).
+    try {
+      getNotificationService().start();
+    } catch (error) {
+      logger.warn('Failed to start notification service', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     // Setup keychain consent IPC handlers for git network operations
     const { setupKeychainIPC } = await import('../features/git/main/keychain.ipc');
