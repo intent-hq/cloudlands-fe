@@ -136,6 +136,8 @@ describe('ChatMessage edit-and-regenerate confirm gate', () => {
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     expect(screen.getByRole('button', { name: 'Edit & regenerate' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
+    // Focus moves into the dialog on open — the wiring Escape relies on.
+    await waitFor(() => expect(document.activeElement).toBe(dialog));
   });
 
   it('Escape cancels back to edit mode with the draft intact', async () => {
