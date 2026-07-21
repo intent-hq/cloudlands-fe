@@ -275,7 +275,6 @@ import { setupWorkspaceSummaryIPC } from '../features/workspace/main/workspace-s
 import { startupMetrics } from '../utils/startup-metrics';
 import { CdpMcpBridge } from './cdp-mcp-bridge';
 import { listRespondingAgents } from './running-agents';
-import { prefetchProviderModelCaches } from './utils/model-pool';
 
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { cleanupStaleTempFiles } from '../shared/main/temp-files';
@@ -1287,7 +1286,6 @@ app.whenReady().then(async () => {
   setupOpencodeIPC(); // Needed for opencode:get-models
   setupClaudeCodeIPC(); // Needed for claude-code:get-models
   setupCodexIPC(); // Needed for codex:get-models
-  prefetchProviderModelCaches(); // Warm persisted provider model caches without blocking startup
   setupCortexIPC(); // Needed for cortex:get-models
   setupPiIPC(); // Needed for pi:get-models
   setupDroidIPC(); // Needed for droid:get-models

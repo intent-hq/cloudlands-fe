@@ -76,6 +76,7 @@
     fetchedForHash = commit.hash;
     // `commitDetails` folds transport errors to `null`; the list simply stays
     // empty on failure and a re-expand won't refetch until the hash changes.
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- interaction-gated lazy detail fetch (PR #214); per-commit file lists are not Redux domain state
     appClient.git.commitDetails(workspaceId, commit.hash).then((result) => {
       if (result && !destroyed && fetchedForHash === commit.hash) {
         fetchedFiles = result.fileDetails.length > 0
