@@ -199,7 +199,9 @@
   });
 
   function saveRemoteSetups(setups = remoteSetups) {
-    appStore.dispatch(setWorkspaceInitializerRemoteSetups(setups));
+    // Snapshot so no $state proxy enters the Redux store (store AGENTS.md §2) —
+    // a proxy in the persisted slice breaks settings.update's IPC structured clone.
+    appStore.dispatch(setWorkspaceInitializerRemoteSetups($state.snapshot(setups)));
   }
 
   function handleSelectRemoteSetup(setup: RemoteSetup) {

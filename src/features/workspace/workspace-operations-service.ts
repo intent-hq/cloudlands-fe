@@ -223,6 +223,11 @@ async function deleteWorkspaceWithUndo(workspace: Workspace): Promise<void> {
     action: {
       label: "Undo",
       onClick: () => {
+        // Already committed (e.g. a teardown flush fired without the window
+        // actually unloading — cancelled navigation / dev HMR): the delete has
+        // reached the daemon, so Undo must stay inert instead of resurrecting
+        // the entity locally and diverging from the daemon.
+        if (!pendingWorkspaceDeletions.has(workspace.id)) return;
         undone = true;
         clearTimeout(timer);
         pendingWorkspaceDeletions.delete(workspace.id);

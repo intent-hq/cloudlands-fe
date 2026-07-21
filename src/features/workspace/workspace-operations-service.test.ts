@@ -195,6 +195,30 @@ describe("workspaceOperationsService (fake seam, real store)", () => {
       ]);
     });
 
+    it("keeps Undo inert when the flush already committed the deletion", async () => {
+      seed(makeWorkspace({ id: "ws-inert" }));
+
+      appStore.dispatch(requestDeleteWorkspace("ws-inert"));
+      await flush();
+
+      // A beforeunload flush fires without the window actually unloading
+      // (cancelled navigation / dev HMR) — the delete is committed.
+      window.dispatchEvent(new Event("beforeunload"));
+      expect(ws.delete).toHaveBeenCalledWith("ws-inert");
+
+      // Clicking Undo afterwards must NOT resurrect the entity locally —
+      // the daemon already received the delete.
+      const { toast } = await import("svelte-sonner");
+      const [, options] = vi.mocked(toast.warning).mock.calls.at(-1)! as [
+        string,
+        { action: { onClick: () => void } },
+      ];
+      options.action.onClick();
+      await flush();
+
+      expect(stored("ws-inert")).toBeUndefined();
+    });
+
     it("does not delete an undone workspace when the flush fires afterwards", async () => {
       seed(makeWorkspace({ id: "ws-undone" }));
 
