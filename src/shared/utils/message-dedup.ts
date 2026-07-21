@@ -97,8 +97,17 @@ function hasSameAppMessageId(a: AgentMessage, b: AgentMessage): boolean {
   return aAppMessageId !== undefined && aAppMessageId === getAppMessageId(b);
 }
 
+/**
+ * Content-hash matching is a FALLBACK for pairs where id-based matching is
+ * impossible: at least one side lacks an `appMessageId` (echo-less paths like
+ * `agent.forceMessage`, or rows from older daemons that do not echo
+ * `userAppMessageId` — PROTOCOL §5.5). When BOTH sides carry an appMessageId,
+ * the id comparison is authoritative: equal ids merge via the appMessageId
+ * paths, and differing ids are distinct logical messages even with identical
+ * content, so content fallback must never collapse them.
+ */
 function canUseLegacyContentFallback(a: AgentMessage, b: AgentMessage): boolean {
-  return !getAppMessageId(a) && !getAppMessageId(b);
+  return getAppMessageId(a) === undefined || getAppMessageId(b) === undefined;
 }
 
 function isStreamingFinalizationDuplicate(a: AgentMessage, b: AgentMessage): boolean {
@@ -269,11 +278,15 @@ export function mergeAgentSessionMessagesWithPolicy({
 }
 
 function getPreferredIdentityMessage(existing: AgentMessage, incoming: AgentMessage): AgentMessage {
+  // Canonical daemon identity wins: an echoed/persisted `msg_` row replaces
+  // the optimistic message it merges with. `mergeLogicalMessage` preserves the
+  // appMessageId from either side, so preferring the canonical id never drops
+  // the logical id.
+  if (hasCanonicalId(existing.id) && !hasCanonicalId(incoming.id)) return existing;
+  if (hasCanonicalId(incoming.id) && !hasCanonicalId(existing.id)) return incoming;
   const existingAppMessageId = getAppMessageId(existing);
   const incomingAppMessageId = getAppMessageId(incoming);
   if (existingAppMessageId && !incomingAppMessageId) return existing;
-  if (incomingAppMessageId && !existingAppMessageId) return incoming;
-  if (hasCanonicalId(existing.id) && !hasCanonicalId(incoming.id)) return existing;
   return incoming;
 }
 

@@ -76,6 +76,88 @@ describe('message-dedup utility', () => {
     });
   });
 
+  it('merges a daemon user echo lacking appMessageId into the optimistic message (older-daemon fallback)', () => {
+    const optimistic: AgentMessage = {
+      id: '550e8400-e29b-41d4-a716-446655440020',
+      role: 'user',
+      appMessageId: 'app_msg_user_fallback',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Ship it' }],
+    };
+    const canonicalEcho: AgentMessage = {
+      id: 'msg_user_echo',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:01.000Z',
+      contentBlocks: [{ type: 'text', text: 'Ship it' }],
+    };
+
+    const inserted = insertAgentMessageWithDedup([optimistic], canonicalEcho);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({
+      id: 'msg_user_echo',
+      appMessageId: 'app_msg_user_fallback',
+      role: 'user',
+    });
+
+    const deduped = deduplicateAgentMessages([optimistic, canonicalEcho]);
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0]).toMatchObject({
+      id: 'msg_user_echo',
+      appMessageId: 'app_msg_user_fallback',
+      role: 'user',
+    });
+  });
+
+  it('prefers the id-based match over a same-content sibling when the echo carries appMessageId', () => {
+    const contentTwin: AgentMessage = {
+      id: 'msg_older_same_content',
+      role: 'user',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Same words' }],
+    };
+    const optimistic: AgentMessage = {
+      id: '550e8400-e29b-41d4-a716-446655440021',
+      role: 'user',
+      appMessageId: 'app_msg_user_target',
+      timestamp: '2024-01-01T00:00:00.500Z',
+      contentBlocks: [{ type: 'text', text: 'Same words' }],
+    };
+    const canonicalEcho: AgentMessage = {
+      id: 'msg_user_echo_2',
+      role: 'user',
+      appMessageId: 'app_msg_user_target',
+      timestamp: '2024-01-01T00:00:01.000Z',
+      contentBlocks: [{ type: 'text', text: 'Same words' }],
+    };
+
+    const merged = insertAgentMessageWithDedup([contentTwin, optimistic], canonicalEcho);
+    expect(merged).toHaveLength(2);
+    expect(merged.map((m) => m.id)).toContain('msg_older_same_content');
+    expect(merged).toContainEqual(
+      expect.objectContaining({ id: 'msg_user_echo_2', appMessageId: 'app_msg_user_target' }),
+    );
+  });
+
+  it('keeps same-content user messages with different appMessageIds distinct', () => {
+    const firstSend: AgentMessage = {
+      id: '550e8400-e29b-41d4-a716-446655440022',
+      role: 'user',
+      appMessageId: 'app_msg_send_1',
+      timestamp: '2024-01-01T00:00:00.000Z',
+      contentBlocks: [{ type: 'text', text: 'Yes' }],
+    };
+    const secondSend: AgentMessage = {
+      id: 'msg_second_send',
+      role: 'user',
+      appMessageId: 'app_msg_send_2',
+      timestamp: '2024-01-01T00:00:01.000Z',
+      contentBlocks: [{ type: 'text', text: 'Yes' }],
+    };
+
+    expect(deduplicateAgentMessages([firstSend, secondSend])).toHaveLength(2);
+    expect(insertAgentMessageWithDedup([firstSend], secondSend)).toHaveLength(2);
+  });
+
   it('collapses the observed same-appMessageId assistant duplicate shape', () => {
     const appMessageId = 'app_msg_observed';
     const streaming = makeAssistant(

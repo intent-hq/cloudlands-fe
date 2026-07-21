@@ -532,10 +532,12 @@ export class UnifiedAgentFactory {
       const hasImageBlocks = (normalized.imageBlocks?.length ?? 0) > 0;
       // Mint the logical app-message id ONCE so the optimistic user message
       // (Step 10, non-backend agents) and the wire send (Step 11) share the
-      // same identity. The daemon accepts but does not yet echo
-      // `userAppMessageId` (PROTOCOL §5.5), so today's dedup still falls back
-      // to content-hash matching; this lands the FE half of the identity
-      // round-trip so appMessageId dedup takes over once the daemon echoes it.
+      // same identity. The daemon echoes it back as `appMessageId` on the
+      // user-row agent:message event and on conversation rows (PROTOCOL §5.5),
+      // so the echoed canonical message merges with the optimistic one by id
+      // (the authoritative path); content-hash dedup remains only as a
+      // fallback for older daemons and echo-less paths (agent.forceMessage
+      // emits no live agent:message echo).
       // Callers may supply their own id (empty/whitespace values are ignored).
       const initialUserAppMessageId =
         hasInitialMessage || hasContextReferences || hasImageBlocks
