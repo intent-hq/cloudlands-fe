@@ -128,8 +128,11 @@ async function main() {
   const lib = await import(pathToFileURL(path.join(__dirname, 'fetch-sidecar-lib.mjs')).href);
   const force = process.argv.includes('--force');
 
+  // Strip a leading `v` from the override so the stamp always stores the bare
+  // semver (matching the pin format) and idempotency is unaffected.
   const version =
-    process.env.INTENTD_VERSION?.trim() || lib.parseVersionPin(fs.readFileSync(PIN_FILE, 'utf8'));
+    process.env.INTENTD_VERSION?.trim().replace(/^v/, '') ||
+    lib.parseVersionPin(fs.readFileSync(PIN_FILE, 'utf8'));
   const target =
     process.env.INTENTD_TARGET?.trim() || lib.resolveTarget(process.platform, process.arch);
   const appName = process.env.INTENTD_APP_NAME?.trim() || lib.INTENTD_APP_NAME;
