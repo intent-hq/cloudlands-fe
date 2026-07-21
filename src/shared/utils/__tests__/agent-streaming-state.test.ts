@@ -60,6 +60,30 @@ describe('normalizeStreamingState', () => {
     expect(result.status).toBe(AgentStatus.Active);
   });
 
+  it('clears stale message-level isStreaming flags when clearStaleMessageFlags is set', () => {
+    const result = normalizeStreamingState(
+      session({ messages: [message({ isStreaming: true })] }),
+      false,
+      true,
+    );
+    expect(result.isStreaming).toBe(false);
+    expect(result.isProcessing).toBe(false);
+    expect(result.isResponding).toBe(false);
+    expect(result.status).toBe(AgentStatus.Idle);
+    expect(result.messages?.[0].isStreaming).toBe(false);
+  });
+
+  it('does not clear message flags when clearStaleMessageFlags is set but a handler exists', () => {
+    const result = normalizeStreamingState(
+      session({ messages: [message({ isStreaming: true })] }),
+      true,
+      true,
+    );
+    expect(result.isStreaming).toBe(true);
+    expect(result.status).toBe(AgentStatus.Active);
+    expect(result.messages?.[0].isStreaming).toBe(true);
+  });
+
   it('leaves non-streaming/idle sessions untouched', () => {
     const result = normalizeStreamingState(
       session({

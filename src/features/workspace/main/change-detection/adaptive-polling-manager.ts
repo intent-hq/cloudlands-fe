@@ -47,6 +47,13 @@ export class AdaptivePollingManager extends EventEmitter {
   private constructor(config?: Partial<AdaptivePollingConfig>) {
     super();
 
+    // This singleton receives one `intervalChanged` listener per workspace
+    // change-detector. With 10+ workspaces open simultaneously the default
+    // limit of 10 fires MaxListenersExceededWarning even though each
+    // detector cleanly deregisters its handler on stop(). Raise the cap so
+    // legitimate per-workspace registration does not look like a leak.
+    this.setMaxListeners(100);
+
     this.config = {
       minInterval: config?.minInterval ?? 2000, // 2 seconds
       maxInterval: config?.maxInterval ?? 30000, // 30 seconds

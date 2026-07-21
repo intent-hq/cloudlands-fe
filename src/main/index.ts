@@ -1492,6 +1492,7 @@ app.whenReady().then(async () => {
     });
 
     // Listen for memory pressure warnings to trigger cleanup
+    let lastBroadcastPressureLevel: 'normal' | 'warning' | 'critical' = 'normal';
     memoryMonitor.onPressure((level) => {
       if (level === 'warning' || level === 'critical') {
         logger.warn('Memory pressure detected, triggering cleanup', { level });
@@ -1499,6 +1500,28 @@ app.whenReady().then(async () => {
           forceGC: level === 'critical',
           skipStreamCleanup: true,
         });
+      }
+
+      // Notify renderer windows on transitions so the UI can surface an
+      // explanation when background work pauses (file watchers stop,
+      // agents are evicted). Only broadcast when the level actually
+      // changes to avoid spamming a toast every 30s while still pressured.
+      if (level !== lastBroadcastPressureLevel) {
+        const previousLevel = lastBroadcastPressureLevel;
+        lastBroadcastPressureLevel = level;
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (window.isDestroyed()) continue;
+          const webContents = window.webContents;
+          if (!webContents || webContents.isDestroyed()) continue;
+          try {
+            webContents.send('system:memory-pressure', { level, previousLevel });
+          } catch (error) {
+            logger.warn('Failed to broadcast memory pressure level', {
+              level,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
       }
 
       // Evict idle auggie processes — the biggest single source of memory (~200-300 MB each).
