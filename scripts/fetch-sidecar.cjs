@@ -68,7 +68,26 @@ async function downloadAsset(asset) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-function extractArchive(archivePath, extractDir) {
+function listArchiveEntries(archivePath) {
+  const output =
+    archivePath.endsWith('.zip') && process.platform !== 'win32'
+      ? execFileSync('unzip', ['-Z1', archivePath], { encoding: 'utf8' })
+      : execFileSync('tar', ['-tf', archivePath], { encoding: 'utf8' });
+  return output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function extractArchive(lib, archivePath, extractDir) {
+  // Reject path-traversal (zip-slip/tar-slip) entries before extracting; the checksum
+  // asset comes from the same release, so it is no defense against a malicious archive.
+  const unsafe = listArchiveEntries(archivePath).filter((entry) => !lib.isSafeArchiveEntry(entry));
+  if (unsafe.length > 0) {
+    throw new Error(
+      `Refusing to extract ${path.basename(archivePath)}: unsafe entry paths: ${unsafe.slice(0, 5).join(', ')}`,
+    );
+  }
   if (archivePath.endsWith('.zip') && process.platform !== 'win32') {
     execFileSync('unzip', ['-o', '-q', archivePath, '-d', extractDir]);
   } else {
@@ -168,7 +187,7 @@ async function main() {
     fs.writeFileSync(archivePath, archive);
     const extractDir = path.join(tmpDir, 'extract');
     fs.mkdirSync(extractDir);
-    extractArchive(archivePath, extractDir);
+    extractArchive(lib, archivePath, extractDir);
     const extractedBin = findFile(extractDir, binaryName);
     if (!extractedBin) {
       throw new Error(`Binary ${binaryName} not found inside ${assetName}`);

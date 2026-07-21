@@ -3,6 +3,7 @@ import {
   TARGET_BY_PLATFORM_ARCH,
   assetCandidates,
   checksumAssetName,
+  isSafeArchiveEntry,
   parseChecksumFile,
   parseVersionPin,
   releaseTag,
@@ -125,6 +126,24 @@ describe('parseChecksumFile', () => {
 
   it('does not trust a bare hash in a multi-entry file', () => {
     expect(parseChecksumFile(`${HASH}\n${'b'.repeat(64)}\n`, asset)).toBeNull();
+  });
+});
+
+describe('isSafeArchiveEntry', () => {
+  it('accepts relative entry paths', () => {
+    expect(isSafeArchiveEntry('intentd')).toBe(true);
+    expect(isSafeArchiveEntry('intentd-aarch64-apple-darwin/intentd')).toBe(true);
+  });
+
+  it('rejects traversal, absolute, and drive-letter paths', () => {
+    expect(isSafeArchiveEntry('../evil')).toBe(false);
+    expect(isSafeArchiveEntry('docs/../README.md')).toBe(false);
+    expect(isSafeArchiveEntry('a/../../evil')).toBe(false);
+    expect(isSafeArchiveEntry('..\\evil')).toBe(false);
+    expect(isSafeArchiveEntry('/etc/passwd')).toBe(false);
+    expect(isSafeArchiveEntry('\\\\server\\share')).toBe(false);
+    expect(isSafeArchiveEntry('C:\\Windows\\evil')).toBe(false);
+    expect(isSafeArchiveEntry('')).toBe(false);
   });
 });
 

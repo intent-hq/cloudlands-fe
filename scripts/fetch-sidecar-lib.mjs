@@ -123,3 +123,14 @@ export function parseChecksumFile(content, assetName) {
 export function sha256Hex(data) {
   return createHash('sha256').update(data).digest('hex');
 }
+
+/**
+ * Guard against archive path traversal (zip-slip/tar-slip): entries must be relative
+ * paths with no `..` segments, absolute prefixes, or Windows drive letters.
+ */
+export function isSafeArchiveEntry(entryPath) {
+  if (typeof entryPath !== 'string' || entryPath.length === 0) return false;
+  if (entryPath.startsWith('/') || entryPath.startsWith('\\')) return false;
+  if (/^[A-Za-z]:/.test(entryPath)) return false;
+  return !entryPath.split(/[\\/]/).includes('..');
+}

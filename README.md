@@ -76,9 +76,9 @@ pnpm run test:playwright # Playwright tests
 ## intentd sidecar pin
 
 The bundled `intentd` sidecar is pinned to an **exact released version** in
-[`intentd.version`](./intentd.version) (bare semver, no leading `v`, matching a
-`vX.Y.Z` / `vX.Y.Z-beta.N` tag on
-[intent-hq/intentd](https://github.com/intent-hq/intentd)).
+[`intentd.version`](./intentd.version): a bare semver with no leading `v`,
+matching a `vX.Y.Z` / `vX.Y.Z-beta.N` tag on
+[intent-hq/intentd](https://github.com/intent-hq/intentd).
 
 - **Bumping the pin**: edit `intentd.version` in a normal reviewable PR, then run
   `node scripts/fetch-sidecar.cjs` to confirm the release assets exist and verify.
