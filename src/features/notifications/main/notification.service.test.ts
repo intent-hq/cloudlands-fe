@@ -10,7 +10,13 @@ import {
   app,
   BrowserWindow,
 } from 'electron';
-import { NotificationService, __resetNotificationCacheForTesting } from './notification.service';
+import {
+  NotificationService,
+  __resetNotificationCacheForTesting,
+  getNotificationService,
+  disposeNotificationService,
+  syncNotificationServices,
+} from './notification.service';
 // workspace-event-bus was deleted; notifications are now driven by Redux sagas
 import { getWindowIdsForWorkspace, sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import type { AgentIdleEvent } from '../../events/types';
@@ -39,6 +45,7 @@ const {
   clientOn,
   clientOff,
   notificationListeners,
+  statusListeners,
   reconnectHandlers,
 } = vi.hoisted(() => {
   const agentListResponse: {
@@ -67,13 +74,28 @@ const {
     return {};
   });
   const notificationListeners: Array<(n: { method: string; params?: unknown }) => void> = [];
+  const statusListeners: Array<(status: string) => void> = [];
   const reconnectHandlers: Array<() => void> = [];
   const clientOn = vi.fn((event: string, listener: (n: never) => void) => {
     if (event === 'notification') {
       notificationListeners.push(listener as (n: { method: string; params?: unknown }) => void);
     }
+    if (event === 'status') {
+      statusListeners.push(listener as (status: string) => void);
+    }
   });
-  const clientOff = vi.fn();
+  const clientOff = vi.fn((event: string, listener: (n: never) => void) => {
+    if (event === 'notification') {
+      const idx = notificationListeners.indexOf(
+        listener as (n: { method: string; params?: unknown }) => void,
+      );
+      if (idx !== -1) notificationListeners.splice(idx, 1);
+    }
+    if (event === 'status') {
+      const idx = statusListeners.indexOf(listener as (status: string) => void);
+      if (idx !== -1) statusListeners.splice(idx, 1);
+    }
+  });
   return {
     requestMock,
     agentListResponse,
@@ -81,6 +103,7 @@ const {
     clientOn,
     clientOff,
     notificationListeners,
+    statusListeners,
     reconnectHandlers,
   };
 });
@@ -193,6 +216,7 @@ describe('NotificationService daemon agent:idle subscription', () => {
     mockNotificationInstances.length = 0;
     agentListResponse.agents = [];
     notificationListeners.length = 0;
+    statusListeners.length = 0;
     reconnectHandlers.length = 0;
     for (const key of Object.keys(settingsValues)) delete settingsValues[key];
   });
@@ -344,14 +368,196 @@ describe('NotificationService daemon agent:idle subscription', () => {
       subscriptionId: 'stale-sub-1',
     });
 
-    // Events for the stale id must not trigger notifications.
-    notificationListeners[0](
-      buildEventsEventNotification({ subscriptionId: 'stale-sub-1' }),
-    );
-    await flush();
+    // stop() detached the notification listener, so stale-id events can no
+    // longer reach the service at all.
+    expect(notificationListeners).toHaveLength(0);
     expect(mockNotificationInstances.length).toBe(0);
 
     requestMock.mockImplementation(defaultImpl!);
+  });
+
+  it('retries events.subscribe on the first status→connected transition when the initial subscribe failed (initial-connect gap)', async () => {
+    // Regression: start() before the daemon client's FIRST successful connect.
+    // The initial subscribe rejects and `reconnected` never fires (it requires
+    // an earlier connected state), so without the status-retry the service
+    // stayed silent until an app relaunch.
+    const defaultImpl = requestMock.getMockImplementation();
+    let failSubscribe = true;
+    requestMock.mockImplementation(async (method: string, params?: unknown) => {
+      if (method === 'events.subscribe') {
+        if (failSubscribe) throw new Error('Connection closed');
+        return { subscriptionId: 'ws-sub-1' };
+      }
+      return defaultImpl!(method, params);
+    });
+
+    const service = new NotificationService('workspace-1');
+    service.start();
+    await flush();
+
+    const subscribeCalls = () =>
+      requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
+    expect(subscribeCalls()).toHaveLength(1);
+    expect(service['subscriptionId']).toBeUndefined();
+    // A status listener was armed for the retry.
+    expect(statusListeners.length).toBe(1);
+
+    // Daemon connects for the first time → retry fires and succeeds.
+    failSubscribe = false;
+    statusListeners[0]('connected');
+    await flush();
+
+    expect(subscribeCalls()).toHaveLength(2);
+    expect(subscribeCalls()[1][1]).toEqual({
+      eventTypes: ['agent:idle'],
+      workspaceId: 'workspace-1',
+    });
+    expect(service['subscriptionId']).toBe('ws-sub-1');
+    // The retry listener detached itself after the connected transition.
+    expect(statusListeners.length).toBe(0);
+
+    // Idle events now produce notifications end-to-end.
+    notificationListeners[0](buildEventsEventNotification());
+    await flush();
+    expect(mockNotificationInstances.length).toBe(1);
+
+    service.stop();
+    requestMock.mockImplementation(defaultImpl!);
+  });
+
+  it('does not double-subscribe when a connected transition arrives after a successful subscribe', async () => {
+    const service = new NotificationService('workspace-1');
+    service.start();
+    await flush();
+
+    const subscribeCalls = () =>
+      requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
+    expect(subscribeCalls()).toHaveLength(1);
+    // Successful subscribe → no retry listener armed.
+    expect(statusListeners.length).toBe(0);
+
+    service.stop();
+  });
+
+  it('ignores non-connected status transitions and detaches the retry listener on stop()', async () => {
+    const defaultImpl = requestMock.getMockImplementation();
+    requestMock.mockImplementation(async (method: string, params?: unknown) => {
+      if (method === 'events.subscribe') throw new Error('Connection closed');
+      return defaultImpl!(method, params);
+    });
+
+    const service = new NotificationService('workspace-1');
+    service.start();
+    await flush();
+    expect(statusListeners.length).toBe(1);
+
+    const subscribeCalls = () =>
+      requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
+
+    // connecting / disconnected must not trigger a retry.
+    statusListeners[0]('connecting');
+    statusListeners[0]('disconnected');
+    await flush();
+    expect(subscribeCalls()).toHaveLength(1);
+
+    // stop() detaches the armed retry listener.
+    service.stop();
+    expect(statusListeners.length).toBe(0);
+
+    requestMock.mockImplementation(defaultImpl!);
+  });
+});
+
+describe('syncNotificationServices lifecycle diff (window-workspace-state-changed)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetNotificationCacheForTesting();
+    mockNotificationIsSupported.value = true;
+    mockNotificationInstances.length = 0;
+    agentListResponse.agents = [];
+    notificationListeners.length = 0;
+    statusListeners.length = 0;
+    reconnectHandlers.length = 0;
+    for (const key of Object.keys(settingsValues)) delete settingsValues[key];
+  });
+
+  afterEach(() => {
+    // Tear down any services left running so suites stay isolated.
+    syncNotificationServices([]);
+    mockNotificationIsSupported.value = false;
+  });
+
+  it('starts a service (events.subscribe §6.1) for every newly open workspace', async () => {
+    syncNotificationServices(['sync-ws-a', 'sync-ws-b']);
+    await flush();
+
+    expect(requestMock).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: ['agent:idle'],
+      workspaceId: 'sync-ws-a',
+    });
+    expect(requestMock).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: ['agent:idle'],
+      workspaceId: 'sync-ws-b',
+    });
+  });
+
+  it('is idempotent — re-syncing the same set does not re-subscribe', async () => {
+    syncNotificationServices(['sync-ws-a']);
+    await flush();
+    syncNotificationServices(['sync-ws-a']);
+    await flush();
+
+    const subscribeCalls = requestMock.mock.calls.filter(([m]) => m === 'events.subscribe');
+    expect(subscribeCalls).toHaveLength(1);
+  });
+
+  it('disposes (events.unsubscribe §6.2) services for workspaces no longer open anywhere', async () => {
+    // Return workspace-specific subscription ids so the unsubscribe assertion
+    // proves it targets the disposed workspace's subscription, not just any.
+    const defaultImpl = requestMock.getMockImplementation();
+    requestMock.mockImplementation(async (method: string, params?: unknown) => {
+      if (method === 'events.subscribe') {
+        const wsId = (params as { workspaceId?: string } | undefined)?.workspaceId;
+        return { subscriptionId: `sub-${wsId}` };
+      }
+      return defaultImpl!(method, params);
+    });
+
+    syncNotificationServices(['sync-ws-a', 'sync-ws-b']);
+    await flush();
+
+    syncNotificationServices(['sync-ws-b']);
+    await flush();
+
+    expect(requestMock).toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'sub-sync-ws-a',
+    });
+    expect(requestMock).not.toHaveBeenCalledWith('events.unsubscribe', {
+      subscriptionId: 'sub-sync-ws-b',
+    });
+    // The disposed instance is dropped: re-opening starts a fresh service.
+    requestMock.mockClear();
+    syncNotificationServices(['sync-ws-a', 'sync-ws-b']);
+    await flush();
+    expect(requestMock).toHaveBeenCalledWith('events.subscribe', {
+      eventTypes: ['agent:idle'],
+      workspaceId: 'sync-ws-a',
+    });
+    requestMock.mockImplementation(defaultImpl!);
+  });
+
+  it('getNotificationService/disposeNotificationService manage the same singleton map', async () => {
+    const service = getNotificationService('sync-ws-c');
+    expect(getNotificationService('sync-ws-c')).toBe(service);
+
+    // sync with the workspace open keeps (and starts) the existing instance.
+    syncNotificationServices(['sync-ws-c']);
+    await flush();
+    expect(getNotificationService('sync-ws-c')).toBe(service);
+
+    disposeNotificationService('sync-ws-c');
+    expect(getNotificationService('sync-ws-c')).not.toBe(service);
+    disposeNotificationService('sync-ws-c');
   });
 });
 

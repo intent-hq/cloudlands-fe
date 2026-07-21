@@ -302,6 +302,10 @@ app.on('browser-window-created', (_event, window) => {
     windowWorkspaceIds.delete(window.id);
     windowBrowserFocusState.delete(window.id);
     windowOpenWorkspaceTabs.delete(window.id);
+    // A close changes the set of open workspaces: notify listeners (menu
+    // rebuild, cache trim, notification-service reconciliation) so services
+    // for workspaces no longer open anywhere are torn down.
+    app.emit('window-workspace-state-changed');
   });
 });
 
