@@ -20,6 +20,7 @@ import {
   Notification,
 } from 'electron';
 import { Logger } from '../../../shared/logger';
+import { WorkspaceId } from '../../../shared/types/branded-ids';
 import type { AgentIdleEvent } from '../../events/types';
 import type {
   ConnectionStatus,
@@ -408,7 +409,7 @@ export class NotificationService {
     let workspaceTitle: string | undefined;
     try {
       const { workspaceService } = await import('../../workspace/main/workspace.service');
-      const workspaceResult = await workspaceService.getWorkspace(event.workspaceId as any);
+      const workspaceResult = await workspaceService.getWorkspace(WorkspaceId(event.workspaceId));
       if (workspaceResult.ok && workspaceResult.data?.title) {
         workspaceTitle = workspaceResult.data.title;
       }

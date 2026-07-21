@@ -49,7 +49,7 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../../system/main/system.ipc', () => ({
-  getFocusedWindowWorkspaceId: () => null,
+  getFocusedWindowWorkspaceId: () => undefined,
   getWindowIdsForWorkspace: () => [],
   sendToWorkspaceWindows: vi.fn(),
 }));

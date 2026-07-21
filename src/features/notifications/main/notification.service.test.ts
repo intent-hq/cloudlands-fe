@@ -167,7 +167,7 @@ vi.mock('electron', () => ({
 // workspace-event-bus mock removed — module was deleted
 
 vi.mock('../../system/main/system.ipc', () => ({
-  getFocusedWindowWorkspaceId: vi.fn(() => null),
+  getFocusedWindowWorkspaceId: vi.fn(() => undefined),
   getWindowIdsForWorkspace: vi.fn(() => []),
   sendToWorkspaceWindows: vi.fn(),
 }));
@@ -562,7 +562,7 @@ describe('NotificationService focus gate (soundOnlyWhenUnfocused)', () => {
     };
     vi.mocked(getWindowIdsForWorkspace).mockReturnValue([mockWindow.id]);
     vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(
-      viewingFocused ? 'workspace-1' : null,
+      viewingFocused ? 'workspace-1' : undefined,
     );
     vi.mocked(BrowserWindow.fromId).mockImplementation((id: number) =>
       (id === mockWindow.id ? mockWindow : null) as never,
@@ -981,7 +981,7 @@ describe('NotificationService fallbacks for workspaces with no open window', () 
     // The event's workspace is not open in ANY window, and no focused window
     // is viewing it.
     vi.mocked(getWindowIdsForWorkspace).mockReturnValue([]);
-    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(null);
+    vi.mocked(getFocusedWindowWorkspaceId).mockReturnValue(undefined);
     vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(null as never);
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([] as never);
   });
