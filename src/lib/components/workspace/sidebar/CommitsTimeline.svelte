@@ -130,20 +130,32 @@
   // Lazily-fetched per-file data keyed by commit hash: the list payload is
   // metadata-only (`file-tracking.loadCommits` skips per-commit tree diffs,
   // PROTOCOL §5.19), so files are fetched via `git.commitDetails` (§5.6) on
-  // first expand. `null` marks an in-flight/failed fetch (no file rows yet).
+  // first expand. `null` marks an in-flight fetch (no file rows yet); it is
+  // cleared on failure so a later expand retries.
   let commitFileCache = $state<Record<string, CommitFile[] | null>>({});
 
   function getCommitFiles(commit: CommitInfo): CommitFile[] {
     return commit.files ?? commitFileCache[commit.hash] ?? [];
   }
 
+  function clearCommitFileMarker(hash: string) {
+    if (commitFileCache[hash] === null) {
+      const { [hash]: _, ...rest } = commitFileCache;
+      commitFileCache = rest;
+    }
+  }
+
   async function fetchCommitFiles(hash: string): Promise<CommitFile[]> {
     const cached = commitFileCache[hash];
     if (cached) return cached;
     // `commitDetails` folds transport errors to `null`; the row simply shows
-    // no files on failure and a later expand retries.
+    // no files on failure and a later expand retries (the in-flight marker is
+    // cleared on both failure paths).
     const result = await appClient.git.commitDetails(workspaceId, hash);
-    if (!result) return [];
+    if (!result) {
+      clearCommitFileMarker(hash);
+      return [];
+    }
     const files: CommitFile[] =
       result.fileDetails.length > 0
         ? result.fileDetails
@@ -157,6 +169,7 @@
     commitFileCache = { ...commitFileCache, [commit.hash]: null };
     fetchCommitFiles(commit.hash).catch((error) => {
       logger.error('Failed to fetch commit details', { hash: commit.hash, error });
+      clearCommitFileMarker(commit.hash);
     });
   }
   let commitEdit = $state<{ hash: string | null; value: string; inputRef: HTMLInputElement | null }>({ hash: null, value: '', inputRef: null });

@@ -398,6 +398,40 @@ describe('CommitsTimeline', () => {
     expect(mockCommitDetails).toHaveBeenCalledTimes(1);
   });
 
+  it('a failed lazy details fetch is retried on the next expand', async () => {
+    mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
+    // `commitDetails` folds transport errors to `null` — the marker must be
+    // cleared so a later expand refetches instead of getting stuck.
+    mockCommitDetails.mockResolvedValueOnce(null).mockResolvedValue({
+      hash: 'abc',
+      author: 'Test',
+      email: 't@example.com',
+      date: '2026-07-21T00:00:00Z',
+      message: 'feat: one',
+      files: ['src/a.ts'],
+      fileDetails: [{ path: 'src/a.ts', additions: 3, deletions: 1 }],
+    });
+
+    const { container } = await renderTimeline();
+    const toggle = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.getAttribute('title') === 'Toggle file list',
+    ) as HTMLButtonElement;
+    await fireEvent.click(toggle);
+    expect(mockCommitDetails).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="file-row"]')).toBeNull();
+    });
+
+    // Collapse + re-expand retries and succeeds this time.
+    await fireEvent.click(toggle);
+    await fireEvent.click(toggle);
+    expect(mockCommitDetails).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      const fileRow = container.querySelector('[data-testid="file-row"]');
+      expect(fileRow?.getAttribute('data-file-path')).toBe('src/a.ts');
+    });
+  });
+
   it('undo-commit resolves file paths via git.commitDetails for metadata-only commits', async () => {
     mocks.ftCommits.push(makeCommit('abc', 'feat: one'));
     mocks.workspaceEntity.baseCommitSha = 'base';
