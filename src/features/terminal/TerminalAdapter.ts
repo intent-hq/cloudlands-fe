@@ -451,7 +451,7 @@ export class TerminalAdapter {
       const list = await this.terminals.list(this.workspaceId);
       return list.find((t) => t.id === this.terminalId) ?? null;
     } catch (error) {
-      logger.warn(`Could not check terminal existence: ${error}`);
+      logger.warn('Could not check terminal existence:', error);
       return null;
     }
   }
